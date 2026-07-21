@@ -29,7 +29,7 @@ Don't mix within one surface.
 |---|---|
 | `<epic-slug>` | Resolve `docs/features/<slug>/README.md` **and `tracker.yaml`** (bail if `kind: epic` has no tracker — that's a `/discover` gap, fix it first). **The tracker's `blocked_by` DAG is the wave seed**: actionable phases = `status: pending` ∧ every `blocked_by` entry `done`. Helper: `bash .agents/scripts/parse_tracker.sh docs/features/<slug>/tracker.yaml`. |
 | `<spec-slug>` | Resolve `docs/features/<slug>/README.md` (`kind: spec`). Single spec, but still wave-based if scope is broad. |
-| `continue <slug>` | Read `docs/features/<slug>/plan.md` §Wave log, resume from the next uncompleted wave. Reconcile against `tracker.yaml` — on disagreement the tracker (committed) wins. |
+| `continue <slug>` | Read `docs/features/<slug>/plan.md` §Wave log (one line per wave), then the per-spec plan files (`plans/*.plan.md`) of every phase not yet `done` — they carry the phase-level detail. Resume from the next uncompleted wave. Reconcile against `tracker.yaml` — on disagreement the tracker (committed) wins. |
 | (empty) | Ask the user once: persist a spec first (`/discover`) or work with inline session context? Inline mode persists ONLY the plan file (`~/.claude/plans/teamlead-<slug>.md`), never a spec. |
 
 ## Dispatch model — native `Workflow`
@@ -43,7 +43,7 @@ Two laws carried into every step:
 ## Cost posture (read before every epic)
 
 - **Keep the lead smart; make everything under it cheap.** Sub-agents are model-pinned (`scout`/`coder`/`go-auditor` → sonnet) so the lead's model never cascades down. The lead tiers each delegated task (haiku / sonnet / rarely opus) and does trivia inline per the [delegate-or-inline gate](../_shared/cc-workflow.md#delegate-or-inline-gate-decide-before-you-spawn-anything).
-- **The SSOT is the spec + plan file on disk, not the lead's context.** A compact must not lose the epic — keep the §Wave log current and resume with `/teamlead continue <slug>`.
+- **The SSOT is the spec + plan files on disk, not the lead's context.** A compact must not lose the epic — keep the §Wave log (epic plan) and the per-spec `plans/*.plan.md` current and resume with `/teamlead continue <slug>`.
 - **Match the tool to the shape.** `Workflow` earns its keep on fan-outs. A linear feature with 3 dependent steps is cheaper and higher-fidelity via `/implement`.
 - **Hard forks go to the user, not to a bigger model.** When self-evaluation can't resolve a genuine architecture fork, surface it with options — don't silently escalate a wave to opus to "think harder".
 
@@ -89,7 +89,15 @@ Synthesize the findings into your own context; the plan file (S3) is the durable
 
 ### S3 — plan + decomposition
 
-Persist the plan: epic/spec mode → `docs/features/<slug>/plan.md` (committed with the epic); inline mode → `~/.claude/plans/teamlead-<slug>.md`. See [Plan template](#plan-template). The wave table is the heart:
+Persist the plan (committed with the epic; inline mode → `~/.claude/plans/teamlead-<slug>.md`). See [Plan templates](#plan-templates). **The plan is SPLIT — 1 spec = 1 plan file**:
+
+- `docs/features/<slug>/plan.md` — the **epic plan, a bounded index**: context/placement, budget, the wave DAG table, parallelism/lead-reserved list, plan-level self-eval, a ONE-LINE-per-wave log, revisions, closeout. **No per-phase narrative ever lands here** — an epic plan that grows per-phase detail becomes a 10k-line file nobody can navigate.
+- `docs/features/<slug>/plans/<spec-stem>.plan.md` — **one per spec** (e.g. `plans/01-foundation.plan.md` for `specs/01-foundation.md`), carrying everything phase-level: goal, allowlist, brief, acceptance, the detailed phase log (dispatch → verify → deviations → amendments → commits). Created **lazily** — at S3 for the first wave's phases, at S6.a for each later wave's phases; never scaffold all N upfront.
+- **Cross-marks on creation** (both, same commit as the plan file): the phase's `tracker.yaml` entry gains `plan: plans/<spec-stem>.plan.md` (the gate parsers ignore unknown keys — verified), and the spec's header block gains a `**Plan**: [plans/<spec-stem>.plan.md](../plans/<spec-stem>.plan.md)` line. A plan file without both marks is undiscoverable from the artifacts a fresh session actually reads.
+
+Spec mode (`kind: spec`, single-spec dir) keeps the single `docs/features/<slug>/plan.md` — that IS 1 spec = 1 plan already.
+
+The wave table is the heart:
 
 | Wave | Scope | Independence | Model | Effort | Files (allowlist) | Stop-cond |
 |---|---|---|---|---|---|---|
@@ -139,6 +147,8 @@ For each wave in order:
 | 9 | **Disjointness** — sibling allowlists pairwise disjoint; overlap → serialize or escape-hatch | 🔴 STOP |
 
 This is the cheapest optimization in the pipeline — a bad brief is burned tokens on rework.
+
+Epic mode: if a phase in this wave has no `plans/<spec-stem>.plan.md` yet, create it NOW (S3 rules — file + both cross-marks) before dispatch; the brief is authored into it, and the checks above run against that file.
 
 #### S6.b — dispatch (one `Workflow` per wave)
 
@@ -212,19 +222,29 @@ Sub-agents run neither (sole-writer rule). The epic/spec closeout (S8.1) always 
 
 #### S6.f — wave log + tracker write-back
 
-Every wave, not at closeout: flip each implemented phase's `status:` (`in-progress` on dispatch → `done` on verified merge), record `commits: [<hashes>]`, bump `updated:`. Stage `tracker.yaml` (and `plan.md`) with the wave's commit. **Gated, not trusted**: `make epic-drift` fails if a scoped code commit is missing from the tracker or the `docs/status.md` stamp is stale.
+Every wave, not at closeout: flip each implemented phase's `status:` (`in-progress` on dispatch → `done` on verified merge), record `commits: [<hashes>]`, bump `updated:`. Stage `tracker.yaml` (and every plan file the wave touched) with the wave's commit. **Gated, not trusted**: `make epic-drift` fails if a scoped code commit is missing from the tracker or the `docs/status.md` stamp is stale.
 
-Update the plan §Wave log:
+The log is split like the plan (epic mode):
+
+**Epic `plan.md` §Wave log — exactly ONE line per wave**, nothing more:
 
 ```markdown
-### Wave N — <title> — <YYYY-MM-DD HH:MM>
-- Agents: <list with model/effort>
+- Wave N — <title> — <date> — <phases: P#,P#> — commits <hashes> — make check <green|red+fixed> — details: plans/<stem>.plan.md[, ...]
+```
+
+**Each touched phase's `plans/<spec-stem>.plan.md` §Phase log — the detail block**:
+
+```markdown
+### Wave N — <YYYY-MM-DD HH:MM>
+- Agent: <model/effort>, brief summary
 - Files / Commits: <count> / <hashes>
-- make check: <green | red+fixed | deferred>
+- Verify: <diff-vs-claim result, scoped tests re-run>
 - Deviations + downstream amendments: <what shipped ≠ spec → which specs amended, or "none">
 - Epic-direction reconcile: <still-serves | STOPPED>
 - Notes: <surprises, deferred items, retries>
 ```
+
+Spec/inline mode keeps the detail block in the single plan file (there is no split).
 
 ### S7 — mid-stream replan
 
@@ -261,7 +281,7 @@ A wave surfaced something not in the plan → stop at a clean commit boundary. I
    | Items intentionally parked | `docs/backlog.md` — one row: item, reason. |
    | Harness-level issue surfaced (recurring agent mistake nothing gates, unguarded invariant) | **Capture, don't fix**: one row in `docs/validator-backlog.md` for `/mate-validator`, or surface to the user for `/mate-harness-hardening`. |
 
-   Mode-parametric: **epic** → tracker fully reconciled + specs' `## Amendments` complete + `plan.md` `status: closed`; **spec** → the spec's own Amendments + status.md if it completed a feature; **inline** → §Wave log closed, plan archived to `~/.claude/plans/closed/`.
+   Mode-parametric: **epic** → tracker fully reconciled + specs' `## Amendments` complete + `plan.md` `status: closed` + every `plans/*.plan.md` `status: closed` (a done phase with an open plan file is drift); **spec** → the spec's own Amendments + status.md if it completed a feature; **inline** → §Wave log closed, plan archived to `~/.claude/plans/closed/`.
 
    If closeout regenerated any code artifact → re-run `make check` before S9; the audit must cover the true final HEAD.
 
@@ -330,9 +350,9 @@ return (await parallel(PROBES.map(x => () => agent(x.p, { label:`coherence:${x.k
 
 **Triggers**: S1 intake (no coherence report newer than the last spec edit) · after a pivot/mass-amendment · S8 step 3.5.
 
-## Plan template
+## Plan templates
 
-`docs/features/<slug>/plan.md` (inline mode: `~/.claude/plans/teamlead-<slug>.md`):
+### Epic plan — `docs/features/<slug>/plan.md` (BOUNDED INDEX; also the full shape for spec mode's single plan and inline mode's `~/.claude/plans/teamlead-<slug>.md`)
 
 ```markdown
 ---
@@ -354,8 +374,11 @@ budget_cap: <N commits | M hours>
   - [ ] ...
 
 ## Wave plan
-| # | Wave | Independence | Model | Effort | Files | Stop-cond |
-|---|---|---|---|---|---|---|
+| # | Wave | Phases | Independence | Model | Effort | Plan file(s) | Stop-cond |
+|---|---|---|---|---|---|---|---|
+
+(epic mode: the `Plan file(s)` column links each wave to its phases'
+`plans/<spec-stem>.plan.md`; allowlists live THERE, not here)
 
 ## Parallelism plan
 - <which waves run concurrently; which files are lead-reserved>
@@ -367,7 +390,7 @@ budget_cap: <N commits | M hours>
 Verdict: ✅ PROCEED | ⚠️ ADJUST | 🔴 STOP
 
 ## Wave log
-(updated after each wave)
+(one line per wave — detail lives in plans/*.plan.md; spec/inline mode: full blocks here)
 
 ## Revisions (user feedback loop)
 
@@ -376,6 +399,44 @@ Verdict: ✅ PROCEED | ⚠️ ADJUST | 🔴 STOP
 - Audit findings: <count>
 - Deferred: <backlog rows>
 - Status: closed <date>
+```
+
+### Per-spec plan — `docs/features/<slug>/plans/<spec-stem>.plan.md` (epic mode only; created lazily at the wave that dispatches the phase)
+
+On creation, stamp both cross-marks (S3): `plan:` key in the phase's tracker
+entry + `**Plan**:` line in the spec header.
+
+```markdown
+---
+slug: <slug>
+phase: <P#>
+spec: ../specs/<spec-stem>.md
+wave: <N>
+status: planned | dispatched | verified | closed
+---
+
+# Phase plan — <P#> <title>
+
+## Goal
+<one paragraph — what this phase ships, traced to spec ACs>
+
+## Allowlist (repo-relative)
+- <files this phase's agent may touch>
+
+## Lead-reserved / off-limits deltas
+- <phase-specific fences beyond the epic's standing list>
+
+## Brief
+<the dispatched agent brief, verbatim (or its final revision)>
+
+## Acceptance
+- [ ] <spec AC rows this phase must satisfy, cited>
+
+## Phase log
+(detail blocks per S6.f — dispatch, verify, deviations, amendments, commits)
+
+## Deferred / follow-ups
+- <rows pushed to backlog or later phases>
 ```
 
 ## Agent brief template
@@ -448,6 +509,8 @@ All file paths are REPO-RELATIVE — they resolve against the repo root.
 - Don't fork (`Agent` without subagent_type) for delegated work.
 - Don't spawn a fresh agent for a ≤2–3-file change with no parallelism benefit — lead does it inline; the spawn is the cost, not the model.
 - Don't squash wave commits — bisect-hostile.
+- Don't grow the epic `plan.md` with per-phase detail — allowlists, briefs, and phase logs live in `plans/<spec-stem>.plan.md` (1 spec = 1 plan); the epic plan is a bounded index.
+- Don't create a per-spec plan without its two cross-marks (tracker `plan:` key + spec `**Plan**:` line) — an unmarked plan file is invisible to `continue` and to a fresh session.
 - Don't write the spec yourself in inline mode — that's `/discover`'s job.
 - Don't skip S4 or S6.a — both self-evaluate gates are the budget protection.
 - Don't `git add -A`. Don't pop a foreign stash.
