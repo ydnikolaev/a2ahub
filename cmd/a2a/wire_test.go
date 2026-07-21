@@ -80,3 +80,62 @@ func TestReadEnvelopeFacts(t *testing.T) {
 		t.Errorf("readEnvelopeFacts(missing fields): want error")
 	}
 }
+
+// TestBuildStoreConfigTolerance guards the wave-4 MED-4 fix: buildStore
+// TOLERATES an absent config (pre-onboarding, CC-092) but SURFACES a
+// malformed one (bad YAML / bad credential ref) rather than silently
+// degrading to zero connected spaces.
+func TestBuildStoreConfigTolerance(t *testing.T) {
+	t.Parallel()
+
+	// pathsIn builds a paths set rooted at dir with the standard layout.
+	pathsIn := func(dir string) paths {
+		return paths{
+			projectConfig: filepath.Join(dir, ".a2a", "config.yaml"),
+			machineConfig: filepath.Join(dir, "machine.yaml"),
+			projectRoot:   dir,
+			staging:       filepath.Join(dir, ".a2a", "staging"),
+		}
+	}
+
+	t.Run("absent config is tolerated (empty store, no error)", func(t *testing.T) {
+		t.Parallel()
+		store, err := buildStore(pathsIn(t.TempDir()))
+		if err != nil {
+			t.Fatalf("buildStore(absent): unexpected error %v", err)
+		}
+		if store == nil {
+			t.Fatal("buildStore(absent): want non-nil store over zero mirrors")
+		}
+	})
+
+	t.Run("malformed project config surfaces loudly", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, ".a2a"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// Unterminated flow sequence — a real YAML parse error, not an
+		// absent file.
+		if err := os.WriteFile(filepath.Join(dir, ".a2a", "config.yaml"), []byte("system: [axon\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := buildStore(pathsIn(dir)); err == nil {
+			t.Error("buildStore(malformed project config): want error, got nil")
+		}
+	})
+
+	t.Run("malformed machine config surfaces loudly", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		// Absent project config (tolerated) but a machine config carrying a
+		// credential reference that is neither env: nor cmd: — LoadMachineConfig
+		// rejects it at load, and buildStore must NOT swallow that.
+		if err := os.WriteFile(filepath.Join(dir, "machine.yaml"), []byte("credentials:\n  getvisa: \"literal-secret-not-a-ref\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := buildStore(pathsIn(dir)); err == nil {
+			t.Error("buildStore(malformed machine config): want error, got nil")
+		}
+	})
+}
