@@ -173,7 +173,15 @@ docs/features/v1-min-2026-07/plans/07-read-surface-statusline.plan.md
 
 ## Phase log
 
-(detail blocks per S6.f)
+### Wave 4 — 2026-07-21
+- Agent: sonnet/high, cache + 6 read verbs (inbox/outbox/show/thread/search/statusline) over a federated Store.
+- Commits: 79dfe0d (cache + verbs), 5d005fc (wiring), e13fc26 (read verbs tolerate missing config, CC-092).
+- Verify: make check green; live e2e smoke confirmed statusline silent + inbox/outbox empty pre-onboarding.
+
+### Wave 4.1 — audit fix — 2026-07-21
+- Audit HIGH-2: P7's CacheBackedPendingMarker/CacheBackedCacheRemover were built (cache_wiring.go) but cmd/a2a still wired the Noop versions → pending-merge overlay + disconnect cleanup inert. Audit MED-4: buildStore swallowed a malformed config. Audit MED-3 (statusline detached goroutine unreliable in one-shot process) → backlogged.
+- Fix (lead, wire.go): wired CacheBacked markers into submit/sync/disconnect via cacheDirOf; buildStore now surfaces a malformed config (errors.Is os.ErrNotExist) while tolerating an absent one; mirrorHoldsArtifact skips .git. Commit 1fe953f + regression test 340f99b.
+- Re-audit (79dfe0d^..fcd829f): PASS. Audit: done.
 
 ## Deferred / follow-ups
 

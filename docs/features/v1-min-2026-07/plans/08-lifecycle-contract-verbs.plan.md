@@ -172,7 +172,15 @@ in docs/features/v1-min-2026-07/plans/08-lifecycle-contract-verbs.plan.md
 
 ## Phase log
 
-(detail blocks per S6.f)
+### Wave 4 — 2026-07-21
+- Agent: sonnet/high, ~15 lifecycle verbs + contract publish/deprecate/retire/diff/verify-export + retire policy POL-006 + fold verify/dispute legality.
+- Commits: e753e6e (verbs + policy + fold legality), 5d005fc (cmd/a2a wiring).
+- Verify: make check green; lead fixed POL-006 closure test (registry_test off allowlist).
+
+### Wave 4.1 — audit fix — 2026-07-21
+- Audit HIGH-1: respond + contract deprecate minted a fresh ULID-suffix secondary id (responseID/announcementID) per invocation → folded into the funnel dedup branch a2a/<system>/<ArtifactID> → a retry against an unmerged prior attempt authored a DUPLICATE artifact + PR (AC-301.1). Audit MED-5: the §5.7/D-029 digest tree lived cli-private, unreusable by P12.
+- Fix (coder, advisor-designed): deterministic content-derived secondary id — seed = canonical SHA-256 of the artifact's own content (respond: parent+result+sorted fields+body+actor; deprecate: contract+version+sunset), fed to MintExchangeIDAt via the existing entropy seam; no funnel/buildRequest change; multiple-responses-per-parent preserved (verify/dispute design). Digest tree moved to exported artifact.DigestTreeFS/CombineDigestPairs. LOW clock-DI fixed. Commit bef5b7b + spec 08 §11 amendments (fcd829f). Midnight-crossing edge backlogged.
+- Discriminating tests: identical-content→same id, different→different id, real-funnel retry→AlreadyOpen, multi-response survives. Re-audit (79dfe0d^..fcd829f): PASS. Audit: done.
 
 ## Deferred / follow-ups
 
