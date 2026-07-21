@@ -188,3 +188,47 @@ log-or-return. Full loop: [docs/features/README.md](../../README.md).
   `internal/e2e/testdata/`, asserting on the OP contract (exit codes,
   JSON/stdout, golden `cmp`) against the throwaway git space fixture. See
   AGENTS.md §Testing rails; footprint and §6 updated to match.
+
+### 2026-07-22 — from wave 5: shipped-reality deltas
+
+- **T3 is a two-mode split, not pure `.txtar`.** The built `a2a` binary
+  cannot reach a `host.FakeHost`: `cmd/a2a/wire.go` hardcodes
+  `githubAPIBaseURL = "https://api.github.com"` with no env/flag override
+  reachable from outside `cmd/a2a`, and `parseGitHubRepo` requires a
+  github.com-shaped remote. So an exec'd `a2a submit`/lifecycle/`contract`
+  verb's write (`OpenPR`) path is unreachable against a local-path fixture.
+  T3 therefore covers: (a) **`.txtar` scripts exec'ing the built binary**
+  for every verb whose success path needs no host — init, connect, new,
+  validate, sync, inbox, outbox, show, thread, search, contracts,
+  statusline, doctor, template list, + submit's pre-network CC-002 refusal;
+  (b) **direct-construction Go tests** (`TestT3<Verb>` — real
+  `space.WriteFunnel` + `host.FakeHost` + `testkit/spacefixture`, the
+  `cmd_submit_test.go`/`cmd_lifecycle_test.go` idiom) for every
+  write-mutating verb. Every OP-201–213/215/218–221 verb is covered across
+  the two modes; the §6 "per-verb suites are `.txtar`" line is narrowed
+  accordingly. **P14 (MCP parity) inherits this reality:** the built binary
+  is not FakeHost-injectable, so a future MCP parity suite exercising writes
+  uses the same direct-construction path, not exec'd `.txtar`.
+- **No `ci.yml`/`Makefile` edit.** `make check` already runs
+  `go test ./... -race`; every P10 test (the `internal/e2e` suites, the
+  `internal/cli` `TestStatuslinePerf`, `TestCCCoverageGate`) runs under that
+  existing step the moment it exists. The §T5 "5 steps added to the
+  test-job" and AC #6 ("ci.yml step list includes both fixtures") are
+  satisfied by those tests running under `go test ./...` — no literal new
+  YAML `- name:` steps were added. The secret-scan corpus already executed
+  via `internal/validate` tests; the compat goldens now run via
+  `TestE2E4`'s CC-080 half.
+- **E2E-1 cascade mapping to the shipped verb set.** A requirement's sole
+  closing move is `satisfy` (direct from `acknowledged`), so the §1.3
+  "response/verify" pair (steps 5b/6) runs against a SEPARATE real
+  `question` exchange exercising the shipped `respond`/`verify` (D-024
+  auto-close), referenced by the original requirement's final `satisfy`
+  (step 7) alongside the newly-published contract version. Steps 2 (hub
+  webhook) and 7's dashboard are v2 (already-recorded amendment). This is
+  the closest real mapping the shipped OP-211 set supports for all 7 named
+  cascade steps — no invented shortcut.
+- **Doctor version-stamp defect FIXED, not just documented.** The harness
+  surfaced that `cmd/a2a/wire.go` passed the full `versionStamp()` to
+  `DoctorCommand`, breaking its bare-version parser → `versions: FAIL`
+  against any version-pinned space. Fixed in the same wave (pass the bare
+  `version`); `doctor.txtar` asserts `versions: PASS`. Guards P11.

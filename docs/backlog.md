@@ -106,6 +106,24 @@
       mirror.go, statusline_test.go) still cite a nonexistent "Deviations
       report"; the real referent is now specs 07/08 §11. Reword the comments
       to point at §11 next time those files are touched.
+- [ ] `testkit/spacefixture`'s auto-seeded `space.yaml` uses a MAP-shaped
+      `participants:` block that does NOT decode into
+      `space.Manifest.Participants ([]Participant)` — any test that reads it
+      back via the BUILT BINARY's `space.ParseManifest` (buildStore/doctor)
+      gets a zero-participant manifest, so `internal/fold`'s authz flags
+      every event `unauthorized-actor` and artifacts freeze at `draft`. P10's
+      e2e worked around it (`properManifestYAML`/`fixOriginManifest`
+      overwrite before any exec'd-binary read). Fix the fixture's own seed to
+      emit a LIST-shaped `participants:` so the workaround isn't needed by
+      every future e2e/read test. Surfaced by P10 wave 5.
+- [ ] Doctor version check hard-FAILs on a non-dotted LOCAL binary version
+      (a plain `go build` with the default `version="dev"` →
+      `doctorParseVersion("dev")` errors → `versions: FAIL "invalid version
+      string"`). Released binaries ldflags-set a real version so this is
+      latent, but a dev-built `a2a doctor` reporting a hard version failure is
+      poor UX — consider treating an unparseable LOCAL version as a warn/skip
+      ("cannot determine") rather than a failure. (wire.go now passes the bare
+      version; this is the residual dev-build edge.)
 - [ ] Proposal (operator decision, D-021-sensitive): `a2a init` offers
       (consent-gated Y/n, `--yes` for automation) to append a ~3-line
       a2ahub pointer block (8.1 session-start floor + skill reference) to

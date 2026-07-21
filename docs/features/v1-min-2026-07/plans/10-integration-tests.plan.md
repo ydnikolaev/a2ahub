@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 phase: P10
 spec: ../specs/10-integration-tests.md
 wave: 5
-status: dispatched
+status: verified
 ---
 
 # Phase plan — P10 Integration tests (T3 harness, E2E-1/E2E-4, cc-coverage)
@@ -220,7 +220,13 @@ docs/features/v1-min-2026-07/plans/10-integration-tests.plan.md (BINDING).
 
 ## Phase log
 
-(detail blocks per S6.f)
+### Wave 5 — 2026-07-22
+- Agent: sonnet/high. 25 files, 48 tests (internal/e2e) + TestStatuslinePerf.
+- Commits: d694c9c (harness + cc-coverage + statusline perf), a0ffc38 (doctor bare-version wiring fix the harness surfaced).
+- Verify (lead, re-run): `go test ./internal/e2e/... -race` exit 0 (48 pass); `make check` exit 0 after removing 2 agent dead helpers (assertStatuslineExit, cloneFresh — lint unused) + fixing doctor.txtar golden to PASS post-fix; `go mod tidy` flipped go-internal to direct.
+- Deviations + downstream amendments: T3 two-mode split (txtar for read verbs / direct-construction Go tests for write verbs — built binary can't reach FakeHost, github URL hardcoded); no ci.yml/Makefile edit (tests run under `go test ./...`); E2E-1 mapped to shipped verbs (satisfy closes, separate question exchange for respond/verify); doctor version-stamp defect FIXED. All recorded in spec 10 §11 (2026-07-22). Backlog: spacefixture map-shaped participants seed; doctor dev-build version UX.
+- Audit: DEFERRED to S8 epic-final (test-only phase; the sole production delta is the trivially-correct doctor wiring one-liner). The drift propagation probe returned a malformed dummy — lead ran the corpus sweep manually instead (deviations above).
+- Epic-direction reconcile: still-serves (proves the L1-exit test cut).
 
 ## Deferred / follow-ups
 

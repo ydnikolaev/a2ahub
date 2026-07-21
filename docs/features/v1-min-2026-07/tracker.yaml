@@ -2,7 +2,7 @@
 # epic-drift (truth) in `make check`. Commit scope for check A: `v1-min`.
 slug: v1-min-2026-07
 status: active
-updated: 2026-07-21  # wave 4 closed — P7/P8 audit done (FIX-AND-REAUDIT PASS)
+updated: 2026-07-22  # wave 5 — P10 done (integration harness), audit rides S8
 strategy: >
   Critical path P1 -> P3 -> P6 -> P7/P8 -> P10 -> P14. Parallel groups:
   {P1,P2} at start; {P3,P4,P5} after foundations; {P6,P9} next (P9 depends
@@ -99,12 +99,12 @@ phases:
 
   - id: P10
     title: Integration tests — T3 harness, E2E-1 + E2E-4, cc-coverage seed
-    status: pending
+    status: done
     spec: specs/10-integration-tests.md
     plan: plans/10-integration-tests.plan.md
     blocked_by: [P7, P8, P9]
-    commits: []
-    audit: open
+    commits: [d694c9c, a0ffc38]
+    audit: open  # test-only phase — rides the S8 epic-final audit
 
   - id: P11
     title: getvisa space bootstrap (axon + seomatrix) — L0 exit

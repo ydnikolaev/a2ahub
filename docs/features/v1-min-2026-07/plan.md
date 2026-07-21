@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 mode: epic
 started: 2026-07-21 17:05
 status: in-progress
-budget_cap: 50 commits (epic-wide; raised from 30 by operator 2026-07-21 at the wave-3 boundary — full 14-phase epic estimate ~40–45; re-ask at >55)
+budget_cap: 65 commits (epic-wide; raised from 30→50 at wave-3, 50→65 at wave-5 by operator standing permission "Поднимать кап коммитов разрешаю" — audit FIX-AND-REAUDIT loops + the P10/P13 splits cost more commits than the ~40–45 estimate; re-ask at >70)
 ---
 
 # Teamlead plan — a2ahub v1-min
@@ -112,6 +112,8 @@ Verdict: ✅ PROCEED
 - Wave 3.2 — audit + fix — 2026-07-21 — go-auditor FIX-AND-REAUDIT: 2 HIGH in my cmd/a2a/wire.go (submit --drafts + bare-id dead — drifted target-resolution copy) + MED (cross-space batch / falsified space field) + testing HIGH (no wiring-seam tests) — fixed 69a475a (one shared ResolveSubmitTargets, cross-space guard, config-only guards before clone, wire+resolver tests) → re-audit PASS (auditor built the binary, both repros now reach space resolution; funnel-never-called on cross-space proven). P6/P9 audit: done. Wave 3 CLOSED.
 - Wave 4 — read surface ∥ lifecycle/contract — 2026-07-21 — FIRST dispatch died on infra (both agents "Connection closed mid-response", zero code); stray build binary cleaned + gitignored (1bf787f); re-dispatched → P7, P8 done — commits 79dfe0d (P7 cache+read verbs), e753e6e (P8 lifecycle/contract+fold-legality+retire POL-006), 5d005fc (cmd/a2a wiring: all 27 verbs), e13fc26 (read verbs tolerate missing config) — make check green (lint 0, 406+ tests) — lead fixed POL-006 closure test (registry_test off P8 allowlist); specs 07/08 amended, 3 backlog rows (§5.7 contract-root digest, D-023 no publish SHA, fold response sub-lifecycle) — details: plans/07,08 *.plan.md
 - Wave 4.1 — audit + fix + re-audit — 2026-07-21 — go-auditor FIX-AND-REAUDIT: 2 HIGH (respond/deprecate non-idempotent — freshly-minted secondary id folded into the funnel dedup branch → duplicate PR on retry; P7's cache-backed markers built but never wired into cmd/a2a) + 3 MED (buildStore swallowed malformed config, digest helper mis-placed for P12 reuse, statusline goroutine unreliable in one-shot process) + 3 LOW. Fix-wave (coder, advisor-designed): deterministic content-derived ids (bef5b7b) via existing entropy seam — no funnel/buildRequest change, multi-response preserved; lead wired CacheBacked markers + surfaced malformed config + .git-skip (1fe953f); docs/amendments/backlog (fcd829f); MED-4 regression test (340f99b). MED-3 statusline-subprocess + midnight-crossing edge backlogged. Re-audit over 79dfe0d^..fcd829f: PASS (all 4 flips confirmed, discriminating tests under -race). P7/P8 audit: done. **Wave 4 CLOSED.** — make check green — details: plans/07,08 *.plan.md
+
+- Wave 5 — integration harness (P10) — 2026-07-22 — P10 done — commits d694c9c (T3 testscript + E2E-1/E2E-4 + cc-coverage + statusline perf, 48 tests), a0ffc38 (doctor bare-version wiring fix the harness surfaced) — make check green — P13 SPLIT OUT to wave 6 (needs a lead-built binary command-catalog entry point — none exists; §7.7 generate-then-diff mechanism also absent). T3 shipped as a two-mode split (txtar for read verbs, direct-construction Go tests for write verbs — built binary not FakeHost-injectable); zero ci.yml edit (runs under `go test ./...`); specs 10 §11 amended; 2 backlog rows (spacefixture participants seed, doctor dev-build version UX). Audit rides S8 (test-only). — details: plans/10-integration-tests.plan.md
 
 ## Revisions (user feedback loop)
 

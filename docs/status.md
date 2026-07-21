@@ -12,10 +12,11 @@
   from the plan 2026-07-21; waves 1–4 shipped 2026-07-21: P1–P6 + P9
   (foundation, schemas, validation, fold, space/host, author verbs,
   space-template/CI/doctor) + P7 (read surface: cache + inbox/outbox/show/
-  thread/search/statusline) + P8 (lifecycle + contract verbs). The `a2a`
-  binary is wired for all 27 verbs; authoring + read paths run locally,
-  live GitHub write path (submit/lifecycle/contract) is P11.
-  <!-- epic-state: v1-min-2026-07 phases=9/14 -->
+  thread/search/statusline) + P8 (lifecycle + contract verbs) + P10
+  (integration harness: T3 testscript + E2E-1/E2E-4 + cc-coverage). The
+  `a2a` binary is wired for all 27 verbs; authoring + read paths run
+  locally, live GitHub write path (submit/lifecycle/contract) is P11.
+  <!-- epic-state: v1-min-2026-07 phases=10/14 -->
 
 - **Dev-pipeline harness bootstrap** (2026-07-21) — orchestration inventory ported
   from the axon harness: agents (`scout`, `coder`, `go-auditor`), skills
