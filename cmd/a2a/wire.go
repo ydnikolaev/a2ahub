@@ -150,7 +150,11 @@ func buildCommands() map[string]command {
 			return fail(stderr, err)
 		}
 		h := host.NewGitHubHost(http.DefaultClient, githubAPIBaseURL)
-		return cli.NewDoctorCommand(h, versionStamp(), p.projectConfig, p.machineConfig, p.projectRoot).Run(context.Background(), args, stdio(stdout, stderr))
+		// Pass the BARE dotted version, not versionStamp() ("a2a x.y.z
+		// (sha)") — doctorVersionOlder parses a bare major.minor.patch, so
+		// the full stamp made `a2a doctor` report `versions: FAIL` against
+		// every space that pins min_binary_version (P10 e2e surfaced it).
+		return cli.NewDoctorCommand(h, version, p.projectConfig, p.machineConfig, p.projectRoot).Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["submit"] = runSubmit
 
