@@ -67,7 +67,7 @@ phases:
     spec: specs/06-author-verbs.md
     plan: plans/06-author-verbs.plan.md
     blocked_by: [P3, P4, P5]
-    commits: [c20082b, d28ea5f, 2942644]
+    commits: [c20082b, d28ea5f, 2942644, 69a475a]
     audit: open
 
   - id: P7
