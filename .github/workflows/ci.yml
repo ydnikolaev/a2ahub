@@ -1,0 +1,38 @@
+# Product-repo CI (spec 01-foundation.md §T5): runs `make check` — the
+# gate the root Makefile already defines (gofmt/vet/test once go.mod
+# exists, plus the pre-existing repo gates feature-lint/epic-drift). The
+# only project-specific step is `make check` itself; the Makefile's steps
+# are never reimplemented inline here.
+#
+# golangci-lint provisioning is a toolchain-setup step (like the Go setup
+# above it), not a project step: ADR-002 lists golangci-lint as a tool
+# that never enters go.mod (a binary the gate invokes), and the Makefile's
+# `check` target intentionally fails loudly if .golangci.yml exists but
+# the binary is missing — so CI must provision it or `make check` always
+# reds once this phase lands.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" v2.12.2
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: make check
+        run: make check
