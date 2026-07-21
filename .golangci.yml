@@ -1,0 +1,42 @@
+# golangci-lint v2 config — sane strict baseline for a2ahub.
+#
+# `make check` (root Makefile) refuses to run if this file exists but
+# golangci-lint is not installed — a configured gate that silently skips is
+# a hole, not a gate (spec 01-foundation.md §T5).
+#
+# Rationale for the enabled set: govet + staticcheck + unused + ineffassign
+# catch correctness bugs; errcheck enforces the repo's error-flow rail
+# (log-or-return, never silently drop an error); revive enforces exported-
+# symbol doc comments and other stylistic rails without fighting idiomatic
+# Go. Nothing here overrides go vet's own defaults or forces a non-stdlib
+# pattern.
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - revive
+  settings:
+    revive:
+      rules:
+        - name: exported
+        - name: error-strings
+        - name: error-naming
+        - name: unused-parameter
+        - name: unreachable-code
+  exclusions:
+    rules:
+      # Test files trade some rigor (exported-doc-comment nagging on
+      # helpers, unchecked error on t.Fatalf/require-style calls) for
+      # readability; production code still holds the full line.
+      - path: _test\.go
+        linters:
+          - revive
+
+formatters:
+  enable:
+    - gofmt
