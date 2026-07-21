@@ -11,6 +11,7 @@ created: 2026-07-29T09:12:00Z
 category: vocabulary
 priority: p2
 blocking: false
+interim_behavior: "Axon renders English names from ISO-3166 fallback table until delivered."
 acceptance_criteria:
   - "Every destination row carries iso2 from the real ISO-3166 registry."
 classification: internal
