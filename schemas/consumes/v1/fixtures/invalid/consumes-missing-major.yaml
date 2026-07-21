@@ -1,0 +1,4 @@
+schema: consumes/v1
+system: axon
+dependencies:
+  - {contract: XC-seomatrix-content-payloads, since: 2026-08-05}

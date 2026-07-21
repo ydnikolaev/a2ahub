@@ -1,0 +1,2 @@
+code: SCH-007
+note: "`id: XR-axon` fails the standing-type ID grammar `<PREFIX>-<system>-<slug>` (§3.3) — no slug segment."

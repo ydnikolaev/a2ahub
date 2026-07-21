@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "compat-fixture/additive-minor/widget-1.1.0.schema.json",
+  "title": "Widget payload (contract v1.1.0) — additive minor bump: new optional field",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "description": { "type": "string" }
+  },
+  "required": ["name"],
+  "additionalProperties": false
+}

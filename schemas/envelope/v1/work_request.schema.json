@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "envelope/v1/work_request.schema.json",
+  "title": "Envelope: work_request (v1)",
+  "allOf": [
+    { "$ref": "base.schema.json" },
+    {
+      "if": {
+        "properties": { "category": { "enum": ["contract-change", "process-change"] } },
+        "required": ["category"]
+      },
+      "then": {
+        "required": ["proposed_change", "refs"],
+        "properties": {
+          "refs": {
+            "type": "array",
+            "minItems": 1,
+            "contains": {
+              "type": "object",
+              "properties": { "ref": { "type": "string", "pattern": "@" } },
+              "required": ["ref"]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "type": "object",
+  "properties": {
+    "type": { "const": "work_request" },
+    "id": { "pattern": "^XW-" },
+    "category": {
+      "type": "string",
+      "enum": ["data", "feature", "fix", "investigation", "contract-change", "process-change", "other"]
+    },
+    "acceptance_criteria": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "proposed_change": { "type": "string" },
+    "to": {
+      "description": "Exchange type (X class, not decision): exactly one target system.",
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "maxItems": 1
+    }
+  },
+  "required": ["category", "acceptance_criteria"],
+  "patternProperties": { "^x_": true },
+  "unevaluatedProperties": false
+}
