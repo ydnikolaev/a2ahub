@@ -145,6 +145,13 @@ func TestRegistryClosure(t *testing.T) {
 	}
 	record(result.Violations)
 
+	// POL-006: retire refused because a registered consumer hasn't acked.
+	if v, _ := CheckRetirePrecondition(RetirePrecondition{
+		Consumers: []RegisteredConsumer{{System: "seomatrix", Acked: false}},
+	}); v != nil {
+		record([]Violation{*v})
+	}
+
 	for _, code := range append(append(registry.CodesInClass("referential"), registry.CodesInClass("lifecycle")...), registry.CodesInClass("policy")...) {
 		if !produced[code] {
 			t.Errorf("registry code %q is never produced by any exercised path in this test", code)

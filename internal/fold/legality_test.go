@@ -72,6 +72,51 @@ func TestCheckLegality(t *testing.T) {
 		}
 	})
 
+	t.Run("verify_legal_from_submitted_response_against_parent_envelope", func(t *testing.T) {
+		t.Parallel()
+		// env is the PARENT exchange's own envelope (rowEnv gives From=
+		// "acme", the original requester/sender) — verify's RoleOwner
+		// check resolves against env.From, never a response's own facts
+		// (responses carry no separate envelope in this package's model).
+		parentEnv := rowEnv(KindQuestion)
+		got := CheckLegality(KindQuestion, StateSubmitted, TVerify, parentEnv, Actor{System: parentEnv.From}, MembershipMember)
+		if got != VerdictLegal {
+			t.Fatalf("got %q, want legal", got)
+		}
+	})
+
+	t.Run("verify_illegal_from_wrong_response_substate", func(t *testing.T) {
+		t.Parallel()
+		parentEnv := rowEnv(KindQuestion)
+		// StateVerified has no From row for TVerify (a response verifies
+		// exactly once from `submitted`).
+		got := CheckLegality(KindQuestion, StateVerified, TVerify, parentEnv, Actor{System: parentEnv.From}, MembershipMember)
+		if got != VerdictIllegalTransition {
+			t.Fatalf("got %q, want illegal-transition", got)
+		}
+	})
+
+	t.Run("verify_unauthorized_actor_is_not_the_parents_owner", func(t *testing.T) {
+		t.Parallel()
+		parentEnv := rowEnv(KindQuestion)
+		// The responder (parentEnv.To0()) is NOT authorized to verify
+		// their own response — only the parent's own owner (the original
+		// requester) may.
+		got := CheckLegality(KindQuestion, StateSubmitted, TVerify, parentEnv, Actor{System: parentEnv.To0()}, MembershipMember)
+		if got != VerdictUnauthorizedActor {
+			t.Fatalf("got %q, want unauthorized-actor", got)
+		}
+	})
+
+	t.Run("dispute_legal_from_submitted_response_against_parent_envelope", func(t *testing.T) {
+		t.Parallel()
+		parentEnv := rowEnv(KindQuestion)
+		got := CheckLegality(KindQuestion, StateSubmitted, TDispute, parentEnv, Actor{System: parentEnv.From}, MembershipMember)
+		if got != VerdictLegal {
+			t.Fatalf("got %q, want legal", got)
+		}
+	})
+
 	t.Run("verdict_set_is_a_strict_subset_of_flag_kinds", func(t *testing.T) {
 		t.Parallel()
 		// state-claim-mismatch has no verdict counterpart — documented
