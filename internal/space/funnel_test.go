@@ -178,6 +178,36 @@ func TestFunnelWrongSectionRefusedBeforeGitAction(t *testing.T) {
 	}
 }
 
+// TestSectionOKRejectsTraversal is the security regression net for the
+// wave-2 audit HIGH: a crafted path with `..` segments (or an absolute
+// path, or any non-canonical form) must not pass the single-writer
+// section guard even though a naive prefix check would accept it.
+func TestSectionOKRejectsTraversal(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		system, path string
+		want         bool
+	}{
+		{"axon", "axon/exchanges/XQ-axon-20260721-abcd.md", true},
+		{"axon", "decisions/D-001.md", true},
+		{"axon", "axon", true},
+		// Traversal / escape attempts — all must be rejected.
+		{"axon", "axon/../seomatrix/evil.md", false},
+		{"axon", "axon/../../etc/passwd", false},
+		{"axon", "../axon/evil.md", false},
+		{"axon", "/etc/passwd", false},
+		{"axon", "axon/./sneaky/../../seomatrix/x.md", false},
+		{"axon", "", false},
+		{"axon", "seomatrix/x.md", false},
+	}
+	for _, tc := range cases {
+		if got := sectionOK(tc.system, tc.path); got != tc.want {
+			t.Errorf("sectionOK(%q, %q) = %v, want %v", tc.system, tc.path, got, tc.want)
+		}
+	}
+}
+
 // TestFunnelDecisionsExceptionAllowed confirms the decisions/ funnel-level
 // exception: a file under decisions/ (multi-party, no single owning
 // system) is NOT refused by the section guard.

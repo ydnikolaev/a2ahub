@@ -99,13 +99,25 @@ func checkRefs(env envelope, resolver Resolver) []Violation {
 
 		if digest != "" {
 			actual, found := resolver.Digest(r.Ref)
-			if found && actual != digest {
+			switch {
+			case found && actual != digest:
 				out = append(out, Violation{
 					Code:     "REF-004",
 					Class:    ClassReferential,
 					Path:     "refs",
 					Message:  "ref " + r.Ref + " digest does not match the resolved target",
 					Severity: SeverityReject,
+				})
+			case !found:
+				// "Can't verify" is not "verified": a pinned digest whose
+				// target cannot be resolved is flagged (warning), not
+				// silently treated as matching.
+				out = append(out, Violation{
+					Code:     "REF-008",
+					Class:    ClassReferential,
+					Path:     "refs",
+					Message:  "ref " + r.Ref + " is digest-pinned but its target could not be resolved to verify",
+					Severity: SeverityWarning,
 				})
 			}
 		}
