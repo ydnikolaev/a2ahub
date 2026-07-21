@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 mode: epic
 started: 2026-07-21 17:05
 status: in-progress
-budget_cap: 30 commits (epic-wide; re-ask at >37)
+budget_cap: 50 commits (epic-wide; raised from 30 by operator 2026-07-21 at the wave-3 boundary — full 14-phase epic estimate ~40–45; re-ask at >55)
 ---
 
 # Teamlead plan — a2ahub v1-min
