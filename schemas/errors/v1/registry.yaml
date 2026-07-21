@@ -51,3 +51,8 @@ entries:
     class: schema
     title: String value fails its schema pattern (ID grammar, semver, ULID)
     applies_to: envelope/v1 id (§3.3 grammar), event/v1 event (ULID), manifest/v1 min_binary_version (semver)
+
+  - code: SCH-008
+    class: schema
+    title: interim_behavior missing while blocking is false
+    applies_to: envelope/v1 requirement.schema.json, work_request.schema.json (§5.2 `interim_behavior` row, CC-011)

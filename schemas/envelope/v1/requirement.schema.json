@@ -2,19 +2,62 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "envelope/v1/requirement.schema.json",
   "title": "Envelope: requirement (v1)",
-  "allOf": [{ "$ref": "base.schema.json" }],
+  "allOf": [
+    {
+      "$ref": "base.schema.json"
+    }
+  ],
   "type": "object",
   "properties": {
-    "type": { "const": "requirement" },
-    "id": { "pattern": "^XR-" },
+    "type": {
+      "const": "requirement"
+    },
+    "id": {
+      "pattern": "^XR-"
+    },
     "category": {
       "type": "string",
-      "enum": ["new-capability", "field-change", "vocabulary", "quality", "other"]
+      "enum": [
+        "new-capability",
+        "field-change",
+        "vocabulary",
+        "quality",
+        "other"
+      ]
     },
-    "target_contract": { "type": "string", "pattern": "^XC-" },
-    "acceptance_criteria": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+    "target_contract": {
+      "type": "string",
+      "pattern": "^XC-"
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    }
   },
-  "required": ["category", "acceptance_criteria"],
-  "patternProperties": { "^x_": true },
-  "unevaluatedProperties": false
+  "required": [
+    "category",
+    "acceptance_criteria"
+  ],
+  "patternProperties": {
+    "^x_": true
+  },
+  "unevaluatedProperties": false,
+  "if": {
+    "required": [
+      "blocking"
+    ],
+    "properties": {
+      "blocking": {
+        "const": false
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "interim_behavior"
+    ]
+  }
 }
