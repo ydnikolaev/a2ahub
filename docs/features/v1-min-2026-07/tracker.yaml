@@ -1,0 +1,131 @@
+# Machine-readable phase tracker — lint-gated by feature-lint (shape) and
+# epic-drift (truth) in `make check`. Commit scope for check A: `v1-min`.
+slug: v1-min-2026-07
+status: active
+updated: 2026-07-21
+strategy: >
+  Critical path P1 -> P3 -> P6 -> P7/P8 -> P10 -> P14. Parallel groups:
+  {P1,P2} at start; {P3,P4,P5} after foundations; {P6,P9} next (P9 depends
+  only on P3+P5, DAG-parallel with P6); {P7,P8,P13} after the author verbs
+  (P7/P8 share internal/cli — per-verb files keep footprints disjoint;
+  serialize at wave level if needed). cmd/a2a wiring lines are LEAD-RESERVED:
+  every phase that adds wiring (P6,P7,P8,P9,P14) gets its lines committed by
+  the lead between waves, never by two concurrent agents. Ops track
+  P11 -> P12 runs against the real getvisa space once the template ships.
+  All phase content is a projection of docs/the-plan/plan/ — specs cite IDs,
+  never restate.
+
+phases:
+  - id: P1
+    title: Foundation — go module, cmd/a2a skeleton, internal/artifact, product CI
+    status: pending
+    spec: specs/01-foundation.md
+    blocked_by: []
+    commits: []
+    audit: open
+
+  - id: P2
+    title: Product schemas v1 + golden fixtures + error-code registry
+    status: pending
+    spec: specs/02-product-schemas.md
+    blocked_by: []
+    commits: []
+    audit: open
+
+  - id: P3
+    title: Validation engine (V1/V2 classes, machine codes, secret-scan)
+    status: pending
+    spec: specs/03-validation-engine.md
+    blocked_by: [P1, P2]
+    commits: []
+    audit: open
+
+  - id: P4
+    title: Fold engine — transition tables, determinism (T2)
+    status: pending
+    spec: specs/04-fold-engine.md
+    blocked_by: [P1, P2]
+    commits: []
+    audit: open
+
+  - id: P5
+    title: Space model, mirrors, GitHub host adapter, PR write funnel
+    status: pending
+    spec: specs/05-space-and-host.md
+    blocked_by: [P1]
+    commits: []
+    audit: open
+
+  - id: P6
+    title: Author verbs — init/connect/new/validate/submit/batch/sync + templates
+    status: pending
+    spec: specs/06-author-verbs.md
+    blocked_by: [P3, P4, P5]
+    commits: []
+    audit: open
+
+  - id: P7
+    title: Read surface — cache, inbox/outbox/show/thread/search + statusline
+    status: pending
+    spec: specs/07-read-surface-statusline.md
+    blocked_by: [P6]
+    commits: []
+    audit: open
+
+  - id: P8
+    title: Lifecycle verbs + contract publish/deprecate/retire/diff/verify-export
+    status: pending
+    spec: specs/08-lifecycle-contract-verbs.md
+    blocked_by: [P6]
+    commits: []
+    audit: open
+
+  - id: P9
+    title: Space template + V3 CI (diff-authz, compat 5.4b) + basic doctor
+    status: pending
+    spec: specs/09-space-template-ci.md
+    blocked_by: [P3, P5]
+    commits: []
+    audit: open
+
+  - id: P10
+    title: Integration tests — T3 harness, E2E-1 + E2E-4, cc-coverage seed
+    status: pending
+    spec: specs/10-integration-tests.md
+    blocked_by: [P7, P8, P9]
+    commits: []
+    audit: open
+
+  - id: P11
+    title: getvisa space bootstrap (axon + seomatrix) — L0 exit
+    status: pending
+    spec: specs/11-getvisa-space-bootstrap.md
+    blocked_by: [P6, P9]
+    commits: []
+    audit: open
+
+  - id: P12
+    title: Day-one content — ingest/todo-feed contracts, producer-outbox migration (L2)
+    status: pending
+    spec: specs/12-day-one-content.md
+    blocked_by: [P8, P11]
+    commits: []
+    audit: open
+
+  - id: P13
+    title: Minimal a2ahub expert skill + agent rules (D-015)
+    status: pending
+    spec: specs/13-agent-skill.md
+    blocked_by: [P7]
+    commits: []
+    audit: open
+
+  - id: P14
+    title: MCP surface + CLI/MCP parity suite (tail)
+    status: pending
+    spec: specs/14-mcp-surface.md
+    blocked_by: [P10]
+    commits: []
+    audit: open
+
+deferred: []
