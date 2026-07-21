@@ -19,8 +19,10 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"io"
@@ -676,6 +678,39 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 
 var _ Command = (*LifecycleCommand)(nil)
 
+// lifecycleRespondSeed builds `respond`'s own canonical, content-derived
+// seed (HIGH-1 fix-wave finding): a fixed-order join of parentID, result,
+// every respFields k=v pair — SORTED by key, since respFields is a map and
+// Go's own map iteration order is randomized per-process; skipping the
+// sort would make the seed (and therefore responseID) nondeterministic in
+// production while a fixed-entropy unit test still passed, the exact trap
+// this fix targets — the body override, and the actor's kind/name/system.
+// Deliberately EXCLUDES `now` (see this file's own respond Run comment)
+// and any random id.
+func lifecycleRespondSeed(parentID, result string, respFields map[string]string, bodyOverride []byte, actor fold.Actor) []byte {
+	keys := make([]string, 0, len(respFields))
+	for k := range respFields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var buf bytes.Buffer
+	buf.WriteString("parent=" + parentID + "\n")
+	buf.WriteString("result=" + result + "\n")
+	for _, k := range keys {
+		buf.WriteString(k + "=" + respFields[k] + "\n")
+	}
+	buf.WriteString("body=")
+	buf.Write(bodyOverride)
+	buf.WriteString("\n")
+	buf.WriteString("actor.kind=" + actor.Kind + "\n")
+	buf.WriteString("actor.name=" + actor.Name + "\n")
+	buf.WriteString("actor.system=" + actor.System + "\n")
+
+	sum := sha256.Sum256(buf.Bytes())
+	return sum[:]
+}
+
 // --- respond (scaffolds + submits an XS) ---------------------------------
 
 // RespondCommand implements `a2a respond <parent-id...>`: scaffolds a new
@@ -689,6 +724,16 @@ type RespondCommand struct {
 // NewRespondCommand constructs the respond command.
 func NewRespondCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *RespondCommand {
 	return &RespondCommand{deps: newLifecycleDeps(funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)}
+}
+
+// SetClockForTest overrides this command's injected clock (test-only DI
+// seam, rails anti-pattern #10: production always uses the constructor's
+// own time.Now default). HIGH-1 fix-wave finding: proving responseID's
+// determinism across two calls needs a FIXED, reproducible `now` — a real
+// wall-clock read would make the assertion flaky near a UTC-date boundary
+// (MintExchangeIDAt embeds today's UTC date).
+func (c *RespondCommand) SetClockForTest(now func() time.Time) {
+	c.deps.now = now
 }
 
 // Name implements cli.Command.
@@ -765,11 +810,6 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return 1
 		}
 
-		responseID, err := artifact.MintExchangeIDAt("XS", c.deps.ownSystem, now, c.deps.entropy)
-		if err != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "respond: cannot mint response id: %v\n", err)
-			return 1
-		}
 		respFields := map[string]string{}
 		for k, v := range fields {
 			respFields[k] = v
@@ -778,6 +818,28 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		respFields["result"] = *result
 		if _, has := respFields["from"]; !has {
 			respFields["from"] = c.deps.ownSystem
+		}
+
+		// HIGH-1 fix-wave finding: responseID's random suffix is derived
+		// from the response's OWN content (lifecycleRespondSeed — parentID,
+		// result, every respFields k=v pair SORTED by key, the body
+		// override, and the actor), never c.deps.entropy directly — a retry
+		// with IDENTICAL inputs reproduces the IDENTICAL responseID, landing
+		// on the funnel's SAME deterministic branch (dedup,
+		// space.WriteStateAlreadyOpen) instead of authoring a duplicate
+		// response artifact + PR. Deliberately NOT keyed on parentID alone:
+		// the verify/dispute design allows multiple distinct responses from
+		// the same system on the same parent (TestVerifyMultiResponseDoes
+		// NotAutoClose), so a parentID-only branch would silently collapse
+		// two genuinely different responses onto one branch. NOTE:
+		// MintExchangeIDAt still embeds today's UTC date from `now`; a retry
+		// crossing midnight still mints a different id (spec 08 §11
+		// amendment — accepted, out of scope here).
+		seed := lifecycleRespondSeed(parentID, *result, respFields, bodyOverride, actor)
+		responseID, err := artifact.MintExchangeIDAt("XS", c.deps.ownSystem, now, bytes.NewReader(seed))
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "respond: cannot mint response id: %v\n", err)
+			return 1
 		}
 		draft, err := template.Render(template.Input{
 			Type: "response", ID: responseID, Actor: resolved, Created: now,

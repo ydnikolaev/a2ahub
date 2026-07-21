@@ -322,13 +322,19 @@ func TestApproveRejectAlwaysGateMarker(t *testing.T) {
 
 // respondFlow drives RespondCommand for one parent and materializes its
 // output onto mirrorDir, returning the minted response id (parsed back out
-// of the recorded funnel call's file paths).
-func respondFlow(t *testing.T, mirrorDir, parentID, ownSystem string) string {
+// of the recorded funnel call's file paths). extraArgs is appended
+// between --result and the parent id — used by tests that need two
+// respond calls to the SAME parent to mint two DISTINCT response ids
+// (HIGH-1 fix-wave finding: responseID is now content-derived, so two
+// respond calls with otherwise-identical content mint the SAME id).
+func respondFlow(t *testing.T, mirrorDir, parentID, ownSystem string, extraArgs ...string) string {
 	t.Helper()
 	fake := &fakeLifecycleFunnel{}
 	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", ownSystem, lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
 	io, _, errOut := newIO()
-	code := cmd.Run(context.Background(), []string{"--result", "answered", parentID}, io)
+	args := append([]string{"--result", "answered"}, extraArgs...)
+	args = append(args, parentID)
+	code := cmd.Run(context.Background(), args, io)
 	if code != 0 {
 		t.Fatalf("respond: code = %d, want 0; stderr=%s", code, errOut.String())
 	}
@@ -405,7 +411,11 @@ func TestVerifyMultiResponseDoesNotAutoClose(t *testing.T) {
 	parentID := "XQ-axon-20260721-g001"
 	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
 	firstResponse := respondFlow(t, mirrorDir, parentID, "beta")
-	_ = respondFlow(t, mirrorDir, parentID, "beta") // second response
+	// Second response MUST carry different content (HIGH-1 fix-wave
+	// finding: responseID is now content-derived) — otherwise it would
+	// mint the SAME id as the first and collapse onto it instead of
+	// exercising the genuine multi-response case this test targets.
+	_ = respondFlow(t, mirrorDir, parentID, "beta", "--field", "title=second response")
 
 	fake := &fakeLifecycleFunnel{}
 	cmd := cli.NewVerifyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
@@ -727,4 +737,143 @@ func TestRemainingGenericVerbsLegalPath(t *testing.T) {
 			t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
 		}
 	})
+}
+
+// extractResponseID pulls the minted XS- response id out of a funnel
+// call's committed files (same lookup respondFlow uses, factored out for
+// tests that need to compare TWO calls' own ids directly rather than
+// materializing either onto disk).
+func extractResponseID(files []space.FileWrite) string {
+	for _, fw := range files {
+		if strings.HasPrefix(filepath.Base(fw.Path), "XS-") {
+			return strings.TrimSuffix(filepath.Base(fw.Path), ".md")
+		}
+	}
+	return ""
+}
+
+// TestRespondDeterministicResponseID is HIGH-1's own discriminating test
+// (AC-301.1, anti-pattern #4): with a FIXED injected clock, two `respond`
+// invocations against the SAME parent with IDENTICAL content mint the
+// IDENTICAL responseID (a retry lands on the SAME funnel branch, no
+// duplicate PR); two invocations with DIFFERENT content mint DISTINCT
+// ids (multiple genuine responses to one parent are never collapsed).
+func TestRespondDeterministicResponseID(t *testing.T) {
+	t.Parallel()
+	fixedNow := func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }
+
+	newRespondCmd := func(t *testing.T, mirrorDir, parentID string) (*cli.RespondCommand, *fakeLifecycleFunnel) {
+		t.Helper()
+		seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		cmd.SetClockForTest(fixedNow)
+		return cmd, fake
+	}
+
+	t.Run("identical_content_mints_identical_id", func(t *testing.T) {
+		t.Parallel()
+		parentID := "XQ-axon-20260721-r001"
+
+		mirrorDir1 := t.TempDir()
+		cmd1, fake1 := newRespondCmd(t, mirrorDir1, parentID)
+		io1, _, errOut1 := newIO()
+		if code := cmd1.Run(context.Background(), []string{"--result", "answered", parentID}, io1); code != 0 {
+			t.Fatalf("respond (1st): code = %d, want 0; stderr=%s", code, errOut1.String())
+		}
+
+		mirrorDir2 := t.TempDir()
+		cmd2, fake2 := newRespondCmd(t, mirrorDir2, parentID)
+		io2, _, errOut2 := newIO()
+		if code := cmd2.Run(context.Background(), []string{"--result", "answered", parentID}, io2); code != 0 {
+			t.Fatalf("respond (2nd): code = %d, want 0; stderr=%s", code, errOut2.String())
+		}
+
+		id1 := extractResponseID(fake1.calls[0].Files)
+		id2 := extractResponseID(fake2.calls[0].Files)
+		if id1 == "" || id2 == "" {
+			t.Fatalf("expected a minted response id in both calls; got %q and %q", id1, id2)
+		}
+		if id1 != id2 {
+			t.Fatalf("responseID = %q vs %q; expected the SAME id for identical content under a fixed clock", id1, id2)
+		}
+		if fake1.calls[0].ArtifactID != fake2.calls[0].ArtifactID {
+			t.Fatalf("ArtifactID = %q vs %q; expected the SAME funnel branch key for identical content", fake1.calls[0].ArtifactID, fake2.calls[0].ArtifactID)
+		}
+	})
+
+	t.Run("different_content_mints_different_id", func(t *testing.T) {
+		t.Parallel()
+		parentID := "XQ-axon-20260721-r002"
+
+		mirrorDir1 := t.TempDir()
+		cmd1, fake1 := newRespondCmd(t, mirrorDir1, parentID)
+		io1, _, errOut1 := newIO()
+		if code := cmd1.Run(context.Background(), []string{"--result", "answered", parentID}, io1); code != 0 {
+			t.Fatalf("respond (answered): code = %d, want 0; stderr=%s", code, errOut1.String())
+		}
+
+		mirrorDir2 := t.TempDir()
+		cmd2, fake2 := newRespondCmd(t, mirrorDir2, parentID)
+		io2, _, errOut2 := newIO()
+		if code := cmd2.Run(context.Background(), []string{"--result", "partial", parentID}, io2); code != 0 {
+			t.Fatalf("respond (partial): code = %d, want 0; stderr=%s", code, errOut2.String())
+		}
+
+		id1 := extractResponseID(fake1.calls[0].Files)
+		id2 := extractResponseID(fake2.calls[0].Files)
+		if id1 == "" || id2 == "" {
+			t.Fatalf("expected a minted response id in both calls; got %q and %q", id1, id2)
+		}
+		if id1 == id2 {
+			t.Fatalf("expected DIFFERENT ids for --result answered vs --result partial, got the same id %q", id1)
+		}
+	})
+}
+
+// TestRespondIdempotentRetryReturnsAlreadyOpen is HIGH-1's end-to-end
+// proof against a REAL space.WriteFunnel + host.NewFakeHost (the same
+// fixture-space integration pattern as
+// TestAckEndToEndWithRealFunnelAndFakeHost): a retried `respond` with
+// IDENTICAL content and a FIXED clock lands on the SAME deterministic
+// branch, so the SECOND call short-circuits to
+// space.WriteStateAlreadyOpen — no second PR is opened.
+func TestRespondIdempotentRetryReturnsAlreadyOpen(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon", "beta")
+	mirrorDir := fx.Clone("beta")
+
+	parentID := "XQ-axon-20260721-r003"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fakeHost := host.NewFakeHost()
+	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	hostCfg := lifecycleHostConfig()
+	hostCfg.RemoteURL = fx.RemoteURL()
+	fixedNow := func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }
+
+	cmd1 := cli.NewRespondCommand(funnel, mirrorDir, "fixture-space", "beta", lifecycleManifest(), hostCfg, lifecycleActorResolver("agent", "bot"))
+	cmd1.SetClockForTest(fixedNow)
+	io1, out1, errOut1 := newIO()
+	if code := cmd1.Run(context.Background(), []string{"--result", "answered", parentID}, io1); code != 0 {
+		t.Fatalf("respond (1st): code = %d, want 0; stdout=%s stderr=%s", code, out1.String(), errOut1.String())
+	}
+	if len(fakeHost.Opens) != 1 {
+		t.Fatalf("expected exactly one OpenPR call after the 1st respond, got %d", len(fakeHost.Opens))
+	}
+
+	// A SECOND, freshly-constructed command (simulating a retried CLI
+	// invocation) against the SAME still-pending mirror state.
+	cmd2 := cli.NewRespondCommand(funnel, mirrorDir, "fixture-space", "beta", lifecycleManifest(), hostCfg, lifecycleActorResolver("agent", "bot"))
+	cmd2.SetClockForTest(fixedNow)
+	io2, out2, errOut2 := newIO()
+	if code := cmd2.Run(context.Background(), []string{"--result", "answered", parentID}, io2); code != 0 {
+		t.Fatalf("respond (retry): code = %d, want 0; stdout=%s stderr=%s", code, out2.String(), errOut2.String())
+	}
+	if len(fakeHost.Opens) != 1 {
+		t.Fatalf("expected STILL exactly one OpenPR call after the retry (dedup), got %d", len(fakeHost.Opens))
+	}
+	if !strings.Contains(out2.String(), "already submitted") {
+		t.Fatalf("expected the retry's stdout to report the already-submitted idempotent path, got %q", out2.String())
+	}
 }
