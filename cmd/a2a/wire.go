@@ -199,15 +199,15 @@ func readVerbs() map[string]func(*cache.Store) cli.Command {
 // buildStore constructs the federated cache.Store over every connected
 // space's mirror (resolving each mirror dir + loading its space.yaml
 // manifest). Read verbs never touch the network to build this.
+//
+// It is TOLERANT of missing config: a project with no `.a2a/config.yaml`
+// (or no connected spaces, or no machine config) yields a store over zero
+// mirrors — the read verbs then report empty, and `a2a statusline` stays
+// silent + exit 0 (CC-092). A missing config is a normal pre-onboarding
+// state, not an error the read path should crash on.
 func buildStore(p paths) (*cache.Store, error) {
-	cfg, err := space.LoadProjectConfig(p.projectConfig)
-	if err != nil {
-		return nil, fmt.Errorf("no project config (run `a2a init` first): %w", err)
-	}
-	machine, err := space.LoadMachineConfig(p.machineConfig)
-	if err != nil {
-		return nil, fmt.Errorf("no machine config (%s): %w", p.machineConfig, err)
-	}
+	cfg, _ := space.LoadProjectConfig(p.projectConfig)     // absent => zero cfg, zero spaces
+	machine, _ := space.LoadMachineConfig(p.machineConfig) // absent => zero machine config
 	mirrors := make([]cache.SpaceMirror, 0, len(cfg.Spaces))
 	for _, ref := range cfg.Spaces {
 		dir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
