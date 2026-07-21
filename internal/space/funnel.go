@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	gopath "path"
 	"path/filepath"
+	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
 )
@@ -218,7 +220,25 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 // sectionOK reports whether path is inside system's own section, or under
 // the space-level decisions/ exception (the one path the single-writer
 // rule does not enforce per-system, §4.2 decision flow).
+//
+// The path must be a clean, relative, forward-slash space path: any
+// absolute path, any `..` segment, or any non-canonical form (e.g.
+// `axon/../other/evil.md`) is rejected outright — otherwise a crafted
+// FileWrite.Path could collapse into a sibling system's section, or
+// outside the repo entirely, while still passing the guard whose whole
+// job is to enforce the single-writer boundary (D-014 data-stays-data,
+// the "one write shape" rail).
 func sectionOK(system, path string) bool {
+	if path == "" || strings.HasPrefix(path, "/") {
+		return false
+	}
+	// A path is safe only if it is already in cleaned, non-escaping form.
+	// path.Clean collapses `..`/`.`/double-slashes; if the input differs
+	// from its cleaned form, or the cleaned form still escapes, reject.
+	if cleaned := gopath.Clean(path); cleaned != path || cleaned == ".." ||
+		strings.HasPrefix(cleaned, "../") {
+		return false
+	}
 	if path == "decisions" || hasPathPrefix(path, "decisions/") {
 		return true
 	}

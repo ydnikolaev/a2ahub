@@ -15,10 +15,10 @@ func checkAuthz(env envelope, ownSystem string) []Violation {
 		return nil
 	}
 	if ownSystem == "" {
-		// No configured own system to compare against — the caller
-		// (V1, or a V2 caller that didn't populate LocalContext.
-		// OwnSystem) hasn't asked for this check; skipping is correct,
-		// not silently passing a real check.
+		// Defensive: ValidateForSubmit already rejects an empty
+		// OwnSystem with ErrNoOwnSystem before reaching here (fail
+		// closed), so this branch is unreachable from the V2 path. Kept
+		// so a future direct caller of checkAuthz cannot fail-open.
 		return nil
 	}
 	if env.From != ownSystem {

@@ -103,6 +103,11 @@ entries:
     title: A ref is unpinned (neither `@version` nor `#digest`) — drift-prone
     applies_to: envelope/v1 refs[].ref (§3.8) — warning severity, not a reject
 
+  - code: REF-008
+    class: referential
+    title: A digest-pinned ref's target could not be resolved to verify
+    applies_to: envelope/v1 refs[].ref pinned with `#digest` but unresolvable (§5.7) — warning, not a reject ("can't verify" ≠ "verified")
+
   - code: LFC-001
     class: lifecycle
     title: Event encodes an illegal transition for the subject's current folded state
