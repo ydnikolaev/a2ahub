@@ -1,0 +1,12 @@
+# Space CODEOWNERS (§4.2, D-011): gated paths ONLY.
+#
+# /<system>/provides/** entries do NOT belong here at template time — each
+# system's onboarding PR adds its own entry when it joins (US-102, §9.2
+# step 2). Pre-seeding a system entry here would be a layout invention this
+# template does not make.
+#
+# Replace the placeholder handles below with the real GitHub teams/logins
+# when the space repo is created (§9.1 org/space admin runbook).
+
+/space.yaml     @REPLACE_WITH_ORG/space-admins
+/decisions/**   @REPLACE_WITH_ORG/all-participants

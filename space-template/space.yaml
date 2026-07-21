@@ -1,0 +1,9 @@
+schema: space/v1
+space: REPLACE_WITH_SPACE_ID
+min_binary_version: 0.1.0
+gates: default                    # G1-G5 per §3.7; operator refines at space creation
+participants: []                  # zero participants at template time (AC-101.1
+                                   # green-on-empty) — added one at a time via each
+                                   # system's onboarding PR (US-102, §9.2 step 2)
+notification_routes: []           # operator fills in chat/webhook routes at creation
+vendored: []
