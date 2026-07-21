@@ -1,0 +1,45 @@
+# cc-coverage.yaml — spec 10 §13.2 traceability file (CI-enforced by
+# internal/e2e.TestCCCoverageGate, spec 10 §8 AC-5): every CC-### listed
+# below MUST resolve to a real, named Go test, or the gate fails the
+# build.
+#
+# Shape (spec 10 §T5): each row is {cc_id, test_ref, tier, status}.
+#   - cc_id    matches a docs/the-plan/plan/12-corner-cases.md CC-### exactly.
+#   - test_ref is "<package-path>.<TestFuncName>" (package-path is
+#     repo-relative, e.g. "internal/e2e"); the gate resolves it via
+#     `go test -list ^<TestFuncName>$ ./<package-path>` and fails if the
+#     name does not come back.
+#   - tier     one of T1|T2|T3|E2E-1|E2E-4 (the tiers this phase and its
+#     predecessors actually ship — spec 10 §T5).
+#   - status   "covered" (the only value this phase's gate checks for).
+#
+# Scope (spec 10 §T5, binding): this is a SUBSET of §12's full catalog —
+# only the CCs this phase's own T3/E2E-1/E2E-4 tests, and the P2/P3
+# secret-scan corpus this phase wires (not authors) into the same test
+# run, actually exercise. The full §12 matrix is v2/L4's exit criterion
+# (15-rollout.md), not this phase's.
+rows:
+  - cc_id: CC-002
+    test_ref: internal/e2e.TestT3Scripts
+    tier: T3
+    status: covered
+  - cc_id: CC-010
+    test_ref: internal/validate.TestSecretScan
+    tier: T1
+    status: covered
+  - cc_id: CC-042
+    test_ref: internal/e2e.TestT3Scripts
+    tier: T3
+    status: covered
+  - cc_id: CC-080
+    test_ref: internal/e2e.TestE2E4
+    tier: E2E-4
+    status: covered
+  - cc_id: CC-081
+    test_ref: internal/e2e.TestE2E4
+    tier: E2E-4
+    status: covered
+  - cc_id: CC-082
+    test_ref: internal/e2e.TestE2E4
+    tier: E2E-4
+    status: covered
