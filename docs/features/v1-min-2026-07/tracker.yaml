@@ -68,7 +68,7 @@ phases:
     plan: plans/06-author-verbs.plan.md
     blocked_by: [P3, P4, P5]
     commits: [c20082b, d28ea5f, 2942644, 69a475a]
-    audit: open
+    audit: done
 
   - id: P7
     title: Read surface — cache, inbox/outbox/show/thread/search + statusline
@@ -93,7 +93,7 @@ phases:
     plan: plans/09-space-template-ci.plan.md
     blocked_by: [P3, P5]
     commits: [8dcd8a3]
-    audit: open
+    audit: done
 
   - id: P10
     title: Integration tests — T3 harness, E2E-1 + E2E-4, cc-coverage seed
