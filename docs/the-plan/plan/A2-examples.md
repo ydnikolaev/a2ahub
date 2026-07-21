@@ -181,6 +181,8 @@ from: seomatrix
 to: [axon]
 actor: {kind: agent, name: claude}
 created: 2026-08-05T10:30:00Z
+priority: p3
+blocking: false
 parent: XR-axon-country-vocabulary
 result: delivered
 refs:
@@ -252,7 +254,7 @@ classification: internal
 schema: envelope/v1
 id: XA-seomatrix-20260901-z2v4
 type: announcement
-title: Factory weekly: coverage & pipeline state
+title: "Factory weekly: coverage & pipeline state"
 space: getvisa
 from: seomatrix
 to: [axon]
@@ -282,14 +284,14 @@ at: 2026-07-29T15:20:00Z
 note: "Linked to factory epic; ETA in accept to follow."
 ```
 
-`axon/events/2026/01J40A7M9P1S3U5W7Y9A1C3E5G.yaml` — satisfy (requester's
+`axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E5G.yaml` — satisfy (requester's
 event folding the requirement to `satisfied`, referencing response B.7 and
 the fulfilling contract version — requirements complete via `satisfy`,
 §3.4.2, not verify/close):
 
 ```yaml
 schema: event/v1
-event: 01J40A7M9P1S3U5W7Y9A1C3E5G
+event: 01J40A7M9P1S3V5W7Y9A1C3E5G
 space: getvisa
 subject: XR-axon-country-vocabulary
 transition: satisfy
