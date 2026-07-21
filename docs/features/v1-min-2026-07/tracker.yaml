@@ -101,6 +101,7 @@ phases:
     title: Integration tests — T3 harness, E2E-1 + E2E-4, cc-coverage seed
     status: pending
     spec: specs/10-integration-tests.md
+    plan: plans/10-integration-tests.plan.md
     blocked_by: [P7, P8, P9]
     commits: []
     audit: open

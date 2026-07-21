@@ -1,6 +1,7 @@
 # P10 — Integration Tests: T3 Harness, E2E-1/E2E-4, cc-coverage Seed
 
 **Slug**: `v1-min-2026-07`  ·  **Track**: ci  ·  **Status**: draft
+**Plan**: [plans/10-integration-tests.plan.md](../plans/10-integration-tests.plan.md)
 **Created**: 2026-07-21  ·  **Owner**: yura
 **Footprint**: `internal/cli/*_test.go`, `internal/space/*_test.go` (T3
 additions to the per-verb packages P6/P7/P8 already own), `internal/e2e/`
