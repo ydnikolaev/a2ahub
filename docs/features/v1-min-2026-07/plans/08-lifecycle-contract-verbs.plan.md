@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 phase: P8
 spec: ../specs/08-lifecycle-contract-verbs.md
 wave: 4
-status: planned
+status: verified
 ---
 
 # Phase plan — P8 Lifecycle & contract verbs

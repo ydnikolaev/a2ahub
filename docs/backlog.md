@@ -65,6 +65,25 @@
       space resolution fails. Surfaced by the wave-3 live e2e. Fix at P11
       (real getvisa space) or add an explicit `--space-id`/derive from
       space.yaml after connect.
+- [ ] Plan §5.7 says the multi-file digest tree is over "repo-relative-path"
+      but the shipped (and only workable) basis is CONTRACT-ROOT-relative
+      (verify-export operates on an arbitrary local dir). Amend §5.7 to say
+      contract-root-relative. P12 must match this basis.
+- [ ] Plan D-023 says "each publish event records commit SHA" but the SHA is
+      only known post-commit (WriteFunnel returns it after the event is
+      already committed) — publish events carry `digest` only, `commit` is
+      empty; `contract diff` resolves versions via git history instead.
+      Amend D-023 to drop/defer the commit-SHA clause. (Pre-existing P6 gap
+      too — cmd_submit never set CommitSHA.)
+- [ ] fold `Apply` has no dispatch for a response's own draft→submit
+      mini-lifecycle (§3.4.6) — verify/dispute legality is closed but a
+      response sub-state beyond verified/disputed would need a fold pass.
+- [ ] Load-induced flake: `TestSubmitEndToEndSingleArtifact` (P6, cli) fails
+      ~1-in-6 under full `make check` parallel load with `-race` — the
+      funnel's `git checkout -B <branch>` subprocess occasionally errors
+      under heavy concurrency. Passes cleanly in isolation and on re-run.
+      Harden the funnel git ops (retry on transient / robust branch reset)
+      or serialize the git-heavy e2e submit tests. Anti-pattern #17/#18.
 - [ ] Proposal (operator decision, D-021-sensitive): `a2a init` offers
       (consent-gated Y/n, `--yes` for automation) to append a ~3-line
       a2ahub pointer block (8.1 session-start floor + skill reference) to

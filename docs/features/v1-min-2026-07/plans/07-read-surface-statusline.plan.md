@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 phase: P7
 spec: ../specs/07-read-surface-statusline.md
 wave: 4
-status: planned
+status: verified
 ---
 
 # Phase plan — P7 Read surface: cache, inbox/outbox/show/thread/search, statusline

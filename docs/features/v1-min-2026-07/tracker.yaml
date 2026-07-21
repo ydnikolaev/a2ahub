@@ -72,20 +72,20 @@ phases:
 
   - id: P7
     title: Read surface — cache, inbox/outbox/show/thread/search + statusline
-    status: in-progress
+    status: done
     spec: specs/07-read-surface-statusline.md
     plan: plans/07-read-surface-statusline.plan.md
     blocked_by: [P6]
-    commits: []
+    commits: [79dfe0d, 5d005fc, e13fc26]
     audit: open
 
   - id: P8
     title: Lifecycle verbs + contract publish/deprecate/retire/diff/verify-export
-    status: in-progress
+    status: done
     spec: specs/08-lifecycle-contract-verbs.md
     plan: plans/08-lifecycle-contract-verbs.plan.md
     blocked_by: [P6]
-    commits: []
+    commits: [e753e6e, 5d005fc]
     audit: open
 
   - id: P9

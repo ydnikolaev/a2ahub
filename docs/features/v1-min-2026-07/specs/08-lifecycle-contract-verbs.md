@@ -187,6 +187,35 @@ precedent — check P1/P6 output before inventing parsing); log-or-return per
 > Append-only. When shipped reality deviates from this spec, record it here
 > AND amend any downstream spec (notably P9, P10, P12).
 
+### 2026-07-21 — from wave 4: shipped-reality deltas
+
+- **Multi-file digest tree is CONTRACT-ROOT-relative, not repo-relative.**
+  §5.7's prose says "repo-relative-path", but `verify-export --local <path>`
+  operates on an arbitrary local export dir with no repo-relative path — so
+  the digest tree roots at the contract's own directory (paths like
+  `schema/main.schema.json`). **P12 (axon CI wiring of verify-export) MUST
+  use the same contract-root-relative basis.** Plan §5.7 wording flagged for
+  an operator amendment (backlog).
+- **Publish events do not record the real `commit` SHA.** The SHA is only
+  known after `space.WriteFunnel.Submit` returns (post-commit), and
+  backfilling it would violate "one commit". `digest` IS recorded
+  (pre-commit computable). `contract diff` therefore resolves `id@version`
+  by walking the contract descriptor's git history (`git log`/`show`/
+  `ls-tree`, read-only), not by publish-event→SHA lookup. Pre-existing P6
+  gap (cmd_submit never set CommitSHA either). Plan D-023 "records commit
+  SHA" clause flagged for operator amendment (backlog).
+- **retire code = POL-006** (registry): retire refused when a registered
+  consumer hasn't acked; override needs sunset-passed + reminder + human.
+  The lead added its production path to internal/validate's closure test
+  (registry_test.go was off P8's allowlist).
+- **fold verify/dispute legality** closed in internal/fold/legality.go (the
+  wave-3 backlog gap) — a pure 26-line addition, existing verdicts
+  untouched. NOTE: fold's `Apply` still has no dispatch for a response's own
+  draft→submit mini-lifecycle (§3.4.6) — out of this phase's granted fold
+  footprint (only legality.go); a response is introduced by `a2a respond`'s
+  submit event, folded via the primary path. Flag for a future fold pass if
+  a response sub-state beyond verified/disputed is ever needed.
+
 <!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->
 
 ### 2026-07-21 — from coherence audit (pre-implementation)

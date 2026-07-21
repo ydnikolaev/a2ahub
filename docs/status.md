@@ -9,12 +9,13 @@
 
 - **Epic [v1-min](features/v1-min-2026-07/README.md)** — space + `a2a` binary
   core + day-one content (plan §15 L0–L2 + E7 tail, D-030). Spec corpus cut
-  from the plan 2026-07-21; waves 1–3 shipped 2026-07-21: P1 foundation,
-  P2 schemas, P3 validation, P4 fold, P5 space/host, P6 author verbs +
-  templates, P9 space-template + V3 CI + doctor. The `a2a` binary is wired
-  and runs the authoring path end-to-end (init→new→validate→template);
-  live GitHub submit is P11.
-  <!-- epic-state: v1-min-2026-07 phases=7/14 -->
+  from the plan 2026-07-21; waves 1–4 shipped 2026-07-21: P1–P6 + P9
+  (foundation, schemas, validation, fold, space/host, author verbs,
+  space-template/CI/doctor) + P7 (read surface: cache + inbox/outbox/show/
+  thread/search/statusline) + P8 (lifecycle + contract verbs). The `a2a`
+  binary is wired for all 27 verbs; authoring + read paths run locally,
+  live GitHub write path (submit/lifecycle/contract) is P11.
+  <!-- epic-state: v1-min-2026-07 phases=9/14 -->
 
 - **Dev-pipeline harness bootstrap** (2026-07-21) — orchestration inventory ported
   from the axon harness: agents (`scout`, `coder`, `go-auditor`), skills

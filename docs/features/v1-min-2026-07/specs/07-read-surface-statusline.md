@@ -196,6 +196,21 @@ Full loop: [docs/features/README.md](../../README.md).
 
 <!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->
 
+### 2026-07-21 — from wave 4: shipped-reality deltas
+- **"reads cache ONLY" is more precisely "reads the local mirror + cache
+  ONLY, no network in the render path".** The statusline render composes
+  fold over the on-disk mirror (not a separate pre-baked cache blob); the
+  <100ms/no-block/zero-noise/severity-exit-code contract holds exactly. The
+  TTL-triggered detached `git fetch` is the only network, spawned in an
+  owned goroutine (recover) whose result lands for the NEXT render — never
+  the current one. Wording of §T1/§7.5 lines "reads cache ONLY" reads as if
+  a distinct cache store is required; the shipped design reads mirror+cache.
+- **`internal/cache` transitively pulls `internal/host`** via
+  `internal/space` (space's write funnel imports host). No file in
+  internal/cache imports host directly — the ADR-001 rule (cache's own
+  imports = artifact/fold/space) holds; the raw `go list -deps` showing
+  `host` is the transitive-via-space closure, not a violation.
+
 ### 2026-07-21 — from coherence audit (pre-implementation)
 - Clarified §5 cache-package bullet: `internal/cache` stays validate-free
   (its ADR-001 import row is `artifact`/`fold`/`space` only); the V5
