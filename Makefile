@@ -25,16 +25,25 @@ check-validators: $(REPO_GATES) ## Repo gates only, no tests, no build — the s
 
 check: $(REPO_GATES) ## THE CEILING — repo gates, plus Go gates once go.mod exists.
 	@if [ -f go.mod ]; then \
-	  echo "check: go.mod found — running Go gates (gofmt -l, go vet, go test -race)"; \
+	  echo "check: go.mod found — running Go gates (gofmt -l, go vet, lint, go test -race)"; \
 	  unformatted=$$(gofmt -l .); \
 	  if [ -n "$$unformatted" ]; then \
 	    echo "check: gofmt -l found unformatted file(s):"; \
 	    echo "$$unformatted"; \
 	    exit 1; \
 	  fi; \
-	  go vet ./... && \
+	  go vet ./... || exit 1; \
+	  if [ -f .golangci.yml ]; then \
+	    if command -v golangci-lint >/dev/null 2>&1; then \
+	      golangci-lint run ./... || exit 1; \
+	    else \
+	      echo "check: FAIL — .golangci.yml exists but golangci-lint is not installed."; \
+	      echo "       A configured lint gate that silently skips is a hole, not a gate."; \
+	      exit 1; \
+	    fi; \
+	  fi; \
 	  go test ./... -race -count=1 && \
-	  echo "check: repo gates + Go gates (gofmt, vet, test) green."; \
+	  echo "check: repo gates + Go gates green."; \
 	else \
 	  echo "check: no go.mod yet — repo gates only (Go gates skipped)."; \
 	fi
