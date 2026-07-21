@@ -1,0 +1,12 @@
+# OP-202 `a2a connect`: fresh connect clones the mirror + writes config,
+# then AC-301.1 idempotent re-run refreshes without duplicating state
+# (AC-301.3: this is a direct-git clone against a local fixture path — no
+# hub, no network — proving the offline/no-hub git-fallback path works).
+rm -r .a2a
+exec a2a connect $ORIGIN
+stdout 'registered space'
+exists .a2a/config.yaml
+exists .a2a/cache/mirrors/origin/space.yaml
+
+exec a2a connect $ORIGIN
+stdout 'already connected'

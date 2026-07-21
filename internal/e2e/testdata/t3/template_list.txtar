@@ -1,0 +1,6 @@
+# OP-219 `a2a template list`: config-independent, cheap verb — works even
+# with no connected space (this project's own README convention).
+exec a2a template list
+stdout 'question'
+stdout 'requirement'
+stdout 'contract'

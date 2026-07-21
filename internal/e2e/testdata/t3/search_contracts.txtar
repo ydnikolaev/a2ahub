@@ -1,0 +1,7 @@
+# OP-221 `a2a search` / `a2a contracts`: local-cache discovery, zero hits
+# is a success (never an error).
+exec a2a search --json demo
+stdout 'XR-axon-demo'
+
+exec a2a contracts --json
+stdout '^\[\]$'

@@ -1,0 +1,10 @@
+# OP-207 `a2a inbox`, OP-208 `a2a outbox`: the seeded XR-axon-demo
+# requirement is FROM axon (this project's own system), so it appears in
+# outbox (owned by me) and NOT in inbox (not addressed to me) — the same
+# pre-onboarding-graceful, guaranteed-array-shape contract
+# scripts/e2e-authoring-smoke.sh already exercises.
+exec a2a inbox --json
+stdout '^\[\]$'
+
+exec a2a outbox --json
+stdout 'XR-axon-demo'

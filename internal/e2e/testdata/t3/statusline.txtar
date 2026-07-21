@@ -1,0 +1,7 @@
+# OP-215 `a2a statusline`: cache-read only, <100ms (perf itself is
+# internal/cli's own TestStatuslinePerf); here just the OP-contract: the
+# seeded XR-axon-demo is `blocking: true`, which severs statusline's own
+# urgent-severity path (exit 11) regardless of addressee — a non-empty,
+# single-line signal.
+! exec a2a statusline
+stdout 'XR-axon-demo'

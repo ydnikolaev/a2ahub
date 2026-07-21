@@ -1,0 +1,18 @@
+# OP-218 `a2a doctor` (basic, no --space): every check PASSes against the
+# seeded fixture (credential env var set, mirror cloned, CI workflow file
+# present, git on PATH, binary version >= the fixture's min_binary_version).
+# `versions` PASSes because the binary is built with -ldflags version 0.1.0
+# (main_test.go) and the fixture's space.yaml pins min_binary_version
+# 0.0.0. (Wave-5 fix: cmd/a2a/wire.go now passes the BARE version to
+# DoctorCommand, not the full "a2a x.y.z (sha)" stamp — the stamp made
+# doctorVersionOlder's parser fail against any version-pinned space.)
+exec a2a doctor
+stdout 'credentials: PASS'
+stdout 'space access: PASS'
+stdout 'versions: PASS'
+stdout 'CI presence: PASS'
+stdout 'statusline wiring: PASS'
+
+# `--space` is explicitly rejected (v2, D-030) — never silently ignored.
+! exec a2a doctor --space
+stderr 'not available'

@@ -1,0 +1,6 @@
+# OP-203 `a2a new` + OP-204 `a2a validate`: AC-401.1 — a freshly-minted
+# draft passes V1 (schema/frontmatter) BEFORE any hand edit.
+exec a2a new question --field title=t --field space=fixture-space
+stdout 'drafted'
+exec a2a validate --all
+stdout '"valid": true'

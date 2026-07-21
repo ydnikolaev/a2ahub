@@ -1,0 +1,27 @@
+# OP-205 `a2a submit`: CC-002 — a `from`-mismatch is refused LOCALLY,
+# before any mirror clone / network call (AC-201.3 ordering, config-only
+# guard). This is the one write-path verb this package's exec'd-binary
+# scripts CAN exercise end to end: the refusal happens before wire.go ever
+# builds a GitHubHost or calls parseGitHubRepo.
+mkdir .a2a/staging
+cp foreign.md .a2a/staging/foreign.md
+! exec a2a submit .a2a/staging/foreign.md
+stderr 'CC-002'
+
+-- foreign.md --
+---
+schema: envelope/v1
+id: XQ-beta-20260721-f001
+type: question
+title: t
+space: fixture-space
+from: beta
+to: [axon]
+actor: {kind: agent, name: bot}
+created: 2026-07-21T10:00:00Z
+category: clarification
+priority: p3
+blocking: true
+classification: internal
+---
+body
