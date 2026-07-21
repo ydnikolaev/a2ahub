@@ -40,8 +40,8 @@ phases:
     spec: specs/03-validation-engine.md
     plan: plans/03-validation-engine.plan.md
     blocked_by: [P1, P2]
-    commits: [5fa17f0]
-    audit: open
+    commits: [5fa17f0, c0eb80f]
+    audit: done
 
   - id: P4
     title: Fold engine — transition tables, determinism (T2)
@@ -50,7 +50,7 @@ phases:
     plan: plans/04-fold-engine.plan.md
     blocked_by: [P1, P2]
     commits: [3309521]
-    audit: open
+    audit: done
 
   - id: P5
     title: Space model, mirrors, GitHub host adapter, PR write funnel
@@ -58,8 +58,8 @@ phases:
     spec: specs/05-space-and-host.md
     plan: plans/05-space-and-host.plan.md
     blocked_by: [P1]
-    commits: [d0e6386]
-    audit: open
+    commits: [d0e6386, c0eb80f]
+    audit: done
 
   - id: P6
     title: Author verbs — init/connect/new/validate/submit/batch/sync + templates

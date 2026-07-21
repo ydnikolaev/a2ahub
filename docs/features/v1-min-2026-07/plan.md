@@ -106,6 +106,7 @@ Verdict: ✅ PROCEED
 - Wave 1.1 — plan-corpus repair — 2026-07-21 — P2 done (operator ceded fork; self-evaluate PROCEED option a: B.7 fields added, B.10 title quoted, B.11 ULID fixed, fixtures re-synced byte-for-byte) — commit 3fd4621 — make check green — details: plans/02-product-schemas.plan.md
 - Wave 1.2 — early audit + fixes — 2026-07-21 — go-auditor FIX-AND-REAUDIT → fix c5d521e (CC-011 conditional + SCH-008 + fixtures + CI hardening) → re-audit found own regression → fix fb33d53 (fixture isolation) → re-audit 2: PASS (ajv cross-check). P1/P2 audit: done. Forward note for P3 recorded in its plan (annotation-propagation edge). — make check green
 - Wave 2 — engines + host — 2026-07-21 — P3, P4, P5 done — commits 5fa17f0, 3309521, d0e6386 (+ haiku lint batch, fold.Result rename, manifest-seam doc fix folded in) — make check green (8 packages, lint 0) — propagation: specs 03/04/05 amended, 4 backlog rows (manifest ref/policy checks unowned, Result JSON tags, format-assertion decision, decision-supersede gap), P6-adapter weight flagged in spec 03 — details: plans/03,04,05 *.plan.md
+- Wave 2.1 — audit + fixes — 2026-07-21 — go-auditor FIX-AND-REAUDIT: 1 HIGH (funnel path-traversal in sectionOK, empirically confirmed) + 2 security MED (authz fail-open, referential can't-verify) fixed lead-inline with tests (c0eb80f); 2 fold-consumer ergonomics MED backlogged as wave-3 P7/P8 inputs (no current consumer) — bf77094 — make check green — P3/P4/P5 audit: done
 
 ## Revisions (user feedback loop)
 
