@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 phase: P2
 spec: ../specs/02-product-schemas.md
 wave: 1
-status: dispatched  # shipped 6bf4205; held open on A2 B.7/B.10/B.11 (operator decision)
+status: verified
 ---
 
 # Phase plan — P2 Product schemas v1
@@ -144,6 +144,17 @@ docs/features/v1-min-2026-07/specs/02-product-schemas.md.
   handoff (options recorded there).
 - Notes: secret-corpus carries no code sidecars by design (policy-class
   codes are P3's); false-positive budget documented in its README.
+
+### Wave 1.1 — 2026-07-21 — escalation resolved (lead)
+
+- Operator ceded the B.7 fork; /self-evaluate verdict PROCEED, option (a):
+  schema stays strict, defaults live in templates (2020-12 `default` is
+  non-validating; blocking has no documented default; the shipped response
+  template already prefills both fields). A2 B.7/B.10/B.11 fixed in the
+  plan corpus, 3 fixtures re-synced byte-for-byte, satisfy-event fixture
+  renamed to the corrected ULID. Verified: byte-diffs clean, response
+  fixture validates, B.10 parses, ULID matches pattern. Commit 3fd4621.
+  Phase closed: AC rows 1–7 all met.
 
 ## Deferred / follow-ups
 

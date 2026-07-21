@@ -103,6 +103,7 @@ Verdict: ✅ PROCEED
 
 - Wave 0 — sentinel — 2026-07-21 — probe confirmed no-isolation agents write the main checkout — no commit
 - Wave 1 — foundation ∥ schemas — 2026-07-21 — P1 done, P2 shipped/held — commits 38677dd, 6bf4205 — make check green — STOP raised: 3 A2-examples plan-corpus defects (B.7, B.10, B.11) + rand4 charset fixed lead-side — details: plans/01-foundation.plan.md, plans/02-product-schemas.plan.md
+- Wave 1.1 — plan-corpus repair — 2026-07-21 — P2 done (operator ceded fork; self-evaluate PROCEED option a: B.7 fields added, B.10 title quoted, B.11 ULID fixed, fixtures re-synced byte-for-byte) — commit 3fd4621 — make check green — details: plans/02-product-schemas.plan.md
 
 ## Revisions (user feedback loop)
 

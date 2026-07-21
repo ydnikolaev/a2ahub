@@ -27,13 +27,11 @@ phases:
 
   - id: P2
     title: Product schemas v1 + golden fixtures + error-code registry
-    # shipped 6bf4205; held open on A2 B.7/B.10/B.11 plan-corpus defects
-    # (operator decision pending)
-    status: in-progress
+    status: done
     spec: specs/02-product-schemas.md
     plan: plans/02-product-schemas.plan.md
     blocked_by: []
-    commits: [6bf4205]
+    commits: [6bf4205, 3fd4621]
     audit: open
 
   - id: P3
