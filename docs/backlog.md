@@ -84,6 +84,28 @@
       under heavy concurrency. Passes cleanly in isolation and on re-run.
       Harden the funnel git ops (retry on transient / robust branch reset)
       or serialize the git-heavy e2e submit tests. Anti-pattern #17/#18.
+- [ ] Statusline TTL-refresh is unreliable in the one-shot CLI process
+      (wave-4 audit, MED, downgraded from HIGH). `triggerRefreshIfStale`
+      (`internal/cache/statusline.go`) spawns a detached, unwaited
+      `go func(){...}()` running `git fetch`; but `main()` is
+      `os.Exit(run(...))`, so the process tears down the instant `statusline`
+      returns — the goroutine (and its `git fetch` subprocess) races process
+      exit with no guarantee it is scheduled long enough to finish. Render
+      itself stays correct (returns stale-but-valid data); only the freshness
+      optimization degrades. Correct primitive for a CLI is a DETACHED
+      SUBPROCESS (`exec.Command` without `Wait`, freed from the parent's
+      process group), not an in-process goroutine. Harden when the statusline
+      refresh path is revisited (P10 perf work touches this file).
+- [ ] `respond`/`contract deprecate` deterministic-id idempotency embeds the
+      UTC date (via `MintExchangeIDAt`), so a retry that crosses midnight
+      mints a different id → a duplicate PR. Never fires in a
+      seconds-to-minutes retry window. Deferred: derive the date
+      deterministically too (or key the branch on a pure content hash) if a
+      cross-midnight retry ever proves real. (Spec 08 §11 wave-4 audit-fix.)
+- [ ] LOW wording cleanup: `internal/cache/*.go` code comments (inbox.go,
+      mirror.go, statusline_test.go) still cite a nonexistent "Deviations
+      report"; the real referent is now specs 07/08 §11. Reword the comments
+      to point at §11 next time those files are touched.
 - [ ] Proposal (operator decision, D-021-sensitive): `a2a init` offers
       (consent-gated Y/n, `--yes` for automation) to append a ~3-line
       a2ahub pointer block (8.1 session-start floor + skill reference) to

@@ -211,6 +211,25 @@ Full loop: [docs/features/README.md](../../README.md).
   imports = artifact/fold/space) holds; the raw `go list -deps` showing
   `host` is the transitive-via-space closure, not a violation.
 
+### 2026-07-21 — from wave 4 audit-fix — interpretation calls recorded
+
+> These P7 reading decisions shipped in code comments citing a nonexistent
+> "Deviations report"; recorded here (the real referent) per the audit. The
+> `internal/cache` code comments still say "Deviations report" — a LOW
+> wording cleanup backlogged, not a behavior change.
+
+- **OP-207 `--actionable` condition 4 ("any open state I'm a party to")** is
+  read as: applies to any item where `me` is a party (`from` OR `to`), not
+  scoped by addressed-to-me alone. Condition 2 keys off `from == me` (owner
+  awaiting own verify/close). `actionableReasons` evaluates all five
+  normative conditions unscoped by `addressedToMe`.
+- **D-017 membership is resolved once per space against the manifest**, not
+  per-commit — the cache reads `fold.MembershipView` from the current
+  manifest rather than replaying membership at each historical commit. A
+  known simplification: a mid-history membership change is not retro-applied
+  to old commits' authorization in the read view (the write funnel + V2/V3
+  enforce authorization at write time regardless).
+
 ### 2026-07-21 — from coherence audit (pre-implementation)
 - Clarified §5 cache-package bullet: `internal/cache` stays validate-free
   (its ADR-001 import row is `artifact`/`fold`/`space` only); the V5

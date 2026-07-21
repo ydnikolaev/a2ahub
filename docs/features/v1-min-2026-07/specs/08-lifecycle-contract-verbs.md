@@ -216,6 +216,45 @@ precedent — check P1/P6 output before inventing parsing); log-or-return per
   submit event, folded via the primary path. Flag for a future fold pass if
   a response sub-state beyond verified/disputed is ever needed.
 
+### 2026-07-21 — from wave 4 audit-fix (FIX-AND-REAUDIT)
+
+- **`respond` and `contract deprecate` secondary-artifact ids are now
+  DETERMINISTIC in their content** (was: freshly-minted ULID-suffix per
+  invocation). Both verbs author a NEW artifact (the response / the
+  deprecation announcement) whose id folded into the funnel's dedup branch
+  `a2a/<system>/<ArtifactID>`; a nondeterministic id defeated
+  `FindPRByHeadBranch`'s idempotent-retry short-circuit (AC-301.1), so a
+  retry against an unmerged prior attempt authored a DUPLICATE PR. Fix: the
+  secondary id's entropy is seeded from a canonical content hash (respond:
+  parent + result + sorted response fields + body + actor; deprecate:
+  contract id + version + sunset), so identical inputs → identical id →
+  identical branch → the funnel dedups; genuinely different content → a
+  distinct branch → a distinct PR (preserving the verify/dispute design's
+  legitimate multiple-responses-per-parent). The random EVENT ids stay
+  random — they are not in the branch key and are never committed before the
+  step-0 short-circuit. Regression tests (same-parent identical-vs-different
+  content) added; the `TestContractPublishIdempotentRerun` comment that
+  over-generalized publish's idempotency to all verbs was corrected.
+- **KNOWN LIMITATION (v1-min, accepted):** the exchange id embeds the UTC
+  date, so a `respond`/`deprecate` retry that crosses midnight mints a
+  different id → a duplicate. This never fires in a seconds-to-minutes retry
+  window; deriving the date deterministically too is deferred (backlog).
+- **Digest tree helper moved to `internal/artifact`** (was: file-private in
+  `internal/cli/cmd_contract.go`). §5/§5.7/D-029 require ONE digest-tree
+  impl that publish/diff/verify-export AND the future P12 axon-CI consumer
+  all call; a `cli`-private copy could not be imported by a non-`cli`
+  consumer, setting up exactly the forbidden three-implementations
+  duplication. Now `artifact.DigestTreeFS`/`artifact.CombineDigestPairs`
+  (exported, contract-root-relative per the wave-4 amendment above, bounded
+  leaf reads). **P12 imports these, does not re-derive.**
+- **Interpretation calls now recorded here (were only in code comments
+  referencing a nonexistent "Deviations report"):** (a) the response
+  batch-submit ordering — a `respond` PR carries the parent's `respond`
+  event + the new response artifact in ONE commit, parent id first; (b)
+  `contractSunsetPassed` now uses the injected clock (`c.deps.now()`), not
+  `time.Now()`, so the AC-202.3 exact-sunset-boundary case is testable
+  against a fixed clock.
+
 <!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->
 
 ### 2026-07-21 — from coherence audit (pre-implementation)
