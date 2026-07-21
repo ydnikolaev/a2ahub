@@ -53,29 +53,32 @@ const (
 	SeverityWarning Severity = "warning"
 )
 
-// Violation is one machine-readable finding, per spec 03 §7.
+// Violation is one machine-readable finding, per spec 03 §7. The json tags
+// are the §7 wire contract (snake_case) — the shape every consumer parses:
+// `a2a validate`'s CLI output, the V3 CI check, the v2 hub, and P13's
+// generated command reference. Changing a tag is a breaking wire change.
 type Violation struct {
 	// Code is the machine-readable registry code (schemas/errors/v1/
 	// registry.yaml), e.g. "SCH-007", "REF-001", "LFC-002", "POL-001".
 	// Never empty (AC row 8: every violation carries a non-empty
 	// registry code).
-	Code string
+	Code string `json:"code"`
 	// Class is one of §5.5's four validation classes.
-	Class Class
+	Class Class `json:"class"`
 	// Path is a JSON-pointer-style field path (e.g. "id", "actor.kind"),
 	// or "event[N]" for a lifecycle violation on the Nth accompanying
 	// event, or "" for a whole-document finding.
-	Path string
+	Path string `json:"path"`
 	// Message is a human-readable, one-line explanation.
-	Message string
+	Message string `json:"message"`
 	// CCRef is the corner-case ID this rule enforces (§12), when
-	// applicable — "" when not.
-	CCRef string
+	// applicable — omitted from JSON when empty (§7 `cc_ref?`).
+	CCRef string `json:"cc_ref,omitempty"`
 	// Severity distinguishes reject from warning-only (see Severity doc
 	// comment). Zero value behaves as SeverityReject (every construction
 	// site in this package sets it explicitly; the zero-value fallback
 	// is a defensive default, not a relied-upon path).
-	Severity Severity
+	Severity Severity `json:"severity"`
 }
 
 // isReject reports whether v should flip Result.Valid to false.
@@ -89,15 +92,15 @@ func (v Violation) isReject() bool {
 // (schema-class) violations (AC-201.2).
 type Result struct {
 	// Valid is true iff zero Reject-severity violations were found.
-	Valid bool
+	Valid bool `json:"valid"`
 	// ArtifactID echoes the artifact's own frontmatter `id` (empty if
 	// the artifact couldn't even be parsed far enough to read one — see
 	// the malformed-frontmatter POL code).
-	ArtifactID string
+	ArtifactID string `json:"artifact_id"`
 	// InvocationPoint is which scope ran.
-	InvocationPoint InvocationPoint
+	InvocationPoint InvocationPoint `json:"invocation_point"`
 	// Violations is empty when Valid is true.
-	Violations []Violation
+	Violations []Violation `json:"violations"`
 }
 
 // newResult builds a Result from an accumulated violation list, computing
