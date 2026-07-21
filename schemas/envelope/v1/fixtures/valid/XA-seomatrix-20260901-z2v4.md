@@ -2,7 +2,7 @@
 schema: envelope/v1
 id: XA-seomatrix-20260901-z2v4
 type: announcement
-title: Factory weekly: coverage & pipeline state
+title: "Factory weekly: coverage & pipeline state"
 space: getvisa
 from: seomatrix
 to: [axon]

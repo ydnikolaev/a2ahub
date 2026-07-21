@@ -8,6 +8,8 @@ from: seomatrix
 to: [axon]
 actor: {kind: agent, name: claude}
 created: 2026-08-05T10:30:00Z
+priority: p3
+blocking: false
 parent: XR-axon-country-vocabulary
 result: delivered
 refs:
