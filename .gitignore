@@ -2,5 +2,9 @@
 .claude/.telemetry/
 .claude/settings.local.json
 
+# Built binaries (produced by `go build` / e2e smoke — never committed)
+/a2a
+/cmd/a2a/a2a
+
 # macOS
 .DS_Store
