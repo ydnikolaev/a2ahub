@@ -3,6 +3,7 @@
 > Unified spec template projection. Track: cli only (§T1); other track sections deleted per template rule.
 
 **Slug**: `v1-min-2026-07`  ·  **Track**: cli  ·  **Status**: draft
+**Plan**: [plans/14-mcp-surface.plan.md](../plans/14-mcp-surface.plan.md)
 **Created**: 2026-07-21  ·  **Owner**: yura
 **Footprint**: `internal/mcp/` (new package — stdio MCP server, tool registry
 mapping 1:1 to the §7.7-enumerated OP subset: `a2a_inbox`/`a2a_outbox`/

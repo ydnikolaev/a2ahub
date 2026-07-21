@@ -134,6 +134,7 @@ phases:
     title: MCP surface + CLI/MCP parity suite (tail)
     status: pending
     spec: specs/14-mcp-surface.md
+    plan: plans/14-mcp-surface.plan.md
     blocked_by: [P10]
     commits: []
     audit: open
