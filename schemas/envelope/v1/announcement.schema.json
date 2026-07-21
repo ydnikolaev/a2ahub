@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "envelope/v1/announcement.schema.json",
+  "title": "Envelope: announcement (v1)",
+  "allOf": [
+    { "$ref": "base.schema.json" },
+    {
+      "if": {
+        "properties": { "category": { "const": "deprecation" } },
+        "required": ["category"]
+      },
+      "then": { "required": ["deprecates"] }
+    }
+  ],
+  "type": "object",
+  "properties": {
+    "type": { "const": "announcement" },
+    "id": { "pattern": "^XA-" },
+    "category": {
+      "type": "string",
+      "enum": ["release", "deprecation", "migration", "incident", "notice", "status"]
+    },
+    "ack_requested": { "type": "boolean" },
+    "deprecates": { "type": "string", "pattern": "^XC-.+@[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "period": { "type": "string" }
+  },
+  "required": ["category"],
+  "patternProperties": { "^x_": true },
+  "unevaluatedProperties": false
+}

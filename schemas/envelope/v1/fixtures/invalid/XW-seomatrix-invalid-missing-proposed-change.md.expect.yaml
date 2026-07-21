@@ -1,0 +1,2 @@
+code: SCH-005
+note: "category `contract-change` requires `proposed_change` (§5.2.1); this fixture omits it."

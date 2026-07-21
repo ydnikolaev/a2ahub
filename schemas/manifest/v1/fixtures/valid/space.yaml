@@ -1,0 +1,18 @@
+schema: space/v1
+space: getvisa
+min_binary_version: 0.1.0
+gates: default                    # G1–G5 per §3.7
+participants:
+  - system: axon
+    org: yura
+    section: axon/
+    owners: [ydnikolaev]
+    status: active
+    joined: 2026-07-28
+  - system: seomatrix
+    org: seomatrix
+    section: seomatrix/
+    owners: [misha-gh]
+    status: active
+    joined: 2026-07-28
+vendored: []

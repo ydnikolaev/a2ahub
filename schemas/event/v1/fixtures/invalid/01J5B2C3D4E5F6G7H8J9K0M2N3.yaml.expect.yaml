@@ -1,0 +1,2 @@
+code: SCH-002
+note: "`transition: teleport` is not in event.schema.json's closed transition enum (§5.2.2, union of all §3.4 transition names + note)."

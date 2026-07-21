@@ -1,0 +1,2 @@
+code: SCH-001
+note: event.schema.json requires `subject` (§5.2.2); this fixture omits it.

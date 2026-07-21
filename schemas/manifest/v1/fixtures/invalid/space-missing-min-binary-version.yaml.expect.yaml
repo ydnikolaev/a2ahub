@@ -1,0 +1,2 @@
+code: SCH-001
+note: space.schema.json requires `min_binary_version` (D-013, §5.4); this fixture omits it.

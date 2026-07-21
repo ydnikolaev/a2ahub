@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "consumes/v1/consumes.schema.json",
+  "title": "Consumer registry — consumes.yaml (v1)",
+  "description": "Space-visible SSOT of contract dependencies per the-plan §5.2.3.",
+  "type": "object",
+  "properties": {
+    "schema": { "const": "consumes/v1" },
+    "system": { "type": "string" },
+    "dependencies": {
+      "type": "array",
+      "description": "Zero deps is legal (empty array must still validate).",
+      "items": {
+        "type": "object",
+        "properties": {
+          "contract": { "type": "string", "pattern": "^XC-" },
+          "major": { "type": "integer", "minimum": 0 },
+          "since": { "type": "string", "format": "date" },
+          "note": { "type": "string" }
+        },
+        "required": ["contract", "major", "since"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "system", "dependencies"],
+  "additionalProperties": false
+}

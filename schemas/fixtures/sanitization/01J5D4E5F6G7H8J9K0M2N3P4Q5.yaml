@@ -1,0 +1,8 @@
+schema: event/v1
+event: 01J5D4E5F6G7H8J9K0M2N3P4Q5
+space: getvisa
+subject: XQ-axon-20260901-s4n1
+transition: note
+actor: {kind: agent, name: claude, system: seomatrix}
+at: 2026-09-01T12:05:00Z
+note: "Adversarial note with control chars: bell=\x07 esc=\x1B tab=\t and raw <script>alert(1)</script> -- must render inert (section 13.4), still schema-valid."

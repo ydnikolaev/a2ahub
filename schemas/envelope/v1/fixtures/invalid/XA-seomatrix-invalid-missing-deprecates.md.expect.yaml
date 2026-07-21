@@ -1,0 +1,2 @@
+code: SCH-005
+note: "category `deprecation` requires `deprecates: <XC-id>@<version>` (§3.4.7); this fixture omits it."

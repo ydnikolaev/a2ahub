@@ -1,0 +1,2 @@
+code: SCH-002
+note: "`category: sunset` is outside announcement's closed enum (release|deprecation|migration|incident|notice|status, §5.2.1)."

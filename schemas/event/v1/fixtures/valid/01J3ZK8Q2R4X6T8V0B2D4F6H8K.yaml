@@ -1,0 +1,9 @@
+schema: event/v1
+event: 01J3ZK8Q2R4X6T8V0B2D4F6H8K
+space: getvisa
+subject: XR-axon-country-vocabulary
+transition: acknowledge
+state: acknowledged
+actor: {kind: agent, name: claude, system: seomatrix}
+at: 2026-07-29T15:20:00Z
+note: "Linked to factory epic; ETA in accept to follow."

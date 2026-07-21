@@ -1,0 +1,2 @@
+code: SCH-003
+note: "`decision` has no `category` field per §5.2.1 — decision.schema.json's unevaluatedProperties:false rejects it."

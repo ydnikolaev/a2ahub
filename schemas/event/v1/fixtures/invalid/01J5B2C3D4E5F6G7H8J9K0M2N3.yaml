@@ -1,0 +1,8 @@
+schema: event/v1
+event: 01J5B2C3D4E5F6G7H8J9K0M2N3
+space: getvisa
+subject: XR-axon-country-vocabulary
+transition: teleport
+state: acknowledged
+actor: {kind: agent, name: claude, system: seomatrix}
+at: 2026-07-29T15:20:00Z
