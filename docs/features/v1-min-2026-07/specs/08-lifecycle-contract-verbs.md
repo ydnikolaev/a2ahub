@@ -9,6 +9,7 @@
 
 **Slug**: `v1-min-2026-07`  ·  **Track**: cli  ·  **Status**: draft
 **Created**: 2026-07-21  ·  **Owner**: yura
+**Plan**: [plans/08-lifecycle-contract-verbs.plan.md](../plans/08-lifecycle-contract-verbs.plan.md)
 **Footprint**: `internal/cli/` (new: `cmd_lifecycle.go` for all OP-211
 generic lifecycle verbs; `cmd_contract.go` for OP-212/213 + the
 `contract diff` slice of OP-221), `internal/validate/` (named addition

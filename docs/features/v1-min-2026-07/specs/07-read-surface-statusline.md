@@ -4,6 +4,7 @@
 
 **Slug**: `v1-min-2026-07`  ·  **Track**: cli  ·  **Status**: draft
 **Created**: 2026-07-21  ·  **Owner**: yura
+**Plan**: [plans/07-read-surface-statusline.plan.md](../plans/07-read-surface-statusline.plan.md)
 **Footprint**: `internal/cache/` (new package — folded views, per-system read
 cursors, staleness), `internal/cli/cmd_inbox.go`, `internal/cli/cmd_outbox.go`,
 `internal/cli/cmd_show.go`, `internal/cli/cmd_thread.go`,
