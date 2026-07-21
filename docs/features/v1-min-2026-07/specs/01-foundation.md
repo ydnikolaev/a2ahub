@@ -2,12 +2,19 @@
 
 **Slug**: `v1-min-2026-07`  ·  **Track**: cli  ·  **Status**: draft
 **Created**: 2026-07-21  ·  **Owner**: yura
-**Footprint**: `go.mod`, `go.sum`, `cmd/a2a/`, `internal/artifact/`, `.github/workflows/ci.yml` —
+**Footprint**: `go.mod`, `go.sum`, `cmd/a2a/`, `internal/artifact/`, `.golangci.yml`, `.github/workflows/ci.yml` —
 Go module init (module path `github.com/ydnikolaev/a2ahub`, per the GitHub
 remote), the `a2a` binary's subcommand-dispatch skeleton + version stamp,
 artifact ID mint/parse/validate + frontmatter parse/serialize + digest
-primitives + ULID mint/parse for lifecycle event IDs (§5.2.2), and the
-product-repo CI workflow running `make check`.
+primitives + ULID mint/parse for lifecycle event IDs (§5.2.2), the
+`.golangci.yml` lint config (once it exists, `make check` refuses to run
+without `golangci-lint` installed — a configured gate never silently skips),
+and the product-repo CI workflow running `make check`.
+**Engineering rails**: all code in this phase — and every phase after it —
+conforms to root `AGENTS.md § a2ahub engineering rails` (stdlib-first stack,
+ISP/DI, idempotency-by-design, error flow, concurrency, testing rails,
+anti-pattern table). P1 sets the patterns every later wave copies; the
+S6.c.3 early-audit checks THIS spec's output against that file first.
 `internal/artifact` imports **stdlib + ADR-002 deps only** (`gopkg.in/yaml.v3`
 for frontmatter, `github.com/oklog/ulid/v2` for event IDs — ADR-001,
 ADR-002). `cmd/a2a` may import anything under `internal/` (ADR-001).
@@ -234,3 +241,13 @@ Full loop (README/tracker/specs shapes, lint gate):
    `artifact` layer; enum-closedness deferred to P2/`internal/validate`) —
    noted here so a P2 author can check the interpretation against their own
    reading, not because the plan itself is contradictory.
+
+### 2026-07-21 — engineering rails + lint gate (pre-implementation)
+
+- **Root `AGENTS.md § a2ahub engineering rails` created** (ported/adapted
+  from the axon backend rails, server/DB specifics stripped) and made the
+  SSOT for Go discipline; `.claude/rules/go-conventions.md` demoted to a
+  pointer. This phase's Footprint gains `.golangci.yml`; `make check` now
+  fails loudly if the config exists but `golangci-lint` is missing.
+  Conformance to the rails is a phase-entry requirement, and the
+  pattern-setting early-audit (teamlead S6.c.3) audits against that file.

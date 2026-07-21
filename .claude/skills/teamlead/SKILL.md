@@ -301,7 +301,7 @@ The docs are already true (S8.4). S11 is only what needs consent: changes to the
 
 | Trigger | Proposal |
 |---|---|
-| Recurring code mistake (≥2 occurrences) | New row in [.claude/rules/go-conventions.md](../../rules/go-conventions.md) §Anti-patterns |
+| Recurring code mistake (≥2 occurrences) | New row in root `AGENTS.md` §Anti-patterns (the engineering-rails SSOT) |
 | New pattern other code will copy | Entry in `docs/decisions.md` |
 | Non-obvious lesson that survives this codebase state | Memory entry (per the session memory conventions) |
 | Sub-agent rule/skill/brief-template gap | Edit to `.claude/skills/*` / `.claude/agents/*` — but check the mate stamp first: a `mate_synced` artifact is fixed upstream, never locally (harness-discipline) |
@@ -392,7 +392,7 @@ All file paths are REPO-RELATIVE — they resolve against the repo root.
 ## Spec / context links
 - Spec: <docs/features/<slug>/specs/NN-*.md or "inline — see below">
 - Plan-corpus IDs to respect: <R-### / AC-### / D-### with one-line summaries>
-- Anti-patterns to avoid: <rows from .claude/rules/go-conventions.md>
+- Anti-patterns to avoid: <rows from root AGENTS.md §Anti-patterns / §Pre-flight checklist>
 
 ## Allowed files (allowlist) — REPO-RELATIVE ONLY
 - internal/validate/codes.go     # ✅

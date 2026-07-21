@@ -31,6 +31,6 @@ Nothing touched and no argument → ask which stack; never run every gate blindl
 
 ## Coverage
 
-- Go coverage floor: 70% for `internal/...` (SSOT: [go-conventions.md](go-conventions.md)).
+- Go coverage floor: 70% for `internal/...` (SSOT: root `AGENTS.md` §Testing rails).
   Raising is a normal commit; lowering requires an explicit user-approved
   decision.

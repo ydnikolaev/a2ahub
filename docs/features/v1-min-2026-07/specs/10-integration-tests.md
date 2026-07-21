@@ -12,7 +12,9 @@ job itself is P1's). May import: `internal/e2e` may import any
 package (ADR-001 core-package rules apply to production code; test-only
 harness code reusing `space`'s mirror-clone helpers is not a boundary
 violation) plus stdlib `testing`/`os/exec`/`net/http/httptest` for the
-simulated host. Never imports `internal/mcp` — parity is P14 (tail item).
+simulated host, plus `github.com/rogpeppe/go-internal/testscript` (ADR-002,
+test-only) — the normative T3/T5-lite driver. Never imports `internal/mcp` —
+parity is P14 (tail item).
 
 ---
 
@@ -93,6 +95,7 @@ L4's exit criterion ("every CC mapped to a green test", 15-rollout.md).
 | Area | What to test | Edge cases |
 |------|--------------|------------|
 | T3 fixture builder | a local bare repo + N clones simulating three systems (per SCOPE); builds/tears down per test | clone reuse across cases must not leak state between tests |
+| T3 mechanism (normative) | per-verb suites are `testscript` `.txtar` scripts (`rogpeppe/go-internal/testscript` per ADR-002 and AGENTS.md §Testing rails): `testscript.Main` registers the `a2a` binary once; each script runs verbs against a fixture space wired in via `Setup`; assertions on stdout/stderr/exit codes + `cmp` against golden files | scripts must stay OP-contract-level (exit codes, JSON output) — never reach into internal package state; fixture path injection via env, not cwd assumptions |
 | T3 per-verb suite | each v1-min-shipped OP-2xx run against the fixture: `init connect new validate submit sync inbox outbox show thread lifecycle-verbs contract-new/publish/deprecate/retire verify-export statusline doctor template-list submit-batch search contracts contract-diff` (OP-201–213, 215, 218–221) | idempotent re-run is a no-op (AC-301.1); offline/no-hub path works via direct git (AC-301.3, CC-042); `from` mismatch refused locally (CC-002); draft passes V1 before edits (AC-401.1) |
 | T3 exclusions | OP-214 (`html`, v2 per 15-rollout.md), OP-216 (`mcp`, P14 tail), OP-217 (`update`, v2), `doctor --space` (v2 per README) — none are shipped in v1-min, none are exercised here | — |
 | E2E-1 | full §1.3 cascade: requirement → ack → downstream requirement → contract version → response → verify → `satisfy`; assert every intermediate folded state and the statusline signal at each step | asserts the git-fallback (no-hub) path only — see §11 Amendment on step 2/7 scope |
@@ -175,3 +178,12 @@ log-or-return. Full loop: [docs/features/README.md](../../README.md).
   edits and maps them into `cc-coverage.yaml`; it does not author or
   duplicate them. Sanitization fixtures have no upstream owner in the plan
   and are authored here under `internal/e2e/testdata/`.
+
+### 2026-07-21 — testing environment made normative (pre-implementation)
+
+- **`testscript` is the T3/T5-lite mechanism**, not an implementation choice:
+  `rogpeppe/go-internal/testscript` (the harness `cmd/go`'s own tests use)
+  added to ADR-002 as test-only; per-verb suites are `.txtar` scripts under
+  `internal/e2e/testdata/`, asserting on the OP contract (exit codes,
+  JSON/stdout, golden `cmp`) against the throwaway git space fixture. See
+  AGENTS.md §Testing rails; footprint and §6 updated to match.

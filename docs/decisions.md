@@ -63,11 +63,16 @@ product value.
 | `gopkg.in/yaml.v3` | YAML parse/serialize | `artifact`, `schema`, `space` |
 | `github.com/santhosh-tekuri/jsonschema/v6` | JSON Schema 2020-12 engine | `validate` (via `schema`) |
 | `github.com/oklog/ulid/v2` | ULID mint/parse for events | `artifact` |
+| `github.com/rogpeppe/go-internal/testscript` | CLI e2e harness (`.txtar` scripts) — **test-only** | `internal/e2e`, T3/T5-lite (amended 2026-07-21) |
 
-Test-only helpers stay stdlib (`testing`, golden files). Anything beyond
-this table — including git/GitHub client libraries for `host`/`space`
-(default posture: shell out to system `git`; GitHub REST via `net/http`) —
-requires a new ADR entry before it enters `go.mod`.
+Other test helpers stay stdlib (`testing`, golden files); if a bare-bones
+assertion helper proves insufficient for the async tiers
+(`require.Eventually`), `stretchr/testify` is pre-approved as test-only.
+Tools that never enter `go.mod` (binaries invoked by the gate):
+`golangci-lint` (config `.golangci.yml`, authored in P1), `govulncheck`.
+Anything beyond this table — including git/GitHub client libraries for
+`host`/`space` (default posture: shell out to system `git`; GitHub REST via
+`net/http`) — requires a new ADR entry before it enters `go.mod`.
 
 **Consequences.** ADR-001's `internal/artifact` row reads "stdlib + ADR-002
 deps"; coder-agent briefs keep the "no new dependencies" invariant — the

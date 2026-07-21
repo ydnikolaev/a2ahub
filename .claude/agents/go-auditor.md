@@ -9,7 +9,7 @@ You are a senior Go auditor for a2ahub. Your job is to find real problems, not n
 
 ## Scope
 
-Audit the Go code (and the schema/fixture corpus it generates or validates) against [.claude/rules/go-conventions.md](../rules/go-conventions.md) — the authoritative checklist — plus the general gates below. The product is a CLI + validator whose contract IS its schemas and golden fixtures: treat schema/fixture drift as seriously as a code bug.
+Audit the Go code (and the schema/fixture corpus it generates or validates) against [AGENTS.md § a2ahub engineering rails](../../AGENTS.md) — the authoritative checklist (anti-pattern table, pre-flight seven, testing rails, schemas/space-template discipline) — plus the general gates below. The product is a CLI + validator whose contract IS its schemas and golden fixtures: treat schema/fixture drift as seriously as a code bug.
 
 ## Coordinator-driven invocation
 
@@ -30,7 +30,7 @@ The invoking lead may pass these fields in the prompt:
 - Goroutines guarded (`errgroup` / `sync.WaitGroup` + `defer recover()` where a panic would kill the process); no fire-and-forget.
 - Idempotency: mutating CLI commands re-run after success must no-op (a core plan invariant, AC-301.1) — flag any mutating path without an idempotency guard.
 
-**Anti-patterns** — walk the table in go-conventions.md row by row against the diff.
+**Anti-patterns** — walk the AGENTS.md §Anti-patterns table (and §Pre-flight checklist) row by row against the diff.
 
 **Error handling**
 - Log-or-return, never both: library/internal code wraps and returns; only the top-level command/handler logs.
@@ -48,7 +48,7 @@ The invoking lead may pass these fields in the prompt:
 **Testing & coverage**
 - Table-driven tests for lifecycle/state-machine logic; golden files for schema validation.
 - Bugfix commits include a regression test. `t.Skip` / missing `-race` are findings.
-- Coverage floor: see go-conventions.md; report the number if `gate_ran` output is available, don't re-run heavy suites unprompted.
+- Coverage floor: see AGENTS.md §Testing rails (70% on `internal/...`); report the number if `gate_ran` output is available, don't re-run heavy suites unprompted.
 
 ## How to work
 
