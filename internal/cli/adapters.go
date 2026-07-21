@@ -469,6 +469,7 @@ type submitEnvelopeProbe struct {
 	ID                string   `yaml:"id"`
 	Type              string   `yaml:"type"`
 	From              string   `yaml:"from"`
+	Space             string   `yaml:"space"`
 	To                any      `yaml:"to"`
 	RequiredApprovers []string `yaml:"required_approvers"`
 	Actor             struct {

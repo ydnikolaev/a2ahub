@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -264,17 +265,15 @@ type submitItem struct {
 // validation failure, or a funnel/IO error; 0 = success (including the
 // idempotent already-submitted no-op, whether whole or per-artifact).
 func (c *SubmitCommand) Run(ctx context.Context, args []string, stdio IO) int {
-	fs := flag.NewFlagSet("submit", flag.ContinueOnError)
-	fs.SetOutput(stdio.Stderr)
-	batch := fs.Bool("batch", false, "submit multiple staged artifacts as one commit + one PR (all-or-nothing)")
-	drafts := fs.Bool("drafts", false, "submit every staged draft under .a2a/staging/ as one batch")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-
-	targets, code := c.resolveTargets(*batch, *drafts, fs.Args(), stdio)
-	if code >= 0 {
-		return code
+	targets, err := ResolveSubmitTargets(c.stagingDir, args)
+	if err != nil {
+		var ue *SubmitUsageError
+		if errors.As(err, &ue) {
+			_, _ = fmt.Fprintln(stdio.Stderr, ue.Error())
+			return 2
+		}
+		_, _ = fmt.Fprintf(stdio.Stderr, "submit: %v\n", err)
+		return 1
 	}
 	if len(targets) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stdout, "submit: nothing to submit")
@@ -292,6 +291,17 @@ func (c *SubmitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	for _, it := range items {
 		if it.env.From != c.ownSystem {
 			_, _ = fmt.Fprintf(stdio.Stderr, "submit: %s: refused (CC-002 foreign-section): artifact `from` %q does not match configured own system %q\n", it.path, it.env.From, c.ownSystem)
+			return 1
+		}
+	}
+
+	// One commit -> one PR -> one repo (D-002/OP-220): every item in a
+	// batch MUST target the same space, else the funnel would stamp a
+	// falsified `space` on artifacts belonging elsewhere. Guard before any
+	// git/network work.
+	for _, it := range items {
+		if it.env.Space != items[0].env.Space {
+			_, _ = fmt.Fprintf(stdio.Stderr, "submit: refused: batch spans multiple spaces (%q vs %q) — one submit is one space\n", items[0].env.Space, it.env.Space)
 			return 1
 		}
 	}
@@ -336,53 +346,70 @@ func (c *SubmitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 }
 
-// resolveTargets computes the target draft paths from flags/args. A
-// non-negative second return means "stop and return this exit code"
-// (usage error); -1 means "targets is the answer, continue".
-func (c *SubmitCommand) resolveTargets(batch, allDrafts bool, args []string, stdio IO) ([]string, int) {
+// SubmitUsageError is a resolvable usage error from ResolveSubmitTargets —
+// callers map it to exit code 2 (usage) and print its message.
+type SubmitUsageError struct{ msg string }
+
+func (e *SubmitUsageError) Error() string { return e.msg }
+
+// ResolveSubmitTargets is the SINGLE parser+resolver of `a2a submit`'s
+// arg grammar (§7.2 OP-205/OP-220), shared by SubmitCommand.Run and the
+// cmd/a2a wiring closure so neither drifts from the other:
+//   - `submit --drafts`               -> every *.md under stagingDir
+//   - `submit --batch <a...>`         -> each arg resolved (>=1 required)
+//   - `submit <artifact>`             -> exactly one arg resolved
+//
+// Each non-flag arg is a staged-draft path OR a bare artifact id (resolved
+// to <stagingDir>/<id>.md), per OP-205's own Input column. A malformed
+// invocation returns a *SubmitUsageError.
+func ResolveSubmitTargets(stagingDir string, args []string) ([]string, error) {
+	fs := flag.NewFlagSet("submit", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	batch := fs.Bool("batch", false, "")
+	drafts := fs.Bool("drafts", false, "")
+	if err := fs.Parse(args); err != nil {
+		return nil, &SubmitUsageError{msg: "usage: a2a submit <artifact> | a2a submit --batch <artifact...> | a2a submit --drafts"}
+	}
 	switch {
-	case allDrafts:
-		entries, err := os.ReadDir(c.stagingDir)
+	case *drafts:
+		entries, err := os.ReadDir(stagingDir)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return nil, -1
+				return nil, nil
 			}
-			_, _ = fmt.Fprintf(stdio.Stderr, "submit: cannot list %s: %v\n", c.stagingDir, err)
-			return nil, 1
+			return nil, fmt.Errorf("cannot list %s: %w", stagingDir, err)
 		}
 		var targets []string
 		for _, e := range entries {
 			if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-				targets = append(targets, filepath.Join(c.stagingDir, e.Name()))
+				targets = append(targets, filepath.Join(stagingDir, e.Name()))
 			}
 		}
-		return targets, -1
-	case batch:
-		if len(args) == 0 {
-			_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a submit --batch <artifact...>")
-			return nil, 2
+		return targets, nil
+	case *batch:
+		if fs.NArg() == 0 {
+			return nil, &SubmitUsageError{msg: "usage: a2a submit --batch <artifact...>"}
 		}
-		targets := make([]string, 0, len(args))
-		for _, a := range args {
-			targets = append(targets, c.resolveTarget(a))
+		targets := make([]string, 0, fs.NArg())
+		for _, a := range fs.Args() {
+			targets = append(targets, resolveSubmitTarget(stagingDir, a))
 		}
-		return targets, -1
+		return targets, nil
 	default:
-		if len(args) != 1 {
-			_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a submit <artifact> | a2a submit --batch <artifact...> | a2a submit --drafts")
-			return nil, 2
+		if fs.NArg() != 1 {
+			return nil, &SubmitUsageError{msg: "usage: a2a submit <artifact> | a2a submit --batch <artifact...> | a2a submit --drafts"}
 		}
-		return []string{c.resolveTarget(args[0])}, -1
+		return []string{resolveSubmitTarget(stagingDir, fs.Arg(0))}, nil
 	}
 }
 
-// resolveTarget accepts either a staged-draft path or a bare artifact id
-// (resolved to <stagingDir>/<id>.md), per §7.2 OP-205's own Input column.
-func (c *SubmitCommand) resolveTarget(a string) string {
+// resolveSubmitTarget accepts either a staged-draft path or a bare artifact
+// id (resolved to <stagingDir>/<id>.md), per §7.2 OP-205's Input column.
+func resolveSubmitTarget(stagingDir, a string) string {
 	if strings.Contains(a, "/") || strings.HasSuffix(a, ".md") {
 		return a
 	}
-	return filepath.Join(c.stagingDir, a+".md")
+	return filepath.Join(stagingDir, a+".md")
 }
 
 func (c *SubmitCommand) loadItems(targets []string) ([]submitItem, error) {
@@ -455,9 +482,13 @@ func (c *SubmitCommand) buildRequest(fresh []submitItem) (space.SubmitRequest, [
 			return space.SubmitRequest{}, nil, fmt.Errorf("cannot mint event id: %w", err)
 		}
 		eventDoc := submitEventDoc{
-			Schema:     "event/v1",
-			Event:      eventID.String(),
-			Space:      c.spaceID,
+			Schema: "event/v1",
+			Event:  eventID.String(),
+			// Stamp the event's space from the artifact's OWN declared
+			// space, never the connected-space id — the cross-space guard
+			// above guarantees the whole batch shares one space, so this is
+			// consistent and never falsified (wave-3 audit MED).
+			Space:      it.env.Space,
 			Subject:    it.env.ID,
 			Transition: transition,
 			Actor:      submitEventActor{Kind: it.env.Actor.Kind, Name: it.env.Actor.Name, System: c.ownSystem},

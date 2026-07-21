@@ -164,32 +164,53 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return failf(stderr, "a2a submit: no project config (run `a2a init` first): %v", err)
 	}
-	machine, err := space.LoadMachineConfig(p.machineConfig)
-	if err != nil {
-		return failf(stderr, "a2a submit: no machine config (%s): %v", p.machineConfig, err)
-	}
 
-	// Resolve the artifact(s) named on the command line to their staged
-	// files, read the first's envelope facts (local, no network).
-	artifactPaths, err := submitArtifactPaths(args, p.staging)
+	// Resolve the artifact(s) named on the command line via the SINGLE
+	// shared submit-arg resolver (no drifted second copy) — this is what
+	// makes `--drafts`, `--batch`, and the bare-id form reach the same
+	// targets the SubmitCommand will resolve. Then read every target's
+	// envelope facts LOCALLY (no network) so the config-only guards below
+	// run before any mirror clone (AC-201.3).
+	targets, err := cli.ResolveSubmitTargets(p.staging, args)
 	if err != nil {
 		return failf(stderr, "a2a submit: %v", err)
 	}
-	env, err := readEnvelopeFacts(artifactPaths[0])
-	if err != nil {
-		return failf(stderr, "a2a submit: %v", err)
+	if len(targets) == 0 {
+		_, _ = fmt.Fprintln(stdout, "submit: nothing to submit")
+		return 0
+	}
+	facts := make([]envelopeFacts, 0, len(targets))
+	for _, t := range targets {
+		f, err := readEnvelopeFacts(t)
+		if err != nil {
+			return failf(stderr, "a2a submit: %v", err)
+		}
+		facts = append(facts, f)
 	}
 
-	// AC-201.3 (config-only, BEFORE any clone/network): refuse a
-	// foreign-section artifact whose `from` is not this system.
-	if env.from != cfg.System {
-		return failf(stderr, "a2a submit: refused — artifact `from: %s` is not this system (%s) [CC-002]", env.from, cfg.System)
+	// AC-201.3 (config-only, BEFORE any clone/network): refuse any
+	// foreign-section artifact whose `from` is not this system, and refuse
+	// a batch spanning multiple spaces (one submit = one space = one PR).
+	for _, f := range facts {
+		if f.from != cfg.System {
+			return failf(stderr, "a2a submit: refused — artifact `from: %s` is not this system (%s) [CC-002]", f.from, cfg.System)
+		}
+		if f.space != facts[0].space {
+			return failf(stderr, "a2a submit: refused — batch spans multiple spaces (%q vs %q)", facts[0].space, f.space)
+		}
 	}
 
 	// Resolve the target space from the artifact's `space` field.
-	ref, ok := findSpace(cfg, env.space)
+	ref, ok := findSpace(cfg, facts[0].space)
 	if !ok {
-		return failf(stderr, "a2a submit: artifact space %q is not a connected space (run `a2a connect`)", env.space)
+		return failf(stderr, "a2a submit: artifact space %q is not a connected space (run `a2a connect`)", facts[0].space)
+	}
+
+	// Machine config (credential refs + mirror root) is needed only from
+	// here on — after the config-only guards, before any network work.
+	machine, err := space.LoadMachineConfig(p.machineConfig)
+	if err != nil {
+		return failf(stderr, "a2a submit: no machine config (%s): %v", p.machineConfig, err)
 	}
 
 	mirrorDir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
@@ -262,28 +283,6 @@ func readEnvelopeFacts(path string) (envelopeFacts, error) {
 		return envelopeFacts{}, fmt.Errorf("draft %s: missing `from` or `space`", path)
 	}
 	return envelopeFacts{from: from, space: sp}, nil
-}
-
-// submitArtifactPaths turns the submit args into staged file paths. It
-// accepts `submit <artifact>`; batch/drafts flag parsing is SubmitCommand's
-// own concern, but the closure needs at least one path to read the target
-// space, so it extracts the first non-flag argument here.
-func submitArtifactPaths(args []string, staging string) ([]string, error) {
-	var out []string
-	for _, a := range args {
-		if strings.HasPrefix(a, "-") {
-			continue
-		}
-		if filepath.IsAbs(a) || strings.Contains(a, string(filepath.Separator)) {
-			out = append(out, a)
-		} else {
-			out = append(out, filepath.Join(staging, a))
-		}
-	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("no artifact named (usage: a2a submit <artifact>)")
-	}
-	return out, nil
 }
 
 func findSpace(cfg space.ProjectConfig, spaceID string) (space.Ref, bool) {
