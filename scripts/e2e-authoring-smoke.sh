@@ -26,4 +26,10 @@ echo "==> template list"; run template list
 echo "==> new question"; run new question --field title="Which ISO codes?" --field space=getvisa
 echo "==> validate --all"; run validate --all
 
-echo "==> OK: authoring path green"
+# Read surface (P7) — pre-onboarding / no-mirror state must be graceful:
+# statusline silent+exit0 (CC-092), inbox/outbox empty JSON array.
+echo "==> statusline (silent, exit 0 when nothing actionable)"; run statusline; echo "   statusline exit=$?"
+echo "==> inbox --json (empty array before any content)"; run inbox --json
+echo "==> outbox --json"; run outbox --json
+
+echo "==> OK: authoring + read path green"
