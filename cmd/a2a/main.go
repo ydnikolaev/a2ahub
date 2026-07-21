@@ -30,20 +30,17 @@ func main() {
 // command is one dispatch-table entry. args excludes the command name.
 type command func(args []string, stdout, stderr io.Writer) int
 
-// dispatch is the single seam later phases (OP-2xx, §7.2) append verbs to.
-var dispatch = map[string]command{
-	"version": runVersion,
-}
-
 // run implements the full CLI surface (T1): no subcommand -> usage to
 // stderr, exit 2; a registered subcommand -> that command's exit code; an
 // unrecognized subcommand -> "unknown command "<x>"" to stderr, exit 2.
+// The OP-2xx verbs are built lazily (wire.go) so a bare `a2a version` never
+// requires a config file on disk.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		printUsage(stderr)
 		return 2
 	}
-	cmd, ok := dispatch[args[0]]
+	cmd, ok := buildCommands()[args[0]]
 	if !ok {
 		_, _ = fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
@@ -57,7 +54,16 @@ func printUsage(w io.Writer) {
 	// through every dispatch-table command's signature.
 	_, _ = fmt.Fprintln(w, "usage: a2a <command> [args...]")
 	_, _ = fmt.Fprintln(w, "commands:")
-	_, _ = fmt.Fprintln(w, "  version   print the binary version stamp")
+	_, _ = fmt.Fprintln(w, "  init        set up project config (.a2a/config.yaml)")
+	_, _ = fmt.Fprintln(w, "  connect     register + mirror-clone a space")
+	_, _ = fmt.Fprintln(w, "  disconnect  remove a connected space")
+	_, _ = fmt.Fprintln(w, "  new         draft an artifact from a template")
+	_, _ = fmt.Fprintln(w, "  template    list / show canonical templates")
+	_, _ = fmt.Fprintln(w, "  validate    validate a draft (V1/V2)")
+	_, _ = fmt.Fprintln(w, "  submit      validate + open a PR for a draft")
+	_, _ = fmt.Fprintln(w, "  sync        fetch all connected spaces")
+	_, _ = fmt.Fprintln(w, "  doctor      diagnose config / space / credentials")
+	_, _ = fmt.Fprintln(w, "  version     print the binary version stamp")
 }
 
 func runVersion(_ []string, stdout, _ io.Writer) int {
