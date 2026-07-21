@@ -1,0 +1,45 @@
+# Machine-readable phase tracker for an epic. Lint-gated by feature-lint in `make check`
+# (scripts/check-feature-lint.sh).
+# Required for `kind: epic`. The README's Phases table is the human view; this is the source of truth.
+#
+# status (feature):  draft | active | shipped | superseded | archived
+# status (phase):    pending | in-progress | done | deferred
+# audit (phase):     open | done | n/a
+#
+# blocked_by — the dependency DAG a lead turns into parallel waves:
+#   - local:      blocked_by: [P1]                    (IDs must exist in phases:, no cycles)
+#   - cross-epic: blocked_by: ["<epic-slug>:PN"]      (that epic must be in the README's related:)
+#   Edges = true data/interface dependencies only; every edge serializes a wave.
+#   Phase status=done (audit != n/a) requires commits: non-empty. All gated by feature-lint.
+#
+# strategy: names the critical path + the parallel groups.
+
+slug: <slug>
+status: active
+updated: <YYYY-MM-DD>
+strategy: <one line — e.g. "critical path P1->P2; P3 parallel to P2 from day 0">
+
+phases:
+  - id: P1
+    title: <phase outcome>
+    status: pending
+    spec: specs/01-<name>.md
+    blocked_by: []
+    commits: []
+    audit: open
+  - id: P2
+    title: <phase outcome>
+    status: pending
+    spec: specs/02-<name>.md
+    blocked_by: [P1]
+    commits: []
+    audit: open
+  - id: P3
+    title: <phase outcome — file-disjoint from P2, so it rides the same wave layer>
+    status: pending
+    spec: specs/03-<name>.md
+    blocked_by: [P1]
+    commits: []
+    audit: open
+
+deferred: []   # [{item, reason, tracker}]

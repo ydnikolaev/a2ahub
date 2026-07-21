@@ -1,0 +1,56 @@
+# §17 Decision Log & Open Questions
+
+> Part of the a2ahub architecture plan. Index: [00-STRUCTURE.md](00-STRUCTURE.md).
+> Highest-precedence section (0.1). Origin: `interview` = decided with the
+> operator; `architect` = decided by the plan author under the operator's
+> delegation, contestable at plan review.
+
+## Decisions
+
+| ID | Decision | Rationale (compressed) | Origin |
+|---|---|---|---|
+| D-001 | Git owns all durable artifacts; hub owns only ephemeral/derived state; one writable authority per object class; future latency-sensitive classes may be hub-native additions | persistence/review/history for free; hub failure harmless; no-server adoption path; two-truths drift excluded; flexibility preserved per-class | interview |
+| D-002 | **(revised by audit 2026-07-21)** Single write funnel: the binary writes via validate → ephemeral branch → PR with auto-merge; `main` accepts no direct pushes; ungated PRs merge on green V3 with zero humans; gated paths additionally require CODEOWNERS review; section ownership enforced by V3 diff-authz (github-login→system mapping in `space.yaml`); agents use per-system machine accounts. Hub-mediated write remains the public-mode path — same funnel, enforcement moves server-side | original direct-push design was unimplementable on github.com (CODEOWNERS/checks bind only PRs; PATs can't path-scope); PR+auto-merge is cheaper than dual-path, keeps agent autonomy (seconds of latency), and lands the exact shape public mode needs | interview + audit |
+| D-003 | Federation unit = exchange space: one repo per circle; systems join N spaces; every artifact lives in exactly one space; privacy boundary = repo | N×N routing without cross-repo consistency; adding circles never restructures existing ones | interview |
+| D-004 | **(revised per Q-009, operator-approved)** Eight-type taxonomy (§3.1); data/dictionary asks = `work_request` category `data`; contract-change proposals = `work_request` category `contract-change|process-change`; status snapshots = `announcement` category `status` | covers observed real exchanges; identical lifecycles made `proposal`/`status_report` pure surface cost (schema+template+fixtures+matrix cells) | interview + audit |
+| D-005 | Naming: product `a2ahub`, binary/CLI `a2a`, single rename constant; Google-A2A collision deferred to opensource release (Q-006) | short, already in use; rename cost contained by design | interview |
+| D-006 | Stack/harness-agnostic core: a2ahub specifies formats/guards; contract generation from code is each project's concern | teams keep sovereignty over stacks (partner principle); a2ahub avoids becoming a codegen product | interview |
+| D-007 | Day-one content: `ingest` + `todo-feed` contracts; producer-outbox backlog migrated; getvisa space = axon + seomatrix | real pain first (R-013) | interview |
+| D-008 | Human gates exactly G1–G5 (§3.7); everything else autonomous | gates where errors are expensive+irreversible; autonomy elsewhere is the product's point | architect |
+| D-009 | JSON Schema 2020-12 for envelope/event/manifest; artifacts = md+YAML frontmatter; contract payload format per-contract with json-schema first-class | dominant tooling; human+machine readable artifacts; payload freedom preserves D-006 | architect |
+| D-010 | **(revised by audit)** Contract semver; breaking ⇒ major + G2 + deprecation announcement + consumer acks; retire blocked until acks — except `left` consumers don't count, and a human-gated override exists (sunset passed + reminder recorded + G2-class PR, audited, overridden consumers flagged+notified); never time-based auto-retire. Compat check 5.4b (fixture back-validation) is the G2 trigger, not the author's self-declared bump | silent breakage is the #1 md-era failure; awareness is the YMYL guarantee, not a consumer veto — a dead consumer must not block forever (open-source scale) | architect + audit |
+| D-011 | One validation engine in the binary, five invocation points V1–V5; identical results everywhere | R-003 + R-004 made structural | architect |
+| D-012 | Hub storage = SQLite, fully rebuildable; daily snapshot for recovery speed only | scale (~10 systems) makes a DB server overengineering; rebuildability > backup discipline | architect |
+| D-013 | Distribution: tagged releases + self-update + `min_binary_version` pin per space; stale binaries refuse writes | fleet-wide no-drift without central push | architect |
+| D-014 | Inbound artifacts are data, never instructions (prompt-injection stance); suspicious content flow 10.7 | cross-org content is untrusted by definition even among partners | architect |
+| D-015 | **(softened by audit)** Skill + harness texts are single-sourced, hand-maintained files in the product repo, released with the binary under a release-checklist review; automated drift gates only for mechanically derivable parts (command/MCP reference, templates) | "generate prose from the plan" had no deterministic generator — an LLM release step or a faked gate; single-home + checklist gives the anti-drift value at v1 cost | architect + audit |
+| D-016 | Single-intent rule: one artifact = one intent; `thread` correlates; no bundle/briefing type. Kept enforceable by making compliance cheaper than violation: batch draft/submit (OP-220), thread-grouped presentation, machine-readable `split-required` decline | bundles existed only because manual relay was costly; per-item lifecycle state is the product's core value; advisor panel confirmed keep-with-ergonomics | architect + audit |
+| D-017 | Lifecycle transitions = append-only event files in the ACTING system's own section; state = deterministic fold; illegal/unauthorized events ignored+flagged. **Fold order = first-parent commit order on `main`** (ULID = intra-commit tiebreak only); authorization evaluated against the manifest as of the event's commit | cross-party transitions under single-writer sections; no in-place status edits; commit order is tamper-evident and clock-skew-immune — client ULIDs would let a backdated event rewrite settled state (e.g. flip an approved decision) | architect + audit |
+| D-018 | Inbox is a computed query, never a folder; no spool copies inside spaces | zero duplication; addressing metadata is sufficient | architect |
+| D-019 | GitHub host profile behind a thin adapter (webhooks+permissions); core speaks plain git | v1 pragmatism with a named exit (Q-004) | architect |
+| D-020 | Statusline = pull model, cache-first, zero-noise defaults; notification routing default-off beyond the 11.3 matrix | prompt latency budget; alert fatigue kills proactivity | architect |
+| D-021 | Statusline integration is advisory: `a2a statusline` is an embeddable segment for the user's OWN statusline; onboarding proposes it, nothing ever replaces or silently edits the user's setup; session-start checklist is the guaranteed floor | users own their harness configs; consent over convenience | interview |
+| D-022 | Registered-consumer registry = space-visible artifacts only: satisfied requirements + `<system>/consumes.yaml` (5.2.3); project-local config is never authoritative | the retire-block validator (V3) and hub can only see the space; a registry in private project configs made the flagship YMYL rule unenforceable | audit |
+| D-023 | Contract version resolution via publish events: each publish event records commit SHA + digest; `id@version` resolves through event lookup → git object; version-scoped deprecate/retire; no `stability` frontmatter (folded state only); no version directory snapshots | the single-file layout couldn't hold two published versions; events give immutable resolution for free from git; a stored stability field was a second truth | audit |
+| D-024 | Closure model: `verify`/`dispute` target responses; the parent closes only via the sender's explicit `close`; `a2a verify` emits both for the single-response case | three sections previously implied two different state machines; one model, one fold | audit |
+| D-025 | Transition-free `note` events (reminders/annotations) and per-recipient broadcast-ack sets are first-class, exempt from illegal-transition folding | the 8.5 reminder and 5.4 ack-tracking mechanisms previously referenced event shapes that didn't exist | audit |
+| D-026 | Drafts are local-only (`.a2a/staging/`); the space holds only submitted/published artifacts; submit event travels in the artifact's first PR | drafts in the space would leak half-thoughts into inboxes and complicate the fold for zero value | audit |
+| D-027 | Exchange types address exactly one system (`to` single-entry; broadcasts excepted); multi-party needs = one artifact per target on a shared thread | per-target sub-state machines are complexity with no v1 consumer | audit |
+| D-028 | Signed releases (key pinned in binary, verify-before-swap, fail closed) are a v1 requirement; hub API tokens hashed + expiring; per-space hub read PATs; output sanitization on all rendered surfaces; sanctioned-redaction runbook exists | the binary is the fleet's security kernel; the hub is a cross-org confidentiality concentrator; append-only-forever had no remedy for leaked secrets/PII | audit |
+| D-029 | Digest = SHA-256 of raw committed bytes, `sha256:<hex>`; multi-file exports use a sorted path+hash tree over `schema/**` + `fixtures/**` | canonicalization layers invite implementation divergence; immutable files make byte-hashing sufficient | audit |
+| D-030 | V1-min cut (§15): v1 = space + binary core + statusline (git-fallback) + skill + L2 content + MCP as a non-critical-path tail item; deferred to v2 with foundation intact: hub, dashboard, local HTML, self-update, doctor --space, hub chat notifications, full e2e matrix | operator needs a working tool now; the deferred set is all read-layers/conveniences over an unchanged core — v2 adds them with zero migrations; MCP kept in v1 (operator call): thin façade over the same core, ~1 day, typed tools in the v1 release | interview |
+
+## Open questions
+
+| ID | Question | Owner | When it must close |
+|---|---|---|---|
+| Q-001 | Per-artifact encryption for `restricted` beyond bilateral-space rule | operator | before any space with mixed-trust membership |
+| Q-002 | Scale behavior past ~10 systems / multi-year volume (space partitioning, index sharding) | architect | when a space's V3 time or tooling latency degrades (13.4 signals) |
+| Q-003 | Signed events / verified identity timing (10.6) | operator | before public mode or first untrusted participant |
+| Q-004 | Non-GitHub host profile (GitLab/Gitea) | operator | on first demand |
+| Q-005 | `sot` onboarding date and their agent stack | operator + partner | L2+ |
+| Q-006 | Final public name vs Google-A2A collision | operator | before opensource release |
+| Q-007 | Chat notification adapter choice (Telegram first?) and per-space routing config surface | operator | L3 |
+| Q-008 | mate: acceptance of the Appendix A amendments (exchange home row, artifact sync) | operator (as mate owner) | before L3 adapter distribution |
+| Q-009 | ~~Taxonomy merge~~ RESOLVED 2026-07-21: operator approved 8 types; D-004 revised, all sections updated | — | closed |
+| Q-010 | Unverified major audit findings (62) and minors (62) retained in the audit archive for implementer triage during L1 | architect | rolling |

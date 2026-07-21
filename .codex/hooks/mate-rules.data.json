@@ -1,0 +1,12 @@
+{
+  "mate_synced": "v0.98.0",
+  "rules": [
+    {
+      "name": "env-discipline",
+      "paths": [
+        "**/.env*"
+      ],
+      "body": "\u003c!-- cites: [code/env.md] --\u003e\n\n# Env discipline — the schema is public, the secrets never are\n\nLoaded when touching `.env*` files. On every env/config change:\n\n- **Schema and secrets never mix.** The schema (what vars exist, with safe defaults) is committed and public — the SSOT of configuration; the production values are encrypted at rest and never touch the repo in plaintext, not even \"temporarily\".\n- **Every new var enters through the schema first** — name, safe default, comment — then gets its real value through the project's secret channel; a var that exists only in a live `.env` is configuration nobody can audit or reproduce.\n- **Layering is by precedence, not by copy-paste:** env var \u003e local `.env` \u003e project defaults \u003e base defaults — never hardcode at a lower layer what a higher one owns.\n\nFull treatment: the env doctrine (`.mate/doctrine/`); the schema dir location and the secret channel are project values (`.mate/config.yaml` `env.schema_dir` + the project's own convention)."
+    }
+  ]
+}

@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Обмен контрактами между сервисами — архитектура</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#14171d;
+    --ink-soft:#3d434f;
+    --muted:#6b7280;
+    --line:#d7dae0;
+    --line-soft:#e6e8ec;
+    --page:#e9ebee;
+    --card:#ffffff;
+    --axon:#c9502a;      /* coral — Axon */
+    --axon-bg:#faece7;
+    --content:#4a41ab;   /* purple — продюсер контента */
+    --content-bg:#edecfb;
+    --data:#0f6e56;      /* teal — продюсер данных */
+    --data-bg:#e1f5ee;
+    --slate:#586170;
+    --disp:'Space Grotesk',sans-serif;
+    --body:'Inter',sans-serif;
+    --mono:'IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:var(--body);
+    background:var(--page);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  .stage{
+    position:fixed;inset:0;
+    display:flex;align-items:center;justify-content:center;
+    padding:clamp(16px,3vw,44px);
+  }
+  .deck{
+    position:relative;
+    width:min(1180px,100%);
+    aspect-ratio:16/9;
+    max-height:100%;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:14px;
+    overflow:hidden;
+    box-shadow:0 24px 60px -30px rgba(20,23,29,.35);
+  }
+  .slide{
+    position:absolute;inset:0;
+    padding:clamp(28px,4.4vw,64px);
+    display:none;
+    flex-direction:column;
+    opacity:0;
+    transition:opacity .35s ease;
+  }
+  .slide.active{display:flex;opacity:1}
+  .slide.leaving{display:flex;opacity:0}
+
+  /* chain motif — left rail */
+  .rail{position:absolute;left:0;top:0;bottom:0;width:6px;display:flex;flex-direction:column}
+  .rail span{flex:1}
+  .rail .a{background:var(--axon)}
+  .rail .c{background:var(--content)}
+  .rail .d{background:var(--data)}
+
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:clamp(11px,1.05vw,13px);
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--muted);
+    display:flex;align-items:center;gap:10px;
+    margin-bottom:clamp(14px,2vw,26px);
+  }
+  .eyebrow .num{color:var(--ink);font-weight:600}
+  .eyebrow .tick{width:22px;height:1px;background:var(--line)}
+
+  h1{
+    font-family:var(--disp);
+    font-weight:600;
+    font-size:clamp(30px,5.2vw,68px);
+    line-height:1.02;
+    letter-spacing:-.02em;
+  }
+  h2{
+    font-family:var(--disp);
+    font-weight:600;
+    font-size:clamp(23px,3.4vw,42px);
+    line-height:1.08;
+    letter-spacing:-.015em;
+    margin-bottom:clamp(14px,2vw,24px);
+  }
+  h2 .accent{color:var(--axon)}
+  .lede{
+    font-size:clamp(15px,1.7vw,21px);
+    line-height:1.55;
+    color:var(--ink-soft);
+    max-width:60ch;
+  }
+  .lede.big{font-size:clamp(17px,2.1vw,26px);max-width:34ch}
+  p.note{font-size:clamp(13px,1.35vw,16px);line-height:1.6;color:var(--muted);max-width:64ch}
+  strong{font-weight:600;color:var(--ink)}
+  code,.mono{font-family:var(--mono)}
+
+  .fill{flex:1;display:flex;flex-direction:column;justify-content:center;min-height:0}
+  .row{display:flex;gap:clamp(14px,2vw,26px)}
+  .grow{flex:1}
+
+  /* generic card */
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:clamp(16px,1.8vw,24px);
+    display:flex;flex-direction:column;gap:8px;
+  }
+  .card h3{font-family:var(--disp);font-weight:600;font-size:clamp(15px,1.5vw,19px);letter-spacing:-.01em}
+  .card p{font-size:clamp(12.5px,1.25vw,15px);line-height:1.5;color:var(--ink-soft)}
+  .card.axon{border-color:var(--axon);background:var(--axon-bg)}
+  .card.axon h3{color:var(--axon)}
+  .card.content{border-color:var(--content);background:var(--content-bg)}
+  .card.content h3{color:var(--content)}
+  .card.data{border-color:var(--data);background:var(--data-bg)}
+  .card.data h3{color:var(--data)}
+  .card.mute{background:#f5f6f8}
+  .tag{
+    display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+    text-transform:uppercase;padding:3px 8px;border-radius:5px;align-self:flex-start;
+  }
+  .tag.no{background:#f6e6e4;color:#a3402a}
+  .tag.yes{background:var(--data-bg);color:var(--data)}
+
+  ul.clean{list-style:none;display:flex;flex-direction:column;gap:clamp(9px,1.3vw,15px);margin-top:8px}
+  ul.clean li{position:relative;padding-left:26px;font-size:clamp(13.5px,1.45vw,17px);line-height:1.5;color:var(--ink-soft)}
+  ul.clean li::before{content:"";position:absolute;left:0;top:.55em;width:9px;height:9px;border-radius:2px;background:var(--slate)}
+  ul.clean li.a::before{background:var(--axon)}
+  ul.clean li.c::before{background:var(--content)}
+  ul.clean li.d::before{background:var(--data)}
+
+  /* levels / roadmap */
+  .levels{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+  .lvl{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:baseline;padding:clamp(11px,1.4vw,16px) clamp(14px,1.6vw,20px);border:1px solid var(--line);border-radius:10px;background:var(--card)}
+  .lvl .k{font-family:var(--mono);font-weight:600;font-size:clamp(12px,1.2vw,14px);color:var(--axon);white-space:nowrap}
+  .lvl .t{font-family:var(--disp);font-weight:500;font-size:clamp(14px,1.45vw,18px)}
+  .lvl .s{font-size:clamp(12px,1.2vw,14.5px);color:var(--muted);line-height:1.45}
+  .lvl .body{display:flex;flex-direction:column;gap:3px}
+
+  .kv{display:flex;flex-direction:column;gap:2px}
+  .kv .code{font-family:var(--mono);font-size:clamp(12px,1.3vw,15px);color:var(--ink)}
+
+  /* title slide */
+  .title-slide{justify-content:center}
+  .title-kicker{font-family:var(--mono);font-size:clamp(12px,1.25vw,15px);letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:22px}
+  .title-sub{margin-top:clamp(20px,3vw,34px);font-size:clamp(15px,1.8vw,22px);color:var(--ink-soft);max-width:52ch;line-height:1.5}
+  .tri{display:flex;gap:8px;margin-top:clamp(26px,3.4vw,40px)}
+  .tri span{font-family:var(--mono);font-size:12px;letter-spacing:.05em;padding:6px 12px;border-radius:6px}
+  .tri .a{background:var(--axon-bg);color:var(--axon)}
+  .tri .c{background:var(--content-bg);color:var(--content)}
+  .tri .d{background:var(--data-bg);color:var(--data)}
+
+  /* cascade */
+  .cascade-wrap{flex:1;display:flex;flex-direction:column;justify-content:center;min-height:0;gap:clamp(8px,1.2vw,14px)}
+  .chain{display:flex;flex-direction:column;gap:clamp(8px,1.1vw,13px)}
+  .step{
+    display:grid;grid-template-columns:clamp(150px,17vw,210px) 1fr;
+    gap:clamp(14px,1.8vw,22px);align-items:center;
+    opacity:.32;transition:opacity .45s ease,transform .45s ease;transform:translateY(3px);
+  }
+  .step.lit{opacity:1;transform:none}
+  .actor{
+    border-radius:10px;padding:clamp(11px,1.3vw,16px) clamp(13px,1.5vw,18px);
+    border:1.5px solid;display:flex;flex-direction:column;gap:3px;position:relative;
+  }
+  .actor .who{font-family:var(--disp);font-weight:600;font-size:clamp(13px,1.4vw,17px)}
+  .actor .role{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--muted)}
+  .actor.axon{border-color:var(--axon);background:var(--axon-bg)}
+  .actor.axon .who{color:var(--axon)}
+  .actor.content{border-color:var(--content);background:var(--content-bg)}
+  .actor.content .who{color:var(--content)}
+  .actor.data{border-color:var(--data);background:var(--data-bg)}
+  .actor.data .who{color:var(--data)}
+  .change{display:flex;flex-direction:column;gap:4px;font-size:clamp(12.5px,1.3vw,16px);line-height:1.45;color:var(--ink-soft)}
+  .change .file{font-family:var(--mono);font-size:clamp(11.5px,1.2vw,14px);color:var(--ink)}
+  .change .pulse{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--line);flex:none}
+  .step.lit .dot{background:var(--axon);animation:ping 1.4s ease-out}
+  .step.content.lit .dot{background:var(--content)}
+  .step.data.lit .dot{background:var(--data)}
+  @keyframes ping{0%{box-shadow:0 0 0 0 rgba(201,80,42,.45)}100%{box-shadow:0 0 0 12px rgba(201,80,42,0)}}
+  .connector{grid-column:1;justify-self:center;width:1.5px;height:clamp(10px,1.4vw,18px);background:var(--line);margin:-6px 0}
+  .connector.lit{background:var(--slate)}
+  .cascade-ctl{display:flex;align-items:center;gap:14px;margin-top:clamp(10px,1.4vw,18px)}
+  .btn{
+    font-family:var(--disp);font-weight:500;font-size:14px;
+    padding:10px 20px;border-radius:8px;border:1px solid var(--ink);
+    background:var(--ink);color:#fff;cursor:pointer;transition:opacity .2s;
+  }
+  .btn:hover{opacity:.85}
+  .btn.ghost{background:transparent;color:var(--ink)}
+  .cascade-ctl .hint{font-size:13px;color:var(--muted)}
+
+  /* topology svg slide */
+  .topo{flex:1;display:flex;align-items:center;justify-content:center;min-height:0}
+  .topo svg{width:100%;height:100%;max-height:100%}
+  .t-th{font-family:var(--disp);font-weight:600;font-size:14px}
+  .t-ts{font-family:var(--mono);font-size:11px}
+
+  .legend{display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;font-size:13px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .legend .sw{width:22px;height:0;border-top:2px solid var(--slate)}
+  .legend .sw.dash{border-top-style:dashed}
+
+  /* nav */
+  .nav{
+    position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+    display:flex;align-items:center;gap:14px;
+    background:var(--card);border:1px solid var(--line);
+    border-radius:100px;padding:7px 10px 7px 16px;
+    box-shadow:0 10px 30px -14px rgba(20,23,29,.4);
+    z-index:50;
+  }
+  .nav .count{font-family:var(--mono);font-size:12px;color:var(--muted);min-width:44px;text-align:center}
+  .nav button{
+    width:34px;height:34px;border-radius:50%;border:1px solid var(--line);
+    background:var(--card);cursor:pointer;font-size:15px;color:var(--ink);
+    display:flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s;
+  }
+  .nav button:hover:not(:disabled){background:#f2f3f5;border-color:var(--line)}
+  .nav button:disabled{opacity:.3;cursor:default}
+  .progress{position:fixed;top:0;left:0;height:3px;background:var(--axon);z-index:60;transition:width .35s ease}
+
+  .kbd{font-family:var(--mono);font-size:11px;background:#f2f3f5;border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--ink-soft)}
+
+  @media (max-width:640px){
+    .row{flex-direction:column}
+    .step{grid-template-columns:1fr;gap:8px}
+    .connector{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:opacity .2s!important}
+  }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="stage">
+  <div class="deck" id="deck">
+
+    <!-- 1. TITLE -->
+    <section class="slide active title-slide">
+      <div class="rail"><span class="a"></span><span class="c"></span><span class="d"></span></div>
+      <div class="title-kicker">Архитектура · обмен контрактами между командами</div>
+      <h1>Агенты обмениваются<br>контрактами сами.<br>Люди — не узкое горло.</h1>
+      <p class="title-sub">Как несколько команд с AI-first разработкой синхронизируют спеки взаимодействующих сервисов — без пересылки MD-файлов руками.</p>
+      <div class="tri">
+        <span class="a">Axon</span>
+        <span class="c">Продюсер контента</span>
+        <span class="d">Продюсер данных</span>
+      </div>
+    </section>
+
+    <!-- 2. REFRAME -->
+    <section class="slide">
+      <div class="rail"><span class="a"></span><span class="c"></span><span class="d"></span></div>
+      <div class="eyebrow"><span class="num">01</span><span class="tick"></span>Переформулировка задачи</div>
+      <h2>Это две разные задачи. Нам нужна <span class="accent">только одна</span>.</h2>
+      <div class="fill">
+        <div class="row">
+          <div class="card grow yes-side">
+            <span class="tag yes">Наша задача</span>
+            <h3>Хранение контрактов</h3>
+            <p>Где лежит источник правды, кто его меняет, как узнать что он изменился. Это и есть наше «перекидываем MD-файлы».</p>
+          </div>
+          <div class="card grow mute">
+            <span class="tag no">Не наша</span>
+            <h3>Рантайм-транспорт агентов</h3>
+            <p>Как агент А в момент работы делегирует задачу агенту Б по сети. Это A2A / ACP — про координацию агентов разных вендоров в проде.</p>
+          </div>
+        </div>
+        <p class="note" style="margin-top:22px">Весь хайп 2026 года — про вторую. У нас одна команда контрактов и общий граф сервисов, поэтому тащить туда распределённую систему там, где хватает git, — лишнее.</p>
+      </div>
+    </section>
+
+    <!-- 3. LANDSCAPE -->
+    <section class="slide">
+      <div class="rail"><span class="a"></span><span class="c"></span><span class="d"></span></div>
+      <div class="eyebrow"><span class="num">02</span><span class="tick"></span>Что уже есть на рынке</div>
+      <h2>Готовые кирпичи под наш кейс</h2>
+      <div class="fill">
+        <div class="row">
+          <div class="card grow">
+            <h3>Git-first registry</h3>
+            <p>Реестры схем (напр. Apicurio 3.3, июнь 2026) с GitOps-хранилищем: git — источник правды, реестр read-only отдаёт по HTTP, запись только через PR.</p>
+          </div>
+          <div class="card grow">
+            <h3>GitOps + registry + MCP</h3>
+            <p>Целостная петля: агент забирает точные схемы из реестра через MCP и генерирует код под них. Нулевой дрифт, потому что данные живые.</p>
+          </div>
+          <div class="card grow">
+            <h3>Drift-guardrails в PR</h3>
+            <p>Инструменты ловят ломающие изменения контракта в pull request — до того как они каскадом сломают агентные workflow. Актуально позже.</p>
+          </div>
+        </div>
+        <p class="note" style="margin-top:20px"><strong>Вывод:</strong> ничего кастомного строить с нуля не нужно. Общий git-репо в роли реестра + тонкий слой доступа для агентов покрывает всё на нашем масштабе.</p>
+      </div>
+    </section>
+
+    <!-- 4. PRINCIPLE -->
+    <section class="slide">
+      <div class="rail"><span class="a"></span><span class="c"></span><span class="d"></span></div>
+      <div class="eyebrow"><span class="num">03</span><span class="tick"></span>Главный принцип</div>
+      <div class="fill" style="gap:26px">
+        <h2 style="margin:0">Git — единственный источник правды.<br>Агенты читают из него напрямую.</h2>
+        <p class="lede big">Никакой синхронизации, никаких копий, никакого лага. И людей нет в петле.</p>
+        <p class="note">Контракт, который пересекает границу владельца, не может жить внутри приватного репозитория одного из участников — иначе это не источник правды, а чья-то приватная копия. Место контракта определяет <strong>владение сервисом</strong>, а не то, кто первый его записал.</p>
+      </div>
+    </section>
+
+    <!-- 5. TOPOLOGY -->
+    <section class="slide">
+      <div class="rail"><span class="a"></span><span class="c"></span><span class="d"></span></div>
+      <div class="eyebrow"><span class="num">04</span><span class="tick"></span>Топология</div>
+      <h2 style="margin-bottom:8px">Общий приватный репо как нейтральная земля</h2>
+      <div class="topo">
+        <svg viewBox="0 0 1000 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Топология: три владельца пишут свои секции в общий репо, агенты читают через MCP">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
+          </defs>
+          <!-- top actors -->
+          <g>
+            <rect x="70" y="26" width="250" height="72" rx="10" fill="var(--axon-bg)" stroke="var(--axon)" stroke-width="1.5"/>
+            <text class="t-th" x="195" y="58" text-anchor="middle" fill="var(--axon)">Axon (ты)</text>
+            <text class="t-ts" x="195" y="80" text-anchor="middle" fill="var(--muted)">приватный код · драйвер спроса</text>
+          </g>
+          <g>
+            <rect x="375" y="26" width="250" height="72" rx="10" fill="var(--content-bg)" stroke="var(--content)" stroke-width="1.5"/>
+            <text class="t-th" x="500" y="58" text-anchor="middle" fill="var(--content)">Продюсер контента</text>
+            <text class="t-ts" x="500" y="80" text-anchor="middle" fill="var(--muted)">команда-партнёр</text>
+          </g>
+          <g>
+            <rect x="680" y="26" width="250" height="72" rx="10" fill="var(--data-bg)" stroke="var(--data)" stroke-width="1.5"/>
+            <text class="t-th" x="805" y="58" text-anchor="middle" fill="var(--data)">Продюсер данных</text>
+            <text class="t-ts" x="805" y="80" text-anchor="middle" fill="var(--muted)">хаб · N потребителей</text>
+          </g>
+          <!-- write arrows -->
+          <line x1="195" y1="100" x2="195" y2="150" stroke="var(--slate)" stroke-width="1.6" marker-end="url(#ar)"/>
+          <line x1="500" y1="100" x2="500" y2="150" stroke="var(--slate)" stroke-width="1.6" marker-end="url(#ar)"/>
+          <line x1="805" y1="100" x2="805" y2="150" stroke="var(--slate)" stroke-width="1.6" marker-end="url(#ar)"/>
+          <!-- container -->
+          <rect x="55" y="150" width="890" height="210" rx="18" fill="#f6f7f9" stroke="var(--line)" stroke-width="1.5"/>
+          <text class="t-th" x="500" y="178" text-anchor="middle" fill="var(--ink)">Общий приватный репо контрактов — источник правды</text>
+          <!-- folders -->
+          <g>
+            <rect x="80" y="200" width="250" height="140" rx="12" fill="var(--axon-bg)" stroke="var(--axon)" stroke-width="1.2"/>
+            <text class="t-th" x="205" y="258" text-anchor="middle" fill="var(--axon)" font-family="var(--mono)">axon/</text>
+            <text class="t-ts" x="205" y="286" text-anchor="middle" fill="var(--axon)">consumes — требования</text>
+          </g>
+          <g>
+            <rect x="375" y="200" width="250" height="140" rx="12" fill="var(--content-bg)" stroke="var(--content)" stroke-width="1.2"/>
+            <text class="t-th" x="500" y="258" text-anchor="middle" fill="var(--content)" font-family="var(--mono)">content-producer/</text>
+            <text class="t-ts" x="500" y="286" text-anchor="middle" fill="var(--content)">provides + consumes</text>
+          </g>
+          <g>
+            <rect x="670" y="200" width="250" height="140" rx="12" fill="var(--data-bg)" stroke="var(--data)" stroke-width="1.2"/>
+            <text class="t-th" x="795" y="258" text-anchor="middle" fill="var(--data)" font-family="var(--mono)">data-producer/</text>
+            <text class="t-ts" x="795" y="286" text-anchor="middle" fill="var(--data)">provides — источник</text>
+          </g>
+          <!-- read arrows (dashed) -->
+          <path d="M205 340 L205 388 L468 388" fill="none" stroke="var(--slate)" stroke-width="1.4" stroke-dasharray="5 5" marker-end="url(#ar)"/>
+          <path d="M500 340 L500 386" fill="none" stroke="var(--slate)" stroke-width="1.4" stroke-dasharray="5 5" marker-end="url(#ar)"/>
+          <path d="M795 340 L795 388 L532 388" fill="none" stroke="var(--slate)" stroke-width="1.4" stroke-dasharray="5 5" marker-end="url(#ar)"/>
+          <!-- reader node -->
+          <rect x="350" y="388" width="300" height="62" rx="10" fill="#f6f7f9" stroke="var(--line)" stroke-width="1.5"/>
+          <text class="t-th" x="500" y="414" text-anchor="middle" fill="var(--ink)">Агенты читают нужные секции</text>
+          <text class="t-ts" x="500" y="436" text-anchor="middle" fill="var(--muted)">через MCP · только чтение</text>
+        </svg>
+      </div>
+      <div class="legend">
+        <span><i class="sw"></i> сплошная — пишет свою секцию (git PR)</span>
+        <span><i class="sw dash"></i> пунктир — читает через MCP (read-only)</span>
+      </div>
+    </section>
+
+    <!-- 6. PROVIDES vs CONSUMES -->
+    <section class="slide">
+      <div class="rail"><span class="a"></span><span class="c"></span><span class="d"></span></div>
+      <div class="eyebrow"><span class="num">05</span><span class="tick"></span>Ключевое различие</div>
+      <h2>Два разных артефакта. Оба называются «контракт».</h2>
+      <div class="fill">
+        <div class="row">
+          <div class="card grow">
+            <div class="kv"><span class="code" style="color:var(--data)">provides</span></div>
+            <h3>«Вот что мой сервис отдаёт»</h3>
+            <p>Владелец — тот, чей сервис реально выдаёт эти данные / API. Есть у продюсера данных, у продюсера контента. У Axon почти пуст — мы конечная точка.</p>
+          </div>
+          <div class="card grow">
+            <div class="kv"><span class="code" style="color:var(--axon)">consumes</span></div>
+            <h3>«Вот что мне нужно сверху»</h3>
+            <p>Тоже полноценный производимый контракт, но другой природы — это <strong>требования</strong>. Именно его производит Axon активнее всех.</p>
+          </div>
+        </div>
+        <p class="note" style="margin-top:22px">Разные роли — одно хранилище. Каждый владелец пишет только в свою папку; потребители пишут ожидания в <code>consumes/&lt;чужой-сервис&gt;/</code>.</p>
+      </div>
+    </section>
+
+    <!-- 7. AXON ROLE -->
+    <section class="slide">
+      <div class="rail"><span class="a"></span><span class="c"></span><span class="d"></span></div>
+      <div class="eyebrow"><span class="num">06</span><span class="tick"></span>Роль Axon</div>
+      <h2>Axon производит <span class="accent">требования</span>, а не поставку</h2>
+      <div class="fill">
+        <p class="lede">Ты — финальный потребитель, и вся цепочка ориентируется на твои требования. Спрос идёт сверху вниз: ты говоришь «мне нужны данные вот в таком виде» → продюсер контента подстраивается → транслирует ниже продюсеру данных.</p>
+        <ul class="clean" style="margin-top:24px">
+          <li class="a">Axon — источник <strong>спроса</strong>, а не источник поставки. Оба — контракты, оба публикуются, оба читаются всеми.</li>
+          <li class="a">То, что Axon производит контракты, <strong>не значит, что они живут в Axon</strong>. Они в общем репо, в папке <code>axon/</code>, которую пишешь только ты.</li>
+          <li class="a">Приватный монорепо Axon остаётся полностью закрытым — наружу выходит только секция контрактов, которую ты и так намеренно публикуешь.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 8. CASCADE (signature) -->
+    <section class="slide" data-cascade>
+      <div class="rail"><span class="a"></span><span class="c"></span><span class="d"></span></div>
+      <div class="eyebrow"><span class="num">07</span><span class="tick"></span>Механика каскада требований</div>
+      <h2 style="margin-bottom:6px">Ты меняешь требование — оно докатывается по цепочке</h2>
+      <div class="cascade-wrap">
+        <div class="chain">
+          <div class="step axon" data-i="0">
+            <div class="actor axon"><span class="who">Axon</span><span class="role">финальный потребитель</span></div>
+            <div class="change">
+              <span class="file">axon/consumes/content-producer/ ✎</span>
+              <span>Меняешь требование: «теперь мне нужно поле <code>publishedAt</code> в ISO-8601».</span>
+              <span class="pulse"><i class="dot"></i>webhook → чат: затронут продюсер контента</span>
+            </div>
+          </div>
+          <div class="connector" data-c="0"></div>
+          <div class="step content" data-i="1">
+            <div class="actor content"><span class="who">Продюсер контента</span><span class="role">среднее звено</span></div>
+            <div class="change">
+              <span class="file">content-producer/consumes/data-producer/ ✎</span>
+              <span>Агент видит новое требование сверху. Чтобы его выполнить, ему самому нужны сырые данные с датой — он обновляет своё требование вниз.</span>
+              <span class="pulse"><i class="dot"></i>webhook → чат: затронут продюсер данных</span>
+            </div>
+          </div>
+          <div class="connector" data-c="1"></div>
+          <div class="step data" data-i="2">
+            <div class="actor data"><span class="who">Продюсер данных</span><span class="role">источник · хаб</span></div>
+            <div class="change">
+              <span class="file">data-producer/provides/ ✎</span>
+              <span>Агент видит требование и добавляет поле в свой <code>provides</code>. Каскад дошёл до источника — цепочка снова согласована.</span>
+              <span class="pulse"><i class="dot"></i>другие потребители хаба тоже видят диф</span>
+            </div>
+          </div>
+        </div>
+        <div class="cascade-ctl">
+          <button class="btn" id="cascadeRun">▶ Проиграть каскад</button>
+          <button class="btn ghost" id="cascadeReset">Сброс</button>
+          <span class="hint">Каждый шаг — обычный git-коммит в свою секцию. Никто не пишет в чужую.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. ACCESS MODEL -->
+    <section class="slide">
+      <div class="rail"><span class="a"></span><span class="c"></span><span class="d"></span></div>
+      <div class="eyebrow"><span class="num">08</span><span class="tick"></span>Модель доступа</div>
+      <h2>Приватный наружу, открытый внутри</h2>
+      <div class="fill">
+        <div class="row">
+          <div class="card grow">
+            <h3>Видимость наружу</h3>
+            <p>Репо контрактов всегда private. Приватный монорепо Axon не расшаривается вообще — это остаётся неизменным.</p>
+          </div>
+          <div class="card grow">
+            <h3>Доступ внутри</h3>
+            <p>Все участники — read + write на общий репо. «Приватный» и «доступ всей команды» — одно состояние, не противоречие.</p>
+          </div>
+          <div class="card grow">
+            <h3>Запись ≠ чтение</h3>
+            <p>Пишут контракты только через git-коммит (PR владельца). MCP-сервер — только на чтение. Git пишем — реестр отдаёт.</p>
+          </div>
+        </div>
+        <p class="note" style="margin-top:20px"><strong>Как подключается Axon:</strong> локальный MCP-сервер на Go читает <code>origin/main</code> общего репо после <code>git fetch</code> (не рабочее дерево — иначе агент прочитает свои незакоммиченные правки). Ноль копий контрактов внутри Axon.</p>
+      </div>
+    </section>
+
+    <!-- 10. ROADMAP -->
+    <section class="slide">
+      <div class="rail"><span class="a"></span><span class="c"></span><span class="d"></span></div>
+      <div class="eyebrow"><span class="num">09</span><span class="tick"></span>Порядок внедрения</div>
+      <h2 style="margin-bottom:10px">По нарастанию — без стройки платформы</h2>
+      <div class="fill">
+        <div class="levels">
+          <div class="lvl"><span class="k">Уровень 0</span><div class="body"><span class="t">Структура <code>contracts/</code></span><span class="s">Секции по владению сервисом с папками provides / consumes / drafts. Draft — явный статус, а не отсутствие файла. Час работы.</span></div></div>
+          <div class="lvl"><span class="k">Уровень 1</span><div class="body"><span class="t">Уведомления об изменениях</span><span class="s">GitHub webhook на <code>contracts/**</code> → в командный чат с дифом. Событийно, не крон — без лага.</span></div></div>
+          <div class="lvl"><span class="k">Уровень 2</span><div class="body"><span class="t">MCP-сервер над контрактами</span><span class="s">Go-сервер отдаёт контракты как tools: get_contract, list_drafts, whats_changed_since. Главный рычаг — агент спрашивает, а не парсит файлы.</span></div></div>
+          <div class="lvl"><span class="k">Уровень 3</span><div class="body"><span class="t">Валидация в CI</span><span class="s">Schema-first проверка дрифта в PR. Добавляем, когда drafts начинают стабилизироваться в provides. Раньше — преждевременно.</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 11. CAVEAT -->
+    <section class="slide">
+      <div class="rail"><span class="a"></span><span class="c"></span><span class="d"></span></div>
+      <div class="eyebrow"><span class="num">10</span><span class="tick"></span>Честная оговорка</div>
+      <h2>Схема работает только с теми, кто согласился играть</h2>
+      <div class="fill">
+        <div class="row">
+          <div class="card grow data">
+            <span class="tag yes">Партнёры в деле</span>
+            <h3>Пишут свою секцию напрямую</h3>
+            <p>Вы + кооперирующиеся команды. Каждый ведёт свою папку в общем репо. Полная автоматизация возможна.</p>
+          </div>
+          <div class="card grow mute">
+            <span class="tag no">Неподконтрольный вендор</span>
+            <h3>Зеркалим read-only</h3>
+            <p>По-настоящему внешний сервис публикует спеку по-своему. Мы зеркалим её в общий репо как «вендоренный» контракт и сами держим зеркало актуальным. Это кэш чужого источника, не источник.</p>
+          </div>
+        </div>
+        <p class="note" style="margin-top:22px">Это важно проговорить с партнёрами заранее: автоматический обмен требует, чтобы каждая сторона писала свою секцию. Там, где стороны нет за столом, ответственность за актуальность зеркала берёт кто-то у нас.</p>
+      </div>
+    </section>
+
+    <!-- 12. SUMMARY -->
+    <section class="slide">
+      <div class="rail"><span class="a"></span><span class="c"></span><span class="d"></span></div>
+      <div class="eyebrow"><span class="num">11</span><span class="tick"></span>Итог</div>
+      <h2 style="margin-bottom:20px">Одной фразой</h2>
+      <div class="fill" style="gap:22px">
+        <p class="lede big" style="max-width:44ch">Один общий приватный репо контрактов как нейтральная земля: каждый владелец пишет свою секцию, читают все через MCP только на чтение, приватный код наружу не выходит.</p>
+        <ul class="clean">
+          <li class="a"><strong>Сегодня:</strong> структура <code>contracts/</code> с provides / consumes / drafts.</li>
+          <li class="c"><strong>На неделе:</strong> webhook изменений в чат.</li>
+          <li class="d"><strong>Дальше:</strong> MCP-сервер на Go, когда агенты начнут спотыкаться об файлы.</li>
+        </ul>
+        <p class="note">Не строим кастомный роутер пушей/пуллов. Не трогаем A2A / agent-cards. Не заводим крон. Git + webhook + MCP покрывают весь граф.</p>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<nav class="nav">
+  <button id="prev" aria-label="Назад">‹</button>
+  <span class="count" id="count">1 / 12</span>
+  <button id="next" aria-label="Вперёд">›</button>
+</nav>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total = slides.length;
+  let cur = 0;
+  const countEl = document.getElementById('count');
+  const progress = document.getElementById('progress');
+  const prevBtn = document.getElementById('prev');
+  const nextBtn = document.getElementById('next');
+
+  function show(n){
+    n = Math.max(0, Math.min(total-1, n));
+    if(n === cur) return;
+    slides[cur].classList.remove('active');
+    slides[n].classList.add('active');
+    cur = n;
+    countEl.textContent = (cur+1)+' / '+total;
+    progress.style.width = ((cur+1)/total*100)+'%';
+    prevBtn.disabled = cur===0;
+    nextBtn.disabled = cur===total-1;
+    if(slides[cur].hasAttribute('data-cascade')) resetCascade();
+  }
+  function go(d){ show(cur+d); }
+
+  prevBtn.onclick = ()=>go(-1);
+  nextBtn.onclick = ()=>go(1);
+  document.addEventListener('keydown', e=>{
+    if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '){e.preventDefault();go(1);}
+    if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();go(-1);}
+    if(e.key==='Home'){e.preventDefault();show(0);}
+    if(e.key==='End'){e.preventDefault();show(total-1);}
+  });
+
+  // init
+  progress.style.width = (1/total*100)+'%';
+  prevBtn.disabled = true;
+
+  // cascade animation
+  const steps = ()=>Array.from(document.querySelectorAll('.step'));
+  const conns = ()=>Array.from(document.querySelectorAll('.connector'));
+  let cascadeTimers = [];
+  function resetCascade(){
+    cascadeTimers.forEach(clearTimeout); cascadeTimers = [];
+    steps().forEach(s=>s.classList.remove('lit'));
+    conns().forEach(c=>c.classList.remove('lit'));
+  }
+  function runCascade(){
+    resetCascade();
+    const st = steps(), cn = conns();
+    const seq = [0,1,2];
+    seq.forEach((i,idx)=>{
+      cascadeTimers.push(setTimeout(()=>{
+        st[i].classList.add('lit');
+        if(idx>0 && cn[idx-1]) cn[idx-1].classList.add('lit');
+      }, idx*1100));
+    });
+  }
+  document.getElementById('cascadeRun').onclick = runCascade;
+  document.getElementById('cascadeReset').onclick = resetCascade;
+</script>
+</body>
+</html>

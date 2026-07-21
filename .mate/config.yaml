@@ -1,0 +1,26 @@
+# .mate/config.yaml — the config seam (spec §6): ONLY what genuinely varies per
+# project. Seeded by `mate new`; fill facets/scopes/floors as the project
+# grows (or run /mate-adopt to classify a brownfield repo).
+project: a2ahub
+cli_name: a2ahub
+
+# providers — the provider environments THIS repo runs. Every pull compiles the
+# manifest through each one and locks the union, so a repo listing two providers
+# gets both surfaces (e.g. .claude/skills/ AND .agents/skills/), each drift-gated.
+# This is a property of the repo, not of the invocation: a project pull takes no
+# --provider flag. Removing a provider PRUNES its files on the next pull.
+providers: [claude-code, codex]
+
+# facets — this repo's stack. Drives the `when:` pull filter: a faceted artifact
+# lands only if its facet matches (e.g. framework:nuxt pulls profiles/nuxt). Seed
+# these at bootstrap (mate init --lang go --framework nuxt --kind web-app) or run
+# /mate-adopt to infer them from the repo; grow them as the stack grows, then pull.
+facets: { lang: [], framework: [], kind: cli, infra: [] }
+
+# entry — the entry composer (v0.65.0). Declare your project brief's ONE home and
+# the pull composes it into every no-imports provider's entry file (codex) as a
+# managed block; point CLAUDE.md at the same file with a one-line import
+# ("@docs/brief.md" — yours, never written by mate). Edit the brief, then pull.
+# entry:
+#   brief: docs/brief.md
+

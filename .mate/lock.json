@@ -1,0 +1,482 @@
+{
+  "release": "v0.98.0",
+  "source": "github.com/ydnikolaev/mate",
+  "providers": [
+    "claude-code",
+    "codex"
+  ],
+  "files": {
+    ".agents/skills/check/SKILL.md": {
+      "sha256": "bd44e3ee2d4f24af0be29cd53bb67d615b014d4a28f2c5eb981d031ac507f0a7",
+      "src": "core/skills/check/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".agents/skills/commit/SKILL.md": {
+      "sha256": "5500d77585a0af7d2154b0f337304cafe62af753d40320ee1fad3fbb6be0af77",
+      "src": "core/skills/commit/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".agents/skills/create-report/SKILL.md": {
+      "sha256": "97d3a5646a3ad430aec5caa6852f5a80a41851ef70f762c5d27e05828a37fa7e",
+      "src": "core/skills/create-report/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".agents/skills/create-report/references/components.md": {
+      "sha256": "689f376b64f64686094516412f9e53e1a6ad53b6410dc959a2eaaddca6200100",
+      "src": "core/skills/create-report/references/components.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".agents/skills/create-report/references/report-template.md": {
+      "sha256": "b0bdda6c849cf590f84d003cce9936d73b62c4506be2a77e71908cdb7a82a698",
+      "src": "core/skills/create-report/references/report-template.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".agents/skills/mate-adopt/SKILL.md": {
+      "sha256": "eee1f2f0faa07ba5b373efcf561b5c9397e2ca6df536255b0e4777d5113b7b96",
+      "src": "core/skills/mate-adopt/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".agents/skills/mate-doctrine/SKILL.md": {
+      "sha256": "ed8064077484654a541e81ee1e9ed3d2f76779efb9aef8a76044f2094b2a497d",
+      "src": "core/skills/mate-doctrine/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".agents/skills/mate-harness-hardening/SKILL.md": {
+      "sha256": "9e0cf275ae6172dda6e3feb0fbbd1638badedfdbbe298492d3b1402dad0cb91f",
+      "src": "core/skills/mate-harness-hardening/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".agents/skills/mate-promote/SKILL.md": {
+      "sha256": "394f7f25a3bd88b3aae1d8d41bf22be08431abc4297626133944fa76c69671b3",
+      "src": "core/skills/mate-promote/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".agents/skills/mate-validator/SKILL.md": {
+      "sha256": "14a3f2128e818ef92eb9a2cf73494d680d8fe2a349d50f46ad8d1c24ba91bfb4",
+      "src": "core/skills/mate-validator/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".agents/skills/presentation/SKILL.md": {
+      "sha256": "d17967ef47631fe36965a26faf28be5c0597fb73f83c8f80bb742758f258a0f2",
+      "src": "core/skills/presentation/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".agents/skills/quick-fix/SKILL.md": {
+      "sha256": "092244b5f2eaa2d86a3005c4aecb7e4316ac6fb3fc8e457fa61cb479fd8656c4",
+      "src": "core/skills/quick-fix/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".agents/skills/self-evaluate/SKILL.md": {
+      "sha256": "a0b1917b70076abcb60ee57fda8b64787c52d10314c5c17fd8a96171e39a6fd1",
+      "src": "core/skills/self-evaluate/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".agents/skills/self-review/SKILL.md": {
+      "sha256": "33a7a588de0e464d247687b6939901bd27e79cf0728287b0968c53d399fc21ad",
+      "src": "core/skills/self-review/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".agents/skills/ship/SKILL.md": {
+      "sha256": "ac7d0749806772e0f234786974e393564cfd36a0591493381917f2230952eaf9",
+      "src": "core/skills/ship/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "codex"
+    },
+    ".claude/hooks/session-start": {
+      "sha256": "7c7327f7ae518bdefa224c66e71189851373299347514c69a2b6e6b0d4060d66",
+      "src": "adapters/claude-code/hooks/session-start",
+      "mode": "sync",
+      "kind": "hook",
+      "provider": "claude-code"
+    },
+    ".claude/rules/commit-conventions.md": {
+      "sha256": "553c4e5f13e7a761a062464347e675d16fb91bfdfda8a6e064d9fc23d26951b9",
+      "src": "core/rules/commit-conventions.md",
+      "mode": "sync",
+      "kind": "rule",
+      "provider": "claude-code"
+    },
+    ".claude/rules/env-discipline.md": {
+      "sha256": "6a08b450e1c072d1dc23ae42613e1e587c7f0d3dce09a3fd39f4e4af11fe31bf",
+      "src": "core/rules/env-discipline.md",
+      "mode": "sync",
+      "kind": "rule",
+      "provider": "claude-code"
+    },
+    ".claude/rules/framework-first.md": {
+      "sha256": "ab1c9ec4f1e1759d1ad117a9d0031e427bcf76ed2e977a4e4a8a9aa19e291921",
+      "src": "core/rules/framework-first.md",
+      "mode": "sync",
+      "kind": "rule",
+      "provider": "claude-code"
+    },
+    ".claude/rules/harness-discipline.md": {
+      "sha256": "aba0702d13c4675c1bb50f033bd26eafa5ce210f659754c8712d16e6679565b9",
+      "src": "core/rules/harness-discipline.md",
+      "mode": "sync",
+      "kind": "rule",
+      "provider": "claude-code"
+    },
+    ".claude/rules/validation-discipline.md": {
+      "sha256": "e701e1e7128ad5cf95d6403489991fa04ddd8ad96de95c0855e754b614dc8fa5",
+      "src": "core/rules/validation-discipline.md",
+      "mode": "sync",
+      "kind": "rule",
+      "provider": "claude-code"
+    },
+    ".claude/skills/check/SKILL.md": {
+      "sha256": "fa3c26563c2befbe3dcfb7653a87a39a014378f76cc59c12abf58c87e5e5b914",
+      "src": "core/skills/check/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".claude/skills/commit/SKILL.md": {
+      "sha256": "cda6cf2ee0a41e7470031bbe30abcc4350b9b9f21ad36ecc777a84686fa5148f",
+      "src": "core/skills/commit/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".claude/skills/create-report/SKILL.md": {
+      "sha256": "195afda89fb82c3c8aef0c721d96834dae1ef59a9d79e658fccdf964c7795dcf",
+      "src": "core/skills/create-report/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".claude/skills/create-report/references/components.md": {
+      "sha256": "689f376b64f64686094516412f9e53e1a6ad53b6410dc959a2eaaddca6200100",
+      "src": "core/skills/create-report/references/components.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".claude/skills/create-report/references/report-template.md": {
+      "sha256": "b0bdda6c849cf590f84d003cce9936d73b62c4506be2a77e71908cdb7a82a698",
+      "src": "core/skills/create-report/references/report-template.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".claude/skills/mate-adopt/SKILL.md": {
+      "sha256": "c77f7049e7bdd00c4b59407006fb3750ab0f2b1c613fb0f8d2f5ee71e998c6c4",
+      "src": "core/skills/mate-adopt/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".claude/skills/mate-doctrine/SKILL.md": {
+      "sha256": "b81778c881afcf68c7b69af2573b01a0c077c63e406f4733d83d7288e8d41178",
+      "src": "core/skills/mate-doctrine/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".claude/skills/mate-harness-hardening/SKILL.md": {
+      "sha256": "24dcbd871405c63fd95221ab55ffedc06b91f36fd22d46b2ed54bf66fa21814c",
+      "src": "core/skills/mate-harness-hardening/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".claude/skills/mate-promote/SKILL.md": {
+      "sha256": "05e2b0617e9f27718ea23f1242b1f76cb0d0418eee27fbabc73368f033ce612e",
+      "src": "core/skills/mate-promote/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".claude/skills/mate-validator/SKILL.md": {
+      "sha256": "7979f1dee6754f6b649812e89e34adb92cba7a6de6d8d9229e4f5d119603723d",
+      "src": "core/skills/mate-validator/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".claude/skills/presentation/SKILL.md": {
+      "sha256": "a4b7840c937a63b5b7d72abda0c16115fe632d19081f80202846500eb429f314",
+      "src": "core/skills/presentation/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".claude/skills/quick-fix/SKILL.md": {
+      "sha256": "9dde7dfa90ae87579551df0088b94e2f041ff950739cf73eabc34e0838c65239",
+      "src": "core/skills/quick-fix/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".claude/skills/self-evaluate/SKILL.md": {
+      "sha256": "6c0602c42bf7a47beb6e383276d7339d6c65cc775f436bb492e3c01ba350ae69",
+      "src": "core/skills/self-evaluate/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".claude/skills/self-review/SKILL.md": {
+      "sha256": "33a7a588de0e464d247687b6939901bd27e79cf0728287b0968c53d399fc21ad",
+      "src": "core/skills/self-review/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".claude/skills/ship/SKILL.md": {
+      "sha256": "5e856db1c86fcab73c2eab5bbf504e2c679b5cd848a873d67ecb78e508b664fe",
+      "src": "core/skills/ship/SKILL.md",
+      "mode": "sync",
+      "kind": "skill",
+      "provider": "claude-code"
+    },
+    ".codex/hooks/mate-rules.data.json": {
+      "sha256": "1a06ad3bcf8e30a45c4967cbddf66c396911f5c0e5d6027c4ea43552348c8a74",
+      "src": "@generated:rule-router",
+      "mode": "sync",
+      "kind": "hook",
+      "provider": "codex"
+    },
+    ".codex/hooks/mate-rules.py": {
+      "sha256": "6b186017ad8d9c1ad0c280bdc1547a009dadd8a170dc61df0338fff1c0e26ec1",
+      "src": "adapters/codex/hooks/mate-rules.py",
+      "mode": "sync",
+      "kind": "hook",
+      "provider": "codex"
+    },
+    ".mate/design/presentation.css": {
+      "sha256": "02b2b41e36841658d3cf4e102900cc9afb28df1426d5dfcd44b28d172de49e86",
+      "src": "core/design/presentation.css",
+      "mode": "sync",
+      "kind": "design"
+    },
+    ".mate/design/report.css": {
+      "sha256": "180837ac9211283ff523356ed7248e423a4fda0b7596e11f7f0b6204c2cdd5d8",
+      "src": "core/design/report.css",
+      "mode": "sync",
+      "kind": "design"
+    },
+    ".mate/doctrine/README.md": {
+      "sha256": "a0c60132f8892108bec1173903edbb51f2d8f6bdceec3b6b973a51ae8bc67c81",
+      "src": "doctrine/README.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/doctrine/_authoring.md": {
+      "sha256": "4eae177b014c17663ed4bd77ef8719f8dcacd7d73f7e68a54842dd2a93e797cf",
+      "src": "doctrine/_authoring.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/doctrine/agent/commit-hygiene.md": {
+      "sha256": "efda44427d32add8f395db2c68fd4dac99d4076c6a2c56aefe0d01cb8ab4679e",
+      "src": "doctrine/agent/commit-hygiene.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/doctrine/agent/harness-layers.md": {
+      "sha256": "f170ff982f57059ea70707c8793562eded2a376d4dfd1cdb9b96ccca9d037f54",
+      "src": "doctrine/agent/harness-layers.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/doctrine/agent/verification-honesty.md": {
+      "sha256": "eb38591eca88c6b1d57d32023fb8796a97eea265b5177490a8edd6fbe2676e6a",
+      "src": "doctrine/agent/verification-honesty.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/doctrine/code/cli-ux.md": {
+      "sha256": "d88a4365bb13d0e1591e4e9a9165664992e2a463699ed6d1ffa07761a9f3bbf5",
+      "src": "doctrine/code/cli-ux.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/doctrine/code/cli.md": {
+      "sha256": "9ae08480d1b010d75921090c8e181503f85ca4224fc65798d842973847a60b01",
+      "src": "doctrine/code/cli.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/doctrine/code/documentation.md": {
+      "sha256": "7267b782f9c6b119ca2375240aaf2dd3e2cc97b70a168aec2ba3d9fffb0d77a0",
+      "src": "doctrine/code/documentation.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/doctrine/code/env.md": {
+      "sha256": "c70f150a9b605710ede0f1f3524001be658270f2027aa6b150d492e5894b208b",
+      "src": "doctrine/code/env.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/doctrine/code/framework-first.md": {
+      "sha256": "42a5585d4f7aa2ec0e2ec524650baf6da27736bee2089ab656a808575c195ba8",
+      "src": "doctrine/code/framework-first.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/doctrine/code/interface.md": {
+      "sha256": "860de38c7136c65c63efe2c7e58e148ef2e8d6dac2aebe34cf1d3f91c5f7b688",
+      "src": "doctrine/code/interface.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/doctrine/code/registries.md": {
+      "sha256": "b04187d467b37fc2e334e4d714b0e283b3cb551ce1ee2b29ac5aab7f6f81a4c6",
+      "src": "doctrine/code/registries.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/doctrine/code/reporting.md": {
+      "sha256": "80b34eb41d62c585cc570ac2bad33c90d5d0852e8cc7abc544bba99fc7adef6d",
+      "src": "doctrine/code/reporting.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/doctrine/code/structure.md": {
+      "sha256": "32cb07e28c437bc1be4c04aee1b72024c693c7d595df1a79a712724099d39d44",
+      "src": "doctrine/code/structure.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/doctrine/code/validation.md": {
+      "sha256": "941b35f3ff7f1acdf7b27e5a345b0416240bfa4dbf6fcc14902ea1a15268891b",
+      "src": "doctrine/code/validation.md",
+      "mode": "sync",
+      "kind": "doctrine"
+    },
+    ".mate/handbook/book.toml": {
+      "sha256": "0bdfc194b73091a44b4522c6086430db77f529e9ed00c64d0f458a0ca74fcbd8",
+      "src": "handbook/book.toml",
+      "mode": "sync",
+      "kind": "handbook"
+    },
+    ".mate/handbook/src/SUMMARY.md": {
+      "sha256": "3b6b4cbf169af71b775b117b7768362b6c753bf49b23d9cb5ce840b9d2fdf3e4",
+      "src": "handbook/src/SUMMARY.md",
+      "mode": "sync",
+      "kind": "handbook"
+    },
+    ".mate/handbook/src/guides/fix-a-red-drift-gate.md": {
+      "sha256": "062d77d1bd5e87ce676efb1ec5d2bbec37db037032bc458621dbb2fa92431338",
+      "src": "handbook/src/guides/fix-a-red-drift-gate.md",
+      "mode": "sync",
+      "kind": "handbook"
+    },
+    ".mate/handbook/src/guides/onboard-a-project.md": {
+      "sha256": "e32f5741dacbc3be31e82b34052d64ac3bf851f720fe9172a477f0354d9eea1b",
+      "src": "handbook/src/guides/onboard-a-project.md",
+      "mode": "sync",
+      "kind": "handbook"
+    },
+    ".mate/handbook/src/introduction.md": {
+      "sha256": "761fc32ba902b9bcd8a271ccd5bf4af3d510c9df10102bad50bf2739461ca53c",
+      "src": "handbook/src/introduction.md",
+      "mode": "sync",
+      "kind": "handbook"
+    },
+    ".mate/handbook/src/reference/cli.md": {
+      "sha256": "ba27763d7d1530bac23bbf9f10a32170389c38ef22970f2d0a8803d8784305e9",
+      "src": "handbook/src/reference/cli.md",
+      "mode": "sync",
+      "kind": "handbook"
+    },
+    ".mate/handbook/src/reference/doctrines.md": {
+      "sha256": "64e2ae8372892098add1b7b0cd4a0889a84371ed93488cdafcc8cad263ad6431",
+      "src": "handbook/src/reference/doctrines.md",
+      "mode": "sync",
+      "kind": "handbook"
+    },
+    ".mate/handbook/src/reference/gates.md": {
+      "sha256": "617326dc2df5594e57b422c4a18512707b75b5f902a926bccee8bf17774d578b",
+      "src": "handbook/src/reference/gates.md",
+      "mode": "sync",
+      "kind": "handbook"
+    },
+    ".mate/handbook/src/reference/providers.md": {
+      "sha256": "469efd957504b1c5bda667961b0321a38371e1bb7f260d11cc72d3ba596712e4",
+      "src": "handbook/src/reference/providers.md",
+      "mode": "sync",
+      "kind": "handbook"
+    },
+    ".mate/handbook/src/reference/registries.md": {
+      "sha256": "d440812b881f3b131edcd528057fa9bc9a3a68ccf4d9bd5bd418bb9eaca37a7b",
+      "src": "handbook/src/reference/registries.md",
+      "mode": "sync",
+      "kind": "handbook"
+    },
+    ".mate/handbook/src/reference/skills.md": {
+      "sha256": "de51fe8c2449cd6185faa1f1b8a7924f433fe31720f6d4387ea5ecae32b7c2f8",
+      "src": "handbook/src/reference/skills.md",
+      "mode": "sync",
+      "kind": "handbook"
+    },
+    "AGENTS.md#mate-reflexes": {
+      "sha256": "b100a37da56df631041f8840aa3146837ee2cc993ab87d22c865e80cf3068ed5",
+      "src": "@generated:mate-reflexes",
+      "mode": "merge",
+      "kind": "rule",
+      "provider": "codex",
+      "block": "mate-reflexes"
+    },
+    "docs/backlog.md": {
+      "sha256": "c3b3f1ff2abf4b890b6620d27aa79b3b6d267cd4d52da66e5c7511317d06922d",
+      "src": "core/templates/docs/backlog.md",
+      "mode": "template",
+      "kind": "template"
+    },
+    "docs/decisions.md": {
+      "sha256": "9b9c42dede014dfb256059414aee8b219e8c2648b8404f1d15993573558329ed",
+      "src": "core/templates/docs/decisions.md",
+      "mode": "template",
+      "kind": "template"
+    },
+    "docs/reports/README.md": {
+      "sha256": "85b206ad622abb7512481a99949d49e21e7789292c0a36fd24df4c961b488b23",
+      "src": "core/templates/docs/reports/README.md",
+      "mode": "template",
+      "kind": "template"
+    },
+    "docs/status.md": {
+      "sha256": "a766d1a7943da56b23e7102b9bc5ca3d18d9c174f49bdee16942cc3a2a7cef00",
+      "src": "core/templates/docs/status.md",
+      "mode": "template",
+      "kind": "template"
+    },
+    "docs/validator-backlog.md": {
+      "sha256": "0102079a36e7ef4e704880c613a3fe9502c01d0ace9c9e64d229d82acddba36c",
+      "src": "core/templates/docs/validator-backlog.md",
+      "mode": "template",
+      "kind": "template"
+    }
+  }
+}

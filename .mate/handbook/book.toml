@@ -1,0 +1,19 @@
+# mate_synced: v0.98.0
+[build]
+# Render into a dot-dir so the build output is never swept into the synced tree
+# (expandTree skips dotdirs) and stays out of git.
+build-dir = ".build"
+
+[book]
+title = "mate handbook"
+description = "The operator-facing reference for the mate cross-project harness — offline, searchable, single-binary."
+authors = ["mate SSOT"]
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "navy"
+git-repository-url = "https://github.com/ydnikolaev/mate"
+
+[output.html.search]
+enable = true

@@ -1,0 +1,242 @@
+/* SYNCED FROM mate@v0.98.0 · mode:sync · DO NOT EDIT — change upstream then `mate pull` */
+/* SSOT SOURCE (mate repo). The fleet-wide doc-presentation design standard:
+   tokens + document skeleton + core components. Consumers receive a stamped
+   copy at .mate/design/presentation.css via `mate pull` — edit HERE, never the
+   synced copies. The `presentation` skill INLINES this file verbatim into each
+   generated document's <style> block (self-contained artifacts: file://,
+   offline, no CDN), then builds per-document components ON these tokens.
+   Changing this file restyles every FUTURE presentation in every project. */
+
+/* ---------- tokens (14): core 11 + status 3; light + dark + manual override */
+:root {
+  --paper: #fcfcfd;
+  --ink: #1c1e2a;
+  --muted: #5d6272;
+  --line: #e3e5ec;
+  --accent: #4338ca;
+  --accent-ink: #3730a3;
+  --accent-soft: #eef0fb;
+  --amber: #b45309;
+  --amber-soft: #fdf3e3;
+  --card: #f6f7fa;
+  --good: #15803d;
+  --good-soft: #e9f6ee;
+  --bad: #b91c1c;
+  --bad-soft: #fdecec;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #14161f;
+    --ink: #e8e9f0;
+    --muted: #9aa0b5;
+    --line: #2a2d3d;
+    --accent: #8b93f8;
+    --accent-ink: #a5abfa;
+    --accent-soft: #22253f;
+    --amber: #e8a33d;
+    --amber-soft: #32270f;
+    --card: #1b1e2b;
+    --good: #4ade80;
+    --good-soft: #12291a;
+    --bad: #f87171;
+    --bad-soft: #331414;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #14161f;
+  --ink: #e8e9f0;
+  --muted: #9aa0b5;
+  --line: #2a2d3d;
+  --accent: #8b93f8;
+  --accent-ink: #a5abfa;
+  --accent-soft: #22253f;
+  --amber: #e8a33d;
+  --amber-soft: #32270f;
+  --card: #1b1e2b;
+  --good: #4ade80;
+  --good-soft: #12291a;
+  --bad: #f87171;
+  --bad-soft: #331414;
+}
+:root[data-theme="light"] {
+  --paper: #fcfcfd;
+  --ink: #1c1e2a;
+  --muted: #5d6272;
+  --line: #e3e5ec;
+  --accent: #4338ca;
+  --accent-ink: #3730a3;
+  --accent-soft: #eef0fb;
+  --amber: #b45309;
+  --amber-soft: #fdf3e3;
+  --card: #f6f7fa;
+  --good: #15803d;
+  --good-soft: #e9f6ee;
+  --bad: #b91c1c;
+  --bad-soft: #fdecec;
+}
+
+/* ---------- base: 17px/1.65 body, system stacks, signature weight ladder
+   (strong 650 · h3 700 · h2 750 · h1 800), radius 14/100/6, 1px var(--line) */
+html { -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-size: 17px;
+  line-height: 1.65;
+  margin: 0;
+}
+.wrap {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 24px 96px;
+}
+.wrap.wide { max-width: 800px; } /* for table-heavy documents */
+.mono {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- hero ---------- */
+header.hero { padding: 88px 0 40px; }
+.brand {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 28px;
+}
+h1 {
+  font-size: clamp(2rem, 5.5vw, 3.1rem);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.08;
+  margin: 0 0 20px;
+  text-wrap: balance;
+}
+.lede {
+  font-size: 1.15rem;
+  color: var(--muted);
+  max-width: 40em;
+  margin: 0;
+  text-wrap: balance;
+}
+.hero-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 32px;
+}
+.chip {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 100px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.chip.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+/* ---------- route divider (between every section) ---------- */
+.route {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 64px 0;
+}
+.route::before, .route::after {
+  content: "";
+  flex: 1;
+  border-top: 2px dashed var(--line);
+}
+.route span {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin: 0 10px;
+  flex: none;
+}
+
+/* ---------- sections + typography ---------- */
+section { margin: 0; }
+.eyebrow {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 12px;
+}
+h2 {
+  font-size: 1.65rem;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  margin: 0 0 18px;
+  text-wrap: balance;
+}
+h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 28px 0 10px;
+}
+p { margin: 0 0 16px; }
+p.big { font-size: 1.08rem; }
+.dim { color: var(--muted); }
+strong { font-weight: 650; }
+em.q {
+  font-style: normal;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  border-radius: 6px;
+  padding: 1px 7px;
+  white-space: nowrap;
+  font-size: 0.92em;
+}
+
+/* ---------- callout ---------- */
+.callout {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px 24px;
+  margin: 24px 0;
+}
+.callout p:last-child { margin-bottom: 0; }
+.callout .tag {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--amber);
+  display: block;
+  margin-bottom: 8px;
+}
+
+/* ---------- honesty note (one per document — the candor block) ---------- */
+.note {
+  border-left: 3px solid var(--accent);
+  padding: 4px 0 4px 18px;
+  margin: 24px 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.note strong { color: var(--ink); }
+
+/* ---------- footer ---------- */
+footer {
+  margin-top: 72px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
