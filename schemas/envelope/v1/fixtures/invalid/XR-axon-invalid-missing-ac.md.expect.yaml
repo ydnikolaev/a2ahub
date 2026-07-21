@@ -1,0 +1,2 @@
+code: SCH-001
+note: requirement.schema.json requires `acceptance_criteria` (§5.2.1); this fixture omits it.

@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "event/v1/event.schema.json",
+  "title": "Lifecycle event (v1)",
+  "description": "Field set per the-plan §5.2.2 verbatim, plus `commit`/`digest` (optional, prose-only per §5.2.2's publish-event note: 'publish events also record commit (SHA) + digest of the published content' — no dedicated table row).",
+  "type": "object",
+  "properties": {
+    "schema": { "const": "event/v1" },
+    "event": {
+      "type": "string",
+      "description": "ULID, intra-commit tiebreak only (§3.5 rule 1).",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "space": { "type": "string" },
+    "subject": { "type": "string" },
+    "transition": {
+      "type": "string",
+      "description": "Union of every §3.4 transition-table event name, plus `note` (`expired` is fold-computed, never an event).",
+      "enum": [
+        "create", "publish", "deprecate", "retire",
+        "acknowledge", "satisfy", "decline", "withdraw", "supersede",
+        "submit", "accept", "start", "block", "unblock", "respond", "close", "dispute", "cancel",
+        "propose", "approve", "reject",
+        "verify-pass", "verify-fail", "verify",
+        "note"
+      ]
+    },
+    "state": {
+      "type": "string",
+      "description": "Claimed resulting state; informational only, omitted for transition-free kinds (note, broadcast ack) — fold wins on mismatch (§3.5 rule 5)."
+    },
+    "actor": {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["human", "agent"] },
+        "name": { "type": "string" },
+        "system": { "type": "string" },
+        "model": { "type": "string" },
+        "session": { "type": "string" }
+      },
+      "required": ["kind", "name", "system"],
+      "additionalProperties": false
+    },
+    "at": { "type": "string", "format": "date-time" },
+    "note": { "type": "string" },
+    "refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ref": { "type": "string" },
+          "note": { "type": "string" }
+        },
+        "required": ["ref"],
+        "additionalProperties": false
+      }
+    },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "reason_code": {
+      "type": "string",
+      "enum": ["split-required", "security-concern", "out-of-scope", "duplicate", "other"]
+    },
+    "commit": { "type": "string" },
+    "digest": { "type": "string" }
+  },
+  "required": ["schema", "event", "space", "subject", "transition", "actor", "at"],
+  "additionalProperties": false
+}

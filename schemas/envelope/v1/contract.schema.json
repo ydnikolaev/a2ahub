@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "envelope/v1/contract.schema.json",
+  "title": "Envelope: contract (v1)",
+  "allOf": [{ "$ref": "base.schema.json" }],
+  "type": "object",
+  "properties": {
+    "type": { "const": "contract" },
+    "id": { "pattern": "^XC-" },
+    "category": {
+      "type": "string",
+      "enum": ["api", "data-feed", "vocabulary", "event-feed", "other"]
+    },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "compat_policy": { "type": "string" },
+    "generated_from": {
+      "type": "object",
+      "properties": {
+        "tool": { "type": "string" },
+        "source_digest": { "type": "string" }
+      },
+      "required": ["tool", "source_digest"],
+      "additionalProperties": false
+    },
+    "schema_format": {
+      "type": "string",
+      "enum": ["json-schema-2020-12", "openapi-3.x", "proto3", "other"]
+    }
+  },
+  "required": ["category", "version", "compat_policy", "schema_format"],
+  "patternProperties": { "^x_": true },
+  "unevaluatedProperties": false
+}

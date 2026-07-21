@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "envelope/v1/base.schema.json",
+  "title": "Envelope base (v1)",
+  "description": "Common frontmatter fields for every artifact type. Field set per the-plan §5.2 (verbatim). Not separately fixture-tested — exercised transitively through the 8 per-type extension schemas.",
+  "type": "object",
+  "properties": {
+    "schema": { "const": "envelope/v1" },
+    "id": {
+      "type": "string",
+      "description": "Identity per the-plan §3.3: standing = <PREFIX>-<system>-<slug>; exchange/broadcast = <PREFIX>-<system>-<YYYYMMDD>-<rand4>. Per-type schemas narrow the prefix further.",
+      "pattern": "^(XC|XR)-[a-z0-9]+-[A-Za-z0-9]+(-[A-Za-z0-9]+)*$|^(XQ|XW|XD|XH|XS|XA)-[a-z0-9]+-[0-9]{8}-[0-9abcdefghjkmnpqrstvwxyz]{4}$"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["contract", "requirement", "question", "work_request", "decision", "response", "handoff", "announcement"]
+    },
+    "title": { "type": "string", "maxLength": 120 },
+    "space": { "type": "string" },
+    "from": { "type": "string" },
+    "to": {
+      "description": "[system ID] for exchanges/standing types, or 'all' for broadcasts (per-type schemas further constrain cardinality).",
+      "oneOf": [
+        { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        { "const": "all" }
+      ]
+    },
+    "actor": {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["human", "agent"] },
+        "name": { "type": "string" },
+        "model": { "type": "string" },
+        "session": { "type": "string" }
+      },
+      "required": ["kind", "name"],
+      "additionalProperties": false
+    },
+    "created": { "type": "string", "format": "date-time" },
+    "priority": { "type": "string", "enum": ["p1", "p2", "p3", "p4"] },
+    "blocking": { "type": "boolean" },
+    "needed_by": { "type": "string", "format": "date" },
+    "effort_estimate": { "type": "string", "enum": ["xs", "s", "m", "l", "xl"] },
+    "expected_response": {
+      "type": "object",
+      "properties": {
+        "shape": { "type": "string" },
+        "by": { "type": "string", "format": "date" }
+      },
+      "required": ["shape"],
+      "additionalProperties": false
+    },
+    "acceptance_criteria": { "type": "array", "items": { "type": "string" } },
+    "thread": { "type": "string" },
+    "supersedes": { "type": "string" },
+    "refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ref": { "type": "string" },
+          "note": { "type": "string" }
+        },
+        "required": ["ref"],
+        "additionalProperties": false
+      }
+    },
+    "origin": { "type": "array", "items": { "type": "string" } },
+    "migrated_from": { "type": "string" },
+    "interim_behavior": { "type": "string" },
+    "classification": {
+      "type": "string",
+      "enum": ["public", "internal", "restricted"],
+      "default": "internal"
+    },
+    "valid_until": { "type": "string", "format": "date" }
+  },
+  "required": [
+    "schema", "id", "type", "title", "space", "from", "to", "actor",
+    "created", "priority", "blocking", "classification"
+  ]
+}

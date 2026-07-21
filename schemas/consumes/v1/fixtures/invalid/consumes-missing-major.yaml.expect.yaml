@@ -1,0 +1,2 @@
+code: SCH-001
+note: consumes.schema.json's dependencies[] items require `major` (§5.2.3); this fixture omits it.

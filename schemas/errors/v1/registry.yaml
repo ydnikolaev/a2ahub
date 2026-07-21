@@ -1,0 +1,53 @@
+# Error-code registry — the-plan §5.5 validation classes.
+#
+# One entry per code: {code, class, title, applies_to}.
+# class in {schema, referential, lifecycle, policy} (§5.5's four validation
+# classes). Code format: <CLASS-ABBR>-<3 digits> (SCH-###, REF-###, LFC-###,
+# POL-###) — zero-padded, monotonic per class, append-only, never reused
+# once a fixture cites it (like CC-### in §12).
+#
+# This phase (P2) populates schema-class entries ONLY: T1 (§13.1) is
+# schema-structural validation. referential/lifecycle/policy rows need
+# runtime context this phase's static fixtures don't have — P3 appends them
+# to this same file (schemas/errors/v1/registry.yaml is the authored SSOT,
+# per spec 02 Open Q2 resolution).
+#
+# Every code below is cited by >=1 fixture's <name>.expect.yaml sidecar
+# under schemas/**/fixtures/invalid/ (AC-201.7: no orphans, no undefined
+# citations).
+
+entries:
+  - code: SCH-001
+    class: schema
+    title: Required field missing
+    applies_to: envelope/v1 (all 8 type schemas), event/v1, manifest/v1, consumes/v1
+
+  - code: SCH-002
+    class: schema
+    title: Value not permitted by its field's closed enum
+    applies_to: envelope/v1 category enums, event/v1 transition enum
+
+  - code: SCH-003
+    class: schema
+    title: Field present that its type's schema forbids
+    applies_to: envelope/v1 decision.schema.json (no `category` field per §5.2.1)
+
+  - code: SCH-004
+    class: schema
+    title: Exchange type's `to` field does not have exactly one entry
+    applies_to: envelope/v1 question/work_request/response/handoff schemas (§3.4.3, X class except decision)
+
+  - code: SCH-005
+    class: schema
+    title: Conditionally-required field missing for the declared category
+    applies_to: envelope/v1 work_request.schema.json (contract-change/process-change requires proposed_change + a pinned refs entry), announcement.schema.json (deprecation requires deprecates)
+
+  - code: SCH-006
+    class: schema
+    title: Value's JSON type does not match the schema's declared type
+    applies_to: any schemas/** schema (e.g. consumes/v1 dependencies[].major must be an integer)
+
+  - code: SCH-007
+    class: schema
+    title: String value fails its schema pattern (ID grammar, semver, ULID)
+    applies_to: envelope/v1 id (§3.3 grammar), event/v1 event (ULID), manifest/v1 min_binary_version (semver)

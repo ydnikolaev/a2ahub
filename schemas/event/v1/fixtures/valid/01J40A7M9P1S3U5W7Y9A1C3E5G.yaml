@@ -1,0 +1,12 @@
+schema: event/v1
+event: 01J40A7M9P1S3U5W7Y9A1C3E5G
+space: getvisa
+subject: XR-axon-country-vocabulary
+transition: satisfy
+state: satisfied
+actor: {kind: agent, name: claude-code, system: axon}
+at: 2026-08-05T17:45:00Z
+refs:
+  - {ref: "XS-seomatrix-20260805-b6n2"}
+  - {ref: "XC-seomatrix-content-payloads@2.2.0"}
+note: "All three ACs verified against fixtures."

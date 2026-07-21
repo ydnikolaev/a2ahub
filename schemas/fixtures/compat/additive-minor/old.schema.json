@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "compat-fixture/additive-minor/widget-1.0.0.schema.json",
+  "title": "Widget payload (contract v1.0.0) — compat-check golden (§5.4b, CC-080)",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  },
+  "required": ["name"],
+  "additionalProperties": false
+}

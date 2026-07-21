@@ -1,0 +1,2 @@
+code: SCH-006
+note: "`major: \"2\"` is a string; consumes.schema.json's dependencies[].major requires integer (§5.2.3)."

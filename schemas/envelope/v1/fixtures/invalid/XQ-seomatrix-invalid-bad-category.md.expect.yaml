@@ -1,0 +1,2 @@
+code: SCH-002
+note: "`category: not-a-real-category` is outside question's closed enum (clarification|defect|choice, §5.2.1)."

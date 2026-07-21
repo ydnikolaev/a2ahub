@@ -1,0 +1,7 @@
+schema: event/v1
+event: 01J5C3D4E5F6G7H8J9K0M2N3P4
+space: getvisa
+transition: acknowledge
+state: acknowledged
+actor: {kind: agent, name: claude, system: seomatrix}
+at: 2026-07-29T15:20:00Z

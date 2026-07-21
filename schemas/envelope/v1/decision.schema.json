@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "envelope/v1/decision.schema.json",
+  "title": "Envelope: decision (v1)",
+  "description": "No `category` field per the-plan §5.2.1 (dash entry) — the enum is omitted entirely (not an empty enum), and since neither base nor this schema defines `category`, unevaluatedProperties:false structurally rejects a category field if present.",
+  "allOf": [{ "$ref": "base.schema.json" }],
+  "type": "object",
+  "properties": {
+    "type": { "const": "decision" },
+    "id": { "pattern": "^XD-" },
+    "required_approvers": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "context": { "type": "string" },
+    "options_considered": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+  },
+  "required": ["required_approvers", "context", "options_considered"],
+  "patternProperties": { "^x_": true },
+  "unevaluatedProperties": false
+}

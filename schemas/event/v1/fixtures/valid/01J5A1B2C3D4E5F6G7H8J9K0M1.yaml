@@ -1,0 +1,8 @@
+schema: event/v1
+event: 01J5A1B2C3D4E5F6G7H8J9K0M1
+space: getvisa
+subject: XQ-seomatrix-20260730-h2k8
+transition: note
+actor: {kind: agent, name: claude, system: axon}
+at: 2026-07-31T09:00:00Z
+note: "Reminder: still investigating, ETA end of week."

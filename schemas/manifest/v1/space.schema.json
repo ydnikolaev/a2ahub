@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "manifest/v1/space.schema.json",
+  "title": "Space manifest — space.yaml (v1)",
+  "description": "No single §5 table enumerates space.yaml's fields (Open Q1). Derived from §4.2's layout comment ('manifest: space id, schema version, participants, gates config, notification routes') plus the A2.13 excerpt. Fields named in prose but absent from A2.13 (full `gates` sub-shape, notification routes) are typed permissively (open) pending a normative table.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "space/v1",
+      "description": "Literal value per A2.13's golden fixture — NOT `manifest/v1` (see phase deviations note: naming tension between this value and the sibling envelope/event/consumes URI convention, unresolved upstream)."
+    },
+    "space": { "type": "string" },
+    "min_binary_version": {
+      "type": "string",
+      "description": "D-013: stale binaries refuse to operate against a space above their known version.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "gates": {
+      "description": "Gates config (G1-G5, §3.7) — full sub-shape not tabulated in §5 (Open Q1); typed permissively."
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "system": { "type": "string" },
+          "org": { "type": "string" },
+          "section": { "type": "string" },
+          "owners": { "type": "array", "items": { "type": "string" } },
+          "status": { "type": "string", "enum": ["active", "left"] },
+          "joined": { "type": "string", "format": "date" }
+        },
+        "required": ["system", "org", "section", "owners", "status", "joined"],
+        "additionalProperties": true
+      }
+    },
+    "vendored": {
+      "type": "array",
+      "description": "Read-only vendor mirrors (§4.4); item shape not tabulated in §5 (Open Q1) — typed permissively."
+    }
+  },
+  "required": ["schema", "space", "min_binary_version", "participants"],
+  "additionalProperties": true
+}
