@@ -27,6 +27,18 @@
       AssertFormat turned a bad `created` into a hard error and no SCH-
       code exists). Decide whether RFC-3339 field enforcement gets its own
       SCH row + fixtures (P2-style commit) or stays annotation-only.
+- [ ] fold.CheckLegality has no verify/dispute case (they target a
+      response, not the parent — need Kind=KindResponse + response
+      substate + parent envelope); naive P8 wiring fails closed+loud but
+      the D-024 closure model is untested at the pre-write reject surface.
+      WAVE-3/P8 INPUT: wire + test verify/dispute legality with the real
+      caller (auditor gave the exact repro). No live defect today.
+- [ ] fold has no exported helper to gather a parent exchange's events
+      PLUS its attached responses' verify/dispute events (those carry the
+      response ID as Subject). A P7-cache query by `Subject == parentID`
+      alone silently misses them → stuck substate. WAVE-3/P7 INPUT: add
+      the event-gathering helper (or document the query contract) when P7
+      builds the cache that needs it.
 - [ ] Decision-supersede successor-authorship is structurally unverifiable
       in `internal/fold` (membership-only check shipped) — real
       enforcement gap; P8 (lifecycle verbs) should decide where it lands.
