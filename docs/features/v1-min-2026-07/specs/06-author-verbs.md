@@ -2,6 +2,7 @@
 
 **Slug**: `v1-min-2026-07`  ·  **Track**: cli  ·  **Status**: draft
 **Created**: 2026-07-21  ·  **Owner**: yura
+**Plan**: [plans/06-author-verbs.plan.md](../plans/06-author-verbs.plan.md)
 **Footprint**: `internal/template/` (embedded P2 templates + render), `internal/cli/cmd_init.go` (OP-201 `init`, OP-202 `connect`/`disconnect`), `internal/cli/cmd_new.go` (OP-203 `new`, OP-219 `template list/show`), `internal/cli/cmd_submit.go` (OP-205 `submit`, OP-220 `submit --batch`, OP-204 `validate`), `internal/cli/cmd_sync.go` (OP-206 `sync`), `cmd/a2a` wiring lines only (registering the new subcommands) — no other file in `internal/cli/` or elsewhere. Every one of P6's 9 OP entries (OP-201…OP-206, OP-219, OP-220, plus the `validate` verb) is pinned to exactly one of these four files so P7/P8 — which also add files to `internal/cli/` in the same wave-DAG position — cannot collide by creating a same-named file.
 
 May import (per [ADR-001](../../../decisions.md)): `internal/template` → `internal/artifact`, `internal/schema` only. `internal/cli` (this phase's four files) → `internal/artifact`, `internal/schema`, `internal/fold`, `internal/validate`, `internal/host`, `internal/space`, `internal/template` (the "core packages above" the `internal/cli` row of ADR-001 grants — `internal/cache` is excluded: P7 builds it and is blocked_by P6, so it does not exist yet at this phase's build time).

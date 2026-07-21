@@ -7,6 +7,7 @@
 
 **Slug**: `v1-min-2026-07`  ·  **Track**: space  ·  **Status**: draft
 **Created**: 2026-07-21  ·  **Owner**: yura
+**Plan**: [plans/09-space-template-ci.plan.md](../plans/09-space-template-ci.plan.md)
 **Footprint**: `space-template/**`, `internal/cli/cmd_doctor.go`, one wiring
 line in `cmd/a2a` — the space repo scaffold + V3 CI workflow + the basic
 `a2a doctor` command. Per ADR-001: `space-template/` is data (no imports);

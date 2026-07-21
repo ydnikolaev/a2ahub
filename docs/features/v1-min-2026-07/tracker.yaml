@@ -63,8 +63,9 @@ phases:
 
   - id: P6
     title: Author verbs — init/connect/new/validate/submit/batch/sync + templates
-    status: pending
+    status: in-progress
     spec: specs/06-author-verbs.md
+    plan: plans/06-author-verbs.plan.md
     blocked_by: [P3, P4, P5]
     commits: []
     audit: open
@@ -87,8 +88,9 @@ phases:
 
   - id: P9
     title: Space template + V3 CI (diff-authz, compat 5.4b) + basic doctor
-    status: pending
+    status: in-progress
     spec: specs/09-space-template-ci.md
+    plan: plans/09-space-template-ci.plan.md
     blocked_by: [P3, P5]
     commits: []
     audit: open
