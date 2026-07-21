@@ -43,6 +43,11 @@ var (
 
 	// ErrNotUTF8 is CC-007: the artifact's raw bytes are not valid UTF-8.
 	ErrNotUTF8 = errors.New("validate: artifact is not valid utf-8")
+
+	// ErrNoOwnSystem is returned by ValidateForSubmit when the V2
+	// LocalContext carries no OwnSystem — a caller misconfiguration that
+	// would otherwise fail-open the CC-002 authz check. Fails closed.
+	ErrNoOwnSystem = errors.New("validate: V2 LocalContext.OwnSystem is empty")
 )
 
 // Error is the small typed error every exported operation in this package

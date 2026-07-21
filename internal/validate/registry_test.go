@@ -99,6 +99,9 @@ func TestRegistryClosure(t *testing.T) {
 	record(checkRefs(envelope{Refs: []refEntry{{Ref: "XC-axon-unknown"}}}, resolver))
 	// REF-004: ref resolves, pinned digest mismatches.
 	record(checkRefs(envelope{Refs: []refEntry{{Ref: "XC-axon-ingest#deadbeef"}}}, resolver))
+	// REF-008: id is known but the digest-pinned target can't be resolved
+	// to verify (Digest returns found=false for this exact pinned ref).
+	record(checkRefs(envelope{Refs: []refEntry{{Ref: "XC-axon-ingest#cafebabe"}}}, resolver))
 	// REF-007: ref resolves, but is entirely unpinned.
 	record(checkRefs(envelope{Refs: []refEntry{{Ref: "XC-axon-ingest"}}}, resolver))
 

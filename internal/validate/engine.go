@@ -67,6 +67,14 @@ func (e *Engine) ValidateDraft(d Draft) (Result, error) {
 // legality of the accompanying events, and the policy secret scan.
 func (e *Engine) ValidateForSubmit(d Draft, events []CandidateEvent, ctx LocalContext) (Result, error) {
 	const op = "ValidateForSubmit"
+	// V2 authz (CC-002) compares `from` against the caller's own system;
+	// an empty OwnSystem would silently skip that check for EVERY
+	// submission (fail-open). A V2 call without OwnSystem is a caller
+	// misconfiguration, not a valid document — fail closed and loud,
+	// mirroring internal/fold's nil-membership fail-closed default.
+	if ctx.OwnSystem == "" {
+		return Result{}, &Error{Op: op, Err: ErrNoOwnSystem}
+	}
 	violations, artifactID, env, ok, err := e.runCommonEnvelope(d)
 	if err != nil {
 		return Result{}, &Error{Op: op, Err: err}

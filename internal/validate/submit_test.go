@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"errors"
 	"os"
 	"testing"
 )
@@ -64,6 +65,18 @@ func TestAuthzFromOwnSection(t *testing.T) {
 		}
 		if hasCode(result.Violations, "REF-005") {
 			t.Fatalf("expected no authz violation when from == own system, got %+v", result.Violations)
+		}
+	})
+
+	t.Run("empty OwnSystem fails closed (never fail-open authz)", func(t *testing.T) {
+		t.Parallel()
+		_, err := engine.ValidateForSubmit(
+			Draft{Path: "axon/exchanges/XW-axon-20260731-p9d3.md", Raw: []byte(validWorkRequestBody)},
+			nil,
+			LocalContext{}, // OwnSystem unset — a caller/wiring misconfiguration
+		)
+		if !errors.Is(err, ErrNoOwnSystem) {
+			t.Fatalf("ValidateForSubmit with empty OwnSystem: err = %v, want ErrNoOwnSystem", err)
 		}
 	})
 
