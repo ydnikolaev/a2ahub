@@ -2,6 +2,7 @@
 
 **Slug**: `v1-min-2026-07`  ·  **Track**: cli  ·  **Status**: draft
 **Created**: 2026-07-21  ·  **Owner**: yura
+**Plan**: [plans/04-fold-engine.plan.md](../plans/04-fold-engine.plan.md)
 **Footprint**: `internal/fold/` only — may import `internal/artifact` (ADR-001);
 **MUST NOT** import `internal/schema`, `internal/space`, `internal/host`,
 `internal/validate`, `internal/cache`, `internal/cli`, or any package that

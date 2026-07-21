@@ -9,6 +9,7 @@
 
 **Slug**: `v1-min-2026-07`  ·  **Track**: cli  ·  **Status**: draft
 **Created**: 2026-07-21  ·  **Owner**: yura
+**Plan**: [plans/05-space-and-host.plan.md](../plans/05-space-and-host.plan.md)
 **Footprint**: `internal/host/`, `internal/space/` — host adapter interface +
 GitHub implementation (ephemeral branch push, PR open with auto-merge,
 check/review status queries); space layout model, `space.yaml` manifest
@@ -209,6 +210,23 @@ phase's unit-test surface.
 > Append-only. When shipped reality deviates from this spec, record it here.
 
 <!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->
+
+### 2026-07-21 — wave-2 planning adjudications (lead, pre-implementation)
+
+- **Validate/schema seams consumed via consumer-side interfaces** (rails
+  ISP/DI), not package imports: P3 builds `internal/validate`/
+  `internal/schema` in the same wave; `internal/space` defines its own
+  submit-validator and manifest-validator interfaces, takes them in
+  constructors, tests with fakes; cmd/a2a (P6) wires the real engine.
+  ADR-001's import grants remain the ceiling.
+- **`testkit/spacefixture` added to this phase's footprint** (rails
+  pre-flight #6): P5 is the first consumer of throwaway git space fixtures
+  and creates the minimal shared builder; P10 extends it.
+- **Credential references** in machine config take the forms `env:<VAR>` or
+  `cmd:<argv...>` (portable superset of "keychain" — a keychain lookup is a
+  `cmd:` helper); resolution precedence per Open Q1's RESOLVED note.
+- **Binary version for the CC-085 guard** is injected via constructor DI
+  from cmd/a2a's version stamp; `internal/space` never reads build info.
 
 ### 2026-07-21 — from coherence audit (pre-implementation)
 

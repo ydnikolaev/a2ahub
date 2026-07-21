@@ -31,13 +31,14 @@ phases:
     spec: specs/02-product-schemas.md
     plan: plans/02-product-schemas.plan.md
     blocked_by: []
-    commits: [6bf4205, 3fd4621]
+    commits: [6bf4205, 3fd4621, c5d521e]
     audit: open
 
   - id: P3
     title: Validation engine (V1/V2 classes, machine codes, secret-scan)
     status: pending
     spec: specs/03-validation-engine.md
+    plan: plans/03-validation-engine.plan.md
     blocked_by: [P1, P2]
     commits: []
     audit: open
@@ -46,6 +47,7 @@ phases:
     title: Fold engine — transition tables, determinism (T2)
     status: pending
     spec: specs/04-fold-engine.md
+    plan: plans/04-fold-engine.plan.md
     blocked_by: [P1, P2]
     commits: []
     audit: open
@@ -54,6 +56,7 @@ phases:
     title: Space model, mirrors, GitHub host adapter, PR write funnel
     status: pending
     spec: specs/05-space-and-host.md
+    plan: plans/05-space-and-host.plan.md
     blocked_by: [P1]
     commits: []
     audit: open

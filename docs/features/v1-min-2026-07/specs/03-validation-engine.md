@@ -2,6 +2,7 @@
 
 **Slug**: `v1-min-2026-07`  ·  **Track**: cli  ·  **Status**: draft
 **Created**: 2026-07-21  ·  **Owner**: yura
+**Plan**: [plans/03-validation-engine.plan.md](../plans/03-validation-engine.plan.md)
 **Footprint**: `internal/schema/`, `internal/validate/` — embed + load product
 schemas from `schemas/**` (owned by P2) and implement THE one validation
 engine (schema / referential / lifecycle / policy classes) with the V1
@@ -190,6 +191,24 @@ Full loop: [docs/features/README.md](../../../features/README.md).
 ## 11. Amendments
 
 <!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->
+
+### 2026-07-21 — wave-2 planning adjudications (lead, pre-implementation)
+
+- **AC-401.2 gate lands here** (shift-left plan review MED-3, recorded in
+  spec 02 Amendments): an embedded Go test in `internal/schema` asserts the
+  8 envelope schemas ↔ 8 templates pairing and the invalid-fixture-sidecar ↔
+  registry closure (both directions). It runs under `go test ./...` inside
+  `make check`, so product CI enforces it with no separate script.
+- **Embed placement**: `go:embed` cannot traverse `..`, so the corpus is
+  embedded by a minimal `package schemas` in `schemas/embed.go` (excluding
+  `fixtures/` trees), consumed by `internal/schema`; `schemas/embed.go` is
+  added to this phase's footprint as a narrow grant.
+- **Fold seam consumed via a consumer-side interface** (rails ISP/DI), not a
+  package import: P4 builds `internal/fold` in the same wave;
+  `internal/validate` defines a 1-method LegalityChecker interface matching
+  §7's 3-valued verdict and takes it via constructor DI; cmd/a2a (P6) wires
+  fold's implementation. AC row 7's import allowlist is satisfied from
+  below; §7's "imports and calls" ownership rule is honored at wiring time.
 
 ### 2026-07-21 — from coherence audit (pre-implementation)
 
