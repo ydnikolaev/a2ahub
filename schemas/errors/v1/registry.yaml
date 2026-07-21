@@ -142,3 +142,8 @@ entries:
     class: policy
     title: Envelope schema version is outside the one-cycle overlap window this binary understands
     applies_to: envelope/v1 `schema` field (§5.4 last bullet, CC-005) — refuse write, read-only + warning
+
+  - code: POL-006
+    class: policy
+    title: Retire refused, a registered consumer has not acknowledged the deprecation
+    applies_to: internal/validate.CheckRetirePrecondition (§5.4/D-022, CC-081/CC-082/CC-086) — `a2a contract retire`, refused locally unless the human-gated override's full precondition set is met
