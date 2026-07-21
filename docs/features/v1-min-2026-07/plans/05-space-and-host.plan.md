@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 phase: P5
 spec: ../specs/05-space-and-host.md
 wave: 2
-status: planned
+status: verified
 ---
 
 # Phase plan — P5 Space model, mirrors & GitHub host adapter
@@ -152,7 +152,21 @@ exported API (IDs, digests, frontmatter — reuse, never re-implement).
 
 ## Phase log
 
-(detail blocks per S6.f)
+### Wave 2 — 2026-07-21
+
+- Agent: coder/sonnet/high. Files/Commits: 25 / d0e6386 (+ SpaceRef→Ref
+  lint rename, ManifestValidator doc-comment correction by lead).
+- Verify: lead re-ran full `make check`; import ceilings confirmed
+  (host: zero a2ahub deps beyond itself; space: artifact+host only).
+- Deviations adjudicated → spec 05 §Amendments "from wave 2" block
+  (GraphQL auto-merge, git-push credential tradeoff, ReviewStatus
+  heuristic, cmd: argv split, env-var name = P6 DI, CC-085 typed error,
+  manifest seam schema-class-only + backlog, FakeHost placement).
+- Epic-direction reconcile: still-serves (funnel matches D-002/D-026
+  verbatim; idempotency AC-301.1 test-backed).
+- Notes: propagation probe flagged the P6 adapter weight (Draft/event
+  splitting, LocalContext closure, Result→error mapping) — carried into
+  wave-3 planning inputs.
 
 ## Deferred / follow-ups
 

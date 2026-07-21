@@ -223,4 +223,29 @@ Full loop (README/tracker/specs shapes, lint gate):
 - Added an explicit flag-set reconciliation sentence under the §T1 table: the legality check's verdict set is a strict subset of fold's flag set, with `state-claim-mismatch` called out as fold-only (no committed claim exists to check for a not-yet-committed candidate event).
 - Clarified in §T1.2 that the legality check is the only rejecting surface this package exports and rejects only pre-write; fold itself keeps its existing non-fatal semantics (never errors/panics on flagged, already-committed events) unchanged.
 
+### 2026-07-21 — from wave 2: shipped-reality deltas
+
+- **respond self-loop added** (responded→respond→responded) beyond the
+  literal §3.4.3 rows — without it a second response is structurally
+  illegal, contradicting D-024's explicit multi-response guarantee.
+- **Zero-events fallback**: `Fold` over an empty stream returns each kind's
+  post-submission state (per the domain doc's literal line); the internal
+  per-event starting carrier is `draft`. The asymmetry is documented and
+  unreachable in practice (entry event travels in the artifact's first PR);
+  decision's empty-stream case stays `draft` (its first event is propose).
+- **Decision supersede is membership-only**: the table's stated actor
+  ("author of the successor decision") is a fact about a different,
+  not-yet-existing artifact — structurally unverifiable from the
+  predecessor's envelope. Real enforcement gap flagged to P3/P8 (backlog).
+- **`note` additionally gets rule-3 authorization** (either party;
+  unauthorized-actor flag for a third party, never illegal-transition,
+  never a state change) — interpretive extension of D-025 for fidelity to
+  the surrounding prose; broadcast-ack stays membership-only.
+- **Unknown membership is fail-closed** everywhere (spec left the policy
+  open; defense-in-depth default chosen).
+- **Contract carries one top-level state** (publish-new-version =
+  published self-loop); no per-version sub-state machine this phase.
+- **ExpiredOverlay(validUntil, reference)** drops the folded-state input
+  the §T1 table listed — the overlay never depends on it.
+
 <!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->

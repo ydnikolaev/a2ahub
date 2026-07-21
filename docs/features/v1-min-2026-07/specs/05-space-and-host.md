@@ -211,6 +211,33 @@ phase's unit-test surface.
 
 <!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->
 
+### 2026-07-21 — from wave 2: shipped-reality deltas
+
+- **OpenPR's auto-merge uses a GraphQL mutation** (enablePullRequestAutoMerge)
+  behind the same net/http client and BaseURL — GitHub's REST API has no
+  auto-merge toggle; the "REST" wording in §5/§10 was aspirational. P10/P11
+  live integration must account for the /graphql endpoint.
+- **PushBranch is os/exec `git push`** (explicit argv, D-019 "core speaks
+  plain git"); the credential rides a per-invocation
+  `-c http.extraheader=AUTHORIZATION:...` override — never persisted, but
+  ps-visible for the duration of that one git call (accepted tradeoff,
+  same technique as actions/checkout).
+- **ReviewStatus is a raw latest-review-per-login fold** — no CODEOWNERS
+  path mapping (host has no space.yaml knowledge, per §T1).
+- **`cmd:` credential references split argv on whitespace** — no quoting
+  grammar in v1; an argv element containing a space is unrepresentable.
+- **The explicit-override env-var NAME is a DI parameter**, frozen at
+  cmd/a2a wiring (P6) alongside the A2A_ACTOR_* precedent.
+- **CC-085's "loud warning" ships as the typed ErrStaleBinaryVersion** with
+  the version comparison in the message — surfacing is transport's job
+  (log-or-return).
+- **ManifestValidator seam is schema-class-only today** (the probe caught
+  the doc comment overclaiming P3 referential/policy manifest checks that
+  no package ships yet); comment corrected, ownership of those checks is a
+  backlog row for wave-3 planning.
+- **FakeHost ships as an exported type in internal/host** (importable by
+  consumers' tests) — placement choice, no production callers.
+
 ### 2026-07-21 — wave-2 planning adjudications (lead, pre-implementation)
 
 - **Validate/schema seams consumed via consumer-side interfaces** (rails

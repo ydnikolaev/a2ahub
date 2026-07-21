@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 phase: P3
 spec: ../specs/03-validation-engine.md
 wave: 2
-status: planned
+status: verified
 ---
 
 # Phase plan — P3 Validation engine
@@ -168,7 +168,21 @@ docs/features/v1-min-2026-07/plans/03-validation-engine.plan.md.
 
 ## Phase log
 
-(detail blocks per S6.f)
+### Wave 2 — 2026-07-21
+
+- Agent: coder/sonnet/high. Files/Commits: 18 / 5fa17f0 (+ lint batch).
+- Verify: lead re-ran full `make check` (integration compile of all wave-2
+  packages, lint 0, -race green); import allowlist confirmed via go list.
+- Deviations adjudicated → spec 03 §Amendments "from wave 2" block:
+  jsonschema/v6 cascade defect (ajv-verified, encapsulated), AssertFormat
+  off, CC-003→V2, class mapping (authz→referential; CC-001/005/006/007→
+  POL-002..005), Severity field, P6 seam facts (LegalityChecker adapter
+  folds local history; JSON tags = P6). Backlog: format-assertion
+  decision, Result JSON shape, manifest ref/policy checks unowned.
+- Epic-direction reconcile: still-serves (D-011 one-engine intact; all
+  deltas are documented narrowings/refinements).
+- Notes: agent self-reported one habitual early repo-wide `go build` before
+  siblings had code — caught itself, no impact; noted for S11.
 
 ## Deferred / follow-ups
 

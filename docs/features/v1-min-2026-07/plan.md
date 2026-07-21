@@ -105,6 +105,7 @@ Verdict: ✅ PROCEED
 - Wave 1 — foundation ∥ schemas — 2026-07-21 — P1 done, P2 shipped/held — commits 38677dd, 6bf4205 — make check green — STOP raised: 3 A2-examples plan-corpus defects (B.7, B.10, B.11) + rand4 charset fixed lead-side — details: plans/01-foundation.plan.md, plans/02-product-schemas.plan.md
 - Wave 1.1 — plan-corpus repair — 2026-07-21 — P2 done (operator ceded fork; self-evaluate PROCEED option a: B.7 fields added, B.10 title quoted, B.11 ULID fixed, fixtures re-synced byte-for-byte) — commit 3fd4621 — make check green — details: plans/02-product-schemas.plan.md
 - Wave 1.2 — early audit + fixes — 2026-07-21 — go-auditor FIX-AND-REAUDIT → fix c5d521e (CC-011 conditional + SCH-008 + fixtures + CI hardening) → re-audit found own regression → fix fb33d53 (fixture isolation) → re-audit 2: PASS (ajv cross-check). P1/P2 audit: done. Forward note for P3 recorded in its plan (annotation-propagation edge). — make check green
+- Wave 2 — engines + host — 2026-07-21 — P3, P4, P5 done — commits 5fa17f0, 3309521, d0e6386 (+ haiku lint batch, fold.Result rename, manifest-seam doc fix folded in) — make check green (8 packages, lint 0) — propagation: specs 03/04/05 amended, 4 backlog rows (manifest ref/policy checks unowned, Result JSON tags, format-assertion decision, decision-supersede gap), P6-adapter weight flagged in spec 03 — details: plans/03,04,05 *.plan.md
 
 ## Revisions (user feedback loop)
 

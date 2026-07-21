@@ -192,6 +192,36 @@ Full loop: [docs/features/README.md](../../../features/README.md).
 
 <!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->
 
+### 2026-07-21 — from wave 2: shipped-reality deltas
+
+- **jsonschema/v6 annotation-cascade defect confirmed and encapsulated**:
+  v6.0.2 does not propagate allOf/$ref annotations when that branch fails,
+  spuriously flagging base fields via `unevaluatedProperties` (verified
+  against ajv 8.20 on the SCH-007 fixture). Fix lives entirely inside
+  `internal/schema` (BaseEnvelopeFields filter in extractFieldViolations) —
+  V3/V4 mounting the same package inherit it automatically.
+- **Format assertions OFF** (2020-12 default): AssertFormat made a malformed
+  `created` a hard Go error instead of a violation, and no SCH- code exists
+  for format failures. Pinned by TestFormatIsAnnotationOnly; RFC-3339 field
+  enforcement is an open decision (backlog).
+- **CC-003 (ID/filename/section) runs in V2 only** — V1 stays strictly
+  schema-class + admission guards; the spec's own §6-vs-§5.5 tension is
+  resolved operationally, documented in ValidateDraft's doc comment.
+- **Class mapping under the registry-prefix constraint**: authz findings
+  report as class `referential` (no authz value in the §7 enum); the
+  pre-schema admission guards ship as policy-class rows — CC-001→POL-002,
+  CC-006→POL-003, CC-007→POL-004, CC-005→POL-005; secret scan is POL-001.
+- **`Severity` field added to Violation** (Reject default / Warning for
+  unpinned-refs §3.8 and G5-flag cases); `Result.Valid` flips only on
+  Reject. Every other consumer of the shape (P6, P9, hub) must honor this
+  identically (D-011).
+- **Seam facts for P6 wiring** (from the propagation probe): the concrete
+  LegalityChecker must derive (kind, envelope, current folded state) itself
+  — the Resolver seam deliberately does not expose them, so the adapter
+  folds locally staged history via `internal/fold`; `Result`/`Violation`
+  carry no JSON tags — the §7 snake_case wire shape is the CLI renderer's
+  to produce (P6, backlog row).
+
 ### 2026-07-21 — wave-2 planning adjudications (lead, pre-implementation)
 
 - **AC-401.2 gate lands here** (shift-left plan review MED-3, recorded in

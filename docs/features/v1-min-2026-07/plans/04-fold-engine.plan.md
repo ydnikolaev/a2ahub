@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 phase: P4
 spec: ../specs/04-fold-engine.md
 wave: 2
-status: planned
+status: verified
 ---
 
 # Phase plan — P4 Fold engine
@@ -125,7 +125,18 @@ errors, fold never fails on them).
 
 ## Phase log
 
-(detail blocks per S6.f)
+### Wave 2 — 2026-07-21
+
+- Agent: coder/sonnet/high. Files/Commits: 15 / 3309521 (+ lead rename
+  FoldResult→Result before commit, package-local, pre-consumer).
+- Verify: lead re-ran scoped tests post-rename + full `make check`;
+  purity confirmed (go list -deps = artifact only). 106 table rows, meta-
+  test pins coverage; T2 properties green.
+- Deviations adjudicated → spec 04 §Amendments "from wave 2" block
+  (respond self-loop, zero-events asymmetry, decision-supersede
+  membership-only gap → backlog, note rule-3 extension, fail-closed
+  unknown membership, single contract state, ExpiredOverlay signature).
+- Epic-direction reconcile: still-serves.
 
 ## Deferred / follow-ups
 
