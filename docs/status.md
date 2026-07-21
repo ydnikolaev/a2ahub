@@ -9,8 +9,9 @@
 
 - **Epic [v1-min](features/v1-min-2026-07/README.md)** — space + `a2a` binary
   core + day-one content (plan §15 L0–L2 + E7 tail, D-030). Spec corpus cut
-  from the plan 2026-07-21; implementation not started.
-  <!-- epic-state: v1-min-2026-07 phases=0/14 -->
+  from the plan 2026-07-21; wave 1 shipped 2026-07-21 (P1 foundation done,
+  P2 schemas shipped but held on three A2-examples plan-corpus defects).
+  <!-- epic-state: v1-min-2026-07 phases=1/14 -->
 
 - **Dev-pipeline harness bootstrap** (2026-07-21) — orchestration inventory ported
   from the axon harness: agents (`scout`, `coder`, `go-auditor`), skills

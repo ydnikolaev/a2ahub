@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 phase: P2
 spec: ../specs/02-product-schemas.md
 wave: 1
-status: planned
+status: dispatched  # shipped 6bf4205; held open on A2 B.7/B.10/B.11 (operator decision)
 ---
 
 # Phase plan — P2 Product schemas v1
@@ -119,7 +119,31 @@ docs/features/v1-min-2026-07/specs/02-product-schemas.md.
 
 ## Phase log
 
-(detail blocks per S6.f)
+### Wave 1 — 2026-07-21
+
+- Agent: coder/sonnet/high, brief above executed as written; self-verified
+  with a scratch jsonschema-2020-12 harness (39 checks, 14 byte-diffs,
+  compat pair reproduced CC-080).
+- Files / Commits: 86 / 6bf4205
+- Verify: lead confirmed no out-of-allowlist writes; propagation probe
+  independently re-confirmed the registry cross-ref and the three A2
+  findings; lead fixed the rand4 charset drift (base.schema.json exchange
+  suffix → Crockford base32, matching internal/artifact — generator is
+  normative) before commit.
+- Deviations + downstream amendments: (accepted) response/handoff also
+  reject `category` (5.2.1 dashes); per-file `$id`s — P3 embedder must key
+  families accordingly; manifest `schema: space/v1` (matches A2.13);
+  event schema adds optional `commit`/`digest` from §5.2.2 prose;
+  `unevaluatedProperties` composition — P3 must confirm library support.
+  (ESCALATED, phase held open) A2-examples defects: B.7 response lacks
+  priority/blocking → the only response valid-fixture fails base schema
+  (AC-2 unmet for response); B.10 title is unparseable YAML (ParseFrontmatter
+  rejects it); B.11 satisfy-event ULID contains forbidden 'U'.
+- Epic-direction reconcile: STOP raised on the three plan-corpus defects —
+  §5.2/§13.5 invariants collide; operator decision requested at wave-1
+  handoff (options recorded there).
+- Notes: secret-corpus carries no code sidecars by design (policy-class
+  codes are P3's); false-positive budget documented in its README.
 
 ## Deferred / follow-ups
 

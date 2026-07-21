@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 phase: P1
 spec: ../specs/01-foundation.md
 wave: 1
-status: planned
+status: verified
 ---
 
 # Phase plan — P1 Foundation
@@ -130,7 +130,21 @@ product CI workflow — per docs/features/v1-min-2026-07/specs/01-foundation.md.
 
 ## Phase log
 
-(detail blocks per S6.f)
+### Wave 1 — 2026-07-21
+
+- Agent: coder/sonnet/high, brief above executed as written.
+- Files / Commits: 15 / 38677dd
+- Verify: lead re-ran `go test ./cmd/... ./internal/artifact/... -race
+  -count=1` (55 pass), full `make check` green (incl. golangci-lint 0
+  issues); diff matched claims, no out-of-allowlist writes.
+- Deviations + downstream amendments: 6 shipped-reality deltas recorded in
+  spec 01 §Amendments (ID-grammar narrowing, CRLF LF-normative round-trip,
+  string-only Digest, YAML-wellformedness guard, extended sentinel set, CI
+  lint-install step). ID-grammar narrowing also pushed to docs/backlog.md.
+- Epic-direction reconcile: still-serves (all deltas are narrowings/
+  hardenings within §3.3/§5.1 semantics).
+- Notes: coverage cmd 88.9% / artifact 89.3% (floor 70). `go run` remaps
+  exit codes — AC-8 verified against a compiled binary.
 
 ## Deferred / follow-ups
 

@@ -2,7 +2,7 @@
 # epic-drift (truth) in `make check`. Commit scope for check A: `v1-min`.
 slug: v1-min-2026-07
 status: active
-updated: 2026-07-21
+updated: 2026-07-21  # wave 1 (P1 done, P2 shipped/held)
 strategy: >
   Critical path P1 -> P3 -> P6 -> P7/P8 -> P10 -> P14. Parallel groups:
   {P1,P2} at start; {P3,P4,P5} after foundations; {P6,P9} next (P9 depends
@@ -18,20 +18,22 @@ strategy: >
 phases:
   - id: P1
     title: Foundation — go module, cmd/a2a skeleton, internal/artifact, product CI
-    status: in-progress
+    status: done
     spec: specs/01-foundation.md
     plan: plans/01-foundation.plan.md
     blocked_by: []
-    commits: []
+    commits: [38677dd]
     audit: open
 
   - id: P2
     title: Product schemas v1 + golden fixtures + error-code registry
+    # shipped 6bf4205; held open on A2 B.7/B.10/B.11 plan-corpus defects
+    # (operator decision pending)
     status: in-progress
     spec: specs/02-product-schemas.md
     plan: plans/02-product-schemas.plan.md
     blocked_by: []
-    commits: []
+    commits: [6bf4205]
     audit: open
 
   - id: P3

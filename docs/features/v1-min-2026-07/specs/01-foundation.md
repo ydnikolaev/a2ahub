@@ -243,6 +243,30 @@ Full loop (README/tracker/specs shapes, lint gate):
    noted here so a P2 author can check the interpretation against their own
    reading, not because the plan itself is contradictory.
 
+### 2026-07-21 — from wave 1: shipped-reality deltas (internal/artifact)
+
+- **ID grammar narrowed for parseability**: `system` is hyphen-free at the
+  mint/parse layer (a hyphenated system would make `<PREFIX>-<system>-<slug>`
+  ambiguous; both §3.3 examples are single-token). Consequence: standing
+  slugs beginning with a digit-run + hyphen (e.g. `24-7-monitoring`) are
+  rejected as malformed exchange-form attempts — the digit-run trigger is
+  what makes wrong-date-length / non-base32 suffixes reject per §6. Revisit
+  only if a real participant needs either shape (backlog row).
+- **CRLF**: `Serialize` emits the LF-normative `---\n<yaml>\n---\n<body>`
+  layout; CRLF inputs are parse-tolerant but do NOT byte-round-trip (§6's
+  round-trip AC holds on LF fixtures).
+- **Digest** returns the string form `sha256:<hex>` only (no raw-bytes
+  variant yet — additive later if a consumer needs it).
+- **ParseFrontmatter** additionally verifies the YAML block is well-formed
+  (rejects with `ErrMalformedFrontmatter`) while still storing raw bytes for
+  byte-faithful Serialize.
+- **Sentinel-error set** beyond the plan's examples: `ErrEmptyField`,
+  `ErrSectionMismatch`, `ErrMalformedFrontmatter`, `ErrMalformedULID`; all
+  wrapped by one typed `*Error{Op, Input, Err}`.
+- **CI** carries an install step for golangci-lint v2.12.2 (pinned) because
+  `make check` hard-fails when `.golangci.yml` exists without the binary;
+  the only project-specific step remains `make check`.
+
 ### 2026-07-21 — engineering rails + lint gate (pre-implementation)
 
 - **Root `AGENTS.md § a2ahub engineering rails` created** (ported/adapted
