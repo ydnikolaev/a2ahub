@@ -227,8 +227,11 @@ if [ "${1:-}" = "--teeth" ]; then
     echo "   ok — green before any seed"
 
     # CHECK B — the class this gate was built for: status.md narrating a stale reality.
+    # Falsify the done-count to 999, never 0: a fresh epic's real count IS 0, and a
+    # seed that replaces 0 with 0 is a no-op — the gate stays honestly green and the
+    # teeth red spuriously (caught 2026-07-21 on the first epic of this repo).
     echo "== teeth 2/8: a status.md stamp that disagrees with its tracker → RED =="
-    sed -i.bak -E 's/(<!-- epic-state: [a-z0-9-]+ phases=)[0-9]+(\/[0-9]+ -->)/\10\2/' "$tmp/status.md"
+    sed -i.bak -E 's/(<!-- epic-state: [a-z0-9-]+ phases=)[0-9]+(\/[0-9]+ -->)/\1999\2/' "$tmp/status.md"
     if run_gate; then
         echo "teeth FAILED: a stamp was falsified and the gate stayed GREEN — check B does not bite." >&2
         exit 1
@@ -282,19 +285,23 @@ if [ "${1:-}" = "--teeth" ]; then
     done
 
     if [ -z "$victim_sha" ]; then
-        echo "teeth: no tracker records an in-scope CODE commit — cannot seed a real violation" >&2
-        exit 1
+        # Not a failure: a fresh epic has no in-scope code commits yet, so there is
+        # nothing real to seed. A loud skip, not a red — same philosophy as the
+        # git/tracker preconditions at the top of this block. This branch re-arms
+        # itself: the seed appears with the first code commit filed in a tracker.
+        echo "== teeth 5/8: SKIPPED — no tracker records an in-scope CODE commit yet =="
+        echo "   check A's bite is unverified until the first \`feat|fix(...)(<scope>)\` commit lands in a tracker."
+    else
+        echo "== teeth 5/8: drop code commit $victim_sha from $(basename "$(dirname "$victim")") → the gate must go RED =="
+        grep -vE "^[[:space:]]+- ${victim_sha}\b" "$victim" > "$victim.seeded"
+        mv "$victim.seeded" "$victim"
+        if run_gate; then
+            echo "teeth FAILED: a code commit was dropped from a tracker and the gate stayed GREEN — check A does not bite." >&2
+            exit 1
+        fi
+        echo "   ok — the gate caught the dropped commit"
+        rm -rf "$tmp/features" && cp -R docs/features "$tmp/features"
     fi
-
-    echo "== teeth 5/8: drop code commit $victim_sha from $(basename "$(dirname "$victim")") → the gate must go RED =="
-    grep -vE "^[[:space:]]+- ${victim_sha}\b" "$victim" > "$victim.seeded"
-    mv "$victim.seeded" "$victim"
-    if run_gate; then
-        echo "teeth FAILED: a code commit was dropped from a tracker and the gate stayed GREEN — check A does not bite." >&2
-        exit 1
-    fi
-    echo "   ok — the gate caught the dropped commit"
-    rm -rf "$tmp/features" && cp -R docs/features "$tmp/features"
 
     # CHECK D — the seed must trip D and ONLY D. Emptying a phase's commits list would also
     # trip A (the hashes vanish) and flipping a phase to done would trip B (the stamp count
@@ -303,29 +310,31 @@ if [ "${1:-}" = "--teeth" ]; then
     # thing different. Then assert the red text is D's, not somebody else's.
     optout_file="$(grep -rlE '^[[:space:]]*commits:[[:space:]]*\[\][[:space:]]*#[[:space:]]*none:' "$tmp/features"/*/tracker.yaml | head -1 || true)"
     if [ -z "$optout_file" ]; then
-        echo "teeth: no tracker carries a \`commits: [] # none:\` opt-out — cannot seed check D" >&2
-        exit 1
-    fi
+        # Same loud-skip rule as teeth 5/8: a corpus with no `# none:` opt-out yet
+        # (nothing done without commits) has nothing real to seed check D against.
+        echo "== teeth 6/8 + 7/8: SKIPPED — no tracker carries a \`commits: [] # none:\` opt-out yet =="
+        echo "   check D's bite is unverified until the first receiptless done phase files its reason."
+    else
+        echo "== teeth 6/8: a done phase with an empty commits list and no stated reason → RED =="
+        sed -i.bak -E 's|^([[:space:]]*commits:[[:space:]]*\[\])[[:space:]]*#[[:space:]]*none:.*$|\1|' "$optout_file"
+        out="$(FEATURES_DIR="$tmp/features" STATUS_MD="$tmp/status.md" bash "$0" 2>&1 || true)"
+        if ! printf '%s' "$out" | grep -q 'no commits and no stated reason'; then
+            echo "teeth FAILED: an opt-out lost its reason and check D did not fire (or another check fired first):" >&2
+            printf '%s\n' "$out" >&2
+            exit 1
+        fi
+        echo "   ok — the gate demands receipts, or a reason"
 
-    echo "== teeth 6/8: a done phase with an empty commits list and no stated reason → RED =="
-    sed -i.bak -E 's|^([[:space:]]*commits:[[:space:]]*\[\])[[:space:]]*#[[:space:]]*none:.*$|\1|' "$optout_file"
-    out="$(FEATURES_DIR="$tmp/features" STATUS_MD="$tmp/status.md" bash "$0" 2>&1 || true)"
-    if ! printf '%s' "$out" | grep -q 'no commits and no stated reason'; then
-        echo "teeth FAILED: an opt-out lost its reason and check D did not fire (or another check fired first):" >&2
-        printf '%s\n' "$out" >&2
-        exit 1
+        echo "== teeth 7/8: the opt-out must carry a REASON — a bare \`# none:\` does not silence it =="
+        sed -i.bak -E 's|^([[:space:]]*commits:[[:space:]]*\[\])$|\1   # none:|' "$optout_file"
+        out="$(FEATURES_DIR="$tmp/features" STATUS_MD="$tmp/status.md" bash "$0" 2>&1 || true)"
+        if ! printf '%s' "$out" | grep -q 'no commits and no stated reason'; then
+            echo "teeth FAILED: a reasonless \`# none:\` silenced check D — the opt-out is a rubber stamp." >&2
+            exit 1
+        fi
+        echo "   ok — an empty excuse is not an excuse"
+        rm -rf "$tmp/features" && cp -R docs/features "$tmp/features"
     fi
-    echo "   ok — the gate demands receipts, or a reason"
-
-    echo "== teeth 7/8: the opt-out must carry a REASON — a bare \`# none:\` does not silence it =="
-    sed -i.bak -E 's|^([[:space:]]*commits:[[:space:]]*\[\])$|\1   # none:|' "$optout_file"
-    out="$(FEATURES_DIR="$tmp/features" STATUS_MD="$tmp/status.md" bash "$0" 2>&1 || true)"
-    if ! printf '%s' "$out" | grep -q 'no commits and no stated reason'; then
-        echo "teeth FAILED: a reasonless \`# none:\` silenced check D — the opt-out is a rubber stamp." >&2
-        exit 1
-    fi
-    echo "   ok — an empty excuse is not an excuse"
-    rm -rf "$tmp/features" && cp -R docs/features "$tmp/features"
 
     # A gate must also stay green on the shapes that are LEGITIMATE, or it teaches people to
     # work around it. Check A counts a hash under `commits_unlisted:` as accounted for; D must
@@ -344,8 +353,8 @@ if [ "${1:-}" = "--teeth" ]; then
     fi
 
     echo ""
-    echo "epic-docs-drift: teeth OK — green on the real corpus; red on a falsified stamp, a missing stamp,"
-    echo "                 a dangling link, a dropped commit, a receiptless done phase, and a reasonless opt-out."
+    echo "epic-docs-drift: teeth OK — green on the real corpus; red on every violation seeded above."
+    echo "                 Any seed marked SKIPPED is honestly unverified until the corpus can carry it."
     exit 0
 fi
 
