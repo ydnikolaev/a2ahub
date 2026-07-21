@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -64,6 +65,12 @@ func resolvePaths() (paths, error) {
 	}, nil
 }
 
+// cacheDirOf is the `.a2a/cache/` path — the home the read-surface Store
+// reads and the write verbs' pending-merge markers write.
+func cacheDirOf(p paths) string {
+	return filepath.Join(p.projectRoot, ".a2a", "cache")
+}
+
 // stdio builds the injected stream set from the dispatch writers.
 func stdio(stdout, stderr io.Writer) cli.IO {
 	return cli.IO{Stdin: os.Stdin, Stdout: stdout, Stderr: stderr}
@@ -99,7 +106,7 @@ func buildCommands() map[string]command {
 		if err != nil {
 			return fail(stderr, err)
 		}
-		return cli.NewDisconnectCommand(p.projectConfig, p.machineConfig, p.projectRoot, cli.NewNoopCacheRemover()).Run(context.Background(), args, stdio(stdout, stderr))
+		return cli.NewDisconnectCommand(p.projectConfig, p.machineConfig, p.projectRoot, cli.NewCacheBackedCacheRemover(cacheDirOf(p))).Run(context.Background(), args, stdio(stdout, stderr))
 	}
 
 	// Config-dependent verbs.
@@ -135,7 +142,7 @@ func buildCommands() map[string]command {
 		if err != nil {
 			return fail(stderr, err)
 		}
-		return cli.NewSyncCommand(p.projectConfig, p.machineConfig, p.projectRoot, cli.NewNoopPendingMarker()).Run(context.Background(), args, stdio(stdout, stderr))
+		return cli.NewSyncCommand(p.projectConfig, p.machineConfig, p.projectRoot, cli.NewCacheBackedPendingMarker(cacheDirOf(p))).Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["doctor"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
@@ -200,14 +207,27 @@ func readVerbs() map[string]func(*cache.Store) cli.Command {
 // space's mirror (resolving each mirror dir + loading its space.yaml
 // manifest). Read verbs never touch the network to build this.
 //
-// It is TOLERANT of missing config: a project with no `.a2a/config.yaml`
+// It is TOLERANT of an ABSENT config: a project with no `.a2a/config.yaml`
 // (or no connected spaces, or no machine config) yields a store over zero
 // mirrors — the read verbs then report empty, and `a2a statusline` stays
 // silent + exit 0 (CC-092). A missing config is a normal pre-onboarding
 // state, not an error the read path should crash on.
+//
+// A MALFORMED config (bad YAML, invalid credential reference) is NOT
+// tolerated — it surfaces loudly. Silently degrading a broken config to
+// "zero connected spaces" would make `a2a inbox`/`statusline` go quietly
+// empty while the user has real spaces and a typo, an undiagnosable failure
+// the no-swallowed-errors rail exists to prevent. Only os.ErrNotExist (the
+// file genuinely absent) is swallowed.
 func buildStore(p paths) (*cache.Store, error) {
-	cfg, _ := space.LoadProjectConfig(p.projectConfig)     // absent => zero cfg, zero spaces
-	machine, _ := space.LoadMachineConfig(p.machineConfig) // absent => zero machine config
+	cfg, err := space.LoadProjectConfig(p.projectConfig)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("load project config: %w", err)
+	}
+	machine, err := space.LoadMachineConfig(p.machineConfig)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("load machine config: %w", err)
+	}
 	mirrors := make([]cache.SpaceMirror, 0, len(cfg.Spaces))
 	for _, ref := range cfg.Spaces {
 		dir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
@@ -219,8 +239,7 @@ func buildStore(p paths) (*cache.Store, error) {
 			SpaceID: ref.ID, Dir: dir, RepoURL: ref.RepoURL, Manifest: manifest,
 		})
 	}
-	cacheDir := filepath.Join(p.projectRoot, ".a2a", "cache")
-	return cache.NewStore(cfg.System, cacheDir, mirrors, time.Now, 0), nil
+	return cache.NewStore(cfg.System, cacheDirOf(p), mirrors, time.Now, 0), nil
 }
 
 // lifecycleDeps is the per-space dependency set every P8 lifecycle/contract
@@ -415,6 +434,12 @@ func mirrorHoldsArtifact(mirrorDir, id string) bool {
 		if err != nil || found {
 			return nil
 		}
+		// Skip the bare `.git` object store — it never holds artifact files
+		// and walking it wastes work that grows with history (matches
+		// internal/cache's own walkers).
+		if d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
+		}
 		if !d.IsDir() && d.Name() == id+".md" {
 			found = true
 		}
@@ -543,7 +568,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 		CommitAuthorName:  cfg.System,
 		CommitAuthorEmail: cfg.System + "@a2a.local",
 	}
-	cmd := cli.NewSubmitCommand(funnel, legality, cli.NewNoopPendingMarker(), mirrorDir, ref.ID, cfg.System, p.staging, hostCfg)
+	cmd := cli.NewSubmitCommand(funnel, legality, cli.NewCacheBackedPendingMarker(cacheDirOf(p)), mirrorDir, ref.ID, cfg.System, p.staging, hostCfg)
 	return cmd.Run(ctx, args, io)
 }
 
