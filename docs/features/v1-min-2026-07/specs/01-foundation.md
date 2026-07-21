@@ -2,6 +2,7 @@
 
 **Slug**: `v1-min-2026-07`  ·  **Track**: cli  ·  **Status**: draft
 **Created**: 2026-07-21  ·  **Owner**: yura
+**Plan**: [plans/01-foundation.plan.md](../plans/01-foundation.plan.md)
 **Footprint**: `go.mod`, `go.sum`, `cmd/a2a/`, `internal/artifact/`, `.golangci.yml`, `.github/workflows/ci.yml` —
 Go module init (module path `github.com/ydnikolaev/a2ahub`, per the GitHub
 remote), the `a2a` binary's subcommand-dispatch skeleton + version stamp,

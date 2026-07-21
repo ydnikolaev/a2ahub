@@ -2,6 +2,7 @@
 
 **Slug**: `v1-min-2026-07`  ·  **Track**: schemas  ·  **Status**: draft
 **Created**: 2026-07-21  ·  **Owner**: yura
+**Plan**: [plans/02-product-schemas.plan.md](../plans/02-product-schemas.plan.md)
 **Footprint**: `schemas/**` only — `schemas/envelope/v1/` (common base + 8
 per-type extensions, plan §5.2/§5.2.1), `schemas/event/v1/` (§5.2.2),
 `schemas/manifest/v1/` (`space.yaml`), `schemas/consumes/v1/` (§5.2.3), the
@@ -162,6 +163,19 @@ code, so no library selection is made here (P3's concern). Full loop:
   is the authored SSOT; P3 adds non-schema-class rows to the same file and
   `internal/validate` embeds it. Question text preserved above, resolution
   appended in place.
+
+### 2026-07-21 — from shift-left plan review (pre-implementation)
+- AC row 1 (AC-401.2) enforcement owner corrected: the schema↔template
+  pairing gate (and the fixture↔registry cross-ref of AC row 7's note) ships
+  as an **embedded Go test in P3's footprint** — it runs under
+  `go test ./...` inside `make check`, so product CI (P1's workflow)
+  enforces it with no separate script surface. P1's CI as scoped carries no
+  schema-drift step of its own; the review found the gate otherwise
+  unowned. Spec 03 to be amended accordingly at wave-2 planning.
+- Invalid-fixture annotation format pinned (review LOW-2, consumed by P3's
+  cross-ref): a sidecar `<fixture-name>.expect.yaml` with at least
+  `code: SCH-###` next to each invalid fixture; fixture bodies stay
+  byte-pure.
 
 ---
 

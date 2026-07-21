@@ -18,16 +18,18 @@ strategy: >
 phases:
   - id: P1
     title: Foundation — go module, cmd/a2a skeleton, internal/artifact, product CI
-    status: pending
+    status: in-progress
     spec: specs/01-foundation.md
+    plan: plans/01-foundation.plan.md
     blocked_by: []
     commits: []
     audit: open
 
   - id: P2
     title: Product schemas v1 + golden fixtures + error-code registry
-    status: pending
+    status: in-progress
     spec: specs/02-product-schemas.md
+    plan: plans/02-product-schemas.plan.md
     blocked_by: []
     commits: []
     audit: open
