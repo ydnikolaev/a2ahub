@@ -53,3 +53,43 @@ func TestStatuslineCommand_UsageError(t *testing.T) {
 		t.Fatalf("code = %d, want 2", code)
 	}
 }
+
+// TestStatuslinePerf is spec 10 §8 AC-4 (13.4, AC-601.2): the render
+// completes <100ms from a WARM cache. "Warm" here is the mirror's own
+// sync-age freshness (cache/staleness.go's mirrorSyncAge, keyed off
+// .git/FETCH_HEAD or .git/HEAD's mtime) — cliWriteManifest/cliWriteArtifact
+// write directly into a real git-initialized directory (see
+// cachetest_helpers_test.go), so its .git metadata is fresh by
+// construction; cold-cache first-run (a never-synced mirror) is explicitly
+// out of scope per 13.4 ("from cache"). Statusline.triggerRefreshIfStale
+// spawns any refresh in a detached goroutine it never waits on, so this
+// budget is unaffected by however long a real git fetch would take —
+// this test measures the SAME call path the CLI command wraps, not a
+// synthetic shortcut.
+func TestStatuslinePerf(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	manifest := cliWriteManifest(t, dir, "axon", "seomatrix")
+	base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+	cliWriteArtifact(t, dir, "seomatrix/exchanges/XW-seomatrix-20260701-perf.md", cliWR("XW-seomatrix-20260701-perf", "perf item", "seomatrix", []string{"axon"}, "p1", false), "body")
+	cliWriteEvent(t, dir, "seomatrix", "01HFX00000000000000000041", cliEvt("XW-seomatrix-20260701-perf", "submit", "seomatrix", base))
+
+	// A large TTL keeps this warm-cache mirror well inside the freshness
+	// window (mirrorSyncAge reads the just-written .git metadata's mtime,
+	// which is "now" by construction) — the cold-cache trigger path
+	// (13.4's own carve-out) is deliberately not exercised here.
+	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}}, func() time.Time { return base.Add(time.Hour) }, 24*time.Hour)
+	cmd := cli.NewStatuslineCommand(store)
+
+	io, out, errOut := newIO()
+	start := time.Now()
+	code := cmd.Run(context.Background(), nil, io)
+	elapsed := time.Since(start)
+
+	if code != 11 {
+		t.Fatalf("code = %d, want 11 (p1 severity); stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if elapsed >= 100*time.Millisecond {
+		t.Fatalf("statusline render took %s, want <100ms (warm cache, AC-601.2)", elapsed)
+	}
+}

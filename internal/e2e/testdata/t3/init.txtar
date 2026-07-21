@@ -1,0 +1,8 @@
+# OP-201 `a2a init`: fresh write, then AC-301.1 idempotent re-run is a no-op.
+rm -r .a2a
+exec a2a init --system axon --space $ORIGIN
+stdout 'wrote'
+exists .a2a/config.yaml
+
+exec a2a init --system axon --space $ORIGIN
+stdout 'already configured'

@@ -1,0 +1,8 @@
+# OP-209 `a2a show`, OP-210 `a2a thread`: FOLDED-STATE observable at the
+# OP-contract level (exact string per cmd_show.go's own format:
+# "<id> <type> (<state>) — <title>").
+exec a2a show XR-axon-demo
+stdout 'XR-axon-demo requirement \(published\) — t'
+
+exec a2a thread XR-axon-demo
+stdout 'XR-axon-demo'
