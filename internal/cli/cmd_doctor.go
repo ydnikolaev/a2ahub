@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -200,7 +201,7 @@ func (c *DoctorCommand) doctorCheckVersions(cfg space.ProjectConfig, machine spa
 	var failures []string
 	for _, ref := range cfg.Spaces {
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
-		raw, err := c.readFile(dir + "/space.yaml")
+		raw, err := c.readFile(filepath.Join(dir, "space.yaml"))
 		if err != nil {
 			ok = false
 			failures = append(failures, fmt.Sprintf("%s: cannot read space.yaml: %v", ref.ID, err))
@@ -248,7 +249,7 @@ func (c *DoctorCommand) doctorCheckCIPresence(cfg space.ProjectConfig, machine s
 	var failures []string
 	for _, ref := range cfg.Spaces {
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
-		if _, err := c.readFile(dir + "/.github/workflows/a2a-validate.yml"); err != nil {
+		if _, err := c.readFile(filepath.Join(dir, ".github", "workflows", "a2a-validate.yml")); err != nil {
 			ok = false
 			failures = append(failures, fmt.Sprintf("%s: missing .github/workflows/a2a-validate.yml: %v", ref.ID, err))
 		}
