@@ -56,3 +56,84 @@ entries:
     class: schema
     title: interim_behavior missing while blocking is false
     applies_to: envelope/v1 requirement.schema.json, work_request.schema.json (§5.2 `interim_behavior` row, CC-011)
+
+  # --- P3 (internal/schema + internal/validate) additions below ---
+  # referential/lifecycle/policy rows this phase adds per spec 02 Open Q2
+  # resolution and spec 03 §5/§8 row 5 (single registry, no Go-side
+  # duplicate). Every code below is emitted by internal/validate
+  # (schemas/errors/v1/registry.yaml stays the SSOT; the Go mapper in
+  # internal/validate/schema_class.go, referential.go, authz.go,
+  # lifecycle.go, policy.go, engine.go loads/mirrors it, never leads it) —
+  # cited by internal/validate's own test corpus (golden fixtures +
+  # dedicated unit tests), not by schemas/**/fixtures/invalid/ sidecars
+  # (that corpus is schema-class only, P2-owned).
+
+  - code: REF-001
+    class: referential
+    title: Artifact id does not match its filename
+    applies_to: internal/artifact.Validate's ErrIDMismatch guard (§3.3, CC-003)
+
+  - code: REF-002
+    class: referential
+    title: Artifact id's system component does not match its owning section
+    applies_to: internal/artifact.Validate's ErrSectionMismatch guard (§3.3/§4.2, CC-003)
+
+  - code: REF-003
+    class: referential
+    title: A ref/id does not resolve against the local artifact cache
+    applies_to: envelope/v1 refs[].ref (§5.7, §3.8, CC-070)
+
+  - code: REF-004
+    class: referential
+    title: A pinned ref's digest does not match its resolved target
+    applies_to: envelope/v1 refs[].ref pinned with `#digest` (§5.7)
+
+  - code: REF-005
+    class: referential
+    title: "`from` does not match this system's configured own section"
+    applies_to: envelope/v1 `from` (§10.3 authz matrix, CC-002; decision-type exempt per §5.2)
+
+  - code: REF-006
+    class: referential
+    title: "`to` includes an unknown system, or a system marked `left`"
+    applies_to: envelope/v1 `to` (§10.3, CC-008)
+
+  - code: REF-007
+    class: referential
+    title: A ref is unpinned (neither `@version` nor `#digest`) — drift-prone
+    applies_to: envelope/v1 refs[].ref (§3.8) — warning severity, not a reject
+
+  - code: LFC-001
+    class: lifecycle
+    title: Event encodes an illegal transition for the subject's current folded state
+    applies_to: lifecycle events checked pre-write via the fold seam (§3.5 rule 2, §7, CC-020)
+
+  - code: LFC-002
+    class: lifecycle
+    title: Event's actor is not authorized for the attempted transition
+    applies_to: lifecycle events checked pre-write via the fold seam (§3.5 rule 3, §10.3, §7, CC-021)
+
+  - code: POL-001
+    class: policy
+    title: Content matches a forbidden secret/credential pattern
+    applies_to: full raw artifact content, envelope + body (§10.4, §13.4, CC-010) — G5 override is flagged only, never granted by this engine
+
+  - code: POL-002
+    class: policy
+    title: Artifact frontmatter is missing or is not valid YAML
+    applies_to: any artifact's `---`-delimited frontmatter block (§5.1, D-009, CC-001)
+
+  - code: POL-003
+    class: policy
+    title: Artifact exceeds the configured size limit
+    applies_to: any artifact's raw bytes (bounded-read guard, CC-006)
+
+  - code: POL-004
+    class: policy
+    title: Artifact is not valid UTF-8
+    applies_to: any artifact's raw bytes (CC-007)
+
+  - code: POL-005
+    class: policy
+    title: Envelope schema version is outside the one-cycle overlap window this binary understands
+    applies_to: envelope/v1 `schema` field (§5.4 last bullet, CC-005) — refuse write, read-only + warning
