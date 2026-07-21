@@ -332,6 +332,32 @@ func (c *ContractCommand) Run(ctx context.Context, args []string, stdio IO) int 
 
 var _ Command = (*ContractCommand)(nil)
 
+// ContractSubcommand describes one `a2a contract <sub>` sub-verb for
+// external surface enumeration.
+type ContractSubcommand struct {
+	Name     string // e.g. "publish"
+	Synopsis string
+}
+
+// ContractSubcommands is the SSOT list of the `a2a contract` family's
+// sub-verbs for surface enumeration — the P14 CLI/MCP parity check and the
+// P13 command-catalog projection both read it. The contract sub-verbs are
+// dispatched by the bare switch in ContractCommand.Run (they are NOT
+// registered as individual cli.Command values / buildCommands keys), so
+// this list is their only machine-enumerable home. KEEP IN SYNC with that
+// switch: a sub-verb added there without a row here (or vice versa) is
+// exactly the drift the parity gate exists to catch.
+func ContractSubcommands() []ContractSubcommand {
+	return []ContractSubcommand{
+		{Name: "new", Synopsis: "draft a new contract (alias for `a2a new contract --slug`)"},
+		{Name: "publish", Synopsis: "publish a contract version (--version/--bump, digest tree)"},
+		{Name: "deprecate", Synopsis: "deprecate a contract with a linked announcement (--sunset)"},
+		{Name: "retire", Synopsis: "retire a contract (consumer-ack precondition, --override)"},
+		{Name: "diff", Synopsis: "diff two contract versions (--json)"},
+		{Name: "verify-export", Synopsis: "verify a local export's digest tree (--local)"},
+	}
+}
+
 // runNew translates `contract new <slug>` into P6's `a2a new contract
 // --slug <slug>` path (spec 08 T1: "thin alias... do not forward args
 // verbatim; P6's NewCommand takes the slug as a flag").
