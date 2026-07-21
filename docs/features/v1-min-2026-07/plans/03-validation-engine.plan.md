@@ -100,7 +100,14 @@ docs/features/v1-min-2026-07/plans/03-validation-engine.plan.md.
    design the seam, CC-005 test refuses an unknown newer version).
    FIRST TEST: allOf+base-$ref+unevaluatedProperties actually rejects a
    stray field and the decision+category fixture — if the library does not
-   enforce it, STOP and report.
+   enforce it, STOP and report. ALSO verify the annotation-propagation edge
+   the wave-1 re-audit flagged: when the base subschema FAILS on one field
+   (e.g. bad id pattern), a spec-conformant validator (ajv reference
+   behavior) still propagates allOf/$ref annotations and reports exactly
+   ONE violation — python-jsonschema wrongly cascades a second
+   unevaluatedProperties error there. Your golden test asserts "exactly the
+   sidecar's code", so santhosh-tekuri/v6 must match ajv here; if it
+   cascades, report it (do not weaken the golden assertion silently).
 3. internal/validate: ValidateDraft (V1: schema class) and
    ValidateForSubmit (V2: schema + referential + authz + lifecycle via the
    LegalityChecker DI seam + policy/secret-scan). Result shape exactly per
