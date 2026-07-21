@@ -1,0 +1,6 @@
+# Agent runtime state — regenerated locally, never shared
+.claude/.telemetry/
+.claude/settings.local.json
+
+# macOS
+.DS_Store
