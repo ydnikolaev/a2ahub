@@ -19,13 +19,11 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"flag"
 	"fmt"
-	"io/fs"
-	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -154,72 +152,33 @@ func contractBump(prior contractSemver, kind string) contractSemver {
 }
 
 // --- digest tree (§5.7/D-029) — the ONE impl publish/diff/verify-export
-// all call. internal/artifact is off-limits to this phase's allowlist
-// (import-only, per the plan's Off-limits list) — this helper lives here,
-// file-private, reusing artifact.Digest for every leaf file, rather than
-// the plan's literal "internal/artifact multi-file digest helper"
-// placement; see this phase's Deviations report. ------------------------
+// all call now lives in internal/artifact (artifact.DigestTreeFS /
+// artifact.CombineDigestPairs, MED-5 fix-wave finding): the plan's own
+// "internal/artifact multi-file digest helper" placement, no longer a
+// file-private copy here. contractDigestSubtrees is this file's own
+// schema/**+fixtures/** subtree list, threaded into every call site below
+// (the artifact helper stays generic; the subtree choice is the caller's).
 
-// contractDigestTreeFS computes the §5.7 multi-file digest tree over
-// root's schema/** and fixtures/** subtrees (contract.md excluded) as
-// currently present on the local filesystem — used by `contract publish`
-// (the just-authored working tree) and `contract verify-export --local`
-// (a local export path).
-func contractDigestTreeFS(root string) (digest string, perFile map[string]string, err error) {
-	perFile = map[string]string{}
-	for _, sub := range []string{"schema", "fixtures"} {
-		dir := filepath.Join(root, sub)
-		info, statErr := os.Stat(dir)
-		if statErr != nil {
-			if os.IsNotExist(statErr) {
-				continue
-			}
-			return "", nil, statErr
-		}
-		if !info.IsDir() {
-			continue
-		}
-		walkErr := filepath.WalkDir(dir, func(p string, d fs.DirEntry, werr error) error {
-			if werr != nil {
-				return werr
-			}
-			if d.IsDir() {
-				return nil
-			}
-			raw, rerr := os.ReadFile(p)
-			if rerr != nil {
-				return rerr
-			}
-			rel, relErr := filepath.Rel(root, p)
-			if relErr != nil {
-				return relErr
-			}
-			perFile[filepath.ToSlash(rel)] = artifact.Digest(raw)
-			return nil
-		})
-		if walkErr != nil {
-			return "", nil, walkErr
-		}
-	}
-	return contractCombineDigestPairs(perFile), perFile, nil
-}
+var contractDigestSubtrees = []string{"schema", "fixtures"}
 
-// contractCombineDigestPairs is §5.7's exact algorithm: "SHA-256 over the
-// sorted list of (repo-relative-path, sha256(file-bytes)) pairs".
-func contractCombineDigestPairs(perFile map[string]string) string {
-	paths := make([]string, 0, len(perFile))
-	for p := range perFile {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	h := sha256.New()
-	for _, p := range paths {
-		h.Write([]byte(p))
-		h.Write([]byte{0})
-		h.Write([]byte(perFile[p]))
-		h.Write([]byte{'\n'})
-	}
-	return "sha256:" + hex.EncodeToString(h.Sum(nil))
+// contractDeprecateSeed builds `contract deprecate`'s own canonical,
+// content-derived seed (HIGH-1 fix-wave finding): a fixed-order join of
+// the deprecated contract id, its deprecated version, and the sunset
+// date — deliberately EXCLUDING `now` (MintExchangeIDAt's own known
+// midnight-crossing limitation, spec 08 §11 amendment, is accepted
+// separately) and EXCLUDING --successor (the migration target, not part
+// of what THIS announcement itself commits to). Fed to MintExchangeIDAt
+// IN PLACE OF c.deps.entropy for announcementID only — a retry with
+// identical inputs reproduces the identical id, landing on the funnel's
+// SAME deterministic branch (dedup) instead of authoring a duplicate
+// announcement + PR.
+func contractDeprecateSeed(contractID, version, sunset string) []byte {
+	var buf bytes.Buffer
+	buf.WriteString("contract=" + contractID + "\n")
+	buf.WriteString("version=" + version + "\n")
+	buf.WriteString("sunset=" + sunset + "\n")
+	sum := sha256.Sum256(buf.Bytes())
+	return sum[:]
 }
 
 // contractDiffTree renders added/removed/changed paths between two
@@ -324,6 +283,17 @@ type ContractCommand struct {
 // (rails anti-pattern #10).
 func NewContractCommand(newCmd *NewCommand, funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *ContractCommand {
 	return &ContractCommand{newCmd: newCmd, deps: newLifecycleDeps(funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)}
+}
+
+// SetClockForTest overrides this command's injected clock (test-only DI
+// seam, rails anti-pattern #10: production always uses the constructor's
+// own time.Now default). HIGH-1/LOW fix-wave finding: proving
+// announcementID's determinism and contractSunsetPassed's date comparison
+// both need a FIXED, reproducible `now` across multiple calls — a real
+// wall-clock read would make either assertion flaky near a UTC-date
+// boundary.
+func (c *ContractCommand) SetClockForTest(now func() time.Time) {
+	c.deps.now = now
 }
 
 // Name implements cli.Command.
@@ -483,7 +453,7 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 	// fixtures/** — computed from the CURRENT working tree (the mirror
 	// already carries this contract's schema/fixtures files; publish
 	// itself never rewrites them, only the descriptor).
-	digest, _, derr := contractDigestTreeFS(filepath.Join(c.deps.mirrorDir, relDir))
+	digest, _, derr := artifact.DigestTreeFS(filepath.Join(c.deps.mirrorDir, relDir), contractDigestSubtrees)
 	if derr != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: cannot compute digest tree: %v\n", derr)
 		return 1
@@ -605,7 +575,21 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 		return 1
 	}
 
-	announcementID, err := artifact.MintExchangeIDAt("XA", c.deps.ownSystem, now, c.deps.entropy)
+	// HIGH-1 fix-wave finding: announcementID's random suffix is derived
+	// from the deprecation's OWN content (contractDeprecateSeed — the
+	// deprecated contract id, its deprecated version, and the sunset date;
+	// deliberately EXCLUDING --successor, which names the migration target
+	// but is not itself part of what THIS announcement commits to), never
+	// c.deps.entropy — a retry with identical inputs reproduces the
+	// identical id, landing on the SAME funnel branch (dedup) instead of
+	// authoring a duplicate announcement + PR. deprecate is one-shot
+	// (legality blocks a second deprecate on the same contract@version), so
+	// this is not a multi-response concern the way respond's is — same
+	// mechanism used for consistency. NOTE: MintExchangeIDAt still embeds
+	// today's UTC date from `now`; a retry crossing midnight still mints a
+	// different id (spec 08 §11 amendment — accepted, out of scope here).
+	announcementSeed := contractDeprecateSeed(id, deprecatedVersion, *sunset)
+	announcementID, err := artifact.MintExchangeIDAt("XA", c.deps.ownSystem, now, bytes.NewReader(announcementSeed))
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: cannot mint announcement id: %v\n", err)
 		return 1
@@ -707,7 +691,14 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 		retiredVersion = probe.Version
 	}
 
-	precondition, err := contractBuildRetirePrecondition(c.deps.mirrorDir, c.deps.manifest, id, retiredVersion, *override, resolved.Kind == "human")
+	// now is fetched ONCE, up front, and threaded through both the LOW
+	// fix-wave finding's contractSunsetPassed(sunset, now) call (via
+	// contractBuildRetirePrecondition) and the retire event's own
+	// timestamp below — never a second, independently-drifting
+	// c.deps.now() call.
+	now := c.deps.now()
+
+	precondition, err := contractBuildRetirePrecondition(c.deps.mirrorDir, c.deps.manifest, id, retiredVersion, *override, resolved.Kind == "human", now)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %v\n", err)
 		return 1
@@ -718,7 +709,6 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 		return 1
 	}
 
-	now := c.deps.now()
 	layout, err := space.NewLayout(c.deps.ownSystem)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %v\n", err)
@@ -757,7 +747,7 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 // mirror: registered consumers (satisfied requirement ∪ consumes.yaml
 // entry), the deprecation announcement's ack set + sunset + reminder
 // count.
-func contractBuildRetirePrecondition(mirrorDir string, manifest space.Manifest, contractID, version string, override, actorIsHuman bool) (validate.RetirePrecondition, error) {
+func contractBuildRetirePrecondition(mirrorDir string, manifest space.Manifest, contractID, version string, override, actorIsHuman bool, now time.Time) (validate.RetirePrecondition, error) {
 	all, err := lifecycleReadAllEvents(mirrorDir)
 	if err != nil {
 		return validate.RetirePrecondition{}, err
@@ -803,19 +793,25 @@ func contractBuildRetirePrecondition(mirrorDir string, manifest space.Manifest, 
 
 	return validate.RetirePrecondition{
 		Consumers:    consumers,
-		SunsetPassed: sunset != "" && contractSunsetPassed(sunset),
+		SunsetPassed: sunset != "" && contractSunsetPassed(sunset, now),
 		HasReminder:  reminderCount > 0,
 		ActorIsHuman: actorIsHuman,
 		Override:     override,
 	}, nil
 }
 
-func contractSunsetPassed(sunset string) bool {
+// contractSunsetPassed reports whether sunset (YYYY-MM-DD) is in the past
+// relative to now — now is the CALLER's own injected clock (c.deps.now,
+// LOW fix-wave finding), never a direct time.Now().UTC() call: every other
+// wall-clock read in this file already goes through the DI seam, and a
+// direct call here would be the one un-injectable exception (untestable
+// without waiting on real wall-clock dates, anti-pattern #10).
+func contractSunsetPassed(sunset string, now time.Time) bool {
 	t, err := time.Parse("2006-01-02", sunset)
 	if err != nil {
 		return false
 	}
-	return time.Now().UTC().After(t)
+	return now.UTC().After(t)
 }
 
 // contractFindDeprecationAnnouncement walks every committed announcement
@@ -1034,7 +1030,7 @@ func (c *ContractCommand) runVerifyExport(_ context.Context, args []string, stdi
 		}
 	}
 
-	localDigest, localPerFile, err := contractDigestTreeFS(*local)
+	localDigest, localPerFile, err := artifact.DigestTreeFS(*local, contractDigestSubtrees)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract verify-export: %v\n", err)
 		return 1
@@ -1044,7 +1040,7 @@ func (c *ContractCommand) runVerifyExport(_ context.Context, args []string, stdi
 		return 0
 	}
 
-	_, spacePerFile, serr := contractDigestTreeFS(filepath.Join(c.deps.mirrorDir, relDir))
+	_, spacePerFile, serr := artifact.DigestTreeFS(filepath.Join(c.deps.mirrorDir, relDir), contractDigestSubtrees)
 	if serr == nil {
 		delta := contractDiff(spacePerFile, localPerFile)
 		for _, p := range delta.Added {

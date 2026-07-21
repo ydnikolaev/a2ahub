@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -204,19 +205,28 @@ func TestContractRetireUnackedNoOverrideBlocked(t *testing.T) {
 
 // TestContractRetireOverrideFullPreconditionSucceeds is AC-202.3's second
 // clause: sunset passed + a reminder + a human actor + --override
-// succeeds, flags the overridden consumer.
+// succeeds, flags the overridden consumer. LOW fix-wave finding: the
+// sunset-passed comparison now runs against a FIXED injected clock
+// (cmd.SetClockForTest), never contractSunsetPassed's own former direct
+// time.Now().UTC() read — the sunset date below is deliberately one day
+// BEFORE that fixed clock, not a hardcoded calendar date compared against
+// real wall-clock time (which would eventually go stale/flip).
 func TestContractRetireOverrideFullPreconditionSucceeds(t *testing.T) {
 	t.Parallel()
+	fixedNow := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	sunset := fixedNow.AddDate(0, 0, -1).Format("2006-01-02") // one day before the fixed clock: passed
+
 	mirrorDir := t.TempDir()
 	writeContractDescriptor(t, mirrorDir, "override", "1.0.0")
 	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-override", "publish", "axon")
 	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-override", "deprecate", "axon")
 	writeConsumesYAML(t, mirrorDir, "beta", "XC-axon-override")
-	writeDeprecationAnnouncement(t, mirrorDir, "XA-axon-20260101-b1b1", "XC-axon-override@1.0.0", "2020-01-01") // sunset in the past
-	writeLifecycleEvent(t, mirrorDir, "axon", 2, "XA-axon-20260101-b1b1", "note", "axon")                       // >=1 reminder
+	writeDeprecationAnnouncement(t, mirrorDir, "XA-axon-20260101-b1b1", "XC-axon-override@1.0.0", sunset)
+	writeLifecycleEvent(t, mirrorDir, "axon", 2, "XA-axon-20260101-b1b1", "note", "axon") // >=1 reminder
 
 	fake := &fakeLifecycleFunnel{}
 	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("human", "owner"))
+	cmd.SetClockForTest(func() time.Time { return fixedNow })
 	io, _, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{"retire", "--override", "XC-axon-override"}, io)
 	if code != 0 {
@@ -451,13 +461,21 @@ func TestContractDeprecateRealTemplateRender(t *testing.T) {
 }
 
 // TestContractPublishIdempotentRerun is the Constraints block's "idempotent
-// re-run test per mutating verb": idempotency is entirely funnel-provided
-// (the deterministic-branch short-circuit, space.WriteStateAlreadyOpen) —
-// this proves ContractCommand.runPublish wires that contract correctly;
-// cmd_lifecycle.go's LifecycleCommand.submit/deps.submit is the SAME
-// shared helper every OP-211 verb + contract sub-verb funnels through, so
-// this one case stands for the rest (uniform funnel call, no verb-specific
-// idempotency logic to re-verify per verb).
+// re-run test per mutating verb": for `publish`, idempotency is entirely
+// funnel-provided (the deterministic-branch short-circuit,
+// space.WriteStateAlreadyOpen) — publish's own ArtifactID is just the
+// contract id + explicit --version/--bump, both caller-supplied and
+// already stable across retries, so this proves ContractCommand.runPublish
+// wires the shared funnel contract correctly. This is NOT true of every
+// verb, though: `respond` and `contract deprecate` each mint a SECOND,
+// SELF-GENERATED id (responseID / announcementID) that also feeds the
+// funnel's branch key — those two verbs carry their OWN verb-specific
+// deterministic-seed logic (lifecycleRespondSeed / contractDeprecateSeed,
+// HIGH-1 fix-wave finding) precisely because a naively-random secondary id
+// would defeat the funnel's dedup on retry even though the funnel itself
+// behaves identically. See TestRespondDeterministicResponseID/
+// TestRespondIdempotentRetryReturnsAlreadyOpen and
+// TestContractDeprecateDeterministicAnnouncementID for that coverage.
 func TestContractPublishIdempotentRerun(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
@@ -496,4 +514,100 @@ func TestContractNewDelegatesToNewCommand(t *testing.T) {
 	if _, err := os.Stat(stagedPath); err != nil {
 		t.Fatalf("expected a staged draft at %s (slug -> --slug delegation into P6's new-path): %v", stagedPath, err)
 	}
+}
+
+// extractAnnouncementID pulls the minted XA- announcement id out of a
+// funnel call's committed files (`contract deprecate`'s own analogue of
+// cmd_lifecycle_test.go's extractResponseID).
+func extractAnnouncementID(files []space.FileWrite) string {
+	for _, fw := range files {
+		if strings.Contains(fw.Path, "/exchanges/XA-") {
+			return strings.TrimSuffix(filepath.Base(fw.Path), ".md")
+		}
+	}
+	return ""
+}
+
+// TestContractDeprecateDeterministicAnnouncementID is HIGH-1's own
+// discriminating test for `contract deprecate` (AC-301.1, anti-pattern
+// #4): with a FIXED injected clock, two deprecate invocations with
+// IDENTICAL (contract id, version, sunset) content mint the IDENTICAL
+// announcementID (a retry lands on the SAME funnel branch); two
+// invocations that differ only in --sunset mint DISTINCT ids.
+func TestContractDeprecateDeterministicAnnouncementID(t *testing.T) {
+	t.Parallel()
+	fixedNow := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+
+	runDeprecate := func(t *testing.T, slug, sunset string) *fakeLifecycleFunnel {
+		t.Helper()
+		mirrorDir := t.TempDir()
+		writeContractDescriptor(t, mirrorDir, slug, "1.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-"+slug, "publish", "axon")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		cmd.SetClockForTest(func() time.Time { return fixedNow })
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"deprecate", "--successor", "XC-axon-" + slug + "@2.0.0", "--sunset", sunset, "XC-axon-" + slug}, io)
+		if code != 0 {
+			t.Fatalf("contract deprecate: code = %d, want 0; stderr=%s", code, errOut.String())
+		}
+		return fake
+	}
+
+	t.Run("same_contract_retry_mints_identical_id", func(t *testing.T) {
+		t.Parallel()
+		fake1 := runDeprecate(t, "dep-retry", "2026-12-31")
+		id1 := extractAnnouncementID(fake1.calls[0].Files)
+		if id1 == "" {
+			t.Fatal("expected a minted announcement id")
+		}
+
+		// A second, independent mirror for the SAME contract id/version/
+		// sunset (simulating a retry against a fresh clone) mints the
+		// IDENTICAL announcement id.
+		mirrorDir2 := t.TempDir()
+		writeContractDescriptor(t, mirrorDir2, "dep-retry", "1.0.0")
+		writeLifecycleEvent(t, mirrorDir2, "axon", 0, "XC-axon-dep-retry", "publish", "axon")
+		fake2 := &fakeLifecycleFunnel{}
+		cmd2 := cli.NewContractCommand(nil, fake2, mirrorDir2, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		cmd2.SetClockForTest(func() time.Time { return fixedNow })
+		io2, _, errOut2 := newIO()
+		code := cmd2.Run(context.Background(), []string{"deprecate", "--successor", "XC-axon-dep-retry@2.0.0", "--sunset", "2026-12-31", "XC-axon-dep-retry"}, io2)
+		if code != 0 {
+			t.Fatalf("contract deprecate (retry): code = %d, want 0; stderr=%s", code, errOut2.String())
+		}
+		id2 := extractAnnouncementID(fake2.calls[0].Files)
+		if id2 == "" {
+			t.Fatal("expected a minted announcement id on the retry")
+		}
+		if id1 != id2 {
+			t.Fatalf("announcementID = %q vs %q; expected the SAME id for an identical (id, version, sunset) retry under a fixed clock", id1, id2)
+		}
+	})
+
+	t.Run("different_sunset_mints_different_id", func(t *testing.T) {
+		t.Parallel()
+		fake1 := runDeprecate(t, "dep-diff", "2026-12-31")
+		mirrorDir2 := t.TempDir()
+		writeContractDescriptor(t, mirrorDir2, "dep-diff", "1.0.0")
+		writeLifecycleEvent(t, mirrorDir2, "axon", 0, "XC-axon-dep-diff", "publish", "axon")
+		fake2 := &fakeLifecycleFunnel{}
+		cmd2 := cli.NewContractCommand(nil, fake2, mirrorDir2, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		cmd2.SetClockForTest(func() time.Time { return fixedNow })
+		io2, _, errOut2 := newIO()
+		code := cmd2.Run(context.Background(), []string{"deprecate", "--successor", "XC-axon-dep-diff@2.0.0", "--sunset", "2027-06-30", "XC-axon-dep-diff"}, io2)
+		if code != 0 {
+			t.Fatalf("contract deprecate (different sunset): code = %d, want 0; stderr=%s", code, errOut2.String())
+		}
+
+		id1 := extractAnnouncementID(fake1.calls[0].Files)
+		id2 := extractAnnouncementID(fake2.calls[0].Files)
+		if id1 == "" || id2 == "" {
+			t.Fatalf("expected a minted announcement id in both calls; got %q and %q", id1, id2)
+		}
+		if id1 == id2 {
+			t.Fatalf("expected DIFFERENT ids for different --sunset values, got the same id %q", id1)
+		}
+	})
 }
