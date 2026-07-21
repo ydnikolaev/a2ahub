@@ -42,6 +42,29 @@
 - [ ] Decision-supersede successor-authorship is structurally unverifiable
       in `internal/fold` (membership-only check shipped) — real
       enforcement gap; P8 (lifecycle verbs) should decide where it lands.
+- [ ] fold `CandidateEvent` carries no envelope; P6's LegalityAdapter
+      works around it with `RegisterEnvelope`. Consider adding envelope
+      facts to CandidateEvent (or a fold API refinement) at P8/hub era so
+      the pre-write legality seam doesn't need a side-channel inject.
+- [ ] `internal/host` has no generic repo-reachability or branch-protection/
+      required-check read primitive (all methods PR-scoped). Doctor works
+      around it via git mirror + fs reads; a future `a2a doctor --space`
+      host-drift diff (v2) needs the new primitive.
+- [ ] P8 `a2a contract new <slug>` must translate the positional slug into
+      `--slug` when delegating to P6's `a2a new` (not verbatim passthrough).
+- [ ] Doctor credential-expiry check unimplementable — no expiry field on
+      any config/manifest type; add one (§9.3 "warns on approaching
+      expiry") if/when the credential model grows it.
+- [ ] V3 CI workflow invokes placeholder `a2a validate --ci --mode=...`
+      flags P6's validate verb doesn't have — reconcile at P10 (grow a
+      `--ci` V3 mode, or rewrite the workflow step).
+- [ ] `a2a init` derives the connected-space id from the repo URL's last
+      path segment (`initSpaceIDFromURL`), but the id that must match an
+      artifact's `space` field (and space.yaml's `space:`) is the space's
+      declared id, not the repo name. When repo-name ≠ space-id, `submit`
+      space resolution fails. Surfaced by the wave-3 live e2e. Fix at P11
+      (real getvisa space) or add an explicit `--space-id`/derive from
+      space.yaml after connect.
 - [ ] Proposal (operator decision, D-021-sensitive): `a2a init` offers
       (consent-gated Y/n, `--yes` for automation) to append a ~3-line
       a2ahub pointer block (8.1 session-start floor + skill reference) to

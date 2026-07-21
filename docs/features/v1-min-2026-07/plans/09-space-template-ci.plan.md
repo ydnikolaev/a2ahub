@@ -39,8 +39,15 @@ P11's runbook, and the basic `a2a doctor` verb. Spec 09 AC rows 1–10.
   needs a helper, keep it file-private and uniquely named (doctorX).
 - **Doctor deps via constructor DI**: connected-space config + mirrors
   (internal/space), credential store (internal/space ResolveCredential),
-  host reachability + CI-presence (internal/host), binary version stamp
-  (injected string). No internal/cache import (absent).
+  binary version stamp (injected string). No internal/cache import (absent).
+  CORRECTION (from wave-3 reality, 2026-07-21): reachability + CI-presence
+  are implemented via `internal/space.CloneOrFetch` + mirror filesystem
+  reads, NOT `internal/host` — the shipped Host interface exposes only
+  PR-scoped methods (no generic repo-reachability or branch-protection
+  read). P9 correctly wired it this way and self-disclosed; the
+  `host.Host` param is retained for DI parity but unused today. A future
+  `--space` host-drift diff would need a new Host primitive (core change,
+  lead's call — backlog).
 - **`--space` flag is REJECTED** with an explicit "not available in v1-min"
   error (D-030), never silently ignored.
 - **space-template/ is pure data** (no imports); `space.yaml` is a literal

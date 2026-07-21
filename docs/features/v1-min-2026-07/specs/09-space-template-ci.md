@@ -194,4 +194,23 @@ per `.claude/rules/go-conventions.md` for `cmd_doctor.go`. Full loop
 > AND amend any downstream spec (notably P10's integration harness and P11's
 > runbook, which consume this phase's workflow contract and checklist).
 
+### 2026-07-21 — from wave 3: shipped-reality deltas
+
+- **Doctor reachability + CI-presence use `internal/space` (git mirror +
+  filesystem reads), not `internal/host`** — the shipped Host interface is
+  PR-scoped only. The `host.Host` DI param is retained but unused; a future
+  `--space` host-drift diff needs a new Host primitive (backlog).
+- **The V3 workflow's `a2a` invocation is a BEHAVIOR-CONTRACT placeholder**:
+  it references `a2a validate --ci --mode=...` flags that P6's shipped
+  `a2a validate [path|--all]` does not yet have. Known/acknowledged (spec §9
+  Roadmap + the workflow's own header) — reconciled at P10 integration:
+  either P6/P8 grow a `--ci` V3 mode or the workflow step is rewritten to
+  the real verb. Not a silent gap.
+- **Doctor gaps disclosed** (not blockers): credential-expiry is
+  unverifiable (no expiry field on any config/manifest type — present +
+  readable only); CI-presence checks workflow-file existence, not the
+  "required check configured" half (no Host primitive); statusline-wiring
+  is interpreted as "git on PATH" (§7.5 fallback) pending P7's
+  `a2a statusline`. All → P7/backlog reconciliation.
+
 <!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->

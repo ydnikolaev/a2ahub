@@ -129,6 +129,35 @@ Full loop (README/tracker/specs shapes, lint gate): [docs/features/README.md](..
 
 > Append-only. When the shipped reality deviates from this spec, record it here AND amend any downstream spec.
 
+### 2026-07-21 — from wave 3: shipped-reality deltas
+
+- **`a2a new <standing-type>` takes the slug via `--slug` / `--field
+  slug=`**, NOT a bare positional after the type. P8's `a2a contract new
+  <slug>` (spec 08) must translate its positional `<slug>` into that flag
+  when delegating, not forward args verbatim (propagation probe; backlog).
+- **Cache seam shipped as two 1-method interfaces** `PendingMarker`
+  (submit/sync pending-merge mark) and `CacheRemover` (disconnect), with
+  no-op impls injected this phase. P7 supplies the real `internal/cache`
+  impls — the constructor seams (`NewSubmitCommand`'s `pending`,
+  `NewDisconnectCommand`'s `cache`) are the wiring points.
+- **DI adapters live in `internal/cli/adapters.go`** (granted in the plan):
+  `LegalityAdapter` (folds mirror history; exports `HasCommittedHistory` +
+  `RegisterEnvelope` for cmd_submit's idempotency + the CandidateEvent
+  envelope gap — see below), `MirrorResolver`, `SubmitValidatorAdapter`
+  (returns `ViolationError` on a non-Valid Result), `ManifestValidatorAdapter`.
+- **CandidateEvent envelope gap** (core-API friction, backlog): validate.
+  CandidateEvent carries only {Subject, Transition, Actor} — no envelope,
+  and a first-submit subject isn't committed yet, so the LegalityAdapter
+  needs `RegisterEnvelope` to inject the drafted artifact's envelope facts
+  before checking legality. Works, but the seam is a workaround for a
+  missing field on CandidateEvent; flag for a possible P8/hub-era fold API
+  refinement.
+- **cmd/a2a wiring is closure-per-verb** (lead): config-dependent verbs
+  (submit/validate/sync) resolve the target space from the artifact's
+  `space` field → connected SpaceRef.ID at call time; the foreign-section
+  refusal (AC-201.3) + idempotency short-circuit run BEFORE any mirror
+  clone in the wiring closure.
+
 <!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->
 
 ---

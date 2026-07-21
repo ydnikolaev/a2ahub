@@ -9,10 +9,12 @@
 
 - **Epic [v1-min](features/v1-min-2026-07/README.md)** — space + `a2a` binary
   core + day-one content (plan §15 L0–L2 + E7 tail, D-030). Spec corpus cut
-  from the plan 2026-07-21; waves 1–2 shipped 2026-07-21: P1 foundation,
-  P2 schemas (three A2-examples defects repaired en route), P3 validation
-  engine, P4 fold engine, P5 space/host + write funnel.
-  <!-- epic-state: v1-min-2026-07 phases=5/14 -->
+  from the plan 2026-07-21; waves 1–3 shipped 2026-07-21: P1 foundation,
+  P2 schemas, P3 validation, P4 fold, P5 space/host, P6 author verbs +
+  templates, P9 space-template + V3 CI + doctor. The `a2a` binary is wired
+  and runs the authoring path end-to-end (init→new→validate→template);
+  live GitHub submit is P11.
+  <!-- epic-state: v1-min-2026-07 phases=7/14 -->
 
 - **Dev-pipeline harness bootstrap** (2026-07-21) — orchestration inventory ported
   from the axon harness: agents (`scout`, `coder`, `go-auditor`), skills
