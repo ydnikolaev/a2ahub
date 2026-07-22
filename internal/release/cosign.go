@@ -3,6 +3,7 @@ package release
 import (
 	"context"
 	_ "embed"
+	"encoding/hex"
 	"os"
 	"regexp"
 
@@ -68,15 +69,20 @@ func (k *KeylessCosignVerifier) Verify(_ context.Context, assetPath string, _ Re
 		return &Error{Op: op, Input: bundlePath, Err: ErrSignatureUnverified}
 	}
 
-	f, err := os.Open(assetPath)
+	// Bind the messageSignature by DIGEST (streamed via sha256File, the same
+	// primitive ChecksumVerifier uses) rather than handing sigstore a reader:
+	// this makes the shipped artifact-policy path byte-identical to the one the
+	// valid-bundle test exercises (WithArtifactDigest), so no production path
+	// goes untested.
+	sum, err := sha256File(assetPath)
 	if err != nil {
 		return &Error{Op: op, Input: assetPath, Err: ErrSignatureInvalid}
 	}
-	defer func() { _ = f.Close() }()
-
-	// The asset bytes bind the messageSignature; the verifier recomputes and
-	// compares the digest.
-	return k.verifyDetached(bundlePath, verify.WithArtifact(f))
+	digest, err := hex.DecodeString(sum)
+	if err != nil {
+		return &Error{Op: op, Input: assetPath, Err: ErrSignatureInvalid}
+	}
+	return k.verifyDetached(bundlePath, verify.WithArtifactDigest("sha256", digest))
 }
 
 // verifyDetached is the core: load the bundle, build an OFFLINE verifier from
