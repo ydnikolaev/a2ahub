@@ -119,6 +119,7 @@ func ResolveToken() string {
 	return ""
 }
 
+// Name implements Source.Name: the provenance tag written to CheckState.Source.
 func (s *GitHubSource) Name() string { return "github" }
 
 // ghRelease/ghAsset decode the GitHub REST releases-list response shape
@@ -193,7 +194,7 @@ func (s *GitHubSource) Latest(ctx context.Context) (Release, error) {
 		}
 		assets := make([]Asset, 0, len(r.Assets))
 		for _, a := range r.Assets {
-			assets = append(assets, Asset{Name: a.Name, URL: a.URL, BrowserDownloadURL: a.BrowserDownloadURL, Size: a.Size})
+			assets = append(assets, Asset(a))
 		}
 		return Release{
 			Tag:     r.TagName,
