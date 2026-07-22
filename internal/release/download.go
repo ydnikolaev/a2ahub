@@ -10,6 +10,11 @@ import (
 	"runtime"
 )
 
+// maxAssetBytes caps a single downloaded asset (the platform binary,
+// SHA256SUMS, or a .cosign.bundle). 512 MiB is far above any real a2a asset
+// while keeping the streamed disk write bounded (rails anti-pattern #13).
+const maxAssetBytes = 512 << 20
+
 // DownloadResult carries the destDir paths Download wrote. BundlePath is ""
 // when the release carries no .cosign.bundle for the platform asset (P16
 // signs best-effort; T2's interim signature slot does not consume the
@@ -47,6 +52,15 @@ func Download(ctx context.Context, client *http.Client, token string, rel Releas
 	if err := fetchAsset(ctx, client, token, asset, assetPath); err != nil {
 		cleanupPaths(assetPath)
 		return DownloadResult{}, err
+	}
+	// The asset is the release BINARY — it must carry the execute bit before
+	// Apply's post-download `version` self-check execs it (os.Create leaves it
+	// 0644, so without this the self-check EACCES-fails on every real run and
+	// no swap can ever complete). Swap re-chmods too, but the self-check runs
+	// first — this is the one that makes the pipeline work in production.
+	if err := os.Chmod(assetPath, 0o755); err != nil {
+		cleanupPaths(assetPath)
+		return DownloadResult{}, &Error{Op: op, Input: assetPath, Err: fmt.Errorf("%w: chmod: %v", ErrDownloadFailed, err)}
 	}
 
 	sumsAsset, ok := findAsset(rel, "SHA256SUMS")
@@ -114,7 +128,11 @@ func fetchAsset(ctx context.Context, client *http.Client, token string, asset As
 	}
 	defer func() { _ = out.Close() }()
 
-	if _, err := io.Copy(out, resp.Body); err != nil {
+	// Bounded read (rails: every external input is size-capped, matching
+	// source.go's io.LimitReader on the releases-list JSON). A truncation at
+	// the cap makes the downstream checksum verify fail closed — a compromised
+	// host can never stream unbounded bytes into the binary's own directory.
+	if _, err := io.Copy(out, io.LimitReader(resp.Body, maxAssetBytes)); err != nil {
 		return &Error{Op: op, Input: asset.Name, Err: fmt.Errorf("%w: %v", ErrDownloadFailed, err)}
 	}
 	return nil
