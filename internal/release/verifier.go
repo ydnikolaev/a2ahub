@@ -52,9 +52,12 @@ func (ChecksumVerifier) Verify(_ context.Context, assetPath string, _ Release) e
 	return nil
 }
 
-// parseSums finds name's SHA-256 hex digest in a `sha256sum` output file
-// (format: "<hex64>  <filename>", one entry per line, per
-// release.yml's `sha256sum a2a-* > SHA256SUMS`). Any non-blank line that
+// parseSums finds name's SHA-256 hex digest in a `sha256sum`-format file
+// (format: "<hex64>  <filename>", one entry per line). Since the publish-prep
+// goreleaser port, SHA256SUMS is produced by goreleaser's `checksum:` block and
+// lists the archives alongside the raw `a2a-<os>-<arch>` binaries (a superset);
+// the per-line format is unchanged, so this parser is unaffected. Any non-blank
+// line that
 // does not split into exactly a 64-character hex digest and a file name is
 // treated as malformed and fails the whole parse — a missing or malformed
 // entry for name is indistinguishable to the caller (both fail closed).
