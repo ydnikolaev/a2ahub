@@ -33,6 +33,11 @@ func liveArtifactDigestOpt(t *testing.T) verify.ArtifactPolicyOption {
 	return verify.WithArtifactDigest("sha256", digest)
 }
 
+// TestKeylessCosign_ValidLiveBundle is the ground-truth valid path. It drives
+// verifyDetached with WithArtifactDigest — which is EXACTLY the artifact-policy
+// option the production Verify() now builds (it streams the asset's sha256 and
+// passes WithArtifactDigest too), so this test covers the shipped path, not a
+// parallel one.
 func TestKeylessCosign_ValidLiveBundle(t *testing.T) {
 	t.Parallel()
 	k := NewKeylessCosignVerifier(liveRepo)
