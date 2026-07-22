@@ -74,6 +74,14 @@ epic-drift: ## An epic's committed docs (status.md stamp, receipts) must match i
 	  echo "epic-drift: skip — .agents/scripts/epic_docs_drift.sh absent (public checkout)."; \
 	fi
 
-harness-check: ## Run both gates' --teeth self-tests (proves the gates actually bite).
-	@bash scripts/check-feature-lint.sh --teeth
-	@bash .agents/scripts/epic_docs_drift.sh --teeth
+harness-check: ## Run both harness gates' --teeth self-tests (private-only; presence-gated).
+	@if [ -f scripts/check-feature-lint.sh ]; then \
+	  bash scripts/check-feature-lint.sh --teeth; \
+	else \
+	  echo "harness-check: skip — scripts/check-feature-lint.sh absent (public checkout)."; \
+	fi
+	@if [ -f .agents/scripts/epic_docs_drift.sh ]; then \
+	  bash .agents/scripts/epic_docs_drift.sh --teeth; \
+	else \
+	  echo "harness-check: skip — .agents/scripts/epic_docs_drift.sh absent (public checkout)."; \
+	fi
