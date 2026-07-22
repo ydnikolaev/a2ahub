@@ -1,0 +1,40 @@
+# The dumb, unbypassable backstop for the publish boundary. The rich gate
+# (scripts/classify-guard.sh, wired into `make check` / `make check-validators`)
+# already runs in the CI job above via `make check`; this job re-asserts the one
+# invariant that matters with self-contained bash that does NOT depend on the
+# local script or the Makefile — the repo tracks no private (harness) path. A
+# local `--no-verify` can skip a git hook; it cannot skip CI.
+#
+# Keep the denylist below in sync with scripts/classify-guard.sh's DENY_* arrays.
+#
+# TODO(P6): add docs/ to the denylist once its untrack lands (publish-prep P6).
+# It is deliberately NOT flagged here yet — docs/ is a PENDING bucket (tracked,
+# classified, untracking deferred) per publish-prep P1.
+name: classify-guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  no-private-paths:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: assert no private path is tracked
+        run: |
+          set -euo pipefail
+          # grep -E has no lookahead, so the scripts/* exception (install.sh,
+          # e2e-authoring-smoke.sh — both product, must stay public) is a post-filter.
+          priv=$(git ls-files | grep -E '^(\.agents|\.claude|\.codex|\.mate)/|^(AGENTS\.md|CLAUDE\.md)$|^scripts/' \
+            | grep -vE '^scripts/(install\.sh|e2e-authoring-smoke\.sh|classify-guard\.sh)$' || true)
+          if [ -n "$priv" ]; then
+            echo "::error::private (harness) paths tracked in the public repo:"
+            echo "$priv"
+            exit 1
+          fi
+          echo "OK — no private path tracked (docs/ PENDING bucket not yet checked here — TODO(P6))."
