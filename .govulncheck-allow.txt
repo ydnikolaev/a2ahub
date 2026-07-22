@@ -4,15 +4,6 @@
 # one doesn't hold the gate permanently red. Review on every dependency bump; delete an entry
 # the moment its vuln becomes fixable.
 
-# GO-2026-5856 — Encrypted Client Hello (ECH) privacy leak in crypto/tls (Fixed in:
-# crypto/tls@go1.26.5). go.mod currently pins `go 1.26.4`. Reached via
-# internal/release.GitHubSource.Latest's HTTPS calls to the GitHub releases API (the
-# self-update check) and cli.NoteCommand's output flow calling into the same TLS conn.
-# UNLIKE sporo's GO-2026-5932 (no patched version exists), this one IS already fixed
-# upstream — govulncheck reports "Fixed in: crypto/tls@go1.26.5", i.e. released. The clean
-# fix is a go.mod toolchain bump, which is off-limits for this phase (go.mod is lead-owned);
-# allowlisting here is a stopgap to keep CI green, NOT a "this is unfixable" acceptance.
-# Per this file's own header ("delete an entry the moment its vuln becomes fixable") —
-# LEAD: this entry should already be deleted once go.mod bumps to go1.26.5+. Flagging as a
-# lead decision rather than silently carrying it forward.
-GO-2026-5856
+# (No accepted findings — every called vuln is a hard red.) GO-2026-5856 (crypto/tls
+# ECH leak) was carried here as a stopgap while go.mod pinned go 1.26.4; it is fixed
+# in go1.26.5 and was removed when go.mod bumped to 1.26.5 (2026-07-22).
