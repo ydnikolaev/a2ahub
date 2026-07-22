@@ -95,6 +95,8 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		return cli.NewInitCommand(""), true
 	case "template":
 		return cli.NewTemplateCommand(), true
+	case "skill":
+		return cli.NewSkillCommand(nil, ""), true
 	case "connect":
 		return cli.NewConnectCommand("", "", ""), true
 	case "disconnect":

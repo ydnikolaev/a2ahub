@@ -58,6 +58,7 @@ var mcpExcludedVerbs = map[string]bool{
 	"mcp":        true, // the mcp verb itself: no self-referencing tool
 	"statusline": true, // spec 14 scope note + AC #6 (see file doc comment)
 	"__catalog":  true, // P13's CLI-only meta verb (catalog.go): no MCP tool
+	"skill":      true, // P20: installs the skill tree to the local repo — a host-machine act, CLI-only (like update)
 }
 
 // toolAction is one reachable MCP capability: a grouped tool plus one of its
