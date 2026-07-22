@@ -224,7 +224,12 @@ tool list + structured-returns contract — quote, do not reparaphrase).
 - Verify (lead, re-run): parity bijection + both decoys + excluded-absent + contract-subverbs-expanded PASS; per-write-verb equivalence (23 funnel writers byte-identical modulo volatile tokens) PASS; CC-093 PASS; -race stable. `make check` exit 0 (after fixing a load-flake in the P10 statusline perf gate that surfaced once the mcp package added parallel load). Live `a2a mcp` serves initialize + tools/list.
 - Deviations + amendments: no ci.yml edit (narrowing); parity is a Go bijection TEST not a binary generator (→ spec 13 amendment: P13 must build its own catalog-emitter); equivalence is byte-identical modulo volatile ULID/timestamp tokens (internal/cli exposes no entropy seam); first-connected-space-only write wiring + eager-clone-blocks-read-tools (backlogged). All in spec 14 §11. Agent found+fixed a real MCP bug (respond wiped default body). Lead added the wire.go mcp dispatch line (bare version to the funnel guard).
 - Epic-direction reconcile: still-serves (MCP tail, parity invariant mechanical).
-- Audit: dispatched post-wave (production code — internal/mcp).
+
+### Wave 6.1 — audit — 2026-07-22
+- go-auditor over a92cf2c^..7dc6327: **VERDICT PASS** (0 IN HIGH, 2 IN LOW). Verified clean: ADR-001 boundary (no internal/cli import), eventDoc field-parity, funnel/V2 reuse, CC-093 real shared-mirror idempotency, parity decoys fail independently, equivalence normalization top-level-anchored (can't mask a field divergence), panic-recover + malformed-input session survival, coverage 71.2%.
+- 2 IN LOW fixed (0e62c79): dead `_ = newDeps`; documented the 8 MiB frame-cap session-end.
+- **OUT-scope HIGH surfaced + FIXED (5b91fff):** path-traversal read-oracle — `artifact.ParseID` accepted `../` in a standing slug → `layout` path.Join → arbitrary 1 MiB file read via any tool's id/ids (D-014, newly reachable via `a2a mcp`). Pre-existing bug-parity with internal/cli; fixed at the SSOT (`standingSlugShape`), closing it for every consumer. make check green. Must-fix-before-public — now closed.
+- Audit: done.
 
 ## Deferred / follow-ups
 

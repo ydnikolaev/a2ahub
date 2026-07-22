@@ -136,7 +136,7 @@ phases:
     spec: specs/14-mcp-surface.md
     plan: plans/14-mcp-surface.plan.md
     blocked_by: [P10]
-    commits: [a92cf2c, 73a5aed, 7dc6327]
-    audit: open
+    commits: [a92cf2c, 73a5aed, 7dc6327, 5b91fff, 0e62c79]
+    audit: done
 
 deferred: []
