@@ -24,16 +24,23 @@ var binDir string
 // file's own location is the documented-robust approach the plan's Context
 // section names.
 func TestMain(m *testing.M) {
+	// os.Exit is called exactly once, OUTSIDE runTestMain's own scope, so
+	// its deferred temp-dir cleanup always runs (gocritic exitAfterDefer:
+	// an os.Exit inside the same scope as the defer would skip it).
+	os.Exit(runTestMain(m))
+}
+
+func runTestMain(m *testing.M) int {
 	root, err := repoRoot()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "internal/e2e: TestMain: resolve repo root:", err)
-		os.Exit(1)
+		return 1
 	}
 
 	dir, err := os.MkdirTemp("", "a2a-e2e-bin-*")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "internal/e2e: TestMain: mkdir temp:", err)
-		os.Exit(1)
+		return 1
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
@@ -47,11 +54,11 @@ func TestMain(m *testing.M) {
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "internal/e2e: TestMain: go build ./cmd/a2a: %v\n%s\n", err, out)
-		os.Exit(1)
+		return 1
 	}
 
 	binDir = dir
-	os.Exit(m.Run())
+	return m.Run()
 }
 
 // repoRoot resolves the product repo root from this source file's own

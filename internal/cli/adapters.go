@@ -372,7 +372,7 @@ func (r *MirrorResolver) ensureIndex() {
 				// simply skipped, never fails the whole walk.
 				return nil
 			}
-			raw, rerr := os.ReadFile(path)
+			raw, rerr := os.ReadFile(path) //nolint:gosec // reason: path comes from walking this system's own already-cloned mirror dir, not attacker-controlled input
 			if rerr != nil {
 				return nil
 			}

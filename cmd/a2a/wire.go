@@ -180,7 +180,6 @@ func buildCommands() map[string]command {
 	// Read verbs (P7): federated over ALL connected spaces via one
 	// cache.Store; read-only, no network in the render path.
 	for name, construct := range readVerbs() {
-		construct := construct
 		m[name] = func(args []string, stdout, stderr io.Writer) int {
 			p, err := resolvePaths()
 			if err != nil {
@@ -198,7 +197,6 @@ func buildCommands() map[string]command {
 	// target space is resolved from the first artifact id on the command
 	// line (the artifact already lives in a connected space's mirror).
 	for name, construct := range lifecycleVerbs() {
-		construct := construct
 		m[name] = func(args []string, stdout, stderr io.Writer) int {
 			return runLifecycle(args, stdout, stderr, construct)
 		}
@@ -489,7 +487,7 @@ func mirrorHoldsArtifact(mirrorDir, id string) bool {
 	var found bool
 	_ = filepath.WalkDir(mirrorDir, func(_ string, d os.DirEntry, err error) error {
 		if err != nil || found {
-			return nil
+			return nil //nolint:nilerr // reason: best-effort walk — mirrorHoldsArtifact already ignores WalkDir's overall error, an inaccessible entry just isn't a match
 		}
 		// Skip the bare `.git` object store — it never holds artifact files
 		// and walking it wastes work that grows with history (matches
@@ -676,7 +674,7 @@ func findSpace(cfg space.ProjectConfig, spaceID string) (space.Ref, bool) {
 }
 
 func loadManifest(mirrorDir string) (space.Manifest, error) {
-	raw, err := os.ReadFile(filepath.Join(mirrorDir, "space.yaml")) //nolint:gosec // reason: mirrorDir is the resolved local mirror clone
+	raw, err := os.ReadFile(filepath.Join(mirrorDir, "space.yaml"))
 	if err != nil {
 		return space.Manifest{}, fmt.Errorf("read space.yaml: %w", err)
 	}

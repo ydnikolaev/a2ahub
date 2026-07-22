@@ -80,7 +80,6 @@ func TestClosureModel(t *testing.T) {
 	t.Run("close_is_illegal_from_any_other_state", func(t *testing.T) {
 		t.Parallel()
 		for _, from := range []State{StateAccepted, StateInProgress, StateBlocked, StateAcknowledged, StateClosed} {
-			from := from
 			t.Run(string(from), func(t *testing.T) {
 				t.Parallel()
 				prior := Result{Kind: KindQuestion, State: from}

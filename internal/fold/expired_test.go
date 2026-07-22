@@ -27,7 +27,6 @@ func TestExpiredOverlay(t *testing.T) {
 		{"valid_until_exactly_now_is_not_yet_expired", base, base, false},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := ExpiredOverlay(tc.validUntil, tc.reference)

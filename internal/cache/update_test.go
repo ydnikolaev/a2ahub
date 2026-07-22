@@ -30,7 +30,7 @@ func TestUpdateNotice_NotEnabled(t *testing.T) {
 	dir := t.TempDir()
 	seedUpdateCache(t, dir, "9.9.9", time.Now())
 
-	store := NewStore("axon", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+	store := NewStore("axon", t.TempDir(), nil, time.Now, 0)
 	n := store.UpdateNotice()
 	if n.Grade != release.GradeNone {
 		t.Fatalf("Grade = %v, want GradeNone (not enabled)", n.Grade)
@@ -197,6 +197,6 @@ func TestTriggerUpdateRefreshIfStale_SkipsWhenFresh(t *testing.T) {
 // called.
 func TestTriggerUpdateRefreshIfStale_NotEnabled(t *testing.T) {
 	t.Parallel()
-	store := NewStore("axon", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+	store := NewStore("axon", t.TempDir(), nil, time.Now, 0)
 	store.triggerUpdateRefreshIfStale(context.Background())
 }

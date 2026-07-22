@@ -268,7 +268,7 @@ func walkArtifacts(dir string) ([]rawArtifact, error) {
 	var out []rawArtifact
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return nil //nolint:nilerr // reason: best-effort walk — skip an inaccessible entry, don't abort the whole walk (see func doc)
 		}
 		if d.IsDir() {
 			if d.Name() == ".git" || d.Name() == "vendored" {
@@ -281,19 +281,19 @@ func walkArtifacts(dir string) ([]rawArtifact, error) {
 		}
 		raw, rerr := readBounded(path, maxCacheReadBytes)
 		if rerr != nil {
-			return nil
+			return nil //nolint:nilerr // reason: best-effort walk — an unreadable file is silently skipped, not fatal (see func doc)
 		}
 		fm, ferr := artifact.ParseFrontmatter(raw)
 		if ferr != nil {
-			return nil
+			return nil //nolint:nilerr // reason: best-effort walk — a non-envelope file is silently skipped, not fatal (see func doc)
 		}
 		env, everr := decodeEnvelope(fm.YAML)
 		if everr != nil || env.ID == "" {
-			return nil
+			return nil //nolint:nilerr // reason: best-effort walk — an undecodable envelope is silently skipped, not fatal (see func doc)
 		}
 		rel, relErr := filepath.Rel(dir, path)
 		if relErr != nil {
-			return nil
+			return nil //nolint:nilerr // reason: best-effort walk — an unrelativizable path is silently skipped, not fatal (see func doc)
 		}
 		out = append(out, rawArtifact{RelPath: filepath.ToSlash(rel), Raw: raw, Env: env, Digest: artifact.Digest(raw)})
 		return nil
@@ -311,7 +311,7 @@ func walkEvents(dir string) ([]rawEvent, error) {
 	var out []rawEvent
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return nil //nolint:nilerr // reason: best-effort walk — skip an inaccessible entry, don't abort the whole walk (see func doc)
 		}
 		if d.IsDir() {
 			if d.Name() == ".git" {
@@ -324,7 +324,7 @@ func walkEvents(dir string) ([]rawEvent, error) {
 		}
 		rel, relErr := filepath.Rel(dir, path)
 		if relErr != nil {
-			return nil
+			return nil //nolint:nilerr // reason: best-effort walk — an unrelativizable path is silently skipped, not fatal (see func doc)
 		}
 		relSlash := filepath.ToSlash(rel)
 		if !strings.Contains(relSlash, "/events/") {
@@ -332,11 +332,11 @@ func walkEvents(dir string) ([]rawEvent, error) {
 		}
 		raw, rerr := readBounded(path, maxCacheReadBytes)
 		if rerr != nil {
-			return nil
+			return nil //nolint:nilerr // reason: best-effort walk — an unreadable file is silently skipped, not fatal (see func doc)
 		}
 		ev, everr := decodeEvent(raw)
 		if everr != nil || ev.Event == "" {
-			return nil
+			return nil //nolint:nilerr // reason: best-effort walk — an undecodable event is silently skipped, not fatal (see func doc)
 		}
 		out = append(out, rawEvent{RelPath: relSlash, Ev: ev})
 		return nil
@@ -360,7 +360,7 @@ func walkEvents(dir string) ([]rawEvent, error) {
 func commitOrder(ctx context.Context, dir string) (map[string]int64, error) {
 	out, err := runGitOutput(ctx, dir, "log", "--first-parent", "--reverse", "--name-only", "--format=%x02%H")
 	if err != nil {
-		return map[string]int64{}, nil
+		return map[string]int64{}, nil //nolint:nilerr // reason: absent/failed git history degrades to ULID-only ordering by design (see func doc)
 	}
 	seq := map[string]int64{}
 	var idx int64

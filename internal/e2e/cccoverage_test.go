@@ -45,16 +45,14 @@ func TestCCCoverageGate(t *testing.T) {
 // teeth, never a no-op that would pass any file.
 func TestCCCoverageGateCatchesBrokenRef(t *testing.T) {
 	root := repoRootForTest(t)
-	broken := ccCoverageRow{
-		CCID: "CC-999", TestRef: "internal/e2e.TestDoesNotExistNoReally", Tier: "T3", Status: "covered",
-	}
+	broken := ccCoverageRow{TestRef: "internal/e2e.TestDoesNotExistNoReally"}
 	if err := resolveTestRef(root, broken.TestRef); err == nil {
 		t.Fatal("expected a deliberately-broken test_ref to FAIL resolution, but it resolved")
 	}
 
 	// And the real file's own rows must all still resolve (the gate isn't
 	// broken in the other direction either).
-	good := ccCoverageRow{CCID: "CC-002", TestRef: "internal/e2e.TestT3Scripts", Tier: "T3", Status: "covered"}
+	good := ccCoverageRow{TestRef: "internal/e2e.TestT3Scripts"}
 	if err := resolveTestRef(root, good.TestRef); err != nil {
 		t.Fatalf("expected a genuine test_ref to resolve, got: %v", err)
 	}

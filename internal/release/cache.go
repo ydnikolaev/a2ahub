@@ -30,7 +30,7 @@ func CachePath() (string, error) {
 	const op = "CachePath"
 	dir, err := os.UserCacheDir()
 	if err != nil {
-		return "", &Error{Op: op, Err: fmt.Errorf("%w: %v", ErrCacheUnavailable, err)}
+		return "", &Error{Op: op, Err: fmt.Errorf("%w: %w", ErrCacheUnavailable, err)}
 	}
 	return filepath.Join(dir, "a2a", "update-check.json"), nil
 }
@@ -60,14 +60,14 @@ func WriteCheck(path string, cs CheckState) error {
 	const op = "WriteCheck"
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return &Error{Op: op, Input: dir, Err: fmt.Errorf("%w: %v", ErrCacheUnavailable, err)}
+		return &Error{Op: op, Input: dir, Err: fmt.Errorf("%w: %w", ErrCacheUnavailable, err)}
 	}
 	data, err := json.Marshal(cs)
 	if err != nil {
-		return &Error{Op: op, Err: fmt.Errorf("%w: %v", ErrCacheUnavailable, err)}
+		return &Error{Op: op, Err: fmt.Errorf("%w: %w", ErrCacheUnavailable, err)}
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return &Error{Op: op, Input: path, Err: fmt.Errorf("%w: %v", ErrCacheUnavailable, err)}
+		return &Error{Op: op, Input: path, Err: fmt.Errorf("%w: %w", ErrCacheUnavailable, err)}
 	}
 	return nil
 }

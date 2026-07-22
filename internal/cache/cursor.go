@@ -24,11 +24,11 @@ type cursorSnapshot struct {
 func loadCursor(path string) (cursorSnapshot, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return cursorSnapshot{Items: map[string]string{}}, nil
+		return cursorSnapshot{Items: map[string]string{}}, nil //nolint:nilerr // reason: a missing cursor file is "never read" by design, not an error (see func doc)
 	}
 	var c cursorSnapshot
 	if err := json.Unmarshal(raw, &c); err != nil {
-		return cursorSnapshot{Items: map[string]string{}}, nil
+		return cursorSnapshot{Items: map[string]string{}}, nil //nolint:nilerr // reason: a schema-mismatched cursor file is "never read" by design, not an error (see func doc)
 	}
 	if c.Items == nil {
 		c.Items = map[string]string{}

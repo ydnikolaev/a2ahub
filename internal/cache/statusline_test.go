@@ -18,7 +18,7 @@ func TestStatusline_ZeroNoiseSilence(t *testing.T) {
 
 	t.Run("no space connected", func(t *testing.T) {
 		t.Parallel()
-		store := NewStore("axon", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+		store := NewStore("axon", t.TempDir(), nil, time.Now, 0)
 		result, err := store.Statusline(context.Background())
 		if err != nil {
 			t.Fatalf("Statusline: %v", err)
@@ -112,7 +112,7 @@ func TestStatusline_NoHubSymbol(t *testing.T) {
 	// TTL=1ns with a just-cloned mirror still triggers the detached-
 	// refresh path (any nonzero age exceeds it) — it must not panic or
 	// block.
-	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, RepoURL: fx.dir, Manifest: mustManifest(t, fx)}}, func() time.Time { return time.Now() }, time.Nanosecond)
+	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, RepoURL: fx.dir, Manifest: mustManifest(t, fx)}}, time.Now, time.Nanosecond)
 	if _, err := store.Statusline(context.Background()); err != nil {
 		t.Fatalf("Statusline: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestStatusline_UpdateNotice_AppendedToActionableLine(t *testing.T) {
 // EnableUpdateNotice and both of which still pass unmodified.
 func TestStatusline_UpdateNotice_NotEnabled_ByteUnchanged(t *testing.T) {
 	t.Parallel()
-	store := NewStore("axon", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+	store := NewStore("axon", t.TempDir(), nil, time.Now, 0)
 	result, err := store.Statusline(context.Background())
 	if err != nil {
 		t.Fatalf("Statusline: %v", err)

@@ -26,7 +26,6 @@ func TestIllegalAndUnauthorized(t *testing.T) {
 	t.Run("CC-020_any_transition_from_terminal_state", func(t *testing.T) {
 		t.Parallel()
 		for _, terminal := range []State{StateRetired, StateSuperseded, StateWithdrawn, StateCancelled} {
-			terminal := terminal
 			t.Run(string(terminal), func(t *testing.T) {
 				t.Parallel()
 				env := rowEnv(KindQuestion)

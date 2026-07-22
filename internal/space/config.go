@@ -63,7 +63,7 @@ func LoadProjectConfig(path string) (ProjectConfig, error) {
 	}
 	var cfg ProjectConfig
 	if err := yaml.Unmarshal(raw, &cfg); err != nil {
-		return ProjectConfig{}, &Error{Op: op, Input: path, Err: fmt.Errorf("%w: %v", ErrManifestInvalid, err)}
+		return ProjectConfig{}, &Error{Op: op, Input: path, Err: fmt.Errorf("%w: %w", ErrManifestInvalid, err)}
 	}
 	return cfg, nil
 }
@@ -81,7 +81,7 @@ func LoadMachineConfig(path string) (MachineConfig, error) {
 	}
 	var cfg MachineConfig
 	if err := yaml.Unmarshal(raw, &cfg); err != nil {
-		return MachineConfig{}, &Error{Op: op, Input: path, Err: fmt.Errorf("%w: %v", ErrManifestInvalid, err)}
+		return MachineConfig{}, &Error{Op: op, Input: path, Err: fmt.Errorf("%w: %w", ErrManifestInvalid, err)}
 	}
 	for space, ref := range cfg.Credentials {
 		if _, err := ParseCredentialReference(ref); err != nil {

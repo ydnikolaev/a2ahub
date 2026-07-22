@@ -62,7 +62,7 @@ func Load() (*Corpus, error) {
 
 	baseDoc, err := readJSON("envelope/v1/base.schema.json")
 	if err != nil {
-		return nil, &Error{Op: op, Err: fmt.Errorf("%w: %v", ErrCorpusLoad, err)}
+		return nil, &Error{Op: op, Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
 	}
 	// base.schema.json is $ref'd BY the 8 type extensions but never
 	// itself has a $ref — safe to register directly under its own full
@@ -70,7 +70,7 @@ func Load() (*Corpus, error) {
 	// distinction matters).
 	baseKey := resourceURLPrefix + "envelope/v1/base.schema.json"
 	if err := c.AddResource(baseKey, baseDoc); err != nil {
-		return nil, &Error{Op: op, Err: fmt.Errorf("%w: %v", ErrCorpusLoad, err)}
+		return nil, &Error{Op: op, Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
 	}
 	baseProps := topLevelProperties(baseDoc)
 
@@ -78,27 +78,27 @@ func Load() (*Corpus, error) {
 	for i, typ := range envelopeTypes {
 		sch, err := addSeeded(c, fmt.Sprintf("envelope-%d", i), "envelope/v1/"+typ+".schema.json")
 		if err != nil {
-			return nil, &Error{Op: op, Input: typ, Err: fmt.Errorf("%w: %v", ErrCorpusLoad, err)}
+			return nil, &Error{Op: op, Input: typ, Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
 		}
 		envelope[typ] = sch
 	}
 
 	event, err := addSeeded(c, "event", "event/v1/event.schema.json")
 	if err != nil {
-		return nil, &Error{Op: op, Input: "event", Err: fmt.Errorf("%w: %v", ErrCorpusLoad, err)}
+		return nil, &Error{Op: op, Input: "event", Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
 	}
 	manifest, err := addSeeded(c, "manifest", "manifest/v1/space.schema.json")
 	if err != nil {
-		return nil, &Error{Op: op, Input: "manifest", Err: fmt.Errorf("%w: %v", ErrCorpusLoad, err)}
+		return nil, &Error{Op: op, Input: "manifest", Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
 	}
 	consumes, err := addSeeded(c, "consumes", "consumes/v1/consumes.schema.json")
 	if err != nil {
-		return nil, &Error{Op: op, Input: "consumes", Err: fmt.Errorf("%w: %v", ErrCorpusLoad, err)}
+		return nil, &Error{Op: op, Input: "consumes", Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
 	}
 
 	registryRaw, err := schemas.FS.ReadFile("errors/v1/registry.yaml")
 	if err != nil {
-		return nil, &Error{Op: op, Err: fmt.Errorf("%w: %v", ErrCorpusLoad, err)}
+		return nil, &Error{Op: op, Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
 	}
 	registry, err := LoadRegistry(registryRaw)
 	if err != nil {

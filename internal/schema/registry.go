@@ -34,7 +34,7 @@ func LoadRegistry(raw []byte) (*Registry, error) {
 	const op = "LoadRegistry"
 	var doc registryDoc
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return nil, &Error{Op: op, Err: fmt.Errorf("%w: %v", ErrRegistryLoad, err)}
+		return nil, &Error{Op: op, Err: fmt.Errorf("%w: %w", ErrRegistryLoad, err)}
 	}
 	byCode := make(map[string]RegistryEntry, len(doc.Entries))
 	for _, e := range doc.Entries {

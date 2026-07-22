@@ -299,7 +299,7 @@ func (r *MirrorResolver) ensureIndex() {
 			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
 				return nil
 			}
-			raw, rerr := os.ReadFile(path)
+			raw, rerr := os.ReadFile(path) //nolint:gosec // reason: path comes from walking this system's own already-cloned mirror dir, not attacker-controlled input
 			if rerr != nil {
 				return nil
 			}

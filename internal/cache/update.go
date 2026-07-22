@@ -136,7 +136,7 @@ func (s *Store) triggerUpdateRefreshIfStale(_ context.Context) {
 		return
 	}
 	checker := s.updateChecker
-	go func() {
+	go func() { //nolint:gosec // reason: context.Background() here is intentional — a detached background refresh must outlive the caller's request-scoped ctx (see func doc above)
 		defer func() { _ = recover() }() // rails: the refresh goroutine must never panic into the caller's prompt
 		checker(context.Background())
 	}()

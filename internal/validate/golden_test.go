@@ -73,7 +73,6 @@ func TestGoldenFixtures_Envelope(t *testing.T) {
 		t.Fatal("expected at least one valid envelope fixture")
 	}
 	for _, f := range validFiles {
-		f := f
 		t.Run("valid/"+filepath.Base(f), func(t *testing.T) {
 			t.Parallel()
 			raw, err := os.ReadFile(f)
@@ -103,7 +102,6 @@ func TestGoldenFixtures_Envelope(t *testing.T) {
 		t.Fatal("expected at least one invalid envelope fixture")
 	}
 	for _, f := range invalidFiles {
-		f := f
 		t.Run("invalid/"+filepath.Base(f), func(t *testing.T) {
 			t.Parallel()
 			raw, err := os.ReadFile(f)
@@ -161,7 +159,6 @@ func TestGoldenFixtures_EventManifestConsumes(t *testing.T) {
 	}
 
 	for _, fam := range families {
-		fam := fam
 		t.Run(fam.name, func(t *testing.T) {
 			t.Parallel()
 

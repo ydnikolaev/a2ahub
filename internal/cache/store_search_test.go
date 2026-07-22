@@ -44,7 +44,7 @@ func TestThread_OrderedConversationView(t *testing.T) {
 func TestSearch_ZeroHitsIsEmptyNotError(t *testing.T) {
 	t.Parallel()
 	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"})
-	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, Manifest: mustManifest(t, fx)}}, func() time.Time { return time.Now() }, 0)
+	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, Manifest: mustManifest(t, fx)}}, time.Now, 0)
 	items, err := store.Search(context.Background(), "no-such-term-anywhere", SearchFilters{})
 	if err != nil {
 		t.Fatalf("Search: %v", err)

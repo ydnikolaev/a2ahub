@@ -161,7 +161,7 @@ func (s *Store) triggerRefreshIfStale(_ context.Context, idx map[string][]folded
 	if len(stale) == 0 {
 		return
 	}
-	go func() {
+	go func() { //nolint:gosec // reason: context.Background() here is intentional — a detached background refresh must outlive the caller's request-scoped ctx (see func doc above)
 		defer func() { _ = recover() }() // rails: the refresh goroutine must never panic into the caller's prompt
 		for _, sm := range stale {
 			_ = space.CloneOrFetch(context.Background(), sm.Dir, sm.RepoURL)
