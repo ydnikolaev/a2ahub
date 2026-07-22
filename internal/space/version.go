@@ -1,9 +1,6 @@
 package space
 
-import (
-	"strconv"
-	"strings"
-)
+import "github.com/ydnikolaev/a2ahub/internal/version"
 
 // versionOlderThan reports whether binaryVersion is strictly older than
 // minVersion, comparing dotted-integer components (major.minor.patch — the
@@ -14,41 +11,15 @@ import (
 // dotted integers returns (false, ErrInvalidVersion) — the CC-085 guard
 // treats an unparseable version as "cannot verify" and fails CLOSED
 // (refuses the write) rather than silently permitting it.
+//
+// This is a thin wrapper over the SSOT comparator internal/version.OlderThan
+// (spec 19 §7 anti-dup, moved verbatim there): it remaps the leaf's own
+// sentinel back to this package's ErrInvalidVersion so existing callers and
+// tests keep observing errors.Is(err, space.ErrInvalidVersion).
 func versionOlderThan(binaryVersion, minVersion string) (bool, error) {
-	bv, err := parseVersion(binaryVersion)
+	older, err := version.OlderThan(binaryVersion, minVersion)
 	if err != nil {
-		return false, err
+		return false, &Error{Op: "versionOlderThan", Input: binaryVersion, Err: ErrInvalidVersion}
 	}
-	mv, err := parseVersion(minVersion)
-	if err != nil {
-		return false, err
-	}
-	for i := range bv {
-		if bv[i] != mv[i] {
-			return bv[i] < mv[i], nil
-		}
-	}
-	return false, nil
-}
-
-// parseVersion parses a "v"?major(.minor(.patch)?)? string into a
-// fixed-length [3]int tuple, stdlib-only (no new semver dependency).
-func parseVersion(s string) ([3]int, error) {
-	var out [3]int
-	s = strings.TrimPrefix(strings.TrimSpace(s), "v")
-	if s == "" {
-		return out, &Error{Op: "parseVersion", Input: s, Err: ErrInvalidVersion}
-	}
-	parts := strings.Split(s, ".")
-	if len(parts) > 3 {
-		return out, &Error{Op: "parseVersion", Input: s, Err: ErrInvalidVersion}
-	}
-	for i, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 0 {
-			return out, &Error{Op: "parseVersion", Input: s, Err: ErrInvalidVersion}
-		}
-		out[i] = n
-	}
-	return out, nil
+	return older, nil
 }

@@ -171,7 +171,7 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		if older {
 			return WriteResult{}, &Error{
 				Op: op,
-				Input: fmt.Sprintf("local binary %s < space.yaml min_binary_version %s",
+				Input: fmt.Sprintf("local binary %s < space.yaml min_binary_version %s — run 'a2a update'",
 					f.binaryVersion, req.MinBinaryVersion),
 				Err: ErrStaleBinaryVersion,
 			}
