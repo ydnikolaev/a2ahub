@@ -152,6 +152,7 @@
       mode makes the same offer when the block is absent. Would need a
       spec 06/09 amendment; complements (not replaces) the §8.8 adapter
       distribution.
+- [x] **DONE (P15, 2026-07-22, commit a54260a): MCP surface consolidation — 6 typed tools, was 33.** Shipped as a2a_read/new/submit/lifecycle/exchange/contract; tools/list ~2120→~700 tok. Original row below.
 - [ ] **MCP surface consolidation — ~5–8 typed tools, NOT 33** (operator
       decision 2026-07-22, needs `/discover` → new spec + phase, NOT a P13/P14
       add-on). The shipped `internal/mcp` registers one tool per §7.7 OP verb
