@@ -21,9 +21,11 @@
   catalog + `skill-drift` CI gate + hand-maintained agent-loop prose) shipped
   2026-07-22. P15 (MCP surface consolidation — ~6 capability-grouped typed
   tools, §7.7 amended) shipped 2026-07-22 (33→6 tools, tools/list ~2120→~700
-  tokens). Remaining: only the user-gated ops track P11 (getvisa space
-  bootstrap) → P12 (day-one content), pending the real getvisa space.
-  <!-- epic-state: v1-min-2026-07 phases=13/15 -->
+  tokens). P16 (release workflow — `v*` tag → cross-build + publish, unblocks
+  P11's binary-fetch) shipped 2026-07-22. Remaining: P11 (getvisa space
+  bootstrap, runbook ready, blocked on operator prereqs — release binary +
+  public-or-Team plan + fetch token) → P12 (day-one content).
+  <!-- epic-state: v1-min-2026-07 phases=14/16 -->
 
 - **Epic [publish-prep](features/publish-prep-2026-07/README.md)** — make
   `ydnikolaev/a2ahub` a public, hardened, cross-platform Go-binary repo

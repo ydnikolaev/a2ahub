@@ -123,12 +123,16 @@ Verdict: ✅ PROCEED
 
 - Wave 8 — P15 MCP surface consolidation (P15 → done) — 2026-07-22 — phase P15 — commits a54260a (code+tests+commands.md regen), preceded by the §7.7-amendment/P15-open docs commit — make check green — 33 tools → **6 capability-grouped** (a2a_read/new/submit/lifecycle/exchange/contract), each dispatching a closed action/view enum via a thin passthrough to the UNCHANGED per-verb handlers; parity reparameterized to capability-level (verb ↔ (tool,action)), byte-equivalence bug-farm all green, tools/list ~2120→~700 tok (−67%, independently re-measured); respond folded → 6 (valve not needed); 3 doc write-backs (spec 14 superseded-note, spec 15 §11 valve + §6 reason_code dead-field) — details: plans/15-mcp-consolidation.plan.md
 
+- Wave 9 — P16 release mechanics + P11 runbook — 2026-07-22 — phases P16 (done), P11 (in-progress) — lead-inline — `.github/workflows/release.yml` (v* tag → cross-build 4 targets + gh release, asset-name contract with the space gate, signing deferred/backlog) + `docs/runbooks/space-bootstrap.md` (execution-ready, live bootstrap BLOCKED on operator prereqs B1 release / B2 branch-protection-plan / B3 fetch-token) — commit cc9411d (runbook) + this commit (P16) — check-validators green — details: plans/16-release-mechanics.plan.md, docs/runbooks/space-bootstrap.md
+
 ## Resume state (fresh-session handoff — read this first)
 
-**Where we are: 13/15 done** (P1–P10 + P13 + P14 + P15). `make check` green.
-P13's Go seam (7a) and P15 have `audit: open` — both hand-verified, ride the
-S8 epic-final go-auditor (epic still open on the ops track). P15 consolidated
-the MCP surface 33→6 grouped tools (2026-07-22). Only the ops track remains:
+**Where we are: 14/16 done** (P1–P10 + P13 + P14 + P15 + P16). `make check`
+green. P13 (7a), P15, P16 have `audit: open` (hand-verified, ride S8). P15
+consolidated the MCP surface 33→6 tools; P16 shipped the release workflow.
+**P11 (in-progress)** is the last work — its runbook is execution-ready but the
+live bootstrap is BLOCKED on three operator prereqs (see below); path chosen:
+public via publish-prep. Remaining after P11: P12. The ops track:
 
 - **Code track — P13 (skill) DONE (waves 7a + 7b, 2026-07-22).** 7a shipped the
   machine half; 7b shipped the prose half (at opus, lead-verified). Detail below

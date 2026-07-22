@@ -1,0 +1,80 @@
+# Release (P16, §7.3 / D-013): on a `v*` tag, cross-build the single `a2a`
+# binary for the first-class targets and publish a GitHub release whose asset
+# names the space CI gate fetches VERBATIM (space-template's a2a-validate job
+# does `gh release download --pattern 'a2a-linux-amd64'`). The asset naming
+# `a2a-<os>-<arch>` is therefore a BEHAVIOR CONTRACT — do not rename without
+# updating space-template/.github/workflows/a2a-validate.yml in lockstep.
+#
+# SIGNING (D-013) is intentionally NOT wired here yet — it is a separate
+# operator decision (cosign/minisign, public key pinned in the binary, verified
+# by `a2a update` OP-217). The `sign` step below is a marked placeholder; until
+# it is filled, releases are UNSIGNED and `a2a update`'s signature check must
+# not be relied upon. See docs/backlog.md.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write # create the release + upload assets
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Cross-build the first-class targets
+        env:
+          # Tag- and commit-controlled values via env (never interpolated
+          # directly into the run script) — the ${{ }} → env → "$VAR" pattern.
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # darwin/arm64 + linux/amd64 first (§7.3); linux/arm64 + darwin/amd64
+          # for completeness. CGO off → static, portable binaries.
+          targets="linux/amd64 linux/arm64 darwin/arm64 darwin/amd64"
+          for t in $targets; do
+            os="${t%/*}"; arch="${t#*/}"
+            echo "building a2a-${os}-${arch} (version=${VERSION} commit=${COMMIT})"
+            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
+              go build -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
+              -o "dist/a2a-${os}-${arch}" ./cmd/a2a
+          done
+          (cd dist && sha256sum a2a-* > SHA256SUMS)
+          ls -l dist
+
+      # --- SIGNING PLACEHOLDER (D-013) — operator decision, not yet wired ---
+      # - name: Sign release assets (cosign keyless / minisign)
+      #   run: |
+      #     # cosign sign-blob --yes dist/a2a-<os>-<arch> > dist/a2a-<os>-<arch>.sig
+      #     # (public key pinned in the binary; `a2a update` verifies before swap)
+      #   Until this is filled, the release below is UNSIGNED.
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release create "$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$VERSION" \
+            --generate-notes \
+            --notes-start-tag "" \
+            dist/a2a-linux-amd64 \
+            dist/a2a-linux-arm64 \
+            dist/a2a-darwin-arm64 \
+            dist/a2a-darwin-amd64 \
+            dist/SHA256SUMS

@@ -2,7 +2,7 @@
 # epic-drift (truth) in `make check`. Commit scope for check A: `v1-min`.
 slug: v1-min-2026-07
 status: active
-updated: 2026-07-22  # wave 8 — P15 done (MCP surface consolidated to 6 grouped tools); audit rides S8
+updated: 2026-07-22  # wave 9 — P16 release mechanics done; P11 in-progress (blocked on operator prereqs)
 strategy: >
   Critical path P1 -> P3 -> P6 -> P7/P8 -> P10 -> P14. Parallel groups:
   {P1,P2} at start; {P3,P4,P5} after foundations; {P6,P9} next (P9 depends
@@ -148,5 +148,14 @@ phases:
     blocked_by: [P14]
     commits: [a54260a]
     audit: open  # hand-verified (make check + byte-equivalence bug-farm green + token drop confirmed); rides S8 epic-final
+
+  - id: P16
+    title: Release mechanics — v0.1.0 build + publish workflow (unblocks P11 B1)
+    status: done
+    spec: specs/16-release-mechanics.md
+    plan: plans/16-release-mechanics.plan.md
+    blocked_by: []
+    commits: [e7342df]
+    audit: open  # CI-config only; build steps locally verified; first release is operator-triggered (push v* tag); signing deferred (D-013 backlog)
 
 deferred: []

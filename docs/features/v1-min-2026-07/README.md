@@ -79,6 +79,7 @@ semantics (idempotency AC-301.1).
 | P13 | [specs/13-agent-skill.md](specs/13-agent-skill.md) | minimal a2ahub expert skill + agent rules (§8, D-015) |
 | P14 | [specs/14-mcp-surface.md](specs/14-mcp-surface.md) | `a2a mcp` façade + CLI/MCP parity suite |
 | P15 | [specs/15-mcp-consolidation.md](specs/15-mcp-consolidation.md) | MCP surface consolidation — ~6 capability-grouped typed tools (§7.7 amended, capability-parity) |
+| P16 | [specs/16-release-mechanics.md](specs/16-release-mechanics.md) | release workflow: `v*` tag → cross-build + publish (unblocks P11 B1); signing deferred |
 
 ## Acceptance criteria (epic level)
 

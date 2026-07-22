@@ -171,6 +171,11 @@
       bijection to CAPABILITY-level parity ("every designated CLI verb is
       reachable via some tool+action"). P13's `commands.md`/skill becomes the
       per-verb arg reference the thinner tools point at — 7a is NOT wasted.
+- [ ] Release signing (D-013) — `.github/workflows/release.yml` (P16) ships an
+      UNSIGNED release; the `sign` step is a marked placeholder. Wire
+      cosign/minisign (public key pinned in the binary, verified by `a2a update`
+      OP-217 before swap) — an operator decision (key management). Until then
+      `a2a update`'s signature check must not be relied upon.
 - [ ] Decompose-example fixture trio (P13 7b deviation): §8.7 / spec 13 T4
       describe a worked decompose example as "announcement + question +
       work_request on one thread, shipped in the product-repo fixture set",
