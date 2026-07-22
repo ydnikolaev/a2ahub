@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/release"
@@ -13,6 +14,36 @@ import (
 // minutes") — distinct from DefaultStatuslineTTL, which governs mirror
 // sync-age, not the machine-level release-check cache.
 const DefaultUpdateCheckTTL = 6 * time.Hour
+
+// ConfigureUpdateNotice enables the proactive update notice on s from the
+// machine config's free-form defaults map (spec 19 T3): update_repo defaults
+// to release.DefaultUpdateRepo; update_check_ttl (a Go duration string)
+// defaults to DefaultUpdateCheckTTL. It wires the background checker that
+// refreshes the machine-level update-check cache (statusline fires it via
+// triggerUpdateRefreshIfStale; the checker writes the cache ONLY — D-021).
+// A cache-path resolution failure disables the notice quietly (advisory
+// display is never fatal). The lead calls this at each Store construction
+// site (CLI read store, MCP buildStore) so every Store-based surface shares
+// one configured notice. Takes the raw defaults map, not space.MachineConfig,
+// so internal/cache stays decoupled from internal/space's config type.
+func ConfigureUpdateNotice(s *Store, binaryVersion string, defaults map[string]string) {
+	cachePath, err := release.CachePath()
+	if err != nil {
+		return
+	}
+	repo := defaults["update_repo"]
+	if repo == "" {
+		repo = release.DefaultUpdateRepo
+	}
+	ttl := DefaultUpdateCheckTTL
+	if raw := defaults["update_check_ttl"]; raw != "" {
+		if d, derr := time.ParseDuration(raw); derr == nil && d > 0 {
+			ttl = d
+		}
+	}
+	checker := release.NewChecker(release.NewGitHubSource(http.DefaultClient, "", repo), cachePath, time.Now)
+	s.EnableUpdateNotice(binaryVersion, cachePath, ttl, checker)
+}
 
 // UpdateNotice is the T4 shared advisory fact every Store-based surface
 // (statusline here; inbox/outbox/mcp in wave 12c) renders from — one

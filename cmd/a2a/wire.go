@@ -166,6 +166,15 @@ func buildCommands() map[string]command {
 		// every space that pins min_binary_version (P10 e2e surfaced it).
 		return cli.NewDoctorCommand(h, version, p.projectConfig, p.machineConfig, p.projectRoot).Run(context.Background(), args, stdio(stdout, stderr))
 	}
+	m["update"] = func(args []string, stdout, stderr io.Writer) int {
+		p, err := resolvePaths()
+		if err != nil {
+			return fail(stderr, err)
+		}
+		// Bare version (like doctor): release.Info/version.OlderThan parse a
+		// bare major.minor.patch, not the "a2a x.y.z (sha)" stamp.
+		return cli.NewUpdateCommand(version, p.projectConfig, p.machineConfig, p.projectRoot).Run(context.Background(), args, stdio(stdout, stderr))
+	}
 	m["submit"] = runSubmit
 
 	// Read verbs (P7): federated over ALL connected spaces via one
@@ -278,7 +287,11 @@ func buildStore(p paths) (*cache.Store, error) {
 			SpaceID: ref.ID, Dir: dir, RepoURL: ref.RepoURL, Manifest: manifest,
 		})
 	}
-	return cache.NewStore(cfg.System, cacheDirOf(p), mirrors, time.Now, 0), nil
+	store := cache.NewStore(cfg.System, cacheDirOf(p), mirrors, time.Now, 0)
+	// P19: enable the proactive update notice on the read store (statusline /
+	// inbox / outbox render it; statusline's stale-trigger fires the checker).
+	cache.ConfigureUpdateNotice(store, version, machine.Defaults)
+	return store, nil
 }
 
 // lifecycleDeps is the per-space dependency set every P8 lifecycle/contract

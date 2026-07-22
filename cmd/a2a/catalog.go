@@ -107,6 +107,8 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		return cli.NewSyncCommand("", "", "", nil), true
 	case "doctor":
 		return cli.NewDoctorCommand(nil, "", "", "", ""), true
+	case "update":
+		return cli.NewUpdateCommand("", "", "", ""), true
 	case "submit":
 		return cli.NewSubmitCommand(nil, nil, nil, "", "", "", "", cli.SubmitHostConfig{}), true
 	}
