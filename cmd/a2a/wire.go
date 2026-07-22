@@ -15,6 +15,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
@@ -188,6 +189,26 @@ func buildCommands() map[string]command {
 	// Contract verb (P8): dispatches its own sub-verbs; per-space like the
 	// lifecycle verbs, plus the P6 new-command for the `contract new` alias.
 	m["contract"] = runContract
+
+	// MCP façade (P14, OP-216): serve the §7.7 tool set over stdio JSON-RPC
+	// for the life of the session. internal/mcp re-wires the same core (never
+	// imports internal/cli); the bare `version` (not the full stamp) feeds
+	// its write funnel's min_binary_version guard, matching the doctor fix.
+	m["mcp"] = func(_ []string, stdout, stderr io.Writer) int {
+		ctx := context.Background()
+		p, err := mcp.ResolvePaths()
+		if err != nil {
+			return fail(stderr, err)
+		}
+		srv, err := mcp.NewServerFromConfig(ctx, p, version)
+		if err != nil {
+			return failf(stderr, "a2a mcp: %v", err)
+		}
+		if err := srv.Serve(ctx, os.Stdin, stdout); err != nil {
+			return failf(stderr, "a2a mcp: %v", err)
+		}
+		return 0
+	}
 
 	return m
 }
