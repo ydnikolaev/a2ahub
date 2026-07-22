@@ -1,10 +1,15 @@
 package main
 
-// mcp_parity_test.go is the CLI/MCP parity bijection gate (spec 14 §8 AC
-// 1/3/6, plan 14 Brief item 6). It lives in package main (not
-// internal/mcp) because ADR-001 forbids internal/mcp from importing
-// internal/cli — the bijection check needs BOTH registries, so this is
-// the one place that can see both.
+// mcp_parity_test.go is the CLI/MCP CAPABILITY-parity gate (spec 15 §T2,
+// §8 AC #3). It lives in package main (not internal/mcp) because ADR-001
+// forbids internal/mcp from importing internal/cli — the parity check needs
+// BOTH surfaces, so this is the one place that can see both.
+//
+// P15 reparameterizes P14's tool-level bijection to a (tool, action)
+// capability bijection: the MCP surface is now ~6 capability-grouped tools,
+// each dispatching a closed action/view enum. Every §7.7-designated CLI
+// verb must map to exactly one reachable (tool, action), and every reachable
+// (tool, action) to exactly one designated verb — both directions.
 //
 // Designated CLI verb set = buildCommands() keys MINUS the CLI-only
 // exclusion set, with `contract` EXPANDED to cli.ContractSubcommands()'s
@@ -12,18 +17,18 @@ package main
 // own bare switch dispatches them, cli.ContractSubcommands() is their only
 // machine-enumerable home per its own doc comment).
 //
+// MCP (tool, action) set = the grouped Registry's tool names paired with
+// each tool's dispatch enum, read from mcp's own EXPORTED slices
+// (mcp.ReadViews / mcp.LifecycleActions / mcp.ExchangeActions /
+// mcp.ContractActions — the single source the grouped schemas also read).
+// Each pair projects to a designated-verb name via toolAction.verb().
+//
 // Deviation (see this phase's report): `statusline` is a buildCommands()
-// key (registered via wire.go's readVerbs()) but is NOT part of the
-// §7.7-designated set — the plan Brief's own exclusion list
-// (version/init/connect/disconnect/doctor/template/sync/validate/mcp)
-// omits it, but spec 14's "Generated OP↔tool mapping table" scope note
-// AND its AC #6 row both explicitly name `statusline` as excluded
-// ("OPs not listed here (init/connect/disconnect/validate/sync/html/
-// statusline/update/doctor/template) have no MCP tool in v1"). Schema/
-// spec fidelity wins over the Brief's own shorthand: `statusline` is
-// added to the exclusion set here.
+// key but is NOT part of the §7.7-designated set (spec 14 scope note + AC
+// #6). Carried over from P14: it is in the exclusion set here.
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -32,8 +37,14 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 )
 
+// groupedToolNames is the P15 capability-grouped tool set (spec 15 §T1).
+var groupedToolNames = []string{
+	"a2a_contract", "a2a_exchange", "a2a_lifecycle",
+	"a2a_new", "a2a_read", "a2a_submit",
+}
+
 // mcpExcludedVerbs is the CLI-only verb set with NO MCP tool by design
-// (spec 14 §T1 scope note + AC #6).
+// (spec 14 §T1 scope note + AC #6, carried into P15 unchanged).
 var mcpExcludedVerbs = map[string]bool{
 	"version":    true,
 	"init":       true,
@@ -48,12 +59,34 @@ var mcpExcludedVerbs = map[string]bool{
 	"__catalog":  true, // P13's CLI-only meta verb (catalog.go): no MCP tool
 }
 
+// toolAction is one reachable MCP capability: a grouped tool plus one of its
+// dispatch-enum action/view values (action "" for the action-free write
+// tools a2a_new / a2a_submit).
+type toolAction struct {
+	tool   string
+	action string
+}
+
+// verb projects a (tool, action) to its designated-CLI-verb name — the
+// bijection's shared key space.
+func (ta toolAction) verb() string {
+	switch ta.tool {
+	case "a2a_contract":
+		return "contract-" + ta.action
+	case "a2a_new":
+		return "new"
+	case "a2a_submit":
+		return "submit"
+	default:
+		// a2a_read view == the read verb; a2a_lifecycle / a2a_exchange
+		// action == the lifecycle/exchange verb.
+		return ta.action
+	}
+}
+
 // designatedCLIVerbs returns the §7.7-designated CLI verb names:
-// buildCommands() keys minus mcpExcludedVerbs, with `contract` expanded
-// to `contract-<sub>` for each of cli.ContractSubcommands() (hyphenated
-// so verbToToolName's uniform hyphen->underscore rule produces
-// `a2a_contract_<sub>`, matching plan 14 Brief item 6's naming
-// convention).
+// buildCommands() keys minus mcpExcludedVerbs, with `contract` expanded to
+// `contract-<sub>` for each of cli.ContractSubcommands().
 func designatedCLIVerbs() []string {
 	var out []string
 	for name := range buildCommands() {
@@ -72,37 +105,63 @@ func designatedCLIVerbs() []string {
 	return out
 }
 
-// verbToToolName applies plan 14 Brief item 6's naming convention: a2a_ +
-// verb-name with EVERY hyphen replaced by an underscore (verify-pass ->
-// a2a_verify_pass; contract-verify-export -> a2a_contract_verify_export).
-func verbToToolName(verb string) string {
-	return "a2a_" + strings.ReplaceAll(verb, "-", "_")
+// mcpCapabilityPairs enumerates every reachable (tool, action) from the
+// grouped registry + mcp's own exported enum slices. It first asserts the
+// registry exposes exactly the 6 grouped tools (a fail here means the
+// enumeration below is stale), then pairs each with its dispatch enum.
+func mcpCapabilityPairs(t *testing.T) []toolAction {
+	t.Helper()
+	names := emptyRegistry().ToolNames()
+	if len(names) != len(groupedToolNames) {
+		t.Fatalf("registry tool set changed: want %v, got %v", groupedToolNames, names)
+	}
+	for i, n := range groupedToolNames {
+		if names[i] != n {
+			t.Fatalf("registry tool set changed: want %v, got %v", groupedToolNames, names)
+		}
+	}
+
+	var pairs []toolAction
+	for _, v := range mcp.ReadViews {
+		pairs = append(pairs, toolAction{"a2a_read", v})
+	}
+	pairs = append(pairs, toolAction{"a2a_new", ""}, toolAction{"a2a_submit", ""})
+	for _, a := range mcp.LifecycleActions {
+		pairs = append(pairs, toolAction{"a2a_lifecycle", a})
+	}
+	for _, a := range mcp.ExchangeActions {
+		pairs = append(pairs, toolAction{"a2a_exchange", a})
+	}
+	for _, a := range mcp.ContractActions {
+		pairs = append(pairs, toolAction{"a2a_contract", a})
+	}
+	return pairs
 }
 
-// checkBijection asserts every designated verb maps to exactly one tool
-// name in toolNames, AND every tool name maps to exactly one designated
-// verb — both directions (AC #3). It returns every mismatch found (a
-// missing tool AND a decoy/orphan tool are each independently reported),
+// checkBijection asserts every designated verb maps to exactly one reachable
+// (tool, action), AND every (tool, action) maps to exactly one designated
+// verb — both directions (AC #3). It returns every mismatch found (a missing
+// capability AND a decoy/orphan capability are each independently reported),
 // never short-circuiting on the first.
-func checkBijection(designated, toolNames []string) []string {
+func checkBijection(designated []string, pairs []toolAction) []string {
 	want := make(map[string]bool, len(designated))
 	for _, v := range designated {
-		want[verbToToolName(v)] = true
+		want[v] = true
 	}
-	got := make(map[string]bool, len(toolNames))
-	for _, n := range toolNames {
-		got[n] = true
+	got := make(map[string]toolAction, len(pairs))
+	for _, ta := range pairs {
+		got[ta.verb()] = ta
 	}
 
 	var problems []string
-	for name := range want {
-		if !got[name] {
-			problems = append(problems, "missing tool for designated verb: "+name)
+	for v := range want {
+		if _, ok := got[v]; !ok {
+			problems = append(problems, "designated CLI verb has no reachable (tool, action): "+v)
 		}
 	}
-	for name := range got {
-		if !want[name] {
-			problems = append(problems, "tool with no designated verb (MCP-only capability, R-018 violation): "+name)
+	for v, ta := range got {
+		if !want[v] {
+			problems = append(problems, fmt.Sprintf("(tool, action) with no designated CLI verb (MCP-only capability, R-018 violation): (%s, action=%q) -> verb %q", ta.tool, ta.action, v))
 		}
 	}
 	sort.Strings(problems)
@@ -111,85 +170,84 @@ func checkBijection(designated, toolNames []string) []string {
 
 // emptyRegistry builds a Registry purely for structural (name-set)
 // inspection — no handler in it is ever invoked by this test, so the
-// zero-value dependencies BuildRegistry closes over are never
-// dereferenced.
+// zero-value dependencies BuildRegistry closes over are never dereferenced.
 func emptyRegistry() *mcp.Registry {
 	return mcp.BuildRegistry(nil, mcp.WriteDeps{}, "", nil, mcp.NewDeps{})
 }
 
-// TestMCPParityBijection is spec 14 §8 AC #1: every §7.7-designated CLI
-// verb has exactly one MCP tool, and every MCP tool maps to exactly one
-// designated verb.
+// TestMCPParityBijection is spec 15 §8 AC #3: every §7.7-designated CLI verb
+// has exactly one reachable MCP (tool, action), and every (tool, action)
+// maps to exactly one designated verb.
 func TestMCPParityBijection(t *testing.T) {
 	t.Parallel()
 	designated := designatedCLIVerbs()
-	toolNames := emptyRegistry().ToolNames()
+	pairs := mcpCapabilityPairs(t)
 
-	problems := checkBijection(designated, toolNames)
+	problems := checkBijection(designated, pairs)
 	if len(problems) != 0 {
-		t.Fatalf("CLI/MCP parity bijection failed:\n%s\n\ndesignated verbs: %v\ntool names: %v",
-			strings.Join(problems, "\n"), designated, toolNames)
+		t.Fatalf("CLI/MCP capability-parity bijection failed:\n%s\n\ndesignated verbs: %v",
+			strings.Join(problems, "\n"), designated)
 	}
 }
 
-// TestMCPParityDecoyToolFailsIndependently is AC #3's first half: a tool
-// with no corresponding designated verb (an MCP-only capability, R-018
-// violation) fails the check on its own, even when every real verb still
-// has its tool.
-func TestMCPParityDecoyToolFailsIndependently(t *testing.T) {
+// TestMCPParityDecoyCapabilityFailsIndependently is AC #3's first half: a
+// (tool, action) with no corresponding designated verb (an MCP-only
+// capability, R-018 violation) fails the check on its own, even when every
+// real verb still has its capability.
+func TestMCPParityDecoyCapabilityFailsIndependently(t *testing.T) {
 	t.Parallel()
 	designated := designatedCLIVerbs()
-	toolNames := append(append([]string(nil), emptyRegistry().ToolNames()...), "a2a_decoy_capability")
+	pairs := append(mcpCapabilityPairs(t), toolAction{"a2a_lifecycle", "decoy-capability"})
 
-	problems := checkBijection(designated, toolNames)
+	problems := checkBijection(designated, pairs)
 	if len(problems) == 0 {
-		t.Fatal("expected the decoy tool to fail the bijection check")
+		t.Fatal("expected the decoy (tool, action) to fail the bijection check")
 	}
 	found := false
 	for _, p := range problems {
-		if strings.Contains(p, "a2a_decoy_capability") {
+		if strings.Contains(p, "decoy-capability") {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("expected a problem naming the decoy tool, got: %v", problems)
+		t.Fatalf("expected a problem naming the decoy capability, got: %v", problems)
 	}
 }
 
 // TestMCPParityDecoyVerbFailsIndependently is AC #3's second half: a
-// designated verb with no corresponding tool fails the check on its own.
+// designated verb with no corresponding (tool, action) fails the check on
+// its own.
 func TestMCPParityDecoyVerbFailsIndependently(t *testing.T) {
 	t.Parallel()
-	designated := append(append([]string(nil), designatedCLIVerbs()...), "decoy-verb-with-no-tool")
-	toolNames := emptyRegistry().ToolNames()
+	designated := append(designatedCLIVerbs(), "decoy-verb-with-no-tool")
+	pairs := mcpCapabilityPairs(t)
 
-	problems := checkBijection(designated, toolNames)
+	problems := checkBijection(designated, pairs)
 	if len(problems) == 0 {
 		t.Fatal("expected the decoy verb to fail the bijection check")
 	}
 	found := false
 	for _, p := range problems {
-		if strings.Contains(p, "a2a_decoy_verb_with_no_tool") {
+		if strings.Contains(p, "decoy-verb-with-no-tool") {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("expected a problem naming the decoy verb's tool, got: %v", problems)
+		t.Fatalf("expected a problem naming the decoy verb, got: %v", problems)
 	}
 }
 
-// TestMCPParityExcludedVerbsAbsent is AC #6: none of the CLI-only
-// (excluded) verb names appear as MCP tools.
+// TestMCPParityExcludedVerbsAbsent is AC #6: none of the CLI-only (excluded)
+// verb names is reachable as an MCP (tool, action).
 func TestMCPParityExcludedVerbsAbsent(t *testing.T) {
 	t.Parallel()
-	toolNames := make(map[string]bool)
-	for _, n := range emptyRegistry().ToolNames() {
-		toolNames[n] = true
+	reachable := make(map[string]bool)
+	for _, ta := range mcpCapabilityPairs(t) {
+		reachable[ta.verb()] = true
 	}
 	for verb := range mcpExcludedVerbs {
-		toolName := verbToToolName(verb)
-		if toolNames[toolName] {
-			t.Errorf("excluded verb %q must have NO MCP tool, but %q is registered", verb, toolName)
+		if reachable[verb] {
+			t.Errorf("excluded verb %q must have NO MCP capability, but it is reachable", verb)
 		}
 	}
 }
@@ -197,7 +255,8 @@ func TestMCPParityExcludedVerbsAbsent(t *testing.T) {
 // TestMCPParityContractSubverbsExpanded proves the contract family is
 // enumerated via cli.ContractSubcommands(), not the bare `contract`
 // buildCommands() key (which dispatches a bare switch, spec 14 Placement
-// decision: "two-level CLI enumeration").
+// decision: "two-level CLI enumeration") — and that each expands to an
+// a2a_contract action.
 func TestMCPParityContractSubverbsExpanded(t *testing.T) {
 	t.Parallel()
 	designated := designatedCLIVerbs()
@@ -208,9 +267,16 @@ func TestMCPParityContractSubverbsExpanded(t *testing.T) {
 	if designatedSet["contract"] {
 		t.Fatal("the bare `contract` key must NOT appear in the designated set (it is expanded to its 6 sub-verbs)")
 	}
+	contractActions := make(map[string]bool, len(mcp.ContractActions))
+	for _, a := range mcp.ContractActions {
+		contractActions[a] = true
+	}
 	for _, sub := range cli.ContractSubcommands() {
 		if !designatedSet["contract-"+sub.Name] {
 			t.Errorf("expected contract-%s in the designated set", sub.Name)
+		}
+		if !contractActions[sub.Name] {
+			t.Errorf("CLI contract sub-verb %q has no a2a_contract action (mcp.ContractActions drift)", sub.Name)
 		}
 	}
 }
