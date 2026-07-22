@@ -35,11 +35,16 @@ artifact. **May import**: none — CI config, no Go code.
 |---|---|---|
 | push tag `v*.*.*` | (1) setup Go from go.mod; (2) cross-build `a2a` for linux/amd64, linux/arm64, darwin/arm64, darwin/amd64 (CGO off, `-trimpath`, `-ldflags "-s -w -X main.version=<tag> -X main.commit=<sha>"`); (3) `sha256sum` manifest; (4) `gh release create <tag>` with the four `a2a-<os>-<arch>` assets + SHA256SUMS | a GitHub release whose `a2a-linux-amd64` asset the space CI gate fetches verbatim |
 
-## 2. Signing (D-013) — deferred, not in this phase
+## 2. Signing — keyless cosign wired; D-013 pinned-key model deferred
 
-The workflow carries a MARKED signing placeholder (cosign/minisign). Until an
-operator decision wires it, releases are UNSIGNED and `a2a update`'s signature
-check (OP-217) must not be relied upon. Tracked in docs/backlog.md.
+The workflow signs each asset with **keyless cosign** (Sigstore OIDC — the
+GitHub Actions workflow identity, NO secrets/keys to manage), uploading
+`.cosign.bundle` assets + Rekor transparency-log entries. This is supply-chain
+hygiene. It is NOT D-013's "public key pinned in the binary, verified by
+`a2a update`" model — that verifier (OP-217) does not exist in the binary yet,
+so pinned-key verification is a **future phase** (backlog). Signing is
+BEST-EFFORT (`continue-on-error`): on this untested pipeline a signer failure
+must never block the release — v0.1.0 still ships (unsigned in that case).
 
 ---
 

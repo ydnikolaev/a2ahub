@@ -171,11 +171,14 @@
       bijection to CAPABILITY-level parity ("every designated CLI verb is
       reachable via some tool+action"). P13's `commands.md`/skill becomes the
       per-verb arg reference the thinner tools point at — 7a is NOT wasted.
-- [ ] Release signing (D-013) — `.github/workflows/release.yml` (P16) ships an
-      UNSIGNED release; the `sign` step is a marked placeholder. Wire
-      cosign/minisign (public key pinned in the binary, verified by `a2a update`
-      OP-217 before swap) — an operator decision (key management). Until then
-      `a2a update`'s signature check must not be relied upon.
+- [ ] D-013 pinned-key verification — `.github/workflows/release.yml` (P16) now
+      signs releases with KEYLESS cosign (supply-chain hygiene, zero secrets),
+      but D-013's model is "public key pinned in the binary, verified by
+      `a2a update` (OP-217) before swap". The `a2a update` verb + the pinned-key
+      check do NOT exist in the binary yet. Build OP-217 with pinned-key (or
+      keyless-identity) verification when self-update lands; until then the
+      keyless signatures are verifiable out-of-band (`cosign verify-blob`) but
+      nothing in the binary enforces them.
 - [ ] Decompose-example fixture trio (P13 7b deviation): §8.7 / spec 13 T4
       describe a worked decompose example as "announcement + question +
       work_request on one thread, shipped in the product-repo fixture set",

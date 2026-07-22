@@ -5,11 +5,14 @@
 # `a2a-<os>-<arch>` is therefore a BEHAVIOR CONTRACT — do not rename without
 # updating space-template/.github/workflows/a2a-validate.yml in lockstep.
 #
-# SIGNING (D-013) is intentionally NOT wired here yet — it is a separate
-# operator decision (cosign/minisign, public key pinned in the binary, verified
-# by `a2a update` OP-217). The `sign` step below is a marked placeholder; until
-# it is filled, releases are UNSIGNED and `a2a update`'s signature check must
-# not be relied upon. See docs/backlog.md.
+# SIGNING: keyless cosign (Sigstore OIDC) — signs each asset using the GitHub
+# Actions workflow identity, NO secrets/keys to manage. Signatures + certs are
+# uploaded as `.cosign.bundle` assets and logged in the Rekor transparency log.
+# This is supply-chain hygiene; it is NOT D-013's "public key pinned in the
+# binary, verified by `a2a update`" model — that verifier (OP-217) does not
+# exist in the binary yet, so pinned-key verification is a future phase (see
+# docs/backlog.md). Signing is BEST-EFFORT here: if it fails on this (untested)
+# pipeline, the release still ships, unsigned.
 name: release
 
 on:
@@ -19,6 +22,7 @@ on:
 
 permissions:
   contents: write # create the release + upload assets
+  id-token: write # keyless cosign OIDC identity
 
 jobs:
   release:
@@ -36,15 +40,19 @@ jobs:
         env:
           # Tag- and commit-controlled values via env (never interpolated
           # directly into the run script) — the ${{ }} → env → "$VAR" pattern.
-          VERSION: ${{ github.ref_name }}
+          TAG: ${{ github.ref_name }}
           COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
+          # Stamp the BARE dotted version (strip the tag's leading "v") so
+          # main.version matches space.yaml's bare `min_binary_version`
+          # exactly — the version parsers tolerate a "v", but a clean stamp
+          # removes all doubt (mirrors the P10 doctor bare-version fix).
+          VERSION="${TAG#v}"
           mkdir -p dist
           # darwin/arm64 + linux/amd64 first (§7.3); linux/arm64 + darwin/amd64
           # for completeness. CGO off → static, portable binaries.
-          targets="linux/amd64 linux/arm64 darwin/arm64 darwin/amd64"
-          for t in $targets; do
+          for t in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64; do
             os="${t%/*}"; arch="${t#*/}"
             echo "building a2a-${os}-${arch} (version=${VERSION} commit=${COMMIT})"
             GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
@@ -55,26 +63,28 @@ jobs:
           (cd dist && sha256sum a2a-* > SHA256SUMS)
           ls -l dist
 
-      # --- SIGNING PLACEHOLDER (D-013) — operator decision, not yet wired ---
-      # - name: Sign release assets (cosign keyless / minisign)
-      #   run: |
-      #     # cosign sign-blob --yes dist/a2a-<os>-<arch> > dist/a2a-<os>-<arch>.sig
-      #     # (public key pinned in the binary; `a2a update` verifies before swap)
-      #   Until this is filled, the release below is UNSIGNED.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign assets (keyless, best-effort)
+        continue-on-error: true # an untested signer must never block the release
+        run: |
+          set -euo pipefail
+          for f in dist/a2a-* dist/SHA256SUMS; do
+            cosign sign-blob --yes "$f" --bundle "${f}.cosign.bundle"
+          done
+          echo "signed: $(ls dist/*.cosign.bundle 2>/dev/null | wc -l) asset(s)"
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ github.ref_name }}
+          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          gh release create "$VERSION" \
+          # Upload every artifact present (binaries + SHA256SUMS + any
+          # .cosign.bundle that the best-effort signer produced).
+          gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "$VERSION" \
+            --title "$TAG" \
             --generate-notes \
-            --notes-start-tag "" \
-            dist/a2a-linux-amd64 \
-            dist/a2a-linux-arm64 \
-            dist/a2a-darwin-arm64 \
-            dist/a2a-darwin-amd64 \
-            dist/SHA256SUMS
+            dist/*
