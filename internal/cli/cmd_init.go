@@ -32,6 +32,15 @@ import (
 type InitCommand struct {
 	projectConfigPath string
 
+	// MachineConfigPath is FIX B's DI seam (spec 18 §T1/§8): when the
+	// wiring layer sets this (cmd/a2a/wire.go's init closure, mirroring
+	// how the validate closure sets CIGitHubActor), Run seeds a
+	// `~/.config/a2a/config.yaml` skeleton on first run so `a2a submit`
+	// never dies "no machine config" before an operator has ever run
+	// `a2a doctor`. Left empty (e.g. the catalog/test construction path),
+	// this is a no-op — no behavior change.
+	MachineConfigPath string
+
 	// writeFile/loadProjectConfig are DI seams (rails, mirrors
 	// DoctorCommand's own convention) so tests never touch a real
 	// .a2a/config.yaml path.
@@ -85,6 +94,13 @@ func (c *InitCommand) Run(_ context.Context, args []string, stdio IO) int {
 	}
 	cfg := space.ProjectConfig{System: *system, Spaces: refs}
 
+	// FIX B runs before the idempotent short-circuit so a repeat `a2a
+	// init` still ensures/hints the machine config (e.g. an operator who
+	// deleted it after a first run).
+	if code := c.ensureMachineConfig(refs, stdio); code != 0 {
+		return code
+	}
+
 	if existing, ok := c.loadExisting(); ok && initConfigsEquivalent(existing, cfg) {
 		_, _ = fmt.Fprintln(stdio.Stdout, "init: already configured")
 		_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a doctor` to verify credentials and space access")
@@ -116,6 +132,68 @@ func (c *InitCommand) loadExisting() (space.ProjectConfig, bool) {
 		return space.ProjectConfig{}, false
 	}
 	return cfg, true
+}
+
+// ensureMachineConfig implements FIX B (spec 18 §T1/§8): a no-op unless
+// MachineConfigPath is wired (config/secrets rail — internal/cli never
+// reads os.UserHomeDir/os.Getenv itself; the path is always DI'd in from
+// wire.go). When wired and no machine config exists yet, it seeds a
+// skeleton — mirror_root plus an EMPTY, commented `credentials:` block, no
+// literal secret value ever written — so the very first `a2a submit`
+// after `a2a init` fails with an actionable "set this env var" message
+// instead of dying on a missing machine config file. An existing machine
+// config is never touched. Every connected space's exact credential env
+// var is then printed (space.ResolveCredential's "A2A_TOKEN_<SPACE-ID>"
+// convention, §7.4/§10.5) whether the skeleton was just written or already
+// existed — a repeat `a2a init` still re-surfaces the hint.
+func (c *InitCommand) ensureMachineConfig(refs []space.Ref, stdio IO) int {
+	if c.MachineConfigPath == "" {
+		return 0
+	}
+
+	if _, err := os.Stat(c.MachineConfigPath); err != nil {
+		if !os.IsNotExist(err) {
+			_, _ = fmt.Fprintf(stdio.Stderr, "init: cannot stat %s: %v\n", c.MachineConfigPath, err)
+			return 1
+		}
+
+		// mirror_root defaults to a "mirrors" sibling of the machine
+		// config file itself (e.g. ~/.config/a2a/mirrors) — derived
+		// purely from the already-DI'd path's own base, never from
+		// os.UserHomeDir/os.Getenv read inside this package.
+		mirrorRoot := filepath.Join(filepath.Dir(c.MachineConfigPath), "mirrors")
+		skeleton, err := yaml.Marshal(space.MachineConfig{MirrorRoot: mirrorRoot})
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "init: cannot encode machine config skeleton: %v\n", err)
+			return 1
+		}
+		// space.MachineConfig.Credentials carries `yaml:"credentials,omitempty"`
+		// (internal/space is read-only here), so an empty map never
+		// round-trips through yaml.Marshal — the empty, commented
+		// `credentials:` block is appended verbatim instead. This is
+		// still a valid, parseable MachineConfig (LoadMachineConfig sees
+		// a nil Credentials map): only the presentation, not the schema,
+		// is hand-assembled.
+		var raw []byte
+		raw = append(raw, "# a2a machine config — personal, per-machine credential REFERENCES only (never commit this file; §7.4).\n"...)
+		raw = append(raw, skeleton...)
+		raw = append(raw, "credentials:\n  # <space-id>: env:A2A_TOKEN_<SPACE_ID>\n"...)
+
+		if err := os.MkdirAll(filepath.Dir(c.MachineConfigPath), 0o755); err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "init: cannot create machine config directory: %v\n", err)
+			return 1
+		}
+		if err := c.writeFile(c.MachineConfigPath, raw, 0o600); err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "init: cannot write %s: %v\n", c.MachineConfigPath, err)
+			return 1
+		}
+		_, _ = fmt.Fprintf(stdio.Stdout, "init: wrote machine config skeleton %s\n", c.MachineConfigPath)
+	}
+
+	for _, ref := range refs {
+		_, _ = fmt.Fprintf(stdio.Stdout, "init: set the credential for space %q via  export A2A_TOKEN_%s=<token>\n", ref.ID, strings.ToUpper(ref.ID))
+	}
+	return 0
 }
 
 // initConfigsEquivalent compares two ProjectConfigs for the "identical
@@ -215,24 +293,38 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 2
 	}
 	repoURL := args[0]
-	id := initSpaceIDFromURL(repoURL)
+	urlID := initSpaceIDFromURL(repoURL)
 
 	cfg, _ := c.loadProjectConfig(c.projectConfigPath) // absent config is fine — connect can be the first write
 	machine, _ := c.loadMachineConfig(c.machineConfigPath)
 
-	ref, existed := connectFind(cfg, id, repoURL)
-	if !existed {
-		ref = space.Ref{ID: id, RepoURL: repoURL}
-		cfg.Spaces = append(cfg.Spaces, ref)
-	}
-
-	dir := c.resolveMirror(c.projectRoot, ref, machine)
+	// The authoritative space id lives in the mirror's own space.yaml
+	// (spec 18 §T1) — it can only be read AFTER a clone, so the clone target
+	// is keyed by the URL-derived id first (chicken/egg). The clone happens
+	// ONCE, before the real id (or whether it equals urlID) is known, so the
+	// clone ref AND the persisted ref BOTH pin MirrorLocation = urlID
+	// unconditionally: that makes ResolveMirrorLocation return the SAME path
+	// for the clone and for every later resolveMirror(ref) call (submit,
+	// disconnect, doctor) in ALL cases — including a configured machine
+	// `mirror_root` (which fix B now seeds by default) combined with a
+	// manifest id ≠ the repo basename. Keying resolution off the id instead
+	// would resolve to a directory that was never cloned into (the mirror
+	// lands at the urlID-keyed path, since that's all that's known at clone
+	// time). Pinning MirrorLocation is the existing space.Ref seam for
+	// exactly "location key ≠ id".
+	dir := c.resolveMirror(c.projectRoot, space.Ref{ID: urlID, MirrorLocation: urlID}, machine)
 	if err := c.cloneOrFetch(ctx, dir, repoURL); err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "connect: cannot establish mirror for %s: %v\n", id, err)
+		_, _ = fmt.Fprintf(stdio.Stderr, "connect: cannot establish mirror for %s: %v\n", urlID, err)
 		return 1
 	}
 
+	id := connectResolveSpaceID(dir, urlID)
+
+	_, existed := connectFind(cfg, id, repoURL)
 	if !existed {
+		ref := space.Ref{ID: id, RepoURL: repoURL, MirrorLocation: urlID}
+		cfg.Spaces = append(cfg.Spaces, ref)
+
 		raw, err := yaml.Marshal(cfg)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "connect: cannot encode config: %v\n", err)
@@ -261,6 +353,27 @@ func connectFind(cfg space.ProjectConfig, id, repoURL string) (space.Ref, bool) 
 		}
 	}
 	return space.Ref{}, false
+}
+
+// connectResolveSpaceID resolves the authoritative space id from the
+// freshly-cloned mirror's own space.yaml `space:` field (space.Manifest.Space,
+// spec 18 §T1) — this is the fix for the id mismatch that made `a2a submit`
+// space-resolution fail: registering the URL-derived id (e.g. "a2a" for a
+// repo path ending in a2a.git) instead of the manifest's own id (e.g.
+// "getvisa") meant no persisted ref ever had the id `submit --space
+// getvisa` actually looks up. Falls back to fallback (the URL-derived id)
+// when space.yaml is unreadable, unparseable, or structurally present but
+// carries no `space:` value — never crashes on a malformed mirror.
+func connectResolveSpaceID(mirrorDir, fallback string) string {
+	raw, err := os.ReadFile(filepath.Join(mirrorDir, "space.yaml"))
+	if err != nil {
+		return fallback
+	}
+	manifest, err := space.ParseManifest(raw)
+	if err != nil || manifest.Space == "" {
+		return fallback
+	}
+	return manifest.Space
 }
 
 var _ Command = (*ConnectCommand)(nil)
