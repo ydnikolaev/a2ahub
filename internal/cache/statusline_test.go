@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/ydnikolaev/a2ahub/internal/release"
 )
 
 // TestStatusline_ZeroNoiseSilence is AC row 2: given nothing actionable,
@@ -133,6 +135,91 @@ func TestStatusline_NoHubSymbol(t *testing.T) {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestStatusline_UpdateNotice_AloneWhenOtherwiseQuiet is spec 19 T4's
+// statusline row: an available update is actionable content in its own
+// right, so an otherwise-quiet statusline (no space connected) still
+// prints the segment ALONE, exit 0 (never inflating severity).
+func TestStatusline_UpdateNotice_AloneWhenOtherwiseQuiet(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	cachePath := filepath.Join(dir, "update-check.json")
+	if err := release.WriteCheck(cachePath, release.CheckState{CheckedAt: now, Latest: "0.3.0", Source: "github"}); err != nil {
+		t.Fatalf("WriteCheck: %v", err)
+	}
+
+	store := NewStore("axon", t.TempDir(), nil, func() time.Time { return now }, 0)
+	store.EnableUpdateNotice("0.1.2", cachePath, time.Hour, nil)
+
+	result, err := store.Statusline(context.Background())
+	if err != nil {
+		t.Fatalf("Statusline: %v", err)
+	}
+	if result.Exit != int(SeverityQuiet) {
+		t.Fatalf("Exit = %d, want %d (update notice never inflates severity)", result.Exit, SeverityQuiet)
+	}
+	if result.Line == "" {
+		t.Fatal("want the update segment printed alone")
+	}
+	if !contains(result.Line, "0.1.2") || !contains(result.Line, "0.3.0") {
+		t.Fatalf("line %q does not name current/latest versions", result.Line)
+	}
+}
+
+// TestStatusline_UpdateNotice_AppendedToActionableLine is spec 19 T4: when
+// there IS actionable content (p1/urgent, severity 11 here), the update
+// segment is appended as a TRAILING segment without changing the exit
+// code — the notice is advisory, never a severity input.
+func TestStatusline_UpdateNotice_AppendedToActionableLine(t *testing.T) {
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+	fx.commitArtifact("seomatrix/exchanges/XW-seomatrix-20260701-urgent2.md", wr("XW-seomatrix-20260701-urgent2", "todo feed pagination", "seomatrix", []string{"axon"}, "p1", false), "body")
+	fx.commitEvent("seomatrix", fxULID(820), evt("XW-seomatrix-20260701-urgent2", "submit", "seomatrix", base))
+
+	now := base.Add(time.Hour)
+	cacheDir := t.TempDir()
+	cachePath := filepath.Join(cacheDir, "update-check.json")
+	if err := release.WriteCheck(cachePath, release.CheckState{CheckedAt: now, Latest: "0.3.0", Source: "github"}); err != nil {
+		t.Fatalf("WriteCheck: %v", err)
+	}
+
+	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, Manifest: mustManifest(t, fx)}}, func() time.Time { return now }, time.Hour)
+	store.EnableUpdateNotice("0.1.2", cachePath, time.Hour, nil)
+
+	result, err := store.Statusline(context.Background())
+	if err != nil {
+		t.Fatalf("Statusline: %v", err)
+	}
+	if result.Exit != int(SeverityUrgent) {
+		t.Fatalf("Exit = %d, want %d (update notice must not change severity)", result.Exit, SeverityUrgent)
+	}
+	if !contains(result.Line, "XW-seomatrix-20260701-urgent2") {
+		t.Fatalf("line %q does not name the urgent item", result.Line)
+	}
+	if !contains(result.Line, "0.1.2") || !contains(result.Line, "0.3.0") {
+		t.Fatalf("line %q does not append the update segment", result.Line)
+	}
+}
+
+// TestStatusline_UpdateNotice_NotEnabled_ByteUnchanged is the
+// EnableUpdateNotice contract: a Store that never calls EnableUpdateNotice
+// renders Statusline exactly as before this phase (zero-space, zero-notice
+// case) — no trailing segment. The not-enabled path with actionable
+// content is already covered by TestStatusline_P1Severity and
+// TestStatusline_ZeroNoiseSilence, neither of which calls
+// EnableUpdateNotice and both of which still pass unmodified.
+func TestStatusline_UpdateNotice_NotEnabled_ByteUnchanged(t *testing.T) {
+	t.Parallel()
+	store := NewStore("axon", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+	result, err := store.Statusline(context.Background())
+	if err != nil {
+		t.Fatalf("Statusline: %v", err)
+	}
+	if result.Line != "" || result.Exit != 0 {
+		t.Fatalf("want empty line + exit 0 (unchanged pre-P19 behavior), got %+v", result)
 	}
 }
 

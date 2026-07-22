@@ -38,6 +38,16 @@ type Store struct {
 	spaces    []SpaceMirror
 	now       Clock
 	ttl       time.Duration
+
+	// update.go's T3/T4 fields — all zero-value until EnableUpdateNotice
+	// is called (never by NewStore itself, so every existing caller's
+	// Statusline output stays byte-unchanged until the lead wires the
+	// setter at a call site).
+	updateEnabled       bool
+	updateBinaryVersion string
+	updateCachePath     string
+	updateTTL           time.Duration
+	updateChecker       func(context.Context)
 }
 
 // NewStore constructs a Store. ownSystem is this project's configured
@@ -55,6 +65,29 @@ func NewStore(ownSystem, cacheDir string, spaces []SpaceMirror, now Clock, ttl t
 }
 
 func (s *Store) cursorPath() string { return filepath.Join(s.cacheDir, "cursor.json") }
+
+// EnableUpdateNotice turns on the T3/T4 update-notice mechanism on an
+// already-constructed Store: a post-construction setter, deliberately NOT a
+// NewStore parameter, so every existing call site's behavior (and
+// Statusline's byte output) is unaffected until a caller opts in.
+// binaryVersion is this build's bare current version (release.Resolve's
+// "current"); cachePath is the T3 machine-level update-check cache file
+// (release.CachePath()); ttl is the cache's freshness window (<=0 defaults
+// to DefaultUpdateCheckTTL); checker is the background refresh function
+// (typically release.NewChecker's return value) triggerUpdateRefreshIfStale
+// spawns detached when the cache is stale — nil disables the refresh
+// trigger while still allowing UpdateNotice to render from whatever the
+// cache already holds.
+func (s *Store) EnableUpdateNotice(binaryVersion, cachePath string, ttl time.Duration, checker func(context.Context)) {
+	if ttl <= 0 {
+		ttl = DefaultUpdateCheckTTL
+	}
+	s.updateEnabled = true
+	s.updateBinaryVersion = binaryVersion
+	s.updateCachePath = cachePath
+	s.updateTTL = ttl
+	s.updateChecker = checker
+}
 
 // index composes every connected space's read-model (buildIndex) — the
 // one place every verb below funnels through.
