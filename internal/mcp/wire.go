@@ -106,7 +106,6 @@ func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string) (*S
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
 	registry = BuildRegistry(store, write, submitDeps.StagingDir, submitDeps.Legality, newDeps)
-	_ = newDeps
 	return NewServer(registry, "a2a-mcp", binaryVersion, nil), nil
 }
 
