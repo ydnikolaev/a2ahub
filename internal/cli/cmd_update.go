@@ -170,18 +170,21 @@ func (c *UpdateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		})
 	}
 
-	updateAvailable := !dec.UpToDate && !dec.BelowFloor
+	// update_available / required come from the shared release.Info SSOT (not
+	// re-derived here) so this object agrees value-for-value with the cache
+	// UpdateNotice that inbox --json / MCP a2a_read render.
+	info := release.Info(dec.Current, dec.Latest, dec.Floor, dec.FloorSpace)
 
 	if *jsonFlag {
 		enc := json.NewEncoder(stdio.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(updateJSON{
-			Current:         dec.Current,
-			Latest:          dec.Latest,
-			UpdateAvailable: updateAvailable,
-			Floor:           dec.Floor,
-			FloorSpace:      dec.FloorSpace,
-			Required:        dec.Required,
+			Current:         info.Current,
+			Latest:          info.Latest,
+			UpdateAvailable: info.UpdateAvailable,
+			Floor:           info.Floor,
+			FloorSpace:      info.FloorSpace,
+			Required:        info.Required,
 		}); err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "update: cannot encode JSON output: %v\n", err)
 			return 1

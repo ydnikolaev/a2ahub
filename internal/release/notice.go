@@ -40,6 +40,57 @@ func grade(current, latest, floor string) Grade {
 	return GradeNone
 }
 
+// NoticeInfo is the full structured update fact — the single home for the
+// update_available / required booleans AND the rendered advisory text, so
+// every surface's JSON object (a2a update --json, inbox --json, MCP a2a_read)
+// and advisory line agree value-for-value. update_available and required are
+// ORTHOGONAL pure version comparisons; Grade/Segment/Sentence are the display
+// rendering (Grade picks the single strongest message to show).
+type NoticeInfo struct {
+	Current         string
+	Latest          string
+	Floor           string
+	FloorSpace      string
+	UpdateAvailable bool // a newer release exists: current strictly older than latest
+	Required        bool // running binary below a space floor: current strictly older than floor
+	Grade           Grade
+	Segment         string
+	Sentence        string
+}
+
+// Info computes the shared T4 notice facts (the SSOT the CLI --json object,
+// the cache UpdateNotice, and the MCP a2a_read update field all derive from,
+// so update_available/required never diverge across surfaces). Unparseable
+// inputs degrade each boolean to false (advisory-display-only; Resolve is the
+// fail-closed decision path for the actual update/write act).
+func Info(current, latest, floor, floorSpace string) NoticeInfo {
+	avail := false
+	if latest != "" {
+		if older, err := version.OlderThan(current, latest); err == nil && older {
+			avail = true
+		}
+	}
+	required := false
+	if floor != "" {
+		if older, err := version.OlderThan(current, floor); err == nil && older {
+			required = true
+		}
+	}
+	seg, g := FormatSegment(current, latest, floor, floorSpace)
+	sen, _ := FormatNotice(current, latest, floor, floorSpace)
+	return NoticeInfo{
+		Current:         current,
+		Latest:          latest,
+		Floor:           floor,
+		FloorSpace:      floorSpace,
+		UpdateAvailable: avail,
+		Required:        required,
+		Grade:           g,
+		Segment:         seg,
+		Sentence:        sen,
+	}
+}
+
 // FormatNotice renders the T4 full-sentence advisory text every "prose"
 // surface (inbox/outbox stderr, doctor) uses verbatim, plus its Grade
 // (GradeNone => text is ""). Every notice string lives HERE so all

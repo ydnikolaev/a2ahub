@@ -52,19 +52,20 @@ func (s *Store) UpdateNotice() UpdateNotice {
 
 	floor, floorSpace := s.updateFloor()
 
-	segment, grade := release.FormatSegment(s.updateBinaryVersion, latest, floor, floorSpace)
-	sentence, _ := release.FormatNotice(s.updateBinaryVersion, latest, floor, floorSpace)
-
+	// Derive every field from the shared release.Info SSOT so this object
+	// agrees value-for-value with `a2a update --json` (parity across surfaces
+	// — update_available/required are orthogonal, not grade-folded).
+	info := release.Info(s.updateBinaryVersion, latest, floor, floorSpace)
 	return UpdateNotice{
-		Current:         s.updateBinaryVersion,
-		Latest:          latest,
-		UpdateAvailable: grade == release.GradeAvailable || grade == release.GradeRequired,
-		Floor:           floor,
-		FloorSpace:      floorSpace,
-		Required:        grade == release.GradeRequired,
-		Grade:           grade,
-		Segment:         segment,
-		Sentence:        sentence,
+		Current:         info.Current,
+		Latest:          info.Latest,
+		UpdateAvailable: info.UpdateAvailable,
+		Floor:           info.Floor,
+		FloorSpace:      info.FloorSpace,
+		Required:        info.Required,
+		Grade:           info.Grade,
+		Segment:         info.Segment,
+		Sentence:        info.Sentence,
 	}
 }
 

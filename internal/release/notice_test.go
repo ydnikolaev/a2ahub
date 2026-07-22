@@ -65,3 +65,36 @@ func TestFormatSegment(t *testing.T) {
 		t.Fatalf("text = %q, want to name the pinning space", text)
 	}
 }
+
+// TestInfo covers the SSOT booleans (update_available / required) both
+// surfaces (a2a update --json, cache.UpdateNotice) derive from — especially
+// the below-floor region where the two must NOT diverge.
+func TestInfo(t *testing.T) {
+	cases := []struct {
+		name                    string
+		current, latest, floor  string
+		wantAvail, wantRequired bool
+		wantGrade               Grade
+	}{
+		{"available-only", "0.1.0", "0.3.0", "", true, false, GradeAvailable},
+		{"required-and-newer", "0.1.0", "0.6.0", "0.4.0", true, true, GradeRequired},
+		{"required-newer-but-below-floor", "0.1.0", "0.3.0", "0.4.0", true, true, GradeRequired},
+		{"below-floor-no-newer", "0.3.0", "0.3.0", "0.4.0", false, true, GradeRequired},
+		{"up-to-date-no-floor", "0.3.0", "0.3.0", "", false, false, GradeNone},
+		{"unparseable-current-degrades", "dev", "0.3.0", "0.4.0", false, false, GradeNone},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Info(tc.current, tc.latest, tc.floor, "sp")
+			if got.UpdateAvailable != tc.wantAvail {
+				t.Errorf("UpdateAvailable = %v, want %v", got.UpdateAvailable, tc.wantAvail)
+			}
+			if got.Required != tc.wantRequired {
+				t.Errorf("Required = %v, want %v", got.Required, tc.wantRequired)
+			}
+			if got.Grade != tc.wantGrade {
+				t.Errorf("Grade = %v, want %v", got.Grade, tc.wantGrade)
+			}
+		})
+	}
+}
