@@ -73,6 +73,7 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  contract    contract lifecycle (new/publish/deprecate/retire/diff/verify-export)")
 	_, _ = fmt.Fprintln(w, "  doctor      diagnose config / space / credentials")
 	_, _ = fmt.Fprintln(w, "  update      self-update to the latest release (--check/--yes/--allow-unsigned)")
+	_, _ = fmt.Fprintln(w, "  skill       install the a2ahub expert-skill tree into this repo")
 	_, _ = fmt.Fprintln(w, "  version     print the binary version stamp")
 }
 
