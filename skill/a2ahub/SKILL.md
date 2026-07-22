@@ -104,7 +104,8 @@ remedy). Both are advisory.
 **Consent stance (D-021).** The notice is display only — nothing ever
 auto-updates. Surface it to your human. Run **`a2a update --yes`** yourself
 *only* when your human or the project has explicitly consented to self-serve
-updates; otherwise report the available version and let them run it. Signature
-verification is checksum-only in this build, so `a2a update` currently requires
-`--allow-unsigned` (state it explicitly — you are updating the fleet's own
-tooling).
+updates; otherwise report the available version and let them run it. The update
+is verified before it swaps: the asset's checksum plus its keyless-cosign
+signature (Sigstore, pinned to the release workflow's identity) — a
+present-but-invalid signature is refused and cannot be overridden. `--allow-unsigned`
+is needed only for an asset that carries no signature bundle at all.
