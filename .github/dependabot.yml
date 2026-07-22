@@ -1,0 +1,27 @@
+# Automated dependency updates. Go modules and GitHub Actions weekly (grouped
+# to keep PR noise low); security updates land immediately regardless of
+# schedule. a2ahub has no web/ tree, so (unlike sporo) there is no npm
+# ecosystem entry here.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      go-dependencies:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        update-types: [minor, patch, major]
+    commit-message:
+      prefix: "ci(deps)"
