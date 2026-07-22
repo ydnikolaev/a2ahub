@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/release"
 )
 
 // OutboxCommand implements `a2a outbox [--attention] [--json]` (OP-208):
@@ -54,7 +55,26 @@ func (c *OutboxCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintf(stdio.Stderr, "outbox: %v\n", err)
 		return 1
 	}
-	return outboxRender(stdio, items, *jsonOut)
+	code := outboxRender(stdio, items, *jsonOut)
+	outboxWriteUpdateAdvisory(stdio, c.store.UpdateNotice(), *jsonOut)
+	return code
+}
+
+// outboxWriteUpdateAdvisory emits the spec 19 T4 update-notice advisory
+// OUT-OF-BAND, to stderr ONLY (wave 12c amendment: the stdout item array's
+// bytes must stay byte-identical for existing consumers). See
+// inboxWriteUpdateAdvisory's doc comment (cmd_inbox.go) — same rule, kept a
+// file-private, uniquely-named copy per this package's own Placement
+// convention (no shared helper across verb files).
+func outboxWriteUpdateAdvisory(stdio IO, n cache.UpdateNotice, jsonOut bool) {
+	if n.Grade == release.GradeNone {
+		return
+	}
+	if jsonOut {
+		_ = json.NewEncoder(stdio.Stderr).Encode(n)
+		return
+	}
+	_, _ = fmt.Fprintf(stdio.Stderr, "note: %s\n", n.Sentence)
 }
 
 func outboxRender(stdio IO, items []cache.Item, jsonOut bool) int {

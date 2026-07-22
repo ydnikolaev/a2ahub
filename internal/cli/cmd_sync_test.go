@@ -27,6 +27,12 @@ func TestSyncFetchesAllConnectedMirrors(t *testing.T) {
 
 	pending := &recordingPendingMarker{}
 	sync := cli.NewSyncCommand(cfgPath, machinePath, dir, pending)
+	// Hermetic: NewSyncCommand's real default refreshUpdate would otherwise
+	// hit the live GitHub API + the real machine update-check cache (spec 19
+	// T3(b)) — this test is not about that seam, so it neuters it (same
+	// pattern as TestSyncRefreshesUpdateCache's own override, minus the
+	// call-counting).
+	sync.SetRefreshUpdateForTest(func(context.Context) {})
 	io2, out, errOut := newIO()
 	code := sync.Run(context.Background(), nil, io2)
 	if code != 0 {
@@ -44,6 +50,7 @@ func TestSyncNoConnectedSpaces(t *testing.T) {
 	machinePath := filepath.Join(dir, "machine.yaml")
 	pending := &recordingPendingMarker{}
 	sync := cli.NewSyncCommand(cfgPath, machinePath, dir, pending)
+	sync.SetRefreshUpdateForTest(func(context.Context) {}) // hermetic: see TestSyncFetchesAllConnectedMirrors's comment
 
 	io, out, _ := newIO()
 	code := sync.Run(context.Background(), nil, io)
@@ -55,6 +62,60 @@ func TestSyncNoConnectedSpaces(t *testing.T) {
 	}
 	if len(pending.calls) != 0 {
 		t.Fatalf("expected zero seam calls with no connected spaces, got %d", len(pending.calls))
+	}
+}
+
+// TestSyncRefreshesUpdateCache is spec 19 T3(b): `a2a sync` is already the
+// consented network verb, so it refreshes the update-check cache
+// synchronously, exactly once, after the mirror-refresh loop.
+func TestSyncRefreshesUpdateCache(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	machinePath := filepath.Join(dir, "machine.yaml")
+
+	connect := cli.NewConnectCommand(cfgPath, machinePath, dir)
+	io1, _, _ := newIO()
+	if code := connect.Run(context.Background(), []string{fx.RemoteURL()}, io1); code != 0 {
+		t.Fatalf("connect: code = %d", code)
+	}
+
+	pending := &recordingPendingMarker{}
+	sync := cli.NewSyncCommand(cfgPath, machinePath, dir, pending)
+	var refreshCalls int
+	sync.SetRefreshUpdateForTest(func(context.Context) { refreshCalls++ })
+
+	io2, out, errOut := newIO()
+	code := sync.Run(context.Background(), nil, io2)
+	if code != 0 {
+		t.Fatalf("sync: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if refreshCalls != 1 {
+		t.Fatalf("refreshUpdate calls = %d, want exactly 1", refreshCalls)
+	}
+}
+
+// TestSyncRefreshesUpdateCacheEvenWithNoConnectedSpaces asserts the T3(b)
+// refresh is not gated on any connected space (the update-check cache tracks
+// the product binary's own release, independent of any space).
+func TestSyncRefreshesUpdateCacheEvenWithNoConnectedSpaces(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	machinePath := filepath.Join(dir, "machine.yaml")
+	pending := &recordingPendingMarker{}
+	sync := cli.NewSyncCommand(cfgPath, machinePath, dir, pending)
+	var refreshCalls int
+	sync.SetRefreshUpdateForTest(func(context.Context) { refreshCalls++ })
+
+	io, _, _ := newIO()
+	code := sync.Run(context.Background(), nil, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0", code)
+	}
+	if refreshCalls != 1 {
+		t.Fatalf("refreshUpdate calls = %d, want exactly 1", refreshCalls)
 	}
 }
 

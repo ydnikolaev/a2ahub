@@ -5,10 +5,13 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"gopkg.in/yaml.v3"
@@ -21,7 +24,14 @@ import (
 const spaceTemplateRoot = "../../space-template"
 
 func newTestDoctorCommand() *DoctorCommand {
-	return NewDoctorCommand(host.NewFakeHost(), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", "/unused/project")
+	cmd := NewDoctorCommand(host.NewFakeHost(), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", "/unused/project")
+	// Hermetic: NewDoctorCommand's real default (release.CachePath) points at
+	// this machine's actual os.UserCacheDir() update-check.json — tests must
+	// never read that real file. Point at a guaranteed-absent path (spec 19
+	// T3: absent cache == "no notice", never an error) unless a test
+	// overrides cmd.cachePath itself to exercise the advisory.
+	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
+	return cmd
 }
 
 func TestDoctorNameAndSynopsis(t *testing.T) {
@@ -107,6 +117,38 @@ func TestDoctorRunNonZeroExitAndActionableMessageOnFailure(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "space access: FAIL: getvisa: boom") {
 		t.Fatalf("stdout missing actionable per-check message; got %q", stdout.String())
+	}
+}
+
+// TestDoctorRunSurfacesUpdateAdvisoryOnPass is spec 19 AC #7: `a2a doctor`
+// must actually REPORT "update available" as advisory prose — not merely
+// compute it internally — while the versions check still PASSES (exit 0).
+func TestDoctorRunSurfacesUpdateAdvisoryOnPass(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cachePath := filepath.Join(dir, "update-check.json")
+	if err := release.WriteCheck(cachePath, release.CheckState{CheckedAt: time.Now(), Latest: "0.3.0", Source: "github"}); err != nil {
+		t.Fatalf("release.WriteCheck: %v", err)
+	}
+
+	cmd := newTestDoctorCommand()
+	cmd.binaryVersion = "0.1.2"
+	cmd.cachePath = func() (string, error) { return cachePath, nil }
+	cmd.loadProjectConfig = func(string) (space.ProjectConfig, error) { return space.ProjectConfig{}, nil }
+	cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
+	cmd.lookupGit = func() error { return nil }
+
+	var stdout, stderr bytes.Buffer
+	code := cmd.Run(context.Background(), nil, IO{Stdout: &stdout, Stderr: &stderr})
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0 (advisory alone must not fail the check); stdout=%q", code, stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "versions: PASS") {
+		t.Fatalf("stdout = %q, want the versions check to still report PASS", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "update available: v0.1.2 -> v0.3.0 — run a2a update") {
+		t.Fatalf("stdout = %q, want the update-available advisory actually reported, not just computed", stdout.String())
 	}
 }
 
@@ -242,6 +284,96 @@ func TestDoctorCheckVersions(t *testing.T) {
 		}
 		if !strings.Contains(detail, "cannot read space.yaml") {
 			t.Fatalf("detail = %q, want an actionable read-failure message", detail)
+		}
+	})
+}
+
+// --- spec 19 T4 doctor row: the "versions" check's update-available
+// advisory (cache-read only) — separate from the min_binary_version floor
+// comparison above, which keeps its own FAIL semantics unchanged. ---
+
+func TestDoctorCheckVersions_UpdateAdvisory(t *testing.T) {
+	t.Parallel()
+
+	t.Run("newer cached release appends the advisory, check still passes", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		cachePath := filepath.Join(dir, "update-check.json")
+		if err := release.WriteCheck(cachePath, release.CheckState{CheckedAt: time.Now(), Latest: "0.3.0", Source: "github"}); err != nil {
+			t.Fatalf("release.WriteCheck: %v", err)
+		}
+
+		cmd := newTestDoctorCommand()
+		cmd.binaryVersion = "0.1.2"
+		cmd.cachePath = func() (string, error) { return cachePath, nil }
+		// No connected spaces: the floor comparison is vacuous (ok=true),
+		// isolating the advisory half.
+		ok, detail := cmd.doctorCheckVersions(space.ProjectConfig{}, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("want the check to still PASS on an advisory alone, got fail: %s", detail)
+		}
+		if !strings.Contains(detail, "update available") {
+			t.Fatalf("detail = %q, want it to contain \"update available\"", detail)
+		}
+		if !strings.Contains(detail, "v0.1.2") || !strings.Contains(detail, "v0.3.0") {
+			t.Fatalf("detail = %q, want the current/latest versions named", detail)
+		}
+	})
+
+	t.Run("a floor violation still FAILs even with a newer cached release", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		cachePath := filepath.Join(dir, "update-check.json")
+		if err := release.WriteCheck(cachePath, release.CheckState{CheckedAt: time.Now(), Latest: "0.3.0", Source: "github"}); err != nil {
+			t.Fatalf("release.WriteCheck: %v", err)
+		}
+
+		cmd := newTestDoctorCommand()
+		cmd.binaryVersion = "0.1.0"
+		cmd.cachePath = func() (string, error) { return cachePath, nil }
+		cmd.readFile = func(string) ([]byte, error) {
+			return []byte("schema: space/v1\nspace: getvisa\nmin_binary_version: 9.9.9\nparticipants: []\n"), nil
+		}
+		cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa"}}}
+		ok, detail := cmd.doctorCheckVersions(cfg, space.MachineConfig{})
+		if ok {
+			t.Fatal("want fail (floor violation), got pass")
+		}
+		if !strings.Contains(detail, "9.9.9") {
+			t.Fatalf("detail = %q, want the min_binary_version pin still named", detail)
+		}
+	})
+
+	t.Run("empty cache emits no advisory", func(t *testing.T) {
+		t.Parallel()
+		cmd := newTestDoctorCommand()
+		cmd.binaryVersion = "0.1.2"
+		cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "absent.json"), nil }
+		ok, detail := cmd.doctorCheckVersions(space.ProjectConfig{}, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("want pass, got fail: %s", detail)
+		}
+		if strings.Contains(detail, "update available") {
+			t.Fatalf("detail = %q, want no advisory on an absent cache", detail)
+		}
+	})
+
+	t.Run("up to date emits no advisory", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		cachePath := filepath.Join(dir, "update-check.json")
+		if err := release.WriteCheck(cachePath, release.CheckState{CheckedAt: time.Now(), Latest: "0.1.2", Source: "github"}); err != nil {
+			t.Fatalf("release.WriteCheck: %v", err)
+		}
+		cmd := newTestDoctorCommand()
+		cmd.binaryVersion = "0.1.2"
+		cmd.cachePath = func() (string, error) { return cachePath, nil }
+		ok, detail := cmd.doctorCheckVersions(space.ProjectConfig{}, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("want pass, got fail: %s", detail)
+		}
+		if strings.Contains(detail, "update available") {
+			t.Fatalf("detail = %q, want no advisory when already up to date", detail)
 		}
 	})
 }
