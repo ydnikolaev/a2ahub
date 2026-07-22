@@ -1,0 +1,65 @@
+# Machine-readable phase tracker for the publish-prep epic. Lint-gated by
+# feature-lint in `make check` (scripts/check-feature-lint.sh).
+slug: publish-prep-2026-07
+status: draft
+updated: 2026-07-22
+strategy: >
+  Everything is built PRIVATE + reversible first; the one-way public flip is
+  P6, last, user-gated. Critical path P1 -> P6. Parallel groups: {P1, P2} from
+  day 0 (boundary and release are footprint-disjoint); {P3, P4} after P1 (they
+  add product-CI workflows/gates the P1 split establishes); P5 after P2 (install
+  + SECURITY reference the release checksums/attestation). P6 blocked_by all —
+  history remediation + private delivery + public flip + first release tag,
+  never before P1-P5 are green in the private repo. No irreversible git op or
+  visibility change without an explicit user-approved plan.
+
+phases:
+  - id: P1
+    title: Publish boundary gate + product/harness Makefile & CI split
+    status: pending
+    spec: specs/01-publish-boundary.md
+    blocked_by: []
+    commits: []
+    audit: open
+
+  - id: P2
+    title: goreleaser v2 cross-platform build + release workflow (cosign/SBOM/SLSA)
+    status: pending
+    spec: specs/02-release-crossplatform.md
+    blocked_by: []
+    commits: []
+    audit: open
+
+  - id: P3
+    title: Security CI — govulncheck + gitleaks + CodeQL + workflow SHA-pin gate
+    status: pending
+    spec: specs/03-security-ci.md
+    blocked_by: [P1]
+    commits: []
+    audit: open
+
+  - id: P4
+    title: Lint hardening + coverage-policy SSOT
+    status: pending
+    spec: specs/04-lint-coverage.md
+    blocked_by: [P1]
+    commits: []
+    audit: open
+
+  - id: P5
+    title: install.sh + Apache-2.0 LICENSE + README + SECURITY.md + dependabot
+    status: pending
+    spec: specs/05-install-meta.md
+    blocked_by: [P2]
+    commits: []
+    audit: open
+
+  - id: P6
+    title: History re-root + private delivery + guarded public flip + first release
+    status: pending
+    spec: specs/06-history-flip.md
+    blocked_by: [P1, P2, P3, P4, P5]
+    commits: []
+    audit: open
+
+deferred: []

@@ -18,6 +18,14 @@
   locally, live GitHub write path (submit/lifecycle/contract) is P11.
   <!-- epic-state: v1-min-2026-07 phases=10/14 -->
 
+- **Epic [publish-prep](features/publish-prep-2026-07/README.md)** — make
+  `ydnikolaev/a2ahub` a public, hardened, cross-platform Go-binary repo
+  modeled 1:1 on `ydnikolaev/sporo` (sporo-style publish boundary + goreleaser
+  release + cosign/SBOM/SLSA + govulncheck/gitleaks/CodeQL). Built PRIVATE +
+  reversible first (P1–P5); the one-way history re-root + public flip is P6,
+  user-gated. Spec corpus cut 2026-07-22.
+  <!-- epic-state: publish-prep-2026-07 phases=0/6 -->
+
 - **Dev-pipeline harness bootstrap** (2026-07-21) — orchestration inventory ported
   from the axon harness: agents (`scout`, `coder`, `go-auditor`), skills
   (`/teamlead`, `/implement`, `/discover`, shared `cc-workflow.md` dispatch SSOT),
