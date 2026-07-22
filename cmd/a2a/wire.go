@@ -136,7 +136,12 @@ func buildCommands() map[string]command {
 		if err != nil {
 			return fail(stderr, err)
 		}
-		return cli.NewValidateCommand(engine, p.staging).Run(context.Background(), args, stdio(stdout, stderr))
+		cmd := cli.NewValidateCommand(engine, p.staging)
+		// Config layer resolves the CI diff-authz author from the
+		// environment (config & secrets rail: internal/cli never reads env
+		// itself); the `--author` flag, if given, overrides this inside Run.
+		cmd.CIGitHubActor = os.Getenv("GITHUB_ACTOR")
+		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["sync"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()

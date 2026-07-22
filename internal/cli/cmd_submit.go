@@ -69,6 +69,12 @@ type ValidateCommand struct {
 	engine     *validate.Engine
 	stagingDir string
 
+	// CIGitHubActor is the config-layer-injected GITHUB_ACTOR fallback for
+	// `--ci` diff-authz (config & secrets rail: this package never reads
+	// the environment itself — cmd/a2a resolves it and injects it). The
+	// `--author` flag, when given, takes precedence over this.
+	CIGitHubActor string
+
 	readFile func(path string) ([]byte, error)
 	readDir  func(dir string) ([]os.DirEntry, error)
 }
@@ -92,12 +98,27 @@ func (c *ValidateCommand) Synopsis() string {
 // paths invalid or unreadable; 0 = every checked path is V1-valid. JSON
 // output is always written to stdout, even on a non-zero exit (rails:
 // "JSON output modes stay machine-parseable on error").
-func (c *ValidateCommand) Run(_ context.Context, args []string, stdio IO) int {
+func (c *ValidateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	all := fs.Bool("all", false, "validate every staged draft under .a2a/staging/")
+	ci := fs.Bool("ci", false, "CI mode: validate a space-repo checkout's changed/all artifacts (V2 + diff-authz)")
+	mode := fs.String("mode", "", "CI mode scope: v3-pr | v3-full-repo")
+	base := fs.String("base", "", "CI mode base sha for the v3-pr diff (git diff <base>...HEAD)")
+	author := fs.String("author", "", "CI mode PR author github login for diff-authz (else GITHUB_ACTOR)")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+
+	// The `--ci` path is additive and self-contained (spec 17 T1): it
+	// runs against the CI checkout cwd (".") — never .a2a/staging/ — and
+	// leaves the existing `validate <path>` / `--all` paths untouched.
+	if *ci {
+		actor := *author
+		if actor == "" {
+			actor = c.CIGitHubActor
+		}
+		return runValidateCI(ctx, c.engine, ".", gitDiffNameOnly, *mode, *base, actor, stdio)
 	}
 
 	var paths []string
