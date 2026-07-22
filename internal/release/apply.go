@@ -21,12 +21,15 @@ type ApplyOptions struct {
 	// ExecPath is the running binary's resolved path — the Swap target. Its
 	// directory is the download dir, so the final rename stays same-filesystem.
 	ExecPath string
-	// AllowUnsigned permits proceeding when the signature is UNVERIFIED
-	// (ErrSignatureUnverified) — the checksum-only interim (T2). It NEVER
-	// permits proceeding on a checksum mismatch.
+	// AllowUnsigned permits proceeding ONLY when the signature material is
+	// ABSENT (ErrSignatureUnverified — no .cosign.bundle for the asset). It
+	// NEVER permits proceeding on a checksum mismatch (ErrChecksumMismatch) or a
+	// present-but-FAILED signature (ErrSignatureInvalid); both are hard stops.
 	AllowUnsigned bool
 	// Verifier is the verification chain (nil => DefaultVerifier: checksum
-	// always-first + the interim UNVERIFIED signature slot).
+	// always-first + the repo-less UNVERIFIED signature fallback — the real CLI
+	// path passes a repo-pinned KeylessVerifier, so this fallback is only hit by
+	// a caller that omits one).
 	Verifier Verifier
 	// Run is the self-check exec seam (nil => DefaultRunner).
 	Run Runner

@@ -28,12 +28,21 @@ var (
 	// NEVER gateable by --allow-unsigned (T2, T-8, D-013).
 	ErrChecksumMismatch = errors.New("release: checksum mismatch")
 
-	// ErrSignatureUnverified is returned by the interim signature slot
-	// (unverifiedSignatureVerifier, T2): this build cannot check the
-	// keyless-cosign bundle P16 releases carry, so it reports UNVERIFIED,
-	// distinct from a checksum failure so the verb can gate ONLY this
-	// sentinel behind --allow-unsigned.
-	ErrSignatureUnverified = errors.New("release: signature verification not implemented in this build")
+	// ErrSignatureUnverified means the signature could not be checked because
+	// the material is ABSENT — no `.cosign.bundle` alongside the asset (or, in
+	// the repo-less DefaultVerifier fallback, no identity to pin against). It is
+	// distinct from a checksum failure AND from a signature that was checked and
+	// FAILED (ErrSignatureInvalid), so the verb can gate ONLY this sentinel
+	// behind --allow-unsigned (an absent signature is the sole overridable case).
+	ErrSignatureUnverified = errors.New("release: signature bundle absent — verification skipped")
+
+	// ErrSignatureInvalid is returned by KeylessCosignVerifier when a bundle IS
+	// present but verification FAILS — a bad/tampered signature, an unreadable
+	// or malformed bundle, an untrusted-root or transparency-log failure, or a
+	// certificate identity/issuer that does not match the pinned release-workflow
+	// OIDC identity. Fail-closed: this sentinel is NEVER gateable by
+	// --allow-unsigned (a present-but-wrong signature is a hard stop, T-8, D-013).
+	ErrSignatureInvalid = errors.New("release: signature verification failed")
 
 	// ErrSelfCheckFailed is returned when the downloaded (temp) binary's
 	// `version` output cannot be parsed, or its stamped bare version does

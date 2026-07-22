@@ -64,6 +64,7 @@ type UpdateCommand struct {
 	loadMachineConfig func(path string) (space.MachineConfig, error)
 	resolveMirror     func(projectRoot string, ref space.Ref, machine space.MachineConfig) string
 	readFile          func(path string) ([]byte, error)
+	verifier          func(repo string) release.Verifier
 }
 
 // NewUpdateCommand constructs the update command. binaryVersion is this
@@ -93,6 +94,10 @@ func NewUpdateCommand(binaryVersion, projectConfigPath, machineConfigPath, proje
 		loadMachineConfig: space.LoadMachineConfig,
 		resolveMirror:     space.ResolveMirrorLocation,
 		readFile:          os.ReadFile,
+		// Real keyless-cosign verification (checksum-first, then the asset's
+		// .cosign.bundle against this repo's release-workflow OIDC identity).
+		// repo is the resolved update_repo, so a repo rename flows through.
+		verifier: func(repo string) release.Verifier { return release.KeylessVerifier(repo) },
 	}
 }
 
@@ -125,7 +130,7 @@ func (c *UpdateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	checkFlag := fs.Bool("check", false, "report only: never downloads or swaps")
 	jsonFlag := fs.Bool("json", false, "machine-readable output")
 	yesFlag := fs.Bool("yes", false, "skip the interactive confirmation")
-	allowUnsignedFlag := fs.Bool("allow-unsigned", false, "permit an UNVERIFIED signature (checksum-only interim, spec 19 T2)")
+	allowUnsignedFlag := fs.Bool("allow-unsigned", false, "proceed when NO signature bundle exists for the asset (never overrides a FAILED signature or a checksum mismatch)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -224,7 +229,7 @@ func (c *UpdateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return 2
 		}
 		prompt := fmt.Sprintf(
-			"a2a update: v%s -> v%s (%s)\nasset: a2a-<os>-<arch> (checksum verified after download, signature UNVERIFIED this build)\nproceed? [y/N] ",
+			"a2a update: v%s -> v%s (%s)\nasset: a2a-<os>-<arch> (checksum + keyless-cosign signature verified after download)\nproceed? [y/N] ",
 			dec.Current, dec.Latest, latestRel.Commit,
 		)
 		if !c.confirm(prompt, stdio) {
@@ -245,12 +250,16 @@ func (c *UpdateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		Target:        latestRel,
 		ExecPath:      execPath,
 		AllowUnsigned: *allowUnsignedFlag,
+		Verifier:      c.verifier(repo),
 		Run:           c.runner,
 	})
 	if err != nil {
-		if errors.Is(err, release.ErrSignatureUnverified) {
-			_, _ = fmt.Fprintf(stdio.Stderr, "update: %v (this build is checksum-only — pass --allow-unsigned)\n", err)
-		} else {
+		switch {
+		case errors.Is(err, release.ErrSignatureUnverified):
+			_, _ = fmt.Fprintf(stdio.Stderr, "update: %v (no cosign bundle for this asset — pass --allow-unsigned to proceed)\n", err)
+		case errors.Is(err, release.ErrSignatureInvalid):
+			_, _ = fmt.Fprintf(stdio.Stderr, "update: %v — refusing; a present-but-invalid signature is never overridable\n", err)
+		default:
 			_, _ = fmt.Fprintf(stdio.Stderr, "update: %v\n", err)
 		}
 		return 1

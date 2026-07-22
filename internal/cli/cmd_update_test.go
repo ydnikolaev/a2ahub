@@ -292,6 +292,62 @@ func TestUpdateCommand_AllowUnsigned_HappySwap(t *testing.T) {
 	}
 }
 
+// fakeSig is a signature-layer stub for the composite verifier: it lets a
+// test drive the CLI's signature gating without a real .cosign.bundle.
+type fakeSig struct{ err error }
+
+func (f fakeSig) Verify(context.Context, string, release.Release) error { return f.err }
+
+// TestUpdateCommand_VerifiedSignatureSwapsWithoutFlag: a signature that
+// VERIFIES lets the update proceed with NO --allow-unsigned — the end-state
+// the keyless verifier delivers (checksum runs first via the composite).
+func TestUpdateCommand_VerifiedSignatureSwapsWithoutFlag(t *testing.T) {
+	rel, _, _ := newUpdateReleaseFixture(t, "0.3.0")
+	execPath, _ := newUpdateExecFixture(t)
+
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	cmd.source = func(string) release.Source { return &fakeUpdateSource{rel: rel} }
+	cmd.resolveExec = func() (string, error) { return execPath, nil }
+	cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
+	cmd.runner = updateMatchingRunner("0.3.0")
+	cmd.verifier = func(string) release.Verifier { return release.NewCompositeVerifier(fakeSig{nil}) }
+
+	stdio, stdout, stderr := newUpdateIO("")
+	code := cmd.Run(context.Background(), []string{"--yes"}, stdio) // NO --allow-unsigned
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (verified signature needs no flag); stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "updated v0.1.0 -> v0.3.0") {
+		t.Fatalf("stdout = %q, want the version-delta line", stdout.String())
+	}
+}
+
+// TestUpdateCommand_InvalidSignatureNotGateable: a present-but-INVALID
+// signature is a hard stop — --allow-unsigned does NOT override it, the binary
+// is untouched. Pins the fail-closed invariant end-to-end through the CLI.
+func TestUpdateCommand_InvalidSignatureNotGateable(t *testing.T) {
+	rel, _, _ := newUpdateReleaseFixture(t, "0.3.0")
+	execPath, orig := newUpdateExecFixture(t)
+
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	cmd.source = func(string) release.Source { return &fakeUpdateSource{rel: rel} }
+	cmd.resolveExec = func() (string, error) { return execPath, nil }
+	cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
+	cmd.verifier = func(string) release.Verifier {
+		return release.NewCompositeVerifier(fakeSig{release.ErrSignatureInvalid})
+	}
+
+	stdio, _, stderr := newUpdateIO("")
+	code := cmd.Run(context.Background(), []string{"--yes", "--allow-unsigned"}, stdio)
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 (invalid signature never gateable); stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "never overridable") {
+		t.Fatalf("stderr = %q, want the non-overridable signature message", stderr.String())
+	}
+	assertUpdateExecUnchanged(t, execPath, orig)
+}
+
 func TestUpdateCommand_BelowFloor(t *testing.T) {
 	rel, assetHits, _ := newUpdateReleaseFixture(t, "0.3.0")
 	execPath, orig := newUpdateExecFixture(t)

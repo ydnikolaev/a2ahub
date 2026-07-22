@@ -125,12 +125,14 @@ func sha256File(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// unverifiedSignatureVerifier is the T2 interim signature slot: this build
-// does not link sigstore-go (2026-07-22 operator decision), so it always
-// reports UNVERIFIED rather than "bundle absent" — P16 releases DO carry
-// best-effort keyless-cosign bundles, this build simply cannot check them.
-// Fail-closed: the caller (the update verb) must gate ErrSignatureUnverified
-// behind --allow-unsigned; nothing here ever reports success.
+// unverifiedSignatureVerifier is the REPO-LESS fallback signature slot: keyless
+// verification needs a repo to pin the release-workflow OIDC identity against
+// (see KeylessCosignVerifier), and DefaultVerifier has none — so it cannot
+// establish a signer and reports UNVERIFIED. The real CLI path resolves the
+// update_repo and passes KeylessVerifier(repo), so this fallback is only hit by
+// a caller that omits a repo-pinned verifier. Fail-closed: the caller (the
+// update verb) gates ErrSignatureUnverified behind --allow-unsigned; nothing
+// here ever reports success.
 type unverifiedSignatureVerifier struct{}
 
 func (unverifiedSignatureVerifier) Verify(_ context.Context, assetPath string, _ Release) error {
@@ -138,9 +140,9 @@ func (unverifiedSignatureVerifier) Verify(_ context.Context, assetPath string, _
 }
 
 // CompositeVerifier runs ChecksumVerifier unconditionally FIRST, then the
-// policy-selected Signature verifier (T2 seam: swapping Signature for a
-// keyless-cosign then pinned-key implementation later is a new Verifier +
-// a policy-order change, zero call-site churn).
+// policy-selected Signature verifier. The seam paid off exactly as designed:
+// KeylessCosignVerifier dropped into the Signature slot (KeylessVerifier) with
+// zero call-site churn; the future D-013 pinned-key verifier is one more.
 type CompositeVerifier struct {
 	Signature Verifier
 }
@@ -151,11 +153,11 @@ func NewCompositeVerifier(signature Verifier) *CompositeVerifier {
 	return &CompositeVerifier{Signature: signature}
 }
 
-// DefaultVerifier is the T2-interim policy: ChecksumVerifier (always) then
-// unverifiedSignatureVerifier (always UNVERIFIED, this phase). The update
-// verb (a later wave) gates errors.Is(err, ErrSignatureUnverified) behind
-// --allow-unsigned; a checksum failure is never gateable because it is
-// never ErrSignatureUnverified.
+// DefaultVerifier is the REPO-LESS fallback: ChecksumVerifier (always) then
+// unverifiedSignatureVerifier (UNVERIFIED — no repo to pin an identity). It is
+// Apply's nil-Verifier default; the production CLI path passes
+// KeylessVerifier(repo) instead, so this is only reached by a caller that omits
+// one. A checksum failure is never gateable (never ErrSignatureUnverified).
 func DefaultVerifier() *CompositeVerifier {
 	return NewCompositeVerifier(unverifiedSignatureVerifier{})
 }
