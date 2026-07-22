@@ -7,9 +7,17 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
+
+// defaultUpdateRepo (spec 19 T3 compiled-in update-repo default,
+// overridable per machine via MachineConfig.Defaults["update_repo"]) is
+// already declared package-level by cmd_update.go — reused verbatim here,
+// not redeclared (this package's own anti-dup convention).
 
 // SyncCommand implements `a2a sync`: fetches every connected space's
 // mirror clone and calls the future internal/cache seam ("refresh local
@@ -34,6 +42,12 @@ type SyncCommand struct {
 	loadMachineConfig func(path string) (space.MachineConfig, error)
 	resolveMirror     func(projectRoot string, ref space.Ref, machine space.MachineConfig) string
 	cloneOrFetch      func(ctx context.Context, dir, repoURL string) error
+	// refreshUpdate is the spec 19 T3(b) consented-network-verb seam: `a2a
+	// sync` is already the consented network verb, so it refreshes the T3
+	// update-check cache synchronously (best-effort — never fails sync).
+	// NewSyncCommand defaults it to a real release.NewChecker built against
+	// release.NewGitHubSource; tests override it with a call-counting fake.
+	refreshUpdate func(ctx context.Context)
 }
 
 // NewSyncCommand constructs the sync command. pending must not be nil
@@ -50,7 +64,40 @@ func NewSyncCommand(projectConfigPath, machineConfigPath, projectRoot string, pe
 		loadMachineConfig: space.LoadMachineConfig,
 		resolveMirror:     space.ResolveMirrorLocation,
 		cloneOrFetch:      space.CloneOrFetch,
+		refreshUpdate:     defaultRefreshUpdate(machineConfigPath),
 	}
+}
+
+// defaultRefreshUpdate builds the production refreshUpdate seam: it
+// resolves the T3 update-repo (compiled default, overridable via this
+// machine's `defaults.update_repo`) and the T3 cache path once, then returns
+// a release.NewChecker closure over them (spec 19 T3: "the checker func
+// closes over Source only, not the updater" — D-021, structurally unable to
+// reach the swap path). release.CachePath failing (an unusable
+// os.UserCacheDir) degrades to a no-op refresh — sync must never fail on
+// account of this best-effort seam.
+func defaultRefreshUpdate(machineConfigPath string) func(ctx context.Context) {
+	repo := defaultUpdateRepo
+	if machine, err := space.LoadMachineConfig(machineConfigPath); err == nil {
+		if v, ok := machine.Defaults["update_repo"]; ok && v != "" {
+			repo = v
+		}
+	}
+	cachePath, err := release.CachePath()
+	if err != nil {
+		return func(context.Context) {}
+	}
+	return release.NewChecker(release.NewGitHubSource(http.DefaultClient, "", repo), cachePath, time.Now)
+}
+
+// SetRefreshUpdateForTest overrides this command's injected T3 update-cache
+// refresh seam (test-only DI, same convention as
+// ContractCommand.SetClockForTest / RespondCommand.SetClockForTest):
+// production always uses NewSyncCommand's own defaultRefreshUpdate; tests in
+// package cli_test (this field is unexported) use this seam to assert
+// refreshUpdate is called without performing a real network fetch.
+func (c *SyncCommand) SetRefreshUpdateForTest(refreshUpdate func(ctx context.Context)) {
+	c.refreshUpdate = refreshUpdate
 }
 
 // Name implements cli.Command.
@@ -86,6 +133,7 @@ func (c *SyncCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	if len(cfg.Spaces) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stdout, "sync: no connected spaces")
+		c.refreshUpdate(ctx)
 		return 0
 	}
 
@@ -107,6 +155,11 @@ func (c *SyncCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		}
 		_, _ = fmt.Fprintf(stdio.Stdout, "sync: %s: refreshed\n", ref.ID)
 	}
+
+	// spec 19 T3(b): sync is already the consented network verb, so it
+	// refreshes the T3 update-check cache synchronously, once, regardless of
+	// the mirror-refresh outcome above (best-effort — never fails sync).
+	c.refreshUpdate(ctx)
 
 	if !allOK {
 		return 1

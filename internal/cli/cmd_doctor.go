@@ -13,11 +13,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
+	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
 // DoctorCommand implements the basic (non-`--space`) `a2a doctor` verb: the
@@ -44,6 +47,10 @@ type DoctorCommand struct {
 	resolveCredential func(ctx context.Context, explicitEnvVar string, ref space.CredentialReference) (host.Credential, error)
 	readFile          func(path string) ([]byte, error)
 	lookupGit         func() error
+	// cachePath resolves the spec 19 T3 update-check cache location for the
+	// "versions" check's advisory half (doctorCheckVersions): defaults to
+	// release.CachePath; tests override it to point at a seeded temp cache.
+	cachePath func() (string, error)
 }
 
 // NewDoctorCommand constructs the basic doctor command. h is the host
@@ -70,6 +77,7 @@ func NewDoctorCommand(h host.Host, binaryVersion, projectConfigPath, machineConf
 		resolveCredential: space.ResolveCredential,
 		readFile:          os.ReadFile,
 		lookupGit:         func() error { _, err := exec.LookPath("git"); return err },
+		cachePath:         release.CachePath,
 	}
 }
 
@@ -122,7 +130,12 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	for _, chk := range checks {
 		ok, detail := chk.run()
 		if ok {
-			_, _ = fmt.Fprintf(stdio.Stdout, "%s: PASS\n", chk.name)
+			// detail is normally empty on PASS, EXCEPT "versions", which
+			// carries the spec 19 T4 update-available advisory (already
+			// prefixed " · " by doctorCheckVersions) even when the floor
+			// comparison itself passes — AC #7 requires doctor to actually
+			// REPORT that advisory, not just compute it.
+			_, _ = fmt.Fprintf(stdio.Stdout, "%s: PASS%s\n", chk.name, detail)
 			continue
 		}
 		allOK = false
@@ -194,9 +207,6 @@ func (c *DoctorCommand) doctorCheckSpaceAccess(ctx context.Context, cfg space.Pr
 // access" check could not reach also fails this check (a stale/absent
 // mirror has nothing to compare against).
 func (c *DoctorCommand) doctorCheckVersions(cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
-	if len(cfg.Spaces) == 0 {
-		return true, ""
-	}
 	ok := true
 	var failures []string
 	for _, ref := range cfg.Spaces {
@@ -224,7 +234,23 @@ func (c *DoctorCommand) doctorCheckVersions(cfg space.ProjectConfig, machine spa
 			failures = append(failures, fmt.Sprintf("%s: local binary %s is older than min_binary_version %s", ref.ID, c.binaryVersion, manifest.MinBinaryVersion))
 		}
 	}
-	return ok, strings.Join(failures, "; ")
+	detail := strings.Join(failures, "; ")
+
+	// spec 19 T4 doctor row: report upward (vs the latest KNOWN release, T3
+	// cache-read only — a live fetch when the cache is empty is a deferred
+	// follow-up, NOT this wave; see this phase's reported deviation) as an
+	// ADVISORY appended to the detail string. This never flips the floor
+	// comparison above: `ok` is untouched here, so the check still PASSES on
+	// the advisory alone (only a floor violation FAILs it).
+	if cp, err := c.cachePath(); err == nil {
+		if latest, _ := release.ReadLatest(cp, time.Now(), cache.DefaultUpdateCheckTTL); latest != "" {
+			if older, err := version.OlderThan(c.binaryVersion, latest); err == nil && older {
+				detail += fmt.Sprintf(" · update available: v%s -> v%s — run a2a update", c.binaryVersion, latest)
+			}
+		}
+	}
+
+	return ok, detail
 }
 
 // doctorCheckCIPresence is a lightweight existence check (spec 09 T1: "not
@@ -280,53 +306,21 @@ func (c *DoctorCommand) doctorCheckStatuslineWiring() (bool, string) {
 
 // doctorVersionOlder reports whether binaryVersion is strictly older than
 // minVersion (dotted major.minor.patch, per schemas/manifest/v1/
-// space.schema.json's min_binary_version pattern). internal/space's own
-// comparator for this same shape (versionOlderThan, funnel.go) is
-// unexported to that package (it is the CC-085 write-funnel's own concern);
-// this is an independent, file-private, uniquely-named copy per this
-// phase's plan Placement decision ("if it needs a helper, keep it
-// file-private and uniquely named").
+// space.schema.json's min_binary_version pattern). A thin wrapper over the
+// SSOT comparator internal/version.OlderThan (spec 19 §7 anti-dup — the same
+// pattern internal/space.versionOlderThan already uses): it remaps the
+// leaf's own sentinel back to this file's errDoctorInvalidVersion so
+// existing callers/tests keep observing that error.
 func doctorVersionOlder(binaryVersion, minVersion string) (bool, error) {
-	bv, err := doctorParseVersion(binaryVersion)
+	older, err := version.OlderThan(binaryVersion, minVersion)
 	if err != nil {
-		return false, err
+		return false, errDoctorInvalidVersion
 	}
-	mv, err := doctorParseVersion(minVersion)
-	if err != nil {
-		return false, err
-	}
-	for i := range bv {
-		if bv[i] != mv[i] {
-			return bv[i] < mv[i], nil
-		}
-	}
-	return false, nil
+	return older, nil
 }
 
-// errDoctorInvalidVersion is returned by doctorParseVersion for an
+// errDoctorInvalidVersion is returned by doctorVersionOlder for an
 // unparseable version string.
 var errDoctorInvalidVersion = errors.New("doctor: invalid version string")
-
-// doctorParseVersion parses a "v"?major(.minor(.patch)?)? string into a
-// fixed-length [3]int tuple, stdlib-only.
-func doctorParseVersion(s string) ([3]int, error) {
-	var out [3]int
-	s = strings.TrimPrefix(strings.TrimSpace(s), "v")
-	if s == "" {
-		return out, errDoctorInvalidVersion
-	}
-	parts := strings.Split(s, ".")
-	if len(parts) > 3 {
-		return out, errDoctorInvalidVersion
-	}
-	for i, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 0 {
-			return out, errDoctorInvalidVersion
-		}
-		out[i] = n
-	}
-	return out, nil
-}
 
 var _ Command = (*DoctorCommand)(nil)

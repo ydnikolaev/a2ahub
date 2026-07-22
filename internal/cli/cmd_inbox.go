@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/release"
 )
 
 // InboxCommand implements `a2a inbox [--actionable] [--json]` (OP-207):
@@ -58,7 +59,28 @@ func (c *InboxCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintf(stdio.Stderr, "inbox: %v\n", err)
 		return 1
 	}
-	return inboxRender(stdio, items, *jsonOut)
+	code := inboxRender(stdio, items, *jsonOut)
+	inboxWriteUpdateAdvisory(stdio, c.store.UpdateNotice(), *jsonOut)
+	return code
+}
+
+// inboxWriteUpdateAdvisory emits the spec 19 T4 update-notice advisory
+// OUT-OF-BAND, to stderr ONLY (wave 12c amendment: the stdout item array's
+// bytes must stay byte-identical for existing consumers — the advisory
+// never rides stdout). GradeNone (no notice enabled, or nothing to advise)
+// emits nothing. --json mode writes the shared cache.UpdateNotice object as
+// one JSON line (same shape as `a2a update --check --json`); human mode
+// writes the FormatNotice prose line prefixed "note: " (spec 19 T4 session-
+// start checklist row).
+func inboxWriteUpdateAdvisory(stdio IO, n cache.UpdateNotice, jsonOut bool) {
+	if n.Grade == release.GradeNone {
+		return
+	}
+	if jsonOut {
+		_ = json.NewEncoder(stdio.Stderr).Encode(n)
+		return
+	}
+	_, _ = fmt.Fprintf(stdio.Stderr, "note: %s\n", n.Sentence)
 }
 
 // inboxRender writes items to stdio.Stdout as a guaranteed JSON array
