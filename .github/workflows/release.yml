@@ -1,9 +1,14 @@
 # Release (P16, §7.3 / D-013): on a `v*` tag, cross-build the single `a2a`
 # binary for the first-class targets and publish a GitHub release whose asset
-# names the space CI gate fetches VERBATIM (space-template's a2a-validate job
-# does `gh release download --pattern 'a2a-linux-amd64'`). The asset naming
-# `a2a-<os>-<arch>` is therefore a BEHAVIOR CONTRACT — do not rename without
-# updating space-template/.github/workflows/a2a-validate.yml in lockstep.
+# names TWO live consumers fetch VERBATIM: (1) the space CI gate
+# (space-template's a2a-validate job does `gh release download --pattern
+# 'a2a-linux-amd64'`); (2) `a2a update` — internal/release.Download fetches
+# `a2a-<runtime.GOOS>-<runtime.GOARCH>` + `SHA256SUMS` and swaps it (v1-min P19).
+# The asset naming `a2a-<os>-<arch>` + the `SHA256SUMS` filename + the per-asset
+# `.cosign.bundle` are therefore a BEHAVIOR CONTRACT — do not rename without
+# updating a2a-validate.yml AND internal/release in lockstep. NB the publish-prep
+# epic (goreleaser, tar.gz archives + checksums.txt) REPLACES this file and would
+# break both consumers — see features/publish-prep-2026-07/specs/02 §7 first.
 #
 # SIGNING: keyless cosign (Sigstore OIDC) — signs each asset using the GitHub
 # Actions workflow identity, NO secrets/keys to manage. Signatures + certs are
