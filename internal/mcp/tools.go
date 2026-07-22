@@ -1,13 +1,18 @@
 package mcp
 
-// tools.go is the registry-construction file: BuildRegistry assembles
-// every §7.7-designated tool (read + new + submit + the 19 lifecycle verbs
-// + the 6 contract sub-verbs) into one Registry. This is the ONE place
-// the full §7.7 tool set is enumerated — cmd/a2a's parity test reads
-// Registry.ToolNames() as the other half of its bijection check.
+// tools.go is the registry-construction file: BuildRegistry assembles the
+// P15 capability-grouped tool set (a2a_read + a2a_new + a2a_submit +
+// a2a_lifecycle + a2a_exchange + a2a_contract = 6 tools) into one Registry.
+// Each grouped tool dispatches a CLOSED action/view enum to the EXISTING
+// per-verb handlers (tools_dispatch.go); this file only wires the
+// registrations and builds each grouped tool's superset input schema. This
+// is the ONE place the grouped tool set is enumerated — cmd/a2a's parity
+// test reads Registry.ToolNames() + the tools_dispatch.go enum slices as
+// the other half of its capability-parity check.
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
@@ -47,51 +52,100 @@ func rawSchema(props map[string]string, required ...string) json.RawMessage {
 	return json.RawMessage(b.String())
 }
 
-var lifecycleSchema = rawSchema(map[string]string{
-	"ids": "array", "reason": "string", "reason_code": "string",
-	"refs": "array", "findings": "string", "actor": "object",
-}, "ids")
+// groupedSchema builds a capability-grouped tool's superset input-schema
+// descriptor: a closed-enum discriminator (discKey, values FROM the
+// exported enum slice — the single source) plus the UNION of every folded
+// action/view's own fields, with the discriminator marked required. Like
+// rawSchema this is documentation for the MCP client, not an enforcement
+// gate — each per-verb handler enforces its own per-action required fields
+// exactly as P14 shipped.
+func groupedSchema(discKey string, enum []string, props map[string]string) json.RawMessage {
+	var b strings.Builder
+	b.WriteString(`{"type":"object","properties":{`)
+	b.WriteString(`"` + discKey + `":{"type":"string","enum":[`)
+	for i, e := range enum {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(`"` + e + `"`)
+	}
+	b.WriteString(`]}`)
+	keys := make([]string, 0, len(props))
+	for k := range props {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		b.WriteString(`,"` + k + `":{"type":"` + props[k] + `"}`)
+	}
+	b.WriteString(`},"required":["` + discKey + `"]}`)
+	return json.RawMessage(b.String())
+}
 
-// BuildRegistry assembles the full §7.7 tool set. store backs the six
-// read tools; write backs every write tool's shared plumbing (funnel,
-// mirror, manifest, actor resolution, clock/entropy); newDeps backs
-// a2a_new and a2a_contract_new's draft path; submitStaging/legality back
+// BuildRegistry assembles the P15 capability-grouped tool set. store backs
+// a2a_read; write backs every write tool's shared plumbing (funnel, mirror,
+// manifest, actor resolution, clock/entropy); newDeps backs a2a_new and
+// a2a_contract action=new's draft path; submitStaging/legality back
 // a2a_submit's own idempotency short-circuit.
 func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string, legality *LegalityAdapter, newDeps NewDeps) *Registry {
 	r := NewRegistry()
-
-	// --- read tools (§7.7: inbox/outbox/show/thread/search/contracts) ---
-	r.Register(ToolSpec{Name: "a2a_inbox", Description: "computed inbox across every connected space", InputSchema: rawSchema(map[string]string{"actionable": "boolean"}), Handler: newInboxHandler(store)})
-	r.Register(ToolSpec{Name: "a2a_outbox", Description: "own open items and their states", InputSchema: rawSchema(map[string]string{"attention": "boolean"}), Handler: newOutboxHandler(store)})
-	r.Register(ToolSpec{Name: "a2a_show", Description: "artifact + folded state + events + validation flags", InputSchema: rawSchema(map[string]string{"ref": "string"}, "ref"), Handler: newShowHandler(store)})
-	r.Register(ToolSpec{Name: "a2a_thread", Description: "conversation view", InputSchema: rawSchema(map[string]string{"thread_id": "string"}, "thread_id"), Handler: newThreadHandler(store)})
-	r.Register(ToolSpec{Name: "a2a_search", Description: "search the local cache (hub-less by design)", InputSchema: rawSchema(map[string]string{"query": "string", "type": "string", "space": "string", "state": "string"}), Handler: newSearchHandler(store)})
-	r.Register(ToolSpec{Name: "a2a_contracts", Description: "known contracts from the local cache", InputSchema: rawSchema(map[string]string{"provider": "string"}), Handler: newContractsHandler(store)})
-
-	// --- new / submit ----------------------------------------------------
-	r.Register(ToolSpec{Name: "a2a_new", Description: "draft one or more new artifacts (items[]) on one thread", InputSchema: rawSchema(map[string]string{"items": "array", "thread": "string"}, "items"), Handler: newNewHandler(newDeps)})
-
+	contractDeps := ContractDeps{WriteDeps: write}
 	submitDeps := SubmitDeps{WriteDeps: write, StagingDir: submitStagingDir, Legality: legality}
+
+	// --- a2a_read (view: the 6 folded read tools) ------------------------
+	r.Register(ToolSpec{
+		Name:        "a2a_read",
+		Description: "read the local cache: view=inbox|outbox|show|thread|search|contracts",
+		InputSchema: groupedSchema("view", ReadViews, map[string]string{
+			"actionable": "boolean", "attention": "boolean", "ref": "string",
+			"thread_id": "string", "query": "string", "type": "string",
+			"space": "string", "state": "string", "provider": "string",
+		}),
+		Handler: newReadDispatch(store),
+	})
+
+	// --- new / submit (action-free write tools, unchanged) ---------------
+	r.Register(ToolSpec{Name: "a2a_new", Description: "draft one or more new artifacts (items[]) on one thread", InputSchema: rawSchema(map[string]string{"items": "array", "thread": "string"}, "items"), Handler: newNewHandler(newDeps)})
 	r.Register(ToolSpec{Name: "a2a_submit", Description: "validate (V2) and submit staged draft(s); accepts an id array (OP-220 batch) or a single id", InputSchema: rawSchema(map[string]string{"ids": "array"}, "ids"), Handler: newSubmitHandler(submitDeps)})
 
-	// --- lifecycle verbs (OP-211): 15 generic table-driven + 4 bespoke ---
-	for _, spec := range LifecycleVerbTable {
-		name := "a2a_" + strings.ReplaceAll(spec.Verb, "-", "_")
-		r.Register(ToolSpec{Name: name, Description: "lifecycle verb: " + spec.Verb, InputSchema: lifecycleSchema, Handler: newLifecycleHandler(spec, write)})
-	}
-	r.Register(ToolSpec{Name: "a2a_respond", Description: "respond to one or more parents", InputSchema: rawSchema(map[string]string{"parent_ids": "array", "result": "string", "fields": "object", "body_override": "string", "actor": "object"}, "parent_ids", "result"), Handler: newRespondHandler(write)})
-	r.Register(ToolSpec{Name: "a2a_verify", Description: "verify one or more responses (D-024 single-response convenience close)", InputSchema: rawSchema(map[string]string{"targets": "array", "refs": "string", "actor": "object"}, "targets"), Handler: newVerifyHandler(write)})
-	r.Register(ToolSpec{Name: "a2a_dispute", Description: "dispute a response", InputSchema: rawSchema(map[string]string{"ids": "array", "reason": "string", "reason_code": "string", "actor": "object"}, "ids", "reason"), Handler: newDisputeHandler(write)})
-	r.Register(ToolSpec{Name: "a2a_note", Description: "annotate one or more artifacts (transition-free, D-025)", InputSchema: rawSchema(map[string]string{"ids": "array", "note": "string", "actor": "object"}, "ids", "note"), Handler: newNoteHandler(write)})
+	// --- a2a_lifecycle (action: the 15 generic OP-211 verbs) -------------
+	r.Register(ToolSpec{
+		Name:        "a2a_lifecycle",
+		Description: "generic lifecycle transition: action=ack|accept|decline|start|block|unblock|cancel|close|withdraw|supersede|satisfy|approve|reject|verify-pass|verify-fail",
+		InputSchema: groupedSchema("action", LifecycleActions, map[string]string{
+			"ids": "array", "reason": "string", "reason_code": "string",
+			"refs": "array", "findings": "string", "actor": "object",
+		}),
+		Handler: newLifecycleDispatch(write),
+	})
 
-	// --- contract family (OP-212/OP-213/OP-221 3rd clause) ---------------
-	contractDeps := ContractDeps{WriteDeps: write}
-	r.Register(ToolSpec{Name: "a2a_contract_new", Description: "draft a new contract (alias for a2a_new type=contract)", InputSchema: rawSchema(map[string]string{"slug": "string", "fields": "object", "body": "string", "thread": "string", "actor": "object"}, "slug"), Handler: newContractNewHandler(newDeps)})
-	r.Register(ToolSpec{Name: "a2a_contract_publish", Description: "publish a contract version (version/bump, digest tree)", InputSchema: rawSchema(map[string]string{"id": "string", "version": "string", "bump": "string", "generated_from_digest": "string", "actor": "object"}, "id"), Handler: newContractPublishHandler(contractDeps)})
-	r.Register(ToolSpec{Name: "a2a_contract_deprecate", Description: "deprecate a contract with a linked announcement", InputSchema: rawSchema(map[string]string{"id": "string", "version": "string", "successor": "string", "sunset": "string", "actor": "object"}, "id", "successor", "sunset"), Handler: newContractDeprecateHandler(contractDeps)})
-	r.Register(ToolSpec{Name: "a2a_contract_retire", Description: "retire a contract (consumer-ack precondition, override)", InputSchema: rawSchema(map[string]string{"id": "string", "version": "string", "override": "boolean", "actor": "object"}, "id"), Handler: newContractRetireHandler(contractDeps)})
-	r.Register(ToolSpec{Name: "a2a_contract_diff", Description: "diff two contract versions", InputSchema: rawSchema(map[string]string{"id": "string", "v1": "string", "v2": "string"}, "id", "v1", "v2"), Handler: newContractDiffHandler(contractDeps)})
-	r.Register(ToolSpec{Name: "a2a_contract_verify_export", Description: "verify a local export's digest tree", InputSchema: rawSchema(map[string]string{"local": "string", "ref": "string"}, "local", "ref"), Handler: newContractVerifyExportHandler(contractDeps)})
+	// --- a2a_exchange (action: respond|verify|dispute|note) --------------
+	r.Register(ToolSpec{
+		Name:        "a2a_exchange",
+		Description: "exchange verbs: action=respond|verify|dispute|note",
+		InputSchema: groupedSchema("action", ExchangeActions, map[string]string{
+			"parent_ids": "array", "result": "string", "fields": "object",
+			"body_override": "string", "targets": "array", "refs": "string",
+			"ids": "array", "reason": "string", "reason_code": "string",
+			"note": "string", "actor": "object",
+		}),
+		Handler: newExchangeDispatch(write),
+	})
+
+	// --- a2a_contract (action: the 6 contract sub-verbs) -----------------
+	r.Register(ToolSpec{
+		Name:        "a2a_contract",
+		Description: "contract family: action=new|publish|deprecate|retire|diff|verify-export",
+		InputSchema: groupedSchema("action", ContractActions, map[string]string{
+			"slug": "string", "fields": "object", "body": "string",
+			"thread": "string", "id": "string", "version": "string",
+			"bump": "string", "generated_from_digest": "string",
+			"successor": "string", "sunset": "string", "override": "boolean",
+			"v1": "string", "v2": "string", "local": "string",
+			"ref": "string", "actor": "object",
+		}),
+		Handler: newContractDispatch(newDeps, contractDeps),
+	})
 
 	return r
 }
