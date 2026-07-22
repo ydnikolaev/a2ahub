@@ -125,6 +125,27 @@ open anywhere. It is a *view* — generated, never committed, never a SSOT.
 
 ## 7.7 MCP tool surface
 
+> **Amended 2026-07-22 (operator-authorized, ydnikolaev) — capability-grouped
+> tools, superseding the original 1:1 mapping (P15).** The original design (one
+> MCP tool per OP verb) produced ~33 tools — too wide for an "enable-and-forget"
+> surface an agent keeps on alongside other MCP servers (measured ~2.1k tokens of
+> tool definitions per request, and some harnesses cap total tool count). The
+> parity requirement is R-018's "no MCP-only capability", a *capability*
+> constraint, NOT a per-verb tool-count constraint. Tools are therefore grouped
+> by capability into ~6 typed tools, each dispatching a closed `action`/`view`
+> enum, read/write split preserved: `a2a_read` (`view`: inbox | outbox | show |
+> thread | search | contracts), `a2a_new` (`items[]` batch on one thread),
+> `a2a_submit` (ID arrays → OP-220), `a2a_lifecycle` (`action`: the 15 generic
+> §3.4 transitions; `{ids, reason, reason_code, refs, findings}` per-action),
+> `a2a_exchange` (`action`: respond | verify | dispute | note), `a2a_contract`
+> (`action`: new | publish | deprecate | retire | diff | verify-export). The
+> §7.1 parity invariant becomes **capability parity**: every §7.7-designated CLI
+> verb is reachable via exactly one `(tool, action)`, CI-checked (the bijection
+> reparameterized by tool+action, not tool). Per-verb byte-equivalence
+> (CLI ≡ MCP funnel events) is preserved per (tool, action). Everything below
+> the tool boundary is unchanged: same core, same V2 pipeline, structured
+> returns. The original wording is retained below for provenance.
+
 Tools map 1:1 to the OP catalog (the authoritative OP↔tool mapping table is
 generated from the binary and CI-checked — the 7.1 parity invariant made
 mechanical): `a2a_inbox`, `a2a_outbox`, `a2a_show`, `a2a_thread`,

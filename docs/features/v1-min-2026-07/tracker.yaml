@@ -140,4 +140,13 @@ phases:
     commits: [a92cf2c, 73a5aed, 7dc6327, 5b91fff, 0e62c79]
     audit: done
 
+  - id: P15
+    title: MCP surface consolidation — ~6 capability-grouped typed tools (§7.7 amended)
+    status: pending
+    spec: specs/15-mcp-consolidation.md
+    plan: plans/15-mcp-consolidation.plan.md
+    blocked_by: [P14]
+    commits: []
+    audit: open
+
 deferred: []
