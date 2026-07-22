@@ -1,0 +1,21 @@
+# gitleaks config. a2ahub commits no live secrets by design; this scans the product source +
+# full history for accidents. The two paths below are the space-template secret-scanner's own
+# fixture corpus (schemas/fixtures/secret-corpus/positive/) — fabricated tokens that MUST match
+# known secret shapes so the a2ahub scanner's own tests can assert it blocks them (§10.4,
+# §13.4). They are not live credentials; gitleaks would otherwise flag its own test fixtures.
+title = "a2ahub gitleaks"
+
+[extend]
+useDefault = true
+
+# ⚠️ gitleaks v8.25.0+ replaced the singular [allowlist] table with [[allowlists]] (array of
+# tables); confirmed against the installed 8.30.1 README and verified with
+# `gitleaks detect --no-git --config .gitleaks.toml` locally (no leaks found). NOT verified
+# against whatever gitleaks binary gitleaks-action@v3.0.0 bundles in CI — if that binary
+# predates v8.25, this array syntax will not parse the same way; confirm on first CI run.
+[[allowlists]]
+description = "a2ahub's own secret-scanner fixture corpus (fabricated, non-live tokens)"
+paths = [
+  '''schemas/fixtures/secret-corpus/positive/private-key-block\.md''',
+  '''schemas/fixtures/secret-corpus/positive/github-pat\.md''',
+]
