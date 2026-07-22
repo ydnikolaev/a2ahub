@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 phase: P13
 spec: ../specs/13-agent-skill.md
 wave: 7
-status: planned
+status: dispatched  # wave 7a (seam) verified + committed; P13 done-blocked on 7b prose
 ---
 
 # Phase plan — P13 Minimal a2ahub expert skill + agent rules (D-015)
@@ -30,12 +30,17 @@ loops content — is a LATER pass (7b). P13 stays `in-progress` until 7b lands.
   Go package directly"). CI therefore cannot read a Go table or run a Go test
   to build `commands.md` — the binary must PRINT the catalog and CI captures
   stdout. A hidden `a2a __catalog` verb ships regardless of internal shape.
-- **Synopses are READ, never re-typed.** `cli.Command.Synopsis()` is the
-  canonical per-verb one-liner; the catalog builder constructs each verb with
-  nil/stub deps (the `emptyRegistry()` precedent — Synopsis() is a pure
-  constant, deps never dereferenced) and reads `Name()`+`Synopsis()` directly.
-  Zero duplicated synopsis text → zero text-drift risk → a name-set parity
-  guard is sufficient. This is the advisor's "don't duplicate Synopsis()".
+- **Synopses are READ, never re-typed — except 3 bare-dispatch verbs.**
+  `cli.Command.Synopsis()` is the canonical per-verb one-liner; the catalog
+  builder constructs each verb with nil/stub deps (the `emptyRegistry()`
+  precedent — Synopsis() is a pure constant, deps never dereferenced) and reads
+  `Name()`+`Synopsis()` directly. **Exception (as shipped):** `version`, `mcp`,
+  `__catalog` have no `cli.Command`, so their 3 synopsis strings are hand-typed
+  in `catalog.go` and only structurally guarded (row exists), not
+  content-guarded — deliberate (`version` avoids leaking a build SHA into the
+  deterministic doc). The other ~39 rows carry zero duplicated text. A name-set
+  parity guard is therefore sufficient. This is the advisor's "don't duplicate
+  Synopsis()".
 - **MCP tool reference is sourced from `mcp.BuildRegistry(...).List()`** —
   name + description + input schema, already the §7.7 SSOT. No second source.
 - **Contract sub-verbs via `cli.ContractSubcommands()`** — the two-level
@@ -88,7 +93,14 @@ loops content — is a LATER pass (7b). P13 stays `in-progress` until 7b lands.
 
 ## Phase log
 
-(detail blocks per S6.f — dispatch, verify, deviations, amendments, commits)
+### Wave 7a — 2026-07-22
+
+- Agent: coder (sonnet/high), 1 disjoint code-wave + scout propagate probe. Brief: hidden `a2a __catalog` verb + name-parity guard + generated reference/**, footprint fenced to cmd/a2a + skill/**; prose (7b) out of scope.
+- Files / Commits: 5 code (catalog.go, catalog_test.go, wire.go +5, mcp_parity_test.go +1, ci.yml) + 9 generated (commands.md + 8 authoring) / ed43fb7 (code+ref+CI), cc44b7b (plan+reconcile).
+- Verify: diff-vs-claim exact — footprint = allowlist, no internal/* touch. `go test ./cmd/a2a/... -race` green (6 new catalog tests + P14 parity intact). Lead re-ran the CI job's own regenerate-and-diff locally: commands.md + all 8 authoring byte-identical to fresh binary regen (AC #3); two catalog runs byte-identical (determinism). `make check` exit 0.
+- Deviations + downstream amendments: (1) 3 rows (version/mcp/__catalog) hand-typed — no cli.Command to read; "never re-typed" over-claimed in my plan/spec → caveat added to spec §11 + plan Placement. (2) Resume-state in plan.md framed the fork OPEN + `--json`; shipped is markdown, resolved → updated. (3) CI trigger widened from spec's path-scope to always-run (cheap, stricter). All 3 were doc-only (probe found NO code defect); amended lead-inline.
+- Epic-direction reconcile: still-serves — catalog seam is exactly the P13 §T4/T5 machine-derivable half; no frozen contract reopened, no D-### contradicted.
+- Notes: contract expands two-level via cli.ContractSubcommands() (mirrors P14 designatedCLIVerbs()); panic-guard fires at generation time if a dispatch verb lacks a catalog row. 8 template types confirmed against plan §3.1. P13 stays in-progress until 7b prose lands.
 
 ## Deferred / follow-ups
 

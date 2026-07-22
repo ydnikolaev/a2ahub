@@ -222,8 +222,16 @@ decision, not plan ambiguity — recorded as a narrowing, not a Q.
   new `cmd/a2a` files is a one-line `mcpExcludedVerbs` addition in
   `cmd/a2a/mcp_parity_test.go` (`__catalog` is a CLI-only meta verb, like
   `version`/`mcp`) — an exclusion, not a rewrite of the P14 bijection logic.
-- Synopses are read from `cli.Command.Synopsis()`, never re-typed, so the drift
-  guard is a name-set parity test (catalog CLI section ⇆ `buildCommands()` keys,
-  two-level) — it composes transitively with P14's dispatch⇆mcp bijection.
+- Synopses are read from `cli.Command.Synopsis()` — with ONE acknowledged
+  exception: `version`, `mcp`, and `__catalog` have no `cli.Command` to read
+  from (bare dispatch funcs), so their 3 synopsis strings are hand-typed in
+  `catalog.go` (`catalogHandTypedSynopsis`) and only STRUCTURALLY guarded (the
+  name-parity test asserts the row exists), not content-guarded. This is
+  deliberate: `version`'s catalog synopsis is intentionally NOT routed through
+  `versionStamp()` so no build-time SHA leaks into the generated doc (determinism
+  over the drift gate). The other ~39 rows are read, never re-typed. The drift
+  guard is therefore a name-set parity test (catalog CLI section ⇆
+  `buildCommands()` keys, two-level) — it composes transitively with P14's
+  dispatch⇆mcp bijection.
 
 <!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->

@@ -2,7 +2,7 @@
 # epic-drift (truth) in `make check`. Commit scope for check A: `v1-min`.
 slug: v1-min-2026-07
 status: active
-updated: 2026-07-22  # wave 5 — P10 done (integration harness), audit rides S8
+updated: 2026-07-22  # wave 7a — P13 catalog seam shipped (in-progress; prose 7b pending)
 strategy: >
   Critical path P1 -> P3 -> P6 -> P7/P8 -> P10 -> P14. Parallel groups:
   {P1,P2} at start; {P3,P4,P5} after foundations; {P6,P9} next (P9 depends
@@ -124,11 +124,11 @@ phases:
 
   - id: P13
     title: Minimal a2ahub expert skill + agent rules (D-015)
-    status: pending
+    status: in-progress
     spec: specs/13-agent-skill.md
     plan: plans/13-agent-skill.plan.md
     blocked_by: [P7]
-    commits: []
+    commits: [ed43fb7]
     audit: open
 
   - id: P14
