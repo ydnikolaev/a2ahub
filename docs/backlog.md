@@ -152,3 +152,21 @@
       mode makes the same offer when the block is absent. Would need a
       spec 06/09 amendment; complements (not replaces) the §8.8 adapter
       distribution.
+- [ ] **MCP surface consolidation — ~5–8 typed tools, NOT 33** (operator
+      decision 2026-07-22, needs `/discover` → new spec + phase, NOT a P13/P14
+      add-on). The shipped `internal/mcp` registers one tool per §7.7 OP verb
+      (33 tools). Measured cost: `tools/list` = 8481 bytes ≈ 2120 tokens
+      (~1% of a 200k window), resent every request — real but modest; the
+      real adoption risk is a harness that refuses N tools (target harnesses:
+      Claude Code + Codex, neither with a punishing low cap). Decision: collapse
+      to a TYPED FLOOR of ~5–8 tools — `a2a_lifecycle(action,ids,reason)`
+      (folds the 15 generic verbs, which ALREADY share one
+      `newLifecycleHandler`/`LifecycleInput`), `a2a_contract(action,…)`,
+      `a2a_new`, `a2a_submit`, `a2a_respond`, `a2a_read(view,…)` — keeping
+      read/write SPLIT (never one dispatcher: preserves coarse tool-permission
+      gating + input validation + self-description). Amends plan §7.7 ("Tools
+      map 1:1 to the OP catalog" — architect-level, surfaced-diff flow) and
+      REWORKS the shipped/audited P14 parity+equivalence suite from tool-level
+      bijection to CAPABILITY-level parity ("every designated CLI verb is
+      reachable via some tool+action"). P13's `commands.md`/skill becomes the
+      per-verb arg reference the thinner tools point at — 7a is NOT wasted.
