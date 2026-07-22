@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
@@ -217,5 +219,323 @@ func TestDisconnectNeverConnectedIsIdempotentNoop(t *testing.T) {
 	}
 	if !bytes.Contains(out.Bytes(), []byte("not connected")) {
 		t.Fatalf("expected a 'not connected' message; got %q", out.String())
+	}
+}
+
+// --- FIX A: connect resolves the real space id from the manifest ---------
+
+// runGitInDir runs `git <args...>` with cwd=dir, explicit argv (never
+// sh -c), a fixed commit identity (so tests never depend on the host
+// machine's global git config), failing the test loudly on error. Mirrors
+// testkit/spacefixture's own unexported git helper — needed here because
+// this test rewrites a fixture's seeded space.yaml after spacefixture.New
+// and must commit + push that change itself.
+func runGitInDir(t testing.TB, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=a2a-fixture",
+		"GIT_AUTHOR_EMAIL=fixture@a2ahub.invalid",
+		"GIT_COMMITTER_NAME=a2a-fixture",
+		"GIT_COMMITTER_EMAIL=fixture@a2ahub.invalid",
+	)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git %v (dir=%s): %v\n%s", args, dir, err, out.String())
+	}
+}
+
+// TestConnectResolvesSpaceIDFromManifest is FIX A's primary case: the
+// mirror's space.yaml `space:` field ("getvisa") differs from the
+// URL-derived id (spacefixture always names its bare repo "origin.git" ->
+// "origin") — connect must register the manifest's id, not the URL's, and
+// the persisted ref must still resolve back to the one physical mirror
+// clone (submit/doctor/disconnect all key off ProjectConfig.Spaces[].ID).
+func TestConnectResolvesSpaceIDFromManifest(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon")
+	clone := fx.Clone("axon")
+
+	// Overwrite (not prepend to) the fixture's default manifest: its
+	// seeded `participants:` block is a map (spacefixture's own minimal
+	// shape), which does not decode into space.Manifest.Participants
+	// ([]Participant) — ParseManifest would (correctly) error on that
+	// mismatch and this test would only ever exercise the fallback path.
+	// A manifest carrying just `space:` (participants omitted, structurally
+	// optional) isolates the one thing this test cares about.
+	manifestPath := filepath.Join(clone, "space.yaml")
+	if err := os.WriteFile(manifestPath, []byte("schema: manifest/v1\nspace: getvisa\nmin_binary_version: \"0.0.0\"\n"), 0o644); err != nil {
+		t.Fatalf("rewrite fixture manifest: %v", err)
+	}
+	runGitInDir(t, clone, "add", "-A")
+	runGitInDir(t, clone, "commit", "-m", "manifest: add explicit space id")
+	runGitInDir(t, clone, "push", "origin", "main")
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	machinePath := filepath.Join(dir, "machine.yaml")
+	cmd := cli.NewConnectCommand(cfgPath, machinePath, dir)
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{fx.RemoteURL()}, io)
+	if code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig: %v", err)
+	}
+	if len(cfg.Spaces) != 1 || cfg.Spaces[0].ID != "getvisa" {
+		t.Fatalf("Spaces = %+v, want exactly one entry with ID \"getvisa\" (the manifest's own id)", cfg.Spaces)
+	}
+
+	// The mirror must actually be reachable via the persisted ref (this
+	// is what submit/doctor/disconnect resolve against) — not just via
+	// the URL-derived id.
+	mirrorDir := space.ResolveMirrorLocation(dir, cfg.Spaces[0], space.MachineConfig{})
+	if _, err := os.Stat(filepath.Join(mirrorDir, ".git")); err != nil {
+		t.Fatalf("expected a cloned mirror reachable from the persisted ref at %s: %v", mirrorDir, err)
+	}
+
+	// Idempotent re-run must still key off the resolved id ("getvisa"),
+	// not the URL-derived one, and must not duplicate the config entry.
+	io2, out2, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{fx.RemoteURL()}, io2); code != 0 {
+		t.Fatalf("second connect: code = %d", code)
+	}
+	if !bytes.Contains(out2.Bytes(), []byte(`"getvisa"`)) || !bytes.Contains(out2.Bytes(), []byte("already connected")) {
+		t.Fatalf("expected an 'already connected' message naming the resolved id \"getvisa\"; got %q", out2.String())
+	}
+	cfg2, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig after second connect: %v", err)
+	}
+	if len(cfg2.Spaces) != 1 {
+		t.Fatalf("Spaces = %+v, want exactly one entry (no duplicate)", cfg2.Spaces)
+	}
+}
+
+// TestConnectMirrorRootWithManifestID guards the fix A regression the P11
+// smoke setup would hit: a configured machine `mirror_root` (which fix B now
+// seeds by default) combined with a manifest id ≠ the repo basename. The
+// clone lands ONCE (before the id is known) and every later resolveMirror
+// must find THAT directory — so the persisted ref's ResolveMirrorLocation,
+// evaluated with the real machine config, must point at the actual clone.
+func TestConnectMirrorRootWithManifestID(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon")
+	clone := fx.Clone("axon")
+	manifestPath := filepath.Join(clone, "space.yaml")
+	if err := os.WriteFile(manifestPath, []byte("schema: manifest/v1\nspace: getvisa\nmin_binary_version: \"0.0.0\"\n"), 0o644); err != nil {
+		t.Fatalf("rewrite fixture manifest: %v", err)
+	}
+	runGitInDir(t, clone, "add", "-A")
+	runGitInDir(t, clone, "commit", "-m", "manifest: add explicit space id")
+	runGitInDir(t, clone, "push", "origin", "main")
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	machinePath := filepath.Join(dir, "machine.yaml")
+	mirrorRoot := filepath.Join(dir, "custom-mirrors")
+	if err := os.WriteFile(machinePath, []byte("mirror_root: "+mirrorRoot+"\n"), 0o644); err != nil {
+		t.Fatalf("write machine config: %v", err)
+	}
+
+	cmd := cli.NewConnectCommand(cfgPath, machinePath, dir)
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{fx.RemoteURL()}, io); code != 0 {
+		t.Fatalf("Run: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig: %v", err)
+	}
+	machine, err := space.LoadMachineConfig(machinePath)
+	if err != nil {
+		t.Fatalf("LoadMachineConfig: %v", err)
+	}
+	if len(cfg.Spaces) != 1 || cfg.Spaces[0].ID != "getvisa" {
+		t.Fatalf("Spaces = %+v, want one entry ID \"getvisa\"", cfg.Spaces)
+	}
+	// The persisted ref, resolved with the REAL machine config (mirror_root
+	// set), must land on the directory that was actually cloned into.
+	mirrorDir := space.ResolveMirrorLocation(dir, cfg.Spaces[0], machine)
+	if _, err := os.Stat(filepath.Join(mirrorDir, ".git")); err != nil {
+		t.Fatalf("persisted ref (id=getvisa) with mirror_root must resolve to the real clone at %s: %v", mirrorDir, err)
+	}
+}
+
+// TestConnectFallsBackToURLIDWhenManifestAbsent: a mirror with no
+// space.yaml at all must not crash connect — it falls back to the
+// URL-derived id.
+func TestConnectFallsBackToURLIDWhenManifestAbsent(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon")
+	clone := fx.Clone("axon")
+
+	if err := os.Remove(filepath.Join(clone, "space.yaml")); err != nil {
+		t.Fatalf("remove fixture manifest: %v", err)
+	}
+	runGitInDir(t, clone, "add", "-A")
+	runGitInDir(t, clone, "commit", "-m", "manifest: remove space.yaml for fallback test")
+	runGitInDir(t, clone, "push", "origin", "main")
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	machinePath := filepath.Join(dir, "machine.yaml")
+	cmd := cli.NewConnectCommand(cfgPath, machinePath, dir)
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{fx.RemoteURL()}, io)
+	if code != 0 {
+		t.Fatalf("Run: code = %d, want 0 (fallback, no crash); stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig: %v", err)
+	}
+	if len(cfg.Spaces) != 1 || cfg.Spaces[0].ID != "origin" {
+		t.Fatalf("Spaces = %+v, want the URL-derived fallback id \"origin\"", cfg.Spaces)
+	}
+}
+
+// TestConnectFallsBackToURLIDWhenManifestUnparseable: a mirror whose
+// space.yaml is syntactically invalid YAML must not crash connect — it
+// falls back to the URL-derived id, same as the absent-manifest case.
+func TestConnectFallsBackToURLIDWhenManifestUnparseable(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon")
+	clone := fx.Clone("axon")
+
+	if err := os.WriteFile(filepath.Join(clone, "space.yaml"), []byte("not: [valid: yaml"), 0o644); err != nil {
+		t.Fatalf("corrupt fixture manifest: %v", err)
+	}
+	runGitInDir(t, clone, "add", "-A")
+	runGitInDir(t, clone, "commit", "-m", "manifest: corrupt space.yaml for fallback test")
+	runGitInDir(t, clone, "push", "origin", "main")
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	machinePath := filepath.Join(dir, "machine.yaml")
+	cmd := cli.NewConnectCommand(cfgPath, machinePath, dir)
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{fx.RemoteURL()}, io)
+	if code != 0 {
+		t.Fatalf("Run: code = %d, want 0 (fallback, no crash); stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig: %v", err)
+	}
+	if len(cfg.Spaces) != 1 || cfg.Spaces[0].ID != "origin" {
+		t.Fatalf("Spaces = %+v, want the URL-derived fallback id \"origin\"", cfg.Spaces)
+	}
+}
+
+// --- FIX B: init seeds a machine-config skeleton --------------------------
+
+// TestInitSeedsMachineConfigSkeleton: init with a wired MachineConfigPath
+// and no existing machine config writes a valid, LoadMachineConfig-parseable
+// skeleton (empty credentials, no literal secret value ever written) and
+// prints, for every connected space, the exact env var `a2a submit` will
+// look for.
+func TestInitSeedsMachineConfigSkeleton(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	machinePath := filepath.Join(dir, "machine", "config.yaml")
+	cmd := cli.NewInitCommand(cfgPath)
+	cmd.MachineConfigPath = machinePath
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--system", "axon", "--space", "https://example.invalid/org/getvisa.git"}, io)
+	if code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+
+	machine, err := space.LoadMachineConfig(machinePath)
+	if err != nil {
+		t.Fatalf("LoadMachineConfig(%s): %v", machinePath, err)
+	}
+	if machine.MirrorRoot == "" {
+		t.Fatal("expected the skeleton to set a non-empty mirror_root")
+	}
+	if len(machine.Credentials) != 0 {
+		t.Fatalf("Credentials = %+v, want empty (a skeleton never writes a literal credential)", machine.Credentials)
+	}
+
+	raw, err := os.ReadFile(machinePath)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", machinePath, err)
+	}
+	if !bytes.Contains(raw, []byte("A2A_TOKEN_")) {
+		t.Fatalf("expected the skeleton's commented example to name the A2A_TOKEN_ convention; got:\n%s", raw)
+	}
+	if !strings.Contains(out.String(), `set the credential for space "getvisa"`) || !strings.Contains(out.String(), "A2A_TOKEN_GETVISA") {
+		t.Fatalf("expected an actionable credential-env-var hint naming space \"getvisa\"; got %q", out.String())
+	}
+}
+
+// TestInitNeverOverwritesExistingMachineConfig: init must never clobber an
+// operator's already-configured machine config, even though it still
+// prints the credential hint.
+func TestInitNeverOverwritesExistingMachineConfig(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	machinePath := filepath.Join(dir, "machine", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(machinePath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	existing := "mirror_root: /custom/mirrors\ncredentials:\n  getvisa: env:A2A_TOKEN_GETVISA\n"
+	if err := os.WriteFile(machinePath, []byte(existing), 0o600); err != nil {
+		t.Fatalf("seed existing machine config: %v", err)
+	}
+
+	cmd := cli.NewInitCommand(cfgPath)
+	cmd.MachineConfigPath = machinePath
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--system", "axon", "--space", "https://example.invalid/org/getvisa.git"}, io)
+	if code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+
+	raw, err := os.ReadFile(machinePath)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", machinePath, err)
+	}
+	if string(raw) != existing {
+		t.Fatalf("existing machine config was modified:\n--- want ---\n%s\n--- got ---\n%s", existing, raw)
+	}
+	if !strings.Contains(out.String(), `set the credential for space "getvisa"`) {
+		t.Fatalf("expected the credential hint even when the machine config already existed; got %q", out.String())
+	}
+}
+
+// TestInitSkipsMachineConfigWhenPathEmpty: MachineConfigPath left empty
+// (the catalog/test construction path) is FIX B's documented no-op — no
+// machine config file, no hint, no behavior change from before FIX B.
+func TestInitSkipsMachineConfigWhenPathEmpty(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	cmd := cli.NewInitCommand(cfgPath) // MachineConfigPath left at its zero value ("")
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--system", "axon", "--space", "https://example.invalid/org/getvisa.git"}, io)
+	if code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if strings.Contains(out.String(), "A2A_TOKEN_") {
+		t.Fatalf("expected no credential hint when MachineConfigPath is empty; got %q", out.String())
 	}
 }

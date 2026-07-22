@@ -90,7 +90,11 @@ func buildCommands() map[string]command {
 		if err != nil {
 			return fail(stderr, err)
 		}
-		return cli.NewInitCommand(p.projectConfig).Run(context.Background(), args, stdio(stdout, stderr))
+		cmd := cli.NewInitCommand(p.projectConfig)
+		// FIX B (spec 18 §T1/§8): wire the machine-config skeleton DI
+		// seam, mirroring how the validate closure sets CIGitHubActor.
+		cmd.MachineConfigPath = p.machineConfig
+		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["template"] = func(args []string, stdout, stderr io.Writer) int {
 		return cli.NewTemplateCommand().Run(context.Background(), args, stdio(stdout, stderr))
