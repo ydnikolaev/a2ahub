@@ -33,7 +33,7 @@ func (ChecksumVerifier) Verify(_ context.Context, assetPath string, _ Release) e
 	base := filepath.Base(assetPath)
 	sumsPath := filepath.Join(filepath.Dir(assetPath), "SHA256SUMS")
 
-	data, err := os.ReadFile(sumsPath)
+	data, err := readSums(sumsPath)
 	if err != nil {
 		return &Error{Op: op, Input: sumsPath, Err: ErrChecksumMismatch}
 	}
@@ -88,6 +88,22 @@ func isHex(s string) bool {
 		}
 	}
 	return true
+}
+
+// maxSumsBytes bounds the locally-fetched SHA256SUMS read: a checksums file
+// for a handful of release assets is well under a kilobyte, so a 1 MiB cap is
+// generous while keeping the read bounded (the package's own "bounded reads
+// everywhere" idiom — source.go — applied here too).
+const maxSumsBytes = 1 << 20
+
+// readSums reads at most maxSumsBytes of the SHA256SUMS file at path.
+func readSums(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return io.ReadAll(io.LimitReader(f, maxSumsBytes))
 }
 
 // sha256File streams path's contents through SHA-256 (no whole-file
