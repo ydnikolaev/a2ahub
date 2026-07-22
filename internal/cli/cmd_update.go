@@ -30,10 +30,13 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
-// defaultUpdateRepo is the compiled-in "<owner>/<name>" of the product repo
+// defaultUpdateRepo aliases the release-package SSOT (release.DefaultUpdateRepo)
+// so the verb and the notice-checker wiring resolve the same product repo.
+//
+// (superseded doc) the compiled-in "<owner>/<name>" of the product repo
 // (spec 19 T3), overridable via machine config `defaults.update_repo`
 // (the publish-prep public-repo transition is a one-line default flip).
-const defaultUpdateRepo = "ydnikolaev/a2ahub"
+const defaultUpdateRepo = release.DefaultUpdateRepo
 
 // UpdateCommand implements `a2a update` (OP-217): resolve -> verify -> swap,
 // fail-closed at every step, plus `--check`/`--json` report-only modes.

@@ -53,6 +53,7 @@ var mcpExcludedVerbs = map[string]bool{
 	"doctor":     true,
 	"template":   true,
 	"sync":       true,
+	"update":     true, // P19 OP-217: self-update is a host-machine act, CLI-only (spec 19 §9, R-018)
 	"validate":   true,
 	"mcp":        true, // the mcp verb itself: no self-referencing tool
 	"statusline": true, // spec 14 scope note + AC #6 (see file doc comment)

@@ -85,7 +85,7 @@ func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string) (*S
 		return nil, fmt.Errorf("mcp: load machine config: %w", err)
 	}
 
-	store, err := buildStore(cfg, machine, p)
+	store, err := buildStore(cfg, machine, p, binaryVersion)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
@@ -120,7 +120,7 @@ func registerReadOnly(r *Registry, store *cache.Store) {
 	r.Register(ToolSpec{Name: "a2a_contracts", Handler: newContractsHandler(store)})
 }
 
-func buildStore(cfg space.ProjectConfig, machine space.MachineConfig, p Paths) (*cache.Store, error) {
+func buildStore(cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string) (*cache.Store, error) {
 	mirrors := make([]cache.SpaceMirror, 0, len(cfg.Spaces))
 	for _, ref := range cfg.Spaces {
 		dir := space.ResolveMirrorLocation(p.ProjectRoot, ref, machine)
@@ -132,7 +132,12 @@ func buildStore(cfg space.ProjectConfig, machine space.MachineConfig, p Paths) (
 		}
 		mirrors = append(mirrors, cache.SpaceMirror{SpaceID: ref.ID, Dir: dir, RepoURL: ref.RepoURL, Manifest: manifest})
 	}
-	return cache.NewStore(cfg.System, cacheDirOf(p), mirrors, time.Now, 0), nil
+	store := cache.NewStore(cfg.System, cacheDirOf(p), mirrors, time.Now, 0)
+	// P19: a2a_read surfaces the update advisory on its text body from this
+	// store's UpdateNotice (checker inert here — MCP reads are cache-read-only
+	// for the notice per T3; sync/statusline/update --check refresh the cache).
+	cache.ConfigureUpdateNotice(store, binaryVersion, machine.Defaults)
+	return store, nil
 }
 
 // buildWriteDeps resolves the FIRST connected space's mirror (cloning/

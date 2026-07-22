@@ -16,6 +16,12 @@ import (
 // happens in this package's unit tests.
 const defaultAPIBaseURL = "https://api.github.com"
 
+// DefaultUpdateRepo is the compiled-in "<owner>/<name>" of the product repo
+// `a2a update` resolves releases from, overridable via machine config
+// defaults["update_repo"] (the publish-prep public-repo transition is a
+// one-line default flip). SSOT for the CLI verb and the notice checker wiring.
+const DefaultUpdateRepo = "ydnikolaev/a2ahub"
+
 // maxListResponseBytes bounds the releases-list JSON response read (rails:
 // "bounded reads everywhere" — internal/host's own idiom).
 const maxListResponseBytes = 4 << 20 // 4 MiB
