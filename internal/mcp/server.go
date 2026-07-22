@@ -78,6 +78,11 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		// A single frame over the 8 MiB ceiling (bufio.ErrTooLong) ends the
+		// session by design: an 8 MiB single request is a protocol violation,
+		// not the recoverable malformed-JSON case (AC #7, handled per-line in
+		// handleLine) — the stream framing is no longer trustworthy, so we
+		// stop rather than guess where the next frame begins.
 		return fmt.Errorf("mcp: read request: %w", err)
 	}
 	return nil
