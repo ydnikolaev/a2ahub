@@ -3,10 +3,39 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
+
+// TestFunnelBinaryVersionIsBare guards the wiring-regression class the P11
+// smoke test surfaced (docs/backlog.md): the value handed to
+// space.NewWriteFunnel must be the BARE dotted version, not versionStamp()
+// ("a2a x.y.z (sha)"), or every write against a version-pinned space fails to
+// parse. funnelBinaryVersion() is the single seam both write paths (submit +
+// lifecycle/contract) call; if a future edit points it at versionStamp() this
+// test reds. The funnel-side contract is guarded by
+// TestFunnelStampShapedVersionFailsClosed in internal/space.
+func TestFunnelBinaryVersionIsBare(t *testing.T) {
+	t.Parallel()
+
+	got := funnelBinaryVersion()
+
+	// Identity with the bare package var — the exact intent that regressed.
+	if got != version {
+		t.Errorf("funnelBinaryVersion() = %q, want the bare version var %q (not versionStamp())", got, version)
+	}
+	// Structural: the stamp carries a space and an "a2a " prefix; a bare
+	// version carries neither. This catches versionStamp() even if the bare
+	// version var were ever itself set stamp-shaped.
+	if got != versionStamp() && (strings.Contains(got, " ") || strings.HasPrefix(got, "a2a ")) {
+		t.Errorf("funnelBinaryVersion() = %q looks stamp-shaped (space / \"a2a \" prefix); the funnel needs a bare major.minor.patch", got)
+	}
+	if got == versionStamp() {
+		t.Errorf("funnelBinaryVersion() returned the full stamp %q — the funnel's CC-085 guard cannot parse it", got)
+	}
+}
 
 func TestParseGitHubRepo(t *testing.T) {
 	t.Parallel()

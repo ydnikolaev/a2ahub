@@ -409,6 +409,16 @@ func runContract(args []string, stdout, stderr io.Writer) int {
 	return cmd.Run(ctx, args, stdio(stdout, stderr))
 }
 
+// funnelBinaryVersion is the single seam feeding space.NewWriteFunnel across
+// every write path (submit + lifecycle/contract). It returns the BARE dotted
+// version, never versionStamp() ("a2a x.y.z (sha)"): the funnel's CC-085
+// min_binary_version guard parses a bare major.minor.patch, so the full stamp
+// makes every write against a version-pinned space fail with "invalid version
+// string" (the P11 smoke test surfaced it — same class as the P10 doctor fix +
+// the MCP wiring). Centralized here so the two call sites can't drift, and
+// guarded by TestFunnelBinaryVersionIsBare.
+func funnelBinaryVersion() string { return version }
+
 // resolveLifecycleDeps loads config, resolves the target space (the one
 // whose mirror holds the first artifact id in args, else the first
 // connected space — so `contract new`/no-arg verbs still get a valid
@@ -452,12 +462,7 @@ func resolveLifecycleDeps(ctx context.Context, p paths, args []string, stderr io
 	legality := cli.NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := cli.NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
 	h := host.NewGitHubHost(http.DefaultClient, githubAPIBaseURL)
-	// Pass the BARE dotted version, not versionStamp() ("a2a x.y.z (sha)"):
-	// the funnel's CC-085 min_binary_version guard parses a bare
-	// major.minor.patch, so the full stamp makes every write against a
-	// version-pinned space fail with "invalid version string" (smoke test
-	// surfaced it — same class as the P10 doctor fix + the MCP wiring).
-	funnel := space.NewWriteFunnel(h, validator, version)
+	funnel := space.NewWriteFunnel(h, validator, funnelBinaryVersion())
 	hostCfg := cli.SubmitHostConfig{
 		RemoteURL: ref.RepoURL, Repo: host.Repo{Owner: owner, Name: name},
 		BaseBranch: defaultBaseBranch, Credential: cred,
@@ -613,12 +618,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	legality := cli.NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := cli.NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
 	h := host.NewGitHubHost(http.DefaultClient, githubAPIBaseURL)
-	// Pass the BARE dotted version, not versionStamp() ("a2a x.y.z (sha)"):
-	// the funnel's CC-085 min_binary_version guard parses a bare
-	// major.minor.patch, so the full stamp makes every write against a
-	// version-pinned space fail with "invalid version string" (smoke test
-	// surfaced it — same class as the P10 doctor fix + the MCP wiring).
-	funnel := space.NewWriteFunnel(h, validator, version)
+	funnel := space.NewWriteFunnel(h, validator, funnelBinaryVersion())
 
 	hostCfg := cli.SubmitHostConfig{
 		RemoteURL:         ref.RepoURL,

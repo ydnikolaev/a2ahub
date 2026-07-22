@@ -106,6 +106,43 @@ func TestMinBinaryVersionGuard(t *testing.T) {
 	}
 }
 
+// TestFunnelStampShapedVersionFailsClosed guards the wiring-regression class
+// the P11 smoke test surfaced (docs/backlog.md): a caller that hands the
+// funnel the one-line version STAMP ("a2a x.y.z (sha)") instead of the BARE
+// dotted version makes the CC-085 guard's parser fail — so EVERY write against
+// a version-pinned space is refused with a parse error, even one the bare
+// version would pass. Here the pin ("0.5.0") is OLDER than the encoded 1.0.0,
+// so a bare "1.0.0" would clear the guard and proceed; the stamp shape instead
+// fails closed (parse error, NOT ErrStaleBinaryVersion) with zero host
+// mutation. This is the funnel-side contract that fixes the wiring bug depend
+// on — the cmd/a2a side is guarded by TestFunnelBinaryVersionIsBare.
+func TestFunnelStampShapedVersionFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+	req.MinBinaryVersion = "0.5.0" // a bare "1.0.0" is NEWER → would clear the guard
+
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "a2a 1.0.0 (abcdef0)") // the STAMP, not bare
+
+	_, err = funnel.Submit(context.Background(), req)
+	if err == nil {
+		t.Fatal("Submit with a stamp-shaped version: want a parse failure, got nil")
+	}
+	if errors.Is(err, ErrStaleBinaryVersion) {
+		t.Fatalf("Submit error = %v; want an unparseable-version failure, not ErrStaleBinaryVersion "+
+			"(the encoded 1.0.0 is newer than the 0.5.0 pin — this must fail on the STAMP shape, not staleness)", err)
+	}
+	if len(fake.Pushes) != 0 || len(fake.Opens) != 0 {
+		t.Fatalf("expected zero git-host mutation on a fail-closed refusal, got pushes=%d opens=%d", len(fake.Pushes), len(fake.Opens))
+	}
+}
+
 // TestFunnelIdempotentShortCircuit exercises the AC-301.1 idempotent
 // re-run: a second Submit for the same artifact id finds the already-open
 // PR via FindPRByHeadBranch and short-circuits — no second push/open.
