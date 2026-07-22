@@ -141,6 +141,14 @@ func TestParseID_malformed(t *testing.T) {
 		{name: "non-base32 suffix (uppercase)", in: "XQ-axon-20260721-K3F9"},
 		{name: "non-base32 suffix (invalid char i)", in: "XQ-axon-20260721-i3f9"},
 		{name: "non-base32 suffix (too short)", in: "XQ-axon-20260721-k3f"},
+		// Security: a standing slug must not carry a path traversal — the
+		// slug flows into layout.ProvidesContract/Exchange (path.Join), so an
+		// escaping slug would be a local file-read oracle (D-014).
+		{name: "slug path traversal (dotdot)", in: "XC-axon-../../../../etc/passwd"},
+		{name: "slug with slash", in: "XC-axon-provides/secret"},
+		{name: "slug with dot segment", in: "XC-axon-a.b"},
+		{name: "slug uppercase", in: "XC-axon-Ingest"},
+		{name: "slug leading hyphen", in: "XC-axon--ingest"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

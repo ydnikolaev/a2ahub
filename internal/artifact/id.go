@@ -74,6 +74,17 @@ var (
 	// "wrong date length" / "non-base32 suffix" (§6) are rejected
 	// instead of accepted as odd-looking standing slugs.
 	exchangeIntentShape = regexp.MustCompile(`^[0-9]+-`)
+
+	// standingSlugShape: the <slug> token of a standing id — lowercase
+	// alphanumeric kebab (`country-vocabulary`, `dep-a`), never a path
+	// separator, `.` or `..`. This is a SECURITY guard, not just grammar:
+	// without it ParseID accepts a slug like `../../../../etc/passwd`,
+	// which layout.ProvidesContract/Exchange (path.Join) then collapse into
+	// an escaping path — a local file-read oracle reachable through any
+	// caller's `id`/`ids` (D-014 untrusted input, newly exposed via the
+	// stdio MCP surface). Constraining the slug at the parse boundary closes
+	// it for every consumer at once.
+	standingSlugShape = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 )
 
 // MintStandingID mints a standing §3.3 ID: <PREFIX>-<system>-<slug>.
@@ -177,6 +188,9 @@ func ParseID(s string) (ID, error) {
 			Date:   m[1],
 			Rand:   m[2],
 		}, nil
+	}
+	if !standingSlugShape.MatchString(rest) {
+		return ID{}, &Error{Op: op, Input: s, Err: ErrMalformedID}
 	}
 	return ID{
 		Raw:    s,
