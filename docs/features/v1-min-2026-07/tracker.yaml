@@ -132,11 +132,11 @@ phases:
 
   - id: P14
     title: MCP surface + CLI/MCP parity suite (tail)
-    status: pending
+    status: in-progress
     spec: specs/14-mcp-surface.md
     plan: plans/14-mcp-surface.plan.md
     blocked_by: [P10]
-    commits: []
+    commits: [a92cf2c]  # cli.ContractSubcommands() SSOT export (lead prep); wave 6 in progress
     audit: open
 
 deferred: []
