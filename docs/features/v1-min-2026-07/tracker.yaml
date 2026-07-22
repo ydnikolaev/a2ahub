@@ -155,7 +155,7 @@ phases:
     spec: specs/16-release-mechanics.md
     plan: plans/16-release-mechanics.plan.md
     blocked_by: []
-    commits: [e7342df]
+    commits: [bb07f62]
     audit: open  # CI-config only; build steps locally verified; first release is operator-triggered (push v* tag); signing deferred (D-013 backlog)
 
 deferred: []
