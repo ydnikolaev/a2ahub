@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 phase: P15
 spec: ../specs/15-mcp-consolidation.md
 wave: 8
-status: planned
+status: closed  # wave 8: shipped 6 grouped tools, lead-verified
 ---
 
 # Phase plan — P15 MCP surface consolidation (~6 capability-grouped tools)
@@ -70,8 +70,15 @@ amended (operator-authorized 2026-07-22).
 
 ## Phase log
 
-(detail per S6.f — dispatch, verify, deviations, commits)
+### Wave 8 — 2026-07-22
+
+- Agent: coder opus/high, 1 disjoint code-wave + scout propagate probe.
+- Files / Commits: internal/mcp/tools.go + tools_dispatch.go (new) + tools_dispatch_test.go (new) + tools_test.go; cmd/a2a/mcp_parity_test.go + mcp_equivalence_test.go; skill/a2ahub/reference/commands.md regen / a54260a.
+- Verify (lead): footprint = allowlist exactly, NO handler body touched (read tools_dispatch.go: every dispatch is `return h(ctx, args)` transparent passthrough). `make check` exit 0. Read BuildRegistry — 6 grouped Register calls, groupedSchema embeds action/view enum + field union. Token weight independently re-measured: 6 tools, 2803 B / ~700 tok (P14 8481/~2120) = −67%. Equivalence bug-farm: all 15 lifecycle + respond/verify/dispute/note + 6 contract byte-identical (incl. content-derived id match in TestEquivRespond). Capability-parity + decoy tests green. commands.md MCP section = 6 grouped tools; skill grep clean of removed names.
+- Deviations + downstream: respond folded → 6 (valve not needed — passthrough can't collide). ContractActions re-typed in mcp (ADR-001), reconciled by parity gate. decline `RequireReasonCode` is a pre-existing dead field (handler off-limits). 3 doc write-backs applied: spec 14 §11 superseded-note, spec 15 §11 valve-decision + §6 reason_code correction.
+- Epic-direction reconcile: still-serves — §7.7 amended (operator-authorized), R-018 "no MCP-only capability" preserved (capability parity), core/funnel untouched.
+- Notes: P15 → done. audit: open (hand-verified; rides S8 epic-final).
 
 ## Deferred / follow-ups
 
-- (none yet)
+- (none)

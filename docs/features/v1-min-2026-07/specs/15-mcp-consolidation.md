@@ -89,7 +89,7 @@ already does) — no new dependency. No `internal/cli` import from `internal/mcp
 | Area | What to test | Edge cases |
 |------|--------------|------------|
 | Capability parity | every designated CLI verb reachable via exactly one `(tool, action)`, both directions | a decoy `(tool, action)` with no CLI verb, and a CLI verb with no `(tool, action)`, each fail independently (carry over P14's decoy tests) |
-| CLI ≡ MCP equivalence | for each write verb, the MCP `(tool, action)` path emits byte-identical funnel events (modulo volatile tokens) to the CLI verb — reparameterized by `(tool, action)` | the per-action required-field guards (decline→reason+reason_code, block/supersede/satisfy→refs, verify-fail→findings, reject→reason) still fire under the grouped tool |
+| CLI ≡ MCP equivalence | for each write verb, the MCP `(tool, action)` path emits byte-identical funnel events (modulo volatile tokens) to the CLI verb — reparameterized by `(tool, action)` | the per-action required-field guards (decline→reason, block/supersede/satisfy→refs, verify-fail→findings, reject→reason) still fire under the grouped tool. NB: `LifecycleVerbTable`'s `RequireReasonCode:true` on `decline` is a pre-existing DEAD field — `newLifecycleHandler` never reads it (a P14 carry-over, handler body off-limits to P15), so there is no reason_code guard to test. |
 | Dispatch errors | an unknown `action`/`view`, or a missing discriminator, returns a well-formed `isError` tool result (not a panic, not a JSON-RPC protocol error) | empty `action`; `action` valid but its required field absent |
 | No MCP-only capability | no `(tool, action)` exists that the CLI cannot reach (R-018) | — |
 
@@ -131,5 +131,28 @@ through its new `(tool, action)` path. Full loop:
 ## 11. Amendments
 
 > Append-only. When the shipped reality deviates from this spec, record it here.
+
+### 2026-07-22 — from wave 8: shipped as 6 tools (respond folded), reason_code note
+
+- **Release valve → folded: 6 tools shipped, not 7.** `a2a_respond` was folded
+  into `a2a_exchange` (action=respond) alongside verify/dispute/note. The
+  §T1 valve's "correctness-harmful?" concern does not apply: the dispatch layer
+  is a transparent passthrough (`return h(ctx, args)` with the ORIGINAL raw
+  args), so respond's distinct `parent_ids`+`result`+`fields`+`body_override`
+  shape is read only by `newRespondHandler` and cannot collide with another
+  action. `TestEquivRespond` proves byte-identical CLI≡MCP output including the
+  content-derived response id (`cliResponseID == mcpResponseID`) — the strongest
+  evidence the group-tool round-trip perturbs nothing. Final set:
+  `a2a_read, a2a_new, a2a_submit, a2a_lifecycle, a2a_exchange, a2a_contract`.
+- **`decline` `reason_code` is a pre-existing dead field** (see §6 NB): the row
+  in `LifecycleVerbTable` sets `RequireReasonCode:true` but `newLifecycleHandler`
+  never reads it. Carried over from P14 unchanged (handler body off-limits to
+  P15). Not a P15 defect; flagged so a future reader doesn't expect a guard.
+- **`ContractActions` re-typed in `internal/mcp`** (not imported from
+  `cli.ContractSubcommands()`): ADR-001 forbids internal/mcp→internal/cli. The
+  capability-parity gate (`TestMCPParityBijection` +
+  `TestMCPParityContractSubverbsExpanded`) reds on any drift between the two
+  lists — the reconciliation is the gate, not the compiler.
+- tools/list weight measured 8481 B/~2120 tok → 2803 B/~700 tok (−67%).
 
 <!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->

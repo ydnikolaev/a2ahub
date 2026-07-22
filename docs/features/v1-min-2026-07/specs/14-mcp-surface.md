@@ -190,6 +190,24 @@ Full loop: [docs/features/README.md](../../README.md).
 > Append-only. When shipped reality deviates from this spec, record it here
 > AND amend any downstream spec.
 
+### 2026-07-22 — SUPERSEDED by P15: the 1:1 tool mapping is no longer current
+
+- **This spec's tool-surface shape is superseded.** The Footprint (1:1
+  registry), the OP↔tool table's per-verb lifecycle/`a2a_contract_*` tool
+  names, and §T/§8's **tool-level bijection** describe the shipped P14 reality
+  as of wave 6 — but the MCP surface was consolidated in **P15 (wave 8,
+  2026-07-22)** to ~6 capability-grouped tools (`a2a_read`, `a2a_new`,
+  `a2a_submit`, `a2a_lifecycle`, `a2a_exchange`, `a2a_contract`), each
+  dispatching a closed `action`/`view` enum. The bijection is now
+  **capability parity** (every designated CLI verb ↔ exactly one
+  `(tool, action)`). The per-verb byte-equivalence P14 established is
+  preserved, reparameterized by `(tool, action)`.
+- Authority: plan [§7.7 amendment](../../../the-plan/plan/07-client.md)
+  (operator-authorized 2026-07-22) + [specs/15-mcp-consolidation.md](15-mcp-consolidation.md).
+  Read those, not this spec's body, for the current tool surface. P14's core
+  claims (internal/mcp re-wires the core, never imports internal/cli; write
+  tools run the same V2 funnel; no MCP-only capability, R-018) all still hold.
+
 ### 2026-07-22 — from wave 6: shipped-reality deltas
 
 - **No `ci.yml` edit (narrowing).** The Footprint's "one CI job edit adding

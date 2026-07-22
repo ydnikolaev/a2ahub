@@ -121,11 +121,14 @@ Verdict: ✅ PROCEED
 
 - Wave 7b — P13 skill prose (P13 → done) — 2026-07-22 — phase P13 — commit d80c8e4 — make check-validators green — hand-maintained prose (SKILL/loops/troubleshooting/onboarding/decompose-example/RELEASE-CHECKLIST) authored at **opus** (upgraded from sonnet floor: normative doctrine, not gate-verifiable) + lead line-by-line verify (loops §8.1/D-014 verbatim vs source, 8-type prefixes = §3.1, doctor claims = cmd_doctor.go, fixture IDs on disk, skill-drift teeth both ways); propagate stale:[]; 1 backlog row (fixture trio) — details: plans/13-agent-skill.plan.md
 
+- Wave 8 — P15 MCP surface consolidation (P15 → done) — 2026-07-22 — phase P15 — commits a54260a (code+tests+commands.md regen), preceded by the §7.7-amendment/P15-open docs commit — make check green — 33 tools → **6 capability-grouped** (a2a_read/new/submit/lifecycle/exchange/contract), each dispatching a closed action/view enum via a thin passthrough to the UNCHANGED per-verb handlers; parity reparameterized to capability-level (verb ↔ (tool,action)), byte-equivalence bug-farm all green, tools/list ~2120→~700 tok (−67%, independently re-measured); respond folded → 6 (valve not needed); 3 doc write-backs (spec 14 superseded-note, spec 15 §11 valve + §6 reason_code dead-field) — details: plans/15-mcp-consolidation.plan.md
+
 ## Resume state (fresh-session handoff — read this first)
 
-**Where we are: 12/14 done** (P1–P10 + P13 + P14). `make check` green. P13's
-Go seam (7a) has `audit: open` — hand-verified, rides the S8 epic-final
-go-auditor (epic still open on the ops track). Only the ops track remains:
+**Where we are: 13/15 done** (P1–P10 + P13 + P14 + P15). `make check` green.
+P13's Go seam (7a) and P15 have `audit: open` — both hand-verified, ride the
+S8 epic-final go-auditor (epic still open on the ops track). P15 consolidated
+the MCP surface 33→6 grouped tools (2026-07-22). Only the ops track remains:
 
 - **Code track — P13 (skill) DONE (waves 7a + 7b, 2026-07-22).** 7a shipped the
   machine half; 7b shipped the prose half (at opus, lead-verified). Detail below

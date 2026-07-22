@@ -20,10 +20,10 @@
   shipped 2026-07-22. P13 (a2ahub expert skill: binary-emitted command/MCP
   catalog + `skill-drift` CI gate + hand-maintained agent-loop prose) shipped
   2026-07-22. P15 (MCP surface consolidation — ~6 capability-grouped typed
-  tools, §7.7 amended) opened 2026-07-22. Remaining: P15 (in progress) + the
-  user-gated ops track P11 (getvisa space bootstrap) → P12 (day-one content),
-  pending the real getvisa space.
-  <!-- epic-state: v1-min-2026-07 phases=12/15 -->
+  tools, §7.7 amended) shipped 2026-07-22 (33→6 tools, tools/list ~2120→~700
+  tokens). Remaining: only the user-gated ops track P11 (getvisa space
+  bootstrap) → P12 (day-one content), pending the real getvisa space.
+  <!-- epic-state: v1-min-2026-07 phases=13/15 -->
 
 - **Epic [publish-prep](features/publish-prep-2026-07/README.md)** — make
   `ydnikolaev/a2ahub` a public, hardened, cross-platform Go-binary repo

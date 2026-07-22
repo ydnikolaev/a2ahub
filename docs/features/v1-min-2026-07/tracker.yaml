@@ -2,7 +2,7 @@
 # epic-drift (truth) in `make check`. Commit scope for check A: `v1-min`.
 slug: v1-min-2026-07
 status: active
-updated: 2026-07-22  # wave 7b — P13 done (catalog seam + skill prose); audit rides S8
+updated: 2026-07-22  # wave 8 — P15 done (MCP surface consolidated to 6 grouped tools); audit rides S8
 strategy: >
   Critical path P1 -> P3 -> P6 -> P7/P8 -> P10 -> P14. Parallel groups:
   {P1,P2} at start; {P3,P4,P5} after foundations; {P6,P9} next (P9 depends
@@ -142,11 +142,11 @@ phases:
 
   - id: P15
     title: MCP surface consolidation — ~6 capability-grouped typed tools (§7.7 amended)
-    status: pending
+    status: done
     spec: specs/15-mcp-consolidation.md
     plan: plans/15-mcp-consolidation.plan.md
     blocked_by: [P14]
-    commits: []
-    audit: open
+    commits: [a54260a]
+    audit: open  # hand-verified (make check + byte-equivalence bug-farm green + token drop confirmed); rides S8 epic-final
 
 deferred: []
