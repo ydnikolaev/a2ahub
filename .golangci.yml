@@ -89,5 +89,13 @@ linters:
         linters: [nilerr]
       - path: internal/cli/cmd_validate_ci\.go
         linters: [nilerr]
+
+# No display caps — print EVERY finding, not golangci's default first-50-per-
+# linter / first-3-same. The gate exit code already reds on any issue; this just
+# keeps the output honest (no silent truncation) — matches sporo.
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
 formatters:
   enable: [gofmt]
