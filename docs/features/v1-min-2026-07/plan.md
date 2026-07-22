@@ -117,11 +117,54 @@ Verdict: ✅ PROCEED
 
 - Wave 6 — MCP surface (P14) — 2026-07-22 — P14 done — commits a92cf2c (ContractSubcommands SSOT export), 73a5aed (internal/mcp stdio JSON-RPC server + §7.7 tool set + cmd/a2a parity/equivalence + wire mcp line), 7dc6327 (statusline perf gate robust under -race) — make check green — 75 mcp + 43 cmd/a2a tests, coverage 71.2%, internal/mcp NEVER imports internal/cli (proven); parity bijection (two-level subset-map) + per-write-verb byte-equivalence (23 funnel writers modulo volatile tokens) + CC-093 all green; live `a2a mcp` serves stdio JSON-RPC. Deviations in spec 14 §11 (no ci.yml narrowing, parity-is-a-test-not-generator → spec 13 amended, equivalence-modulo-tokens, first-space wiring); 3 backlog rows (mcp first-space, eager-clone, funnel version-stamp). Audit dispatched. — details: plans/14-mcp-surface.plan.md
 
+## Resume state (fresh-session handoff — read this first)
+
+**Where we are: 11/14 done** (P1–P10 + P14, all `audit: done`). `make check`
+green. Two tracks remain:
+
+- **Code track — P13 (skill) is the ONLY remaining v1-min code phase.**
+  BLOCKED on a lead-built **command-catalog entry point** that does not exist
+  yet: the binary has no machine-parseable verb/tool catalog (`printUsage` is
+  hand-written prose), and P14 shipped a Go-level parity *test*, not a
+  binary-invoking *generator* (spec 13 §11 + spec 14 §11 record this). P13's
+  `skill-drift` gate needs to build the binary, capture its command + MCP-tool
+  catalog text, and byte-diff `skill/a2ahub/reference/commands.md`.
+  **OPEN DECISION (design fork, advisor-worthy):** how to emit the catalog —
+  a hidden `a2a __catalog --json` verb walking a single registry, vs.
+  restructuring `buildCommands`/`readVerbs`/`cli.ContractSubcommands` +
+  `mcp.BuildRegistry(...).ToolNames()` into one enumerable seam both the
+  catalog-emit and the P14 parity test read. Resolve, then run wave 7 (P13).
+
+- **Ops track — P11 (getvisa space bootstrap) + P12 (day-one content),
+  user-gated.** Operator confirmed: BOTH the a2a binary repo AND the getvisa
+  contract space go PUBLIC (2026-07-22). P11 execution still pending the
+  getvisa space being stood up; P12 `blocked_by [P8, P11]`.
+
+**Architecture confirmed (2026-07-22, operator question):** `a2a mcp` is a
+LOCAL, per-agent stdio subprocess in the binary (the harness spawns it), a
+thin typed-tool façade over the SAME core as the CLI (R-018, no MCP-only
+capability). It is NOT a hosted central server. The shared "knows all
+contracts" source of truth is the **git space repo** (getvisa) that every
+agent's local `a2a` mirrors; a hosted central service is the **hub (v2,
+deferred)**, and even then git stays authoritative (D-030 decentralized).
+MCP's value = typed tools + structured returns for MCP-native harnesses, not
+centralization. → If the operator wants a central contract server, that
+reshapes toward the hub (v2) — confirm before v2 planning.
+
+**Sibling epic:** `publish-prep-2026-07` (0/6, created 2026-07-22) — make the
+repo public sporo-style. P1–P5 private/reversible, P6 flip user-gated. Its
+own open questions: history technique (re-root recommended), planning-docs
+private home. The P14 path-traversal read-oracle fix (5b91fff) was a
+must-fix-before-public item — now closed.
+
 ## Revisions (user feedback loop)
 
 ## Closeout
 
-- Final commits: —
-- Audit findings: —
-- Deferred: —
-- Status: draft
+- Final commits: 727309b (bootstrap) .. HEAD; per-wave hashes in §Wave log.
+- Audit findings: waves 1–4 + P14 all reached PASS (FIX-AND-REAUDIT where
+  needed); P10 test-only (rode make check). P14 audit surfaced + fixed a
+  path-traversal read-oracle (5b91fff).
+- Deferred: see docs/backlog.md (~20 rows) + P11/P12 (ops, user-gated) + P13
+  (blocked on the catalog-seam decision above).
+- Status: in-progress (11/14; P13 + P11 + P12 remain).
