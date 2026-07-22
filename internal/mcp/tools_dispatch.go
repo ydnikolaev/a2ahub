@@ -76,16 +76,20 @@ func newDispatch(tool, discKey string, handlers map[string]HandlerFunc, enum []s
 	}
 }
 
-// newReadDispatch builds a2a_read: view -> the 6 P14 read handlers.
+// newReadDispatch builds a2a_read: view -> the 6 P14 read handlers, wrapped
+// ONCE with withUpdateNotice (spec 19 T4 AMENDED / §11 wave-12c) so every
+// view's response body carries the shared update advisory out-of-band —
+// StructuredContent (result) is untouched by the wrap, so P15's per-verb
+// byte-identity guarantee is unaffected.
 func newReadDispatch(store *cache.Store) HandlerFunc {
-	return newDispatch("a2a_read", "view", map[string]HandlerFunc{
+	return withUpdateNotice(newDispatch("a2a_read", "view", map[string]HandlerFunc{
 		"inbox":     newInboxHandler(store),
 		"outbox":    newOutboxHandler(store),
 		"show":      newShowHandler(store),
 		"thread":    newThreadHandler(store),
 		"search":    newSearchHandler(store),
 		"contracts": newContractsHandler(store),
-	}, ReadViews)
+	}, ReadViews), store)
 }
 
 // newLifecycleDispatch builds a2a_lifecycle: action -> newLifecycleHandler

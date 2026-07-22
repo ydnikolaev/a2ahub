@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 )
 
@@ -175,6 +176,32 @@ func newSearchHandler(store *cache.Store) HandlerFunc {
 // ContractsInput is a2a_contracts's structured input.
 type ContractsInput struct {
 	Provider string `json:"provider,omitempty"`
+}
+
+// withUpdateNotice wraps inner so its response body carries the shared T4
+// update advisory (spec 19 T4 AMENDED / §11 wave-12c) OUT-OF-BAND: the
+// notice rides the response's TEXT body block ONLY — result
+// (StructuredContent) passes through byte-unchanged, so P15's per-verb
+// StructuredContent byte-identity holds regardless of update state. A
+// GradeNone notice (EnableUpdateNotice never called on store, or nothing to
+// advise) leaves body byte-unchanged too; a handler error short-circuits
+// before any notice lookup and is returned exactly as inner produced it.
+func withUpdateNotice(inner HandlerFunc, store *cache.Store) HandlerFunc {
+	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
+		result, body, err := inner(ctx, args)
+		if err != nil {
+			return result, body, err
+		}
+		n := store.UpdateNotice()
+		if n.Grade == release.GradeNone {
+			return result, body, nil
+		}
+		if body != "" {
+			body += "\n"
+		}
+		body += "note: " + n.Sentence
+		return result, body, nil
+	}
 }
 
 func newContractsHandler(store *cache.Store) HandlerFunc {

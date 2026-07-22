@@ -3,11 +3,14 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/release"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
 // dispatchTestRegistry builds a full grouped registry with a REAL empty
@@ -214,6 +217,161 @@ func TestGroupedSchemasListFullEnum(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestReadDispatchAppendsUpdateAdvisoryWithoutTouchingStructuredContent is
+// spec 19 T4 AMENDED / §11 wave-12c: an a2a_read response's body carries the
+// shared update advisory OUT-OF-BAND when the store's UpdateNotice grades
+// GradeAvailable, while StructuredContent (result) stays byte-identical to
+// the unwrapped per-verb handler's own result — proving withUpdateNotice
+// never mutates result, only body. A GradeNone store (EnableUpdateNotice
+// never called — the existing parity/equivalence tests' own construction)
+// leaves body byte-unchanged too.
+//
+// The "want" (unwrapped) and "got" (dispatched) calls each use their OWN
+// Store instance (same mirror/manifest/clock, distinct cacheDir): Store.Inbox
+// advances the on-disk read cursor as a side effect (an item's New field
+// flips false on a second call against the SAME store), which would corrupt
+// a byte-for-byte comparison if both calls shared one store.
+func TestReadDispatchAppendsUpdateAdvisoryWithoutTouchingStructuredContent(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	id := "XQ-axon-20260722-upd1"
+	writeQuestionArtifact(t, mirrorDir, id, "beta")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	manifest := space.Manifest{Participants: []space.Participant{
+		{System: "axon", Status: "active"}, {System: "beta", Status: "active"},
+	}}
+	sm := cache.SpaceMirror{SpaceID: "fixture-space", Dir: mirrorDir, Manifest: manifest}
+	newStore := func(t *testing.T) *cache.Store {
+		t.Helper()
+		return cache.NewStore("beta", t.TempDir(), []cache.SpaceMirror{sm}, func() time.Time { return now }, 0)
+	}
+
+	t.Run("grade_available", func(t *testing.T) {
+		t.Parallel()
+		wantResult, wantBody, err := newInboxHandler(newStore(t))(context.Background(), json.RawMessage(`{}`))
+		if err != nil {
+			t.Fatalf("inner inbox handler: %v", err)
+		}
+
+		enabledStore := newStore(t)
+		cachePath := filepath.Join(t.TempDir(), "update-check.json")
+		if err := release.WriteCheck(cachePath, release.CheckState{CheckedAt: now, Latest: "0.3.0", Source: "test"}); err != nil {
+			t.Fatalf("seed update-check cache: %v", err)
+		}
+		enabledStore.EnableUpdateNotice("0.1.0", cachePath, 6*time.Hour, nil)
+		dispatch := newReadDispatch(enabledStore)
+		gotResult, gotBody, err := dispatch(context.Background(), json.RawMessage(`{"view":"inbox"}`))
+		if err != nil {
+			t.Fatalf("a2a_read view=inbox: %v", err)
+		}
+
+		wantJSON, err := json.Marshal(wantResult)
+		if err != nil {
+			t.Fatalf("marshal inner result: %v", err)
+		}
+		gotJSON, err := json.Marshal(gotResult)
+		if err != nil {
+			t.Fatalf("marshal dispatched result: %v", err)
+		}
+		if string(gotJSON) != string(wantJSON) {
+			t.Fatalf("StructuredContent (result) diverged:\nwant %s\ngot  %s", wantJSON, gotJSON)
+		}
+
+		notice := release.Info("0.1.0", "0.3.0", "", "")
+		if notice.Grade != release.GradeAvailable {
+			t.Fatalf("test setup: expected GradeAvailable, got %v", notice.Grade)
+		}
+		if !strings.Contains(gotBody, notice.Sentence) {
+			t.Fatalf("expected the dispatched body to contain the advisory sentence %q, got %q", notice.Sentence, gotBody)
+		}
+		if gotBody == wantBody {
+			t.Fatalf("expected the dispatched body to differ from the inner body (advisory appended)")
+		}
+	})
+
+	t.Run("grade_none", func(t *testing.T) {
+		t.Parallel()
+		wantResult, wantBody, err := newInboxHandler(newStore(t))(context.Background(), json.RawMessage(`{}`))
+		if err != nil {
+			t.Fatalf("inner inbox handler: %v", err)
+		}
+		// EnableUpdateNotice deliberately NOT called on this second store:
+		// GradeNone, mirroring how the existing mcp parity/equivalence tests
+		// build their stores.
+		dispatch := newReadDispatch(newStore(t))
+		gotResult, gotBody, err := dispatch(context.Background(), json.RawMessage(`{"view":"inbox"}`))
+		if err != nil {
+			t.Fatalf("a2a_read view=inbox: %v", err)
+		}
+		if gotBody != wantBody {
+			t.Fatalf("GradeNone: expected body unchanged, want %q got %q", wantBody, gotBody)
+		}
+		wantJSON, _ := json.Marshal(wantResult)
+		gotJSON, _ := json.Marshal(gotResult)
+		if string(gotJSON) != string(wantJSON) {
+			t.Fatalf("GradeNone: StructuredContent diverged:\nwant %s\ngot  %s", wantJSON, gotJSON)
+		}
+	})
+
+	// view=show is the ONE read view whose result carries a rich structured
+	// payload (showOutput) AND whose body is already non-empty (the
+	// artifact's verbatim markdown) — the view that actually exercises the
+	// "body != "" so join with a newline" branch AND proves result byte-
+	// identity holds even when result is not a bare list.
+	t.Run("grade_available_show", func(t *testing.T) {
+		t.Parallel()
+		showArgs, err := json.Marshal(ShowInput{Ref: id})
+		if err != nil {
+			t.Fatalf("marshal ShowInput: %v", err)
+		}
+
+		wantResult, wantBody, err := newShowHandler(newStore(t))(context.Background(), showArgs)
+		if err != nil {
+			t.Fatalf("inner show handler: %v", err)
+		}
+		if wantBody == "" {
+			t.Fatalf("test setup: expected a non-empty inner body for view=show")
+		}
+
+		enabledStore := newStore(t)
+		cachePath := filepath.Join(t.TempDir(), "update-check.json")
+		if err := release.WriteCheck(cachePath, release.CheckState{CheckedAt: now, Latest: "0.3.0", Source: "test"}); err != nil {
+			t.Fatalf("seed update-check cache: %v", err)
+		}
+		enabledStore.EnableUpdateNotice("0.1.0", cachePath, 6*time.Hour, nil)
+		dispatch := newReadDispatch(enabledStore)
+
+		showViewArgs, err := json.Marshal(map[string]string{"view": "show", "ref": id})
+		if err != nil {
+			t.Fatalf("marshal show view args: %v", err)
+		}
+		gotResult, gotBody, err := dispatch(context.Background(), showViewArgs)
+		if err != nil {
+			t.Fatalf("a2a_read view=show: %v", err)
+		}
+
+		wantJSON, err := json.Marshal(wantResult)
+		if err != nil {
+			t.Fatalf("marshal inner result: %v", err)
+		}
+		gotJSON, err := json.Marshal(gotResult)
+		if err != nil {
+			t.Fatalf("marshal dispatched result: %v", err)
+		}
+		if string(gotJSON) != string(wantJSON) {
+			t.Fatalf("StructuredContent (result) diverged:\nwant %s\ngot  %s", wantJSON, gotJSON)
+		}
+
+		notice := release.Info("0.1.0", "0.3.0", "", "")
+		wantJoined := wantBody + "\nnote: " + notice.Sentence
+		if gotBody != wantJoined {
+			t.Fatalf("expected the body to be the inner body + newline + advisory:\nwant %q\ngot  %q", wantJoined, gotBody)
+		}
+	})
 }
 
 // TestGroupedToolsListWeightDropsFromP14Baseline gates spec 15 §8 AC #1's
