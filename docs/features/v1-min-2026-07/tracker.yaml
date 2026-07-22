@@ -108,11 +108,11 @@ phases:
 
   - id: P11
     title: getvisa space bootstrap (axon + seomatrix) — L0 exit
-    status: pending
+    status: in-progress
     spec: specs/11-getvisa-space-bootstrap.md
     blocked_by: [P6, P9]
     commits: []
-    audit: open
+    audit: open  # runbook space-bootstrap.md ready; live bootstrap BLOCKED on operator prereqs B1 (no v0.1.0 release), B2 (no branch-protection plan), B3 (no fetch-token secret)
 
   - id: P12
     title: Day-one content — ingest/todo-feed contracts, producer-outbox migration (L2)
