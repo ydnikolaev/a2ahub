@@ -11,12 +11,12 @@ import (
 type Grade int
 
 const (
-	// GradeNone: nothing to advise (latest <= current and not required).
+	// GradeNone means nothing to advise (latest <= current and not required).
 	GradeNone Grade = iota
-	// GradeAvailable: a newer release exists (latest > current), the
+	// GradeAvailable means a newer release exists (latest > current) and the
 	// running binary is not below any floor.
 	GradeAvailable
-	// GradeRequired: current < some space's floor — CC-085 already
+	// GradeRequired means current < some space's floor — CC-085 already
 	// refuses writes against that space. Stays advisory (exit 0, T4
 	// amendment #3) even though it is the stronger grade.
 	GradeRequired
