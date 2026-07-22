@@ -106,14 +106,25 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 		}
 	}
 
-	// Filter to *.md files located under a participant section — skip
-	// space.yaml, CODEOWNERS, .github, and any non-artifact file.
+	// One pass over the changed set builds two lists:
+	//   - artifacts: *.md files under a participant section — the V2 engine's
+	//     input (schema/referential/authz/secret run per artifact).
+	//   - authzPaths: EVERY changed path under a participant section, any
+	//     extension — the diff-authz input. A PR editing another system's
+	//     non-artifact files (consumes.yaml, events/*.yaml) must be authorized
+	//     too, not just its *.md (else those edits are unguarded — the strict-L0
+	//     gap this closes). Paths under NO section (root space.yaml, CODEOWNERS,
+	//     .github/**) are deliberately excluded from author-diff-authz — they are
+	//     space infrastructure governed by CODEOWNERS review + branch protection,
+	//     and authorizing them here would red the space owner's own manifest edit.
 	var artifacts []string
+	var authzPaths []string
 	for _, p := range changed {
-		if !strings.HasSuffix(p, ".md") {
+		if _, ok := systemForPath(manifest, p); !ok {
 			continue
 		}
-		if _, ok := systemForPath(manifest, p); ok {
+		authzPaths = append(authzPaths, p)
+		if strings.HasSuffix(p, ".md") {
 			artifacts = append(artifacts, p)
 		}
 	}
@@ -137,10 +148,12 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 
 	// Diff-authz applies only to v3-pr (a full-repo scan has no single PR
 	// author; GITHUB_ACTOR ⊆ every section can never hold across systems)
-	// and only when there is at least one changed artifact to authorize —
-	// an empty changed set is a clean exit 0, never an unmapped-author red.
-	if mode == "v3-pr" && len(artifacts) > 0 {
-		if authz := diffAuthz(manifest, author, artifacts); len(authz) > 0 {
+	// and only when there is at least one section-scoped changed path to
+	// authorize — an empty changed set is a clean exit 0, never an
+	// unmapped-author red. Gated on authzPaths (not artifacts): a PR touching
+	// ONLY another system's non-artifact files must still be authorized.
+	if mode == "v3-pr" && len(authzPaths) > 0 {
+		if authz := diffAuthz(manifest, author, authzPaths); len(authz) > 0 {
 			report.DiffAuthz = authz
 			report.Valid = false
 		}
@@ -201,11 +214,13 @@ func validateCIArtifact(engine *validate.Engine, root, relPath string, manifest 
 	return &validateReport{Path: relPath, Result: &r}, result.Valid
 }
 
-// diffAuthz enforces that every changed artifact path is under the PR
-// author's section (§8 diff-authz). An author not mapped to any system is
-// a CC-097 violation; a changed path outside the author's section is a
-// diff-authz violation.
-func diffAuthz(manifest space.Manifest, author string, artifacts []string) []ciAuthzViolation {
+// diffAuthz enforces that every section-scoped changed path — any extension,
+// not just *.md artifacts — is under the PR author's section (§8 diff-authz).
+// An author not mapped to any system is a CC-097 violation; a changed path
+// under another system's section is a diff-authz violation. Callers pass only
+// paths that already resolve to a section (systemForPath ok); paths under no
+// section are space infrastructure, out of author-diff-authz scope.
+func diffAuthz(manifest space.Manifest, author string, paths []string) []ciAuthzViolation {
 	authorSystem, ok := manifest.SystemForLogin(author)
 	if !ok {
 		return []ciAuthzViolation{{
@@ -215,7 +230,7 @@ func diffAuthz(manifest space.Manifest, author string, artifacts []string) []ciA
 		}}
 	}
 	var out []ciAuthzViolation
-	for _, relPath := range artifacts {
+	for _, relPath := range paths {
 		sys, _ := systemForPath(manifest, relPath)
 		if sys != authorSystem {
 			out = append(out, ciAuthzViolation{
