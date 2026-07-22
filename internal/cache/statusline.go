@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
@@ -31,15 +32,24 @@ type StatuslineResult struct {
 // Statusline computes §7.5's contract: cache-read only (no network, no
 // live git fetch — every read here is a local working-tree/`.git`
 // read), at most one line, zero-noise (empty line + exit 0 when nothing
-// actionable, or when no space is connected at all — CC-092). When any
-// connected space's mirror sync-age exceeds the Store's TTL, it ALSO
-// spawns exactly one detached, recover-guarded background refresh (git
-// fetch, v1-min's git-fallback path, D-030 — never a hub client symbol)
-// whose result lands in the mirror for the NEXT render; this call never
-// waits on that goroutine, so the <100ms render budget is unaffected by
-// however long the refresh itself takes.
+// actionable, or when no space is connected at all — CC-092), EXCEPT that
+// spec 19 T4 amends CC-092: an available update IS actionable content, so
+// an otherwise-empty line prints the update segment alone (still exit 0 —
+// the notice never inflates severity). When any connected space's mirror
+// sync-age exceeds the Store's TTL, it ALSO spawns exactly one detached,
+// recover-guarded background refresh (git fetch, v1-min's git-fallback
+// path, D-030 — never a hub client symbol) whose result lands in the
+// mirror for the NEXT render; this call never waits on that goroutine, so
+// the <100ms render budget is unaffected by however long the refresh
+// itself takes.
 func (s *Store) Statusline(ctx context.Context) (StatuslineResult, error) {
+	n := s.UpdateNotice()
+	s.triggerUpdateRefreshIfStale(ctx)
+
 	if len(s.spaces) == 0 {
+		if n.Grade != release.GradeNone {
+			return StatuslineResult{Line: n.Segment, Exit: int(SeverityQuiet)}, nil
+		}
 		return StatuslineResult{Exit: int(SeverityQuiet)}, nil
 	}
 
@@ -84,6 +94,9 @@ func (s *Store) Statusline(ctx context.Context) (StatuslineResult, error) {
 	s.triggerRefreshIfStale(ctx, idx)
 
 	if len(actionable) == 0 && staleCount == 0 {
+		if n.Grade != release.GradeNone {
+			return StatuslineResult{Line: n.Segment, Exit: int(SeverityQuiet)}, nil
+		}
 		return StatuslineResult{Exit: int(SeverityQuiet)}, nil
 	}
 
@@ -116,6 +129,9 @@ func (s *Store) Statusline(ctx context.Context) (StatuslineResult, error) {
 	}
 	if staleCount > 0 {
 		fmt.Fprintf(&b, " · %d stale", staleCount)
+	}
+	if n.Grade != release.GradeNone {
+		fmt.Fprintf(&b, " · %s", n.Segment)
 	}
 
 	return StatuslineResult{Line: b.String(), Exit: int(severity)}, nil
