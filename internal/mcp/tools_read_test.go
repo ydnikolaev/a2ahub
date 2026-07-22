@@ -3,11 +3,14 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
@@ -175,6 +178,86 @@ func TestSearchHandler(t *testing.T) {
 	items := result.([]cache.Item)
 	if len(items) != 1 {
 		t.Fatalf("expected 1 search hit, got %+v", items)
+	}
+}
+
+// TestWithUpdateNoticeErrorPassthrough proves an inner handler error is
+// returned exactly as produced — no notice lookup, result/body untouched
+// (spec 19 T4 AMENDED / §11 wave-12c: the wrapper never masks or rewrites a
+// tool failure).
+func TestWithUpdateNoticeErrorPassthrough(t *testing.T) {
+	t.Parallel()
+
+	// Use a GradeAvailable-enabled store (not GradeNone): if withUpdateNotice
+	// ever appended the advisory BEFORE checking err, a GradeNone store would
+	// still pass this test vacuously (nothing to append). GradeAvailable
+	// makes the assertion bite on the actual ordering the wrapper must
+	// guard: err short-circuits before any notice lookup/append.
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	store := cache.NewStore("beta", t.TempDir(), nil, func() time.Time { return now }, 0)
+	cachePath := filepath.Join(t.TempDir(), "update-check.json")
+	if err := release.WriteCheck(cachePath, release.CheckState{CheckedAt: now, Latest: "0.3.0", Source: "test"}); err != nil {
+		t.Fatalf("seed update-check cache: %v", err)
+	}
+	store.EnableUpdateNotice("0.1.0", cachePath, 6*time.Hour, nil)
+	if store.UpdateNotice().Grade != release.GradeAvailable {
+		t.Fatalf("test setup: expected GradeAvailable")
+	}
+
+	wantErr := errors.New("boom")
+	inner := func(_ context.Context, _ json.RawMessage) (any, string, error) {
+		return nil, "unused body", wantErr
+	}
+	wrapped := withUpdateNotice(inner, store)
+	result, body, err := wrapped(context.Background(), json.RawMessage(`{}`))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected the inner error passed through unchanged, got %v", err)
+	}
+	if result != nil {
+		t.Fatalf("expected a nil result on error, got %v", result)
+	}
+	if body != "unused body" {
+		t.Fatalf("expected body passed through unchanged on error (no advisory appended), got %q", body)
+	}
+}
+
+// TestWithUpdateNoticeGradeNoneLeavesBodyUnchanged proves the wrapper is a
+// no-op on the body when the store's UpdateNotice grades GradeNone (the
+// default: EnableUpdateNotice never called) — the existing mcp parity/
+// equivalence tests build stores this way, so this documents why they
+// still pass unwrapped through a2a_read.
+//
+// The "want" (unwrapped) and "got" (wrapped) calls each use their OWN Store
+// instance over the SAME mirror: Store.Inbox advances the on-disk read
+// cursor as a side effect (an item's New field flips false on a second call
+// against the SAME store), which would corrupt a byte-for-byte comparison
+// if both calls shared one store.
+func TestWithUpdateNoticeGradeNoneLeavesBodyUnchanged(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	id := "XQ-axon-20260721-e001"
+	writeQuestionArtifact(t, mirrorDir, id, "beta")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+
+	inner := newInboxHandler(testStore(t, mirrorDir))
+	wantResult, wantBody, err := inner(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("inner inbox handler: %v", err)
+	}
+
+	wrappedStore := testStore(t, mirrorDir)
+	wrapped := withUpdateNotice(newInboxHandler(wrappedStore), wrappedStore)
+	gotResult, gotBody, err := wrapped(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("wrapped inbox handler: %v", err)
+	}
+	if gotBody != wantBody {
+		t.Fatalf("GradeNone: expected body unchanged, want %q got %q", wantBody, gotBody)
+	}
+	wantJSON, _ := json.Marshal(wantResult)
+	gotJSON, _ := json.Marshal(gotResult)
+	if string(gotJSON) != string(wantJSON) {
+		t.Fatalf("GradeNone: StructuredContent diverged:\nwant %s\ngot  %s", wantJSON, gotJSON)
 	}
 }
 
