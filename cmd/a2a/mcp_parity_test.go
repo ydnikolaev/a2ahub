@@ -45,6 +45,7 @@ var mcpExcludedVerbs = map[string]bool{
 	"validate":   true,
 	"mcp":        true, // the mcp verb itself: no self-referencing tool
 	"statusline": true, // spec 14 scope note + AC #6 (see file doc comment)
+	"__catalog":  true, // P13's CLI-only meta verb (catalog.go): no MCP tool
 }
 
 // designatedCLIVerbs returns the §7.7-designated CLI verb names:
