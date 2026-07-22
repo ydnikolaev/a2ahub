@@ -77,3 +77,34 @@ tagged release via [../RELEASE-CHECKLIST.md](../RELEASE-CHECKLIST.md), not by a
 machine gate. The `reference/commands.md` and `reference/authoring/*.md` files
 are **generated** from the binary and the schemas and are byte-diffed by the
 `skill-drift` CI job — do not hand-edit them.
+
+## Staying current — the update notice
+
+`a2a` self-updates via **`a2a update`** (resolve → verify → atomically swap the
+running binary). You do not need to know the mechanics — defer to the binary
+(D-015); this section is only about the **proactive notice** and the **consent
+stance**.
+
+A cached "latest release" fact surfaces through the surfaces you already read —
+no new channel to poll:
+
+- **statusline** appends `· update vX→vY` (or `· UPDATE REQUIRED (<space> pins
+  Z)`); it never inflates the pending-items severity codes.
+- **`a2a inbox` / `a2a outbox`** print one advisory line to **stderr** (stdout
+  item output is unchanged); `--json` emits the same `update` object to stderr.
+- **`a2a doctor`** reports it under the "versions" check (advisory — the check
+  still passes; only a `min_binary_version` floor violation fails).
+- **MCP `a2a_read`** carries it on the response's text body.
+
+Two grades: **available** (a newer release exists) and **REQUIRED** (your
+binary is below a connected space's `min_binary_version` floor — that space
+already refuses your writes, and the funnel error names `a2a update` as the
+remedy). Both are advisory.
+
+**Consent stance (D-021).** The notice is display only — nothing ever
+auto-updates. Surface it to your human. Run **`a2a update --yes`** yourself
+*only* when your human or the project has explicitly consented to self-serve
+updates; otherwise report the available version and let them run it. Signature
+verification is checksum-only in this build, so `a2a update` currently requires
+`--allow-unsigned` (state it explicitly — you are updating the fleet's own
+tooling).
