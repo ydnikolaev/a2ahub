@@ -57,7 +57,7 @@ while IFS= read -r f; do
     flag "tracked but NOT public: $f  → 'git rm --cached $f' (private), or add it to ALLOW in scripts/classify-guard.sh (public)"
     continue
   fi
-  if in_list "$t" "${PENDING_DIRS[@]}"; then
+  if in_list "$t" "${PENDING_DIRS[@]:-}"; then
     if ! in_list "$t" "${pending_noted[@]:-}"; then
       note "pending-untrack (deferred to P6): $t/"
       pending_noted+=("$t")
@@ -68,17 +68,24 @@ while IFS= read -r f; do
 done < <(git ls-files)
 
 # ── 2. Every present top-level entry is classified. ──────────────────────────────
-for e in $(ls -A); do
+# `for e in *` with dotglob/nullglob — NOT `$(ls -A)`, whose UNQUOTED word-split
+# lets a top-level entry whose name contains IFS whitespace evade classification
+# (a gate that greens on an unclassified entry is a hole). dotglob makes `*`
+# include dotfiles; nullglob makes an empty tree a clean no-op; neither yields
+# `.`/`..`. Scoped to this loop; check 3 below uses no globs.
+shopt -s dotglob nullglob
+for e in *; do
   t=$(top "$e")
   in_list "$t" "${ALLOW_DIRS[@]}" && continue
   in_list "$e" "${ALLOW_FILES[@]}" && continue
   in_list "$t" "${DENY_DIRS[@]}" && continue
   in_list "$e" "${DENY_FILES[@]}" && continue
-  in_list "$t" "${PENDING_DIRS[@]}" && continue
+  in_list "$t" "${PENDING_DIRS[@]:-}" && continue
   [ "$t" = scripts ] && continue
   in_list "$t" "${IGNORE[@]}" && continue
   flag "UNCLASSIFIED top-level entry: $e  → decide public/private, add it to ALLOW or DENY in scripts/classify-guard.sh"
 done
+shopt -u dotglob nullglob
 
 # ── 3. Manifest ↔ .gitignore coherence: every DENY is actually ignored. ──────────
 # PENDING_DIRS (docs/) is deliberately excluded — it is not gitignored yet.
