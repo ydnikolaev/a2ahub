@@ -189,4 +189,21 @@ decision, not plan ambiguity — recorded as a narrowing, not a Q.
 > Append-only. When the shipped reality deviates from this spec, record it
 > here AND amend any downstream spec.
 
+### 2026-07-22 — from wave 6 (P14): the §7.7 "generate from binary" precedent does NOT exist yet
+
+- §0.5's "MCP reference generation precedent" row and §5's "reuses this exact
+  generate-then-diff mechanism. Do not write a second, parallel doc generator"
+  assume prior art that is not in the repo. P14 shipped a Go-level in-process
+  bijection TEST (`cmd/a2a/mcp_parity_test.go`), NOT a binary-invoking
+  generator: it compares `buildCommands()` keys ∪ `cli.ContractSubcommands()`
+  against `mcp.BuildRegistry(...).ToolNames()` in memory, never execs the
+  built binary, and emits no textual artifact. There is ALSO no machine-
+  parseable command/MCP catalog output from the binary today (`printUsage`
+  is hand-written prose). **P13's `skill-drift` job — which must build the
+  binary, capture its command/MCP catalog text, and byte-diff against
+  `skill/a2ahub/reference/commands.md` — has NO working precedent to reuse and
+  must build the catalog-emitting entry point (a lead-designed `internal/cli`/
+  `cmd/a2a` seam that enumerates verbs + MCP tools) from scratch.** This is a
+  known wave-7 prerequisite, not a spec defect in P13 itself.
+
 <!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->

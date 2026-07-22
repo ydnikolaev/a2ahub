@@ -124,6 +124,26 @@
       poor UX — consider treating an unparseable LOCAL version as a warn/skip
       ("cannot determine") rather than a failure. (wire.go now passes the bare
       version; this is the residual dev-build edge.)
+- [ ] `internal/mcp.NewServerFromConfig` wires write-tool deps for the FIRST
+      connected space only (P14 tail scope) — a multi-space MCP session's
+      lifecycle/contract/submit tools only target `cfg.Spaces[0]`, unlike the
+      CLI's per-invocation `resolveTargetSpaceRef` (mirrorHoldsArtifact). Add
+      per-call target-space resolution to the write-tool handlers when a real
+      multi-space session needs it.
+- [ ] `a2a mcp` eagerly clones the first connected space's mirror at startup
+      (buildWriteDeps → CloneOrFetch), so the server fails to START if that
+      space is unreachable — even though the READ tools only need the local
+      mirror. Make write-dep wiring lazy / tolerant so read tools serve
+      offline (mirror the CC-092 buildStore tolerance). Surfaced by the P14
+      live smoke.
+- [ ] Version-arg consistency: `cmd/a2a` passes the BARE `version` to the MCP
+      server's funnel (correct for the min_binary_version guard, matching the
+      doctor fix), but `runSubmit`/`resolveLifecycleDeps` still pass the full
+      `versionStamp()` ("a2a x.y.z (sha)") to `space.NewWriteFunnel`. If the
+      funnel's `versionOlderThan` mis-parses the stamp the CC-085 guard is
+      wrong for CLI writes against a version-pinned space. Reconcile the CLI
+      wiring to pass bare `version` too (or confirm versionOlderThan strips
+      the stamp).
 - [ ] Proposal (operator decision, D-021-sensitive): `a2a init` offers
       (consent-gated Y/n, `--yes` for automation) to append a ~3-line
       a2ahub pointer block (8.1 session-start floor + skill reference) to

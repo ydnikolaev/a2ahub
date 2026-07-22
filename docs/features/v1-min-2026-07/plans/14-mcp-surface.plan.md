@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 phase: P14
 spec: ../specs/14-mcp-surface.md
 wave: 6
-status: dispatched
+status: verified
 ---
 
 # Phase plan — P14 MCP surface (`a2a mcp`) + CLI/MCP parity suite
@@ -218,7 +218,13 @@ tool list + structured-returns contract — quote, do not reparaphrase).
 
 ## Phase log
 
-(detail blocks per S6.f)
+### Wave 6 — 2026-07-22
+- Agent: sonnet/high. 25 files, 75 mcp tests + 43 cmd/a2a tests; coverage 71.2%; no internal/cli import (go list -deps).
+- Commits: a92cf2c (ContractSubcommands SSOT export, lead prep), 73a5aed (mcp harness + parity + equivalence + wire line), 7dc6327 (statusline perf-test robustness under -race).
+- Verify (lead, re-run): parity bijection + both decoys + excluded-absent + contract-subverbs-expanded PASS; per-write-verb equivalence (23 funnel writers byte-identical modulo volatile tokens) PASS; CC-093 PASS; -race stable. `make check` exit 0 (after fixing a load-flake in the P10 statusline perf gate that surfaced once the mcp package added parallel load). Live `a2a mcp` serves initialize + tools/list.
+- Deviations + amendments: no ci.yml edit (narrowing); parity is a Go bijection TEST not a binary generator (→ spec 13 amendment: P13 must build its own catalog-emitter); equivalence is byte-identical modulo volatile ULID/timestamp tokens (internal/cli exposes no entropy seam); first-connected-space-only write wiring + eager-clone-blocks-read-tools (backlogged). All in spec 14 §11. Agent found+fixed a real MCP bug (respond wiped default body). Lead added the wire.go mcp dispatch line (bare version to the funnel guard).
+- Epic-direction reconcile: still-serves (MCP tail, parity invariant mechanical).
+- Audit: dispatched post-wave (production code — internal/mcp).
 
 ## Deferred / follow-ups
 

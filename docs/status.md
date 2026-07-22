@@ -15,8 +15,10 @@
   thread/search/statusline) + P8 (lifecycle + contract verbs) + P10
   (integration harness: T3 testscript + E2E-1/E2E-4 + cc-coverage). The
   `a2a` binary is wired for all 27 verbs; authoring + read paths run
-  locally, live GitHub write path (submit/lifecycle/contract) is P11.
-  <!-- epic-state: v1-min-2026-07 phases=10/14 -->
+  locally, live GitHub write path (submit/lifecycle/contract) is P11. P14
+  (MCP façade `a2a mcp` + CLI/MCP parity + per-write-verb equivalence)
+  shipped 2026-07-22.
+  <!-- epic-state: v1-min-2026-07 phases=11/14 -->
 
 - **Epic [publish-prep](features/publish-prep-2026-07/README.md)** — make
   `ydnikolaev/a2ahub` a public, hardened, cross-platform Go-binary repo

@@ -190,7 +190,45 @@ Full loop: [docs/features/README.md](../../README.md).
 > Append-only. When shipped reality deviates from this spec, record it here
 > AND amend any downstream spec.
 
-<!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->
+### 2026-07-22 — from wave 6: shipped-reality deltas
+
+- **No `ci.yml` edit (narrowing).** The Footprint's "one CI job edit adding
+  the T3 CLI/MCP parity suite" and AC-301.2's "CI job runs the cmd/a2a parity
+  test" are satisfied WITHOUT a literal new job: the parity + equivalence +
+  CC-093 tests live in the `cmd/a2a` package and run under `make check`'s
+  existing `go test ./...` step (same narrowing as P10). Read "one CI job
+  edit" / "a CI job runs the parity test" as "runs under the existing
+  go-test job".
+- **Parity is a Go-level bijection TEST, not a binary-invoking generator.**
+  `cmd/a2a/mcp_parity_test.go` compares `buildCommands()` keys ∪
+  `cli.ContractSubcommands()` against `mcp.BuildRegistry(...).ToolNames()`
+  in-process — it never execs the built binary and emits no artifact. This is
+  correct for a parity CHECK, but it is NOT the "generate from the binary and
+  CI-check" mechanism §7.7 describes and P13's `commands.md` MCP-reference
+  generator needs — see spec 13's amendment. P13 must build that generator
+  (a catalog-emitting entry point), not reuse this test.
+- **Equivalence is byte-identical MODULO volatile tokens, not shared
+  entropy.** The brief wanted both surfaces driven by a shared fixed
+  clock+entropy, but `internal/cli` exposes NO entropy-injection seam (only
+  Respond/Contract have `SetClockForTest`, clock-only). So the equivalence
+  suite normalizes exactly four volatile tokens (the minted `event:` ULID,
+  its ULID path segment, `at:`/`created:`) and compares every other field
+  (schema/space/subject/transition/actor/note/reason_code/refs/version/
+  digest/commit/PRBody) LITERALLY. All 23 funnel event-writers pass; the
+  read-only `contract diff`/`verify-export` assert an identical digest-tree
+  (structural, no event exists to byte-compare). This satisfies the anti-drift
+  intent (the drift-dangerous event shape is compared literally).
+- **`NewServerFromConfig` wires write tools for the FIRST connected space
+  only** (documented in `internal/mcp/wire.go`). A multi-space session's
+  per-call target-space resolution (the CLI's `resolveTargetSpaceRef`) is out
+  of this tail phase's scope — backlogged. Read tools federate over all
+  spaces; write tools target the first. Also: the server eagerly clones the
+  first space's mirror at startup, so `a2a mcp` currently fails to start if
+  that space is unreachable (read tools should degrade gracefully) — backlogged.
+- **The `mcp` dispatch line + bare-version funnel arg** landed lead-side
+  post-wave (`cmd/a2a/wire.go`); live `a2a mcp` serves initialize + tools/list
+  over stdio (6 read tools with no space connected, write tools added per
+  connected space).
 
 ### 2026-07-21 — from coherence audit (pre-implementation): corrected the §9 "Roadmap conflicts" row and the §10 implementor entry point, both of which incorrectly stated this phase is `blocked_by` P1, P5, P6, P7, P8 per `tracker.yaml`; `tracker.yaml` actually lists `blocked_by: [P10]` only, with P10 transitively covering P1–P9 — both spots now cite P10 and note the transitive chain.
 

@@ -115,6 +115,8 @@ Verdict: ✅ PROCEED
 
 - Wave 5 — integration harness (P10) — 2026-07-22 — P10 done — commits d694c9c (T3 testscript + E2E-1/E2E-4 + cc-coverage + statusline perf, 48 tests), a0ffc38 (doctor bare-version wiring fix the harness surfaced) — make check green — P13 SPLIT OUT to wave 6 (needs a lead-built binary command-catalog entry point — none exists; §7.7 generate-then-diff mechanism also absent). T3 shipped as a two-mode split (txtar for read verbs, direct-construction Go tests for write verbs — built binary not FakeHost-injectable); zero ci.yml edit (runs under `go test ./...`); specs 10 §11 amended; 2 backlog rows (spacefixture participants seed, doctor dev-build version UX). Audit rides S8 (test-only). — details: plans/10-integration-tests.plan.md
 
+- Wave 6 — MCP surface (P14) — 2026-07-22 — P14 done — commits a92cf2c (ContractSubcommands SSOT export), 73a5aed (internal/mcp stdio JSON-RPC server + §7.7 tool set + cmd/a2a parity/equivalence + wire mcp line), 7dc6327 (statusline perf gate robust under -race) — make check green — 75 mcp + 43 cmd/a2a tests, coverage 71.2%, internal/mcp NEVER imports internal/cli (proven); parity bijection (two-level subset-map) + per-write-verb byte-equivalence (23 funnel writers modulo volatile tokens) + CC-093 all green; live `a2a mcp` serves stdio JSON-RPC. Deviations in spec 14 §11 (no ci.yml narrowing, parity-is-a-test-not-generator → spec 13 amended, equivalence-modulo-tokens, first-space wiring); 3 backlog rows (mcp first-space, eager-clone, funnel version-stamp). Audit dispatched. — details: plans/14-mcp-surface.plan.md
+
 ## Revisions (user feedback loop)
 
 ## Closeout
