@@ -2,6 +2,7 @@
 
 **Slug**: `v1-min-2026-07`  ·  **Track**: docs  ·  **Status**: draft
 **Created**: 2026-07-21  ·  **Owner**: yura
+**Plan**: [plans/13-agent-skill.plan.md](../plans/13-agent-skill.plan.md)
 **Footprint**: `skill/**` (new top-level dir, this repo — the ONE editable
 home for the skill/rules prose per D-015/§8.8); one CI job edit on the
 product-repo CI workflow established by P1 (exact workflow file path is P1's
@@ -205,5 +206,24 @@ decision, not plan ambiguity — recorded as a narrowing, not a Q.
   must build the catalog-emitting entry point (a lead-designed `internal/cli`/
   `cmd/a2a` seam that enumerates verbs + MCP tools) from scratch.** This is a
   known wave-7 prerequisite, not a spec defect in P13 itself.
+
+### 2026-07-22 — from wave 7 (P13): catalog seam RESOLVED to cmd/a2a-only — §7/§Footprint stand
+
+- The wave-6 amendment above predicted "a lead-designed `internal/cli`/`cmd/a2a`
+  seam ... from scratch", which read as a threat to §7/§Footprint's "No
+  `internal/*` Go package is created or modified". The lead resolution keeps the
+  entire catalog-emit seam in `cmd/a2a`: a hidden `a2a __catalog` verb builds
+  the catalog by constructing each `cli.Command` with nil/stub deps (the P14
+  `emptyRegistry()` precedent) to READ `Name()`+`Synopsis()`, expands `contract`
+  via `cli.ContractSubcommands()`, and reads MCP tools from
+  `mcp.BuildRegistry(...).List()`. `cmd/a2a` already imports both packages, so
+  **no `internal/*` source file is created or modified** — §7 and §Footprint
+  remain literally TRUE, no footprint widening needed. The only touch outside
+  new `cmd/a2a` files is a one-line `mcpExcludedVerbs` addition in
+  `cmd/a2a/mcp_parity_test.go` (`__catalog` is a CLI-only meta verb, like
+  `version`/`mcp`) — an exclusion, not a rewrite of the P14 bijection logic.
+- Synopses are read from `cli.Command.Synopsis()`, never re-typed, so the drift
+  guard is a name-set parity test (catalog CLI section ⇆ `buildCommands()` keys,
+  two-level) — it composes transitively with P14's dispatch⇆mcp bijection.
 
 <!-- ### YYYY-MM-DD — from wave N: <what changed & why> -->

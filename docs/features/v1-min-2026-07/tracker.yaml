@@ -126,6 +126,7 @@ phases:
     title: Minimal a2ahub expert skill + agent rules (D-015)
     status: pending
     spec: specs/13-agent-skill.md
+    plan: plans/13-agent-skill.plan.md
     blocked_by: [P7]
     commits: []
     audit: open
