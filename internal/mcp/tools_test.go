@@ -8,10 +8,11 @@ import (
 )
 
 // TestBuildRegistryExpectedToolCount proves BuildRegistry registers
-// exactly the §7.7-designated tool set: 6 read + new + submit + 19
-// lifecycle + 6 contract sub-verbs = 33 tools. cmd/a2a/mcp_parity_test.go
-// is the authoritative bijection check against the CLI's own verb set;
-// this is a package-local sanity count.
+// exactly the P15 capability-grouped tool set: a2a_read + a2a_new +
+// a2a_submit + a2a_lifecycle + a2a_exchange + a2a_contract = 6 tools (spec
+// 15 §T1/§8 AC #1). cmd/a2a/mcp_parity_test.go is the authoritative
+// capability-parity check against the CLI's own verb set; this is a
+// package-local sanity count.
 func TestBuildRegistryExpectedToolCount(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
@@ -23,24 +24,29 @@ func TestBuildRegistryExpectedToolCount(t *testing.T) {
 
 	registry := BuildRegistry(store, write, mirrorDir, legality, newDeps)
 	names := registry.ToolNames()
-	const want = 6 + 1 + 1 + 19 + 6
-	if len(names) != want {
-		t.Fatalf("expected %d tools, got %d: %v", want, len(names), names)
+	want := []string{
+		"a2a_contract", "a2a_exchange", "a2a_lifecycle",
+		"a2a_new", "a2a_read", "a2a_submit",
+	}
+	if len(names) != len(want) {
+		t.Fatalf("expected %d tools, got %d: %v", len(want), len(names), names)
+	}
+	for i, name := range want {
+		if names[i] != name {
+			t.Fatalf("tool set mismatch: want %v, got %v", want, names)
+		}
 	}
 
-	mustHave := []string{
+	// The per-verb tool names P14 shipped must NO LONGER be registered —
+	// they are folded into the grouped tools' action/view enums.
+	removed := []string{
 		"a2a_inbox", "a2a_outbox", "a2a_show", "a2a_thread", "a2a_search", "a2a_contracts",
-		"a2a_new", "a2a_submit",
-		"a2a_ack", "a2a_accept", "a2a_decline", "a2a_start", "a2a_block", "a2a_unblock",
-		"a2a_cancel", "a2a_close", "a2a_withdraw", "a2a_supersede", "a2a_satisfy",
-		"a2a_approve", "a2a_reject", "a2a_verify_pass", "a2a_verify_fail",
-		"a2a_respond", "a2a_verify", "a2a_dispute", "a2a_note",
-		"a2a_contract_new", "a2a_contract_publish", "a2a_contract_deprecate",
-		"a2a_contract_retire", "a2a_contract_diff", "a2a_contract_verify_export",
+		"a2a_ack", "a2a_accept", "a2a_respond", "a2a_verify", "a2a_dispute", "a2a_note",
+		"a2a_contract_new", "a2a_contract_publish",
 	}
-	for _, name := range mustHave {
-		if _, ok := registry.Get(name); !ok {
-			t.Errorf("expected tool %q to be registered", name)
+	for _, name := range removed {
+		if _, ok := registry.Get(name); ok {
+			t.Errorf("expected folded tool %q to be ABSENT (now an action/view of a grouped tool)", name)
 		}
 	}
 

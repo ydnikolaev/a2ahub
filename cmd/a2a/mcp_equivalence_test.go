@@ -1,7 +1,12 @@
 package main
 
-// mcp_equivalence_test.go is the per-write-verb CLI≡MCP event/commit
-// equivalence suite (spec 14 §8 AC #4) plus CC-093 (AC #5). It lives in
+// mcp_equivalence_test.go is the per-(tool, action) CLI≡MCP event/commit
+// equivalence suite (spec 15 §T2 / §8 AC #2, reparameterizing P14's
+// per-write-verb suite) plus CC-093 (AC #5). Each write verb is now driven
+// through its GROUPED tool + action discriminator (marshalWithAction injects
+// `action`; the grouped dispatch forwards the ORIGINAL args to the same
+// per-verb sub-handler, which ignores the extra field) and still asserted
+// byte-identical (modulo volatile tokens) to the CLI verb. It lives in
 // package main (cmd/a2a) because ADR-001 grants cmd/a2a import of BOTH
 // internal/cli and internal/mcp — internal/mcp itself is structurally
 // forbidden from importing internal/cli (plan 14 Placement decisions).
@@ -269,19 +274,44 @@ func runCLICommand(t *testing.T, cmd cli.Command, args []string) {
 	}
 }
 
-func runMCPHandler(t *testing.T, registry *mcp.Registry, tool string, input any) {
+// runMCPHandler invokes a grouped tool's handler through the SAME path a
+// real tools/call takes: it marshals input, injects the action discriminator
+// (empty action => an action-free tool like a2a_new / a2a_submit), and calls
+// the registered dispatch handler. The grouped dispatch reads only the
+// discriminator and forwards the ORIGINAL args to the per-verb sub-handler,
+// which ignores the extra field — so the funnel path stays byte-identical.
+func runMCPHandler(t *testing.T, registry *mcp.Registry, tool, action string, input any) {
 	t.Helper()
 	spec, ok := registry.Get(tool)
 	if !ok {
 		t.Fatalf("tool %q is not registered", tool)
 	}
-	raw, err := json.Marshal(input)
+	raw, err := marshalWithAction(action, input)
 	if err != nil {
 		t.Fatalf("marshal input for %s: %v", tool, err)
 	}
 	if _, _, err := spec.Handler(context.Background(), raw); err != nil {
-		t.Fatalf("%s: handler returned an error: %v", tool, err)
+		t.Fatalf("%s (action=%q): handler returned an error: %v", tool, action, err)
 	}
+}
+
+// marshalWithAction marshals input and, when action is non-empty, injects an
+// `"action"` discriminator alongside the input's own fields — the exact
+// payload shape a grouped-tool caller sends.
+func marshalWithAction(action string, input any) (json.RawMessage, error) {
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+	if action == "" {
+		return raw, nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	m["action"] = action
+	return json.Marshal(m)
 }
 
 // --- the 15 generic table-driven lifecycle verbs -------------------------
@@ -495,8 +525,7 @@ func TestEquivGenericLifecycleVerbs(t *testing.T) {
 				Now:          time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 			}
 			registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
-			toolName := "a2a_" + strings.ReplaceAll(tc.verb, "-", "_")
-			runMCPHandler(t, registry, toolName, tc.mcpInput)
+			runMCPHandler(t, registry, "a2a_lifecycle", tc.verb, tc.mcpInput)
 			if len(mcpFunnel.calls) != 1 {
 				t.Fatalf("%s: expected exactly 1 MCP funnel call, got %d", tc.verb, len(mcpFunnel.calls))
 			}
@@ -560,7 +589,7 @@ func TestEquivRespond(t *testing.T) {
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}
 	registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
-	runMCPHandler(t, registry, "a2a_respond", mcp.RespondInput{ParentIDs: []string{parentID}, Result: "answered"})
+	runMCPHandler(t, registry, "a2a_exchange", "respond", mcp.RespondInput{ParentIDs: []string{parentID}, Result: "answered"})
 	if len(mcpFunnel.calls) != 1 {
 		t.Fatalf("respond: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
 	}
@@ -620,7 +649,7 @@ func TestEquivVerify(t *testing.T) {
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}
 	registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
-	runMCPHandler(t, registry, "a2a_verify", mcp.VerifyInput{Targets: []string{mcpResponseID}})
+	runMCPHandler(t, registry, "a2a_exchange", "verify", mcp.VerifyInput{Targets: []string{mcpResponseID}})
 	if len(mcpFunnel.calls) != 1 {
 		t.Fatalf("verify: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
 	}
@@ -665,7 +694,7 @@ func TestEquivDispute(t *testing.T) {
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}
 	registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
-	runMCPHandler(t, registry, "a2a_dispute", mcp.DisputeInput{IDs: []string{mcpResponseID}, Reason: "wrong answer"})
+	runMCPHandler(t, registry, "a2a_exchange", "dispute", mcp.DisputeInput{IDs: []string{mcpResponseID}, Reason: "wrong answer"})
 	if len(mcpFunnel.calls) != 1 {
 		t.Fatalf("dispute: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
 	}
@@ -691,7 +720,7 @@ func TestEquivNote(t *testing.T) {
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}
 	registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
-	runMCPHandler(t, registry, "a2a_note", mcp.NoteInput{IDs: []string{id}, Note: "fyi"})
+	runMCPHandler(t, registry, "a2a_exchange", "note", mcp.NoteInput{IDs: []string{id}, Note: "fyi"})
 
 	assertRequestsEquivalent(t, "note", cliFunnel.calls[0], mcpFunnel.calls[0])
 }
@@ -735,7 +764,7 @@ func TestEquivSubmit(t *testing.T) {
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}
 	registry := mcp.BuildRegistry(nil, writeDeps, mcpStaging, legalityForMCP, mcp.NewDeps{})
-	runMCPHandler(t, registry, "a2a_submit", mcp.SubmitInput{IDs: []string{id}})
+	runMCPHandler(t, registry, "a2a_submit", "", mcp.SubmitInput{IDs: []string{id}})
 	if len(mcpFunnel.calls) != 1 {
 		t.Fatalf("submit: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
 	}
@@ -769,7 +798,7 @@ func TestEquivNew(t *testing.T) {
 		ResolveActor: equivMCPActorResolver("agent", "bot"), WriteFile: os.WriteFile,
 	}
 	registry := mcp.BuildRegistry(nil, mcp.WriteDeps{}, "", nil, newDeps)
-	runMCPHandler(t, registry, "a2a_new", mcp.NewInput{Items: []mcp.NewItem{{Type: "question", Fields: map[string]string{"to": "axon"}}}})
+	runMCPHandler(t, registry, "a2a_new", "", mcp.NewInput{Items: []mcp.NewItem{{Type: "question", Fields: map[string]string{"to": "axon"}}}})
 	mcpEntries, err := os.ReadDir(mcpStaging)
 	if err != nil || len(mcpEntries) != 1 {
 		t.Fatalf("new (MCP): expected exactly 1 staged draft, got %v (err=%v)", mcpEntries, err)
@@ -814,7 +843,7 @@ func TestEquivContractPublish(t *testing.T) {
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}
 	registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
-	runMCPHandler(t, registry, "a2a_contract_publish", mcp.ContractPublishInput{ID: id, Version: "1.0.0"})
+	runMCPHandler(t, registry, "a2a_contract", "publish", mcp.ContractPublishInput{ID: id, Version: "1.0.0"})
 	if len(mcpFunnel.calls) != 1 {
 		t.Fatalf("contract publish: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
 	}
@@ -846,7 +875,7 @@ func TestEquivContractDeprecate(t *testing.T) {
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}
 	registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
-	runMCPHandler(t, registry, "a2a_contract_deprecate", mcp.ContractDeprecateInput{ID: id, Successor: "XC-axon-widget-d002-next@1.0.0", Sunset: "2099-01-01"})
+	runMCPHandler(t, registry, "a2a_contract", "deprecate", mcp.ContractDeprecateInput{ID: id, Successor: "XC-axon-widget-d002-next@1.0.0", Sunset: "2099-01-01"})
 	if len(mcpFunnel.calls) != 1 {
 		t.Fatalf("contract deprecate: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
 	}
@@ -879,7 +908,7 @@ func TestEquivContractRetire(t *testing.T) {
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}
 	registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
-	runMCPHandler(t, registry, "a2a_contract_retire", mcp.ContractRetireInput{ID: id})
+	runMCPHandler(t, registry, "a2a_contract", "retire", mcp.ContractRetireInput{ID: id})
 	if len(mcpFunnel.calls) != 1 {
 		t.Fatalf("contract retire: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
 	}
@@ -911,7 +940,7 @@ func TestEquivContractNew(t *testing.T) {
 		ResolveActor: equivMCPActorResolver("agent", "bot"), WriteFile: os.WriteFile,
 	}
 	registry := mcp.BuildRegistry(nil, mcp.WriteDeps{}, "", nil, newDeps)
-	runMCPHandler(t, registry, "a2a_contract_new", mcp.ContractNewInput{Slug: "widget-equiv"})
+	runMCPHandler(t, registry, "a2a_contract", "new", mcp.ContractNewInput{Slug: "widget-equiv"})
 	mcpEntries, err := os.ReadDir(mcpStaging)
 	if err != nil || len(mcpEntries) != 1 {
 		t.Fatalf("contract new (MCP): expected 1 staged draft, got %v (err=%v)", mcpEntries, err)
@@ -973,11 +1002,14 @@ func TestEquivContractDiffAndVerifyExportAreReadOnly(t *testing.T) {
 
 	writeDeps := mcp.WriteDeps{MirrorDir: mirrorDir, OwnSystem: "axon", Manifest: equivManifest()}
 	registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
-	spec, ok := registry.Get("a2a_contract_diff")
+	spec, ok := registry.Get("a2a_contract")
 	if !ok {
-		t.Fatal("a2a_contract_diff not registered")
+		t.Fatal("a2a_contract not registered")
 	}
-	raw, _ := json.Marshal(mcp.ContractDiffInput{ID: id, V1: "1.0.0", V2: "1.1.0"})
+	raw, err := marshalWithAction("diff", mcp.ContractDiffInput{ID: id, V1: "1.0.0", V2: "1.1.0"})
+	if err != nil {
+		t.Fatalf("marshal contract diff input: %v", err)
+	}
 	result, _, err := spec.Handler(context.Background(), raw)
 	if err != nil {
 		t.Fatalf("contract diff (MCP): %v", err)
