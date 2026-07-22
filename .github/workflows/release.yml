@@ -1,24 +1,16 @@
-# Release (P16, §7.3 / D-013): on a `v*` tag, cross-build the single `a2a`
-# binary for the first-class targets and publish a GitHub release whose asset
-# names TWO live consumers fetch VERBATIM: (1) the space CI gate
-# (space-template's a2a-validate job does `gh release download --pattern
-# 'a2a-linux-amd64'`); (2) `a2a update` — internal/release.Download fetches
-# `a2a-<runtime.GOOS>-<runtime.GOARCH>` + `SHA256SUMS` and swaps it (v1-min P19).
-# The asset naming `a2a-<os>-<arch>` + the `SHA256SUMS` filename + the per-asset
-# `.cosign.bundle` are therefore a BEHAVIOR CONTRACT — do not rename without
-# updating a2a-validate.yml AND internal/release in lockstep. NB the publish-prep
-# epic (goreleaser, tar.gz archives + checksums.txt) REPLACES this file and would
-# break both consumers — see features/publish-prep-2026-07/specs/02 §7 first.
+# Release (publish-prep-2026-07 P2 — REPLACES P16's release.yml, keeps the
+# FILENAME so the future sigstore-cosign backlog verifier's OIDC identity
+# path `.../release.yml@refs/tags/<tag>` still resolves). Cuts a GitHub
+# release with GoReleaser whenever a `v*.*.*` tag lands.
 #
-# SIGNING: keyless cosign (Sigstore OIDC) — signs each asset using the GitHub
-# Actions workflow identity, NO secrets/keys to manage. Signatures + certs are
-# uploaded as `.cosign.bundle` assets and logged in the Rekor transparency log.
-# This is supply-chain hygiene; it is NOT D-013's "public key pinned in the
-# binary, verified by `a2a update`" model — that verifier (OP-217) does not
-# exist in the binary yet, so pinned-key verification is a future phase (see
-# docs/backlog.md). Signing is BEST-EFFORT here: if it fails on this (untested)
-# pipeline, the release still ships, unsigned.
-name: release
+# §7 OPTION 1 preserved (publish-prep-2026-07 spec 02 §7, plan P2): the
+# .goreleaser.yaml this workflow drives still produces the raw
+# `a2a-<os>-<arch>` binary + `SHA256SUMS` + a per-asset `.cosign.bundle`
+# ALONGSIDE the new human-facing tar.gz/zip archives — the two LIVE
+# consumers (`a2a update` / internal/release.Download, and the getvisa space
+# CI gate's `gh release download --pattern 'a2a-linux-amd64'`) keep working
+# unchanged.
+name: Release
 
 on:
   push:
@@ -26,70 +18,46 @@ on:
       - "v*.*.*"
 
 permissions:
-  contents: write # create the release + upload assets
-  id-token: write # keyless cosign OIDC identity
+  contents: write # goreleaser creates the GitHub Release
+  id-token: write # mint the OIDC token for keyless Sigstore signing (cosign + attestations)
+  attestations: write # persist the build-provenance attestation to GitHub
 
 jobs:
-  release:
+  goreleaser:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # GoReleaser's changelog needs the full history, not the default shallow clone.
+          fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
 
-      - name: Cross-build the first-class targets
+      # cosign is NOT preinstalled on the runner — the .goreleaser.yaml `signs`
+      # block (keyless per-asset sign-blob) fails without it.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # syft is NOT preinstalled either — the `sboms` block needs it. The
+      # download-syft sub-action is lighter than the full sbom-action when
+      # goreleaser only needs the binary.
+      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
         env:
-          # Tag- and commit-controlled values via env (never interpolated
-          # directly into the run script) — the ${{ }} → env → "$VAR" pattern.
-          TAG: ${{ github.ref_name }}
-          COMMIT: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          # Stamp the BARE dotted version (strip the tag's leading "v") so
-          # main.version matches space.yaml's bare `min_binary_version`
-          # exactly — the version parsers tolerate a "v", but a clean stamp
-          # removes all doubt (mirrors the P10 doctor bare-version fix).
-          VERSION="${TAG#v}"
-          mkdir -p dist
-          # darwin/arm64 + linux/amd64 first (§7.3); linux/arm64 + darwin/amd64
-          # for completeness. CGO off → static, portable binaries.
-          for t in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64; do
-            os="${t%/*}"; arch="${t#*/}"
-            echo "building a2a-${os}-${arch} (version=${VERSION} commit=${COMMIT})"
-            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
-              go build -trimpath \
-              -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
-              -o "dist/a2a-${os}-${arch}" ./cmd/a2a
-          done
-          (cd dist && sha256sum a2a-* > SHA256SUMS)
-          ls -l dist
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3
-
-      - name: Sign assets (keyless, best-effort)
-        continue-on-error: true # an untested signer must never block the release
-        run: |
-          set -euo pipefail
-          for f in dist/a2a-* dist/SHA256SUMS; do
-            cosign sign-blob --yes "$f" --bundle "${f}.cosign.bundle"
-          done
-          echo "signed: $(ls dist/*.cosign.bundle 2>/dev/null | wc -l) asset(s)"
-
-      - name: Publish GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          # Upload every artifact present (binaries + SHA256SUMS + any
-          # .cosign.bundle that the best-effort signer produced).
-          gh release create "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$TAG" \
-            --generate-notes \
-            dist/*
+      # SLSA build provenance for every artifact goreleaser hashed into
+      # dist/SHA256SUMS (our checksum filename — see .goreleaser.yaml's
+      # `checksum.name_template`, NOT sporo's `checksums.txt`) — one
+      # attestation call covers the whole release. Must run AFTER goreleaser,
+      # which produces that file. Users verify with
+      # `gh attestation verify <file> -R ydnikolaev/a2ahub`.
+      - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-checksums: ./dist/SHA256SUMS

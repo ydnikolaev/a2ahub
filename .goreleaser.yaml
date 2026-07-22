@@ -1,0 +1,173 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+#
+# Cross-compiles the `a2a` CLI and cuts a GitHub release. Ported from sporo's
+# .goreleaser.yaml (verified against the current goreleaser docs, v2.17.0),
+# adapted for a2ahub's §7 OPTION 1 (publish-prep-2026-07 spec 02 §7): TWO live
+# consumers — `a2a update` (internal/release.Download/ChecksumVerifier, P19)
+# and the getvisa space CI gate (`a2a-validate.yml`) — fetch the RAW
+# `a2a-<os>-<arch>` binary + `SHA256SUMS` + a per-asset `.cosign.bundle`
+# VERBATIM. Those three are therefore produced ALONGSIDE the human-facing
+# tar.gz/zip archives, not replaced by them. Do not rename/remove them without
+# migrating internal/release AND space-template/a2a-validate.yml in lockstep.
+version: 2
+
+project_name: a2a
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: a2a
+    main: ./cmd/a2a
+    binary: a2a
+    env:
+      # Static binary, no cgo toolchain needed on any of the cross-compile targets.
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      # a2ahub ADDS this over sporo: strips local filesystem paths from the
+      # compiled binary (reproducible-build hygiene) — sporo lacks it today.
+      - -trimpath
+    ldflags:
+      # main.version + main.commit both exist in cmd/a2a/main.go already
+      # (versionStamp() reads them) — unlike sporo, where main.version was a
+      # todo. main.commit is the a2ahub addition over sporo's ldflags line.
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .Commit }}
+
+archives:
+  # Human-facing download: tar.gz everywhere, zip on Windows (the archive
+  # format the tools already on each OS expect). Plural `formats:` — the
+  # singular `format:` key is deprecated as of the current schema
+  # (goreleaser.com/deprecations).
+  - id: default
+    ids: [a2a]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      a2a_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+  # §7 OPTION 1 core: a SECOND archives entry with `formats: [binary]` skips
+  # archive wrapping entirely and uploads the raw compiled binary under
+  # name_template as-is (confirmed against the current goreleaser schema:
+  # "binary" is a first-class archive format value, not an override-only
+  # option) — this is what keeps `a2a update`'s internal/release.Download
+  # (`a2a-<runtime.GOOS>-<runtime.GOARCH>`) and the space CI's
+  # `gh release download --pattern 'a2a-linux-amd64'` working unchanged.
+  # sporo has no equivalent of this stanza.
+  - id: raw
+    ids: [a2a]
+    formats: [binary]
+    name_template: >-
+      a2a-{{ .Os }}-{{ .Arch }}
+
+checksum:
+  # `SHA256SUMS`, NOT sporo's `checksums.txt` — internal/release/verifier.go
+  # (ChecksumVerifier) hard-codes this exact filename. The single SHA256SUMS
+  # file lists BOTH the archives and the raw `a2a-<os>-<arch>` binaries;
+  # ChecksumVerifier's parser only ever looks up the one line it needs
+  # (`<sha256>  a2a-<os>-<arch>`), so the extra archive lines are harmless.
+  name_template: "SHA256SUMS"
+
+# cosign KEYLESS (Sigstore OIDC) signing, PER-ASSET — NOT sporo's
+# checksum-only signing. This is the P16 contract §7 preserves: the (future)
+# sigstore-cosign backlog verifier (T2) expects one `.cosign.bundle` per
+# asset, named `<asset>.cosign.bundle` (internal/release/download.go:
+# `asset.Name + ".cosign.bundle"`), with the OIDC identity pinned to
+# `.../release.yml@refs/tags/<tag>` — hence this workflow file keeps the
+# `release.yml` name through the goreleaser swap. `--yes` is modern GA
+# keyless (the old COSIGN_EXPERIMENTAL=1 is obsolete). Requires cosign on the
+# runner (release.yml installs it via sigstore/cosign-installer) and
+# `id-token: write`.
+signs:
+  - cmd: cosign
+    signature: "${artifact}.cosign.bundle"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: all
+    output: true
+
+# syft SBOMs. The defaults (cmd: syft, spdx-json output, one document per
+# archive named {{ .ArtifactName }}.sbom.json) are what we want, so the
+# archive entry needs no fields. Only `artifacts: archive` — a `source` entry
+# would need `source.enabled: true` (a source tarball we don't publish
+# today), so it's deliberately omitted rather than left to no-op. Requires
+# syft on the runner (release.yml installs it via anchore/sbom-action/download-syft).
+sboms:
+  - artifacts: archive
+
+changelog:
+  # `use: git` (the default) — not `use: github` — so this doesn't need
+  # GitHub API reachability to build release notes, which matters while the
+  # repo is private and CI has nothing but the default GITHUB_TOKEN.
+  sort: asc
+  # Shorten the commit SHA in each line (the default is the full 40 chars,
+  # which reads as noise jammed against the message). The site further wraps
+  # it in a monospace chip.
+  abbrev: 7
+  # No `filters.exclude`: bare `^docs:`/`^chore:` never matches the SCOPED
+  # commits this repo writes (`docs(v1-min):`, `fix(v1-min):`), so they leak
+  # into Other anyway — and the intent is to SHOW the small stuff under
+  # "Other changes", not to hide it.
+  groups:
+    # GoReleaser matches these against the commit subject (`feat(cli): …`),
+    # which has no SHA prefix — a bare `^[a-f0-9]+` anchor would consume the
+    # leading "fea"/"fi" and never match. The optional `[0-9a-f]{7,40}`
+    # prefix tolerates either form (hash-prefixed or bare subject).
+    - title: Features
+      regexp: '(?i)^([0-9a-f]{7,40}\s+)?feat(\([^)]+\))?!?:'
+      order: 0
+    - title: Fixes
+      regexp: '(?i)^([0-9a-f]{7,40}\s+)?fix(\([^)]+\))?!?:'
+      order: 1
+    - title: Other changes
+      order: 999
+
+release:
+  github:
+    owner: ydnikolaev
+    name: a2ahub
+  # The repo is private for now: this still works because GITHUB_TOKEN in
+  # the release workflow has repo-scoped write access regardless of
+  # visibility.
+  #
+  # The header lists BOTH the human-facing archive names AND calls out that
+  # `a2a update` / the space CI fetch the raw `a2a-<os>-<arch>` assets
+  # automatically — the reader's actual question is "which file is mine?",
+  # answered before the asset list.
+  header: |
+    ### Which file do I download?
+
+    | your machine | file |
+    |---|---|
+    | **macOS on Apple Silicon** (M1/M2/M3/M4) | `a2a_{{ .Version }}_darwin_arm64.tar.gz` |
+    | **macOS on Intel** | `a2a_{{ .Version }}_darwin_amd64.tar.gz` |
+    | Linux x86-64 | `a2a_{{ .Version }}_linux_amd64.tar.gz` |
+    | Linux ARM64 | `a2a_{{ .Version }}_linux_arm64.tar.gz` |
+    | Windows x86-64 | `a2a_{{ .Version }}_windows_amd64.zip` |
+    | Windows ARM64 | `a2a_{{ .Version }}_windows_arm64.zip` |
+
+    Not sure which Mac you have?  → Apple menu → "About This Mac": a chip that
+    says "Apple M…" means `arm64`; "Intel" means `amd64`.
+
+    **macOS, one-time:** the pre-release binary is unsigned, so after
+    unpacking run `xattr -d com.apple.quarantine ./a2a`, then move it onto
+    your PATH (e.g. `mv a2a /usr/local/bin/`). Verify with `a2a version`.
+
+    `a2a update` and CI (the space validation gate) fetch the raw
+    `a2a-<os>-<arch>` binary + `SHA256SUMS` + `<asset>.cosign.bundle` assets
+    below automatically — you don't need to grab those by hand.
+
+# No `homebrew_casks` block — out of this epic's scope (see the plan's
+# "OMIT the entire homebrew_casks block" instruction). Revisit in a later
+# phase if/when a homebrew-tap token exists.
