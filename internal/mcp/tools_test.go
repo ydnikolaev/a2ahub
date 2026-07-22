@@ -16,7 +16,7 @@ import (
 func TestBuildRegistryExpectedToolCount(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
-	store := cache.NewStore("beta", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+	store := cache.NewStore("beta", t.TempDir(), nil, time.Now, 0)
 	fake := &fakeFunnel{}
 	write := testWriteDeps(mirrorDir, fake)
 	legality := NewLegalityAdapter(mirrorDir, "beta", testManifest())

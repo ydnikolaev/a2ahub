@@ -504,7 +504,6 @@ func genericVerbEquivCases() []genericVerbEquivCase {
 func TestEquivGenericLifecycleVerbs(t *testing.T) {
 	t.Parallel()
 	for _, tc := range genericVerbEquivCases() {
-		tc := tc
 		t.Run(tc.verb, func(t *testing.T) {
 			t.Parallel()
 

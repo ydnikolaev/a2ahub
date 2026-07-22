@@ -52,7 +52,6 @@ func TestNewLayoutRejectsInvalidSystemID(t *testing.T) {
 
 	cases := []string{"", "Axon", "axon-mirror", "axon_mirror", "über"}
 	for _, sys := range cases {
-		sys := sys
 		t.Run(sys, func(t *testing.T) {
 			t.Parallel()
 			_, err := NewLayout(sys)
@@ -67,7 +66,6 @@ func TestNewLayoutAcceptsValidSystemID(t *testing.T) {
 	t.Parallel()
 
 	for _, sys := range []string{"axon", "seomatrix", "sys2"} {
-		sys := sys
 		t.Run(sys, func(t *testing.T) {
 			t.Parallel()
 			l, err := NewLayout(sys)

@@ -20,7 +20,7 @@ import (
 func dispatchTestRegistry(t *testing.T) *Registry {
 	t.Helper()
 	mirrorDir := t.TempDir()
-	store := cache.NewStore("beta", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+	store := cache.NewStore("beta", t.TempDir(), nil, time.Now, 0)
 	write := testWriteDeps(mirrorDir, &fakeFunnel{})
 	legality := NewLegalityAdapter(mirrorDir, "beta", testManifest())
 	newDeps := testNewDeps(t.TempDir())
@@ -61,7 +61,6 @@ func TestDispatchEnumValuesReachAHandler(t *testing.T) {
 		{"a2a_contract", "action", ContractActions},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.tool, func(t *testing.T) {
 			t.Parallel()
 			for _, val := range tc.enum {

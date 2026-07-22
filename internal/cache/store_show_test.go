@@ -52,7 +52,7 @@ func TestShow_DigestMismatchWarningNonBlocking(t *testing.T) {
 func TestShow_RefNotFound(t *testing.T) {
 	t.Parallel()
 	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"})
-	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, Manifest: mustManifest(t, fx)}}, func() time.Time { return time.Now() }, 0)
+	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, Manifest: mustManifest(t, fx)}}, time.Now, 0)
 	_, err := store.Show(context.Background(), "XW-axon-20260701-nope")
 	if err == nil {
 		t.Fatal("Show: want error for unknown ref, got nil")

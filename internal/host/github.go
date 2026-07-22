@@ -260,14 +260,14 @@ func (h *GitHubHost) doJSON(ctx context.Context, op, method, url string, cred Cr
 	if body != nil {
 		raw, err := json.Marshal(body)
 		if err != nil {
-			return &Error{Op: op, Err: fmt.Errorf("%w: encode request: %v", ErrRequestFailed, err)}
+			return &Error{Op: op, Err: fmt.Errorf("%w: encode request: %w", ErrRequestFailed, err)}
 		}
 		reqBody = bytes.NewReader(raw)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
-		return &Error{Op: op, Err: fmt.Errorf("%w: build request: %v", ErrRequestFailed, err)}
+		return &Error{Op: op, Err: fmt.Errorf("%w: build request: %w", ErrRequestFailed, err)}
 	}
 	httpReq.Header.Set("Accept", "application/vnd.github+json")
 	if body != nil {
@@ -279,14 +279,14 @@ func (h *GitHubHost) doJSON(ctx context.Context, op, method, url string, cred Cr
 
 	resp, err := h.Client.Do(httpReq)
 	if err != nil {
-		return &Error{Op: op, Err: fmt.Errorf("%w: %v", ErrRequestFailed, err)}
+		return &Error{Op: op, Err: fmt.Errorf("%w: %w", ErrRequestFailed, err)}
 	}
 	defer func() { _ = resp.Body.Close() }() // reason: response already fully read/discarded below
 
 	limited := io.LimitReader(resp.Body, maxResponseBytes)
 	raw, err := io.ReadAll(limited)
 	if err != nil {
-		return &Error{Op: op, Err: fmt.Errorf("%w: read response: %v", ErrRequestFailed, err)}
+		return &Error{Op: op, Err: fmt.Errorf("%w: read response: %w", ErrRequestFailed, err)}
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -299,7 +299,7 @@ func (h *GitHubHost) doJSON(ctx context.Context, op, method, url string, cred Cr
 		return nil
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
-		return &Error{Op: op, Err: fmt.Errorf("%w: decode response: %v", ErrRequestFailed, err)}
+		return &Error{Op: op, Err: fmt.Errorf("%w: decode response: %w", ErrRequestFailed, err)}
 	}
 	return nil
 }

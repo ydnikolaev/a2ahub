@@ -198,7 +198,6 @@ func TestT3LifecycleVerbs(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			fx := spacefixture.New(t, "axon", "beta", "gamma")

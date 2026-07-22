@@ -345,7 +345,6 @@ func TestValidateCI_UsageErrors(t *testing.T) {
 		{"pr without base", "v3-pr", ""},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var out, errBuf bytes.Buffer

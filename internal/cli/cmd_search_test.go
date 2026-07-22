@@ -14,7 +14,7 @@ func TestSearchCommand_ZeroHitsNotError(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	manifest := cliWriteManifest(t, dir, "axon")
-	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}}, func() time.Time { return time.Now() }, 0)
+	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}}, time.Now, 0)
 	cmd := cli.NewSearchCommand(store)
 
 	io, out, _ := newIO()
@@ -33,7 +33,7 @@ func TestSearchCommand_ZeroHitsNotError(t *testing.T) {
 
 func TestSearchCommand_UsageError(t *testing.T) {
 	t.Parallel()
-	store := cache.NewStore("axon", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)
 	cmd := cli.NewSearchCommand(store)
 	io, _, _ := newIO()
 	if code := cmd.Run(context.Background(), nil, io); code != 2 {
@@ -73,7 +73,7 @@ func TestContractsCommand_ProviderFilter(t *testing.T) {
 
 func TestContractsCommand_UsageError(t *testing.T) {
 	t.Parallel()
-	store := cache.NewStore("axon", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)
 	cmd := cli.NewContractsCommand(store)
 	io, _, _ := newIO()
 	if code := cmd.Run(context.Background(), []string{"unexpected"}, io); code != 2 {

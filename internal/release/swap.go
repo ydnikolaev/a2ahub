@@ -17,11 +17,11 @@ import (
 // is ever made.
 func Swap(targetPath, newBinaryPath string) error {
 	const op = "Swap"
-	if err := os.Chmod(newBinaryPath, 0o755); err != nil {
-		return &Error{Op: op, Input: newBinaryPath, Err: fmt.Errorf("%w: %v", ErrSwapFailed, err)}
+	if err := os.Chmod(newBinaryPath, 0o755); err != nil { //nolint:gosec // reason: this is the a2a BINARY being swapped into place — it must be executable, not a secret
+		return &Error{Op: op, Input: newBinaryPath, Err: fmt.Errorf("%w: %w", ErrSwapFailed, err)}
 	}
 	if err := os.Rename(newBinaryPath, targetPath); err != nil {
-		return &Error{Op: op, Input: targetPath, Err: fmt.Errorf("%w: %v", ErrSwapFailed, err)}
+		return &Error{Op: op, Input: targetPath, Err: fmt.Errorf("%w: %w", ErrSwapFailed, err)}
 	}
 	return nil
 }

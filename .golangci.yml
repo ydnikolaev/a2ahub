@@ -1,18 +1,19 @@
-# golangci-lint v2 config — sane strict baseline for a2ahub.
+# golangci-lint v2 config — hardened union for a2ahub.
 #
 # `make check` (root Makefile) refuses to run if this file exists but
 # golangci-lint is not installed — a configured gate that silently skips is
 # a hole, not a gate (spec 01-foundation.md §T5).
 #
-# Rationale for the enabled set: govet + staticcheck + unused + ineffassign
-# catch correctness bugs; errcheck enforces the repo's error-flow rail
-# (log-or-return, never silently drop an error); revive enforces exported-
-# symbol doc comments and other stylistic rails without fighting idiomatic
-# Go. Nothing here overrides go vet's own defaults or forces a non-stdlib
-# pattern.
+# This is the union of a2ahub's original baseline (errcheck/govet/ineffassign/
+# staticcheck/unused/revive) with sporo's hardened set (gosec/errorlint/
+# bodyclose/nilerr/nolintlint/…) — P4 of the publish-prep epic (spec
+# 04-lint-coverage.md).
 version: "2"
-
+run:
+  timeout: 5m
+  tests: true
 linters:
+  default: none
   enable:
     - errcheck
     - govet
@@ -20,7 +21,24 @@ linters:
     - staticcheck
     - unused
     - revive
+    - asciicheck
+    - bodyclose
+    - copyloopvar
+    - errorlint
+    - gocheckcompilerdirectives
+    - gochecknoinits
+    - gocritic
+    - gomoddirectives
+    - goprintffuncname
+    - gosec
+    - makezero
+    - nakedret
+    - nilerr
+    - nolintlint
   settings:
+    govet:
+      enable-all: true
+      disable: [fieldalignment, shadow]
     revive:
       rules:
         - name: exported
@@ -28,15 +46,48 @@ linters:
         - name: error-naming
         - name: unused-parameter
         - name: unreachable-code
+    gosec:
+      excludes:
+        - G304 # file path from a variable — a2ahub resolves config/staging/mirror
+               # paths from its own resolved project state (staging dir, mirror
+               # dir, space.yaml locations), not untrusted external input; by
+               # design, not a hole.
+        - G204 # subprocess with variable arguments — the self-update/exec paths
+               # (P19) intentionally exec a resolved local path (the downloaded
+               # release asset), not attacker-controlled input.
+        - G301 # 0755 dirs — a2ahub writes user-facing project/staging/mirror
+               # directories that are meant to be readable, not secrets.
+        - G306 # 0644 files — same: staged drafts / cache / space mirrors are
+               # meant to be readable, 0600 would be wrong for this use case.
+    nakedret:
+      max-func-lines: 30
+    nolintlint:
+      require-explanation: true
+      require-specific: true
   exclusions:
     rules:
-      # Test files trade some rigor (exported-doc-comment nagging on
-      # helpers, unchecked error on t.Fatalf/require-style calls) for
-      # readability; production code still holds the full line.
       - path: _test\.go
-        linters:
-          - revive
-
+        linters: [revive]
+      # gosec: the handful of gosec findings inside _test.go are all
+      # test-fixture-only (a test computing a path under its own t.TempDir(),
+      # seeding math/rand deterministically for a property test, or an
+      # httptest handler echoing the request path back into a LOCAL test
+      # response) — none of them touch real attacker-controlled input.
+      # gosec stays fully live in production (non-test) code.
+      - path: _test\.go
+        linters: [gosec]
+      # nilerr: a2ahub's validate/adapter layer returns validation FAILURES as
+      # DATA ("return violations, nil") by design — a schema/legality/spec
+      # violation is not a Go error, it's the successful result of running the
+      # check. Scoping nilerr off these specific files keeps it live
+      # everywhere else, so a REAL nil-on-error bug still reds.
+      - path: internal/validate/engine\.go
+        linters: [nilerr]
+      - path: internal/cli/adapters\.go
+        linters: [nilerr]
+      - path: internal/mcp/adapters\.go
+        linters: [nilerr]
+      - path: internal/cli/cmd_validate_ci\.go
+        linters: [nilerr]
 formatters:
-  enable:
-    - gofmt
+  enable: [gofmt]

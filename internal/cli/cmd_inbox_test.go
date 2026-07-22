@@ -54,7 +54,7 @@ func TestInboxCommand_JSONOutput(t *testing.T) {
 
 func TestInboxCommand_UsageError(t *testing.T) {
 	t.Parallel()
-	store := cache.NewStore("axon", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)
 	cmd := cli.NewInboxCommand(store)
 	io, _, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{"unexpected-arg"}, io)
@@ -160,7 +160,7 @@ func TestInboxCommand_NoAdvisoryWhenNoticeNotEnabled(t *testing.T) {
 
 func TestInboxCommand_NoConnectedSpacesEmptyJSON(t *testing.T) {
 	t.Parallel()
-	store := cache.NewStore("axon", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)
 	cmd := cli.NewInboxCommand(store)
 	io, out, _ := newIO()
 	code := cmd.Run(context.Background(), []string{"--json"}, io)

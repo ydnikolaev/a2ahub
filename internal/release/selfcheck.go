@@ -42,7 +42,7 @@ func SelfCheckVersion(ctx context.Context, binPath, wantBareVersion string, run 
 
 	out, err := run(ctx, binPath, "version")
 	if err != nil {
-		return &Error{Op: op, Input: binPath, Err: fmt.Errorf("%w: %v", ErrSelfCheckFailed, err)}
+		return &Error{Op: op, Input: binPath, Err: fmt.Errorf("%w: %w", ErrSelfCheckFailed, err)}
 	}
 
 	match := versionStampPattern.FindStringSubmatch(strings.TrimSpace(out))

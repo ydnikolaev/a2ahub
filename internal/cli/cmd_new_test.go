@@ -32,7 +32,6 @@ func TestNewDraftsEveryTypeV1Valid(t *testing.T) {
 	engine := validate.New(corpus)
 
 	for _, typ := range schema.EnvelopeTypes() {
-		typ := typ
 		t.Run(typ, func(t *testing.T) {
 			t.Parallel()
 			stagingDir := filepath.Join(t.TempDir(), "staging")

@@ -60,7 +60,6 @@ func TestTransitionTable(t *testing.T) {
 	})
 
 	for i, r := range rows {
-		i, r := i, r
 		t.Run(rowName(i, r), func(t *testing.T) {
 			t.Parallel()
 			mu.Lock()

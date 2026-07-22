@@ -61,7 +61,7 @@ func TestShowCommand_RefNotFoundError(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	manifest := cliWriteManifest(t, dir, "axon")
-	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}}, func() time.Time { return time.Now() }, 0)
+	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}}, time.Now, 0)
 	cmd := cli.NewShowCommand(store)
 	io, _, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{"XW-axon-nope"}, io)
@@ -75,7 +75,7 @@ func TestShowCommand_RefNotFoundError(t *testing.T) {
 
 func TestShowCommand_UsageError(t *testing.T) {
 	t.Parallel()
-	store := cache.NewStore("axon", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)
 	cmd := cli.NewShowCommand(store)
 	io, _, _ := newIO()
 	code := cmd.Run(context.Background(), nil, io)

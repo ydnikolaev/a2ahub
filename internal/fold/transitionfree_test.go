@@ -32,7 +32,6 @@ func TestTransitionFreeKinds(t *testing.T) {
 		env := rowEnv(KindQuestion)
 		prior := Result{Kind: KindQuestion, State: StateInProgress}
 		for _, actor := range []string{env.From, env.To0()} {
-			actor := actor
 			t.Run(actor, func(t *testing.T) {
 				t.Parallel()
 				note := Event{ULID: "01NOTE00000000000000002", CommitSeq: 1, Subject: env.ID, Transition: TNote, Actor: Actor{System: actor}}
@@ -65,7 +64,6 @@ func TestTransitionFreeKinds(t *testing.T) {
 		t.Parallel()
 		env := Envelope{ID: "XA-acme-fixture", Kind: KindAnnouncement, From: "acme"}
 		for _, from := range []State{StateDraft, StatePublished, StateSuperseded} {
-			from := from
 			t.Run(string(from), func(t *testing.T) {
 				t.Parallel()
 				prior := Result{Kind: KindAnnouncement, State: from}

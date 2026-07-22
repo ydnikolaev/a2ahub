@@ -41,7 +41,6 @@ func TestExactlyOneTemplatePerType(t *testing.T) {
 	}
 
 	for _, typ := range types {
-		typ := typ
 		t.Run(typ, func(t *testing.T) {
 			t.Parallel()
 			if _, err := template.Show(typ); err != nil {
@@ -62,7 +61,6 @@ func TestTemplateFieldsSubsetOfSchema(t *testing.T) {
 	baseProps := schemaProperties(t, "envelope/v1/base.schema.json")
 
 	for _, typ := range schema.EnvelopeTypes() {
-		typ := typ
 		t.Run(typ, func(t *testing.T) {
 			t.Parallel()
 			typeProps := schemaProperties(t, "envelope/v1/"+typ+".schema.json")
@@ -196,7 +194,6 @@ func TestRenderEveryTypeSchemaValid(t *testing.T) {
 	}
 
 	for _, typ := range schema.EnvelopeTypes() {
-		typ := typ
 		t.Run(typ, func(t *testing.T) {
 			t.Parallel()
 			in := fixedInput(typ, prefixes[typ])

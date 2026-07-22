@@ -125,7 +125,6 @@ func TestSecretScan(t *testing.T) {
 		t.Fatal("expected at least one positive secret-corpus fixture")
 	}
 	for _, f := range positiveFiles {
-		f := f
 		t.Run("positive/"+baseName(f), func(t *testing.T) {
 			t.Parallel()
 			raw := readFileForTest(t, f)
@@ -174,7 +173,6 @@ func TestSecretScan(t *testing.T) {
 		t.Fatal("expected at least one negative (benign lookalike) secret-corpus fixture")
 	}
 	for _, f := range negativeFiles {
-		f := f
 		t.Run("negative/"+baseName(f), func(t *testing.T) {
 			t.Parallel()
 			raw := readFileForTest(t, f)

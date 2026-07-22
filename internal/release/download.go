@@ -58,9 +58,9 @@ func Download(ctx context.Context, client *http.Client, token string, rel Releas
 	// 0644, so without this the self-check EACCES-fails on every real run and
 	// no swap can ever complete). Swap re-chmods too, but the self-check runs
 	// first — this is the one that makes the pipeline work in production.
-	if err := os.Chmod(assetPath, 0o755); err != nil {
+	if err := os.Chmod(assetPath, 0o755); err != nil { //nolint:gosec // reason: this is the downloaded a2a BINARY — it must be executable (0600 would make the self-check exec EACCES-fail), not a secret
 		cleanupPaths(assetPath)
-		return DownloadResult{}, &Error{Op: op, Input: assetPath, Err: fmt.Errorf("%w: chmod: %v", ErrDownloadFailed, err)}
+		return DownloadResult{}, &Error{Op: op, Input: assetPath, Err: fmt.Errorf("%w: chmod: %w", ErrDownloadFailed, err)}
 	}
 
 	sumsAsset, ok := findAsset(rel, "SHA256SUMS")
@@ -102,7 +102,7 @@ func fetchAsset(ctx context.Context, client *http.Client, token string, asset As
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return &Error{Op: op, Input: asset.Name, Err: fmt.Errorf("%w: build request: %v", ErrDownloadFailed, err)}
+		return &Error{Op: op, Input: asset.Name, Err: fmt.Errorf("%w: build request: %w", ErrDownloadFailed, err)}
 	}
 	if token != "" {
 		httpReq.Header.Set("Accept", "application/octet-stream")
@@ -111,7 +111,7 @@ func fetchAsset(ctx context.Context, client *http.Client, token string, asset As
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return &Error{Op: op, Input: asset.Name, Err: fmt.Errorf("%w: %v", ErrDownloadFailed, err)}
+		return &Error{Op: op, Input: asset.Name, Err: fmt.Errorf("%w: %w", ErrDownloadFailed, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -124,7 +124,7 @@ func fetchAsset(ctx context.Context, client *http.Client, token string, asset As
 
 	out, err := os.Create(destPath)
 	if err != nil {
-		return &Error{Op: op, Input: destPath, Err: fmt.Errorf("%w: %v", ErrDownloadFailed, err)}
+		return &Error{Op: op, Input: destPath, Err: fmt.Errorf("%w: %w", ErrDownloadFailed, err)}
 	}
 	defer func() { _ = out.Close() }()
 
@@ -133,7 +133,7 @@ func fetchAsset(ctx context.Context, client *http.Client, token string, asset As
 	// the cap makes the downstream checksum verify fail closed — a compromised
 	// host can never stream unbounded bytes into the binary's own directory.
 	if _, err := io.Copy(out, io.LimitReader(resp.Body, maxAssetBytes)); err != nil {
-		return &Error{Op: op, Input: asset.Name, Err: fmt.Errorf("%w: %v", ErrDownloadFailed, err)}
+		return &Error{Op: op, Input: asset.Name, Err: fmt.Errorf("%w: %w", ErrDownloadFailed, err)}
 	}
 	return nil
 }

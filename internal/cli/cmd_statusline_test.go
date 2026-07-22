@@ -11,7 +11,7 @@ import (
 
 func TestStatuslineCommand_SilentZeroNoise(t *testing.T) {
 	t.Parallel()
-	store := cache.NewStore("axon", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)
 	cmd := cli.NewStatuslineCommand(store)
 	io, out, _ := newIO()
 	code := cmd.Run(context.Background(), nil, io)
@@ -46,7 +46,7 @@ func TestStatuslineCommand_P1Severity(t *testing.T) {
 
 func TestStatuslineCommand_UsageError(t *testing.T) {
 	t.Parallel()
-	store := cache.NewStore("axon", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)
 	cmd := cli.NewStatuslineCommand(store)
 	io, _, _ := newIO()
 	if code := cmd.Run(context.Background(), []string{"unexpected"}, io); code != 2 {

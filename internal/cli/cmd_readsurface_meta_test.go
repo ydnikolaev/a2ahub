@@ -14,7 +14,7 @@ import (
 // dispatch table depends on Name() being stable).
 func TestReadSurfaceCommands_NameAndSynopsis(t *testing.T) {
 	t.Parallel()
-	store := cache.NewStore("axon", t.TempDir(), nil, func() time.Time { return time.Now() }, 0)
+	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)
 
 	cmds := []cli.Command{
 		cli.NewInboxCommand(store),

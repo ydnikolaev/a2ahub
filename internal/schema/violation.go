@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -53,7 +54,8 @@ func extractFieldViolations(err error, baseProps map[string]bool) []FieldViolati
 	if err == nil {
 		return nil
 	}
-	ve, ok := err.(*jsonschema.ValidationError)
+	ve := &jsonschema.ValidationError{}
+	ok := errors.As(err, &ve)
 	if !ok {
 		// Not the library's own error type — an operational failure
 		// (e.g. the instance wasn't JSON-marshalable), never silently

@@ -164,7 +164,7 @@ func (s *GitHubSource) Latest(ctx context.Context) (Release, error) {
 	url := fmt.Sprintf("%s/repos/%s/releases", baseURL, s.Repo)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return Release{}, &Error{Op: op, Err: fmt.Errorf("%w: build request: %v", ErrDownloadFailed, err)}
+		return Release{}, &Error{Op: op, Err: fmt.Errorf("%w: build request: %w", ErrDownloadFailed, err)}
 	}
 	httpReq.Header.Set("Accept", "application/vnd.github+json")
 	if s.Token != "" {
@@ -173,14 +173,14 @@ func (s *GitHubSource) Latest(ctx context.Context) (Release, error) {
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return Release{}, &Error{Op: op, Err: fmt.Errorf("%w: %v", ErrDownloadFailed, err)}
+		return Release{}, &Error{Op: op, Err: fmt.Errorf("%w: %w", ErrDownloadFailed, err)}
 	}
 	defer func() { _ = resp.Body.Close() }() // reason: response already fully read/discarded below
 
 	limited := io.LimitReader(resp.Body, maxListResponseBytes)
 	raw, err := io.ReadAll(limited)
 	if err != nil {
-		return Release{}, &Error{Op: op, Err: fmt.Errorf("%w: read response: %v", ErrDownloadFailed, err)}
+		return Release{}, &Error{Op: op, Err: fmt.Errorf("%w: read response: %w", ErrDownloadFailed, err)}
 	}
 	if resp.StatusCode == http.StatusNotFound {
 		return Release{}, &Error{Op: op, Input: s.Repo, Err: ErrNoRelease}
@@ -191,7 +191,7 @@ func (s *GitHubSource) Latest(ctx context.Context) (Release, error) {
 
 	var list []ghRelease
 	if err := json.Unmarshal(raw, &list); err != nil {
-		return Release{}, &Error{Op: op, Err: fmt.Errorf("%w: decode response: %v", ErrDownloadFailed, err)}
+		return Release{}, &Error{Op: op, Err: fmt.Errorf("%w: decode response: %w", ErrDownloadFailed, err)}
 	}
 
 	for _, r := range list {
