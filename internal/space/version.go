@@ -19,7 +19,9 @@ import "github.com/ydnikolaev/a2ahub/internal/version"
 func versionOlderThan(binaryVersion, minVersion string) (bool, error) {
 	older, err := version.OlderThan(binaryVersion, minVersion)
 	if err != nil {
-		return false, &Error{Op: "versionOlderThan", Input: binaryVersion, Err: ErrInvalidVersion}
+		// Name both inputs (the leaf does not report which one failed to
+		// parse) rather than always blaming binaryVersion.
+		return false, &Error{Op: "versionOlderThan", Input: binaryVersion + " / " + minVersion, Err: ErrInvalidVersion}
 	}
 	return older, nil
 }
