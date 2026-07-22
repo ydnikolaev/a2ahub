@@ -39,3 +39,48 @@ jobs:
 
       - name: make check
         run: make check
+
+  # skill-drift (spec 13 T4/T5, AC-602.1 machine clause): the generated half
+  # of the a2ahub skill must stay byte-identical to a fresh regeneration from
+  # the built binary. Prose paths (SKILL.md/loops.md/…) are OUT of this job —
+  # they are release-checklist-gated (D-015), never machine-gated. The spec's
+  # path-scoped trigger is intentionally widened to always-run (like `check`):
+  # the regenerate is cheap and an always-green gate cannot silently skip.
+  skill-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Regenerate skill reference from the binary and byte-diff
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          mkdir -p "$tmp/authoring"
+          # commands.md == `a2a __catalog` (command + MCP-tool catalog).
+          go run ./cmd/a2a __catalog > "$tmp/commands.md"
+          diff -u skill/a2ahub/reference/commands.md "$tmp/commands.md"
+          # authoring/<type>.md == `a2a template show <type>` (OP-219), one per type.
+          for t in $(go run ./cmd/a2a template list); do
+            go run ./cmd/a2a template show "$t" > "$tmp/authoring/$t.md"
+          done
+          for f in "$tmp"/authoring/*.md; do
+            committed="skill/a2ahub/reference/authoring/$(basename "$f")"
+            if [ ! -f "$committed" ]; then
+              echo "skill-drift: new template type with no committed authoring file: $(basename "$f")" >&2
+              exit 1
+            fi
+            diff -u "$committed" "$f"
+          done
+          # a committed authoring file whose type no longer exists is also drift.
+          for f in skill/a2ahub/reference/authoring/*.md; do
+            test -f "$tmp/authoring/$(basename "$f")" || {
+              echo "skill-drift: committed authoring file with no live template type: $(basename "$f")" >&2
+              exit 1
+            }
+          done

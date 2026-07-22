@@ -194,6 +194,11 @@ func buildCommands() map[string]command {
 	// for the life of the session. internal/mcp re-wires the same core (never
 	// imports internal/cli); the bare `version` (not the full stamp) feeds
 	// its write funnel's min_binary_version guard, matching the doctor fix.
+	// __catalog (P13, spec 13 §11 wave-7 amendment): hidden, machine-
+	// consumed verb printing the deterministic command/MCP catalog
+	// (catalog.go) — never listed in printUsage (main.go).
+	m["__catalog"] = runCatalog
+
 	m["mcp"] = func(_ []string, stdout, stderr io.Writer) int {
 		ctx := context.Background()
 		p, err := mcp.ResolvePaths()
