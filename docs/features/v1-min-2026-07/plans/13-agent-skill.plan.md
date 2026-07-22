@@ -3,7 +3,7 @@ slug: v1-min-2026-07
 phase: P13
 spec: ../specs/13-agent-skill.md
 wave: 7
-status: dispatched  # wave 7a (seam) verified + committed; P13 done-blocked on 7b prose
+status: closed  # P13 done: 7a catalog seam + 7b prose both shipped + lead-verified
 ---
 
 # Phase plan — P13 Minimal a2ahub expert skill + agent rules (D-015)
@@ -102,9 +102,40 @@ loops content — is a LATER pass (7b). P13 stays `in-progress` until 7b lands.
 - Epic-direction reconcile: still-serves — catalog seam is exactly the P13 §T4/T5 machine-derivable half; no frozen contract reopened, no D-### contradicted.
 - Notes: contract expands two-level via cli.ContractSubcommands() (mirrors P14 designatedCLIVerbs()); panic-guard fires at generation time if a dispatch verb lacks a catalog row. 8 template types confirmed against plan §3.1. P13 stays in-progress until 7b prose lands.
 
+### Wave 7b — 2026-07-22 (hand-maintained prose)
+
+- Agent: coder **UPGRADED to opus/high** (lead call after operator flagged the
+  prose as high-stakes normative doctrine — sonnet is the coder floor, but
+  condensation-fidelity of §8 → skill text is judgment-dense, not mechanical,
+  and prose quality is not gate-verifiable). The initial sonnet run was stopped
+  (draft preserved in scratch for cross-check) and re-dispatched at opus from
+  the normative source.
+- Files / Commits: 6 prose files (SKILL, loops, troubleshooting, onboarding,
+  reference/decompose-example, RELEASE-CHECKLIST) / d80c8e4.
+- Verify (lead, line-by-line — "re-check everything"): loops.md §8.1 checklist +
+  D-014 clause diffed VERBATIM against 08-agent-protocol §8.1/§8.3.2 (AC #4 ✓);
+  8-type prefix table matched EXACTLY against §3.1 domain; troubleshooting.md's
+  every binary claim (5 checks, PASS/FAIL shape, exit 0/1/2, --space string,
+  PATH check) verified against internal/cli/cmd_doctor.go; decompose-example.md's
+  3 cited fixture IDs + the threaded pair confirmed on disk (zero fabrication);
+  AC #2 single-sourcing confirmed via find; skill-drift teeth proven BOTH ways
+  (green on identity, red on a hand-injected row). Propagate probe: stale:[].
+- Deviations + downstream: (1) no coordinated announcement+question+work_request
+  single-thread fixture trio exists → decompose-example cites 3 independent real
+  fixtures as shape exemplars + honest in-file deviation block → backlogged.
+  (2) plan-vs-binary verb spellings (`new --thread`, `contract verify-export`)
+  deferred to the generated reference rather than restated (defer-don't-restate).
+  (3) doctor over-read limits (no expiry check, CI-file-not-config, statusline
+  = PATH presence) flagged in troubleshooting.md. None contradict the epic.
+- Epic-direction reconcile: still-serves — completes the P13 skill deliverable
+  (US-602). D-015 sourcing split honored (prose hand-maintained, reference
+  generated + machine-gated).
+- Notes: P13 → done. audit: open (7a Go seam hand-verified; rides S8 epic-final).
+
 ## Deferred / follow-ups
 
-- **7b — hand-maintained prose** (SKILL/loops/troubleshooting/onboarding/
-  decompose-example/RELEASE-CHECKLIST): condense 08-agent-protocol §8.1-8.6,
-  §0/§3, §9; satisfies AC-602.1 prose clause, AC #2, AC #4. P13 → `done` only
-  after this lands.
+- **Decompose fixture trio** (7b deviation #1) — add a real announcement +
+  question + work_request sharing one `thread:` to the fixture set, then swap
+  decompose-example.md's exemplar table for the real IDs. Backlogged.
+- **P13 Go-seam audit** rides the S8 epic-final go-auditor (epic still open on
+  P11/P12 ops track).

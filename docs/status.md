@@ -17,8 +17,11 @@
   `a2a` binary is wired for all 27 verbs; authoring + read paths run
   locally, live GitHub write path (submit/lifecycle/contract) is P11. P14
   (MCP façade `a2a mcp` + CLI/MCP parity + per-write-verb equivalence)
-  shipped 2026-07-22.
-  <!-- epic-state: v1-min-2026-07 phases=11/14 -->
+  shipped 2026-07-22. P13 (a2ahub expert skill: binary-emitted command/MCP
+  catalog + `skill-drift` CI gate + hand-maintained agent-loop prose) shipped
+  2026-07-22. Remaining: the user-gated ops track P11 (getvisa space
+  bootstrap) → P12 (day-one content), pending the real getvisa space.
+  <!-- epic-state: v1-min-2026-07 phases=12/14 -->
 
 - **Epic [publish-prep](features/publish-prep-2026-07/README.md)** — make
   `ydnikolaev/a2ahub` a public, hardened, cross-platform Go-binary repo

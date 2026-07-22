@@ -170,3 +170,14 @@
       bijection to CAPABILITY-level parity ("every designated CLI verb is
       reachable via some tool+action"). P13's `commands.md`/skill becomes the
       per-verb arg reference the thinner tools point at — 7a is NOT wasted.
+- [ ] Decompose-example fixture trio (P13 7b deviation): §8.7 / spec 13 T4
+      describe a worked decompose example as "announcement + question +
+      work_request on one thread, shipped in the product-repo fixture set",
+      but no coordinated single-thread trio exists in
+      `schemas/envelope/v1/fixtures/valid/`. `skill/a2ahub/reference/
+      decompose-example.md` currently cites three independent real fixtures
+      (XA-axon-20260901-d8k1, XQ-seomatrix-20260730-h2k8, XW-axon-20260731-p9d3)
+      as SHAPE exemplars + an honest deviation block. Add a real
+      announcement+question+work_request trio sharing one `thread:` to the
+      fixture set, then replace the exemplar table in decompose-example.md with
+      the actual IDs+thread (the file's own deviation block names the swap).
