@@ -95,6 +95,7 @@ func assertUnswapped(t *testing.T, f applyFixture) {
 }
 
 func TestApply_HappyPath_AllowUnsigned(t *testing.T) {
+	t.Parallel()
 	f := newApplyFixture(t, false)
 	res, err := Apply(context.Background(), "0.1.0", ApplyOptions{
 		Target:        f.target,
@@ -122,6 +123,7 @@ func TestApply_HappyPath_AllowUnsigned(t *testing.T) {
 }
 
 func TestApply_ChecksumMismatch_NeverSwaps_EvenAllowUnsigned(t *testing.T) {
+	t.Parallel()
 	f := newApplyFixture(t, true) // corrupt sums
 	_, err := Apply(context.Background(), "0.1.0", ApplyOptions{
 		Target:        f.target,
@@ -136,6 +138,7 @@ func TestApply_ChecksumMismatch_NeverSwaps_EvenAllowUnsigned(t *testing.T) {
 }
 
 func TestApply_UnverifiedSignature_RefusedWithoutAllowUnsigned(t *testing.T) {
+	t.Parallel()
 	f := newApplyFixture(t, false)
 	_, err := Apply(context.Background(), "0.1.0", ApplyOptions{
 		Target:        f.target,
@@ -150,6 +153,7 @@ func TestApply_UnverifiedSignature_RefusedWithoutAllowUnsigned(t *testing.T) {
 }
 
 func TestApply_SelfCheckMismatch_NoSwap(t *testing.T) {
+	t.Parallel()
 	f := newApplyFixture(t, false)
 	_, err := Apply(context.Background(), "0.1.0", ApplyOptions{
 		Target:        f.target,
@@ -161,4 +165,62 @@ func TestApply_SelfCheckMismatch_NoSwap(t *testing.T) {
 		t.Fatalf("err = %v, want ErrSelfCheckFailed", err)
 	}
 	assertUnswapped(t, f)
+}
+
+// TestApply_RealExec_ChmodBeforeSelfCheck is the regression test for the
+// missing-execute-bit HIGH: it uses the REAL DefaultRunner (Run:nil) against an
+// actual executable shell-script "binary", so it exercises the exec the faked
+// runners hid. os.Create writes the download 0644; without Download's chmod the
+// self-check would EACCES here and no swap could ever complete in production.
+func TestApply_RealExec_ChmodBeforeSelfCheck(t *testing.T) {
+	t.Parallel()
+	platform := fmt.Sprintf("a2a-%s-%s", runtime.GOOS, runtime.GOARCH)
+	script := []byte("#!/bin/sh\necho \"a2a 0.3.0 (realexec)\"\n")
+	sum := sha256.Sum256(script)
+	sums := fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), platform)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/asset":
+			_, _ = w.Write(script)
+		case "/sums":
+			_, _ = w.Write([]byte(sums))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	execPath := filepath.Join(dir, "a2a")
+	if err := os.WriteFile(execPath, []byte("OLD"), 0o755); err != nil {
+		t.Fatalf("seed exec: %v", err)
+	}
+	target := Release{
+		Tag: "v0.3.0", Version: "0.3.0", Commit: "realexec",
+		Assets: []Asset{
+			{Name: platform, BrowserDownloadURL: srv.URL + "/asset"},
+			{Name: "SHA256SUMS", BrowserDownloadURL: srv.URL + "/sums"},
+		},
+	}
+
+	res, err := Apply(context.Background(), "0.1.0", ApplyOptions{
+		Target:        target,
+		ExecPath:      execPath,
+		AllowUnsigned: true,
+		// Run is nil => DefaultRunner => real os/exec of the downloaded script.
+	})
+	if err != nil {
+		t.Fatalf("Apply with real exec: %v (the downloaded asset was likely not chmod 0755 before the self-check)", err)
+	}
+	if res.ToVersion != "0.3.0" {
+		t.Fatalf("ToVersion = %q, want 0.3.0", res.ToVersion)
+	}
+	got, err := os.ReadFile(execPath)
+	if err != nil {
+		t.Fatalf("read swapped exec: %v", err)
+	}
+	if string(got) != string(script) {
+		t.Fatalf("swap did not install the downloaded binary")
+	}
 }
