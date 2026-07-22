@@ -20,6 +20,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"github.com/ydnikolaev/a2ahub/skill"
 )
 
 // wire.go is cmd/a2a's single dependency-injection point (ADR-001: "wiring
@@ -98,6 +99,9 @@ func buildCommands() map[string]command {
 	}
 	m["template"] = func(args []string, stdout, stderr io.Writer) int {
 		return cli.NewTemplateCommand().Run(context.Background(), args, stdio(stdout, stderr))
+	}
+	m["skill"] = func(args []string, stdout, stderr io.Writer) int {
+		return cli.NewSkillCommand(skill.Files, version).Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["connect"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
