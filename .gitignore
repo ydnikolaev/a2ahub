@@ -6,5 +6,24 @@
 /a2a
 /cmd/a2a/a2a
 
+# Release + coverage output (goreleaser dist, coverage profiles — never committed)
+/dist/
+/coverage.out
+
 # macOS
 .DS_Store
+
+# ── publish boundary: private harness ─────────────────────────────────────────
+# SSOT of this list is scripts/classify-guard.sh; the guard asserts the two
+# agree. Harness is delivered by `mate fleet pull`, never committed. docs/
+# (planning) is deferred to P6 — not yet added here (still tracked, PENDING).
+.agents/
+.claude/
+.codex/
+.mate/
+AGENTS.md
+CLAUDE.md
+scripts/*
+!scripts/install.sh
+!scripts/e2e-authoring-smoke.sh
+!scripts/classify-guard.sh
