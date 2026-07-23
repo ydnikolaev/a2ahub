@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -127,6 +128,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"CI presence", func() (bool, string) { return c.doctorCheckCIPresence(cfg, machine) }},
 		{"statusline wiring", func() (bool, string) { return c.doctorCheckStatuslineWiring() }},
 		{"skill discoverable", func() (bool, string) { return c.doctorCheckSkillDiscoverable() }},
+		{"skill manual current", func() (bool, string) { return c.doctorCheckSkillManualCurrent() }},
 	}
 
 	allOK := true
@@ -367,6 +369,45 @@ func (c *DoctorCommand) doctorCheckSkillDiscoverable() (bool, string) {
 		return true, " · ADVISORY: skill installed but no agent surface links it — run 'a2a skill link'"
 	}
 	return true, fmt.Sprintf(" · skill installed and linked (%d surface(s))", linked)
+}
+
+// doctorSkillManualVersionPattern parses the version stamp skillProvenance
+// (cmd_skill.go) writes into PROVENANCE.md's prose: "... (a2a <version>).".
+// A tolerant match — this check never fails doctor on an unrecognized
+// provenance shape (a hand-edited or foreign-format file), it just reports
+// "version unknown".
+var doctorSkillManualVersionPattern = regexp.MustCompile(`a2a ([0-9][^)]*)\)`)
+
+// doctorCheckSkillManualCurrent is P31 wave 5's out-of-band-update catch: an
+// `a2a update` that swapped the binary but was interrupted before (or never
+// reached, e.g. a manually-copied binary replacing the installed one)
+// refreshing the installed skill leaves the manual stamped to an OLDER
+// version than the binary now running. Never a hard FAIL — a stale manual is
+// a nudge (advisory on PASS), matching doctorCheckSkillDiscoverable's own
+// advisory-on-PASS convention; an absent install is simply not this check's
+// concern (nothing to compare).
+func (c *DoctorCommand) doctorCheckSkillManualCurrent() (bool, string) {
+	data, err := os.ReadFile(filepath.Join(c.projectRoot, skillDefaultDir, skillProvenanceFile))
+	if err != nil {
+		return true, " · no skill installed"
+	}
+
+	match := doctorSkillManualVersionPattern.FindStringSubmatch(string(data))
+	if match == nil {
+		return true, " · skill installed (version unknown)"
+	}
+	manualVersion := match[1]
+
+	older, err := version.OlderThan(manualVersion, c.binaryVersion)
+	if err != nil {
+		return true, " · skill installed (version unknown)"
+	}
+	if older {
+		return true, fmt.Sprintf(
+			" · skill manual is v%s, binary is v%s — run 'a2a skill install'",
+			manualVersion, c.binaryVersion)
+	}
+	return true, fmt.Sprintf(" · skill manual current (v%s)", manualVersion)
 }
 
 // doctorVersionOlder reports whether binaryVersion is strictly older than
