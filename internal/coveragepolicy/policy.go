@@ -44,6 +44,7 @@ var Thresholds = map[string]float64{
 var Excluded = map[string]bool{
 	"internal/e2e":         true, // drives the BUILT binary via testscript; every file is _test.go, so it contributes no statements to its own profile
 	"testkit/spacefixture": true, // a test-fixture helper library consumed BY other packages' tests, not itself the subject of a coverage floor
+	"testkit/fakegithub":   true, // same shape as spacefixture: a host test double consumed BY internal/e2e's tests; its own behaviour is asserted by fakegithub_test.go, not by a floor
 }
 
 type pkgStat struct{ total, covered int }

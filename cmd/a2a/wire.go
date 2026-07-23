@@ -43,6 +43,23 @@ const (
 	defaultBaseBranch = "main"
 )
 
+// githubAPIEnv overrides the REST/GraphQL root. Two callers, one knob:
+// GitHub Enterprise (whose API lives on the customer's own host — the same
+// concern Actions exposes as GITHUB_API_URL), and the e2e harness, which
+// needs the EXEC'd binary to reach a host it controls. Without it every
+// host-facing verb — submit, every lifecycle verb, every contract sub-verb,
+// feedback submit — is unreachable from a script, so the wiring closures
+// that assemble them were never executed by any test (P30).
+const githubAPIEnv = "A2A_GITHUB_API"
+
+// githubAPIBase resolves the API root for this process.
+func githubAPIBase() string {
+	if v := os.Getenv(githubAPIEnv); v != "" {
+		return v
+	}
+	return githubAPIBaseURL
+}
+
 // paths bundles the resolved config/staging locations a verb closure needs.
 type paths struct {
 	projectConfig string // .a2a/config.yaml
@@ -177,7 +194,7 @@ func buildCommands() map[string]command {
 		if err != nil {
 			return fail(stderr, err)
 		}
-		h := host.NewGitHubHost(http.DefaultClient, githubAPIBaseURL)
+		h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 		// Pass the BARE dotted version, not versionStamp() ("a2a x.y.z
 		// (sha)") — doctorVersionOlder parses a bare major.minor.patch, so
 		// the full stamp made `a2a doctor` report `versions: FAIL` against
@@ -521,7 +538,7 @@ func resolveLifecycleDeps(ctx context.Context, p paths, args []string, stderr io
 	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
 	legality := cli.NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := cli.NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
-	h := host.NewGitHubHost(http.DefaultClient, githubAPIBaseURL)
+	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 	funnel := space.NewWriteFunnel(h, validator, funnelBinaryVersion())
 	hostCfg := cli.SubmitHostConfig{
 		RemoteURL: ref.RepoURL, Repo: host.Repo{Owner: owner, Name: name},
@@ -677,7 +694,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
 	legality := cli.NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := cli.NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
-	h := host.NewGitHubHost(http.DefaultClient, githubAPIBaseURL)
+	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 	funnel := space.NewWriteFunnel(h, validator, funnelBinaryVersion())
 
 	hostCfg := cli.SubmitHostConfig{
@@ -736,7 +753,7 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 		return failf(stderr, "a2a feedback: bad feedback repo %q: %v", repoURL, err)
 	}
 
-	h := host.NewGitHubHost(http.DefaultClient, githubAPIBaseURL)
+	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 	funnel := space.NewWriteFunnel(h, nil, funnelBinaryVersion())
 	submitCfg := feedback.SubmitConfig{
 		RemoteURL:         repoURL,
