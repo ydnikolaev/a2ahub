@@ -1,6 +1,10 @@
 schema: space/v1
 space: REPLACE_WITH_SPACE_ID
-min_binary_version: 0.1.0
+min_binary_version: 0.4.0             # write floor (D-013/CC-085): the release
+                                      # that fixes the P30 silent-data-loss bug
+                                      # (spec 33 §2 #4). Separate axis from the CI
+                                      # validator version (which lives in the
+                                      # reusable-workflow ref, not here).
 gates: default                    # G1-G5 per §3.7; operator refines at space creation
 participants: []                  # zero participants at template time (AC-101.1
                                    # green-on-empty) — added one at a time via each

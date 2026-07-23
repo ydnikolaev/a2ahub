@@ -1,12 +1,11 @@
-# V3 CI — the space's write-funnel gate (plan §4.2/§9, spec 09 T5).
-#
-# This workflow is a thin invocation of the pinned a2a binary — it never
-# reimplements schema/referential/lifecycle/policy validation logic (D-011,
-# owned by internal/validate, P3). The exact `a2a` verb/flags below are a
-# BEHAVIOR CONTRACT placeholder: the real verb surface belongs to
-# internal/cli (P6, a parallel wave of this same epic) and is reconciled at
-# P10 integration — see this phase's Deviations note before wiring a real
-# space repo from this template.
+# V3 CI — the space's write-funnel gate (spec 09 §4.2/§5.5, redesigned in
+# P33). A thin CALLER of a2ahub's reusable validation workflow: this space
+# carries NO validation logic, NO pinned-binary fetch, and NO
+# A2A_BINARY_FETCH_TOKEN secret. Install + the exact `validate --ci` flags +
+# the pinned a2a version all live in the referenced unit and move as a whole
+# via a Dependabot bump of the SHA below (see .github/dependabot.yml) —
+# never a hand-edit here. This kills the copy/token/manual-pin drift that
+# froze pre-P33 spaces (spec 33 §1).
 name: a2a-validate
 
 on:
@@ -15,112 +14,37 @@ on:
   push:
     branches: [main]
 
-# Least-privilege (§10.5 CI credential row): contents:read to check out the
-# repo; pull-requests:read so the V3 G1/G2 policy branch can query approving
-# reviews via the host API (internal/validate + internal/host, P3/P5) for
-# the PR this run is validating.
+# The reusable `validate` job needs contents:read + pull-requests:read (V3's
+# G1/G2 policy reads approving reviews via the host API). A reusable workflow
+# can only DOWNGRADE the caller's token, so these are granted here.
 permissions:
   contents: read
   pull-requests: read
 
-env:
-  # The PINNED validator release — NEVER "latest" (spec 09 §8 AC row 7).
-  # Bump this deliberately when the space is ready to move to a newer
-  # a2a release; the write funnel's own min_binary_version pin (space.yaml)
-  # is the separate, per-write staleness guard (D-013, CC-085).
-  #
-  # MUST be >= the release that introduced the flag surface the run steps
-  # below invoke: `validate --ci --mode=v3-pr --base` shipped in v0.1.1 (P17).
-  # A pin older than that fails EVERY PR with "flag provided but not defined:
-  # -ci" (exit 2) before any rule runs — a whole-space outage, not a rule
-  # rejection. (External-consumer report, seomatrix 2026-07-23: the live
-  # getvisa space shipped with the 0.1.0 placeholder and blocked all PRs.)
-  A2A_VALIDATOR_VERSION: "0.4.0"
-
 jobs:
-  # The job name below is the exact GitHub status-check context branch
-  # protection binds to (§4.2's cited string; spec 09 AC row 6 asserts
-  # byte-equality against this literal). A rename here silently defeats
-  # AC-101.2 and the P11 branch-protection checklist — do not touch it
-  # without updating BRANCH-PROTECTION.md in lockstep.
+  # The blocking gate. The surfaced status-check CONTEXT is
+  # `a2a-validate / validate` (this caller job / the reusable `validate` job)
+  # — THIS compound string is the required check a branch-protection rule
+  # binds to (P33 amended spec 09 §4.2 / AC row 6; see BRANCH-PROTECTION.md).
+  # Renaming this job changes that context — do not.
   a2a-validate:
     name: a2a-validate
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout PR head
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    # SHA-pinned to an immutable a2ahub commit (never @main); Dependabot moves
+    # it by a reviewed PR that auto-merges on the green check. The `# vX.Y.Z`
+    # comment tracks the human-readable version.
+    uses: ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@0000000000000000000000000000000000000000 # v0.4.0 — REPLACE with the v0.4.0 commit SHA at space creation / first release
+    with:
+      mode: v3-pr
+      base: ${{ github.event.pull_request.base.sha }}
 
-      - name: Fetch pinned a2a-validate binary
-        # Fetches the EXACT pinned ${{ env.A2A_VALIDATOR_VERSION }} release
-        # from the (private) product repo via the read-only token stored as
-        # the A2A_BINARY_FETCH_TOKEN repo secret (§10.5 CI credential row) —
-        # never "latest". A missing/expired token fails this step loudly
-        # (CI red) instead of silently skipping validation (spec 09 §6
-        # "token missing/expired -> CI fails loudly").
-        env:
-          GH_TOKEN: ${{ secrets.A2A_BINARY_FETCH_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::A2A_BINARY_FETCH_TOKEN repo secret is not set — cannot fetch the pinned validator binary" >&2
-            exit 1
-          fi
-          gh release download "v${A2A_VALIDATOR_VERSION}" \
-            --repo ydnikolaev/a2ahub \
-            --pattern 'a2a-linux-amd64' \
-            --output ./a2a
-          chmod +x ./a2a
-
-      - name: Run V3 (changed files + diff-authz + fold integrity + supersession linearity + policy/5.4b)
-        # Behavior contract (spec 09 T5): V2 (schema+referential+authz+
-        # lifecycle) over this PR's changed files, plus diff-authz (changed
-        # paths must be ⊆ the author's section, author = this PR's GitHub
-        # login mapped via space.yaml), fold integrity, supersession
-        # linearity, and policy (classification, gates, 5.4b compat). Emits
-        # machine-readable pass/fail; a non-zero exit fails this job (and
-        # therefore the required check).
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: ./a2a validate --ci --mode=v3-pr --base "$PR_BASE_SHA"
-
-  # Flag-only per §5.5's V3 row: same engine, full repo, post-merge. Never a
-  # required check (spec 09 §8 AC row 10) — deliberately named differently
-  # from the job above so it can never collide with the a2a-validate
-  # status-check context.
+  # Flag-only post-merge audit (spec 09 §5.5 V3 row): full-repo scan on push,
+  # NEVER a required check — deliberately named so it can never collide with
+  # the `a2a-validate` context above. Already merged, so a red run blocks
+  # nothing; it surfaces cross-PR races (CC-095) visibly.
   a2a-postmerge-audit:
-    name: a2a-postmerge-audit (flag-only, never a required check)
+    name: a2a-postmerge-audit
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout main
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Fetch pinned a2a-validate binary
-        env:
-          GH_TOKEN: ${{ secrets.A2A_BINARY_FETCH_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::A2A_BINARY_FETCH_TOKEN repo secret is not set — cannot fetch the pinned validator binary" >&2
-            exit 1
-          fi
-          gh release download "v${A2A_VALIDATOR_VERSION}" \
-            --repo ydnikolaev/a2ahub \
-            --pattern 'a2a-linux-amd64' \
-            --output ./a2a
-          chmod +x ./a2a
-
-      - name: Run V3 full-repo audit (never blocks — already merged)
-        # Surfaces cross-PR races (CC-095) as an annotation/flag, never a
-        # merge block (already merged). continue-on-error keeps this run's
-        # own conclusion from ever becoming a gate.
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./a2a validate --ci --mode=v3-full-repo
+    uses: ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@0000000000000000000000000000000000000000 # v0.4.0 — REPLACE with the v0.4.0 commit SHA at space creation / first release
+    with:
+      mode: v3-full-repo

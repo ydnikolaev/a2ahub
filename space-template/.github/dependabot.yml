@@ -1,0 +1,12 @@
+# Dependabot keeps the space's CI current WITHOUT a hand-edit (spec 33 §2,
+# mechanism #3). It watches the SHA-pinned `uses:` reference to a2ahub's
+# reusable validation workflow in a2a-validate.yml and opens a reviewed PR to
+# bump it when a2ahub cuts a new release — a version move is a bot PR that
+# auto-merges on the green `a2a-validate / validate` check, never a manual
+# version bump in every space (the pre-P33 friction, spec 33 §1).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
