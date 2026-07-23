@@ -164,6 +164,12 @@ func (s *Submitter) Submit(ctx context.Context, path string) (SubmitResult, erro
 		BaseBranch:        baseBranch,
 		PRTitle:           title,
 		Credential:        s.cfg.Credential,
+		// Feedback's audience is the consumer agent, who has no write
+		// access to the product repo — a 403 here is the NORMAL case, not
+		// a credential fault, so this is the one write that routes through
+		// the submitter's own fork (P28). A collaborator's submit never
+		// reaches the fallback: their push succeeds.
+		AllowForkFallback: true,
 	}
 
 	result, err := s.funnel.Submit(ctx, req)

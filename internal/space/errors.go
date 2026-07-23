@@ -52,6 +52,13 @@ var (
 	// (Open Q1 RESOLVED precedence) — never falls back to a literal.
 	ErrCredentialUnresolved = errors.New("space: credential unresolved")
 
+	// ErrForkFallbackUnavailable is returned when a write opted into the
+	// P28 fork fallback, the push was refused for lack of write access,
+	// and no fork could be used — either the host profile has no fork
+	// capability, or the fork could not be created. The error names the
+	// manual fork+PR path, which always works.
+	ErrForkFallbackUnavailable = errors.New("space: push forbidden and no fork available")
+
 	// ErrManifestInvalid is returned when space.yaml fails structural
 	// YAML parse.
 	ErrManifestInvalid = errors.New("space: manifest is not valid yaml")

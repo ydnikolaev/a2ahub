@@ -2,6 +2,7 @@ package space
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	gopath "path"
@@ -72,6 +73,16 @@ type SubmitRequest struct {
 	PRBody  string
 
 	Credential host.Credential
+
+	// AllowForkFallback opts THIS write into the P28 fork path: if the
+	// push is refused because the credential may not write to Repo, the
+	// funnel ensures the submitter's own fork, pushes there, and opens a
+	// cross-fork PR. Off by default — a space write is authored by a
+	// system that owns its section and is expected to have write access,
+	// so a refusal there is a credential fault to report, not to route
+	// around. `a2a feedback submit` is the one caller that sets it: its
+	// audience is precisely the non-collaborator.
+	AllowForkFallback bool
 
 	// MinBinaryVersion is space.yaml's pin for the CC-085 guard (caller
 	// already parsed the manifest; the funnel does not parse YAML).
@@ -145,11 +156,7 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
 	}
 	if existing != nil {
-		state := WriteStateAlreadyOpen
-		if existing.State == "merged" {
-			state = WriteStateAlreadyMerged
-		}
-		return WriteResult{Branch: branch, PRNumber: existing.Number, PRURL: existing.URL, State: state}, nil
+		return existingPRResult(branch, existing), nil
 	}
 
 	// Step 1a: section guard — wrong-section files refused before any
@@ -191,18 +198,32 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		return WriteResult{}, &Error{Op: op, Err: err}
 	}
 
-	// Step 3: push the ephemeral branch.
-	if _, err := f.host.PushBranch(ctx, host.PushBranchRequest{
-		RepoDir: req.RepoDir, LocalRef: branch, Branch: branch,
-		RemoteURL: req.RemoteURL, Credential: req.Credential,
-	}); err != nil {
-		return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
+	// Step 3: push the ephemeral branch — into req.Repo itself, or (when
+	// the caller allowed it and the push was refused for ACCESS) into the
+	// submitter's own fork.
+	head := branch
+	if err := f.push(ctx, req, branch, req.RemoteURL); err != nil {
+		if !req.AllowForkFallback || !errors.Is(err, host.ErrPushForbidden) {
+			return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
+		}
+		forkHead, forked, ferr := f.pushViaFork(ctx, req, branch)
+		if ferr != nil {
+			return WriteResult{}, ferr
+		}
+		if forked != nil {
+			// The fork already carries this branch's PR — the fork-head
+			// idempotency check step 0 could not make, because the fork's
+			// owner was unknown until now.
+			return existingPRResult(branch, forked), nil
+		}
+		head = forkHead
 	}
 
 	// Step 4: open the PR — UNIFORM, auto-merge always (D-002; spec 05
-	// §T1 "Gating needs no OpenPR parameter").
+	// §T1 "Gating needs no OpenPR parameter"). Head is owner-qualified on
+	// the fork path; the PR still targets req.Repo's base branch.
 	pr, err := f.host.OpenPR(ctx, host.OpenPRRequest{
-		Repo: req.Repo, Head: branch, Base: req.BaseBranch,
+		Repo: req.Repo, Head: head, Base: req.BaseBranch,
 		Title: req.PRTitle, Body: req.PRBody, Credential: req.Credential,
 	})
 	if err != nil {
@@ -216,6 +237,66 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		CommitSHA: sha, State: WriteStatePendingMerge,
 	}, nil
 }
+
+// existingPRResult renders the idempotent short-circuit's result for a PR
+// the host already has open or merged for this branch.
+func existingPRResult(branch string, pr *host.PRInfo) WriteResult {
+	state := WriteStateAlreadyOpen
+	if pr.State == "merged" {
+		state = WriteStateAlreadyMerged
+	}
+	return WriteResult{Branch: branch, PRNumber: pr.Number, PRURL: pr.URL, State: state}
+}
+
+// push sends the committed branch to remoteURL.
+func (f *WriteFunnel) push(ctx context.Context, req SubmitRequest, branch, remoteURL string) error {
+	_, err := f.host.PushBranch(ctx, host.PushBranchRequest{
+		RepoDir: req.RepoDir, LocalRef: branch, Branch: branch,
+		RemoteURL: remoteURL, Credential: req.Credential,
+	})
+	return err
+}
+
+// pushViaFork is the P28 fallback, reached only when a push into req.Repo
+// was refused for ACCESS and req.AllowForkFallback is set. It ensures the
+// submitter's fork, re-checks idempotency against the now-known fork head
+// (step 0 could not: it did not know the fork's owner), and pushes there.
+//
+// Returns either the owner-qualified head to open the PR from, or the PR
+// that already exists for that head — never both.
+func (f *WriteFunnel) pushViaFork(ctx context.Context, req SubmitRequest, branch string) (string, *host.PRInfo, error) {
+	const op = "Submit"
+
+	forker, ok := f.host.(host.Forker)
+	if !ok {
+		return "", nil, &Error{Op: op, Input: manualForkAdvice, Err: ErrForkFallbackUnavailable}
+	}
+	fork, err := forker.EnsureFork(ctx, host.EnsureForkRequest{Repo: req.Repo, Credential: req.Credential})
+	if err != nil {
+		return "", nil, &Error{Op: op, Input: manualForkAdvice, Err: fmt.Errorf("%w: %w", ErrForkFallbackUnavailable, err)}
+	}
+
+	existing, err := f.host.FindPRByHeadBranch(ctx, host.FindPRRequest{
+		Repo: req.Repo, Branch: branch, HeadOwner: fork.Repo.Owner, Credential: req.Credential,
+	})
+	if err != nil {
+		return "", nil, &Error{Op: op, Input: branch, Err: err}
+	}
+	if existing != nil {
+		return "", existing, nil
+	}
+
+	if err := f.push(ctx, req, branch, fork.RemoteURL); err != nil {
+		return "", nil, &Error{Op: op, Input: branch, Err: err}
+	}
+	return fork.Repo.Owner + ":" + branch, nil, nil
+}
+
+// manualForkAdvice is the one path that always works when the automatic
+// fork flow cannot run: the operator forks and opens the PR by hand (the
+// intake accepts fork PRs by design — feedback-intake.yml is
+// pull_request_target).
+const manualForkAdvice = "no write access and no automatic fork — fork the repo and open the pull request by hand"
 
 // sectionOK reports whether path is inside system's own section, or under
 // the space-level decisions/ exception (the one path the single-writer
@@ -276,6 +357,20 @@ func (f *WriteFunnel) commitOne(ctx context.Context, req SubmitRequest, branch s
 	addArgs := append([]string{"add"}, paths...)
 	if err := runGit(ctx, req.RepoDir, addArgs...); err != nil {
 		return "", err
+	}
+
+	// A re-run against the SAME mirror re-writes byte-identical files onto
+	// a branch that already carries them, and git refuses an empty commit.
+	// The branch already holding exactly this content is the outcome the
+	// caller asked for, so reuse its tip instead of failing. Reachable
+	// only on the fork path: the normal path's step-0 lookup short-
+	// circuits a re-run long before this point.
+	staged, err := runGitOutput(ctx, req.RepoDir, nil, "diff", "--cached", "--name-only")
+	if err != nil {
+		return "", err
+	}
+	if staged == "" {
+		return runGitOutput(ctx, req.RepoDir, nil, "rev-parse", "HEAD")
 	}
 
 	authorName := req.CommitAuthorName

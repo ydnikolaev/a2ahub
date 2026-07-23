@@ -12,6 +12,21 @@ var (
 	// updates the remote ref.
 	ErrPushRejected = errors.New("host: push rejected")
 
+	// ErrPushForbidden REFINES ErrPushRejected: the remote refused the push
+	// because the credential may not write to that repository (a
+	// non-collaborator, a revoked scope), as opposed to a non-fast-forward
+	// or a protected ref. Every ErrPushForbidden error also satisfies
+	// errors.Is(err, ErrPushRejected) — callers that only care that the
+	// push failed keep working unchanged; the fork fallback (P28) is the
+	// one caller that needs the distinction, and classifying git's stderr
+	// vocabulary belongs here, not in internal/space.
+	ErrPushForbidden = errors.New("host: push forbidden (no write access)")
+
+	// ErrForkUnavailable is returned by the optional Forker capability when
+	// the credential holder's fork can neither be found nor created — the
+	// caller must fall back to the manual fork+PR path, never to silence.
+	ErrForkUnavailable = errors.New("host: fork unavailable")
+
 	// ErrRequestFailed is returned when a GitHub REST/GraphQL call returns
 	// a non-2xx status or a transport-level failure.
 	ErrRequestFailed = errors.New("host: github api request failed")

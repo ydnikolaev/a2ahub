@@ -118,9 +118,46 @@ type ReviewStatusResult struct {
 
 // FindPRRequest identifies a PR by its deterministic head branch name.
 type FindPRRequest struct {
-	Repo       Repo
-	Branch     string
+	Repo   Repo
+	Branch string
+	// HeadOwner qualifies the head reference when the branch lives in a
+	// FORK rather than in Repo itself (P28): GitHub's head filter is
+	// `<owner>:<branch>`, so a cross-fork PR is invisible to a lookup that
+	// assumes Repo.Owner. Empty means "the branch is in Repo" — today's
+	// behaviour, byte for byte.
+	HeadOwner  string
 	Credential Credential
+}
+
+// EnsureForkRequest asks for a fork of Repo owned by whoever Credential
+// authenticates as. Idempotent by construction: an existing fork is
+// returned, never duplicated.
+type EnsureForkRequest struct {
+	Repo       Repo
+	Credential Credential
+}
+
+// ForkInfo is a fork the credential holder may push to: its owner/name and
+// the push URL (RemoteURL feeds PushBranchRequest verbatim).
+type ForkInfo struct {
+	Repo      Repo
+	RemoteURL string
+}
+
+// Forker is an OPTIONAL capability a Host MAY satisfy — deliberately not a
+// 6th method on Host (ADR-003). The 5-primitive core stays the contract
+// every host profile must meet; a profile whose platform has no fork
+// concept simply does not implement this, and the caller
+// (space.WriteFunnel) degrades to reporting the original push refusal.
+//
+// Callers must obtain it by type assertion on a Host, never by widening
+// their own dependency to a concrete implementation.
+type Forker interface {
+	// EnsureFork returns the credential holder's fork of req.Repo,
+	// creating it if it does not exist yet and waiting until the host
+	// reports it usable. Returns an error wrapping ErrForkUnavailable when
+	// the fork can neither be found nor created.
+	EnsureFork(ctx context.Context, req EnsureForkRequest) (ForkInfo, error)
 }
 
 // Host is the 5-primitive host adapter interface (spec 05 §T1). It is
