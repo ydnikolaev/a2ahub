@@ -54,7 +54,7 @@ func printUsage(w io.Writer) {
 	// through every dispatch-table command's signature.
 	_, _ = fmt.Fprintln(w, "usage: a2a <command> [args...]")
 	_, _ = fmt.Fprintln(w, "commands:")
-	_, _ = fmt.Fprintln(w, "  init        set up project config (.a2a/config.yaml)")
+	_, _ = fmt.Fprintln(w, "  init        set up project: config + skill install + AGENTS.md pointer")
 	_, _ = fmt.Fprintln(w, "  connect     register + mirror-clone a space")
 	_, _ = fmt.Fprintln(w, "  disconnect  remove a connected space")
 	_, _ = fmt.Fprintln(w, "  new         draft an artifact from a template")

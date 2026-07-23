@@ -8,17 +8,55 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/skill"
 )
 
-// runInitPointer runs `a2a init --agents-pointer ...` with AgentsPath wired to
-// <dir>/AGENTS.md and returns exit code + the AGENTS.md path.
+// TestInitDefaultOnboarding: a bare `a2a init` (no opt-out flags) with both
+// seams wired does the FULL setup — config + skill tree + AGENTS.md pointer —
+// and preserves existing AGENTS.md content. This is the Option-1 default.
+func TestInitDefaultOnboarding(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	agents := filepath.Join(dir, "AGENTS.md")
+	if err := os.WriteFile(agents, []byte("# Consumer\nkeep me\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := cli.NewInitCommand(filepath.Join(dir, ".a2a", "config.yaml"))
+	cmd.AgentsPath = agents
+	cmd.SkillFiles = skill.Files
+	cmd.SkillTarget = filepath.Join(dir, ".a2ahub", "skill")
+	cmd.Version = "test"
+
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(),
+		[]string{"--system", "axon", "--space", "https://example.invalid/org/space.git"}, io)
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	// Skill tree installed.
+	if _, err := os.Stat(filepath.Join(dir, ".a2ahub", "skill", "SKILL.md")); err != nil {
+		t.Fatalf("skill not installed by default: %v", err)
+	}
+	// Pointer written, existing content preserved.
+	b, _ := os.ReadFile(agents)
+	if !strings.HasPrefix(string(b), "# Consumer\nkeep me\n") {
+		t.Fatalf("existing AGENTS.md content lost: %q", b)
+	}
+	if !strings.Contains(string(b), pointerStartSub) {
+		t.Fatalf("pointer not written by default: %q", b)
+	}
+}
+
+// runInitPointer runs `a2a init ...` (pointer is default-on) with AgentsPath
+// wired to <dir>/AGENTS.md and returns exit code + the AGENTS.md path. It does
+// NOT wire SkillFiles, so the skill step is a no-op — this isolates the pointer.
 func runInitPointer(t *testing.T, dir string, extra ...string) (int, string) {
 	t.Helper()
 	cmd := cli.NewInitCommand(filepath.Join(dir, ".a2a", "config.yaml"))
 	agents := filepath.Join(dir, "AGENTS.md")
 	cmd.AgentsPath = agents
 	io, _, errOut := newIO()
-	args := append([]string{"--system", "axon", "--space", "https://example.invalid/org/space.git", "--agents-pointer"}, extra...)
+	args := append([]string{"--system", "axon", "--space", "https://example.invalid/org/space.git"}, extra...)
 	code := cmd.Run(context.Background(), args, io)
 	if code != 0 {
 		t.Logf("stderr: %s", errOut.String())
@@ -93,20 +131,16 @@ func TestInitAgentsPointer_Idempotent(t *testing.T) {
 	}
 }
 
-// TestInitAgentsPointer_NotWrittenWithoutFlag: no flag => AGENTS.md is never
-// created or touched (consent gate).
-func TestInitAgentsPointer_NotWrittenWithoutFlag(t *testing.T) {
+// TestInitAgentsPointer_OptOut: --no-agents-pointer suppresses the default
+// pointer write — AGENTS.md is never created or touched.
+func TestInitAgentsPointer_OptOut(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	cmd := cli.NewInitCommand(filepath.Join(dir, ".a2a", "config.yaml"))
-	cmd.AgentsPath = filepath.Join(dir, "AGENTS.md")
-	io, _, _ := newIO()
-	code := cmd.Run(context.Background(),
-		[]string{"--system", "axon", "--space", "https://example.invalid/org/space.git"}, io)
+	code, agents := runInitPointer(t, dir, "--no-agents-pointer")
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); !os.IsNotExist(err) {
-		t.Fatal("AGENTS.md created without --agents-pointer (consent gate breached)")
+	if _, err := os.Stat(agents); !os.IsNotExist(err) {
+		t.Fatal("AGENTS.md created despite --no-agents-pointer")
 	}
 }

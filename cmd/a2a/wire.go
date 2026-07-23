@@ -95,8 +95,12 @@ func buildCommands() map[string]command {
 		// FIX B (spec 18 §T1/§8): wire the machine-config skeleton DI
 		// seam, mirroring how the validate closure sets CIGitHubActor.
 		cmd.MachineConfigPath = p.machineConfig
-		// P21: --agents-pointer writes into <projectRoot>/AGENTS.md.
+		// P20/P21 default-on onboarding: init installs the skill tree and the
+		// AGENTS.md pointer by default (opt out via --no-skill / --no-agents-pointer).
 		cmd.AgentsPath = filepath.Join(p.projectRoot, "AGENTS.md")
+		cmd.SkillFiles = skill.Files
+		cmd.SkillTarget = filepath.Join(p.projectRoot, ".a2ahub", "skill")
+		cmd.Version = version
 		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["template"] = func(args []string, stdout, stderr io.Writer) int {
