@@ -201,9 +201,39 @@ func ParseID(s string) (ID, error) {
 	}, nil
 }
 
-// Validate confirms both §5.2 `id`-row guards for an artifact assigned to
+// Placement is the §4.2 layout shape an artifact's committed path takes.
+// The §5.2 `id`-row guards are not uniform across the tree: three shapes
+// exist, and each one carries the id's identity somewhere else. The
+// mapping from an envelope TYPE to its Placement is deliberately NOT made
+// here — this package keeps no 8-type enum (Open Q2, ADR-001) — it is the
+// caller's (internal/validate's) one-line table.
+type Placement int
+
+const (
+	// PlacementSectionFile is the default shape: <system>/<dir>/<id>.<ext>
+	// — the id is the filename stem AND path's first segment is the owning
+	// system's section (exchanges, requires, ...).
+	PlacementSectionFile Placement = iota
+
+	// PlacementProvidesContract is the contract descriptor's shape:
+	// <system>/provides/<slug>/contract.md (§4.2). The filename is the
+	// FIXED literal "contract.md" for every contract in every space, so the
+	// stem can never equal the XC id — identity is carried by the
+	// provides/<slug>/ DIRECTORY instead, and that is what gets checked.
+	PlacementProvidesContract
+
+	// PlacementSpaceLevel is the space-level shape: <dir>/<id>.<ext> under
+	// a directory owned by NO single system (decisions/, §4.2's multi-party
+	// exception). The stem still carries the id; the section guard does not
+	// apply, since the id's <system> token names the DRAFTING system, not a
+	// section owner.
+	PlacementSpaceLevel
+)
+
+// Validate confirms the §5.2 `id`-row guards for an artifact assigned to
 // id and stored at path (a space-relative path, e.g.
-// "axon/exchanges/XQ-axon-20260721-k3f9.md"):
+// "axon/exchanges/XQ-axon-20260721-k3f9.md") under the DEFAULT
+// PlacementSectionFile shape:
 //
 //   - the filename stem (basename without extension) equals id.Raw exactly
 //   - id.System equals the owning section — path's first segment, per the
@@ -212,20 +242,61 @@ func ParseID(s string) (ID, error) {
 //
 // Both guards are checked independently (neither short-circuits the
 // other); a caller can discriminate which failed via errors.Is against
-// ErrIDMismatch / ErrSectionMismatch. NOTE: the `decisions/` section
-// exception (multi-party, no single owning system — §4.2) is envelope
-// `from`-field territory (P2/P3), out of scope here; callers validating
-// decision artifacts should not feed them through the section guard.
+// ErrIDMismatch / ErrSectionMismatch. Artifacts whose §4.2 path is NOT
+// that shape (contracts, decisions) go through ValidateAt with their own
+// Placement — feeding them here reds them unconditionally.
 func Validate(id ID, path string) error {
+	return ValidateAt(id, path, PlacementSectionFile)
+}
+
+// ValidateAt is Validate's placement-aware form: it applies the §5.2
+// `id`-row guards that ACTUALLY hold for placement's §4.2 path shape, and
+// reports the same two sentinels for the same two substantive failures —
+// "this path does not identify this artifact" (ErrIDMismatch) and "this
+// path is not in this artifact's owning section" (ErrSectionMismatch) —
+// so every caller's error mapping stays unchanged across placements.
+func ValidateAt(id ID, path string, placement Placement) error {
 	const op = "Validate"
 	var errs []error
-	if stem := stemOf(path); stem != id.Raw {
-		errs = append(errs, &Error{Op: op, Input: path, Err: ErrIDMismatch})
+
+	switch placement {
+	case PlacementProvidesContract:
+		// Identity lives in the directory, not the stem: the path must be
+		// exactly <system>/provides/<slug>/contract.md for THIS id. An
+		// exchange-class id has no Slug, so it can never match — correct:
+		// a contract id is a standing id by §3.3.
+		if id.Slug == "" || path != ProvidesContractPath(id.System, id.Slug) {
+			errs = append(errs, &Error{Op: op, Input: path, Err: ErrIDMismatch})
+		}
+		if section := sectionOf(path); section != id.System {
+			errs = append(errs, &Error{Op: op, Input: path, Err: ErrSectionMismatch})
+		}
+	case PlacementSpaceLevel:
+		// No owning section to check (that is the point of this shape);
+		// the stem still carries the id.
+		if stem := stemOf(path); stem != id.Raw {
+			errs = append(errs, &Error{Op: op, Input: path, Err: ErrIDMismatch})
+		}
+	default:
+		if stem := stemOf(path); stem != id.Raw {
+			errs = append(errs, &Error{Op: op, Input: path, Err: ErrIDMismatch})
+		}
+		if section := sectionOf(path); section != id.System {
+			errs = append(errs, &Error{Op: op, Input: path, Err: ErrSectionMismatch})
+		}
 	}
-	if section := sectionOf(path); section != id.System {
-		errs = append(errs, &Error{Op: op, Input: path, Err: ErrSectionMismatch})
-	}
+
 	return errors.Join(errs...)
+}
+
+// ProvidesContractPath renders §4.2's contract-descriptor path for a
+// system+slug pair — <system>/provides/<slug>/contract.md, space-relative,
+// forward slashes. It lives HERE, next to the guard that checks it
+// (ValidateAt's PlacementProvidesContract branch), so the renderer and the
+// guard can never drift apart; internal/space's Layout.ProvidesContract is
+// the layout-facing name for this exact function, not a second copy.
+func ProvidesContractPath(system, slug string) string {
+	return path.Join(system, "provides", slug, "contract.md")
 }
 
 func stemOf(p string) string {

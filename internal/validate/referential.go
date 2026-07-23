@@ -29,7 +29,7 @@ func checkIDForm(env envelope, path string) []Violation {
 		return out
 	}
 
-	if verr := artifact.Validate(id, path); verr != nil {
+	if verr := artifact.ValidateAt(id, path, placementFor(env.Type)); verr != nil {
 		// artifact.Validate returns errors.Join(...) of the two
 		// independent guards; errors.Is walks a Join tree (stdlib,
 		// Go 1.20+), so both checks below are independent, not
@@ -57,6 +57,32 @@ func checkIDForm(env envelope, path string) []Violation {
 	}
 
 	return out
+}
+
+// placementFor is the envelope-type → §4.2 path-shape table CC-003's guard
+// needs. internal/artifact deliberately keeps no 8-type enum (ADR-001,
+// Open Q2), so the type-aware half of the rule lives here, in the one
+// package that already knows the 8 types — the mechanics of each shape
+// stay in artifact.ValidateAt.
+//
+// Two types do not commit as <system>/<dir>/<id>.md:
+//   - contract  -> <system>/provides/<slug>/contract.md (fixed filename;
+//     identity is the provides/<slug>/ directory)
+//   - decision  -> decisions/<id>.md (space-level; no owning section)
+//
+// Applying the default shape to either red every contract submission with
+// REF-001 and every decision proposal with REF-002, at V2 AND at V3 —
+// the whole contract/decision family was unpublishable (external-agent
+// feedback fb-20260723-9ae145 against v0.2.0).
+func placementFor(envType string) artifact.Placement {
+	switch envType {
+	case "contract":
+		return artifact.PlacementProvidesContract
+	case "decision":
+		return artifact.PlacementSpaceLevel
+	default:
+		return artifact.PlacementSectionFile
+	}
 }
 
 // checkRefs is the referential class's core §5.7/§3.8 rule: every entry

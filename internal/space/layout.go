@@ -43,9 +43,12 @@ func validSystemID(system string) bool {
 }
 
 // ProvidesContract returns <system>/provides/<slug>/contract.md (the XC
-// contract descriptor).
+// contract descriptor). It delegates to internal/artifact, which owns this
+// one path shape next to the id-placement guard that checks it, so a
+// contract's committed path and the guard V2/V3 run over it can never
+// drift apart (the REF-001-on-every-contract defect, fb-20260723-9ae145).
 func (l Layout) ProvidesContract(slug string) string {
-	return path.Join(l.System, "provides", slug, "contract.md")
+	return artifact.ProvidesContractPath(l.System, slug)
 }
 
 // ProvidesSchemaDir returns <system>/provides/<slug>/schema/.

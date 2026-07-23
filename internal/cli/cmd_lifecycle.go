@@ -81,8 +81,9 @@ var lifecyclePrefixInfo = map[string]fold.Kind{
 // cmd_submit.go's submitSectionPath, keyed by id PREFIX rather than
 // envelope `type` (an OP-211 verb reads an EXISTING artifact by id alone,
 // before any envelope is available, unlike submit which already holds a
-// parsed draft) — same known layout quirk (contract's fixed
-// provides/<slug>/contract.md filename), not re-litigated here.
+// parsed draft) — the same §4.2 shapes, including the contract's fixed
+// provides/<slug>/contract.md filename, which V2's placement table now
+// validates as such (fb-20260723-9ae145).
 func lifecycleArtifactPath(parsed artifact.ID) (string, error) {
 	switch parsed.Prefix {
 	case "XC":

@@ -97,3 +97,118 @@ func TestT3Submit(t *testing.T) {
 		t.Fatalf("expected STILL exactly one push/open after the retry, got pushes=%d opens=%d", len(fakeHost.Pushes), len(fakeHost.Opens))
 	}
 }
+
+// writeStagedDraft writes raw draft content to <dir>/<id>.md, the staged
+// shape `a2a new` produces and `a2a submit` consumes.
+func writeStagedDraft(t *testing.T, dir, id, content string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(dir, id+".md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write draft: %v", err)
+	}
+	return path
+}
+
+// newSubmitRig builds the full real-funnel submit rig TestT3Submit uses
+// (real V2 engine + real WriteFunnel + FakeHost + a fixture clone), so the
+// per-type round-trip tests below differ only in the draft they submit.
+func newSubmitRig(t *testing.T) (*cli.SubmitCommand, *host.FakeHost, string, string) {
+	t.Helper()
+	fx := spacefixture.New(t, "axon", "beta", "gamma")
+	mirrorDir := fx.Clone("axon")
+	stagingDir := t.TempDir()
+
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+	legality := cli.NewLegalityAdapter(mirrorDir, "axon", e2eManifest())
+	resolver := cli.NewMirrorResolver(mirrorDir, e2eManifest())
+	submitValidator := cli.NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
+
+	fakeHost := host.NewFakeHost()
+	funnel := space.NewWriteFunnel(fakeHost, submitValidator, "0.1.0")
+	cmd := cli.NewSubmitCommand(funnel, legality, cli.NewNoopPendingMarker(), mirrorDir, "fixture-space", "axon", stagingDir, e2eHostConfig("axon", fx.RemoteURL()))
+	return cmd, fakeHost, mirrorDir, stagingDir
+}
+
+// TestT3SubmitContract is the contract family's missing round trip: `a2a
+// submit` of a staged XC draft, through the SAME real funnel + real V2
+// engine TestT3Submit uses. The committed path is §4.2's fixed
+// <system>/provides/<slug>/contract.md, whose filename stem can never
+// equal the XC id — the placement rule V2 checks must know that, or every
+// contract submission reds with REF-001 (external-agent feedback
+// fb-20260723-9ae145, filed against v0.2.0).
+func TestT3SubmitContract(t *testing.T) {
+	t.Parallel()
+	cmd, fakeHost, _, stagingDir := newSubmitRig(t)
+
+	const id = "XC-axon-content-feed"
+	path := writeStagedDraft(t, stagingDir, id, "---\n"+
+		"schema: envelope/v1\n"+
+		"id: "+id+"\n"+
+		"type: contract\n"+
+		"title: content feed\n"+
+		"space: fixture-space\n"+
+		"from: axon\n"+
+		"to: [beta]\n"+
+		"actor: {kind: agent, name: bot}\n"+
+		"created: 2026-07-23T10:00:00Z\n"+
+		"category: data-feed\n"+
+		"priority: p2\n"+
+		"blocking: false\n"+
+		"classification: internal\n"+
+		"version: \"1.0.0\"\n"+
+		"schema_format: json-schema-2020-12\n"+
+		"compat_policy: default\n"+
+		"---\nbody\n")
+
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{path}, io); code != 0 {
+		t.Fatalf("code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(fakeHost.Pushes) != 1 || len(fakeHost.Opens) != 1 {
+		t.Fatalf("expected exactly one PushBranch + OpenPR, got pushes=%d opens=%d", len(fakeHost.Pushes), len(fakeHost.Opens))
+	}
+}
+
+// TestT3SubmitDecision is the decision family's round trip: decisions
+// commit to the SPACE-LEVEL decisions/<id>.md (§4.2's multi-party
+// exception), so the id's <system> token never equals the owning path
+// segment — the placement rule must know that too, or every proposal reds
+// with REF-002.
+func TestT3SubmitDecision(t *testing.T) {
+	t.Parallel()
+	cmd, fakeHost, _, stagingDir := newSubmitRig(t)
+
+	const id = "XD-axon-20260723-a1b2"
+	path := writeStagedDraft(t, stagingDir, id, "---\n"+
+		"schema: envelope/v1\n"+
+		"id: "+id+"\n"+
+		"type: decision\n"+
+		"title: provenance is mandatory\n"+
+		"space: fixture-space\n"+
+		"from: axon\n"+
+		"to: [axon, beta]\n"+
+		"actor: {kind: agent, name: bot}\n"+
+		"created: 2026-07-23T10:00:00Z\n"+
+		"priority: p2\n"+
+		"blocking: false\n"+
+		"classification: internal\n"+
+		"required_approvers: [axon, beta]\n"+
+		"context: \"unverified facts must not skip the fact-gate\"\n"+
+		"options_considered: [\"mandatory provenance\", \"triage-only feed\"]\n"+
+		"---\nbody\n")
+
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{path}, io); code != 0 {
+		t.Fatalf("code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(fakeHost.Pushes) != 1 || len(fakeHost.Opens) != 1 {
+		t.Fatalf("expected exactly one PushBranch + OpenPR, got pushes=%d opens=%d", len(fakeHost.Pushes), len(fakeHost.Opens))
+	}
+}
