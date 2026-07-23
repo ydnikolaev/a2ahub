@@ -45,6 +45,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
 	}
+	// `a2a <verb> --help` is answered WITHOUT resolving the verb's
+	// dependencies: help must never require a project config, a mirror, or a
+	// credential — see help.go.
+	if helpRequested(args[1:]) {
+		return runVerbHelp(args[0], args[1:], stdout)
+	}
 	return cmd(args[1:], stdout, stderr)
 }
 
