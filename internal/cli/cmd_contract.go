@@ -48,12 +48,13 @@ import (
 // extensions) — a richer sibling of lifecycleEnvelopeProbe (which only
 // carries the base envelope fields every OP-211 verb needs).
 type contractDescriptorProbe struct {
-	ID            string `yaml:"id"`
-	Space         string `yaml:"space"`
-	From          string `yaml:"from"`
-	Version       string `yaml:"version"`
-	CompatPolicy  string `yaml:"compat_policy"`
-	SchemaFormat  string `yaml:"schema_format"`
+	ID            string   `yaml:"id"`
+	Space         string   `yaml:"space"`
+	From          string   `yaml:"from"`
+	To            []string `yaml:"to"`
+	Version       string   `yaml:"version"`
+	CompatPolicy  string   `yaml:"compat_policy"`
+	SchemaFormat  string   `yaml:"schema_format"`
 	GeneratedFrom struct {
 		Tool         string `yaml:"tool"`
 		SourceDigest string `yaml:"source_digest"`
@@ -657,6 +658,17 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 	// already uses for its own descriptor edit) — see this phase's
 	// Deviations report.
 	announcementDraft, err = contractAddFrontmatterFields(announcementDraft, map[string]any{
+		// space/to/title are the template's own PLACEHOLDERS and
+		// template.Render fills none of them, so every deprecation
+		// announcement was authored with a literal `to:
+		// [<recipient-system>]` and refused by V2 (REF-006) — deprecate
+		// could not complete against a real space at all, which also made
+		// retire unreachable (it requires a prior deprecate). The
+		// announcement addresses the contract's OWN audience, already a
+		// validated participant list.
+		"space":         probe.Space,
+		"to":            probe.To,
+		"title":         fmt.Sprintf("Deprecating %s@%s (sunset %s)", id, deprecatedVersion, *sunset),
 		"ack_requested": true,
 		"deprecates":    id + "@" + deprecatedVersion,
 		"valid_until":   *sunset,
