@@ -1,0 +1,2 @@
+code: FB-002
+note: "kind: bug but `evidence` is absent — the schema's if/then requires evidence.steps/expected/actual for bug reports."

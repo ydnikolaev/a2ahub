@@ -1,0 +1,21 @@
+feedback: v1
+id: fb-20260706-6f7081
+kind: docs
+severity: minor
+title: "troubleshooting.md has no entry for the sync stale-mirror symptom"
+summary: >-
+  I hit a stale-mirror symptom after `a2a sync` and checked
+  troubleshooting.md first per the loop's own rule; there is no entry for
+  "sync exits clean but the mirror didn't move", so I couldn't self-resolve
+  before filing.
+context:
+  a2a_version: v0.1.1
+  os_arch: linux/amd64
+  surface: docs
+checks:
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+status: new

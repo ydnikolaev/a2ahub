@@ -1,0 +1,27 @@
+feedback: v1
+id: fb-20260701-1a2b3c
+kind: bug
+severity: major
+title: "a2a sync reports clean but the mirror is stale"
+summary: >-
+  After a fetch that changed the upstream tip, `a2a sync` printed "already
+  up to date" and exited 0, but the local mirror's HEAD did not advance.
+context:
+  a2a_version: v0.1.1
+  os_arch: darwin/arm64
+  surface: cli
+  command: a2a sync
+evidence:
+  steps:
+    - "push a new commit to the tracked upstream branch"
+    - "run `a2a sync` in a clone last synced before that commit"
+    - "run `git log -1` in the mirror afterward"
+  expected: "mirror HEAD advances to the new upstream commit"
+  actual: "mirror HEAD stays on the old commit; sync printed a clean exit"
+checks:
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+status: new

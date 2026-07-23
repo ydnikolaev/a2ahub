@@ -25,9 +25,14 @@ import "embed"
 //go:embed consumes/v1/*.schema.json
 //go:embed errors/v1/registry.yaml
 //go:embed templates/v1/*.md
+//go:embed feedback/v1/*.schema.json
+//go:embed feedback/v1/template.yaml
+//go:embed feedback/v1/codes.yaml
 
 // FS is the embedded, fixture-free slice of the schemas/ corpus: the 11
 // product JSON schemas (base + 8 envelope extensions + event + manifest +
-// consumes), the error-code registry data file, and the 8 per-type
-// templates.
+// consumes), the error-code registry data file, the 8 per-type templates,
+// and (P25) the feedback family's 2 schemas + its own authoring template +
+// its own feedback-local FB-### code table (schemas/feedback/v1/, I1: not
+// an envelope, own code path).
 var FS embed.FS
