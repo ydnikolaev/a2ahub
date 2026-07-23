@@ -129,16 +129,22 @@ func openInBrowser(path string) error {
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
+	return browserCommand(runtime.GOOS, path).Start()
+}
+
+// browserCommand builds (but does not start) the OS default-handler command for
+// path. Split out from openInBrowser so the per-GOOS argv is unit-testable
+// without launching a real browser. argv-based (no shell) — path is never
+// shell-interpreted.
+func browserCommand(goos, path string) *exec.Cmd {
+	switch goos {
 	case "darwin":
-		cmd = exec.Command("open", path)
+		return exec.Command("open", path)
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", path)
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", path)
 	default: // linux, *bsd
-		cmd = exec.Command("xdg-open", path)
+		return exec.Command("xdg-open", path)
 	}
-	return cmd.Start()
 }
 
 var _ Command = (*HtmlCommand)(nil)
