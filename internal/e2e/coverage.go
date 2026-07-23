@@ -143,6 +143,7 @@ var coverageManifest = []coverageEntry{
 	{Verb: "feedback", Txtar: "feedback_status.txtar"},
 	{Verb: "feedback", Txtar: "feedback_triage.txtar"},
 	{Verb: "feedback", GoTest: "internal/e2e.TestFeedbackSubmitWrite"},
+	{Verb: "feedback", GoTest: "internal/e2e.TestFeedbackSubmitFromANonCollaborator"},
 
 	// --- Permanent skip-set (spec 26 §1, exhaustive) --------------------
 	{Verb: "mcp", Skip: "serve-loop; CLI/MCP behavior equivalence is owned by the P14/P15 parity suite"},

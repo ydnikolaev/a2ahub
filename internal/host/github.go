@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // defaultAPIBaseURL is GitHub's production REST/GraphQL API host. Tests
@@ -37,7 +38,20 @@ type GitHubHost struct {
 	// GraphQL requests go to BaseURL+"/graphql" so a single override
 	// (httptest server URL) captures both surfaces in tests.
 	BaseURL string
+	// ForkReadyAttempts/ForkReadyDelay bound EnsureFork's readiness poll
+	// (fork creation is asynchronous). Zero means the defaults below;
+	// tests shrink them so no suite ever waits on a real clock.
+	ForkReadyAttempts int
+	ForkReadyDelay    time.Duration
 }
+
+// Fork-readiness poll defaults: ~10s of patience in one-second steps,
+// which is generously above the fork latency GitHub actually exhibits and
+// still bounded (rails: no unbounded wait).
+const (
+	defaultForkReadyAttempts = 10
+	defaultForkReadyDelay    = time.Second
+)
 
 // NewGitHubHost constructs a GitHubHost. client may be nil (defaults to
 // http.DefaultClient); baseURL may be "" (defaults to the real GitHub API).
@@ -73,13 +87,126 @@ func (h *GitHubHost) PushBranch(ctx context.Context, req PushBranchRequest) (Pus
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if pushForbidden(detail) {
+			return PushBranchResult{}, &Error{
+				Op:    op,
+				Input: req.Branch,
+				Err:   fmt.Errorf("%w: %w: %s", ErrPushRejected, ErrPushForbidden, detail),
+			}
+		}
 		return PushBranchResult{}, &Error{
 			Op:    op,
 			Input: req.Branch,
-			Err:   fmt.Errorf("%w: %s", ErrPushRejected, strings.TrimSpace(stderr.String())),
+			Err:   fmt.Errorf("%w: %s", ErrPushRejected, detail),
 		}
 	}
 	return PushBranchResult{Branch: req.Branch}, nil
+}
+
+// pushForbiddenMarkers are the phrases git/GitHub emit when a push is
+// refused for ACCESS rather than for ref state. git's stderr is the only
+// signal a push carries — there is no exit code that distinguishes the two
+// — so the vocabulary is pinned here, next to the command that produces
+// it, and tested against the real strings GitHub sends.
+var pushForbiddenMarkers = []string{
+	"denied to",                              // "remote: Permission to o/r.git denied to <login>"
+	"permission denied",                      // ssh remotes
+	"write access to repository not granted", // fine-grained PAT without contents:write
+	"403",                                    // "The requested URL returned error: 403"
+}
+
+// pushForbidden reports whether stderr describes an ACCESS refusal.
+// Deliberately conservative: an unrecognised refusal stays a plain
+// ErrPushRejected, so the fork fallback never fires on a non-fast-forward
+// or a protected-branch rejection (which forking would not fix).
+func pushForbidden(stderr string) bool {
+	s := strings.ToLower(stderr)
+	for _, marker := range pushForbiddenMarkers {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// EnsureFork implements the optional Forker capability: POST
+// /repos/{owner}/{repo}/forks, which GitHub defines as idempotent (an
+// existing fork is returned, not duplicated) and ASYNCHRONOUS — the repo
+// record can lag the 202, so the fork is polled until the host reports it
+// readable before any push is attempted.
+func (h *GitHubHost) EnsureFork(ctx context.Context, req EnsureForkRequest) (ForkInfo, error) {
+	const op = "EnsureFork"
+	if req.Repo.Owner == "" || req.Repo.Name == "" {
+		return ForkInfo{}, &Error{Op: op, Err: ErrInvalidRequest}
+	}
+	target := req.Repo.Owner + "/" + req.Repo.Name
+
+	path := fmt.Sprintf("/repos/%s/%s/forks", req.Repo.Owner, req.Repo.Name)
+	var forked repoPayload
+	if err := h.restCall(ctx, op, http.MethodPost, path, req.Credential, nil, &forked); err != nil {
+		return ForkInfo{}, &Error{Op: op, Input: target, Err: fmt.Errorf("%w: %w", ErrForkUnavailable, err)}
+	}
+	if forked.Owner.Login == "" || forked.Name == "" {
+		return ForkInfo{}, &Error{Op: op, Input: target, Err: fmt.Errorf("%w: fork response named no repository", ErrForkUnavailable)}
+	}
+
+	fork := ForkInfo{
+		Repo:      Repo{Owner: forked.Owner.Login, Name: forked.Name},
+		RemoteURL: forked.CloneURL,
+	}
+	if fork.RemoteURL == "" {
+		fork.RemoteURL = fmt.Sprintf("https://github.com/%s/%s.git", fork.Repo.Owner, fork.Repo.Name)
+	}
+
+	if err := h.waitForRepo(ctx, op, fork.Repo, req.Credential); err != nil {
+		return ForkInfo{}, err
+	}
+	return fork, nil
+}
+
+// repoPayload is the subset of GitHub's repository object EnsureFork reads.
+type repoPayload struct {
+	Name     string `json:"name"`
+	CloneURL string `json:"clone_url"`
+	Owner    struct {
+		Login string `json:"login"`
+	} `json:"owner"`
+}
+
+// waitForRepo polls GET /repos/{owner}/{name} until it answers, bounding
+// both the attempt count and the wait so a fork that never materialises
+// fails with an actionable error instead of hanging.
+func (h *GitHubHost) waitForRepo(ctx context.Context, op string, repo Repo, cred Credential) error {
+	attempts := h.ForkReadyAttempts
+	if attempts <= 0 {
+		attempts = defaultForkReadyAttempts
+	}
+	delay := h.ForkReadyDelay
+	if delay <= 0 {
+		delay = defaultForkReadyDelay
+	}
+
+	path := fmt.Sprintf("/repos/%s/%s", repo.Owner, repo.Name)
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return &Error{Op: op, Input: repo.Owner + "/" + repo.Name, Err: fmt.Errorf("%w: %w", ErrForkUnavailable, ctx.Err())}
+			case <-time.After(delay):
+			}
+		}
+		lastErr = h.restCall(ctx, op, http.MethodGet, path, cred, nil, nil)
+		if lastErr == nil {
+			return nil
+		}
+	}
+	return &Error{
+		Op:    op,
+		Input: repo.Owner + "/" + repo.Name,
+		Err:   fmt.Errorf("%w: not readable after %d attempts: %w", ErrForkUnavailable, attempts, lastErr),
+	}
 }
 
 // OpenPR implements Host.OpenPR: create the PR via REST, then enable
@@ -207,7 +334,11 @@ func (h *GitHubHost) FindPRByHeadBranch(ctx context.Context, req FindPRRequest) 
 		return nil, &Error{Op: op, Err: ErrInvalidRequest}
 	}
 
-	path := fmt.Sprintf("/repos/%s/%s/pulls?state=all&head=%s:%s", req.Repo.Owner, req.Repo.Name, req.Repo.Owner, req.Branch)
+	headOwner := req.HeadOwner
+	if headOwner == "" {
+		headOwner = req.Repo.Owner
+	}
+	path := fmt.Sprintf("/repos/%s/%s/pulls?state=all&head=%s:%s", req.Repo.Owner, req.Repo.Name, headOwner, req.Branch)
 	var results []struct {
 		Number  int    `json:"number"`
 		HTMLURL string `json:"html_url"`
