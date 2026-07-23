@@ -12,19 +12,20 @@ import (
 )
 
 // CompletionCommand implements `a2a completion`. cmds is the top-level verb
-// list and contractSubs the `contract` sub-verbs, both injected by cmd/a2a
-// (the single owner of the dispatch surface). Both may be nil when the command
-// is constructed only to read Name()/Synopsis() (the catalog seam) — Run is
-// never invoked in that case.
+// list and subFamilies maps each `a2a <verb> <sub>` family verb (contract,
+// feedback, …) to its sub-verb names, both injected by cmd/a2a (the single
+// owner of the dispatch surface). Both may be nil when the command is
+// constructed only to read Name()/Synopsis() (the catalog seam) — Run is never
+// invoked in that case.
 type CompletionCommand struct {
-	cmds         []string
-	contractSubs []string
+	cmds        []string
+	subFamilies map[string][]string
 }
 
 // NewCompletionCommand constructs the completion verb over an injected verb
 // inventory. Passing nil/nil is valid for a metadata-only construction.
-func NewCompletionCommand(cmds, contractSubs []string) *CompletionCommand {
-	return &CompletionCommand{cmds: cmds, contractSubs: contractSubs}
+func NewCompletionCommand(cmds []string, subFamilies map[string][]string) *CompletionCommand {
+	return &CompletionCommand{cmds: cmds, subFamilies: subFamilies}
 }
 
 // Name implements Command.
@@ -42,7 +43,7 @@ func (c *CompletionCommand) Run(_ context.Context, args []string, stdio IO) int 
 		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a completion <%s>\n", strings.Join(CompletionShells, "|"))
 		return 2
 	}
-	script, err := RenderCompletion(args[0], c.cmds, c.contractSubs)
+	script, err := RenderCompletion(args[0], c.cmds, c.subFamilies)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a completion: %v\n", err)
 		return 1
