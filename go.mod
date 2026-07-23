@@ -7,6 +7,7 @@ require (
 	github.com/rogpeppe/go-internal v1.15.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/sigstore/sigstore-go v1.2.2
+	github.com/yuin/goldmark v1.8.4
 	gopkg.in/yaml.v3 v3.0.1
 )
 
