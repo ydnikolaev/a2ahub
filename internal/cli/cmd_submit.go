@@ -592,9 +592,12 @@ func (c *SubmitCommand) readMinBinaryVersion() (string, error) {
 }
 
 // submitSectionPath resolves envType/id's committed space-relative path
-// per §4.2's layout (internal/space/layout.go). Contract's provides/
-// <slug>/contract.md fixed filename is a known layout quirk this phase
-// does not attempt to work around — see this phase's Deviations report.
+// per §4.2's layout (internal/space/layout.go). Two of these shapes are
+// not <system>/<dir>/<id>.md — the contract's fixed provides/<slug>/
+// contract.md filename and the space-level decisions/<id>.md — and V2's
+// CC-003 guard knows both via validate's own placement table; treating
+// them as the default shape is what made every contract and every
+// decision unsubmittable through v0.2.0 (fb-20260723-9ae145).
 func submitSectionPath(layout space.Layout, envType, id string) (string, error) {
 	switch envType {
 	case "contract":
