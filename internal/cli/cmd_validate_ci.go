@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 )
@@ -117,14 +118,25 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	//     .github/**) are deliberately excluded from author-diff-authz — they are
 	//     space infrastructure governed by CODEOWNERS review + branch protection,
 	//     and authorizing them here would red the space owner's own manifest edit.
+	//
+	// decisions/*.md is the one artifact location under NO section (§4.2's
+	// multi-party space-level exception): it is validated like any other
+	// artifact, but deliberately stays out of diff-authz — a decision is
+	// authored by one system and approved by others, so "the PR author owns
+	// this section" is the wrong question there (CODEOWNERS + the decision
+	// flow's own approvals are). Before this, decisions were skipped by V3
+	// entirely — invisible to the required check that gates the merge.
 	var artifacts []string
 	var authzPaths []string
 	for _, p := range changed {
-		if _, ok := systemForPath(manifest, p); !ok {
+		if _, ok := systemForPath(manifest, p); ok {
+			authzPaths = append(authzPaths, p)
+			if strings.HasSuffix(p, ".md") {
+				artifacts = append(artifacts, p)
+			}
 			continue
 		}
-		authzPaths = append(authzPaths, p)
-		if strings.HasSuffix(p, ".md") {
+		if isSpaceLevelArtifact(p) {
 			artifacts = append(artifacts, p)
 		}
 	}
@@ -199,7 +211,18 @@ func validateCIArtifact(engine *validate.Engine, root, relPath string, manifest 
 	// under — the CC-002 authz check then verifies the envelope's `from`
 	// matches the section it lives in. The filter guarantees a match, so
 	// ownSystem is never empty (which would trip ErrNoOwnSystem).
-	ownSystem, _ := systemForPath(manifest, relPath)
+	//
+	// A space-level artifact (decisions/, §4.2) has no owning section, so
+	// its own id's <system> token — the DRAFTING system — stands in. That
+	// keeps the engine's fail-closed OwnSystem contract satisfied without
+	// weakening anything: `type: decision` is exempt from the from==section
+	// check by §5.2 anyway, and any OTHER type dropped into decisions/ gets
+	// compared against a system that is not its own section, so it reds
+	// (REF-005) exactly as it should.
+	ownSystem, ok := systemForPath(manifest, relPath)
+	if !ok {
+		ownSystem = spaceLevelOwnSystem(relPath)
+	}
 	legality := NewLegalityAdapter(root, ownSystem, manifest)
 
 	result, err := engine.ValidateForSubmit(
@@ -259,8 +282,34 @@ func systemForPath(manifest space.Manifest, p string) (string, bool) {
 	return "", false
 }
 
-// walkArtifacts collects every `*.md` file under a participant section in
-// the checkout (v3-full-repo scope). The bare `.git` object store is
+// spaceLevelArtifactDir is the one §4.2 directory that holds artifacts
+// belonging to no single system's section (decisions are multi-party).
+const spaceLevelArtifactDir = "decisions"
+
+// isSpaceLevelArtifact reports whether a space-relative path is an
+// artifact filed at the space level rather than inside a participant
+// section — today exactly decisions/*.md (§4.2).
+func isSpaceLevelArtifact(p string) bool {
+	return strings.HasPrefix(p, spaceLevelArtifactDir+"/") && strings.HasSuffix(p, ".md")
+}
+
+// spaceLevelOwnSystem derives the OwnSystem a space-level artifact is
+// validated under: its own id's <system> token (the drafting system, §3.3),
+// read from the filename stem. A stem that is not a parseable id falls back
+// to the directory name — a value no participant can equal, so the artifact
+// fails closed instead of being waved through (the stem itself is separately
+// reported by CC-003 via the placement guard).
+func spaceLevelOwnSystem(relPath string) string {
+	stem := strings.TrimSuffix(filepath.Base(relPath), filepath.Ext(relPath))
+	if id, err := artifact.ParseID(stem); err == nil {
+		return id.System
+	}
+	return spaceLevelArtifactDir
+}
+
+// walkArtifacts collects every `*.md` file under a participant section —
+// plus the space-level decisions/ artifacts, which belong to no section —
+// in the checkout (v3-full-repo scope). The bare `.git` object store is
 // skipped (it holds no artifacts and grows with history).
 func walkArtifacts(root string, manifest space.Manifest) ([]string, error) {
 	var out []string
@@ -281,7 +330,7 @@ func walkArtifacts(root string, manifest space.Manifest) ([]string, error) {
 		if relErr != nil {
 			return nil
 		}
-		if _, ok := systemForPath(manifest, rel); ok {
+		if _, ok := systemForPath(manifest, rel); ok || isSpaceLevelArtifact(rel) {
 			out = append(out, rel)
 		}
 		return nil

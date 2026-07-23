@@ -364,6 +364,133 @@ func TestValidateCI_DiffAuthzUnmappedAuthor(t *testing.T) {
 	}
 }
 
+// validContract returns a genuinely V2-valid contract descriptor for
+// system `from`, as committed at §4.2's <from>/provides/<slug>/contract.md.
+func validContract(from, slug string) string {
+	return "---\n" +
+		"schema: envelope/v1\n" +
+		"id: XC-" + from + "-" + slug + "\n" +
+		"type: contract\n" +
+		"title: Test contract\n" +
+		"space: getvisa\n" +
+		"from: " + from + "\n" +
+		"to: [seomatrix]\n" +
+		"actor: {kind: agent, name: claude, model: claude-fable-5}\n" +
+		"created: 2026-07-30T14:02:00Z\n" +
+		"category: data-feed\n" +
+		"priority: p2\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: \"1.0.0\"\n" +
+		"schema_format: json-schema-2020-12\n" +
+		"compat_policy: default\n" +
+		"---\nBody.\n"
+}
+
+// validDecision returns a genuinely V2-valid decision drafted by `from`,
+// as committed at §4.2's space-level decisions/<id>.md.
+func validDecision(id, from string) string {
+	return "---\n" +
+		"schema: envelope/v1\n" +
+		"id: " + id + "\n" +
+		"type: decision\n" +
+		"title: Test decision\n" +
+		"space: getvisa\n" +
+		"from: " + from + "\n" +
+		"to: [axon, seomatrix]\n" +
+		"actor: {kind: human, name: yura}\n" +
+		"created: 2026-07-30T14:02:00Z\n" +
+		"priority: p2\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"required_approvers: [axon, seomatrix]\n" +
+		"context: \"why this needs deciding\"\n" +
+		"options_considered: [\"a\", \"b\"]\n" +
+		"---\nBody.\n"
+}
+
+// TestValidateCI_PRContractAtItsCanonicalPath proves V3 accepts a contract
+// at the ONLY path a contract can be committed to — the fixed
+// provides/<slug>/contract.md — which the pre-fix stem guard reds
+// unconditionally (fb-20260723-9ae145: the same defect blocked `a2a
+// submit`, so a hand-opened PR was no workaround).
+func TestValidateCI_PRContractAtItsCanonicalPath(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "axon/provides/content-feed/contract.md"
+	root := ciRepo(t, ciSpaceYAML, map[string]string{rel: validContract("axon", "content-feed")})
+
+	code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr=%s; report=%+v", code, errOut, rep)
+	}
+	if len(rep.Artifacts) != 1 || rep.Artifacts[0].Result == nil || !rep.Artifacts[0].Result.Valid {
+		t.Fatalf("expected the contract to validate clean, got %+v", rep.Artifacts)
+	}
+}
+
+// TestValidateCI_PRContractUnderWrongSlugRed proves the placement guard
+// still has teeth: the descriptor's own directory must match its id's slug.
+func TestValidateCI_PRContractUnderWrongSlugRed(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "axon/provides/other-feed/contract.md"
+	root := ciRepo(t, ciSpaceYAML, map[string]string{rel: validContract("axon", "content-feed")})
+
+	code, rep, _ := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1; report=%+v", code, rep)
+	}
+	if len(rep.Artifacts) != 1 || rep.Artifacts[0].Result == nil {
+		t.Fatalf("expected one artifact result, got %+v", rep.Artifacts)
+	}
+	var sawREF001 bool
+	for _, v := range rep.Artifacts[0].Result.Violations {
+		if v.Code == "REF-001" {
+			sawREF001 = true
+		}
+	}
+	if !sawREF001 {
+		t.Fatalf("expected REF-001 for a contract under the wrong slug dir, got %+v", rep.Artifacts[0].Result.Violations)
+	}
+}
+
+// TestValidateCI_PRSpaceLevelDecisionValidated proves decisions/ — filed
+// under no participant section — is validated by V3 rather than skipped,
+// and stays out of author-diff-authz (multi-party by §4.2).
+func TestValidateCI_PRSpaceLevelDecisionValidated(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "decisions/XD-axon-20260730-h2k8.md"
+	root := ciRepo(t, ciSpaceYAML, map[string]string{rel: validDecision("XD-axon-20260730-h2k8", "axon")})
+
+	code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "misha-gh")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr=%s; report=%+v", code, errOut, rep)
+	}
+	if len(rep.Artifacts) != 1 || rep.Artifacts[0].Result == nil || !rep.Artifacts[0].Result.Valid {
+		t.Fatalf("expected the decision to be validated and clean, got %+v", rep.Artifacts)
+	}
+	if len(rep.DiffAuthz) != 0 {
+		t.Fatalf("space-level decisions must stay out of diff-authz, got %+v", rep.DiffAuthz)
+	}
+}
+
+// TestValidateCI_PRSpaceLevelNonDecisionRed proves the space-level lane is
+// not a bypass: a question smuggled into decisions/ still reds (its `from`
+// no longer matches the section it claims to live in).
+func TestValidateCI_PRSpaceLevelNonDecisionRed(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "decisions/XQ-axon-20260730-h2k8.md"
+	root := ciRepo(t, ciSpaceYAML, map[string]string{rel: validQuestion("XQ-axon-20260730-h2k8", "seomatrix", "axon")})
+
+	code, rep, _ := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 (a non-decision under decisions/ must red); report=%+v", code, rep)
+	}
+}
+
 func TestValidateCI_PRDeletedFileSkipped(t *testing.T) {
 	t.Parallel()
 	engine := ciEngine(t)
