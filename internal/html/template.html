@@ -1757,6 +1757,17 @@ function renderDocs(){
       }});
       pre.appendChild(btn);
     });
+    /* In-article anchor links: cross-section refs (rewritten by the doc
+       assembler to #section-id) switch sections; same-page heading anchors
+       scroll within the body. Anything else is left to default. */
+    article.querySelectorAll('a[href^="#"]').forEach(a=>{
+      a.addEventListener("click",ev=>{
+        const id=(a.getAttribute("href")||"").slice(1); if(!id) return;
+        if(docs.some(x=>x.id===id)){ ev.preventDefault(); selectDoc(id); return; }
+        let t; try{ t=article.querySelector("#"+CSS.escape(id)); }catch(e){ t=null; }
+        if(t){ ev.preventDefault(); body.scrollTop=Math.max(0,t.offsetTop-8); }
+      });
+    });
     buildToc(article);
   }
   function buildToc(article){
