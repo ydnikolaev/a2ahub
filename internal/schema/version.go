@@ -92,3 +92,12 @@ func AcceptsConsumesVersion(v int) bool {
 	min, max := acceptedWindow(currentConsumesVersion)
 	return v >= min && v <= max
 }
+
+// CurrentConsumesSchema is the `schema:` value a consumes.yaml authored
+// against THIS build should carry. A validator that finds no `schema:`
+// field at all needs a version to check the document against — so it can
+// report the real, actionable schema-class errors (including the missing
+// `schema` field itself) instead of an opaque "unknown version".
+func CurrentConsumesSchema() string {
+	return "consumes/v" + strconv.Itoa(currentConsumesVersion)
+}

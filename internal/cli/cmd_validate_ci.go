@@ -126,13 +126,23 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	// this section" is the wrong question there (CODEOWNERS + the decision
 	// flow's own approvals are). Before this, decisions were skipped by V3
 	// entirely — invisible to the required check that gates the merge.
+	//
+	// consumes.yaml is the third list: a NON-artifact file (no envelope, no
+	// id) that is nonetheless normative — it is the D-022 registry that
+	// makes a system a registered consumer, and the retire-block check
+	// reads it. Nothing validated it before, so a file the schema rejects
+	// outright merged silently and simply registered nobody.
 	var artifacts []string
 	var authzPaths []string
+	var consumes []string
 	for _, p := range changed {
 		if _, ok := systemForPath(manifest, p); ok {
 			authzPaths = append(authzPaths, p)
-			if strings.HasSuffix(p, ".md") {
+			switch {
+			case strings.HasSuffix(p, ".md"):
 				artifacts = append(artifacts, p)
+			case isConsumesRegistry(p):
+				consumes = append(consumes, p)
 			}
 			continue
 		}
@@ -151,6 +161,16 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 		if rep == nil {
 			// Absent on disk (deleted in this PR) — nothing to validate.
 			continue
+		}
+		report.Artifacts = append(report.Artifacts, *rep)
+		if !ok {
+			report.Valid = false
+		}
+	}
+	for _, relPath := range consumes {
+		rep, ok := validateCIConsumes(engine, root, relPath)
+		if rep == nil {
+			continue // deleted in this PR
 		}
 		report.Artifacts = append(report.Artifacts, *rep)
 		if !ok {
@@ -282,6 +302,31 @@ func systemForPath(manifest space.Manifest, p string) (string, bool) {
 	return "", false
 }
 
+// validateCIConsumes runs the consumes/v1 schema check over one
+// <system>/consumes.yaml (§5.2.3 / D-022). Same report shape as an
+// artifact — the file is normative even though it carries no envelope.
+func validateCIConsumes(engine *validate.Engine, root, relPath string) (*validateReport, bool) {
+	raw, err := os.ReadFile(filepath.Join(root, relPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, true
+		}
+		return &validateReport{Path: relPath, Error: err.Error()}, false
+	}
+	result, err := engine.ValidateConsumes(raw)
+	if err != nil {
+		return &validateReport{Path: relPath, Error: err.Error()}, false
+	}
+	r := result
+	return &validateReport{Path: relPath, Result: &r}, result.Valid
+}
+
+// isConsumesRegistry reports whether a space-relative path is a system's
+// consumes.yaml — the §4.2 name is fixed, one per section.
+func isConsumesRegistry(p string) bool {
+	return filepath.Base(p) == "consumes.yaml"
+}
+
 // spaceLevelArtifactDir is the one §4.2 directory that holds artifacts
 // belonging to no single system's section (decisions are multi-party).
 const spaceLevelArtifactDir = "decisions"
@@ -307,10 +352,11 @@ func spaceLevelOwnSystem(relPath string) string {
 	return spaceLevelArtifactDir
 }
 
-// walkArtifacts collects every `*.md` file under a participant section —
-// plus the space-level decisions/ artifacts, which belong to no section —
-// in the checkout (v3-full-repo scope). The bare `.git` object store is
-// skipped (it holds no artifacts and grows with history).
+// walkArtifacts collects every validatable file in the checkout
+// (v3-full-repo scope): `*.md` under a participant section, each section's
+// `consumes.yaml`, and the space-level decisions/ artifacts, which belong
+// to no section. The bare `.git` object store is skipped (it holds no
+// artifacts and grows with history).
 func walkArtifacts(root string, manifest space.Manifest) ([]string, error) {
 	var out []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -323,7 +369,7 @@ func walkArtifacts(root string, manifest space.Manifest) ([]string, error) {
 			}
 			return nil
 		}
-		if !strings.HasSuffix(path, ".md") {
+		if !strings.HasSuffix(path, ".md") && !isConsumesRegistry(path) {
 			return nil
 		}
 		rel, relErr := filepath.Rel(root, path)
