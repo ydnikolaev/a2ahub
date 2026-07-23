@@ -159,8 +159,34 @@ func toItem(fa foldedArtifact, syncStale, pendingMerge bool) Item {
 		From: fa.Env.From, To: normalizeTo(fa.Env.To), State: string(fa.Result.State),
 		Priority: fa.Env.Priority, Blocking: fa.Env.Blocking, NeededBy: fa.Env.NeededBy,
 		Thread: fa.Env.Thread, PendingMerge: pendingMerge, SyncStale: syncStale,
-		LatestEventAt: fa.LatestEventAt,
+		LatestEventAt: fa.LatestEventAt, Description: bodySummary(fa.Raw, 240),
 	}
+}
+
+// bodySummary extracts a short human-readable description from an artifact's
+// body (the markdown after its frontmatter): the first non-empty paragraph,
+// whitespace-collapsed, a leading markdown heading/quote marker trimmed, capped
+// at max runes. Returns "" for a missing/empty body or an unparseable file
+// (degrade, never fail the caller). Used for the dashboard's item + contract
+// descriptions (D-001/D-002).
+func bodySummary(raw []byte, max int) string {
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return ""
+	}
+	s := strings.TrimSpace(string(fm.Body))
+	if s == "" {
+		return ""
+	}
+	if i := strings.Index(s, "\n\n"); i >= 0 {
+		s = s[:i] // first paragraph only
+	}
+	s = strings.TrimLeft(s, "#>-* \t")       // drop a leading md heading/quote/list marker
+	s = strings.Join(strings.Fields(s), " ") // collapse internal whitespace + newlines
+	if r := []rune(s); len(r) > max {
+		s = strings.TrimSpace(string(r[:max-1])) + "…"
+	}
+	return s
 }
 
 func sortItems(items []Item) {
@@ -462,6 +488,7 @@ func (s *Store) Contracts(ctx context.Context, provider string) ([]ContractInfo,
 			out = append(out, ContractInfo{
 				Space: spaceID, ID: fa.Env.ID, Provider: fa.Env.From,
 				Version: fa.LatestPublishVersion, State: string(fa.Result.State),
+				Description: bodySummary(fa.Raw, 240),
 			})
 		}
 	}

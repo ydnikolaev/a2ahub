@@ -69,6 +69,9 @@ type ContractEdge struct {
 	// Drift: current | behind | deprecated | retired | dangling.
 	Drift  string `json:"drift"`
 	Sunset string `json:"sunset,omitempty"` // ISO date, if the provider set one
+	// Description is the provider contract's short summary (from its body) —
+	// UNTRUSTED, textContent-only (D-002). Omitted when unknown/empty.
+	Description string `json:"description,omitempty"`
 }
 
 // ExchangeEdge is a TRANSIENT overlay edge: open exchanges aggregated per
@@ -100,6 +103,9 @@ type Item struct {
 	New         bool     `json:"new"`
 	Severity    string   `json:"severity"` // blocking | attention | normal
 	Reasons     []string `json:"reasons,omitempty"`
+	// Description is a short human-readable summary (from the artifact body) —
+	// UNTRUSTED, rendered via textContent (D-001). Omitted when the body is empty.
+	Description string `json:"description,omitempty"`
 }
 
 // Contract is one contract in the catalog (from Store.Contracts).
@@ -111,6 +117,9 @@ type Contract struct {
 	State      string   `json:"state"`
 	CodeBacked bool     `json:"codeBacked"`
 	Consumers  []string `json:"consumers,omitempty"`
+	// Description is a short human-readable summary from the contract body —
+	// UNTRUSTED, textContent-only (D-002). Omitted when the body is empty.
+	Description string `json:"description,omitempty"`
 }
 
 // Flag is one validation flag (V4/V5) surfaced per space/system.
