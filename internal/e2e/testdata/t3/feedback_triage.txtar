@@ -1,0 +1,86 @@
+# spec 25 §6 AC-3: `a2a feedback triage` from the hub root lists the
+# `status: new` inbox items; `--apply <verdicts.yaml>` mutates status/
+# resolution in-file, routes accepted items into feedback/backlog.yaml, and
+# appends a dated entry to feedback/digest.md. A second run is idempotent
+# ("inbox clean").
+
+# lists both fresh items
+exec a2a feedback triage
+stdout 'fb-20260715-aaa111'
+stdout 'fb-20260715-bbb222'
+
+# apply the operator-agent's verdicts
+exec a2a feedback triage --apply verdicts.yaml
+stdout 'applied 2'
+
+# statuses mutated in-file
+grep 'status: accepted' feedback/inbox/fb-20260715-aaa111.yaml
+grep 'status: rejected' feedback/inbox/fb-20260715-bbb222.yaml
+
+# the accepted item is routed into the backlog (schema-valid list)
+grep 'fb-20260715-aaa111' feedback/backlog.yaml
+grep 'verdict: accepted' feedback/backlog.yaml
+
+# a dated digest entry was appended
+grep 'Triage' feedback/digest.md
+grep 'fb-20260715-aaa111' feedback/digest.md
+
+# idempotent: nothing new remains
+exec a2a feedback triage
+stdout 'inbox clean'
+
+-- feedback/inbox/fb-20260715-aaa111.yaml --
+feedback: v1
+id: fb-20260715-aaa111
+kind: friction
+severity: minor
+title: "inbox output floods small-context agents"
+summary: "inbox prints ~4k tokens when three lines would be actionable"
+context:
+  a2a_version: v0.1.1
+  os_arch: darwin/arm64
+  surface: cli
+checks:
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+status: new
+
+-- feedback/inbox/fb-20260715-bbb222.yaml --
+feedback: v1
+id: fb-20260715-bbb222
+kind: docs
+severity: minor
+title: "question authoring page omits the close transition"
+summary: "reference/authoring/question.md does not say how a thread closes"
+context:
+  a2a_version: v0.1.1
+  os_arch: darwin/arm64
+  surface: docs
+checks:
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+status: new
+
+-- feedback/backlog.yaml --
+backlog: v1
+wip_limit: 16
+items: []
+
+-- feedback/digest.md --
+# Feedback digest
+
+-- verdicts.yaml --
+verdicts:
+  - id: fb-20260715-aaa111
+    status: accepted
+    resolution: "real token-cost win; routed to backlog"
+    route: backlog
+  - id: fb-20260715-bbb222
+    status: rejected
+    resolution: "duplicate of an already-tracked docs gap"
