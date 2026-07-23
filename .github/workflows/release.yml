@@ -31,6 +31,22 @@ jobs:
           # GoReleaser's changelog needs the full history, not the default shallow clone.
           fetch-depth: 0
 
+      # Refuse to publish a tag whose agent-facing release notes are missing
+      # (P31 AC-915.1). releasenotes/<version>.yaml is the authored, embedded
+      # payload that `a2a whatsnew` and the post-update digest render; a release
+      # with no notes file ships a binary that can say nothing about itself.
+      # This runs before any publish side-effect, so a missing file is a loud
+      # fail in the Actions log, not a half-published release.
+      - name: Assert release notes exist for this tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          notes="releasenotes/${version}.yaml"
+          if [ ! -f "$notes" ]; then
+            echo "::error::missing ${notes} — author the release directives before tagging ${GITHUB_REF_NAME} (P31 §5)"
+            exit 1
+          fi
+          echo "release notes present: ${notes}"
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
