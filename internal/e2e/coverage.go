@@ -72,7 +72,7 @@ func (e coverageEntry) evidenceKind() (string, error) {
 var coverageManifest = []coverageEntry{
 	// --- Setup & health ------------------------------------------------
 	{Verb: "connect", Txtar: "connect.txtar"},
-	{Verb: "disconnect", Skip: "pending 14c family Setup & health — no scenario yet (connect.txtar only exercises connect)"},
+	{Verb: "disconnect", Txtar: "setup_disconnect.txtar"},
 	{Verb: "doctor", Txtar: "doctor.txtar"},
 	{Verb: "init", Txtar: "init.txtar"},
 
@@ -129,11 +129,11 @@ var coverageManifest = []coverageEntry{
 	{Verb: "contract-verify-export", GoTest: "internal/e2e.TestT3ContractVerifyExportLocal"},
 
 	// --- Ops & delivery --------------------------------------------------
-	{Verb: "completion", Skip: "pending 14c family Ops & delivery — no scenario yet"},
-	{Verb: "dashboard", Skip: "pending 14c family Ops & delivery — no scenario yet (alias of html, same synopsis)"},
-	{Verb: "html", Skip: "pending 14c family Ops & delivery — no scenario yet"},
-	{Verb: "skill", Skip: "pending 14c family Ops & delivery — no scenario yet"},
-	{Verb: "version", Skip: "pending 14c family Ops & delivery — no scenario yet"},
+	{Verb: "completion", Txtar: "ops_completion.txtar"},
+	{Verb: "dashboard", Txtar: "ops_html.txtar"},
+	{Verb: "html", Txtar: "ops_html.txtar"},
+	{Verb: "skill", Txtar: "ops_skill.txtar"},
+	{Verb: "version", Txtar: "ops_version.txtar"},
 
 	// --- Feedback (P25) — spec 26 §2 Feedback row: this phase only
 	// registers P25's own evidence, 4 exec-txtar + 1 Go-test ref. --------
@@ -145,7 +145,7 @@ var coverageManifest = []coverageEntry{
 
 	// --- Permanent skip-set (spec 26 §1, exhaustive) --------------------
 	{Verb: "mcp", Skip: "serve-loop; CLI/MCP behavior equivalence is owned by the P14/P15 parity suite"},
-	{Verb: "update", Skip: "network self-swap; covered instead by a scenario against a local fake release-asset fixture (14c)"},
+	{Verb: "update", GoTest: "internal/e2e.TestT3UpdateResolveVerifyRefuseChecksum"},
 }
 
 // manifestVerbSet returns the set of every Verb named by ANY row of

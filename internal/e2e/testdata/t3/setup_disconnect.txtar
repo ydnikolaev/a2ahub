@@ -1,0 +1,29 @@
+# `a2a disconnect <space>` (Setup & health family remainder, extends
+# connect.txtar): removes the config entry, the mirror clone, AND any
+# pending-merge cache markers recorded for that space (§7.2 OP-202,
+# internal/cache.RemoveSpaceMarkers) — this base fixture already ran
+# connect-equivalent setup (a config entry + a real mirror clone for
+# fixture-space; see txtar_test.go's own Setup), so this script seeds one
+# pending marker file (the shape a real submit would have written) to prove
+# the cache-removal step is real, not a no-op, then asserts all three are
+# gone. Disconnecting a space that was never connected is a safe no-op
+# (exit 0).
+exists .a2a/config.yaml
+exists .a2a/cache/mirrors/fixture-space/space.yaml
+mkdir .a2a/cache/pending/fixture-space
+cp pending-marker.json .a2a/cache/pending/fixture-space/XR-fake.json
+
+exec a2a disconnect fixture-space
+stdout 'removed space "fixture-space"'
+! exists .a2a/cache/mirrors/fixture-space
+! exists .a2a/cache/pending/fixture-space
+! grep 'fixture-space' .a2a/config.yaml
+
+# Disconnecting a space that was never (or no longer) connected is idempotent.
+exec a2a disconnect fixture-space
+stdout 'is not connected'
+exec a2a disconnect never-connected
+stdout 'is not connected'
+
+-- pending-marker.json --
+{"artifact_id":"XR-fake","state":"open"}
