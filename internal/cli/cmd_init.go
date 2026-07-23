@@ -9,8 +9,10 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,9 +71,17 @@ type InitCommand struct {
 	MachineConfigPath string
 
 	// AgentsPath is the consumer repo's AGENTS.md path, DI'd from wire.go
-	// (<projectRoot>/AGENTS.md). Only consulted when `--agents-pointer` is
-	// passed; left empty (catalog/test path), the pointer step is a no-op.
+	// (<projectRoot>/AGENTS.md). The pointer is written by DEFAULT (opt out with
+	// --no-agents-pointer); left empty (catalog/test path), the step is a no-op.
 	AgentsPath string
+
+	// SkillFiles + SkillTarget + Version drive the default-on skill install
+	// (opt out with --no-skill). SkillFiles is the embedded tree (skill.Files,
+	// DI'd from wire.go); SkillTarget is where it lands (<projectRoot>/.a2ahub/
+	// skill). Left nil/empty (catalog/test path), the skill step is a no-op.
+	SkillFiles  fs.FS
+	SkillTarget string
+	Version     string
 
 	// writeFile/loadProjectConfig are DI seams (rails, mirrors
 	// DoctorCommand's own convention) so tests never touch a real
@@ -95,7 +105,7 @@ func (c *InitCommand) Name() string { return "init" }
 
 // Synopsis implements cli.Command.
 func (c *InitCommand) Synopsis() string {
-	return "non-interactive project setup: --system <id> --space <repo>..."
+	return "non-interactive project setup: config + skill install + AGENTS.md pointer (--no-skill / --no-agents-pointer to opt out)"
 }
 
 // Run implements cli.Command. Exit codes: 2 = usage error (missing
@@ -107,7 +117,8 @@ func (c *InitCommand) Run(_ context.Context, args []string, stdio IO) int {
 	system := fs.String("system", "", "this project's own system id (required)")
 	var spaces initStringList
 	fs.Var(&spaces, "space", "connected space repo URL (repeatable; at least one required)")
-	agentsPointer := fs.Bool("agents-pointer", false, "append an a2ahub pointer block to AGENTS.md (opt-in; idempotent)")
+	noSkill := fs.Bool("no-skill", false, "do NOT install the a2ahub skill tree (installed by default)")
+	noAgentsPointer := fs.Bool("no-agents-pointer", false, "do NOT add the a2ahub pointer to AGENTS.md (added by default)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -134,13 +145,16 @@ func (c *InitCommand) Run(_ context.Context, args []string, stdio IO) int {
 		return code
 	}
 
-	// Consent-gated (D-021): only on explicit --agents-pointer. Runs before the
-	// idempotent short-circuit so a repeat `a2a init --agents-pointer` still
-	// ensures the block (e.g. an operator who deleted it).
-	if *agentsPointer {
-		if code := c.ensureAgentsPointer(stdio); code != 0 {
-			return code
-		}
+	// Default-on onboarding (opt-out), before the idempotent short-circuit so a
+	// repeat `a2a init` still refreshes both. Both are best-effort extras — a
+	// failure warns but never fails init's primary job (the config write). The
+	// consent for writing into the consumer's AGENTS.md is the act of running
+	// `a2a init` in that repo; --no-agents-pointer opts out (D-021).
+	if !*noSkill {
+		c.installSkill(stdio)
+	}
+	if !*noAgentsPointer {
+		_ = c.ensureAgentsPointer(stdio) // prints its own error; never fatal to init
 	}
 
 	if existing, ok := c.loadExisting(); ok && initConfigsEquivalent(existing, cfg) {
@@ -238,8 +252,29 @@ func (c *InitCommand) ensureMachineConfig(refs []space.Ref, stdio IO) int {
 	return 0
 }
 
-// ensureAgentsPointer appends the a2ahub pointer block to AGENTS.md when
-// --agents-pointer is passed. Safety (operator requirement 2026-07-23): it
+// installSkill materializes the embedded a2ahub skill tree under SkillTarget
+// (default onboarding, opt out with --no-skill). Best-effort: a foreign target
+// or a write error prints a note and returns — it never fails init's primary
+// config write. A no-op when SkillFiles/SkillTarget are unwired (catalog/test).
+func (c *InitCommand) installSkill(stdio IO) {
+	if c.SkillFiles == nil || c.SkillTarget == "" {
+		return
+	}
+	written, err := installSkillTree(c.SkillFiles, c.SkillTarget, c.Version, false)
+	switch {
+	case errors.Is(err, errSkillForeignTarget):
+		_, _ = fmt.Fprintf(stdio.Stdout,
+			"init: skipped skill install — %s has non-a2ahub content (run `a2a skill install --force` to overwrite)\n", c.SkillTarget)
+	case err != nil:
+		_, _ = fmt.Fprintf(stdio.Stderr, "init: skill install skipped: %v\n", err)
+	default:
+		_, _ = fmt.Fprintf(stdio.Stdout, "init: installed a2ahub skill (%d files) to %s\n", written, c.SkillTarget)
+	}
+}
+
+// ensureAgentsPointer appends the a2ahub pointer block to AGENTS.md (default
+// onboarding, opt out with --no-agents-pointer). Safety (operator requirement
+// 2026-07-23): it
 // NEVER overwrites — it APPENDS to whatever the consumer already has (creating
 // the file if absent), and it is idempotent (a file already carrying the start
 // marker is left untouched). A no-op when AgentsPath is unwired (catalog/test).
