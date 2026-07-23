@@ -15,6 +15,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -22,6 +23,12 @@ import (
 	"path/filepath"
 	"strings"
 )
+
+// errSkillForeignTarget is returned by installSkillTree when the target is
+// non-empty, carries no a2ahub provenance marker (someone else's content), and
+// force is not set — nothing is written. Callers decide: `a2a skill install`
+// errors; `a2a init` warns and skips (so onboarding never fails on it).
+var errSkillForeignTarget = errors.New("target is not an a2ahub-managed skill install")
 
 // skillProvenanceFile is the marker file every install writes at the target
 // root. Its presence identifies a target as a2ahub-owned (so a refresh may
@@ -89,65 +96,71 @@ func (c *SkillCommand) runInstall(args []string, stdio IO) int {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a skill install [--dir <path>] [--force]")
 		return 2
 	}
-	target := *dir
-
-	// No-clobber gate: a target that exists, is non-empty, and carries NO
-	// a2ahub provenance marker is treated as someone else's content — refuse
-	// unless --force. Our own prior install (marker present) refreshes freely.
-	nonEmpty, owned, err := skillTargetState(target)
-	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill install: %v\n", err)
-		return 1
-	}
-	if nonEmpty && !owned && !*force {
+	written, err := installSkillTree(c.files, *dir, c.version, *force)
+	if errors.Is(err, errSkillForeignTarget) {
 		_, _ = fmt.Fprintf(stdio.Stderr,
-			"a2a skill install: %s exists and is not an a2ahub skill install — refusing to overwrite (pass --force or --dir <path>)\n", target)
+			"a2a skill install: %s exists and is not an a2ahub skill install — refusing to overwrite (pass --force or --dir <path>)\n", *dir)
 		return 1
 	}
-
-	// Mirror semantics: refreshing our own install (or --force over foreign
-	// content) wipes the target FIRST, so a file the current tree no longer
-	// ships is not left orphaned. An absent/empty target needs no wipe. The
-	// wipe only runs after the no-clobber gate above has authorized it.
-	if nonEmpty {
-		if err := os.RemoveAll(target); err != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill install: cannot refresh %s: %v\n", target, err)
-			return 1
-		}
-	}
-
-	written, err := c.writeTree(target)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill install: %v\n", err)
 		return 1
 	}
-	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte(c.provenance()), 0o644); err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill install: write provenance: %v\n", err)
-		return 1
-	}
 
-	_, _ = fmt.Fprintf(stdio.Stdout, "a2a skill: installed %d files to %s\n", written, target)
-	_, _ = fmt.Fprintf(stdio.Stdout, "  entry point: %s\n", filepath.Join(target, "SKILL.md"))
-	_, _ = fmt.Fprintln(stdio.Stdout, "  point your repo's AGENTS.md/CLAUDE.md at it (or run `a2a init --agents-pointer`)")
+	_, _ = fmt.Fprintf(stdio.Stdout, "a2a skill: installed %d files to %s\n", written, *dir)
+	_, _ = fmt.Fprintf(stdio.Stdout, "  entry point: %s\n", filepath.Join(*dir, "SKILL.md"))
+	_, _ = fmt.Fprintln(stdio.Stdout, "  point your repo's AGENTS.md/CLAUDE.md at it (or run `a2a init` / `a2a init --agents-pointer`)")
 	return 0
 }
 
-// writeTree materializes the embedded a2ahub tree under target, stripping the
-// embed's "a2ahub/" root prefix so files land at <target>/SKILL.md etc. Returns
-// the number of files written. It writes ONLY under target.
-func (c *SkillCommand) writeTree(target string) (int, error) {
+// installSkillTree is the reusable install core shared by `a2a skill install`
+// and `a2a init` (default onboarding). It materializes files' "a2ahub" subtree
+// under target with a PROVENANCE.md marker, and returns the file count.
+//
+// No-clobber + mirror semantics: a non-empty target WITHOUT our marker and
+// without force yields errSkillForeignTarget (nothing written). An authorized
+// non-empty target (our own marker, or force over foreign content) is wiped
+// FIRST so the result mirrors the embedded tree (no orphaned stale files). An
+// absent/empty target installs directly. It writes ONLY under target.
+func installSkillTree(files fs.FS, target, version string, force bool) (int, error) {
+	nonEmpty, owned, err := skillTargetState(target)
+	if err != nil {
+		return 0, err
+	}
+	if nonEmpty && !owned && !force {
+		return 0, errSkillForeignTarget
+	}
+	if nonEmpty {
+		if err := os.RemoveAll(target); err != nil {
+			return 0, fmt.Errorf("cannot refresh %s: %w", target, err)
+		}
+	}
+
+	written, err := writeSkillTree(files, target)
+	if err != nil {
+		return 0, err
+	}
+	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte(skillProvenance(version)), 0o644); err != nil {
+		return written, fmt.Errorf("write provenance: %w", err)
+	}
+	return written, nil
+}
+
+// writeSkillTree materializes files' embedded a2ahub tree under target,
+// stripping the embed's "a2ahub/" root prefix so files land at <target>/SKILL.md
+// etc. Returns the number of files written. It writes ONLY under target.
+func writeSkillTree(files fs.FS, target string) (int, error) {
 	var count int
-	err := fs.WalkDir(c.files, "a2ahub", func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(files, "a2ahub", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel := strings.TrimPrefix(p, "a2ahub")
-		rel = strings.TrimPrefix(rel, "/")
+		rel := strings.TrimPrefix(strings.TrimPrefix(p, "a2ahub"), "/")
 		dest := filepath.Join(target, rel)
 		if d.IsDir() {
 			return os.MkdirAll(dest, 0o755)
 		}
-		data, readErr := fs.ReadFile(c.files, p)
+		data, readErr := fs.ReadFile(files, p)
 		if readErr != nil {
 			return readErr
 		}
@@ -163,12 +176,12 @@ func (c *SkillCommand) writeTree(target string) (int, error) {
 	return count, err
 }
 
-// provenance renders the PROVENANCE.md marker: the machine tag first, then the
-// human "what/where/how-to-refresh" note.
-func (c *SkillCommand) provenance() string {
+// skillProvenance renders the PROVENANCE.md marker: the machine tag first, then
+// the human "what/where/how-to-refresh" note.
+func skillProvenance(version string) string {
 	return skillProvenanceTag + "\n" +
 		"# a2ahub skill — installed artifact\n\n" +
-		"Written by `a2a skill install` (a2a " + c.version + ").\n" +
+		"Written by `a2a skill install` / `a2a init` (a2a " + version + ").\n" +
 		"Source: github.com/ydnikolaev/a2ahub — skill/a2ahub/.\n\n" +
 		"**Do not hand-edit** — refresh with `a2a skill install`.\n\n" +
 		"a2ahub is the protocol for typed cross-system artifact exchange. Start at " +
