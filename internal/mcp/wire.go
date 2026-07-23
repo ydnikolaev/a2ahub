@@ -166,15 +166,20 @@ func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.
 	}
 	engine := validate.New(corpus)
 
-	credRefStr, ok := machine.Credentials[ref.ID]
-	if !ok {
-		return WriteDeps{}, SubmitDeps{}, NewDeps{}, fmt.Errorf("no credential reference for space %q in machine config", ref.ID)
+	// The machine-config reference is OPTIONAL: the explicit
+	// A2A_TOKEN_<SPACE_ID> override is precedence step (a) and must be
+	// sufficient on its own (same contract as cmd/a2a's own
+	// resolveCredential — an unresolvable credential then reports what it
+	// checked, rather than pre-empting the check).
+	var credRef space.CredentialReference
+	if credRefStr, ok := machine.Credentials[ref.ID]; ok {
+		parsed, perr := space.ParseCredentialReference(credRefStr)
+		if perr != nil {
+			return WriteDeps{}, SubmitDeps{}, NewDeps{}, perr
+		}
+		credRef = parsed
 	}
-	credRef, err := space.ParseCredentialReference(credRefStr)
-	if err != nil {
-		return WriteDeps{}, SubmitDeps{}, NewDeps{}, err
-	}
-	cred, err := space.ResolveCredential(ctx, "A2A_TOKEN_"+strings.ToUpper(ref.ID), credRef)
+	cred, err := space.ResolveCredential(ctx, space.CredentialEnvVar(ref.ID), credRef)
 	if err != nil {
 		return WriteDeps{}, SubmitDeps{}, NewDeps{}, err
 	}

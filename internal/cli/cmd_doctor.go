@@ -149,11 +149,14 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 }
 
 // doctorCheckCredentials resolves a write credential for every connected
-// space via the machine-config reference (§7.4/§10.5); a space with no
-// configured reference, or one that fails to resolve, fails this check with
-// an actionable per-space message. There is no explicit-override env var
-// convention scoped to doctor, so this check exercises path (b)/(c) of
-// ResolveCredential's precedence only.
+// space exactly the way a WRITE does (§7.4/§10.5): the explicit
+// A2A_TOKEN_<SPACE_ID> override first, the machine-config reference
+// second. Checking only the reference (as this did before) made doctor
+// disagree with `a2a submit` in both directions — red on a perfectly
+// working exported token, green on a reference that only submit's own
+// precedence would have rejected. A space whose credential resolves
+// through NEITHER path fails this check with an actionable per-space
+// message naming what was checked.
 //
 // Deviation (see this phase's report): neither space.Manifest.Participant
 // nor space.MachineConfig models a credential EXPIRY field today, so "not
@@ -173,7 +176,7 @@ func (c *DoctorCommand) doctorCheckCredentials(ctx context.Context, cfg space.Pr
 				parsedRef = parsed
 			}
 		}
-		if _, err := c.resolveCredential(ctx, "", parsedRef); err != nil {
+		if _, err := c.resolveCredential(ctx, space.CredentialEnvVar(ref.ID), parsedRef); err != nil {
 			ok = false
 			failures = append(failures, fmt.Sprintf("%s: %v", ref.ID, err))
 		}
