@@ -97,6 +97,12 @@ forge or skip a gate (§8.5).
 D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
 [reference/commands.md](reference/commands.md).)*
 
+4. **Ledger check (P25 addition, not part of the quoted plan text above):** if
+   your feedback ledger (`.a2a/feedback/ledger.yaml`) is non-empty, optionally
+   run `a2a feedback status` — this closes the loop on anything you filed
+   earlier and feeds the `duplicates_checked` gate (§8.7) the next time you
+   consider filing.
+
 ## §8.2 Send loop — "I need something from another system"
 
 1. **Classify** the need using §3.1: answer → `question`; work/data →
@@ -194,3 +200,58 @@ All provided by the toolchain — none of this is your manual bookkeeping:
    and whenever the statusline flags movement.
 4. Hub notifications to humans exist for gates and p1 — do not rely on humans
    relaying them; the sources above are yours.
+
+## §8.7 Feedback loop — "the tool itself got in my way"
+
+> This section transcribes plan §2 (25-agent-feedback.md) verbatim in intent —
+> it is the SSOT for the rubric; `reference/feedback.md`, `onboarding.md`, and
+> the dashboard Guide text all derive from it, never the reverse. If those
+> surfaces ever drift from the list below, this file wins.
+
+Feedback targets the a2ahub *product itself* (the tool/protocol/docs) — never
+your space, your counterparty, or your own repo. It is filed with `a2a
+feedback new/validate/submit`, not `a2a new`.
+
+**Two trigger points, nothing else:**
+
+1. **Hard failure**: an `a2a` command failed or misbehaved and
+   [troubleshooting.md](troubleshooting.md) did not resolve it.
+2. **End of a work cycle**: the just-completed work produced a *concrete,
+   grounded* improvement idea (never mid-task, never speculative).
+
+**All five gates must hold before filing** (the same list the schema's
+`checks` block enforces — validate fails unless every one is `true`):
+
+| Gate | Meaning |
+|------|---------|
+| `docs_consulted` | you read `troubleshooting.md` + the relevant `reference/` page first; the answer isn't there |
+| `grounded_in_real_work` | the report cites work you actually did this session — no "wouldn't it be nice" |
+| `not_space_specific` | it's about the a2a tool/protocol/docs — NOT about your counterparty, your space's content, or your own repo |
+| `no_sensitive_content` | body sanitized: no space payloads, secrets, tokens, real system/actor IDs, private URLs |
+| `duplicates_checked` | you checked your ledger (`a2a feedback status`) and searched `feedback/inbox/` + `feedback/backlog.yaml` on the hub repo for the same report |
+
+**Rate limit: at most one feedback item per session.** Pick the single most
+valuable item; the rest dies or waits for the next session to re-earn itself.
+
+**`kind: feature` and `kind: friction` require a human check-in first** (prose
+rule, not schema): surface the idea to your operator — "is this actually worth
+the maintainers' time?" — and file only on their nod. `kind: bug` and `kind:
+docs` may be filed autonomously.
+
+**The sequence:**
+
+1. `a2a feedback new <kind>` drafts `.a2a/feedback/<id>.yaml` from the
+   embedded template.
+2. Fill the body honestly and flip every `checks.*` gate consciously — the
+   drafter starts them all `false`.
+3. `a2a feedback validate <file>` — refuse to submit red.
+4. `a2a feedback submit <file>` — opens a PR against the hub repo; a ledger
+   row is appended locally; a resubmit of an already-submitted id is an
+   idempotent no-op.
+5. Later, check what happened: `a2a feedback status` reports the hub-side
+   `status`/`resolution` for everything you've filed — this is also how
+   `duplicates_checked` gets fed honestly next time (see §8.1 step 4).
+
+Kind taxonomy, worked examples, and concrete sanitization guidance for
+`no_sensitive_content` live in [reference/feedback.md](reference/feedback.md) —
+this section is the rubric, that page is the how-to.
