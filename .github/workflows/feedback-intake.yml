@@ -34,13 +34,9 @@ env:
   # The PINNED a2a release to validate against — NEVER "latest" (spec 25
   # §T5 step 2 / the P9/P17 space-CI pattern in a2a-validate.yml).
   #
-  # KNOWN GAP (deviation, see brief report): 0.1.1 is the latest tag at
-  # authoring time and predates `a2a feedback` (that verb family ships
-  # later in this same epic, spec 25 §10 wave 2). This value is a
-  # forward-reference placeholder — this workflow cannot go green until
-  # bumped to the first release that contains `a2a feedback validate`.
-  # The lead MUST update this before the first real intake PR lands.
-  A2A_INTAKE_VERSION: "0.1.1"
+  # Pinned to the first release that ships `a2a feedback validate` (v0.2.0,
+  # P25). Bump alongside any release that changes the intake `--ci` contract.
+  A2A_INTAKE_VERSION: "0.2.0"
   REPO: ${{ github.repository }}
   PR_NUMBER: ${{ github.event.pull_request.number }}
   PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
