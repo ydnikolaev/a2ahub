@@ -245,6 +245,16 @@ type ApplyResult struct {
 	WipLimitHit []string // accepted verdict refused: feedback/backlog.yaml is at wip_limit
 }
 
+// validVerdictStatuses is the closed set a triage verdict may assign — the
+// hub-side outcomes of feedback.schema.json's `status` enum minus "new" (a
+// verdict never un-triages an item). Guarding against this set BEFORE any
+// write keeps a typo'd verdict (e.g. "accepetd") from silently corrupting a
+// hub-committed feedback artifact and being reported as "applied" (go-auditor
+// P25 IN MED).
+var validVerdictStatuses = map[string]bool{
+	"accepted": true, "rejected": true, "duplicate": true, "needs-info": true, "shipped": true,
+}
+
 // ApplyVerdicts mutates each named inbox item's status/resolution
 // in-file, routes ACCEPTED verdicts into feedback/backlog.yaml
 // (schema-shaped append, respecting BacklogDoc.WipLimit — the brake
@@ -255,6 +265,15 @@ type ApplyResult struct {
 // already-triaged inbox with no new verdicts to apply changes nothing.
 func ApplyVerdicts(hubRoot string, verdicts []Verdict, now time.Time) (ApplyResult, error) {
 	const op = "ApplyVerdicts"
+
+	// Fail-closed BEFORE mutating any inbox file: reject the whole apply if any
+	// verdict carries a status outside the closed enum, so a garbage verdict
+	// never partially rewrites the inbox/backlog/digest.
+	for _, v := range verdicts {
+		if !validVerdictStatuses[v.Status] {
+			return ApplyResult{}, fmt.Errorf("feedback: %s: verdict for %q has invalid status %q (want one of accepted/rejected/duplicate/needs-info/shipped)", op, v.ID, v.Status)
+		}
+	}
 
 	items, err := readInboxItems(hubRoot)
 	if err != nil {

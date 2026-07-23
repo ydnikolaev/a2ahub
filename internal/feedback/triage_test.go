@@ -108,6 +108,38 @@ func TestTriage_DedupeCandidatesAgainstInboxAndBacklog(t *testing.T) {
 	}
 }
 
+// TestApplyVerdicts_RejectsInvalidStatusBeforeMutating is the go-auditor P25
+// IN MED regression: a verdict whose status is outside the closed enum must
+// fail the WHOLE apply with an error, and must NOT rewrite any inbox file
+// (fail-closed, atomic — no partial corruption).
+func TestApplyVerdicts_RejectsInvalidStatusBeforeMutating(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	seedBacklog(t, hubRoot, 16)
+	writeInboxItem(t, hubRoot, "fb-20260701-aaaaaa", "bug", "still new after a bad apply", "new")
+	now := time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC)
+
+	// one good verdict + one typo'd status — the whole apply must be refused.
+	verdicts := []Verdict{
+		{ID: "fb-20260701-aaaaaa", Status: "accepted", Route: "backlog"},
+		{ID: "fb-20260702-bbbbbb", Status: "accepetd"}, // typo
+	}
+	if _, err := ApplyVerdicts(hubRoot, verdicts, now); err == nil {
+		t.Fatal("ApplyVerdicts accepted an invalid status, want error")
+	}
+
+	// the good item must be untouched (still `new`), proving no partial write.
+	items, err := readInboxItems(hubRoot)
+	if err != nil {
+		t.Fatalf("readInboxItems: %v", err)
+	}
+	for _, it := range items {
+		if it.ID == "fb-20260701-aaaaaa" && it.Status != "new" {
+			t.Errorf("fb-20260701-aaaaaa status = %q, want new (no partial mutation on a rejected apply)", it.Status)
+		}
+	}
+}
+
 func TestApplyVerdicts_MutatesRoutesDigestsAndIsIdempotent(t *testing.T) {
 	t.Parallel()
 	hubRoot := t.TempDir()
