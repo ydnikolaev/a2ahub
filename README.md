@@ -21,6 +21,14 @@ supported by the shell installer — grab the `a2a_<version>_windows_<arch>.zip`
 archive from the [releases page](https://github.com/ydnikolaev/a2ahub/releases/latest)
 instead.
 
+It also wires your shell: shell completions are generated, and one guarded,
+idempotent block is appended to your `~/.zshrc` / `~/.bashrc` /
+`config.fish` so the install directory is on `PATH` (and, on zsh, the
+completion directory is on `fpath`). Open a new shell — or `source` that
+file — to pick it up. Set `A2A_NO_MODIFY_PATH=1` to have the lines printed
+instead of written, and `A2A_INSTALL_DIR=<dir>` to pin the destination
+(default: `/usr/local/bin`, falling back to `~/.local/bin`).
+
 **`go install`** (builds from source):
 
 ```sh
@@ -48,6 +56,20 @@ a2a update                    # self-update to the latest release
 Run `a2a` with no arguments to see the full command list, including the
 lifecycle verbs (`ack`, `accept`, `decline`, `respond`, `verify`, ...) and
 `contract` (contract publish/deprecate/retire/diff/verify-export).
+
+### Credentials
+
+Read verbs work offline against the local mirror. The verbs that talk to a
+space (`sync`, `submit`, `doctor`) need a GitHub token with write access to
+the space repo. `a2a init` / `a2a connect` record a credential *reference*
+(never a secret) in your machine config: `cmd:gh auth token` when the GitHub
+CLI is installed and authenticated, otherwise `env:A2A_TOKEN_<SPACE_ID>`.
+Exporting `A2A_TOKEN_<SPACE_ID>` always overrides whatever is configured —
+for a space with id `getvisa`:
+
+```sh
+export A2A_TOKEN_GETVISA="$(gh auth token)"
+```
 
 ## Verifying a release
 
