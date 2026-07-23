@@ -256,6 +256,8 @@ func readVerbs() map[string]func(*cache.Store) cli.Command {
 		"statusline": func(s *cache.Store) cli.Command {
 			return cli.NewStatuslineCommand(s)
 		},
+		"html":      func(s *cache.Store) cli.Command { return cli.NewHtmlCommand(s) },
+		"dashboard": func(s *cache.Store) cli.Command { return cli.NewDashboardCommand(s) },
 	}
 }
 

@@ -55,6 +55,10 @@ var (
 	// ErrManifestInvalid is returned when space.yaml fails structural
 	// YAML parse.
 	ErrManifestInvalid = errors.New("space: manifest is not valid yaml")
+
+	// ErrConsumesInvalid is returned when a consumes.yaml fails structural
+	// YAML parse.
+	ErrConsumesInvalid = errors.New("space: consumes is not valid yaml")
 )
 
 // Error is the small typed error every exported operation in this package

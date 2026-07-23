@@ -66,6 +66,17 @@ func NewStore(ownSystem, cacheDir string, spaces []SpaceMirror, now Clock, ttl t
 
 func (s *Store) cursorPath() string { return filepath.Join(s.cacheDir, "cursor.json") }
 
+// OwnSystem returns this project's configured own system id (the dashboard's
+// ego node / --system default).
+func (s *Store) OwnSystem() string { return s.ownSystem }
+
+// SpaceMirrors returns a read-only view of the connected space mirrors (id,
+// dir, repo URL, manifest) — the dashboard reads nodes (participants), the
+// connected-repo list, and each mirror's dir (to walk consumes.yaml) from here
+// rather than replicating wire.go's buildStore wiring. The slice is the Store's
+// own (callers must not mutate it).
+func (s *Store) SpaceMirrors() []SpaceMirror { return s.spaces }
+
 // EnableUpdateNotice turns on the T3/T4 update-notice mechanism on an
 // already-constructed Store: a post-construction setter, deliberately NOT a
 // NewStore parameter, so every existing call site's behavior (and
@@ -148,6 +159,7 @@ func toItem(fa foldedArtifact, syncStale, pendingMerge bool) Item {
 		From: fa.Env.From, To: normalizeTo(fa.Env.To), State: string(fa.Result.State),
 		Priority: fa.Env.Priority, Blocking: fa.Env.Blocking, NeededBy: fa.Env.NeededBy,
 		Thread: fa.Env.Thread, PendingMerge: pendingMerge, SyncStale: syncStale,
+		LatestEventAt: fa.LatestEventAt,
 	}
 }
 

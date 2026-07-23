@@ -43,6 +43,13 @@ type Item struct {
 	// callers know the data may be behind (T1: "works offline ... with
 	// sync age flagged when stale").
 	SyncStale bool `json:"sync_stale,omitempty"`
+	// LatestEventAt is the timestamp of the artifact's most recent folded
+	// event — the "pending since" anchor. Zero when the artifact has no events
+	// yet (a bare draft). `json:"-"` deliberately: the dashboard assembler reads
+	// this as a Go field (formats it to an age like "5d"), while inbox/outbox
+	// `--json` stay byte-stable for their existing consumers (a time.Time would
+	// not honor omitempty anyway).
+	LatestEventAt time.Time `json:"-"`
 }
 
 // RefFact is one envelope `refs[]` entry's resolved digest/staleness

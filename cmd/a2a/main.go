@@ -69,6 +69,7 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  search      search the local cache")
 	_, _ = fmt.Fprintln(w, "  contracts   list known contracts")
 	_, _ = fmt.Fprintln(w, "  statusline  one-line status (for embedding)")
+	_, _ = fmt.Fprintln(w, "  html        render a self-contained local dashboard (alias: dashboard)")
 	_, _ = fmt.Fprintln(w, "  ack, accept, decline, respond, verify, ... lifecycle verbs")
 	_, _ = fmt.Fprintln(w, "  contract    contract lifecycle (new/publish/deprecate/retire/diff/verify-export)")
 	_, _ = fmt.Fprintln(w, "  doctor      diagnose config / space / credentials")

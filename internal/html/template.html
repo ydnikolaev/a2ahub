@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>a2a dashboard</title>
+<style>
+:root{--bg:#fff;--fg:#111;--mut:#666;--line:#e5e5e5;--card:#fafafa;--blk:#c0392b;--att:#b8860b}
+@media(prefers-color-scheme:dark){:root{--bg:#0d0f12;--fg:#e6e6e6;--mut:#8a8f98;--line:#22262c;--card:#14171b;--blk:#ff6b6b;--att:#e0b341}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg)}
+header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
+h1{font-size:16px;margin:0}.mut{color:var(--mut)}.pill{border:1px solid var(--line);border-radius:999px;padding:1px 8px;font-size:12px}
+main{padding:20px;max-width:1100px;margin:0 auto}section{margin:0 0 24px}h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:6px 0}
+.row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.blocking{background:var(--blk)}.attention{background:var(--att)}.normal{background:var(--mut)}
+.note{color:var(--mut);font-size:12px;border:1px dashed var(--line);border-radius:8px;padding:10px;margin-top:24px}
+</style>
+</head>
+<body>
+<header><h1>a2a dashboard</h1><span class="pill" id="self"></span><span class="mut" id="asof"></span><span class="pill" id="tooling"></span></header>
+<main id="app"></main>
+<script>
+const DATA = /*A2A_DATA_START*/{"generatedAt":"2026-07-23T14:05:00Z","self":"axon","tooling":{"current":"0.1.1","latest":"0.1.1","updateAvailable":false,"required":false,"floor":"0.1.0","floorSpace":"getvisa"},"spaces":[{"id":"getvisa","repoURL":"https://github.com/r22d222/a2a","syncAge":"","stale":false,"participantCount":2,"readable":true}],"nodes":[{"system":"axon","self":true,"org":"yura","status":"active","owners":["ydnikolaev"],"spaces":["getvisa"]},{"system":"seomatrix","self":false,"org":"seomatrix","status":"active","owners":["misha-gh"],"spaces":["getvisa"]}],"contractEdges":[],"exchangeEdges":[],"inbox":[],"outbox":[],"contracts":[],"flags":[]}/*A2A_DATA_END*/;
+
+// Minimal PLACEHOLDER renderer — the designed template replaces this file.
+// All DATA strings are UNTRUSTED: inserted via textContent only, never innerHTML.
+const t = (el, s) => { el.textContent = s == null ? "" : String(s); return el; };
+const mk = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
+
+t(document.getElementById("self"), "you: " + DATA.self);
+t(document.getElementById("asof"), "as of " + DATA.generatedAt);
+const tv = DATA.tooling || {};
+t(document.getElementById("tooling"), tv.required ? "UPDATE REQUIRED" : tv.updateAvailable ? ("update " + tv.current + "→" + tv.latest) : ("a2a " + tv.current));
+
+const app = document.getElementById("app");
+function section(title){ const s = mk("section"); const h = mk("h2"); t(h,title); s.appendChild(h); app.appendChild(s); return s; }
+
+const sp = section("Spaces");
+(DATA.spaces||[]).forEach(s => { const c = mk("div","card"); const r = mk("div","row");
+  r.appendChild(t(mk("strong"), s.id)); r.appendChild(t(mk("span","mut"), s.repoURL));
+  r.appendChild(t(mk("span","pill"), (s.participantCount||0)+" participants"));
+  if (s.stale) r.appendChild(t(mk("span","pill"), "stale"));
+  if (!s.readable) r.appendChild(t(mk("span","pill"), "unreadable"));
+  c.appendChild(r); sp.appendChild(c); });
+
+const nd = section("Systems");
+(DATA.nodes||[]).forEach(n => { const c = mk("div","card"); const r = mk("div","row");
+  r.appendChild(t(mk("strong"), n.system + (n.self ? " (you)" : "")));
+  r.appendChild(t(mk("span","mut"), n.org)); r.appendChild(t(mk("span","pill"), n.status));
+  r.appendChild(t(mk("span","mut"), "spaces: " + (n.spaces||[]).join(", ")));
+  c.appendChild(r); nd.appendChild(c); });
+
+const ce = section("Contract dependencies");
+if (!(DATA.contractEdges||[]).length) ce.appendChild(t(mk("div","mut"),"none"));
+(DATA.contractEdges||[]).forEach(e => { const c = mk("div","card"); const r = mk("div","row");
+  r.appendChild(t(mk("strong"), e.from + " → " + e.to)); r.appendChild(t(mk("span","mut"), e.contract));
+  r.appendChild(t(mk("span","pill"), "drift: " + e.drift)); c.appendChild(r); ce.appendChild(c); });
+
+const ib = section("Inbox");
+if (!(DATA.inbox||[]).length) ib.appendChild(t(mk("div","mut"),"all clear"));
+(DATA.inbox||[]).forEach(i => { const c = mk("div","card"); const r = mk("div","row");
+  const d = mk("span","dot " + (i.severity||"normal")); r.appendChild(d);
+  r.appendChild(t(mk("strong"), i.title || "(untitled)"));
+  r.appendChild(t(mk("span","mut"), i.from + " → " + (i.to||[]).join(",")));
+  r.appendChild(t(mk("span","pill"), i.state)); if (i.age) r.appendChild(t(mk("span","mut"), i.age));
+  c.appendChild(r); ib.appendChild(c); });
+
+const note = mk("div","note");
+t(note, "Placeholder view — the designed template (Claude Design) replaces internal/html/template.html, keeping the DATA markers. Panels here are minimal on purpose.");
+app.appendChild(note);
+</script>
+</body>
+</html>
