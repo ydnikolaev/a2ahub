@@ -230,6 +230,97 @@ func TestValidate(t *testing.T) {
 	})
 }
 
+func TestValidateAtProvidesContract(t *testing.T) {
+	t.Parallel()
+
+	id, err := ParseID("XC-axon-ingest")
+	if err != nil {
+		t.Fatalf("ParseID unexpected error: %v", err)
+	}
+
+	t.Run("the fixed contract.md filename passes", func(t *testing.T) {
+		t.Parallel()
+		// The whole point: the stem is the literal "contract", never the
+		// id — under the default placement this path is unconditionally
+		// ErrIDMismatch (which made every contract unpublishable).
+		if err := ValidateAt(id, "axon/provides/ingest/contract.md", PlacementProvidesContract); err != nil {
+			t.Fatalf("ValidateAt() unexpected error: %v", err)
+		}
+		if err := Validate(id, "axon/provides/ingest/contract.md"); !errors.Is(err, ErrIDMismatch) {
+			t.Fatalf("default placement should still red the fixed filename, got %v", err)
+		}
+	})
+
+	t.Run("wrong slug directory is still an id mismatch", func(t *testing.T) {
+		t.Parallel()
+		err := ValidateAt(id, "axon/provides/other-feed/contract.md", PlacementProvidesContract)
+		if !errors.Is(err, ErrIDMismatch) {
+			t.Fatalf("ValidateAt() error = %v, want errors.Is ErrIDMismatch", err)
+		}
+	})
+
+	t.Run("wrong filename under the right slug is an id mismatch", func(t *testing.T) {
+		t.Parallel()
+		err := ValidateAt(id, "axon/provides/ingest/descriptor.md", PlacementProvidesContract)
+		if !errors.Is(err, ErrIDMismatch) {
+			t.Fatalf("ValidateAt() error = %v, want errors.Is ErrIDMismatch", err)
+		}
+	})
+
+	t.Run("foreign section reports both guards", func(t *testing.T) {
+		t.Parallel()
+		err := ValidateAt(id, "seomatrix/provides/ingest/contract.md", PlacementProvidesContract)
+		if !errors.Is(err, ErrSectionMismatch) {
+			t.Fatalf("ValidateAt() error = %v, want errors.Is ErrSectionMismatch", err)
+		}
+		if !errors.Is(err, ErrIDMismatch) {
+			t.Fatalf("a path outside the id's own section cannot identify it; got %v", err)
+		}
+	})
+
+	t.Run("an exchange-class id can never satisfy this placement", func(t *testing.T) {
+		t.Parallel()
+		exchangeID, perr := ParseID("XQ-axon-20260721-k3f9")
+		if perr != nil {
+			t.Fatalf("ParseID unexpected error: %v", perr)
+		}
+		err := ValidateAt(exchangeID, "axon/provides/k3f9/contract.md", PlacementProvidesContract)
+		if !errors.Is(err, ErrIDMismatch) {
+			t.Fatalf("ValidateAt() error = %v, want errors.Is ErrIDMismatch", err)
+		}
+	})
+}
+
+func TestValidateAtSpaceLevel(t *testing.T) {
+	t.Parallel()
+
+	id, err := ParseID("XD-axon-20260802-r1w9")
+	if err != nil {
+		t.Fatalf("ParseID unexpected error: %v", err)
+	}
+
+	t.Run("decisions/<id>.md passes", func(t *testing.T) {
+		t.Parallel()
+		if err := ValidateAt(id, "decisions/XD-axon-20260802-r1w9.md", PlacementSpaceLevel); err != nil {
+			t.Fatalf("ValidateAt() unexpected error: %v", err)
+		}
+		if err := Validate(id, "decisions/XD-axon-20260802-r1w9.md"); !errors.Is(err, ErrSectionMismatch) {
+			t.Fatalf("default placement should still red the space-level dir, got %v", err)
+		}
+	})
+
+	t.Run("the stem guard still applies", func(t *testing.T) {
+		t.Parallel()
+		err := ValidateAt(id, "decisions/XD-axon-20260802-wrong.md", PlacementSpaceLevel)
+		if !errors.Is(err, ErrIDMismatch) {
+			t.Fatalf("ValidateAt() error = %v, want errors.Is ErrIDMismatch", err)
+		}
+		if errors.Is(err, ErrSectionMismatch) {
+			t.Fatalf("space-level placement must never report a section mismatch: %v", err)
+		}
+	})
+}
+
 // deterministicEntropy is a fixed io.Reader for testable mint calls —
 // every Read fills from seed cyclically.
 type deterministicEntropy struct{ seed []byte }
