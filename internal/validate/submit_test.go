@@ -3,6 +3,7 @@ package validate
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -178,6 +179,64 @@ func TestSecretScan(t *testing.T) {
 			raw := readFileForTest(t, f)
 			if v := scanForSecrets(raw); len(v) != 0 {
 				t.Fatalf("expected benign lookalike %s to pass, got %+v", f, v)
+			}
+		})
+	}
+}
+
+// TestSecretScanHardenedPatterns is spec 25 §11's "sensitive-content
+// hardening" sub-wave (13f, operator review 2026-07-23): the additional
+// prefix/shape-anchored credential patterns appended to secretPatterns
+// (policy.go). Every positive case is a synthetic, non-live fake token
+// sized to actually clear its pattern's length floor; every negative case
+// proves the SAME false-positive budget internal/validate/golden_test.go's
+// secret-corpus negatives already document — a legitimate hex hash, a
+// plain GitHub repo URL, an ordinary sentence using the word "bearer", and
+// a base64 blob that is not a JWT must all pass clean, because this
+// scanner is shared by envelope submit too (a false positive there blocks
+// a legitimate artifact, not just a legitimate feedback report).
+func TestSecretScanHardenedPatterns(t *testing.T) {
+	t.Parallel()
+
+	positives := map[string]string{
+		"github oauth token (gho_)":          "gho_" + strings.Repeat("a1B2c3", 6),
+		"github user-to-server (ghu_)":       "ghu_" + strings.Repeat("d4E5f6", 6),
+		"github server-to-server (ghs_)":     "ghs_" + strings.Repeat("g7H8i9", 6),
+		"github refresh token (ghr_)":        "ghr_" + strings.Repeat("j0K1l2", 6),
+		"github fine-grained PAT":            "github_pat_" + strings.Repeat("A", 60),
+		"slack bot token (xoxb-)":            "xoxb-" + strings.Repeat("1", 12),
+		"slack legacy token (xoxp-)":         "xoxp-" + strings.Repeat("2", 12),
+		"slack incoming webhook":             "https://hooks.slack.com/services/" + strings.Repeat("T", 20),
+		"gitlab PAT (glpat-)":                "glpat-" + strings.Repeat("a", 22),
+		"jwt (three base64url segments)":     "eyJ" + strings.Repeat("A", 10) + ".eyJ" + strings.Repeat("B", 10) + "." + strings.Repeat("C", 10),
+		"google API key (AIza)":              "AIza" + strings.Repeat("A", 35),
+		"stripe live secret key (sk_live_)":  "sk_live_" + strings.Repeat("1", 24),
+		"bearer authorization header inline": "Authorization: Bearer " + strings.Repeat("x", 25),
+	}
+	for name, body := range positives {
+		t.Run("positive/"+name, func(t *testing.T) {
+			t.Parallel()
+			violations := scanForSecrets([]byte(body))
+			if len(violations) == 0 {
+				t.Fatalf("expected the hardened scanner to block %q", body)
+			}
+			if !hasCode(violations, "POL-001") {
+				t.Fatalf("expected POL-001, got %+v", violations)
+			}
+		})
+	}
+
+	negatives := map[string]string{
+		"plain 40-char hex hash":         strings.Repeat("ab12cd34", 5),
+		"ordinary github repo URL":       "See https://github.com/ydnikolaev/a2ahub for the source.",
+		"sentence using the word bearer": "This bearer of good news arrived early, well ahead of schedule.",
+		"base64 blob that is not a JWT":  "SGVsbG8gV29ybGQsIHRoaXMgaXMgYSB0ZXN0IGJsb2Igbm90IGEgSldULg==",
+	}
+	for name, body := range negatives {
+		t.Run("negative/"+name, func(t *testing.T) {
+			t.Parallel()
+			if v := scanForSecrets([]byte(body)); len(v) != 0 {
+				t.Fatalf("expected benign content %q to pass, got %+v", body, v)
 			}
 		})
 	}
