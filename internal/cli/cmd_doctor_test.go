@@ -849,21 +849,54 @@ func TestDoctorWorkflowPinnedNotLatest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read a2a-validate.yml: %v", err)
 	}
-	// Only non-comment lines matter here — the file's own explanatory
-	// comments legitimately mention the word "latest" to say it must never
-	// be used.
+	// P33: the space is a CALLER — it carries no validation logic and no
+	// version/fetch of its own. Every `uses:` must SHA-pin a2ahub's reusable
+	// workflow to an immutable 40-hex commit (never @main/@latest/a branch;
+	// AC-933.1). Only non-comment lines matter — the file's own comments
+	// legitimately say the word "latest" to forbid it.
+	usesRefs := 0
 	for _, line := range strings.Split(string(raw), "\n") {
 		code, _, _ := strings.Cut(line, "#")
 		if strings.Contains(code, "\"latest\"") || strings.Contains(code, ": latest") {
-			t.Fatalf("workflow line pins to \"latest\", want an explicit version (AC row 7): %q", line)
+			t.Fatalf("workflow pins to \"latest\", want an immutable SHA (AC-933.1): %q", line)
+		}
+		// Token checks scan CODE only — comments legitimately name the dead
+		// secret / var to say they are gone (as does this file's header).
+		if strings.Contains(code, "A2A_BINARY_FETCH_TOKEN") {
+			t.Fatalf("P33 killed the fetch-token secret — the space must not USE A2A_BINARY_FETCH_TOKEN: %q", line)
+		}
+		if strings.Contains(code, "A2A_VALIDATOR_VERSION") {
+			t.Fatalf("P33: the a2a version lives in the reusable-workflow ref, not an A2A_VALIDATOR_VERSION env: %q", line)
+		}
+		trimmed := strings.TrimSpace(code)
+		if !strings.HasPrefix(trimmed, "uses:") {
+			continue
+		}
+		usesRefs++
+		if !strings.Contains(trimmed, "a2a-validate-reusable.yml") {
+			t.Fatalf("caller `uses:` must reference a2ahub's reusable validation workflow, got %q", trimmed)
+		}
+		at := strings.Index(trimmed, "@")
+		if at < 0 {
+			t.Fatalf("caller `uses:` must be SHA-pinned (never unpinned/@main), got %q", trimmed)
+		}
+		ref := strings.TrimSpace(trimmed[at+1:])
+		if ref == "main" || ref == "master" || ref == "latest" {
+			t.Fatalf("caller `uses:` pinned to a moving ref %q, want an immutable 40-hex SHA (AC-933.1)", ref)
+		}
+		isHex := len(ref) == 40
+		for _, r := range ref {
+			if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+				isHex = false
+				break
+			}
+		}
+		if !isHex {
+			t.Fatalf("caller `uses:` ref %q is not a 40-hex SHA (AC-933.1 immutable pin)", ref)
 		}
 	}
-	content := string(raw)
-	if !strings.Contains(content, "A2A_VALIDATOR_VERSION") {
-		t.Fatal("workflow must name an explicit pinned-version variable (AC row 7)")
-	}
-	if !strings.Contains(content, "secrets.A2A_BINARY_FETCH_TOKEN") {
-		t.Fatal("workflow must fetch the binary via the read-only token repo secret (§10.5 CI credential row)")
+	if usesRefs == 0 {
+		t.Fatal("caller has no `uses:` reference to the reusable validation workflow (P33)")
 	}
 }
 
