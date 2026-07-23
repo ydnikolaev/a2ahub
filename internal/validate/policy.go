@@ -13,15 +13,47 @@ import (
 // lives only in the config layer).
 const DefaultMaxArtifactBytes = 2 << 20 // 2 MiB
 
-// secretPatterns are the three shapes documented by schemas/fixtures/
-// secret-corpus/README.md (§13.4): AWS access-key ID, GitHub personal
-// access token, and a PEM private-key block. This is a best-effort,
-// documented-false-negative scan (§10.4) — encoded/obfuscated secrets are
-// explicitly out of reach, per the corpus's own README.
+// secretPatterns opens with the three shapes documented by
+// schemas/fixtures/secret-corpus/README.md (§13.4): AWS access-key ID,
+// GitHub personal access token, and a PEM private-key block. This is a
+// best-effort, documented-false-negative scan (§10.4) — encoded/obfuscated
+// secrets are explicitly out of reach, per the corpus's own README.
+//
+// The remaining patterns are the spec 25 §11 "sensitive-content
+// hardening" sub-wave (13f, operator review 2026-07-23): the feedback
+// channel is PUBLIC and human-free auto-merge publishes a match
+// irreversibly, so every addition here is prefix/shape-anchored (never
+// entropy-based) to keep the false-positive rate at the floor a
+// fail-closed gate requires (a false positive here blocks a legitimate
+// envelope submit AND a legitimate feedback report, §11). Deliberately
+// NOT added, per that same false-positive budget: bare email/PII, a
+// generic long hex/base64 blob (legit hashes/commit SHAs/IDs), and any
+// entropy-only heuristic — see this phase's Deviations report.
 var secretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`AKIA[0-9A-Z]{16}`),
 	regexp.MustCompile(`ghp_[A-Za-z0-9]{36}`),
 	regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`),
+	// GitHub extra token prefixes (OAuth/user-to-server/server-to-server/
+	// refresh) alongside the existing ghp_ (personal access token).
+	regexp.MustCompile(`gh[ours]_[A-Za-z0-9]{36}`),
+	// GitHub fine-grained personal access token.
+	regexp.MustCompile(`github_pat_[0-9a-zA-Z_]{60,}`),
+	// Slack bot/app/legacy/refresh token shapes.
+	regexp.MustCompile(`xox[baprs]-[0-9A-Za-z-]{10,}`),
+	// Slack incoming-webhook URL.
+	regexp.MustCompile(`https://hooks\.slack\.com/services/[A-Za-z0-9/]+`),
+	// GitLab personal access token.
+	regexp.MustCompile(`glpat-[0-9A-Za-z_-]{20,}`),
+	// JWT: three base64url segments (header.payload.signature); both the
+	// header and a typical claims-object payload start with the base64
+	// encoding of `{"` (`eyJ`), a distinctive-enough anchor.
+	regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`),
+	// Google API key.
+	regexp.MustCompile(`AIza[0-9A-Za-z_-]{35}`),
+	// Stripe live secret key.
+	regexp.MustCompile(`sk_live_[0-9A-Za-z]{24,}`),
+	// Authorization: Bearer <token> header, inline in a body.
+	regexp.MustCompile(`Bearer\s+[A-Za-z0-9._-]{20,}`),
 }
 
 // scanForSecrets is the V2 policy class's secret-scan rule (CC-010,
