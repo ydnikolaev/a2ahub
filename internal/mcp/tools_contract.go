@@ -32,12 +32,13 @@ import (
 // contract's descriptor (contract.md) fields (mirrors internal/cli's
 // contractDescriptorProbe).
 type contractDescriptorProbe struct {
-	ID            string `yaml:"id"`
-	Space         string `yaml:"space"`
-	From          string `yaml:"from"`
-	Version       string `yaml:"version"`
-	CompatPolicy  string `yaml:"compat_policy"`
-	SchemaFormat  string `yaml:"schema_format"`
+	ID            string   `yaml:"id"`
+	Space         string   `yaml:"space"`
+	From          string   `yaml:"from"`
+	To            []string `yaml:"to"`
+	Version       string   `yaml:"version"`
+	CompatPolicy  string   `yaml:"compat_policy"`
+	SchemaFormat  string   `yaml:"schema_format"`
 	GeneratedFrom struct {
 		Tool         string `yaml:"tool"`
 		SourceDigest string `yaml:"source_digest"`
@@ -467,6 +468,14 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract deprecate: render announcement failed: %w", err)
 		}
 		announcementDraft, err = contractAddFrontmatterFields(announcementDraft, map[string]any{
+			// space/to/title are the template's own PLACEHOLDERS and
+			// template.Render fills none of them, so every deprecation
+			// announcement was authored with a literal `to:
+			// [<recipient-system>]` and refused by V2 (REF-006). Mirrors
+			// internal/cli's copy (ADR-001's deliberate duplication).
+			"space":         probe.Space,
+			"to":            probe.To,
+			"title":         fmt.Sprintf("Deprecating %s@%s (sunset %s)", in.ID, deprecatedVersion, in.Sunset),
 			"ack_requested": true,
 			"deprecates":    in.ID + "@" + deprecatedVersion,
 			"valid_until":   in.Sunset,
