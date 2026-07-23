@@ -16,21 +16,21 @@ import (
 // commands for the reading agent to run through the normal write funnel;
 // a2a never runs them itself.
 type Action struct {
-	Scope  string   `yaml:"scope"`
-	Why    string   `yaml:"why"`
-	Detect []string `yaml:"detect,omitempty"`
-	Run    []string `yaml:"run,omitempty"`
+	Scope  string   `yaml:"scope" json:"scope"`
+	Why    string   `yaml:"why" json:"why"`
+	Detect []string `yaml:"detect,omitempty" json:"detect,omitempty"`
+	Run    []string `yaml:"run,omitempty" json:"run,omitempty"`
 }
 
 // Change is one entry in a release-notes file's changes list.
 type Change struct {
-	ID      string   `yaml:"id"`
-	Kind    string   `yaml:"kind"`
-	Impact  string   `yaml:"impact"`
-	Subject string   `yaml:"subject"`
-	Detail  string   `yaml:"detail"`
-	Affects []string `yaml:"affects,omitempty"`
-	Action  Action   `yaml:"action"`
+	ID      string   `yaml:"id" json:"id"`
+	Kind    string   `yaml:"kind" json:"kind"`
+	Impact  string   `yaml:"impact" json:"impact"`
+	Subject string   `yaml:"subject" json:"subject"`
+	Detail  string   `yaml:"detail" json:"detail"`
+	Affects []string `yaml:"affects,omitempty" json:"affects,omitempty"`
+	Action  Action   `yaml:"action" json:"action"`
 }
 
 // ReleaseNotes is the parsed structural shape of one releasenotes/<version>
@@ -40,17 +40,19 @@ type Change struct {
 // separate concern (internal/schema's ValidateReleaseNotes), never
 // re-implemented here.
 type ReleaseNotes struct {
-	Schema   string   `yaml:"schema"`
-	Version  string   `yaml:"version"`
-	Released string   `yaml:"released"`
-	Headline string   `yaml:"headline"`
-	Changes  []Change `yaml:"changes"`
+	Schema   string   `yaml:"schema" json:"schema"`
+	Version  string   `yaml:"version" json:"version"`
+	Released string   `yaml:"released" json:"released"`
+	Headline string   `yaml:"headline" json:"headline"`
+	Changes  []Change `yaml:"changes" json:"changes"`
 
 	// Raw holds the exact bytes ParseReleaseNotes was given, so a caller
 	// can hand them, unmodified, to a schema-validation seam that needs
 	// the full document rather than just this struct's typed subset (the
-	// same rationale space.Manifest.Raw documents).
-	Raw []byte `yaml:"-"`
+	// same rationale space.Manifest.Raw documents). json:"-" keeps it out
+	// of the agent-facing `whatsnew --json` / MCP StructuredContent shape —
+	// that surface is the machine contract, not a debug dump.
+	Raw []byte `yaml:"-" json:"-"`
 }
 
 // ParseReleaseNotes structurally parses raw release-notes YAML bytes.

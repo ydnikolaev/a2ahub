@@ -16,6 +16,8 @@ import (
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/notes"
+	"github.com/ydnikolaev/a2ahub/releasenotes"
 )
 
 // genericSchema is a permissive (additionalProperties allowed) object
@@ -104,9 +106,10 @@ func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string,
 		Handler: newReadDispatch(store),
 	})
 
-	// --- new / submit (action-free write tools, unchanged) ---------------
+	// --- new / submit / whatsnew (action-free tools, unchanged shape) ----
 	r.Register(ToolSpec{Name: "a2a_new", Description: "draft one or more new artifacts (items[]) on one thread", InputSchema: rawSchema(map[string]string{"items": "array", "thread": "string"}, "items"), Handler: newNewHandler(newDeps)})
 	r.Register(ToolSpec{Name: "a2a_submit", Description: "validate (V2) and submit staged draft(s); accepts an id array (OP-220 batch) or a single id", InputSchema: rawSchema(map[string]string{"ids": "array"}, "ids"), Handler: newSubmitHandler(submitDeps)})
+	r.Register(ToolSpec{Name: "a2a_whatsnew", Description: "release directives: what changed and what to do — optional since=<version>", InputSchema: rawSchema(map[string]string{"since": "string"}), Handler: newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return notes.Load(releasenotes.FS) })})
 
 	// --- a2a_lifecycle (action: the 15 generic OP-211 verbs) -------------
 	r.Register(ToolSpec{

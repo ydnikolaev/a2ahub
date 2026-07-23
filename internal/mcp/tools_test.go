@@ -8,9 +8,10 @@ import (
 )
 
 // TestBuildRegistryExpectedToolCount proves BuildRegistry registers
-// exactly the P15 capability-grouped tool set: a2a_read + a2a_new +
-// a2a_submit + a2a_lifecycle + a2a_exchange + a2a_contract = 6 tools (spec
-// 15 §T1/§8 AC #1). cmd/a2a/mcp_parity_test.go is the authoritative
+// exactly the P15 capability-grouped tool set plus P31's standalone
+// a2a_whatsnew: a2a_read + a2a_new + a2a_submit + a2a_lifecycle +
+// a2a_exchange + a2a_contract + a2a_whatsnew = 7 tools (spec 15 §T1/§8 AC
+// #1, extended P31). cmd/a2a/mcp_parity_test.go is the authoritative
 // capability-parity check against the CLI's own verb set; this is a
 // package-local sanity count.
 func TestBuildRegistryExpectedToolCount(t *testing.T) {
@@ -26,7 +27,7 @@ func TestBuildRegistryExpectedToolCount(t *testing.T) {
 	names := registry.ToolNames()
 	want := []string{
 		"a2a_contract", "a2a_exchange", "a2a_lifecycle",
-		"a2a_new", "a2a_read", "a2a_submit",
+		"a2a_new", "a2a_read", "a2a_submit", "a2a_whatsnew",
 	}
 	if len(names) != len(want) {
 		t.Fatalf("expected %d tools, got %d: %v", len(want), len(names), names)
