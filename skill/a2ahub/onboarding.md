@@ -7,6 +7,19 @@
 > for what each check means). The non-overengineering bar (§9): every runbook
 > must be executable by one person in the stated time.
 
+> **Make the installed skill discoverable.** `a2a skill install` writes this
+> tree into `.a2ahub/skill/` — a provider-neutral namespace nothing reads by
+> default. After installing (or via `a2a init`, which does both by default),
+> run `a2a skill link` to place a discovery entry for each agent surface this
+> repo already shows: a `.claude/skills/a2ahub` symlink for Claude Code, a
+> `.codex/skills/a2ahub` symlink for Codex, and so on — pointing back at the
+> installed tree. This matters because **Claude Code reads `CLAUDE.md`, not
+> `AGENTS.md`** — the AGENTS.md pointer alone reaches Codex, not Claude Code;
+> the skill link (plus a `CLAUDE.md` pointer `a2a init` also writes when
+> `CLAUDE.md` already exists) is what makes the manual discoverable there.
+> `a2a doctor`'s "skill discoverable" check flags an installed-but-unlinked
+> skill.
+
 ## Install profiles (§9.1)
 
 | Profile | Who | What it covers | Budget |

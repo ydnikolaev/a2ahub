@@ -494,6 +494,97 @@ func TestDoctorCheckStatuslineWiring(t *testing.T) {
 	}
 }
 
+// --- doctorCheckSkillDiscoverable (P32, AC-918.2) --------------------------
+
+func TestDoctorCheckSkillDiscoverable_NotInstalled(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	cmd := NewDoctorCommand(host.NewFakeHost(), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
+
+	ok, detail := cmd.doctorCheckSkillDiscoverable()
+	if !ok {
+		t.Fatalf("want pass (not installed is not this check's concern), got fail: %s", detail)
+	}
+	if !strings.Contains(detail, "no a2ahub skill installed") {
+		t.Fatalf("detail = %q, want a not-installed note", detail)
+	}
+}
+
+func TestDoctorCheckSkillDiscoverable_InstalledButUnlinked(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".a2ahub", "skill"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".a2ahub", "skill", "SKILL.md"), []byte("---\nname: a2ahub\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A detected surface (.claude/ present) with NO a2ahub link under it.
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewDoctorCommand(host.NewFakeHost(), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
+
+	ok, detail := cmd.doctorCheckSkillDiscoverable()
+	if !ok {
+		t.Fatalf("want pass (advisory-on-PASS, matching doctorCheckVersions), got fail: %s", detail)
+	}
+	if !strings.Contains(detail, "ADVISORY") || !strings.Contains(detail, "a2a skill link") {
+		t.Fatalf("detail = %q, want the installed-but-unlinked advisory naming the fix", detail)
+	}
+}
+
+func TestDoctorCheckSkillDiscoverable_InstalledAndLinked(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".a2ahub", "skill"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".a2ahub", "skill", "SKILL.md"), []byte("---\nname: a2ahub\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	linkDir := filepath.Join(root, ".claude", "skills", "a2ahub")
+	if err := os.MkdirAll(linkDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewDoctorCommand(host.NewFakeHost(), "0.1.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
+
+	ok, detail := cmd.doctorCheckSkillDiscoverable()
+	if !ok {
+		t.Fatalf("want pass, got fail: %s", detail)
+	}
+	if !strings.Contains(detail, "linked (1 surface") {
+		t.Fatalf("detail = %q, want the linked-surface count", detail)
+	}
+}
+
+// TestDoctorRunRendersSkillDiscoverableWithSeparator guards the PASS-line
+// rendering convention (Run's "%s: PASS%s\n" has no space before detail):
+// every returned detail must lead with " · " itself, or the line mashes
+// together like doctorCheckVersions's own advisory does when this is
+// missed.
+func TestDoctorRunRendersSkillDiscoverableWithSeparator(t *testing.T) {
+	t.Parallel()
+	cmd := newTestDoctorCommand()
+	cmd.loadProjectConfig = func(string) (space.ProjectConfig, error) { return space.ProjectConfig{}, nil }
+	cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
+	cmd.lookupGit = func() error { return nil }
+
+	var stdout, stderr bytes.Buffer
+	code := cmd.Run(context.Background(), nil, IO{Stdout: &stdout, Stderr: &stderr})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "skill discoverable: PASS · ") {
+		t.Fatalf("stdout = %q, want a properly separated PASS line", stdout.String())
+	}
+}
+
 // --- doctorVersionOlder: the file-private version comparator this phase's
 // plan Placement decision explicitly sanctions (internal/space's own
 // versionOlderThan is unexported to that package). ---
