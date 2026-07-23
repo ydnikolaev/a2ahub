@@ -1,0 +1,104 @@
+# The SSOT space-validation workflow (P33, spec 33 §T3). ONE home for the
+# V3 write-funnel gate: install a2a + the exact `validate --ci` invocation +
+# the pinned version, co-located in one versioned unit. A space references
+# this file by a SHA-pinned path (see the space-template caller) and carries
+# NO validation logic and NO fetch-token secret of its own — the
+# private-era copy/token/manual-pin design (spec 09 §T5) is dead (spec 33 §1).
+#
+# Integrity: `go run github.com/ydnikolaev/a2ahub/cmd/a2a@<ver>` verifies the
+# module supply chain via the Go checksum DB (GOSUMDB) for free — no
+# A2A_BINARY_FETCH_TOKEN, no cosign step (spec 33 §2, mechanism #1).
+#
+# The status-check CONTEXT a branch-protection rule binds to is
+# `<caller-job-name> / validate` — e.g. `a2a-validate / validate` when the
+# caller names its job `a2a-validate`. The flat `a2a-validate` context of the
+# copied design does NOT survive the move to a reusable workflow (GitHub
+# nested-job naming); the branch-protection required check is renamed once,
+# as an operator step (spec 33 §2/§8 AC-101.2 amendment, BRANCH-PROTECTION.md).
+# Renaming the `validate` job below silently changes that context — do not.
+name: a2a-validate-reusable
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "v3-pr (changed files + diff-authz) | v3-full-repo (post-merge audit)."
+        required: true
+        type: string
+      base:
+        description: "The PR base SHA — required for mode=v3-pr, ignored for v3-full-repo."
+        required: false
+        type: string
+        default: ""
+      a2a-ref:
+        # The module version this unit pins — the co-located version that
+        # moves as a whole when the caller bumps the workflow SHA (Dependabot).
+        # Bumped in lockstep with each a2ahub release tag. The empty-string
+        # sentinel means "build ./cmd/a2a from the caller's own checkout" —
+        # used ONLY by a2ahub's dogfood, so the canary exercises the PR's
+        # current code, never a released version (spec 33 §T3, AC-930.2).
+        description: "a2a module version to `go run` (e.g. v0.4.0); empty = local ./cmd/a2a (a2ahub dogfood only)."
+        required: false
+        type: string
+        default: "v0.4.0"
+      space-path:
+        description: "Working directory of the space content to validate (default: repo root)."
+        required: false
+        type: string
+        default: "."
+
+jobs:
+  validate:
+    # This job name is the second half of the branch-protection context
+    # `<caller-job> / validate`. It is a load-bearing literal — see header.
+    name: validate
+    runs-on: ubuntu-latest
+    # Least-privilege (spec 09 §10.5, reinterpreted for a public product):
+    # contents:read to check out the space; pull-requests:read so V3's G1/G2
+    # policy branch can query approving reviews via the host API. A reusable
+    # workflow can only DOWNGRADE the caller's token — the caller must itself
+    # grant at least these (its ~5-line workflow declares them).
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout space content
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Full history: v3-pr shells out to `git diff <base>...HEAD`.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # Pinned to a2a's own toolchain (go.mod `go 1.26.5`); bumped with
+          # the release. A space repo has no go.mod, so go-version-file is not
+          # usable here — the version is named explicitly.
+          go-version: "1.26.5"
+
+      - name: a2a validate --ci
+        env:
+          # V3 policy reads approving reviews via the host API.
+          GH_TOKEN: ${{ github.token }}
+          A2A_MODE: ${{ inputs.mode }}
+          A2A_BASE: ${{ inputs.base }}
+          A2A_REF: ${{ inputs.a2a-ref }}
+          SPACE_PATH: ${{ inputs.space-path }}
+        run: |
+          set -euo pipefail
+          cd "$SPACE_PATH"
+          args=(validate --ci --mode="$A2A_MODE")
+          if [ "$A2A_MODE" = "v3-pr" ]; then
+            if [ -z "$A2A_BASE" ]; then
+              echo "::error::mode=v3-pr requires the 'base' input (the PR base SHA)" >&2
+              exit 2
+            fi
+            args+=(--base "$A2A_BASE")
+          fi
+          if [ -n "$A2A_REF" ]; then
+            # Spaces: pinned module from the Go checksum DB (no local source).
+            go run "github.com/ydnikolaev/a2ahub/cmd/a2a@$A2A_REF" "${args[@]}"
+          else
+            # a2ahub dogfood: the caller checkout IS a2ahub — build current code.
+            go run "$GITHUB_WORKSPACE/cmd/a2a" "${args[@]}"
+          fi
