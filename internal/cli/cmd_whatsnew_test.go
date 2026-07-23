@@ -138,6 +138,19 @@ func TestWhatsnewJSONShape(t *testing.T) {
 	if len(decoded) != 2 {
 		t.Fatalf("expected 2 entries, got %d: %#v", len(decoded), decoded)
 	}
+	// Regression guard (S8 audit LOW): --json is the agent-facing machine
+	// contract — it must emit snake_case keys and NEVER the internal Raw
+	// byte blob. notes.ReleaseNotes.Raw carries json:"-"; this pins that a
+	// future tag removal would break the test, not silently leak.
+	js := out.String()
+	for _, forbidden := range []string{`"Raw"`, `"raw"`, `"Schema"`, `"Changes"`} {
+		if strings.Contains(js, forbidden) {
+			t.Errorf("--json leaked %s (want snake_case, no Raw): %s", forbidden, js)
+		}
+	}
+	if !strings.Contains(js, `"schema"`) || !strings.Contains(js, `"headline"`) {
+		t.Errorf("--json missing expected snake_case keys: %s", js)
+	}
 }
 
 func TestWhatsnewJSONEmptyIsArrayNotNull(t *testing.T) {
