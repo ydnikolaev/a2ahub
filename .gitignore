@@ -25,6 +25,7 @@
 .claude/
 .codex/
 .mate/
+.sporo/
 AGENTS.md
 CLAUDE.md
 scripts/*
