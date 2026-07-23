@@ -109,6 +109,13 @@ func buildCommands() map[string]command {
 	m["skill"] = func(args []string, stdout, stderr io.Writer) int {
 		return cli.NewSkillCommand(skill.Files, version).Run(context.Background(), args, stdio(stdout, stderr))
 	}
+	// P23 (OP-222): shell completion. A pure host-side render — no store, no
+	// config — fed the dispatch surface it belongs to (completionCmds/
+	// completionContractSubs read the SAME buildCommands()/ContractSubcommands()
+	// the binary wires, so a new verb is completable the moment it registers).
+	m["completion"] = func(args []string, stdout, stderr io.Writer) int {
+		return cli.NewCompletionCommand(completionCmds(), completionContractSubs()).Run(context.Background(), args, stdio(stdout, stderr))
+	}
 	m["connect"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
 		if err != nil {
@@ -242,6 +249,34 @@ func buildCommands() map[string]command {
 	}
 
 	return m
+}
+
+// completionCmds returns the top-level verb names `a2a completion` offers:
+// buildCommands() keys minus the hidden __catalog meta verb (never listed in
+// usage, so never completed). Read from the SAME dispatch map the binary
+// wires — not a second hand-kept list — so a newly registered verb is
+// completable automatically (the completion parity test guards the invariant).
+// RenderCompletion sorts, so the map's non-deterministic key order is fine.
+func completionCmds() []string {
+	var out []string
+	for name := range buildCommands() {
+		if name == "__catalog" {
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
+// completionContractSubs returns the `a2a contract <sub>` sub-verb names from
+// the same cli.ContractSubcommands() SSOT the catalog and MCP parity use.
+func completionContractSubs() []string {
+	subs := cli.ContractSubcommands()
+	out := make([]string, 0, len(subs))
+	for _, s := range subs {
+		out = append(out, s.Name)
+	}
+	return out
 }
 
 // readVerbs maps each P7 read verb to its cache.Store-backed constructor.

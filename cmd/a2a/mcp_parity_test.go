@@ -61,6 +61,7 @@ var mcpExcludedVerbs = map[string]bool{
 	"skill":      true, // P20: installs the skill tree to the local repo — a host-machine act, CLI-only (like update)
 	"html":       true, // OP-214: renders a local HTML file — a host-machine act, CLI-only
 	"dashboard":  true, // alias of html — CLI-only
+	"completion": true, // P23/OP-222: prints a shell completion script — a host-machine act, CLI-only
 }
 
 // toolAction is one reachable MCP capability: a grouped tool plus one of its
