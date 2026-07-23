@@ -55,6 +55,7 @@ var docManifest = []docEntry{
 	{"work-loops", "Concepts", "The work loops", "a2ahub/loops.md"},
 	{"commands", "Reference", "Command reference", "a2ahub/reference/commands.md"},
 	{"decompose", "Reference", "Decompose example", "a2ahub/reference/decompose-example.md"},
+	{"feedback", "Reference", "Feedback", "a2ahub/reference/feedback.md"},
 	{"authoring-contract", "Authoring", "Authoring: Contract", "a2ahub/reference/authoring/contract.md"},
 	{"authoring-requirement", "Authoring", "Authoring: Requirement", "a2ahub/reference/authoring/requirement.md"},
 	{"authoring-question", "Authoring", "Authoring: Question", "a2ahub/reference/authoring/question.md"},
@@ -199,6 +200,8 @@ func docAnchorFor(dest string) (string, bool) {
 		return "#commands", true
 	case "decompose-example.md":
 		return "#decompose", true
+	case "feedback.md":
+		return "#feedback", true
 	case "authoring": // a `reference/authoring/` directory link → the first authoring section
 		return "#authoring-contract", true
 	}

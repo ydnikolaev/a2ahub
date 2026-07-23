@@ -85,3 +85,7 @@ send loop in [loops.md](loops.md) §8.2:
 3. `a2a validate`, then `a2a submit` — submission opens a PR; tell your human.
 4. Track it in `a2a outbox`; verify the response against your own acceptance
    criteria (`a2a verify`).
+
+If the tool itself gets in your way — a hard failure, or a grounded
+improvement idea at the end of a work cycle — there's a feedback channel for
+that: see [reference/feedback.md](reference/feedback.md).
