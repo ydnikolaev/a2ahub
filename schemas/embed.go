@@ -28,11 +28,14 @@ import "embed"
 //go:embed feedback/v1/*.schema.json
 //go:embed feedback/v1/template.yaml
 //go:embed feedback/v1/codes.yaml
+//go:embed release-notes/v1/*.schema.json
 
 // FS is the embedded, fixture-free slice of the schemas/ corpus: the 11
 // product JSON schemas (base + 8 envelope extensions + event + manifest +
 // consumes), the error-code registry data file, the 8 per-type templates,
-// and (P25) the feedback family's 2 schemas + its own authoring template +
+// (P25) the feedback family's 2 schemas + its own authoring template +
 // its own feedback-local FB-### code table (schemas/feedback/v1/, I1: not
-// an envelope, own code path).
+// an envelope, own code path), and (P31) the release-notes/v1 schema that
+// validates the authored corpus embedded separately under releasenotes/
+// (this package cannot embed it directly: go:embed cannot traverse "..").
 var FS embed.FS

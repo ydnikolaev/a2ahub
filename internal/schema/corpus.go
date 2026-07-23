@@ -29,12 +29,13 @@ const resourceURLPrefix = "https://schemas.a2ahub.internal/"
 // error-code registry. Build one with Load(); it is safe for concurrent
 // read-only use (jsonschema.Schema.Validate does not mutate the schema).
 type Corpus struct {
-	envelope  map[string]*jsonschema.Schema // by type name
-	event     *jsonschema.Schema
-	manifest  *jsonschema.Schema
-	consumes  *jsonschema.Schema
-	baseProps map[string]bool // envelope/v1/base.schema.json's own top-level "properties" keys
-	registry  *Registry
+	envelope     map[string]*jsonschema.Schema // by type name
+	event        *jsonschema.Schema
+	manifest     *jsonschema.Schema
+	consumes     *jsonschema.Schema
+	releaseNotes *jsonschema.Schema
+	baseProps    map[string]bool // envelope/v1/base.schema.json's own top-level "properties" keys
+	registry     *Registry
 }
 
 // Load compiles the embedded schema corpus (schemas.FS) and loads the
@@ -95,6 +96,10 @@ func Load() (*Corpus, error) {
 	if err != nil {
 		return nil, &Error{Op: op, Input: "consumes", Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
 	}
+	releaseNotes, err := addSeeded(c, "release-notes", "release-notes/v1/release-notes.schema.json")
+	if err != nil {
+		return nil, &Error{Op: op, Input: "release-notes", Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
+	}
 
 	registryRaw, err := schemas.FS.ReadFile("errors/v1/registry.yaml")
 	if err != nil {
@@ -106,12 +111,13 @@ func Load() (*Corpus, error) {
 	}
 
 	return &Corpus{
-		envelope:  envelope,
-		event:     event,
-		manifest:  manifest,
-		consumes:  consumes,
-		baseProps: baseProps,
-		registry:  registry,
+		envelope:     envelope,
+		event:        event,
+		manifest:     manifest,
+		consumes:     consumes,
+		releaseNotes: releaseNotes,
+		baseProps:    baseProps,
+		registry:     registry,
 	}, nil
 }
 
@@ -232,6 +238,18 @@ func (c *Corpus) ValidateConsumes(version string, instance any) ([]FieldViolatio
 		return nil, &Error{Op: op, Input: version, Err: ErrUnsupportedVersion}
 	}
 	return extractFieldViolations(c.consumes.Validate(instance), nil), nil
+}
+
+// ValidateReleaseNotes validates instance against the release-notes/v1
+// schema. Unlike ValidateEnvelope/ValidateEvent/ValidateManifest/
+// ValidateConsumes, there is no N-1-cycle version-overlap window here (no
+// AcceptsReleaseNotesVersion): release-notes/v1 is the schema field's own
+// literal const, not a per-instance version selector — the corpus is
+// authored (releasenotes/*.yaml, one file per shipped a2a version) and
+// internal/notes' gate test validates every embedded file against this
+// one schema directly.
+func (c *Corpus) ValidateReleaseNotes(instance any) ([]FieldViolation, error) {
+	return extractFieldViolations(c.releaseNotes.Validate(instance), nil), nil
 }
 
 // BaseEnvelopeFields returns the set of field names declared directly on
