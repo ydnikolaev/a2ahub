@@ -29,9 +29,11 @@ jobs:
         run: |
           set -euo pipefail
           # grep -E has no lookahead, so the scripts/* exception (install.sh,
-          # e2e-authoring-smoke.sh — both product, must stay public) is a post-filter.
+          # dev-install.sh, e2e-authoring-smoke.sh, classify-guard.sh — all
+          # product/tooling, kept public; MUST stay in sync with
+          # scripts/classify-guard.sh's ALLOW_FILES) is a post-filter.
           priv=$(git ls-files | grep -E '^(\.agents|\.claude|\.codex|\.mate)/|^(AGENTS\.md|CLAUDE\.md)$|^scripts/' \
-            | grep -vE '^scripts/(install\.sh|e2e-authoring-smoke\.sh|classify-guard\.sh)$' || true)
+            | grep -vE '^scripts/(install\.sh|dev-install\.sh|e2e-authoring-smoke\.sh|classify-guard\.sh)$' || true)
           if [ -n "$priv" ]; then
             echo "::error::private (harness) paths tracked in the public repo:"
             echo "$priv"

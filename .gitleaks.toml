@@ -18,4 +18,7 @@ description = "a2ahub's own secret-scanner fixture corpus (fabricated, non-live 
 paths = [
   '''schemas/fixtures/secret-corpus/positive/private-key-block\.md''',
   '''schemas/fixtures/secret-corpus/positive/github-pat\.md''',
+  # P25 feedback secret-scan fixtures: fabricated tokens the feedback
+  # validator's own tests assert it blocks (FB-006). Not live credentials.
+  '''schemas/feedback/v1/fixtures/invalid/planted-secret.*\.yaml''',
 ]
