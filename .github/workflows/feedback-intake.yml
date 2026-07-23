@@ -1,0 +1,164 @@
+# Feedback intake (P25 spec 25-agent-feedback.md §T5). Validates, labels, and
+# auto-merges consumer-agent feedback PRs under `feedback/inbox/**` with hard
+# path guards, so malformed/hostile submissions never cost the operator
+# attention (US-F5, invariants I2/I4).
+#
+# SECURITY — READ BEFORE EDITING (I2, normative, spec 25 §T5 "Security notes"):
+#   `pull_request_target` is REQUIRED here — fork PRs need the repo token to
+#   label/enable-auto-merge, which `pull_request` never grants for forks.
+#   That is safe ONLY because this job treats the PR as a quarantined data
+#   source, never as code: it NEVER checks out or executes PR-head content.
+#   It reads exactly ONE file BLOB via the GitHub API (raw bytes) and feeds
+#   it, as DATA, to a PINNED `a2a` release binary — never a binary built
+#   from the PR, never "latest" (mirrors the space-CI pattern in
+#   space-template/.github/workflows/a2a-validate.yml). There is
+#   deliberately no `actions/checkout` step anywhere in this file. Do not
+#   add one, and do not add a step that reads `github.event.pull_request.
+#   head.sha` into anything other than an API `ref=` query parameter.
+name: feedback-intake
+
+on:
+  pull_request_target:
+    paths:
+      - "feedback/inbox/**"
+
+# Least privilege: only what steps 5 (label) and 6 (auto-merge) need.
+# `pull-requests: write` covers PR labels; `contents: write` is required to
+# enable auto-merge (the GraphQL mutation needs repo write access at
+# enable-time — branch protection + required checks gate the actual merge).
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  # The PINNED a2a release to validate against — NEVER "latest" (spec 25
+  # §T5 step 2 / the P9/P17 space-CI pattern in a2a-validate.yml).
+  #
+  # KNOWN GAP (deviation, see brief report): 0.1.1 is the latest tag at
+  # authoring time and predates `a2a feedback` (that verb family ships
+  # later in this same epic, spec 25 §10 wave 2). This value is a
+  # forward-reference placeholder — this workflow cannot go green until
+  # bumped to the first release that contains `a2a feedback validate`.
+  # The lead MUST update this before the first real intake PR lands.
+  A2A_INTAKE_VERSION: "0.1.1"
+  REPO: ${{ github.repository }}
+  PR_NUMBER: ${{ github.event.pull_request.number }}
+  PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  intake:
+    name: feedback-intake
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1 (spec §T5): path guard. The changed-file set must be EXACTLY
+      # ONE ADDED file matching feedback/inbox/fb-<8 digits>-<6 hex>.yaml
+      # (the schema's own id pattern, spec 25 §T2) — anything else (other
+      # paths, modified/deleted files, >1 file, a subdirectory smuggled
+      # under the glob) fails here, before any further step runs.
+      - name: Path guard — exactly one added feedback/inbox/fb-*.yaml file
+        id: guard
+        run: |
+          set -euo pipefail
+          files_json=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate)
+          count=$(echo "$files_json" | jq 'length')
+          if [ "$count" -ne 1 ]; then
+            echo "::error::feedback-intake path guard: expected exactly 1 changed file, got $count" >&2
+            exit 1
+          fi
+
+          status=$(echo "$files_json" | jq -r '.[0].status')
+          filename=$(echo "$files_json" | jq -r '.[0].filename')
+
+          if [ "$status" != "added" ]; then
+            echo "::error::feedback-intake path guard: file must be added (got status=$status) for $filename" >&2
+            exit 1
+          fi
+
+          if ! echo "$filename" | grep -qE '^feedback/inbox/fb-[0-9]{8}-[0-9a-f]{6}\.yaml$'; then
+            echo "::error::feedback-intake path guard: unexpected path $filename (want feedback/inbox/fb-<8 digits>-<6 hex>.yaml)" >&2
+            exit 1
+          fi
+
+          echo "path=$filename" >> "$GITHUB_OUTPUT"
+
+      # Step 2 (spec §T5): fetch the PINNED a2a release binary. Never head,
+      # never built from the PR. This workflow runs IN the product repo
+      # itself, so the default `github.token` (already read-scoped via
+      # `contents: read`... here `write`, superset) can read its own
+      # releases — unlike the downstream space-CI pattern this mirrors,
+      # no separate cross-repo fetch secret is needed.
+      - name: Fetch pinned a2a release binary
+        run: |
+          set -euo pipefail
+          gh release download "v${A2A_INTAKE_VERSION}" \
+            --repo "${REPO}" \
+            --pattern 'a2a-linux-amd64' \
+            --output ./a2a
+          chmod +x ./a2a
+
+      # Step 3 (spec §T5 / I2): fetch the single PR file BLOB — raw content
+      # only, via the contents API pinned to the PR head SHA. This is NOT a
+      # checkout: no working tree is populated with PR-head content, only
+      # this one file's bytes land on disk, and only as DATA for step 4.
+      #
+      # Materialized at its OWN validated path (steps.guard.outputs.path,
+      # e.g. feedback/inbox/fb-<id>.yaml) — not a renamed scratch file.
+      # Spec T1 / the intake-guards txtar require `validate --ci` to see
+      # filename == id and path under feedback/inbox/; a renamed copy
+      # would make every valid submission fail step 4 as "wrong path".
+      - name: Fetch the single PR file blob (no checkout of PR head)
+        env:
+          FILE_PATH: ${{ steps.guard.outputs.path }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$FILE_PATH")"
+          gh api "repos/${REPO}/contents/${FILE_PATH}?ref=${PR_HEAD_SHA}" \
+            --jq '.content' \
+            | base64 -d > "$FILE_PATH"
+
+      # Step 4 (spec §T5 / T1): validate. Exit 0 = proceed; non-zero = fail
+      # (no label, no merge) — schema + all-checks-true + size caps +
+      # secret-scan + intake constraints (filename = id, path under
+      # feedback/inbox/) all live behind this one command.
+      - name: a2a feedback validate --ci
+        env:
+          FILE_PATH: ${{ steps.guard.outputs.path }}
+        run: ./a2a feedback validate --ci "$FILE_PATH"
+
+      # Step 5 (spec §T5): label the PR. `kind` is a validated top-level
+      # scalar field (spec 25 §T2) — safe to read after step 4 passed.
+      - name: Label the PR (feedback + feedback:<kind>)
+        env:
+          FILE_PATH: ${{ steps.guard.outputs.path }}
+        run: |
+          set -euo pipefail
+          kind=$(grep -m1 -E '^kind:[[:space:]]*' "$FILE_PATH" \
+            | sed -E 's/^kind:[[:space:]]*//; s/[[:space:]]+#.*$//; s/[[:space:]]*$//' \
+            | tr -d '"'"'"'\r')
+          if [ -z "$kind" ]; then
+            echo "::error::feedback-intake: could not read a non-empty kind from the validated file" >&2
+            exit 1
+          fi
+          gh pr edit "${PR_NUMBER}" --repo "${REPO}" --add-label "feedback,feedback:${kind}"
+
+      # Step 6 (spec §T5): enable auto-merge (squash) — the D-002 GraphQL
+      # machinery (internal/host/github.go OpenPR), since GitHub's
+      # auto-merge toggle has no REST endpoint. Branch protection completes
+      # the actual merge once the required check goes green (I4).
+      - name: Enable auto-merge (squash)
+        run: |
+          set -euo pipefail
+          node_id=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.node_id')
+          # $id below is a GraphQL variable name (bound via -f id=), not a
+          # shell variable; the single-quoted literal is intentional so the
+          # shell never touches it.
+          # shellcheck disable=SC2016
+          gh api graphql \
+            -f query='
+              mutation($id: ID!) {
+                enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH}) {
+                  clientMutationId
+                }
+              }' \
+            -f id="${node_id}"
