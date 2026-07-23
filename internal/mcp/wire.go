@@ -40,6 +40,20 @@ const (
 	defaultBaseBranch = "main"
 )
 
+// githubAPIEnv / githubAPIBase mirror cmd/a2a's own resolver — the MCP
+// surface wires the same host against the same knob (GitHub Enterprise, and
+// an e2e harness that controls the host). The duplication across the two
+// wiring points is ADR-001's deliberate one: internal/mcp never imports
+// internal/cli, and cmd/a2a's copy is not importable from here.
+const githubAPIEnv = "A2A_GITHUB_API"
+
+func githubAPIBase() string {
+	if v := os.Getenv(githubAPIEnv); v != "" {
+		return v
+	}
+	return githubAPIBaseURL
+}
+
 // Paths bundles the resolved config/staging locations the mcp server
 // needs — mirrors cmd/a2a/wire.go's own paths struct.
 type Paths struct {
@@ -191,7 +205,7 @@ func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.
 	resolver := NewMirrorResolver(mirrorDir, manifest)
 	legality := NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
-	h := host.NewGitHubHost(http.DefaultClient, githubAPIBaseURL)
+	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 	funnel := space.NewWriteFunnel(h, validator, binaryVersion)
 
 	hostCfg := SubmitHostConfig{
