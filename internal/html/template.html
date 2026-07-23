@@ -355,11 +355,14 @@ button{font:inherit}
 .setup p{color:var(--text-dim);margin:0 0 20px;font-size:14px;line-height:1.55}
 
 /* ---------------------------------------------------------------- guide */
-.guide{max-width:1060px;margin:0 auto;display:flex;flex-direction:column;gap:64px;padding-bottom:44px}
-.g-hero{position:relative;overflow:hidden;border:1px solid var(--border);border-radius:24px;padding:52px 48px;
-  display:grid;grid-template-columns:1.05fr .95fr;gap:36px;align-items:center;
+.guide{max-width:none;display:flex;flex-direction:column;gap:58px;padding-bottom:44px}
+/* body sections read at a comfortable width; the hero breaks out wider */
+.guide>*{max-width:1080px;margin-left:auto;margin-right:auto;width:100%}
+.g-hero{position:relative;overflow:hidden;border:1px solid var(--border);border-radius:26px;padding:60px 56px;max-width:1320px;
+  display:grid;grid-template-columns:1.08fr .92fr;gap:44px;align-items:center;
   background:
-    radial-gradient(90% 130% at 100% 0%, var(--accent-soft) 0%, transparent 52%),
+    radial-gradient(88% 128% at 100% 0%, var(--accent-soft) 0%, transparent 54%),
+    radial-gradient(70% 120% at 0% 100%, color-mix(in srgb,var(--accent) 8%,transparent) 0%, transparent 50%),
     radial-gradient(var(--border) 1px, transparent 1.4px) 0 0/22px 22px,
     var(--surface);
   box-shadow:var(--shadow)}
@@ -420,21 +423,30 @@ button{font:inherit}
 .g-branch .bdot{width:22px;height:22px;border-radius:999px;background:var(--blocking);color:#fff;display:grid;place-items:center;font-weight:800;font-size:12px;flex:none}
 .g-branch .bname{font-weight:700;font-size:13.5px;color:var(--blocking);margin-bottom:3px}
 .g-branch .bd{font-size:12.5px;color:var(--text-dim);line-height:1.5}
-.g-flow{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap}
-.g-phase{flex:1;min-width:200px;border:1px solid var(--border);border-radius:15px;background:var(--surface);padding:15px 15px 16px;box-shadow:var(--shadow-sm)}
-.g-phase .plab{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-faint);font-weight:700;margin-bottom:12px}
-.g-phase .plab .pn{width:17px;height:17px;border-radius:6px;background:var(--accent-soft);color:var(--accent);display:inline-grid;place-items:center;font-size:10px;font-weight:800}
-.g-phase .psteps{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
-.g-phase .pstep{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:7px 11px;display:flex;flex-direction:column;gap:2px}
-.g-phase .pstep b{font-family:var(--mono);color:var(--accent);font-size:12px;font-weight:700}
+.g-flow{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:stretch}
+@media(max-width:820px){.g-flow{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:480px){.g-flow{grid-template-columns:1fr}}
+.g-phase{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:15px;background:var(--surface);padding:16px 15px 18px;box-shadow:var(--shadow-sm)}
+.g-phase .plab{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-faint);font-weight:700;margin-bottom:14px}
+.g-phase .plab .pn{width:18px;height:18px;border-radius:6px;background:var(--accent);color:#fff;display:inline-grid;place-items:center;font-size:10px;font-weight:800}
+.g-phase .psteps{display:flex;flex-direction:column;align-items:stretch}
+.g-phase .pstep{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:9px 12px;display:flex;flex-direction:column;gap:2px}
+.g-phase .pstep b{font-family:var(--mono);color:var(--accent);font-size:12.5px;font-weight:700}
 .g-phase .pstep span{color:var(--text-faint);font-size:10.5px}
-.g-arrow{align-self:center;color:var(--text-faint)}
-.g-arrow.big{font-size:17px}
-.g-sig{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
-.g-sigrow{display:flex;gap:13px;padding:15px 17px;border:1px solid var(--border);border-radius:15px;background:var(--surface);box-shadow:var(--shadow-sm);align-items:flex-start}
-.g-sigrow .sd{width:10px;height:10px;border-radius:999px;margin-top:4px;flex:none;box-shadow:0 0 0 4px color-mix(in srgb,currentColor 14%,transparent)}
+.g-phase .pconn{width:2px;height:11px;background:var(--border-strong);border-radius:2px;margin:3px 0 3px 18px}
+.g-sig{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
+.g-sigrow{display:flex;gap:14px;padding:16px 18px;border:1px solid var(--border);border-radius:15px;background:var(--surface);box-shadow:var(--shadow-sm);align-items:flex-start}
+.g-sigbadge{flex:none;min-width:70px;display:flex;align-items:center;padding-top:1px}
+.g-sbwrap{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.g-sbwrap .sdot{margin:0}
+.g-sigtext{min-width:0}
 .g-sigrow .sb{font-weight:700;font-size:13.5px;margin-bottom:3px}
 .g-sigrow .st{font-size:12.5px;color:var(--text-dim);line-height:1.55}
+.sig-chip{font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;letter-spacing:.03em;text-transform:uppercase}
+.sig-chip.blk{background:color-mix(in srgb,var(--blocking) 15%,transparent);color:var(--blocking);border:1px solid color-mix(in srgb,var(--blocking) 32%,transparent)}
+.sig-chip.soft{background:var(--accent-soft);color:var(--accent)}
+.sig-age{font-family:var(--mono);font-size:11px;font-weight:650;color:var(--attention);background:color-mix(in srgb,var(--attention) 14%,transparent);padding:2px 8px;border-radius:6px}
+.drift-pill{font-size:10.5px;font-weight:650;padding:2px 9px;border-radius:999px;color:var(--dc);background:color-mix(in srgb,var(--dc) 15%,transparent);border:1px solid color-mix(in srgb,var(--dc) 30%,transparent)}
 .g-cta{display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap;border:1px solid var(--border);border-radius:22px;padding:32px 36px;
   background:radial-gradient(110% 170% at 0% 100%, var(--accent-soft) 0%, transparent 52%),var(--surface);box-shadow:var(--shadow)}
 .g-cta h2{margin:0 0 7px;font-size:21px;letter-spacing:-.02em}
@@ -442,6 +454,25 @@ button{font:inherit}
 .g-rev{opacity:0;transform:translateY(16px)}
 .g-rev.in{opacity:1;transform:none;transition:opacity .55s ease,transform .55s ease}
 @media (prefers-reduced-motion:reduce){.g-rev{opacity:1;transform:none}}
+/* automation band — built for agents */
+.g-auto{border:1px solid var(--border);border-radius:22px;padding:40px 34px 34px;
+  background:radial-gradient(120% 150% at 50% 0%, color-mix(in srgb,var(--accent) 8%,transparent) 0%, transparent 56%),var(--surface-2);box-shadow:var(--shadow-sm)}
+.g-ahead{text-align:center;max-width:660px;margin:0 auto 30px}
+.g-ahead .eyebrow{justify-content:center}
+.g-ahead h2{margin:6px 0 11px;font-size:clamp(22px,2.6vw,30px);letter-spacing:-.028em;font-weight:780;text-wrap:balance}
+.g-ahead p{margin:0;font-size:14.5px;color:var(--text-dim);line-height:1.62;text-wrap:pretty}
+.g-feats{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}
+@media(max-width:900px){.g-feats{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.g-feats{grid-template-columns:1fr}}
+.g-feat{border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:19px 18px 20px;box-shadow:var(--shadow-sm);transition:transform .15s,border-color .15s,box-shadow .15s}
+.g-feat:hover{transform:translateY(-2px);border-color:var(--border-strong);box-shadow:var(--shadow)}
+.g-ftag{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-soft);border-radius:7px;padding:3px 9px;margin-bottom:12px}
+.g-ft{font-weight:730;font-size:15px;letter-spacing:-.015em;margin-bottom:6px;line-height:1.25}
+.g-fd{font-size:12.5px;color:var(--text-dim);line-height:1.6;text-wrap:pretty}
+/* boxed guide section (lifecycle · flow) */
+.g-sec.boxed{border:1px solid var(--border);border-radius:20px;padding:32px 30px 30px;
+  background:radial-gradient(100% 130% at 100% 0%, color-mix(in srgb,var(--accent) 5%,transparent) 0%, transparent 62%),var(--surface-2)}
+.g-sec.boxed>.g-shead{margin-bottom:30px}
 
 /* ---------------------------------------------------------------- docs */
 .docs{display:grid;grid-template-columns:216px minmax(0,1fr) 198px;gap:26px;align-items:start}
@@ -607,7 +638,8 @@ const I18N = {
       secTypes:"The 8 artifact types",secTypesSub:"Everything systems exchange is one of these typed files.",
       secLife:"The lifecycle of an exchange",secLifeSub:"Every item moves left to right through these states.",
       secFlow:"How an exchange flows",secFlowSub:"From your keyboard to the recipient's inbox and back.",
-      secSig:"Statuses & signals this dashboard highlights",secSigSub:"Plain meanings of the words you'll see on every row."}
+      secSig:"Statuses & signals this dashboard highlights",secSigSub:"The real badges you see on every row — and what each one means.",
+      secAuto:"Built for agents, end to end",secAutoSub:"The same protocol reaches an agent three ways — and the whole path from draft to merge can run without a human in the loop."}
   },
   ru:{
     types:{contract:"Контракт",requirement:"Требование",question:"Вопрос",work_request:"Запрос работы",decision:"Решение",handoff:"Передача",response:"Ответ",announcement:"Объявление"},
@@ -640,7 +672,8 @@ const I18N = {
       secTypes:"8 типов артефактов",secTypesSub:"Всё, чем обмениваются системы, — один из этих типизированных файлов.",
       secLife:"Жизненный цикл обмена",secLifeSub:"Каждая задача идёт слева направо через эти состояния.",
       secFlow:"Как проходит обмен",secFlowSub:"От клавиатуры до входящих получателя и обратно.",
-      secSig:"Статусы и сигналы дашборда",secSigSub:"Простые значения слов, которые вы видите в каждой строке."}
+      secSig:"Статусы и сигналы дашборда",secSigSub:"Реальные бейджи, которые вы видите в каждой строке, — и что каждый значит.",
+      secAuto:"Создано для агентов — от и до",secAutoSub:"Один протокол доступен агенту тремя способами, а весь путь от черновика до мерджа может идти без человека."}
   }
 };
 const GUIDE_TEXT = {
@@ -692,11 +725,28 @@ const GUIDE_TEXT = {
        b1:{en:"Open documentation",ru:"Открыть документацию"},b2:{en:"Back to dashboard",ru:"К дашборду"}},
   diagram:{you:{en:"you",ru:"вы"},space:{en:"space · git",ru:"спейс · git"},pr:{en:"PR · validate · CI",ru:"PR · проверки · CI"}},
   signals:[
-    {b:{en:"blocking",ru:"блокирует"},c:"var(--blocking)",d:{en:"someone can't proceed until this is handled (top priority).",ru:"кто-то не может продолжить, пока это не решено (высший приоритет)."}},
-    {b:{en:"priority P1 / P2",ru:"приоритет P1 / P2"},c:"var(--attention)",d:{en:"how urgent the author marked it.",ru:"насколько срочным пометил автор."}},
-    {b:{en:"stale",ru:"давно без движения"},c:"var(--attention)",d:{en:"pending a long time with no movement.",ru:"висит долго без изменений."}},
-    {b:{en:"gate-pending",ru:"ждёт вашего ревью"},c:"var(--blocking)",d:{en:"a PR or review is waiting on you.",ru:"PR или ревью ждёт именно вас."}},
-    {b:{en:"contract drift",ru:"дрейф контракта"},c:"var(--d-deprecated)",d:{en:"you depend on vN but the provider shipped vN+1, or deprecated/retired it.",ru:"вы зависите от vN, а провайдер выпустил vN+1 или снял версию."}}
+    {kind:"blocking",b:{en:"blocking",ru:"блокирует"},c:"var(--blocking)",d:{en:"someone can't proceed until this is handled — always sorted to the top.",ru:"кто-то не может продолжить, пока это не решено, — всегда наверху списка."}},
+    {kind:"priority",b:{en:"priority P1 / P2",ru:"приоритет P1 / P2"},c:"var(--attention)",d:{en:"how urgent the author marked it (P1 highest, P3 default).",ru:"насколько срочным пометил автор (P1 — высший, P3 — по умолчанию)."}},
+    {kind:"new",b:{en:"new",ru:"новое"},c:"var(--accent)",d:{en:"arrived since you last read this inbox — a small dot on the row.",ru:"появилось с вашего последнего просмотра входящих — точка на строке."}},
+    {kind:"gate",b:{en:"gate-pending",ru:"ждёт вашего ревью"},c:"var(--blocking)",d:{en:"a PR or review is waiting specifically on you.",ru:"PR или ревью ждёт именно вас."}},
+    {kind:"stale",b:{en:"stale",ru:"давно без движения"},c:"var(--attention)",d:{en:"pending a long time with no movement — the age turns amber.",ru:"висит долго без изменений — возраст становится янтарным."}},
+    {kind:"drift",b:{en:"contract drift",ru:"дрейф контракта"},c:"var(--d-deprecated)",d:{en:"you depend on vN but the provider shipped vN+1, deprecated, or retired it.",ru:"вы зависите от vN, а провайдер выпустил vN+1, пометил устаревшим или снял версию."}}
+  ],
+  auto:[
+    {tag:"a2a skill",t:{en:"A skill teaches the agent",ru:"Навык обучает агента"},
+     d:{en:"a2a skill install drops the a2ahub skill into a repo. The agent instantly knows the protocol — the 8 types, the loops, the commands — no prompt engineering.",ru:"a2a skill install кладёт навык a2ahub в репозиторий. Агент сразу знает протокол — 8 типов, циклы, команды — без промпт-инжиниринга."}},
+    {tag:"a2a",t:{en:"One CLI does the work",ru:"Один CLI делает всё"},
+     d:{en:"A single a2a binary: draft, validate, submit, inbox, contracts, dashboard. Everything a participant does is one command — trivially scriptable.",ru:"Единый бинарь a2a: черновик, валидация, submit, входящие, контракты, дашборд. Любое действие участника — одна команда, легко скриптуется."}},
+    {tag:"MCP",t:{en:"Native MCP tools",ru:"Нативные MCP-инструменты"},
+     d:{en:"The same actions are exposed as MCP tools — a2a_new, a2a_submit, a2a_read… An agent calls them directly, with typed arguments, no output parsing.",ru:"Те же действия — как MCP-инструменты: a2a_new, a2a_submit, a2a_read… Агент вызывает их напрямую, с типизированными аргументами, без парсинга вывода."}},
+    {tag:"XQ → XS",t:{en:"Agents talk to agents",ru:"Агенты общаются с агентами"},
+     d:{en:"Systems coordinate through typed artifacts directly: one team's agent files a question, another's answers, a third hands off tested work. Humans step in only where a decision (XD) truly needs them.",ru:"Системы координируются типизированными артефактами напрямую: агент одной команды задаёт вопрос, агент другой отвечает, третий передаёт готовую работу. Человек нужен лишь там, где требуется решение (XD)."}},
+    {tag:"auto-merge",t:{en:"Validated PRs merge themselves",ru:"Валидные PR мерджатся сами"},
+     d:{en:"Passes schema + the space's CI gate → the pull request auto-merges. No manual gatekeeping; human review only where CODEOWNERS requires it.",ru:"Прошёл схему и CI-гейт спейса → pull request мерджится автоматически. Никакого ручного гейткипинга; ревью человека — только там, где требует CODEOWNERS."}},
+    {tag:"a2a statusline",t:{en:"It surfaces what needs you",ru:"Показывает, что ждёт вас"},
+     d:{en:"a2a statusline puts what's blocking and what's waiting on you right in the agent or editor status bar — plus update notices, so nothing important stays buried.",ru:"a2a statusline выносит блокирующее и ждущее вас прямо в статус-строку агента или редактора — плюс уведомления об обновлениях, чтобы важное не терялось."}},
+    {tag:"draft → merge",t:{en:"The whole loop is automatable",ru:"Весь цикл автоматизируем"},
+     d:{en:"draft → validate → submit → CI → merge → the recipient's inbox — every step is a command an agent can run. The exchange keeps moving while you sleep.",ru:"draft → validate → submit → CI → merge → входящие получателя — каждый шаг это команда, которую агент может выполнить. Обмен идёт, пока вы спите."}}
   ]
 };
 const GRAPH_TEXT = {
@@ -1579,6 +1629,20 @@ function renderGuide(){
     el("span",{class:"pm",text:p.m})])));
   g.appendChild(pills);
 
+  /* automation band — built for agents (skill · cli · mcp · auto-merge) */
+  const auto=el("div",{class:"g-auto"});
+  auto.appendChild(el("div",{class:"g-ahead"},[
+    el("div",{class:"eyebrow",text:(S.lang==="ru"?"Автоматизация":"Automation")}),
+    el("h2",{text:L.guide.secAuto}),
+    el("p",{text:L.guide.secAutoSub})]));
+  const feats=el("div",{class:"g-feats"});
+  GT.auto.forEach(f=>feats.appendChild(el("div",{class:"g-feat"},[
+    el("span",{class:"g-ftag",text:f.tag}),
+    el("div",{class:"g-ft",text:f.t[S.lang]}),
+    el("div",{class:"g-fd",text:f.d[S.lang]})])));
+  auto.appendChild(feats);
+  g.appendChild(auto);
+
   /* 01 — artifact types */
   const s1=gsec("01",L.guide.secTypes,L.guide.secTypesSub);
   const cards=el("div",{class:"g-cards"});
@@ -1591,8 +1655,8 @@ function renderGuide(){
   });
   s1.appendChild(cards); g.appendChild(s1);
 
-  /* 02 — lifecycle rail */
-  const s2=gsec("02",L.guide.secLife,L.guide.secLifeSub);
+  /* 02 — lifecycle rail (boxed section) */
+  const s2=gsec("02",L.guide.secLife,L.guide.secLifeSub); s2.classList.add("boxed");
   const rail=el("div",{class:"g-rail"});
   const order=["draft","submitted","acked","accepted","in-progress","responded","verified","closed"];
   order.forEach((k,i)=>rail.appendChild(el("div",{class:"g-rstep"},[
@@ -1607,31 +1671,29 @@ function renderGuide(){
     el("div",{},[el("div",{class:"bname",text:stateWord("disputed")}),el("div",{class:"bd",text:GT.lifecycle.disputed[S.lang]})])]));
   s2.appendChild(br); g.appendChild(s2);
 
-  /* 03 — flow swimlanes */
-  const s3=gsec("03",L.guide.secFlow,L.guide.secFlowSub);
+  /* 03 — flow pipeline (boxed; 4 equal phases, steps stacked) */
+  const s3=gsec("03",L.guide.secFlow,L.guide.secFlowSub); s3.classList.add("boxed");
   const flow=el("div",{class:"g-flow"});
   const cuts=[[0,3],[3,5],[5,7],[7,9]];
   cuts.forEach((c,i)=>{
     const ph=el("div",{class:"g-phase"});
     ph.appendChild(el("div",{class:"plab"},[el("span",{class:"pn",text:String(i+1)}),document.createTextNode(GT.phases[i][S.lang])]));
+    const rowsteps=GT.pipe.slice(c[0],c[1]);
     const row=el("div",{class:"psteps"});
-    GT.pipe.slice(c[0],c[1]).forEach((st,j)=>{
-      const p=el("span",{class:"pstep"},[el("b",{text:st.cmd})]);
-      if(st[S.lang]) p.appendChild(el("span",{text:st[S.lang]}));
-      row.appendChild(p);
-      if(j<c[1]-c[0]-1) row.appendChild(el("span",{class:"g-arrow",text:"→"}));
+    rowsteps.forEach((st,j)=>{
+      row.appendChild(el("span",{class:"pstep"},[el("b",{text:st.cmd}), st[S.lang]?el("span",{text:st[S.lang]}):null]));
+      if(j<rowsteps.length-1) row.appendChild(el("span",{class:"pconn"}));
     });
     ph.appendChild(row); flow.appendChild(ph);
-    if(i<cuts.length-1) flow.appendChild(el("span",{class:"g-arrow big",text:"→"}));
   });
   s3.appendChild(flow); g.appendChild(s3);
 
-  /* 04 — signals */
+  /* 04 — signals (real dashboard badges) */
   const s4=gsec("04",L.guide.secSig,L.guide.secSigSub);
   const sig=el("div",{class:"g-sig"});
   GT.signals.forEach(x=>sig.appendChild(el("div",{class:"g-sigrow"},[
-    el("span",{class:"sd",style:"background:"+x.c+";color:"+x.c}),
-    el("div",{},[el("div",{class:"sb",text:x.b[S.lang]}),el("div",{class:"st",text:x.d[S.lang]})])])));
+    el("div",{class:"g-sigbadge"},[signalBadge(x.kind)]),
+    el("div",{class:"g-sigtext"},[el("div",{class:"sb",text:x.b[S.lang]}),el("div",{class:"st",text:x.d[S.lang]})])])));
   s4.appendChild(sig); g.appendChild(s4);
 
   /* closing cta */
@@ -1702,6 +1764,18 @@ function heroDiagram(){
 function gsec(num,title,sub){ const s=el("div",{class:"g-sec"});
   const h=el("div",{class:"g-shead"}); h.appendChild(el("span",{class:"num",text:num})); h.appendChild(el("h2",{text:title})); if(sub)h.appendChild(el("p",{text:sub}));
   s.appendChild(h); return s; }
+/* signalBadge: the REAL dashboard token for a signal, so the guide shows what
+   each badge actually looks like on a row (not a generic dot). */
+function signalBadge(kind){
+  const w=el("span",{class:"g-sbwrap"});
+  if(kind==="blocking"){ w.appendChild(el("span",{class:"sdot blocking"})); w.appendChild(el("span",{class:"sig-chip blk",text:sevWord("blocking")})); }
+  else if(kind==="priority"){ w.appendChild(el("span",{class:"pri p1",text:"P1"})); w.appendChild(el("span",{class:"pri p2",text:"P2"})); }
+  else if(kind==="new"){ w.appendChild(el("span",{class:"newdot"})); w.appendChild(el("span",{class:"sig-chip soft",text:L.ui.new||"new"})); }
+  else if(kind==="gate"){ w.appendChild(el("span",{class:"sig-chip blk",text:(S.lang==="ru"?"ревью":"review")})); }
+  else if(kind==="stale"){ w.appendChild(el("span",{class:"sig-age",text:"14d"})); }
+  else if(kind==="drift"){ w.appendChild(el("span",{class:"drift-pill",style:"--dc:var(--d-behind)",text:driftWord("behind")})); w.appendChild(el("span",{class:"drift-pill",style:"--dc:var(--d-deprecated)",text:driftWord("deprecated")})); }
+  return w;
+}
 
 /* ================================================================ DOCS */
 const GROUP_ORDER=["Start","Concepts","Reference","Authoring","Help"];
