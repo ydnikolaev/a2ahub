@@ -849,3 +849,118 @@ func newContractVerifyExportHandler(deps ContractDeps) HandlerFunc {
 		return contractVerifyExportResult{ID: id, Matches: false, LocalDigest: localDigest, WantDigest: wantDigest, Diff: diff}, "", nil
 	}
 }
+
+// ContractAdoptInput is a2a_contract action=adopt's structured input —
+// the MCP twin of `a2a contract adopt` (internal/cli's runAdopt).
+type ContractAdoptInput struct {
+	ID    string `json:"id"`
+	Major int    `json:"major,omitempty"`
+	Note  string `json:"note,omitempty"`
+}
+
+// newContractAdoptHandler registers this system as a CONSUMER of another
+// system's contract: it writes the dependency into <own-system>/
+// consumes.yaml (§5.2.3, D-022 — the space-visible registry a producer's
+// retire has to wait for) and submits it through the same write funnel as
+// every other mutation. Mirrors internal/cli's runAdopt exactly; the
+// duplication is ADR-001's (internal/mcp never imports internal/cli).
+func newContractAdoptHandler(deps ContractDeps) HandlerFunc {
+	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
+		var in ContractAdoptInput
+		if err := json.Unmarshal(args, &in); err != nil {
+			return nil, "", fmt.Errorf("contract adopt: invalid input: %w", err)
+		}
+		parsed, perr := artifact.ParseID(in.ID)
+		if perr != nil || parsed.Prefix != "XC" {
+			return nil, "", fmt.Errorf("contract adopt: %q is not a contract id (XC-<system>-<slug>)", in.ID)
+		}
+		if parsed.System == deps.OwnSystem {
+			return nil, "", fmt.Errorf("contract adopt: %s is this system's OWN contract — the registry records what you consume from OTHERS (§5.2.3)", in.ID)
+		}
+
+		major := in.Major
+		if major == 0 {
+			_, probe, _, _, rerr := contractReadDescriptor(deps.MirrorDir, in.ID)
+			if rerr != nil {
+				return nil, "", fmt.Errorf("contract adopt: cannot read %s from the local mirror — sync first, or pass major: %w", in.ID, rerr)
+			}
+			v, verr := contractParseSemver(probe.Version)
+			if verr != nil {
+				return nil, "", fmt.Errorf("contract adopt: %s has no usable published version (%q): %w", in.ID, probe.Version, verr)
+			}
+			major = v[0]
+		}
+
+		layout, lerr := space.NewLayout(deps.OwnSystem)
+		if lerr != nil {
+			return nil, "", fmt.Errorf("contract adopt: %w", lerr)
+		}
+		relPath := layout.ConsumesYAML()
+
+		registry := space.Consumes{Schema: "consumes/v1", System: deps.OwnSystem, Dependencies: []space.Dependency{}}
+		if raw, rerr := readBoundedFile(filepath.Join(deps.MirrorDir, relPath), maxMirrorEventBytes); rerr == nil {
+			parsedRegistry, cerr := space.ParseConsumes(raw)
+			if cerr != nil {
+				return nil, "", fmt.Errorf("contract adopt: cannot parse %s: %w", relPath, cerr)
+			}
+			registry = parsedRegistry
+			if registry.Schema == "" {
+				registry.Schema = "consumes/v1"
+			}
+			if registry.System == "" {
+				registry.System = deps.OwnSystem
+			}
+		}
+
+		updated, changed := contractUpsertDependency(registry, space.Dependency{
+			Contract: in.ID, Major: major,
+			Since: deps.Now().UTC().Format("2006-01-02"),
+			Note:  in.Note,
+		})
+		if !changed {
+			return contractAdoptResult{ID: in.ID, Major: major, AlreadyRegistered: true}, "", nil
+		}
+
+		raw, merr := yaml.Marshal(updated)
+		if merr != nil {
+			return nil, "", fmt.Errorf("contract adopt: cannot encode %s: %w", relPath, merr)
+		}
+
+		req := deps.buildRequest([]string{in.ID}, []space.FileWrite{{Path: relPath, Content: raw}}, "contract-adopt", false)
+		result, err := deps.submit(ctx, req, "contract adopt", []string{in.ID})
+		return result, "", err
+	}
+}
+
+// contractAdoptResult is the idempotent-no-op shape (a real write returns
+// the funnel's own submit result, like every other write handler).
+type contractAdoptResult struct {
+	ID                string `json:"id"`
+	Major             int    `json:"major"`
+	AlreadyRegistered bool   `json:"already_registered"`
+}
+
+// contractUpsertDependency adds or updates dep in registry, keeping the
+// list sorted by contract id, and reports changed=false for the
+// idempotent re-run (same contract, same major).
+func contractUpsertDependency(registry space.Consumes, dep space.Dependency) (space.Consumes, bool) {
+	for i, existing := range registry.Dependencies {
+		if existing.Contract != dep.Contract {
+			continue
+		}
+		if existing.Major == dep.Major && (dep.Note == "" || existing.Note == dep.Note) {
+			return registry, false
+		}
+		registry.Dependencies[i].Major = dep.Major
+		registry.Dependencies[i].Since = dep.Since
+		if dep.Note != "" {
+			registry.Dependencies[i].Note = dep.Note
+		}
+		return registry, true
+	}
+	registry.Dependencies = append(registry.Dependencies, dep)
+	sort.Slice(registry.Dependencies, func(i, j int) bool {
+		return registry.Dependencies[i].Contract < registry.Dependencies[j].Contract
+	})
+	return registry, true
+}

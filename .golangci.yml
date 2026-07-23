@@ -83,6 +83,8 @@ linters:
       # everywhere else, so a REAL nil-on-error bug still reds.
       - path: internal/validate/engine\.go
         linters: [nilerr]
+      - path: internal/validate/consumes\.go
+        linters: [nilerr]
       - path: internal/cli/adapters\.go
         linters: [nilerr]
       - path: internal/mcp/adapters\.go
