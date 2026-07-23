@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
 
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -289,6 +290,250 @@ func TestUpdateCommand_AllowUnsigned_HappySwap(t *testing.T) {
 	}
 	if atomic.LoadInt32(sumsHits) != 1 {
 		t.Fatalf("SHA256SUMS hits = %d, want exactly 1", *sumsHits)
+	}
+}
+
+// --- post-swap digest + skill refresh (P31 wave 5) -------------------------
+
+// updateFakeWhatsnewRunner returns out/err for every invocation, recording
+// the args it was called with so tests can assert the digest execs the
+// NEW (just-swapped) binary's own `whatsnew --since <FromVersion>`.
+func updateFakeWhatsnewRunner(out string, err error, calls *[][]string) release.Runner {
+	return func(_ context.Context, path string, args ...string) (string, error) {
+		*calls = append(*calls, append([]string{path}, args...))
+		return out, err
+	}
+}
+
+func TestUpdateCommand_PostSwapDigest_PrintsUnderHeader(t *testing.T) {
+	rel, _, _ := newUpdateReleaseFixture(t, "0.3.0")
+	execPath, _ := newUpdateExecFixture(t)
+
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	cmd.source = func(string) release.Source { return &fakeUpdateSource{rel: rel} }
+	cmd.resolveExec = func() (string, error) { return execPath, nil }
+	cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
+	cmd.runner = updateMatchingRunner("0.3.0")
+
+	var calls [][]string
+	cmd.whatsnewRunner = updateFakeWhatsnewRunner("v0.3.0 (2026-01-01) — headline\n  [high] a change\n", nil, &calls)
+
+	stdio, stdout, stderr := newUpdateIO("")
+	code := cmd.Run(context.Background(), []string{"--yes", "--allow-unsigned"}, stdio)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0 (stderr: %s)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "what changed") || !strings.Contains(stdout.String(), "a change") {
+		t.Fatalf("stdout = %q, want the digest under a header", stdout.String())
+	}
+	if len(calls) != 1 {
+		t.Fatalf("whatsnewRunner calls = %d, want 1", len(calls))
+	}
+	if calls[0][0] != execPath {
+		t.Fatalf("whatsnewRunner path = %q, want the swapped exec path %q", calls[0][0], execPath)
+	}
+	if want := []string{"whatsnew", "--since", "0.1.0"}; strings.Join(calls[0][1:], " ") != strings.Join(want, " ") {
+		t.Fatalf("whatsnewRunner args = %v, want %v", calls[0][1:], want)
+	}
+}
+
+func TestUpdateCommand_PostSwapDigest_RunnerError_StillExitsZeroNoExtraOutput(t *testing.T) {
+	rel, _, _ := newUpdateReleaseFixture(t, "0.3.0")
+	execPath, _ := newUpdateExecFixture(t)
+
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	cmd.source = func(string) release.Source { return &fakeUpdateSource{rel: rel} }
+	cmd.resolveExec = func() (string, error) { return execPath, nil }
+	cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
+	cmd.runner = updateMatchingRunner("0.3.0")
+
+	var calls [][]string
+	cmd.whatsnewRunner = updateFakeWhatsnewRunner("", fmt.Errorf("exec: no such file"), &calls)
+
+	stdio, stdout, stderr := newUpdateIO("")
+	code := cmd.Run(context.Background(), []string{"--yes", "--allow-unsigned"}, stdio)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0 (a digest failure is never fatal); stderr=%s", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "what changed") {
+		t.Fatalf("stdout = %q, want no digest header on a runner error", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "updated v0.1.0 -> v0.3.0") {
+		t.Fatalf("stdout = %q, want the version-delta line still present", stdout.String())
+	}
+}
+
+func TestUpdateCommand_PostSwapDigest_EmptyOutput_Skipped(t *testing.T) {
+	rel, _, _ := newUpdateReleaseFixture(t, "0.3.0")
+	execPath, _ := newUpdateExecFixture(t)
+
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	cmd.source = func(string) release.Source { return &fakeUpdateSource{rel: rel} }
+	cmd.resolveExec = func() (string, error) { return execPath, nil }
+	cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
+	cmd.runner = updateMatchingRunner("0.3.0")
+
+	var calls [][]string
+	cmd.whatsnewRunner = updateFakeWhatsnewRunner("   \n", nil, &calls)
+
+	stdio, stdout, stderr := newUpdateIO("")
+	code := cmd.Run(context.Background(), []string{"--yes", "--allow-unsigned"}, stdio)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "what changed") {
+		t.Fatalf("stdout = %q, want no digest header on whitespace-only output", stdout.String())
+	}
+}
+
+func TestUpdateCommand_PostSwapDigest_JSONMode_NoHumanDigest(t *testing.T) {
+	rel, _, _ := newUpdateReleaseFixture(t, "0.3.0")
+	execPath, _ := newUpdateExecFixture(t)
+
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	cmd.source = func(string) release.Source { return &fakeUpdateSource{rel: rel} }
+	cmd.resolveExec = func() (string, error) { return execPath, nil }
+	cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
+	cmd.runner = updateMatchingRunner("0.3.0")
+
+	var calls [][]string
+	cmd.whatsnewRunner = updateFakeWhatsnewRunner("v0.3.0 — headline\n  [high] a change\n", nil, &calls)
+
+	stdio, stdout, stderr := newUpdateIO("")
+	code := cmd.Run(context.Background(), []string{"--yes", "--allow-unsigned", "--json"}, stdio)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "what changed") {
+		t.Fatalf("stdout = %q, want no human digest in --json mode", stdout.String())
+	}
+	if len(calls) != 0 {
+		t.Fatalf("whatsnewRunner calls = %d, want 0 (never invoked in --json mode)", len(calls))
+	}
+}
+
+func TestUpdateCommand_SkillRefresh_ManagedInstall_Refreshed(t *testing.T) {
+	rel, _, _ := newUpdateReleaseFixture(t, "0.3.0")
+	execPath, _ := newUpdateExecFixture(t)
+
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	cmd.source = func(string) release.Source { return &fakeUpdateSource{rel: rel} }
+	cmd.resolveExec = func() (string, error) { return execPath, nil }
+	cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
+	cmd.runner = updateMatchingRunner("0.3.0")
+	cmd.whatsnewRunner = updateFakeWhatsnewRunner("", fmt.Errorf("no digest"), &[][]string{})
+
+	// Seed a PRE-EXISTING managed skill install (provenance-marked, older
+	// version) under the command's own projectRoot (newTestUpdateCommand's
+	// 4th NewUpdateCommand arg).
+	skillTarget := filepath.Join(cmd.projectRoot, skillDefaultDir)
+	if err := os.MkdirAll(skillTarget, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillTarget, "SKILL.md"), []byte("stale content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillTarget, skillProvenanceFile), []byte(skillProvenance("0.1.0")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd.SkillFiles = fstest.MapFS{
+		"a2ahub/SKILL.md": &fstest.MapFile{Data: []byte("fresh content")},
+	}
+
+	stdio, stdout, stderr := newUpdateIO("")
+	code := cmd.Run(context.Background(), []string{"--yes", "--allow-unsigned"}, stdio)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "refreshed skill install") {
+		t.Fatalf("stdout = %q, want a refreshed-skill confirmation", stdout.String())
+	}
+	got, err := os.ReadFile(filepath.Join(skillTarget, "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read refreshed SKILL.md: %v", err)
+	}
+	if string(got) != "fresh content" {
+		t.Fatalf("SKILL.md = %q, want the re-installed content", got)
+	}
+	prov, err := os.ReadFile(filepath.Join(skillTarget, skillProvenanceFile))
+	if err != nil {
+		t.Fatalf("read refreshed PROVENANCE.md: %v", err)
+	}
+	if !strings.Contains(string(prov), "a2a 0.3.0") {
+		t.Fatalf("PROVENANCE.md = %q, want it re-stamped to the ToVersion (0.3.0)", prov)
+	}
+}
+
+func TestUpdateCommand_SkillRefresh_NoInstall_SkippedSilently(t *testing.T) {
+	rel, _, _ := newUpdateReleaseFixture(t, "0.3.0")
+	execPath, _ := newUpdateExecFixture(t)
+
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	cmd.source = func(string) release.Source { return &fakeUpdateSource{rel: rel} }
+	cmd.resolveExec = func() (string, error) { return execPath, nil }
+	cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
+	cmd.runner = updateMatchingRunner("0.3.0")
+	cmd.whatsnewRunner = updateFakeWhatsnewRunner("", fmt.Errorf("no digest"), &[][]string{})
+	cmd.SkillFiles = fstest.MapFS{
+		"a2ahub/SKILL.md": &fstest.MapFile{Data: []byte("fresh content")},
+	}
+	// No pre-existing install at cmd.projectRoot/.a2ahub/skill — never created.
+
+	stdio, stdout, stderr := newUpdateIO("")
+	code := cmd.Run(context.Background(), []string{"--yes", "--allow-unsigned"}, stdio)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "refreshed skill install") {
+		t.Fatalf("stdout = %q, want no refresh message when there is nothing to refresh", stdout.String())
+	}
+	if _, err := os.Stat(filepath.Join(cmd.projectRoot, skillDefaultDir)); !os.IsNotExist(err) {
+		t.Fatalf("skill refresh created an install where none existed (err=%v)", err)
+	}
+}
+
+func TestUpdateCommand_SkillRefresh_ForeignTarget_SkippedNotClobbered(t *testing.T) {
+	rel, _, _ := newUpdateReleaseFixture(t, "0.3.0")
+	execPath, _ := newUpdateExecFixture(t)
+
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	cmd.source = func(string) release.Source { return &fakeUpdateSource{rel: rel} }
+	cmd.resolveExec = func() (string, error) { return execPath, nil }
+	cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
+	cmd.runner = updateMatchingRunner("0.3.0")
+	cmd.whatsnewRunner = updateFakeWhatsnewRunner("", fmt.Errorf("no digest"), &[][]string{})
+	cmd.SkillFiles = fstest.MapFS{
+		"a2ahub/SKILL.md": &fstest.MapFile{Data: []byte("fresh content")},
+	}
+
+	// A target that exists but carries NO a2ahub provenance marker — someone
+	// else's content. The update must never touch it.
+	skillTarget := filepath.Join(cmd.projectRoot, skillDefaultDir)
+	if err := os.MkdirAll(skillTarget, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillTarget, "unrelated.txt"), []byte("do not touch"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdio, stdout, stderr := newUpdateIO("")
+	code := cmd.Run(context.Background(), []string{"--yes", "--allow-unsigned"}, stdio)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "refreshed skill install") {
+		t.Fatalf("stdout = %q, want no refresh message for a foreign target", stdout.String())
+	}
+	if _, err := os.ReadFile(filepath.Join(skillTarget, "unrelated.txt")); err != nil {
+		t.Fatalf("foreign target content was removed: %v", err)
 	}
 }
 

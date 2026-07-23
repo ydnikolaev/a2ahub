@@ -19,6 +19,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -65,6 +66,23 @@ type UpdateCommand struct {
 	resolveMirror     func(projectRoot string, ref space.Ref, machine space.MachineConfig) string
 	readFile          func(path string) ([]byte, error)
 	verifier          func(repo string) release.Verifier
+
+	// whatsnewRunner execs the just-swapped NEW binary's own `whatsnew`
+	// verb (P31 wave 5) so the post-update digest always reflects the
+	// binary that is actually on disk now, never an in-process render of
+	// a corpus this (old) process embedded. Defaults to release.DefaultRunner
+	// (the same os/exec seam SelfCheckVersion uses); tests override it with a
+	// canned Runner.
+	whatsnewRunner release.Runner
+
+	// SkillFiles is the embedded a2ahub skill tree (skill.Files), DI'd by
+	// wire.go exactly like SkillCommand/InitCommand. When set (and this
+	// command's projectRoot has a MANAGED skill install already), a
+	// successful update best-effort refreshes it to the new version so the
+	// installed manual is never older than the binary. Left nil (the zero
+	// value, e.g. direct-construction tests that don't set it), the refresh
+	// step is a no-op.
+	SkillFiles fs.FS
 }
 
 // NewUpdateCommand constructs the update command. binaryVersion is this
@@ -97,7 +115,8 @@ func NewUpdateCommand(binaryVersion, projectConfigPath, machineConfigPath, proje
 		// Real keyless-cosign verification (checksum-first, then the asset's
 		// .cosign.bundle against this repo's release-workflow OIDC identity).
 		// repo is the resolved update_repo, so a repo rename flows through.
-		verifier: func(repo string) release.Verifier { return release.KeylessVerifier(repo) },
+		verifier:       func(repo string) release.Verifier { return release.KeylessVerifier(repo) },
+		whatsnewRunner: release.DefaultRunner,
 	}
 }
 
@@ -266,7 +285,66 @@ func (c *UpdateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 
 	_, _ = fmt.Fprintf(stdio.Stdout, "a2a: updated v%s -> v%s (%s)\n", res.FromVersion, res.ToVersion, res.Commit)
+
+	// P31 wave 5: hand the agent the release directives for the range it
+	// just crossed, and refresh the installed skill manual — both
+	// BEST-EFFORT (the update above already succeeded; neither step may
+	// change the exit code).
+	if !*jsonFlag {
+		c.printPostUpdateDigest(ctx, execPath, res, stdio)
+	}
+	c.refreshInstalledSkill(res, stdio, *jsonFlag)
+
 	return 0
+}
+
+// printPostUpdateDigest execs the just-swapped NEW binary's own `whatsnew
+// --since <FromVersion>` (never an in-process render — internal/release must
+// not import internal/notes, and this is the exact idiom SelfCheckVersion's
+// injectable Runner already establishes) and prints its output under a
+// header. Skipped entirely (never printed, never an error) when FromVersion
+// does not parse as a real version (a dev/empty build stamp), the runner
+// errors, or its output is empty/whitespace-only — a missing digest is not a
+// failure of the update that already succeeded.
+func (c *UpdateCommand) printPostUpdateDigest(ctx context.Context, execPath string, res release.ApplyResult, stdio IO) {
+	if _, err := version.OlderThan(res.FromVersion, res.FromVersion); err != nil {
+		return
+	}
+	run := c.whatsnewRunner
+	if run == nil {
+		run = release.DefaultRunner
+	}
+	out, err := run(ctx, execPath, "whatsnew", "--since", res.FromVersion)
+	if err != nil || strings.TrimSpace(out) == "" {
+		return
+	}
+	_, _ = fmt.Fprintln(stdio.Stdout, "\n── what changed ──")
+	_, _ = fmt.Fprint(stdio.Stdout, out)
+}
+
+// refreshInstalledSkill best-effort re-installs the a2ahub skill tree over an
+// EXISTING managed install (skillTargetState's owned==true) so the manual on
+// disk is stamped to the version just swapped to — never creates a new
+// install, and never fails the already-succeeded update on any error. The
+// human confirmation line is suppressed in --json mode (jsonMode), matching
+// the digest's own JSON-clean-stdout convention; a refresh failure still
+// warns to stderr regardless of jsonMode.
+func (c *UpdateCommand) refreshInstalledSkill(res release.ApplyResult, stdio IO, jsonMode bool) {
+	if c.projectRoot == "" || c.SkillFiles == nil {
+		return
+	}
+	target := filepath.Join(c.projectRoot, skillDefaultDir)
+	_, owned, err := skillTargetState(target)
+	if err != nil || !owned {
+		return
+	}
+	if _, err := installSkillTree(c.SkillFiles, target, res.ToVersion, false); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "update: skill refresh failed (non-fatal): %v\n", err)
+		return
+	}
+	if !jsonMode {
+		_, _ = fmt.Fprintf(stdio.Stdout, "a2a: refreshed skill install (%s -> v%s)\n", skillDefaultDir, res.ToVersion)
+	}
 }
 
 // computeFloor computes the T1 step-1 floor: the MAX min_binary_version

@@ -585,6 +585,112 @@ func TestDoctorRunRendersSkillDiscoverableWithSeparator(t *testing.T) {
 	}
 }
 
+// --- doctorCheckSkillManualCurrent (P31 wave 5) -----------------------------
+
+func TestDoctorCheckSkillManualCurrent_NoInstall(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	cmd := NewDoctorCommand(host.NewFakeHost(), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
+
+	ok, detail := cmd.doctorCheckSkillManualCurrent()
+	if !ok {
+		t.Fatalf("want pass (no install is not this check's concern), got fail: %s", detail)
+	}
+	if !strings.Contains(detail, "no skill installed") {
+		t.Fatalf("detail = %q, want a no-install note", detail)
+	}
+}
+
+func TestDoctorCheckSkillManualCurrent_OlderManual_Advisory(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	target := filepath.Join(root, skillDefaultDir)
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte(skillProvenance("0.1.0")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewDoctorCommand(host.NewFakeHost(), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
+
+	ok, detail := cmd.doctorCheckSkillManualCurrent()
+	if !ok {
+		t.Fatalf("want pass (advisory-on-PASS, never a hard FAIL), got fail: %s", detail)
+	}
+	if !strings.Contains(detail, "v0.1.0") || !strings.Contains(detail, "v0.3.0") || !strings.Contains(detail, "a2a skill install") {
+		t.Fatalf("detail = %q, want the stale-manual advisory naming both versions and the fix", detail)
+	}
+}
+
+func TestDoctorCheckSkillManualCurrent_UpToDate_Clean(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	target := filepath.Join(root, skillDefaultDir)
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte(skillProvenance("0.3.0")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewDoctorCommand(host.NewFakeHost(), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
+
+	ok, detail := cmd.doctorCheckSkillManualCurrent()
+	if !ok {
+		t.Fatalf("want pass, got fail: %s", detail)
+	}
+	if !strings.Contains(detail, "skill manual current (v0.3.0)") {
+		t.Fatalf("detail = %q, want the current-manual note", detail)
+	}
+}
+
+func TestDoctorCheckSkillManualCurrent_UnparseableProvenance_VersionUnknown(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	target := filepath.Join(root, skillDefaultDir)
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte("not a real provenance file\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewDoctorCommand(host.NewFakeHost(), "0.3.0", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
+
+	ok, detail := cmd.doctorCheckSkillManualCurrent()
+	if !ok {
+		t.Fatalf("want pass, got fail: %s", detail)
+	}
+	if !strings.Contains(detail, "version unknown") {
+		t.Fatalf("detail = %q, want a version-unknown note", detail)
+	}
+}
+
+// TestDoctorRunRendersSkillManualCurrentWithSeparator guards the same
+// PASS-line separator convention TestDoctorRunRendersSkillDiscoverableWithSeparator
+// pins for its sibling check.
+func TestDoctorRunRendersSkillManualCurrentWithSeparator(t *testing.T) {
+	t.Parallel()
+	cmd := newTestDoctorCommand()
+	cmd.loadProjectConfig = func(string) (space.ProjectConfig, error) { return space.ProjectConfig{}, nil }
+	cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
+	cmd.lookupGit = func() error { return nil }
+
+	var stdout, stderr bytes.Buffer
+	code := cmd.Run(context.Background(), nil, IO{Stdout: &stdout, Stderr: &stderr})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "skill manual current: PASS · ") {
+		t.Fatalf("stdout = %q, want a properly separated PASS line", stdout.String())
+	}
+}
+
 // --- doctorVersionOlder: the file-private version comparator this phase's
 // plan Placement decision explicitly sanctions (internal/space's own
 // versionOlderThan is unexported to that package). ---

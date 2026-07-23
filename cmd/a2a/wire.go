@@ -216,7 +216,12 @@ func buildCommands() map[string]command {
 		}
 		// Bare version (like doctor): release.Info/version.OlderThan parse a
 		// bare major.minor.patch, not the "a2a x.y.z (sha)" stamp.
-		return cli.NewUpdateCommand(version, p.projectConfig, p.machineConfig, p.projectRoot).Run(context.Background(), args, stdio(stdout, stderr))
+		cmd := cli.NewUpdateCommand(version, p.projectConfig, p.machineConfig, p.projectRoot)
+		// P31 wave 5: best-effort skill-manual refresh after a successful swap
+		// (installSkillTree's own embedded tree — same DI the init/skill
+		// closures already pass).
+		cmd.SkillFiles = skill.Files
+		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["submit"] = runSubmit
 	m["feedback"] = runFeedback
