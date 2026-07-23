@@ -116,8 +116,10 @@ func buildCommands() map[string]command {
 		// P20/P21 default-on onboarding: init installs the skill tree and the
 		// AGENTS.md pointer by default (opt out via --no-skill / --no-agents-pointer).
 		cmd.AgentsPath = filepath.Join(p.projectRoot, "AGENTS.md")
+		cmd.ClaudeMdPath = filepath.Join(p.projectRoot, "CLAUDE.md")
 		cmd.SkillFiles = skill.Files
 		cmd.SkillTarget = filepath.Join(p.projectRoot, ".a2ahub", "skill")
+		cmd.ProjectRoot = p.projectRoot
 		cmd.Version = version
 		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
@@ -125,7 +127,13 @@ func buildCommands() map[string]command {
 		return cli.NewTemplateCommand().Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["skill"] = func(args []string, stdout, stderr io.Writer) int {
-		return cli.NewSkillCommand(skill.Files, version).Run(context.Background(), args, stdio(stdout, stderr))
+		p, err := resolvePaths()
+		if err != nil {
+			return fail(stderr, err)
+		}
+		cmd := cli.NewSkillCommand(skill.Files, version)
+		cmd.ProjectRoot = p.projectRoot
+		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	// P23 (OP-222): shell completion. A pure host-side render — no store, no
 	// config — fed the dispatch surface it belongs to (completionCmds/

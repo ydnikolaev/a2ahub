@@ -22,6 +22,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ydnikolaev/a2ahub/internal/surface"
 )
 
 // errSkillForeignTarget is returned by installSkillTree when the target is
@@ -45,14 +47,23 @@ const skillProvenanceTag = "<!-- a2ahub-skill-install -->"
 // a hand-written AGENTS.md, so a re-install never touches the harness.
 const skillDefaultDir = ".a2ahub/skill"
 
-// SkillCommand implements `a2a skill <subcommand>`. Today the only subcommand
-// is `install`; the dispatch shape leaves room for `a2a skill path`/`list`
-// later without a second top-level verb.
+// SkillCommand implements `a2a skill <subcommand>`: `install` (materialize
+// the SSOT tree) and `link` (P32, OP-916/917: install a per-surface
+// discovery entry pointing AT the installed SSOT tree). The dispatch shape
+// leaves room for `a2a skill path`/`list` later without a second top-level
+// verb.
 type SkillCommand struct {
 	// files is the embedded skill tree, rooted at "a2ahub/" (skill.Files).
 	files fs.FS
 	// version is this build's version stamp, recorded in PROVENANCE.md.
 	version string
+
+	// ProjectRoot is the consumer repo's root, DI'd from wire.go, used by
+	// `skill link` to detect agent surfaces and resolve link targets. Left
+	// empty (catalog.go's NewSkillCommand(nil, "") construction, or a test
+	// that never sets it), `runLink` reports an error rather than silently
+	// no-opping — link has no other sensible default target.
+	ProjectRoot string
 }
 
 // NewSkillCommand constructs the command. files is the embedded a2ahub skill
@@ -66,20 +77,26 @@ func (c *SkillCommand) Name() string { return "skill" }
 
 // Synopsis implements Command.
 func (c *SkillCommand) Synopsis() string {
-	return "install the a2ahub expert-skill tree into this repo (for its agent)"
+	return "install the a2ahub expert-skill tree into this repo, and link it so an agent surface can discover it"
 }
 
-// Run implements Command. Exit codes: 2 = usage; 1 = install error; 0 = ok.
+// Run implements Command. Exit codes: 2 = usage; 1 = install/link error; 0 =
+// ok. `install` materializes the SSOT tree under a local namespace (never a
+// consumer harness path); `link` (P32) installs a per-surface discovery
+// entry pointing AT that tree, so the agent surface that must read it
+// actually finds it.
 func (c *SkillCommand) Run(_ context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a skill install [--dir <path>] [--force]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a skill install [--dir <path>] [--force] | a2a skill link [--surface <id>] [--force]")
 		return 2
 	}
 	switch args[0] {
 	case "install":
 		return c.runInstall(args[1:], stdio)
+	case "link":
+		return c.runLink(args[1:], stdio)
 	default:
-		_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill: unknown subcommand %q (want: install)\n", args[0])
+		_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill: unknown subcommand %q (want: install, link)\n", args[0])
 		return 2
 	}
 }
@@ -110,6 +127,77 @@ func (c *SkillCommand) runInstall(args []string, stdio IO) int {
 	_, _ = fmt.Fprintf(stdio.Stdout, "a2a skill: installed %d files to %s\n", written, *dir)
 	_, _ = fmt.Fprintf(stdio.Stdout, "  entry point: %s\n", filepath.Join(*dir, "SKILL.md"))
 	_, _ = fmt.Fprintln(stdio.Stdout, "  point your repo's AGENTS.md/CLAUDE.md at it (or run `a2a init` / `a2a init --agents-pointer`)")
+	return 0
+}
+
+// runLink implements `a2a skill link` (P32, spec 32 §2/AC-916.*/AC-917.*):
+// installs a discovery entry (symlink, or a stub fallback) for one or every
+// detected agent surface, pointing at the installed SSOT tree
+// (skillDefaultDir). It never invents a harness directory a consumer has not
+// opted into (surface.Detect only sees a marker dir that already exists),
+// and it refuses to link a target that is not a2ahub-owned unless --force.
+func (c *SkillCommand) runLink(args []string, stdio IO) int {
+	fset := flag.NewFlagSet("skill link", flag.ContinueOnError)
+	fset.SetOutput(stdio.Stderr)
+	surfaceID := fset.String("surface", "", "link only this surface id (default: every detected surface)")
+	force := fset.Bool("force", false, "overwrite a link target that is not an a2ahub-managed link")
+	if err := fset.Parse(args); err != nil {
+		return 2
+	}
+	if fset.NArg() != 0 {
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a skill link [--surface <id>] [--force]")
+		return 2
+	}
+	if c.ProjectRoot == "" {
+		_, _ = fmt.Fprintln(stdio.Stderr, "a2a skill link: no project root configured")
+		return 1
+	}
+
+	ssotRel := skillDefaultDir
+	if _, err := os.Stat(filepath.Join(c.ProjectRoot, ssotRel, "SKILL.md")); err != nil {
+		_, _ = fmt.Fprintln(stdio.Stderr, "a2a skill link: no a2ahub skill installed — run 'a2a skill install' first")
+		return 1
+	}
+
+	explicit := *surfaceID != ""
+	var targets []surface.Surface
+	if explicit {
+		s, ok := surface.ByID(*surfaceID)
+		if !ok {
+			_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill link: unknown surface %q (known: claude, codex)\n", *surfaceID)
+			return 2
+		}
+		targets = []surface.Surface{s}
+	} else {
+		targets = surface.Detect(c.ProjectRoot)
+		if len(targets) == 0 {
+			_, _ = fmt.Fprintln(stdio.Stdout, "a2a skill link: no known agent surface detected (.claude/ or .codex/) — nothing to link")
+			return 0
+		}
+	}
+
+	hardFail := false
+	for _, s := range targets {
+		result, err := surface.Link(c.ProjectRoot, s, ssotRel, *force)
+		switch {
+		case errors.Is(err, surface.ErrForeignLinkTarget):
+			_, _ = fmt.Fprintf(stdio.Stderr,
+				"a2a skill link: %s already exists and is not an a2ahub link — refusing (pass --force)\n",
+				filepath.Join(s.SkillsHome, "a2ahub"))
+			if explicit {
+				hardFail = true
+			}
+		case err != nil:
+			_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill link: %v\n", err)
+			hardFail = true
+		default:
+			_, _ = fmt.Fprintf(stdio.Stdout, "linked %s: %s (%s)\n", s.ID, result.Path, result.Mode)
+		}
+	}
+
+	if hardFail {
+		return 1
+	}
 	return 0
 }
 

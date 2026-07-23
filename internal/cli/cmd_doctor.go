@@ -20,6 +20,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/surface"
 	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
@@ -125,6 +126,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"versions", func() (bool, string) { return c.doctorCheckVersions(cfg, machine) }},
 		{"CI presence", func() (bool, string) { return c.doctorCheckCIPresence(cfg, machine) }},
 		{"statusline wiring", func() (bool, string) { return c.doctorCheckStatuslineWiring() }},
+		{"skill discoverable", func() (bool, string) { return c.doctorCheckSkillDiscoverable() }},
 	}
 
 	allOK := true
@@ -341,6 +343,30 @@ func (c *DoctorCommand) doctorCheckStatuslineWiring() (bool, string) {
 		return false, fmt.Sprintf("git-fallback statusline refresh unavailable: %v", err)
 	}
 	return true, ""
+}
+
+// doctorCheckSkillDiscoverable is P32's AC-918.2 check: an installed skill
+// that no agent surface can see is a correct file in a place nothing looks
+// (spec 32 §1). Never a FAIL — a consumer who has not installed the skill,
+// or has installed but not yet linked it, is not this check's concern (it
+// only reports what it finds, an advisory on PASS, matching
+// doctorCheckVersions's own advisory-on-PASS convention).
+func (c *DoctorCommand) doctorCheckSkillDiscoverable() (bool, string) {
+	if _, err := os.Stat(filepath.Join(c.projectRoot, skillDefaultDir, "SKILL.md")); err != nil {
+		return true, " · no a2ahub skill installed"
+	}
+
+	detected := surface.Detect(c.projectRoot)
+	linked := 0
+	for _, s := range detected {
+		if _, err := os.Lstat(filepath.Join(c.projectRoot, s.SkillsHome, "a2ahub")); err == nil {
+			linked++
+		}
+	}
+	if linked == 0 {
+		return true, " · ADVISORY: skill installed but no agent surface links it — run 'a2a skill link'"
+	}
+	return true, fmt.Sprintf(" · skill installed and linked (%d surface(s))", linked)
 }
 
 // doctorVersionOlder reports whether binaryVersion is strictly older than
