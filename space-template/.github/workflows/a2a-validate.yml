@@ -28,7 +28,14 @@ env:
   # Bump this deliberately when the space is ready to move to a newer
   # a2a release; the write funnel's own min_binary_version pin (space.yaml)
   # is the separate, per-write staleness guard (D-013, CC-085).
-  A2A_VALIDATOR_VERSION: "0.1.0"
+  #
+  # MUST be >= the release that introduced the flag surface the run steps
+  # below invoke: `validate --ci --mode=v3-pr --base` shipped in v0.1.1 (P17).
+  # A pin older than that fails EVERY PR with "flag provided but not defined:
+  # -ci" (exit 2) before any rule runs — a whole-space outage, not a rule
+  # rejection. (External-consumer report, seomatrix 2026-07-23: the live
+  # getvisa space shipped with the 0.1.0 placeholder and blocked all PRs.)
+  A2A_VALIDATOR_VERSION: "0.3.0"
 
 jobs:
   # The job name below is the exact GitHub status-check context branch
