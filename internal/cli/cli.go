@@ -33,6 +33,17 @@ type Command interface {
 	Run(ctx context.Context, args []string, stdio IO) int
 }
 
+// IsHelpArg reports whether a command-line token is a request for help.
+// Verbs whose FIRST argument is a sub-verb or a type name (`new <type>`,
+// `contract <sub>`, `template <sub>`, `completion <shell>`, `feedback
+// <sub>`) never reach flag.Parse for that token, so without this they
+// answer `--help` with "unknown type/subcommand" — the least useful reply
+// available to a program being asked how to use it. The three spellings
+// match Go's own flag package.
+func IsHelpArg(s string) bool {
+	return s == "-h" || s == "--help" || s == "-help"
+}
+
 // IO is the injected stream set a Command reads and writes — never the
 // global os.Std* (that is cmd/a2a's to supply), so tests drive a verb with
 // buffers and assert on output + exit code.
