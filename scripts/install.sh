@@ -178,6 +178,50 @@ case ":$PATH:" in
   *) log "note: ${install_dir} isn't on your PATH — add: export PATH=\"${install_dir}:\$PATH\"" ;;
 esac
 
+# --- 9. shell completion (best-effort; never fails the install) -------------
+# Set up Tab-completion so every verb is discoverable right after install.
+# Generated from the INSTALLED, de-quarantined binary (not the temp copy) so
+# macOS Gatekeeper can't block it. Any failure is swallowed (|| true): a broken
+# completion setup must never abort a successful binary install.
+setup_completion() {
+  a2a_bin="${install_dir}/${BINARY}"
+  shell_name="$(basename "${SHELL:-}")"
+
+  case "$shell_name" in
+    bash)
+      dest_dir="${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
+      mkdir -p "$dest_dir" || return 0
+      "$a2a_bin" completion bash > "${dest_dir}/${BINARY}" 2>/dev/null || return 0
+      log "bash completion installed -> ${dest_dir}/${BINARY}"
+      log "  (needs the bash-completion package; or load now: source <(${BINARY} completion bash))"
+      ;;
+    zsh)
+      dest_dir="${HOME}/.zsh/completions"
+      mkdir -p "$dest_dir" || return 0
+      "$a2a_bin" completion zsh > "${dest_dir}/_${BINARY}" 2>/dev/null || return 0
+      log "zsh completion installed -> ${dest_dir}/_${BINARY}"
+      case ":${FPATH:-}:" in
+        *":${dest_dir}:"*) log "  (already on \$fpath — open a new shell to pick it up)" ;;
+        *)
+          log "  to enable it, add these two lines to ~/.zshrc, then open a new shell:"
+          log "    fpath=(${dest_dir} \$fpath)"
+          log "    autoload -Uz compinit && compinit"
+          ;;
+      esac
+      ;;
+    fish)
+      dest_dir="${HOME}/.config/fish/completions"
+      mkdir -p "$dest_dir" || return 0
+      "$a2a_bin" completion fish > "${dest_dir}/${BINARY}.fish" 2>/dev/null || return 0
+      log "fish completion installed -> ${dest_dir}/${BINARY}.fish (open a new shell to pick it up)"
+      ;;
+    *)
+      log "shell completion available: run '${BINARY} completion <bash|zsh|fish>' to generate it"
+      ;;
+  esac
+}
+setup_completion || true
+
 log "done — run '${BINARY}' with no arguments to see the command list."
 
 # --- other channels -----------------------------------------------------------
