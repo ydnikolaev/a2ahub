@@ -86,7 +86,12 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 0
 	}
 
-	page, rErr := html.Render(html.DefaultTemplate(), data)
+	docs, dErr := html.Docs()
+	if dErr != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "a2a %s: %v\n", c.name, dErr)
+		return 1
+	}
+	page, rErr := html.Render(html.DefaultTemplate(), data, docs)
 	if rErr != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a %s: %v\n", c.name, rErr)
 		return 1

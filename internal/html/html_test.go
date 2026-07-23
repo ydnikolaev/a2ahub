@@ -124,25 +124,49 @@ func TestExchangeEdges(t *testing.T) {
 	}
 }
 
-func TestRender_Injects(t *testing.T) {
+// bothRegionsTmpl is a minimal template carrying both injection regions, in
+// file order (DATA before DOCS) — the real template's layout, so the DOCS
+// index-recompute path is exercised.
+const bothRegionsTmpl = "<script>const DATA = /*A2A_DATA_START*/{}/*A2A_DATA_END*/;</script>\n" +
+	"<script>const DOCS = /*A2A_DOCS_START*/[]/*A2A_DOCS_END*/;</script>\n"
+
+func TestRender_InjectsBothRegions(t *testing.T) {
 	t.Parallel()
-	tmpl := []byte("const DATA = /*A2A_DATA_START*/{}/*A2A_DATA_END*/;\n")
-	out, err := Render(tmpl, Data{Self: "axon"})
+	docs := []DocSection{{ID: "x", Group: "Start", Title: "X", HTML: "<h2>hi</h2>"}}
+	out, err := Render([]byte(bothRegionsTmpl), Data{Self: "axon"}, docs)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Contains(out, []byte(`"self": "axon"`)) {
-		t.Fatalf("real data not injected:\n%s", out)
+		t.Fatalf("DATA not injected:\n%s", out)
 	}
-	if bytes.Contains(out, []byte("A2A_DATA_START")) {
-		t.Fatal("marker leaked into output")
+	// DOCS is injected as a section object; its html is JSON-escaped like DATA
+	// (the <script>-breakout protection is asserted in TestRender_Sanitizes...).
+	if !bytes.Contains(out, []byte(`"id": "x"`)) || !bytes.Contains(out, []byte(`"html":`)) {
+		t.Fatalf("DOCS section not injected:\n%s", out)
+	}
+	// NEITHER marker pair may survive — a stale DOCS offset (from not recomputing
+	// after the DATA splice) would leave a marker or misplace the JSON.
+	for _, m := range []string{"A2A_DATA_START", "A2A_DATA_END", "A2A_DOCS_START", "A2A_DOCS_END"} {
+		if bytes.Contains(out, []byte(m)) {
+			t.Fatalf("marker %s leaked into output:\n%s", m, out)
+		}
+	}
+	if !bytes.Contains(out, []byte("const DOCS = [")) {
+		t.Fatalf("DOCS global not well-formed:\n%s", out)
 	}
 }
 
 func TestRender_MissingMarkers(t *testing.T) {
 	t.Parallel()
-	if _, err := Render([]byte("no markers here"), Data{}); err == nil {
+	// Missing DATA markers entirely.
+	if _, err := Render([]byte("no markers here"), Data{}, nil); err == nil {
 		t.Fatal("want error on a template missing the DATA markers")
+	}
+	// DATA present but DOCS markers missing must also fail loud (half a page).
+	dataOnly := "const DATA = /*A2A_DATA_START*/{}/*A2A_DATA_END*/;\n"
+	if _, err := Render([]byte(dataOnly), Data{}, nil); err == nil {
+		t.Fatal("want error on a template missing the DOCS markers")
 	}
 }
 
@@ -151,9 +175,8 @@ func TestRender_MissingMarkers(t *testing.T) {
 // block (json.Marshal escapes < as <).
 func TestRender_SanitizesScriptBreakout(t *testing.T) {
 	t.Parallel()
-	tmpl := []byte("<script>const DATA = /*A2A_DATA_START*/{}/*A2A_DATA_END*/;</script>")
 	hostile := `</script><img src=x onerror=alert(1)>`
-	out, err := Render(tmpl, Data{Inbox: []Item{{Title: hostile}}})
+	out, err := Render([]byte(bothRegionsTmpl), Data{Inbox: []Item{{Title: hostile}}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,11 +191,18 @@ func TestRender_SanitizesScriptBreakout(t *testing.T) {
 func TestDefaultTemplate_HasMarkers(t *testing.T) {
 	t.Parallel()
 	tmpl := DefaultTemplate()
-	if !strings.Contains(string(tmpl), dataStart) || !strings.Contains(string(tmpl), dataEnd) {
-		t.Fatal("embedded template.html is missing the DATA markers")
+	for _, m := range []string{dataStart, dataEnd, docsStart, docsEnd} {
+		if !strings.Contains(string(tmpl), m) {
+			t.Fatalf("embedded template.html is missing marker %s", m)
+		}
 	}
-	// It must render without error (markers present + valid).
-	if _, err := Render(tmpl, Data{Self: "axon"}); err != nil {
+	// It must render without error over the REAL docs assembler (markers present
+	// + valid, and the embedded skill tree renders).
+	docs, err := Docs()
+	if err != nil {
+		t.Fatalf("Docs(): %v", err)
+	}
+	if _, err := Render(tmpl, Data{Self: "axon"}, docs); err != nil {
 		t.Fatalf("Render over the embedded template failed: %v", err)
 	}
 }
