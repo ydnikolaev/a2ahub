@@ -43,3 +43,18 @@ rows:
     test_ref: internal/e2e.TestE2E4
     tier: E2E-4
     status: covered
+  # P26 (2026-07-23): CCs newly exercised by the family coverage scenarios.
+  # Light extension per spec 26 §5 (the full §12 matrix stays v2); coverage.go's
+  # TestE2ECoverageParity is now the primary verb-level coverage SSOT.
+  - cc_id: CC-020
+    test_ref: internal/e2e.TestT3LifecycleTransitionCoverage
+    tier: T3
+    status: covered
+  - cc_id: CC-023
+    test_ref: internal/e2e.TestT3LifecycleTransitionCoverage
+    tier: T3
+    status: covered
+  - cc_id: CC-084
+    test_ref: internal/e2e.TestT3ContractVerifyExportTamperedDigest
+    tier: T3
+    status: covered
