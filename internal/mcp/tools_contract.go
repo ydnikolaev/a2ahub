@@ -951,8 +951,12 @@ func contractUpsertDependency(registry space.Consumes, dep space.Dependency) (sp
 		if existing.Major == dep.Major && (dep.Note == "" || existing.Note == dep.Note) {
 			return registry, false
 		}
-		registry.Dependencies[i].Major = dep.Major
-		registry.Dependencies[i].Since = dep.Since
+		// `since` records when the dependency was DECLARED: only a real
+		// major change restarts it (mirrors internal/cli's own copy).
+		if registry.Dependencies[i].Major != dep.Major {
+			registry.Dependencies[i].Major = dep.Major
+			registry.Dependencies[i].Since = dep.Since
+		}
 		if dep.Note != "" {
 			registry.Dependencies[i].Note = dep.Note
 		}

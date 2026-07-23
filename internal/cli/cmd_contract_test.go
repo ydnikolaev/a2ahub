@@ -753,6 +753,31 @@ func TestContractAdopt(t *testing.T) {
 		}
 	})
 
+	t.Run("a note-only edit keeps the original since date", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeMirrorFile(t, mirrorDir, "axon/consumes.yaml",
+			"schema: consumes/v1\nsystem: axon\ndependencies:\n  - contract: XC-beta-content-feed\n    major: 1\n    since: \"2026-01-01\"\n")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"adopt", "XC-beta-content-feed", "--major", "1", "--note", "why we depend on it"}, io); code != 0 {
+			t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+		}
+		registry, err := space.ParseConsumes(fake.calls[0].Files[0].Content)
+		if err != nil {
+			t.Fatalf("ParseConsumes: %v", err)
+		}
+		dep := registry.Dependencies[0]
+		if dep.Note != "why we depend on it" {
+			t.Fatalf("dependency = %+v, want the new note recorded", dep)
+		}
+		if dep.Since != "2026-01-01" {
+			t.Fatalf("dependency = %+v, want `since` untouched — it records when the dependency was DECLARED, not when the row was last edited", dep)
+		}
+	})
+
 	t.Run("refuses this system's own contract", func(t *testing.T) {
 		t.Parallel()
 		mirrorDir := t.TempDir()

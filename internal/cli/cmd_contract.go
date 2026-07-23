@@ -1177,11 +1177,14 @@ func contractUpsertDependency(registry space.Consumes, dep space.Dependency) (sp
 		if existing.Major == dep.Major && (dep.Note == "" || existing.Note == dep.Note) {
 			return registry, false
 		}
-		// Re-pinning to a different major keeps the original `since` only
-		// when the major is unchanged; a new major is a new dependency in
-		// substance, so it gets today's date.
-		registry.Dependencies[i].Major = dep.Major
-		registry.Dependencies[i].Since = dep.Since
+		// A new major is a new dependency in substance, so it gets
+		// today's date; editing only the note must NOT rewrite `since`
+		// (it records when the dependency was declared, not when the row
+		// was last touched).
+		if registry.Dependencies[i].Major != dep.Major {
+			registry.Dependencies[i].Major = dep.Major
+			registry.Dependencies[i].Since = dep.Since
+		}
 		if dep.Note != "" {
 			registry.Dependencies[i].Note = dep.Note
 		}
