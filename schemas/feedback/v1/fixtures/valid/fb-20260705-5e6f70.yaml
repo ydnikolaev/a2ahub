@@ -1,0 +1,20 @@
+feedback: v1
+id: fb-20260705-5e6f70
+kind: docs
+severity: minor
+title: "reference/authoring/question.md doesn't say how threads close"
+summary: >-
+  I read reference/authoring/question.md end to end looking for how a
+  question exchange reaches a terminal state, but it only documents opening
+  one — the closing transition (accept/reject/withdraw) isn't mentioned.
+context:
+  a2a_version: v0.1.1
+  os_arch: darwin/arm64
+  surface: docs
+checks:
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+status: new

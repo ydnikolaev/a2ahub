@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "feedback/v1/backlog.schema.json",
+  "title": "Feedback backlog (v1)",
+  "description": "Field set per docs/features/v1-min-2026-07/specs/25-agent-feedback.md §T2 (second table). This is `feedback/backlog.yaml`, the external-intake backlog (I6) — deliberately separate from docs/backlog.md and from the shared envelope schema family; feedback owns this shape end to end.",
+  "type": "object",
+  "properties": {
+    "backlog": {
+      "const": "v1"
+    },
+    "wip_limit": {
+      "type": "integer",
+      "description": "Brake against graveyarding (validator-backlog pattern); default 16.",
+      "default": 16
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^fb-[0-9]{8}-[0-9a-f]{6}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["bug", "feature", "docs", "friction", "protocol"]
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["blocker", "major", "minor"]
+          },
+          "title": {
+            "type": "string"
+          },
+          "verdict": {
+            "const": "accepted"
+          },
+          "route": {
+            "type": "string",
+            "enum": ["backlog", "phase", "quick-fix"]
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "date": {
+            "type": "string"
+          }
+        },
+        "required": ["id", "kind", "severity", "title", "verdict", "route", "refs", "date"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["backlog", "wip_limit", "items"],
+  "additionalProperties": false
+}

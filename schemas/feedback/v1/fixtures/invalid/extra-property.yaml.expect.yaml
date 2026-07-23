@@ -1,0 +1,2 @@
+code: FB-001
+note: "top-level `extra_field` is not declared by feedback.schema.json; additionalProperties: false (I2) must reject it."

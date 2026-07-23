@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "feedback/v1/feedback.schema.json",
+  "title": "Agent feedback report (v1)",
+  "description": "Field set per docs/features/v1-min-2026-07/specs/25-agent-feedback.md §T2 (first table), as amended by §11 A2/A4/A6/A7. NOT an envelope (I1): this schema is validated by its own code path (internal/feedback), never by internal/validate's actors/threads/to/from engine. Whole-file size cap is 16 KiB — enforced by `a2a feedback validate`/the intake CI job at runtime, NOT by this schema (a JSON-Schema instance has no notion of its own serialized byte size). The five `checks.*` gates and the `status`/`resolution` submit-time constraints (status MUST be `new`, resolution MUST be absent at submit) are likewise runtime/semantic gates (I5, §T1) — this schema only shapes the fields, it does not assert their submit-time values beyond type/enum.",
+  "type": "object",
+  "properties": {
+    "feedback": {
+      "const": "v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^fb-[0-9]{8}-[0-9a-f]{6}$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["bug", "feature", "docs", "friction", "protocol"]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["blocker", "major", "minor"]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 80
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 1200
+    },
+    "context": {
+      "type": "object",
+      "description": "a2a_version/os_arch are auto-filled by `a2a feedback new` (§T1); surface is the closed enum, command/error_code/agent are optional free-form self-reports.",
+      "properties": {
+        "a2a_version": {
+          "type": "string"
+        },
+        "os_arch": {
+          "type": "string"
+        },
+        "surface": {
+          "type": "string",
+          "enum": ["cli", "schema", "docs", "skill", "dashboard", "space-ci", "protocol"]
+        },
+        "command": {
+          "type": "string"
+        },
+        "error_code": {
+          "type": "string",
+          "description": "Permissive: whatever code the agent saw, not constrained to the V2 registry set.",
+          "pattern": "^[A-Z]{2,4}-[0-9]{2,4}$"
+        },
+        "agent": {
+          "type": "string"
+        }
+      },
+      "required": ["a2a_version", "os_arch", "surface"],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Mandatory when kind is bug (see this schema's top-level if/then); optional otherwise.",
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 10
+        },
+        "expected": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "actual": {
+          "type": "string",
+          "maxLength": 400
+        }
+      },
+      "additionalProperties": false
+    },
+    "proposal": {
+      "type": "string",
+      "maxLength": 1200
+    },
+    "checks": {
+      "type": "object",
+      "description": "The five §2.1 honesty gates. All five are structurally required; validate refuses the report unless every value is literally true (I5) — that ALL-true assertion is a runtime gate, not this schema's job (an all-false checks block is schema-valid by design).",
+      "properties": {
+        "docs_consulted": {
+          "type": "boolean"
+        },
+        "grounded_in_real_work": {
+          "type": "boolean"
+        },
+        "not_space_specific": {
+          "type": "boolean"
+        },
+        "no_sensitive_content": {
+          "type": "boolean"
+        },
+        "duplicates_checked": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "docs_consulted",
+        "grounded_in_real_work",
+        "not_space_specific",
+        "no_sensitive_content",
+        "duplicates_checked"
+      ],
+      "additionalProperties": false
+    },
+    "status": {
+      "type": "string",
+      "enum": ["new", "accepted", "rejected", "duplicate", "needs-info", "shipped"]
+    },
+    "resolution": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "feedback",
+    "id",
+    "kind",
+    "severity",
+    "title",
+    "summary",
+    "context",
+    "checks",
+    "status"
+  ],
+  "additionalProperties": false,
+  "if": {
+    "properties": {
+      "kind": {
+        "const": "bug"
+      }
+    },
+    "required": ["kind"]
+  },
+  "then": {
+    "required": ["evidence"],
+    "properties": {
+      "evidence": {
+        "required": ["steps", "expected", "actual"]
+      }
+    }
+  }
+}

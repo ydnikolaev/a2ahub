@@ -1,0 +1,73 @@
+# Feedback-local error-code registry — FB-### (spec §11 A2 revised).
+#
+# This is NOT the shared envelope registry (schemas/errors/v1/registry.yaml,
+# closed 4-class {schema,referential,lifecycle,policy} set, §5.5). Feedback
+# is not an envelope (I1): it owns this separate, closed FB-### set with its
+# own closure discipline (every code emitted >=1x by internal/feedback AND
+# cited by >=1 fixture's *.expect.yaml sidecar — enforced by 13b's own
+# closure test, mirroring internal/validate/registry_test.go, NOT authored
+# in this wave).
+#
+# One entry per code: {code, title, when}. Code format: FB-<3 digits>,
+# zero-padded, monotonic, append-only, never reused once a fixture cites it.
+#
+# FB-001..FB-006 are cited by schemas/feedback/v1/fixtures/invalid/*.yaml
+# sidecars in this same commit. FB-007/FB-008 are intake-only path guards
+# (`a2a feedback validate --ci`, §T1) with no schema-fixture home — they are
+# exercised by 13b/13c's own test corpus, not schemas/feedback/v1/fixtures.
+
+entries:
+  - code: FB-001
+    title: Schema-structural violation
+    when: >-
+      The report fails feedback.schema.json validation — bad `id` pattern,
+      an extra/unknown property, a missing required field, or a value
+      outside a closed enum.
+
+  - code: FB-002
+    title: Missing bug evidence
+    when: >-
+      `kind: bug` but `evidence` (or one of its `steps`/`expected`/`actual`
+      subfields) is absent, per this schema's bug-conditional requirement.
+
+  - code: FB-003
+    title: Honesty gate false
+    when: >-
+      One or more `checks.*` gates is `false`; validate refuses the report
+      until every §2.1 gate reads `true` (I5). Schema-valid by design — this
+      is a runtime gate, not a schema violation.
+
+  - code: FB-004
+    title: Report oversize
+    when: >-
+      The whole feedback YAML file exceeds the 16 KiB cap (§T2). Schema-valid
+      by design — JSON Schema has no serialized-byte-size keyword; the size
+      cap is enforced by `a2a feedback validate`/the intake CI job.
+
+  - code: FB-005
+    title: Status not new at submit
+    when: >-
+      `status` is not `new` (e.g. `accepted`, `shipped`) when the report is
+      about to be submitted/intake-checked. Schema-valid by design — the
+      schema's `status` enum permits every hub-mutated value; only submit
+      time constrains it to `new`.
+
+  - code: FB-006
+    title: Secret or credential detected
+    when: >-
+      The body (summary/proposal/evidence) matches a forbidden secret or
+      credential pattern (reuses `validate.ScanSecrets`, re-mapped per §11
+      A3). Schema-valid by design — content policy is a runtime scan, not a
+      JSON Schema keyword.
+
+  - code: FB-007
+    title: Filename does not match id
+    when: >-
+      An intake PR's file basename does not equal `<id>.yaml` (`a2a feedback
+      validate --ci` intake constraint, §T1).
+
+  - code: FB-008
+    title: Path not under inbox
+    when: >-
+      An intake PR's file is not located at `feedback/inbox/<id>.yaml`
+      (`a2a feedback validate --ci` intake constraint, §T1).

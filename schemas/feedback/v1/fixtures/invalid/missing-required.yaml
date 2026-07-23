@@ -1,0 +1,16 @@
+feedback: v1
+id: fb-20260712-c5d6e7
+kind: docs
+title: "severity field is missing entirely"
+summary: "a required top-level field (severity) is absent"
+context:
+  a2a_version: v0.1.1
+  os_arch: darwin/arm64
+  surface: docs
+checks:
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+status: new

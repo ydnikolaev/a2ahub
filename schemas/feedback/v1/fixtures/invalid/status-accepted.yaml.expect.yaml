@@ -1,0 +1,2 @@
+code: FB-005
+note: "status: accepted (not new); schema-valid by design — status enum permits every hub-mutated value, only submit time constrains it to new."

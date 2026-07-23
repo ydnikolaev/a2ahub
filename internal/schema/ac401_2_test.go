@@ -88,9 +88,22 @@ func TestAC401_2_FixtureRegistryClosure(t *testing.T) {
 		t.Fatalf("LoadRegistry: %v", err)
 	}
 
-	sidecars, err := filepath.Glob(filepath.Join(corpusRoot, "*/v1/fixtures/invalid/*.expect.yaml"))
+	allSidecars, err := filepath.Glob(filepath.Join(corpusRoot, "*/v1/fixtures/invalid/*.expect.yaml"))
 	if err != nil {
 		t.Fatalf("glob sidecars: %v", err)
+	}
+	// The feedback family (schemas/feedback/v1, P25) is a SEPARATE code domain:
+	// it is not an envelope (I1), owns its own feedback-local FB-### table
+	// (schemas/feedback/v1/codes.yaml, spec 25 §11 A2), and is closure-checked
+	// by internal/feedback's own test — NOT by this envelope-registry gate.
+	// Excluding it here keeps this gate envelope-scoped, exactly as the registry
+	// it reads is envelope-scoped.
+	var sidecars []string
+	for _, p := range allSidecars {
+		if strings.Contains(filepath.ToSlash(p), "/feedback/") {
+			continue
+		}
+		sidecars = append(sidecars, p)
 	}
 	if len(sidecars) == 0 {
 		t.Fatal("expected at least one invalid-fixture sidecar under schemas/**/fixtures/invalid/")
