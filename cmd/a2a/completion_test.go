@@ -22,7 +22,7 @@ var hiddenFromCompletion = map[string]bool{"__catalog": true}
 func TestCompletionCoversEveryDispatchVerb(t *testing.T) {
 	t.Parallel()
 
-	script, err := cli.RenderCompletion("bash", completionCmds(), completionContractSubs())
+	script, err := cli.RenderCompletion("bash", completionCmds(), completionSubFamilies())
 	if err != nil {
 		t.Fatalf("render bash completion: %v", err)
 	}
@@ -41,10 +41,13 @@ func TestCompletionCoversEveryDispatchVerb(t *testing.T) {
 		}
 	}
 
-	// Every contract sub-verb must be offered.
-	for _, sub := range cli.ContractSubcommands() {
-		if !containsWord(script, sub.Name) {
-			t.Errorf("contract sub-verb %q missing from completion", sub.Name)
+	// Every sub-verb of every family (contract, feedback, …) must be offered —
+	// the parity guard now covers N families via completionSubFamilies().
+	for family, subs := range completionSubFamilies() {
+		for _, sub := range subs {
+			if !containsWord(script, sub) {
+				t.Errorf("%s sub-verb %q missing from completion", family, sub)
+			}
 		}
 	}
 }
