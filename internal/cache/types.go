@@ -43,6 +43,18 @@ type Item struct {
 	// callers know the data may be behind (T1: "works offline ... with
 	// sync age flagged when stale").
 	SyncStale bool `json:"sync_stale,omitempty"`
+	// LatestEventAt is the timestamp of the artifact's most recent folded
+	// event — the "pending since" anchor. Zero when the artifact has no events
+	// yet (a bare draft). `json:"-"` deliberately: the dashboard assembler reads
+	// this as a Go field (formats it to an age like "5d"), while inbox/outbox
+	// `--json` stay byte-stable for their existing consumers (a time.Time would
+	// not honor omitempty anyway).
+	LatestEventAt time.Time `json:"-"`
+	// Description is a short human-readable summary from the artifact's body —
+	// the "what is this" line the dashboard shows under an inbox/outbox item.
+	// json:"-" (like LatestEventAt): a dashboard-only Go field, so inbox/outbox
+	// `--json` stay byte-stable for their existing consumers.
+	Description string `json:"-"`
 }
 
 // RefFact is one envelope `refs[]` entry's resolved digest/staleness
@@ -97,6 +109,10 @@ type ContractInfo struct {
 	Provider string `json:"provider"`
 	Version  string `json:"version,omitempty"`
 	State    string `json:"state"`
+	// Description is a short human-readable summary from the contract's body,
+	// for the dashboard's dependency map. json:"-" keeps `a2a contracts --json`
+	// byte-stable for its existing consumers (read as a Go field only).
+	Description string `json:"-"`
 }
 
 // SearchFilters narrows `a2a search`'s free-text match.

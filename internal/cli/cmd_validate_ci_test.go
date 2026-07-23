@@ -268,6 +268,85 @@ func TestValidateCI_DiffAuthzOutsideSection(t *testing.T) {
 	}
 }
 
+// TestValidateCI_DiffAuthzNonArtifactCrossSection is the strict-L0 gap this
+// change closes: a PR touching ONLY another system's NON-artifact file
+// (consumes.yaml) — no *.md at all — was previously unguarded (artifacts==0
+// skipped diff-authz entirely). Now the section-scoped path is authorized:
+// axon author editing seomatrix/consumes.yaml reds.
+func TestValidateCI_DiffAuthzNonArtifactCrossSection(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	// No *.md in the change set — only a cross-section non-artifact file.
+	root := ciRepo(t, ciSpaceYAML, nil)
+	changed := "seomatrix/consumes.yaml"
+	code, rep, _ := runCI(t, engine, root, fakeGit(changed), "v3-pr", "deadbeef", "ydnikolaev")
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 (cross-section non-artifact edit); report=%+v", code, rep)
+	}
+	if len(rep.DiffAuthz) != 1 || rep.DiffAuthz[0].Path != changed {
+		t.Fatalf("expected one diff-authz violation on %s, got %+v", changed, rep.DiffAuthz)
+	}
+	if len(rep.Artifacts) != 0 {
+		t.Fatalf("no *.md changed -> zero artifact results, got %+v", rep.Artifacts)
+	}
+}
+
+// TestValidateCI_DiffAuthzOwnSectionNonArtifact confirms the widened authz
+// does NOT over-fire: an author editing a NON-artifact file inside their OWN
+// section is clean.
+func TestValidateCI_DiffAuthzOwnSectionNonArtifact(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	root := ciRepo(t, ciSpaceYAML, nil)
+	code, rep, errOut := runCI(t, engine, root, fakeGit("axon/consumes.yaml", "axon/events/2026/e.yaml"), "v3-pr", "deadbeef", "ydnikolaev")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (own-section edits); stderr=%s; report=%+v", code, errOut, rep)
+	}
+	if len(rep.DiffAuthz) != 0 || !rep.Valid {
+		t.Fatalf("own-section non-artifact edits must be clean, got %+v", rep)
+	}
+}
+
+// TestValidateCI_DiffAuthzRootFileOutOfScope proves space infrastructure
+// under NO participant section (root space.yaml) is deliberately NOT
+// author-diff-authz'd — it is governed by CODEOWNERS + branch protection, and
+// authorizing it here would red the space owner's own manifest edit.
+func TestValidateCI_DiffAuthzRootFileOutOfScope(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	root := ciRepo(t, ciSpaceYAML, nil)
+	code, rep, errOut := runCI(t, engine, root, fakeGit("space.yaml", "CODEOWNERS", ".github/workflows/ci.yml"), "v3-pr", "deadbeef", "ydnikolaev")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (out-of-section infra); stderr=%s; report=%+v", code, errOut, rep)
+	}
+	if len(rep.DiffAuthz) != 0 {
+		t.Fatalf("root/infra paths must be out of author-diff-authz scope, got %+v", rep.DiffAuthz)
+	}
+}
+
+// TestValidateCI_DiffAuthzMixedArtifactAndCrossSection: an author edits their
+// own valid *.md AND another system's non-artifact file in one PR — the *.md
+// validates clean, the cross-section file reds diff-authz.
+func TestValidateCI_DiffAuthzMixedArtifactAndCrossSection(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	own := "axon/exchanges/XQ-axon-20260730-h2k8.md"
+	cross := "seomatrix/events/2026/e.yaml"
+	root := ciRepo(t, ciSpaceYAML, map[string]string{
+		own: validQuestion("XQ-axon-20260730-h2k8", "axon", "seomatrix"),
+	})
+	code, rep, _ := runCI(t, engine, root, fakeGit(own, cross), "v3-pr", "deadbeef", "ydnikolaev")
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1; report=%+v", code, rep)
+	}
+	if len(rep.DiffAuthz) != 1 || rep.DiffAuthz[0].Path != cross {
+		t.Fatalf("expected one diff-authz violation on %s, got %+v", cross, rep.DiffAuthz)
+	}
+	if len(rep.Artifacts) != 1 || rep.Artifacts[0].Result == nil || !rep.Artifacts[0].Result.Valid {
+		t.Fatalf("own *.md should be V2-valid, got %+v", rep.Artifacts)
+	}
+}
+
 func TestValidateCI_DiffAuthzUnmappedAuthor(t *testing.T) {
 	t.Parallel()
 	engine := ciEngine(t)

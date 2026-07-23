@@ -1,0 +1,47 @@
+# Feedback authoring skeleton (v1) — materialized by `a2a feedback new <kind>`
+# to `.a2a/feedback/<id>.yaml` (§T1, §11 A4). Every field required by
+# feedback.schema.json is present with a placeholder or auto-fill value so
+# the drafted file is schema-VALID once you replace the placeholders and
+# flip `checks.*` to true after honestly clearing every §2.1 gate.
+#
+# `id` / `context.a2a_version` / `context.os_arch` are filled in by the CLI
+# before this file ever reaches disk — the empty strings below are the
+# pre-fill placeholders `internal/feedback` overwrites, never hand-edited.
+#
+# `checks.*` starts all `false` on purpose: the agent must consciously flip
+# each one after actually verifying it (I5) — never bulk-set to true.
+
+feedback: v1
+id: ""            # auto-filled: fb-YYYYMMDD-<6 hex>
+kind: ""          # bug | feature | docs | friction | protocol
+severity: minor   # blocker | major | minor
+title: ""         # 8-80 chars, specific
+summary: ""       # <=1200 chars
+
+context:
+  a2a_version: "" # auto-filled
+  os_arch: ""     # auto-filled (runtime.GOOS/runtime.GOARCH)
+  surface: cli    # cli | schema | docs | skill | dashboard | space-ci | protocol
+  # command: ""       # optional: the failing/awkward invocation
+  # error_code: ""    # optional: whatever code you saw (e.g. POL-001)
+  # agent: ""         # optional: free self-report
+
+# evidence is REQUIRED when kind is bug (steps/expected/actual all
+# mandatory); optional otherwise — delete this block for non-bug kinds.
+evidence:
+  steps:
+    - ""          # 1-10 concrete repro steps
+  expected: ""    # <=400 chars
+  actual: ""      # <=400 chars
+
+# proposal: ""      # optional, <=1200 chars: your suggested shape
+
+checks:
+  docs_consulted: false
+  grounded_in_real_work: false
+  not_space_specific: false
+  no_sensitive_content: false
+  duplicates_checked: false
+
+status: new
+# resolution is hub-mutated only; MUST be absent at submit — do not add it.

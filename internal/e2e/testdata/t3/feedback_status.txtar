@@ -1,0 +1,18 @@
+# spec 25 §6 AC-4: `a2a feedback status` reads the consumer-local ledger
+# (.a2a/feedback/ledger.yaml). An empty/absent ledger is a friendly, exit-0
+# no-op (not an error). `--json` on an empty ledger is the same friendly exit-0.
+#
+# The populated-ledger path resolves each item's hub-side status/resolution
+# over the network (raw.githubusercontent.com) in the real binary, so the
+# "unreachable hub degrades to unknown, exit 0" branch is covered by
+# internal/feedback/status_test.go's httptest server — NOT here: this txtar
+# stays strictly network-free per the T3 isolation invariant.
+
+# no ledger at all -> friendly, exit 0
+exec a2a feedback status
+stdout 'no feedback filed'
+
+# --json on an empty ledger -> same friendly exit-0 (the empty short-circuit
+# precedes the json branch), still exit 0
+exec a2a feedback status --json
+stdout 'no feedback filed'

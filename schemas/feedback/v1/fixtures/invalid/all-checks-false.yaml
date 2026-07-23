@@ -1,0 +1,20 @@
+feedback: v1
+id: fb-20260715-f8091a
+kind: feature
+severity: minor
+title: "every honesty gate is false — schema-valid, semantically refused"
+summary: >-
+  This report is otherwise well-formed but none of the §2.1 checks were
+  actually cleared; `a2a feedback validate` must refuse it (I5), while the
+  JSON schema itself has no opinion on the checks' truth values.
+context:
+  a2a_version: v0.1.1
+  os_arch: darwin/arm64
+  surface: cli
+checks:
+  docs_consulted: false
+  grounded_in_real_work: false
+  not_space_specific: false
+  no_sensitive_content: false
+  duplicates_checked: false
+status: new

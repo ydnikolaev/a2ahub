@@ -54,7 +54,7 @@ func printUsage(w io.Writer) {
 	// through every dispatch-table command's signature.
 	_, _ = fmt.Fprintln(w, "usage: a2a <command> [args...]")
 	_, _ = fmt.Fprintln(w, "commands:")
-	_, _ = fmt.Fprintln(w, "  init        set up project config (.a2a/config.yaml)")
+	_, _ = fmt.Fprintln(w, "  init        set up project: config + skill install + AGENTS.md pointer")
 	_, _ = fmt.Fprintln(w, "  connect     register + mirror-clone a space")
 	_, _ = fmt.Fprintln(w, "  disconnect  remove a connected space")
 	_, _ = fmt.Fprintln(w, "  new         draft an artifact from a template")
@@ -69,10 +69,14 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  search      search the local cache")
 	_, _ = fmt.Fprintln(w, "  contracts   list known contracts")
 	_, _ = fmt.Fprintln(w, "  statusline  one-line status (for embedding)")
+	_, _ = fmt.Fprintln(w, "  html        render a self-contained local dashboard (alias: dashboard)")
 	_, _ = fmt.Fprintln(w, "  ack, accept, decline, respond, verify, ... lifecycle verbs")
 	_, _ = fmt.Fprintln(w, "  contract    contract lifecycle (new/publish/deprecate/retire/diff/verify-export)")
+	_, _ = fmt.Fprintln(w, "  feedback    file feedback on a2a itself (new/validate/submit/status/triage)")
 	_, _ = fmt.Fprintln(w, "  doctor      diagnose config / space / credentials")
 	_, _ = fmt.Fprintln(w, "  update      self-update to the latest release (--check/--yes/--allow-unsigned)")
+	_, _ = fmt.Fprintln(w, "  skill       install the a2ahub expert-skill tree into this repo")
+	_, _ = fmt.Fprintln(w, "  completion  print a shell completion script (bash|zsh|fish)")
 	_, _ = fmt.Fprintln(w, "  version     print the binary version stamp")
 }
 

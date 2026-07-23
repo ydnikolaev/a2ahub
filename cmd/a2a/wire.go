@@ -14,12 +14,14 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/feedback"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"github.com/ydnikolaev/a2ahub/skill"
 )
 
 // wire.go is cmd/a2a's single dependency-injection point (ADR-001: "wiring
@@ -94,10 +96,26 @@ func buildCommands() map[string]command {
 		// FIX B (spec 18 §T1/§8): wire the machine-config skeleton DI
 		// seam, mirroring how the validate closure sets CIGitHubActor.
 		cmd.MachineConfigPath = p.machineConfig
+		// P20/P21 default-on onboarding: init installs the skill tree and the
+		// AGENTS.md pointer by default (opt out via --no-skill / --no-agents-pointer).
+		cmd.AgentsPath = filepath.Join(p.projectRoot, "AGENTS.md")
+		cmd.SkillFiles = skill.Files
+		cmd.SkillTarget = filepath.Join(p.projectRoot, ".a2ahub", "skill")
+		cmd.Version = version
 		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["template"] = func(args []string, stdout, stderr io.Writer) int {
 		return cli.NewTemplateCommand().Run(context.Background(), args, stdio(stdout, stderr))
+	}
+	m["skill"] = func(args []string, stdout, stderr io.Writer) int {
+		return cli.NewSkillCommand(skill.Files, version).Run(context.Background(), args, stdio(stdout, stderr))
+	}
+	// P23 (OP-222): shell completion. A pure host-side render — no store, no
+	// config — fed the dispatch surface it belongs to (completionCmds/
+	// completionContractSubs read the SAME buildCommands()/ContractSubcommands()
+	// the binary wires, so a new verb is completable the moment it registers).
+	m["completion"] = func(args []string, stdout, stderr io.Writer) int {
+		return cli.NewCompletionCommand(completionCmds(), completionSubFamilies()).Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["connect"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
@@ -176,6 +194,7 @@ func buildCommands() map[string]command {
 		return cli.NewUpdateCommand(version, p.projectConfig, p.machineConfig, p.projectRoot).Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["submit"] = runSubmit
+	m["feedback"] = runFeedback
 
 	// Read verbs (P7): federated over ALL connected spaces via one
 	// cache.Store; read-only, no network in the render path.
@@ -234,6 +253,45 @@ func buildCommands() map[string]command {
 	return m
 }
 
+// completionCmds returns the top-level verb names `a2a completion` offers:
+// buildCommands() keys minus the hidden __catalog meta verb (never listed in
+// usage, so never completed). Read from the SAME dispatch map the binary
+// wires — not a second hand-kept list — so a newly registered verb is
+// completable automatically (the completion parity test guards the invariant).
+// RenderCompletion sorts, so the map's non-deterministic key order is fine.
+func completionCmds() []string {
+	var out []string
+	for name := range buildCommands() {
+		if name == "__catalog" {
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
+// completionContractSubs returns the `a2a contract <sub>` sub-verb names from
+// the same cli.ContractSubcommands() SSOT the catalog and MCP parity use.
+func completionContractSubs() []string {
+	subs := cli.ContractSubcommands()
+	out := make([]string, 0, len(subs))
+	for _, s := range subs {
+		out = append(out, s.Name)
+	}
+	return out
+}
+
+// completionSubFamilies maps each `a2a <verb> <sub>` family to its sub-verb
+// names from the same SSOTs the catalog/MCP parity use — contract
+// (ContractSubcommands) + feedback (FeedbackSubcommands). Adding a family here
+// is the ONLY completion edit a new sub-verb family needs (renderer is N-family).
+func completionSubFamilies() map[string][]string {
+	return map[string][]string{
+		"contract": completionContractSubs(),
+		"feedback": cli.FeedbackSubcommands(),
+	}
+}
+
 // readVerbs maps each P7 read verb to its cache.Store-backed constructor.
 func readVerbs() map[string]func(*cache.Store) cli.Command {
 	return map[string]func(*cache.Store) cli.Command{
@@ -246,6 +304,8 @@ func readVerbs() map[string]func(*cache.Store) cli.Command {
 		"statusline": func(s *cache.Store) cli.Command {
 			return cli.NewStatuslineCommand(s)
 		},
+		"html":      func(s *cache.Store) cli.Command { return cli.NewHtmlCommand(s) },
+		"dashboard": func(s *cache.Store) cli.Command { return cli.NewDashboardCommand(s) },
 	}
 }
 
@@ -409,6 +469,16 @@ func runContract(args []string, stdout, stderr io.Writer) int {
 	return cmd.Run(ctx, args, stdio(stdout, stderr))
 }
 
+// funnelBinaryVersion is the single seam feeding space.NewWriteFunnel across
+// every write path (submit + lifecycle/contract). It returns the BARE dotted
+// version, never versionStamp() ("a2a x.y.z (sha)"): the funnel's CC-085
+// min_binary_version guard parses a bare major.minor.patch, so the full stamp
+// makes every write against a version-pinned space fail with "invalid version
+// string" (the P11 smoke test surfaced it — same class as the P10 doctor fix +
+// the MCP wiring). Centralized here so the two call sites can't drift, and
+// guarded by TestFunnelBinaryVersionIsBare.
+func funnelBinaryVersion() string { return version }
+
 // resolveLifecycleDeps loads config, resolves the target space (the one
 // whose mirror holds the first artifact id in args, else the first
 // connected space — so `contract new`/no-arg verbs still get a valid
@@ -452,12 +522,7 @@ func resolveLifecycleDeps(ctx context.Context, p paths, args []string, stderr io
 	legality := cli.NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := cli.NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
 	h := host.NewGitHubHost(http.DefaultClient, githubAPIBaseURL)
-	// Pass the BARE dotted version, not versionStamp() ("a2a x.y.z (sha)"):
-	// the funnel's CC-085 min_binary_version guard parses a bare
-	// major.minor.patch, so the full stamp makes every write against a
-	// version-pinned space fail with "invalid version string" (smoke test
-	// surfaced it — same class as the P10 doctor fix + the MCP wiring).
-	funnel := space.NewWriteFunnel(h, validator, version)
+	funnel := space.NewWriteFunnel(h, validator, funnelBinaryVersion())
 	hostCfg := cli.SubmitHostConfig{
 		RemoteURL: ref.RepoURL, Repo: host.Repo{Owner: owner, Name: name},
 		BaseBranch: defaultBaseBranch, Credential: cred,
@@ -613,12 +678,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	legality := cli.NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := cli.NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
 	h := host.NewGitHubHost(http.DefaultClient, githubAPIBaseURL)
-	// Pass the BARE dotted version, not versionStamp() ("a2a x.y.z (sha)"):
-	// the funnel's CC-085 min_binary_version guard parses a bare
-	// major.minor.patch, so the full stamp makes every write against a
-	// version-pinned space fail with "invalid version string" (smoke test
-	// surfaced it — same class as the P10 doctor fix + the MCP wiring).
-	funnel := space.NewWriteFunnel(h, validator, version)
+	funnel := space.NewWriteFunnel(h, validator, funnelBinaryVersion())
 
 	hostCfg := cli.SubmitHostConfig{
 		RemoteURL:         ref.RepoURL,
@@ -630,6 +690,74 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	}
 	cmd := cli.NewSubmitCommand(funnel, legality, cli.NewCacheBackedPendingMarker(cacheDirOf(p)), mirrorDir, ref.ID, cfg.System, p.staging, hostCfg)
 	return cmd.Run(ctx, args, io)
+}
+
+// canonicalFeedbackRepo is the default `a2a feedback submit` target (§T1) when
+// neither --repo nor A2A_FEEDBACK_REPO is set: the product repo itself.
+const canonicalFeedbackRepo = "https://github.com/ydnikolaev/a2ahub"
+
+// feedbackToken resolves the push credential for `a2a feedback submit`. Feedback
+// targets a fixed repo, not a connected space, so it does not use the machine
+// config's per-space credential refs; it reads an ambient token (A2A_FEEDBACK_
+// TOKEN, else GITHUB_TOKEN/GH_TOKEN). Empty is tolerated — only a real push
+// needs it (the e2e submit path uses FakeHost, §11 A5).
+func feedbackToken() string {
+	for _, k := range []string{"A2A_FEEDBACK_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"} {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// runFeedback wires `a2a feedback <new|validate|submit|status|triage>`. Unlike
+// submit it targets a FIXED product repo (canonicalFeedbackRepo, or the
+// --repo/A2A_FEEDBACK_REPO override — §11 A8), never a connected space, and runs
+// its OWN validation (feedback is not an envelope, I1) — so the shared
+// space.WriteFunnel is wired with a nil envelope validator (feedback pre-
+// validates before Submit). All state lives under the project-local
+// .a2a/feedback/ (gitignored), so no `a2a init`/connect is required.
+func runFeedback(args []string, stdout, stderr io.Writer) int {
+	p, err := resolvePaths()
+	if err != nil {
+		return fail(stderr, err)
+	}
+	feedbackDir := filepath.Join(p.projectRoot, ".a2a", "feedback")
+	ledgerPath := filepath.Join(feedbackDir, "ledger.yaml")
+
+	drafter := feedback.NewDrafter(feedbackDir, version)
+
+	repoURL := os.Getenv("A2A_FEEDBACK_REPO")
+	if repoURL == "" {
+		repoURL = canonicalFeedbackRepo
+	}
+	owner, name, err := parseGitHubRepo(repoURL)
+	if err != nil {
+		return failf(stderr, "a2a feedback: bad feedback repo %q: %v", repoURL, err)
+	}
+
+	h := host.NewGitHubHost(http.DefaultClient, githubAPIBaseURL)
+	funnel := space.NewWriteFunnel(h, nil, funnelBinaryVersion())
+	submitCfg := feedback.SubmitConfig{
+		RemoteURL:         repoURL,
+		Repo:              host.Repo{Owner: owner, Name: name},
+		BaseBranch:        defaultBaseBranch,
+		Credential:        host.Credential{Token: feedbackToken()},
+		CommitAuthorName:  "a2a-feedback",
+		CommitAuthorEmail: "a2a-feedback@a2a.local",
+	}
+	submitter := feedback.NewSubmitter(funnel, ledgerPath, p.projectRoot, owner+"-"+name, submitCfg)
+
+	hubReader := feedback.DefaultHubReader(http.DefaultClient,
+		"https://raw.githubusercontent.com/"+owner+"/"+name+"/"+defaultBaseBranch)
+
+	hubRoot, err := os.Getwd()
+	if err != nil {
+		return fail(stderr, err)
+	}
+
+	cmd := cli.NewFeedbackCommand(drafter, submitter, ledgerPath, hubRoot, hubReader)
+	return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 }
 
 // envelopeFacts is the minimal frontmatter the submit closure reads locally

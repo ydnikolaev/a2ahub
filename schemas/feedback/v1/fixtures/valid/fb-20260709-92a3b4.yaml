@@ -1,0 +1,22 @@
+feedback: v1
+id: fb-20260709-92a3b4
+kind: protocol
+severity: major
+title: "need a partial-acceptance response state for work_request"
+summary: >-
+  This session's work_request could only be answered fully accepted or
+  rejected; the counterparty wanted to do half the proposed change now and
+  defer the rest, and no envelope shape let them say that without a second
+  round-trip.
+context:
+  a2a_version: v0.1.1
+  os_arch: darwin/arm64
+  surface: protocol
+proposal: "a response.decision enum value `partial` plus a refs-scoped accepted-subset field"
+checks:
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+status: new

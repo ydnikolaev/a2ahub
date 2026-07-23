@@ -66,6 +66,17 @@ func NewStore(ownSystem, cacheDir string, spaces []SpaceMirror, now Clock, ttl t
 
 func (s *Store) cursorPath() string { return filepath.Join(s.cacheDir, "cursor.json") }
 
+// OwnSystem returns this project's configured own system id (the dashboard's
+// ego node / --system default).
+func (s *Store) OwnSystem() string { return s.ownSystem }
+
+// SpaceMirrors returns a read-only view of the connected space mirrors (id,
+// dir, repo URL, manifest) — the dashboard reads nodes (participants), the
+// connected-repo list, and each mirror's dir (to walk consumes.yaml) from here
+// rather than replicating wire.go's buildStore wiring. The slice is the Store's
+// own (callers must not mutate it).
+func (s *Store) SpaceMirrors() []SpaceMirror { return s.spaces }
+
 // EnableUpdateNotice turns on the T3/T4 update-notice mechanism on an
 // already-constructed Store: a post-construction setter, deliberately NOT a
 // NewStore parameter, so every existing call site's behavior (and
@@ -148,7 +159,55 @@ func toItem(fa foldedArtifact, syncStale, pendingMerge bool) Item {
 		From: fa.Env.From, To: normalizeTo(fa.Env.To), State: string(fa.Result.State),
 		Priority: fa.Env.Priority, Blocking: fa.Env.Blocking, NeededBy: fa.Env.NeededBy,
 		Thread: fa.Env.Thread, PendingMerge: pendingMerge, SyncStale: syncStale,
+		LatestEventAt: fa.LatestEventAt, Description: bodySummary(fa.Raw, 240),
 	}
+}
+
+// bodySummary extracts a short human-readable description from an artifact's
+// body (the markdown after its frontmatter): the first non-empty paragraph,
+// whitespace-collapsed, a leading markdown heading/quote marker trimmed, capped
+// at max runes. Returns "" for a missing/empty body or an unparseable file
+// (degrade, never fail the caller). Used for the dashboard's item + contract
+// descriptions (D-001/D-002).
+func bodySummary(raw []byte, max int) string {
+	if max < 1 {
+		max = 1
+	}
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return ""
+	}
+	body := strings.ReplaceAll(string(fm.Body), "\r\n", "\n") // CRLF → LF so the split matches
+	s := strings.TrimSpace(body)
+	if s == "" {
+		return ""
+	}
+	if i := strings.Index(s, "\n\n"); i >= 0 {
+		s = s[:i] // first paragraph only
+	}
+	s = trimLeadingMarker(s)
+	s = strings.Join(strings.Fields(s), " ") // collapse internal whitespace + newlines
+	if r := []rune(s); len(r) > max {
+		s = strings.TrimSpace(string(r[:max-1])) + "…"
+	}
+	return s
+}
+
+// trimLeadingMarker drops ONE leading markdown block marker — an ATX heading
+// (`#`+), a blockquote (`>`), or a list bullet (`-`/`*`/`+`) — but only when it
+// is a real marker, i.e. followed by a space. So prose like "-50°C is cold" or
+// "**bold**" keeps its leading character (the old blanket TrimLeft mangled it).
+func trimLeadingMarker(s string) string {
+	t := strings.TrimLeft(s, " \t")
+	if h := strings.TrimLeft(t, "#"); h != t && strings.HasPrefix(h, " ") {
+		return strings.TrimLeft(h, " ") // heading: '#'+ then space
+	}
+	for _, m := range []string{"> ", "- ", "* ", "+ "} {
+		if strings.HasPrefix(t, m) {
+			return strings.TrimLeft(t[len(m):], " ")
+		}
+	}
+	return s
 }
 
 func sortItems(items []Item) {
@@ -450,6 +509,7 @@ func (s *Store) Contracts(ctx context.Context, provider string) ([]ContractInfo,
 			out = append(out, ContractInfo{
 				Space: spaceID, ID: fa.Env.ID, Provider: fa.Env.From,
 				Version: fa.LatestPublishVersion, State: string(fa.Result.State),
+				Description: bodySummary(fa.Raw, 240),
 			})
 		}
 	}

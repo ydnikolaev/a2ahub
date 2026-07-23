@@ -95,6 +95,10 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		return cli.NewInitCommand(""), true
 	case "template":
 		return cli.NewTemplateCommand(), true
+	case "skill":
+		return cli.NewSkillCommand(nil, ""), true
+	case "completion":
+		return cli.NewCompletionCommand(nil, nil), true
 	case "connect":
 		return cli.NewConnectCommand("", "", ""), true
 	case "disconnect":
@@ -111,6 +115,8 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		return cli.NewUpdateCommand("", "", "", ""), true
 	case "submit":
 		return cli.NewSubmitCommand(nil, nil, nil, "", "", "", "", cli.SubmitHostConfig{}), true
+	case "feedback":
+		return cli.NewFeedbackCommand(nil, nil, "", "", nil), true
 	}
 	if construct, ok := readVerbs()[name]; ok {
 		return construct(nil), true

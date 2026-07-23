@@ -1,0 +1,73 @@
+# spec 25 §6/§8 AC-1 (partial): `a2a feedback new <kind>` mints a draft
+# under .a2a/feedback/ with id/kind/context auto-filled and every checks.*
+# gate false; `a2a feedback validate <file>` refuses it RED (FB-003);
+# flipping every checks.* gate to true — the ONLY `false` tokens anywhere
+# in the drafted document — makes it GREEN. Two more embedded fixtures
+# cover FB-001 (bad id pattern) and FB-002 (missing bug evidence).
+#
+# `new` mints its id via crypto/rand (internal/feedback.MintFeedbackID) —
+# no injectable seam for the exec'd binary — so this script never hard-
+# codes the generated filename: it globs the ONE file under .a2a/feedback/
+# via `sh -c` (testscript's own env-var expansion is disabled inside
+# single-quoted text, so `$p`/`$(...)` pass through to the real shell
+# untouched — no prior txtar in this package needed this idiom, recorded
+# as a deviation in this phase's report).
+
+exec sh -c 'p=$(a2a feedback new bug --title "no way to list only my systems own contracts") && cat "$p"'
+stdout 'id: fb-[0-9]{8}-[0-9a-f]{6}'
+stdout 'kind: bug'
+stdout 'a2a_version: 0\.1\.0'
+stdout 'os_arch: \S+/\S+'
+stdout 'docs_consulted: false'
+stdout 'duplicates_checked: false'
+stdout 'status: new'
+
+! exec sh -c 'p=$(ls .a2a/feedback/*.yaml); a2a feedback validate "$p"'
+stdout 'FB-003'
+
+exec sh -c 'p=$(ls .a2a/feedback/*.yaml); awk "{gsub(/false/,\"true\")}1" "$p" > "$p.tmp" && mv "$p.tmp" "$p" && a2a feedback validate "$p"'
+stdout 'valid'
+
+! exec a2a feedback validate bad-id.yaml
+stdout 'FB-001'
+
+! exec a2a feedback validate missing-evidence.yaml
+stdout 'FB-002'
+
+-- bad-id.yaml --
+feedback: v1
+id: fb-2026070-ZZZZZZ
+kind: docs
+severity: minor
+title: "id pattern is not fb-YYYYMMDD-6hex"
+summary: "the date segment is 7 digits and the hex segment is not lowercase hex"
+context:
+  a2a_version: v0.1.1
+  os_arch: darwin/arm64
+  surface: docs
+checks:
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+status: new
+
+-- missing-evidence.yaml --
+feedback: v1
+id: fb-20260702-2b3c4d
+kind: bug
+severity: major
+title: "bug report filed with no evidence block at all"
+summary: "evidence is required for kind:bug and is entirely absent here"
+context:
+  a2a_version: v0.1.1
+  os_arch: darwin/arm64
+  surface: cli
+checks:
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+status: new
