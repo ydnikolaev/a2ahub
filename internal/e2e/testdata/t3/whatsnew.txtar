@@ -1,0 +1,18 @@
+# `a2a whatsnew`: renders the embedded release-notes corpus — no space, no
+# config needed. This shared t3 test binary is built with -X
+# main.version=0.1.0 (main_test.go), which predates every entry in the real
+# corpus (0.2.0/0.3.0/0.4.0) — so every invocation below exercises the
+# documented empty-result paths (upto=binaryVersion bounds --since; no
+# Exactly(binaryVersion) match for the bare form) deterministically, rather
+# than positive digest content. Rich rendering (digest text, impact
+# ordering, action-scope directives, JSON shape) is covered by
+# internal/cli/cmd_whatsnew_test.go and internal/mcp/tools_whatsnew_test.go
+# against a fixed, injected corpus.
+exec a2a whatsnew
+stdout 'no release notes for version 0\.1\.0'
+
+exec a2a whatsnew --since 0.1.0
+stdout 'no release notes since 0\.1\.0'
+
+exec a2a whatsnew --since 0.1.0 --json
+stdout '\[\]'
