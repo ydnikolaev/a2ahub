@@ -1,0 +1,5 @@
+# `a2a version`: the one-line build stamp (main_test.go builds this binary
+# with -ldflags -X main.version=0.1.0, so the printed version is real, never
+# the "dev" fallback).
+exec a2a version
+stdout 'a2a 0\.1\.0 \('
