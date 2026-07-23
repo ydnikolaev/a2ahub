@@ -78,21 +78,21 @@ func TestSubmit_HappyPath(t *testing.T) {
 	if result.AlreadyOpen {
 		t.Fatal("expected a fresh submit, not AlreadyOpen")
 	}
-	if result.Branch != "a2a/feedback/fb-20260723-abc123" {
+	if result.Branch != "a2a/feedback/submit/fb-20260723-abc123" {
 		t.Fatalf("Branch = %q, want a2a/feedback/fb-20260723-abc123 (§11 A6)", result.Branch)
 	}
 
 	if len(fakeHost.Pushes) != 1 || len(fakeHost.Opens) != 1 {
 		t.Fatalf("expected exactly one PushBranch + OpenPR call, got pushes=%d opens=%d", len(fakeHost.Pushes), len(fakeHost.Opens))
 	}
-	if fakeHost.Pushes[0].Branch != "a2a/feedback/fb-20260723-abc123" {
+	if fakeHost.Pushes[0].Branch != "a2a/feedback/submit/fb-20260723-abc123" {
 		t.Fatalf("push branch = %q, want a2a/feedback/fb-20260723-abc123", fakeHost.Pushes[0].Branch)
 	}
 	wantTitle := "feedback(bug): a2a sync reports clean but the mirror is stale"
 	if fakeHost.Opens[0].Title != wantTitle {
 		t.Fatalf("PR title = %q, want %q", fakeHost.Opens[0].Title, wantTitle)
 	}
-	if fakeHost.Opens[0].Head != "a2a/feedback/fb-20260723-abc123" {
+	if fakeHost.Opens[0].Head != "a2a/feedback/submit/fb-20260723-abc123" {
 		t.Fatalf("PR head = %q, want a2a/feedback/fb-20260723-abc123", fakeHost.Opens[0].Head)
 	}
 

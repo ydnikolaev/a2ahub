@@ -559,6 +559,7 @@ func (c *SubmitCommand) buildRequest(fresh []submitItem) (space.SubmitRequest, [
 	return space.SubmitRequest{
 		RepoDir:           c.mirrorDir,
 		System:            c.ownSystem,
+		Verb:              "submit",
 		ArtifactID:        strings.Join(ids, "+"),
 		Files:             files,
 		CommitMessage:     commitMsg,

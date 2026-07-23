@@ -94,7 +94,7 @@ func TestFeedbackSubmitWrite(t *testing.T) {
 		t.Fatalf("expected an 'opened PR' message; got %q", out.String())
 	}
 
-	wantBranch := "a2a/feedback/" + feedbackSubmitTestID
+	wantBranch := "a2a/feedback/submit/" + feedbackSubmitTestID
 	if len(fakeHost.Pushes) != 1 || len(fakeHost.Opens) != 1 {
 		t.Fatalf("expected exactly one real PushBranch + OpenPR call, got pushes=%d opens=%d", len(fakeHost.Pushes), len(fakeHost.Opens))
 	}

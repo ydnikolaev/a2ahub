@@ -221,6 +221,7 @@ func buildSubmitRequest(deps SubmitDeps, fresh []submitItem) (space.SubmitReques
 	return space.SubmitRequest{
 		RepoDir:           deps.MirrorDir,
 		System:            deps.OwnSystem,
+		Verb:              "submit",
 		ArtifactID:        strings.Join(ids, "+"),
 		Files:             files,
 		CommitMessage:     commitMsg,

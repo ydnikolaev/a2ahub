@@ -15,6 +15,7 @@ func newTestSubmitRequest(fx *spacefixture.Fixture, system string, l Layout) Sub
 	return SubmitRequest{
 		RepoDir:    fx.Clone(system),
 		System:     system,
+		Verb:       "submit",
 		ArtifactID: artifactID,
 		Files: []FileWrite{
 			{Path: l.Exchange(artifactID), Content: []byte("---\nid: " + artifactID + "\n---\nbody\n")},
@@ -54,7 +55,7 @@ func TestFunnelSingleCommit(t *testing.T) {
 	if result.State != WriteStatePendingMerge {
 		t.Fatalf("State = %v, want %v", result.State, WriteStatePendingMerge)
 	}
-	if result.Branch != "a2a/axon/"+req.ArtifactID {
+	if result.Branch != "a2a/axon/submit/"+req.ArtifactID {
 		t.Fatalf("Branch = %q, want a2a/axon/%s", result.Branch, req.ArtifactID)
 	}
 	if len(fake.Pushes) != 1 || len(fake.Opens) != 1 {
@@ -209,7 +210,7 @@ func TestFunnelWrongSectionRefusedBeforeGitAction(t *testing.T) {
 		t.Fatalf("expected zero git-host mutation on section refusal, got pushes=%d opens=%d", len(fake.Pushes), len(fake.Opens))
 	}
 	// No commit should have been created either.
-	branch := "a2a/axon/" + req.ArtifactID
+	branch := "a2a/axon/submit/" + req.ArtifactID
 	if _, err := runGitOutput(context.Background(), req.RepoDir, nil, "rev-parse", "--verify", branch); err == nil {
 		t.Fatalf("expected branch %s to NOT exist after a wrong-section refusal", branch)
 	}
@@ -331,6 +332,7 @@ func TestDirectGitNoHub(t *testing.T) {
 	req := SubmitRequest{
 		RepoDir:    mirrorDir,
 		System:     proj.System,
+		Verb:       "submit",
 		ArtifactID: artifactID,
 		Files: []FileWrite{
 			{Path: l.Exchange(artifactID), Content: []byte("artifact")},

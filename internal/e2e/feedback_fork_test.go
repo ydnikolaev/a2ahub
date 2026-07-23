@@ -60,7 +60,7 @@ func TestFeedbackSubmitFromANonCollaborator(t *testing.T) {
 		t.Fatalf("expected an 'opened PR' message; got %q", out.String())
 	}
 
-	branch := "a2a/feedback/" + feedbackSubmitTestID
+	branch := "a2a/feedback/submit/" + feedbackSubmitTestID
 	if len(fakeHost.Forks) != 1 {
 		t.Fatalf("EnsureFork calls = %d, want 1", len(fakeHost.Forks))
 	}

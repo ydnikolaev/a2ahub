@@ -52,6 +52,13 @@ var (
 	// (Open Q1 RESOLVED precedence) — never falls back to a literal.
 	ErrCredentialUnresolved = errors.New("space: credential unresolved")
 
+	// ErrMissingVerb is returned when a SubmitRequest names no verb. The
+	// verb is part of the deterministic branch name, so an unnamed write
+	// would share a branch with every other write on the same artifact —
+	// the defect that made `ack` then `accept` lose the accept. Refused at
+	// the funnel rather than defaulted, so a new caller cannot regress it.
+	ErrMissingVerb = errors.New("space: submit request names no verb")
+
 	// ErrForkFallbackUnavailable is returned when a write opted into the
 	// P28 fork fallback, the push was refused for lack of write access,
 	// and no fork could be used — either the host profile has no fork
