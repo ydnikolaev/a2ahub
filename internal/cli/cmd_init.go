@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/surface"
 	"gopkg.in/yaml.v3"
 )
 
@@ -32,9 +33,14 @@ const (
 
 // initAgentsPointerBlock renders the marker-wrapped pointer: what a2ahub is,
 // where the local operating skill lives, the session-start floor, and the
-// binary-is-truth rule. Provider-agnostic prose (AGENTS.md is read by both
-// Claude Code and Codex, §8.8) — it points at the binary and the installed
-// skill, never restating command or validation rules.
+// binary-is-truth rule. AGENTS.md reaches Codex (and any other
+// AGENTS.md-reading surface, internal/surface.Registry's ReadsAgentsMD
+// rows) directly; Claude Code does NOT read AGENTS.md (verified against
+// code.claude.com/docs/en/memory, 2026-07-23) — it is reached instead via
+// the skill link (`a2a skill link`, P32) plus a CLAUDE.md pointer
+// (ensureClaudeMdPointer). The block's own prose stays provider-agnostic —
+// it points at the binary and the installed skill, never restating command
+// or validation rules.
 func initAgentsPointerBlock() string {
 	return initAgentsPointerStart + "\n" +
 		"## a2ahub\n\n" +
@@ -83,6 +89,17 @@ type InitCommand struct {
 	SkillTarget string
 	Version     string
 
+	// ProjectRoot is the consumer repo's root, DI'd from wire.go, used by
+	// the default-on surface-link step (linkDetectedSurfaces, opt out with
+	// --no-skill-link). Left empty (catalog/test path), the step is a no-op.
+	ProjectRoot string
+
+	// ClaudeMdPath is the consumer repo's CLAUDE.md path, DI'd from wire.go
+	// (<projectRoot>/CLAUDE.md). Governed by the SAME --no-agents-pointer
+	// flag as AgentsPath (spec 32 §2.3's CLAUDE.md three-way). Left empty
+	// (catalog/test path), the step is a no-op.
+	ClaudeMdPath string
+
 	// writeFile/loadProjectConfig are DI seams (rails, mirrors
 	// DoctorCommand's own convention) so tests never touch a real
 	// .a2a/config.yaml path. defaultCredentialRef is the same kind of seam
@@ -115,7 +132,7 @@ func (c *InitCommand) Name() string { return "init" }
 
 // Synopsis implements cli.Command.
 func (c *InitCommand) Synopsis() string {
-	return "non-interactive project setup: config + skill install + AGENTS.md pointer (--no-skill / --no-agents-pointer to opt out)"
+	return "non-interactive project setup: config + skill install + surface link + AGENTS.md/CLAUDE.md pointer (--no-skill / --no-skill-link / --no-agents-pointer to opt out)"
 }
 
 // Run implements cli.Command. Exit codes: 2 = usage error (missing
@@ -129,6 +146,7 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs.Var(&spaces, "space", "connected space repo URL (repeatable; at least one required)")
 	noSkill := fs.Bool("no-skill", false, "do NOT install the a2ahub skill tree (installed by default)")
 	noAgentsPointer := fs.Bool("no-agents-pointer", false, "do NOT add the a2ahub pointer to AGENTS.md (added by default)")
+	noSkillLink := fs.Bool("no-skill-link", false, "do NOT link the installed skill into detected agent surfaces (linked by default)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -163,8 +181,12 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if !*noSkill {
 		c.installSkill(stdio)
 	}
+	if !*noSkillLink {
+		c.linkDetectedSurfaces(stdio)
+	}
 	if !*noAgentsPointer {
 		_ = c.ensureAgentsPointer(stdio) // prints its own error; never fatal to init
+		c.ensureClaudeMdPointer(stdio)   // best-effort; never fatal to init
 	}
 
 	if existing, ok := c.loadExisting(); ok && initConfigsEquivalent(existing, cfg) {
@@ -296,6 +318,90 @@ func (c *InitCommand) installSkill(stdio IO) {
 	default:
 		_, _ = fmt.Fprintf(stdio.Stdout, "init: installed a2ahub skill (%d files) to %s\n", written, c.SkillTarget)
 	}
+}
+
+// linkDetectedSurfaces installs a discovery entry (P32, spec 32 §2.2) for
+// every agent surface this repo already shows — best-effort, exactly like
+// installSkill: a foreign link target or a write error prints a note and
+// continues, it never fails init's primary job. A no-op when ProjectRoot is
+// unwired (catalog/test), or when the SSOT skill tree is not installed
+// (installSkill's own target — a link to a missing tree is a dangling
+// pointer, so this waits for a successful install; --no-skill combined with
+// --no-skill-link both unset degrades to this silent no-op rather than a
+// spurious error, matching installSkill's own best-effort framing).
+func (c *InitCommand) linkDetectedSurfaces(stdio IO) {
+	if c.ProjectRoot == "" {
+		return
+	}
+	ssotRel := skillDefaultDir
+	if _, err := os.Stat(filepath.Join(c.ProjectRoot, ssotRel, "SKILL.md")); err != nil {
+		return
+	}
+	targets := surface.Detect(c.ProjectRoot)
+	for _, s := range targets {
+		result, err := surface.Link(c.ProjectRoot, s, ssotRel, false)
+		switch {
+		case errors.Is(err, surface.ErrForeignLinkTarget):
+			_, _ = fmt.Fprintf(stdio.Stdout,
+				"init: skipped skill link for %s — %s already exists and is not an a2ahub link (run `a2a skill link --surface %s --force` to overwrite)\n",
+				s.ID, filepath.Join(s.SkillsHome, "a2ahub"), s.ID)
+		case err != nil:
+			_, _ = fmt.Fprintf(stdio.Stderr, "init: skill link for %s skipped: %v\n", s.ID, err)
+		default:
+			_, _ = fmt.Fprintf(stdio.Stdout, "init: linked %s: %s (%s)\n", s.ID, result.Path, result.Mode)
+		}
+	}
+}
+
+// ensureClaudeMdPointer implements spec 32 §2.3's CLAUDE.md three-way, the
+// sibling of ensureAgentsPointer for the one verified surface that does NOT
+// read AGENTS.md (Claude Code). Governed by the same --no-agents-pointer
+// flag as ensureAgentsPointer (the flag means "write context-file
+// pointers", not "AGENTS.md only"). A no-op when ClaudeMdPath is unwired
+// (catalog/test path).
+//
+//  1. CLAUDE.md exists and already imports "@AGENTS.md" — the bridge is
+//     already in place, nothing to do.
+//  2. CLAUDE.md exists (no @AGENTS.md import) — append the SAME
+//     marker-fenced pointer block ensureAgentsPointer writes, idempotent on
+//     the same start marker.
+//  3. Neither exists — do NOT create CLAUDE.md a consumer never asked for;
+//     the skill link (linkDetectedSurfaces) is discovery-sufficient on its
+//     own.
+func (c *InitCommand) ensureClaudeMdPointer(stdio IO) {
+	if c.ClaudeMdPath == "" {
+		return
+	}
+	existing, err := os.ReadFile(c.ClaudeMdPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			_, _ = fmt.Fprintf(stdio.Stderr, "init: cannot read %s: %v\n", c.ClaudeMdPath, err)
+		}
+		return // absent — skill link alone is discovery-sufficient (spec 32 §2.3.3)
+	}
+	if bytes.Contains(existing, []byte("@AGENTS.md")) {
+		_, _ = fmt.Fprintf(stdio.Stdout, "init: %s already bridged to AGENTS.md (@AGENTS.md import present)\n", c.ClaudeMdPath)
+		return
+	}
+	if bytes.Contains(existing, []byte(initAgentsPointerStart)) {
+		_, _ = fmt.Fprintf(stdio.Stdout, "init: a2ahub pointer already present in %s\n", c.ClaudeMdPath)
+		return
+	}
+
+	out := append([]byte(nil), existing...)
+	if len(existing) > 0 {
+		if !bytes.HasSuffix(out, []byte("\n")) {
+			out = append(out, '\n')
+		}
+		out = append(out, '\n')
+	}
+	out = append(out, initAgentsPointerBlock()...)
+
+	if err := c.writeFile(c.ClaudeMdPath, out, 0o644); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "init: cannot write %s: %v\n", c.ClaudeMdPath, err)
+		return
+	}
+	_, _ = fmt.Fprintf(stdio.Stdout, "init: appended a2ahub pointer to %s\n", c.ClaudeMdPath)
 }
 
 // ensureAgentsPointer appends the a2ahub pointer block to AGENTS.md (default
