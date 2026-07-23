@@ -15,11 +15,12 @@
 # make harness-check     both harness gates' --teeth self-tests (the gates bite).
 # make coverage          go test -race with the coveragepolicy SSOT floor (also run by `check`).
 # make vulncheck         govulncheck ./... gated by .govulncheck-allow.txt (network; not in `check`).
+# make install           put a dev `a2a` on your PATH that always runs THIS source tree.
 #
 # Recipes are POSIX sh — no bashisms — even though the gate scripts they call
 # are bash (invoked explicitly via `bash`, never relying on $(SHELL)).
 
-.PHONY: check check-validators feature-lint epic-drift classify-guard workflow-lint harness-check coverage vulncheck
+.PHONY: check check-validators feature-lint epic-drift classify-guard workflow-lint harness-check coverage vulncheck install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -82,6 +83,9 @@ vulncheck: ## govulncheck ./... gated by .govulncheck-allow.txt (NEW called vuln
 	new=""; for id in $$found; do grep -qxF "$$id" .govulncheck-allow.txt 2>/dev/null || new="$$new $$id"; done; \
 	if [ -n "$$new" ]; then printf '%s\n' "$$out"; echo; echo "vulncheck: FAIL — NEW vulnerabilities (not in .govulncheck-allow.txt):$$new"; exit 1; fi; \
 	if [ -n "$$found" ]; then echo "vulncheck: OK — only accepted vulns present:$$(printf '%s' "$$found" | tr '\n' ' ' | sed 's/^/ /')"; else echo "vulncheck: OK — no called vulnerabilities"; fi
+
+install: ## Put a dev `a2a` on your PATH that always runs THIS source tree (rebuilds when changed).
+	@sh scripts/dev-install.sh
 
 feature-lint: ## Validate docs/features/<slug>/ against the canonical template (private harness gate, presence-gated).
 	@if [ -f scripts/check-feature-lint.sh ]; then \
