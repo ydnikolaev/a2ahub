@@ -1,0 +1,12 @@
+schema: release-notes/v1
+version: "0.1.0"
+released: "2026-01-01"
+changes:
+  - id: RN-0100-1
+    kind: feat
+    impact: low
+    subject: "a minimal change"
+    detail: "a minimal detail"
+    action:
+      scope: none
+      why: "nothing to run"

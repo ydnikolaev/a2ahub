@@ -1,0 +1,18 @@
+schema: release-notes/v1
+version: "0.2.0"
+released: "2026-07-23"
+headline: "The first version an external system tested against"
+changes:
+  - id: RN-0200-1
+    kind: feat
+    impact: normal
+    subject: "the v1-min core — schemas, one validation engine, lifecycle verbs, submit/sync/inbox, contract ops"
+    detail: >
+      Baseline. The `a2a` binary that a second system first pointed at a live
+      space: the typed artifact model, the single validation engine (V1/V2/V3),
+      the fold/lifecycle transitions, submit/sync/inbox/outbox, the contract
+      family, templates, and the feedback intake path.
+    affects: []
+    action:
+      scope: none
+      why: "baseline — nothing to migrate from here"

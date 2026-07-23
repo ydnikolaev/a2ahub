@@ -1,0 +1,65 @@
+schema: release-notes/v1
+version: "0.3.0"
+released: "2026-07-23"
+headline: "Contracts and decisions are publishable again; feedback works without write access"
+changes:
+  - id: RN-0300-1
+    kind: fix
+    impact: high
+    subject: "the contract/decision family is publishable again (placement-aware id guard)"
+    detail: >
+      Before 0.3.0 a one-shape id guard (CC-003) reddened EVERY contract with
+      REF-001 and EVERY decision with REF-002 — the whole family was
+      unpublishable, with no workaround (a hand PR reddened identically in V3).
+      The guard is now placement-aware, so contracts and space-level decisions
+      validate and publish.
+    affects: [contract, submit, validate]
+    action:
+      scope: space
+      why: "anything you tried to publish before and could not can now be re-submitted"
+      detect: ["a2a validate --ci"]
+      run: ["a2a submit <path>"]
+  - id: RN-0300-2
+    kind: feat
+    impact: high
+    subject: "a2a feedback submit works without write access (fork flow)"
+    detail: >
+      The verb the skill tells every consumer agent to use pushed straight into
+      the product repo, so a submitter without write access got a 403 and no PR.
+      It now falls back to a fork + pull request automatically (ADR-003 optional
+      host.Forker capability), so a non-collaborator's report goes through the
+      normal verb instead of out-of-band.
+    affects: [feedback]
+    action:
+      scope: none
+      why: "the verb now just works for a non-collaborator — nothing to run"
+  - id: RN-0300-3
+    kind: feat
+    impact: normal
+    subject: "a2a contract adopt writes consumes.yaml; the consumer registry fails closed at retire"
+    detail: >
+      `a2a contract adopt <XC-id>` is the consumes.yaml writer (schema
+      consumes/v1), and `contract retire` reads that registry fail-closed — a
+      registry it cannot read counts as a blocking consumer, not zero, so a
+      contract can no longer be retired out from under a subscribed system.
+    affects: [contract]
+    action:
+      scope: space
+      why: "your space's consumes.yaml files must be schema-shaped or V3 reds them"
+      detect: ["a2a validate --ci"]
+      run: ["a2a contract adopt <XC-id>"]
+  - id: RN-0300-4
+    kind: fix
+    impact: normal
+    subject: "credential precedence honoured; connect repairs a stale space id; --help needs no config"
+    detail: >
+      A2A_TOKEN_<SPACE_ID> now resolves everywhere; `a2a connect` repairs a
+      stale space id and `a2a doctor` gained a space-identity check (a wrong id
+      no longer survives to the first submit); every verb's `--help` answers
+      with no project config or credential.
+    affects: [connect, doctor]
+    action:
+      scope: local
+      why: "re-run doctor to catch a stale space id before your next write"
+      detect: ["a2a doctor"]
+      run: ["a2a connect <space>"]
