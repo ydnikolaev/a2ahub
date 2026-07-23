@@ -11,12 +11,26 @@ import (
 )
 
 // sampleCmds/sampleSubs are a representative injected inventory: it includes
-// `contract` (whose subs gate on it) plus a verb that sorts before and after
-// it, so ordering and the contract-sub branch are both exercised.
+// `contract` and `feedback` (two sub-verb families, whose subs gate on their
+// own verb) plus verbs that sort before and after, so ordering and the
+// N-family sub-verb branches are both exercised.
 var (
 	sampleCmds = []string{"submit", "contract", "init", "completion"}
-	sampleSubs = []string{"publish", "diff", "new"}
+	sampleSubs = map[string][]string{
+		"contract": {"publish", "diff", "new"},
+		"feedback": {"submit", "status", "new"},
+	}
 )
+
+// allSubs flattens sampleSubs to every sub-verb name (dedup not needed — the
+// containment assertions only check presence).
+func allSubs() []string {
+	var out []string
+	for _, subs := range sampleSubs {
+		out = append(out, subs...)
+	}
+	return out
+}
 
 // markerFor is the shell-specific string that proves the script is wired to
 // register completion for `a2a` (not just a list of words).
@@ -44,9 +58,9 @@ func TestRenderCompletion_ContainsEveryName(t *testing.T) {
 				t.Errorf("%s: top-level verb %q not in script", shell, name)
 			}
 		}
-		for _, sub := range sampleSubs {
+		for _, sub := range allSubs() {
 			if !strings.Contains(script, sub) {
-				t.Errorf("%s: contract sub-verb %q not in script", shell, sub)
+				t.Errorf("%s: sub-verb %q not in script", shell, sub)
 			}
 		}
 	}

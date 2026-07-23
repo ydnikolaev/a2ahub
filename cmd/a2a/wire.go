@@ -14,6 +14,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/feedback"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
@@ -114,7 +115,7 @@ func buildCommands() map[string]command {
 	// completionContractSubs read the SAME buildCommands()/ContractSubcommands()
 	// the binary wires, so a new verb is completable the moment it registers).
 	m["completion"] = func(args []string, stdout, stderr io.Writer) int {
-		return cli.NewCompletionCommand(completionCmds(), completionContractSubs()).Run(context.Background(), args, stdio(stdout, stderr))
+		return cli.NewCompletionCommand(completionCmds(), completionSubFamilies()).Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["connect"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
@@ -193,6 +194,7 @@ func buildCommands() map[string]command {
 		return cli.NewUpdateCommand(version, p.projectConfig, p.machineConfig, p.projectRoot).Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["submit"] = runSubmit
+	m["feedback"] = runFeedback
 
 	// Read verbs (P7): federated over ALL connected spaces via one
 	// cache.Store; read-only, no network in the render path.
@@ -277,6 +279,17 @@ func completionContractSubs() []string {
 		out = append(out, s.Name)
 	}
 	return out
+}
+
+// completionSubFamilies maps each `a2a <verb> <sub>` family to its sub-verb
+// names from the same SSOTs the catalog/MCP parity use — contract
+// (ContractSubcommands) + feedback (FeedbackSubcommands). Adding a family here
+// is the ONLY completion edit a new sub-verb family needs (renderer is N-family).
+func completionSubFamilies() map[string][]string {
+	return map[string][]string{
+		"contract": completionContractSubs(),
+		"feedback": cli.FeedbackSubcommands(),
+	}
 }
 
 // readVerbs maps each P7 read verb to its cache.Store-backed constructor.
@@ -677,6 +690,74 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	}
 	cmd := cli.NewSubmitCommand(funnel, legality, cli.NewCacheBackedPendingMarker(cacheDirOf(p)), mirrorDir, ref.ID, cfg.System, p.staging, hostCfg)
 	return cmd.Run(ctx, args, io)
+}
+
+// canonicalFeedbackRepo is the default `a2a feedback submit` target (§T1) when
+// neither --repo nor A2A_FEEDBACK_REPO is set: the product repo itself.
+const canonicalFeedbackRepo = "https://github.com/ydnikolaev/a2ahub"
+
+// feedbackToken resolves the push credential for `a2a feedback submit`. Feedback
+// targets a fixed repo, not a connected space, so it does not use the machine
+// config's per-space credential refs; it reads an ambient token (A2A_FEEDBACK_
+// TOKEN, else GITHUB_TOKEN/GH_TOKEN). Empty is tolerated — only a real push
+// needs it (the e2e submit path uses FakeHost, §11 A5).
+func feedbackToken() string {
+	for _, k := range []string{"A2A_FEEDBACK_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"} {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// runFeedback wires `a2a feedback <new|validate|submit|status|triage>`. Unlike
+// submit it targets a FIXED product repo (canonicalFeedbackRepo, or the
+// --repo/A2A_FEEDBACK_REPO override — §11 A8), never a connected space, and runs
+// its OWN validation (feedback is not an envelope, I1) — so the shared
+// space.WriteFunnel is wired with a nil envelope validator (feedback pre-
+// validates before Submit). All state lives under the project-local
+// .a2a/feedback/ (gitignored), so no `a2a init`/connect is required.
+func runFeedback(args []string, stdout, stderr io.Writer) int {
+	p, err := resolvePaths()
+	if err != nil {
+		return fail(stderr, err)
+	}
+	feedbackDir := filepath.Join(p.projectRoot, ".a2a", "feedback")
+	ledgerPath := filepath.Join(feedbackDir, "ledger.yaml")
+
+	drafter := feedback.NewDrafter(feedbackDir, version)
+
+	repoURL := os.Getenv("A2A_FEEDBACK_REPO")
+	if repoURL == "" {
+		repoURL = canonicalFeedbackRepo
+	}
+	owner, name, err := parseGitHubRepo(repoURL)
+	if err != nil {
+		return failf(stderr, "a2a feedback: bad feedback repo %q: %v", repoURL, err)
+	}
+
+	h := host.NewGitHubHost(http.DefaultClient, githubAPIBaseURL)
+	funnel := space.NewWriteFunnel(h, nil, funnelBinaryVersion())
+	submitCfg := feedback.SubmitConfig{
+		RemoteURL:         repoURL,
+		Repo:              host.Repo{Owner: owner, Name: name},
+		BaseBranch:        defaultBaseBranch,
+		Credential:        host.Credential{Token: feedbackToken()},
+		CommitAuthorName:  "a2a-feedback",
+		CommitAuthorEmail: "a2a-feedback@a2a.local",
+	}
+	submitter := feedback.NewSubmitter(funnel, ledgerPath, p.projectRoot, owner+"-"+name, submitCfg)
+
+	hubReader := feedback.DefaultHubReader(http.DefaultClient,
+		"https://raw.githubusercontent.com/"+owner+"/"+name+"/"+defaultBaseBranch)
+
+	hubRoot, err := os.Getwd()
+	if err != nil {
+		return fail(stderr, err)
+	}
+
+	cmd := cli.NewFeedbackCommand(drafter, submitter, ledgerPath, hubRoot, hubReader)
+	return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 }
 
 // envelopeFacts is the minimal frontmatter the submit closure reads locally

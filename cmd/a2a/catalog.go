@@ -115,6 +115,8 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		return cli.NewUpdateCommand("", "", "", ""), true
 	case "submit":
 		return cli.NewSubmitCommand(nil, nil, nil, "", "", "", "", cli.SubmitHostConfig{}), true
+	case "feedback":
+		return cli.NewFeedbackCommand(nil, nil, "", "", nil), true
 	}
 	if construct, ok := readVerbs()[name]; ok {
 		return construct(nil), true
