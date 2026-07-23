@@ -102,6 +102,7 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 					edge.ProviderVersion = ci.Version
 					edge.State = ci.State
 					edge.Drift = driftOf(ci.State, dep.Major, ci.Version)
+					edge.Description = ci.Description
 				}
 				d.ContractEdges = append(d.ContractEdges, edge)
 			}
@@ -116,7 +117,7 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 		cons := consumersOf[c.ID]
 		sort.Strings(cons)
 		d.Contracts = append(d.Contracts, Contract{Space: c.Space, ID: c.ID, Provider: c.Provider,
-			Version: c.Version, State: c.State, Consumers: dedupSorted(cons)})
+			Version: c.Version, State: c.State, Consumers: dedupSorted(cons), Description: c.Description})
 	}
 
 	// Inbox / outbox items (open only — the Store already filters to open).
@@ -148,7 +149,7 @@ func toItem(it cache.Item, now time.Time) Item {
 		Space: it.Space, ID: it.ID, Type: it.Type, Title: it.Title, From: it.From, To: it.To,
 		State: it.State, Priority: it.Priority, Blocking: it.Blocking, GatePending: gate,
 		Thread: it.Thread, Age: humanizeAge(now, it.LatestEventAt), New: it.New,
-		Severity: severityOf(it, gate), Reasons: it.Reasons,
+		Severity: severityOf(it, gate), Reasons: it.Reasons, Description: it.Description,
 	}
 }
 

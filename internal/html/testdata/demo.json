@@ -93,7 +93,8 @@
       "pinnedMajor": 1,
       "providerVersion": "1.4.2",
       "state": "published",
-      "drift": "current"
+      "drift": "current",
+      "description": "Outbound webhook for payment-gateway events — signed JSON payloads, at-least-once delivery, 24h replay window."
     },
     {
       "from": "gvbilling",
@@ -103,7 +104,8 @@
       "pinnedMajor": 1,
       "providerVersion": "2.3.0",
       "state": "published",
-      "drift": "behind"
+      "drift": "behind",
+      "description": "Canonical visa-application status feed consumed by billing and downstream reporting. You pin v1.x; the provider is on v2 — plan the upgrade."
     },
     {
       "from": "axon",
@@ -114,7 +116,8 @@
       "providerVersion": "3.1.0",
       "state": "deprecated",
       "drift": "deprecated",
-      "sunset": "2026-09-01"
+      "sunset": "2026-09-01",
+      "description": "Crawl-report export (sitemap deltas + crawl stats). v3 is deprecated — migrate to v4 before the sunset date."
     },
     {
       "from": "gvbilling",
@@ -124,7 +127,8 @@
       "pinnedMajor": 1,
       "providerVersion": "1.0.0",
       "state": "retired",
-      "drift": "retired"
+      "drift": "retired",
+      "description": "Legacy auth-token contract, retired in favour of visa-status v2 — no new consumers; existing pins must migrate."
     },
     {
       "from": "gvbilling",
@@ -187,7 +191,8 @@
       "age": "2h",
       "new": true,
       "severity": "normal",
-      "reasons": ["needs-input"]
+      "reasons": ["needs-input"],
+      "description": "Billing needs to know which visa-status auth major to pin so its token refresh keeps working after the gvcore v2 cutover. Blocking their release if unanswered by Friday."
     },
     {
       "space": "platform",
@@ -204,7 +209,8 @@
       "age": "5d",
       "new": false,
       "severity": "blocking",
-      "reasons": ["blocking-dependency"]
+      "reasons": ["blocking-dependency"],
+      "description": "The crawl-report v3 exporter breaks on the new v4 schema; seomatrix needs axon to rebuild it before the platform-wide migration or their reporting pipeline stalls."
     },
     {
       "space": "getvisa",

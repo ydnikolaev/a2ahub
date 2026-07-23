@@ -295,6 +295,7 @@ button{font:inherit}
 .dep .d2 .k{color:var(--text-faint)}
 .dep .d2 > span{white-space:nowrap}
 .dep .d2 .sunset{margin-top:0;display:inline}
+.dep-desc{font-size:12px;color:var(--text-dim);line-height:1.5;margin-top:7px;text-wrap:pretty}
 .cid{font-family:var(--mono);font-size:12px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle}
 .drift{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:650;white-space:nowrap}
 .drift .dd{width:8px;height:8px;border-radius:50%}
@@ -435,12 +436,12 @@ button{font:inherit}
 .g-phase .pstep span{color:var(--text-faint);font-size:10.5px}
 .g-phase .pconn{width:2px;height:11px;background:var(--border-strong);border-radius:2px;margin:3px 0 3px 18px}
 .g-sig{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
-.g-sigrow{display:flex;gap:14px;padding:16px 18px;border:1px solid var(--border);border-radius:15px;background:var(--surface);box-shadow:var(--shadow-sm);align-items:flex-start}
-.g-sigbadge{flex:none;min-width:70px;display:flex;align-items:center;padding-top:1px}
+.g-sigrow{display:flex;flex-direction:column;gap:12px;padding:16px 18px;border:1px solid var(--border);border-radius:15px;background:var(--surface);box-shadow:var(--shadow-sm)}
+.g-sigbadge{display:flex;align-items:center;min-height:22px}
 .g-sbwrap{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
 .g-sbwrap .sdot{margin:0}
 .g-sigtext{min-width:0}
-.g-sigrow .sb{font-weight:700;font-size:13.5px;margin-bottom:3px}
+.g-sigrow .sb{font-weight:700;font-size:14px;margin-bottom:4px;letter-spacing:-.01em}
 .g-sigrow .st{font-size:12.5px;color:var(--text-dim);line-height:1.55}
 .sig-chip{font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;letter-spacing:.03em;text-transform:uppercase}
 .sig-chip.blk{background:color-mix(in srgb,var(--blocking) 15%,transparent);color:var(--blocking);border:1px solid color-mix(in srgb,var(--blocking) 32%,transparent)}
@@ -725,12 +726,12 @@ const GUIDE_TEXT = {
        b1:{en:"Open documentation",ru:"Открыть документацию"},b2:{en:"Back to dashboard",ru:"К дашборду"}},
   diagram:{you:{en:"you",ru:"вы"},space:{en:"space · git",ru:"спейс · git"},pr:{en:"PR · validate · CI",ru:"PR · проверки · CI"}},
   signals:[
-    {kind:"blocking",b:{en:"blocking",ru:"блокирует"},c:"var(--blocking)",d:{en:"someone can't proceed until this is handled — always sorted to the top.",ru:"кто-то не может продолжить, пока это не решено, — всегда наверху списка."}},
-    {kind:"priority",b:{en:"priority P1 / P2",ru:"приоритет P1 / P2"},c:"var(--attention)",d:{en:"how urgent the author marked it (P1 highest, P3 default).",ru:"насколько срочным пометил автор (P1 — высший, P3 — по умолчанию)."}},
-    {kind:"new",b:{en:"new",ru:"новое"},c:"var(--accent)",d:{en:"arrived since you last read this inbox — a small dot on the row.",ru:"появилось с вашего последнего просмотра входящих — точка на строке."}},
-    {kind:"gate",b:{en:"gate-pending",ru:"ждёт вашего ревью"},c:"var(--blocking)",d:{en:"a PR or review is waiting specifically on you.",ru:"PR или ревью ждёт именно вас."}},
-    {kind:"stale",b:{en:"stale",ru:"давно без движения"},c:"var(--attention)",d:{en:"pending a long time with no movement — the age turns amber.",ru:"висит долго без изменений — возраст становится янтарным."}},
-    {kind:"drift",b:{en:"contract drift",ru:"дрейф контракта"},c:"var(--d-deprecated)",d:{en:"you depend on vN but the provider shipped vN+1, deprecated, or retired it.",ru:"вы зависите от vN, а провайдер выпустил vN+1, пометил устаревшим или снял версию."}}
+    {kind:"blocking",b:{en:"Blocking",ru:"Блокирует"},c:"var(--blocking)",d:{en:"Someone can't proceed until this is handled — always sorted to the top.",ru:"Кто-то не может продолжить, пока это не решено, — всегда наверху списка."}},
+    {kind:"priority",b:{en:"Priority P1 / P2",ru:"Приоритет P1 / P2"},c:"var(--attention)",d:{en:"How urgent the author marked it (P1 highest, P3 default).",ru:"Насколько срочным пометил автор (P1 — высший, P3 — по умолчанию)."}},
+    {kind:"new",b:{en:"New",ru:"Новое"},c:"var(--accent)",d:{en:"Arrived since you last read this inbox — a small dot on the row.",ru:"Появилось с вашего последнего просмотра входящих — точка на строке."}},
+    {kind:"gate",b:{en:"Gate-pending",ru:"Ждёт вашего ревью"},c:"var(--blocking)",d:{en:"A PR or review is waiting specifically on you.",ru:"PR или ревью ждёт именно вас."}},
+    {kind:"stale",b:{en:"Stale",ru:"Давно без движения"},c:"var(--attention)",d:{en:"Pending a long time with no movement — the age turns amber.",ru:"Висит долго без изменений — возраст становится янтарным."}},
+    {kind:"drift",b:{en:"Contract drift",ru:"Дрейф контракта"},c:"var(--d-deprecated)",d:{en:"You depend on vN but the provider shipped vN+1, deprecated, or retired it.",ru:"Вы зависите от vN, а провайдер выпустил vN+1, пометил устаревшим или снял версию."}}
   ],
   auto:[
     {tag:"a2a skill",t:{en:"A skill teaches the agent",ru:"Навык обучает агента"},
@@ -1502,7 +1503,9 @@ function contractsCard(cEdges,contracts,combined){
     d2.appendChild(el("span",{},[el("span",{class:"k",text:L.ui.state+" "}),document.createTextNode(stateWord(e.state))]));
     if(e.sunset) d2.appendChild(el("span",{class:"sunset",text:L.ui.sunsetLbl+" "+e.sunset+" "+sunsetCountdown(e.sunset)}));
     if(combined) d2.appendChild(el("span",{class:"spacechip",text:e.space}));
-    dep.appendChild(d2); list.appendChild(dep);
+    dep.appendChild(d2);
+    if(e.description) dep.appendChild(el("div",{class:"dep-desc",text:e.description}));  /* D-002: UNTRUSTED → textContent */
+    list.appendChild(dep);
   });
   card.appendChild(list);
   const provided=contracts.filter(c=>c.provider===DATA.self);
@@ -1518,6 +1521,7 @@ function contractsCard(cEdges,contracts,combined){
       (c.consumers||[]).forEach(x=>cons.appendChild(el("span",{class:"chip",text:x})));
       if(!(c.consumers||[]).length) cons.appendChild(el("span",{class:"chip",text:L.ui.noConsumers}));
       line.appendChild(cons); pb.appendChild(line);
+      if(c.description) pb.appendChild(el("div",{class:"dep-desc",style:"margin-top:-2px;margin-bottom:9px",text:c.description}));  /* D-002 */
     });
     card.appendChild(pb);
   }
