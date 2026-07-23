@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os/exec"
@@ -993,9 +994,9 @@ func (c *ContractCommand) runDiff(ctx context.Context, args []string, stdio IO) 
 
 	delta := contractDiff(tree1, tree2)
 	if *jsonOut {
-		enc := yaml.NewEncoder(stdio.Stdout)
+		enc := json.NewEncoder(stdio.Stdout)
+		enc.SetIndent("", "  ")
 		_ = enc.Encode(delta)
-		_ = enc.Close()
 		return 0
 	}
 	for _, p := range delta.Added {
