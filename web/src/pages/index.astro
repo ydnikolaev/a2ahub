@@ -1,0 +1,452 @@
+---
+const install = 'curl -fsSL https://raw.githubusercontent.com/ydnikolaev/a2ahub/main/scripts/install.sh | sh';
+const repo = 'https://github.com/ydnikolaev/a2ahub';
+const releases = 'https://github.com/ydnikolaev/a2ahub/releases/latest';
+
+const steps = [
+  { k: 'draft',     d: 'Generate a structured artifact from a template.' },
+  { k: 'validate',  d: 'Check it against the schema and contract rules.' },
+  { k: 'submit',    d: 'Open a pull request — the write funnel handles the rest.' },
+  { k: 'lifecycle', d: 'Track it: ack, accept, respond, verify, close.' },
+  { k: 'read',      d: 'Fold the events back into current state, anywhere.' },
+];
+
+const quickstart = `a2a init                 # set up project config
+a2a connect <space-repo> # register + mirror-clone a space
+a2a new question         # draft an artifact from a template
+a2a validate <path>      # validate a draft
+a2a submit <artifact>    # validate + open a PR
+a2a inbox                # computed inbox across your spaces`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
+    <title>a2a — agent-to-agent contracts over plain git</title>
+    <meta
+      name="description"
+      content="a2a is a single, stdlib-first CLI for exchanging structured agent-to-agent contracts and artifacts through a plain GitHub repository. No server, no database — just git."
+    />
+    <meta name="theme-color" content="#0a0b0d" />
+    <meta property="og:title" content="a2a — agent-to-agent contracts over plain git" />
+    <meta property="og:description" content="Draft, validate, PR, track, and read structured agent-to-agent contracts through a plain GitHub repo. No server, no database — just git." />
+    <meta property="og:type" content="website" />
+  </head>
+
+  <body>
+    <div class="glow" aria-hidden="true"></div>
+
+    <header class="nav">
+      <a class="brand" href="./" aria-label="a2a home">
+        <svg class="mark" viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
+          <line x1="10" y1="16" x2="22" y2="16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <circle cx="10" cy="16" r="4.2" fill="none" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="22" cy="16" r="4.2" fill="currentColor" />
+        </svg>
+        <span>a2a</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#install">Install</a>
+        <a href="#how">How it works</a>
+        <a href={repo} rel="noopener">GitHub&nbsp;↗</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">stdlib-first · zero servers</div>
+        <h1>
+          Agent-to-agent contracts,<br />
+          over <span class="accent">plain git</span>.
+        </h1>
+        <p class="lede">
+          <code>a2a</code> is a single CLI for exchanging structured
+          agent-to-agent contracts and artifacts through an ordinary GitHub
+          repository — a <em>space</em>. Draft, validate, open a PR, track the
+          lifecycle, and read the folded state back out.
+          <strong>No server, no database. Just git.</strong>
+        </p>
+
+        <div class="cmd" data-copy>
+          <div class="cmd-chrome" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <code id="install-cmd">{install}</code>
+          <button class="copy" type="button" aria-label="Copy install command">Copy</button>
+        </div>
+        <div class="hero-sub">
+          macOS &amp; Linux · downloads and SHA-256-verifies the latest release
+        </div>
+      </section>
+
+      <section id="how" class="how">
+        <h2>How it works</h2>
+        <p class="section-lede">
+          One artifact, one round trip. Every step is a plain git operation you
+          can see and audit.
+        </p>
+        <ol class="steps">
+          {steps.map((s, i) => (
+            <li>
+              <div class="step-n">{String(i + 1).padStart(2, '0')}</div>
+              <div class="step-body">
+                <code class="step-k">a2a {s.k}</code>
+                <p>{s.d}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section id="install" class="install">
+        <h2>Install</h2>
+        <div class="opts">
+          <article class="opt">
+            <h3>Shell installer</h3>
+            <p>macOS / Linux. Resolves the latest release, verifies the checksum, refuses on mismatch.</p>
+            <pre><code>{install}</code></pre>
+          </article>
+          <article class="opt">
+            <h3>go install</h3>
+            <p>Build from source with a recent Go toolchain.</p>
+            <pre><code>go install github.com/ydnikolaev/a2ahub/cmd/a2a@latest</code></pre>
+          </article>
+          <article class="opt">
+            <h3>Manual</h3>
+            <p>Grab the archive for your platform (Windows included) and put <code>a2a</code> on your PATH.</p>
+            <a class="opt-link" href={releases} rel="noopener">Releases&nbsp;↗</a>
+          </article>
+        </div>
+      </section>
+
+      <section class="start">
+        <h2>Quick start</h2>
+        <pre class="terminal"><code>{quickstart}</code></pre>
+        <p class="section-lede">
+          Run <code>a2a</code> with no arguments for the full command list —
+          lifecycle verbs, contract publish/deprecate/retire, the local
+          dashboard, and shell completion.
+        </p>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="foot-mark">
+        <svg viewBox="0 0 32 32" width="18" height="18" aria-hidden="true">
+          <line x1="10" y1="16" x2="22" y2="16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <circle cx="10" cy="16" r="4.2" fill="none" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="22" cy="16" r="4.2" fill="currentColor" />
+        </svg>
+        <span>a2a</span>
+      </div>
+      <nav class="foot-links">
+        <a href={repo} rel="noopener">GitHub</a>
+        <a href={releases} rel="noopener">Releases</a>
+        <a href={`${repo}/blob/main/SECURITY.md`} rel="noopener">Security</a>
+        <a href={`${repo}/blob/main/LICENSE`} rel="noopener">Apache&nbsp;2.0</a>
+      </nav>
+    </footer>
+
+    <script is:inline>
+      const box = document.querySelector('[data-copy]');
+      if (box) {
+        const btn = box.querySelector('.copy');
+        const cmd = document.getElementById('install-cmd');
+        btn.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(cmd.textContent.trim());
+            const prev = btn.textContent;
+            btn.textContent = 'Copied';
+            btn.classList.add('ok');
+            setTimeout(() => { btn.textContent = prev; btn.classList.remove('ok'); }, 1400);
+          } catch { /* clipboard unavailable — no-op */ }
+        });
+      }
+    </script>
+
+    <style>
+      :root {
+        --bg: #0a0b0d;
+        --bg-soft: #101216;
+        --surface: #14171c;
+        --surface-2: #171b21;
+        --border: #23272e;
+        --border-soft: #1b1f25;
+        --text: #e7e9ec;
+        --muted: #969ba3;
+        --faint: #6b7079;
+        --accent: #5eead4;
+        --accent-dim: #2dd4bf;
+        --radius: 14px;
+        --maxw: 780px;
+        --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, monospace;
+        --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      html { scroll-behavior: smooth; }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+        overflow-x: hidden;
+      }
+
+      .glow {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background:
+          radial-gradient(60% 42% at 50% -8%, rgba(94, 234, 212, 0.10), transparent 70%),
+          radial-gradient(30% 30% at 88% 8%, rgba(94, 234, 212, 0.05), transparent 70%);
+      }
+
+      main, .nav, .foot { position: relative; z-index: 1; }
+
+      code { font-family: var(--mono); font-size: 0.92em; }
+
+      /* nav */
+      .nav {
+        max-width: var(--maxw);
+        margin: 0 auto;
+        padding: 22px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        color: var(--text);
+        text-decoration: none;
+        font-family: var(--mono);
+        font-weight: 600;
+        font-size: 1.05rem;
+        letter-spacing: -0.01em;
+      }
+      .brand .mark { color: var(--accent); }
+      .nav-links { display: flex; gap: 22px; align-items: center; }
+      .nav-links a {
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 0.9rem;
+        transition: color 0.15s ease;
+      }
+      .nav-links a:hover { color: var(--text); }
+
+      /* hero */
+      main { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+      .hero { padding: 64px 0 40px; }
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        letter-spacing: 0.04em;
+        color: var(--accent-dim);
+        text-transform: lowercase;
+        margin-bottom: 20px;
+      }
+      h1 {
+        font-size: clamp(2.4rem, 6vw, 3.6rem);
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+        font-weight: 680;
+        margin: 0 0 22px;
+      }
+      .accent {
+        color: var(--accent);
+        position: relative;
+      }
+      .lede {
+        font-size: 1.14rem;
+        color: var(--muted);
+        max-width: 60ch;
+        margin: 0 0 34px;
+      }
+      .lede code { color: var(--text); background: var(--surface); padding: 1px 6px; border-radius: 6px; }
+      .lede em { color: var(--text); font-style: normal; border-bottom: 1px dashed var(--border); }
+      .lede strong { color: var(--text); font-weight: 600; }
+
+      /* install command box */
+      .cmd {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 14px;
+        background: linear-gradient(180deg, var(--surface-2), var(--surface));
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 14px 14px 14px 16px;
+        box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset, 0 20px 50px -30px rgba(0,0,0,0.9);
+      }
+      .cmd-chrome { display: inline-flex; gap: 6px; }
+      .cmd-chrome span { width: 10px; height: 10px; border-radius: 50%; background: var(--border); }
+      .cmd-chrome span:first-child { background: #2a2f37; }
+      .cmd > code {
+        color: var(--text);
+        font-size: 0.86rem;
+        white-space: nowrap;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      .cmd > code::-webkit-scrollbar { display: none; }
+      .copy {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--accent);
+        background: rgba(94, 234, 212, 0.08);
+        border: 1px solid rgba(94, 234, 212, 0.22);
+        border-radius: 8px;
+        padding: 6px 12px;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      }
+      .copy:hover { background: rgba(94, 234, 212, 0.14); }
+      .copy.ok { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+      .hero-sub {
+        margin-top: 14px;
+        font-size: 0.85rem;
+        color: var(--faint);
+        font-family: var(--mono);
+      }
+
+      /* sections */
+      section h2 {
+        font-size: 1.5rem;
+        letter-spacing: -0.02em;
+        font-weight: 640;
+        margin: 0 0 10px;
+      }
+      .section-lede { color: var(--muted); max-width: 58ch; margin: 0 0 4px; }
+      .how, .install, .start { padding: 46px 0; border-top: 1px solid var(--border-soft); }
+
+      /* steps */
+      .steps { list-style: none; padding: 0; margin: 26px 0 0; display: grid; gap: 2px; }
+      .steps li {
+        display: grid;
+        grid-template-columns: 52px 1fr;
+        gap: 18px;
+        align-items: baseline;
+        padding: 16px 14px;
+        border-radius: 10px;
+        transition: background 0.15s ease;
+      }
+      .steps li:hover { background: var(--bg-soft); }
+      .step-n {
+        font-family: var(--mono);
+        font-size: 0.82rem;
+        color: var(--accent-dim);
+        opacity: 0.8;
+      }
+      .step-k {
+        color: var(--text);
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+      .step-body p { margin: 4px 0 0; color: var(--muted); font-size: 0.96rem; }
+
+      /* install options */
+      .opts {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 14px;
+        margin-top: 24px;
+      }
+      .opt {
+        background: var(--surface);
+        border: 1px solid var(--border-soft);
+        border-radius: 12px;
+        padding: 18px;
+      }
+      .opt h3 { margin: 0 0 6px; font-size: 0.98rem; font-family: var(--mono); color: var(--accent); font-weight: 600; }
+      .opt p { margin: 0 0 12px; color: var(--muted); font-size: 0.9rem; }
+      .opt pre {
+        margin: 0;
+        background: var(--bg);
+        border: 1px solid var(--border-soft);
+        border-radius: 8px;
+        padding: 10px 12px;
+        overflow-x: auto;
+      }
+      .opt pre code { font-size: 0.78rem; color: var(--text); }
+      .opt-link {
+        display: inline-block;
+        color: var(--accent);
+        text-decoration: none;
+        font-family: var(--mono);
+        font-size: 0.85rem;
+        border-bottom: 1px solid rgba(94,234,212,0.3);
+        padding-bottom: 1px;
+      }
+      .opt-link:hover { border-bottom-color: var(--accent); }
+
+      /* quick start terminal */
+      .terminal {
+        margin: 22px 0 20px;
+        background: linear-gradient(180deg, var(--surface-2), var(--surface));
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px 22px;
+        overflow-x: auto;
+        box-shadow: 0 20px 50px -34px rgba(0,0,0,0.9);
+      }
+      .terminal code {
+        color: var(--text);
+        font-size: 0.85rem;
+        line-height: 1.85;
+        white-space: pre;
+        display: block;
+      }
+
+      /* footer */
+      .foot {
+        max-width: var(--maxw);
+        margin: 40px auto 0;
+        padding: 28px 24px 48px;
+        border-top: 1px solid var(--border-soft);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+      .foot-mark {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--faint);
+        font-family: var(--mono);
+        font-size: 0.9rem;
+      }
+      .foot-mark svg { color: var(--accent-dim); }
+      .foot-links { display: flex; gap: 20px; flex-wrap: wrap; }
+      .foot-links a { color: var(--muted); text-decoration: none; font-size: 0.86rem; transition: color 0.15s ease; }
+      .foot-links a:hover { color: var(--text); }
+
+      @media (max-width: 560px) {
+        .nav-links { gap: 16px; }
+        .nav-links a:not(:last-child) { display: none; }
+        .hero { padding: 40px 0 30px; }
+        .cmd { grid-template-columns: 1fr auto; }
+        .cmd-chrome { display: none; }
+        .steps li { grid-template-columns: 40px 1fr; gap: 12px; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+        * { transition: none !important; }
+      }
+    </style>
+  </body>
+</html>
