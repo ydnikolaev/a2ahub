@@ -154,10 +154,18 @@ log "checksum verified"
 bin_path="${workdir}/${asset_name}"
 chmod +x "$bin_path"
 
-install_dir="/usr/local/bin"
-if [ ! -w "$install_dir" ] 2>/dev/null; then
-  install_dir="${HOME}/.local/bin"
+# A2A_INSTALL_DIR pins the destination (useful for a sandboxed/CI install, or
+# a machine where neither default is the right place); otherwise prefer
+# /usr/local/bin and fall back to ~/.local/bin when it is not writable.
+if [ -n "${A2A_INSTALL_DIR:-}" ]; then
+  install_dir="${A2A_INSTALL_DIR}"
   mkdir -p "$install_dir"
+else
+  install_dir="/usr/local/bin"
+  if [ ! -w "$install_dir" ] 2>/dev/null; then
+    install_dir="${HOME}/.local/bin"
+    mkdir -p "$install_dir"
+  fi
 fi
 
 cp "$bin_path" "${install_dir}/${BINARY}"
@@ -171,58 +179,125 @@ if [ "$os" = "darwin" ]; then
   log "  (if Gatekeeper still balks, run: xattr -d com.apple.quarantine ${install_dir}/${BINARY})"
 fi
 
-# --- 8. PATH hint -------------------------------------------------------------
+# --- 8. shell integration: PATH + completion (best-effort) ------------------
+# An installed binary the shell cannot find is a failed install as far as the
+# user is concerned, so this step WIRES the shell rather than printing advice
+# and hoping: it appends one guarded, idempotent block to the login shell's rc
+# file (PATH when needed, plus the two lines zsh needs to load completions).
+# Opt out with A2A_NO_MODIFY_PATH=1 — then the same lines are printed instead.
+# Every failure here is swallowed: a shell that could not be wired must never
+# abort an otherwise successful binary install.
 
-case ":$PATH:" in
-  *":${install_dir}:"*) ;;
-  *) log "note: ${install_dir} isn't on your PATH — add: export PATH=\"${install_dir}:\$PATH\"" ;;
-esac
+a2a_bin="${install_dir}/${BINARY}"
+shell_name="$(basename "${SHELL:-sh}")"
+block_start="# >>> a2a install >>>"
+block_end="# <<< a2a install <<<"
 
-# --- 9. shell completion (best-effort; never fails the install) -------------
-# Set up Tab-completion so every verb is discoverable right after install.
-# Generated from the INSTALLED, de-quarantined binary (not the temp copy) so
-# macOS Gatekeeper can't block it. Any failure is swallowed (|| true): a broken
-# completion setup must never abort a successful binary install.
-setup_completion() {
-  a2a_bin="${install_dir}/${BINARY}"
-  shell_name="$(basename "${SHELL:-}")"
+# rc_needs_line FILE LINE -> true when FILE does not already contain LINE.
+rc_needs_line() {
+  [ -f "$1" ] || return 0
+  ! grep -qF "$2" "$1" 2>/dev/null
+}
+
+# append_block FILE LINES... — writes the guarded block, once. A file that
+# already carries the marker is left alone (re-running the installer, or
+# `a2a update`, never appends a second copy).
+append_block() {
+  rc_file="$1"
+  shift
+  [ -n "$rc_file" ] || return 0
+  if [ -f "$rc_file" ] && grep -qF "$block_start" "$rc_file" 2>/dev/null; then
+    log "shell: ${rc_file} already carries the a2a block — left untouched"
+    return 0
+  fi
+  {
+    printf '\n%s\n' "$block_start"
+    for line in "$@"; do printf '%s\n' "$line"; done
+    printf '%s\n' "$block_end"
+  } >> "$rc_file" 2>/dev/null || return 1
+  log "shell: wired ${rc_file} (PATH/completions) — run 'source ${rc_file}' or open a new shell"
+  return 0
+}
+
+# print_block FILE LINES... — the A2A_NO_MODIFY_PATH=1 path: say exactly what
+# to paste, never touch the file.
+print_block() {
+  log "shell: A2A_NO_MODIFY_PATH is set — add these lines to $1 yourself:"
+  shift
+  for line in "$@"; do log "    $line"; done
+}
+
+setup_shell() {
+  path_line="export PATH=\"${install_dir}:\$PATH\""
+  need_path=1
+  case ":$PATH:" in
+    *":${install_dir}:"*) need_path=0 ;;
+  esac
 
   case "$shell_name" in
-    bash)
-      dest_dir="${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
-      mkdir -p "$dest_dir" || return 0
-      "$a2a_bin" completion bash > "${dest_dir}/${BINARY}" 2>/dev/null || return 0
-      log "bash completion installed -> ${dest_dir}/${BINARY}"
-      log "  (needs the bash-completion package; or load now: source <(${BINARY} completion bash))"
-      ;;
     zsh)
-      dest_dir="${HOME}/.zsh/completions"
-      mkdir -p "$dest_dir" || return 0
-      "$a2a_bin" completion zsh > "${dest_dir}/_${BINARY}" 2>/dev/null || return 0
-      log "zsh completion installed -> ${dest_dir}/_${BINARY}"
-      case ":${FPATH:-}:" in
-        *":${dest_dir}:"*) log "  (already on \$fpath — open a new shell to pick it up)" ;;
-        *)
-          log "  to enable it, add these two lines to ~/.zshrc, then open a new shell:"
-          log "    fpath=(${dest_dir} \$fpath)"
-          log "    autoload -Uz compinit && compinit"
-          ;;
-      esac
+      rc_file="${ZDOTDIR:-$HOME}/.zshrc"
+      comp_dir="${HOME}/.zsh/completions"
+      mkdir -p "$comp_dir" || return 0
+      "$a2a_bin" completion zsh > "${comp_dir}/_${BINARY}" 2>/dev/null || return 0
+      log "zsh completion installed -> ${comp_dir}/_${BINARY}"
+
+      set --
+      if [ "$need_path" -eq 1 ]; then set -- "$path_line"; fi
+      set -- "$@" "fpath=(${comp_dir} \$fpath)"
+      # Only add compinit when the rc does not already run it (a framework
+      # like oh-my-zsh runs its own; two compinit calls just cost startup
+      # time).
+      if rc_needs_line "$rc_file" "compinit"; then
+        set -- "$@" "autoload -Uz compinit && compinit"
+      fi
+      [ "$#" -gt 0 ] || return 0
+      if [ -n "${A2A_NO_MODIFY_PATH:-}" ]; then print_block "$rc_file" "$@"; else append_block "$rc_file" "$@"; fi
+      ;;
+    bash)
+      rc_file="${HOME}/.bashrc"
+      comp_dir="${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
+      mkdir -p "$comp_dir" || return 0
+      "$a2a_bin" completion bash > "${comp_dir}/${BINARY}" 2>/dev/null || return 0
+      log "bash completion installed -> ${comp_dir}/${BINARY} (needs the bash-completion package)"
+
+      [ "$need_path" -eq 1 ] || return 0
+      if [ -n "${A2A_NO_MODIFY_PATH:-}" ]; then print_block "$rc_file" "$path_line"; else append_block "$rc_file" "$path_line"; fi
+      # macOS bash reads ~/.bash_profile for login shells and may never
+      # source ~/.bashrc — say so rather than leaving a silent no-op.
+      if [ "$os" = "darwin" ] && [ -f "${HOME}/.bash_profile" ] && rc_needs_line "${HOME}/.bash_profile" ".bashrc"; then
+        log "  note: ~/.bash_profile does not source ~/.bashrc — add: [ -f ~/.bashrc ] && . ~/.bashrc"
+      fi
       ;;
     fish)
-      dest_dir="${HOME}/.config/fish/completions"
-      mkdir -p "$dest_dir" || return 0
-      "$a2a_bin" completion fish > "${dest_dir}/${BINARY}.fish" 2>/dev/null || return 0
-      log "fish completion installed -> ${dest_dir}/${BINARY}.fish (open a new shell to pick it up)"
+      comp_dir="${HOME}/.config/fish/completions"
+      mkdir -p "$comp_dir" || return 0
+      "$a2a_bin" completion fish > "${comp_dir}/${BINARY}.fish" 2>/dev/null || return 0
+      log "fish completion installed -> ${comp_dir}/${BINARY}.fish"
+
+      [ "$need_path" -eq 1 ] || return 0
+      rc_file="${HOME}/.config/fish/config.fish"
+      mkdir -p "$(dirname "$rc_file")" || return 0
+      if [ -n "${A2A_NO_MODIFY_PATH:-}" ]; then
+        print_block "$rc_file" "fish_add_path ${install_dir}"
+      else
+        append_block "$rc_file" "fish_add_path ${install_dir}"
+      fi
       ;;
     *)
       log "shell completion available: run '${BINARY} completion <bash|zsh|fish>' to generate it"
+      if [ "$need_path" -eq 1 ]; then
+        log "note: ${install_dir} isn't on your PATH — add: ${path_line}"
+      fi
       ;;
   esac
 }
-setup_completion || true
+setup_shell || true
 
 log "done — run '${BINARY}' with no arguments to see the command list."
+log "next: 'a2a init --system <your-system> --space <space-repo-url>' then 'a2a doctor'."
+log "  writes (sync/submit/doctor) need a GitHub token: a2a uses 'gh auth token' when the"
+log "  GitHub CLI is authenticated, or export A2A_TOKEN_<SPACE_ID> to override it."
 
 # --- other channels -----------------------------------------------------------
 # Already installed a2a? `a2a update` runs this exact download+verify contract
