@@ -1,0 +1,2 @@
+code: FB-004
+note: "file is ~27 KiB, past the 16 KiB whole-file cap (§T2); schema-valid by design — JSON Schema has no byte-size keyword, the cap is a runtime guard."

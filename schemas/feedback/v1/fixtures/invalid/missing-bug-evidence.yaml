@@ -1,0 +1,19 @@
+feedback: v1
+id: fb-20260714-e7f809
+kind: bug
+severity: major
+title: "bug filed with no evidence block at all"
+summary: >-
+  kind: bug requires evidence.steps/expected/actual (§T2, this schema's
+  bug-conditional if/then); this fixture omits `evidence` entirely.
+context:
+  a2a_version: v0.1.1
+  os_arch: darwin/arm64
+  surface: cli
+checks:
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+status: new

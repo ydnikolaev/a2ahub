@@ -1,0 +1,6 @@
+# External-intake feedback backlog (I6, spec 25-agent-feedback.md §1/§T2).
+# Deliberately separate from docs/backlog.md; `a2a feedback triage` appends
+# accepted rows here. Schema: schemas/feedback/v1/backlog.schema.json.
+backlog: v1
+wip_limit: 16
+items: []

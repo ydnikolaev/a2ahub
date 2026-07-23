@@ -1,0 +1,21 @@
+feedback: v1
+id: fb-20260710-a3b4c5
+kind: protocol
+severity: minor
+title: "announcement schema has no room for a superseding artifact ref"
+summary: >-
+  Filing a supersede announcement this session, I wanted to point at the
+  new artifact replacing this one, but announcement.schema.json's fields
+  only cover deprecation, not a forward pointer to what replaces it.
+context:
+  a2a_version: v0.1.1
+  os_arch: linux/amd64
+  surface: protocol
+proposal: "add an optional supersedes ref field to announcement.schema.json, pinned like refs[]"
+checks:
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+status: new

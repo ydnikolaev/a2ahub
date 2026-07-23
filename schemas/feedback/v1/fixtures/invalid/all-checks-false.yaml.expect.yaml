@@ -1,0 +1,2 @@
+code: FB-003
+note: "every checks.* gate is false; schema-valid by design (I5's ALL-true assertion is a runtime gate, not a schema keyword) — 13b's validator rejects this, not schema_test."
