@@ -40,7 +40,7 @@ import (
 // groupedToolNames is the P15 capability-grouped tool set (spec 15 §T1).
 var groupedToolNames = []string{
 	"a2a_contract", "a2a_exchange", "a2a_lifecycle",
-	"a2a_new", "a2a_read", "a2a_submit",
+	"a2a_new", "a2a_read", "a2a_submit", "a2a_whatsnew",
 }
 
 // mcpExcludedVerbs is the CLI-only verb set with NO MCP tool by design
@@ -83,6 +83,8 @@ func (ta toolAction) verb() string {
 		return "new"
 	case "a2a_submit":
 		return "submit"
+	case "a2a_whatsnew":
+		return "whatsnew"
 	default:
 		// a2a_read view == the read verb; a2a_lifecycle / a2a_exchange
 		// action == the lifecycle/exchange verb.
@@ -131,7 +133,7 @@ func mcpCapabilityPairs(t *testing.T) []toolAction {
 	for _, v := range mcp.ReadViews {
 		pairs = append(pairs, toolAction{"a2a_read", v})
 	}
-	pairs = append(pairs, toolAction{"a2a_new", ""}, toolAction{"a2a_submit", ""})
+	pairs = append(pairs, toolAction{"a2a_new", ""}, toolAction{"a2a_submit", ""}, toolAction{"a2a_whatsnew", ""})
 	for _, a := range mcp.LifecycleActions {
 		pairs = append(pairs, toolAction{"a2a_lifecycle", a})
 	}

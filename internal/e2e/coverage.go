@@ -135,6 +135,7 @@ var coverageManifest = []coverageEntry{
 	{Verb: "html", Txtar: "ops_html.txtar"},
 	{Verb: "skill", Txtar: "ops_skill.txtar"},
 	{Verb: "version", Txtar: "ops_version.txtar"},
+	{Verb: "whatsnew", Txtar: "whatsnew.txtar"},
 
 	// --- Feedback (P25) — spec 26 §2 Feedback row: this phase only
 	// registers P25's own evidence, 4 exec-txtar + 1 Go-test ref. --------
