@@ -1,0 +1,38 @@
+# Dogfood + canary (P33, spec 33 §T3, AC-930.2, risk #1): a2ahub runs its OWN
+# reusable space-validation workflow on every PR, so a change that would break
+# the workflow for every downstream space is caught HERE first — a bad release
+# can never silently reach the fleet.
+#
+# It calls the reusable workflow by LOCAL path (`./.github/workflows/…`), which
+# runs the SAME job against this PR's current code (`a2a-ref: ""` → build
+# ./cmd/a2a), never a released version. There is no SHA/chicken-egg: local
+# `uses:` always resolves to this commit.
+#
+# The target is `space-template/` — the canonical, artifact-less-but-valid
+# space skeleton (`v3-full-repo` reports 0 artifacts → exit 0). That exercises
+# the full acquisition + `validate --ci` path a space runs, without needing a
+# populated fixture space in this repo.
+#
+# The caller job is named `a2a-validate` so the surfaced check is
+# `a2a-validate / validate` — the exact context a migrated space's branch
+# protection binds to. This job is NOT (and need not be) a required check on
+# a2ahub itself; `make check` (ci.yml) remains a2ahub's own gate.
+name: a2a-validate-dogfood
+
+on:
+  pull_request:
+
+# A reusable workflow can only DOWNGRADE the caller's token, so the grants the
+# reusable `validate` job needs (contents:read + pull-requests:read) must be
+# declared here, at the caller.
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  a2a-validate:
+    uses: ./.github/workflows/a2a-validate-reusable.yml
+    with:
+      mode: v3-full-repo
+      space-path: space-template
+      a2a-ref: "" # build ./cmd/a2a from this PR — canary the current code
