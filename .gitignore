@@ -10,6 +10,10 @@
 /dist/
 /coverage.out
 
+# Local a2a runtime state (config + cache + generated dashboard) — created when
+# you run the dev `a2a` from this repo; never committed.
+/.a2a/
+
 # macOS
 .DS_Store
 
@@ -25,5 +29,6 @@ AGENTS.md
 CLAUDE.md
 scripts/*
 !scripts/install.sh
+!scripts/dev-install.sh
 !scripts/e2e-authoring-smoke.sh
 !scripts/classify-guard.sh

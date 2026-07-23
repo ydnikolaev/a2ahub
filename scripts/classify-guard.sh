@@ -30,11 +30,11 @@ cd "$(git rev-parse --show-toplevel)"
 # never drift into a leak. PENDING entries are deliberately NOT required to be
 # gitignored (see docs/ above) until they graduate to DENY.
 ALLOW_DIRS=( .github cmd internal schemas skill space-template testkit )
-ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh )
+ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh )
 DENY_DIRS=( .agents .claude .codex .mate )   # scripts/ handled below (install.sh + e2e-authoring-smoke.sh are the public exceptions)
 DENY_FILES=( AGENTS.md CLAUDE.md )
 PENDING_DIRS=( docs )   # deferred to P6 — tracked today, tolerated by check 1, classified by check 2, exempt from check 3.
-IGNORE=( .git a2a bin dist go.work go.work.sum coverage.out .DS_Store .env )
+IGNORE=( .git a2a bin dist go.work go.work.sum coverage.out .DS_Store .env .a2a )
 
 fail=0
 flag() { printf '  \033[31m✗\033[0m %s\n' "$1" >&2; fail=1; }
@@ -53,6 +53,7 @@ while IFS= read -r f; do
   in_list "$t" "${ALLOW_DIRS[@]}" && continue
   if [ "$t" = scripts ]; then
     [ "$f" = "scripts/install.sh" ] && continue
+    [ "$f" = "scripts/dev-install.sh" ] && continue
     [ "$f" = "scripts/e2e-authoring-smoke.sh" ] && continue
     flag "tracked but NOT public: $f  → 'git rm --cached $f' (private), or add it to ALLOW in scripts/classify-guard.sh (public)"
     continue
