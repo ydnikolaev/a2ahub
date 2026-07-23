@@ -1,0 +1,81 @@
+schema: release-notes/v1
+version: "0.4.0"
+released: "2026-07-23"
+headline: "Second writes on one artifact no longer vanish; other systems' work is finally visible; the skill is discoverable"
+changes:
+  - id: RN-0400-1
+    kind: fix
+    impact: high
+    subject: "a write's branch names the write, not the artifact — a second transition no longer silently drops"
+    detail: >
+      Through 0.3.0 the write funnel keyed its branch on the ARTIFACT, so once
+      any write by your system on an artifact had merged, every LATER write by
+      your system on that same artifact short-circuited with exit 0 and wrote
+      nothing. `ack` then `accept` lost the accept; a contract's publish,
+      deprecate and retire all collapsed into its submit. Fixed: the branch
+      now names the verb too, so each transition is its own write.
+    affects: [lifecycle, contract, submit]
+    action:
+      scope: space
+      why: "any second transition on one artifact you believe you recorded on 0.2.0/0.3.0 may not actually exist in the space"
+      detect: ["a2a outbox --json"]
+      run: ["a2a lifecycle <verb> <artifact-id>"]
+  - id: RN-0400-2
+    kind: fix
+    impact: high
+    subject: "a2a sync moves the mirror's working tree — other systems' published work is now visible"
+    detail: >
+      Through 0.3.0 `a2a sync` fetched refs but never moved the mirror's
+      working tree, and every read walks the tree — so nothing another system
+      published after your clone was ever visible, and the fail-closed retire
+      guard was reading stale data. Fixed: sync now checks out the fetched head.
+    affects: [sync]
+    action:
+      scope: local
+      why: "re-run sync once on 0.4.0 to finally see everything other systems published since your clone"
+      detect: ["a2a inbox"]
+      run: ["a2a sync"]
+  - id: RN-0400-3
+    kind: fix
+    impact: normal
+    subject: "contract deprecate authors a schema-valid announcement — retire is reachable"
+    detail: >
+      Through 0.3.0 `contract deprecate` left the announcement template's
+      space/to/title placeholders unfilled, so V2 refused it every time and
+      retire (which needs a prior deprecate) was unreachable. Fixed on both the
+      CLI and MCP surfaces — the end-of-life path works.
+    affects: [contract]
+    action:
+      scope: none
+      why: "the verb now just works — nothing to run unless you were blocked on it"
+  - id: RN-0400-4
+    kind: feat
+    impact: normal
+    subject: "the a2ahub skill is discoverable by your agent's runtime (a2a skill link)"
+    detail: >
+      `a2a skill install` writes the operating manual into .a2ahub/skill/, but
+      your agent's runtime reads it from its own home (Claude Code from
+      .claude/skills/ + CLAUDE.md, Codex from .codex/skills/ + AGENTS.md).
+      `a2a skill link` now installs a discovery entry (a symlink, or a stub)
+      pointing at the one installed tree, and `a2a update` refreshes it — so the
+      manual your agent reads is never older than your binary.
+    affects: [skill, init, doctor]
+    action:
+      scope: local
+      why: "link the installed manual into your agent's skills home so it is actually read"
+      detect: ["a2a doctor"]
+      run: ["a2a skill link"]
+  - id: RN-0400-5
+    kind: feat
+    impact: low
+    subject: "a2a whatsnew — the release directives you are reading right now"
+    detail: >
+      An authored, version-keyed, embedded release-notes corpus surfaced as
+      `a2a whatsnew [--since <v>] [--json]` (and an MCP twin), rendered after
+      every `a2a update`. a2a informs with structured directives; your agent
+      decides and runs them. A `scope: space` directive is emitted as a command
+      for you to run through the funnel — a2a never runs it for you.
+    affects: []
+    action:
+      scope: none
+      why: "this is the mechanism itself"
