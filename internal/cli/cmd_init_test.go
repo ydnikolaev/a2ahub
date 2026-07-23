@@ -165,6 +165,90 @@ func TestConnectIdempotent(t *testing.T) {
 	}
 }
 
+// TestConnectRecordsCredentialReferenceUnderTheAuthoritativeID: the space
+// id the credentials map must be keyed by comes out of the mirror's own
+// space.yaml, which only connect ever reads — so connect is the one place
+// that can record a reference under the RIGHT key. It appends to the
+// operator's existing machine config without disturbing what is already
+// there (comments and all).
+func TestConnectRecordsCredentialReferenceUnderTheAuthoritativeID(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	machinePath := filepath.Join(dir, "machine.yaml")
+	existing := "# my own notes\nmirror_root: " + filepath.Join(dir, "mirrors") + "\ncredentials:\n  other-space: env:A2A_TOKEN_OTHER_SPACE\n"
+	if err := os.WriteFile(machinePath, []byte(existing), 0o600); err != nil {
+		t.Fatalf("seed machine config: %v", err)
+	}
+
+	cmd := cli.NewConnectCommand(cfgPath, machinePath, dir)
+	cmd.SetDefaultCredentialRefForTest(func(_ context.Context, id string) string {
+		return "env:A2A_TOKEN_" + strings.ToUpper(id)
+	})
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{fx.RemoteURL()}, io); code != 0 {
+		t.Fatalf("connect: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig: %v", err)
+	}
+	id := cfg.Spaces[0].ID
+
+	machine, err := space.LoadMachineConfig(machinePath)
+	if err != nil {
+		t.Fatalf("LoadMachineConfig: %v", err)
+	}
+	if machine.Credentials[id] == "" {
+		t.Fatalf("expected a credential reference under the authoritative id %q; got %+v", id, machine.Credentials)
+	}
+	if machine.Credentials["other-space"] != "env:A2A_TOKEN_OTHER_SPACE" {
+		t.Fatalf("the operator's existing entry must survive; got %+v", machine.Credentials)
+	}
+	raw, err := os.ReadFile(machinePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !bytes.Contains(raw, []byte("# my own notes")) {
+		t.Fatalf("the operator's comments must survive the edit; got:\n%s", raw)
+	}
+
+	// Idempotent: a second connect leaves the file byte-identical.
+	before := string(raw)
+	io2, _, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{fx.RemoteURL()}, io2); code != 0 {
+		t.Fatalf("second connect: code = %d", code)
+	}
+	after, err := os.ReadFile(machinePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(after) != before {
+		t.Fatalf("second connect rewrote the machine config:\n--- before ---\n%s\n--- after ---\n%s", before, after)
+	}
+}
+
+// TestConnectLeavesMissingMachineConfigToInit: connect never CREATES the
+// machine config (that is `a2a init`'s job) — a missing one is not an error.
+func TestConnectLeavesMissingMachineConfigToInit(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon")
+	dir := t.TempDir()
+	machinePath := filepath.Join(dir, "machine.yaml")
+
+	cmd := cli.NewConnectCommand(filepath.Join(dir, ".a2a", "config.yaml"), machinePath, dir)
+	cmd.SetDefaultCredentialRefForTest(func(_ context.Context, id string) string { return "env:A2A_TOKEN_" + id })
+	io, out, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{fx.RemoteURL()}, io); code != 0 {
+		t.Fatalf("connect: code = %d; output=%s", code, out.String())
+	}
+	if _, err := os.Stat(machinePath); !os.IsNotExist(err) {
+		t.Fatalf("connect must not create the machine config itself (stat err = %v)", err)
+	}
+}
+
 func TestDisconnectRemovesConfigAndMirror(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon")
@@ -444,9 +528,9 @@ func TestConnectFallsBackToURLIDWhenManifestUnparseable(t *testing.T) {
 
 // TestInitSeedsMachineConfigSkeleton: init with a wired MachineConfigPath
 // and no existing machine config writes a valid, LoadMachineConfig-parseable
-// skeleton (empty credentials, no literal secret value ever written) and
-// prints, for every connected space, the exact env var `a2a submit` will
-// look for.
+// skeleton carrying a WORKING credential REFERENCE per connected space (a
+// reference, never a literal secret) and prints the exact env var that
+// overrides it.
 func TestInitSeedsMachineConfigSkeleton(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -454,6 +538,9 @@ func TestInitSeedsMachineConfigSkeleton(t *testing.T) {
 	machinePath := filepath.Join(dir, "machine", "config.yaml")
 	cmd := cli.NewInitCommand(cfgPath)
 	cmd.MachineConfigPath = machinePath
+	cmd.SetDefaultCredentialRefForTest(func(_ context.Context, id string) string {
+		return "env:A2A_TOKEN_" + strings.ToUpper(id)
+	})
 
 	io, out, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{"--system", "axon", "--space", "https://example.invalid/org/getvisa.git"}, io)
@@ -468,8 +555,11 @@ func TestInitSeedsMachineConfigSkeleton(t *testing.T) {
 	if machine.MirrorRoot == "" {
 		t.Fatal("expected the skeleton to set a non-empty mirror_root")
 	}
-	if len(machine.Credentials) != 0 {
-		t.Fatalf("Credentials = %+v, want empty (a skeleton never writes a literal credential)", machine.Credentials)
+	if got := machine.Credentials["getvisa"]; got != "env:A2A_TOKEN_GETVISA" {
+		t.Fatalf("Credentials[getvisa] = %q, want the seeded reference", got)
+	}
+	if _, err := space.ParseCredentialReference(machine.Credentials["getvisa"]); err != nil {
+		t.Fatalf("the seeded value must be a parseable credential REFERENCE: %v", err)
 	}
 
 	raw, err := os.ReadFile(machinePath)
@@ -477,10 +567,10 @@ func TestInitSeedsMachineConfigSkeleton(t *testing.T) {
 		t.Fatalf("ReadFile(%s): %v", machinePath, err)
 	}
 	if !bytes.Contains(raw, []byte("A2A_TOKEN_")) {
-		t.Fatalf("expected the skeleton's commented example to name the A2A_TOKEN_ convention; got:\n%s", raw)
+		t.Fatalf("expected the skeleton to name the A2A_TOKEN_ convention; got:\n%s", raw)
 	}
-	if !strings.Contains(out.String(), `set the credential for space "getvisa"`) || !strings.Contains(out.String(), "A2A_TOKEN_GETVISA") {
-		t.Fatalf("expected an actionable credential-env-var hint naming space \"getvisa\"; got %q", out.String())
+	if !strings.Contains(out.String(), `credential for space "getvisa"`) || !strings.Contains(out.String(), "A2A_TOKEN_GETVISA") {
+		t.Fatalf("expected an actionable credential hint naming space \"getvisa\"; got %q", out.String())
 	}
 }
 
@@ -502,6 +592,9 @@ func TestInitNeverOverwritesExistingMachineConfig(t *testing.T) {
 
 	cmd := cli.NewInitCommand(cfgPath)
 	cmd.MachineConfigPath = machinePath
+	cmd.SetDefaultCredentialRefForTest(func(_ context.Context, id string) string {
+		return "env:A2A_TOKEN_" + strings.ToUpper(id)
+	})
 
 	io, out, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{"--system", "axon", "--space", "https://example.invalid/org/getvisa.git"}, io)
@@ -516,7 +609,7 @@ func TestInitNeverOverwritesExistingMachineConfig(t *testing.T) {
 	if string(raw) != existing {
 		t.Fatalf("existing machine config was modified:\n--- want ---\n%s\n--- got ---\n%s", existing, raw)
 	}
-	if !strings.Contains(out.String(), `set the credential for space "getvisa"`) {
+	if !strings.Contains(out.String(), `credential for space "getvisa"`) {
 		t.Fatalf("expected the credential hint even when the machine config already existed; got %q", out.String())
 	}
 }

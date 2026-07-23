@@ -85,9 +85,19 @@ type InitCommand struct {
 
 	// writeFile/loadProjectConfig are DI seams (rails, mirrors
 	// DoctorCommand's own convention) so tests never touch a real
-	// .a2a/config.yaml path.
-	writeFile         func(path string, data []byte, perm os.FileMode) error
-	loadProjectConfig func(path string) (space.ProjectConfig, error)
+	// .a2a/config.yaml path. defaultCredentialRef is the same kind of seam
+	// over the credential-reference probe (nil = internal/space's real one,
+	// which shells out to `gh`).
+	writeFile            func(path string, data []byte, perm os.FileMode) error
+	loadProjectConfig    func(path string) (space.ProjectConfig, error)
+	defaultCredentialRef func(ctx context.Context, spaceID string) string
+}
+
+// SetDefaultCredentialRefForTest overrides the credential-reference probe
+// (test-only DI, rails anti-pattern #10 convention) so tests never shell
+// out to the ambient `gh`.
+func (c *InitCommand) SetDefaultCredentialRefForTest(f func(ctx context.Context, spaceID string) string) {
+	c.defaultCredentialRef = f
 }
 
 // NewInitCommand constructs the init command. projectConfigPath is
@@ -111,7 +121,7 @@ func (c *InitCommand) Synopsis() string {
 // Run implements cli.Command. Exit codes: 2 = usage error (missing
 // --system, or zero --space values); 1 = config write failure; 0 =
 // success (including the idempotent "already configured" no-op).
-func (c *InitCommand) Run(_ context.Context, args []string, stdio IO) int {
+func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	system := fs.String("system", "", "this project's own system id (required)")
@@ -141,7 +151,7 @@ func (c *InitCommand) Run(_ context.Context, args []string, stdio IO) int {
 	// FIX B runs before the idempotent short-circuit so a repeat `a2a
 	// init` still ensures/hints the machine config (e.g. an operator who
 	// deleted it after a first run).
-	if code := c.ensureMachineConfig(refs, stdio); code != 0 {
+	if code := c.ensureMachineConfig(ctx, refs, stdio); code != 0 {
 		return code
 	}
 
@@ -194,15 +204,17 @@ func (c *InitCommand) loadExisting() (space.ProjectConfig, bool) {
 // MachineConfigPath is wired (config/secrets rail — internal/cli never
 // reads os.UserHomeDir/os.Getenv itself; the path is always DI'd in from
 // wire.go). When wired and no machine config exists yet, it seeds a
-// skeleton — mirror_root plus an EMPTY, commented `credentials:` block, no
-// literal secret value ever written — so the very first `a2a submit`
-// after `a2a init` fails with an actionable "set this env var" message
-// instead of dying on a missing machine config file. An existing machine
-// config is never touched. Every connected space's exact credential env
-// var is then printed (space.ResolveCredential's "A2A_TOKEN_<SPACE-ID>"
-// convention, §7.4/§10.5) whether the skeleton was just written or already
-// existed — a repeat `a2a init` still re-surfaces the hint.
-func (c *InitCommand) ensureMachineConfig(refs []space.Ref, stdio IO) int {
+// skeleton — mirror_root plus a WORKING credential REFERENCE per connected
+// space (never a literal secret): `cmd:gh auth token` when the GitHub CLI
+// is installed and authenticated, else `env:A2A_TOKEN_<SPACE_ID>`. The
+// commented-out placeholder this used to write meant a fresh install's
+// first `a2a submit`/`a2a doctor` was red until the operator hand-edited
+// YAML, which is precisely the friction the install is supposed to remove.
+// An existing machine config is never touched (it may carry the operator's
+// own comments and entries) — it only gets the hint printed. Every
+// connected space's exact credential env var is printed either way, so a
+// repeat `a2a init` still re-surfaces it.
+func (c *InitCommand) ensureMachineConfig(ctx context.Context, refs []space.Ref, stdio IO) int {
 	if c.MachineConfigPath == "" {
 		return 0
 	}
@@ -224,16 +236,18 @@ func (c *InitCommand) ensureMachineConfig(refs []space.Ref, stdio IO) int {
 			return 1
 		}
 		// space.MachineConfig.Credentials carries `yaml:"credentials,omitempty"`
-		// (internal/space is read-only here), so an empty map never
-		// round-trips through yaml.Marshal — the empty, commented
-		// `credentials:` block is appended verbatim instead. This is
-		// still a valid, parseable MachineConfig (LoadMachineConfig sees
-		// a nil Credentials map): only the presentation, not the schema,
-		// is hand-assembled.
+		// (internal/space is read-only here), so the map never
+		// round-trips through yaml.Marshal — the `credentials:` block is
+		// appended verbatim instead. This is still a valid, parseable
+		// MachineConfig: only the presentation, not the schema, is
+		// hand-assembled.
 		var raw []byte
 		raw = append(raw, "# a2a machine config — personal, per-machine credential REFERENCES only (never commit this file; §7.4).\n"...)
 		raw = append(raw, skeleton...)
-		raw = append(raw, "credentials:\n  # <space-id>: env:A2A_TOKEN_<SPACE_ID>\n"...)
+		raw = append(raw, "credentials:\n"...)
+		for _, ref := range refs {
+			raw = append(raw, "  "+ref.ID+": "+c.credentialRef(ctx, ref.ID)+"\n"...)
+		}
 
 		if err := os.MkdirAll(filepath.Dir(c.MachineConfigPath), 0o755); err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "init: cannot create machine config directory: %v\n", err)
@@ -247,9 +261,21 @@ func (c *InitCommand) ensureMachineConfig(refs []space.Ref, stdio IO) int {
 	}
 
 	for _, ref := range refs {
-		_, _ = fmt.Fprintf(stdio.Stdout, "init: set the credential for space %q via  export A2A_TOKEN_%s=<token>\n", ref.ID, strings.ToUpper(ref.ID))
+		_, _ = fmt.Fprintf(stdio.Stdout, "init: credential for space %q: %s resolves it, or override with  export %s=<token>\n",
+			ref.ID, c.credentialRef(ctx, ref.ID), space.CredentialEnvVar(ref.ID))
 	}
 	return 0
+}
+
+// credentialRef picks the machine-config credential reference to seed//hint
+// for spaceID, through the DI'd seam (tests pin it; wire.go leaves it nil,
+// which falls back to internal/space's own probe — the only layer allowed
+// to look at the machine's environment).
+func (c *InitCommand) credentialRef(ctx context.Context, spaceID string) string {
+	if c.defaultCredentialRef != nil {
+		return c.defaultCredentialRef(ctx, spaceID)
+	}
+	return space.DefaultCredentialReference(ctx, spaceID)
 }
 
 // installSkill materializes the embedded a2ahub skill tree under SkillTarget
@@ -378,6 +404,17 @@ type ConnectCommand struct {
 	resolveMirror     func(projectRoot string, ref space.Ref, machine space.MachineConfig) string
 	cloneOrFetch      func(ctx context.Context, dir, repoURL string) error
 	writeFile         func(path string, data []byte, perm os.FileMode) error
+	readFile          func(path string) ([]byte, error)
+
+	// defaultCredentialRef is the same probe seam InitCommand carries (nil
+	// = internal/space's real one).
+	defaultCredentialRef func(ctx context.Context, spaceID string) string
+}
+
+// SetDefaultCredentialRefForTest overrides the credential-reference probe
+// (test-only DI) so tests never shell out to the ambient `gh`.
+func (c *ConnectCommand) SetDefaultCredentialRefForTest(f func(ctx context.Context, spaceID string) string) {
+	c.defaultCredentialRef = f
 }
 
 // NewConnectCommand constructs the connect command.
@@ -391,6 +428,7 @@ func NewConnectCommand(projectConfigPath, machineConfigPath, projectRoot string)
 		resolveMirror:     space.ResolveMirrorLocation,
 		cloneOrFetch:      space.CloneOrFetch,
 		writeFile:         os.WriteFile,
+		readFile:          os.ReadFile,
 	}
 }
 
@@ -438,6 +476,15 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	id := connectResolveSpaceID(dir, urlID)
 
+	// The authoritative id is known only HERE (it comes out of the freshly
+	// cloned mirror's space.yaml), and the machine config's credentials map
+	// is keyed by exactly that id — so this is the only place that can seed
+	// a credential reference under the right key. `a2a init` seeds one under
+	// its URL-derived guess; when the manifest disagrees, that entry is
+	// keyed to a space that does not exist and every write reds until an
+	// operator notices and hand-edits the YAML.
+	c.ensureCredentialEntry(ctx, machine, id, stdio)
+
 	_, existed := connectFind(cfg, id, repoURL)
 	if !existed {
 		ref := space.Ref{ID: id, RepoURL: repoURL, MirrorLocation: urlID}
@@ -462,6 +509,73 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	_, _ = fmt.Fprintf(stdio.Stdout, "connect: space %q already connected; mirror refreshed\n", id)
 	return 0
+}
+
+// ensureCredentialEntry adds `<id>: <reference>` to an EXISTING machine
+// config that has no entry for id yet, by a targeted text insert rather
+// than a marshal round-trip — the file is the operator's, and re-encoding
+// it would silently drop their comments and key order. A missing machine
+// config is left to `a2a init` (which seeds the whole skeleton); an
+// unreadable/unwritable one degrades to the printed hint. Best-effort by
+// design: connect's own job is the mirror + config entry, and this never
+// fails it.
+func (c *ConnectCommand) ensureCredentialEntry(ctx context.Context, machine space.MachineConfig, id string, stdio IO) {
+	if c.machineConfigPath == "" {
+		return
+	}
+	if _, present := machine.Credentials[id]; present {
+		return
+	}
+	raw, err := c.readFile(c.machineConfigPath)
+	if err != nil {
+		return // no machine config yet — `a2a init` seeds it, hint below still applies
+	}
+
+	ref := space.DefaultCredentialReference(ctx, id)
+	if c.defaultCredentialRef != nil {
+		ref = c.defaultCredentialRef(ctx, id)
+	}
+	updated, ok := insertCredentialEntry(raw, id, ref)
+	if !ok {
+		return
+	}
+	if err := c.writeFile(c.machineConfigPath, updated, 0o600); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "connect: could not record the credential reference for %q: %v\n", id, err)
+		return
+	}
+	_, _ = fmt.Fprintf(stdio.Stdout, "connect: recorded credential reference for space %q (%s); override any time with  export %s=<token>\n",
+		id, ref, space.CredentialEnvVar(id))
+}
+
+// insertCredentialEntry inserts `  <id>: <ref>` into a machine config's
+// raw YAML text: under an existing top-level `credentials:` key, else as a
+// new block appended at the end. Returns ok=false when an entry for id is
+// already textually present (so a rewrite is not needed). Text surgery,
+// deliberately: it preserves every comment the operator wrote.
+func insertCredentialEntry(raw []byte, id, ref string) ([]byte, bool) {
+	lines := strings.Split(string(raw), "\n")
+	entry := "  " + id + ": " + ref
+
+	credsAt := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, "credentials:") {
+			credsAt = i
+			continue
+		}
+		if credsAt >= 0 && strings.HasPrefix(strings.TrimSpace(line), id+":") {
+			return nil, false
+		}
+	}
+
+	if credsAt < 0 {
+		text := strings.TrimRight(string(raw), "\n")
+		return []byte(text + "\ncredentials:\n" + entry + "\n"), true
+	}
+	out := make([]string, 0, len(lines)+1)
+	out = append(out, lines[:credsAt+1]...)
+	out = append(out, entry)
+	out = append(out, lines[credsAt+1:]...)
+	return []byte(strings.Join(out, "\n")), true
 }
 
 func connectFind(cfg space.ProjectConfig, id, repoURL string) (space.Ref, bool) {

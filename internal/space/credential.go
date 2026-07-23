@@ -13,6 +13,54 @@ import (
 // & secrets" — env access confined to the config/credentials layer,
 // §7.4/§10.5).
 
+// CredentialEnvVar renders the per-space override env var every surface
+// honours as ResolveCredential's precedence step (a) — "A2A_TOKEN_" plus
+// the uppercased space id (§7.4/§10.5). It is the SSOT for that name:
+// cmd/a2a, internal/mcp and `a2a doctor` all render it through here, so
+// the var a user is TOLD to export can never diverge from the var a write
+// path actually reads.
+func CredentialEnvVar(spaceID string) string {
+	return "A2A_TOKEN_" + strings.ToUpper(spaceID)
+}
+
+// DefaultCredentialReference picks the machine-config credential reference
+// to seed for a newly connected space, so a fresh install can write to a
+// space without hand-editing YAML first:
+//
+//   - `cmd:gh auth token` when the GitHub CLI is installed AND already
+//     authenticated (the overwhelmingly common developer setup, and the
+//     one the operator otherwise ends up pasting into their shell rc by
+//     hand);
+//   - `env:A2A_TOKEN_<SPACE_ID>` otherwise — the documented convention,
+//     satisfied by exporting that one variable.
+//
+// Either way the reference is a REFERENCE: no secret is ever written to
+// disk, and the explicit A2A_TOKEN_<SPACE_ID> override still wins over it
+// at resolve time (ResolveCredential's precedence (a)).
+//
+// This probe lives here because internal/space's credential layer is the
+// only place allowed to look at the machine's environment (the file's own
+// os.Getenv rail, §7.4/§10.5) — callers get a plain string back.
+func DefaultCredentialReference(ctx context.Context, spaceID string) string {
+	if ghAuthTokenAvailable(ctx) {
+		return "cmd:gh auth token"
+	}
+	return "env:" + CredentialEnvVar(spaceID)
+}
+
+// ghAuthTokenAvailable reports whether `gh auth token` is installed and
+// currently yields a token. It runs the same explicit-argv command
+// ResolveCredential's cmd path would run (never sh -c) and discards the
+// output — the token itself is never returned, logged, or persisted here.
+func ghAuthTokenAvailable(ctx context.Context) bool {
+	path, err := exec.LookPath("gh")
+	if err != nil {
+		return false
+	}
+	out, err := exec.CommandContext(ctx, path, "auth", "token").Output()
+	return err == nil && strings.TrimSpace(string(out)) != ""
+}
+
 // ResolveCredential resolves a write credential per the Open Q1 RESOLVED
 // precedence (spec 05 §11 Amendments / Open questions #1): (a) the
 // explicit override env var explicitEnvVar, if set and non-empty; else

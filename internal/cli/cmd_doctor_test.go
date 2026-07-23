@@ -203,6 +203,26 @@ func TestDoctorCheckCredentials(t *testing.T) {
 		}
 	})
 
+	// The write path resolves A2A_TOKEN_<SPACE_ID> FIRST and the machine-
+	// config reference second; doctor must ask the same question, or it
+	// reds a token that `a2a submit` would happily use (and greens a
+	// reference submit would reject).
+	t.Run("passes the same explicit override env var a write does", func(t *testing.T) {
+		t.Parallel()
+		cmd := newTestDoctorCommand()
+		var sawEnvVar string
+		cmd.resolveCredential = func(_ context.Context, envVar string, _ space.CredentialReference) (host.Credential, error) {
+			sawEnvVar = envVar
+			return host.Credential{Token: "tok"}, nil
+		}
+		if ok, detail := cmd.doctorCheckCredentials(context.Background(), cfg, machine); !ok {
+			t.Fatalf("want pass, got fail: %s", detail)
+		}
+		if sawEnvVar != "A2A_TOKEN_GETVISA" {
+			t.Fatalf("explicit env var = %q, want A2A_TOKEN_GETVISA (the same one submit reads)", sawEnvVar)
+		}
+	})
+
 	t.Run("no connected spaces vacuously passes", func(t *testing.T) {
 		t.Parallel()
 		cmd := newTestDoctorCommand()

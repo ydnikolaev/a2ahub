@@ -3,6 +3,8 @@ package space
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -32,6 +34,70 @@ func TestResolveCredentialFallsBackToConfiguredEnvRef(t *testing.T) {
 	}
 	if got.Token != "configured-secret" {
 		t.Fatalf("Token = %q, want configured-secret", got.Token)
+	}
+}
+
+func TestCredentialEnvVar(t *testing.T) {
+	t.Parallel()
+
+	for in, want := range map[string]string{
+		"getvisa": "A2A_TOKEN_GETVISA",
+		"a2a":     "A2A_TOKEN_A2A",
+	} {
+		if got := CredentialEnvVar(in); got != want {
+			t.Fatalf("CredentialEnvVar(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// reason: mutates process PATH (t.Setenv) so the `gh` probe sees a stub
+// instead of whatever is installed on the machine running the tests.
+func TestDefaultCredentialReference(t *testing.T) {
+	t.Run("prefers gh when it yields a token", func(t *testing.T) {
+		dir := t.TempDir()
+		writeStubGH(t, dir, "printf 'ghp_stub\\n'\n")
+		t.Setenv("PATH", dir)
+
+		if got := DefaultCredentialReference(context.Background(), "getvisa"); got != "cmd:gh auth token" {
+			t.Fatalf("DefaultCredentialReference = %q, want the gh cmd reference", got)
+		}
+	})
+
+	t.Run("falls back to the env convention when gh fails", func(t *testing.T) {
+		dir := t.TempDir()
+		writeStubGH(t, dir, "exit 1\n")
+		t.Setenv("PATH", dir)
+
+		if got := DefaultCredentialReference(context.Background(), "getvisa"); got != "env:A2A_TOKEN_GETVISA" {
+			t.Fatalf("DefaultCredentialReference = %q, want the env reference", got)
+		}
+	})
+
+	t.Run("falls back to the env convention when gh is absent", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
+
+		if got := DefaultCredentialReference(context.Background(), "getvisa"); got != "env:A2A_TOKEN_GETVISA" {
+			t.Fatalf("DefaultCredentialReference = %q, want the env reference", got)
+		}
+	})
+
+	t.Run("an empty token is not a credential", func(t *testing.T) {
+		dir := t.TempDir()
+		writeStubGH(t, dir, "printf '   \\n'\n")
+		t.Setenv("PATH", dir)
+
+		if got := DefaultCredentialReference(context.Background(), "getvisa"); got != "env:A2A_TOKEN_GETVISA" {
+			t.Fatalf("DefaultCredentialReference = %q, want the env reference (blank output is not a token)", got)
+		}
+	})
+}
+
+// writeStubGH drops an executable `gh` shim into dir whose body is script.
+func writeStubGH(t *testing.T, dir, script string) {
+	t.Helper()
+	path := filepath.Join(dir, "gh")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+		t.Fatalf("write gh stub: %v", err)
 	}
 }
 
