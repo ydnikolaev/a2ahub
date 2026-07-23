@@ -809,16 +809,25 @@ func loadManifest(mirrorDir string) (space.Manifest, error) {
 	return space.ParseManifest(raw)
 }
 
+// resolveCredential resolves the write credential for spaceID, honouring
+// space.ResolveCredential's FULL precedence: the explicit
+// A2A_TOKEN_<SPACE_ID> override first, the machine-config reference
+// second, an actionable error naming both last. A missing (or unparseable)
+// machine-config entry is deliberately NOT an early return: exporting the
+// documented env var must be sufficient on its own, or the two halves of
+// the documented contract ("export this var" / "configure a reference")
+// disagree — which is exactly how a fresh install ends up with a red
+// `a2a doctor` next to a working shell export.
 func resolveCredential(ctx context.Context, spaceID string, machine space.MachineConfig) (host.Credential, error) {
-	refStr, ok := machine.Credentials[spaceID]
-	if !ok {
-		return host.Credential{}, fmt.Errorf("no credential reference for space %q in machine config", spaceID)
+	var ref space.CredentialReference
+	if refStr, ok := machine.Credentials[spaceID]; ok {
+		parsed, err := space.ParseCredentialReference(refStr)
+		if err != nil {
+			return host.Credential{}, err
+		}
+		ref = parsed
 	}
-	ref, err := space.ParseCredentialReference(refStr)
-	if err != nil {
-		return host.Credential{}, err
-	}
-	return space.ResolveCredential(ctx, "A2A_TOKEN_"+strings.ToUpper(spaceID), ref)
+	return space.ResolveCredential(ctx, space.CredentialEnvVar(spaceID), ref)
 }
 
 // parseGitHubRepo extracts owner/name from a GitHub remote URL
