@@ -240,7 +240,7 @@ func TestT3ContractAdopt(t *testing.T) {
 
 	// The committed file is on the funnel's branch — merge it the way the
 	// other write tests do, then read it back off disk.
-	mergeBranchToMain(t, mirrorDir, "a2a/axon/XC-beta-content-feed")
+	mergeBranchToMain(t, mirrorDir, "a2a/axon/contract-adopt/XC-beta-content-feed")
 	raw, err := os.ReadFile(filepath.Join(mirrorDir, "axon", "consumes.yaml"))
 	if err != nil {
 		t.Fatalf("read the committed registry: %v", err)

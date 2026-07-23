@@ -364,7 +364,7 @@ func (d WriteDeps) buildRequest(ids []string, files []space.FileWrite, verb stri
 	}
 	return space.SubmitRequest{
 		RepoDir: d.MirrorDir, System: d.OwnSystem,
-		ArtifactID: strings.Join(sorted, "+"), Files: files,
+		Verb: verb, ArtifactID: strings.Join(sorted, "+"), Files: files,
 		CommitMessage: commitMsg, CommitAuthorName: d.HostCfg.CommitAuthorName, CommitAuthorEmail: d.HostCfg.CommitAuthorEmail,
 		RemoteURL: d.HostCfg.RemoteURL, Repo: d.HostCfg.Repo, BaseBranch: baseBranch,
 		PRTitle: commitMsg, PRBody: prBody, Credential: d.HostCfg.Credential,
