@@ -92,7 +92,14 @@ func seedTree(t testing.TB, root string, systems []string) {
 			mkdirAll(t, d)
 			writeFile(t, filepath.Join(d, ".gitkeep"), "")
 		}
-		writeFile(t, filepath.Join(root, sys, "consumes.yaml"), "consumes: []\n")
+		// A SCHEMA-SHAPED empty registry (consumes/v1), not the `consumes: []`
+		// placeholder this fixture used to seed: that shape is not the schema's
+		// at all, yet it unmarshals cleanly into a zero-valued struct — so
+		// every consumer of the file silently read "this system consumes
+		// nothing". The live getvisa space carried the same two words, most
+		// likely copied from here.
+		writeFile(t, filepath.Join(root, sys, "consumes.yaml"),
+			"schema: consumes/v1\nsystem: "+sys+"\ndependencies: []\n")
 	}
 
 	mkdirAll(t, filepath.Join(root, "decisions"))

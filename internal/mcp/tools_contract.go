@@ -715,18 +715,16 @@ func contractFindRegisteredConsumers(mirrorDir, contractID string) (map[string]b
 		if rerr != nil {
 			return nil, rerr
 		}
-		var doc struct {
-			System       string `yaml:"system"`
-			Dependencies []struct {
-				Contract string `yaml:"contract"`
-			} `yaml:"dependencies"`
+		registry, cerr := contractParseConsumesStrict(raw, m)
+		if cerr != nil {
+			// FAIL CLOSED — see internal/cli's own copy: an unreadable
+			// registry must never round down to "consumes nothing", or a
+			// retire runs out from under a subscribed system.
+			return nil, cerr
 		}
-		if yaml.Unmarshal(raw, &doc) != nil {
-			continue
-		}
-		for _, d := range doc.Dependencies {
+		for _, d := range registry.Dependencies {
 			if d.Contract == contractID {
-				out[doc.System] = true
+				out[registry.System] = true
 			}
 		}
 	}
@@ -967,4 +965,22 @@ func contractUpsertDependency(registry space.Consumes, dep space.Dependency) (sp
 		return registry.Dependencies[i].Contract < registry.Dependencies[j].Contract
 	})
 	return registry, true
+}
+
+// contractParseConsumesStrict parses a committed consumes.yaml and refuses
+// anything that is not a real consumes/v1 registry (mirrors internal/cli's
+// own copy — ADR-001: internal/mcp never imports internal/cli). A
+// wrong-shaped file like `consumes: []` unmarshals cleanly into a
+// zero-valued struct, which is indistinguishable from "no dependencies".
+func contractParseConsumesStrict(raw []byte, path string) (space.Consumes, error) {
+	registry, err := space.ParseConsumes(raw)
+	if err != nil {
+		return space.Consumes{}, fmt.Errorf("mcp: %s is not valid yaml: %w", path, err)
+	}
+	if registry.Schema != "consumes/v1" || registry.System == "" {
+		return space.Consumes{}, fmt.Errorf(
+			"mcp: %s is not a consumes/v1 registry (needs `schema: consumes/v1`, `system: <id>`, `dependencies: [...]`) — "+
+				"refusing to treat it as \"no registered consumers\"; fix the file (or write it with contract adopt)", path)
+	}
+	return registry, nil
 }

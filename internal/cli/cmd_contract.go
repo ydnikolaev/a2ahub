@@ -317,6 +317,13 @@ func (c *ContractCommand) Run(ctx context.Context, args []string, stdio IO) int 
 		return 2
 	}
 	sub, rest := args[0], args[1:]
+	if IsHelpArg(sub) {
+		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a contract <new|publish|deprecate|retire|diff|verify-export|adopt> ...")
+		for _, s := range ContractSubcommands() {
+			_, _ = fmt.Fprintf(stdio.Stdout, "  %-14s %s\n", s.Name, s.Synopsis)
+		}
+		return 0
+	}
 	switch sub {
 	case "new":
 		return c.runNew(ctx, rest, stdio)
@@ -936,22 +943,43 @@ func contractFindRegisteredConsumers(mirrorDir, contractID string) (map[string]b
 		if rerr != nil {
 			return nil, rerr
 		}
-		var doc struct {
-			System       string `yaml:"system"`
-			Dependencies []struct {
-				Contract string `yaml:"contract"`
-			} `yaml:"dependencies"`
+		registry, cerr := contractParseConsumesStrict(raw, m)
+		if cerr != nil {
+			// FAIL CLOSED. This function's output is the retire
+			// precondition's consumer list: "I could not read this
+			// registry" must never round down to "this system consumes
+			// nothing", or a contract gets retired out from under a system
+			// that is subscribed to it. A malformed registry is an error
+			// that stops the retire and names the file to fix.
+			return nil, cerr
 		}
-		if yaml.Unmarshal(raw, &doc) != nil {
-			continue
-		}
-		for _, d := range doc.Dependencies {
+		for _, d := range registry.Dependencies {
 			if d.Contract == contractID {
-				out[doc.System] = true
+				out[registry.System] = true
 			}
 		}
 	}
 	return out, nil
+}
+
+// contractParseConsumesStrict parses a committed consumes.yaml and
+// REFUSES anything that is not a real consumes/v1 registry. Plain
+// yaml.Unmarshal is not enough: the placeholder an external consumer's
+// space actually carried (`consumes: []`) unmarshals cleanly into a
+// zero-valued struct, so a silent "0 dependencies, empty system" is
+// exactly what a wrong-shaped file produces — indistinguishable from a
+// system that genuinely consumes nothing.
+func contractParseConsumesStrict(raw []byte, path string) (space.Consumes, error) {
+	registry, err := space.ParseConsumes(raw)
+	if err != nil {
+		return space.Consumes{}, fmt.Errorf("cli: %s is not valid yaml: %w", path, err)
+	}
+	if registry.Schema != "consumes/v1" || registry.System == "" {
+		return space.Consumes{}, fmt.Errorf(
+			"cli: %s is not a consumes/v1 registry (needs `schema: consumes/v1`, `system: <id>`, `dependencies: [...]`) — "+
+				"refusing to treat it as \"no registered consumers\"; fix the file (or write it with `a2a contract adopt`)", path)
+	}
+	return registry, nil
 }
 
 // runDiff implements `a2a contract diff <id> <v1> <v2> [--json]`.
