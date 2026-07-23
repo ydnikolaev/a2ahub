@@ -29,7 +29,7 @@ cd "$(git rev-parse --show-toplevel)"
 # Every DENY entry MUST also be in .gitignore — check 3 asserts it, so the two can
 # never drift into a leak. PENDING entries are deliberately NOT required to be
 # gitignored (see docs/ above) until they graduate to DENY.
-ALLOW_DIRS=( .github cmd internal schemas skill space-template testkit seeds feedback )
+ALLOW_DIRS=( .github cmd internal schemas skill space-template testkit seeds feedback web )
 ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh )
 DENY_DIRS=( .agents .claude .codex .mate .sporo )   # scripts/ handled below (install.sh + e2e-authoring-smoke.sh are the public exceptions)
 DENY_FILES=( AGENTS.md CLAUDE.md )
