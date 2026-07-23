@@ -152,6 +152,29 @@ func TestSkillInstall_IdempotentRefresh(t *testing.T) {
 	assertSkillTreeMatchesEmbed(t, target)
 }
 
+// TestSkillInstall_RefreshPrunesStaleFiles: a refresh MIRRORS the embedded
+// tree — a file left from a prior install that the current tree no longer ships
+// is removed, not orphaned.
+func TestSkillInstall_RefreshPrunesStaleFiles(t *testing.T) {
+	t.Parallel()
+	target := t.TempDir()
+	if code, _, stderr := runSkill(t, "install", "--dir", target); code != 0 {
+		t.Fatalf("first install exit = %d; stderr=%s", code, stderr)
+	}
+	// Simulate a file a PRIOR skill version shipped that the current tree drops.
+	stale := filepath.Join(target, "reference", "authoring", "obsolete-type.md")
+	if err := os.WriteFile(stale, []byte("stale\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := runSkill(t, "install", "--dir", target); code != 0 {
+		t.Fatalf("refresh exit = %d; stderr=%s", code, stderr)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatal("stale file survived the refresh — tree is not mirrored")
+	}
+	assertSkillTreeMatchesEmbed(t, target)
+}
+
 // TestSkillInstall_EmptyDirOK: an existing but EMPTY target installs cleanly
 // (treated as unowned-but-safe).
 func TestSkillInstall_EmptyDirOK(t *testing.T) {

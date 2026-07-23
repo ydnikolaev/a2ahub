@@ -94,13 +94,26 @@ func (c *SkillCommand) runInstall(args []string, stdio IO) int {
 	// No-clobber gate: a target that exists, is non-empty, and carries NO
 	// a2ahub provenance marker is treated as someone else's content — refuse
 	// unless --force. Our own prior install (marker present) refreshes freely.
-	if owned, err := skillTargetIsOwnedOrEmpty(target); err != nil {
+	nonEmpty, owned, err := skillTargetState(target)
+	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill install: %v\n", err)
 		return 1
-	} else if !owned && !*force {
+	}
+	if nonEmpty && !owned && !*force {
 		_, _ = fmt.Fprintf(stdio.Stderr,
 			"a2a skill install: %s exists and is not an a2ahub skill install — refusing to overwrite (pass --force or --dir <path>)\n", target)
 		return 1
+	}
+
+	// Mirror semantics: refreshing our own install (or --force over foreign
+	// content) wipes the target FIRST, so a file the current tree no longer
+	// ships is not left orphaned. An absent/empty target needs no wipe. The
+	// wipe only runs after the no-clobber gate above has authorized it.
+	if nonEmpty {
+		if err := os.RemoveAll(target); err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill install: cannot refresh %s: %v\n", target, err)
+			return 1
+		}
 	}
 
 	written, err := c.writeTree(target)
@@ -163,26 +176,28 @@ func (c *SkillCommand) provenance() string {
 		"syntax and validation (this tree defers to it, never restates it).\n"
 }
 
-// skillTargetIsOwnedOrEmpty reports whether target is safe to (re)install into:
-// it does not exist, or is empty, or already carries the a2ahub provenance
-// marker. A non-empty target WITHOUT the marker returns false (someone else's
-// content — the caller refuses unless --force).
-func skillTargetIsOwnedOrEmpty(target string) (bool, error) {
+// skillTargetState inspects target for the install gate: nonEmpty is true when
+// it exists and holds at least one entry; owned is true when it carries the
+// a2ahub provenance marker (a prior install of ours). An absent or empty target
+// is (false, false) — safe to install without --force and needs no wipe. A
+// non-empty target without the marker is (true, false) — someone else's content
+// (refuse unless --force).
+func skillTargetState(target string) (nonEmpty, owned bool, err error) {
 	entries, err := os.ReadDir(target)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return true, nil
+			return false, false, nil
 		}
-		return false, err
+		return false, false, err
 	}
 	if len(entries) == 0 {
-		return true, nil
+		return false, false, nil
 	}
-	data, err := os.ReadFile(filepath.Join(target, skillProvenanceFile))
-	if err != nil {
-		return false, nil //nolint:nilerr // absent/unreadable marker => treat as unowned, not a hard error
+	data, readErr := os.ReadFile(filepath.Join(target, skillProvenanceFile))
+	if readErr != nil {
+		return true, false, nil //nolint:nilerr // absent/unreadable marker => non-empty + unowned, not a hard error
 	}
-	return strings.HasPrefix(string(data), skillProvenanceTag), nil
+	return true, strings.HasPrefix(string(data), skillProvenanceTag), nil
 }
 
 var _ Command = (*SkillCommand)(nil)
