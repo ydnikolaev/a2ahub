@@ -203,6 +203,46 @@ func TestContractRetireUnackedNoOverrideBlocked(t *testing.T) {
 	}
 }
 
+// TestContractRetireRefusesAMalformedConsumerRegistry is the fail-closed
+// half of AC-202.2: the retire precondition counts REGISTERED CONSUMERS by
+// reading every system's consumes.yaml, and a file it cannot read as a
+// consumes/v1 registry used to be skipped silently — so a wrong-shaped
+// registry (the `consumes: []` placeholder a real space carried) meant
+// "zero consumers" and a contract could be retired out from under a system
+// subscribed to it. Reading must fail loudly instead.
+func TestContractRetireRefusesAMalformedConsumerRegistry(t *testing.T) {
+	t.Parallel()
+
+	for name, registry := range map[string]string{
+		"placeholder shape": "consumes: []\n",
+		"missing header":    "dependencies:\n  - contract: XC-axon-gated\n    major: 1\n",
+		"unparseable yaml":  "dependencies: [unclosed\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			mirrorDir := t.TempDir()
+			writeContractDescriptor(t, mirrorDir, "gated", "1.0.0")
+			writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-gated", "publish", "axon")
+			writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-gated", "deprecate", "axon")
+			writeMirrorFile(t, mirrorDir, "beta/consumes.yaml", registry)
+			writeDeprecationAnnouncement(t, mirrorDir, "XA-axon-20260101-a1a1", "XC-axon-gated@1.0.0", "2099-01-01")
+
+			fake := &fakeLifecycleFunnel{}
+			cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("human", "owner"))
+			io, _, errOut := newIO()
+			if code := cmd.Run(context.Background(), []string{"retire", "--override", "XC-axon-gated"}, io); code == 0 {
+				t.Fatal("expected a non-zero exit: the consumer registry could not be read, so the consumer count is unknown")
+			}
+			if !strings.Contains(errOut.String(), "consumes.yaml") {
+				t.Fatalf("expected the refusal to name the offending file; got %q", errOut.String())
+			}
+			if len(fake.calls) != 0 {
+				t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+			}
+		})
+	}
+}
+
 // TestContractRetireOverrideFullPreconditionSucceeds is AC-202.3's second
 // clause: sunset passed + a reminder + a human actor + --override
 // succeeds, flags the overridden consumer. LOW fix-wave finding: the
