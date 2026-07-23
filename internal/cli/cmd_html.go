@@ -11,7 +11,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
@@ -55,11 +57,12 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	out := fs.String("out", htmlDefaultOut, "output HTML file path")
 	jsonOut := fs.Bool("json", false, "emit the DATA model as JSON to stdout (no HTML file)")
 	demo := fs.Bool("demo", false, "render the embedded demo fixture (all states/types) — no connected space needed")
+	noOpen := fs.Bool("no-open", false, "don't open the rendered file in your browser (for scripts/CI)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 {
-		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a %s [--system <id>] [--out <path>] [--json] [--demo]\n", c.name)
+		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a %s [--system <id>] [--out <path>] [--json] [--demo] [--no-open]\n", c.name)
 		return 2
 	}
 
@@ -104,8 +107,38 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a %s: cannot write %s: %v\n", c.name, *out, wErr)
 		return 1
 	}
-	_, _ = fmt.Fprintf(stdio.Stdout, "a2a %s: wrote %s (open it in a browser)\n", c.name, *out)
+	_, _ = fmt.Fprintf(stdio.Stdout, "a2a %s: wrote %s\n", c.name, *out)
+
+	// Open it in the default browser (default-on convenience; --no-open for
+	// scripts/CI). Best-effort: a launch failure never fails the render.
+	if !*noOpen {
+		if oErr := openInBrowser(*out); oErr != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "a2a %s: couldn't open a browser (%v) — open %s yourself\n", c.name, oErr, *out)
+		} else {
+			_, _ = fmt.Fprintf(stdio.Stdout, "a2a %s: opening it in your browser…\n", c.name)
+		}
+	}
 	return 0
+}
+
+// openInBrowser launches the OS default handler for path (the rendered HTML),
+// fire-and-forget — it does NOT wait for the browser. The path is a2a's own
+// computed output file, never external input. Absolute-izes the path so the
+// launcher resolves it regardless of the browser's working directory.
+func openInBrowser(path string) error {
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", path)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", path)
+	default: // linux, *bsd
+		cmd = exec.Command("xdg-open", path)
+	}
+	return cmd.Start()
 }
 
 var _ Command = (*HtmlCommand)(nil)
