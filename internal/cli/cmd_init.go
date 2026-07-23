@@ -444,6 +444,12 @@ func (c *ConnectCommand) Synopsis() string {
 // arg); 1 = clone/config-write failure; 0 = success (including the
 // idempotent already-connected path).
 func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
+	if len(args) == 1 && IsHelpArg(args[0]) {
+		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a connect <space-repo-url>")
+		_, _ = fmt.Fprintln(stdio.Stdout, "clones the space's mirror, registers it under the id its own space.yaml declares,")
+		_, _ = fmt.Fprintln(stdio.Stdout, "and records a credential reference for it. Safe to re-run.")
+		return 0
+	}
 	if len(args) != 1 || args[0] == "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a connect <space-repo>")
 		return 2
@@ -484,6 +490,29 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// keyed to a space that does not exist and every write reds until an
 	// operator notices and hand-edits the YAML.
 	c.ensureCredentialEntry(ctx, machine, id, stdio)
+
+	// An entry registered under a DIFFERENT id for this same repo URL is a
+	// stale id, not a second space: `a2a init -space <url>` has to guess the
+	// id from the URL (it never clones, so it cannot read the manifest), and
+	// when the manifest disagrees — the documented `a2a` vs `getvisa` case —
+	// every later verb looks up an id that no space has. connect is the
+	// first moment the truth is knowable, so it repairs the entry instead of
+	// leaving the operator with a green `a2a doctor` and a submit that tells
+	// them to run the command they already ran.
+	if repaired, was, ok := connectRepairStaleID(&cfg, id, repoURL); ok {
+		raw, err := yaml.Marshal(cfg)
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "connect: cannot encode config: %v\n", err)
+			return 1
+		}
+		if err := c.writeFile(c.projectConfigPath, raw, 0o644); err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "connect: cannot write %s: %v\n", c.projectConfigPath, err)
+			return 1
+		}
+		_, _ = fmt.Fprintf(stdio.Stdout, "connect: corrected space id %q -> %q (the space's own space.yaml is authoritative)\n", was, repaired)
+		_, _ = fmt.Fprintf(stdio.Stdout, "connect: space %q already connected; mirror refreshed\n", id)
+		return 0
+	}
 
 	_, existed := connectFind(cfg, id, repoURL)
 	if !existed {
@@ -578,6 +607,32 @@ func insertCredentialEntry(raw []byte, id, ref string) ([]byte, bool) {
 	return []byte(strings.Join(out, "\n")), true
 }
 
+// connectRepairStaleID rewrites the id of an entry registered for repoURL
+// under a different id than the manifest's authoritative one. It reports
+// (newID, oldID, true) when it changed something; the caller persists.
+// An entry already carrying the right id, or no entry for this URL, is
+// left alone (ok=false) — this only ever fixes a wrong id in place, it
+// never adds, removes, or reorders entries.
+func connectRepairStaleID(cfg *space.ProjectConfig, id, repoURL string) (repaired, was string, ok bool) {
+	for i, r := range cfg.Spaces {
+		if r.RepoURL != repoURL || r.ID == id {
+			continue
+		}
+		// Another entry may legitimately already hold the correct id (an
+		// operator who ran connect before init) — then the stale row is a
+		// duplicate this function must not turn into a second copy.
+		for _, other := range cfg.Spaces {
+			if other.ID == id && other.RepoURL == repoURL {
+				return "", "", false
+			}
+		}
+		was = r.ID
+		cfg.Spaces[i].ID = id
+		return id, was, true
+	}
+	return "", "", false
+}
+
 func connectFind(cfg space.ProjectConfig, id, repoURL string) (space.Ref, bool) {
 	for _, r := range cfg.Spaces {
 		if r.ID == id || r.RepoURL == repoURL {
@@ -659,6 +714,11 @@ func (c *DisconnectCommand) Synopsis() string {
 // 1 = mirror-removal/config-write failure; 0 = success (including the
 // idempotent never-connected no-op).
 func (c *DisconnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
+	if len(args) == 1 && IsHelpArg(args[0]) {
+		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a disconnect <space-id>")
+		_, _ = fmt.Fprintln(stdio.Stdout, "removes the space's config entry, mirror clone and cache. Safe to re-run.")
+		return 0
+	}
 	if len(args) != 1 || args[0] == "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a disconnect <space>")
 		return 2

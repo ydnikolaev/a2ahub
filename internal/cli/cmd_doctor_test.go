@@ -91,7 +91,7 @@ func TestDoctorRunAllPassOnZeroConnectedSpaces(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 	}
-	for _, name := range []string{"credentials", "space access", "versions", "CI presence", "statusline wiring"} {
+	for _, name := range []string{"credentials", "space access", "space identity", "versions", "CI presence", "statusline wiring"} {
 		if !strings.Contains(stdout.String(), name+": PASS") {
 			t.Errorf("stdout missing %q PASS line; got %q", name, stdout.String())
 		}
@@ -229,6 +229,50 @@ func TestDoctorCheckCredentials(t *testing.T) {
 		ok, _ := cmd.doctorCheckCredentials(context.Background(), space.ProjectConfig{}, machine)
 		if !ok {
 			t.Fatal("want pass with zero connected spaces")
+		}
+	})
+}
+
+// TestDoctorCheckSpaceIdentity: `a2a init -space <url>` guesses the space
+// id from the repo URL, so a repo whose basename is not its space id leaves
+// a config naming a space that does not exist. Doctor used to report a
+// healthy setup while every write failed — this check is the guard.
+func TestDoctorCheckSpaceIdentity(t *testing.T) {
+	t.Parallel()
+	manifest := "schema: space/v1\nspace: getvisa\nmin_binary_version: 0.0.0\nparticipants: []\n"
+
+	t.Run("matching id passes", func(t *testing.T) {
+		t.Parallel()
+		cmd := newTestDoctorCommand()
+		cmd.readFile = func(string) ([]byte, error) { return []byte(manifest), nil }
+		ok, detail := cmd.doctorCheckSpaceIdentity(space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa", RepoURL: "https://example.invalid/o/a2a.git"}}}, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("want pass, got fail: %s", detail)
+		}
+	})
+
+	t.Run("url-derived id that the manifest disagrees with fails, naming the fix", func(t *testing.T) {
+		t.Parallel()
+		cmd := newTestDoctorCommand()
+		cmd.readFile = func(string) ([]byte, error) { return []byte(manifest), nil }
+		ok, detail := cmd.doctorCheckSpaceIdentity(space.ProjectConfig{Spaces: []space.Ref{{ID: "a2a", RepoURL: "https://example.invalid/o/a2a.git"}}}, space.MachineConfig{})
+		if ok {
+			t.Fatal("want fail: the configured id is not the id the space declares")
+		}
+		for _, want := range []string{"a2a", "getvisa", "a2a connect"} {
+			if !strings.Contains(detail, want) {
+				t.Fatalf("detail = %q, want it to name %q", detail, want)
+			}
+		}
+	})
+
+	t.Run("an unreachable mirror is left to the space-access check", func(t *testing.T) {
+		t.Parallel()
+		cmd := newTestDoctorCommand()
+		cmd.readFile = func(string) ([]byte, error) { return nil, errors.New("no such file") }
+		ok, _ := cmd.doctorCheckSpaceIdentity(space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa"}}}, space.MachineConfig{})
+		if !ok {
+			t.Fatal("want pass: a missing mirror is another check's failure, not a double-report")
 		}
 	})
 }

@@ -121,6 +121,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}{
 		{"credentials", func() (bool, string) { return c.doctorCheckCredentials(ctx, cfg, machine) }},
 		{"space access", func() (bool, string) { return c.doctorCheckSpaceAccess(ctx, cfg, machine) }},
+		{"space identity", func() (bool, string) { return c.doctorCheckSpaceIdentity(cfg, machine) }},
 		{"versions", func() (bool, string) { return c.doctorCheckVersions(cfg, machine) }},
 		{"CI presence", func() (bool, string) { return c.doctorCheckCIPresence(cfg, machine) }},
 		{"statusline wiring", func() (bool, string) { return c.doctorCheckStatuslineWiring() }},
@@ -197,6 +198,41 @@ func (c *DoctorCommand) doctorCheckSpaceAccess(ctx context.Context, cfg space.Pr
 		if err := c.cloneOrFetch(ctx, dir, ref.RepoURL); err != nil {
 			ok = false
 			failures = append(failures, fmt.Sprintf("%s: %v", ref.ID, err))
+		}
+	}
+	return ok, strings.Join(failures, "; ")
+}
+
+// doctorCheckSpaceIdentity verifies that every connected space's
+// CONFIGURED id equals the id the space itself declares in its space.yaml
+// (`space:`). They can differ silently: `a2a init -space <url>` never
+// clones, so it derives the id from the repo URL — a repo whose basename
+// is not its space id (the documented `a2a` vs `getvisa` case) leaves
+// .a2a/config.yaml naming a space that does not exist. Nothing caught it:
+// doctor never compared the two, so it reported a healthy setup while the
+// first `a2a submit` failed and told the operator to run `a2a connect` —
+// the command they had already run. This check names the mismatch and the
+// one-command fix.
+func (c *DoctorCommand) doctorCheckSpaceIdentity(cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+	ok := true
+	var failures []string
+	for _, ref := range cfg.Spaces {
+		dir := c.resolveMirror(c.projectRoot, ref, machine)
+		raw, err := c.readFile(filepath.Join(dir, "space.yaml"))
+		if err != nil {
+			// The mirror is unreachable — "space access"/"versions" already
+			// report that; do not double-fail on the same root cause.
+			continue
+		}
+		manifest, err := space.ParseManifest(raw)
+		if err != nil || manifest.Space == "" {
+			continue // "versions" reports an unparseable manifest
+		}
+		if manifest.Space != ref.ID {
+			ok = false
+			failures = append(failures, fmt.Sprintf(
+				"configured id %q but the space declares %q — run `a2a connect %s` to correct it",
+				ref.ID, manifest.Space, ref.RepoURL))
 		}
 	}
 	return ok, strings.Join(failures, "; ")

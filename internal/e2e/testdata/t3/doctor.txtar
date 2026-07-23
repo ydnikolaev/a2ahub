@@ -9,6 +9,7 @@
 exec a2a doctor
 stdout 'credentials: PASS'
 stdout 'space access: PASS'
+stdout 'space identity: PASS'
 stdout 'versions: PASS'
 stdout 'CI presence: PASS'
 stdout 'statusline wiring: PASS'

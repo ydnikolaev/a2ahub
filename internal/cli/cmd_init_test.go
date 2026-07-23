@@ -230,6 +230,59 @@ func TestConnectRecordsCredentialReferenceUnderTheAuthoritativeID(t *testing.T) 
 	}
 }
 
+// TestConnectRepairsAStaleURLDerivedID: `a2a init -space <url>` cannot
+// know the real space id (it never clones), so it registers the URL's
+// basename. connect is the first moment the manifest is readable — it must
+// CORRECT that entry, not leave a config naming a space that does not
+// exist while `doctor` reports green.
+func TestConnectRepairsAStaleURLDerivedID(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	machinePath := filepath.Join(dir, "machine.yaml")
+
+	// What init writes: the id guessed from the URL, which the fixture's own
+	// space.yaml disagrees with.
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	stale := "system: axon\nspaces:\n  - id: wrong-guess\n    repo_url: " + fx.RemoteURL() + "\n"
+	if err := os.WriteFile(cfgPath, []byte(stale), 0o644); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	cmd := cli.NewConnectCommand(cfgPath, machinePath, dir)
+	cmd.SetDefaultCredentialRefForTest(func(_ context.Context, id string) string { return "env:A2A_TOKEN_" + id })
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{fx.RemoteURL()}, io); code != 0 {
+		t.Fatalf("connect: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig: %v", err)
+	}
+	if len(cfg.Spaces) != 1 {
+		t.Fatalf("Spaces = %+v, want the SAME single entry, repaired (never a duplicate)", cfg.Spaces)
+	}
+	if cfg.Spaces[0].ID == "wrong-guess" {
+		t.Fatalf("the stale id survived: %+v", cfg.Spaces[0])
+	}
+	if !strings.Contains(out.String(), "corrected space id") {
+		t.Fatalf("expected connect to REPORT the correction, got %q", out.String())
+	}
+
+	// Idempotent: a second connect finds nothing to repair.
+	io2, out2, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{fx.RemoteURL()}, io2); code != 0 {
+		t.Fatalf("second connect: code = %d", code)
+	}
+	if strings.Contains(out2.String(), "corrected space id") {
+		t.Fatalf("second connect must find nothing to correct, got %q", out2.String())
+	}
+}
+
 // TestConnectLeavesMissingMachineConfigToInit: connect never CREATES the
 // machine config (that is `a2a init`'s job) — a missing one is not an error.
 func TestConnectLeavesMissingMachineConfigToInit(t *testing.T) {
