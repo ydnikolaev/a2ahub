@@ -12,7 +12,9 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/validate"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
@@ -199,5 +201,67 @@ func appendGeneratedFromDigest(t *testing.T, mirrorDir, slug, digest string) {
 	content := strings.Replace(string(raw), "---\nbody\n", "generated_from: {tool: test, source_digest: \""+digest+"\"}\n---\nbody\n", 1)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("appendGeneratedFromDigest: write: %v", err)
+	}
+}
+
+// TestT3ContractAdopt is the D-022 consumer-registry round trip
+// (`a2a contract adopt`): a REAL funnel + REAL V2 validation writing
+// <own-system>/consumes.yaml. The V2 pass matters here — a consumes.yaml
+// carries no envelope, so the submit validator has to route it to the
+// consumes/v1 schema check instead of demanding frontmatter.
+func TestT3ContractAdopt(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon", "beta", "gamma")
+	mirrorDir := fx.Clone("axon")
+
+	// beta publishes a contract; axon adopts it.
+	writeContractDescriptorFor(t, mirrorDir, "beta", "content-feed", "2.0.0")
+
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+	legality := cli.NewLegalityAdapter(mirrorDir, "axon", e2eManifest())
+	resolver := cli.NewMirrorResolver(mirrorDir, e2eManifest())
+	submitValidator := cli.NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
+
+	fakeHost := host.NewFakeHost()
+	funnel := space.NewWriteFunnel(fakeHost, submitValidator, "0.1.0")
+	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
+
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{"adopt", "XC-beta-content-feed"}, io); code != 0 {
+		t.Fatalf("contract adopt: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(fakeHost.Pushes) != 1 || len(fakeHost.Opens) != 1 {
+		t.Fatalf("expected exactly one PushBranch + OpenPR, got pushes=%d opens=%d", len(fakeHost.Pushes), len(fakeHost.Opens))
+	}
+
+	// The committed file is on the funnel's branch — merge it the way the
+	// other write tests do, then read it back off disk.
+	mergeBranchToMain(t, mirrorDir, "a2a/axon/XC-beta-content-feed")
+	raw, err := os.ReadFile(filepath.Join(mirrorDir, "axon", "consumes.yaml"))
+	if err != nil {
+		t.Fatalf("read the committed registry: %v", err)
+	}
+	registry, err := space.ParseConsumes(raw)
+	if err != nil {
+		t.Fatalf("ParseConsumes: %v", err)
+	}
+	if len(registry.Dependencies) != 1 || registry.Dependencies[0].Contract != "XC-beta-content-feed" || registry.Dependencies[0].Major != 2 {
+		t.Fatalf("committed registry = %+v, want XC-beta-content-feed pinned at major 2", registry)
+	}
+
+	// Re-running against the now-committed registry is a no-op: no second PR.
+	io2, out2, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{"adopt", "XC-beta-content-feed"}, io2); code != 0 {
+		t.Fatalf("re-adopt: code = %d, want 0; stdout=%s", code, out2.String())
+	}
+	if !strings.Contains(out2.String(), "already registered") {
+		t.Fatalf("expected the idempotent message, got %q", out2.String())
+	}
+	if len(fakeHost.Opens) != 1 {
+		t.Fatalf("expected STILL exactly one OpenPR after the re-run, got %d", len(fakeHost.Opens))
 	}
 }

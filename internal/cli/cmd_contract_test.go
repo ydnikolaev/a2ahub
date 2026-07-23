@@ -611,3 +611,179 @@ func TestContractDeprecateDeterministicAnnouncementID(t *testing.T) {
 		}
 	})
 }
+
+// writeForeignContractDescriptor seeds ANOTHER system's published
+// contract in the mirror — what `contract adopt` reads to pin a major.
+func writeForeignContractDescriptor(t *testing.T, mirrorDir, system, slug, version string) {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: XC-" + system + "-" + slug + "\n" +
+		"type: contract\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: " + system + "\n" +
+		"to: [axon]\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: api\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: \"" + version + "\"\n" +
+		"compat_policy: strict-semver\n" +
+		"schema_format: json-schema-2020-12\n" +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, system+"/provides/"+slug+"/contract.md", content)
+}
+
+// TestContractAdopt covers the D-022 consumer registry writer: the verb
+// that makes a system a REGISTERED consumer (§5.2.3). Before it existed
+// there was no tool path to that file at all.
+func TestContractAdopt(t *testing.T) {
+	t.Parallel()
+
+	t.Run("writes a schema-shaped registry pinned to the published major", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeForeignContractDescriptor(t, mirrorDir, "beta", "content-feed", "2.3.1")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, out, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"adopt", "XC-beta-content-feed"}, io); code != 0 {
+			t.Fatalf("code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+		files := fake.calls[0].Files
+		if len(files) != 1 || files[0].Path != "axon/consumes.yaml" {
+			t.Fatalf("expected one write to axon/consumes.yaml, got %+v", files)
+		}
+		registry, err := space.ParseConsumes(files[0].Content)
+		if err != nil {
+			t.Fatalf("ParseConsumes: %v", err)
+		}
+		if registry.Schema != "consumes/v1" || registry.System != "axon" {
+			t.Fatalf("registry header = %+v, want schema consumes/v1 + system axon", registry)
+		}
+		if len(registry.Dependencies) != 1 {
+			t.Fatalf("Dependencies = %+v, want exactly one", registry.Dependencies)
+		}
+		dep := registry.Dependencies[0]
+		if dep.Contract != "XC-beta-content-feed" || dep.Major != 2 {
+			t.Fatalf("dependency = %+v, want XC-beta-content-feed at major 2 (from version 2.3.1)", dep)
+		}
+		if dep.Since == "" {
+			t.Fatalf("dependency = %+v, want a `since` date", dep)
+		}
+	})
+
+	t.Run("appends to an existing registry, sorted, keeping prior entries", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeForeignContractDescriptor(t, mirrorDir, "beta", "content-feed", "1.0.0")
+		writeMirrorFile(t, mirrorDir, "axon/consumes.yaml",
+			"schema: consumes/v1\nsystem: axon\ndependencies:\n  - contract: XC-gamma-todo-feed\n    major: 4\n    since: \"2026-01-01\"\n")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"adopt", "XC-beta-content-feed", "--note", "renders the feed"}, io); code != 0 {
+			t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+		}
+		registry, err := space.ParseConsumes(fake.calls[0].Files[0].Content)
+		if err != nil {
+			t.Fatalf("ParseConsumes: %v", err)
+		}
+		if len(registry.Dependencies) != 2 {
+			t.Fatalf("Dependencies = %+v, want both the prior and the new one", registry.Dependencies)
+		}
+		if registry.Dependencies[0].Contract != "XC-beta-content-feed" || registry.Dependencies[1].Contract != "XC-gamma-todo-feed" {
+			t.Fatalf("Dependencies not sorted by contract id: %+v", registry.Dependencies)
+		}
+		if registry.Dependencies[0].Note != "renders the feed" {
+			t.Fatalf("--note not recorded: %+v", registry.Dependencies[0])
+		}
+		if registry.Dependencies[1].Major != 4 || registry.Dependencies[1].Since != "2026-01-01" {
+			t.Fatalf("the prior entry must survive untouched: %+v", registry.Dependencies[1])
+		}
+	})
+
+	t.Run("re-adopting the same major is an idempotent no-op", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeForeignContractDescriptor(t, mirrorDir, "beta", "content-feed", "1.2.0")
+		writeMirrorFile(t, mirrorDir, "axon/consumes.yaml",
+			"schema: consumes/v1\nsystem: axon\ndependencies:\n  - contract: XC-beta-content-feed\n    major: 1\n    since: \"2026-01-01\"\n")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, out, _ := newIO()
+		if code := cmd.Run(context.Background(), []string{"adopt", "XC-beta-content-feed"}, io); code != 0 {
+			t.Fatalf("code = %d, want 0", code)
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("an already-registered dependency must not open a PR, got %+v", fake.calls)
+		}
+		if !strings.Contains(out.String(), "already registered") {
+			t.Fatalf("expected the idempotent message, got %q", out.String())
+		}
+	})
+
+	t.Run("re-pinning to a new major rewrites the entry", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeMirrorFile(t, mirrorDir, "axon/consumes.yaml",
+			"schema: consumes/v1\nsystem: axon\ndependencies:\n  - contract: XC-beta-content-feed\n    major: 1\n    since: \"2026-01-01\"\n")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"adopt", "XC-beta-content-feed", "--major", "2"}, io); code != 0 {
+			t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+		}
+		registry, err := space.ParseConsumes(fake.calls[0].Files[0].Content)
+		if err != nil {
+			t.Fatalf("ParseConsumes: %v", err)
+		}
+		if len(registry.Dependencies) != 1 || registry.Dependencies[0].Major != 2 {
+			t.Fatalf("Dependencies = %+v, want the single entry re-pinned to major 2", registry.Dependencies)
+		}
+	})
+
+	t.Run("refuses this system's own contract", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeContractDescriptor(t, mirrorDir, "widget-a", "1.0.0")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"adopt", "XC-axon-widget-a"}, io); code != 1 {
+			t.Fatalf("code = %d, want 1", code)
+		}
+		if !strings.Contains(errOut.String(), "OWN contract") {
+			t.Fatalf("expected an own-contract refusal, got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("refusal must happen before any funnel call, got %+v", fake.calls)
+		}
+	})
+
+	t.Run("an unsynced contract is an actionable error, never a guessed major", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"adopt", "XC-beta-content-feed"}, io); code != 1 {
+			t.Fatalf("code = %d, want 1", code)
+		}
+		if !strings.Contains(errOut.String(), "--major") {
+			t.Fatalf("expected the error to name the --major escape hatch, got %q", errOut.String())
+		}
+	})
+}

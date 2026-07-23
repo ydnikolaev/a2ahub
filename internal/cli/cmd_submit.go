@@ -150,7 +150,16 @@ func (c *ValidateCommand) Run(ctx context.Context, args []string, stdio IO) int 
 			reports = append(reports, validateReport{Path: p, Error: err.Error()})
 			continue
 		}
-		result, err := c.engine.ValidateDraft(validate.Draft{Path: p, Raw: raw})
+		// A consumes.yaml is not an artifact (no envelope, no id) but it IS
+		// normative (§5.2.3 / D-022) and the space CI checks it — so the
+		// authoring verb checks the same file the same way, rather than
+		// reporting "missing frontmatter" on a file that has none by design.
+		var result validate.Result
+		if isConsumesRegistry(p) {
+			result, err = c.engine.ValidateConsumes(raw)
+		} else {
+			result, err = c.engine.ValidateDraft(validate.Draft{Path: p, Raw: raw})
+		}
 		if err != nil {
 			allValid = false
 			reports = append(reports, validateReport{Path: p, Error: err.Error()})

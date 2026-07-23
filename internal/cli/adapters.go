@@ -482,19 +482,37 @@ type submitEnvelopeProbe struct {
 func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space.FileWrite) error {
 	events := map[string]mirrorEvent{}
 	var drafts []space.FileWrite
+	var registries []space.FileWrite
 	for _, f := range files {
-		if strings.Contains(f.Path, "/events/") {
+		switch {
+		case strings.Contains(f.Path, "/events/"):
 			var ev mirrorEvent
 			if err := yaml.Unmarshal(f.Content, &ev); err != nil {
 				return fmt.Errorf("cli: SubmitValidatorAdapter: decode event %s: %w", f.Path, err)
 			}
 			events[ev.Subject] = ev
-			continue
+		case isConsumesRegistry(f.Path):
+			// The D-022 consumer registry is a non-artifact file (no
+			// envelope, no frontmatter) that the funnel nonetheless
+			// carries — it gets the consumes/v1 schema check here, the
+			// SAME one the space's V3 runs, so a write can never land a
+			// registry the space would then reject.
+			registries = append(registries, f)
+		default:
+			drafts = append(drafts, f)
 		}
-		drafts = append(drafts, f)
 	}
 
 	var violations []validate.Violation
+	for _, r := range registries {
+		result, err := v.engine.ValidateConsumes(r.Content)
+		if err != nil {
+			return fmt.Errorf("cli: SubmitValidatorAdapter: ValidateConsumes %s: %w", r.Path, err)
+		}
+		if !result.Valid {
+			violations = append(violations, result.Violations...)
+		}
+	}
 	for _, d := range drafts {
 		fm, err := artifact.ParseFrontmatter(d.Content)
 		if err != nil {

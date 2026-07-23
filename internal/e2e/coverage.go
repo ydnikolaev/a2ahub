@@ -121,6 +121,7 @@ var coverageManifest = []coverageEntry{
 	{Verb: "withdraw", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
 
 	// --- Contract ops (direct-construction, exec-unreachable) -----------
+	{Verb: "contract-adopt", GoTest: "internal/e2e.TestT3ContractAdopt"},
 	{Verb: "contract-deprecate", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},
 	{Verb: "contract-diff", GoTest: "internal/e2e.TestT3ContractDiff"},
 	{Verb: "contract-new", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},

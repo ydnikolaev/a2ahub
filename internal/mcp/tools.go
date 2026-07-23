@@ -135,7 +135,7 @@ func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string,
 	// --- a2a_contract (action: the 6 contract sub-verbs) -----------------
 	r.Register(ToolSpec{
 		Name:        "a2a_contract",
-		Description: "contract family: action=new|publish|deprecate|retire|diff|verify-export",
+		Description: "contract family: action=new|publish|deprecate|retire|diff|verify-export|adopt",
 		InputSchema: groupedSchema("action", ContractActions, map[string]string{
 			"slug": "string", "fields": "object", "body": "string",
 			"thread": "string", "id": "string", "version": "string",
@@ -143,6 +143,7 @@ func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string,
 			"successor": "string", "sunset": "string", "override": "boolean",
 			"v1": "string", "v2": "string", "local": "string",
 			"ref": "string", "actor": "object",
+			"major": "integer", "note": "string",
 		}),
 		Handler: newContractDispatch(newDeps, contractDeps),
 	})

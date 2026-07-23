@@ -491,6 +491,50 @@ func TestValidateCI_PRSpaceLevelNonDecisionRed(t *testing.T) {
 	}
 }
 
+// TestValidateCI_PRConsumesRegistryValidated proves the D-022 registry
+// file is checked by V3 — it carries no envelope, but it is normative, and
+// an invalid one used to merge silently and register nobody.
+func TestValidateCI_PRConsumesRegistryValidated(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "axon/consumes.yaml"
+
+	t.Run("valid", func(t *testing.T) {
+		t.Parallel()
+		root := ciRepo(t, ciSpaceYAML, map[string]string{
+			rel: "schema: consumes/v1\nsystem: axon\ndependencies:\n  - contract: XC-seomatrix-content-feed\n    major: 1\n    since: \"2026-07-23\"\n",
+		})
+		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0; stderr=%s; report=%+v", code, errOut, rep)
+		}
+		if len(rep.Artifacts) != 1 || rep.Artifacts[0].Result == nil || !rep.Artifacts[0].Result.Valid {
+			t.Fatalf("expected the registry to be validated and clean, got %+v", rep.Artifacts)
+		}
+	})
+
+	t.Run("the consumes: [] placeholder reds", func(t *testing.T) {
+		t.Parallel()
+		root := ciRepo(t, ciSpaceYAML, map[string]string{rel: "consumes: []\n"})
+		code, rep, _ := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		if code != 1 {
+			t.Fatalf("exit = %d, want 1; report=%+v", code, rep)
+		}
+		if len(rep.Artifacts) != 1 || rep.Artifacts[0].Result == nil || rep.Artifacts[0].Result.Valid {
+			t.Fatalf("expected the placeholder to red, got %+v", rep.Artifacts)
+		}
+	})
+
+	t.Run("full-repo scan picks it up too", func(t *testing.T) {
+		t.Parallel()
+		root := ciRepo(t, ciSpaceYAML, map[string]string{rel: "consumes: []\n"})
+		code, rep, _ := runCI(t, engine, root, nil, "v3-full-repo", "", "")
+		if code != 1 {
+			t.Fatalf("exit = %d, want 1; report=%+v", code, rep)
+		}
+	})
+}
+
 func TestValidateCI_PRDeletedFileSkipped(t *testing.T) {
 	t.Parallel()
 	engine := ciEngine(t)

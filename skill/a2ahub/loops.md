@@ -131,9 +131,10 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
    also closes the parent; a requirement completes via `a2a satisfy`). Fail →
    `a2a dispute` with concrete findings, at most twice per exchange before human
    escalation (8.5).
-7. **Register consumed contracts:** the binary writes your `consumes.yaml`;
-   this is what makes you a registered consumer whom breaking changes must wait
-   for. Local config is never the registry.
+7. **Register consumed contracts:** `a2a contract adopt <XC-id>` writes your
+   `consumes.yaml` and opens the PR (pin explicitly with `--major`; re-running
+   is a no-op). This is what makes you a registered consumer whom breaking
+   changes must wait for. Local config is never the registry.
 
 ## §8.3 Receive loop — "something arrived for my system"
 

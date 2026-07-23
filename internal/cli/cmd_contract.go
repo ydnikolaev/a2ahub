@@ -23,8 +23,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -311,7 +313,7 @@ func (c *ContractCommand) Synopsis() string {
 // Run implements cli.Command.
 func (c *ContractCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract <new|publish|deprecate|retire|diff|verify-export> ...")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract <new|publish|deprecate|retire|diff|verify-export|adopt> ...")
 		return 2
 	}
 	sub, rest := args[0], args[1:]
@@ -328,6 +330,8 @@ func (c *ContractCommand) Run(ctx context.Context, args []string, stdio IO) int 
 		return c.runDiff(ctx, rest, stdio)
 	case "verify-export":
 		return c.runVerifyExport(ctx, rest, stdio)
+	case "adopt":
+		return c.runAdopt(ctx, rest, stdio)
 	default:
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract: unknown subcommand %q\n", sub)
 		return 2
@@ -359,6 +363,7 @@ func ContractSubcommands() []ContractSubcommand {
 		{Name: "retire", Synopsis: "retire a contract (consumer-ack precondition, --override)"},
 		{Name: "diff", Synopsis: "diff two contract versions (--json)"},
 		{Name: "verify-export", Synopsis: "verify a local export's digest tree (--local)"},
+		{Name: "adopt", Synopsis: "register this system as a consumer of a contract (writes consumes.yaml)"},
 	}
 }
 
@@ -1012,6 +1017,181 @@ func (c *ContractCommand) runDiff(ctx context.Context, args []string, stdio IO) 
 		_, _ = fmt.Fprintf(stdio.Stdout, "changed %s\n", p)
 	}
 	return 0
+}
+
+// runAdopt implements `a2a contract adopt <XC-id> [--major N] [--note
+// <text>]`: register this system as a CONSUMER of another system's
+// contract by writing the dependency into `<own-system>/consumes.yaml`
+// (§5.2.3, D-022) and submitting it through the same write funnel every
+// other mutation goes through.
+//
+// This is the registry the retire-block precondition (§5.4) and the
+// dashboard's dependency edges read, and D-022 is explicit that ONLY the
+// space-visible file counts — "project-local config is never
+// authoritative". Until this verb existed there was no way to write it:
+// `loops.md` §8.2 step 7 told agents "the binary writes your
+// consumes.yaml" and nothing did, while `a2a submit` accepts only
+// envelope artifacts. A system therefore could not become a registered
+// consumer at all, so a producer's retire never had anyone to wait for.
+func (c *ContractCommand) runAdopt(ctx context.Context, args []string, stdio IO) int {
+	// The id is lifted out BEFORE flag.Parse, so both orders work —
+	// Go's flag package stops at the first non-flag token, which would
+	// otherwise make `adopt <id> --major 2` silently drop the flag (the
+	// same guard `a2a feedback new` documents for its own kind arg).
+	fs := flag.NewFlagSet("contract adopt", flag.ContinueOnError)
+	fs.SetOutput(stdio.Stderr)
+	major := fs.Int("major", 0, "pinned major version to build against (default: the contract's currently published major)")
+	note := fs.String("note", "", "optional free-text rationale recorded with the dependency")
+
+	var id string
+	rest := args
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		id, rest = args[0], args[1:]
+	}
+	if err := fs.Parse(rest); err != nil {
+		return 2
+	}
+	if id == "" && fs.NArg() == 1 {
+		id = fs.Arg(0)
+	}
+	if id == "" || fs.NArg() > 1 {
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract adopt <XC-id> [--major <n>] [--note <text>]")
+		return 2
+	}
+
+	parsed, err := artifact.ParseID(id)
+	if err != nil || parsed.Prefix != "XC" {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract adopt: %s: not a contract id (XC-<system>-<slug>)\n", id)
+		return 1
+	}
+	if parsed.System == c.deps.ownSystem {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract adopt: %s is this system's OWN contract — the registry records what you consume from OTHERS (§5.2.3)\n", id)
+		return 1
+	}
+
+	pinned := *major
+	if pinned == 0 {
+		pinned, err = contractPublishedMajor(c.deps.mirrorDir, id)
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "contract adopt: %v (pass --major <n> to pin explicitly)\n", err)
+			return 1
+		}
+	}
+
+	layout, err := space.NewLayout(c.deps.ownSystem)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract adopt: %v\n", err)
+		return 1
+	}
+	relPath := layout.ConsumesYAML()
+
+	registry, err := contractLoadConsumes(c.deps.mirrorDir, relPath, c.deps.ownSystem)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract adopt: %v\n", err)
+		return 1
+	}
+
+	updated, changed := contractUpsertDependency(registry, space.Dependency{
+		Contract: id, Major: pinned,
+		Since: c.deps.now().UTC().Format("2006-01-02"),
+		Note:  *note,
+	})
+	if !changed {
+		_, _ = fmt.Fprintf(stdio.Stdout, "contract adopt: %s already registered at major %d\n", id, pinned)
+		return 0
+	}
+
+	raw, err := yaml.Marshal(updated)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract adopt: cannot encode %s: %v\n", relPath, err)
+		return 1
+	}
+
+	// The funnel's own V2 pass validates the file against consumes/v1 (the
+	// SAME check the space's V3 runs) — this verb never re-implements it.
+	req := c.deps.buildRequest([]string{id}, []space.FileWrite{{Path: relPath, Content: raw}}, "contract-adopt", false)
+	return c.deps.submit(ctx, req, "contract adopt", []string{id}, stdio)
+}
+
+// contractPublishedMajor reads the contract descriptor committed in the
+// mirror and returns its published major. A contract that is not in the
+// mirror (never synced, or never published) is an actionable error, not a
+// silent default — pinning to the wrong major is exactly the mistake this
+// registry exists to prevent.
+func contractPublishedMajor(mirrorDir, id string) (int, error) {
+	_, probe, _, _, err := contractReadDescriptor(mirrorDir, id)
+	if err != nil {
+		return 0, fmt.Errorf("cannot read %s from the local mirror — run `a2a sync` first: %w", id, err)
+	}
+	if probe.Version == "" {
+		return 0, fmt.Errorf("%s carries no published version yet", id)
+	}
+	v, err := contractParseSemver(probe.Version)
+	if err != nil {
+		return 0, fmt.Errorf("%s has an unparseable version %q: %w", id, probe.Version, err)
+	}
+	return v[0], nil
+}
+
+// contractLoadConsumes reads this system's committed consumes.yaml, or
+// returns a fresh, schema-shaped empty registry when the system has never
+// registered a dependency.
+func contractLoadConsumes(mirrorDir, relPath, ownSystem string) (space.Consumes, error) {
+	raw, err := readBoundedFile(filepath.Join(mirrorDir, relPath), maxMirrorEventBytes)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		// Never registered a dependency before — a fresh registry, not an
+		// error. Any OTHER read failure IS an error: silently starting from
+		// empty would drop the system's existing dependencies on the next
+		// write.
+		return space.Consumes{Schema: "consumes/v1", System: ownSystem, Dependencies: []space.Dependency{}}, nil
+	case err != nil:
+		return space.Consumes{}, fmt.Errorf("cannot read %s: %w", relPath, err)
+	}
+	registry, perr := space.ParseConsumes(raw)
+	if perr != nil {
+		return space.Consumes{}, fmt.Errorf("cannot parse %s: %w", relPath, perr)
+	}
+	// A committed file whose header drifted (or a hand-written stub) is
+	// repaired to the schema's shape rather than propagated — the write
+	// still goes through V2/V3, so a file this cannot fix reds there.
+	if registry.Schema == "" {
+		registry.Schema = "consumes/v1"
+	}
+	if registry.System == "" {
+		registry.System = ownSystem
+	}
+	return registry, nil
+}
+
+// contractUpsertDependency adds or updates dep in registry, keeping the
+// dependency list sorted by contract id (a stable file makes the diff a
+// reviewer sees the actual change). It reports changed=false when the
+// registry already carries exactly this contract at this major — the
+// idempotent re-run, which must not open a second PR.
+func contractUpsertDependency(registry space.Consumes, dep space.Dependency) (space.Consumes, bool) {
+	for i, existing := range registry.Dependencies {
+		if existing.Contract != dep.Contract {
+			continue
+		}
+		if existing.Major == dep.Major && (dep.Note == "" || existing.Note == dep.Note) {
+			return registry, false
+		}
+		// Re-pinning to a different major keeps the original `since` only
+		// when the major is unchanged; a new major is a new dependency in
+		// substance, so it gets today's date.
+		registry.Dependencies[i].Major = dep.Major
+		registry.Dependencies[i].Since = dep.Since
+		if dep.Note != "" {
+			registry.Dependencies[i].Note = dep.Note
+		}
+		return registry, true
+	}
+	registry.Dependencies = append(registry.Dependencies, dep)
+	sort.Slice(registry.Dependencies, func(i, j int) bool {
+		return registry.Dependencies[i].Contract < registry.Dependencies[j].Contract
+	})
+	return registry, true
 }
 
 // runVerifyExport implements `a2a contract verify-export --local <path>
