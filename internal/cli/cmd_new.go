@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,6 +28,18 @@ import (
 // lookup (Future-proofing table, §9: "no per-type branch to hand-edit").
 // No core package exports this mapping as a queryable table today (each
 // schema file's own `id` pattern encodes it, but only as a regex).
+// newTypeNames returns the drafted-type vocabulary, sorted — the one
+// machine-readable answer to "what can I draft?", used by `a2a new --help`
+// and by the unknown-type error so both stay in step with the table.
+func newTypeNames() []string {
+	names := make([]string, 0, len(newTypePrefix))
+	for k := range newTypePrefix {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
+}
+
 var newTypePrefix = map[string]struct {
 	Prefix string
 	Class  artifact.Class
@@ -92,9 +105,14 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 		return 2
 	}
 	typ := args[0]
+	if IsHelpArg(typ) {
+		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a new <type> [--field k=v]... [--body-file <path>] [--thread <id>] [--slug <slug>]")
+		_, _ = fmt.Fprintln(stdio.Stdout, "types: "+strings.Join(newTypeNames(), " | "))
+		return 0
+	}
 	prefixInfo, ok := newTypePrefix[typ]
 	if !ok {
-		_, _ = fmt.Fprintf(stdio.Stderr, "new: unknown type %q\n", typ)
+		_, _ = fmt.Fprintf(stdio.Stderr, "new: unknown type %q (want one of: %s)\n", typ, strings.Join(newTypeNames(), ", "))
 		return 2
 	}
 
