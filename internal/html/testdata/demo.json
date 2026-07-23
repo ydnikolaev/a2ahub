@@ -1,0 +1,433 @@
+{
+  "generatedAt": "2026-07-23T14:05:00Z",
+  "self": "axon",
+  "tooling": {
+    "current": "0.1.1",
+    "latest": "0.2.0",
+    "updateAvailable": true,
+    "required": false,
+    "floor": "0.1.0",
+    "floorSpace": "getvisa"
+  },
+  "spaces": [
+    {
+      "id": "getvisa",
+      "repoURL": "https://github.com/getvisa/a2a-space",
+      "syncAge": "3m",
+      "stale": false,
+      "participantCount": 4,
+      "readable": true
+    },
+    {
+      "id": "platform",
+      "repoURL": "https://github.com/seomatrix/platform-a2a-space",
+      "syncAge": "2d",
+      "stale": true,
+      "participantCount": 4,
+      "readable": true
+    },
+    {
+      "id": "vault",
+      "repoURL": "https://github.com/getvisa/vault-a2a-space",
+      "syncAge": "",
+      "stale": false,
+      "participantCount": 0,
+      "readable": false
+    }
+  ],
+  "nodes": [
+    {
+      "system": "axon",
+      "self": true,
+      "org": "axon",
+      "status": "active",
+      "owners": ["yura"],
+      "spaces": ["getvisa", "platform"]
+    },
+    {
+      "system": "gvcore",
+      "self": false,
+      "org": "getvisa",
+      "status": "active",
+      "owners": ["priya", "sam"],
+      "spaces": ["getvisa", "platform"]
+    },
+    {
+      "system": "gvbilling",
+      "self": false,
+      "org": "getvisa",
+      "status": "active",
+      "owners": ["priya"],
+      "spaces": ["getvisa"]
+    },
+    {
+      "system": "legacycrm",
+      "self": false,
+      "org": "getvisa",
+      "status": "left",
+      "spaces": ["getvisa"]
+    },
+    {
+      "system": "seomatrix",
+      "self": false,
+      "org": "seomatrix",
+      "status": "active",
+      "owners": ["dana"],
+      "spaces": ["platform"]
+    },
+    {
+      "system": "pgw",
+      "self": false,
+      "org": "seomatrix",
+      "status": "active",
+      "owners": ["dana", "ops"],
+      "spaces": ["platform"]
+    }
+  ],
+  "contractEdges": [
+    {
+      "from": "axon",
+      "to": "pgw",
+      "space": "platform",
+      "contract": "XC-pgw-webhook",
+      "pinnedMajor": 1,
+      "providerVersion": "1.4.2",
+      "state": "published",
+      "drift": "current"
+    },
+    {
+      "from": "gvbilling",
+      "to": "gvcore",
+      "space": "getvisa",
+      "contract": "XC-gvcore-visa-status",
+      "pinnedMajor": 1,
+      "providerVersion": "2.3.0",
+      "state": "published",
+      "drift": "behind"
+    },
+    {
+      "from": "axon",
+      "to": "seomatrix",
+      "space": "platform",
+      "contract": "XC-seomatrix-crawl-report",
+      "pinnedMajor": 3,
+      "providerVersion": "3.1.0",
+      "state": "deprecated",
+      "drift": "deprecated",
+      "sunset": "2026-09-01"
+    },
+    {
+      "from": "gvbilling",
+      "to": "gvcore",
+      "space": "getvisa",
+      "contract": "XC-gvcore-auth-legacy",
+      "pinnedMajor": 1,
+      "providerVersion": "1.0.0",
+      "state": "retired",
+      "drift": "retired"
+    },
+    {
+      "from": "gvbilling",
+      "to": "legacycrm",
+      "space": "getvisa",
+      "contract": "XC-legacycrm-export-legacy",
+      "pinnedMajor": 1,
+      "drift": "dangling"
+    },
+    {
+      "from": "axon",
+      "to": "seomatrix",
+      "space": "platform",
+      "contract": "XC-seomatrix-old-api",
+      "pinnedMajor": 2,
+      "drift": "dangling"
+    }
+  ],
+  "exchangeEdges": [
+    {
+      "from": "gvbilling",
+      "to": "axon",
+      "space": "getvisa",
+      "count": 2,
+      "maxPriority": "p2",
+      "blocking": false,
+      "maxStale": "5d"
+    },
+    {
+      "from": "seomatrix",
+      "to": "axon",
+      "space": "platform",
+      "count": 2,
+      "maxPriority": "p1",
+      "blocking": true,
+      "maxStale": "5d"
+    },
+    {
+      "from": "pgw",
+      "to": "axon",
+      "space": "platform",
+      "count": 2,
+      "maxPriority": "p2",
+      "blocking": false,
+      "maxStale": "2h"
+    }
+  ],
+  "inbox": [
+    {
+      "space": "getvisa",
+      "id": "XQ-gvbilling-20260721-a1b2",
+      "type": "question",
+      "title": "Which auth provider version should billing pin to?",
+      "from": "gvbilling",
+      "to": ["axon"],
+      "state": "submitted",
+      "priority": "p2",
+      "blocking": false,
+      "gatePending": false,
+      "age": "2h",
+      "new": true,
+      "severity": "normal",
+      "reasons": ["needs-input"]
+    },
+    {
+      "space": "platform",
+      "id": "XW-seomatrix-20260718-c3d4",
+      "type": "work_request",
+      "title": "Rebuild crawl-report exporter for v4 schema",
+      "from": "seomatrix",
+      "to": ["axon"],
+      "state": "responded",
+      "priority": "p1",
+      "blocking": true,
+      "gatePending": false,
+      "thread": "THR-crawl-v4",
+      "age": "5d",
+      "new": false,
+      "severity": "blocking",
+      "reasons": ["blocking-dependency"]
+    },
+    {
+      "space": "getvisa",
+      "id": "XC-gvcore-new-ingest",
+      "type": "contract",
+      "title": "New ingest-v2 contract awaiting acknowledgement",
+      "from": "gvcore",
+      "to": ["axon"],
+      "state": "published",
+      "priority": "p3",
+      "blocking": false,
+      "gatePending": false,
+      "age": "3w",
+      "new": false,
+      "severity": "normal"
+    },
+    {
+      "space": "platform",
+      "id": "XR-pgw-slo-target",
+      "type": "requirement",
+      "title": "Uptime SLO commitment for gateway webhook",
+      "from": "pgw",
+      "to": ["axon"],
+      "state": "acknowledged",
+      "priority": "p2",
+      "blocking": false,
+      "gatePending": false,
+      "age": "2h",
+      "new": true,
+      "severity": "attention"
+    },
+    {
+      "space": "getvisa",
+      "id": "XD-gvcore-20260701-e5f6",
+      "type": "decision",
+      "title": "Decision: adopt visa-status v2 for billing",
+      "from": "gvcore",
+      "to": ["axon"],
+      "state": "proposed",
+      "priority": "p3",
+      "blocking": false,
+      "gatePending": false,
+      "age": "just now",
+      "new": true,
+      "severity": "normal"
+    },
+    {
+      "space": "getvisa",
+      "id": "XH-legacycrm-20260615-g7h8",
+      "type": "handoff",
+      "title": "</script><img src=x onerror=alert(1)>",
+      "from": "legacycrm",
+      "to": ["axon"],
+      "state": "submitted",
+      "priority": "p2",
+      "blocking": false,
+      "gatePending": true,
+      "thread": "THR-legacy-handoff",
+      "age": "3w",
+      "new": false,
+      "severity": "blocking",
+      "reasons": ["gate-pending-on-me"]
+    },
+    {
+      "space": "platform",
+      "id": "XS-seomatrix-20260718-k1m2",
+      "type": "response",
+      "title": "",
+      "from": "seomatrix",
+      "to": ["axon"],
+      "state": "submitted",
+      "priority": "p3",
+      "blocking": false,
+      "gatePending": false,
+      "age": "5d",
+      "new": false,
+      "severity": "normal"
+    },
+    {
+      "space": "getvisa",
+      "id": "XA-gvcore-20260601-n3p4",
+      "type": "announcement",
+      "title": "almanac 📚 v3 — Ünïcode ok · مرحبا",
+      "from": "gvcore",
+      "to": ["axon", "gvbilling"],
+      "state": "published",
+      "priority": "p3",
+      "blocking": false,
+      "gatePending": false,
+      "age": "2d",
+      "new": true,
+      "severity": "normal"
+    },
+    {
+      "space": "platform",
+      "id": "XQ-pgw-20260723-q5r6",
+      "type": "question",
+      "title": "Please review the compatibility matrix for the getvisa visa-status v2 API migration including all affected downstream consumers before the Friday cutover window closes and file blocking issues immediately if regressions are found",
+      "from": "pgw",
+      "to": ["axon"],
+      "state": "accepted",
+      "priority": "p2",
+      "blocking": false,
+      "gatePending": false,
+      "age": "just now",
+      "new": true,
+      "severity": "normal"
+    },
+    {
+      "space": "getvisa",
+      "id": "XW-gvbilling-20260718-s7t8",
+      "type": "work_request",
+      "title": "Migrate onboarding flow docs to new template",
+      "from": "gvbilling",
+      "to": ["axon"],
+      "state": "in_progress",
+      "priority": "p3",
+      "blocking": false,
+      "gatePending": false,
+      "age": "5d",
+      "new": false,
+      "severity": "normal"
+    }
+  ],
+  "outbox": [
+    {
+      "space": "getvisa",
+      "id": "XW-axon-20260721-v9w0",
+      "type": "work_request",
+      "title": "Confirm gvbilling rollout window",
+      "from": "axon",
+      "to": ["gvbilling"],
+      "state": "acknowledged",
+      "priority": "p2",
+      "blocking": false,
+      "gatePending": false,
+      "age": "2h",
+      "new": false,
+      "severity": "normal"
+    },
+    {
+      "space": "platform",
+      "id": "XQ-axon-20260718-x1y2",
+      "type": "question",
+      "title": "Can seomatrix backport the crawl-report v3 fix?",
+      "from": "axon",
+      "to": ["seomatrix"],
+      "state": "submitted",
+      "priority": "p1",
+      "blocking": true,
+      "gatePending": false,
+      "age": "5d",
+      "new": false,
+      "severity": "blocking"
+    },
+    {
+      "space": "platform",
+      "id": "XD-axon-20260701-a3b4",
+      "type": "decision",
+      "title": "Adopt pgw webhook v1 as the default integration",
+      "from": "axon",
+      "to": ["pgw"],
+      "state": "proposed",
+      "priority": "p3",
+      "blocking": false,
+      "gatePending": false,
+      "age": "3w",
+      "new": false,
+      "severity": "normal"
+    }
+  ],
+  "contracts": [
+    {
+      "space": "platform",
+      "id": "XC-pgw-webhook",
+      "provider": "pgw",
+      "version": "1.4.2",
+      "state": "published",
+      "codeBacked": true,
+      "consumers": ["axon"]
+    },
+    {
+      "space": "getvisa",
+      "id": "XC-gvcore-visa-status",
+      "provider": "gvcore",
+      "version": "2.3.0",
+      "state": "published",
+      "codeBacked": true,
+      "consumers": ["gvbilling"]
+    },
+    {
+      "space": "getvisa",
+      "id": "XC-gvcore-auth-legacy",
+      "provider": "gvcore",
+      "version": "1.0.0",
+      "state": "retired",
+      "codeBacked": false,
+      "consumers": ["gvbilling"]
+    },
+    {
+      "space": "platform",
+      "id": "XC-seomatrix-crawl-report",
+      "provider": "seomatrix",
+      "version": "3.1.0",
+      "state": "deprecated",
+      "codeBacked": true,
+      "consumers": ["axon"]
+    }
+  ],
+  "flags": [
+    {
+      "space": "getvisa",
+      "system": "legacycrm",
+      "code": "V4-STALE-MANIFEST",
+      "message": "legacycrm participant manifest not refreshed in 30d",
+      "severity": "attention"
+    },
+    {
+      "space": "platform",
+      "system": "pgw",
+      "code": "V5-CODE-MISMATCH",
+      "message": "published contract version does not match the code-backed verifier output",
+      "severity": "blocking"
+    }
+  ]
+}

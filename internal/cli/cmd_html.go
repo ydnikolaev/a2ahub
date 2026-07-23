@@ -54,15 +54,22 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	system := fs.String("system", "", "view this system's perspective (default: your configured system)")
 	out := fs.String("out", htmlDefaultOut, "output HTML file path")
 	jsonOut := fs.Bool("json", false, "emit the DATA model as JSON to stdout (no HTML file)")
+	demo := fs.Bool("demo", false, "render the embedded demo fixture (all states/types) — no connected space needed")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 {
-		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a %s [--system <id>] [--out <path>] [--json]\n", c.name)
+		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a %s [--system <id>] [--out <path>] [--json] [--demo]\n", c.name)
 		return 2
 	}
 
-	data, err := html.Assemble(ctx, c.store, *system, time.Now())
+	var data html.Data
+	var err error
+	if *demo {
+		data, err = html.DemoData()
+	} else {
+		data, err = html.Assemble(ctx, c.store, *system, time.Now())
+	}
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a %s: %v\n", c.name, err)
 		return 1
