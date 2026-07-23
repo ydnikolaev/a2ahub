@@ -130,6 +130,17 @@ func TestExchangeEdges(t *testing.T) {
 const bothRegionsTmpl = "<script>const DATA = /*A2A_DATA_START*/{}/*A2A_DATA_END*/;</script>\n" +
 	"<script>const DOCS = /*A2A_DOCS_START*/[]/*A2A_DOCS_END*/;</script>\n"
 
+// TestToItem_CarriesDescription guards the D-001 plumbing: a cache.Item's
+// Description (from the artifact body) reaches the model Item the dashboard
+// renders. The mapper is otherwise field-copy, so one assertion suffices.
+func TestToItem_CarriesDescription(t *testing.T) {
+	t.Parallel()
+	m := toItem(cache.Item{ID: "XQ-x", Description: "why this matters"}, time.Now())
+	if m.Description != "why this matters" {
+		t.Fatalf("Description = %q, want it carried through", m.Description)
+	}
+}
+
 func TestRender_InjectsBothRegions(t *testing.T) {
 	t.Parallel()
 	docs := []DocSection{{ID: "x", Group: "Start", Title: "X", HTML: "<h2>hi</h2>"}}

@@ -170,21 +170,42 @@ func toItem(fa foldedArtifact, syncStale, pendingMerge bool) Item {
 // (degrade, never fail the caller). Used for the dashboard's item + contract
 // descriptions (D-001/D-002).
 func bodySummary(raw []byte, max int) string {
+	if max < 1 {
+		max = 1
+	}
 	fm, err := artifact.ParseFrontmatter(raw)
 	if err != nil {
 		return ""
 	}
-	s := strings.TrimSpace(string(fm.Body))
+	body := strings.ReplaceAll(string(fm.Body), "\r\n", "\n") // CRLF → LF so the split matches
+	s := strings.TrimSpace(body)
 	if s == "" {
 		return ""
 	}
 	if i := strings.Index(s, "\n\n"); i >= 0 {
 		s = s[:i] // first paragraph only
 	}
-	s = strings.TrimLeft(s, "#>-* \t")       // drop a leading md heading/quote/list marker
+	s = trimLeadingMarker(s)
 	s = strings.Join(strings.Fields(s), " ") // collapse internal whitespace + newlines
 	if r := []rune(s); len(r) > max {
 		s = strings.TrimSpace(string(r[:max-1])) + "…"
+	}
+	return s
+}
+
+// trimLeadingMarker drops ONE leading markdown block marker — an ATX heading
+// (`#`+), a blockquote (`>`), or a list bullet (`-`/`*`/`+`) — but only when it
+// is a real marker, i.e. followed by a space. So prose like "-50°C is cold" or
+// "**bold**" keeps its leading character (the old blanket TrimLeft mangled it).
+func trimLeadingMarker(s string) string {
+	t := strings.TrimLeft(s, " \t")
+	if h := strings.TrimLeft(t, "#"); h != t && strings.HasPrefix(h, " ") {
+		return strings.TrimLeft(h, " ") // heading: '#'+ then space
+	}
+	for _, m := range []string{"> ", "- ", "* ", "+ "} {
+		if strings.HasPrefix(t, m) {
+			return strings.TrimLeft(t[len(m):], " ")
+		}
 	}
 	return s
 }
