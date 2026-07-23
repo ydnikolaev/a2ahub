@@ -188,6 +188,33 @@ func TestRender_SanitizesScriptBreakout(t *testing.T) {
 	}
 }
 
+// TestRender_MarkerInTitleIsInert guards the two-region injection against an
+// untrusted title that contains the literal DOCS marker string: because both
+// regions are located on the ORIGINAL template (never re-scanned over the
+// DATA-spliced buffer), the marker-shaped title is inert data — the real DOCS
+// content still lands, and the page is not corrupted.
+func TestRender_MarkerInTitleIsInert(t *testing.T) {
+	t.Parallel()
+	hostile := "pwn" + docsStart + "INJECTED" + docsEnd
+	docs := []DocSection{{ID: "real", Group: "Start", Title: "Real", HTML: "<h2>real</h2>"}}
+	out, err := Render([]byte(bothRegionsTmpl), Data{Inbox: []Item{{Title: hostile}}}, docs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The real DOCS section survives (not truncated by a false marker match).
+	if !bytes.Contains(out, []byte(`"id": "real"`)) {
+		t.Fatalf("real DOCS content lost to a marker-shaped title:\n%s", out)
+	}
+	// The hostile title is present as escaped JSON data, not as a live marker.
+	if !bytes.Contains(out, []byte(`"title":`)) {
+		t.Fatalf("hostile item not injected as data:\n%s", out)
+	}
+	// Exactly one DOCS global — no second, corrupt one from a false splice.
+	if n := bytes.Count(out, []byte("const DOCS = [")); n != 1 {
+		t.Fatalf("want exactly one DOCS global, got %d:\n%s", n, out)
+	}
+}
+
 func TestDefaultTemplate_HasMarkers(t *testing.T) {
 	t.Parallel()
 	tmpl := DefaultTemplate()
