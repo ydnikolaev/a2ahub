@@ -145,7 +145,7 @@ var coverageManifest = []coverageEntry{
 
 	// --- Permanent skip-set (spec 26 §1, exhaustive) --------------------
 	{Verb: "mcp", Skip: "serve-loop; CLI/MCP behavior equivalence is owned by the P14/P15 parity suite"},
-	{Verb: "update", GoTest: "internal/e2e.TestT3UpdateResolveVerifyRefuseChecksum"},
+	{Verb: "update", Skip: "network self-swap — the exec'd `a2a update` verb replaces the running binary, so the VERB can't run headlessly (permanent skip, spec §1/§11). The resolve→verify→refuse-on-bad-checksum MECHANISM is exercised by internal/e2e.TestT3UpdateResolveVerifyRefuseChecksum (against a local fake release fixture), and the verb's own dispatch by internal/cli/cmd_update_test.go."},
 }
 
 // manifestVerbSet returns the set of every Verb named by ANY row of

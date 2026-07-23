@@ -192,7 +192,10 @@ type contractDiffTree struct {
 }
 
 func contractDiff(a, b map[string]string) contractDiffTree {
-	var out contractDiffTree
+	// Non-nil empty slices so `--json` emits `[]` (not `null`) for an empty
+	// diff — a JSON consumer doing `.added.length` must not trip (go-auditor
+	// P26 IN LOW).
+	out := contractDiffTree{Added: []string{}, Removed: []string{}, Changed: []string{}}
 	for p, da := range a {
 		db, ok := b[p]
 		if !ok {
