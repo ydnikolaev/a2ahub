@@ -1,0 +1,33 @@
+# OP-214 `a2a html --demo --no-open`: renders the embedded demo fixture with
+# no connected space required (pure local read), consumes BOTH marker pairs
+# (neither A2A_DATA_* nor A2A_DOCS_* marker survives, internal/html's own
+# render.go contract), the Documentation tab's five section groups (Start,
+# Concepts, Reference, Authoring, Help — docs.go's docManifest) are present,
+# and the page is self-contained: zero external asset loads (no
+# href="http…"/src="http…" — the demo Data's own repoURL string VALUES
+# legitimately contain "https://github.com/…" and must NOT be mistaken for an
+# asset reference, so this only greps tag-attribute shapes, never the bare
+# substring).
+exec a2a html --demo --no-open
+stdout 'wrote'
+exists .a2a/dashboard.html
+
+! grep 'A2A_DATA_START' .a2a/dashboard.html
+! grep 'A2A_DATA_END' .a2a/dashboard.html
+! grep 'A2A_DOCS_START' .a2a/dashboard.html
+! grep 'A2A_DOCS_END' .a2a/dashboard.html
+
+grep 'const DOCS = \[' .a2a/dashboard.html
+grep '"group": "Start"' .a2a/dashboard.html
+grep '"group": "Concepts"' .a2a/dashboard.html
+grep '"group": "Reference"' .a2a/dashboard.html
+grep '"group": "Authoring"' .a2a/dashboard.html
+grep '"group": "Help"' .a2a/dashboard.html
+
+! grep 'href="http' .a2a/dashboard.html
+! grep 'src="http' .a2a/dashboard.html
+
+# `a2a dashboard` is the same command under the friendly alias name.
+exec a2a dashboard --demo --no-open --out dashboard2.html
+stdout 'wrote'
+exists dashboard2.html

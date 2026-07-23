@@ -2,6 +2,14 @@
 # internal/cli's own TestStatuslinePerf); here just the OP-contract: the
 # seeded XR-axon-demo is `blocking: true`, which severs statusline's own
 # urgent-severity path (exit 11) regardless of addressee — a non-empty,
-# single-line signal.
-! exec a2a statusline
+# single-line signal. AC-601.2 (spec 07 §8) names the exit code itself as
+# part of the contract ("severity exit code reflect it... exit 11"), not
+# just non-empty stdout — `! exec` alone only proves "some nonzero exit"
+# and would stay green even if statusline regressed to exit 1 (a hard
+# error) or exit 2 (usage error) instead of 11 (severity). testscript has
+# no built-in exact-exit-code assertion, so the exit code is surfaced via
+# a shell wrapper (the same `exec sh -c` idiom feedback_intake_guards.txtar
+# already uses) and matched on stdout.
+exec sh -c 'a2a statusline; echo "exit=$?"'
 stdout 'XR-axon-demo'
+stdout 'exit=11'

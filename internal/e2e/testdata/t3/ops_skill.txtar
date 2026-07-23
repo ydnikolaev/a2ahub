@@ -1,0 +1,37 @@
+# `a2a skill install` (spec 20): clean-repo install writes the embedded tree
+# + a PROVENANCE.md marker; a re-install onto a target with SOMEONE ELSE's
+# content (no marker) refuses without --force; a re-install onto OUR OWN
+# target (marker present) is self-refreshing and PRUNES a file the current
+# tree no longer ships (mirrors internal/cli/cmd_skill_test.go's own
+# clean-repo / foreign-refusal / refresh-prune scenarios, exec'd through the
+# real binary).
+exec a2a skill install --dir myskill
+stdout 'installed'
+stdout 'SKILL.md'
+exists myskill/SKILL.md
+exists myskill/PROVENANCE.md
+
+# Someone else's directory (no provenance marker) — refuse, write nothing.
+! exec a2a skill install --dir foreign
+stderr 'refusing to overwrite'
+! exists foreign/SKILL.md
+exists foreign/user-file.md
+
+# --force overrides the foreign-target refusal.
+exec a2a skill install --dir foreign --force
+stdout 'installed'
+exists foreign/SKILL.md
+
+# Refresh-prune: a stale file left under OUR OWN target from a prior install
+# is removed (not orphaned) on the next install, since a refresh mirrors the
+# embedded tree exactly.
+cp stale-source/obsolete-type.md myskill/reference/authoring/obsolete-type.md
+exec a2a skill install --dir myskill
+stdout 'installed'
+! exists myskill/reference/authoring/obsolete-type.md
+exists myskill/SKILL.md
+
+-- foreign/user-file.md --
+mine
+-- stale-source/obsolete-type.md --
+stale

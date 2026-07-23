@@ -1,0 +1,26 @@
+# OP-222 `a2a completion <bash|zsh|fish>`: each shell emits a script
+# carrying that shell's own registration marker (P23,
+# internal/cli/completion_test.go's own marker vocabulary), and — when the
+# real shell interpreter is on PATH — the emitted script parses under it
+# (`-n` for bash/zsh, `--no-execute` for fish; mirrors
+# TestRenderCompletion_ShellSyntax's own per-shell LookPath-skip idiom via
+# testscript's `[exec:prog]` condition, so a dev/CI box missing one shell
+# never fails the scenario). An unknown shell argument refuses (exit 1).
+
+exec a2a completion bash
+stdout 'complete -F _a2a a2a'
+cp stdout comp.bash
+[exec:bash] exec bash -n comp.bash
+
+exec a2a completion zsh
+stdout '#compdef a2a'
+cp stdout comp.zsh
+[exec:zsh] exec zsh -n comp.zsh
+
+exec a2a completion fish
+stdout 'complete -c a2a'
+cp stdout comp.fish
+[exec:fish] exec fish --no-execute comp.fish
+
+! exec a2a completion powershell
+stderr 'a2a completion:'
