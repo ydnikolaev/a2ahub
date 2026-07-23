@@ -237,7 +237,7 @@ func TestSubmitEndToEndSingleArtifact(t *testing.T) {
 		t.Fatalf("expected an 'opened PR' message; got %q", out.String())
 	}
 
-	changed := gitDiffNames(t, mirrorDir, "main", "a2a/axon/XQ-axon-20260721-k3f9")
+	changed := gitDiffNames(t, mirrorDir, "main", "a2a/axon/submit/XQ-axon-20260721-k3f9")
 	if len(changed) != 2 {
 		t.Fatalf("changed files = %v, want exactly 2 (artifact + event)", changed)
 	}
@@ -283,7 +283,7 @@ func TestSubmitBatchAllOrNothing(t *testing.T) {
 		t.Fatal("expected an actionable error message")
 	}
 
-	count := gitRevListCount(t, mirrorDir, "main", "a2a/axon/*")
+	count := gitRevListCount(t, mirrorDir, "main", "a2a/axon/submit/*")
 	if count != 0 {
 		t.Fatalf("expected zero new commits on an aborted batch, found %d branch(es)/commit(s)", count)
 	}
@@ -306,7 +306,7 @@ func TestSubmitBatchOneCommitNEvents(t *testing.T) {
 		t.Fatalf("code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
 	}
 
-	branch := "a2a/axon/XQ-axon-20260721-bbb1+XQ-axon-20260721-bbb2+XQ-axon-20260721-bbb3"
+	branch := "a2a/axon/submit/XQ-axon-20260721-bbb1+XQ-axon-20260721-bbb2+XQ-axon-20260721-bbb3"
 	commits := gitRevListCountBranch(t, mirrorDir, "main", branch)
 	if commits != 1 {
 		t.Fatalf("commits ahead of main on %s = %d, want exactly 1", branch, commits)

@@ -60,7 +60,7 @@ func TestFunnelFallsBackToAFork(t *testing.T) {
 		t.Fatalf("State = %v, want %v", result.State, WriteStatePendingMerge)
 	}
 
-	branch := "a2a/axon/" + req.ArtifactID
+	branch := "a2a/axon/submit/" + req.ArtifactID
 	if len(fake.Forks) != 1 || fake.Forks[0].Repo != req.Repo {
 		t.Fatalf("EnsureFork calls = %+v, want exactly one for %+v", fake.Forks, req.Repo)
 	}

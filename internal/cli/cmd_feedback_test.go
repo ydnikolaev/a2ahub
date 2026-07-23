@@ -221,7 +221,7 @@ status: new
 	if len(fakeHost.Pushes) != 1 || len(fakeHost.Opens) != 1 {
 		t.Fatalf("expected exactly one PushBranch + OpenPR call, got pushes=%d opens=%d", len(fakeHost.Pushes), len(fakeHost.Opens))
 	}
-	wantBranch := "a2a/feedback/fb-20260723-cafe01"
+	wantBranch := "a2a/feedback/submit/fb-20260723-cafe01"
 	if fakeHost.Pushes[0].Branch != wantBranch {
 		t.Fatalf("branch = %q, want %q", fakeHost.Pushes[0].Branch, wantBranch)
 	}

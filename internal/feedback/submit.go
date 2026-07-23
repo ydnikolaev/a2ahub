@@ -154,6 +154,7 @@ func (s *Submitter) Submit(ctx context.Context, path string) (SubmitResult, erro
 	req := space.SubmitRequest{
 		RepoDir:           dir,
 		System:            "feedback",
+		Verb:              "submit",
 		ArtifactID:        probe.ID,
 		Files:             []space.FileWrite{{Path: gopath.Join("feedback", "inbox", probe.ID+".yaml"), Content: raw}},
 		CommitMessage:     title,

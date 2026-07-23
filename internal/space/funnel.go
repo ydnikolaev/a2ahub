@@ -47,6 +47,12 @@ type SubmitRequest struct {
 	RepoDir string
 	// System is the authoring system (branch name + section guard).
 	System string
+	// Verb names the WRITE this request is — "submit", "ack", "accept",
+	// "contract-publish", … It is part of the branch name, which is what
+	// makes two different transitions on one artifact two different
+	// branches (see BranchName). Required: a write that cannot say which
+	// write it is cannot be told apart from the previous one.
+	Verb string
 	// ArtifactID is the artifact's §3.3 id (branch name suffix).
 	ArtifactID string
 	// Files are committed together, exactly once. Every Path must be
@@ -145,17 +151,24 @@ func NewWriteFunnel(h host.Host, validator SubmitValidator, binaryVersion string
 //	(5) return the write-result.
 func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResult, error) {
 	const op = "Submit"
-	branch := fmt.Sprintf("a2a/%s/%s", req.System, req.ArtifactID)
+	if req.Verb == "" {
+		return WriteResult{}, &Error{Op: op, Input: req.ArtifactID, Err: ErrMissingVerb}
+	}
+	branch := BranchName(req.System, req.Verb, req.ArtifactID)
 
 	// Step 0: idempotent-retry short-circuit — before ANY other check or
-	// git action (spec 05 §7 idempotency note).
+	// git action (spec 05 §7 idempotency note). Only an OPEN PR
+	// short-circuits: it is the interrupted run's own PR, still in flight.
+	// A MERGED one is a write that already completed, and the next write on
+	// the same branch is a NEW transition, not a repeat — treating it as a
+	// repeat is how `ack` then `accept` used to lose the accept.
 	existing, err := f.host.FindPRByHeadBranch(ctx, host.FindPRRequest{
 		Repo: req.Repo, Branch: branch, Credential: req.Credential,
 	})
 	if err != nil {
 		return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
 	}
-	if existing != nil {
+	if existing != nil && existing.State != "merged" {
 		return existingPRResult(branch, existing), nil
 	}
 
@@ -193,9 +206,23 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	}
 
 	// Step 2: assemble ONE commit = every req.Files entry (D-026).
-	sha, err := f.commitOne(ctx, req, branch)
+	sha, fresh, err := f.commitOne(ctx, req, branch)
 	if err != nil {
 		return WriteResult{}, &Error{Op: op, Err: err}
+	}
+	if !fresh {
+		// Nothing to commit: the branch already carries exactly this
+		// content. Either it is already IN the space (a genuine repeat of
+		// the same write — nothing left to do), or a previous attempt made
+		// the commit but never got it merged, in which case the push/PR
+		// steps still have work.
+		onBase, berr := f.commitIsOnBase(ctx, req, sha)
+		if berr != nil {
+			return WriteResult{}, &Error{Op: op, Err: berr}
+		}
+		if onBase {
+			return WriteResult{Branch: branch, CommitSHA: sha, State: WriteStateAlreadyMerged}, nil
+		}
 	}
 
 	// Step 3: push the ephemeral branch — into req.Repo itself, or (when
@@ -236,6 +263,35 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		Branch: branch, PRNumber: pr.Number, PRURL: pr.URL,
 		CommitSHA: sha, State: WriteStatePendingMerge,
 	}, nil
+}
+
+// BranchName renders the funnel's deterministic branch:
+// a2a/<system>/<verb>/<artifact-id>.
+//
+// The VERB segment is load-bearing. Keyed on the artifact alone, the branch
+// identified WHAT was written about rather than WHICH write it was, so once
+// any write by a system on an artifact had merged, every later write by
+// that system on that artifact matched a merged PR and short-circuited —
+// `ack` then `accept` lost the accept, and a contract's publish/deprecate/
+// retire all collapsed into its submit. Silently, with exit 0.
+func BranchName(system, verb, artifactID string) string {
+	return fmt.Sprintf("a2a/%s/%s/%s", system, verb, artifactID)
+}
+
+// commitIsOnBase reports whether sha is already contained in the base
+// branch as the mirror last fetched it — i.e. this write's content is
+// already in the space. An unresolvable base ref answers "no": writing a
+// duplicate is recoverable, silently dropping a write is not.
+func (f *WriteFunnel) commitIsOnBase(ctx context.Context, req SubmitRequest, sha string) (bool, error) {
+	base := req.BaseBranch
+	if base == "" {
+		base = "main"
+	}
+	if err := runGit(ctx, req.RepoDir, "rev-parse", "--verify", "origin/"+base); err != nil {
+		return false, nil //nolint:nilerr // reason: an unknown base is "not on base", not a failure
+	}
+	err := runGit(ctx, req.RepoDir, "merge-base", "--is-ancestor", sha, "origin/"+base)
+	return err == nil, nil
 }
 
 // existingPRResult renders the idempotent short-circuit's result for a PR
@@ -333,44 +389,44 @@ func hasPathPrefix(path, prefix string) bool {
 // commitOne checks out branch (creating it from the current HEAD), writes
 // every req.Files entry to disk under req.RepoDir, stages, and commits
 // them as ONE commit — the D-026 shape. Returns the new commit SHA.
-func (f *WriteFunnel) commitOne(ctx context.Context, req SubmitRequest, branch string) (string, error) {
+func (f *WriteFunnel) commitOne(ctx context.Context, req SubmitRequest, branch string) (sha string, fresh bool, err error) {
 	if len(req.Files) == 0 {
-		return "", fmt.Errorf("space: commitOne: no files to commit")
+		return "", false, fmt.Errorf("space: commitOne: no files to commit")
 	}
 
 	if err := runGit(ctx, req.RepoDir, "checkout", "-B", branch); err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	paths := make([]string, 0, len(req.Files))
 	for _, file := range req.Files {
 		full := filepath.Join(req.RepoDir, filepath.FromSlash(file.Path))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			return "", err
+			return "", false, err
 		}
 		if err := os.WriteFile(full, file.Content, 0o644); err != nil {
-			return "", err
+			return "", false, err
 		}
 		paths = append(paths, file.Path)
 	}
 
 	addArgs := append([]string{"add"}, paths...)
 	if err := runGit(ctx, req.RepoDir, addArgs...); err != nil {
-		return "", err
+		return "", false, err
 	}
 
-	// A re-run against the SAME mirror re-writes byte-identical files onto
-	// a branch that already carries them, and git refuses an empty commit.
-	// The branch already holding exactly this content is the outcome the
-	// caller asked for, so reuse its tip instead of failing. Reachable
-	// only on the fork path: the normal path's step-0 lookup short-
-	// circuits a re-run long before this point.
+	// Nothing staged means the branch already carries exactly this content
+	// — a re-run over the same mirror. git refuses an empty commit, so
+	// report the branch tip and let the caller decide what it means: on the
+	// base branch it is a write that already landed, off it a previous
+	// attempt whose push or PR never completed.
 	staged, err := runGitOutput(ctx, req.RepoDir, nil, "diff", "--cached", "--name-only")
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if staged == "" {
-		return runGitOutput(ctx, req.RepoDir, nil, "rev-parse", "HEAD")
+		head, herr := runGitOutput(ctx, req.RepoDir, nil, "rev-parse", "HEAD")
+		return head, false, herr
 	}
 
 	authorName := req.CommitAuthorName
@@ -390,12 +446,12 @@ func (f *WriteFunnel) commitOne(ctx context.Context, req SubmitRequest, branch s
 		msg = "a2a: submit " + req.ArtifactID
 	}
 	if _, err := runGitOutput(ctx, req.RepoDir, env, "commit", "-m", msg); err != nil {
-		return "", err
+		return "", false, err
 	}
 
-	sha, err := runGitOutput(ctx, req.RepoDir, nil, "rev-parse", "HEAD")
+	head, err := runGitOutput(ctx, req.RepoDir, nil, "rev-parse", "HEAD")
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	return sha, nil
+	return head, true, nil
 }

@@ -427,7 +427,7 @@ func (d lifecycleDeps) buildRequest(ids []string, files []space.FileWrite, verb 
 	}
 	return space.SubmitRequest{
 		RepoDir: d.mirrorDir, System: d.ownSystem,
-		ArtifactID: strings.Join(sorted, "+"), Files: files,
+		Verb: verb, ArtifactID: strings.Join(sorted, "+"), Files: files,
 		CommitMessage: commitMsg, CommitAuthorName: d.hostCfg.CommitAuthorName, CommitAuthorEmail: d.hostCfg.CommitAuthorEmail,
 		RemoteURL: d.hostCfg.RemoteURL, Repo: d.hostCfg.Repo, BaseBranch: baseBranch,
 		PRTitle: commitMsg, PRBody: prBody, Credential: d.hostCfg.Credential,

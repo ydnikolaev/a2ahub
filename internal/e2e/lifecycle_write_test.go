@@ -252,12 +252,19 @@ func TestT3BlockUnblock(t *testing.T) {
 	if code := unblockCmd.Run(context.Background(), []string{id}, io2); code != 0 {
 		t.Fatalf("unblock: code = %d, want 0; stderr=%s", code, errOut2.String())
 	}
-	// block and unblock share the SAME deterministic branch (a2a/beta/<id>
-	// — the write funnel keys idempotency off artifact id, not verb), so
-	// unblock's own funnel call short-circuits to WriteStateAlreadyOpen
-	// against block's still-open PR — exactly ONE real OpenPR, not two.
-	if len(fakeHost.Opens) != 1 {
-		t.Fatalf("expected exactly one OpenPR call (block+unblock share a branch, dedup), got %d", len(fakeHost.Opens))
+	// Two writes, two branches, two PRs. This assertion used to read "one
+	// OpenPR — block and unblock share a branch, dedup": the funnel keyed
+	// its branch on the ARTIFACT, so unblock short-circuited against
+	// block's open PR and its event was silently dropped. The dedup was
+	// the defect, written down as an expectation (see space.BranchName).
+	if len(fakeHost.Opens) != 2 {
+		t.Fatalf("expected block and unblock to open their own PRs, got %d", len(fakeHost.Opens))
+	}
+	heads := []string{fakeHost.Opens[0].Head, fakeHost.Opens[1].Head}
+	for _, want := range []string{"a2a/beta/block/" + id, "a2a/beta/unblock/" + id} {
+		if heads[0] != want && heads[1] != want {
+			t.Errorf("no PR opened from %q; heads = %v", want, heads)
+		}
 	}
 }
 
