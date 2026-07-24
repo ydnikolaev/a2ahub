@@ -3,9 +3,11 @@
 package livee2e
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
+	"time"
 )
 
 // EnvReportPath optionally names a file the rendered report is also written
@@ -27,15 +29,29 @@ func TestLiveMatrix(t *testing.T) {
 	run := NewRunFor(os.Getenv(EnvOrg), DefaultRepo, Catalogue())
 
 	cfg, err := LoadConfig(os.Getenv)
-	switch {
-	case err != nil:
+	if err != nil {
 		run.Abort(err.Error())
-	default:
-		// Wave 3 replaces this with provisioning + the scenario drivers.
-		// Until then the honest outcome is that nothing ran — reported as
-		// such, and non-zero, rather than as an empty success.
-		_ = cfg
-		run.Abort("live scenarios are not implemented yet (spec 36 wave 3); the matrix was declared and nothing was run")
+	} else {
+		// Preflight against REAL GitHub before anything else. Every failure
+		// here is a refusal to run: each condition it checks turns the
+		// boundary scenarios into passes that prove nothing (spec 36 §T5).
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+		defer cancel()
+
+		pre, preErr := RunPreflight(ctx, &GitHubProber{}, cfg, cfg.Org, DefaultRepo)
+		switch {
+		case preErr != nil:
+			run.Abort("preflight refused: " + preErr.Error())
+		default:
+			// Carried into the report so it states the identities its
+			// assertions rest on — a report that does not name them cannot
+			// be audited afterwards.
+			run.Preflight = pre
+			// Wave 3 replaces this with provisioning + the scenario drivers.
+			// Until then the honest outcome is that nothing ran: reported as
+			// such, and non-zero, rather than as an empty success.
+			run.Abort("preflight passed; live scenarios are not implemented yet (spec 36 wave 3)")
+		}
 	}
 
 	report := run.Report()
