@@ -29,7 +29,7 @@
       "type": "object",
       "properties": {
         "kind": { "type": "string", "enum": ["human", "agent"] },
-        "name": { "type": "string" },
+        "name": { "type": "string", "minLength": 1 },
         "model": { "type": "string" },
         "session": { "type": "string" }
       },

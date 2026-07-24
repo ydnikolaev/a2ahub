@@ -67,6 +67,25 @@ func TestResolveActorDefaultsKindToAgent(t *testing.T) {
 	}
 }
 
+// TestResolveActorNameFallsBackToOSUser is the HIGH-finding stopgap's
+// regression: with every §7.4 source empty (no flag, no env, no harness
+// default, no config default-actor), actor.Name previously resolved to ""
+// — a CLI-minted event/artifact could carry an anonymous actor straight
+// through schema validation. It must now fall back to a non-empty OS-user
+// value (osUsername, unexported) rather than staying empty.
+func TestResolveActorNameFallsBackToOSUser(t *testing.T) {
+	// reason: mutates process env; not parallel-safe against sibling tests
+	// touching the same A2A_ACTOR_* variables (same reason as
+	// TestResolveActorOrderEnvBeatsHarnessAndConfig above). Setting the var
+	// to "" rather than leaving it untouched guards against a leaked
+	// non-empty value from process env when this test runs standalone.
+	t.Setenv("A2A_ACTOR_NAME", "")
+	a := cli.ResolveActor(cli.ActorFlags{}, cli.HarnessDefaults{}, cli.ConfigActor{})
+	if a.Name == "" {
+		t.Fatal("Name = \"\" with no flag/env/harness/config source; want a non-empty OS-user fallback")
+	}
+}
+
 // --- LegalityAdapter -----------------------------------------------------
 
 func TestLegalityAdapterFreshSubmitIsLegal(t *testing.T) {

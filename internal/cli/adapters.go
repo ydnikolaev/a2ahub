@@ -19,6 +19,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -75,12 +76,35 @@ type ConfigActor struct {
 // §7.4's binding order: explicit flags > A2A_ACTOR_* env vars > harness
 // adapter defaults > config; actor.kind defaults to "agent" when no
 // source names one.
+//
+// actor.Name carries one more fallback below config: the OS user
+// (osUsername) — the HIGH-finding stopgap for the anonymous-actor gap.
+// Every §7.4 source above it can legitimately be empty (unset flag/env, no
+// harness adapter integration yet, no config default-actor block), and
+// unlike Kind, Name previously had no final fallback at all, so a CLI-minted
+// write could carry actor.name: "" straight through. This is deliberately
+// the LAST fallback, not a new higher-priority source — it never overrides
+// an explicit flag, env var, harness default, or config value.
 func ResolveActor(flags ActorFlags, harness HarnessDefaults, cfg ConfigActor) template.Actor {
 	return template.Actor{
 		Kind:  firstNonEmpty(flags.Kind, os.Getenv(envActorKind), harness.Kind, cfg.Kind, "agent"),
-		Name:  firstNonEmpty(flags.Name, os.Getenv(envActorName), harness.Name, cfg.Name),
+		Name:  firstNonEmpty(flags.Name, os.Getenv(envActorName), harness.Name, cfg.Name, osUsername()),
 		Model: firstNonEmpty(flags.Model, os.Getenv(envActorModel), harness.Model, cfg.Model),
 	}
+}
+
+// osUsername is ResolveActor's final non-empty fallback for actor.name: the
+// OS user (os/user.Current's Username, falling back to $USER when the
+// os/user lookup fails or returns an empty username — e.g. no /etc/passwd
+// entry in a minimal container). If neither resolves, osUsername returns ""
+// and ResolveActor leaves Name empty; this function does NOT invent a
+// placeholder — schema validation (actor.name minLength:1, both event/v1
+// and envelope/v1) is what then rejects the write with a clear message.
+func osUsername() string {
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	return os.Getenv("USER")
 }
 
 func firstNonEmpty(vals ...string) string {
