@@ -233,3 +233,37 @@ func contains(s, sub string) bool {
 		return false
 	})()
 }
+
+// The urgent segment must state what actually fired. Urgency has three
+// independent sources — priority p1, `blocking: true`, and a pending gate —
+// and an earlier version rendered every one of them as the literal "1 p1",
+// with the count hardcoded too.
+//
+// Found live on 2026-07-24 (P36's matrix): a question carrying
+// `priority: p3, blocking: true` was announced as `1 p1`. A status line that
+// names a priority the artifact does not have teaches the reader to ignore
+// it — and the hardcoded 1 hid every additional urgent item.
+func TestUrgencyLabelNamesTheRealReason(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		priority string
+		blocking bool
+		reasons  []string
+		want     string
+	}{
+		{"an explicit p1 stays p1", "p1", false, nil, "p1"},
+		{"p3 that blocks is blocking, NOT p1", "p3", true, nil, "blocking"},
+		{"a pending gate is a gate", "p3", false, []string{"gate-pending-on-me"}, "gate"},
+		{"the author's p1 wins over a derived reason", "p1", true, []string{"gate-pending-on-me"}, "p1"},
+		{"nothing urgent yields no label", "p3", false, []string{"some-other-reason"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := urgencyLabel(tc.priority, tc.blocking, tc.reasons); got != tc.want {
+				t.Fatalf("urgencyLabel(%q, %v, %v) = %q, want %q", tc.priority, tc.blocking, tc.reasons, got, tc.want)
+			}
+		})
+	}
+}

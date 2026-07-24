@@ -102,22 +102,19 @@ func (s *Store) Statusline(ctx context.Context) (StatuslineResult, error) {
 
 	newCount := 0
 	var urgent *actionableEntry
+	urgentCount, urgentLabel := 0, ""
 	severity := SeverityItemsPending
 	for i := range actionable {
 		e := &actionable[i]
 		if _, seen := prior.Items[e.fa.Env.ID]; !seen {
 			newCount++
 		}
-		urgentNow := e.fa.Env.Priority == "p1" || e.fa.Env.Blocking
-		for _, r := range e.reasons {
-			if r == "gate-pending-on-me" {
-				urgentNow = true
-			}
-		}
-		if urgentNow {
+		label := urgencyLabel(e.fa.Env.Priority, e.fa.Env.Blocking, e.reasons)
+		if label != "" {
 			severity = SeverityUrgent
+			urgentCount++
 			if urgent == nil {
-				urgent = e
+				urgent, urgentLabel = e, label
 			}
 		}
 	}
@@ -125,7 +122,12 @@ func (s *Store) Statusline(ctx context.Context) (StatuslineResult, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "a2a: %d new", newCount)
 	if urgent != nil {
-		fmt.Fprintf(&b, " · 1 p1 %s %q", urgent.fa.Env.ID, urgent.fa.Env.Title)
+		// With more than one, the specific label would describe only the
+		// named item, so the segment widens to the honest superset.
+		if urgentCount > 1 {
+			urgentLabel = "urgent"
+		}
+		fmt.Fprintf(&b, " · %d %s %s %q", urgentCount, urgentLabel, urgent.fa.Env.ID, urgent.fa.Env.Title)
 	}
 	if staleCount > 0 {
 		fmt.Fprintf(&b, " · %d stale", staleCount)
@@ -167,4 +169,31 @@ func (s *Store) triggerRefreshIfStale(_ context.Context, idx map[string][]folded
 			_ = space.CloneOrFetch(context.Background(), sm.Dir, sm.RepoURL)
 		}
 	}()
+}
+
+// urgencyLabel names the SOURCE of an item's urgency, for the status line's
+// urgent segment. Three independent things make an item urgent, and the
+// segment has to say which one fired.
+//
+// An earlier version rendered all three as the literal "p1". Observed live on
+// 2026-07-24 (P36's matrix): a question carrying `priority: p3, blocking:
+// true` was announced as `1 p1`. A status line that states a priority the
+// artifact does not carry teaches its reader to stop believing it — and the
+// count was hardcoded to 1 besides, hiding every additional urgent item.
+//
+// Precedence is by specificity, not severity: an explicit p1 is what the
+// author actually wrote, so it wins over the derived reasons.
+func urgencyLabel(priority string, blocking bool, reasons []string) string {
+	switch {
+	case priority == "p1":
+		return "p1"
+	case blocking:
+		return "blocking"
+	}
+	for _, r := range reasons {
+		if r == "gate-pending-on-me" {
+			return "gate"
+		}
+	}
+	return ""
 }
