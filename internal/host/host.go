@@ -125,6 +125,18 @@ type CheckStatusResult struct {
 	// this field is how the caller learns the choice was not unique — a
 	// silent pick is exactly what spec 34 §2.4 forbids. Empty otherwise.
 	Ambiguous []string
+	// HeadSHA is the commit the selected run actually executed against —
+	// the evidence of WHICH REF answered, the sibling of Name's which-shape.
+	//
+	// It exists because a conclusion alone is not a verdict. GitHub can serve
+	// a check run computed against a stale merge commit after the base moved
+	// (observed twice during the 2026-07-24 getvisa migration), so a caller
+	// that reads Conclusion without comparing this to the PR's current head
+	// can report a green that was never tested, or a red already fixed. Any
+	// consumer that waits for green — the `submit --wait` backlog row, and
+	// P36's live tier today — needs it to be right rather than merely
+	// plausible. Empty when no run matched.
+	HeadSHA string
 }
 
 // ReviewStatusResult reports the CODEOWNERS-required review approval state

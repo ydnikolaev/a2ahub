@@ -290,6 +290,10 @@ type checkRun struct {
 	// same-second case, since GitHub's check-run ids increase over time.
 	StartedAt string `json:"started_at"`
 	ID        int64  `json:"id"`
+	// HeadSHA is the commit this run executed against. Surfaced through
+	// CheckStatusResult because a conclusion read without it can be a stale
+	// merge commit's verdict — see CheckStatusResult.HeadSHA.
+	HeadSHA string `json:"head_sha"`
 }
 
 // selectRequiredCheckRun picks the V3 required check run out of a head SHA's
@@ -398,7 +402,7 @@ func (h *GitHubHost) CheckStatus(ctx context.Context, req StatusRequest) (CheckS
 	if !ok {
 		return CheckStatusResult{State: "queued"}, nil
 	}
-	return CheckStatusResult{State: run.Status, Conclusion: run.Conclusion, Name: run.Name, Ambiguous: ambiguous}, nil
+	return CheckStatusResult{State: run.Status, Conclusion: run.Conclusion, Name: run.Name, Ambiguous: ambiguous, HeadSHA: run.HeadSHA}, nil
 }
 
 // ReviewStatus implements Host.ReviewStatus: reads the PR's reviews and

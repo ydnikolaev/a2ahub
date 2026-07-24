@@ -169,8 +169,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	case len(parts) == 6 && parts[0] == "repos" && parts[3] == "pulls" && parts[5] == "reviews":
 		s.writeJSON(w, s.reviewPayload())
 	case len(parts) == 6 && parts[0] == "repos" && parts[3] == "commits" && parts[5] == "check-runs":
+		// head_sha echoes the SHA the run was ASKED for, which is the
+		// non-stale case. Real GitHub can answer with a run computed against
+		// an older ref, and CheckStatusResult.HeadSHA exists so a caller can
+		// tell the two apart; a fake that omitted the field would make every
+		// hermetic caller read an empty ref and skip that comparison.
 		s.writeJSON(w, map[string]any{"check_runs": []map[string]any{
-			{"name": s.CheckName, "status": s.CheckState, "conclusion": s.CheckConclusion},
+			{"name": s.CheckName, "status": s.CheckState, "conclusion": s.CheckConclusion, "head_sha": parts[4]},
 		}})
 	case len(parts) == 3 && parts[0] == "repos" && r.Method == http.MethodGet:
 		s.writeJSON(w, map[string]any{"name": parts[2]})
