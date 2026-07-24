@@ -9,6 +9,25 @@ import (
 // makefilePath is repo-relative from this package's directory.
 const makefilePath = "../../Makefile"
 
+// buildTagDirective is assembled rather than written literally so this file's
+// own source can never satisfy the check that looks for it.
+const buildTagDirective = "//go:" + "build livee2e"
+
+// preamble returns everything before a Go file's package clause — the only
+// place a build constraint may legally appear. Scanning whole files instead
+// would let THIS file match on the directive it mentions in its own strings,
+// which is how the first version of this guard passed with the tagged file
+// deleted.
+func preamble(src string) string {
+	if strings.HasPrefix(src, "package ") {
+		return ""
+	}
+	if idx := strings.Index(src, "\npackage "); idx >= 0 {
+		return src[:idx]
+	}
+	return src
+}
+
 func readMakefile(t *testing.T) []string {
 	t.Helper()
 	b, err := os.ReadFile(makefilePath)
@@ -71,6 +90,36 @@ func TestLiveTierIsNotAMergeGate(t *testing.T) {
 	// scenarios, which is the separation this whole test defends.
 	if !strings.Contains(strings.Join(liveRecipe, "\n"), "-tags=livee2e") {
 		t.Errorf("`live-e2e` does not pass -tags=livee2e; recipe:\n%s", strings.Join(liveRecipe, "\n"))
+	}
+
+	// (b2) …and something must actually be behind that tag. With no
+	// `//go:build livee2e` file, -tags=livee2e is decorative: the target
+	// would run only the hermetic tests in this package and exit 0 with no
+	// credentials configured — precisely the silent green AC-962.2 forbids.
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package dir: %v", err)
+	}
+	tagged := false
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+			continue
+		}
+		b, readErr := os.ReadFile(entry.Name())
+		if readErr != nil {
+			t.Fatalf("read %s: %v", entry.Name(), readErr)
+		}
+		// Only the preamble counts. A build constraint must precede the
+		// package clause, and scanning the whole file would let THIS test
+		// match its own directive literal below — a guard that is satisfied
+		// by its own source is no guard at all.
+		if strings.Contains(preamble(string(b)), buildTagDirective) {
+			tagged = true
+			break
+		}
+	}
+	if !tagged {
+		t.Errorf("no file carries the %q constraint — the build tag guards nothing and `make live-e2e` would exit 0 unconfigured", buildTagDirective)
 	}
 
 	// (c) REPO_GATES is the single list both `check` and `check-validators`
