@@ -35,7 +35,7 @@ func TestNewDraftsEveryTypeV1Valid(t *testing.T) {
 		t.Run(typ, func(t *testing.T) {
 			t.Parallel()
 			stagingDir := filepath.Join(t.TempDir(), "staging")
-			cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver)
+			cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
 
 			args := []string{typ}
 			if typ == "contract" || typ == "requirement" {
@@ -74,7 +74,7 @@ func TestNewDraftsEveryTypeV1Valid(t *testing.T) {
 
 func TestNewStandingTypeRequiresSlug(t *testing.T) {
 	t.Parallel()
-	cmd := cli.NewNewCommand(t.TempDir(), "axon", fixedActorResolver)
+	cmd := cli.NewNewCommand(t.TempDir(), "axon", fixedActorResolver, nil)
 	io, _, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{"contract"}, io)
 	if code != 2 {
@@ -87,7 +87,7 @@ func TestNewStandingTypeRequiresSlug(t *testing.T) {
 
 func TestNewUnknownType(t *testing.T) {
 	t.Parallel()
-	cmd := cli.NewNewCommand(t.TempDir(), "axon", fixedActorResolver)
+	cmd := cli.NewNewCommand(t.TempDir(), "axon", fixedActorResolver, nil)
 	io, _, _ := newIO()
 	code := cmd.Run(context.Background(), []string{"bogus"}, io)
 	if code != 2 {
@@ -103,7 +103,7 @@ func TestNewFieldOverrideAndBodyFile(t *testing.T) {
 		t.Fatalf("write body file: %v", err)
 	}
 
-	cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver)
+	cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
 	io, out, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{"question", "--field", "category=defect", "--body-file", bodyFile}, io)
 	if code != 0 {
@@ -131,7 +131,7 @@ func TestNewFieldOverrideAndBodyFile(t *testing.T) {
 func TestNewMintsIDFromOwnSystem(t *testing.T) {
 	t.Parallel()
 	stagingDir := t.TempDir()
-	cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver)
+	cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
 	io, _, _ := newIO()
 	if code := cmd.Run(context.Background(), []string{"question"}, io); code != 0 {
 		t.Fatalf("code = %d", code)
@@ -147,6 +147,77 @@ func TestNewMintsIDFromOwnSystem(t *testing.T) {
 	}
 	if id.System != "axon" {
 		t.Fatalf("System = %q, want axon", id.System)
+	}
+}
+
+// TestNewDefaultsSpaceFromSingleConnectedSpace is the regression test for
+// the live-run defect: `a2a new <type>` used to leave `space: <space-id>`
+// (the literal template placeholder) whenever --field space= was not
+// given, breaking the very next `a2a submit`. With exactly one connected
+// space, the drafted `space:` field now defaults to it; with zero or more
+// than one, today's behavior (placeholder survives) is unchanged; an
+// explicit --field space= always wins regardless of the connected-space
+// count.
+func TestNewDefaultsSpaceFromSingleConnectedSpace(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name              string
+		connectedSpaceIDs []string
+		fieldOverride     string // "" means no --field space= given
+		want              string
+	}{
+		{
+			name:              "one connected space fills the placeholder",
+			connectedSpaceIDs: []string{"acme-launch"},
+			want:              "space: acme-launch",
+		},
+		{
+			name:              "zero connected spaces leaves the placeholder",
+			connectedSpaceIDs: nil,
+			want:              "space: <space-id>",
+		},
+		{
+			name:              "two connected spaces leaves the placeholder (ambiguous)",
+			connectedSpaceIDs: []string{"acme-launch", "acme-migrate"},
+			want:              "space: <space-id>",
+		},
+		{
+			name:              "explicit --field space= always wins",
+			connectedSpaceIDs: []string{"acme-launch"},
+			fieldOverride:     "other-space",
+			want:              "space: other-space",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			stagingDir := t.TempDir()
+			cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, tt.connectedSpaceIDs)
+
+			args := []string{"question"}
+			if tt.fieldOverride != "" {
+				args = append(args, "--field", "space="+tt.fieldOverride)
+			}
+
+			io, out, errOut := newIO()
+			code := cmd.Run(context.Background(), args, io)
+			if code != 0 {
+				t.Fatalf("code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+			}
+
+			entries, err := os.ReadDir(stagingDir)
+			if err != nil || len(entries) != 1 {
+				t.Fatalf("ReadDir: %v, entries=%v", err, entries)
+			}
+			raw, err := os.ReadFile(filepath.Join(stagingDir, entries[0].Name()))
+			if err != nil {
+				t.Fatalf("ReadFile: %v", err)
+			}
+			if !bytes.Contains(raw, []byte(tt.want)) {
+				t.Fatalf("expected %q in drafted frontmatter; got:\n%s", tt.want, raw)
+			}
+		})
 	}
 }
 

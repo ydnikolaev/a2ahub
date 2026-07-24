@@ -96,6 +96,35 @@ func fixtureHostConfig(fx *spacefixture.Fixture) cli.SubmitHostConfig {
 	return cfg
 }
 
+// --- validate (OP-204) ------------------------------------------------
+
+// TestValidateResolvesBareStagedID is the same fix `a2a submit <id>`
+// already has (OP-205's Input column): `a2a validate <id>` must accept a
+// bare staged artifact id — what `a2a new` just printed — not demand a
+// path, "open XQ-...: no such file or directory". Reuses submit's own
+// resolveSubmitTarget id-resolution rather than a second copy.
+func TestValidateResolvesBareStagedID(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	writeQuestionDraft(t, stagingDir, "XQ-axon-20260721-k3f9", "axon", "other")
+
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+	cmd := cli.NewValidateCommand(engine, stagingDir)
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"XQ-axon-20260721-k3f9"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 (bare staged id must resolve to <staging>/<id>.md); stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "XQ-axon-20260721-k3f9.md") {
+		t.Fatalf("expected the JSON report to name the resolved staging path; got %q", out.String())
+	}
+}
+
 // TestSubmitForeignSectionRefusal is AC-201.3: an artifact whose `from`
 // does not match the configured own system is refused locally, exits
 // non-zero, and the write funnel is NEVER called (no git/network call).
@@ -116,6 +145,60 @@ func TestSubmitForeignSectionRefusal(t *testing.T) {
 	}
 	if !strings.Contains(errOut.String(), "CC-002") {
 		t.Fatalf("expected the refusal message to name CC-002; got %q", errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+	}
+}
+
+// TestSubmitRefusesUnfilledPlaceholderSpace is the placeholder-space
+// message improvement: a draft whose `space:` is still the unfilled
+// `<space-id>` template placeholder (schemas/templates/v1/*.md) must be
+// refused as "the draft was never filled in", not surfaced as if
+// `<space-id>` were a real (merely wrong) space value — that check belongs
+// to the wire layer's own findSpace lookup, one layer up, once this guard
+// has ruled out "still a draft".
+func TestSubmitRefusesUnfilledPlaceholderSpace(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	content := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: XQ-axon-20260721-k3f9\n" +
+		"type: question\n" +
+		"title: t\n" +
+		"space: <space-id>\n" +
+		"from: axon\n" +
+		"to: [other]\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: clarification\n" +
+		"priority: p3\n" +
+		"blocking: true\n" +
+		"classification: internal\n" +
+		"---\nbody\n"
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(stagingDir, "XQ-axon-20260721-k3f9.md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write draft: %v", err)
+	}
+
+	mirrorDir := t.TempDir()
+	legality := cli.NewLegalityAdapter(mirrorDir, "axon", testManifest())
+	fake := &fakeSubmitFunnel{}
+	cmd := cli.NewSubmitCommand(fake, legality, cli.NewNoopPendingMarker(), mirrorDir, "fixture-space", "axon", stagingDir, testHostConfig())
+
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{path}, io)
+	if code == 0 {
+		t.Fatal("expected a non-zero exit for an artifact with an unfilled placeholder space")
+	}
+	if !strings.Contains(errOut.String(), "never filled in") {
+		t.Fatalf("expected the refusal message to name the unfilled draft, not quote the placeholder as a value; got %q", errOut.String())
+	}
+	if strings.Contains(errOut.String(), "not a connected space") {
+		t.Fatalf("expected the placeholder-specific message, not the connected-space message; got %q", errOut.String())
 	}
 	if len(fake.calls) != 0 {
 		t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))

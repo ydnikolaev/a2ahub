@@ -138,7 +138,12 @@ func (c *ValidateCommand) Run(ctx context.Context, args []string, stdio IO) int 
 			_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a validate <path> | a2a validate --all")
 			return 2
 		}
-		paths = []string{fs.Arg(0)}
+		// A bare staged artifact id (no "/", no ".md" suffix — e.g. what
+		// `a2a new` just printed) resolves to <staging>/<id>.md, exactly
+		// like `a2a submit <id>` already does — resolveSubmitTarget below
+		// is submit's own id-resolution, reused here rather than
+		// reinvented, so the two verbs never drift on what a bare id means.
+		paths = []string{resolveSubmitTarget(c.stagingDir, fs.Arg(0))}
 	}
 
 	var reports []validateReport
@@ -316,6 +321,19 @@ func (c *SubmitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 1
 	}
 
+	// A draft whose `space:` is still the unfilled `<space-id>` template
+	// placeholder (schemas/templates/v1/*.md) is a draft that was never
+	// finished, not a resolvable-but-wrong space id — catch it here, before
+	// any git/network call, so the user sees "the draft was never filled
+	// in" rather than the wire layer's own "not a connected space" message
+	// quoting the placeholder back as if it were a real value.
+	for _, it := range items {
+		if submitIsPlaceholder(it.env.Space) {
+			_, _ = fmt.Fprintf(stdio.Stderr, "submit: %s: draft's space was never filled in (re-run `a2a new`, or pass `--field space=<space-id>`)\n", it.path)
+			return 1
+		}
+	}
+
 	// AC-201.3: foreign-section refusal, BEFORE any git/network call,
 	// all-or-nothing across the whole batch.
 	for _, it := range items {
@@ -441,6 +459,13 @@ func resolveSubmitTarget(stagingDir, a string) string {
 		return a
 	}
 	return filepath.Join(stagingDir, a+".md")
+}
+
+// submitIsPlaceholder reports whether s is still an unfilled template
+// placeholder (`<...>`, e.g. `<space-id>` in schemas/templates/v1/*.md's
+// `space:` field) rather than a real — possibly wrong — value.
+func submitIsPlaceholder(s string) bool {
+	return strings.HasPrefix(s, "<") && strings.HasSuffix(s, ">")
 }
 
 func (c *SubmitCommand) loadItems(targets []string) ([]submitItem, error) {

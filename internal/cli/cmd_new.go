@@ -62,8 +62,9 @@ var newTypePrefix = map[string]struct {
 // this phase's Deviations report — sugar over the same code path, never
 // load-bearing for any acceptance row).
 type NewCommand struct {
-	stagingDir string
-	ownSystem  string
+	stagingDir        string
+	ownSystem         string
+	connectedSpaceIDs []string
 
 	now          func() time.Time
 	entropy      io.Reader
@@ -76,15 +77,23 @@ type NewCommand struct {
 // and the draft's default `from`). resolveActor closes over the §7.4
 // harness/config fallbacks (cmd/a2a supplies
 // `func(f cli.ActorFlags) template.Actor { return cli.ResolveActor(f, harness, cfg) }`);
-// it must not be nil (rails anti-pattern #10).
-func NewNewCommand(stagingDir, ownSystem string, resolveActor func(ActorFlags) template.Actor) *NewCommand {
+// it must not be nil (rails anti-pattern #10). connectedSpaceIDs is the
+// project's configured connected-space ids; when the caller does not
+// supply `--field space=` and there is exactly one connected space, Run
+// defaults the drafted `space:` field to it instead of leaving the
+// template's literal `<space-id>` placeholder in place — the ambiguous
+// zero-or-many-spaces case is left untouched (defect: a live-run bug
+// where the placeholder survived into the draft and the very next `a2a
+// submit` failed).
+func NewNewCommand(stagingDir, ownSystem string, resolveActor func(ActorFlags) template.Actor, connectedSpaceIDs []string) *NewCommand {
 	return &NewCommand{
-		stagingDir:   stagingDir,
-		ownSystem:    ownSystem,
-		now:          time.Now,
-		entropy:      rand.Reader,
-		resolveActor: resolveActor,
-		writeFile:    os.WriteFile,
+		stagingDir:        stagingDir,
+		ownSystem:         ownSystem,
+		connectedSpaceIDs: connectedSpaceIDs,
+		now:               time.Now,
+		entropy:           rand.Reader,
+		resolveActor:      resolveActor,
+		writeFile:         os.WriteFile,
 	}
 }
 
@@ -140,6 +149,9 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	}
 	if _, has := fields["from"]; !has {
 		fields["from"] = c.ownSystem
+	}
+	if _, has := fields["space"]; !has && len(c.connectedSpaceIDs) == 1 {
+		fields["space"] = c.connectedSpaceIDs[0]
 	}
 
 	now := c.now()

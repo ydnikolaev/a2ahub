@@ -34,7 +34,7 @@ func TestT3ContractNewPublishDeprecate(t *testing.T) {
 	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
 	hostCfg := e2eHostConfig("axon", fx.RemoteURL())
 
-	newCmd := cli.NewNewCommand(stagingDir, "axon", e2eActorResolver("agent", "bot"))
+	newCmd := cli.NewNewCommand(stagingDir, "axon", e2eActorResolver("agent", "bot"), nil)
 	cmd := cli.NewContractCommand(newCmd, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), hostCfg, e2eActorResolver("agent", "bot"))
 
 	io, out, errOut := newIO()
