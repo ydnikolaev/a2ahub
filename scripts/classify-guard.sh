@@ -34,6 +34,13 @@ ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulnch
 DENY_DIRS=( .agents .claude .codex .mate .sporo )   # scripts/ handled below (install.sh + e2e-authoring-smoke.sh are the public exceptions)
 DENY_FILES=( AGENTS.md CLAUDE.md )
 PENDING_DIRS=( docs )   # deferred to P6 — tracked today, tolerated by check 1, classified by check 2, exempt from check 3.
+# PRIVATE_ONLY_FILES: tracked HERE, deliberately stripped at publish. Same
+# shape as PENDING_DIRS (tracked, not published, so not required to be
+# gitignored) but permanent rather than deferred — these live inside an
+# ALLOW_DIRS tree, so without this list they would classify as "public" and the
+# guard would be lying about the boundary. Must stay in sync with the STRIP set
+# in docs/runbooks/publish-to-public.sh.
+PRIVATE_ONLY_FILES=( .github/dependabot.yml )
 IGNORE=( .git a2a bin dist go.work go.work.sum coverage.out .DS_Store .env .a2a )
 
 fail=0
@@ -49,6 +56,10 @@ pending_noted=()
 while IFS= read -r f; do
   [ -z "$f" ] && continue
   in_list "$f" "${ALLOW_FILES[@]}" && continue
+  if in_list "$f" "${PRIVATE_ONLY_FILES[@]}"; then
+    note "private-only (tracked here, stripped at publish): $f"
+    continue
+  fi
   t=$(top "$f")
   in_list "$t" "${ALLOW_DIRS[@]}" && continue
   if [ "$t" = scripts ]; then

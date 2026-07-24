@@ -39,7 +39,13 @@ jobs:
           # failed the push. An allow list of public files has to be edited
           # every time the product grows; a deny list of private ones only
           # changes when the privacy boundary itself moves.
-          priv=$(git ls-files | grep -E '^(\.agents|\.claude|\.codex|\.mate)/|^(AGENTS\.md|CLAUDE\.md)$|^scripts/(check-feature-lint\.sh$|lib/)' || true)
+          #
+          # .github/dependabot.yml is in the deny set for a different reason
+          # than the rest: it is not secret, it simply cannot function here
+          # (public main is force-pushed, so a merged bump is destroyed and
+          # reopened forever). Dependabot runs on the private repo instead. If
+          # this file reappears here, the publish filter regressed.
+          priv=$(git ls-files | grep -E '^(\.agents|\.claude|\.codex|\.mate)/|^(AGENTS\.md|CLAUDE\.md)$|^\.github/dependabot\.yml$|^scripts/(check-feature-lint\.sh$|lib/)' || true)
           if [ -n "$priv" ]; then
             echo "::error::private (harness) paths tracked in the public repo:"
             echo "$priv"
