@@ -21,11 +21,11 @@ func TestLoad_CorpusIntegrity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(all) != 3 {
-		t.Fatalf("Load returned %d entries, want 3: %+v", len(all), all)
+	if len(all) != 4 {
+		t.Fatalf("Load returned %d entries, want 4: %+v", len(all), all)
 	}
 
-	wantVersions := []string{"0.2.0", "0.3.0", "0.4.0"}
+	wantVersions := []string{"0.2.0", "0.3.0", "0.4.0", "0.5.0"}
 	for i, rn := range all {
 		if rn.Version != wantVersions[i] {
 			t.Errorf("entry %d: version = %q, want %q (ascending order)", i, rn.Version, wantVersions[i])
@@ -171,11 +171,11 @@ func TestSince(t *testing.T) {
 	assertVersionsEqual(t, `Since("",0.3.0)`, got, want)
 
 	got = versionsOf(Since(all, "0.3.0", ""))
-	want = []string{"0.4.0"}
+	want = []string{"0.4.0", "0.5.0"}
 	assertVersionsEqual(t, `Since(0.3.0,"")`, got, want)
 
 	got = versionsOf(Since(all, "", ""))
-	want = []string{"0.2.0", "0.3.0", "0.4.0"}
+	want = []string{"0.2.0", "0.3.0", "0.4.0", "0.5.0"}
 	assertVersionsEqual(t, `Since("","")`, got, want)
 }
 
