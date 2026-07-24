@@ -133,7 +133,18 @@ func buildCommands() map[string]command {
 	// to THIS binary's release, so a scaffolded space can never reference a
 	// version that predates the workflow.
 	m["space"] = func(args []string, stdout, stderr io.Writer) int {
-		return cli.NewSpaceCommand(spacetemplate.Files, version).Run(context.Background(), args, stdio(stdout, stderr))
+		cmd := cli.NewSpaceCommand(spacetemplate.Files, version)
+		// `space init` is config-free by design (it scaffolds a tree that
+		// does not exist yet). `space update` reconciles a CONNECTED space,
+		// so it needs the same resolution submit does — done only for that
+		// sub-verb, and reporting the real error rather than degrading to
+		// the command's own "not wired" message.
+		if len(args) > 0 && args[0] == "update" {
+			if err := wireSpaceUpdate(context.Background(), cmd, args[1:]); err != nil {
+				return fail(stderr, err)
+			}
+		}
+		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["skill"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
@@ -834,6 +845,95 @@ func readEnvelopeFacts(path string) (envelopeFacts, error) {
 		return envelopeFacts{}, fmt.Errorf("draft %s: missing `from` or `space`", path)
 	}
 	return envelopeFacts{from: from, space: sp}, nil
+}
+
+// wireSpaceUpdate resolves the connected space `a2a space update` acts on and
+// fills the command's update-only DI (spec 35). It mirrors runSubmit's own
+// resolution — project config, machine config, mirror clone, credential, repo
+// — minus everything artifact-shaped: this write carries no envelope, so
+// there is no staging dir, no legality adapter and no V2 artifact validator
+// (see cli.SpaceInfraNoValidation for why the funnel gets a no-op validator
+// here, and what bounds the write instead).
+func wireSpaceUpdate(ctx context.Context, cmd *cli.SpaceCommand, args []string) error {
+	p, err := resolvePaths()
+	if err != nil {
+		return err
+	}
+	cfg, err := space.LoadProjectConfig(p.projectConfig)
+	if err != nil {
+		return fmt.Errorf("a2a space update: no project config (run `a2a init` first): %w", err)
+	}
+
+	// The space is picked here, not in internal/cli — that package never
+	// resolves a "connected space" itself. `--space` wins; otherwise the
+	// single connected space is implied, and an ambiguous project is an
+	// error rather than an arbitrary pick (`--all` is deferred, spec 35 §6).
+	wanted := spaceFlagValue(args)
+	var ref space.Ref
+	switch {
+	case wanted != "":
+		found, ok := findSpace(cfg, wanted)
+		if !ok {
+			return fmt.Errorf("a2a space update: %q is not a connected space (run `a2a connect`)", wanted)
+		}
+		ref = found
+	case len(cfg.Spaces) == 1:
+		ref = cfg.Spaces[0]
+	case len(cfg.Spaces) == 0:
+		return fmt.Errorf("a2a space update: no connected space (run `a2a connect` first)")
+	default:
+		return fmt.Errorf("a2a space update: %d connected spaces — name one with --space <id>", len(cfg.Spaces))
+	}
+
+	machine, err := space.LoadMachineConfig(p.machineConfig)
+	if err != nil {
+		return fmt.Errorf("a2a space update: no machine config (%s): %w", p.machineConfig, err)
+	}
+	mirrorDir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
+	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL); err != nil {
+		return fmt.Errorf("a2a space update: mirror sync failed: %w", err)
+	}
+	cred, err := resolveCredential(ctx, ref.ID, machine)
+	if err != nil {
+		return fmt.Errorf("a2a space update: %w", err)
+	}
+	owner, name, err := parseGitHubRepo(ref.RepoURL)
+	if err != nil {
+		return fmt.Errorf("a2a space update: %w", err)
+	}
+
+	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
+	cmd.Funnel = space.NewWriteFunnel(h, cli.SpaceInfraNoValidation{}, funnelBinaryVersion())
+	cmd.MirrorDir = mirrorDir
+	cmd.SpaceID = ref.ID
+	cmd.OwnSystem = cfg.System
+	cmd.HostCfg = cli.SubmitHostConfig{
+		RemoteURL:         ref.RepoURL,
+		Repo:              host.Repo{Owner: owner, Name: name},
+		BaseBranch:        defaultBaseBranch,
+		Credential:        cred,
+		CommitAuthorName:  cfg.System,
+		CommitAuthorEmail: cfg.System + "@a2a.local",
+	}
+	return nil
+}
+
+// spaceFlagValue peeks `--space <id>` / `--space=<id>` out of the sub-verb's
+// own args. The command re-parses them properly with flag.FlagSet; this only
+// needs the value early enough to choose which space to resolve.
+func spaceFlagValue(args []string) string {
+	for i, a := range args {
+		if v, ok := strings.CutPrefix(a, "--space="); ok {
+			return v
+		}
+		if v, ok := strings.CutPrefix(a, "-space="); ok {
+			return v
+		}
+		if (a == "--space" || a == "-space") && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 func findSpace(cfg space.ProjectConfig, spaceID string) (space.Ref, bool) {
