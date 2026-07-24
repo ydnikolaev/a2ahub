@@ -346,33 +346,43 @@ type spaceScopeChecker interface {
 // only through this one command.
 const spaceWorkflowScope = "workflow"
 
-// spaceCheckWorkflowScope reports why the credential cannot carry this write,
-// or "" when it can (or when the answer is unknowable).
+// spaceCheckWorkflowScope reports two strings:
+//   - refuse: the reason this write MUST be refused (exit 1), or "" if it may proceed.
+//   - note: an advisory note for the user (printed to stdout before attempting the write),
+//     or "" if there is nothing to warn about.
 //
-// The unknowable case is the point of the `reported` flag: fine-grained PATs
-// and App installation tokens do not advertise scopes at all, and treating
-// silence as refusal would block exactly the most narrowly-scoped credentials
-// a2a wants people to use. Silence therefore proceeds — GitHub still refuses
-// the push if the permission really is missing, and that error is not made
-// worse by our having tried.
-func (c *SpaceCommand) spaceCheckWorkflowScope(ctx context.Context) string {
+// The distinction matters because fine-grained PATs and App installation tokens do not
+// advertise scopes at all (reported=false). Treating that silence as refusal would block
+// exactly the most narrowly-scoped credentials a2a wants people to use. Instead, when
+// scopes cannot be verified, we proceed but warn the user that GitHub may still refuse
+// the push if the permission is missing.
+//
+// When scopes ARE reported and the credential provably lacks the workflow scope, we
+// refuse hard: GitHub will reject it anyway, and the pre-flight prevents the user
+// from computing a plan they cannot execute.
+func (c *SpaceCommand) spaceCheckWorkflowScope(ctx context.Context) (refuse, note string) {
 	if c.Scopes == nil {
-		return ""
+		return "", ""
 	}
 	scopes, reported, err := c.Scopes.TokenScopes(ctx, c.HostCfg.Credential)
-	if err != nil || !reported {
-		return ""
+	if err != nil {
+		return "", ""
+	}
+	if !reported {
+		// Cannot verify scope for fine-grained credential type. Proceed but warn.
+		return "", "scope could not be verified for this credential type (fine-grained PAT or GitHub App token does not advertise scopes) — the write may still be refused by GitHub if the token lacks Workflows permission"
 	}
 	for _, s := range scopes {
 		if s == spaceWorkflowScope {
-			return ""
+			return "", ""
 		}
 	}
+	// Scopes were reported and do not include workflow. This is a hard refusal.
 	return "this write updates .github/workflows/, which GitHub refuses from a token without the `" + spaceWorkflowScope + "` scope.\n" +
 		"  your token reports: " + strings.Join(scopes, ", ") + "\n" +
 		"  fix (either one):\n" +
 		"    gh auth refresh -h github.com -s " + spaceWorkflowScope + "\n" +
-		"    or use a fine-grained PAT scoped to this space with Contents/Pull requests/Workflows: write"
+		"    or use a fine-grained PAT scoped to this space with Contents/Pull requests/Workflows: write", ""
 }
 
 // SpaceInfraNoValidation is the space.SubmitValidator `a2a space update`
@@ -757,9 +767,12 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 	// a raw git push rejection — which reads as "it worked, then broke".
 	// --dry-run still shows the plan (that is what it is for) but says the
 	// run would be refused, so the scope is learned BEFORE it matters.
-	scopeProblem := c.spaceCheckWorkflowScope(ctx)
-	if scopeProblem != "" && !*dryRun {
-		_, _ = fmt.Fprintf(stdio.Stderr, "space update: %s\n", scopeProblem)
+	scopeRefusal, scopeNote := c.spaceCheckWorkflowScope(ctx)
+	if scopeNote != "" {
+		_, _ = fmt.Fprintf(stdio.Stdout, "space update: %s\n", scopeNote)
+	}
+	if scopeRefusal != "" && !*dryRun {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space update: %s\n", scopeRefusal)
 		return 1
 	}
 
@@ -806,8 +819,8 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 	}
 
 	if *dryRun {
-		if scopeProblem != "" {
-			_, _ = fmt.Fprintf(stdio.Stdout, "space update: WOULD BE REFUSED — %s\n", scopeProblem)
+		if scopeRefusal != "" {
+			_, _ = fmt.Fprintf(stdio.Stdout, "space update: WOULD BE REFUSED — %s\n", scopeRefusal)
 		}
 		_, _ = fmt.Fprintln(stdio.Stdout, "space update: --dry-run — no files written, nothing pushed")
 		return 0

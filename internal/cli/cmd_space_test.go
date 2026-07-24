@@ -797,7 +797,8 @@ func TestSpaceUpdateRefusesWithoutWorkflowScope(t *testing.T) {
 
 // A fine-grained PAT or App token does not advertise scopes at all. Treating
 // that silence as refusal would block exactly the most narrowly-scoped
-// credentials, so it must proceed.
+// credentials, so it must proceed. However, the user must be warned that the
+// write may still fail at GitHub's end if the token lacks Workflows permission.
 func TestSpaceUpdateProceedsWhenScopesAreNotReported(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
@@ -816,6 +817,17 @@ func TestSpaceUpdateProceedsWhenScopesAreNotReported(t *testing.T) {
 	}
 	if len(funnel.calls) != 1 {
 		t.Fatalf("funnel.calls = %d, want 1 — an unreported scope set must not block the write", len(funnel.calls))
+	}
+
+	// The key new behavior: the can't-verify note must surface to stdout.
+	if !strings.Contains(out.String(), "scope could not be verified") {
+		t.Errorf("stdout does not surface the can't-verify note; stdout=%s", out.String())
+	}
+	if !strings.Contains(out.String(), "does not advertise scopes") {
+		t.Errorf("stdout does not explain why (fine-grained PAT/App); stdout=%s", out.String())
+	}
+	if !strings.Contains(out.String(), "may still be refused") {
+		t.Errorf("stdout does not warn that the write may still fail; stdout=%s", out.String())
 	}
 }
 
@@ -838,6 +850,34 @@ func TestSpaceUpdateDryRunWarnsAboutMissingScope(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "WOULD BE REFUSED") {
 		t.Errorf("--dry-run did not warn that the real run would be refused; stdout=%s", out.String())
+	}
+	if len(funnel.calls) != 0 {
+		t.Error("--dry-run must never call the funnel")
+	}
+}
+
+// Dry-run with unreported scopes must show the note but NOT say "WOULD BE REFUSED"
+// (because it may well succeed — the credential might have the permission).
+func TestSpaceUpdateDryRunWithUnreportedScopes(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir)
+	funnel := &fakeSubmitFunnel{}
+	cmd := spaceUpdateFullyWiredCommand(spaceUpdateTemplateFS(), mirrorDir, funnel, "9.9.9")
+	cmd.Scopes = &fakeScopeChecker{reported: false}
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update", "--dry-run"}, io); code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "scaffolding diff") {
+		t.Errorf("--dry-run stopped showing the plan; stdout=%s", out.String())
+	}
+	if !strings.Contains(out.String(), "scope could not be verified") {
+		t.Errorf("--dry-run did not surface the can't-verify note; stdout=%s", out.String())
+	}
+	if strings.Contains(out.String(), "WOULD BE REFUSED") {
+		t.Errorf("--dry-run should not say WOULD BE REFUSED for a can't-verify note (it may succeed); stdout=%s", out.String())
 	}
 	if len(funnel.calls) != 0 {
 		t.Error("--dry-run must never call the funnel")
