@@ -25,12 +25,44 @@
 | Profile | Who | What it covers | Budget |
 |---------|-----|----------------|--------|
 | **hub admin** | operator | Provision the hub on a VPS: binary + systemd + `hub.yaml` + space read-PATs + webhook registration + TLS + optional chat webhook. | ≤ 1 h |
-| **org/space admin** | operator (v1) | Create a space repo from the product's space template (layout, CI workflow with the `a2a-validate` required check, CODEOWNERS skeleton, `space.yaml`) + branch protection (PR-only main, auto-merge) + invite participants. Verify a direct push is rejected and an ungated PR auto-merges. | ≤ 30 min |
+| **org/space admin** | operator (v1) | Create a space repo from the product's space template (layout, CI **caller** workflow + `dependabot.yml`, CODEOWNERS skeleton, `space.yaml`) + branch protection (PR-only main, required check `a2a-validate / validate`, auto-merge) + invite participants. Verify a direct push is rejected and an ungated PR auto-merges. | ≤ 30 min |
 | **project dev** | each participating team | Install the binary + `a2a init` + `a2a connect` + credentials + the harness adapter, then `a2a doctor` green. | ≤ 30 min, no walkthrough |
 
 The project-dev profile is the one an agent most often assists. The end state is
 a green `a2a doctor` — if any check fails, jump to
 [troubleshooting.md](troubleshooting.md).
+
+### Two roles — don't conflate them (P33 space-CI model)
+
+- **Space owner** *creates* the space repo from `space-template/`. That template
+  already carries the CI **caller** (`.github/workflows/a2a-validate.yml`) and
+  `.github/dependabot.yml` — the owner does NOT hand-write CI or install
+  Dependabot; both come with the template. The caller is a ~thin call to
+  a2ahub's **public reusable workflow** (`ydnikolaev/a2ahub/.github/workflows/
+  a2a-validate-reusable.yml@vX.Y.Z`); validation logic + the pinned a2a version
+  live there, not in the space.
+- **Participant** (any team joining an existing space, *including a team that
+  doesn't know us*) runs the **project-dev** profile — `a2a init` + `a2a connect`
+  + credentials. A participant NEVER touches the space's CI; that is the owner's
+  repo.
+
+**Zero-token, cross-team.** Because a2ahub is public, a space references the
+reusable workflow with **no secret and no access to our repos** — the pre-P33
+`A2A_BINARY_FETCH_TOKEN` is gone (integrity is the Go checksum DB via
+`go run …@<ver>`). A participating team needs to know nothing about us.
+
+**One caveat for a restrictive org.** Calling an external reusable workflow is
+subject to the caller org's Actions policy. If a team's org restricts Actions to
+"only actions/workflows in this organization," they add **`ydnikolaev/a2ahub`**
+to the allowlist once (Settings → Actions → General → *Allow specified
+actions and reusable workflows*). This is **one setting, not a token**. A public
+space repo has no such restriction by default; a **private** space in a private
+org may also need Dependabot enabled at the org/repo level for the version-bump
+PRs to open.
+
+**Version movement.** The caller pins an immutable release tag `@vX.Y.Z`;
+Dependabot opens the bump PR when a2ahub cuts a new release, and it auto-merges
+on the green `a2a-validate / validate` check — never a hand-edit in the space.
 
 ## Onboarding a new system into an existing space (§9.2)
 
@@ -53,6 +85,12 @@ Guide the participant through these steps in order:
 
 ## Onboarding a new space, org, or offboarding (§9.2)
 
+- **Scaffolding the space tree** (space-admin step 1): copy `space-template/`
+  into the new repo — it ships the CI caller + `dependabot.yml` ready to go.
+  `a2a space init <id>` (self-service scaffolder, ships v0.5.0) automates this:
+  it writes the tree with `space:`/`min_binary_version` filled and the reusable
+  ref pinned to the binary's own version. CODEOWNERS org handles + creating the
+  repo, pushing, and arming branch protection stay the owner's steps.
 - **New space (new circle):** the space-admin profile plus a `hub.yaml` entry
   and a webhook.
 - **New org:** the operator sets up GitHub org membership/team, then proceeds as
