@@ -1,0 +1,445 @@
+//go:build livee2e
+
+package livee2e
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+)
+
+// ghClient is the harness's own GitHub REST client for create/reset/protect/
+// rerun questions — deliberately NOT a widening of internal/host's
+// 5-primitive contract (wave 3a's precedent, carried forward here): "who may
+// administer this repo", "reset its protection", "re-run a workflow" are
+// questions only a test harness asks, and growing the product's Host
+// interface to answer them would push harness concerns into the product's
+// own contract.
+type ghClient struct {
+	// Token authenticates every call this client makes — either the
+	// provisioner or the participant credential, never both (Config keeps
+	// them separate; a harness wires one ghClient per identity).
+	Token string
+	// APIRoot defaults to defaultAPIRoot (prober_github.go) when empty.
+	APIRoot string
+	// HTTP defaults to a 30s-timeout client when nil — bounded by default,
+	// same rationale as GitHubProber.
+	HTTP *http.Client
+}
+
+func (c *ghClient) root() string {
+	if c.APIRoot == "" {
+		return defaultAPIRoot
+	}
+	return strings.TrimSuffix(c.APIRoot, "/")
+}
+
+func (c *ghClient) client() *http.Client {
+	if c.HTTP != nil {
+		return c.HTTP
+	}
+	return &http.Client{Timeout: 30 * time.Second}
+}
+
+// attempt issues ONE HTTP round trip. transportErr is set only for a genuine
+// transport-level failure (dial/timeout, or a body that could not be read) —
+// never for a completed request that merely answered with a non-2xx status,
+// which is reported through (status, respBody) instead. That split is what
+// lets do's ClassifyStatus call see the real distinction §T6-d needs: a
+// network failure and a decisive 4xx/5xx are different signals.
+func (c *ghClient) attempt(ctx context.Context, method, path string, body []byte) (status int, respBody []byte, transportErr error) {
+	var reqReader io.Reader
+	if body != nil {
+		reqReader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.root()+path, reqReader)
+	if err != nil {
+		return 0, nil, fmt.Errorf("build request %s %s: %w", method, path, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return resp.StatusCode, nil, fmt.Errorf("read response body: %w", err)
+	}
+	return resp.StatusCode, raw, nil
+}
+
+// bodyOrErr renders whichever of a response body or a transport error is
+// available, for an error message — GitHub's error body usually names the
+// actionable part (a missing permission), so it is preferred when present.
+func bodyOrErr(body []byte, err error) string {
+	if len(body) > 0 {
+		return strings.TrimSpace(string(body))
+	}
+	if err != nil {
+		return err.Error()
+	}
+	return "(no body)"
+}
+
+// do is the ONE path every method in this file goes through, and it is
+// where §T6-d lives: classify the outcome with the sibling's ClassifyStatus,
+// and on OutcomeUnknown sleep RetryDelay(attempt) and try again, up to
+// MaxAttempts, before giving up with ErrUnknownOutcome (wrapped, naming the
+// path) — never silently reporting the last transient failure as decisive.
+//
+// Idempotent GETs retry freely under this loop with no special casing.
+// WRITES go through the identical loop; the contract that makes that safe is
+// the caller's, not do's: a write that comes back Unknown may already have
+// landed (a 504 on OpenPR that had, a 500 on a push that had not — both
+// observed against real GitHub on 2026-07-24), so the caller must RE-READ
+// state before concluding anything, never treat "do returned an error" as
+// "the write did not happen". `a2a submit`'s own idempotent-retry path (look
+// the PR up by its deterministic head branch) is the product-side precedent
+// for this contract.
+//
+// RetryDelay's attempt argument is 1-based here (the first RETRY, i.e. the
+// second overall try, passes 1) — a documented assumption about the
+// sibling's RetryDelay, since the pinned signature does not state an
+// indexing convention; flagged as a coordination point in the wave report.
+func (c *ghClient) do(ctx context.Context, method, path string, body any, out any) (int, error) {
+	var reqBody []byte
+	if body != nil {
+		var err error
+		reqBody, err = json.Marshal(body)
+		if err != nil {
+			return 0, fmt.Errorf("livee2e: encode %s %s: %w", method, path, err)
+		}
+	}
+
+	var lastStatus int
+	var lastRespBody []byte
+	var lastTransportErr error
+	for attempt := 0; attempt < MaxAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return lastStatus, fmt.Errorf("livee2e: %s %s: %w", method, path, ctx.Err())
+			case <-time.After(RetryDelay(attempt)):
+			}
+		}
+
+		status, respBody, transportErr := c.attempt(ctx, method, path, reqBody)
+		lastStatus, lastRespBody, lastTransportErr = status, respBody, transportErr
+
+		switch ClassifyStatus(status, transportErr) {
+		case OutcomeOK:
+			if out != nil && len(respBody) > 0 {
+				if decErr := json.Unmarshal(respBody, out); decErr != nil {
+					return status, fmt.Errorf("livee2e: decode %s %s: %w", method, path, decErr)
+				}
+			}
+			return status, nil
+		case OutcomeFatal:
+			return status, fmt.Errorf("livee2e: %s %s: status %d: %s", method, path, status, bodyOrErr(respBody, transportErr))
+		case OutcomeUnknown:
+			continue
+		}
+	}
+	return lastStatus, fmt.Errorf("livee2e: %s %s: %w after %d attempts: %s",
+		method, path, ErrUnknownOutcome, MaxAttempts, bodyOrErr(lastRespBody, lastTransportErr))
+}
+
+// Repo reports whether owner/name exists — a 404 is a normal "no" here, not
+// an error (the reset flow's own first question: create, or reset in
+// place?).
+func (c *ghClient) Repo(ctx context.Context, owner, name string) (bool, error) {
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name)
+	status, err := c.do(ctx, http.MethodGet, path, nil, nil)
+	if err != nil {
+		if status == http.StatusNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// CreateRepo creates a PUBLIC repo under org (spec 36 §9.5.1 — public is
+// deliberate: unmetered Actions + working branch protection on a Free org).
+func (c *ghClient) CreateRepo(ctx context.Context, org, name, description string) error {
+	path := "/orgs/" + url.PathEscape(org) + "/repos"
+	body := map[string]any{
+		"name":        name,
+		"private":     false,
+		"auto_init":   true,
+		"description": description,
+	}
+	_, err := c.do(ctx, http.MethodPost, path, body, nil)
+	return err
+}
+
+// PatchRepo updates repo settings (e.g. allow_auto_merge, delete_branch_on_merge).
+func (c *ghClient) PatchRepo(ctx context.Context, owner, name string, body any) error {
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name)
+	_, err := c.do(ctx, http.MethodPatch, path, body, nil)
+	return err
+}
+
+// PutProtection arms branch protection. body carries the FULL protection
+// document (required_status_checks, enforce_admins, required_pull_request_
+// reviews, restrictions, allow_force_pushes, allow_deletions) — GitHub's PUT
+// replaces the whole document, so a partial body silently drops whatever it
+// omits (restrictions in particular must be present-and-null, or GitHub
+// answers 422).
+func (c *ghClient) PutProtection(ctx context.Context, owner, name, branch string, body any) error {
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/branches/" + url.PathEscape(branch) + "/protection"
+	_, err := c.do(ctx, http.MethodPut, path, body, nil)
+	return err
+}
+
+// DeleteProtection removes branch protection. A 404 is a no-op, not an
+// error: the first-ever reset has no protection yet to remove.
+func (c *ghClient) DeleteProtection(ctx context.Context, owner, name, branch string) error {
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/branches/" + url.PathEscape(branch) + "/protection"
+	status, err := c.do(ctx, http.MethodDelete, path, nil, nil)
+	if err != nil && status == http.StatusNotFound {
+		return nil
+	}
+	return err
+}
+
+// ListBranches lists every branch name on owner/name (first page, up to
+// 100 — the reset space never approaches that many).
+func (c *ghClient) ListBranches(ctx context.Context, owner, name string) ([]string, error) {
+	var payload []struct {
+		Name string `json:"name"`
+	}
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/branches?per_page=100"
+	if _, err := c.do(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(payload))
+	for _, b := range payload {
+		out = append(out, b.Name)
+	}
+	return out, nil
+}
+
+// DeleteRef deletes a git ref (e.g. "heads/probe/xsec"). ref is passed
+// through verbatim rather than escaped per path segment: GitHub's git-refs
+// path legitimately contains slashes (branch names commonly do), and
+// escaping each one would double-encode a valid ref.
+func (c *ghClient) DeleteRef(ctx context.Context, owner, name, ref string) error {
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/git/refs/" + ref
+	_, err := c.do(ctx, http.MethodDelete, path, nil, nil)
+	return err
+}
+
+// PullState is the subset of GitHub's pull-request object the harness reads.
+type PullState struct {
+	Number         int
+	HeadSHA        string
+	Merged         bool
+	MergeableState string
+	State          string
+}
+
+// pullPayload is PullState's wire shape.
+type pullPayload struct {
+	Number int `json:"number"`
+	Head   struct {
+		SHA string `json:"sha"`
+	} `json:"head"`
+	Merged         bool   `json:"merged"`
+	MergeableState string `json:"mergeable_state"`
+	State          string `json:"state"`
+}
+
+func (p pullPayload) toPullState() PullState {
+	return PullState{
+		Number: p.Number, HeadSHA: p.Head.SHA, Merged: p.Merged,
+		MergeableState: p.MergeableState, State: p.State,
+	}
+}
+
+// OpenPull opens a PR from head into base, returning its number.
+func (c *ghClient) OpenPull(ctx context.Context, owner, name, title, head, base string) (int, error) {
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/pulls"
+	body := map[string]any{"title": title, "head": head, "base": base}
+	var created struct {
+		Number int `json:"number"`
+	}
+	if _, err := c.do(ctx, http.MethodPost, path, body, &created); err != nil {
+		return 0, err
+	}
+	return created.Number, nil
+}
+
+// Pull reads a single PR's current state.
+func (c *ghClient) Pull(ctx context.Context, owner, name string, number int) (PullState, error) {
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(name), number)
+	var payload pullPayload
+	if _, err := c.do(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return PullState{}, err
+	}
+	return payload.toPullState(), nil
+}
+
+// ListPulls lists PRs in the given state ("open" | "closed" | "all"; ""
+// defaults to "open", matching GitHub's own default).
+func (c *ghClient) ListPulls(ctx context.Context, owner, name, state string) ([]PullState, error) {
+	if state == "" {
+		state = "open"
+	}
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/pulls?state=" + url.QueryEscape(state) + "&per_page=100"
+	var payloads []pullPayload
+	if _, err := c.do(ctx, http.MethodGet, path, nil, &payloads); err != nil {
+		return nil, err
+	}
+	out := make([]PullState, 0, len(payloads))
+	for _, p := range payloads {
+		out = append(out, p.toPullState())
+	}
+	return out, nil
+}
+
+// SetPullState closes or reopens a PR — the §T6-c re-trigger mechanism that
+// needs no Actions permission at all: reopening fires a fresh pull_request
+// run whose triggering_actor is whoever reopened it, which is precisely how
+// the v0.6.4 GITHUB_ACTOR bypass class is exercised (AC-961.3).
+func (c *ghClient) SetPullState(ctx context.Context, owner, name string, number int, state string) error {
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(name), number)
+	_, err := c.do(ctx, http.MethodPatch, path, map[string]any{"state": state}, nil)
+	return err
+}
+
+// MergePull merges a PR via PUT .../merge. The returned STATUS is itself the
+// assertion AC-961.4 needs: a merge blocked by branch protection answers 405
+// Method Not Allowed, and an unmergeable/dirty PR answers 409 Conflict —
+// both come back as a VALUE (merged=false, status, err=nil), never as a Go
+// error, so a caller asserting "the merge was refused" reads the status, not
+// a failed do() call. Any other non-2xx (including an exhausted retry loop)
+// is a genuine error.
+func (c *ghClient) MergePull(ctx context.Context, owner, name string, number int) (merged bool, status int, err error) {
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d/merge", url.PathEscape(owner), url.PathEscape(name), number)
+	var result struct {
+		Merged bool `json:"merged"`
+	}
+	status, err = c.do(ctx, http.MethodPut, path, nil, &result)
+	if err != nil {
+		if status == http.StatusMethodNotAllowed || status == http.StatusConflict {
+			return false, status, nil
+		}
+		return false, status, err
+	}
+	return result.Merged, status, nil
+}
+
+// UpdateBranch forces merge-commit recomputation (§T6-b): without this, a
+// re-triggered check after main moved can serve a STALE merge commit, so a
+// scenario that changes the base must call this before re-triggering, or
+// assert on which ref actually executed instead.
+//
+// GitHub answers 422 when the branch is already up to date with its base
+// (nothing to recompute) — that is OutcomeFatal under ClassifyStatus, so it
+// surfaces here as an error. Fine for row 15's intended sequence (main moves
+// first, so the branch is always behind when this is called); a caller that
+// might invoke this defensively on an already-current branch must expect and
+// tolerate a 422, which this method does not special-case.
+func (c *ghClient) UpdateBranch(ctx context.Context, owner, name string, number int) error {
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d/update-branch", url.PathEscape(owner), url.PathEscape(name), number)
+	_, err := c.do(ctx, http.MethodPut, path, nil, nil)
+	return err
+}
+
+// CheckRuns lists the check runs GitHub recorded for sha, returning the
+// sibling's untagged CheckRunRef type so refassert.go's comparisons can
+// consume it directly.
+//
+// HeadSHA is reported exactly as GitHub sends it (the check run's own
+// head_sha field), never normalized against the queried sha: for
+// pull_request-triggered runs GitHub may report the MERGE commit rather than
+// the PR's head, and whether that happens here is exactly the empirical
+// question §T6-b exists to let the live run answer, not one to decide by
+// silently coercing the two to look equal.
+//
+// Deliberately does NOT pass `filter=latest` the way internal/host's
+// CheckStatus does (github.go): that filter is exactly what would hide the
+// stale, superseded runs a re-trigger leaves behind, and §T6-b's whole point
+// is seeing them. This is a real divergence from the product's own call
+// against the same endpoint, named here rather than left implicit. Like
+// CheckStatus, this reads only the first page (up to 100 runs), which is the
+// same fail-safe ceiling github.go documents for the same reason: a space
+// repo runs few enough checks that the ceiling is far off, and the failure
+// mode is an incomplete list, never a false positive.
+func (c *ghClient) CheckRuns(ctx context.Context, owner, name, sha string) ([]CheckRunRef, error) {
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/commits/" + url.PathEscape(sha) + "/check-runs?per_page=100"
+	var payload struct {
+		CheckRuns []struct {
+			Name       string `json:"name"`
+			HeadSHA    string `json:"head_sha"`
+			Status     string `json:"status"`
+			Conclusion string `json:"conclusion"`
+		} `json:"check_runs"`
+	}
+	if _, err := c.do(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	out := make([]CheckRunRef, 0, len(payload.CheckRuns))
+	for _, r := range payload.CheckRuns {
+		out = append(out, CheckRunRef{Name: r.Name, HeadSHA: r.HeadSHA, Status: r.Status, Conclusion: r.Conclusion})
+	}
+	return out, nil
+}
+
+// WorkflowRun is the subset of GitHub's workflow-run object the §T6-c
+// rerun-API path needs. Not part of the pinned cross-agent API (no sibling
+// file references it), so it is defined here rather than guessed into
+// refassert.go.
+type WorkflowRun struct {
+	ID         int64
+	Name       string
+	Status     string
+	Conclusion string
+	HeadSHA    string
+}
+
+// ListWorkflowRuns lists workflow runs for a head SHA.
+func (c *ghClient) ListWorkflowRuns(ctx context.Context, owner, name, headSHA string) ([]WorkflowRun, error) {
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/actions/runs?head_sha=" + url.QueryEscape(headSHA) + "&per_page=100"
+	var payload struct {
+		WorkflowRuns []struct {
+			ID         int64  `json:"id"`
+			Name       string `json:"name"`
+			Status     string `json:"status"`
+			Conclusion string `json:"conclusion"`
+			HeadSHA    string `json:"head_sha"`
+		} `json:"workflow_runs"`
+	}
+	if _, err := c.do(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	out := make([]WorkflowRun, 0, len(payload.WorkflowRuns))
+	for _, r := range payload.WorkflowRuns {
+		out = append(out, WorkflowRun{ID: r.ID, Name: r.Name, Status: r.Status, Conclusion: r.Conclusion, HeadSHA: r.HeadSHA})
+	}
+	return out, nil
+}
+
+// RerunWorkflow re-runs a completed workflow run — the OTHER §T6-c
+// mechanism: unlike SetPullState's close/reopen, this needs the
+// provisioner's Actions:write permission (spec 36 §9.5.3).
+func (c *ghClient) RerunWorkflow(ctx context.Context, owner, name string, runID int64) error {
+	path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/rerun", url.PathEscape(owner), url.PathEscape(name), runID)
+	_, err := c.do(ctx, http.MethodPost, path, nil, nil)
+	return err
+}
