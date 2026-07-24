@@ -120,7 +120,8 @@ portal.
 
 | Situation | Runbook move |
 |-----------|--------------|
-| Fleet upgrade | Bump `min_binary_version` in the manifest per space (a PR); stale binaries then refuse writes and drift resolves itself. |
+| Space scaffolding is behind the template (a new CI shape, a new `.github/` file) | `a2a space update --dry-run`, then `a2a space update` — it diffs the space against the embedded template and opens the PR through the normal funnel. Admin-only steps (the required-check rename, deleting a stale secret) are printed as `scope: space` directives for a human to run; a2a holds no admin scope. |
+| Fleet upgrade | Bump `min_binary_version` in the manifest per space (a PR); stale binaries then refuse writes and drift resolves itself. `a2a space update` raises it only as far as the template's own declared floor, and never lowers it. |
 | Envelope schema migration | N/N−1 overlap window; the release note names the cutoff; the validator reports old-schema artifacts. |
 | Hub loss | `hub rebuild` (the hub owns only ephemeral state). |
 | Repo loss | Restore from any participant's mirror + GitHub — git is distributed. |
