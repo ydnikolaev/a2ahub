@@ -1,0 +1,27 @@
+schema: release-notes/v1
+version: "0.6.1"
+released: "2026-07-24"
+headline: "space update no longer adds a second CODEOWNERS beside your real one"
+changes:
+  - id: RN-0601-1
+    kind: fix
+    impact: high
+    subject: "a2a space update respects a CODEOWNERS kept at .github/ or docs/"
+    detail: >
+      The template ships `CODEOWNERS` at the repo root, and 0.6.0's
+      `space update` asked only "does that exact path exist?". A space that
+      keeps its real owners at `.github/CODEOWNERS` — where GitHub looks
+      FIRST — answered no, so the update proposed adding a root `CODEOWNERS`
+      full of `@REPLACE_WITH_ORG/...` placeholders beside the real file.
+      Harmless on day one (GitHub prefers the `.github/` copy) but it is junk
+      in the repo root, an error in GitHub's CODEOWNERS UI, and a
+      gates-nothing takeover the day the real file moves. A seeded file is now
+      matched by its ROLE across GitHub's own resolution order (`.github/`,
+      root, `docs/`); the location difference is reported as advisory drift
+      instead of written. Found by the first dry-run against a real space.
+    affects: [space]
+    action:
+      scope: local
+      why: "if you ran `a2a space update` on 0.6.0 and it offered to add a root CODEOWNERS, drop that file from the PR — or re-run the dry-run on 0.6.1"
+      detect: ["a2a space update --dry-run"]
+      run: ["a2a update"]

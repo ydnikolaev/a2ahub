@@ -712,3 +712,41 @@ func TestSpaceUpdateRefusesUnflooredManifest(t *testing.T) {
 		t.Error("funnel must not be called when the manifest is unusable")
 	}
 }
+
+// TestSpaceUpdateSeededFileAtAnAlternateLocation: the template ships
+// CODEOWNERS at the repo root, but GitHub also resolves it from .github/ and
+// docs/ — and the live getvisa space keeps its REAL owners in
+// .github/CODEOWNERS. Adding a root copy full of @REPLACE_WITH_ORG
+// placeholders next to it is inert today (GitHub prefers .github/) but it is
+// junk in the repo, an error in the CODEOWNERS UI, and a gates-nothing
+// takeover the day the real file moves. Found by a dry-run against the live
+// space; every fixture had CODEOWNERS at the template's own path.
+func TestSpaceUpdateSeededFileAtAnAlternateLocation(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir)
+	// Move the space's CODEOWNERS to where GitHub looks FIRST.
+	if err := os.Remove(filepath.Join(mirrorDir, "CODEOWNERS")); err != nil {
+		t.Fatalf("remove root CODEOWNERS: %v", err)
+	}
+	writeSpaceMirrorFile(t, mirrorDir, ".github/CODEOWNERS", "/space.yaml @acme/real-owners\n")
+
+	funnel := &fakeSubmitFunnel{}
+	cmd := spaceUpdateFullyWiredCommand(spaceUpdateTemplateFS(), mirrorDir, funnel, "9.9.9")
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update"}, io); code != 0 {
+		t.Fatalf("Run: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(funnel.calls) != 1 {
+		t.Fatalf("funnel.calls = %d, want 1", len(funnel.calls))
+	}
+	for _, f := range funnel.calls[0].Files {
+		if f.Path == "CODEOWNERS" {
+			t.Errorf("planned a root CODEOWNERS though the space keeps a real one at .github/CODEOWNERS:\n%s", f.Content)
+		}
+	}
+	if !strings.Contains(out.String(), ".github/CODEOWNERS") {
+		t.Errorf("the alternate location was not reported as advisory drift; stdout=%s", out.String())
+	}
+}
