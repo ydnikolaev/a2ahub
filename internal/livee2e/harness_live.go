@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
 // The two local system ids the rig scaffolds (the axon/seomatrix shape,
@@ -102,6 +104,98 @@ func (h *harness) WaitForRequiredCheck(ctx context.Context, prNumber int, token 
 			return host.CheckStatusResult{}, ctx.Err()
 		case <-time.After(requiredCheckPollInterval):
 		}
+	}
+}
+
+// submitted is what one driven write produced: the artifact and the PR the
+// funnel opened for it.
+type submitted struct {
+	ID       string
+	Branch   string
+	PRNumber int
+	HeadSHA  string
+}
+
+// ErrNoPRForBranch is returned when a submit reported success but no pull
+// request exists for its deterministic branch. Distinct from a submit error:
+// it is the §T6-d shape where the push landed and the PR did not, and a
+// caller must render it as unknown rather than as a product defect.
+var ErrNoPRForBranch = errors.New("livee2e: submit left no pull request on its branch")
+
+// DraftAndSubmit runs the whole author path for one artifact — draft, fill,
+// submit — and resolves the resulting PR.
+//
+// It exists on the harness rather than in each scenario family because all
+// four families need it and four copies would drift; that is also why it
+// resolves the PR through space.BranchName + ListPulls instead of scraping
+// `a2a submit`'s stdout. The branch name is the funnel's own deterministic
+// identity (the same one its idempotent-retry path looks a PR up by), so this
+// keeps working when the CLI's output text changes, and it is the only
+// resolution that stays correct after a §T6-d retry — where the first attempt
+// may have opened the PR and merely failed to say so.
+func (h *harness) DraftAndSubmit(ctx context.Context, c *checkout, artifactType string, extra ...string) (submitted, error) {
+	id, unfilled, err := c.Draft(ctx, artifactType, extra...)
+	if err != nil {
+		return submitted{}, err
+	}
+	if len(unfilled) > 0 {
+		// Not fatal: the draft may still validate. Carried up so a scenario
+		// can put it in its Detail — an unfilled field is how we learn a
+		// template asks for something the matrix cannot describe.
+		_ = unfilled
+	}
+
+	branch := space.BranchName(c.System, "submit", id)
+	if _, stderr, subErr := c.Run(ctx, "submit", id); subErr != nil {
+		return submitted{ID: id, Branch: branch}, fmt.Errorf("livee2e: a2a submit %s (%s): %w: %s", id, c.System, subErr, strings.TrimSpace(stderr))
+	}
+
+	pr, err := h.pullForBranch(ctx, branch)
+	if err != nil {
+		return submitted{ID: id, Branch: branch}, err
+	}
+	return submitted{ID: id, Branch: branch, PRNumber: pr.Number, HeadSHA: pr.HeadSHA}, nil
+}
+
+// pullForBranch finds the open PR whose head is branch.
+func (h *harness) pullForBranch(ctx context.Context, branch string) (PullState, error) {
+	pulls, err := h.Prov.ListPulls(ctx, h.Org, h.Repo, "open")
+	if err != nil {
+		return PullState{}, err
+	}
+	for _, p := range pulls {
+		if p.HeadRef == branch {
+			return p, nil
+		}
+	}
+	return PullState{}, fmt.Errorf("%w: %s", ErrNoPRForBranch, branch)
+}
+
+// AwaitCheck waits for a PR's required check using the credential of the
+// checkout that authored it — never a fixed token. Reading a boundary
+// scenario's check through the provisioner would be the §T5 mistake one layer
+// down: the observation would be made by an identity the scenario is not about.
+func (h *harness) AwaitCheck(ctx context.Context, c *checkout, prNumber int) (host.CheckStatusResult, error) {
+	return h.WaitForRequiredCheck(ctx, prNumber, c.Token)
+}
+
+// verdictForError maps an error to the honest verdict, so four scenario
+// families cannot each decide differently what a timeout or an unresolved
+// 5xx means. ok is false when err is nil (the caller decides pass/fail from
+// what it observed) or when the error is a genuine product failure.
+//
+// The two mapped classes are the ones spec 36 §T4 and §T6-d say must never
+// render as VerdictFail: a bounded wait expiring is "we did not wait long
+// enough", and an exhausted 5xx retry is "we do not know what happened".
+// Reporting either as a defect is how a tier trains its readers to ignore red.
+func verdictForError(err error) (Verdict, bool) {
+	switch {
+	case err == nil:
+		return VerdictNotRun, false
+	case errors.Is(err, ErrCheckWaitTimedOut), errors.Is(err, ErrUnknownOutcome):
+		return VerdictTimedOut, true
+	default:
+		return VerdictNotRun, false
 	}
 }
 

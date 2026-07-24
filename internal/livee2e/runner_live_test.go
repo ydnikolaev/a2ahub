@@ -47,10 +47,26 @@ func TestLiveMatrix(t *testing.T) {
 			// assertions rest on — a report that does not name them cannot
 			// be audited afterwards.
 			run.Preflight = pre
-			// Wave 3 replaces this with provisioning + the scenario drivers.
-			// Until then the honest outcome is that nothing ran: reported as
-			// such, and non-zero, rather than as an empty success.
-			run.Abort("preflight passed; live scenarios are not implemented yet (spec 36 wave 3)")
+
+			// Wave 3-2 replaces this with the four scenario families. Until
+			// then the harness is CONSTRUCTED for real — provisioning, both
+			// checkouts, one draft — so that the ~380 lines of orchestration
+			// wave 3-2 is about to be written against are known to work,
+			// rather than discovered broken four families later.
+			h, cleanup, hErr := newHarness(ctx, cfg, pre)
+			defer cleanup()
+			switch {
+			case hErr != nil:
+				run.Abort("harness construction failed: " + hErr.Error())
+			default:
+				id, unfilled, dErr := h.B.Draft(ctx, "announcement")
+				if dErr != nil {
+					run.Abort("smoke draft failed: " + dErr.Error())
+					break
+				}
+				t.Logf("SMOKE OK: space reset, both checkouts connected, B drafted %s (unfilled: %v)", id, unfilled)
+				run.Abort("harness smoke passed; live scenarios are not implemented yet (spec 36 wave 3-2)")
+			}
 		}
 	}
 

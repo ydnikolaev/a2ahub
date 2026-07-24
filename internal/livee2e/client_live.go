@@ -246,7 +246,12 @@ func (c *ghClient) DeleteRef(ctx context.Context, owner, name, ref string) error
 
 // PullState is the subset of GitHub's pull-request object the harness reads.
 type PullState struct {
-	Number         int
+	Number int
+	// HeadRef is the head BRANCH name. It is how a caller resolves "the PR
+	// for this write" without scraping CLI output: the funnel's branch name
+	// is deterministic (space.BranchName), which is also what its own
+	// idempotent-retry path looks a PR up by.
+	HeadRef        string
 	HeadSHA        string
 	Merged         bool
 	MergeableState string
@@ -258,6 +263,7 @@ type pullPayload struct {
 	Number int `json:"number"`
 	Head   struct {
 		SHA string `json:"sha"`
+		Ref string `json:"ref"`
 	} `json:"head"`
 	Merged         bool   `json:"merged"`
 	MergeableState string `json:"mergeable_state"`
@@ -266,7 +272,7 @@ type pullPayload struct {
 
 func (p pullPayload) toPullState() PullState {
 	return PullState{
-		Number: p.Number, HeadSHA: p.Head.SHA, Merged: p.Merged,
+		Number: p.Number, HeadRef: p.Head.Ref, HeadSHA: p.Head.SHA, Merged: p.Merged,
 		MergeableState: p.MergeableState, State: p.State,
 	}
 }
