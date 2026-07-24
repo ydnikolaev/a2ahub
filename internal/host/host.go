@@ -83,6 +83,18 @@ type PRInfo struct {
 	Number int
 	URL    string
 	State  string
+	// AutoMergeArmed reports whether auto-merge is actually armed on the PR.
+	//
+	// It exists because arming is a SECOND call that GitHub can decline for
+	// reasons that are not failures of the write: the repository has
+	// auto-merge turned off, or the PR is already mergeable so there is
+	// nothing to wait for. Both leave a real, open PR — so failing the whole
+	// submit would be wrong, and silently claiming it will merge unattended
+	// (which is what swallowing the GraphQL error did) is worse.
+	AutoMergeArmed bool
+	// AutoMergeNote explains, in words the operator can act on, why arming
+	// did not happen. Empty when AutoMergeArmed is true.
+	AutoMergeNote string
 }
 
 // StatusRequest identifies the PR whose check/review state is queried.

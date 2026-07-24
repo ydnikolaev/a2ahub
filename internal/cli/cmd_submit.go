@@ -372,6 +372,7 @@ func (c *SubmitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return 1
 		}
 		_, _ = fmt.Fprintf(stdio.Stdout, "submit: opened PR %s for %s (%s)\n", result.PRURL, strings.Join(ids, ", "), result.State)
+		warnAutoMerge(stdio, "submit", result.AutoMergeNote)
 		return 0
 	}
 }
