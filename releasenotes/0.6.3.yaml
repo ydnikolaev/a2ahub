@@ -1,0 +1,41 @@
+schema: release-notes/v1
+version: "0.6.3"
+released: "2026-07-24"
+headline: "You learn about a missing `workflow` scope from doctor, not from a git push rejection"
+changes:
+  - id: RN-0603-1
+    kind: fix
+    impact: normal
+    subject: "a2a space update checks it CAN write workflows before printing a plan it cannot execute"
+    detail: >
+      `space update` rewrites `.github/workflows/`, which GitHub refuses from a
+      token without the `workflow` scope — and `gh auth token` does not carry
+      it by default. Until now the command computed the whole diff, printed it
+      with both `scope: space` directives, and only then died on a raw git push
+      rejection: it read as "it worked, then broke". It now probes the
+      credential first and refuses up front, naming the scopes your token
+      actually reports and the exact remedy. `--dry-run` still shows the diff
+      (that is what it is for) but says the real run would be refused, so you
+      learn this before it matters.
+    affects: [space]
+    action:
+      scope: none
+      why: "nothing to run — the command now tells you what it needs"
+  - id: RN-0603-2
+    kind: feat
+    impact: low
+    subject: "a2a doctor reports a missing `workflow` scope as an advisory, not a failure"
+    detail: >
+      Doctor's credentials check now notes when a space's token lacks the
+      `workflow` scope, and is explicit that this is FINE for participating:
+      submit, the lifecycle verbs and the contract verbs are confined to your
+      own section by the write funnel and never touch `.github/`. Only a space
+      OWNER running `a2a space update` needs it. A fine-grained PAT or a
+      GitHub App token does not advertise scopes at all, and that silence is
+      deliberately reported as nothing — an advisory that fired on the most
+      narrowly scoped credentials would just train people to ignore it.
+    affects: [doctor]
+    action:
+      scope: local
+      why: "run doctor once if you own a space, to see whether you can migrate its scaffolding"
+      detect: ["a2a doctor"]

@@ -26,7 +26,10 @@ type FakeHost struct {
 	FindPRFunc func(ctx context.Context, req FindPRRequest) (*PRInfo, error)
 	// CheckStatusFunc/ReviewStatusFunc override the corresponding method;
 	// unset returns a zero-value success result.
-	CheckStatusFunc  func(ctx context.Context, req StatusRequest) (CheckStatusResult, error)
+	CheckStatusFunc func(ctx context.Context, req StatusRequest) (CheckStatusResult, error)
+	// TokenScopesFunc overrides TokenScopes; nil reports a workflow-capable
+	// classic token (see the method).
+	TokenScopesFunc  func(ctx context.Context, cred Credential) ([]string, bool, error)
 	ReviewStatusFunc func(ctx context.Context, req StatusRequest) (ReviewStatusResult, error)
 	// EnsureForkFunc, when set, overrides the optional Forker capability.
 	// Default: mints ForkLogin's fork of the same repo name, idempotently.
@@ -79,6 +82,16 @@ func (f *FakeHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, error
 	f.byBranch[req.Head] = info
 	f.mu.Unlock()
 	return info, nil
+}
+
+// TokenScopes delegates to TokenScopesFunc; by default it reports the scopes
+// a workflow-capable classic token would carry, so a fake-backed test is not
+// accidentally gated on a capability probe it never meant to exercise.
+func (f *FakeHost) TokenScopes(ctx context.Context, cred Credential) ([]string, bool, error) {
+	if f.TokenScopesFunc != nil {
+		return f.TokenScopesFunc(ctx, cred)
+	}
+	return []string{"repo", "workflow"}, true, nil
 }
 
 // CheckStatus delegates to CheckStatusFunc, or reports a green check by

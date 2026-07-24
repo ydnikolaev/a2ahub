@@ -279,3 +279,67 @@ func TestInvalidRequestsRejected(t *testing.T) {
 		t.Errorf("FindPRByHeadBranch({}) error = %v, want ErrInvalidRequest", err)
 	}
 }
+
+// TestTokenScopesReportsAndDistinguishesSilence covers the whole point of the
+// `reported` flag: a classic/OAuth token advertises its scopes in
+// X-OAuth-Scopes, while a fine-grained PAT or App installation token omits the
+// header entirely — and "omitted" must never be read as "holds none", or the
+// most narrowly-scoped credentials would be the ones we refuse.
+func TestTokenScopesReportsAndDistinguishesSilence(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name         string
+		setHeader    bool
+		header       string
+		wantScopes   []string
+		wantReported bool
+	}{
+		{name: "oauth token advertises scopes", setHeader: true, header: "repo, read:org, workflow",
+			wantScopes: []string{"repo", "read:org", "workflow"}, wantReported: true},
+		{name: "classic token with no scopes is reported as empty", setHeader: true, header: "",
+			wantScopes: nil, wantReported: true},
+		{name: "fine-grained PAT omits the header entirely", setHeader: false,
+			wantScopes: nil, wantReported: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/rate_limit" {
+					t.Errorf("probed %s, want the rate_limit endpoint (it does not count against the limit)", r.URL.Path)
+				}
+				if tc.setHeader {
+					w.Header().Set("X-OAuth-Scopes", tc.header)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			defer srv.Close()
+
+			h := NewGitHubHost(srv.Client(), srv.URL)
+			scopes, reported, err := h.TokenScopes(context.Background(), Credential{Token: "t"})
+			if err != nil {
+				t.Fatalf("TokenScopes: %v", err)
+			}
+			if reported != tc.wantReported {
+				t.Fatalf("reported = %v, want %v", reported, tc.wantReported)
+			}
+			if len(scopes) != len(tc.wantScopes) {
+				t.Fatalf("scopes = %v, want %v", scopes, tc.wantScopes)
+			}
+			for i := range scopes {
+				if scopes[i] != tc.wantScopes[i] {
+					t.Fatalf("scopes = %v, want %v", scopes, tc.wantScopes)
+				}
+			}
+		})
+	}
+}
+
+func TestTokenScopesRejectsAnEmptyCredential(t *testing.T) {
+	t.Parallel()
+	h := NewGitHubHost(nil, "")
+	if _, _, err := h.TokenScopes(context.Background(), Credential{}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("TokenScopes({}) error = %v, want ErrInvalidRequest", err)
+	}
+}

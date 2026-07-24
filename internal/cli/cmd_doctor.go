@@ -173,7 +173,7 @@ func (c *DoctorCommand) doctorCheckCredentials(ctx context.Context, cfg space.Pr
 		return true, ""
 	}
 	ok := true
-	var failures []string
+	var failures, advisories []string
 	for _, ref := range cfg.Spaces {
 		var parsedRef space.CredentialReference
 		if raw, present := machine.Credentials[ref.ID]; present {
@@ -181,12 +181,56 @@ func (c *DoctorCommand) doctorCheckCredentials(ctx context.Context, cfg space.Pr
 				parsedRef = parsed
 			}
 		}
-		if _, err := c.resolveCredential(ctx, space.CredentialEnvVar(ref.ID), parsedRef); err != nil {
+		cred, err := c.resolveCredential(ctx, space.CredentialEnvVar(ref.ID), parsedRef)
+		if err != nil {
 			ok = false
 			failures = append(failures, fmt.Sprintf("%s: %v", ref.ID, err))
+			continue
+		}
+		if note := c.doctorWorkflowScopeNote(ctx, ref.ID, cred); note != "" {
+			advisories = append(advisories, note)
 		}
 	}
-	return ok, strings.Join(failures, "; ")
+	if !ok {
+		return false, strings.Join(failures, "; ")
+	}
+	// PASS-with-advisory (the `versions` precedent): a missing `workflow`
+	// scope must NOT fail this check. No ordinary participant needs it — every
+	// artifact write is confined to the caller's own section, and .github/ is
+	// reachable only through `a2a space update`. Failing here would red the
+	// whole fleet over a capability almost nobody uses.
+	//
+	// The " · " prefix is the renderer's convention for PASS-with-detail: the
+	// check supplies it, exactly as doctorCheckVersions does.
+	if len(advisories) == 0 {
+		return true, ""
+	}
+	return true, " · " + strings.Join(advisories, "; ")
+}
+
+// doctorWorkflowScopeNote returns an advisory when the space's credential
+// provably lacks the `workflow` scope — the capability `a2a space update`
+// needs to rewrite the space's CI caller, and the one whose absence otherwise
+// surfaces as a raw git push rejection midway through that command.
+//
+// Silence (a fine-grained PAT or App token, which do not advertise scopes) is
+// reported as nothing at all: an advisory that fires on the most narrowly
+// scoped credentials would train people to ignore it.
+func (c *DoctorCommand) doctorWorkflowScopeNote(ctx context.Context, spaceID string, cred host.Credential) string {
+	if c.h == nil || cred.Token == "" {
+		return ""
+	}
+	scopes, reported, err := c.h.TokenScopes(ctx, cred)
+	if err != nil || !reported {
+		return ""
+	}
+	for _, s := range scopes {
+		if s == "workflow" {
+			return ""
+		}
+	}
+	return fmt.Sprintf("%s: token has no `workflow` scope — fine for participating (submit/lifecycle/contract never touch .github/), "+
+		"but `a2a space update` would be refused; grant it with `gh auth refresh -h github.com -s workflow` if you own this space", spaceID)
 }
 
 // doctorCheckSpaceAccess ensures every connected space's mirror clone is

@@ -461,18 +461,72 @@ func (h *GitHubHost) graphQLCall(ctx context.Context, op string, cred Credential
 }
 
 func (h *GitHubHost) doJSON(ctx context.Context, op, method, url string, cred Credential, body any, out any) error {
+	_, raw, err := h.send(ctx, op, method, url, cred, body)
+	if err != nil {
+		return err
+	}
+	if out == nil || len(raw) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return &Error{Op: op, Err: fmt.Errorf("%w: decode response: %w", ErrRequestFailed, err)}
+	}
+	return nil
+}
+
+// scopeHeader is the response header GitHub uses to advertise a token's
+// OAuth scopes. Only OAuth-app and classic-PAT credentials carry it;
+// fine-grained PATs and GitHub App installation tokens do not use scopes at
+// all and omit it entirely.
+const scopeHeader = "X-OAuth-Scopes"
+
+// TokenScopes implements Host.TokenScopes by reading scopeHeader off a
+// /rate_limit response — the one authenticated endpoint GitHub documents as
+// not counting against the rate limit, so a capability probe never costs the
+// caller a request they needed.
+func (h *GitHubHost) TokenScopes(ctx context.Context, cred Credential) ([]string, bool, error) {
+	const op = "TokenScopes"
+	if cred.Token == "" {
+		return nil, false, &Error{Op: op, Err: ErrInvalidRequest}
+	}
+	hdr, _, err := h.send(ctx, op, http.MethodGet, h.BaseURL+"/rate_limit", cred, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	// Absent header vs present-but-empty is the whole distinction: absent
+	// means "this credential type does not do scopes" (reported=false, the
+	// caller must not conclude anything), present-but-empty means a classic
+	// token that genuinely holds none (reported=true, scopes empty).
+	values, ok := hdr[http.CanonicalHeaderKey(scopeHeader)]
+	if !ok {
+		return nil, false, nil
+	}
+	var scopes []string
+	for _, field := range strings.Split(strings.Join(values, ","), ",") {
+		if s := strings.TrimSpace(field); s != "" {
+			scopes = append(scopes, s)
+		}
+	}
+	return scopes, true, nil
+}
+
+// send issues one request and returns the response HEADER alongside the
+// bounded body. doJSON is a thin wrapper over it; TokenScopes needs the
+// header, which is why this exists as its own step rather than a second
+// hand-rolled HTTP path.
+func (h *GitHubHost) send(ctx context.Context, op, method, url string, cred Credential, body any) (http.Header, []byte, error) {
 	var reqBody io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
 		if err != nil {
-			return &Error{Op: op, Err: fmt.Errorf("%w: encode request: %w", ErrRequestFailed, err)}
+			return nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: encode request: %w", ErrRequestFailed, err)}
 		}
 		reqBody = bytes.NewReader(raw)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
-		return &Error{Op: op, Err: fmt.Errorf("%w: build request: %w", ErrRequestFailed, err)}
+		return nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: build request: %w", ErrRequestFailed, err)}
 	}
 	httpReq.Header.Set("Accept", "application/vnd.github+json")
 	if body != nil {
@@ -484,27 +538,21 @@ func (h *GitHubHost) doJSON(ctx context.Context, op, method, url string, cred Cr
 
 	resp, err := h.Client.Do(httpReq)
 	if err != nil {
-		return &Error{Op: op, Err: fmt.Errorf("%w: %w", ErrRequestFailed, err)}
+		return nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: %w", ErrRequestFailed, err)}
 	}
 	defer func() { _ = resp.Body.Close() }() // reason: response already fully read/discarded below
 
 	limited := io.LimitReader(resp.Body, maxResponseBytes)
 	raw, err := io.ReadAll(limited)
 	if err != nil {
-		return &Error{Op: op, Err: fmt.Errorf("%w: read response: %w", ErrRequestFailed, err)}
+		return nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: read response: %w", ErrRequestFailed, err)}
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &Error{
+		return nil, nil, &Error{
 			Op:  op,
 			Err: fmt.Errorf("%w: status %d: %s", ErrRequestFailed, resp.StatusCode, strings.TrimSpace(string(raw))),
 		}
 	}
-	if out == nil || len(raw) == 0 {
-		return nil
-	}
-	if err := json.Unmarshal(raw, out); err != nil {
-		return &Error{Op: op, Err: fmt.Errorf("%w: decode response: %w", ErrRequestFailed, err)}
-	}
-	return nil
+	return resp.Header, raw, nil
 }
