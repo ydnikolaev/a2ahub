@@ -1,0 +1,64 @@
+schema: release-notes/v1
+version: "0.6.0"
+released: "2026-07-24"
+headline: "Spaces are self-service: scaffold one, and keep an existing one current, with a command"
+changes:
+  - id: RN-0600-1
+    kind: feat
+    impact: normal
+    subject: "a2a space init — scaffold a ready-to-push space tree from the embedded template"
+    detail: >
+      `a2a space init <space-id> [--dir <path>]` writes a complete space repo
+      tree from the template embedded in your binary: the CI caller pinned to
+      THIS binary's release, dependabot.yml, space.yaml, CODEOWNERS and the
+      branch-protection checklist. Creating a space no longer means copying
+      files out of a2ahub by hand and filling placeholders. Two residual manual
+      steps remain and are printed: replace the CODEOWNERS placeholders with
+      real teams, and arm branch protection with the required check
+      `a2a-validate / validate`. A dev build refuses to scaffold — it would pin
+      a release tag that does not exist.
+    affects: [space, ci]
+    action:
+      scope: local
+      why: "use it instead of hand-copying the template when you create your next space"
+      run: ["a2a space init <space-id>"]
+  - id: RN-0600-2
+    kind: feat
+    impact: high
+    subject: "a2a space update — template drift becomes a command, not a runbook"
+    detail: >
+      Dependabot moves your space CI's version ref, but it cannot add a file,
+      rename a job, or change the caller's shape — so every STRUCTURAL template
+      change used to be a manual per-space copy job. `a2a space update
+      [--dry-run]` diffs your connected space against the embedded template and
+      opens ONE reviewable PR through the normal write funnel. It never
+      overwrites what the space owns: your real CODEOWNERS teams and your
+      space.yaml participants survive verbatim, and `min_binary_version` moves
+      only as far as the template's own declared floor, and only upward. Steps
+      that need repo-admin scope — renaming the required status check, deleting
+      a stale A2A_BINARY_FETCH_TOKEN secret — are PRINTED as directives for you
+      to run; a2a asks for no admin credential and calls no admin API.
+    affects: [space, ci]
+    action:
+      scope: space
+      why: "if you own a space created before the reusable-workflow CI, this is now the supported way to migrate it"
+      detect: ["a2a space update --dry-run"]
+      run: ["a2a space update"]
+  - id: RN-0600-3
+    kind: fix
+    impact: high
+    subject: "the V3 gate result resolves on a migrated space (compound required-check context)"
+    detail: >
+      Since the space CI became a caller of a2ahub's reusable workflow, GitHub
+      names the check run `a2a-validate / validate` rather than the flat
+      `a2a-validate`. The host's check-run query filtered on the flat name
+      exactly, so on a migrated space it matched nothing and reported "no check"
+      instead of the real conclusion. It now lists the head commit's runs and
+      selects by anchored prefix, so BOTH shapes resolve — a fleet mid-migration
+      needs no per-space configuration — while the push-triggered
+      `a2a-postmerge-audit / validate` can never be mistaken for the gate.
+      Found before any space was migrated, so nothing broke in the field.
+    affects: [space, ci]
+    action:
+      scope: none
+      why: "nothing to run — the read is simply correct now, on migrated and un-migrated spaces alike"
