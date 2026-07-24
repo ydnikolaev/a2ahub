@@ -1,0 +1,25 @@
+schema: release-notes/v1
+version: "0.5.0"
+released: "2026-07-24"
+headline: "Space CI is a referenced reusable workflow — no copied logic, no fetch-token, version by Dependabot"
+changes:
+  - id: RN-0500-1
+    kind: feat
+    impact: normal
+    subject: "space CI validates through a2ahub's reusable workflow — copy/token/manual-pin drift is gone"
+    detail: >
+      A space's `.github/workflows/a2a-validate.yml` is now a thin CALLER of
+      a2ahub's public reusable workflow (`a2a-validate-reusable.yml`), pinned to
+      an immutable release tag and bumped by Dependabot. The validation logic +
+      the pinned a2a version live in that one versioned unit, so a space can no
+      longer drift a flag surface past its pinned binary (the outage that froze
+      pinned-binary spaces). The `A2A_BINARY_FETCH_TOKEN` secret is gone —
+      a2ahub is public and integrity is the Go checksum DB via `go run …@<ver>`.
+      The required status check is `a2a-validate / validate` (caller job /
+      reusable job). a2ahub dogfoods the same workflow on its own PRs.
+    affects: [space, ci]
+    action:
+      scope: space
+      why: "if you own a pre-existing space, migrate its CI to the reusable caller — one-time, and it ends the flag-drift outages"
+      detect: ["a2a doctor"]
+      run: ["see docs/runbooks/space-bootstrap.md — the P33 migration section (swap to the caller, add dependabot.yml, rename the required check to a2a-validate / validate, delete the fetch-token secret)"]
