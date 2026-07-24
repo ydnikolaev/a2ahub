@@ -274,20 +274,41 @@ type checkRun struct {
 	Name       string `json:"name"`
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
+	// StartedAt and ID break ties between runs sharing a name (see
+	// selectRequiredCheckRun). StartedAt is RFC-3339 and therefore sorts
+	// correctly as a plain string; ID is the stable fallback for the
+	// same-second case, since GitHub's check-run ids increase over time.
+	StartedAt string `json:"started_at"`
+	ID        int64  `json:"id"`
 }
 
 // selectRequiredCheckRun picks the V3 required check run out of a head SHA's
 // runs (spec 34 §2): compound `a2a-validate / …` wins over flat
 // `a2a-validate` — a space mid-migration can briefly emit both, and the
-// compound one is the shape branch protection now requires. More than one
-// compound candidate is resolved deterministically (lexicographically first)
-// and REPORTED, never picked silently. Zero candidates → ok=false, which the
-// caller renders as the pre-existing "no check" result.
+// compound one is the shape branch protection now requires. Zero candidates →
+// ok=false, which the caller renders as the pre-existing "no check" result.
 //
-// The pick is deterministic across DISTINCT names, which is what `filter=latest`
-// (one run per name) guarantees. Two compound runs sharing a name would make
-// the conclusion order-dependent — but `Ambiguous` fires on candidate COUNT,
-// so that case still degrades to a reported ambiguity, never a silent verdict.
+// Ordering is MOST RECENT FIRST (StartedAt desc, then ID desc), with the name
+// only grouping equal-recency runs. This corrects an assumption an earlier
+// version of this function documented and relied on — that `filter=latest`
+// returns one run per name, so candidate names are distinct and sorting by
+// name is total.
+//
+// That is false, and routinely so. Verified against real GitHub on
+// 2026-07-24 (P36's live tier): after a PR's check was re-triggered,
+// `/commits/{sha}/check-runs?filter=latest` returned TWO completed runs both
+// named `a2a-validate / validate` for one head SHA — `filter=latest` is
+// per-CHECK-SUITE, and a re-trigger creates another suite. Sorting by name
+// alone then compares equal, `sort.Slice` is not stable, and the pick between
+// the stale run and the current one is arbitrary. A caller would read the OLD
+// conclusion — reporting failure on a PR that has since gone green, or the
+// reverse. That is precisely the defect class spec 34 exists to close, one
+// layer deeper, and no fake produces it: a fake never re-triggers.
+//
+// Ambiguity is still REPORTED (never a silent pick) whenever more than one
+// compound candidate exists, so a caller can see that the head SHA carried
+// several — but the pick itself is now the meaningful one rather than a
+// coin flip.
 func selectRequiredCheckRun(runs []checkRun) (run checkRun, ambiguous []string, ok bool) {
 	var compound, flat []checkRun
 	for _, r := range runs {
@@ -307,7 +328,18 @@ func selectRequiredCheckRun(runs []checkRun) (run checkRun, ambiguous []string, 
 		return checkRun{}, nil, false
 	}
 
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Name < candidates[j].Name })
+	sort.Slice(candidates, func(i, j int) bool {
+		a, b := candidates[i], candidates[j]
+		if a.StartedAt != b.StartedAt {
+			// RFC-3339, so lexicographic IS chronological. Descending:
+			// the newest run answers for the head SHA.
+			return a.StartedAt > b.StartedAt
+		}
+		if a.ID != b.ID {
+			return a.ID > b.ID
+		}
+		return a.Name < b.Name
+	})
 	if len(compound) > 1 {
 		ambiguous = make([]string, 0, len(compound))
 		for _, r := range compound {

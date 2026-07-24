@@ -154,6 +154,56 @@ func TestCheckStatusReportsAmbiguousCompoundRuns(t *testing.T) {
 	}
 }
 
+// A re-triggered check leaves TWO runs with the SAME name on one head SHA,
+// and the current one must win.
+//
+// This is not hypothetical and not rare. Verified against real GitHub on
+// 2026-07-24 (P36's live tier): re-triggering a PR's check made
+// `/commits/{sha}/check-runs?filter=latest` return two completed runs both
+// named `a2a-validate / validate` — `filter=latest` is per-check-SUITE, and a
+// re-trigger creates another suite. An earlier version of the selector sorted
+// by name alone, which compares equal here; `sort.Slice` is not stable, so the
+// pick between the stale run and the current one was arbitrary.
+//
+// The fixture puts the STALE run first and gives it the "better" conclusion,
+// so a selector that keeps input order, or that prefers success, fails.
+func TestCheckStatusPrefersTheMostRecentRunOfTheSameName(t *testing.T) {
+	t.Parallel()
+
+	h, _ := checkRunsHost(t, []map[string]any{
+		{"name": "a2a-validate / validate", "status": "completed", "conclusion": "success",
+			"started_at": "2026-07-24T16:06:38Z", "id": 89529876709},
+		{"name": "a2a-validate / validate", "status": "completed", "conclusion": "failure",
+			"started_at": "2026-07-24T16:09:08Z", "id": 89530405168},
+	})
+	got := checkStatus(t, h)
+
+	if got.Conclusion != "failure" {
+		t.Fatalf("CheckStatus.Conclusion = %q, want the LATER run's %q — a stale conclusion read as current is the whole defect", got.Conclusion, "failure")
+	}
+	// Still reported: the caller should be able to see the SHA carried more
+	// than one candidate, even though the pick is now meaningful.
+	if len(got.Ambiguous) != 2 {
+		t.Fatalf("CheckStatus.Ambiguous = %v, want both runs reported", got.Ambiguous)
+	}
+}
+
+// Same-second runs still resolve deterministically, by id — GitHub's
+// check-run ids increase over time, so the higher id is the later run.
+func TestCheckStatusBreaksSameSecondTiesByID(t *testing.T) {
+	t.Parallel()
+
+	h, _ := checkRunsHost(t, []map[string]any{
+		{"name": "a2a-validate / validate", "status": "completed", "conclusion": "success",
+			"started_at": "2026-07-24T16:09:08Z", "id": 100},
+		{"name": "a2a-validate / validate", "status": "completed", "conclusion": "failure",
+			"started_at": "2026-07-24T16:09:08Z", "id": 101},
+	})
+	if got := checkStatus(t, h); got.Conclusion != "failure" {
+		t.Fatalf("CheckStatus.Conclusion = %q, want the higher-id run's %q", got.Conclusion, "failure")
+	}
+}
+
 // The unambiguous single-match path must NOT report ambiguity.
 func TestCheckStatusSingleMatchIsNotAmbiguous(t *testing.T) {
 	t.Parallel()
