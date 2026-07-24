@@ -196,9 +196,14 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		// retry answered "already-open". Arming is idempotent, so the common
 		// case — the PR was fully configured — costs one no-op call.
 		if am, isAutoMerger := f.host.(host.AutoMerger); isAutoMerger {
-			if err := am.EnableAutoMerge(ctx, host.EnableAutoMergeRequest{
+			err := am.EnableAutoMerge(ctx, host.EnableAutoMergeRequest{
 				Repo: req.Repo, PRNumber: existing.Number, Credential: req.Credential,
-			}); err != nil {
+			})
+			// "Already clean" is GitHub declining because the PR can be
+			// merged right now — nothing to wait for. That is not a failed
+			// repair, it is the repair being unnecessary, so it must not
+			// fail the retry.
+			if err != nil && !host.IsAutoMergeAlreadyClean(err) {
 				return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
 			}
 		}

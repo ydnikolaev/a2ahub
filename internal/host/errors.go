@@ -31,6 +31,14 @@ var (
 	// a non-2xx status or a transport-level failure.
 	ErrRequestFailed = errors.New("host: github api request failed")
 
+	// ErrGraphQLFailed is returned when a GraphQL call answers HTTP 200 —
+	// which GraphQL does even for a failed operation — while reporting the
+	// failure in the response body's `errors` array. A separate sentinel
+	// from ErrRequestFailed because the transport SUCCEEDED; only the
+	// operation did not, and a caller may want to recognise a specific
+	// refusal (see IsAutoMergeAlreadyClean).
+	ErrGraphQLFailed = errors.New("host: github graphql operation failed")
+
 	// ErrInvalidRequest is returned when a caller omits a required field
 	// on a request value.
 	ErrInvalidRequest = errors.New("host: invalid request")
