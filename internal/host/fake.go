@@ -31,6 +31,10 @@ type FakeHost struct {
 	// classic token (see the method).
 	TokenScopesFunc  func(ctx context.Context, cred Credential) ([]string, bool, error)
 	ReviewStatusFunc func(ctx context.Context, req StatusRequest) (ReviewStatusResult, error)
+	// EnableAutoMergeFunc, when set, overrides the optional AutoMerger
+	// capability. Default: records the call and succeeds, which is what a
+	// real host does when auto-merge is already armed.
+	EnableAutoMergeFunc func(ctx context.Context, req EnableAutoMergeRequest) error
 	// EnsureForkFunc, when set, overrides the optional Forker capability.
 	// Default: mints ForkLogin's fork of the same repo name, idempotently.
 	EnsureForkFunc func(ctx context.Context, req EnsureForkRequest) (ForkInfo, error)
@@ -41,6 +45,7 @@ type FakeHost struct {
 	Pushes   []PushBranchRequest
 	Opens    []OpenPRRequest
 	Forks    []EnsureForkRequest
+	AutoArms []EnableAutoMergeRequest
 	nextPR   int
 	byBranch map[string]PRInfo
 }
@@ -164,3 +169,22 @@ var (
 	_ Forker = (*FakeHost)(nil)
 	_ Forker = (*GitHubHost)(nil)
 )
+
+// EnableAutoMerge implements the optional AutoMerger capability: it records
+// the call and succeeds, unless EnableAutoMergeFunc overrides it.
+//
+// The fake satisfies AutoMerger deliberately. The funnel's idempotent-retry
+// short-circuit re-arms auto-merge on the PR it finds, because OpenPR is not
+// atomic on real GitHub — a fake that did NOT satisfy the capability would
+// make the type assertion fail and leave that path untested.
+func (f *FakeHost) EnableAutoMerge(ctx context.Context, req EnableAutoMergeRequest) error {
+	f.mu.Lock()
+	f.AutoArms = append(f.AutoArms, req)
+	fn := f.EnableAutoMergeFunc
+	f.mu.Unlock()
+
+	if fn != nil {
+		return fn(ctx, req)
+	}
+	return nil
+}

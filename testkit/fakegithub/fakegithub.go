@@ -216,7 +216,12 @@ func (s *Server) handleGetPR(w http.ResponseWriter, _ *http.Request, numStr stri
 		sha := s.revParse(headRef(pr))
 		s.writeJSON(w, map[string]any{
 			"number": pr.Number, "html_url": s.prURL(pr.Number),
-			"state": prAPIState(pr), "merged": pr.Merged,
+			// node_id is what host.EnableAutoMerge resolves before it can
+			// run the GraphQL mutation — the funnel's retry path re-arms
+			// auto-merge on an existing PR, and without this the fake would
+			// make that path untestable.
+			"node_id": fmt.Sprintf("PR_%d", pr.Number),
+			"state":   prAPIState(pr), "merged": pr.Merged,
 			"head": map[string]any{"sha": sha},
 		})
 		return
