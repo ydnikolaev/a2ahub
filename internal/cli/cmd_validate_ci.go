@@ -9,13 +9,24 @@
 // This file is kept separate from cmd_submit.go's ValidateCommand.Run so
 // the existing `validate <path>` / `validate --all` paths stay untouched;
 // ValidateCommand.Run only delegates here when `--ci` is set.
+//
+// P37 wave B2 (spec 37 §2 T2/T3, AC-970.2) adds ONE more rule, still not a
+// new validation RULE of its own: for every contract this PR touches, at
+// merge, run the SAME `validate.CheckComputedCompatibility` core `contract
+// publish` runs locally (internal/validate/compat.go), plus D-D's
+// `validate.CheckContractPublishable` (POL-009). Both are exported,
+// pure-input functions this file only CALLS — see
+// TestValidateCIAndContractHaveNoSecondCompatCopy for the test that proves
+// no second copy of either verdict exists in this package.
 package cli
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -25,6 +36,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"gopkg.in/yaml.v3"
 )
 
 // gitChangedFilesFunc is the seam over `git diff --name-only` — the real
@@ -132,10 +144,26 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	// makes a system a registered consumer, and the retire-block check
 	// reads it. Nothing validated it before, so a file the schema rejects
 	// outright merged silently and simply registered nobody.
+	//
+	// contractIDs is the P37 wave B2 fourth bucket: every CONTRACT (by id)
+	// this PR touches — a changed path that IS a contract descriptor, or
+	// that lives under a descriptor's schema/**, fixtures/valid/** or
+	// fixtures/invalid/** subtree (contractTouchedByPath). Deduped to ONE
+	// entry per descriptor directory (contractDescPaths, seenContracts): a
+	// PR changing five of a contract's schema files must produce ONE
+	// compat verdict below, not five (AC-970.2's acceptance).
 	var artifacts []string
 	var authzPaths []string
 	var consumes []string
+	var contractIDs []string
+	contractDescPaths := map[string]string{}
+	seenContracts := map[string]bool{}
 	for _, p := range changed {
+		if id, descPath, ok := contractTouchedByPath(p); ok && !seenContracts[id] {
+			seenContracts[id] = true
+			contractIDs = append(contractIDs, id)
+			contractDescPaths[id] = descPath
+		}
 		if _, ok := systemForPath(manifest, p); ok {
 			authzPaths = append(authzPaths, p)
 			switch {
@@ -175,6 +203,24 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 		report.Artifacts = append(report.Artifacts, *rep)
 		if !ok {
 			report.Valid = false
+		}
+	}
+
+	// Per-contract compat + publishability verdict (spec 37 §2 T2/T3,
+	// AC-970.2) — v3-pr only. A full-repo scan (`--mode=v3-full-repo`) has
+	// no single `--base` commit to diff a PRIOR version's fixtures out of
+	// git history against, so it is not this check's scope; the merge gate
+	// a raw `git push` cannot bypass is specifically the PR check.
+	if mode == "v3-pr" {
+		for _, id := range contractIDs {
+			rep, ok := validateCIContract(ctx, root, base, id, contractDescPaths[id], stdio.Stderr)
+			if rep == nil {
+				continue // deleted in this PR
+			}
+			report.Artifacts = append(report.Artifacts, *rep)
+			if !ok {
+				report.Valid = false
+			}
 		}
 	}
 
@@ -325,6 +371,213 @@ func validateCIConsumes(engine *validate.Engine, root, relPath string) (*validat
 // consumes.yaml — the §4.2 name is fixed, one per section.
 func isConsumesRegistry(p string) bool {
 	return filepath.Base(p) == "consumes.yaml"
+}
+
+// contractTouchedByPath reports whether repo-relative path p is a
+// contract's own descriptor file, or lives under that descriptor's
+// schema/**, fixtures/valid/** or fixtures/invalid/** subtree
+// (internal/space/layout.go's Layout.ProvidesContract/ProvidesSchemaDir/
+// ProvidesFixturesValidDir/ProvidesFixturesInvalidDir — the §4.2
+// <system>/provides/<slug>/{contract.md,schema/,fixtures/{valid,invalid}/}
+// shape). Returns the contract's id and the descriptor's own repo-relative
+// path.
+//
+// The id is reconstructed directly from the path, not looked up: a
+// contract id's own grammar (artifact.ParseID) makes its <rest> token
+// (the third `-`-separated segment) identical to its slug verbatim, so
+// "XC-"+system+"-"+slug IS the id — the same identity ProvidesContractPath
+// (internal/artifact/id.go) renders the path from, just run in reverse.
+func contractTouchedByPath(p string) (id, descriptorPath string, ok bool) {
+	parts := strings.Split(p, "/")
+	if len(parts) < 4 || parts[1] != "provides" {
+		return "", "", false
+	}
+	system, slug := parts[0], parts[2]
+	switch {
+	case len(parts) == 4 && parts[3] == "contract.md":
+	case len(parts) >= 5 && parts[3] == "schema":
+	case len(parts) >= 6 && parts[3] == "fixtures" && (parts[4] == "valid" || parts[4] == "invalid"):
+	default:
+		return "", "", false
+	}
+	descriptorPath = strings.Join(parts[:3], "/") + "/contract.md"
+	return "XC-" + system + "-" + slug, descriptorPath, true
+}
+
+// contractWorkingTreeFiles reads every file under
+// root/descriptorDir/sub (sub e.g. "schema" or "fixtures/valid"), keyed
+// the SAME way contractPriorVersionFiles/contractReadTreeAtSHA
+// (contract_git.go) key their own maps: relative to descriptorDir,
+// forward-slash, sub-PREFIXED (e.g. "schema/main.schema.json") — so a map
+// this returns drops straight into validate.CompatInput.NewSchemas without
+// re-keying. A missing directory is empty, not an error: a contract
+// publishing no schema/** (or no fixtures/valid/**) at all is exactly what
+// validate.CheckContractPublishable (POL-009) exists to catch, not this
+// helper's concern.
+func contractWorkingTreeFiles(root, descriptorDir, sub string) (map[string][]byte, error) {
+	out := map[string][]byte{}
+	base := filepath.Join(root, filepath.FromSlash(descriptorDir))
+	dir := filepath.Join(base, filepath.FromSlash(sub))
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, werr error) error {
+		if werr != nil {
+			if errors.Is(werr, fs.ErrNotExist) {
+				return nil
+			}
+			return werr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		raw, rerr := readBoundedFile(p, maxMirrorEventBytes)
+		if rerr != nil {
+			return rerr
+		}
+		rel, rerr := filepath.Rel(base, p)
+		if rerr != nil {
+			return rerr
+		}
+		out[filepath.ToSlash(rel)] = raw
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// contractFixturesValidOnly keeps only the fixtures/valid/** half of a
+// contractReadTreeAtSHA(..., []string{"fixtures"}) result — mirroring the
+// same fixtures/invalid/**-exclusion contractPriorVersionFiles
+// (contract_git.go) applies for its own two-subtree callers: an invalid
+// fixture failing the new schema is the fixture doing its job, not a
+// compatibility break, and must never reach validate.CompatInput.
+func contractFixturesValidOnly(tree map[string][]byte) map[string][]byte {
+	out := map[string][]byte{}
+	for k, v := range tree {
+		if k == "fixtures/valid" || strings.HasPrefix(k, "fixtures/valid/") {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// validateCIContract is spec 37 §2 T2/T3's merge-side compat +
+// publishability verdict for ONE contract this PR touched (AC-970.2): the
+// SAME two exported checks `contract publish` runs locally
+// (validate.CheckContractPublishable, unconditional — D-D/POL-009 — and,
+// gated on validate.IsJSONSchemaFormat, validate.CheckComputedCompatibility
+// — §5.4b/POL-007/POL-008), never a local re-implementation of either.
+// Returns (nil, true) when the descriptor is absent on disk at HEAD
+// (deleted in this PR — nothing to check), else a filled validateReport
+// (Path is always the descriptor's own repo-relative path, AC-970.1) and
+// whether the contract is clean.
+//
+// Ordering matters for one thing: when the format is JSON-Schema, the
+// PRIOR version's fixtures are read via contractReadTreeAtSHA BEFORE the
+// prior descriptor is read via a single `git show`. contractReadTreeAtSHA
+// verifies `base` resolves to a real commit up front and fails loudly if
+// not; reading the descriptor FIRST and treating any git-show failure
+// (unreachable base OR a genuinely absent descriptor) as "first publish,
+// nothing to check" would silently wave a breaking change through for a
+// bogus `--base` — the exact fail-open wave A closed for
+// contractReadTreeAtSHA itself (its own doc comment), reopened one layer
+// up if this function got the order backwards.
+func validateCIContract(ctx context.Context, root, base, id, descriptorPath string, stderr io.Writer) (*validateReport, bool) {
+	_, probe, relPath, relDir, err := contractReadDescriptor(root, id)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, true
+		}
+		return &validateReport{Path: descriptorPath, Error: fmt.Sprintf("contract %s: %v", id, err)}, false
+	}
+
+	schemasNew, err := contractWorkingTreeFiles(root, relDir, "schema")
+	if err != nil {
+		return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read schema/**: %v", id, err)}, false
+	}
+	fixturesValidNew, err := contractWorkingTreeFiles(root, relDir, "fixtures/valid")
+	if err != nil {
+		return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read fixtures/valid/**: %v", id, err)}, false
+	}
+
+	var violations []validate.Violation
+	if v := validate.CheckContractPublishable(validate.PublishableInput{
+		SchemaFormat:  probe.SchemaFormat,
+		ContractID:    id,
+		Schemas:       len(schemasNew),
+		ValidFixtures: len(fixturesValidNew),
+	}); v != nil {
+		violations = append(violations, *v)
+	}
+
+	if validate.IsJSONSchemaFormat(probe.SchemaFormat) {
+		// PRIOR fixtures FIRST — see this function's own doc comment for
+		// why the order is load-bearing.
+		priorTree, terr := contractReadTreeAtSHA(ctx, root, base, relDir, []string{"fixtures"})
+		if terr != nil {
+			return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read prior fixtures at base %s: %v", id, base, terr)}, false
+		}
+
+		priorRaw, gerr := contractGitBounded(ctx, root, maxMirrorEventBytes, "show", base+":"+relPath)
+		switch {
+		case gerr != nil:
+			// base itself already resolved (contractReadTreeAtSHA above
+			// would have errored otherwise) — so a failing `git show
+			// base:relPath` means the descriptor genuinely does not exist
+			// at base: a FIRST publish in this PR. D-B: nothing to check,
+			// and say so (never silence — "a CI log that says nothing
+			// reads as it passed").
+			_, _ = fmt.Fprintf(stderr, "validate --ci: contract %s: no descriptor found at base %s — first publish in this PR, computed compatibility not checked\n", id, base)
+		default:
+			priorFM, ferr := artifact.ParseFrontmatter(priorRaw)
+			var priorProbe contractDescriptorProbe
+			if ferr == nil {
+				ferr = yaml.Unmarshal(priorFM.YAML, &priorProbe)
+			}
+			if ferr != nil {
+				return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: prior descriptor at base %s is not parseable: %v", id, base, ferr)}, false
+			}
+			priorSemver, perr := contractParseSemver(priorProbe.Version)
+			if perr != nil {
+				return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: prior version %q at base %s is not valid semver: %v", id, priorProbe.Version, base, perr)}, false
+			}
+			newSemver, nerr := contractParseSemver(probe.Version)
+			if nerr != nil {
+				return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: version %q is not valid semver: %v", id, probe.Version, nerr)}, false
+			}
+
+			result := validate.CheckComputedCompatibility(validate.CompatInput{
+				DeclaredBump:  contractInferBumpKind(priorSemver, newSemver),
+				PriorVersion:  priorProbe.Version,
+				NewVersion:    probe.Version,
+				NewSchemas:    schemasNew,
+				PriorFixtures: contractFixturesValidOnly(priorTree),
+			})
+			if !result.Computed {
+				// Computed==false with no Violation (major bump, or a
+				// prior version that published no fixtures) is an honest
+				// non-answer, not a pass — printed explicitly so a clean
+				// exit-0 CI log still says WHY nothing was checked.
+				_, _ = fmt.Fprintf(stderr, "validate --ci: contract %s: %s\n", id, result.Reason)
+			}
+			if result.Violation != nil {
+				violations = append(violations, *result.Violation)
+			}
+		}
+	}
+
+	valid := true
+	for _, v := range violations {
+		if v.Severity != validate.SeverityWarning {
+			valid = false
+			break
+		}
+	}
+	if violations == nil {
+		violations = []validate.Violation{}
+	}
+	res := validate.Result{Valid: valid, ArtifactID: id, InvocationPoint: validate.V2, Violations: violations}
+	return &validateReport{Path: relPath, Result: &res}, valid
 }
 
 // spaceLevelArtifactDir is the one §4.2 directory that holds artifacts

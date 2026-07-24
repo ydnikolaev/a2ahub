@@ -27,6 +27,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -518,6 +519,57 @@ func parseArgsAnyOrder(fs *flag.FlagSet, args []string) ([]string, error) {
 	return append(lifted, fs.Args()...), nil
 }
 
+// contractReadWorkingTreeFiles reads every regular file under
+// filepath.Join(root, sub) as it currently sits in the working tree, keyed
+// "<sub>/<path-relative-to-root>" (forward-slash) — the SAME keying
+// contractPriorVersionFiles/contractReadTreeAtSHA use for the prior
+// version's git-history reads (both "schema/<name>" and
+// "fixtures/valid/<name>", relative to the descriptor's own directory), so
+// validate.CheckComputedCompatibility's fixture->schema mapping sees
+// identical shapes on both sides of a comparison, and so a POL-007/POL-008
+// refusal names a path that actually exists in the repo (AC-970.1). A
+// missing directory is not an error — an empty map (nothing published
+// under that subtree yet), which is exactly what D-D's own "count, don't
+// assume" check needs to see. Bounded: every leaf read goes through
+// readBoundedFile at maxMirrorEventBytes, this package's own existing
+// artifact-read ceiling.
+func contractReadWorkingTreeFiles(root, sub string) (map[string][]byte, error) {
+	dir := filepath.Join(root, sub)
+	info, err := os.Stat(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string][]byte{}, nil
+		}
+		return nil, err
+	}
+	if !info.IsDir() {
+		return map[string][]byte{}, nil
+	}
+	out := map[string][]byte{}
+	walkErr := filepath.WalkDir(dir, func(p string, d fs.DirEntry, werr error) error {
+		if werr != nil {
+			return werr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		raw, rerr := readBoundedFile(p, maxMirrorEventBytes)
+		if rerr != nil {
+			return rerr
+		}
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			return relErr
+		}
+		out[filepath.ToSlash(rel)] = raw
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	return out, nil
+}
+
 func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("contract publish", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
@@ -558,6 +610,34 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 		return 1
 	}
 
+	// D-D/POL-009: a JSON-Schema contract must publish an actual baseline
+	// (schema/** + fixtures/valid/**) before publish records a version
+	// anything else will trust as compat-checkable. This runs on EVERY
+	// publish, including the first — CheckContractPublishable itself no-ops
+	// for a non-JSON-Schema schema_format (validate.IsJSONSchemaFormat), so
+	// calling it unconditionally here is always safe. newSchemas is also
+	// F1's own NewSchemas input below (read once, used twice).
+	workDir := filepath.Join(c.deps.mirrorDir, relDir)
+	newSchemas, err := contractReadWorkingTreeFiles(workDir, "schema")
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %v\n", err)
+		return 1
+	}
+	newFixturesValid, err := contractReadWorkingTreeFiles(workDir, filepath.Join("fixtures", "valid"))
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %v\n", err)
+		return 1
+	}
+	if violation := validate.CheckContractPublishable(validate.PublishableInput{
+		SchemaFormat:  probe.SchemaFormat,
+		ContractID:    id,
+		Schemas:       len(newSchemas),
+		ValidFixtures: len(newFixturesValid),
+	}); violation != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %s: refused: %s (%s)\n", id, violation.Message, violation.Code)
+		return 1
+	}
+
 	// G1: no PRIOR publish event at all for this contract.
 	all, err := lifecycleReadAllEvents(c.deps.mirrorDir)
 	if err != nil {
@@ -586,6 +666,71 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 	// G2: a self-declared MAJOR bump on a non-first publish.
 	isMajorBump := !isFirstPublish && newVersion[0] > baseline[0]
 	gated := isFirstPublish || isMajorBump
+
+	// F1/POL-007/POL-008 (D-010, §5.4b): computed compatibility. Only makes
+	// sense once there IS a prior version to compare against, and only for
+	// a JSON-Schema dialect (validate.IsJSONSchemaFormat) — for
+	// openapi-3.x/proto3/other, §5.4b hands deep compatibility to the
+	// owner's own CI, so this engine has nothing to compute. A MAJOR bump
+	// is still handed to the core (not special-cased out here): it answers
+	// Computed:false with a Reason by design (D-B), and printing that
+	// Reason the SAME way a minor/patch's "nothing computed" prints is
+	// AC-970.3 — a caller-side special case would just re-derive the same
+	// sentence the core already owns.
+	if !isFirstPublish && validate.IsJSONSchemaFormat(probe.SchemaFormat) {
+		declaredBump := *bump
+		if declaredBump == "" {
+			// --version was used instead of --bump: classify the jump from
+			// baseline -> newVersion using the SAME major > minor > patch
+			// precedence contractBump's own kind vocabulary uses, rather
+			// than leaving DeclaredBump empty (which the core would not
+			// recognize as "major" and so would treat as a checkable
+			// minor/patch bump regardless of the operator's real intent).
+			declaredBump = contractInferBumpKind(baseline, newVersion)
+		}
+		_, priorFixturesValid, perr := contractPriorVersionFiles(ctx, c.deps.mirrorDir, relPath, relDir, baseline.String())
+		if perr != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %v\n", perr)
+			return 1
+		}
+		compat := validate.CheckComputedCompatibility(validate.CompatInput{
+			DeclaredBump:  declaredBump,
+			PriorVersion:  baseline.String(),
+			NewVersion:    newVersion.String(),
+			NewSchemas:    newSchemas,
+			PriorFixtures: priorFixturesValid,
+		})
+		switch {
+		case compat.Violation != nil:
+			// compat.Violation.Message already NAMES the offending
+			// fixture(s) (AC-970.1) — POL-007 joins compat.Failures'
+			// fixture paths into its own Message, POL-008 names the one
+			// fixture/schema that broke the baseline; neither needs
+			// re-deriving here.
+			_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %s: refused: %s (%s)\n", id, compat.Violation.Message, compat.Violation.Code)
+			return 1
+		case !compat.Computed:
+			// D-B: "checked and compatible" must be visibly different from
+			// "nothing was computed" — print the core's own Reason sentence
+			// and CONTINUE (this is not a refusal).
+			_, _ = fmt.Fprintln(stdio.Stdout, compat.Reason)
+		default:
+			_, _ = fmt.Fprintf(stdio.Stdout, "contract publish: %s: computed compatibility confirmed (%s -> %s)\n", id, baseline.String(), newVersion.String())
+		}
+	}
+
+	// F2/D-A: a major bump over an existing prior major is refused unless a
+	// deprecation of that prior major already exists — a PRECONDITION, not
+	// an atomic pairing, so the deprecation always lands first and §T3's
+	// window (a major published with no deprecation in flight) never
+	// opens. The refusal names the exact command the operator owes.
+	if isMajorBump && !contractPriorMajorDeprecated(all, id, baseline[0]) {
+		_, _ = fmt.Fprintf(stdio.Stderr,
+			"contract publish: %s: refused: major bump to %s carries no deprecation of the prior major (v%d) — "+
+				"run `a2a contract deprecate %s --version %s --successor <XC-id@version> --sunset <YYYY-MM-DD>` first, then retry this publish\n",
+			id, newVersion.String(), baseline[0], id, baseline.String())
+		return 1
+	}
 
 	now := c.deps.now()
 	eventID, err := artifact.MintULIDAt(now, c.deps.entropy)
@@ -678,6 +823,66 @@ func contractPublishedVersions(all []lifecycleEventDoc, id string) []contractSem
 		return false
 	})
 	return out
+}
+
+// contractInferBumpKind classifies the jump from baseline to newVersion
+// using contractBump's own major/minor/patch vocabulary. It is F1's
+// fallback for a publish that gave --version rather than --bump, so
+// DeclaredBump is never left empty (which the compat core would not
+// recognize as "major" and so would compat-check regardless of what the
+// operator actually meant to declare).
+//
+// ONE classifier, read by BOTH enforcement layers — `contract publish`
+// here and `validate --ci` in cmd_validate_ci.go (same package). Wave B
+// briefly shipped two, and they disagreed on exactly one input: a
+// component DOWNGRADE. Comparing with `>`, publishing 1.0.0 over a 2.0.0
+// baseline falls through to "patch" and gets the strict fixture
+// revalidation; comparing with `!=` it is "major" and is not checked at
+// all. Nothing guards version monotonicity, so the input is reachable —
+// and the two layers landed on opposite sides of it, with CI (the merge
+// gate) on the fail-open side. That is precisely the divergence AC-970.2
+// exists to prevent, arriving through the bump classifier rather than
+// through the compat rule itself.
+//
+// `!=` is the answer kept: any change to a component means the version
+// moved in that component, and a downgrade is the LEAST safe thing to
+// quietly reclassify as a patch.
+func contractInferBumpKind(baseline, newVersion contractSemver) string {
+	switch {
+	case newVersion[0] != baseline[0]:
+		return "major"
+	case newVersion[1] != baseline[1]:
+		return "minor"
+	default:
+		return "patch"
+	}
+}
+
+// contractPriorMajorDeprecated reports whether id already carries a
+// fold.TDeprecate event covering priorMajor: either a version-scoped
+// deprecate whose major component IS priorMajor, or a whole-contract
+// deprecate (no version scope — deprecate's own --version is optional,
+// runDeprecate defaults it to the CURRENTLY published version, but a prior
+// deprecate could have been scoped differently, and an unscoped one covers
+// every version including priorMajor). Walks the SAME already-loaded event
+// slice contractPublishedVersions walks — no second mirror read.
+func contractPriorMajorDeprecated(all []lifecycleEventDoc, id string, priorMajor int) bool {
+	for _, ev := range all {
+		if ev.Subject != id || ev.Transition != fold.TDeprecate {
+			continue
+		}
+		if ev.Version == "" {
+			return true
+		}
+		v, err := contractParseSemver(ev.Version)
+		if err != nil {
+			continue
+		}
+		if v[0] == priorMajor {
+			return true
+		}
+	}
+	return false
 }
 
 // runDeprecate implements `a2a contract deprecate <id> [--version

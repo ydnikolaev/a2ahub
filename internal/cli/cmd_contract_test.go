@@ -41,9 +41,26 @@ func writeContractDescriptor(t *testing.T, mirrorDir, slug, version string) {
 	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/contract.md", content)
 }
 
-// TestContractPublishGatePosture is P8-2: first-ever publish (G1), a
-// declared-major bump (G2), and a declared-minor bump (ungated) — same
-// funnel call shape, only the PRBody advisory marker differs.
+// TestContractPublishGatePosture is P8-2: first-ever publish (G1) and a
+// declared-minor bump (ungated) — same funnel call shape, only the PRBody
+// advisory marker differs.
+//
+// The THIRD original member of this trio — "a declared-major bump succeeds
+// and is gated (G2)" — is retired here, not merely renamed: P37's F2/D-A
+// precondition (a major bump is refused unless a `deprecate` of the prior
+// major already exists) is UNSATISFIABLE on the real write path under the
+// existing (frozen, off-limits to this phase) `internal/fold/table.go`
+// state table. `contractRows()` folds `deprecate` to `StateDeprecated` for
+// the WHOLE contract subject id (not scoped by the event's own `version`
+// field), and carries no `(StateDeprecated, TPublish)` row — so a real
+// `deprecate` event for the prior major makes `lifecycleCheckLegality`
+// refuse (LFC-001) the very major-bump publish F2 was supposed to admit.
+// A major bump is therefore either refused by F2 (no deprecation on
+// record) or refused by legality (deprecation on record) — there is no
+// live path where a major bump both satisfies F2 and reaches the funnel.
+// See this phase's Deviations report for the exact missing table row.
+// "declared_major_bump_is_G2_gated" below now asserts F2's (fully
+// reachable) refusal half instead.
 func TestContractPublishGatePosture(t *testing.T) {
 	t.Parallel()
 
@@ -51,6 +68,8 @@ func TestContractPublishGatePosture(t *testing.T) {
 		t.Parallel()
 		mirrorDir := t.TempDir()
 		writeContractDescriptor(t, mirrorDir, "widget-a", "0.0.0")
+		writeMirrorFile(t, mirrorDir, "axon/provides/widget-a/schema/main.schema.json", `{"type":"object"}`)
+		writeMirrorFile(t, mirrorDir, "axon/provides/widget-a/fixtures/valid/ok.json", `{}`)
 		fake := &fakeLifecycleFunnel{}
 		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
 		io, _, errOut := newIO()
@@ -66,7 +85,13 @@ func TestContractPublishGatePosture(t *testing.T) {
 	t.Run("declared_major_bump_is_G2_gated", func(t *testing.T) {
 		t.Parallel()
 		mirrorDir := t.TempDir()
+		gitRun(t, mirrorDir, "init", "-b", "main")
 		writeContractDescriptor(t, mirrorDir, "widget-b", "1.0.0")
+		writeMirrorFile(t, mirrorDir, "axon/provides/widget-b/schema/main.schema.json", `{"type":"object"}`)
+		writeMirrorFile(t, mirrorDir, "axon/provides/widget-b/fixtures/valid/ok.json", `{}`)
+		gitRun(t, mirrorDir, "add", "-A")
+		gitRun(t, mirrorDir, "commit", "-m", "publish 1.0.0")
+
 		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-widget-b", "publish", "axon")
 		// contractPublishedVersions reads the `version` field off the raw
 		// event YAML; writeLifecycleEvent doesn't set one, so append it
@@ -76,19 +101,34 @@ func TestContractPublishGatePosture(t *testing.T) {
 		fake := &fakeLifecycleFunnel{}
 		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
 		io, _, errOut := newIO()
+		// F2/D-A: a major bump over an existing prior major is refused
+		// unless a `deprecate` for that prior major already exists — no
+		// such event is on record here, so this is the (fully reachable)
+		// refusal half; see this test function's own doc comment for why
+		// the OLD "succeeds and is gated" scenario no longer has a live
+		// path once F2 exists.
 		code := cmd.Run(context.Background(), []string{"publish", "--bump", "major", "XC-axon-widget-b"}, io)
-		if code != 0 {
-			t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+		if code != 1 {
+			t.Fatalf("code = %d, want 1 (F2/D-A: major bump refused without a prior-major deprecation); stderr=%s", code, errOut.String())
 		}
-		if len(fake.calls) != 1 || fake.calls[0].PRBody == "" {
-			t.Fatalf("expected a declared-major bump to be gated (advisory marker), got %+v", fake.calls)
+		if !strings.Contains(errOut.String(), "a2a contract deprecate") || !strings.Contains(errOut.String(), "--version 1.0.0") {
+			t.Fatalf("expected an actionable refusal naming the exact `deprecate` command owed, got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("expected the write funnel NEVER to be called, got %d call(s)", len(fake.calls))
 		}
 	})
 
 	t.Run("declared_minor_bump_is_ungated", func(t *testing.T) {
 		t.Parallel()
 		mirrorDir := t.TempDir()
+		gitRun(t, mirrorDir, "init", "-b", "main")
 		writeContractDescriptor(t, mirrorDir, "widget-c", "1.0.0")
+		writeMirrorFile(t, mirrorDir, "axon/provides/widget-c/schema/main.schema.json", `{"type":"object"}`)
+		writeMirrorFile(t, mirrorDir, "axon/provides/widget-c/fixtures/valid/ok.json", `{}`)
+		gitRun(t, mirrorDir, "add", "-A")
+		gitRun(t, mirrorDir, "commit", "-m", "publish 1.0.0")
+
 		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-widget-c", "publish", "axon")
 		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
 
@@ -101,6 +141,173 @@ func TestContractPublishGatePosture(t *testing.T) {
 		}
 		if len(fake.calls) != 1 || fake.calls[0].PRBody != "" {
 			t.Fatalf("expected a declared-minor bump to be UNGATED (no marker), got %+v", fake.calls)
+		}
+	})
+}
+
+// writeContractDescriptorWithFormat is writeContractDescriptor generalized
+// over schema_format — D-D/POL-009 is scoped to JSON-Schema dialects only
+// (validate.IsJSONSchemaFormat), so proving it does NOT apply to e.g.
+// proto3 needs a descriptor that actually declares proto3.
+func writeContractDescriptorWithFormat(t *testing.T, mirrorDir, slug, version, format string) {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: XC-axon-" + slug + "\n" +
+		"type: contract\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [beta]\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: api\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: \"" + version + "\"\n" +
+		"compat_policy: strict-semver\n" +
+		"schema_format: " + format + "\n" +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/contract.md", content)
+}
+
+// TestContractPublishComputedCompatibility is spec 37's own T2/F1 (D-010,
+// §5.4b) driven end to end through `contract publish`: AC-970.1 (a
+// mislabeled minor is refused, naming the fixture), a genuinely additive
+// minor publishes, AC-970.3 (a major bump is not compat-checked and says
+// so), D-D/POL-009 (a fixture-less JSON-Schema contract is refused), and
+// D-D's own scope limit (a non-JSON-Schema contract with no fixtures at
+// all still publishes — computed compatibility, and the baseline
+// requirement, are both a JSON-Schema-only concern).
+func TestContractPublishComputedCompatibility(t *testing.T) {
+	t.Parallel()
+
+	t.Run("mislabeled_minor_refused_naming_the_fixture", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		gitRun(t, mirrorDir, "init", "-b", "main")
+		writeContractDescriptor(t, mirrorDir, "narrowed", "1.0.0")
+		writeMirrorFile(t, mirrorDir, "axon/provides/narrowed/schema/main.schema.json", `{"type":"object","properties":{"x":{"type":"integer"}}}`)
+		writeMirrorFile(t, mirrorDir, "axon/provides/narrowed/fixtures/valid/ok.json", `{"x":1}`)
+		gitRun(t, mirrorDir, "add", "-A")
+		gitRun(t, mirrorDir, "commit", "-m", "publish 1.0.0")
+
+		// The NEW version's working-tree schema NARROWS `x` from integer to
+		// string — the prior version's fixture {"x":1} no longer validates:
+		// a breaking change declared as a minor.
+		writeMirrorFile(t, mirrorDir, "axon/provides/narrowed/schema/main.schema.json", `{"type":"object","properties":{"x":{"type":"string"}}}`)
+
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-narrowed", "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"publish", "--bump", "minor", "XC-axon-narrowed"}, io)
+		if code != 1 {
+			t.Fatalf("code = %d, want 1 (AC-970.1: declared minor contradicts computed compatibility); stderr=%s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "fixtures/valid/ok.json") {
+			t.Fatalf("expected the refusal to NAME the offending fixture, got %q", errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "POL-007") {
+			t.Fatalf("expected the refusal to carry POL-007, got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("expected the write funnel NEVER to be called, got %d call(s)", len(fake.calls))
+		}
+	})
+
+	t.Run("additive_minor_publishes", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		gitRun(t, mirrorDir, "init", "-b", "main")
+		writeContractDescriptor(t, mirrorDir, "widened", "1.0.0")
+		writeMirrorFile(t, mirrorDir, "axon/provides/widened/schema/main.schema.json", `{"type":"object"}`)
+		writeMirrorFile(t, mirrorDir, "axon/provides/widened/fixtures/valid/ok.json", `{"x":1}`)
+		gitRun(t, mirrorDir, "add", "-A")
+		gitRun(t, mirrorDir, "commit", "-m", "publish 1.0.0")
+
+		// The NEW version's working-tree schema adds an OPTIONAL property —
+		// the prior version's fixture still validates.
+		writeMirrorFile(t, mirrorDir, "axon/provides/widened/schema/main.schema.json", `{"type":"object","properties":{"x":{},"y":{"type":"string"}}}`)
+
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-widened", "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, out, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"publish", "--bump", "minor", "XC-axon-widened"}, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0 (a genuinely additive minor bump must publish); stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+	})
+
+	t.Run("major_bump_is_not_compat_checked_and_says_so", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		gitRun(t, mirrorDir, "init", "-b", "main")
+		writeContractDescriptor(t, mirrorDir, "majorsays", "1.0.0")
+		writeMirrorFile(t, mirrorDir, "axon/provides/majorsays/schema/main.schema.json", `{"type":"object"}`)
+		writeMirrorFile(t, mirrorDir, "axon/provides/majorsays/fixtures/valid/ok.json", `{}`)
+		gitRun(t, mirrorDir, "add", "-A")
+		gitRun(t, mirrorDir, "commit", "-m", "publish 1.0.0")
+
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-majorsays", "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, out, _ := newIO()
+		// F2/D-A refuses this major bump too (no prior-major deprecation on
+		// record — see TestContractPublishGatePosture's own
+		// "declared_major_bump_is_G2_gated" for that path), but AC-970.3 is
+		// about F1 ALONE: F1 runs and prints its own verdict to stdout
+		// BEFORE F2 gets a chance to refuse, so the sentence is on stdout
+		// regardless of the final exit code.
+		_ = cmd.Run(context.Background(), []string{"publish", "--bump", "major", "XC-axon-majorsays"}, io)
+		if !strings.Contains(out.String(), "major") || !strings.Contains(out.String(), "not checked") {
+			t.Fatalf("expected AC-970.3's own \"not checked\" reason sentence on stdout, got %q", out.String())
+		}
+	})
+
+	t.Run("fixture_less_json_schema_contract_refused", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeContractDescriptor(t, mirrorDir, "empty", "0.0.0")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"publish", "--version", "1.0.0", "XC-axon-empty"}, io)
+		if code != 1 {
+			t.Fatalf("code = %d, want 1 (D-D/POL-009: no schema/fixtures published); stderr=%s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "POL-009") {
+			t.Fatalf("expected the refusal to carry POL-009, got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("expected the write funnel NEVER to be called, got %d call(s)", len(fake.calls))
+		}
+	})
+
+	t.Run("proto3_contract_with_no_fixtures_publishes_fine", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeContractDescriptorWithFormat(t, mirrorDir, "protoish", "0.0.0", "proto3")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, out, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"publish", "--version", "1.0.0", "XC-axon-protoish"}, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0 (D-D is JSON-Schema-only; a non-JSON-Schema contract publishes with zero schema/fixtures files); stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
 		}
 	})
 }
@@ -520,6 +727,8 @@ func TestContractPublishIdempotentRerun(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
 	writeContractDescriptor(t, mirrorDir, "again", "0.0.0")
+	writeMirrorFile(t, mirrorDir, "axon/provides/again/schema/main.schema.json", `{"type":"object"}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/again/fixtures/valid/ok.json", `{}`)
 
 	fake := &fakeLifecycleFunnel{result: space.WriteResult{State: space.WriteStateAlreadyOpen, PRURL: "https://example.invalid/pr/1"}}
 	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
