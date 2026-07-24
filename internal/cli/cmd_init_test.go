@@ -622,8 +622,11 @@ func TestInitSeedsMachineConfigSkeleton(t *testing.T) {
 	if !bytes.Contains(raw, []byte("A2A_TOKEN_")) {
 		t.Fatalf("expected the skeleton to name the A2A_TOKEN_ convention; got:\n%s", raw)
 	}
-	if !strings.Contains(out.String(), `credential for space "getvisa"`) || !strings.Contains(out.String(), "A2A_TOKEN_GETVISA") {
-		t.Fatalf("expected an actionable credential hint naming space \"getvisa\"; got %q", out.String())
+	if strings.Contains(out.String(), "A2A_TOKEN_GETVISA") {
+		t.Fatalf("init must NOT emit a specific A2A_TOKEN_ export with the provisional space id; got %q", out.String())
+	}
+	if !strings.Contains(out.String(), "a2a connect") {
+		t.Fatalf("init must point the user to run `a2a connect`; got %q", out.String())
 	}
 }
 
@@ -662,8 +665,8 @@ func TestInitNeverOverwritesExistingMachineConfig(t *testing.T) {
 	if string(raw) != existing {
 		t.Fatalf("existing machine config was modified:\n--- want ---\n%s\n--- got ---\n%s", existing, raw)
 	}
-	if !strings.Contains(out.String(), `credential for space "getvisa"`) {
-		t.Fatalf("expected the credential hint even when the machine config already existed; got %q", out.String())
+	if !strings.Contains(out.String(), "a2a connect") {
+		t.Fatalf("init must point the user to run `a2a connect`; got %q", out.String())
 	}
 }
 
@@ -683,5 +686,45 @@ func TestInitSkipsMachineConfigWhenPathEmpty(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "A2A_TOKEN_") {
 		t.Fatalf("expected no credential hint when MachineConfigPath is empty; got %q", out.String())
+	}
+}
+
+// TestInitDoesNotEmitProvisionalCredentialExport validates the fix for the
+// defect where init printed `export A2A_TOKEN_<provisional-id>=<token>` based
+// on the URL-derived id. Init never clones so it cannot know the real space id
+// (which lives in the manifest and only connect can read) — so it must defer
+// the credential instruction to `a2a connect`, which registers the space and
+// knows the authoritative id.
+func TestInitDoesNotEmitProvisionalCredentialExport(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	machinePath := filepath.Join(dir, "machine", "config.yaml")
+	cmd := cli.NewInitCommand(cfgPath)
+	cmd.MachineConfigPath = machinePath
+	cmd.SetDefaultCredentialRefForTest(func(_ context.Context, id string) string {
+		return "env:A2A_TOKEN_" + strings.ToUpper(id)
+	})
+
+	// Use a URL whose basename contains a hyphen to test that init does not emit
+	// an invalid shell identifier. The provisional id derived from
+	// "https://example.invalid/org/live-e2e-space.git" is "live-e2e-space",
+	// and the old code would emit `export A2A_TOKEN_LIVE_E2E_SPACE=...` in the
+	// init output.
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--system", "axon", "--space", "https://example.invalid/org/live-e2e-space.git"}, io)
+	if code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+
+	// Init must NOT emit a specific A2A_TOKEN_ export based on the provisional id.
+	if strings.Contains(out.String(), "A2A_TOKEN_LIVE_E2E_SPACE") || strings.Contains(out.String(), "A2A_TOKEN_") {
+		t.Fatalf("init must NOT emit a specific A2A_TOKEN_<id> export with the provisional space id; got %q", out.String())
+	}
+
+	// Init must point the user to run `a2a connect` to register and get the
+	// correct credential instruction.
+	if !strings.Contains(out.String(), "a2a connect") {
+		t.Fatalf("init must point the user to run `a2a connect`; got %q", out.String())
 	}
 }

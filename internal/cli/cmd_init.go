@@ -191,6 +191,7 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	if existing, ok := c.loadExisting(); ok && initConfigsEquivalent(existing, cfg) {
 		_, _ = fmt.Fprintln(stdio.Stdout, "init: already configured")
+		_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a connect <url>` for each space to register and set up credentials")
 		_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a doctor` to verify credentials and space access")
 		return 0
 	}
@@ -210,6 +211,7 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 
 	_, _ = fmt.Fprintf(stdio.Stdout, "init: wrote %s\n", c.projectConfigPath)
+	_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a connect <url>` for each space to register and set up credentials")
 	_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a doctor` to verify credentials and space access")
 	return 0
 }
@@ -282,10 +284,6 @@ func (c *InitCommand) ensureMachineConfig(ctx context.Context, refs []space.Ref,
 		_, _ = fmt.Fprintf(stdio.Stdout, "init: wrote machine config skeleton %s\n", c.MachineConfigPath)
 	}
 
-	for _, ref := range refs {
-		_, _ = fmt.Fprintf(stdio.Stdout, "init: credential for space %q: %s resolves it, or override with  export %s=<token>\n",
-			ref.ID, c.credentialRef(ctx, ref.ID), space.CredentialEnvVar(ref.ID))
-	}
 	return 0
 }
 
