@@ -184,6 +184,24 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
 	}
 	if existing != nil && existing.State != "merged" {
+		// Re-arm auto-merge before reporting success. OpenPR is NOT atomic
+		// on GitHub — creating the PR and arming auto-merge are two calls —
+		// so the interrupted run this short-circuit exists for may have
+		// created a PR and died before arming it. Reporting "already
+		// submitted" over a PR that will never merge on its own is exactly
+		// the silent stall this path is meant to recover from.
+		//
+		// Observed live 2026-07-24 (P36's matrix): a 504 on OpenPR left a PR
+		// open with a green required check and `auto_merge: null`, and every
+		// retry answered "already-open". Arming is idempotent, so the common
+		// case — the PR was fully configured — costs one no-op call.
+		if am, isAutoMerger := f.host.(host.AutoMerger); isAutoMerger {
+			if err := am.EnableAutoMerge(ctx, host.EnableAutoMergeRequest{
+				Repo: req.Repo, PRNumber: existing.Number, Credential: req.Credential,
+			}); err != nil {
+				return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
+			}
+		}
 		return existingPRResult(branch, existing), nil
 	}
 

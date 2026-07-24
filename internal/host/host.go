@@ -173,6 +173,37 @@ type Forker interface {
 	EnsureFork(ctx context.Context, req EnsureForkRequest) (ForkInfo, error)
 }
 
+// EnableAutoMergeRequest identifies the PR whose auto-merge is (re-)armed.
+type EnableAutoMergeRequest struct {
+	Repo       Repo
+	PRNumber   int
+	Credential Credential
+}
+
+// AutoMerger is an OPTIONAL capability a Host MAY satisfy — deliberately not
+// a 6th method on Host, the same shape as Forker (ADR-003). Obtain it by type
+// assertion on a Host, never by widening a caller's dependency to a concrete
+// implementation.
+//
+// It exists because OpenPR is NOT atomic on GitHub: creating the PR and
+// arming auto-merge are two API calls (REST create, then a GraphQL
+// `enablePullRequestAutoMerge` mutation). A failure between them — or a 5xx
+// on the create whose write actually landed, which real GitHub does — leaves
+// a PR that exists, passes its checks, and will never merge. The funnel's
+// idempotent-retry short-circuit then finds that PR and reports success,
+// so the write looks submitted and silently is not.
+//
+// Observed live on 2026-07-24 (P36's matrix): a 504 on OpenPR left PR #2 of
+// the test space open with a green required check and `auto_merge: null`, and
+// every subsequent `a2a submit` answered "already submitted … already-open".
+//
+// Implementations MUST be idempotent: arming auto-merge on a PR that already
+// has it is a no-op success, because the retry path cannot know which state
+// it is repairing.
+type AutoMerger interface {
+	EnableAutoMerge(ctx context.Context, req EnableAutoMergeRequest) error
+}
+
 // Host is the 5-primitive host adapter interface (spec 05 §T1). It is
 // host-agnostic by design (D-019, Q-004 tracked): a GitLab/Gitea profile is
 // a new implementation of this same interface, never a redesign.

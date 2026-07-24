@@ -239,13 +239,12 @@ func (h *GitHubHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, err
 
 	// Auto-merge is UNIFORM (spec 05 §T1) — always requested, never
 	// gated by a parameter here.
-	mutation := map[string]any{
-		"query": "mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id}) { clientMutationId } }",
-		"variables": map[string]any{
-			"id": created.NodeID,
-		},
-	}
-	if err := h.graphQLCall(ctx, op, req.Credential, mutation, nil); err != nil {
+	//
+	// NOTE this is a SECOND call: the PR already exists by the time it runs,
+	// so a failure here leaves a real PR that will never merge on its own.
+	// That is why AutoMerger exists and why the funnel re-arms on its
+	// idempotent-retry path — see EnableAutoMerge.
+	if err := h.armAutoMerge(ctx, op, req.Credential, created.NodeID); err != nil {
 		return PRInfo{}, err
 	}
 
@@ -587,4 +586,46 @@ func (h *GitHubHost) send(ctx context.Context, op, method, url string, cred Cred
 		}
 	}
 	return resp.Header, raw, nil
+}
+
+// armAutoMerge runs the enable-auto-merge mutation for an already-created PR
+// node. One implementation, shared by OpenPR's create path and by
+// EnableAutoMerge's repair path, so the two can never drift.
+func (h *GitHubHost) armAutoMerge(ctx context.Context, op string, cred Credential, nodeID string) error {
+	if nodeID == "" {
+		return &Error{Op: op, Err: ErrInvalidRequest}
+	}
+	mutation := map[string]any{
+		"query": "mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id}) { clientMutationId } }",
+		"variables": map[string]any{
+			"id": nodeID,
+		},
+	}
+	return h.graphQLCall(ctx, op, cred, mutation, nil)
+}
+
+// EnableAutoMerge implements AutoMerger: arm auto-merge on an EXISTING PR.
+//
+// This is the repair path for OpenPR's non-atomicity (see AutoMerger's doc).
+// It resolves the PR's node id itself rather than taking one, so any caller
+// holding only a PR number — which is all FindPRByHeadBranch returns — can
+// use it.
+//
+// Idempotent by construction: GitHub treats enabling auto-merge on a PR that
+// already has it as a no-op success, which is what the retry path needs,
+// since it cannot know whether the original OpenPR got this far.
+func (h *GitHubHost) EnableAutoMerge(ctx context.Context, req EnableAutoMergeRequest) error {
+	const op = "EnableAutoMerge"
+	if req.Repo.Owner == "" || req.Repo.Name == "" || req.PRNumber == 0 {
+		return &Error{Op: op, Err: ErrInvalidRequest}
+	}
+
+	var pr struct {
+		NodeID string `json:"node_id"`
+	}
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d", req.Repo.Owner, req.Repo.Name, req.PRNumber)
+	if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &pr); err != nil {
+		return err
+	}
+	return h.armAutoMerge(ctx, op, req.Credential, pr.NodeID)
 }

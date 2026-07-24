@@ -562,3 +562,73 @@ func TestSpaceInfraOKAnchored(t *testing.T) {
 		}
 	}
 }
+
+// The idempotent short-circuit must RE-ARM auto-merge on the PR it finds.
+//
+// OpenPR is not atomic on GitHub: creating the PR and arming auto-merge are
+// two calls. So the interrupted run this short-circuit exists to recover from
+// may have created a PR and died before arming it — and reporting "already
+// submitted" over a PR that will never merge on its own is the silent stall
+// the path is supposed to prevent, not cause.
+//
+// Observed live on 2026-07-24 (P36's matrix): a 504 on OpenPR left a PR open
+// with a green required check and `auto_merge: null`, and every retry
+// answered already-open.
+func TestFunnelShortCircuitReArmsAutoMerge(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+	first, err := funnel.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("first Submit: %v", err)
+	}
+	if len(fake.AutoArms) != 0 {
+		t.Fatalf("the create path armed via the repair capability (%d calls); OpenPR does it inline", len(fake.AutoArms))
+	}
+
+	if _, err := funnel.Submit(context.Background(), req); err != nil {
+		t.Fatalf("second (re-run) Submit: %v", err)
+	}
+	if len(fake.AutoArms) != 1 {
+		t.Fatalf("re-run armed auto-merge %d times, want exactly 1", len(fake.AutoArms))
+	}
+	if got := fake.AutoArms[0]; got.PRNumber != first.PRNumber || got.Repo != req.Repo {
+		t.Fatalf("armed %+v, want PR %d on %+v", got, first.PRNumber, req.Repo)
+	}
+}
+
+// A repair that cannot be performed must FAIL the retry, not be reported as a
+// successful re-submit: "already submitted" over a PR whose auto-merge could
+// not be confirmed is precisely the false reassurance this guards.
+func TestFunnelShortCircuitFailsWhenReArmingFails(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	if _, err := funnel.Submit(context.Background(), req); err != nil {
+		t.Fatalf("first Submit: %v", err)
+	}
+
+	sentinel := errors.New("auto-merge not allowed on this repository")
+	fake.EnableAutoMergeFunc = func(context.Context, host.EnableAutoMergeRequest) error { return sentinel }
+
+	if _, err := funnel.Submit(context.Background(), req); !errors.Is(err, sentinel) {
+		t.Fatalf("re-run error = %v, want the arming failure to surface", err)
+	}
+}

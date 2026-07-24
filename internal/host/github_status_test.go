@@ -393,3 +393,64 @@ func TestTokenScopesRejectsAnEmptyCredential(t *testing.T) {
 		t.Fatalf("TokenScopes({}) error = %v, want ErrInvalidRequest", err)
 	}
 }
+
+// EnableAutoMerge is the repair path for OpenPR's non-atomicity: creating a
+// PR and arming auto-merge are two calls, so a failure between them leaves a
+// PR that passes its checks and never merges.
+//
+// Observed live on 2026-07-24 (P36's matrix): a 504 on OpenPR left a PR open
+// with a green required check and `auto_merge: null`.
+func TestEnableAutoMergeResolvesTheNodeAndArms(t *testing.T) {
+	t.Parallel()
+
+	var gotPRPath, gotQuery, gotNodeID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/graphql" {
+			var body struct {
+				Query     string         `json:"query"`
+				Variables map[string]any `json:"variables"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			gotQuery = body.Query
+			gotNodeID, _ = body.Variables["id"].(string)
+			_, _ = w.Write([]byte(`{"data":{}}`))
+			return
+		}
+		gotPRPath = r.URL.Path
+		_, _ = w.Write([]byte(`{"node_id":"PR_kwDO"}`))
+	}))
+	defer srv.Close()
+
+	h := NewGitHubHost(srv.Client(), srv.URL)
+	err := h.EnableAutoMerge(context.Background(), EnableAutoMergeRequest{
+		Repo: Repo{Owner: "o", Name: "r"}, PRNumber: 2, Credential: Credential{Token: "t"},
+	})
+	if err != nil {
+		t.Fatalf("EnableAutoMerge: %v", err)
+	}
+	if gotPRPath != "/repos/o/r/pulls/2" {
+		t.Errorf("resolved the node id from %q", gotPRPath)
+	}
+	if !strings.Contains(gotQuery, "enablePullRequestAutoMerge") {
+		t.Errorf("mutation = %q", gotQuery)
+	}
+	if gotNodeID != "PR_kwDO" {
+		t.Errorf("armed node %q, want the one the PR reported", gotNodeID)
+	}
+}
+
+func TestEnableAutoMergeRejectsAnIncompleteRequest(t *testing.T) {
+	t.Parallel()
+
+	h := NewGitHubHost(nil, "http://unused.invalid")
+	for name, req := range map[string]EnableAutoMergeRequest{
+		"no owner":  {Repo: Repo{Name: "r"}, PRNumber: 1},
+		"no name":   {Repo: Repo{Owner: "o"}, PRNumber: 1},
+		"no number": {Repo: Repo{Owner: "o", Name: "r"}},
+	} {
+		if err := h.EnableAutoMerge(context.Background(), req); !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("%s: want ErrInvalidRequest, got %v", name, err)
+		}
+	}
+}
