@@ -70,6 +70,40 @@ func TestCheckStatusResolvesCompoundCheckRun(t *testing.T) {
 	}
 }
 
+// A conclusion alone is not a verdict: GitHub can serve a run computed against
+// a stale merge commit after the base moved (observed twice during the
+// 2026-07-24 getvisa migration). CheckStatus therefore reports WHICH REF the
+// selected run executed against, so a caller comparing it to the PR's current
+// head can tell a fresh green from a stale one.
+func TestCheckStatusReportsTheExecutedRef(t *testing.T) {
+	t.Parallel()
+
+	h, _ := checkRunsHost(t, []map[string]any{
+		{"name": "a2a-validate / validate", "status": "completed", "conclusion": "success", "head_sha": "deadbeef"},
+	})
+	got := checkStatus(t, h)
+
+	if got.HeadSHA != "deadbeef" {
+		t.Fatalf("CheckStatus.HeadSHA = %q, want the selected run's own head_sha — without it a stale run's green is indistinguishable from a current one", got.HeadSHA)
+	}
+}
+
+// No matching run means no ref to report. Reporting the PR's head here would
+// be the worst possible default: it would make every stale-ref comparison
+// agree with itself.
+func TestCheckStatusReportsNoExecutedRefWhenNoRunMatched(t *testing.T) {
+	t.Parallel()
+
+	h, _ := checkRunsHost(t, []map[string]any{
+		{"name": "a2a-postmerge-audit / validate", "status": "completed", "conclusion": "success", "head_sha": "deadbeef"},
+	})
+	got := checkStatus(t, h)
+
+	if got.HeadSHA != "" {
+		t.Fatalf("CheckStatus.HeadSHA = %q, want empty when no required run matched", got.HeadSHA)
+	}
+}
+
 // AC-940.2 — an un-migrated space still emits the FLAT name; the mixed fleet
 // means one binary must resolve both without per-space configuration.
 func TestCheckStatusResolvesFlatCheckRun(t *testing.T) {
