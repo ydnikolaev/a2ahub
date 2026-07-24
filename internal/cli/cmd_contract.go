@@ -378,14 +378,112 @@ func ContractSubcommands() []ContractSubcommand {
 // runNew translates `contract new <slug>` into P6's `a2a new contract
 // --slug <slug>` path (spec 08 T1: "thin alias... do not forward args
 // verbatim; P6's NewCommand takes the slug as a flag").
+//
+// The positional `<slug>` is only ONE of three equivalent spellings this
+// verb accepts: `--slug <slug>` and `--field slug=<slug>` both name the
+// same value (the surface-consistency defect this fixes — `a2a new
+// contract --slug foo` already took a flag, so `a2a contract new --slug
+// foo` silently treating "--slug" itself as the literal slug, rather than
+// erroring or honoring the flag, was the inconsistency). All three forms
+// may be combined as long as they AGREE; if two disagree this is a usage
+// error (contractResolveNewSlug), never a silent pick of one over the
+// other.
 func (c *ContractCommand) runNew(ctx context.Context, args []string, stdio IO) int {
-	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract new <slug> [--field k=v]...")
+	positional, viaFlag, viaField, rest, err := contractParseNewArgs(args)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract new: %v\n", err)
 		return 2
 	}
-	slug := args[0]
-	delegated := append([]string{"contract", "--slug", slug}, args[1:]...)
+	slug, err := contractResolveNewSlug(positional, viaFlag, viaField)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract new: %v\n", err)
+		return 2
+	}
+	if slug == "" {
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract new <slug> | --slug <slug> [--field k=v]...")
+		return 2
+	}
+	delegated := append([]string{"contract", "--slug", slug}, rest...)
 	return c.newCmd.Run(ctx, delegated, stdio)
+}
+
+// contractParseNewArgs splits `contract new`'s raw args into: an optional
+// leading positional slug (args[0], only when it does not itself look like
+// a flag), an optional `--slug <value>`/`--slug=<value>` flag value, an
+// optional `--field slug=<value>` value, and rest — every remaining token
+// UNCHANGED and in order, forwarded verbatim to P6's NewCommand (whose own
+// flag set owns --field/--body-file/--thread/--actor-*, never re-parsed
+// here). Both single- and double-dash spellings are accepted for --slug/
+// --field, matching Go's own flag package convention (it treats "-x" and
+// "--x" identically).
+func contractParseNewArgs(args []string) (positional, viaFlag, viaField string, rest []string, err error) {
+	rest = make([]string, 0, len(args))
+	i := 0
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		positional = args[0]
+		i = 1
+	}
+	for ; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--slug" || a == "-slug":
+			if i+1 >= len(args) {
+				return "", "", "", nil, fmt.Errorf("flag needs an argument: %s", a)
+			}
+			viaFlag = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--slug="):
+			viaFlag = strings.TrimPrefix(a, "--slug=")
+		case strings.HasPrefix(a, "-slug="):
+			viaFlag = strings.TrimPrefix(a, "-slug=")
+		case a == "--field" || a == "-field":
+			rest = append(rest, a)
+			if i+1 < len(args) {
+				if k, v, found := strings.Cut(args[i+1], "="); found && k == "slug" {
+					viaField = v
+				}
+				rest = append(rest, args[i+1])
+				i++
+			}
+		case strings.HasPrefix(a, "--field="):
+			if k, v, found := strings.Cut(strings.TrimPrefix(a, "--field="), "="); found && k == "slug" {
+				viaField = v
+			}
+			rest = append(rest, a)
+		case strings.HasPrefix(a, "-field="):
+			if k, v, found := strings.Cut(strings.TrimPrefix(a, "-field="), "="); found && k == "slug" {
+				viaField = v
+			}
+			rest = append(rest, a)
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return positional, viaFlag, viaField, rest, nil
+}
+
+// contractResolveNewSlug merges the (up to three) slug spellings
+// contractParseNewArgs found, in positional -> --slug -> --field slug=
+// precedence order, ERRORING the moment two disagree (the defect this fixes
+// is a silent, wrong pick — e.g. the positional literal "--slug" winning
+// over what the user actually meant as a flag — so agreement is required,
+// never assumed). Returns "" with a nil error when none of the three were
+// given at all (the caller's own usage-error branch).
+func contractResolveNewSlug(positional, viaFlag, viaField string) (string, error) {
+	slug := positional
+	if viaFlag != "" {
+		if slug != "" && slug != viaFlag {
+			return "", fmt.Errorf("conflicting slug: positional %q vs --slug %q", slug, viaFlag)
+		}
+		slug = viaFlag
+	}
+	if viaField != "" {
+		if slug != "" && slug != viaField {
+			return "", fmt.Errorf("conflicting slug: %q vs --field slug=%q", slug, viaField)
+		}
+		slug = viaField
+	}
+	return slug, nil
 }
 
 // runPublish implements `a2a contract publish <id> [--version <semver> |

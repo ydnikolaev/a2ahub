@@ -542,7 +542,7 @@ func TestContractPublishIdempotentRerun(t *testing.T) {
 func TestContractNewDelegatesToNewCommand(t *testing.T) {
 	t.Parallel()
 	stagingDir := t.TempDir()
-	newCmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver)
+	newCmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
 	cmd := cli.NewContractCommand(newCmd, &fakeLifecycleFunnel{}, t.TempDir(), "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
 
 	io, out, errOut := newIO()
@@ -554,6 +554,100 @@ func TestContractNewDelegatesToNewCommand(t *testing.T) {
 	if _, err := os.Stat(stagedPath); err != nil {
 		t.Fatalf("expected a staged draft at %s (slug -> --slug delegation into P6's new-path): %v", stagedPath, err)
 	}
+}
+
+// TestContractNewSlugSpellings is the defect-fix test: `contract new`
+// previously took the slug positionally ONLY, so `a2a contract new --slug
+// foo` passed the literal string "--slug" through as the slug (silently
+// wrong, no error) — inconsistent with `a2a new contract --slug foo`,
+// which IS a flag. This proves the positional form, the `--slug` flag
+// form, and the `--field slug=` form all resolve to the SAME staged
+// draft, and that a positional/--slug disagreement is a loud usage error
+// rather than a silent pick.
+func TestContractNewSlugSpellings(t *testing.T) {
+	t.Parallel()
+
+	newContractCmd := func(t *testing.T, stagingDir string) *cli.ContractCommand {
+		t.Helper()
+		newCmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+		return cli.NewContractCommand(newCmd, &fakeLifecycleFunnel{}, t.TempDir(), "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	}
+
+	t.Run("positional_form", func(t *testing.T) {
+		t.Parallel()
+		stagingDir := t.TempDir()
+		cmd := newContractCmd(t, stagingDir)
+		io, out, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"new", "widget-positional"}, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+		if _, err := os.Stat(filepath.Join(stagingDir, "XC-axon-widget-positional.md")); err != nil {
+			t.Fatalf("expected a staged draft: %v", err)
+		}
+	})
+
+	t.Run("--slug_flag_form", func(t *testing.T) {
+		t.Parallel()
+		stagingDir := t.TempDir()
+		cmd := newContractCmd(t, stagingDir)
+		io, out, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"new", "--slug", "widget-flag"}, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+		if _, err := os.Stat(filepath.Join(stagingDir, "XC-axon-widget-flag.md")); err != nil {
+			t.Fatalf("expected a staged draft at the --slug-derived path (regression: --slug used to be swallowed as the literal slug string): %v", err)
+		}
+	})
+
+	t.Run("--field_slug_form", func(t *testing.T) {
+		t.Parallel()
+		stagingDir := t.TempDir()
+		cmd := newContractCmd(t, stagingDir)
+		io, out, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"new", "--field", "slug=widget-field"}, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+		if _, err := os.Stat(filepath.Join(stagingDir, "XC-axon-widget-field.md")); err != nil {
+			t.Fatalf("expected a staged draft at the --field slug=-derived path: %v", err)
+		}
+	})
+
+	t.Run("conflicting_positional_and_flag_errors_loudly", func(t *testing.T) {
+		t.Parallel()
+		stagingDir := t.TempDir()
+		cmd := newContractCmd(t, stagingDir)
+		io, out, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"new", "widget-a", "--slug", "widget-b"}, io)
+		if code != 2 {
+			t.Fatalf("code = %d, want 2 (usage error); stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "conflicting slug") {
+			t.Fatalf("expected a conflicting-slug error, got stderr=%q", errOut.String())
+		}
+		if _, err := os.Stat(filepath.Join(stagingDir, "XC-axon-widget-a.md")); err == nil {
+			t.Fatal("expected no draft staged for the losing positional slug")
+		}
+		if _, err := os.Stat(filepath.Join(stagingDir, "XC-axon-widget-b.md")); err == nil {
+			t.Fatal("expected no draft staged for the losing --slug value either — a conflict must refuse both, not silently pick one")
+		}
+	})
+
+	t.Run("agreeing_positional_and_flag_is_not_a_conflict", func(t *testing.T) {
+		t.Parallel()
+		stagingDir := t.TempDir()
+		cmd := newContractCmd(t, stagingDir)
+		io, out, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"new", "widget-same", "--slug", "widget-same"}, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0 (identical spellings must not conflict); stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+		if _, err := os.Stat(filepath.Join(stagingDir, "XC-axon-widget-same.md")); err != nil {
+			t.Fatalf("expected a staged draft: %v", err)
+		}
+	})
 }
 
 // extractAnnouncementID pulls the minted XA- announcement id out of a
