@@ -244,7 +244,7 @@ func TestContractGitShowBoundedContentRefusesOversizedContent(t *testing.T) {
 	contractGitRun(t, repoDir, "commit", "-q", "-m", "big file")
 	sha := contractGitRevParse(t, repoDir, "HEAD")
 
-	_, err := contractGitShowBoundedContent(context.Background(), repoDir, sha+":big.txt", 4)
+	_, err := contractGitBounded(context.Background(), repoDir, 4, "show", sha+":big.txt")
 	if err == nil {
 		t.Fatal("expected an error for content exceeding the bound, got nil")
 	}
@@ -261,9 +261,9 @@ func TestContractGitShowBoundedContentReadsWithinBound(t *testing.T) {
 	contractGitRun(t, repoDir, "commit", "-q", "-m", "small file")
 	sha := contractGitRevParse(t, repoDir, "HEAD")
 
-	got, err := contractGitShowBoundedContent(context.Background(), repoDir, sha+":small.txt", maxMirrorEventBytes)
+	got, err := contractGitBounded(context.Background(), repoDir, maxMirrorEventBytes, "show", sha+":small.txt")
 	if err != nil {
-		t.Fatalf("contractGitShowBoundedContent: %v", err)
+		t.Fatalf("contractGitBounded: %v", err)
 	}
 	if string(got) != "hi" {
 		t.Fatalf("got %q, want %q", got, "hi")

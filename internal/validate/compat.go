@@ -111,8 +111,23 @@ func CheckComputedCompatibility(in CompatInput) CompatResult {
 	fixtureKeys := sortedKeys(in.PriorFixtures)
 	schemaKeys := sortedKeys(in.NewSchemas)
 
+	plan, planErr := planMapping(fixtureKeys, in.NewSchemas, schemaKeys)
+	if planErr != nil {
+		return brokenBaseline(planErr.fixture, planErr.detail)
+	}
+
 	compiled := map[string]*schema.ExternalSchema{}
 	var failures []CompatFailure
+
+	// A fixture whose named schema is gone from the new version is not an
+	// unevaluatable baseline — it is the breaking change itself, reported
+	// as such, with an empty Schema because there is no longer one to name.
+	for _, fixturePath := range plan.schemaRemoved {
+		failures = append(failures, CompatFailure{
+			Fixture: fixturePath,
+			Detail:  "the schema this fixture validated against in the prior version is not published by the new version",
+		})
+	}
 
 	for _, fixturePath := range fixtureKeys {
 		raw := in.PriorFixtures[fixturePath]
@@ -122,9 +137,9 @@ func CheckComputedCompatibility(in CompatInput) CompatResult {
 			return brokenBaseline(fixturePath, fmt.Sprintf("fixture is not valid JSON: %v", err))
 		}
 
-		schemaPath, candidates, ok := mapFixtureToSchema(fixturePath, in.NewSchemas, schemaKeys)
-		if !ok {
-			return brokenBaseline(fixturePath, ambiguousMappingDetail(candidates))
+		schemaPath, mapped := plan.schemaFor[fixturePath]
+		if !mapped {
+			continue // already reported above as a removed schema
 		}
 
 		sch, ok := compiled[schemaPath]
@@ -161,7 +176,7 @@ func CheckComputedCompatibility(in CompatInput) CompatResult {
 			Code:  "POL-007",
 			Class: ClassPolicy,
 			Message: fmt.Sprintf(
-				"declared %s bump (%s -> %s) contradicts computed compatibility: %s no longer validate against the new schema",
+				"declared %s bump (%s -> %s) contradicts computed compatibility: %s no longer validate against the new version's schemas",
 				in.DeclaredBump, orPlaceholder(in.PriorVersion), orPlaceholder(in.NewVersion), strings.Join(names, ", "),
 			),
 			CCRef:    "CC-080",
@@ -193,28 +208,101 @@ func brokenBaseline(fixturePath, detail string) CompatResult {
 	}
 }
 
-// mapFixtureToSchema is decision D-E's fixture -> schema mapping, done on
-// base names (not literal path concatenation) because NewSchemas'/
-// PriorFixtures' keys are full repo-relative paths whose directory
-// prefixes this package does not otherwise know or assume:
+// mappingPlan is the fixture -> schema assignment for a WHOLE batch,
+// decided once before any fixture is validated.
+type mappingPlan struct {
+	// schemaFor maps a fixture path to the NewSchemas key it validates
+	// against. A fixture absent from this map is in schemaRemoved.
+	schemaFor map[string]string
+	// schemaRemoved lists fixtures that named a schema by stem which the
+	// new version no longer publishes (sorted).
+	schemaRemoved []string
+}
+
+// mappingRefusal is planMapping's fail-closed answer: the batch cannot be
+// mapped at all, so nothing can be computed (D-B, POL-008).
+type mappingRefusal struct{ fixture, detail string }
+
+// planMapping is decision D-E's fixture -> schema mapping. It is a
+// property of the BATCH, not of one fixture, and that is the whole point.
 //
-//  1. fixtures/valid/<stem>.json -> schema/<stem>.schema.json, matched by
-//     base name, if such an entry exists in NewSchemas.
-//  2. else, if NewSchemas holds exactly one entry, use it.
-//  3. else, ambiguous: ok=false, candidates is every NewSchemas key
-//     (sorted) for the caller to name in its refusal.
-func mapFixtureToSchema(fixturePath string, newSchemas map[string][]byte, sortedSchemaKeys []string) (schemaPath string, candidates []string, ok bool) {
-	stem := strings.TrimSuffix(pathBaseName(fixturePath), ".json")
-	want := stem + ".schema.json"
-	for _, k := range sortedSchemaKeys {
-		if pathBaseName(k) == want {
-			return k, nil, true
+// Deciding per fixture — "no stem match? then fall back to the single
+// schema" — produces a FALSE PASS, which the wave-A early audit
+// reproduced: one schema `widget-1.schema.json`, two prior fixtures
+// `widget-1.json` and `gadget-1.json`, where the new version DELETED
+// gadget's schema. widget matched by stem; gadget fell through to "there
+// is exactly one schema, use it", validated green against a schema that
+// was never its own, and the whole publish reported Computed:true with
+// zero failures — while a schema had in fact been removed in a minor bump.
+//
+// So the mode is chosen once, from what the batch as a whole looks like:
+//
+//  1. EVERY fixture matches a schema by stem (fixtures/valid/<stem>.json ->
+//     schema/<stem>.schema.json, compared on base names since these keys
+//     are full paths whose prefixes this package does not assume) — the
+//     contract uses the stem convention; map each accordingly.
+//  2. NO fixture matches by stem and there is exactly ONE schema — the
+//     contract is single-schema and names its fixtures freely; every
+//     fixture maps to that schema. This is the shape of the repo's own
+//     compat corpus.
+//  3. SOME match and some do not — the contract IS using the stem
+//     convention, so a fixture with no match has lost its schema. That is
+//     a breaking change, not an unmappable input: those fixtures go to
+//     schemaRemoved and are reported as POL-007 failures.
+//  4. Anything else (no stem matches, and zero or several schemas) —
+//     genuinely unmappable, refuse with POL-008 naming the candidates.
+//
+// A stem that matches TWO schemas at different directory depths (nothing
+// constrains schema/** to be flat) is ambiguous under every mode and
+// refuses rather than silently taking the first — case 4.
+func planMapping(sortedFixtureKeys []string, newSchemas map[string][]byte, sortedSchemaKeys []string) (mappingPlan, *mappingRefusal) {
+	matched := map[string]string{}
+	var unmatched []string
+
+	for _, fixturePath := range sortedFixtureKeys {
+		want := strings.TrimSuffix(pathBaseName(fixturePath), ".json") + ".schema.json"
+		var hits []string
+		for _, k := range sortedSchemaKeys {
+			if pathBaseName(k) == want {
+				hits = append(hits, k)
+			}
+		}
+		switch len(hits) {
+		case 0:
+			unmatched = append(unmatched, fixturePath)
+		case 1:
+			matched[fixturePath] = hits[0]
+		default:
+			return mappingPlan{}, &mappingRefusal{
+				fixture: fixturePath,
+				detail: fmt.Sprintf(
+					"fixture->schema mapping is ambiguous: %d schemas share the base name %s (%s)",
+					len(hits), want, strings.Join(hits, ", "),
+				),
+			}
 		}
 	}
-	if len(newSchemas) == 1 {
-		return sortedSchemaKeys[0], nil, true
+
+	switch {
+	case len(unmatched) == 0: // case 1
+		return mappingPlan{schemaFor: matched}, nil
+
+	case len(matched) == 0 && len(newSchemas) == 1: // case 2
+		only := sortedSchemaKeys[0]
+		for _, fixturePath := range sortedFixtureKeys {
+			matched[fixturePath] = only
+		}
+		return mappingPlan{schemaFor: matched}, nil
+
+	case len(matched) > 0: // case 3
+		return mappingPlan{schemaFor: matched, schemaRemoved: unmatched}, nil
+
+	default: // case 4
+		return mappingPlan{}, &mappingRefusal{
+			fixture: unmatched[0],
+			detail:  ambiguousMappingDetail(sortedSchemaKeys),
+		}
 	}
-	return "", sortedSchemaKeys, false
 }
 
 // ambiguousMappingDetail renders mapFixtureToSchema's candidate list into

@@ -227,6 +227,106 @@ func TestCheckComputedCompatibility_NoSchemasPublishedIsPOL008(t *testing.T) {
 	}
 }
 
+// TestCheckComputedCompatibility_DeletedSchemaIsNotASilentPass is the
+// wave-A early audit's reproduction, kept as a regression.
+//
+// The prior version published two fixtures under the stem convention; the
+// new version DELETED gadget's schema — a breaking change in a declared
+// minor bump. Deciding the fixture->schema mapping per fixture, gadget-1
+// found no stem match, fell through to "there is exactly one schema, use
+// it", validated green against widget's schema (which it was never written
+// against), and the whole publish reported Computed:true with no failures.
+//
+// TEETH: restore the per-fixture single-schema fallback in planMapping and
+// this test reds — Computed:true, zero failures, no violation.
+func TestCheckComputedCompatibility_DeletedSchemaIsNotASilentPass(t *testing.T) {
+	t.Parallel()
+
+	res := CheckComputedCompatibility(CompatInput{
+		DeclaredBump: "minor",
+		PriorVersion: "1.0.0",
+		NewVersion:   "1.1.0",
+		NewSchemas: map[string][]byte{
+			"schema/widget-1.schema.json": []byte(`{"type":"object"}`),
+		},
+		PriorFixtures: map[string][]byte{
+			"fixtures/valid/widget-1.json": []byte(`{"name":"Widget"}`),
+			"fixtures/valid/gadget-1.json": []byte(`{"totally":"unrelated","shape":true}`),
+		},
+	})
+
+	if !res.Computed {
+		t.Fatalf("expected the check to be COMPUTED (the batch is mappable — one fixture lost its schema, which is a verdict, not an unevaluatable baseline); got Reason=%q", res.Reason)
+	}
+	if res.Violation == nil || res.Violation.Code != "POL-007" {
+		t.Fatalf("removing a schema in a minor bump must contradict the declared bump (POL-007); got %+v", res.Violation)
+	}
+	if len(res.Failures) != 1 || res.Failures[0].Fixture != "fixtures/valid/gadget-1.json" {
+		t.Fatalf("expected exactly one failure naming gadget-1, got %+v", res.Failures)
+	}
+	if res.Failures[0].Schema != "" {
+		t.Fatalf("a removed schema has no path to name; Schema = %q", res.Failures[0].Schema)
+	}
+}
+
+// TestCheckComputedCompatibility_DuplicateSchemaBaseNameIsPOL008 covers
+// the other half of the same audit finding: nothing constrains schema/**
+// to be flat (internal/space/layout.go only names the directory), so two
+// schemas can share a base name at different depths. Taking whichever
+// sorts first would make the verdict depend on a directory name.
+func TestCheckComputedCompatibility_DuplicateSchemaBaseNameIsPOL008(t *testing.T) {
+	t.Parallel()
+
+	res := CheckComputedCompatibility(CompatInput{
+		DeclaredBump: "minor",
+		PriorVersion: "1.0.0",
+		NewVersion:   "1.1.0",
+		NewSchemas: map[string][]byte{
+			"schema/legacy/widget-1.schema.json": []byte(`{"type":"object"}`),
+			"schema/v2/widget-1.schema.json":     []byte(`{"type":"object","required":["name"]}`),
+		},
+		PriorFixtures: map[string][]byte{
+			"fixtures/valid/widget-1.json": []byte(`{"name":"Widget"}`),
+		},
+	})
+
+	if res.Computed {
+		t.Fatalf("an ambiguous stem must refuse, not resolve to whichever schema sorts first; got Computed=true, failures=%+v", res.Failures)
+	}
+	if res.Violation == nil || res.Violation.Code != "POL-008" {
+		t.Fatalf("expected POL-008, got %+v", res.Violation)
+	}
+}
+
+// TestCheckComputedCompatibility_SingleSchemaFreelyNamedFixtures keeps
+// case 2 of the mapping alive: a single-schema contract may name its
+// fixtures anything, and every one of them validates against that schema.
+// This is the shape of the repo's own schemas/fixtures/compat corpus, and
+// the batch rule must not have broken it.
+func TestCheckComputedCompatibility_SingleSchemaFreelyNamedFixtures(t *testing.T) {
+	t.Parallel()
+
+	res := CheckComputedCompatibility(CompatInput{
+		DeclaredBump: "minor",
+		PriorVersion: "1.0.0",
+		NewVersion:   "1.1.0",
+		NewSchemas: map[string][]byte{
+			"schema/widget.schema.json": []byte(`{"type":"object"}`),
+		},
+		PriorFixtures: map[string][]byte{
+			"fixtures/valid/example.json": []byte(`{"name":"Widget"}`),
+			"fixtures/valid/another.json": []byte(`{"name":"Gadget"}`),
+		},
+	})
+
+	if !res.Computed {
+		t.Fatalf("a single-schema contract with freely-named fixtures must still be computed; Reason=%q", res.Reason)
+	}
+	if res.Violation != nil || len(res.Failures) != 0 {
+		t.Fatalf("both fixtures validate against the one schema; got %+v / %+v", res.Violation, res.Failures)
+	}
+}
+
 func TestCheckComputedCompatibility_UnparseableFixtureIsPOL008(t *testing.T) {
 	t.Parallel()
 
