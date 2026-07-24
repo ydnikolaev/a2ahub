@@ -152,6 +152,46 @@ func TestRegistryClosure(t *testing.T) {
 		record([]Violation{*v})
 	}
 
+	// POL-007: declared minor bump contradicts computed compatibility —
+	// the mislabeled-minor compat fixture (§5.4b, CC-080; see compat_test.go
+	// for the corpus's own dedicated coverage).
+	mislabeledNewSchema, err := os.ReadFile(filepath.Join(corpusRoot, "fixtures/compat/mislabeled-minor/new.schema.json"))
+	if err != nil {
+		t.Fatalf("read mislabeled-minor/new.schema.json: %v", err)
+	}
+	mislabeledFixture, err := os.ReadFile(filepath.Join(corpusRoot, "fixtures/compat/mislabeled-minor/fixtures/valid/widget-1.json"))
+	if err != nil {
+		t.Fatalf("read mislabeled-minor/fixtures/valid/widget-1.json: %v", err)
+	}
+	pol007 := CheckComputedCompatibility(CompatInput{
+		DeclaredBump:  "minor",
+		PriorVersion:  "1.0.0",
+		NewVersion:    "1.1.0",
+		NewSchemas:    map[string][]byte{"schema/widget.schema.json": mislabeledNewSchema},
+		PriorFixtures: map[string][]byte{"fixtures/valid/widget-1.json": mislabeledFixture},
+	})
+	if pol007.Violation != nil {
+		record([]Violation{*pol007.Violation})
+	}
+
+	// POL-008: computed compatibility could not be evaluated — an
+	// ambiguous fixture->schema mapping (D-E's fail-closed branch).
+	pol008 := CheckComputedCompatibility(CompatInput{
+		DeclaredBump: "minor",
+		PriorVersion: "1.0.0",
+		NewVersion:   "1.1.0",
+		NewSchemas: map[string][]byte{
+			"schema/a.schema.json": []byte(`{"type":"object"}`),
+			"schema/b.schema.json": []byte(`{"type":"object"}`),
+		},
+		PriorFixtures: map[string][]byte{
+			"fixtures/valid/widget-1.json": []byte(`{"name":"Widget"}`),
+		},
+	})
+	if pol008.Violation != nil {
+		record([]Violation{*pol008.Violation})
+	}
+
 	for _, code := range append(append(registry.CodesInClass("referential"), registry.CodesInClass("lifecycle")...), registry.CodesInClass("policy")...) {
 		if !produced[code] {
 			t.Errorf("registry code %q is never produced by any exercised path in this test", code)
