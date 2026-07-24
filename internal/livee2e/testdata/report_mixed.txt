@@ -1,0 +1,22 @@
+a2a live-e2e report
+space:       a2ahub-live-e2e/space
+provisioner: operator
+participant: a2ahub-e2e-bot
+
+SCENARIO               SYSTEM  SURFACE  VERDICT
+submit-gate-merge      A       cli      pass
+submit-gate-merge      A       mcp      pass
+submit-gate-merge      B       cli      timed-out
+    expected: check run reaches a terminal conclusion within 5m
+    observed: still queued after 5m
+    detail:   https://github.com/a2ahub-live-e2e/space/pull/12
+submit-gate-merge      B       mcp      not-run
+cross-section-refusal  A       cli      not-run
+cross-section-refusal  A       mcp      not-run
+cross-section-refusal  B       cli      fail
+    expected: check stays failure after the provisioner re-triggers it
+    observed: check flipped to success
+    detail:   executed ref a2a-validate-reusable.yml@v0.6.3 — stale merge commit? (spec 36 §T6-b)
+cross-section-refusal  B       mcp      not-run
+
+summary: not-run=4 pass=2 fail=1 timed-out=1 (exit 1)

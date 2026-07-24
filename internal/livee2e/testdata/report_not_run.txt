@@ -1,0 +1,17 @@
+a2a live-e2e report
+space:       a2ahub-live-e2e/space
+provisioner: (none)
+participant: (none)
+NOT RUN:     A2A_LIVE_E2E_ORG is unset
+
+SCENARIO               SYSTEM  SURFACE  VERDICT
+submit-gate-merge      A       cli      not-run
+submit-gate-merge      A       mcp      not-run
+submit-gate-merge      B       cli      not-run
+submit-gate-merge      B       mcp      not-run
+cross-section-refusal  A       cli      not-run
+cross-section-refusal  A       mcp      not-run
+cross-section-refusal  B       cli      not-run
+cross-section-refusal  B       mcp      not-run
+
+summary: not-run=8 (exit 2)
