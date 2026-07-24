@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/version"
 )
@@ -73,6 +74,10 @@ type SpaceCommand struct {
 	// HostCfg carries the push/PR target and commit authorship (same shape
 	// SubmitCommand uses).
 	HostCfg SubmitHostConfig
+	// Scopes probes what the write credential is actually allowed to do.
+	// Nil disables the check (an `init`-only construction, or a test that
+	// does not care) — the command then behaves exactly as before.
+	Scopes spaceScopeChecker
 
 	// readFile is a DI seam (mirrors writeFile/mkdirAll's own convention)
 	// so a test can simulate the mirror's on-disk content without a real
@@ -326,6 +331,49 @@ func (c *SpaceCommand) spaceScaffold(target, spaceID, version string) (int, erro
 }
 
 // --- `a2a space update` (spec 35) ---------------------------------------
+
+// spaceScopeChecker is this file's narrow consumer-side seam over the host's
+// token-capability probe (rails ISP/DI) — *host.GitHubHost satisfies it
+// structurally.
+type spaceScopeChecker interface {
+	TokenScopes(ctx context.Context, cred host.Credential) (scopes []string, reported bool, err error)
+}
+
+// spaceWorkflowScope is the GitHub scope required to create or update a file
+// under .github/workflows/. `space update` rewrites the space's CI caller, so
+// it needs this; NO other a2a write does — every artifact write is confined to
+// the caller's own section by the funnel's guard, and .github/ is reachable
+// only through this one command.
+const spaceWorkflowScope = "workflow"
+
+// spaceCheckWorkflowScope reports why the credential cannot carry this write,
+// or "" when it can (or when the answer is unknowable).
+//
+// The unknowable case is the point of the `reported` flag: fine-grained PATs
+// and App installation tokens do not advertise scopes at all, and treating
+// silence as refusal would block exactly the most narrowly-scoped credentials
+// a2a wants people to use. Silence therefore proceeds — GitHub still refuses
+// the push if the permission really is missing, and that error is not made
+// worse by our having tried.
+func (c *SpaceCommand) spaceCheckWorkflowScope(ctx context.Context) string {
+	if c.Scopes == nil {
+		return ""
+	}
+	scopes, reported, err := c.Scopes.TokenScopes(ctx, c.HostCfg.Credential)
+	if err != nil || !reported {
+		return ""
+	}
+	for _, s := range scopes {
+		if s == spaceWorkflowScope {
+			return ""
+		}
+	}
+	return "this write updates .github/workflows/, which GitHub refuses from a token without the `" + spaceWorkflowScope + "` scope.\n" +
+		"  your token reports: " + strings.Join(scopes, ", ") + "\n" +
+		"  fix (either one):\n" +
+		"    gh auth refresh -h github.com -s " + spaceWorkflowScope + "\n" +
+		"    or use a fine-grained PAT scoped to this space with Contents/Pull requests/Workflows: write"
+}
 
 // SpaceInfraNoValidation is the space.SubmitValidator `a2a space update`
 // wires — and it deliberately validates nothing.
@@ -704,6 +752,17 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 		return 1
 	}
 
+	// Capability pre-flight. A real run REFUSES here rather than computing a
+	// plan, printing it in full with both directives, and only then dying on
+	// a raw git push rejection — which reads as "it worked, then broke".
+	// --dry-run still shows the plan (that is what it is for) but says the
+	// run would be refused, so the scope is learned BEFORE it matters.
+	scopeProblem := c.spaceCheckWorkflowScope(ctx)
+	if scopeProblem != "" && !*dryRun {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space update: %s\n", scopeProblem)
+		return 1
+	}
+
 	// Version guard (fail closed), same as `space init` — a dev build must
 	// not pin a caller ref / min_binary_version to a release that does not
 	// exist.
@@ -747,6 +806,9 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 	}
 
 	if *dryRun {
+		if scopeProblem != "" {
+			_, _ = fmt.Fprintf(stdio.Stdout, "space update: WOULD BE REFUSED — %s\n", scopeProblem)
+		}
 		_, _ = fmt.Fprintln(stdio.Stdout, "space update: --dry-run — no files written, nothing pushed")
 		return 0
 	}

@@ -750,3 +750,96 @@ func TestSpaceUpdateSeededFileAtAnAlternateLocation(t *testing.T) {
 		t.Errorf("the alternate location was not reported as advisory drift; stdout=%s", out.String())
 	}
 }
+
+// fakeScopeChecker drives the workflow-scope pre-flight.
+type fakeScopeChecker struct {
+	scopes   []string
+	reported bool
+	err      error
+	calls    int
+}
+
+func (f *fakeScopeChecker) TokenScopes(context.Context, host.Credential) ([]string, bool, error) {
+	f.calls++
+	return f.scopes, f.reported, f.err
+}
+
+// TestSpaceUpdateRefusesWithoutWorkflowScope: `space update` rewrites
+// .github/workflows/, which GitHub refuses from a token lacking the
+// `workflow` scope. Before this check the command printed the whole plan and
+// both directives and THEN died on a raw git push rejection — it read as "it
+// worked, then broke". Observed performing the live getvisa migration.
+func TestSpaceUpdateRefusesWithoutWorkflowScope(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir)
+	funnel := &fakeSubmitFunnel{}
+	cmd := spaceUpdateFullyWiredCommand(spaceUpdateTemplateFS(), mirrorDir, funnel, "9.9.9")
+	cmd.Scopes = &fakeScopeChecker{scopes: []string{"repo", "read:org"}, reported: true}
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update"}, io); code != 1 {
+		t.Fatalf("Run: code = %d, want 1; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(funnel.calls) != 0 {
+		t.Error("funnel must not be called when the credential provably cannot carry the write")
+	}
+	for _, want := range []string{"workflow", "gh auth refresh", "repo, read:org"} {
+		if !strings.Contains(errOut.String(), want) {
+			t.Errorf("stderr does not name %q — the remedy must be actionable; stderr=%s", want, errOut.String())
+		}
+	}
+	// The refusal must come BEFORE the plan, not after it.
+	if strings.Contains(out.String(), "scaffolding diff") {
+		t.Errorf("printed a plan it cannot execute:\n%s", out.String())
+	}
+}
+
+// A fine-grained PAT or App token does not advertise scopes at all. Treating
+// that silence as refusal would block exactly the most narrowly-scoped
+// credentials, so it must proceed.
+func TestSpaceUpdateProceedsWhenScopesAreNotReported(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir)
+	funnel := &fakeSubmitFunnel{}
+	cmd := spaceUpdateFullyWiredCommand(spaceUpdateTemplateFS(), mirrorDir, funnel, "9.9.9")
+	probe := &fakeScopeChecker{reported: false}
+	cmd.Scopes = probe
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update"}, io); code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if probe.calls == 0 {
+		t.Error("the probe was never consulted")
+	}
+	if len(funnel.calls) != 1 {
+		t.Fatalf("funnel.calls = %d, want 1 — an unreported scope set must not block the write", len(funnel.calls))
+	}
+}
+
+// --dry-run still shows the plan (that is what it is for) but must say the
+// real run would be refused, so the scope is learned BEFORE it matters.
+func TestSpaceUpdateDryRunWarnsAboutMissingScope(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir)
+	funnel := &fakeSubmitFunnel{}
+	cmd := spaceUpdateFullyWiredCommand(spaceUpdateTemplateFS(), mirrorDir, funnel, "9.9.9")
+	cmd.Scopes = &fakeScopeChecker{scopes: []string{"repo"}, reported: true}
+
+	io, out, errOut := newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update", "--dry-run"}, io); code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "scaffolding diff") {
+		t.Errorf("--dry-run stopped showing the plan; stdout=%s", out.String())
+	}
+	if !strings.Contains(out.String(), "WOULD BE REFUSED") {
+		t.Errorf("--dry-run did not warn that the real run would be refused; stdout=%s", out.String())
+	}
+	if len(funnel.calls) != 0 {
+		t.Error("--dry-run must never call the funnel")
+	}
+}

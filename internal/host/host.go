@@ -190,6 +190,14 @@ type Host interface {
 	// CheckStatus reads the `a2a-validate` required status check result —
 	// flat or compound-named (spec 34 §2).
 	CheckStatus(ctx context.Context, req StatusRequest) (CheckStatusResult, error)
+	// TokenScopes reports the OAuth scopes GitHub attributes to cred.
+	//
+	// reported=false means the credential TYPE does not advertise scopes at
+	// all — a fine-grained PAT or a GitHub App installation token — which is
+	// NOT the same as holding none. A caller that treats "not reported" as
+	// "missing" would refuse exactly the credentials that are most narrowly
+	// scoped, so the boolean is deliberately separate from the slice.
+	TokenScopes(ctx context.Context, cred Credential) (scopes []string, reported bool, err error)
 	// ReviewStatus reads the CODEOWNERS-required review approval state.
 	ReviewStatus(ctx context.Context, req StatusRequest) (ReviewStatusResult, error)
 	// FindPRByHeadBranch looks up an existing open or merged PR by its

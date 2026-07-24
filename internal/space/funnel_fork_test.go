@@ -161,6 +161,10 @@ func (h hostWithoutFork) OpenPR(ctx context.Context, req host.OpenPRRequest) (ho
 	return h.inner.OpenPR(ctx, req)
 }
 
+func (h hostWithoutFork) TokenScopes(ctx context.Context, cred host.Credential) ([]string, bool, error) {
+	return h.inner.TokenScopes(ctx, cred)
+}
+
 func (h hostWithoutFork) CheckStatus(ctx context.Context, req host.StatusRequest) (host.CheckStatusResult, error) {
 	return h.inner.CheckStatus(ctx, req)
 }

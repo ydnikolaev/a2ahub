@@ -904,6 +904,11 @@ func wireSpaceUpdate(ctx context.Context, cmd *cli.SpaceCommand, args []string) 
 
 	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 	cmd.Funnel = space.NewWriteFunnel(h, cli.SpaceInfraNoValidation{}, funnelBinaryVersion())
+	// The same host doubles as the capability probe: `space update` rewrites
+	// .github/workflows/, which GitHub refuses from a token without the
+	// `workflow` scope — checked BEFORE the plan is printed, not after the
+	// push is rejected.
+	cmd.Scopes = h
 	cmd.MirrorDir = mirrorDir
 	cmd.SpaceID = ref.ID
 	cmd.OwnSystem = cfg.System
