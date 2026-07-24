@@ -15,6 +15,12 @@ import (
 // drop an artifact into the working tree.
 const EnvReportPath = "A2A_LIVE_E2E_REPORT"
 
+// liveRunCeiling bounds the entire matrix. `make live-e2e` must pass a
+// -timeout at least this large, or `go test`'s own 10-minute default kills the
+// run first and the report never renders — the one failure mode that costs a
+// full matrix's Actions latency and returns nothing.
+const liveRunCeiling = 75 * time.Minute
+
 // TestLiveMatrix is the live tier's ONLY entry point, reachable solely
 // through `make live-e2e` (which supplies -tags=livee2e). It exists in the
 // tagged build so that `go test ./...` — what `make check` runs — cannot
@@ -32,10 +38,14 @@ func TestLiveMatrix(t *testing.T) {
 	if err != nil {
 		run.Abort(err.Error())
 	} else {
-		// Preflight against REAL GitHub before anything else. Every failure
-		// here is a refusal to run: each condition it checks turns the
-		// boundary scenarios into passes that prove nothing (spec 36 §T5).
-		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+		// One deadline for the WHOLE run, not just preflight: seventeen
+		// scenarios, each of which may wait out a bounded Actions latency,
+		// add up far past any single step's ceiling. It is deliberately
+		// generous — expiring here aborts mid-matrix, and a run that dies
+		// half-way reports fewer rows than it actually knew. The per-step
+		// ceilings (requiredCheckWaitCeiling) are what keep any ONE scenario
+		// from eating it.
+		ctx, cancel := context.WithTimeout(t.Context(), liveRunCeiling)
 		defer cancel()
 
 		pre, preErr := RunPreflight(ctx, &GitHubProber{}, cfg, cfg.Org, DefaultRepo)
@@ -48,24 +58,13 @@ func TestLiveMatrix(t *testing.T) {
 			// be audited afterwards.
 			run.Preflight = pre
 
-			// Wave 3-2 replaces this with the four scenario families. Until
-			// then the harness is CONSTRUCTED for real — provisioning, both
-			// checkouts, one draft — so that the ~380 lines of orchestration
-			// wave 3-2 is about to be written against are known to work,
-			// rather than discovered broken four families later.
 			h, cleanup, hErr := newHarness(ctx, cfg, pre)
 			defer cleanup()
 			switch {
 			case hErr != nil:
 				run.Abort("harness construction failed: " + hErr.Error())
 			default:
-				id, unfilled, dErr := h.B.Draft(ctx, "announcement")
-				if dErr != nil {
-					run.Abort("smoke draft failed: " + dErr.Error())
-					break
-				}
-				t.Logf("SMOKE OK: space reset, both checkouts connected, B drafted %s (unfilled: %v)", id, unfilled)
-				run.Abort("harness smoke passed; live scenarios are not implemented yet (spec 36 wave 3-2)")
+				driveFamilies(ctx, t, run, h)
 			}
 		}
 	}
@@ -83,4 +82,56 @@ func TestLiveMatrix(t *testing.T) {
 	if code := report.ExitCode(); code != 0 {
 		t.Fatalf("live-e2e: %d cell(s) declared, exit code %d — see the report above", len(report.Results), code)
 	}
+}
+
+// driveFamilies runs the four scenario families and records what they return.
+//
+// SERIALLY, and that is a correctness requirement rather than a simplification:
+// the families are file-disjoint but they all drive ONE real space, and two of
+// them deliberately mutate shared state (a merge with the gate not green, a
+// raised min_binary_version). Run concurrently, one family's restore window
+// would break every write another family has in flight, and the failure would
+// surface as somebody else's bug.
+//
+// Order is cheapest-blast-radius first: the happy paths establish that the
+// ordinary flow works before the boundary and refusal families start bending
+// protection and the write floor. A family that panics is contained here — the
+// remaining families still run, and its rows stay not-run rather than taking
+// the whole matrix down with them.
+func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
+	families := []struct {
+		name string
+		fn   func(context.Context, *harness) []Result
+	}{
+		{"happy", runHappyScenarios},
+		{"boundary", runBoundaryScenarios},
+		{"refusal", runRefusalScenarios},
+		{"space", runSpaceScenarios},
+	}
+
+	for _, family := range families {
+		t.Logf("=== family %s ===", family.name)
+		for _, res := range runFamily(ctx, t, family.name, family.fn, h) {
+			if err := run.Record(res); err != nil {
+				// An undeclared cell or a zero verdict is a family/catalogue
+				// mismatch. Surfaced loudly: silently dropping it would leave
+				// the row not-run in a report that otherwise reads complete.
+				t.Errorf("record %s/%s/%s from family %s: %v",
+					res.Scenario, res.System, res.Surface, family.name, err)
+				continue
+			}
+			t.Logf("  %-34s %-2s %s", res.Scenario, res.System, res.Verdict)
+		}
+	}
+}
+
+// runFamily isolates one family's panic. A live tier that loses fifteen rows
+// because the sixteenth dereferenced a nil PR would report less than it knew.
+func runFamily(ctx context.Context, t *testing.T, name string, fn func(context.Context, *harness) []Result, h *harness) (out []Result) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("family %s panicked: %v — its rows stay not-run", name, r)
+		}
+	}()
+	return fn(ctx, h)
 }
