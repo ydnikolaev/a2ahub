@@ -68,17 +68,32 @@ type Run struct {
 // surfaces, in that nesting order — which is also the report's row order, so
 // two runs of the same matrix diff cleanly.
 func NewRun(org, repo string, scenarios, systems []string, surfaces []Surface) *Run {
+	declared := make([]Scenario, 0, len(scenarios))
+	for _, name := range scenarios {
+		declared = append(declared, Scenario{Name: name, Systems: systems, Surfaces: surfaces})
+	}
+	return NewRunFor(org, repo, declared)
+}
+
+// NewRunFor declares the matrix from a scenario catalogue, where each
+// scenario names the systems and surfaces it actually applies to.
+//
+// Not every scenario is a full cross product: "protection does not bind the
+// provisioner" is meaningless for participant B, and declaring it anyway
+// would pad the report with cells that can only ever be not-run — inflating
+// apparent coverage with rows nobody intends to run.
+func NewRunFor(org, repo string, scenarios []Scenario) *Run {
 	r := &Run{Org: org, Repo: repo, results: map[cellKey]*Result{}}
 	for _, scenario := range scenarios {
-		for _, system := range systems {
-			for _, surface := range surfaces {
-				key := cellKey{scenario, system, surface}
+		for _, system := range scenario.Systems {
+			for _, surface := range scenario.Surfaces {
+				key := cellKey{scenario.Name, system, surface}
 				if _, dup := r.results[key]; dup {
 					continue
 				}
 				r.order = append(r.order, key)
 				r.results[key] = &Result{
-					Scenario: scenario,
+					Scenario: scenario.Name,
 					System:   system,
 					Surface:  surface,
 					Verdict:  VerdictNotRun,
@@ -152,7 +167,7 @@ func (r Report) Tally() map[Verdict]int {
 	return counts
 }
 
-// ExitCode is the process status `make live-e2e` exits with.
+// ExitCode classifies the run:
 //
 //	0 — every declared cell ran and passed
 //	1 — the run happened and at least one cell did not pass
@@ -163,6 +178,13 @@ func (r Report) Tally() map[Verdict]int {
 // would teach us to read a red exit as a known-flaky nuisance. Zero is
 // unreachable without at least one cell, so an empty matrix can never exit
 // green (AC-962.2).
+//
+// NOTE on the process status: the live entry point is a `go test` target, and
+// `go test` has only pass/fail, so `make live-e2e` reliably exits NON-ZERO on
+// anything but a fully green run — but the 1-vs-2 distinction is carried in
+// the rendered summary line, not in the process code. Making the process
+// carry it means moving the entry point out of `go test`, which is a wave-3
+// decision, not an accident to be discovered later.
 func (r Report) ExitCode() int {
 	if r.NotRunReason != "" || len(r.Results) == 0 {
 		return 2
@@ -183,7 +205,7 @@ func (r Report) Render() string {
 	var b strings.Builder
 
 	b.WriteString("a2a live-e2e report\n")
-	fmt.Fprintf(&b, "space:       %s/%s\n", r.Org, r.Repo)
+	fmt.Fprintf(&b, "space:       %s/%s\n", orNone(r.Org), r.Repo)
 	fmt.Fprintf(&b, "provisioner: %s\n", orNone(r.Preflight.ProvisionerLogin))
 	fmt.Fprintf(&b, "participant: %s\n", orNone(r.Preflight.ParticipantLogin))
 	if r.NotRunReason != "" {
