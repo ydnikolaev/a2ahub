@@ -1,0 +1,29 @@
+schema: release-notes/v1
+version: "0.6.4"
+released: "2026-07-24"
+headline: "SECURITY: diff-authz checked the wrong person — the one who re-ran CI, not the PR author"
+changes:
+  - id: RN-0604-1
+    kind: fix
+    impact: high
+    subject: "V3 diff-authz resolves the PR author from the pull request, not from GITHUB_ACTOR"
+    detail: >
+      The space CI passed no author to `a2a validate --ci`, so the validator
+      fell back to `GITHUB_ACTOR` — the account that TRIGGERED the workflow
+      run, which is not the PR's author. diff-authz asks "is every changed path
+      inside the author's own section", so the verdict depended on who pressed
+      the button. Two consequences, one of them serious: a maintainer re-running
+      a contributor's PR saw it checked against the MAINTAINER's section and go
+      red on a legal PR; and — the direction that matters — a PR from system B
+      illegally writing into system A's section PASSED whenever anyone from A
+      re-triggered it, defeating the single-writer boundary V3 exists to
+      enforce, via a request as innocuous as "could you re-run CI?". The
+      reusable workflow now reads `github.event.pull_request.user.login`
+      directly; GITHUB_ACTOR remains only as the fallback for non-PR contexts.
+      Found while performing a real space migration.
+    affects: [ci, space]
+    action:
+      scope: space
+      why: "your space CI keeps checking the wrong identity until its reusable-workflow ref points at 0.6.4 or later"
+      detect: ["a2a space update --dry-run"]
+      run: ["a2a space update"]
