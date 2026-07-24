@@ -1,7 +1,7 @@
 # The SSOT space-validation workflow (P33, spec 33 §T3). ONE home for the
 # V3 write-funnel gate: install a2a + the exact `validate --ci` invocation +
 # the pinned version, co-located in one versioned unit. A space references
-# this file by a SHA-pinned path (see the space-template caller) and carries
+# this file by a release-tag-pinned path (see the space-template caller) and carries
 # NO validation logic and NO fetch-token secret of its own — the
 # private-era copy/token/manual-pin design (spec 09 §T5) is dead (spec 33 §1).
 #

@@ -30,10 +30,11 @@ jobs:
   a2a-validate:
     name: a2a-validate
     if: github.event_name == 'pull_request'
-    # SHA-pinned to an immutable a2ahub commit (never @main); Dependabot moves
-    # it by a reviewed PR that auto-merges on the green check. The `# vX.Y.Z`
-    # comment tracks the human-readable version.
-    uses: ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@0000000000000000000000000000000000000000 # v0.4.0 — REPLACE with the v0.4.0 commit SHA at space creation / first release
+    # Pinned to an a2ahub RELEASE TAG (never @main): tags are immutable in
+    # a2ahub's publish model (pushed once per release, §0.5), and Dependabot
+    # bumps this ref by a reviewed PR that auto-merges on the green check. A
+    # scaffold (`a2a space init`) fills the running binary's own version here.
+    uses: ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@v0.4.0
     with:
       mode: v3-pr
       base: ${{ github.event.pull_request.base.sha }}
@@ -45,6 +46,6 @@ jobs:
   a2a-postmerge-audit:
     name: a2a-postmerge-audit
     if: github.event_name == 'push'
-    uses: ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@0000000000000000000000000000000000000000 # v0.4.0 — REPLACE with the v0.4.0 commit SHA at space creation / first release
+    uses: ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@v0.4.0
     with:
       mode: v3-full-repo

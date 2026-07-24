@@ -850,10 +850,11 @@ func TestDoctorWorkflowPinnedNotLatest(t *testing.T) {
 		t.Fatalf("read a2a-validate.yml: %v", err)
 	}
 	// P33: the space is a CALLER — it carries no validation logic and no
-	// version/fetch of its own. Every `uses:` must SHA-pin a2ahub's reusable
-	// workflow to an immutable 40-hex commit (never @main/@latest/a branch;
-	// AC-933.1). Only non-comment lines matter — the file's own comments
-	// legitimately say the word "latest" to forbid it.
+	// version/fetch of its own. Every `uses:` must pin a2ahub's reusable
+	// workflow to an immutable RELEASE TAG `@vMAJOR.MINOR.PATCH` (never
+	// @main/@latest/a branch; tags are pushed-once/immutable in a2ahub's
+	// publish model — AC-933.1 as amended). Only non-comment lines matter —
+	// the file's own comments legitimately say the word "latest" to forbid it.
 	usesRefs := 0
 	for _, line := range strings.Split(string(raw), "\n") {
 		code, _, _ := strings.Cut(line, "#")
@@ -878,21 +879,30 @@ func TestDoctorWorkflowPinnedNotLatest(t *testing.T) {
 		}
 		at := strings.Index(trimmed, "@")
 		if at < 0 {
-			t.Fatalf("caller `uses:` must be SHA-pinned (never unpinned/@main), got %q", trimmed)
+			t.Fatalf("caller `uses:` must be pinned to a release tag (never unpinned/@main), got %q", trimmed)
 		}
 		ref := strings.TrimSpace(trimmed[at+1:])
 		if ref == "main" || ref == "master" || ref == "latest" {
-			t.Fatalf("caller `uses:` pinned to a moving ref %q, want an immutable 40-hex SHA (AC-933.1)", ref)
+			t.Fatalf("caller `uses:` pinned to a moving ref %q, want an immutable release tag @vMAJOR.MINOR.PATCH (AC-933.1)", ref)
 		}
-		isHex := len(ref) == 40
-		for _, r := range ref {
-			if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-				isHex = false
-				break
+		// Immutable release tag: v<major>.<minor>.<patch>, each part numeric.
+		validTag := strings.HasPrefix(ref, "v")
+		if validTag {
+			parts := strings.Split(strings.TrimPrefix(ref, "v"), ".")
+			validTag = len(parts) == 3
+			for _, p := range parts {
+				if p == "" {
+					validTag = false
+				}
+				for _, r := range p {
+					if r < '0' || r > '9' {
+						validTag = false
+					}
+				}
 			}
 		}
-		if !isHex {
-			t.Fatalf("caller `uses:` ref %q is not a 40-hex SHA (AC-933.1 immutable pin)", ref)
+		if !validTag {
+			t.Fatalf("caller `uses:` ref %q is not an immutable release tag @vMAJOR.MINOR.PATCH (AC-933.1)", ref)
 		}
 	}
 	if usesRefs == 0 {
