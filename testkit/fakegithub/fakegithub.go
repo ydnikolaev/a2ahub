@@ -58,6 +58,12 @@ type Server struct {
 	// CheckState/CheckConclusion are what CheckStatus reports.
 	CheckState      string
 	CheckConclusion string
+	// CheckName is the check run's NAME — the field internal/host selects
+	// on. It defaults to the post-P33 COMPOUND context a migrated space
+	// really emits (`<caller-job> / <reusable-job>`), so the default rig
+	// exercises the shape the fleet is moving to; set it to the flat
+	// `a2a-validate` to stand in for an un-migrated space.
+	CheckName string
 	// ReviewApprovals are the logins whose latest review is an approval.
 	ReviewApprovals []string
 
@@ -84,6 +90,7 @@ func New(t testing.TB, originDir string) *Server {
 		AutoMerge:       true,
 		CheckState:      "completed",
 		CheckConclusion: "success",
+		CheckName:       "a2a-validate / validate",
 		t:               t,
 		forks:           make(map[string]string),
 	}
@@ -163,7 +170,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		s.writeJSON(w, s.reviewPayload())
 	case len(parts) == 6 && parts[0] == "repos" && parts[3] == "commits" && parts[5] == "check-runs":
 		s.writeJSON(w, map[string]any{"check_runs": []map[string]any{
-			{"status": s.CheckState, "conclusion": s.CheckConclusion},
+			{"name": s.CheckName, "status": s.CheckState, "conclusion": s.CheckConclusion},
 		}})
 	case len(parts) == 3 && parts[0] == "repos" && r.Method == http.MethodGet:
 		s.writeJSON(w, map[string]any{"name": parts[2]})

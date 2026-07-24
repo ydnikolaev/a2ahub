@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 )
@@ -255,8 +256,70 @@ func (h *GitHubHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, err
 	return PRInfo{Number: created.Number, URL: created.HTMLURL, State: state}, nil
 }
 
-// CheckStatus implements Host.CheckStatus: reads the PR's head SHA, then
-// the named `a2a-validate` check-run's state/conclusion.
+// requiredCheckName is the space CI's gate job name — frozen by spec 33 §11
+// on both sides of the P33 migration. An un-migrated space emits it flat; a
+// migrated space's caller job of the same name emits the compound context
+// `a2a-validate / <reusable-job>`.
+const requiredCheckName = "a2a-validate"
+
+// compoundSeparator is GitHub's rendering of a called workflow's run name:
+// `<caller-job> / <reusable-job>`. Matching on the prefix INCLUDING this
+// separator is what keeps `a2a-postmerge-audit / validate` — push-triggered,
+// never the required check (spec 09 §5.5) — out of the candidate set, and
+// what makes the match anchored rather than a substring search.
+const compoundSeparator = " / "
+
+// checkRun is one entry of the head SHA's check-runs listing.
+type checkRun struct {
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+}
+
+// selectRequiredCheckRun picks the V3 required check run out of a head SHA's
+// runs (spec 34 §2): compound `a2a-validate / …` wins over flat
+// `a2a-validate` — a space mid-migration can briefly emit both, and the
+// compound one is the shape branch protection now requires. More than one
+// compound candidate is resolved deterministically (lexicographically first)
+// and REPORTED, never picked silently. Zero candidates → ok=false, which the
+// caller renders as the pre-existing "no check" result.
+func selectRequiredCheckRun(runs []checkRun) (run checkRun, ambiguous []string, ok bool) {
+	var compound, flat []checkRun
+	for _, r := range runs {
+		switch {
+		case strings.HasPrefix(r.Name, requiredCheckName+compoundSeparator):
+			compound = append(compound, r)
+		case r.Name == requiredCheckName:
+			flat = append(flat, r)
+		}
+	}
+
+	candidates := compound
+	if len(candidates) == 0 {
+		candidates = flat
+	}
+	if len(candidates) == 0 {
+		return checkRun{}, nil, false
+	}
+
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Name < candidates[j].Name })
+	if len(compound) > 1 {
+		ambiguous = make([]string, 0, len(compound))
+		for _, r := range compound {
+			ambiguous = append(ambiguous, r.Name)
+		}
+	}
+	return candidates[0], ambiguous, true
+}
+
+// CheckStatus implements Host.CheckStatus: reads the PR's head SHA, then the
+// required check run's state/conclusion.
+//
+// The listing is NOT filtered by `check_name=` server-side: that filter is an
+// exact match, and P33 turned a migrated space's run name into the compound
+// `a2a-validate / <reusable-job>`, which such a filter misses entirely
+// (reporting "no check" instead of the real conclusion). Selection therefore
+// happens here, over both shapes — see selectRequiredCheckRun.
 func (h *GitHubHost) CheckStatus(ctx context.Context, req StatusRequest) (CheckStatusResult, error) {
 	const op = "CheckStatus"
 	if req.Repo.Owner == "" || req.Repo.Name == "" || req.PRNumber == 0 {
@@ -268,21 +331,20 @@ func (h *GitHubHost) CheckStatus(ctx context.Context, req StatusRequest) (CheckS
 		return CheckStatusResult{}, err
 	}
 
-	path := fmt.Sprintf("/repos/%s/%s/commits/%s/check-runs?check_name=a2a-validate", req.Repo.Owner, req.Repo.Name, headSHA)
+	// filter=latest is GitHub's own default (one run per name, the most
+	// recent) — stated explicitly because the selection below depends on it.
+	path := fmt.Sprintf("/repos/%s/%s/commits/%s/check-runs?filter=latest&per_page=100", req.Repo.Owner, req.Repo.Name, headSHA)
 	var resp struct {
-		CheckRuns []struct {
-			Status     string `json:"status"`
-			Conclusion string `json:"conclusion"`
-		} `json:"check_runs"`
+		CheckRuns []checkRun `json:"check_runs"`
 	}
 	if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &resp); err != nil {
 		return CheckStatusResult{}, err
 	}
-	if len(resp.CheckRuns) == 0 {
+	run, ambiguous, ok := selectRequiredCheckRun(resp.CheckRuns)
+	if !ok {
 		return CheckStatusResult{State: "queued"}, nil
 	}
-	run := resp.CheckRuns[0]
-	return CheckStatusResult{State: run.Status, Conclusion: run.Conclusion}, nil
+	return CheckStatusResult{State: run.Status, Conclusion: run.Conclusion, Name: run.Name, Ambiguous: ambiguous}, nil
 }
 
 // ReviewStatus implements Host.ReviewStatus: reads the PR's reviews and

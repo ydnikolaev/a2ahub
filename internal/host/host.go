@@ -94,12 +94,25 @@ type StatusRequest struct {
 
 // CheckStatusResult reports the `a2a-validate` required status check (V3)
 // result for a PR (spec 05 §T1, §10.3 enforcement-layering note).
+//
+// The check run is named `a2a-validate` on an un-migrated space and
+// `a2a-validate / <reusable-job>` on a P33-migrated one (GitHub names a
+// called workflow's run `<caller-job> / <reusable-job>`); both shapes resolve
+// here — see requiredCheckRunName (spec 34 §2).
 type CheckStatusResult struct {
 	// State is the check's run state: "queued" | "in_progress" | "completed".
 	State string
 	// Conclusion is populated once State == "completed":
 	// "success" | "failure" | "neutral" | ... (GitHub's check-run vocabulary).
 	Conclusion string
+	// Name is the selected check run's own name — the evidence of WHICH
+	// shape answered (diagnostic only; empty when no run matched).
+	Name string
+	// Ambiguous lists every candidate name when more than one compound run
+	// matched. The pick stays deterministic (lexicographically first) and
+	// this field is how the caller learns the choice was not unique — a
+	// silent pick is exactly what spec 34 §2.4 forbids. Empty otherwise.
+	Ambiguous []string
 }
 
 // ReviewStatusResult reports the CODEOWNERS-required review approval state
@@ -174,7 +187,8 @@ type Host interface {
 	// OpenPR opens a PR from the pushed branch into Base with auto-merge
 	// enabled — UNIFORM, always (see OpenPRRequest doc).
 	OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, error)
-	// CheckStatus reads the `a2a-validate` required status check result.
+	// CheckStatus reads the `a2a-validate` required status check result —
+	// flat or compound-named (spec 34 §2).
 	CheckStatus(ctx context.Context, req StatusRequest) (CheckStatusResult, error)
 	// ReviewStatus reads the CODEOWNERS-required review approval state.
 	ReviewStatus(ctx context.Context, req StatusRequest) (ReviewStatusResult, error)
