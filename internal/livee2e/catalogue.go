@@ -27,12 +27,21 @@ type Scenario struct {
 
 // bothSurfaces is the CLI/MCP pair — P15's parity claim, exercised rather
 // than asserted.
+//
+// NOT USED BY THE CATALOGUE YET. Spec §6 left "does MCP coverage reuse the CLI
+// scenarios or need its own table" open and named the sequencing: decide after
+// the first CLI matrix is green. It is not green yet, and nothing in the repo
+// drives MCP over stdio — cmd/a2a/mcp_equivalence_test.go calls the registry's
+// handlers in process, so a live MCP surface is a JSON-RPC client that does not
+// exist. Declaring the nine MCP cells anyway would put `make live-e2e`
+// permanently at exit 1, and a tier that is always red is a tier nobody reads.
+// Kept here (and exercised by the tests) as the shape the follow-up restores.
 func bothSurfaces() []Surface { return []Surface{SurfaceCLI, SurfaceMCP} }
 
 // cliOnly is for scenarios about GitHub's own semantics (protection, check
 // naming, workflow refs). Those are properties of the space, not of the entry
 // point, so running them twice would double the Actions spend to re-observe
-// the same fact.
+// the same fact — and, until the MCP driver exists, it is every scenario.
 func cliOnly() []Surface { return []Surface{SurfaceCLI} }
 
 // Catalogue is the declared live matrix (spec 36 §T3 + §8). Declaring it in
@@ -41,15 +50,18 @@ func cliOnly() []Surface { return []Surface{SurfaceCLI} }
 // during implementation shows up as a not-run row rather than as silence.
 //
 // Each entry names the acceptance criterion it answers.
+//
+// Every entry is cliOnly() for now — see bothSurfaces() for why, and spec §10's
+// 2026-07-24 amendment for the decision that made it so.
 func Catalogue() []Scenario {
 	return []Scenario{
 		// AC-960.1 — the rig provisions and scaffolds its own space.
 		{Name: "space-init", Systems: []string{SystemA}, Surfaces: cliOnly()},
-		// AC-960.2 — the ordinary happy path, both systems, both surfaces.
-		{Name: "submit-gate-merge", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces()},
-		{Name: "lifecycle-transitions", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces()},
-		{Name: "contract-publish-deprecate-retire", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces()},
-		{Name: "cross-system-visibility", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces()},
+		// AC-960.2 — the ordinary happy path, both systems.
+		{Name: "submit-gate-merge", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly()},
+		{Name: "lifecycle-transitions", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly()},
+		{Name: "contract-publish-deprecate-retire", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly()},
+		{Name: "cross-system-visibility", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly()},
 		{Name: "validate-ci-both-modes", Systems: []string{SystemA}, Surfaces: cliOnly()},
 
 		// AC-961.1 — host.CheckStatus resolves the REAL compound context
@@ -79,7 +91,7 @@ func Catalogue() []Scenario {
 		{Name: "executed-ref-not-stale", Systems: []string{SystemB}, Surfaces: cliOnly()},
 
 		// Refusal paths that are cheap to keep honest live.
-		{Name: "out-of-section-write-refused", Systems: []string{SystemB}, Surfaces: bothSurfaces()},
+		{Name: "out-of-section-write-refused", Systems: []string{SystemB}, Surfaces: cliOnly()},
 		{Name: "stale-write-floor-refused", Systems: []string{SystemB}, Surfaces: cliOnly()},
 	}
 }

@@ -66,6 +66,31 @@ func TestProtectionSkipsProvisionerIsProvisionerOnly(t *testing.T) {
 	t.Fatal("protection-skips-provisioner is missing from the catalogue — AC-961.4 asserts protection's reach in BOTH directions")
 }
 
+// The catalogue may only declare a surface the tier can actually drive.
+//
+// This is the same rule as TestNewRunForHonoursPerScenarioApplicability, one
+// level up: a declared cell nobody can reach is not coverage, it is a
+// permanently not-run row — and because ExitCode is 0 only when EVERY declared
+// cell passes, nine such rows would pin `make live-e2e` at exit 1 forever. A
+// tier that is always red stops being read, which costs more than the missing
+// rows do.
+//
+// So this guard is NOT "MCP is unwanted". It is the tripwire on the follow-up:
+// the commit that declares an MCP cell must be the commit that can drive one,
+// and it deletes this test rather than working around it. Spec §6 asked the
+// question, §10's 2026-07-24 amendment answers it.
+func TestCatalogueDeclaresOnlyDrivableSurfaces(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range Catalogue() {
+		for _, surface := range scenario.Surfaces {
+			if surface != SurfaceCLI {
+				t.Errorf("scenario %q declares surface %q, which the live tier has no driver for — nothing in the repo speaks MCP over stdio, so the cell could only ever be not-run (spec §10, 2026-07-24)",
+					scenario.Name, surface)
+			}
+		}
+	}
+}
+
 func TestCatalogueIsWellFormed(t *testing.T) {
 	t.Parallel()
 	names := map[string]bool{}
