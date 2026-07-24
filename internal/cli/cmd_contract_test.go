@@ -946,3 +946,67 @@ func TestContractAdopt(t *testing.T) {
 		}
 	})
 }
+
+// Every contract sub-verb must accept its flags AFTER the positional id,
+// because that is the order its OWN usage string tells the caller to use.
+//
+// This is not a style preference. Go's flag package stops parsing at the
+// first non-flag token, so `contract deprecate <id> --successor X --sunset Y`
+// leaves both flags unparsed, fails the required-flag check, and prints the
+// very usage line the caller just followed. `contract adopt` already lifts
+// the id before Parse and documents why; its three siblings did not, and no
+// test caught it because every existing test passes the flags FIRST — the
+// order that works, not the order that is advertised.
+//
+// The live tier is what found it: driving the real binary the way the usage
+// string reads produced exit 2 on `contract deprecate`.
+func TestContractSubVerbsAcceptFlagsAfterTheID(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		verb string
+		args []string
+	}{
+		{"deprecate", []string{"deprecate", "XC-axon-depme", "--successor", "XC-axon-depme@2.0.0", "--sunset", "2026-12-31"}},
+		{"publish", []string{"publish", "XC-axon-depme", "--bump", "minor"}},
+		{"retire", []string{"retire", "XC-axon-depme", "--override"}},
+	} {
+		t.Run(tc.verb, func(t *testing.T) {
+			t.Parallel()
+			mirrorDir := t.TempDir()
+			writeContractDescriptor(t, mirrorDir, "depme", "1.0.0")
+			writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-depme", "publish", "axon")
+
+			fake := &fakeLifecycleFunnel{}
+			cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+			io, _, errOut := newIO()
+			code := cmd.Run(context.Background(), tc.args, io)
+
+			// Exit 2 is the usage/parse failure specifically. A later
+			// refusal (legality, preconditions) is a different question and
+			// is covered by the tests above — this one asserts only that the
+			// ARGUMENTS were understood.
+			if code == 2 {
+				t.Fatalf("`a2a contract %s <id> --flags...` exited 2 (usage) — the flags after the id were not parsed; stderr=%s",
+					tc.verb, errOut.String())
+			}
+		})
+	}
+}
+
+// The flags-first order must keep working — the fix lifts the id out, it does
+// not move it. Both orders are legal; neither is the only one.
+func TestContractSubVerbsStillAcceptFlagsBeforeTheID(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "depme", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-depme", "publish", "axon")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"deprecate", "--successor", "XC-axon-depme@2.0.0", "--sunset", "2026-12-31", "XC-axon-depme"}, io)
+	if code == 2 {
+		t.Fatalf("flags-before-id exited 2 (usage); stderr=%s", errOut.String())
+	}
+}
