@@ -157,3 +157,8 @@ entries:
     class: policy
     title: Computed compatibility could not be evaluated against the prior version's baseline
     applies_to: internal/validate.CheckComputedCompatibility (§5.4b, D-010) — an unparseable prior fixture, an uncompilable schema, or an ambiguous fixture->schema mapping; fail-closed per D-B. Deliberately carries NO CC-### — CC-080 is "a breaking change published as a minor", which is POL-007's case; "the baseline is unusable" has no corner case of its own, and the emitting code leaves CCRef empty to say so
+
+  - code: POL-009
+    class: policy
+    title: Contract declares a JSON-Schema format but publishes no schema or valid fixtures
+    applies_to: internal/validate.CheckContractPublishable (§5.4b, D-010) — read by BOTH `a2a contract publish` and `validate --ci`. Without a published baseline §5.4b's compat check has nothing to compute against, so the guarantee would be opt-in; §5.4b hands non-JSON-Schema formats to the owner's own CI, so they are not subject to this

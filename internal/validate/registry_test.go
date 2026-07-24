@@ -192,6 +192,15 @@ func TestRegistryClosure(t *testing.T) {
 		record([]Violation{*pol008.Violation})
 	}
 
+	// POL-009: a JSON-Schema contract published with no baseline to
+	// compute against (D-D).
+	if v := CheckContractPublishable(PublishableInput{
+		SchemaFormat: "json-schema-2020-12",
+		ContractID:   "XC-axon-ingest",
+	}); v != nil {
+		record([]Violation{*v})
+	}
+
 	for _, code := range append(append(registry.CodesInClass("referential"), registry.CodesInClass("lifecycle")...), registry.CodesInClass("policy")...) {
 		if !produced[code] {
 			t.Errorf("registry code %q is never produced by any exercised path in this test", code)
