@@ -488,6 +488,36 @@ func contractResolveNewSlug(positional, viaFlag, viaField string) (string, error
 
 // runPublish implements `a2a contract publish <id> [--version <semver> |
 // --bump major|minor|patch] [--generated-from-digest <hex>]`.
+// parseArgsAnyOrder parses fs while accepting positional arguments BEFORE the
+// flags, and returns the positionals in the order they were written.
+//
+// It exists because Go's flag package stops parsing at the first non-flag
+// token, so `contract deprecate <id> --successor X --sunset Y` leaves both
+// flags unset — and every one of these sub-verbs prints a usage line that
+// tells the caller to write exactly that. The command documented an order it
+// then refused, which is worse than either order alone: following the help
+// text is what breaks.
+//
+// `contract adopt` and `feedback new` each already carried a private copy of
+// this lift. This is the third occurrence and the one that made it a defect
+// rather than a quirk, so the logic has one home now.
+//
+// Both orders stay legal — flags-first callers (including every test written
+// before this was found) are unaffected, because the lifted positionals are
+// concatenated with whatever fs.Args() reports.
+func parseArgsAnyOrder(fs *flag.FlagSet, args []string) ([]string, error) {
+	var lifted []string
+	rest := args
+	for len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+		lifted = append(lifted, rest[0])
+		rest = rest[1:]
+	}
+	if err := fs.Parse(rest); err != nil {
+		return nil, err
+	}
+	return append(lifted, fs.Args()...), nil
+}
+
 func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("contract publish", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
@@ -495,14 +525,15 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 	bump := fs.String("bump", "", "major|minor|patch (bump the prior published version)")
 	generatedFromDigest := fs.String("generated-from-digest", "", "optional §5.3 generated_from.source_digest to record")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
-	if err := fs.Parse(args); err != nil {
+	positional, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
-	if fs.NArg() != 1 {
+	if len(positional) != 1 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract publish <id> [--version <semver>|--bump major|minor|patch]")
 		return 2
 	}
-	id := fs.Arg(0)
+	id := positional[0]
 	if *version == "" && *bump == "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "contract publish: one of --version or --bump is required")
 		return 2
@@ -660,14 +691,15 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 	successor := fs.String("successor", "", "successor XC-id@version (required)")
 	sunset := fs.String("sunset", "", "sunset date, YYYY-MM-DD (required)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
-	if err := fs.Parse(args); err != nil {
+	positional, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
-	if fs.NArg() != 1 || *successor == "" || *sunset == "" {
+	if len(positional) != 1 || *successor == "" || *sunset == "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract deprecate <id> --successor <XC-id@version> --sunset <date>")
 		return 2
 	}
-	id := fs.Arg(0)
+	id := positional[0]
 
 	resolved := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
@@ -812,14 +844,15 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 	version := fs.String("version", "", "version scope")
 	override := fs.Bool("override", false, "human-gated override (§5.4)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
-	if err := fs.Parse(args); err != nil {
+	positional, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
-	if fs.NArg() != 1 {
+	if len(positional) != 1 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract retire <id> [--version <semver>] [--override]")
 		return 2
 	}
-	id := fs.Arg(0)
+	id := positional[0]
 
 	resolved := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
@@ -1097,14 +1130,15 @@ func (c *ContractCommand) runDiff(ctx context.Context, args []string, stdio IO) 
 	fs := flag.NewFlagSet("contract diff", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	jsonOut := fs.Bool("json", false, "JSON output")
-	if err := fs.Parse(args); err != nil {
+	positional, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
-	if fs.NArg() != 3 {
+	if len(positional) != 3 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract diff <id> <v1> <v2> [--json]")
 		return 2
 	}
-	id, v1, v2 := fs.Arg(0), fs.Arg(1), fs.Arg(2)
+	id, v1, v2 := positional[0], positional[1], positional[2]
 	if v1 == v2 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "contract diff: v1 and v2 are the same version")
 		return 1
@@ -1172,30 +1206,23 @@ func (c *ContractCommand) runDiff(ctx context.Context, args []string, stdio IO) 
 // envelope artifacts. A system therefore could not become a registered
 // consumer at all, so a producer's retire never had anyone to wait for.
 func (c *ContractCommand) runAdopt(ctx context.Context, args []string, stdio IO) int {
-	// The id is lifted out BEFORE flag.Parse, so both orders work —
-	// Go's flag package stops at the first non-flag token, which would
-	// otherwise make `adopt <id> --major 2` silently drop the flag (the
-	// same guard `a2a feedback new` documents for its own kind arg).
+	// Both argument orders work, via the shared parseArgsAnyOrder — this
+	// verb carried the only copy of that lift until its three siblings were
+	// found to be missing it.
 	fs := flag.NewFlagSet("contract adopt", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	major := fs.Int("major", 0, "pinned major version to build against (default: the contract's currently published major)")
 	note := fs.String("note", "", "optional free-text rationale recorded with the dependency")
 
-	var id string
-	rest := args
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		id, rest = args[0], args[1:]
-	}
-	if err := fs.Parse(rest); err != nil {
+	positional, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
-	if id == "" && fs.NArg() == 1 {
-		id = fs.Arg(0)
-	}
-	if id == "" || fs.NArg() > 1 {
+	if len(positional) != 1 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract adopt <XC-id> [--major <n>] [--note <text>]")
 		return 2
 	}
+	id := positional[0]
 
 	parsed, err := artifact.ParseID(id)
 	if err != nil || parsed.Prefix != "XC" {
