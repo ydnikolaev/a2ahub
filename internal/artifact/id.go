@@ -97,6 +97,20 @@ func MintStandingID(prefix, system, slug string) (string, error) {
 	if err := validateMintTriple(op, prefix, system, slug); err != nil {
 		return "", err
 	}
+	// The slug is shape-checked against the SAME standingSlugShape ParseID
+	// uses, so this function cannot mint an id its own parser and the
+	// envelope schema would reject.
+	//
+	// It was previously unchecked, and the gap was reachable from the CLI:
+	// `a2a contract new <slug>` takes the slug positionally, so
+	// `a2a contract new --slug my-thing` passed the literal "--slug" through
+	// as the slug and minted `XC-bravo---slug` — a draft that `a2a validate`
+	// then refused with SCH-007 on the very field the tool had generated,
+	// while `my-thing` was discarded without a word (observed on P36's live
+	// matrix, 2026-07-24).
+	if !standingSlugShape.MatchString(slug) {
+		return "", &Error{Op: op, Input: slug, Err: ErrMalformedID}
+	}
 	return prefix + "-" + system + "-" + slug, nil
 }
 
