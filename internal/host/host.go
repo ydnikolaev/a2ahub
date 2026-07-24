@@ -98,7 +98,7 @@ type StatusRequest struct {
 // The check run is named `a2a-validate` on an un-migrated space and
 // `a2a-validate / <reusable-job>` on a P33-migrated one (GitHub names a
 // called workflow's run `<caller-job> / <reusable-job>`); both shapes resolve
-// here — see requiredCheckRunName (spec 34 §2).
+// here — see selectRequiredCheckRun (spec 34 §2).
 type CheckStatusResult struct {
 	// State is the check's run state: "queued" | "in_progress" | "completed".
 	State string
