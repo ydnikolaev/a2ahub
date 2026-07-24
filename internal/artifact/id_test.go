@@ -331,3 +331,59 @@ func (d deterministicEntropy) Read(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
+
+// MintStandingID must never produce an id its own ParseID and the envelope
+// schema would reject. The slug was previously unchecked, and the gap was
+// reachable straight from the CLI: `a2a contract new <slug>` takes the slug
+// positionally, so `a2a contract new --slug my-thing` minted
+// `XC-bravo---slug` from the literal flag name and silently discarded
+// `my-thing`. `a2a validate` then refused the draft with SCH-007 on the one
+// field the tool itself had generated (observed on P36's live matrix,
+// 2026-07-24).
+func TestMintStandingIDRejectsAMalformedSlug(t *testing.T) {
+	t.Parallel()
+
+	for name, slug := range map[string]string{
+		"a flag name":       "--slug",
+		"a leading hyphen":  "-thing",
+		"a trailing hyphen": "thing-",
+		"a double hyphen":   "my--thing",
+		"uppercase":         "MyThing",
+		"an underscore":     "my_thing",
+		"a space":           "my thing",
+		"a path separator":  "my/thing",
+		"a dot":             "my.thing",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got, err := MintStandingID("XC", "bravo", slug)
+			if err == nil {
+				t.Fatalf("MintStandingID minted %q from slug %q — ParseID and the envelope schema both reject it", got, slug)
+			}
+			if !errors.Is(err, ErrMalformedID) {
+				t.Errorf("err = %v, want ErrMalformedID", err)
+			}
+		})
+	}
+}
+
+// The shapes a standing slug is meant to allow must keep working — the guard
+// above must not be so strict that it refuses legitimate slugs.
+func TestMintStandingIDAcceptsLegitimateSlugs(t *testing.T) {
+	t.Parallel()
+
+	for _, slug := range []string{"ingest", "todo-feed", "matrix-contract-v2", "v2", "a1b2c3"} {
+		want := "XC-bravo-" + slug
+		got, err := MintStandingID("XC", "bravo", slug)
+		if err != nil {
+			t.Fatalf("MintStandingID(%q): %v", slug, err)
+		}
+		if got != want {
+			t.Errorf("MintStandingID(%q) = %q, want %q", slug, got, want)
+		}
+		// Round-trip: what Mint produces, Parse must accept.
+		if _, err := ParseID(got); err != nil {
+			t.Errorf("ParseID(%q): %v", got, err)
+		}
+	}
+}
