@@ -780,7 +780,7 @@ func TestEquivSubmit(t *testing.T) {
 func TestEquivNew(t *testing.T) {
 	t.Parallel()
 	cliStaging := t.TempDir()
-	cliCmd := cli.NewNewCommand(cliStaging, "beta", equivCLIActorResolver("agent", "bot"))
+	cliCmd := cli.NewNewCommand(cliStaging, "beta", equivCLIActorResolver("agent", "bot"), nil)
 	runCLICommand(t, cliCmd, []string{"question", "--field", "to=axon"})
 	cliEntries, err := os.ReadDir(cliStaging)
 	if err != nil || len(cliEntries) != 1 {
@@ -921,7 +921,7 @@ func TestEquivContractRetire(t *testing.T) {
 func TestEquivContractNew(t *testing.T) {
 	t.Parallel()
 	cliStaging := t.TempDir()
-	newCmd := cli.NewNewCommand(cliStaging, "beta", equivCLIActorResolver("agent", "bot"))
+	newCmd := cli.NewNewCommand(cliStaging, "beta", equivCLIActorResolver("agent", "bot"), nil)
 	cliCmd := cli.NewContractCommand(newCmd, nil, "", "fixture-space", "beta", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
 	runCLICommand(t, cliCmd, []string{"new", "widget-equiv"})
 	cliEntries, err := os.ReadDir(cliStaging)

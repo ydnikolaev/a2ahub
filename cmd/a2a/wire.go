@@ -192,7 +192,7 @@ func buildCommands() map[string]command {
 			// 2; harness/config sources have no live provider yet (zero).
 			return cli.ResolveActor(f, cli.HarnessDefaults{}, cli.ConfigActor{})
 		}
-		return cli.NewNewCommand(p.staging, cfg.System, resolve).Run(context.Background(), args, stdio(stdout, stderr))
+		return cli.NewNewCommand(p.staging, cfg.System, resolve, connectedSpaceIDs(cfg)).Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["validate"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
@@ -515,7 +515,7 @@ func runContract(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return failf(stderr, "a2a contract: no project config (run `a2a init` first): %v", err)
 	}
-	newCmd := cli.NewNewCommand(p.staging, cfg.System, actorResolver())
+	newCmd := cli.NewNewCommand(p.staging, cfg.System, actorResolver(), connectedSpaceIDs(cfg))
 	deps, code := resolveLifecycleDeps(ctx, p, args, stderr)
 	if code >= 0 {
 		return code
@@ -697,6 +697,13 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	// Resolve the target space from the artifact's `space` field.
 	ref, ok := findSpace(cfg, facts[0].space)
 	if !ok {
+		// An unfilled `<...>` placeholder is a draft `a2a new` never completed,
+		// not a mis-connected space — quoting the placeholder back reads as a
+		// broken config. SubmitCommand.Run re-checks this too (submitIsPlaceholder);
+		// this is the config-only layer that fires first for the real binary.
+		if strings.HasPrefix(facts[0].space, "<") && strings.HasSuffix(facts[0].space, ">") {
+			return failf(stderr, "a2a submit: the draft's space was never filled in (re-run `a2a new`, or pass `--field space=<id>`)")
+		}
 		return failf(stderr, "a2a submit: artifact space %q is not a connected space (run `a2a connect`)", facts[0].space)
 	}
 
@@ -948,6 +955,17 @@ func findSpace(cfg space.ProjectConfig, spaceID string) (space.Ref, bool) {
 		}
 	}
 	return space.Ref{}, false
+}
+
+// connectedSpaceIDs lists the ids of every space registered in the project
+// config, so `a2a new` can default the artifact's `space:` field when exactly
+// one space is connected (cli.NewNewCommand, cmd_new.go).
+func connectedSpaceIDs(cfg space.ProjectConfig) []string {
+	ids := make([]string, 0, len(cfg.Spaces))
+	for _, r := range cfg.Spaces {
+		ids = append(ids, r.ID)
+	}
+	return ids
 }
 
 func loadManifest(mirrorDir string) (space.Manifest, error) {

@@ -108,7 +108,7 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 	case "disconnect":
 		return cli.NewDisconnectCommand("", "", "", nil), true
 	case "new":
-		return cli.NewNewCommand("", "", nil), true
+		return cli.NewNewCommand("", "", nil, nil), true
 	case "validate":
 		return cli.NewValidateCommand(nil, ""), true
 	case "sync":
