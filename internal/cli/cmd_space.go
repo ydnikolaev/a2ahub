@@ -614,7 +614,11 @@ func spaceUpdateDirectiveLines(owner, name, baseBranch string) []string {
 	return []string{
 		"scope: space directive — prerequisite (spec 35 §T3: this PR cannot merge until protection stops requiring the old flat context)",
 		"  why: the reusable-workflow caller (spec 33 §11) surfaces the compound context \"a2a-validate / validate\", never the old flat \"a2a-validate\"",
-		fmt.Sprintf(`  run: gh api --method PATCH -H "Accept: application/vnd.github+json" repos/%s/branches/%s/protection/required_status_checks -f strict=false -f 'contexts[]=a2a-validate / validate'`, repo, baseBranch),
+		// Byte-identical to docs/runbooks/space-bootstrap.md's "P33
+		// migration" step — that runbook is the SSOT an operator already
+		// follows, and two different commands for one job is how a
+		// half-applied protection change happens.
+		fmt.Sprintf(`  run: gh api -X PUT repos/%s/branches/%s/protection/required_status_checks -f 'checks[][context]=a2a-validate / validate'`, repo, baseBranch),
 		"scope: space directive — cleanup (optional: P33 removed the need for this secret)",
 		fmt.Sprintf("  run: gh secret delete A2A_BINARY_FETCH_TOKEN --repo %s", repo),
 	}
