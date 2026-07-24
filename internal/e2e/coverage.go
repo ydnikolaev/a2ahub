@@ -78,6 +78,7 @@ var coverageManifest = []coverageEntry{
 
 	// --- Authoring -------------------------------------------------------
 	{Verb: "new", Txtar: "new_validate.txtar"},
+	{Verb: "space", Txtar: "space_init.txtar"},
 	{Verb: "template", Txtar: "template_list.txtar"},
 	{Verb: "validate", Txtar: "new_validate.txtar"},
 
