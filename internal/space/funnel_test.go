@@ -353,3 +353,212 @@ func TestDirectGitNoHub(t *testing.T) {
 		t.Fatalf("result = %+v, want a pending-merge PR", result)
 	}
 }
+
+// spaceInfraPaths is the fixed set spec 35 §2 T1 admits when
+// SubmitRequest.AllowSpaceInfrastructure is set.
+var spaceInfraPaths = []string{
+	"space.yaml",
+	"CODEOWNERS",
+	"BRANCH-PROTECTION.md",
+	".github/workflows/a2a-validate.yml",
+}
+
+// TestFunnelSpaceInfrastructureDefaultRefused covers spec 35 §2 T1: with
+// AllowSpaceInfrastructure left at its zero value (false), every
+// space-infrastructure path is refused exactly like any other
+// out-of-section path — the existing behaviour is unchanged.
+func TestFunnelSpaceInfrastructureDefaultRefused(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range spaceInfraPaths {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+
+			fx := spacefixture.New(t, "axon")
+			l, err := NewLayout("axon")
+			if err != nil {
+				t.Fatalf("NewLayout: %v", err)
+			}
+			req := newTestSubmitRequest(fx, "axon", l)
+			req.Files = []FileWrite{{Path: path, Content: []byte("infra\n")}}
+			// AllowSpaceInfrastructure left unset (false) — the default.
+
+			fake := host.NewFakeHost()
+			funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+			_, err = funnel.Submit(context.Background(), req)
+			if !errors.Is(err, ErrWrongSection) {
+				t.Fatalf("Submit(%s) error = %v, want ErrWrongSection", path, err)
+			}
+			if len(fake.Pushes) != 0 || len(fake.Opens) != 0 {
+				t.Fatalf("expected zero git-host mutation on section refusal, got pushes=%d opens=%d", len(fake.Pushes), len(fake.Opens))
+			}
+		})
+	}
+}
+
+// TestFunnelSpaceInfrastructureAllowed covers spec 35 §2 T1: with
+// AllowSpaceInfrastructure set, every fixed space-infrastructure path is
+// admitted past the section guard and the write proceeds to completion.
+func TestFunnelSpaceInfrastructureAllowed(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range spaceInfraPaths {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+
+			fx := spacefixture.New(t, "axon")
+			l, err := NewLayout("axon")
+			if err != nil {
+				t.Fatalf("NewLayout: %v", err)
+			}
+			req := newTestSubmitRequest(fx, "axon", l)
+			req.Files = []FileWrite{{Path: path, Content: []byte("infra\n")}}
+			req.AllowSpaceInfrastructure = true
+
+			fake := host.NewFakeHost()
+			funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+			result, err := funnel.Submit(context.Background(), req)
+			if err != nil {
+				t.Fatalf("Submit(%s): %v", path, err)
+			}
+			if result.State != WriteStatePendingMerge {
+				t.Fatalf("Submit(%s) State = %v, want %v", path, result.State, WriteStatePendingMerge)
+			}
+		})
+	}
+}
+
+// TestFunnelSpaceInfrastructureDoesNotWidenSectionGuard confirms
+// AllowSpaceInfrastructure only ADDS the fixed infra path set — it does
+// not otherwise loosen the section guard: a foreign system's section path
+// is still refused even with the flag set.
+func TestFunnelSpaceInfrastructureDoesNotWidenSectionGuard(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+	other, err := NewLayout("seomatrix")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req.Files = []FileWrite{{Path: other.Exchange("XQ-seomatrix-20260721-abcd"), Content: []byte("x")}}
+	req.AllowSpaceInfrastructure = true
+
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+	_, err = funnel.Submit(context.Background(), req)
+	if !errors.Is(err, ErrWrongSection) {
+		t.Fatalf("Submit error = %v, want ErrWrongSection", err)
+	}
+	if len(fake.Pushes) != 0 || len(fake.Opens) != 0 {
+		t.Fatalf("expected zero git-host mutation on section refusal, got pushes=%d opens=%d", len(fake.Pushes), len(fake.Opens))
+	}
+}
+
+// TestFunnelSpaceInfrastructureFlagDoesNotWeakenCleanliness is the security
+// regression net for the infra route: AllowSpaceInfrastructure must not
+// reopen the traversal/absolute-path holes sectionOK already closes. Every
+// path here is refused whether or not it superficially resembles an infra
+// path.
+func TestFunnelSpaceInfrastructureFlagDoesNotWeakenCleanliness(t *testing.T) {
+	t.Parallel()
+
+	badPaths := []string{
+		".github/../beta/evil.md", // collapses OUT of .github/ once cleaned
+		"/etc/passwd",             // absolute
+		".githubfoo/x",            // NOT anchored under .github/
+	}
+	for _, path := range badPaths {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+
+			fx := spacefixture.New(t, "axon")
+			l, err := NewLayout("axon")
+			if err != nil {
+				t.Fatalf("NewLayout: %v", err)
+			}
+			req := newTestSubmitRequest(fx, "axon", l)
+			req.Files = []FileWrite{{Path: path, Content: []byte("x")}}
+			req.AllowSpaceInfrastructure = true
+
+			fake := host.NewFakeHost()
+			funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+			_, err = funnel.Submit(context.Background(), req)
+			if !errors.Is(err, ErrWrongSection) {
+				t.Fatalf("Submit(%s) error = %v, want ErrWrongSection", path, err)
+			}
+			if len(fake.Pushes) != 0 || len(fake.Opens) != 0 {
+				t.Fatalf("expected zero git-host mutation, got pushes=%d opens=%d", len(fake.Pushes), len(fake.Opens))
+			}
+		})
+	}
+}
+
+// TestFunnelAxonCodeownersResolvesBySectionNotInfra documents the
+// distinction the brief calls out: "axon/CODEOWNERS" is inside axon's OWN
+// section, so sectionOK already admits it — it was always allowed, with
+// no AllowSpaceInfrastructure involved. spaceInfraOK itself must NOT be
+// the rule that admits this path (it only recognizes the repo-root
+// CODEOWNERS, not one nested under a system's section).
+func TestFunnelAxonCodeownersResolvesBySectionNotInfra(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+	req.Files = []FileWrite{{Path: "axon/CODEOWNERS", Content: []byte("x")}}
+	// AllowSpaceInfrastructure intentionally left false: this write must
+	// succeed on the section rule alone.
+
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+	if _, err := funnel.Submit(context.Background(), req); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if spaceInfraOK("axon/CODEOWNERS") {
+		t.Fatalf(`spaceInfraOK("axon/CODEOWNERS") = true, want false — only the section rule admits this path`)
+	}
+}
+
+// TestSpaceInfraOKAnchored is the unit-level anchoring net for
+// spaceInfraOK: every entry in the fixed infra set matches, and every
+// near-miss (nested-under-a-section, prefix-but-not-directory,
+// traversal, absolute) is rejected.
+func TestSpaceInfraOKAnchored(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"space.yaml", true},
+		{"CODEOWNERS", true},
+		{"BRANCH-PROTECTION.md", true},
+		{".github/workflows/a2a-validate.yml", true},
+		{".github/x", true},
+		{"axon/CODEOWNERS", false},
+		{"axon/space.yaml", false},
+		{".githubfoo/x", false},
+		{".github/../beta/evil.md", false},
+		{"/etc/passwd", false},
+		{"beta/anything.md", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		if got := spaceInfraOK(tc.path); got != tc.want {
+			t.Errorf("spaceInfraOK(%q) = %v, want %v", tc.path, got, tc.want)
+		}
+	}
+}
