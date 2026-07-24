@@ -157,18 +157,38 @@ func (h *harness) DraftAndSubmit(ctx context.Context, c *checkout, artifactType 
 	return submitted{ID: id, Branch: branch, PRNumber: pr.Number, HeadSHA: pr.HeadSHA}, nil
 }
 
-// pullForBranch finds the open PR whose head is branch.
+// pullForBranch finds the PR whose head is branch, open or already closed.
+//
+// Listing only OPEN pull requests was wrong, and the second live run is what
+// showed it: this space runs auto-merge, so a write whose check goes green
+// quickly is merged — and therefore CLOSED — before the caller looks. Both
+// contract rows reported "submit left no pull request on its branch" for a PR
+// that had in fact been created, gated and merged exactly as intended. The
+// harness was asking for the wrong state, not the product failing to open a PR.
+//
+// Open is still PREFERRED: a branch can carry more than one PR over a run's
+// lifetime, and the one still open is the one a caller waiting on a gate means.
+// Falling back to the highest number picks the most recent of the closed ones.
 func (h *harness) pullForBranch(ctx context.Context, branch string) (PullState, error) {
-	pulls, err := h.Prov.ListPulls(ctx, h.Org, h.Repo, "open")
+	pulls, err := h.Prov.ListPulls(ctx, h.Org, h.Repo, "all")
 	if err != nil {
 		return PullState{}, err
 	}
+	var best PullState
+	var found bool
 	for _, p := range pulls {
-		if p.HeadRef == branch {
-			return p, nil
+		if p.HeadRef != branch {
+			continue
+		}
+		switch {
+		case !found, p.State == "open" && best.State != "open", p.State == best.State && p.Number > best.Number:
+			best, found = p, true
 		}
 	}
-	return PullState{}, fmt.Errorf("%w: %s", ErrNoPRForBranch, branch)
+	if !found {
+		return PullState{}, fmt.Errorf("%w: %s", ErrNoPRForBranch, branch)
+	}
+	return best, nil
 }
 
 // AwaitCheck waits for a PR's required check using the credential of the
