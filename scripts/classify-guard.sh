@@ -30,7 +30,7 @@ cd "$(git rev-parse --show-toplevel)"
 # never drift into a leak. PENDING entries are deliberately NOT required to be
 # gitignored (see docs/ above) until they graduate to DENY.
 ALLOW_DIRS=( .github cmd internal schemas skill space-template testkit seeds feedback web releasenotes )
-ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh )
+ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh )
 DENY_DIRS=( .agents .claude .codex .mate .sporo )   # scripts/ handled below (install.sh + e2e-authoring-smoke.sh are the public exceptions)
 DENY_FILES=( AGENTS.md CLAUDE.md )
 PENDING_DIRS=( docs )   # deferred to P6 — tracked today, tolerated by check 1, classified by check 2, exempt from check 3.
@@ -55,6 +55,7 @@ while IFS= read -r f; do
     [ "$f" = "scripts/install.sh" ] && continue
     [ "$f" = "scripts/dev-install.sh" ] && continue
     [ "$f" = "scripts/e2e-authoring-smoke.sh" ] && continue
+    [ "$f" = "scripts/release-preflight.sh" ] && continue
     flag "tracked but NOT public: $f  → 'git rm --cached $f' (private), or add it to ALLOW in scripts/classify-guard.sh (public)"
     continue
   fi
@@ -108,6 +109,9 @@ if git check-ignore -q --no-index -- scripts/install.sh; then
 fi
 if git check-ignore -q --no-index -- scripts/e2e-authoring-smoke.sh; then
   flag "scripts/e2e-authoring-smoke.sh must stay PUBLIC  → add '!scripts/e2e-authoring-smoke.sh' to .gitignore"
+fi
+if git check-ignore -q --no-index -- scripts/release-preflight.sh; then
+  flag "scripts/release-preflight.sh must stay PUBLIC (the pre-tag release gate)  → add '!scripts/release-preflight.sh' to .gitignore"
 fi
 if git check-ignore -q --no-index -- scripts/classify-guard.sh; then
   flag "scripts/classify-guard.sh must stay PUBLIC (it IS this gate)  → add '!scripts/classify-guard.sh' to .gitignore"

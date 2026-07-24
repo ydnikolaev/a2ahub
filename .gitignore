@@ -33,3 +33,4 @@ scripts/*
 !scripts/dev-install.sh
 !scripts/e2e-authoring-smoke.sh
 !scripts/classify-guard.sh
+!scripts/release-preflight.sh

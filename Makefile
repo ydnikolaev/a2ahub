@@ -20,7 +20,7 @@
 # Recipes are POSIX sh — no bashisms — even though the gate scripts they call
 # are bash (invoked explicitly via `bash`, never relying on $(SHELL)).
 
-.PHONY: check check-validators feature-lint epic-drift classify-guard workflow-lint harness-check coverage vulncheck install
+.PHONY: check check-validators feature-lint epic-drift classify-guard workflow-lint harness-check coverage vulncheck release-preflight install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -76,6 +76,10 @@ coverage: ## go test -race with coverage, gated by the coveragepolicy SSOT floor
 	go test ./... -race -covermode=atomic -coverprofile=coverage.out -count=1
 	@go run internal/coveragepolicy/covercheck.go coverage.out
 
+release-preflight: ## MUST pass before cutting a release tag: version free on the release remote + every space-template reusable pin resolves to a tag that carries the workflow. Needs network — NOT in `check`. Usage: make release-preflight VERSION=v0.6.0
+	@test -n "$(VERSION)" || { echo "release-preflight: set VERSION, e.g. make release-preflight VERSION=v0.6.0"; exit 2; }
+	@bash scripts/release-preflight.sh "$(VERSION)"
+
 vulncheck: ## govulncheck ./... gated by .govulncheck-allow.txt (NEW called vuln reds; accepted stays green). Needs network — NOT in `check`.
 	@command -v govulncheck >/dev/null 2>&1 || { echo "vulncheck: govulncheck missing — go install golang.org/x/vuln/cmd/govulncheck@latest"; exit 1; }
 	@out=$$(govulncheck ./... 2>&1) || true; \
@@ -101,7 +105,8 @@ epic-drift: ## An epic's committed docs (status.md stamp, receipts) must match i
 	  echo "epic-drift: skip — .agents/scripts/epic_docs_drift.sh absent (public checkout)."; \
 	fi
 
-harness-check: ## Run both harness gates' --teeth self-tests (private-only; presence-gated).
+harness-check: ## Run the gates' --teeth self-tests (harness gates are private/presence-gated; release-preflight is public).
+	@bash scripts/release-preflight.sh --teeth
 	@if [ -f scripts/check-feature-lint.sh ]; then \
 	  bash scripts/check-feature-lint.sh --teeth; \
 	else \
