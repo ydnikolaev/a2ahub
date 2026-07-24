@@ -432,7 +432,8 @@ func TestSpaceUpdateDryRunWritesNothing(t *testing.T) {
 	// admin-only commands, never runs them.
 	wantDirectives := []string{
 		"scope: space directive — prerequisite (spec 35 §T3: this PR cannot merge until protection stops requiring the old flat context)",
-		`  run: gh api --method PATCH -H "Accept: application/vnd.github+json" repos/acme/getvisa/branches/main/protection/required_status_checks -f strict=false -f 'contexts[]=a2a-validate / validate'`,
+		// Must stay byte-identical to the runbook's own command.
+		`  run: gh api -X PUT repos/acme/getvisa/branches/main/protection/required_status_checks -f 'checks[][context]=a2a-validate / validate'`,
 		"scope: space directive — cleanup (optional: P33 removed the need for this secret)",
 		"  run: gh secret delete A2A_BINARY_FETCH_TOKEN --repo acme/getvisa",
 	}
