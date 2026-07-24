@@ -147,3 +147,13 @@ entries:
     class: policy
     title: Retire refused, a registered consumer has not acknowledged the deprecation
     applies_to: internal/validate.CheckRetirePrecondition (§5.4/D-022, CC-081/CC-082/CC-086) — `a2a contract retire`, refused locally unless the human-gated override's full precondition set is met
+
+  - code: POL-007
+    class: policy
+    title: Declared version bump contradicts computed schema compatibility
+    applies_to: internal/validate.CheckComputedCompatibility (§5.4b, D-010, CC-080) — a declared minor/patch whose new schema rejects a fixture valid under the prior version
+
+  - code: POL-008
+    class: policy
+    title: Computed compatibility could not be evaluated against the prior version's baseline
+    applies_to: internal/validate.CheckComputedCompatibility (§5.4b, D-010) — an unparseable prior fixture, an uncompilable schema, or an ambiguous fixture->schema mapping; fail-closed per D-B. Deliberately carries NO CC-### — CC-080 is "a breaking change published as a minor", which is POL-007's case; "the baseline is unusable" has no corner case of its own, and the emitting code leaves CCRef empty to say so
