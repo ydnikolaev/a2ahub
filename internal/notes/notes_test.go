@@ -21,11 +21,14 @@ func TestLoad_CorpusIntegrity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(all) != 4 {
-		t.Fatalf("Load returned %d entries, want 4: %+v", len(all), all)
+	// Deliberately hardcoded: this is the tripwire that catches a corpus
+	// file accidentally dropped or mis-ordered. Bump it when you cut a
+	// release — that edit IS the check.
+	if len(all) != 5 {
+		t.Fatalf("Load returned %d entries, want 5: %+v", len(all), all)
 	}
 
-	wantVersions := []string{"0.2.0", "0.3.0", "0.4.0", "0.5.0"}
+	wantVersions := []string{"0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0"}
 	for i, rn := range all {
 		if rn.Version != wantVersions[i] {
 			t.Errorf("entry %d: version = %q, want %q (ascending order)", i, rn.Version, wantVersions[i])
@@ -160,7 +163,14 @@ func (erroringFS) Glob(pattern string) ([]string, error) {
 }
 
 func TestSince(t *testing.T) {
-	all := mustLoadFixtureCorpus(t)
+	// Synthetic corpus on purpose. Since is a pure range filter — its
+	// behavior has nothing to do with which releases happen to be shipped,
+	// and pinning it to the real corpus made every release edit this test's
+	// open-ended cases. The corpus itself is guarded by
+	// TestLoad_CorpusIntegrity, which is where that assertion belongs.
+	all := []ReleaseNotes{
+		{Version: "0.2.0"}, {Version: "0.3.0"}, {Version: "0.4.0"},
+	}
 
 	got := versionsOf(Since(all, "0.2.0", "0.4.0"))
 	want := []string{"0.3.0", "0.4.0"}
@@ -171,11 +181,11 @@ func TestSince(t *testing.T) {
 	assertVersionsEqual(t, `Since("",0.3.0)`, got, want)
 
 	got = versionsOf(Since(all, "0.3.0", ""))
-	want = []string{"0.4.0", "0.5.0"}
+	want = []string{"0.4.0"}
 	assertVersionsEqual(t, `Since(0.3.0,"")`, got, want)
 
 	got = versionsOf(Since(all, "", ""))
-	want = []string{"0.2.0", "0.3.0", "0.4.0", "0.5.0"}
+	want = []string{"0.2.0", "0.3.0", "0.4.0"}
 	assertVersionsEqual(t, `Since("","")`, got, want)
 }
 
