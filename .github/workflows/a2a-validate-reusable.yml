@@ -82,6 +82,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           A2A_MODE: ${{ inputs.mode }}
           A2A_BASE: ${{ inputs.base }}
+          # The PR's AUTHOR — never GITHUB_ACTOR, which is whoever triggered
+          # the run. diff-authz asks "is every changed path inside the author's
+          # own section", so resolving the author from the trigger makes the
+          # verdict depend on who pressed the button:
+          #   - false RED: a maintainer re-running a contributor's PR sees it
+          #     checked against the MAINTAINER's section;
+          #   - false GREEN (the serious one): a PR from system B illegally
+          #     touching system A's section PASSES when someone from A
+          #     re-triggers it — the single-writer boundary defeated by asking
+          #     "could you re-run CI?".
+          # A reusable workflow inherits the caller's `github` context, so the
+          # real author is available here with no new caller input — every
+          # space gets the fix by bumping the version ref alone (P33's promise).
+          # Read via env, never interpolated into the shell (injection).
+          A2A_AUTHOR: ${{ github.event.pull_request.user.login }}
           A2A_REF: ${{ inputs.a2a-ref }}
           SPACE_PATH: ${{ inputs.space-path }}
         run: |
@@ -94,6 +109,9 @@ jobs:
               exit 2
             fi
             args+=(--base "$A2A_BASE")
+            if [ -n "${A2A_AUTHOR:-}" ]; then
+              args+=(--author "$A2A_AUTHOR")
+            fi
           fi
           if [ -n "$A2A_REF" ]; then
             # Spaces: pinned module from the Go checksum DB (no local source).
