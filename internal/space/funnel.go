@@ -119,6 +119,12 @@ type WriteResult struct {
 	PRURL     string
 	CommitSHA string
 	State     WriteState
+	// AutoMergeNote is non-empty when the PR opened but auto-merge could NOT
+	// be armed — the repository forbids it, or the PR is already mergeable.
+	// The write succeeded either way, so this is not an error; it is the one
+	// thing the caller must be told, because State says "pending-merge" and
+	// nothing will act on that pending unless a human does.
+	AutoMergeNote string
 }
 
 // SubmitValidator is the consumer-side seam (rails ISP/DI) for V2
@@ -304,6 +310,9 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	return WriteResult{
 		Branch: branch, PRNumber: pr.Number, PRURL: pr.URL,
 		CommitSHA: sha, State: WriteStatePendingMerge,
+		// Carried, not swallowed: "pending-merge" over a PR nobody will
+		// merge is the one outcome the caller must not read as done.
+		AutoMergeNote: pr.AutoMergeNote,
 	}, nil
 }
 

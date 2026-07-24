@@ -524,3 +524,98 @@ func TestGraphQLSuccessStaysSuccess(t *testing.T) {
 		t.Error("IsAutoMergeAlreadyClean(nil) reported true")
 	}
 }
+
+// A repository with auto-merge DISABLED must not make `a2a submit` fail. The
+// write happened and the PR is real; only the unattended merge is
+// unavailable, and the operator needs to be told which.
+//
+// This is the case that matters in practice: `allow_auto_merge` is OFF by
+// default on a new repository, and the live getvisa space runs with it off
+// (verified 2026-07-24). Before GraphQL errors were surfaced at all, every
+// submit there quietly claimed "pending-merge" over a PR nobody would merge;
+// making the error fatal instead would have broken submit outright.
+func TestOpenPRReportsADisabledAutoMergeInsteadOfFailing(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/graphql" {
+			// GitHub's exact wording, captured from the real API.
+			_, _ = w.Write([]byte(`{"data":{"enablePullRequestAutoMerge":null},` +
+				`"errors":[{"message":"Auto merge is not allowed for this repository"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"number":7,"html_url":"https://x/pull/7","node_id":"PR_7","state":"open"}`))
+	}))
+	defer srv.Close()
+
+	h := NewGitHubHost(srv.Client(), srv.URL)
+	pr, err := h.OpenPR(context.Background(), OpenPRRequest{
+		Repo: Repo{Owner: "o", Name: "r"}, Head: "a2a/x/y", Base: "main", Title: "t",
+	})
+	if err != nil {
+		t.Fatalf("OpenPR failed on a repo with auto-merge disabled: %v", err)
+	}
+	if pr.Number != 7 {
+		t.Fatalf("PRInfo = %+v, want the created PR", pr)
+	}
+	if pr.AutoMergeArmed {
+		t.Error("AutoMergeArmed is true though GitHub refused")
+	}
+	if !strings.Contains(pr.AutoMergeNote, "Allow auto-merge") {
+		t.Errorf("AutoMergeNote = %q, want it to name the remedy", pr.AutoMergeNote)
+	}
+}
+
+// An UNRECOGNISED GraphQL failure stays fatal. A surprise must not be filed
+// under "known limitation" and shipped as a PR nobody knows is stuck.
+func TestOpenPRStillFailsOnAnUnknownGraphQLError(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/graphql" {
+			_, _ = w.Write([]byte(`{"errors":[{"message":"Resource not accessible by personal access token"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"number":8,"html_url":"https://x/pull/8","node_id":"PR_8","state":"open"}`))
+	}))
+	defer srv.Close()
+
+	h := NewGitHubHost(srv.Client(), srv.URL)
+	_, err := h.OpenPR(context.Background(), OpenPRRequest{
+		Repo: Repo{Owner: "o", Name: "r"}, Head: "a2a/x/y", Base: "main", Title: "t",
+	})
+	if err == nil {
+		t.Fatal("an unrecognised GraphQL failure was swallowed as a known limitation")
+	}
+	if !errors.Is(err, ErrGraphQLFailed) {
+		t.Errorf("err = %v, want ErrGraphQLFailed", err)
+	}
+}
+
+// A successful arming reports armed and says nothing.
+func TestOpenPRArmedReportsNoNote(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/graphql" {
+			_, _ = w.Write([]byte(`{"data":{"enablePullRequestAutoMerge":{"clientMutationId":null}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"number":9,"html_url":"https://x/pull/9","node_id":"PR_9","state":"open"}`))
+	}))
+	defer srv.Close()
+
+	h := NewGitHubHost(srv.Client(), srv.URL)
+	pr, err := h.OpenPR(context.Background(), OpenPRRequest{
+		Repo: Repo{Owner: "o", Name: "r"}, Head: "a2a/x/y", Base: "main", Title: "t",
+	})
+	if err != nil {
+		t.Fatalf("OpenPR: %v", err)
+	}
+	if !pr.AutoMergeArmed || pr.AutoMergeNote != "" {
+		t.Fatalf("PRInfo = %+v, want armed with no note", pr)
+	}
+}

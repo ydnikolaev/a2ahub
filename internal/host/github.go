@@ -245,15 +245,25 @@ func (h *GitHubHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, err
 	// so a failure here leaves a real PR that will never merge on its own.
 	// That is why AutoMerger exists and why the funnel re-arms on its
 	// idempotent-retry path — see EnableAutoMerge.
+	armed, note := true, ""
 	if err := h.armAutoMerge(ctx, op, req.Credential, created.NodeID); err != nil {
-		return PRInfo{}, err
+		note = autoMergeRefusal(err)
+		if note == "" {
+			// An unrecognised failure is a surprise, not a known limitation:
+			// surface it rather than shipping a PR nobody knows is stuck.
+			return PRInfo{}, err
+		}
+		armed = false
 	}
 
 	state := created.State
 	if state == "" {
 		state = "open"
 	}
-	return PRInfo{Number: created.Number, URL: created.HTMLURL, State: state}, nil
+	return PRInfo{
+		Number: created.Number, URL: created.HTMLURL, State: state,
+		AutoMergeArmed: armed, AutoMergeNote: note,
+	}, nil
 }
 
 // requiredCheckName is the space CI's gate job name — frozen by spec 33 §11
@@ -535,10 +545,45 @@ func (h *GitHubHost) graphQLCall(ctx context.Context, op string, cred Credential
 // funnel's repair path reports it as such rather than as an error.
 const autoMergeCleanMarker = "clean status"
 
+// autoMergeDisabledMarker is GitHub's refusal when the REPOSITORY has
+// auto-merge turned off (Settings -> Allow auto-merge). Verified against real
+// GitHub on 2026-07-24: "Auto merge is not allowed for this repository".
+//
+// This is the reason that matters most in practice: `allow_auto_merge` is
+// OFF by default on a new repository, and the live getvisa space runs with it
+// off — so before GraphQL errors were surfaced at all, every `a2a submit`
+// there quietly opened a PR that needed a manual merge while reporting
+// "pending-merge".
+const autoMergeDisabledMarker = "auto merge is not allowed"
+
+// autoMergeRefusal classifies a failed arming attempt into a NON-FATAL note,
+// or returns "" when the failure is a genuine surprise the caller must not
+// paper over.
+//
+// The two known refusals both leave a real, open PR: the repository forbids
+// auto-merge, or the PR is already mergeable so there is nothing to wait for.
+// Failing the whole submit for either would be wrong — the write happened.
+// Reporting nothing would be worse, and is precisely what swallowing the
+// GraphQL error used to do.
+func autoMergeRefusal(err error) string {
+	if !errors.Is(err, ErrGraphQLFailed) {
+		return ""
+	}
+	lower := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(lower, autoMergeDisabledMarker):
+		return "auto-merge is disabled on this repository — merge the PR yourself, " +
+			"or enable Settings -> General -> Allow auto-merge so a2a can arm it"
+	case strings.Contains(lower, autoMergeCleanMarker):
+		return "the PR is already mergeable, so GitHub declined to arm auto-merge — merge it"
+	}
+	return ""
+}
+
 // IsAutoMergeAlreadyClean reports whether err is GitHub declining to arm
 // auto-merge because the PR can be merged right now.
 func IsAutoMergeAlreadyClean(err error) bool {
-	return errors.Is(err, ErrGraphQLFailed) && strings.Contains(err.Error(), autoMergeCleanMarker)
+	return errors.Is(err, ErrGraphQLFailed) && strings.Contains(strings.ToLower(err.Error()), autoMergeCleanMarker)
 }
 
 func (h *GitHubHost) doJSON(ctx context.Context, op, method, url string, cred Credential, body any, out any) error {

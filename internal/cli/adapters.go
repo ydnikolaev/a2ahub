@@ -675,3 +675,21 @@ func NewNoopCacheRemover() *NoopCacheRemover { return &NoopCacheRemover{} }
 
 // RemoveSpace implements CacheRemover as a pure no-op.
 func (NoopCacheRemover) RemoveSpace(context.Context, string) error { return nil }
+
+// warnAutoMerge surfaces a write's auto-merge note on stderr, if any.
+//
+// The note is non-empty when the PR opened but auto-merge could not be armed
+// — the repository has it disabled, or the PR is already mergeable. Neither
+// is a failed write, so the verb still succeeds; but the state it reports is
+// "pending-merge", and nothing will act on that pending unless a human does.
+// Saying so is the difference between a PR that is in flight and a PR that
+// only looks like it.
+//
+// Written to Stderr deliberately: stdout stays the machine-readable result
+// line that harnesses parse.
+func warnAutoMerge(stdio IO, verb, note string) {
+	if note == "" {
+		return
+	}
+	_, _ = fmt.Fprintf(stdio.Stderr, "%s: NOTE auto-merge is not armed — %s\n", verb, note)
+}

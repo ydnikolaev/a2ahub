@@ -445,6 +445,7 @@ func (d lifecycleDeps) submit(ctx context.Context, req space.SubmitRequest, verb
 		_, _ = fmt.Fprintf(stdio.Stdout, "%s: already submitted (PR %s, %s)\n", verb, result.PRURL, result.State)
 	default:
 		_, _ = fmt.Fprintf(stdio.Stdout, "%s: opened PR %s for %s (%s)\n", verb, result.PRURL, strings.Join(ids, ", "), result.State)
+		warnAutoMerge(stdio, verb, result.AutoMergeNote)
 	}
 	return 0
 }

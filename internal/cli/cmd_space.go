@@ -844,6 +844,7 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 		_, _ = fmt.Fprintf(stdio.Stdout, "space update: already submitted (PR %s, %s)\n", result.PRURL, result.State)
 	default:
 		_, _ = fmt.Fprintf(stdio.Stdout, "space update: opened PR %s (%s)\n", result.PRURL, result.State)
+		warnAutoMerge(stdio, "space update", result.AutoMergeNote)
 	}
 	return 0
 }
