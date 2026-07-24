@@ -192,7 +192,18 @@ type happySpaceParticipantsDoc struct {
 // for why that ONE sub-assertion goes through h.Prov.do instead).
 func happySpaceInit(ctx context.Context, h *harness) Result {
 	const scenario = "space-init"
-	mirrorDir := filepath.Join(h.A.Dir, ".a2a", "cache", "mirrors", h.SpaceSlug)
+
+	// Sync FIRST. `a2a connect` leaves the mirror directory empty — proven
+	// live, not assumed — so reading space.yaml straight after harness
+	// construction reads a hole and reports the scaffold as missing when it
+	// is actually fine. The product question this raises (should connect
+	// populate the mirror?) is a backlog row, not this row's verdict.
+	if _, stderr, syncErr := h.A.Run(ctx, "sync"); syncErr != nil {
+		return happyResultFromErr(scenario, SystemA,
+			fmt.Errorf("sync before reading the scaffold: %w: %s", syncErr, stderr),
+			"a2a sync populates the mirror so the scaffold can be read")
+	}
+	mirrorDir := h.A.MirrorDir()
 
 	raw, err := os.ReadFile(filepath.Join(mirrorDir, "space.yaml"))
 	if err != nil {
@@ -324,6 +335,28 @@ const happyLifecycleTransitionsSlug = "matrix-lifecycle-req"
 // submit's own local branch so far (commitOne forks the next write from
 // CURRENT HEAD, which the write funnel deliberately leaves the working tree
 // parked on) — this is the intended chaining, not a state leak.
+// happyLandAndSync waits for a submitted write to actually LAND on main and
+// then refreshes the checkout's mirror.
+//
+// Both multi-write rows need it and neither had it, which is why both failed
+// live with "cannot read <id>": a second transition (`withdraw`, `contract
+// deprecate`) reads the artifact out of the local mirror, and the artifact is
+// only there once its PR merged AND a sync pulled it down. Submitting and
+// immediately transitioning asks the CLI to act on something that does not
+// exist yet anywhere it can see — the harness's mistake, not the product's.
+func happyLandAndSync(ctx context.Context, h *harness, c *checkout, prNumber int) error {
+	if _, err := h.AwaitCheck(ctx, c, prNumber); err != nil {
+		return fmt.Errorf("waiting for PR #%d's required check: %w", prNumber, err)
+	}
+	if _, err := happyAwaitMerged(ctx, h, prNumber); err != nil {
+		return fmt.Errorf("waiting for PR #%d to merge: %w", prNumber, err)
+	}
+	if _, stderr, err := c.Run(ctx, "sync"); err != nil {
+		return fmt.Errorf("sync after PR #%d merged: %w: %s", prNumber, err, stderr)
+	}
+	return nil
+}
+
 func happyLifecycleTransitions(ctx context.Context, h *harness, system string, c *checkout) Result {
 	const scenario = "lifecycle-transitions"
 
@@ -335,6 +368,11 @@ func happyLifecycleTransitions(ctx context.Context, h *harness, system string, c
 	sub, err := h.DraftAndSubmit(ctx, c, "requirement", "--slug", happyLifecycleTransitionsSlug)
 	if err != nil {
 		return happyResultFromErr(scenario, system, err, "publish (the first submit) opens its own PR")
+	}
+
+	if err := happyLandAndSync(ctx, h, c, sub.PRNumber); err != nil {
+		return happyResultFromErr(scenario, system, err,
+			"the published requirement lands on main and reaches the mirror before withdraw reads it")
 	}
 
 	if _, stderr, err := c.Run(ctx, "withdraw", sub.ID); err != nil {
@@ -387,6 +425,11 @@ func happyContractLifecycle(ctx context.Context, h *harness, system string, c *c
 		return happyResultFromErr(scenario, system, err, "submit publishes a new contract, opening its own PR")
 	}
 
+	if err := happyLandAndSync(ctx, h, c, sub.PRNumber); err != nil {
+		return happyResultFromErr(scenario, system, err,
+			"the published contract lands on main and reaches the mirror before deprecate reads it")
+	}
+
 	successor := sub.ID + "-successor@2.0.0"
 	if _, stderr, err := c.Run(ctx, "contract", "deprecate", sub.ID, "--successor", successor, "--sunset", "2020-01-01"); err != nil {
 		return happyResultFromErr(scenario, system, fmt.Errorf("a2a contract deprecate %s: %w: %s", sub.ID, err, stderr),
@@ -395,6 +438,11 @@ func happyContractLifecycle(ctx context.Context, h *harness, system string, c *c
 	deprecatePR, err := h.pullForBranch(ctx, space.BranchName(c.System, "contract-deprecate", sub.ID))
 	if err != nil {
 		return happyResultFromErr(scenario, system, err, "contract deprecate's own branch has an open PR")
+	}
+
+	if err := happyLandAndSync(ctx, h, c, deprecatePR.Number); err != nil {
+		return happyResultFromErr(scenario, system, err,
+			"the deprecation lands on main and reaches the mirror before retire reads it (retire needs a prior deprecate)")
 	}
 
 	if _, stderr, err := c.Run(ctx, "contract", "retire", sub.ID); err != nil {
@@ -509,7 +557,7 @@ func happyValidateCIBothModes(ctx context.Context, h *harness) Result {
 		return happyResultFromErr(scenario, system, err, "draft+submit opens a live PR to validate against")
 	}
 
-	if stdout, stderr, err := c.Run(ctx, "validate", "--ci", "--mode=v3-pr", "--base=main", "--author="+h.Pre.ProvisionerLogin); err != nil {
+	if stdout, stderr, err := c.RunIn(ctx, c.MirrorDir(), "validate", "--ci", "--mode=v3-pr", "--base=main", "--author="+h.Pre.ProvisionerLogin); err != nil {
 		return Result{
 			Scenario: scenario, System: system, Surface: SurfaceCLI, Verdict: VerdictFail,
 			Expected: "validate --ci --mode=v3-pr exits 0 on the just-submitted PR's own diff",
@@ -523,7 +571,7 @@ func happyValidateCIBothModes(ctx context.Context, h *harness) Result {
 			"a2a sync returns the checkout to main before validate --ci --mode=v3-full-repo")
 	}
 
-	if stdout, stderr, err := c.Run(ctx, "validate", "--ci", "--mode=v3-full-repo"); err != nil {
+	if stdout, stderr, err := c.RunIn(ctx, c.MirrorDir(), "validate", "--ci", "--mode=v3-full-repo"); err != nil {
 		return Result{
 			Scenario: scenario, System: system, Surface: SurfaceCLI, Verdict: VerdictFail,
 			Expected: "validate --ci --mode=v3-full-repo exits 0 on the clean synced mirror",
