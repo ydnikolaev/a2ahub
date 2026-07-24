@@ -12,6 +12,12 @@
 #   (a) the version you are about to cut is FREE on the remote;
 #   (b) every reusable-workflow ref the space-template pins resolves to a tag
 #       whose TREE ACTUALLY CONTAINS that workflow file.
+#   (c) the space-template's declared min_binary_version does not EXCEED the
+#       version being cut. That field is the fleet WRITE FLOOR: `a2a space
+#       update` propagates it to every space, and the funnel then refuses any
+#       write from an older binary (CC-085). A floor ahead of the newest
+#       release refuses EVERYONE — including the person trying to fix it —
+#       so a one-character typo here is a fleet-wide outage.
 #
 # Determinism note (validation doctrine §5): the only non-deterministic step is
 # the `git fetch` of the release remote. Everything after it is a pure local git
@@ -27,6 +33,7 @@ set -euo pipefail
 REMOTE="${A2A_RELEASE_REMOTE:-public}"
 REUSABLE_PATH=".github/workflows/a2a-validate-reusable.yml"
 TEMPLATE_WORKFLOWS="space-template/.github/workflows"
+TEMPLATE_MANIFEST="space-template/space.yaml"
 
 fail() { printf '\033[31m✗\033[0m %s\n' "$1" >&2; return 1; }
 ok()   { printf '\033[32m✓\033[0m %s\n' "$1"; }
@@ -79,6 +86,28 @@ assert_pins_resolve() { # $1 = repo
     return 1
   fi
   return "$rc"
+}
+
+# (c) the template's write floor must be <= the version being cut, or every
+#     space that takes the update locks out every binary in existence.
+assert_floor_not_ahead() { # $1 = repo, $2 = version (vX.Y.Z or X.Y.Z)
+  local repo="$1" want="${2#v}" floor
+  floor="$(sed -n 's/^min_binary_version:[[:space:]]*"\{0,1\}\([0-9][0-9.]*\)"\{0,1\}.*/\1/p' "$repo/$TEMPLATE_MANIFEST" 2>/dev/null | head -1)"
+  if [ -z "$floor" ]; then
+    fail "release-preflight: $TEMPLATE_MANIFEST declares no min_binary_version —
+    \`a2a space update\` could not decide any space's write floor."
+    return 1
+  fi
+  # Highest of the two per `sort -V`; if that is the floor and they differ, the
+  # floor is ahead of the release.
+  if [ "$(printf '%s\n%s\n' "$want" "$floor" | sort -V | tail -1)" = "$floor" ] && [ "$want" != "$floor" ]; then
+    fail "release-preflight: space-template min_binary_version is $floor, AHEAD of the
+    $2 being cut. \`a2a space update\` would push that floor to every space and the
+    funnel would then refuse writes from every existing binary (CC-085) — including
+    the one you would need to fix it. Fix: lower the floor, or cut >= $floor."
+    return 1
+  fi
+  ok "release-preflight: template write floor $floor is not ahead of ${2}"
 }
 
 # ── teeth: the gate must go RED on a violating fixture (offline) ──────────────
@@ -139,6 +168,41 @@ teeth() {
   fi
   ok "teeth 4: newly added caller with a bad pin → RED (ADD direction)"
 
+  # --- teeth 6/7/8: the write-floor assertion ---
+  # 6: a floor AHEAD of the version being cut → RED (the fleet-lockout case).
+  printf 'schema: space/v1\nmin_binary_version: 9.9.9\n' > "$tmp/space-template/space.yaml"
+  if out="$(assert_floor_not_ahead "$tmp" v1.0.0 2>&1)"; then
+    echo "release-preflight --teeth: FAILED — gate stayed GREEN on a floor ahead of the release" >&2
+    echo "$out" >&2; exit 1
+  fi
+  case "$out" in *AHEAD*) ;; *)
+    echo "release-preflight --teeth: FAILED — red, but not with the floor-ahead message" >&2
+    echo "$out" >&2; exit 1 ;;
+  esac
+  ok "teeth 6: template floor ahead of the release → RED"
+
+  # 7: a floor at or below the version → GREEN (no false positive), including
+  #    the equal case and a two-digit component sort -V must order correctly.
+  printf 'schema: space/v1\nmin_binary_version: 0.9.0\n' > "$tmp/space-template/space.yaml"
+  if ! out="$(assert_floor_not_ahead "$tmp" v0.10.0 2>&1)"; then
+    echo "release-preflight --teeth: FAILED — gate went RED on 0.9.0 <= 0.10.0 (version sort is not numeric)" >&2
+    echo "$out" >&2; exit 1
+  fi
+  printf 'schema: space/v1\nmin_binary_version: 1.0.0\n' > "$tmp/space-template/space.yaml"
+  if ! out="$(assert_floor_not_ahead "$tmp" v1.0.0 2>&1)"; then
+    echo "release-preflight --teeth: FAILED — gate went RED on floor == version" >&2
+    echo "$out" >&2; exit 1
+  fi
+  ok "teeth 7: floor <= release (incl. equal, incl. 0.9.0 < 0.10.0) → GREEN"
+
+  # 8: a MISSING floor → RED (space update could not decide any space's floor).
+  printf 'schema: space/v1\n' > "$tmp/space-template/space.yaml"
+  if out="$(assert_floor_not_ahead "$tmp" v1.0.0 2>&1)"; then
+    echo "release-preflight --teeth: FAILED — gate stayed GREEN on a template with no min_binary_version" >&2
+    echo "$out" >&2; exit 1
+  fi
+  ok "teeth 8: template with no min_binary_version → RED"
+
   # --- teeth 5: version-free assertion bites on an existing tag ---
   if out="$(assert_version_free "$tmp" v0.2.0 2>&1)"; then
     echo "release-preflight --teeth: FAILED — version-free stayed GREEN on an existing tag" >&2
@@ -149,7 +213,7 @@ teeth() {
   if ! assert_version_free "$tmp" v0.3.0 >/dev/null 2>&1; then
     echo "release-preflight --teeth: FAILED — version-free went RED on a free version" >&2; exit 1
   fi
-  ok "teeth 6: a free version → GREEN"
+  ok "teeth 9: a free version → GREEN"
 
   echo "release-preflight --teeth: all teeth bite."
 }
@@ -181,6 +245,7 @@ git -C "$ROOT" fetch --quiet "$REMOTE" --tags
 rc=0
 assert_version_free "$ROOT" "$VERSION" || rc=1
 assert_pins_resolve "$ROOT" || rc=1
+assert_floor_not_ahead "$ROOT" "$VERSION" || rc=1
 
 if [ "$rc" -ne 0 ]; then
   echo "release-preflight: FAIL — do not cut $VERSION until the above is fixed." >&2

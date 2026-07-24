@@ -1,0 +1,40 @@
+schema: release-notes/v1
+version: "0.6.2"
+released: "2026-07-24"
+headline: "The fleet write floor moves to 0.6.2 — and a gate now stops it running ahead of the release"
+changes:
+  - id: RN-0602-1
+    kind: feat
+    impact: high
+    subject: "space-template's write floor raised to 0.6.2"
+    detail: >
+      `min_binary_version` in the space template is the fleet WRITE FLOOR: the
+      funnel refuses a write from any binary older than it (CC-085). It sat at
+      0.4.0, which admitted binaries that predate `a2a space update`, `a2a space
+      init` and the compound required-check fix. Raised to 0.6.2, so every space
+      that takes an update requires a binary that actually understands the
+      current space contract. `a2a space update` propagates it — and only
+      upward, never lowering a space that already pins higher.
+    affects: [space, ci]
+    action:
+      scope: space
+      why: "every participant in a space you own must be on 0.6.2+ before the floor lands, or their writes will be refused"
+      detect: ["a2a doctor", "a2a space update --dry-run"]
+      run: ["a2a update", "a2a space update"]
+  - id: RN-0602-2
+    kind: fix
+    impact: normal
+    subject: "release-preflight refuses to cut a release whose template floor is ahead of it"
+    detail: >
+      Nothing checked that the template's declared `min_binary_version` was
+      reachable. A floor ahead of the newest release would propagate to every
+      space through `a2a space update` and then refuse writes from every binary
+      in existence — including the one needed to fix it. `make release-preflight
+      VERSION=…` now asserts the floor is not ahead of the version being cut, and
+      that the template declares one at all, with offline teeth covering the
+      lockout case, the equal case, numeric ordering (0.9.0 < 0.10.0) and a
+      missing field.
+    affects: [ci]
+    action:
+      scope: none
+      why: "a maintainer-side gate — nothing to run"
