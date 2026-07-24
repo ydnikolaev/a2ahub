@@ -94,7 +94,7 @@ vulncheck: ## govulncheck ./... gated by .govulncheck-allow.txt (NEW called vuln
 
 live-e2e: ## THE LIVE TIER: the real binary against a real throwaway GitHub space (spec 36). Needs network + A2A_LIVE_E2E_{ORG,PROVISIONER_TOKEN,PARTICIPANT_TOKEN}. NEVER in `check`, NEVER a merge gate — run it beside `release-preflight` before cutting a tag.
 	@test -f go.mod || { echo "live-e2e: no go.mod — nothing to run."; exit 2; }
-	go test ./internal/livee2e/... -tags=livee2e -count=1 -v
+	go test ./internal/livee2e/... -tags=livee2e -count=1 -v -timeout 90m
 
 install: ## Put a dev `a2a` on your PATH that always runs THIS source tree (rebuilds when changed).
 	@sh scripts/dev-install.sh
