@@ -37,10 +37,10 @@ on:
         # sentinel means "build ./cmd/a2a from the caller's own checkout" —
         # used ONLY by a2ahub's dogfood, so the canary exercises the PR's
         # current code, never a released version (spec 33 §T3, AC-930.2).
-        description: "a2a module version to `go run` (e.g. v0.4.0); empty = local ./cmd/a2a (a2ahub dogfood only)."
+        description: "a2a module version to `go run` (e.g. v0.5.0); empty = local ./cmd/a2a (a2ahub dogfood only)."
         required: false
         type: string
-        default: "v0.4.0"
+        default: "v0.5.0"
       space-path:
         description: "Working directory of the space content to validate (default: repo root)."
         required: false
