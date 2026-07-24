@@ -95,6 +95,10 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		return cli.NewInitCommand(""), true
 	case "template":
 		return cli.NewTemplateCommand(), true
+	case "space":
+		// Nil template FS / empty version: the catalog only reads Name() +
+		// Synopsis(), never scaffolds.
+		return cli.NewSpaceCommand(nil, ""), true
 	case "skill":
 		return cli.NewSkillCommand(nil, ""), true
 	case "completion":

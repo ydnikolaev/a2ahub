@@ -63,6 +63,7 @@ var mcpExcludedVerbs = map[string]bool{
 	"dashboard":  true, // alias of html — CLI-only
 	"completion": true, // P23/OP-222: prints a shell completion script — a host-machine act, CLI-only
 	"feedback":   true, // P25: files feedback on a2a itself (consumer submit + hub-operator triage) — a host act, CLI-only (spec 25 §T1: triage "Not exposed via MCP")
+	"space":      true, // P33 §12: scaffolds a NEW space repo onto the local filesystem — an operator/host act outside any connected space, CLI-only (like init/skill/html)
 }
 
 // toolAction is one reachable MCP capability: a grouped tool plus one of its
