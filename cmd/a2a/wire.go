@@ -22,6 +22,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 	"github.com/ydnikolaev/a2ahub/skill"
+	spacetemplate "github.com/ydnikolaev/a2ahub/space-template"
 )
 
 // wire.go is cmd/a2a's single dependency-injection point (ADR-001: "wiring
@@ -125,6 +126,14 @@ func buildCommands() map[string]command {
 	}
 	m["template"] = func(args []string, stdout, stderr io.Writer) int {
 		return cli.NewTemplateCommand().Run(context.Background(), args, stdio(stdout, stderr))
+	}
+	// `a2a space init <id>` scaffolds a space tree from the embedded
+	// space-template (spec 33 §12). The embed + this build's own version are
+	// the only injections: the command pins the caller's reusable-workflow ref
+	// to THIS binary's release, so a scaffolded space can never reference a
+	// version that predates the workflow.
+	m["space"] = func(args []string, stdout, stderr io.Writer) int {
+		return cli.NewSpaceCommand(spacetemplate.Files, version).Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["skill"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()

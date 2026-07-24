@@ -1,0 +1,36 @@
+# P33 §12 `a2a space init`: scaffold a ready-to-push space tree from the
+# EMBEDDED space-template. Two traps this exercises against the real binary:
+#   - the embed must carry the dot-directory `.github/` (a plain //go:embed
+#     silently drops it, scaffolding a space with no CI at all);
+#   - the caller's reusable-workflow ref must pin THIS binary's version, never
+#     the version baked into the template (the e2e harness builds with
+#     -X main.version=0.1.0, so the pin must come out @v0.1.0).
+exec a2a space init acme-space
+stdout 'wrote 8 files'
+stdout 'residual manual steps'
+
+# The scaffolded tree carries the CI caller + dependabot — the dotfile-embed trap.
+exists acme-space/.github/workflows/a2a-validate.yml
+exists acme-space/.github/dependabot.yml
+exists acme-space/space.yaml
+exists acme-space/CODEOWNERS
+
+# The ref pins the RUNNING binary's version, not the template's baked one.
+grep '@v0.1.0' acme-space/.github/workflows/a2a-validate.yml
+
+# Space id + write floor were substituted.
+grep 'space: acme-space' acme-space/space.yaml
+grep 'min_binary_version: 0.1.0' acme-space/space.yaml
+
+# A dev build must NOT scaffold (it would pin a tag that does not exist) —
+# covered by the unit tests; here we assert the happy path stays green.
+
+# AC-936.1: the scaffolded space validates green through the real binary.
+cd acme-space
+exec a2a validate --ci --mode=v3-full-repo
+stdout '"valid": true'
+
+# Re-running into a non-empty directory refuses rather than half-overwriting.
+cd ..
+! exec a2a space init acme-space
+stderr 'not empty'
