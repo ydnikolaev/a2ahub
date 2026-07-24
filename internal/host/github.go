@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -487,8 +488,57 @@ func (h *GitHubHost) restCall(ctx context.Context, op, method, path string, cred
 }
 
 // graphQLCall issues one GraphQL POST against h.BaseURL+"/graphql".
+// graphQLCall posts a GraphQL request and — unlike a REST call — must inspect
+// the RESPONSE BODY to learn whether it worked.
+//
+// GraphQL answers HTTP 200 for a failed operation and reports the failure in
+// the body's `errors` array. Checking only the status therefore swallows every
+// GraphQL failure silently. That is not theoretical: `a2a submit` arms
+// auto-merge through this path, so a refused arming left the PR open forever
+// while the command reported "opened PR … (pending-merge)". Verified against
+// real GitHub on 2026-07-24 (P36's matrix) — the mutation returned
+// `HTTP 200` with `errors: ["Pull request Pull request is in clean status"]`
+// and `data: {enablePullRequestAutoMerge: null}`, and the caller saw success.
 func (h *GitHubHost) graphQLCall(ctx context.Context, op string, cred Credential, body any, out any) error {
-	return h.doJSON(ctx, op, http.MethodPost, h.BaseURL+"/graphql", cred, body, out)
+	var envelope struct {
+		Data   json.RawMessage `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"errors"`
+	}
+	if err := h.doJSON(ctx, op, http.MethodPost, h.BaseURL+"/graphql", cred, body, &envelope); err != nil {
+		return err
+	}
+	if len(envelope.Errors) > 0 {
+		messages := make([]string, 0, len(envelope.Errors))
+		for _, e := range envelope.Errors {
+			messages = append(messages, e.Message)
+		}
+		return &Error{Op: op, Err: fmt.Errorf("%w: %s", ErrGraphQLFailed, strings.Join(messages, "; "))}
+	}
+	if out == nil || len(envelope.Data) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(envelope.Data, out); err != nil {
+		return &Error{Op: op, Err: fmt.Errorf("%w: decode graphql data: %w", ErrRequestFailed, err)}
+	}
+	return nil
+}
+
+// autoMergeCleanMarker is GitHub's refusal when auto-merge is requested on a
+// pull request that is ALREADY mergeable: there is nothing to wait for, so it
+// declines and expects a plain merge instead.
+//
+// Matched on the message because GraphQL gives no stable code for it. This is
+// not a failure of the write — it means the PR is green and ready — so the
+// funnel's repair path reports it as such rather than as an error.
+const autoMergeCleanMarker = "clean status"
+
+// IsAutoMergeAlreadyClean reports whether err is GitHub declining to arm
+// auto-merge because the PR can be merged right now.
+func IsAutoMergeAlreadyClean(err error) bool {
+	return errors.Is(err, ErrGraphQLFailed) && strings.Contains(err.Error(), autoMergeCleanMarker)
 }
 
 func (h *GitHubHost) doJSON(ctx context.Context, op, method, url string, cred Credential, body any, out any) error {

@@ -454,3 +454,73 @@ func TestEnableAutoMergeRejectsAnIncompleteRequest(t *testing.T) {
 		}
 	}
 }
+
+// GraphQL answers HTTP 200 for a FAILED operation and puts the failure in the
+// body's `errors` array, so a call that checks only the status swallows every
+// GraphQL failure silently.
+//
+// That was not theoretical: `a2a submit` arms auto-merge through this path, so
+// a refused arming left the PR open forever while the command reported
+// "opened PR … (pending-merge)". Verified against real GitHub on 2026-07-24
+// (P36's matrix): HTTP 200, errors ["Pull request Pull request is in clean
+// status"], data {enablePullRequestAutoMerge: null}.
+func TestGraphQLErrorsSurfaceDespiteHTTP200(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/graphql" {
+			// The exact shape GitHub sends: success status, failed operation.
+			_, _ = w.Write([]byte(`{"data":{"enablePullRequestAutoMerge":null},` +
+				`"errors":[{"message":"Pull request Pull request is in clean status"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"node_id":"PR_1"}`))
+	}))
+	defer srv.Close()
+
+	h := NewGitHubHost(srv.Client(), srv.URL)
+	err := h.EnableAutoMerge(context.Background(), EnableAutoMergeRequest{
+		Repo: Repo{Owner: "o", Name: "r"}, PRNumber: 2,
+	})
+	if err == nil {
+		t.Fatal("a GraphQL failure returned nil — the whole defect")
+	}
+	if !errors.Is(err, ErrGraphQLFailed) {
+		t.Errorf("err = %v, want it to wrap ErrGraphQLFailed", err)
+	}
+	if !strings.Contains(err.Error(), "clean status") {
+		t.Errorf("err = %v, want GitHub's own message carried through", err)
+	}
+	// The funnel's repair path depends on recognising THIS refusal, because
+	// "the PR is already mergeable" is not a failed repair.
+	if !IsAutoMergeAlreadyClean(err) {
+		t.Error("IsAutoMergeAlreadyClean did not recognise GitHub's clean-status refusal")
+	}
+}
+
+// A GraphQL call that genuinely succeeds must stay a success — the errors
+// check must not turn every 200 into a failure.
+func TestGraphQLSuccessStaysSuccess(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/graphql" {
+			_, _ = w.Write([]byte(`{"data":{"enablePullRequestAutoMerge":{"clientMutationId":null}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"node_id":"PR_1"}`))
+	}))
+	defer srv.Close()
+
+	h := NewGitHubHost(srv.Client(), srv.URL)
+	if err := h.EnableAutoMerge(context.Background(), EnableAutoMergeRequest{
+		Repo: Repo{Owner: "o", Name: "r"}, PRNumber: 2,
+	}); err != nil {
+		t.Fatalf("EnableAutoMerge on a clean success: %v", err)
+	}
+	if IsAutoMergeAlreadyClean(nil) {
+		t.Error("IsAutoMergeAlreadyClean(nil) reported true")
+	}
+}
