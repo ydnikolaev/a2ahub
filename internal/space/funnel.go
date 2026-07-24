@@ -93,6 +93,21 @@ type SubmitRequest struct {
 	// MinBinaryVersion is space.yaml's pin for the CC-085 guard (caller
 	// already parsed the manifest; the funnel does not parse YAML).
 	MinBinaryVersion string
+
+	// AllowSpaceInfrastructure opts THIS write into admitting the fixed set
+	// of space-infrastructure paths ("space.yaml", "CODEOWNERS",
+	// "BRANCH-PROTECTION.md", anything under ".github/") past the section
+	// guard, IN ADDITION TO the caller's own section. Off by default — an
+	// ordinary system write has no business touching the space's shared
+	// infrastructure, and admitting it unconditionally would let any writer
+	// edit CODEOWNERS or the CI workflow through the funnel meant to enforce
+	// the single-writer boundary. V3 diff-authz (internal/cli/cmd_validate_ci.go)
+	// already carves these exact paths out of per-author section review and
+	// treats them as governed instead by CODEOWNERS review + branch
+	// protection — so this flag lets the two guards agree on what
+	// "space infrastructure" means rather than silently disagreeing. The one
+	// caller that sets it is spec 35's `a2a space update` migration path.
+	AllowSpaceInfrastructure bool
 }
 
 // WriteResult is what Submit returns: the contract P7's cache persistence
@@ -173,9 +188,13 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	}
 
 	// Step 1a: section guard — wrong-section files refused before any
-	// git action (shared refusal path, AC-201.3 precondition).
+	// git action (shared refusal path, AC-201.3 precondition). A file passes
+	// either by being inside the authoring system's own section (or the
+	// decisions/ exception), or — only when the caller opted in — by being
+	// one of the fixed space-infrastructure paths.
 	for _, file := range req.Files {
-		if !sectionOK(req.System, file.Path) {
+		if !sectionOK(req.System, file.Path) &&
+			(!req.AllowSpaceInfrastructure || !spaceInfraOK(file.Path)) {
 			return WriteResult{}, &Error{Op: op, Input: file.Path, Err: ErrWrongSection}
 		}
 	}
@@ -366,20 +385,67 @@ const manualForkAdvice = "no write access and no automatic fork — fork the rep
 // job is to enforce the single-writer boundary (D-014 data-stays-data,
 // the "one write shape" rail).
 func sectionOK(system, path string) bool {
-	if path == "" || strings.HasPrefix(path, "/") {
-		return false
-	}
-	// A path is safe only if it is already in cleaned, non-escaping form.
-	// path.Clean collapses `..`/`.`/double-slashes; if the input differs
-	// from its cleaned form, or the cleaned form still escapes, reject.
-	if cleaned := gopath.Clean(path); cleaned != path || cleaned == ".." ||
-		strings.HasPrefix(cleaned, "../") {
+	if !isCleanRelativePath(path) {
 		return false
 	}
 	if path == "decisions" || hasPathPrefix(path, "decisions/") {
 		return true
 	}
 	return path == system || hasPathPrefix(path, system+"/")
+}
+
+// spaceInfraOK reports whether path is one of the fixed space-infrastructure
+// paths — "space.yaml", "CODEOWNERS", "BRANCH-PROTECTION.md", or anything
+// under ".github/" — mirroring what internal/cli/cmd_validate_ci.go already
+// excludes from author-diff-authz (both guards must agree on this set,
+// §"AllowSpaceInfrastructure" on SubmitRequest).
+//
+// Only reachable when the caller opted in via
+// SubmitRequest.AllowSpaceInfrastructure; sectionOK's own admission (e.g.
+// system "axon" writing "axon/CODEOWNERS", a file merely NAMED CODEOWNERS
+// inside axon's own section) is unaffected and unrelated — this function
+// checks the repo-root infrastructure files/dir ONLY, anchored (not
+// substring-matched): "CODEOWNERS" matches, "axon/CODEOWNERS" does not;
+// ".github/x" matches, ".githubfoo/x" does not.
+//
+// Shares isCleanRelativePath with sectionOK so a path admitted via this
+// route is held to the exact same cleanliness bar as the section route —
+// otherwise a crafted ".github/../axon/evil.md" could pass in claiming to
+// be infrastructure while actually escaping into another system's section.
+func spaceInfraOK(path string) bool { return IsInfrastructurePath(path) }
+
+// IsInfrastructurePath is the EXPORTED form of the same predicate, and the
+// single source of truth for "what counts as space infrastructure".
+//
+// It is exported because a caller that PLANS an infrastructure write (spec
+// 35's `a2a space update`) has to know the exact set the funnel will admit.
+// A second, hand-maintained copy on the planning side would drift, and the
+// failure mode is nasty: the planner proposes a file, the funnel refuses it
+// with ErrWrongSection, and the whole write fails on a path nobody asked
+// for. One predicate, both sides.
+func IsInfrastructurePath(path string) bool {
+	if !isCleanRelativePath(path) {
+		return false
+	}
+	switch path {
+	case "space.yaml", "CODEOWNERS", "BRANCH-PROTECTION.md":
+		return true
+	}
+	return hasPathPrefix(path, ".github/")
+}
+
+// isCleanRelativePath reports whether path is already in cleaned,
+// non-escaping, relative form: not empty, not absolute, and identical to
+// its own path.Clean result (which collapses `..`/`.`/double-slashes) with
+// that cleaned form not itself escaping the root. Shared by every route
+// through the section guard (sectionOK and spaceInfraOK) so no route can
+// admit a path the other would have rejected as unclean.
+func isCleanRelativePath(path string) bool {
+	if path == "" || strings.HasPrefix(path, "/") {
+		return false
+	}
+	cleaned := gopath.Clean(path)
+	return cleaned == path && cleaned != ".." && !strings.HasPrefix(cleaned, "../")
 }
 
 func hasPathPrefix(path, prefix string) bool {

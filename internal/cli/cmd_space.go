@@ -1,5 +1,6 @@
-// `a2a space init` — self-service space scaffolding (spec 33 §12). This
-// file's only package-level symbols are SpaceCommand + its NewSpaceCommand
+// `a2a space init` — self-service space scaffolding (spec 33 §12) — and
+// `a2a space update` — template-drift migration (spec 35). This file's
+// only package-level symbols are SpaceCommand + its NewSpaceCommand
 // constructor plus file-private, uniquely-named helpers (space* prefix) —
 // no shared helper, no package var, matching cmd_contract.go's own
 // Placement convention for this package.
@@ -14,10 +15,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
+
+	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
-// SpaceCommand implements `a2a space <init>` — today a single sub-verb
-// (mirrors the `contract` group's dispatch shape, cmd_contract.go).
+// SpaceCommand implements `a2a space <init|update>` (mirrors the `contract`
+// group's dispatch shape, cmd_contract.go).
 type SpaceCommand struct {
 	// TemplateFiles is the embedded space-template/ tree (spacetemplate.Files,
 	// DI'd from wire.go — this package never imports space-template
@@ -37,6 +42,42 @@ type SpaceCommand struct {
 	// real os operations.
 	writeFile func(path string, data []byte, perm os.FileMode) error
 	mkdirAll  func(path string, perm os.FileMode) error
+
+	// --- `space update`-only DI (spec 35) -----------------------------
+	//
+	// All six are nil-able ("nil means not wired", this package's DI
+	// convention): `a2a space init` never reads any of them, so it keeps
+	// working when every one is left zero (TestSpaceCommandStructLiteralWorks
+	// proves this for TemplateFiles/Version already; the same holds for
+	// these). `a2a space update` refuses cleanly (spaceUpdateWired) rather
+	// than nil-panicking when any is unwired. The LEAD wires all six in
+	// cmd/a2a — this package never resolves a "connected space" itself.
+
+	// Funnel is the write-funnel seam (submitFunnel, cmd_submit.go) — reused
+	// as-is, no second funnel entry point.
+	Funnel submitFunnel
+	// MirrorDir is the connected space's local mirror clone working
+	// directory (same role as SubmitCommand.mirrorDir).
+	MirrorDir string
+	// SpaceID is the connected space's id — both the `--space` flag's
+	// expected value and the substitution target for space.yaml's sentinel
+	// (space init reuses spaceApplySubstitutions, which needs a space id;
+	// update's mirror already carries a real one, so this is used only to
+	// validate `--space`, never to rewrite the id).
+	SpaceID string
+	// OwnSystem is this project's configured own system id (§7.4) — the
+	// authoring system for the branch name; the section guard for the
+	// infrastructure paths this command writes is satisfied via
+	// AllowSpaceInfrastructure, not via section membership.
+	OwnSystem string
+	// HostCfg carries the push/PR target and commit authorship (same shape
+	// SubmitCommand uses).
+	HostCfg SubmitHostConfig
+
+	// readFile is a DI seam (mirrors writeFile/mkdirAll's own convention)
+	// so a test can simulate the mirror's on-disk content without a real
+	// filesystem. NewSpaceCommand defaults it to os.ReadFile.
+	readFile func(path string) ([]byte, error)
 }
 
 // NewSpaceCommand constructs the space command. templateFiles is the
@@ -47,6 +88,7 @@ func NewSpaceCommand(templateFiles fs.FS, version string) *SpaceCommand {
 		Version:       version,
 		writeFile:     os.WriteFile,
 		mkdirAll:      os.MkdirAll,
+		readFile:      os.ReadFile,
 	}
 }
 
@@ -55,18 +97,18 @@ func (c *SpaceCommand) Name() string { return "space" }
 
 // Synopsis implements cli.Command.
 func (c *SpaceCommand) Synopsis() string {
-	return "space scaffolding: init <space-id> [--dir <path>] — write a ready-to-push space tree from the embedded template"
+	return "space scaffolding: init <space-id> [--dir <path>] | update [--space <id>] [--dry-run] — write/migrate a space tree from the embedded template"
 }
 
 // Run implements cli.Command.
 func (c *SpaceCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space <init> ...")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space <init|update> ...")
 		return 2
 	}
 	sub, rest := args[0], args[1:]
 	if IsHelpArg(sub) {
-		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a space <init> ...")
+		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a space <init|update> ...")
 		for _, s := range SpaceSubcommands() {
 			_, _ = fmt.Fprintf(stdio.Stdout, "  %-14s %s\n", s.Name, s.Synopsis)
 		}
@@ -75,6 +117,8 @@ func (c *SpaceCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	switch sub {
 	case "init":
 		return c.runInit(ctx, rest, stdio)
+	case "update":
+		return c.runUpdate(ctx, rest, stdio)
 	default:
 		_, _ = fmt.Fprintf(stdio.Stderr, "space: unknown subcommand %q\n", sub)
 		return 2
@@ -101,6 +145,7 @@ type SpaceSubcommand struct {
 func SpaceSubcommands() []SpaceSubcommand {
 	return []SpaceSubcommand{
 		{Name: "init", Synopsis: "scaffold a new space repo tree from the embedded template"},
+		{Name: "update", Synopsis: "diff the connected space's scaffolding against the embedded template and open a PR (spec 35)"},
 	}
 }
 
@@ -278,4 +323,425 @@ func (c *SpaceCommand) spaceScaffold(target, spaceID, version string) (int, erro
 		return written, err
 	}
 	return written, nil
+}
+
+// --- `a2a space update` (spec 35) ---------------------------------------
+
+// SpaceInfraNoValidation is the space.SubmitValidator `a2a space update`
+// wires — and it deliberately validates nothing.
+//
+// The V2 submit validator (SubmitValidatorAdapter) parses every non-event,
+// non-registry file as an ARTIFACT: frontmatter, envelope, referential
+// integrity. `space update` writes no artifacts at all — a CI workflow, a
+// dependabot config, CODEOWNERS and a manifest field have no envelope, so
+// running that adapter here would reject every legitimate write.
+//
+// What bounds this write instead is the funnel's own guard: the request
+// carries AllowSpaceInfrastructure, so `spaceInfraOK` admits ONLY
+// space.yaml / CODEOWNERS / BRANCH-PROTECTION.md / .github/**, and anything
+// else is still refused with ErrWrongSection before any git action. The
+// space's V3 gate then validates the resulting PR for real. This type is
+// named rather than an inline nil so the reason is greppable and a future
+// reader cannot mistake it for an oversight.
+type SpaceInfraNoValidation struct{}
+
+// ValidateSubmit implements space.SubmitValidator.
+func (SpaceInfraNoValidation) ValidateSubmit(context.Context, []space.FileWrite) error { return nil }
+
+// spaceUpdateDisposition classifies how `a2a space update` treats one
+// template-relative path when diffing a connected space's scaffolding
+// against the embedded template (spec 35 §2 T1; plan 35 "Intake findings"
+// §2, the file-disposition model). A naive whole-file diff is destructive:
+// a live space's CODEOWNERS carries real teams where the template carries
+// `@REPLACE_WITH_ORG/...`, and its space.yaml carries real participants
+// where the template carries a skeleton — a whole-file diff would propose
+// reverting both, and would never converge (breaking AC-950.4's idempotent
+// no-op).
+type spaceUpdateDisposition int
+
+const (
+	// spaceDispositionManaged: the template owns the WHOLE file — always
+	// overwritten with the substituted template content, whether or not it
+	// already exists in the space.
+	spaceDispositionManaged spaceUpdateDisposition = iota
+	// spaceDispositionSeeded: the template owns only the file's EXISTENCE —
+	// created if absent, but NEVER overwritten once present (its content is
+	// the space's own — e.g. real CODEOWNERS teams). Drift from the
+	// template is reported as an advisory note only.
+	spaceDispositionSeeded
+	// spaceDispositionFieldManaged: the template owns ONE named field
+	// inside an otherwise space-owned file — only that field is rewritten
+	// (via the exact regex `space init` already uses), every other byte of
+	// the space's own file is left untouched.
+	spaceDispositionFieldManaged
+)
+
+// spaceUpdateDispositionTable is the single package-level SSOT for every
+// template path this command special-cases (plan 35 "Intake findings" §2).
+// A template path NOT listed here defaults to spaceDispositionManaged when
+// it is ABSENT from the space (a new template file — e.g. a new file under
+// .github/ — propagates automatically, no code change required, AC-951.1)
+// and is left untouched when it already exists in the space (an existing,
+// unlisted file is presumed space-owned/customized — this command only
+// knows how to safely reconcile the three dispositions below; see
+// spaceComputeUpdatePlan's own "default" branch for exactly how that
+// distinction is applied).
+var spaceUpdateDispositionTable = map[string]spaceUpdateDisposition{
+	".github/workflows/a2a-validate.yml": spaceDispositionManaged,
+	".github/dependabot.yml":             spaceDispositionManaged,
+	"BRANCH-PROTECTION.md":               spaceDispositionManaged,
+	"CODEOWNERS":                         spaceDispositionSeeded,
+	"space.yaml":                         spaceDispositionFieldManaged,
+}
+
+// spaceUpdatePlan is the diff spaceComputeUpdatePlan produces: writes is the
+// exact SubmitRequest.Files payload a non-dry-run submits; summary is the
+// human-readable line per pending write; drift is advisory-only lines
+// (seeded files that exist but no longer match the template — never
+// written).
+type spaceUpdatePlan struct {
+	writes  []space.FileWrite
+	summary []string
+	drift   []string
+	// currentFloor is the space's OWN min_binary_version as the mirror
+	// carries it right now (before this update). It is what the funnel's
+	// CC-085 guard must be given — the floor this write has to clear is the
+	// one in force, not the one the update may be about to raise.
+	currentFloor string
+	// skipped lists template paths this command structurally cannot carry
+	// (not space infrastructure — e.g. the template's own README.md). They
+	// are REPORTED rather than silently dropped: a maintainer adding such a
+	// file to the template needs to learn that `space update` will not
+	// propagate it, instead of assuming it did.
+	skipped []string
+}
+
+// spaceMinVersionValuePattern captures space.yaml's min_binary_version
+// VALUE (spaceMinVersionPattern next to it captures only the key, for
+// replacement). Tolerates the quoted form the schema also permits.
+var spaceMinVersionValuePattern = regexp.MustCompile(`min_binary_version:\s*"?([0-9]+\.[0-9]+\.[0-9]+)"?`)
+
+// spaceMinVersionValue extracts space.yaml's declared min_binary_version.
+func spaceMinVersionValue(spaceYAML []byte) (string, bool) {
+	m := spaceMinVersionValuePattern.FindSubmatch(spaceYAML)
+	if m == nil {
+		return "", false
+	}
+	return string(m[1]), true
+}
+
+// spaceUpdateFloor decides what a space's min_binary_version becomes on an
+// update, and it is deliberately NOT "this binary's version".
+//
+// Two properties make that the wrong source. (1) The floor is a FLEET
+// policy, not scaffolding: raising it refuses every other participant whose
+// binary is older (CC-085), so one participant running `space update` with a
+// fresh build would lock out the rest as a side effect of a convenience
+// command. (2) Convergence: with the running binary as the source, two
+// participants on different builds produce different space.yaml content and
+// fight forever — AC-950.4's "re-running is a no-op" would hold only per
+// binary version, which is not idempotence.
+//
+// The TEMPLATE's own declared floor is the SSOT (that is what "template
+// drift" means, and it is the axis P33 deliberately kept separate from the
+// caller's `@vX.Y.Z` ref). And the move is MONOTONE: a space already at or
+// above the template's floor keeps its own — converging downward would
+// weaken a guard, which no drift-sync should ever do silently.
+func spaceUpdateFloor(current, templateFloor string) (next string, changed bool, err error) {
+	older, err := version.OlderThan(current, templateFloor)
+	if err != nil {
+		return "", false, fmt.Errorf("cannot compare min_binary_version %q with the template's %q: %w", current, templateFloor, err)
+	}
+	if !older {
+		return current, false, nil
+	}
+	return templateFloor, true, nil
+}
+
+// spaceComputeUpdatePlan walks c.TemplateFiles, applies spaceApplySubstitutions
+// per file (spaceID/version — same substitution engine `space init` uses),
+// and reconciles each path's disposition against the mirror's current
+// content (read via c.readFile, DI-seamed so tests never touch a real
+// filesystem). It performs NO write — pure diff, safe to call for
+// --dry-run and for a real run alike.
+func (c *SpaceCommand) spaceComputeUpdatePlan(spaceID, version string) (spaceUpdatePlan, error) {
+	readFile := c.readFile
+	if readFile == nil {
+		readFile = os.ReadFile
+	}
+
+	var plan spaceUpdatePlan
+	err := fs.WalkDir(c.TemplateFiles, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		templateData, rerr := fs.ReadFile(c.TemplateFiles, p)
+		if rerr != nil {
+			return fmt.Errorf("cannot read embedded %s: %w", p, rerr)
+		}
+		// The plan may only ever propose paths the FUNNEL can carry. The
+		// funnel admits exactly space.IsInfrastructurePath (the shared
+		// predicate — see its doc for why this is not a second copy);
+		// anything else is refused with ErrWrongSection, which would fail
+		// the entire write over a file nobody asked to update. The real
+		// template carries such files (README.md), so this is not
+		// hypothetical — the e2e tier caught it.
+		if !space.IsInfrastructurePath(p) {
+			if _, listed := spaceUpdateDispositionTable[p]; listed {
+				// A disposition row that the funnel cannot carry is a
+				// contradiction in this command's own configuration.
+				return fmt.Errorf("disposition table lists %s, which is not a space-infrastructure path the funnel can carry", p)
+			}
+			plan.skipped = append(plan.skipped, p)
+			return nil
+		}
+
+		substituted := spaceApplySubstitutions(p, templateData, spaceID, version)
+
+		mirrorPath := filepath.Join(c.MirrorDir, filepath.FromSlash(p))
+		current, rerr := readFile(mirrorPath)
+		exists := true
+		if rerr != nil {
+			if !os.IsNotExist(rerr) {
+				return fmt.Errorf("cannot inspect %s: %w", mirrorPath, rerr)
+			}
+			exists = false
+		}
+
+		disposition, listed := spaceUpdateDispositionTable[p]
+
+		switch disposition {
+		case spaceDispositionFieldManaged:
+			// space.yaml: the template's own skeleton is irrelevant to the
+			// file's BODY — only the mirror's own current bytes are
+			// rewritten, and only the min_binary_version field within them
+			// (reuses spaceMinVersionPattern, the exact regex `space init`
+			// uses). The template IS the authority for that one value —
+			// see spaceUpdateFloor for why the running binary's version is
+			// deliberately not the source.
+			if !exists {
+				return fmt.Errorf("%s: expected in every connected space but is missing from the mirror", p)
+			}
+			templateFloor, ok := spaceMinVersionValue(templateData)
+			if !ok {
+				return fmt.Errorf("the embedded template's %s declares no min_binary_version — cannot decide the space's write floor", p)
+			}
+			currentFloor, ok := spaceMinVersionValue(current)
+			if !ok {
+				// Silently doing nothing here would leave the space
+				// permanently un-floored while reporting success.
+				return fmt.Errorf("%s in the mirror declares no min_binary_version — fix the space manifest before updating", p)
+			}
+			plan.currentFloor = currentFloor
+
+			nextFloor, changed, ferr := spaceUpdateFloor(currentFloor, templateFloor)
+			if ferr != nil {
+				return ferr
+			}
+			if !changed {
+				if currentFloor != templateFloor {
+					plan.drift = append(plan.drift, fmt.Sprintf(
+						"advisory: %s pins min_binary_version %s, above the template's %s — left as is (the floor never converges downward)",
+						p, currentFloor, templateFloor))
+				}
+				return nil
+			}
+			updated := spaceMinVersionPattern.ReplaceAll(current, []byte("${1}"+nextFloor))
+			if !bytes.Equal(updated, current) {
+				plan.writes = append(plan.writes, space.FileWrite{Path: p, Content: updated})
+				plan.summary = append(plan.summary, fmt.Sprintf("field-update %s (min_binary_version %s -> %s, the template's floor)", p, currentFloor, nextFloor))
+			}
+		case spaceDispositionSeeded:
+			switch {
+			case !exists:
+				plan.writes = append(plan.writes, space.FileWrite{Path: p, Content: substituted})
+				plan.summary = append(plan.summary, fmt.Sprintf("add %s", p))
+			case !bytes.Equal(current, substituted):
+				plan.drift = append(plan.drift, fmt.Sprintf("advisory: %s exists and differs from the current template — left untouched (seeded, customize-once file)", p))
+			}
+		default: // spaceDispositionManaged — the fixed rows above, or an
+			// unlisted template path treated the same way ONLY while it is
+			// absent from the space (AC-951.1); once present, an unlisted
+			// path is presumed space-owned and this command never touches
+			// it again.
+			if !listed && exists {
+				return nil
+			}
+			switch {
+			case !exists:
+				plan.writes = append(plan.writes, space.FileWrite{Path: p, Content: substituted})
+				plan.summary = append(plan.summary, fmt.Sprintf("add %s", p))
+			case !bytes.Equal(current, substituted):
+				plan.writes = append(plan.writes, space.FileWrite{Path: p, Content: substituted})
+				plan.summary = append(plan.summary, fmt.Sprintf("update %s", p))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return spaceUpdatePlan{}, err
+	}
+	return plan, nil
+}
+
+// spaceUpdateWired reports a clear "not wired" error when the lead has not
+// yet supplied `space update`'s own DI fields — `a2a space init` never
+// touches any of them and keeps working with all six left zero (this
+// package's "nil means not wired" convention); `a2a space update` needs a
+// connected space and refuses cleanly here rather than nil-panicking deeper
+// in (e.g. on a nil Funnel).
+func (c *SpaceCommand) spaceUpdateWired() error {
+	if c.Funnel == nil || c.MirrorDir == "" || c.SpaceID == "" || c.OwnSystem == "" ||
+		c.HostCfg == (SubmitHostConfig{}) {
+		return fmt.Errorf("not wired for a connected space (Funnel/MirrorDir/SpaceID/OwnSystem/HostCfg) — connect a space first")
+	}
+	return nil
+}
+
+// spaceUpdateDirectiveLines renders the two admin-only migration steps as
+// `scope: space` directives (spec 31's directive model, applied here per
+// spec 35 §T2/AC-952.1: a2a PRINTS the exact command, a human/agent runs
+// it — a2a itself calls no admin API; internal/host's Host interface
+// exposes no branch-protection primitive at all, so that is structural,
+// not just a convention this command happens to follow). owner/name
+// identify the space's GitHub repo; baseBranch is the PR's target branch
+// (branch protection is a per-branch GitHub setting).
+func spaceUpdateDirectiveLines(owner, name, baseBranch string) []string {
+	repo := owner + "/" + name
+	return []string{
+		"scope: space directive — prerequisite (spec 35 §T3: this PR cannot merge until protection stops requiring the old flat context)",
+		"  why: the reusable-workflow caller (spec 33 §11) surfaces the compound context \"a2a-validate / validate\", never the old flat \"a2a-validate\"",
+		fmt.Sprintf(`  run: gh api --method PATCH -H "Accept: application/vnd.github+json" repos/%s/branches/%s/protection/required_status_checks -f strict=false -f 'contexts[]=a2a-validate / validate'`, repo, baseBranch),
+		"scope: space directive — cleanup (optional: P33 removed the need for this secret)",
+		fmt.Sprintf("  run: gh secret delete A2A_BINARY_FETCH_TOKEN --repo %s", repo),
+	}
+}
+
+// spaceUpdatePRBody renders the PR body for a `space update` write: it must
+// state that the required-check rename is a prerequisite (spec 35 §T3) —
+// the PR cannot merge while protection still requires the old flat context
+// — plus the same directive commands, for a reviewer who never runs
+// `a2a space update` themselves.
+func spaceUpdatePRBody(owner, name, baseBranch string) string {
+	var b strings.Builder
+	b.WriteString("a2a space update: sync this space's scaffolding with the current embedded template.\n\n")
+	b.WriteString("Prerequisite (spec 35 §T3): this PR cannot merge until branch protection's required status check is renamed from the flat `a2a-validate` to the compound `a2a-validate / validate` — the reusable-workflow caller shape (spec 33 §11) never reports the old flat context, so the PR will otherwise hang \"Expected — waiting for status to be reported\".\n\n")
+	for _, line := range spaceUpdateDirectiveLines(owner, name, baseBranch) {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// runUpdate implements `a2a space update [--space <id>] [--dry-run]` (spec
+// 35): diff the connected space's scaffolding against the embedded
+// template, print it, and (without --dry-run) submit it through the
+// existing write funnel with AllowSpaceInfrastructure set. Exit codes:
+// 2 = usage error; 1 = not wired / version guard / diff error / funnel
+// error; 0 = success (including the idempotent already-current no-op).
+func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) int {
+	fset := flag.NewFlagSet("space update", flag.ContinueOnError)
+	fset.SetOutput(stdio.Stderr)
+	spaceFlag := fset.String("space", "", "space id (defaults to the connected space)")
+	dryRun := fset.Bool("dry-run", false, "print the scaffolding diff without writing or pushing")
+	if err := fset.Parse(args); err != nil {
+		return 2
+	}
+	if fset.NArg() > 0 {
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space update [--space <id>] [--dry-run]")
+		return 2
+	}
+
+	if err := c.spaceUpdateWired(); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space update: %v\n", err)
+		return 1
+	}
+	if *spaceFlag != "" && *spaceFlag != c.SpaceID {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space update: unknown space %q (connected space is %q)\n", *spaceFlag, c.SpaceID)
+		return 1
+	}
+
+	// Version guard (fail closed), same as `space init` — a dev build must
+	// not pin a caller ref / min_binary_version to a release that does not
+	// exist.
+	cleanVersion, err := spaceCleanVersion(c.Version)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space update: refusing to update — %v\n", err)
+		return 1
+	}
+
+	plan, err := c.spaceComputeUpdatePlan(c.SpaceID, cleanVersion)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space update: %v\n", err)
+		return 1
+	}
+
+	for _, note := range plan.drift {
+		_, _ = fmt.Fprintf(stdio.Stdout, "space update: %s\n", note)
+	}
+	if len(plan.skipped) > 0 {
+		_, _ = fmt.Fprintf(stdio.Stdout,
+			"space update: not propagated (outside the space-infrastructure paths this command may write): %s\n",
+			strings.Join(plan.skipped, ", "))
+	}
+
+	if len(plan.writes) == 0 {
+		_, _ = fmt.Fprintf(stdio.Stdout, "space update: %s is already current with the embedded template — nothing to do\n", c.SpaceID)
+		return 0
+	}
+
+	_, _ = fmt.Fprintln(stdio.Stdout, "space update: scaffolding diff against the embedded template:")
+	for _, line := range plan.summary {
+		_, _ = fmt.Fprintf(stdio.Stdout, "  %s\n", line)
+	}
+
+	baseBranch := c.HostCfg.BaseBranch
+	if baseBranch == "" {
+		baseBranch = "main"
+	}
+	for _, line := range spaceUpdateDirectiveLines(c.HostCfg.Repo.Owner, c.HostCfg.Repo.Name, baseBranch) {
+		_, _ = fmt.Fprintf(stdio.Stdout, "space update: %s\n", line)
+	}
+
+	if *dryRun {
+		_, _ = fmt.Fprintln(stdio.Stdout, "space update: --dry-run — no files written, nothing pushed")
+		return 0
+	}
+
+	commitMsg := "a2a(space-update): sync scaffolding with the embedded template"
+	req := space.SubmitRequest{
+		RepoDir:                  c.MirrorDir,
+		System:                   c.OwnSystem,
+		Verb:                     "space-update",
+		ArtifactID:               "scaffolding",
+		Files:                    plan.writes,
+		CommitMessage:            commitMsg,
+		CommitAuthorName:         c.HostCfg.CommitAuthorName,
+		CommitAuthorEmail:        c.HostCfg.CommitAuthorEmail,
+		RemoteURL:                c.HostCfg.RemoteURL,
+		Repo:                     c.HostCfg.Repo,
+		BaseBranch:               baseBranch,
+		PRTitle:                  commitMsg,
+		PRBody:                   spaceUpdatePRBody(c.HostCfg.Repo.Owner, c.HostCfg.Repo.Name, baseBranch),
+		Credential:               c.HostCfg.Credential,
+		MinBinaryVersion:         plan.currentFloor,
+		AllowSpaceInfrastructure: true,
+	}
+
+	result, err := c.Funnel.Submit(ctx, req)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "space update: %v\n", err)
+		return 1
+	}
+
+	switch result.State {
+	case space.WriteStateAlreadyOpen, space.WriteStateAlreadyMerged:
+		_, _ = fmt.Fprintf(stdio.Stdout, "space update: already submitted (PR %s, %s)\n", result.PRURL, result.State)
+	default:
+		_, _ = fmt.Fprintf(stdio.Stdout, "space update: opened PR %s (%s)\n", result.PRURL, result.State)
+	}
+	return 0
 }
