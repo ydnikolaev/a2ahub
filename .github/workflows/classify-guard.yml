@@ -28,12 +28,18 @@ jobs:
       - name: assert no private path is tracked
         run: |
           set -euo pipefail
-          # grep -E has no lookahead, so the scripts/* exception (install.sh,
-          # dev-install.sh, e2e-authoring-smoke.sh, classify-guard.sh — all
-          # product/tooling, kept public; MUST stay in sync with
-          # scripts/classify-guard.sh's ALLOW_FILES) is a post-filter.
-          priv=$(git ls-files | grep -E '^(\.agents|\.claude|\.codex|\.mate)/|^(AGENTS\.md|CLAUDE\.md)$|^scripts/' \
-            | grep -vE '^scripts/(install\.sh|dev-install\.sh|e2e-authoring-smoke\.sh|classify-guard\.sh)$' || true)
+          # scripts/ is matched as a DENY list, not an allow list, and it
+          # mirrors the STRIP set in docs/runbooks/publish-to-public.sh —
+          # the thing that actually decides what reaches this repo.
+          #
+          # It used to be an allow list of the four then-public scripts, kept
+          # "in sync" with scripts/classify-guard.sh by hand. It rotted the
+          # first time a new public script shipped: P33 added
+          # release-preflight.sh, the local gate stayed green, and this job
+          # failed the push. An allow list of public files has to be edited
+          # every time the product grows; a deny list of private ones only
+          # changes when the privacy boundary itself moves.
+          priv=$(git ls-files | grep -E '^(\.agents|\.claude|\.codex|\.mate)/|^(AGENTS\.md|CLAUDE\.md)$|^scripts/(check-feature-lint\.sh$|lib/)' || true)
           if [ -n "$priv" ]; then
             echo "::error::private (harness) paths tracked in the public repo:"
             echo "$priv"
