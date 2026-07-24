@@ -1,6 +1,6 @@
 schema: release-notes/v1
 version: "0.4.0"
-released: "2026-07-23"
+released: "2026-07-24"
 headline: "Second writes on one artifact no longer vanish; other systems' work is finally visible; the skill is discoverable"
 changes:
   - id: RN-0400-1
@@ -48,6 +48,22 @@ changes:
     action:
       scope: none
       why: "the verb now just works — nothing to run unless you were blocked on it"
+  - id: RN-0400-6
+    kind: feat
+    impact: normal
+    subject: "space CI is now a referenced reusable workflow — no copied logic, no fetch-token, version by Dependabot"
+    detail: >
+      A space's CI is a thin caller of a2ahub's public reusable workflow, pinned
+      by release tag and bumped by Dependabot; the A2A_BINARY_FETCH_TOKEN secret
+      is gone (integrity is the Go checksum DB via `go run …@<ver>`). The
+      required status check is now `a2a-validate / validate`. If you own a space,
+      migrate its CI to the caller per docs/runbooks/space-bootstrap.md (a
+      one-time branch-protection rename) — it ends the flag-drift outages that
+      froze pinned-binary spaces. New spaces scaffold from the template.
+    affects: [space, ci]
+    action:
+      scope: none
+      why: "a2a has no command to migrate a space's CI — it is a one-time owner/runbook step, not a funnel write"
   - id: RN-0400-4
     kind: feat
     impact: normal
