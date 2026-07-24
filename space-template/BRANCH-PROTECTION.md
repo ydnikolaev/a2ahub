@@ -24,6 +24,14 @@ Notes:
 - No repo secret is required (P33): a2ahub is public and the reusable
   workflow acquires the validator via `go run …@<ver>` (Go checksum DB), so
   the pre-P33 `A2A_BINARY_FETCH_TOKEN` secret is gone. Set nothing.
+- **Actions policy (restrictive orgs only).** Calling a2ahub's reusable
+  workflow is subject to the space org's Actions policy. If the org restricts
+  Actions to "only actions/workflows in this organization," add
+  `ydnikolaev/a2ahub` once under Settings → Actions → General → *Allow
+  specified actions and reusable workflows* — **one setting, not a token**. A
+  public space repo has no such restriction by default. A **private** space in
+  a private org may also need Dependabot enabled (Settings → Code security) for
+  the version-bump PRs to open.
 - Migrating a pre-P33 space: the required check RENAMES from the flat
   `a2a-validate` to `a2a-validate / validate` — update the branch-protection
   rule in the same change that swaps the workflow to the caller, or PRs hang

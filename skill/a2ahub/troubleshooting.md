@@ -58,8 +58,10 @@ imply the stronger property the plan's §9.3 runbook eventually describes:
   "warns on approaching expiry" (§9.3) is not yet enforced by this check — do
   not tell a user their credential is fresh on the strength of a PASS.
 - **CI presence** verifies the workflow *file* exists in the mirror, NOT that a
-  required status check named `a2a-validate` is *configured* in the host's
-  branch-protection settings. The full host-drift diff is `a2a doctor --space`
+  required status check named `a2a-validate / validate` (the P33 compound
+  context — caller job `a2a-validate` calls a2ahub's reusable `validate` job) is
+  *configured* in the host's branch-protection settings. The full host-drift
+  diff is `a2a doctor --space`
   territory (v2, rejected in v1-min).
 - **statusline wiring** is a presence check for the git fallback only, NOT a
   test of statusline rendering.
