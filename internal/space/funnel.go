@@ -382,8 +382,9 @@ const manualForkAdvice = "no write access and no automatic fork — fork the rep
 // `axon/../other/evil.md`) is rejected outright — otherwise a crafted
 // FileWrite.Path could collapse into a sibling system's section, or
 // outside the repo entirely, while still passing the guard whose whole
-// job is to enforce the single-writer boundary (D-014 data-stays-data,
-// the "one write shape" rail).
+// job is to enforce the single-writer boundary (D-002's single write funnel
+// + section ownership — plan §4.2; NOT D-014, which is the unrelated
+// data-never-instructions stance).
 func sectionOK(system, path string) bool {
 	if !isCleanRelativePath(path) {
 		return false
