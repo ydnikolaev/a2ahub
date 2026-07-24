@@ -394,6 +394,25 @@ var spaceUpdateDispositionTable = map[string]spaceUpdateDisposition{
 	"space.yaml":                         spaceDispositionFieldManaged,
 }
 
+// spaceSeededAlternates lists the OTHER locations a seeded file may legitimately
+// occupy in a space. The list for CODEOWNERS is GitHub's own resolution order
+// (.github/, repo root, docs/) — a space with any one of them has a CODEOWNERS,
+// whatever path the template ships.
+var spaceSeededAlternates = map[string][]string{
+	"CODEOWNERS": {".github/CODEOWNERS", "docs/CODEOWNERS"},
+}
+
+// spaceSeededElsewhere reports whether a seeded template path is already
+// satisfied at one of its alternate locations in the mirror.
+func (c *SpaceCommand) spaceSeededElsewhere(templatePath string, readFile func(string) ([]byte, error)) (string, bool) {
+	for _, alt := range spaceSeededAlternates[templatePath] {
+		if _, err := readFile(filepath.Join(c.MirrorDir, filepath.FromSlash(alt))); err == nil {
+			return alt, true
+		}
+	}
+	return "", false
+}
+
 // spaceUpdatePlan is the diff spaceComputeUpdatePlan produces: writes is the
 // exact SubmitRequest.Files payload a non-dry-run submits; summary is the
 // human-readable line per pending write; drift is advisory-only lines
@@ -555,6 +574,23 @@ func (c *SpaceCommand) spaceComputeUpdatePlan(spaceID, version string) (spaceUpd
 				plan.summary = append(plan.summary, fmt.Sprintf("field-update %s (min_binary_version %s -> %s, the template's floor)", p, currentFloor, nextFloor))
 			}
 		case spaceDispositionSeeded:
+			// A seeded file's identity is the ROLE it plays, not the path the
+			// template happens to use. GitHub resolves CODEOWNERS from
+			// .github/, the repo root, or docs/ — first match wins — so a
+			// space that keeps its real owners in .github/CODEOWNERS already
+			// HAS one. Comparing paths instead of roles would drop a root
+			// CODEOWNERS full of @REPLACE_WITH_ORG placeholders next to it:
+			// inert today (the .github/ copy wins), but noise in the repo,
+			// an error in GitHub's CODEOWNERS UI, and a silent
+			// gates-nothing takeover the day the real file moves.
+			// Found on the live getvisa space, invisible to the fixtures.
+			if !exists {
+				if alt, found := c.spaceSeededElsewhere(p, readFile); found {
+					plan.drift = append(plan.drift, fmt.Sprintf(
+						"advisory: template ships %s, this space keeps it at %s — left untouched (seeded, one per space)", p, alt))
+					return nil
+				}
+			}
 			switch {
 			case !exists:
 				plan.writes = append(plan.writes, space.FileWrite{Path: p, Content: substituted})
