@@ -283,6 +283,11 @@ type checkRun struct {
 // compound candidate is resolved deterministically (lexicographically first)
 // and REPORTED, never picked silently. Zero candidates → ok=false, which the
 // caller renders as the pre-existing "no check" result.
+//
+// The pick is deterministic across DISTINCT names, which is what `filter=latest`
+// (one run per name) guarantees. Two compound runs sharing a name would make
+// the conclusion order-dependent — but `Ambiguous` fires on candidate COUNT,
+// so that case still degrades to a reported ambiguity, never a silent verdict.
 func selectRequiredCheckRun(runs []checkRun) (run checkRun, ambiguous []string, ok bool) {
 	var compound, flat []checkRun
 	for _, r := range runs {
@@ -333,6 +338,13 @@ func (h *GitHubHost) CheckStatus(ctx context.Context, req StatusRequest) (CheckS
 
 	// filter=latest is GitHub's own default (one run per name, the most
 	// recent) — stated explicitly because the selection below depends on it.
+	//
+	// Only the first page is read. Dropping the server-side check_name filter
+	// widened this listing to EVERY check on the head SHA, so a repo with more
+	// than 100 distinct check names could push ours past page 1 — a space repo
+	// runs two checks, so the ceiling is far off, and the failure mode is the
+	// fail-safe "no check", never a false green. Following the Link header is
+	// a backlog row, not a silent assumption.
 	path := fmt.Sprintf("/repos/%s/%s/commits/%s/check-runs?filter=latest&per_page=100", req.Repo.Owner, req.Repo.Name, headSHA)
 	var resp struct {
 		CheckRuns []checkRun `json:"check_runs"`

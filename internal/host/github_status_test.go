@@ -112,7 +112,11 @@ func TestCheckStatusNeverSelectsPostmergeAudit(t *testing.T) {
 
 	h, _ := checkRunsHost(t, []map[string]any{
 		{"name": "a2a-postmerge-audit / validate", "status": "completed", "conclusion": "success"},
+		// Anchored on BOTH sides: a leading near-miss must not match…
 		{"name": "some-a2a-validate / validate", "status": "completed", "conclusion": "success"},
+		// …and neither must a trailing one — this is the row that fails if
+		// the separator is ever dropped from the prefix.
+		{"name": "a2a-validate-extra / validate", "status": "completed", "conclusion": "success"},
 	})
 	got := checkStatus(t, h)
 
