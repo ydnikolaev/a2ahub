@@ -143,14 +143,39 @@ func checkoutEnv(token, spaceSlug string) []string {
 // failure) — callers that need the process's stderr for a message read it
 // off the second return value regardless of err.
 func (c *checkout) Run(ctx context.Context, args ...string) (stdout, stderr string, err error) {
+	return c.RunIn(ctx, c.Dir, args...)
+}
+
+// RunIn is Run with an explicit working directory, for the verbs that are not
+// about the project at all.
+//
+// `validate --ci` is the case that forced it: in the space's CI it runs
+// INSIDE the checked-out space repo and reads `space.yaml` from the working
+// directory, so running it from a participant's project directory fails with
+// "cannot read space.yaml" no matter how healthy the space is. That is not a
+// product defect and must not be reported as one — it is the harness calling
+// a repo-scoped verb from the wrong repo. MirrorDir names the right one.
+func (c *checkout) RunIn(ctx context.Context, dir string, args ...string) (stdout, stderr string, err error) {
 	cmd := exec.CommandContext(ctx, c.Bin, args...)
-	cmd.Dir = c.Dir
+	cmd.Dir = dir
 	cmd.Env = checkoutEnv(c.Token, c.SpaceSlug)
 	var out, errBuf strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
 	runErr := cmd.Run()
 	return out.String(), errBuf.String(), runErr
+}
+
+// MirrorDir is the checkout's local clone of the space — the working tree
+// every read verb folds over, and the only directory a repo-scoped verb like
+// `validate --ci` may run from.
+//
+// NOTE, learned live: `a2a connect` leaves this directory EMPTY. It is
+// populated by the first `a2a sync`, so anything reading a file out of it
+// must sync first or it reads a hole (filed to the backlog as a product
+// question — connect arguably owes the caller a populated mirror).
+func (c *checkout) MirrorDir() string {
+	return filepath.Join(c.Dir, ".a2a", "cache", "mirrors", c.SpaceSlug)
 }
 
 // draftedIDPattern extracts the id `a2a new` mints from its own stdout line

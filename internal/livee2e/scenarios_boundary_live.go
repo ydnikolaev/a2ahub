@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ydnikolaev/a2ahub/internal/host"
 )
 
 // This file drives wave 3-2's boundary/identity family — the rows plan
@@ -652,6 +654,61 @@ func boundaryMoveMainDirect(ctx context.Context, h *harness) error {
 // ref matches the new head, never the stale one.
 const scenarioExecutedRefNotStale = "executed-ref-not-stale"
 
+// boundaryStaleRefCeiling/Interval bound the poll below.
+const (
+	boundaryStaleRefCeiling  = 4 * time.Minute
+	boundaryStaleRefInterval = 10 * time.Second
+)
+
+// boundaryAwaitCheckAtHead polls until the check the PRODUCT resolves for a PR
+// is both completed AND computed against that PR's CURRENT head, returning how
+// long the answer stayed stale.
+//
+// Asking once is not enough, and the first live run proved why: seconds after
+// UpdateBranch moved the head, CheckStatus answered with a run that had
+// executed against the PREVIOUS commit — GitHub really does serve the old
+// ref's run for a window. That is exactly §T6-b, and a single-shot assertion
+// turns it into a coin flip: fail if you asked early, pass if you asked late,
+// and neither outcome tells you anything about the product.
+//
+// So the row asserts CONVERGENCE and reports the window. A verdict that never
+// becomes current within the bound is the real defect this row exists to
+// catch — that is when a caller reading Conclusion acts on a ref that is not
+// the one under review.
+func boundaryAwaitCheckAtHead(ctx context.Context, h *harness, prNumber int) (host.CheckStatusResult, string, time.Duration, error) {
+	started := time.Now()
+	deadline := started.Add(boundaryStaleRefCeiling)
+	var lastRes host.CheckStatusResult
+	var lastHead, lastDetail string
+
+	for {
+		pr, err := h.Part.Pull(ctx, h.Org, h.Repo, prNumber)
+		if err != nil {
+			return host.CheckStatusResult{}, "", 0, err
+		}
+		res, err := h.AwaitCheck(ctx, h.B, prNumber)
+		if err != nil {
+			return host.CheckStatusResult{}, "", 0, err
+		}
+		lastRes, lastHead = res, pr.HeadSHA
+
+		ok, detail := ExecutedRefIsCurrent(pr.HeadSHA, resolvedCheckRun(res))
+		lastDetail = detail
+		if ok {
+			return res, pr.HeadSHA, time.Since(started), nil
+		}
+		if time.Now().After(deadline) {
+			return lastRes, lastHead, time.Since(started), fmt.Errorf(
+				"the resolved check never became current within %s: %s", boundaryStaleRefCeiling, lastDetail)
+		}
+		select {
+		case <-ctx.Done():
+			return host.CheckStatusResult{}, "", 0, ctx.Err()
+		case <-time.After(boundaryStaleRefInterval):
+		}
+	}
+}
+
 func boundaryExecutedRefNotStale(ctx context.Context, h *harness) Result {
 	const expected = "the required check's executed HeadSHA equals the PR's NEW head after main moved and the branch was force-recomputed — never a stale merge commit (§T6-b)"
 
@@ -668,23 +725,18 @@ func boundaryExecutedRefNotStale(ctx context.Context, h *harness) Result {
 		return boundaryFromErr(scenarioExecutedRefNotStale, SystemB, expected, fmt.Errorf("force-recompute: %w", err))
 	}
 
-	// Re-read the PR for its NEW head — the old value (sub.HeadSHA) is
-	// exactly the stale read this row exists to catch.
-	pr, err := h.Part.Pull(ctx, h.Org, h.Repo, sub.PRNumber)
+	res, head, staleFor, err := boundaryAwaitCheckAtHead(ctx, h, sub.PRNumber)
 	if err != nil {
-		return boundaryFromErr(scenarioExecutedRefNotStale, SystemB, expected, err)
+		if v, ok := verdictForError(err); ok {
+			return boundaryResult(scenarioExecutedRefNotStale, SystemB, v, expected, err.Error(), fmt.Sprintf("PR #%d", sub.PRNumber))
+		}
+		return boundaryResult(scenarioExecutedRefNotStale, SystemB, VerdictFail, expected, err.Error(), fmt.Sprintf("PR #%d", sub.PRNumber))
 	}
 
-	res, err := h.AwaitCheck(ctx, h.B, sub.PRNumber)
-	if err != nil {
-		return boundaryFromErr(scenarioExecutedRefNotStale, SystemB, expected, err)
-	}
-
-	ok, detail := ExecutedRefIsCurrent(pr.HeadSHA, resolvedCheckRun(res))
-	if !ok {
-		return boundaryResult(scenarioExecutedRefNotStale, SystemB, VerdictFail, expected, detail, fmt.Sprintf("PR #%d", sub.PRNumber))
-	}
+	// The window is the evidence, not a footnote: it is the measured size of
+	// the interval in which reading a conclusion would have meant reading the
+	// wrong ref's verdict.
 	return boundaryResult(scenarioExecutedRefNotStale, SystemB, VerdictPass, "", "",
-		fmt.Sprintf("PR #%d: check run %q executed against the PR's current (post-update-branch) head %s",
-			sub.PRNumber, resolvedCheckRun(res).Name, pr.HeadSHA))
+		fmt.Sprintf("PR #%d: check run %q became current at head %s after %s of serving the previous ref",
+			sub.PRNumber, resolvedCheckRun(res).Name, head, staleFor.Round(time.Second)))
 }
