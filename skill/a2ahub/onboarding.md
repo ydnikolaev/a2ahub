@@ -87,10 +87,14 @@ Guide the participant through these steps in order:
 
 - **Scaffolding the space tree** (space-admin step 1): copy `space-template/`
   into the new repo — it ships the CI caller + `dependabot.yml` ready to go.
-  `a2a space init <id>` (self-service scaffolder, ships v0.5.0) automates this:
-  it writes the tree with `space:`/`min_binary_version` filled and the reusable
-  ref pinned to the binary's own version. CODEOWNERS org handles + creating the
-  repo, pushing, and arming branch protection stay the owner's steps.
+  `a2a space init <space-id> [--dir <path>]` automates this: it writes the tree
+  from the embedded template with `space:` and `min_binary_version` filled and
+  the reusable-workflow ref pinned to the running binary's own release. It
+  refuses to run from an untagged dev build (it would pin a version that does
+  not exist) and refuses a non-empty target directory. CODEOWNERS org handles
+  stay `@REPLACE_WITH_ORG/...` placeholders — the command prints them, plus
+  creating the repo, pushing, and arming branch protection, as the owner's
+  remaining steps.
 - **New space (new circle):** the space-admin profile plus a `hub.yaml` entry
   and a webhook.
 - **New org:** the operator sets up GitHub org membership/team, then proceeds as
