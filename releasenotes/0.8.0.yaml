@@ -123,15 +123,21 @@ changes:
     subject: "A space pinned to v0.7.0 was validating with the v0.5.0 binary"
     detail: >
       A space pins the reusable validation workflow by release tag and inherits
-      that workflow's own default for which a2a version to run. That default was
-      left at v0.5.0 when v0.6.x and v0.7.0 shipped, so a space pinned at
+      that workflow's own default for which a2a version to `go run`. That default
+      was left at v0.5.0 when v0.6.x and v0.7.0 shipped, so a space pinned at
       `@v0.7.0` ran its CI gate with a binary two releases old while believing it
-      ran what it pinned. This mattered beyond version hygiene: v0.5.0 predates
-      the v0.6.4 fix for author resolution in the diff-authorization check, so
-      those spaces kept an authorization bypass the notes had described as
-      closed. The default now moves with the release, and
-      `make release-preflight` refuses a cut whose default disagrees with the tag
-      — the skew cannot recur silently.
+      ran what it pinned. Every binary-side `validate --ci` improvement since
+      v0.5.0 was therefore absent from that space's gate — most consequentially
+      the computed contract-compatibility check RN-0700-3 added, so a breaking
+      change labelled `minor` would not have been caught at merge there.
+      To be precise about what this was NOT, since an earlier draft of this note
+      overstated it: the v0.6.4 diff-authorization fix is a WORKFLOW-side change
+      (it passes `--author <the pull request's author>` explicitly instead of
+      letting the binary fall back to whoever re-triggered the run), so any space
+      pinning the v0.6.4-or-later workflow carried that fix regardless of which
+      binary the workflow ran. No space kept that bypass open because of this.
+      The default now moves with the release, and `make release-preflight` refuses
+      a cut whose default disagrees with the tag — the skew cannot recur silently.
     affects: [space, policy]
     action:
       scope: space

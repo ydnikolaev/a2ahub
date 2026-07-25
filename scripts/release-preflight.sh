@@ -127,9 +127,11 @@ assert_ref_default_matches() { # $1 = repo, $2 = version (vX.Y.Z)
     VALIDATOR, so the two skewing means every space silently validates with $got while
     believing it runs $want.
     This is not hypothetical: v0.7.0 shipped with the default still at v0.5.0, so every
-    space at @v0.7.0 ran a validator two releases old — including one that predated the
-    v0.6.4 diff-authz fix, i.e. spaces kept an authorization bypass that the release
-    notes said was closed.
+    space at @v0.7.0 ran a validator two releases old, missing every binary-side
+    \`validate --ci\` fix since — including the computed contract-compatibility check, so a
+    breaking change labelled minor would not be caught at merge there. (It did NOT reopen
+    the v0.6.4 diff-authz bypass: that fix is workflow-side, passing --author explicitly,
+    so the pinned WORKFLOW carries it whichever binary it runs.)
     Fix: set \`default: \"$want\"\` in $REUSABLE_PATH before tagging."
     return 1
   fi
