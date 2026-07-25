@@ -257,3 +257,153 @@ func TestAutoMergeAllowed(t *testing.T) {
 		}
 	})
 }
+
+// TestMergePRSendsExplicitMergeMethod is WAVE M4's host-layer half of
+// AC-1050.12: MergePR PUTs /repos/{o}/{r}/pulls/{n}/merge with an EXPLICIT
+// merge_method chosen from the repository's own allowed set — never left to
+// GitHub's implicit repository default, the way armAutoMerge's call is (see
+// MergePR's doc for why the two paths must not diverge).
+func TestMergePRSendsExplicitMergeMethod(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		allowMergeCommit bool
+		allowSquash      bool
+		allowRebase      bool
+		wantMethod       string
+	}{
+		{name: "merge commit preferred when allowed", allowMergeCommit: true, allowSquash: true, allowRebase: true, wantMethod: "merge"},
+		{name: "falls back to squash when merge commit disallowed", allowMergeCommit: false, allowSquash: true, allowRebase: true, wantMethod: "squash"},
+		{name: "falls back to rebase when only rebase allowed", allowMergeCommit: false, allowSquash: false, allowRebase: true, wantMethod: "rebase"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var sawMethod string
+			var sawPath string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/space":
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"allow_merge_commit": tc.allowMergeCommit,
+						"allow_squash_merge": tc.allowSquash,
+						"allow_rebase_merge": tc.allowRebase,
+					})
+				case r.Method == http.MethodPut && r.URL.Path == "/repos/acme/space/pulls/7/merge":
+					sawPath = r.URL.Path
+					var body map[string]any
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Fatalf("decode merge body: %v", err)
+					}
+					sawMethod, _ = body["merge_method"].(string)
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]any{"merged": true})
+				default:
+					t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+				}
+			}))
+			defer srv.Close()
+
+			h := NewGitHubHost(srv.Client(), srv.URL)
+			err := h.MergePR(context.Background(), MergePRRequest{
+				Repo: Repo{Owner: "acme", Name: "space"}, PRNumber: 7, Credential: Credential{Token: "tok"},
+			})
+			if err != nil {
+				t.Fatalf("MergePR: %v", err)
+			}
+			if sawPath != "/repos/acme/space/pulls/7/merge" {
+				t.Fatalf("merge request path = %q, want /repos/acme/space/pulls/7/merge", sawPath)
+			}
+			if sawMethod != tc.wantMethod {
+				t.Fatalf("merge_method = %q, want %q", sawMethod, tc.wantMethod)
+			}
+		})
+	}
+}
+
+// TestMergePRNoMethodAllowed is the "guess nothing" half: a repository that
+// disallows every merge method gets a typed, actionable error instead of a
+// request GitHub would refuse anyway.
+func TestMergePRNoMethodAllowed(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("unexpected request %s %s — MergePR must not attempt a merge with no allowed method", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"allow_merge_commit": false, "allow_squash_merge": false, "allow_rebase_merge": false,
+		})
+	}))
+	defer srv.Close()
+
+	h := NewGitHubHost(srv.Client(), srv.URL)
+	err := h.MergePR(context.Background(), MergePRRequest{
+		Repo: Repo{Owner: "acme", Name: "space"}, PRNumber: 7, Credential: Credential{Token: "tok"},
+	})
+	if !errors.Is(err, ErrMergeMethodUnavailable) {
+		t.Fatalf("expected errors.Is(err, ErrMergeMethodUnavailable), got %v", err)
+	}
+}
+
+// TestMergePRStatusOutcomes is WAVE M4's 405/409 distinguishability
+// requirement: a head that moved under us (409) must never be confused with
+// "not mergeable right now" (405), because a caller (the funnel) must NEVER
+// report a 409 as a landed write — the commit that would actually be merged
+// is not the one it verified green.
+func TestMergePRStatusOutcomes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		status     int
+		wantErr    error
+		wantOthers []error // must NOT match
+	}{
+		{name: "405 not mergeable", status: http.StatusMethodNotAllowed, wantErr: ErrPRNotMergeable, wantOthers: []error{ErrPRHeadMoved}},
+		{name: "409 head moved", status: http.StatusConflict, wantErr: ErrPRHeadMoved, wantOthers: []error{ErrPRNotMergeable}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.Method {
+				case http.MethodGet:
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]any{"allow_merge_commit": true})
+				case http.MethodPut:
+					http.Error(w, `{"message":"refused"}`, tc.status)
+				}
+			}))
+			defer srv.Close()
+
+			h := NewGitHubHost(srv.Client(), srv.URL)
+			err := h.MergePR(context.Background(), MergePRRequest{
+				Repo: Repo{Owner: "acme", Name: "space"}, PRNumber: 7, Credential: Credential{Token: "tok"},
+			})
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("errors.Is(err, %v) = false, err = %v", tc.wantErr, err)
+			}
+			for _, other := range tc.wantOthers {
+				if errors.Is(err, other) {
+					t.Fatalf("err unexpectedly also matches %v (must be distinguishable): %v", other, err)
+				}
+			}
+		})
+	}
+}
+
+// TestMergePRInvalidRequest guards the missing-field precondition every
+// other host operation enforces.
+func TestMergePRInvalidRequest(t *testing.T) {
+	t.Parallel()
+	h := NewGitHubHost(nil, "")
+	if err := h.MergePR(context.Background(), MergePRRequest{}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("expected errors.Is(err, ErrInvalidRequest), got %v", err)
+	}
+}

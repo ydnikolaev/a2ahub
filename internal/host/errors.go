@@ -42,6 +42,26 @@ var (
 	// ErrInvalidRequest is returned when a caller omits a required field
 	// on a request value.
 	ErrInvalidRequest = errors.New("host: invalid request")
+
+	// ErrPRNotMergeable is returned when GitHub answers HTTP 405 to a direct
+	// merge attempt (Merger.MergePR): the PR cannot be merged right now. A
+	// distinct sentinel from ErrPushRejected/ErrRequestFailed because a
+	// caller (the funnel's guard) must be able to tell "the merge attempt
+	// itself was refused" apart from every other request failure.
+	ErrPRNotMergeable = errors.New("host: pull request not mergeable")
+
+	// ErrPRHeadMoved is returned when GitHub answers HTTP 409 to a direct
+	// merge attempt: the PR's head moved since the caller last read it, so
+	// the commit that would be merged is not the one the caller verified
+	// green. A caller MUST NOT report this outcome as a landed write.
+	ErrPRHeadMoved = errors.New("host: pull request head moved")
+
+	// ErrMergeMethodUnavailable is returned by Merger.MergePR when the
+	// repository allows no merge method at all (merge commit, squash, and
+	// rebase all disabled) — there is no way to land the PR, and guessing
+	// would be wrong, so this is a typed, actionable error rather than a
+	// best-effort attempt.
+	ErrMergeMethodUnavailable = errors.New("host: repository allows no merge method")
 )
 
 // Error is the small typed error every exported operation in this package

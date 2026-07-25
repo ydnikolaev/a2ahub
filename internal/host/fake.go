@@ -40,12 +40,20 @@ type FakeHost struct {
 	EnsureForkFunc func(ctx context.Context, req EnsureForkRequest) (ForkInfo, error)
 	// ForkLogin is the login EnsureFork's default behaviour forks as.
 	ForkLogin string
+	// MergePRFunc, when set, overrides the optional Merger capability.
+	// Default: records the call and marks the recorded PR (found by number
+	// across every branch OpenPR minted) merged, so a subsequent
+	// FindPRByHeadBranch reads it back as merged — the same shape a real
+	// merge produces, and what makes a funnel test's "landed" assertion
+	// observable rather than merely "was called".
+	MergePRFunc func(ctx context.Context, req MergePRRequest) error
 
 	// Recorded calls, for test assertions.
 	Pushes   []PushBranchRequest
 	Opens    []OpenPRRequest
 	Forks    []EnsureForkRequest
 	AutoArms []EnableAutoMergeRequest
+	MergePRs []MergePRRequest
 	nextPR   int
 	byBranch map[string]PRInfo
 }
@@ -168,6 +176,8 @@ var (
 	_ Host   = (*FakeHost)(nil)
 	_ Forker = (*FakeHost)(nil)
 	_ Forker = (*GitHubHost)(nil)
+	_ Merger = (*FakeHost)(nil)
+	_ Merger = (*GitHubHost)(nil)
 )
 
 // EnableAutoMerge implements the optional AutoMerger capability: it records
@@ -186,5 +196,30 @@ func (f *FakeHost) EnableAutoMerge(ctx context.Context, req EnableAutoMergeReque
 	if fn != nil {
 		return fn(ctx, req)
 	}
+	return nil
+}
+
+// MergePR implements the optional Merger capability: it records the request
+// and, by default, marks the PR it names merged in byBranch (across
+// whichever branch OpenPR minted it under) so a subsequent
+// FindPRByHeadBranch observes the merge.
+func (f *FakeHost) MergePR(ctx context.Context, req MergePRRequest) error {
+	f.mu.Lock()
+	f.MergePRs = append(f.MergePRs, req)
+	fn := f.MergePRFunc
+	f.mu.Unlock()
+
+	if fn != nil {
+		return fn(ctx, req)
+	}
+
+	f.mu.Lock()
+	for branch, info := range f.byBranch {
+		if info.Number == req.PRNumber {
+			info.State = "merged"
+			f.byBranch[branch] = info
+		}
+	}
+	f.mu.Unlock()
 	return nil
 }

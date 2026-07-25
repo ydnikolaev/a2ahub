@@ -73,6 +73,25 @@ type Server struct {
 	// to true — a correctly-configured space — so no existing test's
 	// behaviour changes; set false to drive the WAVE M2 doctor FAIL path.
 	AllowAutoMerge bool
+	// AllowMergeCommit/AllowSquashMerge/AllowRebaseMerge are what GET
+	// /repos/{owner}/{name} reports for the same three merge-method flags
+	// host.GitHubHost.MergePR reads to pick an explicit merge_method
+	// (WAVE M4). All default true — a freshly created repository's own
+	// default — so MergePR's default preference (merge commit) is what a
+	// test sees unless it narrows one of these.
+	AllowMergeCommit bool
+	AllowSquashMerge bool
+	AllowRebaseMerge bool
+	// AutoMergeAlreadyClean, when true, makes the enable-auto-merge mutation
+	// answer GitHub's REAL "clean status" refusal (WAVE M4) instead of
+	// arming/merging: `errors: [{"message": "... is in clean status"}]`,
+	// the exact wording internal/host's autoMergeRefusal/IsAutoMergeAlreadyClean
+	// match against. Reaching a merge from here therefore requires the
+	// caller to land the PR itself via the merge endpoint below — this flag
+	// is what makes that scenario reproducible over a real HTTP path rather
+	// than only inside internal/host's own httptest-server unit tests.
+	// False (default) preserves every existing test's behaviour.
+	AutoMergeAlreadyClean bool
 
 	t    testing.TB
 	mu   sync.Mutex
@@ -93,14 +112,17 @@ type Server struct {
 func New(t testing.TB, originDir string) *Server {
 	t.Helper()
 	s := &Server{
-		OriginDir:       originDir,
-		AutoMerge:       true,
-		CheckState:      "completed",
-		CheckConclusion: "success",
-		CheckName:       "a2a-validate / validate",
-		AllowAutoMerge:  true,
-		t:               t,
-		forks:           make(map[string]string),
+		OriginDir:        originDir,
+		AutoMerge:        true,
+		CheckState:       "completed",
+		CheckConclusion:  "success",
+		CheckName:        "a2a-validate / validate",
+		AllowAutoMerge:   true,
+		AllowMergeCommit: true,
+		AllowSquashMerge: true,
+		AllowRebaseMerge: true,
+		t:                t,
+		forks:            make(map[string]string),
 	}
 	s.srv = httptest.NewServer(http.HandlerFunc(s.route))
 	s.URL = s.srv.URL
@@ -174,6 +196,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		s.handleGetPR(w, r, parts[4])
 	case len(parts) == 4 && parts[0] == "repos" && parts[3] == "forks" && r.Method == http.MethodPost:
 		s.handleFork(w, r, parts[2])
+	case len(parts) == 6 && parts[0] == "repos" && parts[3] == "pulls" && parts[5] == "merge" && r.Method == http.MethodPut:
+		s.handleMergePR(w, r, parts[4])
 	case len(parts) == 6 && parts[0] == "repos" && parts[3] == "pulls" && parts[5] == "reviews":
 		s.writeJSON(w, s.reviewPayload())
 	case len(parts) == 6 && parts[0] == "repos" && parts[3] == "commits" && parts[5] == "check-runs":
@@ -186,7 +210,12 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			{"name": s.CheckName, "status": s.CheckState, "conclusion": s.CheckConclusion, "head_sha": parts[4]},
 		}})
 	case len(parts) == 3 && parts[0] == "repos" && r.Method == http.MethodGet:
-		s.writeJSON(w, map[string]any{"name": parts[2], "allow_auto_merge": s.AllowAutoMerge})
+		s.writeJSON(w, map[string]any{
+			"name": parts[2], "allow_auto_merge": s.AllowAutoMerge,
+			"allow_merge_commit": s.AllowMergeCommit,
+			"allow_squash_merge": s.AllowSquashMerge,
+			"allow_rebase_merge": s.AllowRebaseMerge,
+		})
 	default:
 		http.Error(w, "fakegithub: unhandled "+r.Method+" "+r.URL.Path, http.StatusNotFound)
 	}
@@ -284,9 +313,20 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "fakegithub: bad graphql body", http.StatusBadRequest)
 		return
 	}
-	if strings.Contains(body.Query, "enablePullRequestAutoMerge") && s.AutoMerge {
-		nodeID, _ := body.Variables["id"].(string)
-		s.mergeByNodeID(nodeID)
+	if strings.Contains(body.Query, "enablePullRequestAutoMerge") {
+		if s.AutoMergeAlreadyClean {
+			s.writeJSON(w, map[string]any{
+				"data": map[string]any{"enablePullRequestAutoMerge": nil},
+				"errors": []map[string]any{
+					{"message": "Pull request Pull request is in clean status", "type": "UNPROCESSABLE"},
+				},
+			})
+			return
+		}
+		if s.AutoMerge {
+			nodeID, _ := body.Variables["id"].(string)
+			s.mergeByNodeID(nodeID)
+		}
 	}
 	s.writeJSON(w, map[string]any{"data": map[string]any{}})
 }
@@ -320,6 +360,45 @@ func (s *Server) mergeByNodeID(nodeID string) {
 	if _, err := fmt.Sscanf(nodeID, "PR_%d", &number); err != nil {
 		return
 	}
+	if err := s.mergeByNumber(number); err != nil {
+		s.t.Errorf("%v", err)
+	}
+}
+
+// handleMergePR serves PUT /repos/{owner}/{repo}/pulls/{number}/merge — the
+// DIRECT merge host.GitHubHost.MergePR issues (WAVE M4). It requires an
+// explicit merge_method the same way real GitHub does (a request without one
+// is a caller bug, not something to paper over), and reports a merge failure
+// as 405 — the one status internal/host classifies as ErrPRNotMergeable.
+func (s *Server) handleMergePR(w http.ResponseWriter, r *http.Request, numStr string) {
+	var number int
+	if _, err := fmt.Sscanf(numStr, "%d", &number); err != nil {
+		http.Error(w, "fakegithub: bad pr number", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		MergeMethod string `json:"merge_method"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "fakegithub: bad merge body", http.StatusBadRequest)
+		return
+	}
+	if body.MergeMethod == "" {
+		http.Error(w, `{"message":"merge_method is required"}`, http.StatusUnprocessableEntity)
+		return
+	}
+	if err := s.mergeByNumber(number); err != nil {
+		http.Error(w, `{"message":"`+strings.ReplaceAll(err.Error(), `"`, `'`)+`"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	s.writeJSON(w, map[string]any{"merged": true, "message": "Pull Request successfully merged"})
+}
+
+// mergeByNumber performs the REAL git merge (see merge's own doc) and marks
+// the PR merged — the one merge implementation mergeByNodeID (auto-merge)
+// and handleMergePR (direct merge) both route through, so the two paths
+// cannot diverge in what "merged" means inside this fake.
+func (s *Server) mergeByNumber(number int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, pr := range s.prs {
@@ -331,24 +410,22 @@ func (s *Server) mergeByNodeID(nodeID string) {
 		if owner != "" {
 			forkDir, ok := s.forks[owner]
 			if !ok {
-				s.t.Errorf("fakegithub: PR %d heads from unknown fork %q", pr.Number, owner)
-				return
+				return fmt.Errorf("fakegithub: PR %d heads from unknown fork %q", pr.Number, owner)
 			}
 			headRepo = forkDir
 			// Keep a copy of the fork's head inside the origin so a later
 			// CheckStatus can resolve the PR's head SHA.
 			if err := s.git(s.OriginDir, "fetch", forkDir, "refs/heads/"+branch+":refs/fork/"+branch); err != nil {
-				s.t.Errorf("fakegithub: fetch fork head: %v", err)
-				return
+				return fmt.Errorf("fakegithub: fetch fork head: %w", err)
 			}
 		}
 		if err := s.merge(headRepo, branch, pr.Base); err != nil {
-			s.t.Errorf("fakegithub: merge PR %d: %v", pr.Number, err)
-			return
+			return fmt.Errorf("fakegithub: merge PR %d: %w", pr.Number, err)
 		}
 		pr.State, pr.Merged = "merged", true
-		return
+		return nil
 	}
+	return fmt.Errorf("fakegithub: no such pr %d", number)
 }
 
 // merge performs a REAL git merge of headRepo's branch into base and pushes
