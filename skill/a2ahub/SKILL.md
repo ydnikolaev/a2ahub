@@ -77,6 +77,7 @@ Three ways an agent activates this skill (§8.7):
 | [reference/commands.md](reference/commands.md) | **Generated from the binary.** Full `a2a` command catalog + MCP tool catalog. The source of truth for invocation syntax — never duplicated in prose. |
 | [reference/authoring/](reference/authoring/) | **Generated from schemas.** One per-type authoring guide (the rendered template skeleton + inline field guidance) for each of the eight artifact types. |
 | [reference/decompose-example.md](reference/decompose-example.md) | A worked single-intent decompose: one thread carrying an announcement + a question + a work_request, referencing the product-repo fixtures. |
+| [reference/feedback.md](reference/feedback.md) | The feedback channel — filing a defect or a gap against a2a itself (`a2a feedback new/validate/submit/status`), what the quarantined intake does with it, and what makes a report actionable. Hand-maintained prose, not generated. |
 
 ## The eight artifact types (map)
 
@@ -96,13 +97,19 @@ Full semantics in [loops.md](loops.md); template + fields per type in
 
 ## Sourcing & drift (D-015)
 
-The prose files in this skill (`SKILL.md`, `loops.md`, `troubleshooting.md`,
-`onboarding.md`, `reference/decompose-example.md`, and the release checklist)
-are **hand-maintained** and single-sourced here; they are reviewed at each
-tagged release via [../RELEASE-CHECKLIST.md](../RELEASE-CHECKLIST.md), not by a
-machine gate. The `reference/commands.md` and `reference/authoring/*.md` files
-are **generated** from the binary and the schemas and are byte-diffed by the
-`skill-drift` CI job — do not hand-edit them.
+The prose files in this skill — `SKILL.md`, `loops.md`, `troubleshooting.md`,
+`onboarding.md`, `reference/decompose-example.md` and `reference/feedback.md` —
+are **hand-maintained** and single-sourced here; they are reviewed at each tagged
+release against the maintainers' own release checklist, not by a machine gate.
+(That checklist lives in the product repo, one directory above this tree, and is
+deliberately NOT shipped inside the installed skill: it is a maintainer
+procedure, not something a consuming agent acts on. A relative link to it used to
+sit here and resolved to nothing in every installation.)
+
+The `reference/commands.md` and `reference/authoring/*.md` files are
+**generated** from the binary and the schemas and are byte-diffed by the
+`skill-drift` CI job on every push — do not hand-edit them. Anything not in
+either list does not exist in this tree.
 
 ## Staying current — the update notice
 

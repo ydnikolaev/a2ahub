@@ -25,7 +25,7 @@
 | Profile | Who | What it covers | Budget |
 |---------|-----|----------------|--------|
 | **hub admin** | operator | Provision the hub on a VPS: binary + systemd + `hub.yaml` + space read-PATs + webhook registration + TLS + optional chat webhook. | ≤ 1 h |
-| **org/space admin** | operator (v1) | Create a space repo from the product's space template (layout, CI **caller** workflow + `dependabot.yml`, CODEOWNERS skeleton, `space.yaml`) + branch protection (PR-only main, required check `a2a-validate / validate`, auto-merge) + invite participants. Verify a direct push is rejected and an ungated PR auto-merges. | ≤ 30 min |
+| **org/space admin** | operator (v1) | Create a space repo from the product's space template (layout, CI **caller** workflow + `dependabot.yml`, CODEOWNERS skeleton, `space.yaml`) + branch protection (PR-only main, required check `a2a-validate / validate`) + the SEPARATE repo setting "Allow auto-merge" (Settings → General — not part of branch protection, and off by default) + invite participants. Verify a direct push is rejected and an ungated PR auto-merges. | ≤ 30 min |
 | **project dev** | each participating team | Install the binary + `a2a init` + `a2a connect` + credentials + the harness adapter, then `a2a doctor` green. | ≤ 30 min, no walkthrough |
 
 The project-dev profile is the one an agent most often assists. The end state is
@@ -93,8 +93,15 @@ Guide the participant through these steps in order:
   refuses to run from an untagged dev build (it would pin a version that does
   not exist) and refuses a non-empty target directory. CODEOWNERS org handles
   stay `@REPLACE_WITH_ORG/...` placeholders — the command prints them, plus
-  creating the repo, pushing, and arming branch protection, as the owner's
-  remaining steps.
+  creating the repo, pushing, arming branch protection, and **enabling GitHub's
+  "Allow auto-merge" repo setting**, as the owner's four remaining steps.
+- **Do not skip the auto-merge setting.** It is off by default on every newly
+  created GitHub repository, it is a *repo setting* rather than part of branch
+  protection, and without it the whole exchange stalls silently: `a2a submit`
+  opens a pull request and arms auto-merge, so with the setting off the request
+  sits there green and unmerged, the writer sees a warning it may not read, and
+  the counterparty sees nothing at all. `a2a doctor` FAILs on it (the
+  `auto-merge enabled` row) — Settings → General → "Allow auto-merge".
 - **New space (new circle):** the space-admin profile plus a `hub.yaml` entry
   and a webhook.
 - **New org:** the operator sets up GitHub org membership/team, then proceeds as
