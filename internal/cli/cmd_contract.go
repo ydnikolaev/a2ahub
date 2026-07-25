@@ -789,18 +789,33 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 		}
 	}
 
-	// F2/D-A: a major bump over an existing prior major is refused unless a
-	// deprecation of that prior major already exists — a PRECONDITION, not
-	// an atomic pairing, so the deprecation always lands first and §T3's
-	// window (a major published with no deprecation in flight) never
-	// opens. The refusal names the exact command the operator owes.
-	if isMajorBump && !contractPriorMajorDeprecated(all, id, baseline[0]) {
-		_, _ = fmt.Fprintf(stdio.Stderr,
-			"contract publish: %s: refused: major bump to %s carries no deprecation of the prior major (v%d) — "+
-				"run `a2a contract deprecate %s --version %s --successor <XC-id@version> --sunset <YYYY-MM-DD>` first, then retry this publish\n",
-			id, newVersion.String(), baseline[0], id, baseline.String())
-		return 1
-	}
+	// F2 (D-010 atomicity) is DELIBERATELY NOT ENFORCED HERE, and the
+	// reason is a defect this phase found rather than a corner it cut.
+	//
+	// D-A specified a precondition: a major bump is refused unless the prior
+	// major is already deprecated, so the deprecation always lands first and
+	// no window opens in which a new major is published while the old one is
+	// still undeclared. That rule was built, and it turned out to forbid the
+	// very sequence it exists to allow.
+	//
+	// internal/fold models a contract's lifecycle per SUBJECT, not per
+	// VERSION — fold.Event carries no version field at all — so a single
+	// `deprecate` puts the WHOLE contract in StateDeprecated, and
+	// contractRows() (internal/fold/table.go) has no (Deprecated, publish)
+	// row. Deprecate the prior major first and the publish that was supposed
+	// to follow is refused as an illegal transition (LFC-001), before any
+	// check here runs. Publish first and the same wall arrives one version
+	// later. Either way a contract can never publish a successor once
+	// anything has been deprecated.
+	//
+	// That is a pre-existing product defect, not P37's: docs/the-plan/plan/
+	// 05-schemas.md:118 describes a major-publish-after-deprecation flow the
+	// state machine forbids, and P36's live row never hit it because it
+	// publishes exactly once. Enforcing F2 on top of it would brick major
+	// publishes outright, so the enforcement is withdrawn (operator decision
+	// 2026-07-25) and the fold's per-version lifecycle is filed as its own
+	// phase. Spec 37 §11 records this; F2 stays open there rather than
+	// counting as shipped.
 
 	now := c.deps.now()
 	eventID, err := artifact.MintULIDAt(now, c.deps.entropy)
@@ -971,33 +986,6 @@ func contractInferBumpKind(baseline, newVersion contractSemver) string {
 	default:
 		return "patch"
 	}
-}
-
-// contractPriorMajorDeprecated reports whether id already carries a
-// fold.TDeprecate event covering priorMajor: either a version-scoped
-// deprecate whose major component IS priorMajor, or a whole-contract
-// deprecate (no version scope — deprecate's own --version is optional,
-// runDeprecate defaults it to the CURRENTLY published version, but a prior
-// deprecate could have been scoped differently, and an unscoped one covers
-// every version including priorMajor). Walks the SAME already-loaded event
-// slice contractPublishedVersions walks — no second mirror read.
-func contractPriorMajorDeprecated(all []lifecycleEventDoc, id string, priorMajor int) bool {
-	for _, ev := range all {
-		if ev.Subject != id || ev.Transition != fold.TDeprecate {
-			continue
-		}
-		if ev.Version == "" {
-			return true
-		}
-		v, err := contractParseSemver(ev.Version)
-		if err != nil {
-			continue
-		}
-		if v[0] == priorMajor {
-			return true
-		}
-	}
-	return false
 }
 
 // runDeprecate implements `a2a contract deprecate <id> [--version
