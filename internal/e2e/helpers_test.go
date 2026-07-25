@@ -205,6 +205,35 @@ func writeContractDescriptorFor(t *testing.T, mirrorDir, from, slug, version str
 	writeMirrorFile(t, mirrorDir, from+"/provides/"+slug+"/contract.md", content)
 }
 
+// writeContractSchemaFixture seeds decision D-D/POL-009's own baseline (>=1
+// schema/** file + >=1 fixtures/valid/** file) for from's XC-<from>-<slug>
+// contract — the "constructed directly" shape (internal/space.Layout's own
+// ProvidesSchemaDir/ProvidesFixturesValidDir path constructors, never
+// filepath.Join'd against Layout's forward-slash output — see its own doc
+// comment), for tests that write a committed descriptor straight into the
+// mirror (writeContractDescriptor/writeContractDescriptorFor) rather than
+// driving `a2a contract new`'s real scaffold.
+//
+// Both files are named after slug (D-E's stem-mapping rule,
+// internal/validate/compat.go's planMapping doc comment: fixtures/valid/
+// <stem>.json <-> schema/<stem>.schema.json), and shaped exactly like
+// internal/template/scaffold's own starter pair (a permissive
+// `additionalProperties: true` schema whose one modeled field the fixture
+// actually exercises) — a fixture that only satisfies `{}` against
+// `additionalProperties: true` would validate trivially and never
+// meaningfully participate in a later CheckComputedCompatibility call.
+func writeContractSchemaFixture(t *testing.T, mirrorDir, from, slug string) {
+	t.Helper()
+	layout, err := space.NewLayout(from)
+	if err != nil {
+		t.Fatalf("writeContractSchemaFixture: NewLayout: %v", err)
+	}
+	schema := `{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"example":{"type":"string"}},"additionalProperties":true}` + "\n"
+	fixture := `{"example":"replace-me"}` + "\n"
+	writeMirrorFile(t, mirrorDir, layout.ProvidesSchemaDir(slug)+"/"+slug+".schema.json", schema)
+	writeMirrorFile(t, mirrorDir, layout.ProvidesFixturesValidDir(slug)+"/"+slug+".json", fixture)
+}
+
 func writeConsumesYAML(t *testing.T, mirrorDir, system, contractID string) {
 	t.Helper()
 	content := "schema: consumes/v1\nsystem: " + system + "\ndependencies:\n  - contract: " + contractID + "\n    major: 1\n    since: \"2026-01-01\"\n"

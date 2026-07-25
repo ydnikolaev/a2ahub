@@ -278,6 +278,243 @@ func TestSubmitIdempotentAlreadySubmitted(t *testing.T) {
 	}
 }
 
+// --- contract sidecars (P37 D-D follow-up: submit carries schema/fixtures) -
+
+// writeContractDraft stages a minimal, valid contract draft at
+// <stagingDir>/<id>.md (contract.schema.json's required fields, same
+// shape as cmd_contract_test.go's own writeContractDescriptor, which
+// seeds the MIRROR rather than staging).
+func writeContractDraft(t *testing.T, stagingDir, id string) string {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: " + id + "\n" +
+		"type: contract\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [beta]\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: api\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: \"0.0.0\"\n" +
+		"compat_policy: strict-semver\n" +
+		"schema_format: json-schema-2020-12\n" +
+		"---\nbody\n"
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(stagingDir, id+".md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write contract draft: %v", err)
+	}
+	return path
+}
+
+// writeStagedSidecar writes a scaffold-shaped sidecar file under
+// stagingDir at the exact space-relative path
+// internal/cli/cmd_new.go's newScaffoldContractFiles would have written
+// it to (schema/<slug>.schema.json, fixtures/valid/<slug>.json, ...).
+func writeStagedSidecar(t *testing.T, stagingDir, spaceRelPath, content string) {
+	t.Helper()
+	full := filepath.Join(stagingDir, filepath.FromSlash(spaceRelPath))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+		t.Fatalf("write sidecar %s: %v", spaceRelPath, err)
+	}
+}
+
+// TestSubmitContractCarriesStagedSidecars proves the gap this wave closes:
+// a scaffolded contract's staged schema/** and fixtures/**/* travel into
+// the SubmitRequest alongside contract.md and its lifecycle event, at
+// their correct space-relative paths (§4.2/internal/space.Layout) —
+// otherwise a scaffolded contract is refused (POL-009) the first time
+// anyone publishes it, because nothing else carries those files into the
+// space.
+func TestSubmitContractCarriesStagedSidecars(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	path := writeContractDraft(t, stagingDir, "XC-axon-widget-a")
+	writeStagedSidecar(t, stagingDir, "axon/provides/widget-a/schema/widget-a.schema.json", `{"type":"object"}`)
+	writeStagedSidecar(t, stagingDir, "axon/provides/widget-a/fixtures/valid/widget-a.json", `{}`)
+	// A nested $ref split under schema/ must be carried too (not just the
+	// top-level file) — internal/cli/cmd_contract.go's own
+	// contractReadWorkingTreeFiles counts a contract's published schema
+	// files the SAME recursive way.
+	writeStagedSidecar(t, stagingDir, "axon/provides/widget-a/schema/common/types.schema.json", `{"type":"string"}`)
+
+	mirrorDir := t.TempDir()
+	writeMinimalSpaceYAML(t, mirrorDir)
+	legality := cli.NewLegalityAdapter(mirrorDir, "axon", testManifest())
+	fake := &fakeSubmitFunnel{}
+	cmd := cli.NewSubmitCommand(fake, legality, cli.NewNoopPendingMarker(), mirrorDir, "fixture-space", "axon", stagingDir, testHostConfig())
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{path}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+
+	files := fake.calls[0].Files
+	if len(files) != 5 { // contract.md + event + schema + nested schema + fixture
+		t.Fatalf("Files = %d, want 5 (contract.md, event, schema, nested schema, fixture); got %+v", len(files), files)
+	}
+	byPath := map[string]bool{}
+	for _, f := range files {
+		byPath[f.Path] = true
+	}
+	for _, want := range []string{
+		"axon/provides/widget-a/contract.md",
+		"axon/provides/widget-a/schema/widget-a.schema.json",
+		"axon/provides/widget-a/schema/common/types.schema.json",
+		"axon/provides/widget-a/fixtures/valid/widget-a.json",
+	} {
+		if !byPath[want] {
+			t.Errorf("Files missing %q; got %+v", want, files)
+		}
+	}
+	var sawEvent bool
+	for p := range byPath {
+		if strings.HasPrefix(p, "axon/events/") {
+			sawEvent = true
+		}
+	}
+	if !sawEvent {
+		t.Errorf("Files missing the lifecycle event under axon/events/; got %+v", files)
+	}
+
+	if !strings.Contains(out.String(), "widget-a.schema.json") {
+		t.Errorf("expected the submit output to name the carried sidecar file(s); got %q", out.String())
+	}
+}
+
+// TestSubmitContractNoSidecarsUnaffected proves a contract with no staged
+// schema/fixtures (a contract authored before the D-D scaffold existed, or
+// a non-JSON-Schema contract) submits exactly as before: the same file
+// count as the pre-change behaviour (contract.md + event, nothing more).
+func TestSubmitContractNoSidecarsUnaffected(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	path := writeContractDraft(t, stagingDir, "XC-axon-widget-b")
+
+	mirrorDir := t.TempDir()
+	writeMinimalSpaceYAML(t, mirrorDir)
+	legality := cli.NewLegalityAdapter(mirrorDir, "axon", testManifest())
+	fake := &fakeSubmitFunnel{}
+	cmd := cli.NewSubmitCommand(fake, legality, cli.NewNoopPendingMarker(), mirrorDir, "fixture-space", "axon", stagingDir, testHostConfig())
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{path}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	if len(fake.calls[0].Files) != 2 {
+		t.Fatalf("Files = %d, want exactly 2 (contract.md + event), unchanged from before this wave; got %+v", len(fake.calls[0].Files), fake.calls[0].Files)
+	}
+	if strings.Contains(out.String(), "carried sidecar") {
+		t.Errorf("expected no 'carried sidecar' message when there are no sidecars; got %q", out.String())
+	}
+}
+
+// TestSubmitContractSidecarsDoNotPerturbArtifactID is the idempotency
+// guard: SubmitRequest.ArtifactID (and therefore the deterministic funnel
+// branch, space.BranchName) is derived solely from the submitted
+// artifact ids, never from Files — so carrying a contract's sidecars
+// cannot make a re-submit of the same contract open a second PR.
+func TestSubmitContractSidecarsDoNotPerturbArtifactID(t *testing.T) {
+	t.Parallel()
+
+	run := func(t *testing.T, withSidecars bool) space.SubmitRequest {
+		stagingDir := t.TempDir()
+		path := writeContractDraft(t, stagingDir, "XC-axon-widget-c")
+		if withSidecars {
+			writeStagedSidecar(t, stagingDir, "axon/provides/widget-c/schema/widget-c.schema.json", `{"type":"object"}`)
+			writeStagedSidecar(t, stagingDir, "axon/provides/widget-c/fixtures/valid/widget-c.json", `{}`)
+		}
+		mirrorDir := t.TempDir()
+		writeMinimalSpaceYAML(t, mirrorDir)
+		legality := cli.NewLegalityAdapter(mirrorDir, "axon", testManifest())
+		fake := &fakeSubmitFunnel{}
+		cmd := cli.NewSubmitCommand(fake, legality, cli.NewNoopPendingMarker(), mirrorDir, "fixture-space", "axon", stagingDir, testHostConfig())
+		io, out, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{path}, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+		return fake.calls[0]
+	}
+
+	without := run(t, false)
+	with := run(t, true)
+
+	if without.ArtifactID != "XC-axon-widget-c" || with.ArtifactID != "XC-axon-widget-c" {
+		t.Fatalf("ArtifactID = %q / %q, want both %q", without.ArtifactID, with.ArtifactID, "XC-axon-widget-c")
+	}
+	wantBranch := space.BranchName("axon", "submit", "XC-axon-widget-c")
+	if gotBranch := space.BranchName(without.System, without.Verb, without.ArtifactID); gotBranch != wantBranch {
+		t.Fatalf("branch (no sidecars) = %q, want %q", gotBranch, wantBranch)
+	}
+	if gotBranch := space.BranchName(with.System, with.Verb, with.ArtifactID); gotBranch != wantBranch {
+		t.Fatalf("branch (with sidecars) = %q, want %q — presence of sidecar Files perturbed the deterministic branch", gotBranch, wantBranch)
+	}
+}
+
+// TestSubmitContractSidecarSymlinkEscapeRefused proves a sidecar entry
+// that would escape the contract's own directory (a symlink, the one way
+// a name that stayed inside the schema/fixtures directory listing could
+// still resolve to content outside it) is refused locally, BEFORE any
+// git/network call — never silently followed or silently dropped.
+func TestSubmitContractSidecarSymlinkEscapeRefused(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	path := writeContractDraft(t, stagingDir, "XC-axon-widget-d")
+
+	outsideDir := t.TempDir()
+	outsideFile := filepath.Join(outsideDir, "secret.txt")
+	if err := os.WriteFile(outsideFile, []byte("outside contract dir"), 0o644); err != nil {
+		t.Fatalf("write outside file: %v", err)
+	}
+
+	schemaDir := filepath.Join(stagingDir, "axon", "provides", "widget-d", "schema")
+	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Symlink(outsideFile, filepath.Join(schemaDir, "widget-d.schema.json")); err != nil {
+		t.Fatalf("create symlink fixture: %v", err)
+	}
+
+	mirrorDir := t.TempDir()
+	legality := cli.NewLegalityAdapter(mirrorDir, "axon", testManifest())
+	fake := &fakeSubmitFunnel{}
+	cmd := cli.NewSubmitCommand(fake, legality, cli.NewNoopPendingMarker(), mirrorDir, "fixture-space", "axon", stagingDir, testHostConfig())
+
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{path}, io)
+	if code == 0 {
+		t.Fatal("expected a non-zero exit for a sidecar symlink escaping the contract's own directory")
+	}
+	if !strings.Contains(errOut.String(), "symlink") {
+		t.Fatalf("expected the refusal message to name the symlink; got %q", errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+	}
+}
+
 // --- end-to-end (real WriteFunnel + FakeHost + spacefixture) ---------------
 
 func newRealFunnelDeps(t *testing.T) (*space.WriteFunnel, *cli.LegalityAdapter, string, *spacefixture.Fixture) {

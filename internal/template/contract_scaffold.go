@@ -12,6 +12,13 @@ package template
 import (
 	"bytes"
 	_ "embed"
+	"os"
+	"path/filepath"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
 //go:embed scaffold/contract.schema.json
@@ -50,4 +57,75 @@ func ContractScaffold(slug string) (schema []byte, fixture []byte) {
 	schema = bytes.ReplaceAll(contractScaffoldSchemaRaw, token, []byte(slug))
 	fixture = bytes.ReplaceAll(contractScaffoldFixtureRaw, token, []byte(slug))
 	return schema, fixture
+}
+
+// ScaffoldContractInStaging writes decision D-D's starter schema and valid
+// fixture for slug under stagingDir, at the SAME relative shape
+// internal/space.Layout will place them at once submitted — so the author
+// edits the paths a later publish actually looks for, and
+// internal/cli/cmd_submit.go's sidecar carry finds them where it expects.
+// D-E's fixture->schema stem mapping is satisfied by naming both files
+// after slug.
+//
+// It lives here, beside ContractScaffold, because BOTH surfaces need it:
+// `a2a contract new` and the MCP a2a_new tool. internal/mcp may never
+// import internal/cli (P14's proven invariant), so a helper left in the
+// CLI would have meant a second copy in the MCP handler — and the parity
+// suite exists precisely to make that impossible. It caught this: after
+// wave C2 shipped the scaffold CLI-side only, TestEquivContractNew went
+// red on a real capability asymmetry, not a stale fixture.
+//
+// Never overwrites: an existing file at either path is left exactly as it
+// is, so a re-run cannot clobber an author's own schema or fixture.
+// Returns the paths it actually wrote, in order.
+func ScaffoldContractInStaging(stagingDir, ownSystem, slug string, writeFile func(string, []byte, os.FileMode) error) ([]string, error) {
+	layout, err := space.NewLayout(ownSystem)
+	if err != nil {
+		return nil, err
+	}
+
+	schemaBytes, fixtureBytes := ContractScaffold(slug)
+	candidates := []struct {
+		path string
+		data []byte
+	}{
+		{filepath.Join(stagingDir, filepath.FromSlash(layout.ProvidesSchemaDir(slug)), slug+".schema.json"), schemaBytes},
+		{filepath.Join(stagingDir, filepath.FromSlash(layout.ProvidesFixturesValidDir(slug)), slug+".json"), fixtureBytes},
+	}
+
+	var written []string
+	for _, cand := range candidates {
+		if _, statErr := os.Stat(cand.path); statErr == nil {
+			continue // D-D: never overwrite an existing scaffold or the author's own edit
+		} else if !os.IsNotExist(statErr) {
+			return written, statErr
+		}
+		if err := os.MkdirAll(filepath.Dir(cand.path), 0o755); err != nil {
+			return written, err
+		}
+		if err := writeFile(cand.path, cand.data, 0o644); err != nil {
+			return written, err
+		}
+		written = append(written, cand.path)
+	}
+	return written, nil
+}
+
+// ContractDraftSchemaFormat decodes schema_format from a just-rendered
+// contract draft's OWN frontmatter — what Render produced, never the
+// template's literal default — so it reflects whatever `schema_format`
+// override actually landed. Shared by both surfaces for the same reason
+// ScaffoldContractInStaging is.
+func ContractDraftSchemaFormat(draft []byte) (string, error) {
+	fm, err := artifact.ParseFrontmatter(draft)
+	if err != nil {
+		return "", err
+	}
+	var probe struct {
+		SchemaFormat string `yaml:"schema_format"`
+	}
+	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+		return "", err
+	}
+	return probe.SchemaFormat, nil
 }

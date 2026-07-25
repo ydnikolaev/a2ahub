@@ -42,6 +42,7 @@ func testE2E4G2GateAndLinkedDeprecation(t *testing.T) {
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	mirrorDir := fx.Clone("axon")
 	writeContractDescriptor(t, mirrorDir, "g2widget", "0.0.0")
+	writeContractSchemaFixture(t, mirrorDir, "axon", "g2widget")
 
 	reviewCalls := 0
 	fakeHost := host.NewFakeHost()

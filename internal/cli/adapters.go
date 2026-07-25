@@ -522,6 +522,20 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 			// SAME one the space's V3 runs, so a write can never land a
 			// registry the space would then reject.
 			registries = append(registries, f)
+		case isContractBaselinePath(f.Path):
+			// A contract's own schema/** and fixtures/** (P37 D-D), carried
+			// alongside contract.md by `submit`. They are not artifacts:
+			// no envelope, no frontmatter, no id. Feeding one to the drafts
+			// loop below runs artifact.ParseFrontmatter over a JSON schema
+			// and refuses the WHOLE submit — so the very files D-D requires
+			// would make the contract unsubmittable.
+			//
+			// Deliberately validated NOWHERE here. The compatibility rule
+			// that reads them lives in internal/validate and runs at
+			// publish and at merge (`validate --ci`); re-deciding anything
+			// about them at the funnel would be the second copy AC-970.2
+			// exists to forbid. §5.4b also permits non-JSON-Schema formats
+			// whose files this engine could not parse at all.
 		default:
 			drafts = append(drafts, f)
 		}

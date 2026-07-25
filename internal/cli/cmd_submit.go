@@ -16,7 +16,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -368,7 +370,7 @@ func (c *SubmitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 0
 	}
 
-	req, ids, err := c.buildRequest(fresh)
+	req, ids, carried, err := c.buildRequest(fresh)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "submit: %v\n", err)
 		return 1
@@ -390,6 +392,9 @@ func (c *SubmitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return 1
 		}
 		_, _ = fmt.Fprintf(stdio.Stdout, "submit: opened PR %s for %s (%s)\n", result.PRURL, strings.Join(ids, ", "), result.State)
+		if len(carried) > 0 {
+			_, _ = fmt.Fprintf(stdio.Stdout, "submit: carried sidecar file(s): %s\n", strings.Join(carried, ", "))
+		}
 		warnAutoMerge(stdio, "submit", result.AutoMergeNote)
 		return 0
 	}
@@ -505,37 +510,67 @@ func (c *SubmitCommand) partitionByHistory(items []submitItem) (fresh []submitIt
 
 // buildRequest assembles the ONE-commit SubmitRequest (D-026: the
 // artifact file + its first lifecycle event, for every fresh item) and
-// returns the sorted artifact ids included, for the caller's own
-// messages.
+// returns the sorted artifact ids included plus the space-relative paths
+// of every contract sidecar file carried along (see
+// submitContractSidecars), for the caller's own messages.
 //
 // Batch branch key: SubmitRequest.ArtifactID names the deterministic
 // branch a2a/<system>/<id>; the core API is single-artifact-shaped, so
 // for a batch this phase joins every included artifact id with "+"
 // (sorted, deterministic) — this phase's own convention, not defined by
 // any core package; see this phase's Deviations report.
-func (c *SubmitCommand) buildRequest(fresh []submitItem) (space.SubmitRequest, []string, error) {
+//
+// ArtifactID/branch stability (idempotency): ArtifactID is derived solely
+// from `ids` (each item's own `it.env.ID`, joined with "+"), never from
+// `files` — carrying a contract's sidecars alongside contract.md adds
+// entries to `files` only, so it cannot perturb the deterministic branch
+// name a re-submit of the same artifact(s) resolves to.
+func (c *SubmitCommand) buildRequest(fresh []submitItem) (space.SubmitRequest, []string, []string, error) {
 	layout, err := space.NewLayout(c.ownSystem)
 	if err != nil {
-		return space.SubmitRequest{}, nil, err
+		return space.SubmitRequest{}, nil, nil, err
 	}
 
 	now := c.now()
 	var files []space.FileWrite
 	var ids []string
+	var carried []string
 	for _, it := range fresh {
 		sectionPath, err := submitSectionPath(layout, it.env.Type, it.env.ID)
 		if err != nil {
-			return space.SubmitRequest{}, nil, fmt.Errorf("%s: %w", it.path, err)
+			return space.SubmitRequest{}, nil, nil, fmt.Errorf("%s: %w", it.path, err)
 		}
 		files = append(files, space.FileWrite{Path: sectionPath, Content: it.raw})
 
+		// D-D/POL-009: a contract's staged schema/** and fixtures/**
+		// baseline (internal/cli/cmd_new.go's newScaffoldContractFiles)
+		// must travel with contract.md, or a scaffolded contract is
+		// refused the first time anyone publishes it (nothing else carries
+		// those files into the space). The slug comes from the SAME
+		// artifact.ParseID(id) submitSectionPath's own contract branch
+		// already uses — never re-derived from it.path.
+		if it.env.Type == "contract" {
+			parsed, err := artifact.ParseID(it.env.ID)
+			if err != nil {
+				return space.SubmitRequest{}, nil, nil, fmt.Errorf("%s: %w", it.path, err)
+			}
+			sidecars, err := submitContractSidecars(c.stagingDir, layout, parsed.Slug)
+			if err != nil {
+				return space.SubmitRequest{}, nil, nil, fmt.Errorf("%s: %w", it.path, err)
+			}
+			for _, sc := range sidecars {
+				carried = append(carried, sc.Path)
+			}
+			files = append(files, sidecars...)
+		}
+
 		transition, ok := submitFirstTransition[it.env.Type]
 		if !ok {
-			return space.SubmitRequest{}, nil, fmt.Errorf("%s: unknown envelope type %q", it.path, it.env.Type)
+			return space.SubmitRequest{}, nil, nil, fmt.Errorf("%s: unknown envelope type %q", it.path, it.env.Type)
 		}
 		eventID, err := artifact.MintULIDAt(now, c.entropy)
 		if err != nil {
-			return space.SubmitRequest{}, nil, fmt.Errorf("cannot mint event id: %w", err)
+			return space.SubmitRequest{}, nil, nil, fmt.Errorf("cannot mint event id: %w", err)
 		}
 		eventDoc := submitEventDoc{
 			Schema: "event/v1",
@@ -552,7 +587,7 @@ func (c *SubmitCommand) buildRequest(fresh []submitItem) (space.SubmitRequest, [
 		}
 		eventRaw, err := yaml.Marshal(eventDoc)
 		if err != nil {
-			return space.SubmitRequest{}, nil, fmt.Errorf("cannot encode event for %s: %w", it.env.ID, err)
+			return space.SubmitRequest{}, nil, nil, fmt.Errorf("cannot encode event for %s: %w", it.env.ID, err)
 		}
 		eventPath := layout.EventFile(now.UTC().Format("2006"), eventID.String())
 		files = append(files, space.FileWrite{Path: eventPath, Content: eventRaw})
@@ -574,13 +609,15 @@ func (c *SubmitCommand) buildRequest(fresh []submitItem) (space.SubmitRequest, [
 	// DoctorCommand's own "versions" check does.
 	minBinaryVersion, err := c.readMinBinaryVersion()
 	if err != nil {
-		return space.SubmitRequest{}, nil, fmt.Errorf("cannot read space.yaml min_binary_version pin: %w", err)
+		return space.SubmitRequest{}, nil, nil, fmt.Errorf("cannot read space.yaml min_binary_version pin: %w", err)
 	}
 
 	baseBranch := c.hostCfg.BaseBranch
 	if baseBranch == "" {
 		baseBranch = "main"
 	}
+
+	sort.Strings(carried)
 
 	return space.SubmitRequest{
 		RepoDir:           c.mirrorDir,
@@ -597,7 +634,112 @@ func (c *SubmitCommand) buildRequest(fresh []submitItem) (space.SubmitRequest, [
 		PRTitle:           commitMsg,
 		Credential:        c.hostCfg.Credential,
 		MinBinaryVersion:  minBinaryVersion,
-	}, ids, nil
+	}, ids, carried, nil
+}
+
+// submitContractSidecarDirs are the D-D scaffold's own subtrees under a
+// contract's provides/<slug>/ section (internal/space.Layout's
+// ProvidesSchemaDir/ProvidesFixturesValidDir/ProvidesFixturesInvalidDir).
+// fixtures/invalid is included even though §5.4b's compat core
+// deliberately never feeds it to the new schema — an authored invalid
+// fixture is still part of the published contract.
+func submitContractSidecarDirs(layout space.Layout, slug string) []string {
+	return []string{
+		layout.ProvidesSchemaDir(slug),
+		layout.ProvidesFixturesValidDir(slug),
+		layout.ProvidesFixturesInvalidDir(slug),
+	}
+}
+
+// submitContractSidecars collects a staged contract's schema/** and
+// fixtures/**/* sidecar files (D-D's scaffold, internal/cli/cmd_new.go's
+// newScaffoldContractFiles) from stagingDir, at the SAME space-relative
+// paths space.Layout would place them at once submitted — so a
+// scaffolded contract carries its own baseline into the space alongside
+// contract.md (POL-009: a JSON-Schema-dialect contract needs >=1 schema
+// file and >=1 valid fixture to be publishable at all,
+// internal/validate/publishable.go's CheckContractPublishable).
+//
+// Walks each subtree recursively (filepath.WalkDir, mirroring
+// internal/cli/cmd_contract.go's own contractReadWorkingTreeFiles, which
+// counts a contract's published schema/fixtures files the SAME way) so a
+// nested schema layout (e.g. schema/common/types.schema.json, a normal
+// $ref split) is carried in full, not just its top-level files.
+//
+// Absent is not an error: a contract authored before the scaffold existed
+// (or a non-JSON-Schema contract that legitimately has no schema) simply
+// has nothing under schema/ or fixtures/ in staging — this returns (nil,
+// nil), so `submit` never starts refusing artifacts it accepted
+// yesterday.
+//
+// Bounded and safe: every leaf read goes through readBoundedFile at
+// maxMirrorEventBytes (this package's existing artifact-read ceiling, not
+// a second constant). A symlink anywhere in the walk is refused outright,
+// never followed or silently skipped — the one way a name that stayed
+// inside the directory listing could still resolve to content, or imply a
+// destination, outside the contract's own directory. A relative path that
+// would resolve outside its subtree root is refused for the same reason
+// (defense in depth alongside the symlink refusal, since WalkDir itself
+// never emits one without a symlink already having crossed the
+// boundary).
+func submitContractSidecars(stagingDir string, layout space.Layout, slug string) ([]space.FileWrite, error) {
+	var out []space.FileWrite
+	for _, spacePath := range submitContractSidecarDirs(layout, slug) {
+		localDir := filepath.Join(stagingDir, filepath.FromSlash(spacePath))
+		info, err := os.Stat(localDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("cannot stat %s: %w", localDir, err)
+		}
+		if !info.IsDir() {
+			continue
+		}
+
+		type sidecarFile struct {
+			rel string
+			raw []byte
+		}
+		var found []sidecarFile
+		walkErr := filepath.WalkDir(localDir, func(p string, d fs.DirEntry, werr error) error {
+			if werr != nil {
+				return werr
+			}
+			if p == localDir {
+				return nil
+			}
+			if d.Type()&fs.ModeSymlink != 0 {
+				return fmt.Errorf("sidecar %s is a symlink, refused (escapes the contract's own directory)", p)
+			}
+			if d.IsDir() {
+				return nil
+			}
+			rel, relErr := filepath.Rel(localDir, p)
+			if relErr != nil {
+				return relErr
+			}
+			relSlash := filepath.ToSlash(rel)
+			if relSlash == ".." || strings.HasPrefix(relSlash, "../") {
+				return fmt.Errorf("sidecar %s escapes the contract's own directory %s", p, localDir)
+			}
+			raw, rerr := readBoundedFile(p, maxMirrorEventBytes)
+			if rerr != nil {
+				return rerr
+			}
+			found = append(found, sidecarFile{rel: relSlash, raw: raw})
+			return nil
+		})
+		if walkErr != nil {
+			return nil, walkErr
+		}
+
+		sort.Slice(found, func(i, j int) bool { return found[i].rel < found[j].rel })
+		for _, f := range found {
+			out = append(out, space.FileWrite{Path: path.Join(spacePath, f.rel), Content: f.raw})
+		}
+	}
+	return out, nil
 }
 
 // readMinBinaryVersion reads and structurally parses <mirrorDir>/space.yaml

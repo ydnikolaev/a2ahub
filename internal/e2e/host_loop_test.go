@@ -168,6 +168,22 @@ func (r *hostRig) stageContract(slug, version string) (path, id string) {
 		"# Export\n\nWhat this contract covers.\n"
 	path = filepath.Join(r.projectDir, ".a2a", "staging", id+".md")
 	mustWrite(r.t, path, content)
+
+	// D-D/POL-009: carry a real schema/fixture baseline into staging at the
+	// SAME space-relative shape `a2a contract new`'s own scaffold uses
+	// (internal/cli/cmd_new.go's newScaffoldContractFiles) and `a2a submit`
+	// now carries along (internal/cli/cmd_submit.go's
+	// submitContractSidecars) — without it, `contract publish`'s own
+	// POL-009 check refuses this contract the first time anyone publishes
+	// it, exactly the gap this end-to-end rig exists to catch.
+	schemaDir := filepath.Join(r.projectDir, ".a2a", "staging", r.system, "provides", slug, "schema")
+	fixturesValidDir := filepath.Join(r.projectDir, ".a2a", "staging", r.system, "provides", slug, "fixtures", "valid")
+	mustMkdirAll(r.t, schemaDir)
+	mustMkdirAll(r.t, fixturesValidDir)
+	mustWrite(r.t, filepath.Join(schemaDir, slug+".schema.json"),
+		`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"example":{"type":"string"}},"additionalProperties":true}`+"\n")
+	mustWrite(r.t, filepath.Join(fixturesValidDir, slug+".json"), `{"example":"replace-me"}`+"\n")
+
 	return path, id
 }
 
