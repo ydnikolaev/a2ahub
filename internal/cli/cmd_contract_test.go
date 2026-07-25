@@ -4,16 +4,20 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"gopkg.in/yaml.v3"
 )
 
 // writeContractDescriptor seeds axon's XC-axon-<slug> contract.md at
@@ -168,6 +172,34 @@ func writeContractDescriptorWithFormat(t *testing.T, mirrorDir, slug, version, f
 		"version: \"" + version + "\"\n" +
 		"compat_policy: strict-semver\n" +
 		"schema_format: " + format + "\n" +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/contract.md", content)
+}
+
+// writeContractDescriptorWithCompatPolicy is writeContractDescriptor
+// generalized over compat_policy — F5/AC-975.1's own fixture needs two
+// commits that disagree ONLY on this field (schema/fixtures held
+// identical) to prove `contract diff` sees a frontmatter-only change that
+// contractDigestTreeAtSHA's file digest cannot.
+func writeContractDescriptorWithCompatPolicy(t *testing.T, mirrorDir, slug, version, compatPolicy string) {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: XC-axon-" + slug + "\n" +
+		"type: contract\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [beta]\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: api\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: \"" + version + "\"\n" +
+		"compat_policy: " + compatPolicy + "\n" +
+		"schema_format: json-schema-2020-12\n" +
 		"---\nbody\n"
 	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/contract.md", content)
 }
@@ -536,6 +568,65 @@ func TestContractDiffTwoVersions(t *testing.T) {
 	}
 }
 
+// TestContractDiffReportsChangedCompatPolicy is F5/AC-975.1: a change
+// confined to contract.md's own frontmatter — compat_policy itself — is
+// invisible to contractDiff's schema/**+fixtures/** file digest.
+// schema/main.schema.json is deliberately BYTE-IDENTICAL between the two
+// commits below (only compat_policy differs), so `changed
+// schema/main.schema.json` must NOT appear; `contract diff` must still
+// report the frontmatter change, via the descriptor probe read at each
+// version's own commit (contractDescriptorProbeAtSHA).
+func TestContractDiffReportsChangedCompatPolicy(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	gitRun(t, mirrorDir, "init", "-b", "main")
+
+	writeContractDescriptorWithCompatPolicy(t, mirrorDir, "policy-diff", "1.0.0", "strict-semver")
+	writeMirrorFile(t, mirrorDir, "axon/provides/policy-diff/schema/main.schema.json", `{"type":"object"}`)
+	gitRun(t, mirrorDir, "add", "-A")
+	gitRun(t, mirrorDir, "commit", "-m", "publish 1.0.0")
+
+	writeContractDescriptorWithCompatPolicy(t, mirrorDir, "policy-diff", "1.1.0", "loose-semver")
+	gitRun(t, mirrorDir, "add", "-A")
+	gitRun(t, mirrorDir, "commit", "-m", "publish 1.1.0")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"diff", "XC-axon-policy-diff", "1.0.0", "1.1.0"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "frontmatter compat_policy: strict-semver -> loose-semver") {
+		t.Fatalf("expected the frontmatter diff to report compat_policy's change, got:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "changed schema/main.schema.json") {
+		t.Fatalf("schema/main.schema.json is byte-identical between the two versions and must NOT be reported changed, got:\n%s", out.String())
+	}
+
+	// --json carries the same signal under `frontmatter_changed` — decoded
+	// (never string-matched against the raw bytes), since encoding/json's
+	// default HTML-safe escaping backslash-escapes the `>` in `->` in the
+	// raw output. That is still valid JSON, decoding back to the literal
+	// `->` correctly, so string-matching the raw bytes would be the wrong
+	// assertion here.
+	io2, out2, errOut2 := newIO()
+	code2 := cmd.Run(context.Background(), []string{"diff", "--json", "XC-axon-policy-diff", "1.0.0", "1.1.0"}, io2)
+	if code2 != 0 {
+		t.Fatalf("code = %d, want 0; stdout=%s stderr=%s", code2, out2.String(), errOut2.String())
+	}
+	var decoded struct {
+		FrontmatterChanged []string `json:"frontmatter_changed"`
+	}
+	if err := json.Unmarshal(out2.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode --json output: %v\nstdout=%s", err, out2.String())
+	}
+	wantEntry := "compat_policy: strict-semver -> loose-semver"
+	if !slices.Contains(decoded.FrontmatterChanged, wantEntry) {
+		t.Fatalf("expected --json frontmatter_changed to contain %q, got %v", wantEntry, decoded.FrontmatterChanged)
+	}
+}
+
 // TestContractVerifyExportLocal is AC-1001.1: a matching local export
 // exits 0; a deliberately-drifted one exits non-zero with a diagnostic.
 func TestContractVerifyExportLocal(t *testing.T) {
@@ -869,6 +960,261 @@ func extractAnnouncementID(files []space.FileWrite) string {
 		}
 	}
 	return ""
+}
+
+// extractAnnouncementTo decodes the committed announcement artifact's own
+// `to:` frontmatter field out of a funnel call's files — used by the F3/T4
+// addressing tests below to read back what `contract deprecate` actually
+// addressed the deprecation to.
+func extractAnnouncementTo(t *testing.T, files []space.FileWrite) []string {
+	t.Helper()
+	for _, fw := range files {
+		if !strings.Contains(fw.Path, "/exchanges/XA-") {
+			continue
+		}
+		fm, err := artifact.ParseFrontmatter(fw.Content)
+		if err != nil {
+			t.Fatalf("extractAnnouncementTo: parse frontmatter: %v", err)
+		}
+		var probe struct {
+			To []string `yaml:"to"`
+		}
+		if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+			t.Fatalf("extractAnnouncementTo: decode `to`: %v", err)
+		}
+		return probe.To
+	}
+	t.Fatal("extractAnnouncementTo: no announcement artifact among the committed files")
+	return nil
+}
+
+// TestContractDeprecateAddressesRegisteredConsumers is F3/T4 (AC-971.1,
+// AC-971.2): the deprecation announcement's `to:` is the registered-
+// consumer set (contractFindRegisteredConsumers), not the descriptor's own
+// authoring-time `to:`. The descriptor here carries `to: [beta]`
+// (writeContractDescriptor's own fixed shape); `gamma` is registered ONLY
+// via a `consumes.yaml` entry (the `contract adopt` shape) and never
+// appears in the descriptor at all — exactly AC-971.1's own scenario, a
+// consumer that would otherwise never be addressed. Expect `[beta gamma]`:
+// this reds under every wrong implementation the brief calls out —
+// reverting to `probe.To` yields `[beta]`; reading only the consumes.yaml
+// half of the union (never the requirement half, exercised by
+// TestContractRetireCleanAckSucceedsUngated's siblings elsewhere) would
+// still pass here since both consumers are consumes.yaml-registered, so
+// the point this test proves is specifically "the descriptor's `to:` is
+// NOT the source" and "the set is sorted, deduped, and excludes `from`
+// (axon never appears)".
+func TestContractDeprecateAddressesRegisteredConsumers(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "addressed", "1.0.0") // descriptor `to: [beta]`
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-addressed", "publish", "axon")
+	writeConsumesYAML(t, mirrorDir, "beta", "XC-axon-addressed")
+	writeConsumesYAML(t, mirrorDir, "gamma", "XC-axon-addressed")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"deprecate", "--version", "1.0.0", "--successor", "XC-axon-addressed@2.0.0", "--sunset", "2026-12-31", "XC-axon-addressed"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	got := extractAnnouncementTo(t, fake.calls[0].Files)
+	want := []string{"beta", "gamma"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("announcement `to:` = %v, want %v (registered-consumer set, not descriptor `to:`)", got, want)
+	}
+}
+
+// TestContractDeprecateAddressesAreOneQueryWithRetire is AC-971.2's "one
+// query" proof: `contract deprecate`'s `to:` and `contract retire
+// --override`'s own `retired-unacked` note (see
+// TestContractRetireOverrideFullPreconditionSucceeds — that note IS the
+// registered-consumer set the retire precondition reads, per
+// contractBuildRetirePrecondition/contractFindRegisteredConsumers) must be
+// the SAME set, because both are computed by calling
+// contractFindRegisteredConsumers(mirrorDir, contractID) — literally the
+// one function, not two independently-written call sites that happen to
+// agree today. Materializing deprecate's own committed files into the
+// mirror (as a real commit would) and then running retire against that
+// SAME mirror is what makes the two reads observe identical registry
+// state.
+//
+// The two sets coincide here for a second, narrower reason worth stating
+// explicitly: `retired-unacked` is filtered to `!Left && !Acked` consumers,
+// while deprecate's `to:` is the raw registered set (minus `from`). They
+// are equal in THIS test only because nobody has acked and nobody has
+// `left` — not because the two computations are defined to always match on
+// every input, only because they both start from the same
+// contractFindRegisteredConsumers query.
+//
+// Reverting runDeprecate's `to:` back to `probe.To`, or computing the
+// addressee set any other way than calling contractFindRegisteredConsumers
+// directly, reds this test: the descriptor's own `to: [beta]` differs from
+// the two-system registered set `[beta gamma]` that retire's own
+// `retired-unacked` note independently proves is correct.
+func TestContractDeprecateAddressesAreOneQueryWithRetire(t *testing.T) {
+	t.Parallel()
+	fixedNowDeprecate := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	fixedNowRetire := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC) // after the sunset below
+
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "onequery", "1.0.0") // descriptor `to: [beta]`
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-onequery", "publish", "axon")
+	writeConsumesYAML(t, mirrorDir, "beta", "XC-axon-onequery")
+	writeConsumesYAML(t, mirrorDir, "gamma", "XC-axon-onequery")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	cmd.SetClockForTest(func() time.Time { return fixedNowDeprecate })
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"deprecate", "--version", "1.0.0", "--successor", "XC-axon-onequery@2.0.0", "--sunset", "2026-01-02", "XC-axon-onequery"}, io)
+	if code != 0 {
+		t.Fatalf("deprecate: code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	deprecateTo := extractAnnouncementTo(t, fake.calls[0].Files)
+	announcementID := extractAnnouncementID(fake.calls[0].Files)
+	materializeFiles(t, mirrorDir, fake.calls[0])
+
+	// A reminder note event on the announcement's own thread, plus a human
+	// actor and --override, is what makes retire's override path succeed
+	// and reveal `retired-unacked` (§5.4 bullet (b) — see
+	// TestContractRetireOverrideFullPreconditionSucceeds).
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, announcementID, "note", "axon")
+
+	retireFake := &fakeLifecycleFunnel{}
+	retireCmd := cli.NewContractCommand(nil, retireFake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("human", "owner"))
+	retireCmd.SetClockForTest(func() time.Time { return fixedNowRetire })
+	retireIO, _, retireErrOut := newIO()
+	retireCode := retireCmd.Run(context.Background(), []string{"retire", "--version", "1.0.0", "--override", "XC-axon-onequery"}, retireIO)
+	if retireCode != 0 {
+		t.Fatalf("retire: code = %d, want 0; stderr=%s", retireCode, retireErrOut.String())
+	}
+	if len(retireFake.calls) != 1 {
+		t.Fatalf("expected exactly one retire funnel call, got %d", len(retireFake.calls))
+	}
+	retireContent := string(retireFake.calls[0].Files[0].Content)
+	if !strings.Contains(retireContent, "retired-unacked: beta, gamma") {
+		t.Fatalf("expected retire's own registered-consumer read to name both beta and gamma, got:\n%s", retireContent)
+	}
+	sortedDeprecateTo := append([]string(nil), deprecateTo...)
+	sort.Strings(sortedDeprecateTo)
+	if strings.Join(sortedDeprecateTo, ", ") != "beta, gamma" {
+		t.Fatalf("deprecate `to:` = %v, want [beta gamma] — the SAME set retire's `retired-unacked` note names", deprecateTo)
+	}
+}
+
+// TestContractDeprecateRetireRefuseAmbiguousVersion is F4/AC-972.1: with
+// MORE THAN ONE distinct published version on record and `--version`
+// omitted, both `deprecate` and `retire` used to default to the
+// descriptor's CURRENT version — after a `--bump major` that is the NEW
+// version, so the OLD one silently got no announcement/retire at all. Both
+// now REFUSE (usage error, exit 2) and list every published version.
+func TestContractDeprecateRetireRefuseAmbiguousVersion(t *testing.T) {
+	t.Parallel()
+
+	seedTwoPublishedVersions := func(t *testing.T, mirrorDir, slug string) {
+		t.Helper()
+		writeContractDescriptor(t, mirrorDir, slug, "2.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-"+slug, "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-"+slug, "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+	}
+
+	t.Run("deprecate_refuses_and_lists_versions", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		seedTwoPublishedVersions(t, mirrorDir, "ambiguous-dep")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"deprecate", "--successor", "XC-axon-ambiguous-dep@3.0.0", "--sunset", "2026-12-31", "XC-axon-ambiguous-dep"}, io)
+		if code != 2 {
+			t.Fatalf("code = %d, want 2 (usage error: ambiguous --version); stderr=%s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "--version is required") || !strings.Contains(errOut.String(), "1.0.0") || !strings.Contains(errOut.String(), "2.0.0") {
+			t.Fatalf("expected a refusal listing both published versions, got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("expected the write funnel NEVER to be called, got %d call(s)", len(fake.calls))
+		}
+	})
+
+	t.Run("retire_refuses_and_lists_versions", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		seedTwoPublishedVersions(t, mirrorDir, "ambiguous-ret")
+		// retire's own legality requires a prior deprecate on record
+		// (LFC-001) regardless of F4 — seeded here so the refusal under
+		// test is actually the version-ambiguity one, not legality.
+		writeLifecycleEvent(t, mirrorDir, "axon", 2, "XC-axon-ambiguous-ret", "deprecate", "axon")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"retire", "XC-axon-ambiguous-ret"}, io)
+		if code != 2 {
+			t.Fatalf("code = %d, want 2 (usage error: ambiguous --version); stderr=%s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "--version is required") || !strings.Contains(errOut.String(), "1.0.0") || !strings.Contains(errOut.String(), "2.0.0") {
+			t.Fatalf("expected a refusal listing both published versions, got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("expected the write funnel NEVER to be called, got %d call(s)", len(fake.calls))
+		}
+	})
+}
+
+// TestContractDeprecateRetireDefaultWithOneVersion is F4/AC-972.1's other
+// half: with exactly ONE distinct published version on record, omitting
+// `--version` stays unambiguous and both verbs still default (never
+// refuse).
+func TestContractDeprecateRetireDefaultWithOneVersion(t *testing.T) {
+	t.Parallel()
+
+	seedOnePublishedVersion := func(t *testing.T, mirrorDir, slug string) {
+		t.Helper()
+		writeContractDescriptor(t, mirrorDir, slug, "1.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-"+slug, "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	}
+
+	t.Run("deprecate_defaults", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		seedOnePublishedVersion(t, mirrorDir, "single-dep")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"deprecate", "--successor", "XC-axon-single-dep@2.0.0", "--sunset", "2026-12-31", "XC-axon-single-dep"}, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0 (single published version, unambiguous default); stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+	})
+
+	t.Run("retire_defaults", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		seedOnePublishedVersion(t, mirrorDir, "single-ret")
+		writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-single-ret", "deprecate", "axon")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"retire", "XC-axon-single-ret"}, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0 (single published version, unambiguous default; no registered consumers); stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+	})
 }
 
 // TestContractDeprecateDeterministicAnnouncementID is HIGH-1's own

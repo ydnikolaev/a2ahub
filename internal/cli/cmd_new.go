@@ -20,7 +20,10 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
+	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"gopkg.in/yaml.v3"
 )
 
 // newTypePrefix maps an envelope type to its §3.3 ID prefix + mint class
@@ -156,6 +159,10 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 
 	now := c.now()
 	var mintedID string
+	// standingSlug captures the resolved slug for the contract scaffold
+	// step below (D-D) — only the ClassStanding branch computes a slug at
+	// all, and only "contract" (never "requirement") ever reads it back.
+	var standingSlug string
 	switch prefixInfo.Class {
 	case artifact.ClassStanding:
 		s := *slug
@@ -173,6 +180,7 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 			return 1
 		}
 		mintedID = id
+		standingSlug = s
 	case artifact.ClassExchangeBroadcast:
 		id, err := artifact.MintExchangeIDAt(prefixInfo.Prefix, c.ownSystem, now, c.entropy)
 		if err != nil {
@@ -218,7 +226,99 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	}
 
 	_, _ = fmt.Fprintf(stdio.Stdout, "new: drafted %s -> %s\n", mintedID, path)
+
+	// D-D: a fresh contract whose schema_format is a JSON-Schema dialect
+	// gets a starter schema/ + fixtures/valid/ scaffold, so §5.4b's
+	// computed compatibility check has a real baseline the moment the
+	// contract exists rather than needing the author to opt in later.
+	// requirement is also ClassStanding but carries no schema_format
+	// concept, so this is gated on typ, not on the class switch above.
+	if typ == "contract" {
+		schemaFormat, sfErr := newContractDraftSchemaFormat(draft)
+		if sfErr != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "new: cannot read drafted schema_format: %v\n", sfErr)
+			return 1
+		}
+		if validate.IsJSONSchemaFormat(schemaFormat) {
+			written, werr := newScaffoldContractFiles(c.stagingDir, c.ownSystem, standingSlug, c.writeFile)
+			if werr != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "new: cannot scaffold contract schema: %v\n", werr)
+				return 1
+			}
+			for _, p := range written {
+				_, _ = fmt.Fprintf(stdio.Stdout, "new: scaffolded %s\n", p)
+			}
+		}
+	}
+
 	return 0
+}
+
+// newContractDraftSchemaFormat decodes schema_format from a just-rendered
+// contract draft's OWN frontmatter — the output Render produced,
+// never the template's literal default — so this always reflects whatever
+// `--field schema_format=` override (or lack of one) actually landed in
+// the draft. Deliberately its own tiny probe rather than reusing cmd_
+// contract.go's contractDescriptorProbe: that type lives in a file this
+// wave does not hold (allowlist), and duplicating a one-field decode here
+// is cheaper and safer than reaching into a file outside this brief's
+// grant.
+func newContractDraftSchemaFormat(draft []byte) (string, error) {
+	fm, err := artifact.ParseFrontmatter(draft)
+	if err != nil {
+		return "", err
+	}
+	var probe struct {
+		SchemaFormat string `yaml:"schema_format"`
+	}
+	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+		return "", err
+	}
+	return probe.SchemaFormat, nil
+}
+
+// newScaffoldContractFiles writes decision D-D's starter schema/fixture
+// (template.ContractScaffold) under stagingDir, mirroring the
+// space-relative layout internal/space.Layout would place them at once
+// submitted (ProvidesSchemaDir/ProvidesFixturesValidDir) — so the author
+// edits the same relative shape a later publish will look for. D-E's stem
+// mapping is satisfied by naming both files after slug.
+//
+// Idempotent and non-destructive: a target that already exists is left
+// untouched and simply absent from the returned list, so re-running
+// `contract new` over an existing contract never clobbers the author's own
+// edits to a previously-scaffolded (or hand-written) schema/fixture.
+func newScaffoldContractFiles(stagingDir, ownSystem, slug string, writeFile func(string, []byte, os.FileMode) error) ([]string, error) {
+	layout, err := space.NewLayout(ownSystem)
+	if err != nil {
+		return nil, err
+	}
+
+	schemaBytes, fixtureBytes := template.ContractScaffold(slug)
+	candidates := []struct {
+		path string
+		data []byte
+	}{
+		{filepath.Join(stagingDir, filepath.FromSlash(layout.ProvidesSchemaDir(slug)), slug+".schema.json"), schemaBytes},
+		{filepath.Join(stagingDir, filepath.FromSlash(layout.ProvidesFixturesValidDir(slug)), slug+".json"), fixtureBytes},
+	}
+
+	var written []string
+	for _, cand := range candidates {
+		if _, statErr := os.Stat(cand.path); statErr == nil {
+			continue // D-D: never overwrite an existing scaffold or the author's own edit
+		} else if !os.IsNotExist(statErr) {
+			return written, statErr
+		}
+		if err := os.MkdirAll(filepath.Dir(cand.path), 0o755); err != nil {
+			return written, err
+		}
+		if err := writeFile(cand.path, cand.data, 0o644); err != nil {
+			return written, err
+		}
+		written = append(written, cand.path)
+	}
+	return written, nil
 }
 
 // newParseFields splits each "k=v" --field value into a map; a value with
