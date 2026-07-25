@@ -100,5 +100,20 @@ func Catalogue() []Scenario {
 		// scenario family produces, and A is the producer whose writes the
 		// row's own narrative follows.
 		{Name: "contract-integrity-registered-consumer", Systems: []string{SystemA}, Surfaces: cliOnly()},
+
+		// AC-980.1 (spec 38 wave F) — Layer-1 rows for the five envelope
+		// kinds nothing else in this matrix drives: the whole legal
+		// lifecycle to a terminal state, against real GitHub, both
+		// systems in play (A authors, B is the counterpart). Filed under
+		// SystemA only, matching contract-integrity-registered-consumer's
+		// own precedent above and this phase's own brief ("one row per
+		// KIND, not per (kind x system)" — a second row in the other
+		// direction would double the Actions spend to re-observe the
+		// same fact).
+		{Name: "question-lifecycle-to-closed", Systems: []string{SystemA}, Surfaces: cliOnly()},
+		{Name: "work-request-lifecycle-to-closed", Systems: []string{SystemA}, Surfaces: cliOnly()},
+		{Name: "handoff-lifecycle-to-accepted", Systems: []string{SystemA}, Surfaces: cliOnly()},
+		{Name: "response-lifecycle-to-verified", Systems: []string{SystemA}, Surfaces: cliOnly()},
+		{Name: "decision-lifecycle-to-approved", Systems: []string{SystemA}, Surfaces: cliOnly()},
 	}
 }

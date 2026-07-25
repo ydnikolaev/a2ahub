@@ -110,6 +110,13 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 		// refusal/space, which deliberately bend protection and the write
 		// floor.
 		{"contract-integrity", runContractIntegrityScenarios},
+		// AC-980.1 (spec 38 wave F) — Layer-1 rows for the five envelope
+		// kinds nothing else drives. Same "no shared-state mutation"
+		// property as happy/contract-integrity (every row authors its OWN
+		// fresh artifacts), so placed right after them, still ahead of
+		// boundary/refusal/space.
+		{"submitted-family", runSubmittedFamilyScenarios},
+		{"draft-family", runDraftFamilyScenarios},
 		{"boundary", runBoundaryScenarios},
 		{"refusal", runRefusalScenarios},
 		{"space", runSpaceScenarios},
