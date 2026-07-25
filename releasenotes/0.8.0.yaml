@@ -1,0 +1,177 @@
+schema: release-notes/v1
+version: "0.8.0"
+released: "2026-07-25"
+headline: "The read path tells you what the other side published, and a green pull request no longer sits forever"
+changes:
+  - id: RN-0800-1
+    kind: fix
+    impact: high
+    subject: "`a2a inbox` reported nothing while the other side had already published"
+    detail: >
+      Every read verb read the local mirror and never fetched, and none of them
+      said a word about how old that mirror was. Put that next to the protocol's
+      own session-start floor — run `a2a inbox`, and if it is empty, proceed —
+      and the result is that a contract your counterparty published after your
+      last `a2a sync` was invisible, while the documented loop told your agent
+      that invisible means nothing to do. No error anywhere, on either side.
+      `inbox`, `outbox`, `show`, `thread`, `search`, `contracts`, `dashboard` and
+      `html` now refresh a stale mirror before reading it: bounded (5s per space,
+      10s in total), and never fatal — an unreachable origin prints a note and
+      still gives you the local answer, so an offline machine keeps working.
+      `a2a statusline` is deliberately excluded and keeps its existing background
+      refresh: a synchronous fetch does not belong in a shell prompt.
+    affects: [cli]
+    action:
+      scope: local
+      why: "the fix is in the binary; nothing in your space changes"
+      run: ["a2a update"]
+
+  - id: RN-0800-2
+    kind: fix
+    impact: high
+    subject: "A pull request GitHub was ready to merge could sit open forever, while the write reported success"
+    detail: >
+      When a2a opens a pull request it arms auto-merge. GitHub declines to arm it
+      on a request that is ALREADY mergeable — there is nothing to wait for — and
+      a2a treated that refusal as "no repair needed" and reported the write
+      successful. For a person reading a terminal the printed hint said "merge
+      it". For an automated exchange it was a full stop: success reported, the
+      artifact never on the base branch, the counterparty never seeing it. Found
+      on a live space holding three such requests, each with a green required
+      check, the oldest three days old.
+      a2a now lands that request itself — but only after reading its required
+      check and finding it present and explicitly successful. A check that is
+      pending, absent, ambiguous or failing is never merged, and a space that
+      requires review keeps its request blocked rather than mergeable, so this
+      can only ever complete what auto-merge would have completed a moment
+      later.
+    affects: [cli]
+    action:
+      scope: local
+      why: "the fix is in the binary; nothing in your space changes"
+      run: ["a2a update"]
+
+  - id: RN-0800-3
+    kind: fix
+    impact: high
+    subject: "A space created from the template could not merge anything, and nothing told you"
+    detail: >
+      GitHub's `allow_auto_merge` repository setting is off by default on a newly
+      created repository — which is exactly what `a2a space init` produces. The
+      printed setup steps never mentioned it and `a2a doctor` never checked it,
+      so the funnel armed auto-merge on a repository that forbids it and every
+      write stalled behind a request nothing would merge. `a2a doctor` gains a
+      row for it, `a2a space init` names it among the steps you still have to
+      perform, and the template's branch-protection checklist now states the
+      values every operated space actually runs — `required_approving_review_count:
+      0`, `require_code_owner_reviews: true`, `enforce_admins: false` — each with
+      the reason, because a checklist that gives a value without its reason gets
+      "corrected" by the next reader. Note the doctor row reports UNVERIFIED
+      rather than failing when your credential cannot read repository settings: a
+      fine-grained token without "Repository metadata: read" is a working setup
+      and should not turn `a2a doctor` red.
+    affects: [cli, space]
+    action:
+      scope: space
+      why: "the checklist values live in your space's own BRANCH-PROTECTION.md; the doctor row and the init step are in the binary"
+      detect: ["a2a doctor"]
+      run: ["a2a update", "a2a space update"]
+
+  - id: RN-0800-4
+    kind: fix
+    impact: normal
+    subject: "`a2a init --space <url>` followed by `a2a connect <url>` left two mirrors, and read verbs used the wrong one"
+    detail: >
+      `init --space` recorded the space without a mirror location, which always
+      resolves project-locally and ignores a configured `mirror_root` entirely.
+      `connect` then cloned to the mirror_root path but never repaired the
+      recorded entry, so the clone and every later read looked in different
+      directories. `a2a doctor` happened to heal it by cloning into the path the
+      read verbs use, which is why this stayed latent for a month — the residue
+      was an orphaned second clone that even `a2a disconnect` never removed.
+      `connect` now repairs the recorded mirror location, so the sequence the
+      tool's own output recommends leaves exactly one mirror.
+    affects: [cli]
+    action:
+      scope: local
+      why: "the repair happens on your next `a2a connect`; an orphaned mirror from before can be deleted by hand"
+      run: ["a2a update"]
+
+  - id: RN-0800-5
+    kind: fix
+    impact: normal
+    subject: "A space id with a hyphen produced a credential variable your shell refuses to set"
+    detail: >
+      `A2A_TOKEN_<SPACE_ID>` was built by upper-casing the space id, so a space
+      called `my-space` yielded `A2A_TOKEN_MY-SPACE` — which bash and zsh both
+      reject as an invalid identifier. That export is the literal remedy `a2a
+      connect` prints, so the documented fallback was untypeable. Masked for
+      anyone whose `gh` CLI is authenticated, since a2a prefers `gh auth token`,
+      and therefore a dead end specifically for an agent in a container. Hyphens
+      now map to underscores, and the space manifest schema pins the id grammar
+      so the `my-space` / `my_space` collision the mapping could otherwise
+      introduce cannot be constructed.
+    affects: [cli, schemas]
+    action:
+      scope: local
+      why: "no existing space id changes — every id in use already conformed"
+      run: ["a2a update"]
+
+  - id: RN-0800-6
+    kind: fix
+    impact: high
+    subject: "A space pinned to v0.7.0 was validating with the v0.5.0 binary"
+    detail: >
+      A space pins the reusable validation workflow by release tag and inherits
+      that workflow's own default for which a2a version to run. That default was
+      left at v0.5.0 when v0.6.x and v0.7.0 shipped, so a space pinned at
+      `@v0.7.0` ran its CI gate with a binary two releases old while believing it
+      ran what it pinned. This mattered beyond version hygiene: v0.5.0 predates
+      the v0.6.4 fix for author resolution in the diff-authorization check, so
+      those spaces kept an authorization bypass the notes had described as
+      closed. The default now moves with the release, and
+      `make release-preflight` refuses a cut whose default disagrees with the tag
+      — the skew cannot recur silently.
+    affects: [space, policy]
+    action:
+      scope: space
+      why: "your space's CI resolves the validator through the workflow it pins; re-pin to this release"
+      detect: ["a2a space update --dry-run"]
+      run: ["a2a space update"]
+
+  - id: RN-0800-7
+    kind: fix
+    impact: normal
+    subject: "`make check` went red at random, and the installer's shell hook had no regression net"
+    detail: >
+      Two developer-facing surfaces, both guarded by nothing. Git spawns
+      background maintenance inside test fixtures and outlived the temporary
+      directories being cleaned up, so the repository's own gate failed for no
+      reason — and a gate that fails at random teaches you to re-run it instead
+      of read it. Every fixture git invocation now routes through one owner that
+      disables that maintenance, the test binaries harden their environment so a
+      git process started by production code under test is covered too, and a
+      structural test fails per site if a new invocation skips it. Separately,
+      `install.sh`'s shell-integration hook — four shell branches, hand-verified
+      once — is now driven by a committed test per shell, including the
+      idempotency case.
+    affects: [cli]
+    action:
+      scope: local
+      why: "repository-internal quality work; nothing to do"
+
+  - id: RN-0800-8
+    kind: policy
+    impact: normal
+    subject: "The fleet write floor stays at 0.7.0"
+    detail: >
+      Deliberately not raised. Nothing in this release is a write-path guard a
+      pre-0.8.0 binary could bypass: every fix here either corrects what a verb
+      reports to its own operator or completes a write that was already correctly
+      validated. Raising the floor would refuse writes from a colleague who has
+      not updated yet, in exchange for nothing — so it holds at 0.7.0, and you
+      can update the two ends of an exchange independently.
+    affects: [policy]
+    action:
+      scope: local
+      why: "no space.yaml change is required by this release"
