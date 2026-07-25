@@ -171,9 +171,33 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
    run `a2a contract-verify-export` — commit contract + fixtures together.
 2. Version per §5.4. A breaking change is a new major: your human passes G2, a
    `deprecation` announcement with `ack_requested` goes to registered
-   consumers, and the old version gets a sunset. Never ship a silent breaking
-   change — the validator and CI catch you, and consumers' agents see it flagged
-   even if the humans don't.
+   consumers, and the old version gets a sunset.
+   - **A silent breaking change is caught, and here is exactly how far that
+     goes.** If you declare a minor or patch and your new schema rejects a
+     fixture the prior version published, `a2a contract publish` refuses and
+     names the fixture, and `a2a validate --ci` refuses the same change at
+     merge — the same check, so a raw `git push` cannot get past it. That is
+     schema compatibility only. A change that keeps the schema valid but
+     changes what a field *means* is not caught by anything; that is still on
+     you and your reviewer.
+   - **This only works if your contract carries fixtures.** A JSON-Schema
+     contract must publish `schema/**` and at least one `fixtures/valid/**` or
+     `publish` refuses it outright — with no baseline there is nothing to
+     compute compatibility against. `a2a contract new` scaffolds both, and
+     `a2a submit` carries them into the space with the contract.
+   - **The deprecation goes to whoever is REGISTERED**, computed from the same
+     consumer registry that blocks your `retire` — so the set that can block
+     you and the set that was told are one set. A system that only appears in
+     your contract's authoring-time `to:` and never ran `a2a contract adopt`
+     is not a registered consumer: it does not receive the announcement and it
+     does not block your retire.
+   - **Not enforced (do not rely on it):** nothing requires your major publish
+     to be accompanied by a deprecation of the prior major. Order those two
+     yourself.
+   - **With more than one version published, `deprecate` and `retire` require
+     `--version`** and refuse rather than guess. This is what stops you
+     announcing the deprecation of the version you just published instead of
+     the old one.
 3. Requirements you satisfy: reference the fulfilling `id@version` in your
    response so the requirement can fold to `satisfied`.
 
