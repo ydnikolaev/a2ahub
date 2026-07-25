@@ -1,9 +1,22 @@
 // Package schema loads and compiles the embedded product schema corpus
 // (schemas.FS: envelope/v1 base + 8 type extensions, event/v1, manifest/v1,
 // consumes/v1) with santhosh-tekuri/jsonschema/v6, and loads the
-// error-code registry (schemas/errors/v1/registry.yaml). It is the only
-// package in this repo that imports jsonschema/v6 (go-conventions.md
-// "Stack" table); internal/validate is its sole v1 consumer.
+// error-code registry (schemas/errors/v1/registry.yaml).
+//
+// It is the home for jsonschema/v6 (go-conventions.md "Stack" table), and
+// the one place a schema OUTSIDE the embedded corpus may be compiled —
+// CompileExternal (external.go), which a contract's own producer-authored
+// schema goes through. internal/validate is its sole v1 consumer and does
+// no I/O of its own, so the compat core is fed bytes and hands them here.
+//
+// This doc used to claim it was "the only package in this repo that
+// imports jsonschema/v6". That has not been true since P25:
+// internal/feedback/validate.go imports it directly for the feedback/v1
+// family, which is its own corpus with its own FB-### code domain. The
+// claim is corrected rather than the import removed — consolidating a
+// second embedded corpus into this package is a real design question, not
+// a docs fix, and stating a boundary the code does not hold is exactly the
+// class of thing P37/AC-974.1 exists to stop.
 package schema
 
 import "errors"
