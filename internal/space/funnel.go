@@ -291,50 +291,26 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		}
 	}
 
-	// Step 2: assemble ONE commit = every req.Files entry (D-026).
-	sha, fresh, err := f.commitOne(ctx, req, branch)
+	// Steps 2-3: commit + push, under ONE hold of the mirror's advisory
+	// lock spanning the whole span — this mirror directory is shared
+	// across every project/system on this machine that connects the same
+	// space (mirror_root), and this is the only part of Submit that
+	// mutates it. See commitAndPush's own doc for the exact hold window.
+	outcome, err := f.commitAndPush(ctx, req, branch)
 	if err != nil {
-		return WriteResult{}, &Error{Op: op, Err: err}
+		return WriteResult{}, err
 	}
-	if !fresh {
-		// Nothing to commit: the branch already carries exactly this
-		// content. Either it is already IN the space (a genuine repeat of
-		// the same write — nothing left to do), or a previous attempt made
-		// the commit but never got it merged, in which case the push/PR
-		// steps still have work.
-		onBase, berr := f.commitIsOnBase(ctx, req, sha)
-		if berr != nil {
-			return WriteResult{}, &Error{Op: op, Err: berr}
-		}
-		if onBase {
-			return WriteResult{Branch: branch, CommitSHA: sha, State: WriteStateAlreadyMerged}, nil
-		}
+	if outcome.done != nil {
+		return *outcome.done, nil
 	}
-
-	// Step 3: push the ephemeral branch — into req.Repo itself, or (when
-	// the caller allowed it and the push was refused for ACCESS) into the
-	// submitter's own fork.
-	head := branch
-	if err := f.push(ctx, req, branch, req.RemoteURL); err != nil {
-		if !req.AllowForkFallback || !errors.Is(err, host.ErrPushForbidden) {
-			return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
-		}
-		forkHead, forked, ferr := f.pushViaFork(ctx, req, branch)
-		if ferr != nil {
-			return WriteResult{}, ferr
-		}
-		if forked != nil {
-			// The fork already carries this branch's PR — the fork-head
-			// idempotency check step 0 could not make, because the fork's
-			// owner was unknown until now.
-			return existingPRResult(branch, forked), nil
-		}
-		head = forkHead
-	}
+	sha, head := outcome.sha, outcome.head
 
 	// Step 4: open the PR — UNIFORM, auto-merge always (D-002; spec 05
 	// §T1 "Gating needs no OpenPR parameter"). Head is owner-qualified on
-	// the fork path; the PR still targets req.Repo's base branch.
+	// the fork path; the PR still targets req.Repo's base branch. Runs
+	// UNLOCKED: commitAndPush already released the mirror lock once the
+	// push completed, so this network round trip does not hold up any
+	// other writer on the mirror.
 	pr, err := f.host.OpenPR(ctx, host.OpenPRRequest{
 		Repo: req.Repo, Head: head, Base: req.BaseBranch,
 		Title: req.PRTitle, Body: req.PRBody, Credential: req.Credential,
@@ -461,20 +437,122 @@ func BranchName(system, verb, artifactID string) string {
 	return fmt.Sprintf("a2a/%s/%s/%s", system, verb, artifactID)
 }
 
+// resolvedBaseBranch returns req.BaseBranch, defaulting to §4.2's
+// normative "main" when unset. The one place this default lives, shared by
+// commitOne's checkout start-point and commitIsOnBase's ancestor check so
+// the two can never name a different base out from under each other.
+func resolvedBaseBranch(req SubmitRequest) string {
+	if req.BaseBranch == "" {
+		return "main"
+	}
+	return req.BaseBranch
+}
+
 // commitIsOnBase reports whether sha is already contained in the base
 // branch as the mirror last fetched it — i.e. this write's content is
 // already in the space. An unresolvable base ref answers "no": writing a
 // duplicate is recoverable, silently dropping a write is not.
 func (f *WriteFunnel) commitIsOnBase(ctx context.Context, req SubmitRequest, sha string) (bool, error) {
-	base := req.BaseBranch
-	if base == "" {
-		base = "main"
-	}
+	base := resolvedBaseBranch(req)
 	if err := runGit(ctx, req.RepoDir, "rev-parse", "--verify", "origin/"+base); err != nil {
 		return false, nil //nolint:nilerr // reason: an unknown base is "not on base", not a failure
 	}
 	err := runGit(ctx, req.RepoDir, "merge-base", "--is-ancestor", sha, "origin/"+base)
 	return err == nil, nil
+}
+
+// commitAndPushOutcome is what commitAndPush found: either steps 2-3
+// completed with a commit SHA and push head ready for Submit's step 4
+// (OpenPR), or the write is already fully accounted for — this write's
+// content already merged, or a fork PR already exists for this head — and
+// Submit should return the carried result immediately without opening
+// anything.
+type commitAndPushOutcome struct {
+	sha, head string
+	// done, when non-nil, is Submit's final result: nothing left to do.
+	done *WriteResult
+}
+
+// commitAndPush is Submit's steps 2-3 (commit, then push — into req.Repo
+// itself, or the P28 fork fallback), run under ONE hold of the mirror's
+// advisory lock (AcquireMirrorLock) spanning the whole mutate-commit-push
+// sequence — the exact live-e2e regression this exists to close: two
+// systems writing the SAME shared mirror (mirror_root puts every
+// project's clone of a space in one place) interleaved their own
+// checkout/write/add/commit on ONE git index, and a branch ended up
+// carrying the other author's files.
+//
+// The lock is acquired before the first git action that touches
+// req.RepoDir and released as soon as the push (ordinary or via fork)
+// completes — success OR failure, so a refused write never leaks the lock
+// and poisons the next writer's attempt (asserted directly by this
+// package's tests). Everything after this function returns — OpenPR,
+// tryLandCleanPR's CheckStatus/MergePR — is a HOST network call, not a
+// mutation of req.RepoDir, and deliberately runs UNLOCKED: holding the
+// mirror lock across those round trips would stall every other writer on
+// the mirror for the duration of a call that never touches req.RepoDir
+// again.
+func (f *WriteFunnel) commitAndPush(ctx context.Context, req SubmitRequest, branch string) (commitAndPushOutcome, error) {
+	const op = "Submit"
+
+	lock, err := AcquireMirrorLock(ctx, req.RepoDir)
+	if err != nil {
+		return commitAndPushOutcome{}, &Error{Op: op, Input: branch, Err: err}
+	}
+	// The explicit release on the success path below already ran by the
+	// time this fires; MirrorLock.Release is idempotent, so this is the
+	// safety net for every error return in this function.
+	defer func() { _ = lock.Release() }() // reason: best-effort cleanup — a failed release self-heals via mirrorLockStaleAfter and must not turn a completed/refused write into a different error
+
+	sha, fresh, err := f.commitOne(ctx, req, branch)
+	if err != nil {
+		return commitAndPushOutcome{}, &Error{Op: op, Err: err}
+	}
+	if !fresh {
+		// Nothing to commit: the branch already carries exactly this
+		// content. Either it is already IN the space (a genuine repeat of
+		// the same write — nothing left to do), or a previous attempt made
+		// the commit but never got it merged, in which case the push/PR
+		// steps still have work.
+		onBase, berr := f.commitIsOnBase(ctx, req, sha)
+		if berr != nil {
+			return commitAndPushOutcome{}, &Error{Op: op, Err: berr}
+		}
+		if onBase {
+			done := WriteResult{Branch: branch, CommitSHA: sha, State: WriteStateAlreadyMerged}
+			return commitAndPushOutcome{done: &done}, nil
+		}
+	}
+
+	// Push the ephemeral branch — into req.Repo itself, or (when the
+	// caller allowed it and the push was refused for ACCESS) into the
+	// submitter's own fork.
+	head := branch
+	if err := f.push(ctx, req, branch, req.RemoteURL); err != nil {
+		if !req.AllowForkFallback || !errors.Is(err, host.ErrPushForbidden) {
+			return commitAndPushOutcome{}, &Error{Op: op, Input: branch, Err: err}
+		}
+		forkHead, forked, ferr := f.pushViaFork(ctx, req, branch)
+		if ferr != nil {
+			return commitAndPushOutcome{}, ferr
+		}
+		if forked != nil {
+			// The fork already carries this branch's PR — the fork-head
+			// idempotency check step 0 could not make, because the fork's
+			// owner was unknown until now.
+			done := existingPRResult(branch, forked)
+			return commitAndPushOutcome{done: &done}, nil
+		}
+		head = forkHead
+	}
+
+	// Release NOW, explicitly, rather than waiting for the deferred safety
+	// net: nothing left in this function touches req.RepoDir, and every
+	// other writer waiting on this mirror should be unblocked the moment
+	// this one's push lands, not after this function merely returns.
+	_ = lock.Release() // reason: best-effort — see the deferred release's own comment above
+
+	return commitAndPushOutcome{sha: sha, head: head}, nil
 }
 
 // existingPRResult renders the idempotent short-circuit's result for a PR
@@ -617,15 +695,31 @@ func hasPathPrefix(path, prefix string) bool {
 	return len(path) > len(prefix) && path[:len(prefix)] == prefix
 }
 
-// commitOne checks out branch (creating it from the current HEAD), writes
-// every req.Files entry to disk under req.RepoDir, stages, and commits
-// them as ONE commit — the D-026 shape. Returns the new commit SHA.
+// commitOne checks out branch FROM origin/<resolvedBaseBranch(req)> —
+// never from ambient HEAD — writes every req.Files entry to disk under
+// req.RepoDir, stages, and commits them as ONE commit — the D-026 shape.
+// Returns the new commit SHA.
+//
+// The explicit start point is load-bearing, not cosmetic. `checkout -B
+// branch` with NO start point resets branch to whatever HEAD happens to be
+// — and on a SHARED mirror (mirror_root puts every project's clone of a
+// space in one place), HEAD is left standing on the PREVIOUS caller's own
+// ephemeral branch (checkoutRemoteHead's own doc: "commitOne checks it out
+// and never leaves"). Two systems writing the same mirror back to back —
+// even perfectly serialized by AcquireMirrorLock, no race at all — used to
+// produce a second branch whose diff against main carried the FIRST
+// system's files too, because it forked from the first system's branch
+// instead of from base. Verified empirically before this fix (a hermetic
+// two-sequential-Submit repro, no goroutines involved) and is a second,
+// independent defect from the shared-index race AcquireMirrorLock exists
+// to close — a lock alone does not fix it.
 func (f *WriteFunnel) commitOne(ctx context.Context, req SubmitRequest, branch string) (sha string, fresh bool, err error) {
 	if len(req.Files) == 0 {
 		return "", false, fmt.Errorf("space: commitOne: no files to commit")
 	}
 
-	if err := runGit(ctx, req.RepoDir, "checkout", "-B", branch); err != nil {
+	startPoint := "origin/" + resolvedBaseBranch(req)
+	if err := runGit(ctx, req.RepoDir, "checkout", "-B", branch, startPoint); err != nil {
 		return "", false, err
 	}
 
@@ -651,6 +745,16 @@ func (f *WriteFunnel) commitOne(ctx context.Context, req SubmitRequest, branch s
 	// report the branch tip and let the caller decide what it means: on the
 	// base branch it is a write that already landed, off it a previous
 	// attempt whose push or PR never completed.
+	//
+	// Since the checkout above now always starts branch fresh from
+	// origin/<base> (see this function's own doc), the "off base" half of
+	// that sentence is close to unreachable in practice: a previous
+	// attempt's un-pushed local commit is discarded by the reset before
+	// this diff runs, so re-writing the SAME content almost always stages
+	// as new (this returns fresh=true, a brand-new commit object with the
+	// same tree). Left in place rather than removed: it is still exactly
+	// correct for the one case that DOES reach it — this write's content
+	// already equals origin/<base>'s current tree, i.e. it already merged.
 	staged, err := runGitOutput(ctx, req.RepoDir, nil, "diff", "--cached", "--name-only")
 	if err != nil {
 		return "", false, err

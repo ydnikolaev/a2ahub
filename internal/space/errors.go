@@ -74,13 +74,18 @@ var (
 	// YAML parse.
 	ErrConsumesInvalid = errors.New("space: consumes is not valid yaml")
 
-	// ErrMirrorLocked is returned by the mirror-checkout step when another
-	// process's own concurrent CloneOrFetch still held one of the
-	// mirror's git lock files (index.lock, HEAD.lock, a branch ref lock,
-	// or config.lock) after indexLockWaitBudget (mirror.go) elapsed. The
+	// ErrMirrorLocked is returned when another process still holds a lock
+	// on the mirror after this process's own wait budget elapsed — either
+	// git's own lock files (index.lock, HEAD.lock, a branch ref lock, or
+	// config.lock; see mirror.go's checkoutRemoteHead/indexLockWaitBudget),
+	// or the coarser, mirror-directory-wide advisory lock the write funnel
+	// holds across its whole mutate-commit-push span (see
+	// mirrorlock.go's AcquireMirrorLock/mirrorLockWaitBudget). Both name
+	// the same underlying fact from the caller's point of view: the
 	// mirror is a shared cache (mirror_root puts every project's clone of
-	// a space in one place) and the write funnel is idempotent by head
-	// branch, so the caller's safe next move is simply to re-run.
+	// a space in one place), something else is using it right now, and
+	// the write funnel is idempotent by head branch — so the caller's
+	// safe next move is simply to re-run.
 	ErrMirrorLocked = errors.New("space: mirror is locked by a concurrent git process; re-run")
 )
 
