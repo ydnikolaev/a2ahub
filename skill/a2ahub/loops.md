@@ -169,6 +169,18 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
 
 1. Regenerate the contract export from your code (your project's mechanism);
    run `a2a contract-verify-export` — commit contract + fixtures together.
+   - **Edit the schema in staging, not in the mirror.** Your changed
+     `schema/**` and `fixtures/**` go under
+     `.a2a/staging/<system>/provides/<slug>/` — the same tree `a2a contract
+     new` scaffolds. `a2a contract publish` reads them from there and carries
+     them into the same commit as the version bump, which is what lets the
+     compatibility check below compare your NEW schema against the PRIOR
+     version's fixtures.
+   - The mirror under `.a2a/cache/mirrors/` is a **cache, not a workspace**.
+     Every `a2a` command refreshes it and resets it to the space's `main`
+     first, so an edit you make there is discarded before the next command
+     reads it — silently, because the command is not doing anything wrong.
+     Edit staging.
 2. Version per §5.4. A breaking change is a new major: your human passes G2, a
    `deprecation` announcement with `ack_requested` goes to registered
    consumers, and the old version gets a sunset.
