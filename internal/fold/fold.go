@@ -112,8 +112,20 @@ func applyNote(env Envelope, result *Result, event Event, membership MembershipV
 // exempt from the transition table entirely; accumulates into the
 // per-recipient ack set (deduplicated by acting system — a duplicate ack
 // from the same recipient is a no-op on the set), never changes State.
+// broadcastAckPermitted is D-025's authorization rule for a broadcast ack,
+// in ONE place because it has two enforcement points: this package's own
+// post-write Apply (applyBroadcastAck) and its pre-write CheckLegality.
+// Shipping the rule twice is what let them disagree — CheckLegality had no
+// branch at all, so it refused every ack the fold would have accepted.
+//
+// The rule is membership alone: any current member may acknowledge a
+// broadcast, addressed or not.
+func broadcastAckPermitted(status MembershipStatus) bool {
+	return status == MembershipMember
+}
+
 func applyBroadcastAck(result *Result, event Event, membership MembershipView) {
-	if membership != nil && membership(event.Actor.System) != MembershipMember {
+	if membership != nil && !broadcastAckPermitted(membership(event.Actor.System)) {
 		result.Flags = append(result.Flags, Flag{Kind: FlagUnauthorizedActor, EventULID: event.ULID, Subject: event.Subject})
 		return
 	}

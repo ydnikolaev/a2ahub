@@ -44,6 +44,36 @@ func CheckLegality(kind Kind, currentState State, transition string, env Envelop
 		}
 		return VerdictLegal
 	}
+	// D-025's transition-free broadcast-acknowledge, checked pre-write by
+	// the SAME predicate applyBroadcastAck applies post-write
+	// (broadcastAckPermitted, fold.go) — never a second reading of the rule.
+	//
+	// Without this branch the generic table lookup below decided it, and
+	// announcementRows() carries no acknowledge row, so EVERY `a2a ack` on
+	// an announcement was refused LFC-001 while the fold stood ready to
+	// apply the very event no verb could author. D-025 states the rule
+	// plainly ("per-recipient broadcast-ack sets are first-class, exempt
+	// from illegal-transition folding") and the fold implemented it; this
+	// side did not, so the stricter of the two guards silently won.
+	//
+	// The cost was not cosmetic: `ack_requested: true` was unanswerable, and
+	// `contract retire`'s precondition — every registered consumer has acked
+	// the deprecation — could never be satisfied except by --override. Live
+	// run 5 (2026-07-25) is what surfaced it, at the first row that ever had
+	// a registered consumer with something to ack.
+	//
+	// Membership, not role, is deliberately the whole test: a broadcast ack
+	// is answerable by any current member, INCLUDING one that never appears
+	// in the announcement's `to:`. That is not a loosening — it is what
+	// AC-971.1 requires, since a consumer registered via `contract adopt`
+	// receives the deprecation precisely because it is registered, not
+	// because it was addressed.
+	if kind == KindAnnouncement && transition == TAcknowledge {
+		if !broadcastAckPermitted(membership) {
+			return VerdictUnauthorizedActor
+		}
+		return VerdictLegal
+	}
 	if transition == TUnblock {
 		if currentState != StateBlocked {
 			return VerdictIllegalTransition
