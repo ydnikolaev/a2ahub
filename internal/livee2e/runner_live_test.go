@@ -104,6 +104,12 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 		fn   func(context.Context, *harness) []Result
 	}{
 		{"happy", runHappyScenarios},
+		// contract-integrity (AC-973.1) writes only to its own contract's
+		// section, the same "no shared-state mutation" property the happy
+		// family has — placed right after it, still ahead of boundary/
+		// refusal/space, which deliberately bend protection and the write
+		// floor.
+		{"contract-integrity", runContractIntegrityScenarios},
 		{"boundary", runBoundaryScenarios},
 		{"refusal", runRefusalScenarios},
 		{"space", runSpaceScenarios},

@@ -93,5 +93,12 @@ func Catalogue() []Scenario {
 		// Refusal paths that are cheap to keep honest live.
 		{Name: "out-of-section-write-refused", Systems: []string{SystemB}, Surfaces: cliOnly()},
 		{Name: "stale-write-floor-refused", Systems: []string{SystemB}, Surfaces: cliOnly()},
+
+		// AC-973.1 (spec 37) — the full producer<->consumer contract-
+		// integrity story, both systems (A publishes/deprecates/retires, B
+		// adopts/acks). Filed under SystemA: it is the one row this
+		// scenario family produces, and A is the producer whose writes the
+		// row's own narrative follows.
+		{Name: "contract-integrity-registered-consumer", Systems: []string{SystemA}, Surfaces: cliOnly()},
 	}
 }
