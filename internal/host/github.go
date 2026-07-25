@@ -650,12 +650,42 @@ func (h *GitHubHost) AutoMergeAllowed(ctx context.Context, req RepoSettingsReque
 // AutoMergeAllowed and MergePR read — ONE response body, two callers, kept
 // as one struct so the fields can never drift apart (WAVE M4: MergePR needs
 // exactly the sibling fields AutoMergeAllowed already reads, per the same
-// GitHub response).
+// GitHub response). RepoPermissions reads the SAME response's `permissions`
+// object — a third caller, still no second GET.
 type repoMergeSettings struct {
-	AllowAutoMerge   bool `json:"allow_auto_merge"`
-	AllowMergeCommit bool `json:"allow_merge_commit"`
-	AllowSquashMerge bool `json:"allow_squash_merge"`
-	AllowRebaseMerge bool `json:"allow_rebase_merge"`
+	AllowAutoMerge   bool            `json:"allow_auto_merge"`
+	AllowMergeCommit bool            `json:"allow_merge_commit"`
+	AllowSquashMerge bool            `json:"allow_squash_merge"`
+	AllowRebaseMerge bool            `json:"allow_rebase_merge"`
+	Permissions      RepoPermissions `json:"permissions"`
+}
+
+// RepoPermissions is the subset of GET /repos/{owner}/{repo}'s `permissions`
+// object doctor's "who can fix it" note needs (this phase's brief §3): what
+// the CREDENTIAL that read this repo can actually DO on it, never a config
+// field. GitHub nests these (admin implies push implies pull), so a caller
+// deciding "can this credential write here" checks Admin || Push.
+type RepoPermissions struct {
+	Admin bool `json:"admin"`
+	Push  bool `json:"push"`
+	Pull  bool `json:"pull"`
+}
+
+// RepoPermissions reads GET /repos/{owner}/{repo} — the SAME call
+// AutoMergeAllowed and MergePR already issue — and reports the resolved
+// credential's own permissions on the repository, straight off that
+// response's `permissions` object. No second GitHub endpoint: this extends
+// the one existing read rather than adding a new one.
+func (h *GitHubHost) RepoPermissions(ctx context.Context, req RepoSettingsRequest) (RepoPermissions, error) {
+	const op = "RepoPermissions"
+	if req.Repo.Owner == "" || req.Repo.Name == "" {
+		return RepoPermissions{}, &Error{Op: op, Err: ErrInvalidRequest}
+	}
+	settings, err := h.readRepoSettings(ctx, op, req.Repo, req.Credential)
+	if err != nil {
+		return RepoPermissions{}, err
+	}
+	return settings.Permissions, nil
 }
 
 // readRepoSettings issues the single GET /repos/{owner}/{repo} call both

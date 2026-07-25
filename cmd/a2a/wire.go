@@ -227,7 +227,20 @@ func buildCommands() map[string]command {
 		// (sha)") — doctorVersionOlder parses a bare major.minor.patch, so
 		// the full stamp made `a2a doctor` report `versions: FAIL` against
 		// every space that pins min_binary_version (P10 e2e surfaced it).
-		return cli.NewDoctorCommand(h, version, p.projectConfig, p.machineConfig, p.projectRoot).Run(context.Background(), args, stdio(stdout, stderr))
+		cmd := cli.NewDoctorCommand(h, version, p.projectConfig, p.machineConfig, p.projectRoot)
+		// The "space scaffolding current" row compares the connected space's
+		// committed scaffolding against what THIS binary's embedded template
+		// would write — the reverse of "versions", which only asks whether the
+		// binary is too old for the space. It needs the embedded template, and
+		// internal/cli must not import space-template directly, so it is wired
+		// here post-construction (the same shape init/update already use for
+		// SkillFiles). Left unwired the row degrades to an advisory "this build
+		// wires no embedded space template" rather than failing — which is
+		// correct behaviour and exactly why it must actually be wired: an
+		// advisory nobody set up is indistinguishable from one that has nothing
+		// to report.
+		cmd.TemplateFiles = spacetemplate.Files
+		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["update"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()

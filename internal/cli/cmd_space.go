@@ -461,11 +461,14 @@ var spaceSeededAlternates = map[string][]string{
 	"CODEOWNERS": {".github/CODEOWNERS", "docs/CODEOWNERS"},
 }
 
-// spaceSeededElsewhere reports whether a seeded template path is already
-// satisfied at one of its alternate locations in the mirror.
-func (c *SpaceCommand) spaceSeededElsewhere(templatePath string, readFile func(string) ([]byte, error)) (string, bool) {
+// spaceSeededElsewhereIn reports whether a seeded template path is already
+// satisfied at one of its alternate locations in mirrorDir. Package-level
+// (not a *SpaceCommand method) so spaceComputeUpdatePlanFor — the shared
+// drift computation `space update` and `doctor`'s scaffolding-current row
+// both call — needs no *SpaceCommand receiver to use it.
+func spaceSeededElsewhereIn(mirrorDir, templatePath string, readFile func(string) ([]byte, error)) (string, bool) {
 	for _, alt := range spaceSeededAlternates[templatePath] {
-		if _, err := readFile(filepath.Join(c.MirrorDir, filepath.FromSlash(alt))); err == nil {
+		if _, err := readFile(filepath.Join(mirrorDir, filepath.FromSlash(alt))); err == nil {
 			return alt, true
 		}
 	}
@@ -542,21 +545,42 @@ func spaceUpdateFloor(current, templateFloor string) (next string, changed bool,
 // content (read via c.readFile, DI-seamed so tests never touch a real
 // filesystem). It performs NO write — pure diff, safe to call for
 // --dry-run and for a real run alike.
+//
+// A thin wrapper over spaceComputeUpdatePlanFor — the package-level function
+// doctor's "space scaffolding current" row (cmd_doctor.go) ALSO calls, so
+// the two commands can never disagree about "is this space behind" (spec 35
+// §9's precedent: space.IsInfrastructurePath is the one owner for the
+// funnel/planner agreement; this is the same move for the drift diff
+// itself). This wrapper's own behaviour is unchanged — same inputs, same
+// readFile default, same output — the lift is byte-identical.
 func (c *SpaceCommand) spaceComputeUpdatePlan(spaceID, version string) (spaceUpdatePlan, error) {
-	readFile := c.readFile
+	return spaceComputeUpdatePlanFor(c.TemplateFiles, c.MirrorDir, spaceID, version, c.readFile)
+}
+
+// spaceComputeUpdatePlanFor is the package-level drift computation shared by
+// `space update` (spaceComputeUpdatePlan, above) and `doctor`'s "space
+// scaffolding current" row (doctorCheckScaffoldingCurrent, cmd_doctor.go) —
+// ONE owner for "is this space behind the embedded template", never a
+// second implementation. templateFiles is the embedded space-template/
+// tree; mirrorDir is the space's local mirror working directory; readFile
+// is DI-seamed (nil defaults to os.ReadFile) so a caller — a test, or
+// doctor's own read-only check — never needs a real filesystem. It performs
+// NO write — pure diff, safe for --dry-run, a real run, and doctor's
+// read-only row alike.
+func spaceComputeUpdatePlanFor(templateFiles fs.FS, mirrorDir, spaceID, version string, readFile func(string) ([]byte, error)) (spaceUpdatePlan, error) {
 	if readFile == nil {
 		readFile = os.ReadFile
 	}
 
 	var plan spaceUpdatePlan
-	err := fs.WalkDir(c.TemplateFiles, ".", func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(templateFiles, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
 			return nil
 		}
-		templateData, rerr := fs.ReadFile(c.TemplateFiles, p)
+		templateData, rerr := fs.ReadFile(templateFiles, p)
 		if rerr != nil {
 			return fmt.Errorf("cannot read embedded %s: %w", p, rerr)
 		}
@@ -579,7 +603,7 @@ func (c *SpaceCommand) spaceComputeUpdatePlan(spaceID, version string) (spaceUpd
 
 		substituted := spaceApplySubstitutions(p, templateData, spaceID, version)
 
-		mirrorPath := filepath.Join(c.MirrorDir, filepath.FromSlash(p))
+		mirrorPath := filepath.Join(mirrorDir, filepath.FromSlash(p))
 		current, rerr := readFile(mirrorPath)
 		exists := true
 		if rerr != nil {
@@ -644,7 +668,7 @@ func (c *SpaceCommand) spaceComputeUpdatePlan(spaceID, version string) (spaceUpd
 			// gates-nothing takeover the day the real file moves.
 			// Found on the live getvisa space, invisible to the fixtures.
 			if !exists {
-				if alt, found := c.spaceSeededElsewhere(p, readFile); found {
+				if alt, found := spaceSeededElsewhereIn(mirrorDir, p, readFile); found {
 					plan.drift = append(plan.drift, fmt.Sprintf(
 						"advisory: template ships %s, this space keeps it at %s — left untouched (seeded, one per space)", p, alt))
 					return nil
