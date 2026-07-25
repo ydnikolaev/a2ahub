@@ -14,7 +14,9 @@ package cli
 
 import (
 	"context"
+	"flag"
 	"io"
+	"strings"
 )
 
 // Command is one a2a subcommand. Run receives the args AFTER the verb name
@@ -51,4 +53,41 @@ type IO struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
+}
+
+// parseArgsAnyOrder parses fs while accepting positional arguments BEFORE
+// the flags, and returns the positionals in the order they were written.
+//
+// It exists because Go's flag package stops parsing at the first non-flag
+// token, so e.g. `contract deprecate <id> --successor X --sunset Y` leaves
+// both flags unset — and the verb's own usage line tells the caller to
+// write exactly that. The command documented an order it then refused,
+// which is worse than either order alone: following the help text is what
+// breaks.
+//
+// `contract adopt` and `feedback new` each already carried a private copy
+// of this lift when `contract deprecate` made it the THIRD occurrence — the
+// logic got one home then (cmd_contract.go). Wave K's live run found
+// thirteen MORE commands with the identical bare-`fs.Parse(args)` gap
+// (`a2a show <id> --json` among them), which makes a single per-file copy
+// the wrong shape entirely; the lift now lives here, on cli.go, this
+// package's own shared seam every verb file already builds against (see
+// this file's own doc comment) — the same file IsHelpArg already calls
+// home for the same reason: a small arg-parsing utility every verb file
+// needs, owned by none of them.
+//
+// Both orders stay legal — flags-first callers (including every test
+// written before this was found) are unaffected, because the lifted
+// positionals are concatenated with whatever fs.Args() reports.
+func parseArgsAnyOrder(fs *flag.FlagSet, args []string) ([]string, error) {
+	var lifted []string
+	rest := args
+	for len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+		lifted = append(lifted, rest[0])
+		rest = rest[1:]
+	}
+	if err := fs.Parse(rest); err != nil {
+		return nil, err
+	}
+	return append(lifted, fs.Args()...), nil
 }

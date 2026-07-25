@@ -107,7 +107,14 @@ func (c *ValidateCommand) Run(ctx context.Context, args []string, stdio IO) int 
 	mode := fs.String("mode", "", "CI mode scope: v3-pr | v3-full-repo")
 	base := fs.String("base", "", "CI mode base sha for the v3-pr diff (git diff <base>...HEAD)")
 	author := fs.String("author", "", "CI mode PR author github login for diff-authz (else GITHUB_ACTOR)")
-	if err := fs.Parse(args); err != nil {
+	// Wave K fix (live run 6, "thirteen verbs refuse a flag written after
+	// their positional argument"): parseArgsAnyOrder (cli.go), not a bare
+	// fs.Parse(args) — `validate <path> --all` used to leave --all unset
+	// (flag.Parse stops at the first non-flag token) and then refuse on
+	// fs.NArg() != 1 with the SECOND, unconsumed "--all" token counted as
+	// a positional.
+	positional, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
 
@@ -135,7 +142,7 @@ func (c *ValidateCommand) Run(ctx context.Context, args []string, stdio IO) int 
 			}
 		}
 	} else {
-		if fs.NArg() != 1 {
+		if len(positional) != 1 {
 			_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a validate <path> | a2a validate --all")
 			return 2
 		}
@@ -144,7 +151,7 @@ func (c *ValidateCommand) Run(ctx context.Context, args []string, stdio IO) int 
 		// like `a2a submit <id>` already does — resolveSubmitTarget below
 		// is submit's own id-resolution, reused here rather than
 		// reinvented, so the two verbs never drift on what a bare id means.
-		paths = []string{resolveSubmitTarget(c.stagingDir, fs.Arg(0))}
+		paths = []string{resolveSubmitTarget(c.stagingDir, positional[0])}
 	}
 
 	var reports []validateReport
@@ -420,7 +427,14 @@ func ResolveSubmitTargets(stagingDir string, args []string) ([]string, error) {
 	fs.SetOutput(io.Discard)
 	batch := fs.Bool("batch", false, "")
 	drafts := fs.Bool("drafts", false, "")
-	if err := fs.Parse(args); err != nil {
+	// Wave K fix (live run 6, "thirteen verbs refuse a flag written after
+	// their positional argument"): parseArgsAnyOrder (cli.go), not a bare
+	// fs.Parse(args) — `submit --batch <a...>` is the documented order,
+	// but a batch of artifact ids written before --batch used to leave
+	// the flag unset (flag.Parse stops at the first non-flag token) and
+	// fall through to the single-artifact branch's fs.NArg() != 1 refusal.
+	positional, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return nil, &SubmitUsageError{msg: "usage: a2a submit <artifact> | a2a submit --batch <artifact...> | a2a submit --drafts"}
 	}
 	switch {
@@ -440,19 +454,19 @@ func ResolveSubmitTargets(stagingDir string, args []string) ([]string, error) {
 		}
 		return targets, nil
 	case *batch:
-		if fs.NArg() == 0 {
+		if len(positional) == 0 {
 			return nil, &SubmitUsageError{msg: "usage: a2a submit --batch <artifact...>"}
 		}
-		targets := make([]string, 0, fs.NArg())
-		for _, a := range fs.Args() {
+		targets := make([]string, 0, len(positional))
+		for _, a := range positional {
 			targets = append(targets, resolveSubmitTarget(stagingDir, a))
 		}
 		return targets, nil
 	default:
-		if fs.NArg() != 1 {
+		if len(positional) != 1 {
 			return nil, &SubmitUsageError{msg: "usage: a2a submit <artifact> | a2a submit --batch <artifact...> | a2a submit --drafts"}
 		}
-		return []string{resolveSubmitTarget(stagingDir, fs.Arg(0))}, nil
+		return []string{resolveSubmitTarget(stagingDir, positional[0])}, nil
 	}
 }
 

@@ -216,7 +216,7 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 		var files []space.FileWrite
 		var ids []string
 		for _, parentID := range in.ParentIDs {
-			verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, parentID, fold.TRespond, actor)
+			verdict, parentEnv, err := checkLegality(deps.MirrorDir, deps.Manifest, parentID, fold.TRespond, actor)
 			if err != nil {
 				return nil, "", fmt.Errorf("respond: %s: %w", parentID, err)
 			}
@@ -239,6 +239,32 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 			}
 
 			seed := respondSeed(parentID, in.Result, respFields, bodyOverride, actor)
+
+			// Wave K, MCP half. internal/cli's RespondCommand.Run carries
+			// the same three fills with the full rationale; ADR-001 keeps
+			// these copies deliberate (internal/mcp may never import
+			// internal/cli) and cmd/a2a/mcp_equivalence_test.go's
+			// TestEquivRespond is what keeps them honest — it went red the
+			// moment only one side was fixed, which is the parity suite
+			// doing exactly its job.
+			//
+			// Short version: response.md leaves `space` and `title` as
+			// unfilled SCALAR placeholders that nothing in V2 rejects, so a
+			// committed response would carry the literal `<space-id>`
+			// forever; both are set below and flow through applyFills
+			// normally. `to` is SEQUENCE-valued, which applyFills/setScalar
+			// cannot rewrite at all (P18's deferred "Fix C"), so the
+			// rendered draft still names `<requester-system>` and the
+			// funnel refuses it with REF-006 — that one is assigned
+			// structurally after the render.
+			//
+			// Placed AFTER respondSeed, deliberately: both are derived
+			// defaults, and folding them into the seed would change every
+			// already-computed responseID's hash input.
+			respFields["space"] = parentProbe.Space
+			if _, has := respFields["title"]; !has {
+				respFields["title"] = fmt.Sprintf("Response to %s", parentID)
+			}
 			responseID, err := artifact.MintExchangeIDAt("XS", deps.OwnSystem, now, bytes.NewReader(seed))
 			if err != nil {
 				return nil, "", fmt.Errorf("respond: cannot mint response id: %w", err)
@@ -250,6 +276,28 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 			if err != nil {
 				return nil, "", fmt.Errorf("respond: render failed for %s: %w", parentID, err)
 			}
+
+			// A response answers the system that asked (§3.4.3: `to` carries
+			// EXACTLY one entry). The requester is already in hand as
+			// parentEnv.From from this loop's own legality check — never
+			// re-derived. Same decode/assign/re-encode idiom runPublish uses
+			// for a contract's `version`; never text surgery on a structured
+			// document.
+			respFm, err := artifact.ParseFrontmatter(draft)
+			if err != nil {
+				return nil, "", fmt.Errorf("respond: parse rendered response for %s: %w", parentID, err)
+			}
+			var respDoc map[string]any
+			if err := yaml.Unmarshal(respFm.YAML, &respDoc); err != nil {
+				return nil, "", fmt.Errorf("respond: decode rendered response for %s: %w", parentID, err)
+			}
+			respDoc["to"] = []string{parentEnv.From}
+			respYAML, err := yaml.Marshal(respDoc)
+			if err != nil {
+				return nil, "", fmt.Errorf("respond: encode rendered response for %s: %w", parentID, err)
+			}
+			draft = artifact.SerializeFrontmatter(artifact.Frontmatter{YAML: respYAML, Body: respFm.Body})
+
 			files = append(files, space.FileWrite{Path: layout.Exchange(responseID), Content: draft})
 
 			respondEventID, err := artifact.MintULIDAt(now, deps.Entropy)

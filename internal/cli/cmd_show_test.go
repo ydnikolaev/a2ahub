@@ -73,6 +73,46 @@ func TestShowCommand_RefNotFoundError(t *testing.T) {
 	}
 }
 
+// TestShowCommand_FlagAfterPositional is Wave K's exact live-run 6 repro:
+// `a2a show <id> --json` used to exit 2 with "usage: a2a show <ref>",
+// because Go's flag package stops parsing at the first non-flag token, so
+// `--json` was counted as a SECOND positional and `fs.NArg() != 1`.
+//
+// TEETH: reverting ShowCommand.Run's parseArgsAnyOrder call (cmd_show.go)
+// back to a bare `fs.Parse(args)` reds this with exactly that usage error.
+func TestShowCommand_FlagAfterPositional(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	manifest := cliWriteManifest(t, dir, "axon", "seomatrix")
+	base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+
+	cliWriteArtifact(t, dir, "axon/requires/XR-axon-target.md", map[string]any{
+		"schema": "envelope/v1", "id": "XR-axon-target", "type": "requirement", "title": "target",
+		"space": "fixture-space", "from": "axon", "to": []string{"seomatrix"},
+		"actor": map[string]any{"kind": "agent", "name": "axon-bot"}, "created": base.Format(time.RFC3339),
+		"priority": "p2", "blocking": false, "classification": "internal",
+	}, "target body")
+	cliWriteEvent(t, dir, "axon", "01HFX00000000000000000012", cliEvt("XR-axon-target", "publish", "axon", base))
+
+	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}}, func() time.Time { return base.Add(time.Hour) }, 0)
+	cmd := cli.NewShowCommand(store)
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"XR-axon-target", "--json"}, io)
+	if code != 0 {
+		t.Fatalf("show <id> --json: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	var decoded struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatalf("json.Unmarshal: %v (stdout=%s)", err, out.String())
+	}
+	if decoded.ID != "XR-axon-target" {
+		t.Fatalf("got id %q, want XR-axon-target", decoded.ID)
+	}
+}
+
 func TestShowCommand_UsageError(t *testing.T) {
 	t.Parallel()
 	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)

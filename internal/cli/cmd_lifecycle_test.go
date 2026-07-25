@@ -13,8 +13,10 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
+	"github.com/ydnikolaev/a2ahub/internal/validate"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
@@ -739,6 +741,118 @@ func TestRemainingGenericVerbsLegalPath(t *testing.T) {
 	})
 }
 
+// TestAckAcceptsFlagWrittenAfterPositional is Wave K's live-run 6 defect
+// ("thirteen verbs refuse a flag written after their positional
+// argument") applied to LifecycleCommand.Run — "the most important one"
+// per the wave's own brief, since every N-id batch verb (ack/accept/
+// decline/start/block/unblock/cancel/close/withdraw/supersede/satisfy/
+// approve/reject/verify-pass/verify-fail) shares this one Run method via
+// the table. `a2a ack <id> --actor-name reviewer-bot` used to exit 2 with
+// "usage: a2a ack <id...>" (Go's flag package stops parsing at the first
+// non-flag token, so `--actor-name reviewer-bot` was counted as two more
+// positionals).
+//
+// TEETH: reverting LifecycleCommand.Run's parseArgsAnyOrder call
+// (cmd_lifecycle.go) back to a bare `fs.Parse(args)` reds this with
+// exactly that usage error.
+func TestAckAcceptsFlagWrittenAfterPositional(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	id := "XQ-axon-20260721-p001"
+	writeQuestionArtifact(t, mirrorDir, id, "beta")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewAckCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+	// --reason is accepted (and, per LifecycleCommand.Run, written onto
+	// the authored event's `note`) for every table-driven verb regardless
+	// of RequireReason — used here purely as a flag whose VALUE is
+	// independently verifiable in the funnel call's own content, unlike
+	// --actor-name/--actor-kind/--actor-model, which this test's fixed
+	// lifecycleActorResolver ignores by design (§7.4 seam, see its own
+	// doc comment).
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{id, "--reason", "reviewed after the flag"}, io)
+	if code != 0 {
+		t.Fatalf("ack <id> --reason x: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	found := false
+	for _, fw := range fake.calls[0].Files {
+		if strings.Contains(string(fw.Content), "note: reviewed after the flag") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected the --reason text (written after the positional) to reach the authored event, got:\n%v", fake.calls[0].Files)
+	}
+}
+
+// TestNoteAcceptsFlagWrittenAfterPositional is the same Wave K defect
+// applied to NoteCommand.Run (its own Run method, distinct from
+// LifecycleCommand.Run above): `a2a note <id> --note text` used to refuse.
+//
+// TEETH: reverting NoteCommand.Run's parseArgsAnyOrder call
+// (cmd_lifecycle.go) back to a bare `fs.Parse(args)` reds this.
+func TestNoteAcceptsFlagWrittenAfterPositional(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	id := "XQ-axon-20260721-p002"
+	writeQuestionArtifact(t, mirrorDir, id, "beta")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewNoteCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{id, "--note", "context for the record"}, io)
+	if code != 0 {
+		t.Fatalf("note <id> --note x: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	found := false
+	for _, fw := range fake.calls[0].Files {
+		if strings.Contains(string(fw.Content), "note: context for the record") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected the --note text to reach the authored event, got:\n%v", fake.calls[0].Files)
+	}
+}
+
+// TestRespondAcceptsFlagWrittenAfterPositional is the same Wave K defect
+// applied to RespondCommand.Run: `a2a respond <parent-id> --result
+// answered` used to refuse. Distinct from TestRespondSetsToAsParentAuthor
+// AndPassesSubmitValidation below (Part 1's own fix, `to`), which always
+// writes flags before the positional and would not have caught this.
+//
+// TEETH: reverting RespondCommand.Run's parseArgsAnyOrder call
+// (cmd_lifecycle.go) back to a bare `fs.Parse(args)` reds this.
+func TestRespondAcceptsFlagWrittenAfterPositional(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-p003"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{parentID, "--result", "answered"}, io)
+	if code != 0 {
+		t.Fatalf("respond <parent-id> --result x: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+}
+
 // extractResponseID pulls the minted XS- response id out of a funnel
 // call's committed files (same lookup respondFlow uses, factored out for
 // tests that need to compare TWO calls' own ids directly rather than
@@ -875,5 +989,118 @@ func TestRespondIdempotentRetryReturnsAlreadyOpen(t *testing.T) {
 	}
 	if !strings.Contains(out2.String(), "already submitted") {
 		t.Fatalf("expected the retry's stdout to report the already-submitted idempotent path, got %q", out2.String())
+	}
+}
+
+// TestRespondSetsToAsParentAuthorAndPassesSubmitValidation is Wave K's
+// regression proof for live run 6, part 1 ("a2a respond writes the
+// response template's to: placeholder verbatim"): response.md's own
+// `to: [<requester-system>]` is a SEQUENCE node, and internal/template's
+// applyFills/setScalar only ever rewrites a SCALAR node (P18's
+// deliberately-deferred "Fix C (--field lists)", off-limits this wave) —
+// so the rendered draft used to still carry the literal placeholder text,
+// and the real write funnel's own V2 pass refused it on every one of
+// three separate live rows with the identical message:
+//
+//	respond: space: Submit: submit validation failed: [REF-006 to: `to`
+//	includes an unknown system: <requester-system>]
+//
+// Unlike TestRespondIdempotentRetryReturnsAlreadyOpen (which passes a
+// NIL SubmitValidator to space.NewWriteFunnel and so would NOT have
+// caught this — no validation ever runs), this test wires the REAL
+// validate.Engine through the funnel's own SubmitValidator seam
+// (SubmitValidatorAdapter, the exact adapter cmd/a2a's own wiring uses),
+// so it exercises precisely the check that failed on the live run: the
+// assertion is that `a2a respond` SUCCEEDS end to end, not merely that
+// `to` changed.
+//
+// It also asserts `space`/`title` are filled (a SECOND, related defect
+// found while checking — per the pinned `to` fix's own instruction — this
+// verb's other unfilled placeholders): V2 has no guard for either, so a
+// `code == 0` assertion alone would have missed a response permanently
+// committing `space: <space-id>`.
+//
+// TEETH: reverting RespondCommand.Run's respFm/respDoc["to"] assignment
+// (cmd_lifecycle.go, the decode/mutate/re-encode block right after
+// template.Render) back to using the unfilled template output reds this
+// test with the exact REF-006 message the live run reported. Separately,
+// reverting the `respFields["space"] = parentProbe.Space` line (same
+// function, a few lines above) reds this test's own `<space-id>`
+// assertion instead — a distinct edit, a distinct red, both proven below.
+func TestRespondSetsToAsParentAuthorAndPassesSubmitValidation(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon", "beta")
+	mirrorDir := fx.Clone("beta")
+
+	parentID := "XQ-axon-20260721-t900"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+	manifest := lifecycleManifest()
+	legality := cli.NewLegalityAdapter(mirrorDir, "beta", manifest)
+	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
+	validator := cli.NewSubmitValidatorAdapter(engine, "beta", resolver, legality)
+
+	fakeHost := host.NewFakeHost()
+	funnel := space.NewWriteFunnel(fakeHost, validator, "0.1.0")
+	hostCfg := lifecycleHostConfig()
+	hostCfg.RemoteURL = fx.RemoteURL()
+
+	cmd := cli.NewRespondCommand(funnel, mirrorDir, "fixture-space", "beta", manifest, hostCfg, lifecycleActorResolver("agent", "bot"))
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "answered", parentID}, io)
+	if code != 0 {
+		t.Fatalf("respond: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "opened PR") {
+		t.Fatalf("expected an 'opened PR' message; got %q", out.String())
+	}
+	if len(fakeHost.Pushes) != 1 {
+		t.Fatalf("expected exactly one PushBranch call, got %d", len(fakeHost.Pushes))
+	}
+
+	// Read the committed response back off the pushed branch and confirm
+	// `to` names axon — the PARENT's own author (writeQuestionArtifact
+	// seeds the parent `from: axon`) — never the literal placeholder.
+	branch := fakeHost.Pushes[0].Branch
+	changed := gitDiffNames(t, mirrorDir, "main", branch)
+	var responsePath string
+	for _, p := range changed {
+		if strings.HasPrefix(filepath.Base(p), "XS-") && strings.HasSuffix(p, ".md") {
+			responsePath = p
+		}
+	}
+	if responsePath == "" {
+		t.Fatalf("expected a committed XS- response file among %v", changed)
+	}
+	content := runGitOutputForTest(t, mirrorDir, "show", branch+":"+responsePath)
+	if !strings.Contains(content, "to:\n    - axon\n") && !strings.Contains(content, "to: [axon]") {
+		t.Fatalf("expected the committed response's `to` to be [axon] (the parent's own author), got:\n%s", content)
+	}
+	if strings.Contains(content, "<requester-system>") {
+		t.Fatalf("the committed response still carries the unfilled template `to` placeholder:\n%s", content)
+	}
+	// `space` and `title` are the SAME class of unfilled-placeholder
+	// defect as `to` (template.Render fills neither; `contract deprecate`
+	// already had to fix the identical `space`/`title` gap on its own
+	// draft-and-write-in-one-call announcement) — found while checking,
+	// per the pinned `to` fix's own instruction, whether any OTHER field
+	// on this exact verb shape goes out unfilled. V2 has no guard for
+	// either (space is a free-form string; title has no placeholder-
+	// literal check outside SubmitCommand.Run, which respond never goes
+	// through), so ONLY a content assertion like this one would catch a
+	// regression here — a bare `code == 0` would not.
+	if strings.Contains(content, "<space-id>") {
+		t.Fatalf("the committed response still carries the unfilled template `space` placeholder:\n%s", content)
+	}
+	if !strings.Contains(content, "space: fixture-space\n") {
+		t.Fatalf("expected the committed response's `space` to be fixture-space (the parent's own space), got:\n%s", content)
+	}
+	if strings.Contains(content, "<human/agent-scannable title") {
+		t.Fatalf("the committed response still carries the unfilled template `title` placeholder:\n%s", content)
 	}
 }

@@ -559,35 +559,11 @@ func contractResolveNewSlug(positional, viaFlag, viaField string) (string, error
 
 // runPublish implements `a2a contract publish <id> [--version <semver> |
 // --bump major|minor|patch] [--generated-from-digest <hex>]`.
-// parseArgsAnyOrder parses fs while accepting positional arguments BEFORE the
-// flags, and returns the positionals in the order they were written.
 //
-// It exists because Go's flag package stops parsing at the first non-flag
-// token, so `contract deprecate <id> --successor X --sunset Y` leaves both
-// flags unset — and every one of these sub-verbs prints a usage line that
-// tells the caller to write exactly that. The command documented an order it
-// then refused, which is worse than either order alone: following the help
-// text is what breaks.
-//
-// `contract adopt` and `feedback new` each already carried a private copy of
-// this lift. This is the third occurrence and the one that made it a defect
-// rather than a quirk, so the logic has one home now.
-//
-// Both orders stay legal — flags-first callers (including every test written
-// before this was found) are unaffected, because the lifted positionals are
-// concatenated with whatever fs.Args() reports.
-func parseArgsAnyOrder(fs *flag.FlagSet, args []string) ([]string, error) {
-	var lifted []string
-	rest := args
-	for len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
-		lifted = append(lifted, rest[0])
-		rest = rest[1:]
-	}
-	if err := fs.Parse(rest); err != nil {
-		return nil, err
-	}
-	return append(lifted, fs.Args()...), nil
-}
+// (parseArgsAnyOrder, the any-order positional/flag lift every sub-verb
+// below calls, moved to cli.go in Wave K — thirteen more commands across
+// the package needed it, which made a single per-file copy the wrong
+// shape; see its own doc comment there.)
 
 // contractReadWorkingTreeFiles reads every regular file under
 // filepath.Join(root, sub) as it currently sits in the working tree, keyed

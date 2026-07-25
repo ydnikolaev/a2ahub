@@ -138,14 +138,19 @@ func (c *FeedbackCommand) runValidate(args []string, stdio IO) int {
 	fs := flag.NewFlagSet("feedback validate", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	ci := fs.Bool("ci", false, "CI intake mode: additionally enforce the filename/path guards")
-	if err := fs.Parse(args); err != nil {
+	// Wave K fix (live run 6, "thirteen verbs refuse a flag written after
+	// their positional argument"): parseArgsAnyOrder (cli.go), not a bare
+	// fs.Parse(args) — both `feedback validate <file> --ci` and
+	// `feedback validate --ci <file>` must work.
+	positional, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
-	if fs.NArg() != 1 {
+	if len(positional) != 1 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a feedback validate <file> [--ci]")
 		return 2
 	}
-	path := fs.Arg(0)
+	path := positional[0]
 	raw, err := c.readFile(path)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "feedback validate: %v\n", err)

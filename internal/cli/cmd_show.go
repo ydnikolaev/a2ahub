@@ -58,14 +58,19 @@ func (c *ShowCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("show", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	jsonOut := fs.Bool("json", false, "JSON output")
-	if err := fs.Parse(args); err != nil {
+	// Wave K fix (live run 6): `a2a show <id> --json` exited 2 with
+	// "usage: a2a show <ref>" — Go's flag package stops parsing at the
+	// first non-flag token, so --json was counted as a SECOND positional
+	// and fs.NArg() != 1. parseArgsAnyOrder (cli.go) accepts both orders.
+	positional, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
-	if fs.NArg() != 1 {
+	if len(positional) != 1 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a show <ref>")
 		return 2
 	}
-	ref := fs.Arg(0)
+	ref := positional[0]
 
 	result, err := c.store.Show(ctx, ref)
 	if err != nil {

@@ -593,10 +593,17 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 	refs := fs.String("refs", "", "comma-separated refs (blocker/successor/contract+response ids)")
 	findings := fs.String("findings", "", "verification findings text")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
-	if err := fs.Parse(args); err != nil {
+	// Wave K fix (live run 6, "thirteen verbs refuse a flag written after
+	// their positional argument"): parseArgsAnyOrder, not a bare
+	// fs.Parse(args) — this is the most important of the thirteen, since
+	// it is every N-id batch verb's own Run (ack/accept/decline/start/
+	// block/unblock/cancel/close/withdraw/supersede/satisfy/approve/
+	// reject/verify-pass/verify-fail all share this one method via the
+	// table). See parseArgsAnyOrder's own doc comment (cli.go).
+	ids, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
-	ids := fs.Args()
 	if len(ids) == 0 {
 		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a %s <id...>\n", c.spec.Verb)
 		return 2
@@ -755,10 +762,12 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	bodyFile := fs.String("body-file", "", "path to a file whose contents replace the response body")
 	result := fs.String("result", "", "answered|delivered|partial|cannot (required)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
-	if err := fs.Parse(args); err != nil {
+	// Wave K fix (see LifecycleCommand.Run's own comment above): any-order
+	// parsing, not a bare fs.Parse(args).
+	parents, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
-	parents := fs.Args()
 	if len(parents) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a respond --result <answered|delivered|partial|cannot> <parent-id...>")
 		return 2
@@ -797,7 +806,7 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	var files []space.FileWrite
 	var ids []string
 	for _, parentID := range parents {
-		verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, parentID, fold.TRespond, actor)
+		verdict, parentEnv, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, parentID, fold.TRespond, actor)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: %v\n", parentID, err)
 			return 1
@@ -843,6 +852,42 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: cannot mint response id: %v\n", err)
 			return 1
 		}
+
+		// Wave K fix, `space`/`title` half (found alongside the pinned
+		// `to` fix while checking this exact "drafts AND writes in one
+		// call" shape, per that fix's own instruction to check other
+		// verbs for the same class of gap): response.md's `space:
+		// <space-id>` and `title: <human/agent-scannable title, ...>`
+		// are SCALAR placeholders respFields never carried keys for, so
+		// template.Render's own applyFills left both completely unfilled
+		// — the committed response would carry those LITERAL strings
+		// forever. internal/validate's V2 pass rejects neither (space is
+		// a free-form string field; title has no placeholder-literal
+		// check outside SubmitCommand.Run, cmd_submit.go, a path
+		// `respond` never goes through — it calls c.deps.submit
+		// directly). `contract deprecate` (cmd_contract.go) already
+		// fixes the identical `space`/`title` gap on its own
+		// announcement draft the same way.
+		//
+		// Added HERE, deliberately AFTER lifecycleRespondSeed/
+		// MintExchangeIDAt above rather than alongside `parent`/`result`/
+		// `from`: both are DERIVED defaults (parentProbe.Space; a
+		// parentID-based title text), not part of what a retry's
+		// dedup-by-content check (this file's own HIGH-1 fix, doc'd
+		// below) needs to distinguish two responses — folding them into
+		// the seed would also silently change every already-computed
+		// responseID's own hash input, which is exactly the kind of
+		// seed-shape change HIGH-1 warns never to make casually. It
+		// happens to also keep this verb's content-derived id
+		// numerically identical to internal/mcp's own (unfixed) respond
+		// path, which mints from the SAME parent/result/from-only seed —
+		// not the goal, but a useful confirmation neither seed shape
+		// silently drifted.
+		respFields["space"] = parentProbe.Space
+		if _, has := respFields["title"]; !has {
+			respFields["title"] = fmt.Sprintf("Response to %s", parentID)
+		}
+
 		draft, err := template.Render(template.Input{
 			Type: "response", ID: responseID, Actor: resolved, Created: now,
 			Fields: respFields, Body: bodyOverride,
@@ -851,6 +896,42 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: render failed for %s: %v\n", parentID, err)
 			return 1
 		}
+
+		// Wave K fix (live run 6, "a2a respond writes the response
+		// template's to: placeholder verbatim"): response.md's own `to:
+		// [<requester-system>]` is SEQUENCE-valued, and internal/template's
+		// applyFills/setScalar only ever rewrites a scalar node (P18's
+		// deliberately-deferred "Fix C (--field lists)", off-limits this
+		// wave) — so the rendered draft still carries the literal
+		// placeholder text, and the funnel's own V2 pass refuses it
+		// (REF-006/CC-008: "`to` includes an unknown system:
+		// <requester-system>"). A response answers the system that asked
+		// (§3.4.3: "to: EXACTLY one entry"), and that requester is already
+		// in hand as parentEnv.From from this loop's own legality check
+		// above — never re-derived. Fixed the SAME way runPublish
+		// (cmd_contract.go) already sets `version`: decode the rendered
+		// frontmatter into a map, assign the ONE real field, re-encode via
+		// artifact.SerializeFrontmatter. Never ad-hoc text surgery on a
+		// structured document (rails), and never reopening applyFills for
+		// sequence values (that is P18's call, not this wave's).
+		respFm, err := artifact.ParseFrontmatter(draft)
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "respond: parse rendered response for %s: %v\n", parentID, err)
+			return 1
+		}
+		var respDoc map[string]any
+		if err := yaml.Unmarshal(respFm.YAML, &respDoc); err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "respond: decode rendered response for %s: %v\n", parentID, err)
+			return 1
+		}
+		respDoc["to"] = []string{parentEnv.From}
+		respYAML, err := yaml.Marshal(respDoc)
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "respond: encode rendered response for %s: %v\n", parentID, err)
+			return 1
+		}
+		draft = artifact.SerializeFrontmatter(artifact.Frontmatter{YAML: respYAML, Body: respFm.Body})
+
 		files = append(files, space.FileWrite{Path: layout.Exchange(responseID), Content: draft})
 
 		// NOTE (deviation, see this phase's report): §3.4.6 prose describes
@@ -926,10 +1007,12 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs.SetOutput(stdio.Stderr)
 	refs := fs.String("refs", "", "response id (disambiguates a multi-response parent)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
-	if err := fs.Parse(args); err != nil {
+	// Wave K fix (see LifecycleCommand.Run's own comment above): any-order
+	// parsing, not a bare fs.Parse(args).
+	targets, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
-	targets := fs.Args()
 	if len(targets) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a verify <response-id|parent-id...> [--refs <response-id>]")
 		return 2
@@ -1099,10 +1182,12 @@ func (c *DisputeCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	reason := fs.String("reason", "", "reason text (required)")
 	reasonCode := fs.String("reason-code", "", "machine-readable reason code")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
-	if err := fs.Parse(args); err != nil {
+	// Wave K fix (see LifecycleCommand.Run's own comment above): any-order
+	// parsing, not a bare fs.Parse(args).
+	ids, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
-	ids := fs.Args()
 	if len(ids) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a dispute --reason <text> <response-id>")
 		return 2
@@ -1194,10 +1279,12 @@ func (c *NoteCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs.SetOutput(stdio.Stderr)
 	noteText := fs.String("note", "", "annotation text (required)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
-	if err := fs.Parse(args); err != nil {
+	// Wave K fix (see LifecycleCommand.Run's own comment above): any-order
+	// parsing, not a bare fs.Parse(args).
+	ids, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
-	ids := fs.Args()
 	if len(ids) == 0 || *noteText == "" {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a note --note <text> <id...>")
 		return 2

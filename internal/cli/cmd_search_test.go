@@ -31,6 +31,34 @@ func TestSearchCommand_ZeroHitsNotError(t *testing.T) {
 	}
 }
 
+// TestSearchCommand_FlagAfterPositional is Wave K's live-run 6 defect
+// applied to `a2a search`: `search <query> --json` used to refuse with a
+// usage error (Go's flag package stops parsing at the first non-flag
+// token).
+//
+// TEETH: reverting SearchCommand.Run's parseArgsAnyOrder call
+// (cmd_search.go) back to a bare `fs.Parse(args)` reds this.
+func TestSearchCommand_FlagAfterPositional(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	manifest := cliWriteManifest(t, dir, "axon")
+	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}}, time.Now, 0)
+	cmd := cli.NewSearchCommand(store)
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"no-such-query", "--json"}, io)
+	if code != 0 {
+		t.Fatalf("search <query> --json: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	var items []cache.Item
+	if err := json.Unmarshal(out.Bytes(), &items); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("want empty result, got %+v", items)
+	}
+}
+
 func TestSearchCommand_UsageError(t *testing.T) {
 	t.Parallel()
 	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)
