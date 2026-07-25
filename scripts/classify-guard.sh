@@ -67,6 +67,11 @@ while IFS= read -r f; do
     [ "$f" = "scripts/dev-install.sh" ] && continue
     [ "$f" = "scripts/e2e-authoring-smoke.sh" ] && continue
     [ "$f" = "scripts/release-preflight.sh" ] && continue
+    # install.sh's own regression net (P40 AC-1002.*) — public for the same
+    # reason install.sh is. Matched as a prefix, not a filename: it is a Go
+    # test package, so a second file in it is normal growth, not a new
+    # boundary decision. Mirrored by `!scripts/installsh/` in .gitignore.
+    case "$f" in scripts/installsh/*) continue ;; esac
     flag "tracked but NOT public: $f  → 'git rm --cached $f' (private), or add it to ALLOW in scripts/classify-guard.sh (public)"
     continue
   fi

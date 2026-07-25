@@ -34,3 +34,9 @@ scripts/*
 !scripts/e2e-authoring-smoke.sh
 !scripts/classify-guard.sh
 !scripts/release-preflight.sh
+# install.sh's regression net (P40 AC-1002.*). A directory, not a file: `scripts/*`
+# excludes the DIRECTORY `scripts/installsh`, and git cannot re-include a file whose
+# parent directory is excluded — so `!scripts/installsh/install_test.go` alone would
+# silently not work. Public for the same reason install.sh is: it is the proof the
+# installer still wires a shell, and a test that ships only on one machine is not one.
+!scripts/installsh/

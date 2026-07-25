@@ -47,14 +47,26 @@ esac
 asset_name="${BINARY}-${os}-${arch}"
 sums_name="SHA256SUMS"
 
-# --- 2. auth headers (optional; public repo needs none) ---------------------
-
-auth_header=""
-if [ -n "${GITHUB_TOKEN:-}" ]; then
-  auth_header="Authorization: Bearer ${GITHUB_TOKEN}"
-fi
-
-api="https://api.github.com/repos/${OWNER}/${REPO}"
+# --- 6a. install-dir resolution (used by install_binary AND setup_shell) ---
+# A2A_INSTALL_DIR pins the destination (useful for a sandboxed/CI install, or
+# a machine where neither default is the right place); otherwise prefer
+# /usr/local/bin and fall back to ~/.local/bin when it is not writable.
+# Sets $install_dir. Extracted so setup_shell can resolve the SAME value
+# without re-running the download/verify/install sequence (A2A_INSTALL_LIB
+# mode sources this file, defines functions, and returns before install_binary
+# ever runs — setup_shell still needs a real install_dir to build $a2a_bin).
+resolve_install_dir() {
+  if [ -n "${A2A_INSTALL_DIR:-}" ]; then
+    install_dir="${A2A_INSTALL_DIR}"
+    mkdir -p "$install_dir"
+  else
+    install_dir="/usr/local/bin"
+    if [ ! -w "$install_dir" ] 2>/dev/null; then
+      install_dir="${HOME}/.local/bin"
+      mkdir -p "$install_dir"
+    fi
+  fi
+}
 
 curl_json() {
   if [ -n "$auth_header" ]; then
@@ -63,25 +75,6 @@ curl_json() {
     curl -fsSL -H "Accept: application/vnd.github+json" "$1"
   fi
 }
-
-# --- 3. resolve the release (latest, or a pinned A2A_VERSION) ---------------
-
-if [ -n "${A2A_VERSION:-}" ]; then
-  tag="${A2A_VERSION}"
-  case "$tag" in
-    v*) ;;
-    *) tag="v${tag}" ;;
-  esac
-  release_json="$(curl_json "${api}/releases/tags/${tag}")" \
-    || die "couldn't reach GitHub's releases API for ${OWNER}/${REPO} tag ${tag} (private repo? check GITHUB_TOKEN)"
-else
-  release_json="$(curl_json "${api}/releases/latest")" \
-    || die "couldn't reach GitHub's releases API for ${OWNER}/${REPO} (private repo? check GITHUB_TOKEN)"
-fi
-
-tag="$(printf '%s' "$release_json" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
-[ -n "$tag" ] || die "couldn't parse a tag_name out of the releases response"
-version="${tag#v}"
 
 # Pull "id" + "name" pairs out of the assets array and grep for the ones we
 # want. (Not using jq: it isn't guaranteed present, and this script has
@@ -104,16 +97,6 @@ find_asset_id() {
     | sed -E 's/[^0-9]*([0-9]+).*/\1/'
 }
 
-asset_id="$(find_asset_id "$asset_name")"
-sums_id="$(find_asset_id "$sums_name")"
-[ -n "$asset_id" ] || die "release ${tag} has no asset named ${asset_name} — check .goreleaser.yaml's raw name_template still matches"
-[ -n "$sums_id" ] || die "release ${tag} has no ${sums_name} asset — refusing to install an unverified binary"
-
-# --- 4. download via the asset API (works for private repos with a token) --
-
-workdir="$(mktemp -d)"
-trap 'rm -rf "$workdir"' EXIT
-
 download_asset() {
   id="$1"
   out="$2"
@@ -127,57 +110,90 @@ download_asset() {
   fi
 }
 
-log "downloading ${asset_name} (release ${tag})"
-download_asset "$asset_id" "${workdir}/${asset_name}"
-download_asset "$sums_id" "${workdir}/${sums_name}"
+# install_binary runs the imperative auth->resolve->download->verify->install
+# sequence (§2-§7 below). Kept in one function so A2A_INSTALL_LIB mode can
+# source this file — defining every function above, including this one —
+# without performing a single network call or touching the filesystem beyond
+# what function definitions themselves require (nothing).
+install_binary() {
+  # --- 2. auth headers (optional; public repo needs none) ---------------------
 
-# --- 5. verify checksum (fail-closed — no skip path) -------------------------
-
-expected="$(grep "  ${asset_name}\$" "${workdir}/${sums_name}" | awk '{print $1}')"
-[ -n "$expected" ] || die "asset ${asset_name} not listed in ${sums_name}"
-
-if command -v sha256sum >/dev/null 2>&1; then
-  actual="$(sha256sum "${workdir}/${asset_name}" | awk '{print $1}')"
-elif command -v shasum >/dev/null 2>&1; then
-  actual="$(shasum -a 256 "${workdir}/${asset_name}" | awk '{print $1}')"
-else
-  die "no sha256sum or shasum on PATH — can't verify the download, refusing to install unverified binary"
-fi
-
-[ "$expected" = "$actual" ] || die "checksum mismatch for ${asset_name}: expected ${expected}, got ${actual}"
-log "checksum verified"
-
-# --- 6. install: prefer /usr/local/bin, fall back to ~/.local/bin ----------
-# NOTE: no unpack step — the downloaded asset IS the a2a binary, already
-# executable-shaped (goreleaser's `formats: [binary]` raw archives entry).
-
-bin_path="${workdir}/${asset_name}"
-chmod +x "$bin_path"
-
-# A2A_INSTALL_DIR pins the destination (useful for a sandboxed/CI install, or
-# a machine where neither default is the right place); otherwise prefer
-# /usr/local/bin and fall back to ~/.local/bin when it is not writable.
-if [ -n "${A2A_INSTALL_DIR:-}" ]; then
-  install_dir="${A2A_INSTALL_DIR}"
-  mkdir -p "$install_dir"
-else
-  install_dir="/usr/local/bin"
-  if [ ! -w "$install_dir" ] 2>/dev/null; then
-    install_dir="${HOME}/.local/bin"
-    mkdir -p "$install_dir"
+  auth_header=""
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    auth_header="Authorization: Bearer ${GITHUB_TOKEN}"
   fi
-fi
 
-cp "$bin_path" "${install_dir}/${BINARY}"
-log "installed ${BINARY} ${version} -> ${install_dir}/${BINARY}"
+  api="https://api.github.com/repos/${OWNER}/${REPO}"
 
-# --- 7. macOS Gatekeeper note ------------------------------------------------
+  # --- 3. resolve the release (latest, or a pinned A2A_VERSION) ---------------
 
-if [ "$os" = "darwin" ]; then
-  xattr -d com.apple.quarantine "${install_dir}/${BINARY}" 2>/dev/null || true
-  log "macOS: cleared the com.apple.quarantine flag on the binary."
-  log "  (if Gatekeeper still balks, run: xattr -d com.apple.quarantine ${install_dir}/${BINARY})"
-fi
+  if [ -n "${A2A_VERSION:-}" ]; then
+    tag="${A2A_VERSION}"
+    case "$tag" in
+      v*) ;;
+      *) tag="v${tag}" ;;
+    esac
+    release_json="$(curl_json "${api}/releases/tags/${tag}")" \
+      || die "couldn't reach GitHub's releases API for ${OWNER}/${REPO} tag ${tag} (private repo? check GITHUB_TOKEN)"
+  else
+    release_json="$(curl_json "${api}/releases/latest")" \
+      || die "couldn't reach GitHub's releases API for ${OWNER}/${REPO} (private repo? check GITHUB_TOKEN)"
+  fi
+
+  tag="$(printf '%s' "$release_json" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
+  [ -n "$tag" ] || die "couldn't parse a tag_name out of the releases response"
+  version="${tag#v}"
+
+  asset_id="$(find_asset_id "$asset_name")"
+  sums_id="$(find_asset_id "$sums_name")"
+  [ -n "$asset_id" ] || die "release ${tag} has no asset named ${asset_name} — check .goreleaser.yaml's raw name_template still matches"
+  [ -n "$sums_id" ] || die "release ${tag} has no ${sums_name} asset — refusing to install an unverified binary"
+
+  # --- 4. download via the asset API (works for private repos with a token) --
+
+  workdir="$(mktemp -d)"
+  trap 'rm -rf "$workdir"' EXIT
+
+  log "downloading ${asset_name} (release ${tag})"
+  download_asset "$asset_id" "${workdir}/${asset_name}"
+  download_asset "$sums_id" "${workdir}/${sums_name}"
+
+  # --- 5. verify checksum (fail-closed — no skip path) -------------------------
+
+  expected="$(grep "  ${asset_name}\$" "${workdir}/${sums_name}" | awk '{print $1}')"
+  [ -n "$expected" ] || die "asset ${asset_name} not listed in ${sums_name}"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "${workdir}/${asset_name}" | awk '{print $1}')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "${workdir}/${asset_name}" | awk '{print $1}')"
+  else
+    die "no sha256sum or shasum on PATH — can't verify the download, refusing to install unverified binary"
+  fi
+
+  [ "$expected" = "$actual" ] || die "checksum mismatch for ${asset_name}: expected ${expected}, got ${actual}"
+  log "checksum verified"
+
+  # --- 6. install: prefer /usr/local/bin, fall back to ~/.local/bin ----------
+  # NOTE: no unpack step — the downloaded asset IS the a2a binary, already
+  # executable-shaped (goreleaser's `formats: [binary]` raw archives entry).
+
+  bin_path="${workdir}/${asset_name}"
+  chmod +x "$bin_path"
+
+  resolve_install_dir
+
+  cp "$bin_path" "${install_dir}/${BINARY}"
+  log "installed ${BINARY} ${version} -> ${install_dir}/${BINARY}"
+
+  # --- 7. macOS Gatekeeper note ------------------------------------------------
+
+  if [ "$os" = "darwin" ]; then
+    xattr -d com.apple.quarantine "${install_dir}/${BINARY}" 2>/dev/null || true
+    log "macOS: cleared the com.apple.quarantine flag on the binary."
+    log "  (if Gatekeeper still balks, run: xattr -d com.apple.quarantine ${install_dir}/${BINARY})"
+  fi
+}
 
 # --- 8. shell integration: PATH + completion (best-effort) ------------------
 # An installed binary the shell cannot find is a failed install as far as the
@@ -188,8 +204,6 @@ fi
 # Every failure here is swallowed: a shell that could not be wired must never
 # abort an otherwise successful binary install.
 
-a2a_bin="${install_dir}/${BINARY}"
-shell_name="$(basename "${SHELL:-sh}")"
 block_start="# >>> a2a install >>>"
 block_end="# <<< a2a install <<<"
 
@@ -228,6 +242,10 @@ print_block() {
 }
 
 setup_shell() {
+  shell_name="$(basename "${SHELL:-sh}")"
+  [ -n "${install_dir:-}" ] || resolve_install_dir
+  a2a_bin="${install_dir}/${BINARY}"
+
   path_line="export PATH=\"${install_dir}:\$PATH\""
   need_path=1
   case ":$PATH:" in
@@ -292,6 +310,21 @@ setup_shell() {
       ;;
   esac
 }
+
+# --- 9. A2A_INSTALL_LIB mode: define the functions above, install/run nothing
+# Sourcing with A2A_INSTALL_LIB=1 stops here — every function above this point
+# is now defined (resolve_install_dir, curl_json, find_asset_id,
+# download_asset, install_binary, rc_needs_line, append_block, print_block,
+# setup_shell) and no network call or filesystem write has happened. This is
+# what lets a test drive setup_shell in isolation. `return` stops a SOURCED
+# script here; a script that was executed (not sourced) can't `return` at top
+# level in some shells, hence the `exit` fallback.
+if [ -n "${A2A_INSTALL_LIB:-}" ]; then
+  A2A_INSTALL_LIB_LOADED=1
+  return 0 2>/dev/null || exit 0
+fi
+
+install_binary
 setup_shell || true
 
 log "done — run '${BINARY}' with no arguments to see the command list."
