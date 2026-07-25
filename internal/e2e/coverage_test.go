@@ -139,17 +139,25 @@ func TestE2ECoverageGateCatchesBadTxtarRef(t *testing.T) {
 	}
 
 	// And the gate isn't broken the other way: a genuinely invoking script
-	// must resolve, including the contract-<sub> -> `a2a contract <sub>`
-	// two-word rewrite (catalog.go's own documentation-only hyphenation of
-	// the single "contract" dispatch verb).
+	// must resolve, including a MULTI-TOKEN catalog verb — `contract` is one
+	// dispatch key whose sub-verb is its first argument, so the verb name
+	// and the invocation are both two words. (They used to disagree: the
+	// catalog stitched them with a hyphen and verbInvocationPattern rewrote
+	// that back, which is how seven uninvocable command names shipped in
+	// commands.md.)
 	writeTempTxtar(t, dir, "invokes.txtar", "exec a2a connect $ORIGIN\nstdout 'registered'\n")
 	if err := resolveTxtarEntry(dir, "invokes.txtar", "connect"); err != nil {
 		t.Fatalf("expected a genuinely invoking txtar to resolve, got: %v", err)
 	}
 
 	writeTempTxtar(t, dir, "contract_new.txtar", "exec a2a contract new widget\nstdout 'staged'\n")
-	if err := resolveTxtarEntry(dir, "contract_new.txtar", "contract-new"); err != nil {
-		t.Fatalf("expected `a2a contract new` to resolve the contract-new verb, got: %v", err)
+	if err := resolveTxtarEntry(dir, "contract_new.txtar", "contract new"); err != nil {
+		t.Fatalf("expected `a2a contract new` to resolve the `contract new` verb, got: %v", err)
+	}
+	// The hyphenated spelling is no longer a verb anywhere, and must not
+	// resolve — otherwise the rename could be silently half-reverted.
+	if err := resolveTxtarEntry(dir, "contract_new.txtar", "contract-new"); err == nil {
+		t.Fatal("expected the retired hyphenated spelling `contract-new` NOT to resolve, but it did")
 	}
 }
 
