@@ -166,6 +166,30 @@ func (c *checkout) RunIn(ctx context.Context, dir string, args ...string) (stdou
 	return out.String(), errBuf.String(), runErr
 }
 
+// RunWithAPIRoot execs the a2a binary exactly like Run, except A2A_GITHUB_API
+// is set to apiRoot for THIS ONE invocation only — the seam spec 38's Layer
+// 3 fault-injection row uses to point a single real write at a proxy in
+// front of production GitHub (spec 38 §6-Q1, plan D-G) instead of letting
+// checkoutEnv filter the seam back to its documented default.
+//
+// This is a deliberate, narrow puncture of checkoutEnv's own "the seam sits
+// at its default, asserted rather than assumed" invariant (checkoutEnv's own
+// doc comment above) — recorded as a deviation in wave H's report. It is
+// safe only because the one caller (scenarios_failure_recovery_live.go) is a
+// row the report labels a DISTINCT evidence class (Result.EvidenceClass,
+// report.go): every other call in this package still goes through Run/RunIn,
+// which checkoutEnv still filters unconditionally.
+func (c *checkout) RunWithAPIRoot(ctx context.Context, apiRoot string, args ...string) (stdout, stderr string, err error) {
+	cmd := exec.CommandContext(ctx, c.Bin, args...)
+	cmd.Dir = c.Dir
+	cmd.Env = append(checkoutEnv(c.Token, c.SpaceSlug), githubAPIEnv+"="+apiRoot)
+	var out, errBuf strings.Builder
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+	runErr := cmd.Run()
+	return out.String(), errBuf.String(), runErr
+}
+
 // MirrorDir is the checkout's local clone of the space — the working tree
 // every read verb folds over, and the only directory a repo-scoped verb like
 // `validate --ci` may run from.

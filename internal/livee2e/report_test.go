@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -204,4 +205,40 @@ func TestRenderMixedRun(t *testing.T) {
 	}
 
 	assertGolden(t, "report_mixed.txt", run.Report().Render())
+}
+
+// TestRenderMarksAnInjectedFaultEvidenceClassOnItsFace is AC-982.1's own
+// report contract (spec 38 §6-Q1, plan D-G): a proxied row must say so ON
+// ITS FACE, not only in a code comment — rendered even when the row
+// PASSES, so a green report can never be mistaken for "we observed a real,
+// unscheduled 5xx".
+func TestRenderMarksAnInjectedFaultEvidenceClassOnItsFace(t *testing.T) {
+	t.Parallel()
+	run := NewRun("a2ahub-live-e2e", "space", []string{"s"}, []string{"A"}, []Surface{SurfaceCLI})
+	if err := run.Record(Result{
+		Scenario: "s", System: "A", Surface: SurfaceCLI, Verdict: VerdictPass,
+		EvidenceClass: EvidenceClassInjectedFault,
+	}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+
+	rendered := run.Report().Render()
+	if !strings.Contains(rendered, "evidence-class: "+EvidenceClassInjectedFault) {
+		t.Fatalf("rendered report does not carry the evidence-class marker on a PASSING row:\n%s", rendered)
+	}
+}
+
+// TestRenderOmitsEvidenceClassWhenUnset is the same guard's other half:
+// every ordinary live row (EvidenceClass == "") must render exactly as it
+// did before this field existed — the byte-identical-goldens half of the
+// same change.
+func TestRenderOmitsEvidenceClassWhenUnset(t *testing.T) {
+	t.Parallel()
+	run := NewRun("a2ahub-live-e2e", "space", []string{"s"}, []string{"A"}, []Surface{SurfaceCLI})
+	if err := run.Record(Result{Scenario: "s", System: "A", Surface: SurfaceCLI, Verdict: VerdictPass}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if rendered := run.Report().Render(); strings.Contains(rendered, "evidence-class:") {
+		t.Fatalf("rendered report carries an evidence-class marker nobody set:\n%s", rendered)
+	}
 }

@@ -12,6 +12,8 @@
 #                        (private harness gate — skips cleanly if absent).
 # make epic-drift        an epic's committed docs match its reality
 #                        (private harness gate — skips cleanly if absent).
+# make skill-citations   every `a2a <verb>` / error code the shipped skill PROSE
+#                        cites must exist (private harness gate — skips if absent).
 # make harness-check     both harness gates' --teeth self-tests (the gates bite).
 # make coverage          go test -race with the coveragepolicy SSOT floor (also run by `check`).
 # make vulncheck         govulncheck ./... gated by .govulncheck-allow.txt (network; not in `check`).
@@ -24,7 +26,7 @@
 # Recipes are POSIX sh — no bashisms — even though the gate scripts they call
 # are bash (invoked explicitly via `bash`, never relying on $(SHELL)).
 
-.PHONY: check check-validators feature-lint epic-drift classify-guard workflow-lint harness-check coverage vulncheck release-preflight live-e2e install
+.PHONY: check check-validators feature-lint epic-drift skill-citations classify-guard workflow-lint harness-check coverage vulncheck release-preflight live-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -35,10 +37,10 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := classify-guard workflow-lint feature-lint epic-drift
+REPO_GATES := classify-guard workflow-lint feature-lint epic-drift skill-citations
 
 check-validators: $(REPO_GATES) ## Repo gates only, no tests, no build — the static lane.
-	@echo "check-validators: repo gates green (classify-guard, workflow-lint, feature-lint, epic-drift). No tests ran."
+	@echo "check-validators: repo gates green ($(REPO_GATES)). No tests ran."
 
 check: $(REPO_GATES) ## THE CEILING — repo gates, plus Go gates once go.mod exists.
 	@if [ -f go.mod ]; then \
@@ -106,6 +108,13 @@ feature-lint: ## Validate docs/features/<slug>/ against the canonical template (
 	  echo "feature-lint: skip — scripts/check-feature-lint.sh absent (public checkout)."; \
 	fi
 
+skill-citations: ## Every `a2a <verb>` and error code the shipped skill PROSE cites must exist (P39 AC-993.1; private harness gate, presence-gated).
+	@if [ -f scripts/check-skill-citations.sh ]; then \
+	  bash scripts/check-skill-citations.sh; \
+	else \
+	  echo "skill-citations: skip — scripts/check-skill-citations.sh absent (public checkout)."; \
+	fi
+
 epic-drift: ## An epic's committed docs (status.md stamp, receipts) must match its tracker (private harness gate, presence-gated).
 	@if [ -f .agents/scripts/epic_docs_drift.sh ]; then \
 	  bash .agents/scripts/epic_docs_drift.sh; \
@@ -124,4 +133,9 @@ harness-check: ## Run the gates' --teeth self-tests (harness gates are private/p
 	  bash .agents/scripts/epic_docs_drift.sh --teeth; \
 	else \
 	  echo "harness-check: skip — .agents/scripts/epic_docs_drift.sh absent (public checkout)."; \
+	fi
+	@if [ -f scripts/check-skill-citations.sh ]; then \
+	  bash scripts/check-skill-citations.sh --teeth; \
+	else \
+	  echo "harness-check: skip — scripts/check-skill-citations.sh absent (public checkout)."; \
 	fi
