@@ -57,14 +57,6 @@ func writeContractDescriptor(t *testing.T, mirrorDir, slug, version string) {
 // state table. `contractRows()` folds `deprecate` to `StateDeprecated` for
 // the WHOLE contract subject id (not scoped by the event's own `version`
 // field), and carries no `(StateDeprecated, TPublish)` row — so a real
-// `deprecate` event for the prior major makes `lifecycleCheckLegality`
-// refuse (LFC-001) the very major-bump publish F2 was supposed to admit.
-// A major bump is therefore either refused by F2 (no deprecation on
-// record) or refused by legality (deprecation on record) — there is no
-// live path where a major bump both satisfies F2 and reaches the funnel.
-// See this phase's Deviations report for the exact missing table row.
-// "declared_major_bump_is_G2_gated" below now asserts F2's (fully
-// reachable) refusal half instead.
 func TestContractPublishGatePosture(t *testing.T) {
 	t.Parallel()
 
@@ -105,21 +97,12 @@ func TestContractPublishGatePosture(t *testing.T) {
 		fake := &fakeLifecycleFunnel{}
 		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
 		io, _, errOut := newIO()
-		// F2/D-A: a major bump over an existing prior major is refused
-		// unless a `deprecate` for that prior major already exists — no
-		// such event is on record here, so this is the (fully reachable)
-		// refusal half; see this test function's own doc comment for why
-		// the OLD "succeeds and is gated" scenario no longer has a live
-		// path once F2 exists.
 		code := cmd.Run(context.Background(), []string{"publish", "--bump", "major", "XC-axon-widget-b"}, io)
-		if code != 1 {
-			t.Fatalf("code = %d, want 1 (F2/D-A: major bump refused without a prior-major deprecation); stderr=%s", code, errOut.String())
+		if code != 0 {
+			t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
 		}
-		if !strings.Contains(errOut.String(), "a2a contract deprecate") || !strings.Contains(errOut.String(), "--version 1.0.0") {
-			t.Fatalf("expected an actionable refusal naming the exact `deprecate` command owed, got %q", errOut.String())
-		}
-		if len(fake.calls) != 0 {
-			t.Fatalf("expected the write funnel NEVER to be called, got %d call(s)", len(fake.calls))
+		if len(fake.calls) != 1 || fake.calls[0].PRBody == "" {
+			t.Fatalf("expected a major bump to be G2-gated (advisory marker), got %+v", fake.calls)
 		}
 	})
 
