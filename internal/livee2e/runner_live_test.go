@@ -118,6 +118,13 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 		// boundary/refusal/space.
 		{"submitted-family", runSubmittedFamilyScenarios},
 		{"draft-family", runDraftFamilyScenarios},
+		// AC-981.1 (spec 38 wave G) — Layer-2 illegal-transition rows, one
+		// per kind. Same "no shared-state mutation" property as the three
+		// families above (every row authors its OWN fresh artifacts and
+		// the refused call never reaches the funnel at all), so placed
+		// right after them, still ahead of boundary/refusal/space, which
+		// deliberately bend protection and the write floor.
+		{"illegal-transitions", runIllegalTransitionScenarios},
 		{"boundary", runBoundaryScenarios},
 		{"refusal", runRefusalScenarios},
 		{"space", runSpaceScenarios},

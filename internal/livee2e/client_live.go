@@ -459,17 +459,35 @@ func (c *ghClient) UpdateBranch(ctx context.Context, owner, name string, number 
 // question §T6-b exists to let the live run answer, not one to decide by
 // silently coercing the two to look equal.
 //
-// Deliberately does NOT pass `filter=latest` the way internal/host's
-// CheckStatus does (github.go): that filter is exactly what would hide the
-// stale, superseded runs a re-trigger leaves behind, and §T6-b's whole point
-// is seeing them. This is a real divergence from the product's own call
-// against the same endpoint, named here rather than left implicit. Like
-// CheckStatus, this reads only the first page (up to 100 runs), which is the
-// same fail-safe ceiling github.go documents for the same reason: a space
-// repo runs few enough checks that the ceiling is far off, and the failure
-// mode is an incomplete list, never a false positive.
+// Explicitly passes `filter=all` — the opposite of internal/host's
+// CheckStatus (github.go), which explicitly passes `filter=latest` (one run
+// per name, the most recent) because ITS selection logic depends on exactly
+// that collapsing. This function wants the OPPOSITE: §T6-b's whole point is
+// seeing the stale, superseded runs a re-trigger leaves behind, which
+// `filter=latest` would hide.
+//
+// This param is NOT optional the way it might look. AC-984.1's own live-run
+// diagnosis (scenarios_boundary_live.go's own top-of-file note) is that an
+// EARLIER version of this function built its query string with no `filter`
+// param at all, on the documented (here, wrongly) assumption that omitting
+// it meant "no filtering". It does not: GitHub's own default for this
+// endpoint, when the param is omitted, IS `filter=latest` — the exact fact
+// internal/host/github.go's own CheckStatus states explicitly ("filter=latest
+// is GitHub's own default"), one file over, previously verified against
+// real GitHub for THAT function's own selection logic. An unfiltered call
+// here therefore silently collapsed to the same "one run per name" view
+// CheckStatus deliberately asks for on purpose — meaning a caller counting
+// entries in the result to detect "did a re-trigger add a new run" could
+// never see the count exceed 1, before OR after any re-trigger, regardless
+// of how many runs GitHub actually executed. Explicit `filter=all` is the
+// fix.
+//
+// Like CheckStatus, this reads only the first page (up to 100 runs), which is
+// the same fail-safe ceiling github.go documents for the same reason: a
+// space repo runs few enough checks that the ceiling is far off, and the
+// failure mode is an incomplete list, never a false positive.
 func (c *ghClient) CheckRuns(ctx context.Context, owner, name, sha string) ([]CheckRunRef, error) {
-	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/commits/" + url.PathEscape(sha) + "/check-runs?per_page=100"
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/commits/" + url.PathEscape(sha) + "/check-runs?filter=all&per_page=100"
 	var payload struct {
 		CheckRuns []struct {
 			Name       string `json:"name"`

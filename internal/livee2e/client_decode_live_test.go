@@ -159,6 +159,42 @@ func TestReadBoundRefusesRatherThanTruncates(t *testing.T) {
 	}
 }
 
+// TestCheckRunsPassesFilterAll is AC-984.1's own regression (spec 38 wave G):
+// the pre-fix CheckRuns built its query with NO `filter` param, on the
+// documented-but-wrong assumption that omitting it meant "unfiltered".
+// GitHub's own default for this endpoint is `filter=latest` even when the
+// caller never asks for it (internal/host/github.go's own CheckStatus states
+// this explicitly, previously verified for that function's own selection
+// logic) — so the omitted param silently collapsed every listing to "one run
+// per check name", meaning a caller counting entries to detect "a re-trigger
+// added a new run" could never see the count exceed 1, before OR after any
+// re-trigger. This is why cross-section-retrigger-stays-red timed out
+// identically on four consecutive live runs with "no new check run appeared
+// after the re-trigger": the condition it polled for was unsatisfiable from
+// the day it was written, not a timing race.
+//
+// TEETH: drop `filter=all` from CheckRuns' path (or revert to no filter
+// param at all) and this test reds on the missing query parameter.
+func TestCheckRunsPassesFilterAll(t *testing.T) {
+	t.Parallel()
+
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"check_runs":[]}`))
+	}))
+	defer srv.Close()
+
+	c := &ghClient{Token: "t", APIRoot: srv.URL}
+	if _, err := c.CheckRuns(context.Background(), "o", "r", "deadbeef"); err != nil {
+		t.Fatalf("CheckRuns: %v", err)
+	}
+	if !strings.Contains(gotQuery, "filter=all") {
+		t.Fatalf("CheckRuns query = %q, want it to contain filter=all — GitHub's own default (filter=latest) collapses the listing to one run per check name, which can never detect a re-trigger's new run", gotQuery)
+	}
+}
+
 // TestListPullsPaginates guards the other half: `state=all` over a space
 // that is reset but never emptied grows every run, so one unpaginated call
 // is a question that stops being answerable as the space ages. A page cap

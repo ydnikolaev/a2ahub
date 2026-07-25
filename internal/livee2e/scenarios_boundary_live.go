@@ -374,13 +374,19 @@ func boundaryProbeEnvelope(id string) string {
 }
 
 // boundaryCheckRunCount counts the check runs named requiredCheckContext at
-// headSHA. CheckRuns (client_live.go) deliberately does NOT pass
-// filter=latest, so a re-trigger leaves the superseded run visible and adds
-// a NEW entry rather than replacing it — counting is how this file tells "a
-// new run appeared" apart from "the same run is still there" without a run
-// identity to diff against (CheckRunRef, refassert.go, carries only
-// Name/HeadSHA/Status/Conclusion — the fields AC-960.5's currency comparison
-// needs, not an id).
+// headSHA, through CheckRuns' now-corrected `filter=all` (client_live.go).
+// It is NO LONGER the gating mechanism cross-section-retrigger-stays-red
+// waits on (see boundaryAwaitCheckLeavesCompleted's own doc comment for why
+// that changed) — kept and still called, at each re-trigger boundary, so the
+// row's own Detail records the count as EVIDENCE rather than deleting a
+// still-useful, now-correct observation. Whether a re-trigger mints a
+// distinct check-run object or mutates one in place is a real open question
+// this wave's diagnosis could not answer from source alone (see
+// retrigger_diagnosis in this wave's own report); the recorded counts are
+// what lets the NEXT live run answer it for free — 1 -> 2 -> 3 means
+// distinct objects, 1 -> 1 -> 1 means GitHub mutates in place and
+// count-based detection could never have worked here regardless of the
+// filter fix.
 func boundaryCheckRunCount(ctx context.Context, h *harness, headSHA string) (int, error) {
 	runs, err := h.Prov.CheckRuns(ctx, h.Org, h.Repo, headSHA)
 	if err != nil {
@@ -395,28 +401,74 @@ func boundaryCheckRunCount(ctx context.Context, h *harness, headSHA string) (int
 	return n, nil
 }
 
-// boundaryWaitCheckRunAppears polls until the number of check runs named
-// requiredCheckContext at headSHA exceeds baseline — gating on the SAME
-// surface AwaitCheck actually reads (host.CheckStatus, via GitHub's
-// check-runs endpoint), not on ListWorkflowRuns' workflow-run surface. A
-// workflow run flipping to "queued" only means GitHub accepted the rerun
-// request; its own check run is created a moment later when the job
-// dispatches, and polling the wrong surface can read the STALE,
-// pre-retrigger check run as if it were the new one — the same vacuous-pass
-// failure a fixed sleep would produce, one layer down (see
-// boundaryRetriggerPollInterval's doc comment).
-func boundaryWaitCheckRunAppears(ctx context.Context, h *harness, headSHA string, baseline int) error {
+// boundaryCheckStatusOnce performs ONE non-blocking read of prNumber's
+// required check via host.CheckStatus, authenticated as c — the single-shot
+// primitive boundaryAwaitCheckLeavesCompleted needs. h.AwaitCheck
+// (WaitForRequiredCheck, harness_live.go) is the WRONG tool for that job: it
+// blocks UNTIL the check reaches "completed", so it structurally cannot
+// observe the check LEAVING "completed" — the one signal a re-trigger
+// actually produces.
+func boundaryCheckStatusOnce(ctx context.Context, h *harness, c *checkout, prNumber int) (host.CheckStatusResult, error) {
+	hc := host.NewGitHubHost(nil, defaultAPIRoot)
+	return hc.CheckStatus(ctx, host.StatusRequest{
+		Repo:       host.Repo{Owner: h.Org, Name: h.Repo},
+		PRNumber:   prNumber,
+		Credential: host.Credential{Token: c.Token},
+	})
+}
+
+// boundaryAwaitCheckLeavesCompleted polls until prNumber's required check
+// reports a State other than "completed" — proof a re-trigger genuinely
+// STARTED a new execution, replacing the pre-fix mechanism
+// (boundaryWaitCheckRunAppears, since removed) that polled
+// boundaryCheckRunCount for a count exceeding a baseline.
+//
+// That mechanism's premise was that a re-trigger leaves the superseded
+// check run visible and adds a NEW, distinctly-countable entry at the same
+// head SHA. This wave's diagnosis (retrigger_diagnosis, this wave's report)
+// found the count could never have worked as gating logic: CheckRuns built
+// its query with no `filter` param, and GitHub's own documented default for
+// that endpoint IS `filter=latest` even when the caller omits it —
+// internal/host/github.go's own CheckStatus states this explicitly, one
+// file over, for that function's own (deliberate, correct) use of the same
+// default. An unfiltered read therefore ALSO collapsed to "one run per
+// check name", so `n > baseline` could never be satisfied — not a timing
+// race, an unsatisfiable condition from the day the row was written, which
+// is exactly why it timed out identically on four consecutive live runs
+// with "no new check run appeared after the re-trigger" (always the SAME
+// message, never a different one — see this wave's report for why that
+// detail is itself evidence: RerunWorkflow/SetPullState answering
+// non-2xx would have surfaced as a DIFFERENT error, through boundaryFromErr,
+// not this timeout).
+//
+// A STATUS-transition wait sidesteps the open question the count-based
+// mechanism could not settle from source alone (does a re-trigger mint a
+// distinct check-run object, or mutate one in place?) entirely: whichever
+// GitHub does, the SAME check name cannot stay "completed" while a
+// genuinely fresh execution runs for it — it must report something other
+// than "completed" (queued/in_progress) for the window that execution
+// takes. If GitHub's read is momentarily stale (the exact failure mode
+// boundaryRetriggerPollInterval's own doc comment already names: "reading
+// the PRE-retrigger 'completed' state and mistaking it for the retriggered
+// run's own conclusion"), this loop simply has not seen the transition
+// YET; it has genuinely not seen one only if the whole ceiling elapses
+// without ever observing anything but "completed" — which renders
+// VerdictTimedOut (never a false pass, never a false fail: a missed
+// transient window and "the re-trigger truly did nothing" are
+// indistinguishable from here, and the honest verdict for both is "we did
+// not confirm it").
+func boundaryAwaitCheckLeavesCompleted(ctx context.Context, h *harness, c *checkout, prNumber int) error {
 	deadline := time.Now().Add(boundaryRetriggerPropagationCeiling)
 	for {
-		n, err := boundaryCheckRunCount(ctx, h, headSHA)
+		res, err := boundaryCheckStatusOnce(ctx, h, c, prNumber)
 		if err != nil {
 			return err
 		}
-		if n > baseline {
+		if res.State != "completed" {
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("%w: no new %q check run appeared at %s after the re-trigger", ErrCheckWaitTimedOut, requiredCheckContext, headSHA)
+			return fmt.Errorf("%w: PR #%d's required check never left \"completed\" within %s after the re-trigger", ErrCheckWaitTimedOut, prNumber, boundaryRetriggerPropagationCeiling)
 		}
 		if err := boundaryDelay(ctx, boundaryRetriggerPollInterval); err != nil {
 			return err
@@ -432,6 +484,12 @@ func boundaryWaitCheckRunAppears(ctx context.Context, h *harness, headSHA string
 // button (needs Actions:write) and close/reopen (needs only Pull
 // requests:write, and is the one the original report described, so the more
 // important of the two to assert). A pass needs both to stay red.
+//
+// AC-984.1 (spec 38 wave G): this row timed out on FOUR consecutive live
+// runs with "no new check run appeared after the re-trigger" before this
+// wave. The cause was the gating mechanism, not the product or the space:
+// see boundaryAwaitCheckLeavesCompleted's own doc comment for the fix, and
+// this wave's own report for the full retrigger_diagnosis.
 const scenarioCrossSectionRetriggerStaysRed = "cross-section-retrigger-stays-red"
 
 func boundaryCrossSectionRetriggerStaysRed(ctx context.Context, h *harness) Result {
@@ -518,6 +576,10 @@ func boundaryCrossSectionRetriggerStaysRed(ctx context.Context, h *harness) Resu
 		return boundaryRefused(scenarioCrossSectionRetriggerStaysRed, SystemB, expected,
 			fmt.Sprintf("no %q workflow run found at head %s to re-run via the Actions API", requiredWorkflowName, pr.HeadSHA))
 	}
+	// baseline/baseline2 are recorded EVIDENCE, not the gate: see
+	// boundaryCheckRunCount's own doc comment for why counting alone cannot
+	// be trusted to gate this row, and boundaryAwaitCheckLeavesCompleted's
+	// for the mechanism that actually does.
 	baseline, err := boundaryCheckRunCount(ctx, h, pr.HeadSHA)
 	if err != nil {
 		return boundaryFromErr(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, err)
@@ -525,23 +587,27 @@ func boundaryCrossSectionRetriggerStaysRed(ctx context.Context, h *harness) Resu
 	if err := h.Prov.RerunWorkflow(ctx, h.Org, h.Repo, runID); err != nil {
 		return boundaryFromErr(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, err)
 	}
-	if err := boundaryWaitCheckRunAppears(ctx, h, pr.HeadSHA, baseline); err != nil {
+	if err := boundaryAwaitCheckLeavesCompleted(ctx, h, h.B, prNumber); err != nil {
 		return boundaryFromErr(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, err)
 	}
 	res2, err := h.AwaitCheck(ctx, h.B, prNumber)
 	if err != nil {
 		return boundaryFromErr(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, err)
 	}
+	afterRerunCount, countErr := boundaryCheckRunCount(ctx, h, pr.HeadSHA)
+	if countErr != nil {
+		afterRerunCount = -1 // evidence only; never fail the row over a read this assertion does not depend on
+	}
 	if res2.Conclusion != "failure" {
 		return boundaryResult(scenarioCrossSectionRetriggerStaysRed, SystemB, VerdictFail, expected,
 			fmt.Sprintf("after the provisioner's rerun-API re-trigger, the check concluded %q, not failure — the v0.6.4 GITHUB_ACTOR bypass is back", res2.Conclusion),
-			fmt.Sprintf("PR #%d, rerun of workflow run %d", prNumber, runID))
+			fmt.Sprintf("PR #%d, rerun of workflow run %d, check-run count %d -> %d", prNumber, runID, baseline, afterRerunCount))
 	}
 
 	// Mechanism (b): close then reopen — needs only Pull requests:write, the
 	// one the original report described, so it is the more important of the
-	// two to assert. Re-baseline right before closing, so the "new check run"
-	// detection below is not fooled by the run mechanism (a) already added.
+	// two to assert. Re-baseline right before closing, so the recorded
+	// count evidence below is not confused by mechanism (a)'s own count.
 	baseline2, err := boundaryCheckRunCount(ctx, h, pr.HeadSHA)
 	if err != nil {
 		return boundaryFromErr(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, err)
@@ -552,22 +618,26 @@ func boundaryCrossSectionRetriggerStaysRed(ctx context.Context, h *harness) Resu
 	if err := h.Prov.SetPullState(ctx, h.Org, h.Repo, prNumber, "open"); err != nil {
 		return boundaryFromErr(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, err)
 	}
-	if err := boundaryWaitCheckRunAppears(ctx, h, pr.HeadSHA, baseline2); err != nil {
+	if err := boundaryAwaitCheckLeavesCompleted(ctx, h, h.B, prNumber); err != nil {
 		return boundaryFromErr(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, err)
 	}
 	res3, err := h.AwaitCheck(ctx, h.B, prNumber)
 	if err != nil {
 		return boundaryFromErr(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, err)
 	}
+	afterReopenCount, countErr := boundaryCheckRunCount(ctx, h, pr.HeadSHA)
+	if countErr != nil {
+		afterReopenCount = -1
+	}
 	if res3.Conclusion != "failure" {
 		return boundaryResult(scenarioCrossSectionRetriggerStaysRed, SystemB, VerdictFail, expected,
 			fmt.Sprintf("after the provisioner's close/reopen re-trigger, the check concluded %q, not failure — the v0.6.4 GITHUB_ACTOR bypass is back", res3.Conclusion),
-			fmt.Sprintf("PR #%d, closed+reopened", prNumber))
+			fmt.Sprintf("PR #%d, closed+reopened, check-run count %d -> %d", prNumber, baseline2, afterReopenCount))
 	}
 
 	return boundaryResult(scenarioCrossSectionRetriggerStaysRed, SystemB, VerdictPass, "", "",
-		fmt.Sprintf("PR #%d stayed failure throughout: initial=%s, after rerun-API=%s, after close/reopen=%s",
-			prNumber, res1.Conclusion, res2.Conclusion, res3.Conclusion))
+		fmt.Sprintf("PR #%d stayed failure throughout: initial=%s, after rerun-API=%s (check-run count %d->%d), after close/reopen=%s (check-run count %d->%d) — the count is recorded evidence, not the gate (see boundaryCheckRunCount's own doc comment)",
+			prNumber, res1.Conclusion, res2.Conclusion, baseline, afterRerunCount, res3.Conclusion, baseline2, afterReopenCount))
 }
 
 // boundaryPushMain fast-forward pushes dir's current HEAD onto main as
