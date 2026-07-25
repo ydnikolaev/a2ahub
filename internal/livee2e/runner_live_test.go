@@ -20,7 +20,7 @@ const EnvReportPath = "A2A_LIVE_E2E_REPORT"
 // -timeout at least this large, or `go test`'s own 10-minute default kills the
 // run first and the report never renders — the one failure mode that costs a
 // full matrix's Actions latency and returns nothing.
-const liveRunCeiling = 75 * time.Minute
+const liveRunCeiling = 110 * time.Minute
 
 // TestLiveMatrix is the live tier's ONLY entry point, reachable solely
 // through `make live-e2e` (which supplies -tags=livee2e). It exists in the
