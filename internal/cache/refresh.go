@@ -17,13 +17,19 @@ import (
 // prompt indefinitely.
 const perMirrorTimeout = 5 * time.Second
 
-// totalBudget bounds SyncIfStale's own wall-clock spend across every
-// connected space's mirror combined. With one connected space this caps
-// at perMirrorTimeout (5s); the separate ceiling exists so that N
-// connected spaces, one of which has an unreachable origin, cannot turn a
-// single read into an N*perMirrorTimeout hang — SyncIfStale stops
-// attempting further mirrors once the budget is spent and reports the
-// ones it never got to.
+// totalBudget bounds how much wall-clock SyncIfStale will spend STARTING new
+// mirror refreshes. With one connected space the cap is perMirrorTimeout (5s);
+// the separate ceiling exists so that N connected spaces, one of which has an
+// unreachable origin, cannot turn a single read into an N*perMirrorTimeout hang.
+//
+// It is an ADMISSION budget, not a hard deadline, and the difference is worth
+// stating because `a2a inbox` is the verb the protocol's floor tells every agent
+// to run at session open: the remaining budget is checked BEFORE each mirror, so
+// a mirror admitted at 9.9s can still run its own 5s timeout to completion. The
+// real worst case is therefore totalBudget + perMirrorTimeout (~15s), and it is
+// independent of how many mirrors there are. Interrupting a fetch already in
+// flight to honour a hard 10s would buy 5s at the cost of throwing away a
+// refresh that was about to succeed — the wrong trade for a cache.
 const totalBudget = 10 * time.Second
 
 // ErrSyncBudgetExhausted is wrapped into one returned error per mirror

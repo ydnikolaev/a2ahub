@@ -30,6 +30,15 @@ const (
 	// call — including the repair path, where a re-run found the PR open and
 	// landed it: the artifact was submitted by an earlier invocation either
 	// way, which is what the caller's "already submitted" message says.
+	//
+	// The go-auditor read that repair case as the same lie WriteStateMerged
+	// exists to prevent (2026-07-25). Adjudicated: it is not. The short-circuit
+	// only fires when FindPRByHeadBranch already found a PR, which means a
+	// PREVIOUS invocation pushed and opened it — so "already submitted" is
+	// literally true, and the only imprecision left is that the caller cannot
+	// tell "it was merged before I ran" from "I landed what a prior call
+	// opened". That distinction changes nothing a caller does (nothing is
+	// pending either way), so it stays one state rather than three.
 	WriteStateAlreadyMerged WriteState = "already-merged"
 	// WriteStateMerged is returned when THIS call did the whole thing:
 	// a fresh push + PR-open, GitHub declined to arm auto-merge because the
