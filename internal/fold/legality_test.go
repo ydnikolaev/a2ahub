@@ -129,3 +129,84 @@ func TestCheckLegality(t *testing.T) {
 		}
 	})
 }
+
+// TestCheckLegalityBroadcastAck is live run 5's (2026-07-25) regression.
+//
+// D-025 makes a broadcast acknowledge transition-free and "exempt from
+// illegal-transition folding". applyBroadcastAck implemented that; this
+// package's OTHER enforcement point, CheckLegality, did not — it fell
+// through to the generic table lookup, and announcementRows() carries no
+// acknowledge row. So `a2a ack <announcement>` was refused LFC-001
+// unconditionally, for every announcement, in every state, while the fold
+// stood ready to apply the very event no verb could author.
+//
+// The blast radius was not cosmetic: `ack_requested: true` was
+// unanswerable, and `contract retire`'s precondition — every registered
+// consumer has acknowledged the deprecation — could be satisfied only by
+// `--override`. Nothing hermetic covered an ack on an announcement, so
+// the whole deprecate -> ack -> retire chain was green everywhere and
+// broken in the one place it is actually walked.
+//
+// TEETH: delete the `kind == KindAnnouncement && transition ==
+// TAcknowledge` branch from CheckLegality and the first two subtests red
+// with illegal-transition.
+func TestCheckLegalityBroadcastAck(t *testing.T) {
+	t.Parallel()
+
+	t.Run("addressed_member_may_ack", func(t *testing.T) {
+		t.Parallel()
+		env := rowEnv(KindAnnouncement)
+		got := CheckLegality(KindAnnouncement, StatePublished, TAcknowledge, env, Actor{System: env.To0()}, MembershipMember)
+		if got != VerdictLegal {
+			t.Fatalf("got %q, want legal — D-025 exempts a broadcast ack from the transition table", got)
+		}
+	})
+
+	// The case AC-971.1 depends on: a consumer registered via `contract
+	// adopt` is never in the announcement's own `to:`, and must still be
+	// able to answer the deprecation it was sent. Membership is the whole
+	// test; addressing is not.
+	t.Run("unaddressed_member_may_ack", func(t *testing.T) {
+		t.Parallel()
+		env := rowEnv(KindAnnouncement)
+		got := CheckLegality(KindAnnouncement, StatePublished, TAcknowledge, env, Actor{System: "gamma"}, MembershipMember)
+		if got != VerdictLegal {
+			t.Fatalf("got %q, want legal — a registered consumer acks a deprecation it was never addressed by", got)
+		}
+	})
+
+	// The exemption is from the TABLE, never from membership.
+	t.Run("non_member_may_not_ack", func(t *testing.T) {
+		t.Parallel()
+		env := rowEnv(KindAnnouncement)
+		for _, status := range []MembershipStatus{MembershipLeft, MembershipUnknown} {
+			if got := CheckLegality(KindAnnouncement, StatePublished, TAcknowledge, env, Actor{System: "gamma"}, status); got != VerdictUnauthorizedActor {
+				t.Fatalf("membership %v: got %q, want unauthorized-actor", status, got)
+			}
+		}
+	})
+
+	// Both enforcement points must answer the same question the same way —
+	// this is the divergence that shipped, so it is asserted rather than
+	// assumed. A member's ack is accepted by the fold and by the pre-write
+	// check; a non-member's is rejected by both.
+	t.Run("pre_write_and_post_write_agree", func(t *testing.T) {
+		t.Parallel()
+		env := rowEnv(KindAnnouncement)
+		for _, tc := range []struct {
+			status MembershipStatus
+			want   bool
+		}{{MembershipMember, true}, {MembershipLeft, false}, {MembershipUnknown, false}} {
+			view := func(string) MembershipStatus { return tc.status }
+			var result Result
+			applyBroadcastAck(&result, Event{ULID: "01", Subject: env.ID, Actor: Actor{System: "gamma"}}, view)
+			postAccepted := len(result.Flags) == 0 && result.Acks["gamma"]
+
+			preAccepted := CheckLegality(KindAnnouncement, StatePublished, TAcknowledge, env, Actor{System: "gamma"}, tc.status) == VerdictLegal
+
+			if postAccepted != tc.want || preAccepted != tc.want {
+				t.Fatalf("membership %v: pre-write=%v post-write=%v, want both %v", tc.status, preAccepted, postAccepted, tc.want)
+			}
+		}
+	})
+}
