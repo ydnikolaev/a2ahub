@@ -2,18 +2,16 @@ package e2e
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/santhosh-tekuri/jsonschema/v6"
-
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/validate"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
@@ -193,50 +191,55 @@ func testE2E4RetireOverrideSucceeds(t *testing.T) {
 // P9's own compat-golden fixtures, schemas/fixtures/compat/, are WIRED
 // here, never authored/duplicated). §5.4b's own rule ("a minor/patch bump
 // REQUIRES that all prior-version valid fixtures still validate against
-// the new schema") is evaluated directly with the SAME JSON-schema engine
-// (santhosh-tekuri/jsonschema/v6) internal/schema already depends on —
-// this is the generic, already-a-dependency validation mechanism the rule
-// itself is defined in terms of, not a re-derivation of product logic.
+// the new schema") is evaluated by the PRODUCT's own core —
+// validate.CheckComputedCompatibility — never by a copy living here.
+//
+// It used to be a copy: a private compatFixtureValidates that compiled the
+// schema with jsonschema/v6 directly. When this test was written that was
+// the ONLY implementation of §5.4b anywhere in the repo, which is precisely
+// what P37's F1 found — the rule the documents promised was a helper inside
+// an e2e test file, reachable from no production path. P37 built the real
+// core; leaving the copy here would have left two implementations of one
+// rule free to diverge, which is the exact risk spec 37 §T2 cites P35's scar
+// for. So this now asserts the shipped verdict, POL-007 and all.
 func testE2E4MislabeledMinorFailsCompat(t *testing.T) {
 	t.Parallel()
 	root := repoRootForTest(t)
 
-	additivePass := compatFixtureValidates(t,
-		filepath.Join(root, "schemas/fixtures/compat/additive-minor/new.schema.json"),
-		filepath.Join(root, "schemas/fixtures/compat/additive-minor/fixtures/valid/widget-1.json"),
-	)
-	if !additivePass {
-		t.Fatal("additive-minor: expected the v1.0.0-valid fixture to STILL validate against the new (minor-bumped) schema — genuinely additive, minor bump correct")
+	readCompatCase := func(dir string) validate.CompatInput {
+		t.Helper()
+		schemaRaw, err := os.ReadFile(filepath.Join(root, "schemas/fixtures/compat", dir, "new.schema.json"))
+		if err != nil {
+			t.Fatalf("read %s/new.schema.json: %v", dir, err)
+		}
+		fixtureRaw, err := os.ReadFile(filepath.Join(root, "schemas/fixtures/compat", dir, "fixtures/valid/widget-1.json"))
+		if err != nil {
+			t.Fatalf("read %s fixture: %v", dir, err)
+		}
+		return validate.CompatInput{
+			DeclaredBump:  "minor",
+			PriorVersion:  "1.0.0",
+			NewVersion:    "1.1.0",
+			NewSchemas:    map[string][]byte{"schema/widget-1.schema.json": schemaRaw},
+			PriorFixtures: map[string][]byte{"fixtures/valid/widget-1.json": fixtureRaw},
+		}
 	}
 
-	mislabeledPass := compatFixtureValidates(t,
-		filepath.Join(root, "schemas/fixtures/compat/mislabeled-minor/new.schema.json"),
-		filepath.Join(root, "schemas/fixtures/compat/mislabeled-minor/fixtures/valid/widget-1.json"),
-	)
-	if mislabeledPass {
-		t.Fatal("mislabeled-minor: expected the v1.0.0-valid fixture to FAIL against the new schema (CC-080: a breaking change mislabeled as a minor bump — major required)")
+	additive := validate.CheckComputedCompatibility(readCompatCase("additive-minor"))
+	if !additive.Computed {
+		t.Fatalf("additive-minor: expected the check to be computed, got Reason=%q", additive.Reason)
 	}
-}
+	if additive.Violation != nil {
+		t.Fatalf("additive-minor: the v1.0.0-valid fixture must STILL validate against the new (minor-bumped) schema — genuinely additive, minor bump correct; got %+v", additive.Violation)
+	}
 
-// compatFixtureValidates compiles schemaPath (santhosh-tekuri/jsonschema/v6,
-// already an internal/schema dependency) and reports whether fixturePath's
-// decoded JSON instance validates against it.
-func compatFixtureValidates(t *testing.T, schemaPath, fixturePath string) bool {
-	t.Helper()
-	c := jsonschema.NewCompiler()
-	schema, err := c.Compile(schemaPath)
-	if err != nil {
-		t.Fatalf("compile %s: %v", schemaPath, err)
+	mislabeled := validate.CheckComputedCompatibility(readCompatCase("mislabeled-minor"))
+	if mislabeled.Violation == nil || mislabeled.Violation.Code != "POL-007" {
+		t.Fatalf("mislabeled-minor: a breaking change declared as a minor must be refused with POL-007 (CC-080); got %+v", mislabeled.Violation)
 	}
-	raw, err := os.ReadFile(fixturePath)
-	if err != nil {
-		t.Fatalf("read %s: %v", fixturePath, err)
+	if len(mislabeled.Failures) != 1 || mislabeled.Failures[0].Fixture != "fixtures/valid/widget-1.json" {
+		t.Fatalf("mislabeled-minor: the refusal must NAME the offending fixture (AC-970.1); got %+v", mislabeled.Failures)
 	}
-	var inst any
-	if err := json.Unmarshal(raw, &inst); err != nil {
-		t.Fatalf("decode %s: %v", fixturePath, err)
-	}
-	return schema.Validate(inst) == nil
 }
 
 // repoRootForTest is repoRoot's test-friendly twin (t.Fatal on error).
