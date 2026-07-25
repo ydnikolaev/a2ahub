@@ -837,9 +837,31 @@ func TestEquivContractPublish(t *testing.T) {
 			`{"example":"replace-me"}`)
 	}
 
+	// P37 Wave I: STAGE an additional sidecar file, identically on both
+	// surfaces, alongside the landed baseline above — this is the overlay/
+	// carry parity check, not just the pre-existing landed-tree-only path
+	// TestEquivContractPublish covered before this wave (which a nil CLI
+	// newCmd / unset MCP StagingDir would pass VACUOUSLY: neither surface
+	// would touch staging at all, so the two would trivially agree). A
+	// real `cli.NewNewCommand` + a real MCP StagingDir below force BOTH
+	// surfaces to actually read this file back.
+	stageExtraSchema := func(t *testing.T, stagingDir string) {
+		t.Helper()
+		full := filepath.Join(stagingDir, "axon", "provides", "widget-d001", "schema", "extra.schema.json")
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(`{"type":"object","additionalProperties":true}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	cliDir, cliFunnel, _ := newEquivMirror(t, "axon")
 	seed(t, cliDir)
-	cliCmd := cli.NewContractCommand(nil, cliFunnel, cliDir, "fixture-space", "axon", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+	cliStaging := t.TempDir()
+	stageExtraSchema(t, cliStaging)
+	cliNewCmd := cli.NewNewCommand(cliStaging, "axon", equivCLIActorResolver("agent", "bot"), nil)
+	cliCmd := cli.NewContractCommand(cliNewCmd, cliFunnel, cliDir, "fixture-space", "axon", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
 	runCLICommand(t, cliCmd, []string{"publish", "--version", "1.0.0", id})
 	if len(cliFunnel.calls) != 1 {
 		t.Fatalf("contract publish: expected 1 CLI funnel call, got %d", len(cliFunnel.calls))
@@ -847,12 +869,14 @@ func TestEquivContractPublish(t *testing.T) {
 
 	mcpDir, mcpFunnel, _ := newEquivMirror(t, "axon")
 	seed(t, mcpDir)
+	mcpStaging := t.TempDir()
+	stageExtraSchema(t, mcpStaging)
 	writeDeps := mcp.WriteDeps{
 		Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "axon",
 		Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}
-	registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
+	registry := mcp.BuildRegistry(nil, writeDeps, mcpStaging, nil, mcp.NewDeps{})
 	runMCPHandler(t, registry, "a2a_contract", "publish", mcp.ContractPublishInput{ID: id, Version: "1.0.0"})
 	if len(mcpFunnel.calls) != 1 {
 		t.Fatalf("contract publish: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))

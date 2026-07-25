@@ -91,7 +91,12 @@ func groupedSchema(discKey string, enum []string, props map[string]string) json.
 // a2a_submit's own idempotency short-circuit.
 func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string, legality *LegalityAdapter, newDeps NewDeps) *Registry {
 	r := NewRegistry()
-	contractDeps := ContractDeps{WriteDeps: write}
+	// P37 Wave I: `a2a_contract` publish needs the SAME staging dir
+	// `a2a_submit` already receives here, to fold a staged schema/fixture
+	// edit into the version it is declaring (ContractDeps.StagingDir's own
+	// doc comment) — no new BuildRegistry parameter, this one is already
+	// threaded through for submit's own idempotency short-circuit.
+	contractDeps := ContractDeps{WriteDeps: write, StagingDir: submitStagingDir}
 	submitDeps := SubmitDeps{WriteDeps: write, StagingDir: submitStagingDir, Legality: legality}
 
 	// --- a2a_read (view: the 6 folded read tools) ------------------------

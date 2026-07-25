@@ -1548,3 +1548,240 @@ func TestContractSubVerbsStillAcceptFlagsBeforeTheID(t *testing.T) {
 		t.Fatalf("flags-before-id exited 2 (usage); stderr=%s", errOut.String())
 	}
 }
+
+// --- P37 Wave I: `contract publish` carries the schema/fixtures change it
+// is declaring a version for ------------------------------------------------
+//
+// The defect this wave fixes: internal/space/mirror.go's
+// checkoutRemoteHead hard-resets the mirror working tree to
+// origin/<branch> on EVERY `a2a` invocation, so by the time `contract
+// publish` runs, the mirror can never carry an author's own schema/
+// fixture edit — only .a2a/staging/ still can. The tests above this
+// section (TestContractPublishComputedCompatibility et al.) prove F1/
+// POL-007/POL-008/POL-009 by mutating the MIRROR's own working tree
+// directly, which is exactly the scenario the real hard reset makes
+// unreachable in production — they were green while the check was
+// unreachable. These tests instead route the "new version's" schema
+// through STAGING, the one place a real invocation could still find it,
+// proving the overlay this wave adds.
+
+// TestContractPublishOverlayCarriesStagedSchema is AC-970.1 (a mislabeled
+// minor is refused, naming the fixture) and its --bump major counterpart,
+// driven through a REAL staging dir rather than a mutated mirror working
+// tree. TEETH: reverting runPublish to read newSchemas/newFixturesValid
+// straight from contractReadWorkingTreeFiles(workDir, ...) (i.e. dropping
+// the contractStagingOverlay fold-in) reds BOTH sub-tests — the staged
+// narrowed schema is never seen, so the minor bump publishes clean instead
+// of refusing, and the major bump's carried Files never contain the
+// staged bytes.
+func TestContractPublishOverlayCarriesStagedSchema(t *testing.T) {
+	t.Parallel()
+
+	setup := func(t *testing.T) (mirrorDir, stagingDir string) {
+		t.Helper()
+		mirrorDir = t.TempDir()
+		gitRun(t, mirrorDir, "init", "-b", "main")
+		writeContractDescriptor(t, mirrorDir, "overlaid", "1.0.0")
+		writeMirrorFile(t, mirrorDir, "axon/provides/overlaid/schema/main.schema.json", `{"type":"object","properties":{"x":{"type":"integer"}}}`)
+		writeMirrorFile(t, mirrorDir, "axon/provides/overlaid/fixtures/valid/ok.json", `{"x":1}`)
+		gitRun(t, mirrorDir, "add", "-A")
+		gitRun(t, mirrorDir, "commit", "-m", "publish 1.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-overlaid", "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+		// The mirror's working tree is left exactly as committed (the
+		// hard-reset invariant, off-limits/unmodified here) — ONLY staging
+		// carries the new version's narrowed schema.
+		stagingDir = t.TempDir()
+		writeStagedSidecar(t, stagingDir, "axon/provides/overlaid/schema/main.schema.json", `{"type":"object","properties":{"x":{"type":"string"}}}`)
+		return mirrorDir, stagingDir
+	}
+
+	t.Run("minor_bump_refused_naming_the_fixture", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir, stagingDir := setup(t)
+		newCmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(newCmd, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"publish", "--bump", "minor", "XC-axon-overlaid"}, io)
+		if code != 1 {
+			t.Fatalf("code = %d, want 1 (the STAGED schema narrows x, the prior fixture no longer validates); stderr=%s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "POL-007") {
+			t.Fatalf("expected the refusal to carry POL-007, got %q", errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "fixtures/valid/ok.json") {
+			t.Fatalf("expected the refusal to NAME the offending fixture, got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("expected the write funnel NEVER to be called, got %d call(s)", len(fake.calls))
+		}
+	})
+
+	t.Run("major_bump_publishes_carrying_the_staged_schema", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir, stagingDir := setup(t)
+		newCmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(newCmd, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"publish", "--bump", "major", "XC-axon-overlaid"}, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0 (a major bump is not compat-checked, F2 withdrawn per this file's own doc comment); stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+		var found bool
+		for _, f := range fake.calls[0].Files {
+			if f.Path == "axon/provides/overlaid/schema/main.schema.json" {
+				found = true
+				if string(f.Content) != `{"type":"object","properties":{"x":{"type":"string"}}}` {
+					t.Fatalf("carried schema content = %q, want the STAGED (narrowed) schema", f.Content)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("expected the staged schema to be carried in the funnel's Files, got %+v", fake.calls[0].Files)
+		}
+	})
+}
+
+// TestContractPublishNoStagingIsUnaffected is the no-regression case: a
+// contract with an EMPTY staging dir (nothing staged for it — a contract
+// authored before the D-D scaffold existed, or simply never re-staged)
+// publishes exactly as it did before this wave, POL-009 satisfied from the
+// landed tree alone, and the recorded digest matches artifact.DigestTreeFS's
+// own answer over that SAME landed tree exactly. TEETH: any change that
+// makes overlayAll diverge from landedAll when staging is empty (e.g. a
+// contractStagingOverlay that mutates its `landed` argument in place, or a
+// keying mismatch between contractReadWorkingTreeFiles and DigestTreeFS)
+// reds the digest assertion below even though the exit code stays 0.
+func TestContractPublishNoStagingIsUnaffected(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "untouched", "0.0.0")
+	writeMirrorFile(t, mirrorDir, "axon/provides/untouched/schema/main.schema.json", `{"type":"object"}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/untouched/fixtures/valid/ok.json", `{}`)
+
+	wantDigest, _, err := artifact.DigestTreeFS(filepath.Join(mirrorDir, "axon", "provides", "untouched"), []string{"schema", "fixtures"})
+	if err != nil {
+		t.Fatalf("DigestTreeFS: %v", err)
+	}
+
+	stagingDir := t.TempDir() // exists, but carries nothing for this contract
+	newCmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(newCmd, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"publish", "--version", "1.0.0", "XC-axon-untouched"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 (POL-009 satisfied from the landed tree alone); stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	if len(fake.calls[0].Files) != 2 { // contract.md + event, unchanged from before this wave
+		t.Fatalf("Files = %d, want 2 (contract.md + event); got %+v", len(fake.calls[0].Files), fake.calls[0].Files)
+	}
+	if got := contractEventDigest(t, fake.calls[0].Files); got != wantDigest {
+		t.Fatalf("recorded digest = %q, want %q (artifact.DigestTreeFS's own answer over the SAME unmodified landed tree)", got, wantDigest)
+	}
+}
+
+// TestContractPublishPartialStagingOverlaysPerFile is the case a
+// per-directory precedence (rather than a per-file one) would get wrong:
+// staging holds ONLY the new schema, not the fixture. TEETH: an overlay
+// that treats "staging has ANY file for this contract" as "ignore every
+// landed file for this contract" (rather than merging key by key) reds
+// this test — POL-009 would see zero valid fixtures (the landed one
+// silently dropped) and refuse a publish that should succeed.
+func TestContractPublishPartialStagingOverlaysPerFile(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "partial", "0.0.0")
+	writeMirrorFile(t, mirrorDir, "axon/provides/partial/schema/main.schema.json", `{"type":"object"}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/partial/fixtures/valid/ok.json", `{"landed":true}`)
+
+	stagingDir := t.TempDir()
+	writeStagedSidecar(t, stagingDir, "axon/provides/partial/schema/main.schema.json", `{"type":"object","properties":{"y":{}}}`)
+
+	newCmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(newCmd, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"publish", "--version", "1.0.0", "XC-axon-partial"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 (the landed fixture must still satisfy POL-009 even though only the schema was staged); stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	byPath := map[string]string{}
+	for _, f := range fake.calls[0].Files {
+		byPath[f.Path] = string(f.Content)
+	}
+	if got := byPath["axon/provides/partial/schema/main.schema.json"]; got != `{"type":"object","properties":{"y":{}}}` {
+		t.Fatalf("carried schema = %q, want the STAGED content (staged wins per file)", got)
+	}
+}
+
+// TestContractPublishDigestReflectsOverlay is the digest half of the
+// defect: the event's recorded digest must describe what THIS commit
+// carries (schema + landed fixture, folded through the overlay), not what
+// the mirror alone held before staging was folded in. TEETH: reverting the
+// digest computation in runPublish to `artifact.DigestTreeFS(filepath.Join(
+// c.deps.mirrorDir, relDir), contractDigestSubtrees)` (the pre-wave call)
+// reds this test — that call reads the mirror's own unmodified working
+// tree and can never see the staged override.
+func TestContractPublishDigestReflectsOverlay(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "digested", "0.0.0")
+	writeMirrorFile(t, mirrorDir, "axon/provides/digested/schema/main.schema.json", `{"type":"object"}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/digested/fixtures/valid/ok.json", `{}`)
+
+	mirrorOnlyDigest, _, err := artifact.DigestTreeFS(filepath.Join(mirrorDir, "axon", "provides", "digested"), []string{"schema", "fixtures"})
+	if err != nil {
+		t.Fatalf("DigestTreeFS: %v", err)
+	}
+
+	stagingDir := t.TempDir()
+	writeStagedSidecar(t, stagingDir, "axon/provides/digested/schema/main.schema.json", `{"type":"object","properties":{"y":{}}}`)
+
+	newCmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(newCmd, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"publish", "--version", "1.0.0", "XC-axon-digested"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	if got := contractEventDigest(t, fake.calls[0].Files); got == mirrorOnlyDigest {
+		t.Fatalf("recorded digest %q equals the mirror-tree-ONLY digest — the staged schema override was not reflected", got)
+	}
+}
+
+// contractEventDigest extracts the `digest:` field off the ONE
+// axon/events/**/*.yaml entry in files — this wave's own shared assertion
+// helper for the two digest tests above.
+func contractEventDigest(t *testing.T, files []space.FileWrite) string {
+	t.Helper()
+	for _, f := range files {
+		if strings.HasPrefix(f.Path, "axon/events/") {
+			var ev struct {
+				Digest string `yaml:"digest"`
+			}
+			if err := yaml.Unmarshal(f.Content, &ev); err != nil {
+				t.Fatalf("decode event: %v", err)
+			}
+			return ev.Digest
+		}
+	}
+	t.Fatalf("no axon/events/**/*.yaml file found in %+v", files)
+	return ""
+}

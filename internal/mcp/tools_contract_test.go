@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
 func writeContractDescriptor(t *testing.T, mirrorDir, slug, version string) {
@@ -74,6 +75,127 @@ func TestContractPublishMinorBumpUngated(t *testing.T) {
 	}
 	if len(fake.calls) != 1 || fake.calls[0].PRBody != "" {
 		t.Fatalf("expected a declared-minor bump to be UNGATED, got %+v", fake.calls)
+	}
+}
+
+// TestContractPublishOverlayCarriesStagedSchema is P37 Wave I's MCP-parity
+// coverage (mirrors internal/cli's own TestContractPublishOverlayCarriesStagedSchema,
+// minus the POL-007/POL-009 assertions this handler deliberately does not
+// run locally — see newContractPublishHandler's own doc comment). TEETH:
+// reverting newContractPublishHandler to compute Files/digest from the
+// mirror's own contractReadDescriptor-relative tree alone (dropping the
+// contractStagingOverlay fold-in) reds this test — the staged schema would
+// never appear in Files, and the recorded digest would equal the
+// mirror-only digest.
+func TestContractPublishOverlayCarriesStagedSchema(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "widget-o", "0.0.0")
+	writeMirrorFile(t, mirrorDir, "axon/provides/widget-o/schema/main.schema.json", `{"type":"object"}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/widget-o/fixtures/valid/ok.json", `{}`)
+
+	mirrorOnlyDigest, _, err := artifact.DigestTreeFS(filepath.Join(mirrorDir, "axon", "provides", "widget-o"), []string{"schema", "fixtures"})
+	if err != nil {
+		t.Fatalf("DigestTreeFS: %v", err)
+	}
+
+	stagingDir := t.TempDir()
+	staged := filepath.Join(stagingDir, "axon", "provides", "widget-o", "schema", "main.schema.json")
+	if err := os.MkdirAll(filepath.Dir(staged), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(staged, []byte(`{"type":"object","properties":{"y":{}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fake := &fakeFunnel{}
+	deps := contractTestDeps(mirrorDir, fake)
+	deps.StagingDir = stagingDir
+	handler := newContractPublishHandler(deps)
+	args, _ := json.Marshal(ContractPublishInput{ID: "XC-axon-widget-o", Version: "1.0.0"})
+	if _, _, err := handler(context.Background(), args); err != nil {
+		t.Fatalf("publish failed: %v", err)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+
+	var sawStagedSchema bool
+	var eventRaw []byte
+	for _, f := range fake.calls[0].Files {
+		if f.Path == "axon/provides/widget-o/schema/main.schema.json" {
+			sawStagedSchema = true
+			if string(f.Content) != `{"type":"object","properties":{"y":{}}}` {
+				t.Fatalf("carried schema = %q, want the STAGED content", f.Content)
+			}
+		}
+		if strings.HasPrefix(f.Path, "axon/events/") {
+			eventRaw = f.Content
+		}
+	}
+	if !sawStagedSchema {
+		t.Fatalf("expected the staged schema to be carried in Files, got %+v", fake.calls[0].Files)
+	}
+	if eventRaw == nil {
+		t.Fatalf("expected a lifecycle event file, got %+v", fake.calls[0].Files)
+	}
+	if strings.Contains(string(eventRaw), mirrorOnlyDigest) {
+		t.Fatalf("recorded event %s carries the MIRROR-TREE-ONLY digest %q — the staged schema override was not reflected", eventRaw, mirrorOnlyDigest)
+	}
+}
+
+// TestContractPublishNoStagingDigestMatchesMirrorTree is the no-regression
+// case: deps.StagingDir unset (the zero value, every construction that
+// predates this wave) must record the SAME digest artifact.DigestTreeFS
+// itself would compute over the unmodified mirror tree.
+func TestContractPublishNoStagingDigestMatchesMirrorTree(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "widget-p", "0.0.0")
+	writeMirrorFile(t, mirrorDir, "axon/provides/widget-p/schema/main.schema.json", `{"type":"object"}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/widget-p/fixtures/valid/ok.json", `{}`)
+
+	wantDigest, _, err := artifact.DigestTreeFS(filepath.Join(mirrorDir, "axon", "provides", "widget-p"), []string{"schema", "fixtures"})
+	if err != nil {
+		t.Fatalf("DigestTreeFS: %v", err)
+	}
+
+	fake := &fakeFunnel{}
+	handler := newContractPublishHandler(contractTestDeps(mirrorDir, fake)) // StagingDir unset
+	args, _ := json.Marshal(ContractPublishInput{ID: "XC-axon-widget-p", Version: "1.0.0"})
+	if _, _, err := handler(context.Background(), args); err != nil {
+		t.Fatalf("publish failed: %v", err)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	var eventRaw []byte
+	for _, f := range fake.calls[0].Files {
+		if strings.HasPrefix(f.Path, "axon/events/") {
+			eventRaw = f.Content
+		}
+	}
+	if eventRaw == nil {
+		t.Fatalf("expected a lifecycle event file, got %+v", fake.calls[0].Files)
+	}
+	if !strings.Contains(string(eventRaw), wantDigest) {
+		t.Fatalf("recorded event %s does not carry DigestTreeFS's own answer %q", eventRaw, wantDigest)
+	}
+}
+
+// TestContractStagingOverlaySkipsSidecarOutsidePrefix is
+// contractStagingOverlay's own defensive branch: a staged FileWrite whose
+// Path does not start with THIS contract's own relDir+"/" prefix (should
+// never happen given template.ContractSidecarsFromStaging's own slug-
+// scoped walk, but defended anyway) is skipped, never allowed to overlay
+// an unrelated key.
+func TestContractStagingOverlaySkipsSidecarOutsidePrefix(t *testing.T) {
+	t.Parallel()
+	landed := map[string][]byte{"schema/a.json": []byte("landed")}
+	staged := []space.FileWrite{{Path: "beta/provides/other/schema/a.json", Content: []byte("staged")}}
+	got := contractStagingOverlay(landed, staged, "axon/provides/widget")
+	if string(got["schema/a.json"]) != "landed" {
+		t.Fatalf("expected the out-of-prefix staged file to be skipped (landed value preserved); got %q", got["schema/a.json"])
 	}
 }
 

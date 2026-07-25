@@ -16,9 +16,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -28,6 +26,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 	"gopkg.in/yaml.v3"
 )
@@ -512,7 +511,7 @@ func (c *SubmitCommand) partitionByHistory(items []submitItem) (fresh []submitIt
 // artifact file + its first lifecycle event, for every fresh item) and
 // returns the sorted artifact ids included plus the space-relative paths
 // of every contract sidecar file carried along (see
-// submitContractSidecars), for the caller's own messages.
+// template.ContractSidecarsFromStaging), for the caller's own messages.
 //
 // Batch branch key: SubmitRequest.ArtifactID names the deterministic
 // branch a2a/<system>/<id>; the core API is single-artifact-shaped, so
@@ -554,7 +553,7 @@ func (c *SubmitCommand) buildRequest(fresh []submitItem) (space.SubmitRequest, [
 			if err != nil {
 				return space.SubmitRequest{}, nil, nil, fmt.Errorf("%s: %w", it.path, err)
 			}
-			sidecars, err := submitContractSidecars(c.stagingDir, layout, parsed.Slug)
+			sidecars, err := template.ContractSidecarsFromStaging(c.stagingDir, c.ownSystem, parsed.Slug)
 			if err != nil {
 				return space.SubmitRequest{}, nil, nil, fmt.Errorf("%s: %w", it.path, err)
 			}
@@ -635,111 +634,6 @@ func (c *SubmitCommand) buildRequest(fresh []submitItem) (space.SubmitRequest, [
 		Credential:        c.hostCfg.Credential,
 		MinBinaryVersion:  minBinaryVersion,
 	}, ids, carried, nil
-}
-
-// submitContractSidecarDirs are the D-D scaffold's own subtrees under a
-// contract's provides/<slug>/ section (internal/space.Layout's
-// ProvidesSchemaDir/ProvidesFixturesValidDir/ProvidesFixturesInvalidDir).
-// fixtures/invalid is included even though §5.4b's compat core
-// deliberately never feeds it to the new schema — an authored invalid
-// fixture is still part of the published contract.
-func submitContractSidecarDirs(layout space.Layout, slug string) []string {
-	return []string{
-		layout.ProvidesSchemaDir(slug),
-		layout.ProvidesFixturesValidDir(slug),
-		layout.ProvidesFixturesInvalidDir(slug),
-	}
-}
-
-// submitContractSidecars collects a staged contract's schema/** and
-// fixtures/**/* sidecar files (D-D's scaffold, internal/cli/cmd_new.go's
-// newScaffoldContractFiles) from stagingDir, at the SAME space-relative
-// paths space.Layout would place them at once submitted — so a
-// scaffolded contract carries its own baseline into the space alongside
-// contract.md (POL-009: a JSON-Schema-dialect contract needs >=1 schema
-// file and >=1 valid fixture to be publishable at all,
-// internal/validate/publishable.go's CheckContractPublishable).
-//
-// Walks each subtree recursively (filepath.WalkDir, mirroring
-// internal/cli/cmd_contract.go's own contractReadWorkingTreeFiles, which
-// counts a contract's published schema/fixtures files the SAME way) so a
-// nested schema layout (e.g. schema/common/types.schema.json, a normal
-// $ref split) is carried in full, not just its top-level files.
-//
-// Absent is not an error: a contract authored before the scaffold existed
-// (or a non-JSON-Schema contract that legitimately has no schema) simply
-// has nothing under schema/ or fixtures/ in staging — this returns (nil,
-// nil), so `submit` never starts refusing artifacts it accepted
-// yesterday.
-//
-// Bounded and safe: every leaf read goes through readBoundedFile at
-// maxMirrorEventBytes (this package's existing artifact-read ceiling, not
-// a second constant). A symlink anywhere in the walk is refused outright,
-// never followed or silently skipped — the one way a name that stayed
-// inside the directory listing could still resolve to content, or imply a
-// destination, outside the contract's own directory. A relative path that
-// would resolve outside its subtree root is refused for the same reason
-// (defense in depth alongside the symlink refusal, since WalkDir itself
-// never emits one without a symlink already having crossed the
-// boundary).
-func submitContractSidecars(stagingDir string, layout space.Layout, slug string) ([]space.FileWrite, error) {
-	var out []space.FileWrite
-	for _, spacePath := range submitContractSidecarDirs(layout, slug) {
-		localDir := filepath.Join(stagingDir, filepath.FromSlash(spacePath))
-		info, err := os.Stat(localDir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("cannot stat %s: %w", localDir, err)
-		}
-		if !info.IsDir() {
-			continue
-		}
-
-		type sidecarFile struct {
-			rel string
-			raw []byte
-		}
-		var found []sidecarFile
-		walkErr := filepath.WalkDir(localDir, func(p string, d fs.DirEntry, werr error) error {
-			if werr != nil {
-				return werr
-			}
-			if p == localDir {
-				return nil
-			}
-			if d.Type()&fs.ModeSymlink != 0 {
-				return fmt.Errorf("sidecar %s is a symlink, refused (escapes the contract's own directory)", p)
-			}
-			if d.IsDir() {
-				return nil
-			}
-			rel, relErr := filepath.Rel(localDir, p)
-			if relErr != nil {
-				return relErr
-			}
-			relSlash := filepath.ToSlash(rel)
-			if relSlash == ".." || strings.HasPrefix(relSlash, "../") {
-				return fmt.Errorf("sidecar %s escapes the contract's own directory %s", p, localDir)
-			}
-			raw, rerr := readBoundedFile(p, maxMirrorEventBytes)
-			if rerr != nil {
-				return rerr
-			}
-			found = append(found, sidecarFile{rel: relSlash, raw: raw})
-			return nil
-		})
-		if walkErr != nil {
-			return nil, walkErr
-		}
-
-		sort.Slice(found, func(i, j int) bool { return found[i].rel < found[j].rel })
-		for _, f := range found {
-			out = append(out, space.FileWrite{Path: path.Join(spacePath, f.rel), Content: f.raw})
-		}
-	}
-	return out, nil
 }
 
 // readMinBinaryVersion reads and structurally parses <mirrorDir>/space.yaml

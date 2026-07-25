@@ -96,6 +96,91 @@ func TestScaffoldContractInStagingSurfacesAWriteFailure(t *testing.T) {
 	}
 }
 
+// --- ContractSidecarsFromStaging (P37 Wave I: the shared collector both
+// `a2a submit` and `a2a contract publish` read staged schema/fixtures
+// back through — moved here from internal/cli's own submitContractSidecars,
+// same behaviour, same refusals) --------------------------------------------
+
+func TestContractSidecarsFromStagingCollectsNestedFilesSorted(t *testing.T) {
+	t.Parallel()
+	staging := t.TempDir()
+	write := func(rel, content string) {
+		full := filepath.Join(staging, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("axon/provides/widget/schema/main.schema.json", `{"type":"object"}`)
+	write("axon/provides/widget/schema/common/types.schema.json", `{"type":"string"}`)
+	write("axon/provides/widget/fixtures/valid/ok.json", `{}`)
+	write("axon/provides/widget/fixtures/invalid/bad.json", `null`)
+
+	got, err := ContractSidecarsFromStaging(staging, "axon", "widget")
+	if err != nil {
+		t.Fatalf("ContractSidecarsFromStaging: %v", err)
+	}
+	if len(got) != 4 {
+		t.Fatalf("got %d files, want 4: %+v", len(got), got)
+	}
+	wantPaths := map[string]string{
+		"axon/provides/widget/schema/main.schema.json":         `{"type":"object"}`,
+		"axon/provides/widget/schema/common/types.schema.json": `{"type":"string"}`,
+		"axon/provides/widget/fixtures/valid/ok.json":          `{}`,
+		"axon/provides/widget/fixtures/invalid/bad.json":       `null`,
+	}
+	for _, f := range got {
+		want, ok := wantPaths[f.Path]
+		if !ok {
+			t.Fatalf("unexpected path %s in %+v", f.Path, got)
+		}
+		if string(f.Content) != want {
+			t.Fatalf("%s content = %q, want %q", f.Path, f.Content, want)
+		}
+	}
+}
+
+func TestContractSidecarsFromStagingAbsentIsNilNotError(t *testing.T) {
+	t.Parallel()
+	got, err := ContractSidecarsFromStaging(t.TempDir(), "axon", "widget")
+	if err != nil {
+		t.Fatalf("ContractSidecarsFromStaging: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected no sidecars for a contract nothing was staged for, got %+v", got)
+	}
+}
+
+func TestContractSidecarsFromStagingRefusesSymlink(t *testing.T) {
+	t.Parallel()
+	staging := t.TempDir()
+	outsideDir := t.TempDir()
+	outsideFile := filepath.Join(outsideDir, "secret.txt")
+	if err := os.WriteFile(outsideFile, []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	schemaDir := filepath.Join(staging, "axon", "provides", "widget", "schema")
+	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsideFile, filepath.Join(schemaDir, "widget.schema.json")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ContractSidecarsFromStaging(staging, "axon", "widget")
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected a symlink refusal, got %v", err)
+	}
+}
+
+func TestContractSidecarsFromStagingRefusesAnUnusableSystem(t *testing.T) {
+	t.Parallel()
+	if _, err := ContractSidecarsFromStaging(t.TempDir(), "", "widget"); err == nil {
+		t.Fatal("expected an error for a system the layout cannot be built for")
+	}
+}
+
 func TestContractDraftSchemaFormat(t *testing.T) {
 	t.Parallel()
 

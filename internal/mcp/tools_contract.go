@@ -12,6 +12,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -129,6 +131,70 @@ func contractBump(prior contractSemver, kind string) contractSemver {
 
 var contractDigestSubtrees = []string{"schema", "fixtures"}
 
+// contractReadWorkingTreeFiles mirrors internal/cli's own copy
+// (cmd_contract.go, same name, same behaviour) — ADR-001: internal/mcp
+// never imports internal/cli, so this package carries its own file-private
+// copy rather than a shared one. Reads every regular file under
+// filepath.Join(root, sub), keyed "<sub>/<path-relative-to-root>"
+// (forward-slash). A missing directory is not an error — an empty map.
+func contractReadWorkingTreeFiles(root, sub string) (map[string][]byte, error) {
+	dir := filepath.Join(root, sub)
+	info, err := os.Stat(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string][]byte{}, nil
+		}
+		return nil, err
+	}
+	if !info.IsDir() {
+		return map[string][]byte{}, nil
+	}
+	out := map[string][]byte{}
+	walkErr := filepath.WalkDir(dir, func(p string, d fs.DirEntry, werr error) error {
+		if werr != nil {
+			return werr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		raw, rerr := readBoundedFile(p, maxMirrorEventBytes)
+		if rerr != nil {
+			return rerr
+		}
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			return relErr
+		}
+		out[filepath.ToSlash(rel)] = raw
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	return out, nil
+}
+
+// contractStagingOverlay mirrors internal/cli's own copy (cmd_contract.go,
+// same name, same PER-FILE-not-per-directory merge, same "absence in
+// staging means unchanged, never removed" rule) — see that copy's own doc
+// comment for the full rationale; ADR-001 duplication, not a second source
+// of truth (the equivalence suite, cmd/a2a/mcp_equivalence_test.go's
+// TestEquivContractPublish, keeps the two behaviours honest).
+func contractStagingOverlay(landed map[string][]byte, staged []space.FileWrite, relDir string) map[string][]byte {
+	out := make(map[string][]byte, len(landed))
+	for k, v := range landed {
+		out[k] = v
+	}
+	prefix := relDir + "/"
+	for _, sc := range staged {
+		if !strings.HasPrefix(sc.Path, prefix) {
+			continue
+		}
+		out[strings.TrimPrefix(sc.Path, prefix)] = sc.Content
+	}
+	return out
+}
+
 func contractDeprecateSeed(contractID, version, sunset string) []byte {
 	var buf bytes.Buffer
 	buf.WriteString("contract=" + contractID + "\n")
@@ -215,9 +281,14 @@ func contractDigestTreeAtSHA(ctx context.Context, repoDir, sha, descriptorDir st
 
 // ContractDeps bundles WriteDeps for the contract family's funnel-writer
 // sub-verbs (publish/deprecate/retire) and read-only sub-verbs
-// (diff/verify-export).
+// (diff/verify-export). StagingDir is P37 Wave I's own addition: `publish`
+// needs it to fold a staged schema/fixture edit into the version it is
+// declaring (see newContractPublishHandler's own doc comment) — empty
+// (the zero value, e.g. any existing test construction that does not set
+// it) degrades to exactly the pre-wave behaviour, never a panic.
 type ContractDeps struct {
 	WriteDeps
+	StagingDir string
 }
 
 // ContractNewInput is a2a_contract_new's structured input: a thin delegate
@@ -362,12 +433,59 @@ func newContractPublishHandler(deps ContractDeps) HandlerFunc {
 		}
 		newRaw := artifact.SerializeFrontmatter(artifact.Frontmatter{YAML: newYAML, Body: fm.Body})
 
-		files := []space.FileWrite{{Path: relPath, Content: newRaw}}
-
-		digest, _, derr := artifact.DigestTreeFS(filepath.Join(deps.MirrorDir, relDir), contractDigestSubtrees)
-		if derr != nil {
-			return nil, "", fmt.Errorf("contract publish: cannot compute digest tree: %w", derr)
+		// P37 Wave I (parity with internal/cli's own runPublish, mirrored
+		// here per ADR-001): internal/space/mirror.go's checkoutRemoteHead
+		// hard-resets the mirror working tree to origin/<branch> on EVERY
+		// `a2a` invocation, so by the time this handler runs the mirror can
+		// never carry an author's own schema/fixture edit — only
+		// deps.StagingDir (never touched by the reset) still can.
+		// deps.StagingDir is empty on any construction that predates this
+		// wave (the zero value), which degrades this to exactly the
+		// pre-wave behaviour: overlayAll below then equals landedAll,
+		// unmodified. NOTE: unlike internal/cli's own runPublish, this
+		// handler does NOT run POL-009/POL-007/POL-008 locally (a filed,
+		// pre-existing asymmetry backstopped by CI — not this wave's to
+		// fix); the overlay/carry/digest fix below applies regardless.
+		landedSchema, err := contractReadWorkingTreeFiles(filepath.Join(deps.MirrorDir, relDir), "schema")
+		if err != nil {
+			return nil, "", fmt.Errorf("contract publish: %w", err)
 		}
+		landedFixtures, err := contractReadWorkingTreeFiles(filepath.Join(deps.MirrorDir, relDir), "fixtures")
+		if err != nil {
+			return nil, "", fmt.Errorf("contract publish: %w", err)
+		}
+		landedAll := make(map[string][]byte, len(landedSchema)+len(landedFixtures))
+		for k, v := range landedSchema {
+			landedAll[k] = v
+		}
+		for k, v := range landedFixtures {
+			landedAll[k] = v
+		}
+		var stagedSidecars []space.FileWrite
+		if deps.StagingDir != "" {
+			parsed, perr := artifact.ParseID(in.ID)
+			if perr != nil {
+				return nil, "", fmt.Errorf("contract publish: %w", perr)
+			}
+			stagedSidecars, err = template.ContractSidecarsFromStaging(deps.StagingDir, parsed.System, parsed.Slug)
+			if err != nil {
+				return nil, "", fmt.Errorf("contract publish: %w", err)
+			}
+		}
+		overlayAll := contractStagingOverlay(landedAll, stagedSidecars, relDir)
+
+		files := []space.FileWrite{{Path: relPath, Content: newRaw}}
+		files = append(files, stagedSidecars...)
+
+		// §5.7/D-029 multi-file digest tree, computed from overlayAll — see
+		// internal/cli's own runPublish for why this uses artifact.Digest +
+		// artifact.CombineDigestPairs directly rather than
+		// artifact.DigestTreeFS (which cannot see the staged override).
+		perFileDigest := make(map[string]string, len(overlayAll))
+		for k, v := range overlayAll {
+			perFileDigest[k] = artifact.Digest(v)
+		}
+		digest := artifact.CombineDigestPairs(perFileDigest)
 
 		ev := eventDoc{
 			Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
