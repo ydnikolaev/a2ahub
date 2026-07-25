@@ -105,24 +105,95 @@ func TestMintExchangeIDAt_rejectsBadInputs(t *testing.T) {
 	}
 }
 
-func TestMintExchangeID_smokeNoTrivialCollision(t *testing.T) {
-	// reason: this is a tight-loop smoke test of the real crypto/rand
-	// path, not a formal collision proof (§6) — not parallel-safe to
-	// subtest split since it deliberately shares state minimally; kept
-	// single-goroutine for a simple, fast assertion.
+// TestMintExchangeID_smokeEntropySourceIsLive smoke-tests the real crypto/rand
+// path: it catches a STUCK or degenerate entropy source, which is the only
+// failure mode this test can honestly detect.
+//
+// It used to demand ZERO collisions across 200 mints, and that assertion was
+// mathematically false. The §3.3 suffix is 4 characters of Crockford base32, so
+// the space is 32^4 = 1,048,576 values, and the birthday probability over 200
+// draws is 1 - exp(-200*199/(2*1048576)) ≈ **1.9% per run**. That is roughly one
+// red `make check` in every 53 — for no defect at all. Confirmed empirically
+// (`-count=400` reproduces it several times), and it is exactly the class P40
+// exists to treat: a gate that fails at random teaches people to re-run it
+// instead of read it, and then a real failure gets re-run too.
+//
+// What IS guaranteed: a working generator yields ~199 distinct values out of 200
+// (expected collisions ≈ 0.019), while a broken one — a stuck reader, a
+// zero-filled buffer, a mis-sliced alphabet — yields 1, or a handful. The floor
+// below sits far under the honest expectation and far above any degenerate
+// source, so it cannot red by chance and cannot stay green on a dead generator.
+//
+// The remaining question is a PRODUCT question, not this test's: 4 base32
+// characters give one system one day about 1,200 artifacts before a coin-flip
+// collision. Fine for humans and small fleets, worth revisiting for a large
+// automated one — and it is protocol-visible (plan §3.3 mandates the rand4
+// shape), so it is a decision, not a fix. Filed rather than silently widened.
+func TestMintExchangeID_smokeEntropySourceIsLive(t *testing.T) {
 	t.Parallel()
 
-	seen := make(map[string]bool, 200)
-	for i := 0; i < 200; i++ {
+	const mints = 200
+	// 190 of 200 distinct tolerates ten collisions where 0.019 are expected —
+	// a ~10-sigma margin against chance — while a stuck source produces 1.
+	const minDistinct = 190
+
+	seen := make(map[string]bool, mints)
+	for i := 0; i < mints; i++ {
 		id, err := MintExchangeID("XQ", "axon")
 		if err != nil {
-			t.Fatalf("MintExchangeID unexpected error: %v", err)
-		}
-		if seen[id] {
-			t.Fatalf("MintExchangeID produced a collision on iteration %d: %q", i, id)
+			t.Fatalf("MintExchangeID unexpected error on iteration %d: %v", i, err)
 		}
 		seen[id] = true
 	}
+	if len(seen) < minDistinct {
+		t.Fatalf("MintExchangeID produced only %d distinct ids out of %d mints (want >= %d): "+
+			"the entropy source looks stuck or degenerate, not merely unlucky — %d distinct would need "+
+			"a birthday coincidence far beyond chance for a 32^4 space",
+			len(seen), mints, minDistinct, len(seen))
+	}
+}
+
+// TestMintExchangeID_smokeFloorCatchesAStuckSource is the teeth for the floor
+// above. A distinctness floor is only worth having if a degenerate entropy
+// source actually trips it — otherwise it is a number that always passes, which
+// is what the zero-collision assertion had effectively become in the other
+// direction (a number that sometimes failed for no reason).
+//
+// A reader that always yields the same bytes is the realistic shape of the bug:
+// a mis-wired DI seam handing over a fixed buffer, or an entropy device that
+// stopped. It produces exactly ONE distinct id, far below the floor.
+func TestMintExchangeID_smokeFloorCatchesAStuckSource(t *testing.T) {
+	t.Parallel()
+
+	stuck := stuckReader{}
+	at := time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC)
+
+	seen := make(map[string]bool, 200)
+	for i := 0; i < 200; i++ {
+		id, err := MintExchangeIDAt("XQ", "axon", at, stuck)
+		if err != nil {
+			t.Fatalf("MintExchangeIDAt(stuck) unexpected error: %v", err)
+		}
+		seen[id] = true
+	}
+	if len(seen) != 1 {
+		t.Fatalf("a stuck entropy source produced %d distinct ids, want exactly 1 — "+
+			"this test can no longer prove the distinctness floor above has teeth", len(seen))
+	}
+	if len(seen) >= 190 {
+		t.Fatal("unreachable given the check above, kept as an explicit statement: " +
+			"a stuck source must fall BELOW the floor the live-source test enforces")
+	}
+}
+
+// stuckReader is an entropy source that never changes — the degenerate case.
+type stuckReader struct{}
+
+func (stuckReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 0x7f
+	}
+	return len(p), nil
 }
 
 func TestParseID_malformed(t *testing.T) {

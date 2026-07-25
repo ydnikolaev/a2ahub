@@ -141,12 +141,30 @@ func whatsnewRenderText(stdio IO, slice []notes.ReleaseNotes, since, binaryVersi
 		_, _ = fmt.Fprintf(stdio.Stdout, "v%s (%s) — %s\n", rn.Version, rn.Released, rn.Headline)
 
 		changes := append([]notes.Change(nil), rn.Changes...)
+		// A known-issue is not a change and must not be read as one: it says
+		// "this is broken right now, use the other thing". Sorted to the TOP
+		// regardless of impact, because a reader who stops after the first line
+		// must have seen it — the whole reason the kind exists is that an agent
+		// acting on a surface it should be avoiding gets a wrong answer with no
+		// error. Within each group the existing impact order still applies.
 		sort.SliceStable(changes, func(a, b int) bool {
+			ka, kb := changes[a].Kind == notes.KindKnownIssue, changes[b].Kind == notes.KindKnownIssue
+			if ka != kb {
+				return ka
+			}
 			return whatsnewImpactOrder(changes[a].Impact) < whatsnewImpactOrder(changes[b].Impact)
 		})
 
 		for _, ch := range changes {
-			_, _ = fmt.Fprintf(stdio.Stdout, "  [%s] %s\n", ch.Impact, ch.Subject)
+			// The label carries the kind for a known-issue and the impact for a
+			// change. Rendering both identically — which is what this did before
+			// the kind existed — makes a standing limitation indistinguishable
+			// from a feature, and this text is the update notice's own body.
+			label := ch.Impact
+			if ch.Kind == notes.KindKnownIssue {
+				label = "KNOWN ISSUE"
+			}
+			_, _ = fmt.Fprintf(stdio.Stdout, "  [%s] %s\n", label, ch.Subject)
 			for _, line := range whatsnewWrapDetail(strings.TrimSpace(ch.Detail), "    ", whatsnewDetailWidth) {
 				_, _ = fmt.Fprintln(stdio.Stdout, line)
 			}
@@ -158,6 +176,11 @@ func whatsnewRenderText(stdio IO, slice []notes.ReleaseNotes, since, binaryVersi
 				if len(ch.Action.Run) > 0 {
 					_, _ = fmt.Fprintf(stdio.Stdout, "      run: %s\n", strings.Join(ch.Action.Run, ", "))
 				}
+			} else if ch.Kind == notes.KindKnownIssue {
+				// scope:none normally means "nothing to do", so the why is
+				// suppressed. For a known issue the why IS the payload — it
+				// names the working alternative.
+				_, _ = fmt.Fprintf(stdio.Stdout, "    → %s\n", ch.Action.Why)
 			}
 		}
 	}

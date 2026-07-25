@@ -47,7 +47,17 @@ func initAgentsPointerBlock() string {
 		"This repo participates in **a2ahub** — typed cross-system artifact exchange " +
 		"(questions, work requests, contracts, decisions) with other systems' agents.\n\n" +
 		"- **Operating skill:** `.a2ahub/skill/SKILL.md` (install / refresh with `a2a skill install`).\n" +
-		"- **Session start:** run `a2a doctor`, then `a2a inbox`; act on blocking items.\n" +
+		// The normative session-start floor is plan §8.1 (D-021), which the
+		// installed skill quotes verbatim in loops.md. This pointer used to
+		// paraphrase it as "run a2a doctor, then a2a inbox" — dropping both
+		// `--actionable` (the normative filtered union) and the outbox check
+		// entirely. This block is the highest-read-rate artifact in the whole
+		// delivery chain: it is what an agent sees before it has opened the
+		// skill. A paraphrase that disagrees with the floor is worse here than
+		// anywhere else, so it now names the floor's own commands and defers
+		// for the rest.
+		"- **Session start (the floor, per the skill's loops.md §8.1):** `a2a inbox --actionable`, " +
+		"then `a2a outbox --attention`; act on blocking items. Run `a2a doctor` when something looks wrong.\n" +
 		"- **Source of truth:** the `a2a` binary — `a2a <verb>` and `a2a validate`; never " +
 		"hand-edit space files. The skill documents, the binary validates.\n" +
 		initAgentsPointerEnd + "\n"
