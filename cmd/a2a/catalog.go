@@ -47,17 +47,31 @@ type catalogCommandRow struct {
 
 // catalogCommandRows builds every "## Commands" row, sorted by name:
 // buildCommands() keys, each read from a nil/stub-dep cli.Command
-// construction (never re-typed); `contract` EXPANDED to `contract-<sub>`
+// construction (never re-typed); `contract` EXPANDED to `contract <sub>`
 // rows from cli.ContractSubcommands() (its own doc comment: the ONLY
 // machine-enumerable home of the 6 contract sub-verbs — mirrors
 // mcp_parity_test.go's designatedCLIVerbs() two-level shape); and the 3
 // catalogHandTypedSynopsis entries for verbs with no cli.Command.
+//
+// The separator is a SPACE, and it used to be a hyphen. That rendered seven
+// names — `contract-publish`, `contract-adopt`, … — that the dispatcher
+// answers with `unknown command`: `contract` is a single dispatch key whose
+// sub-verb is its first ARGUMENT, never part of the verb's own name. This
+// catalog is the machine-consumed one (it IS
+// skill/a2ahub/reference/commands.md, shipped into every consumer repo), so
+// an agent reading it typed a command that does not exist, and
+// skill/a2ahub/loops.md had propagated one of them into prose.
+//
+// The `skill-drift` CI gate could not see it: it regenerates this file from
+// this same function and byte-diffs, so it proves the committed copy is
+// current, never that what it advertises is real. TestEveryCatalogNameIsDispatchable
+// (catalog_test.go) is the guard that checks the thing that actually matters.
 func catalogCommandRows() []catalogCommandRow {
 	var rows []catalogCommandRow
 	for name := range buildCommands() {
 		if name == "contract" {
 			for _, sub := range cli.ContractSubcommands() {
-				rows = append(rows, catalogCommandRow{Name: "contract-" + sub.Name, Synopsis: sub.Synopsis})
+				rows = append(rows, catalogCommandRow{Name: "contract " + sub.Name, Synopsis: sub.Synopsis})
 			}
 			continue
 		}
