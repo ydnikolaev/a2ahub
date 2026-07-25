@@ -156,6 +156,102 @@ func TestContractRetireUnackedBlocked(t *testing.T) {
 	}
 }
 
+// TestContractDeprecateAddressesConsumesOnlyRegistrant is F3 (AC-971.1,
+// AC-971.2) on the MCP surface: a system that registered as a consumer
+// ONLY via `consumes.yaml` — and never appears in the descriptor's own
+// `to: [beta]` — must still be addressed by the deprecation announcement.
+// Before P37's MCP fix, `newContractDeprecateHandler` addressed
+// `probe.To` directly and this consumer was silently never told.
+func TestContractDeprecateAddressesConsumesOnlyRegistrant(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "dep-f3", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-dep-f3", "publish", "axon")
+	// "gamma" registers as a consumer via consumes.yaml — NOT in the
+	// descriptor's `to: [beta]`.
+	writeMirrorFile(t, mirrorDir, "gamma/consumes.yaml",
+		"schema: consumes/v1\nsystem: gamma\ndependencies:\n  - contract: XC-axon-dep-f3\n    major: 1\n    since: \"2026-01-01\"\n")
+
+	fake := &fakeFunnel{}
+	handler := newContractDeprecateHandler(contractTestDeps(mirrorDir, fake))
+	args, _ := json.Marshal(ContractDeprecateInput{ID: "XC-axon-dep-f3", Successor: "XC-axon-dep-f3-next@1.0.0", Sunset: "2099-01-01"})
+	_, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("deprecate failed: %v", err)
+	}
+	if len(fake.calls) != 1 || len(fake.calls[0].Files) != 3 {
+		t.Fatalf("expected 3 files (deprecate event + announcement draft + its publish event), got %+v", fake.calls)
+	}
+	// Assert on the exact `to:` block, not a bare substring match — "gamma"
+	// or "beta" appearing anywhere else in the rendered frontmatter would
+	// otherwise satisfy (or spuriously fail) a looser check.
+	announcement := string(fake.calls[0].Files[1].Content)
+	if !strings.Contains(announcement, "to:\n    - gamma") {
+		t.Fatalf("expected the announcement's `to:` block to address the registered consumer \"gamma\", got:\n%s", announcement)
+	}
+	if strings.Contains(announcement, "- beta") {
+		t.Fatalf("expected the announcement NOT to fall back to the descriptor's `to: [beta]` once a registered consumer exists, got:\n%s", announcement)
+	}
+}
+
+// TestContractDeprecateRefusesOmittedVersionWithMultiplePublished is F4
+// (AC-972.1) on the MCP surface: `deprecate` must REFUSE an omitted
+// version once more than one version has been published, listing what
+// is published, rather than silently defaulting to the descriptor's
+// CURRENT version.
+func TestContractDeprecateRefusesOmittedVersionWithMultiplePublished(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "dep-f4", "2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-dep-f4", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-dep-f4", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+
+	fake := &fakeFunnel{}
+	handler := newContractDeprecateHandler(contractTestDeps(mirrorDir, fake))
+	args, _ := json.Marshal(ContractDeprecateInput{ID: "XC-axon-dep-f4", Successor: "XC-axon-dep-f4-next@1.0.0", Sunset: "2099-01-01"})
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected a refusal: two published versions, no --version given")
+	}
+	if !strings.Contains(err.Error(), "1.0.0") || !strings.Contains(err.Error(), "2.0.0") {
+		t.Fatalf("expected the refusal to list both published versions, got: %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the funnel NEVER to be called, got %d calls", len(fake.calls))
+	}
+}
+
+// TestContractRetireRefusesOmittedVersionWithMultiplePublished is F4
+// (AC-972.1) on the MCP surface's `retire` verb — same guarantee as
+// deprecate's, checked independently since the two handlers each carry
+// their own copy (ADR-001).
+func TestContractRetireRefusesOmittedVersionWithMultiplePublished(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "ret-f4", "2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-ret-f4", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-ret-f4", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 2, "XC-axon-ret-f4", "deprecate", "axon")
+
+	fake := &fakeFunnel{}
+	handler := newContractRetireHandler(contractTestDeps(mirrorDir, fake))
+	args, _ := json.Marshal(ContractRetireInput{ID: "XC-axon-ret-f4"})
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected a refusal: two published versions, no version given")
+	}
+	if !strings.Contains(err.Error(), "1.0.0") || !strings.Contains(err.Error(), "2.0.0") {
+		t.Fatalf("expected the refusal to list both published versions, got: %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the funnel NEVER to be called, got %d calls", len(fake.calls))
+	}
+}
+
 func gitRunTest(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)

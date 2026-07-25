@@ -392,6 +392,49 @@ func newContractPublishHandler(deps ContractDeps) HandlerFunc {
 	}
 }
 
+// contractDistinctPublishedVersions dedupes contractPublishedVersions' own
+// per-EVENT list into the distinct SET of versions ever published (mirrors
+// internal/cli's own copy — ADR-001: internal/mcp never imports
+// internal/cli). contractPublishedVersions already returns its slice sorted
+// ascending, so dedup-by-adjacency preserves that order.
+func contractDistinctPublishedVersions(all []eventDoc, id string) []contractSemver {
+	sorted := contractPublishedVersions(all, id)
+	out := make([]contractSemver, 0, len(sorted))
+	for i, v := range sorted {
+		if i > 0 && v == sorted[i-1] {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+// contractResolveVersionOrRefuse is F4/AC-972.1 on the MCP surface: `deprecate`
+// and `retire` both used to default an omitted version to the descriptor's
+// CURRENT version — after a `bump: major` publish that is the NEW version, so
+// the OLD one silently got no announcement at all. With exactly one distinct
+// published version, defaulting to currentVersion is unambiguous and stays;
+// with MORE than one and explicit == "", this REFUSES with an error listing
+// every published version, oldest first, so the caller can retry with an
+// explicit version (mirrors internal/cli's own copy — ADR-001: internal/mcp
+// never imports internal/cli). The MCP surface returns errors rather than
+// exit codes, so unlike the CLI's exit-2 usage error this is just the
+// returned error.
+func contractResolveVersionOrRefuse(all []eventDoc, id, explicit, currentVersion string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	versions := contractDistinctPublishedVersions(all, id)
+	if len(versions) <= 1 {
+		return currentVersion, nil
+	}
+	strs := make([]string, len(versions))
+	for i, v := range versions {
+		strs[i] = v.String()
+	}
+	return "", fmt.Errorf("mcp: version is required: %s has %d published versions (%s) — say which one", id, len(versions), strings.Join(strs, ", "))
+}
+
 // ContractDeprecateInput is a2a_contract_deprecate's structured input.
 type ContractDeprecateInput struct {
 	ID        string     `json:"id"`
@@ -425,9 +468,13 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 		if err != nil {
 			return nil, "", fmt.Errorf("contract deprecate: %w", err)
 		}
-		deprecatedVersion := in.Version
-		if deprecatedVersion == "" {
-			deprecatedVersion = probe.Version
+		allEvents, err := readAllEvents(deps.MirrorDir)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract deprecate: %w", err)
+		}
+		deprecatedVersion, err := contractResolveVersionOrRefuse(allEvents, in.ID, in.Version, probe.Version)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract deprecate: %w", err)
 		}
 
 		now := deps.Now()
@@ -467,14 +514,29 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 		if err != nil {
 			return nil, "", fmt.Errorf("contract deprecate: render announcement failed: %w", err)
 		}
+		// F3/T4 (AC-971.1, AC-971.2): the announcement's addressees are the
+		// registered-consumer set — the SAME contractFindRegisteredConsumers
+		// query the retire precondition reads — not the descriptor's own
+		// authoring-time `to:`. "Who blocks my retire" and "who was told"
+		// become one query instead of two that can drift apart (mirrors
+		// internal/cli's own copy — ADR-001: internal/mcp never imports
+		// internal/cli).
+		to, err := contractDeprecateAddressees(deps.MirrorDir, in.ID, probe.From, probe.To)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract deprecate: %w", err)
+		}
+
 		announcementDraft, err = contractAddFrontmatterFields(announcementDraft, map[string]any{
 			// space/to/title are the template's own PLACEHOLDERS and
 			// template.Render fills none of them, so every deprecation
 			// announcement was authored with a literal `to:
-			// [<recipient-system>]` and refused by V2 (REF-006). Mirrors
+			// [<recipient-system>]` and refused by V2 (REF-006). `to` used
+			// to be filled from probe.To for the same reason — it is now
+			// `to` computed above (F3), which falls back to probe.To only
+			// when the registry has no registered consumers yet. Mirrors
 			// internal/cli's copy (ADR-001's deliberate duplication).
 			"space":         probe.Space,
-			"to":            probe.To,
+			"to":            to,
 			"title":         fmt.Sprintf("Deprecating %s@%s (sunset %s)", in.ID, deprecatedVersion, in.Sunset),
 			"ack_requested": true,
 			"deprecates":    in.ID + "@" + deprecatedVersion,
@@ -543,9 +605,13 @@ func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 		if err != nil {
 			return nil, "", fmt.Errorf("contract retire: %w", err)
 		}
-		retiredVersion := in.Version
-		if retiredVersion == "" {
-			retiredVersion = probe.Version
+		allEvents, err := readAllEvents(deps.MirrorDir)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract retire: %w", err)
+		}
+		retiredVersion, err := contractResolveVersionOrRefuse(allEvents, in.ID, in.Version, probe.Version)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract retire: %w", err)
 		}
 
 		now := deps.Now()
@@ -738,6 +804,44 @@ func contractFindRegisteredConsumers(mirrorDir, contractID string) (map[string]b
 		}
 	}
 	return out, nil
+}
+
+// contractDeprecateAddressees is F3/T4 (AC-971.1, AC-971.2): who a
+// deprecation announcement is addressed to. Computed from the SAME
+// contractFindRegisteredConsumers query the retire precondition reads —
+// "who blocks retire" and "who was told" are one query, not two that can
+// silently disagree. Sorted (contractFindRegisteredConsumers returns a
+// map), deduped, and excludes the contract's OWN `from` system — a producer
+// does not address itself.
+//
+// An EMPTY registered-consumer set (nobody has adopted this contract yet)
+// falls back to fallback (the descriptor's own authoring-time `to:`):
+// schemas/envelope/v1/base.schema.json's own `to` requires either
+// `minItems: 1` or the literal `"all"`, so `to: []` is refused by V2
+// (REF-006), and is not an option. A fallback that is ALSO empty/nil is
+// refused with an actionable error rather than silently authoring an
+// invalid `to: null` announcement. Mirrors internal/cli's own copy —
+// ADR-001: internal/mcp never imports internal/cli.
+func contractDeprecateAddressees(mirrorDir, contractID, from string, fallback []string) ([]string, error) {
+	consumers, err := contractFindRegisteredConsumers(mirrorDir, contractID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(consumers))
+	for sys := range consumers {
+		if sys == from {
+			continue
+		}
+		out = append(out, sys)
+	}
+	sort.Strings(out)
+	if len(out) > 0 {
+		return out, nil
+	}
+	if len(fallback) == 0 {
+		return nil, fmt.Errorf("mcp: %s has no registered consumers and no fallback recipients (descriptor `to:` is empty) — nobody to address the deprecation to", contractID)
+	}
+	return fallback, nil
 }
 
 // ContractDiffInput is a2a_contract_diff's structured (read-only) input.
