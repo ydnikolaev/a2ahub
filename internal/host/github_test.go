@@ -258,6 +258,86 @@ func TestAutoMergeAllowed(t *testing.T) {
 	})
 }
 
+// TestRepoPermissions is this phase's (doctor "space scaffolding current"
+// row) host-layer half: RepoPermissions reads the SAME GET
+// /repos/{owner}/{repo} endpoint AutoMergeAllowed reads and decodes its
+// `permissions` object, rather than issuing a second request against a
+// different endpoint.
+func TestRepoPermissions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("push access", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet || r.URL.Path != "/repos/acme/space" {
+				t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"allow_auto_merge": true,
+				"permissions":      map[string]any{"admin": false, "push": true, "pull": true},
+			})
+		}))
+		defer srv.Close()
+
+		h := NewGitHubHost(srv.Client(), srv.URL)
+		perm, err := h.RepoPermissions(context.Background(), RepoSettingsRequest{
+			Repo: Repo{Owner: "acme", Name: "space"}, Credential: Credential{Token: "tok"},
+		})
+		if err != nil {
+			t.Fatalf("RepoPermissions: %v", err)
+		}
+		if !perm.Push || perm.Admin || !perm.Pull {
+			t.Fatalf("perm = %+v, want push=true admin=false pull=true", perm)
+		}
+	})
+
+	t.Run("read-only access", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"permissions": map[string]any{"admin": false, "push": false, "pull": true},
+			})
+		}))
+		defer srv.Close()
+
+		h := NewGitHubHost(srv.Client(), srv.URL)
+		perm, err := h.RepoPermissions(context.Background(), RepoSettingsRequest{
+			Repo: Repo{Owner: "acme", Name: "space"}, Credential: Credential{Token: "tok"},
+		})
+		if err != nil {
+			t.Fatalf("RepoPermissions: %v", err)
+		}
+		if perm.Push || perm.Admin {
+			t.Fatalf("perm = %+v, want no push/admin", perm)
+		}
+	})
+
+	t.Run("read fails", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, `{"message":"Forbidden"}`, http.StatusForbidden)
+		}))
+		defer srv.Close()
+
+		h := NewGitHubHost(srv.Client(), srv.URL)
+		if _, err := h.RepoPermissions(context.Background(), RepoSettingsRequest{
+			Repo: Repo{Owner: "acme", Name: "space"}, Credential: Credential{Token: "tok"},
+		}); !errors.Is(err, ErrRequestFailed) {
+			t.Fatalf("expected errors.Is(err, ErrRequestFailed), got %v", err)
+		}
+	})
+
+	t.Run("invalid request", func(t *testing.T) {
+		t.Parallel()
+		h := NewGitHubHost(nil, "")
+		if _, err := h.RepoPermissions(context.Background(), RepoSettingsRequest{}); !errors.Is(err, ErrInvalidRequest) {
+			t.Fatalf("expected errors.Is(err, ErrInvalidRequest), got %v", err)
+		}
+	})
+}
+
 // TestMergePRSendsExplicitMergeMethod is WAVE M4's host-layer half of
 // AC-1050.12: MergePR PUTs /repos/{o}/{r}/pulls/{n}/merge with an EXPLICIT
 // merge_method chosen from the repository's own allowed set — never left to

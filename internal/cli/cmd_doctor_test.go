@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
@@ -616,6 +617,251 @@ func TestDoctorCheckAutoMerge(t *testing.T) {
 		ok, _ := cmd.doctorCheckAutoMerge(context.Background(), space.ProjectConfig{}, machine)
 		if !ok {
 			t.Fatal("want pass with zero connected spaces")
+		}
+	})
+}
+
+// --- doctorCheckScaffoldingCurrent ("space scaffolding current" row) -----
+
+// doctorScaffoldingTemplateFS is a small stand-in embedded template — the
+// same six-path shape spaceUpdateTemplateFS (cmd_space_test.go) uses for
+// `space update`'s own tests, kept separate because that helper lives in
+// the external cli_test package and this file needs its own.
+func doctorScaffoldingTemplateFS() fstest.MapFS {
+	return fstest.MapFS{
+		"space.yaml": &fstest.MapFile{Data: []byte(
+			"schema: manifest/v1\n" +
+				"space: REPLACE_WITH_SPACE_ID\n" +
+				"min_binary_version: 0.1.0\n" +
+				"participants: []\n",
+		)},
+		"CODEOWNERS": &fstest.MapFile{Data: []byte("/space.yaml @REPLACE_WITH_ORG/space-owners\n")},
+		"README.md":  &fstest.MapFile{Data: []byte("# space template\n")},
+		".github/workflows/a2a-validate.yml": &fstest.MapFile{Data: []byte(
+			"jobs:\n  a2a-validate:\n    uses: ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@v0.1.0\n",
+		)},
+		".github/dependabot.yml": &fstest.MapFile{Data: []byte("version: 2\n")},
+		"BRANCH-PROTECTION.md":   &fstest.MapFile{Data: []byte("# branch protection checklist\n")},
+	}
+}
+
+// doctorScaffoldingMirrorReadFile matches by path SUFFIX (the mirror
+// directory prefix doctor's real resolveMirror computes is irrelevant to
+// these tests) — a path with no matching suffix reports os.ErrNotExist,
+// exactly what a file absent from the mirror looks like to spaceComputeUpdatePlanFor.
+func doctorScaffoldingMirrorReadFile(files map[string]string) func(string) ([]byte, error) {
+	return func(path string) ([]byte, error) {
+		for rel, content := range files {
+			if strings.HasSuffix(filepath.ToSlash(path), rel) {
+				return []byte(content), nil
+			}
+		}
+		return nil, os.ErrNotExist
+	}
+}
+
+func TestDoctorCheckScaffoldingCurrent_NoConnectedSpacesVacuouslyPasses(t *testing.T) {
+	t.Parallel()
+	cmd := newTestDoctorCommand()
+	cmd.TemplateFiles = doctorScaffoldingTemplateFS()
+	ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), space.ProjectConfig{}, space.MachineConfig{})
+	if !ok || detail != "" {
+		t.Fatalf("want pass with no note, got ok=%v detail=%q", ok, detail)
+	}
+}
+
+func TestDoctorCheckScaffoldingCurrent_TemplateNotWiredIsAdvisoryNotFailure(t *testing.T) {
+	t.Parallel()
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa", RepoURL: "https://github.com/acme/getvisa.git"}}}
+	cmd := newTestDoctorCommand() // cmd.TemplateFiles left nil, "not wired"
+	ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+	if !ok {
+		t.Fatalf("want an advisory PASS, got FAIL: %s", detail)
+	}
+	if !strings.Contains(detail, "unverified") {
+		t.Fatalf("detail = %q, want an explicit unverified note", detail)
+	}
+}
+
+func TestDoctorCheckScaffoldingCurrent_DevBinaryIsUndecidableNotFailure(t *testing.T) {
+	t.Parallel()
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa", RepoURL: "https://github.com/acme/getvisa.git"}}}
+	cmd := newTestDoctorCommand()
+	cmd.TemplateFiles = doctorScaffoldingTemplateFS()
+	cmd.binaryVersion = "dev"
+	ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+	if !ok {
+		t.Fatalf("want an advisory PASS, got FAIL: %s", detail)
+	}
+	if !strings.Contains(detail, "could not be checked") {
+		t.Fatalf("detail = %q, want a could-not-check note (a dev build cannot be compared as a release version)", detail)
+	}
+}
+
+func TestDoctorCheckScaffoldingCurrent_UnreadableMirrorIsUndecidableNotFailure(t *testing.T) {
+	t.Parallel()
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa", RepoURL: "https://github.com/acme/getvisa.git"}}}
+	cmd := newTestDoctorCommand()
+	cmd.TemplateFiles = doctorScaffoldingTemplateFS()
+	cmd.binaryVersion = "0.5.0"
+	// A read failure OTHER than "not exist" (e.g. a permission error) makes
+	// spaceComputeUpdatePlanFor itself return an error — this must render as
+	// "could not be checked", never a FAIL.
+	cmd.readFile = func(string) ([]byte, error) { return nil, errors.New("permission denied") }
+	ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+	if !ok {
+		t.Fatalf("want an advisory PASS, got FAIL: %s", detail)
+	}
+	if !strings.Contains(detail, "could not be checked") {
+		t.Fatalf("detail = %q, want a could-not-check note", detail)
+	}
+}
+
+func TestDoctorCheckScaffoldingCurrent_InSyncPassesWithNoNote(t *testing.T) {
+	t.Parallel()
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa", RepoURL: "https://github.com/acme/getvisa.git"}}}
+	cmd := newTestDoctorCommand()
+	cmd.TemplateFiles = doctorScaffoldingTemplateFS()
+	cmd.binaryVersion = "0.5.0"
+	cmd.readFile = doctorScaffoldingMirrorReadFile(map[string]string{
+		"space.yaml":                         "schema: manifest/v1\nspace: getvisa\nmin_binary_version: 0.1.0\nparticipants: []\n",
+		"CODEOWNERS":                         "/space.yaml @REPLACE_WITH_ORG/space-owners\n",
+		".github/workflows/a2a-validate.yml": "jobs:\n  a2a-validate:\n    uses: ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@v0.5.0\n",
+		".github/dependabot.yml":             "version: 2\n",
+		"BRANCH-PROTECTION.md":               "# branch protection checklist\n",
+	})
+	ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+	if !ok || detail != "" {
+		t.Fatalf("want pass with no note for an already-current space, got ok=%v detail=%q", ok, detail)
+	}
+}
+
+// TestDoctorCheckScaffoldingCurrent_BehindNamesWhoCanFixByPermission is this
+// phase's core acceptance: a behind space is NEVER a failure, and the note's
+// wording is resolved from what the credential can actually DO (push/admin
+// on GET /repos/{owner}/{repo}'s `permissions` object), never a config
+// field — the three outcomes spec'd in the brief.
+func TestDoctorCheckScaffoldingCurrent_BehindNamesWhoCanFixByPermission(t *testing.T) {
+	t.Parallel()
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa", RepoURL: "https://github.com/acme/getvisa.git"}}}
+	withToken := func(context.Context, string, space.CredentialReference) (host.Credential, error) {
+		return host.Credential{Token: "tok"}, nil
+	}
+	// A mirror with only space.yaml present (pinned BELOW the template's
+	// floor) and every other managed file missing — guaranteed BEHIND.
+	behindReadFile := doctorScaffoldingMirrorReadFile(map[string]string{
+		"space.yaml": "schema: manifest/v1\nspace: getvisa\nmin_binary_version: 0.0.1\nparticipants: []\n",
+	})
+
+	t.Run("push access -> names the drift and says run the command", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"permissions":{"admin":false,"push":true,"pull":true}}`))
+		}))
+		defer srv.Close()
+
+		cmd := newTestDoctorCommand()
+		cmd.TemplateFiles = doctorScaffoldingTemplateFS()
+		cmd.binaryVersion = "0.5.0"
+		cmd.readFile = behindReadFile
+		cmd.h = host.NewGitHubHost(nil, srv.URL)
+		cmd.resolveCredential = withToken
+
+		ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("want an advisory PASS (never FAIL), got FAIL: %s", detail)
+		}
+		if !strings.Contains(detail, "getvisa") {
+			t.Fatalf("detail = %q, want the space named", detail)
+		}
+		if !strings.Contains(detail, "behind the current template") {
+			t.Fatalf("detail = %q, want the drift named", detail)
+		}
+		if !strings.Contains(detail, "run `a2a space update`") {
+			t.Fatalf("detail = %q, want it to say to run the command (push access)", detail)
+		}
+		if strings.Contains(detail, "ask the space admin") {
+			t.Fatalf("detail = %q, must not tell a pushable credential to ask someone else", detail)
+		}
+	})
+
+	t.Run("read-only access -> names the drift and says ask the space admin", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"permissions":{"admin":false,"push":false,"pull":true}}`))
+		}))
+		defer srv.Close()
+
+		cmd := newTestDoctorCommand()
+		cmd.TemplateFiles = doctorScaffoldingTemplateFS()
+		cmd.binaryVersion = "0.5.0"
+		cmd.readFile = behindReadFile
+		cmd.h = host.NewGitHubHost(nil, srv.URL)
+		cmd.resolveCredential = withToken
+
+		ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("want an advisory PASS (never FAIL), got FAIL: %s", detail)
+		}
+		if !strings.Contains(detail, "ask the space admin to run `a2a space update`") {
+			t.Fatalf("detail = %q, want a ONE-SENTENCE ask-the-admin note a participant can relay verbatim", detail)
+		}
+		if strings.Contains(detail, "who can fix it could not be determined") {
+			t.Fatalf("detail = %q, a KNOWN read-only permission must not render as unknown", detail)
+		}
+	})
+
+	t.Run("permission unknown (read fails) -> neutral note, prescribes nothing", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, `{"message":"Forbidden"}`, http.StatusForbidden)
+		}))
+		defer srv.Close()
+
+		cmd := newTestDoctorCommand()
+		cmd.TemplateFiles = doctorScaffoldingTemplateFS()
+		cmd.binaryVersion = "0.5.0"
+		cmd.readFile = behindReadFile
+		cmd.h = host.NewGitHubHost(nil, srv.URL)
+		cmd.resolveCredential = withToken
+
+		ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("want an advisory PASS (never FAIL), got FAIL: %s", detail)
+		}
+		if !strings.Contains(detail, "could not be determined") {
+			t.Fatalf("detail = %q, want the neutral could-not-determine note", detail)
+		}
+		if strings.Contains(detail, "run `a2a space update`") || strings.Contains(detail, "ask the space admin") {
+			t.Fatalf("detail = %q, an UNKNOWN permission must not prescribe who acts", detail)
+		}
+		// Stable output: no multi-line API body interpolated (the same
+		// discipline doctorCheckAutoMerge's note already follows).
+		if strings.Contains(detail, "\n") || strings.Contains(detail, "Forbidden") {
+			t.Fatalf("detail = %q must not interpolate the raw API error", detail)
+		}
+	})
+
+	// FakeHost implements no RepoPermissions — the same "unwired reader"
+	// shape doctorCheckAutoMerge's own test asserts for AutoMergeAllowed —
+	// so this is doctor's DEFAULT behavior against a behind space with no
+	// GitHub host wired at all: neutral, never a guess.
+	t.Run("unwired repo-permissions reader is the same neutral note", func(t *testing.T) {
+		t.Parallel()
+		cmd := newTestDoctorCommand() // host.NewFakeHost() implements no RepoPermissions
+		cmd.TemplateFiles = doctorScaffoldingTemplateFS()
+		cmd.binaryVersion = "0.5.0"
+		cmd.readFile = behindReadFile
+		cmd.resolveCredential = withToken
+
+		ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("want an advisory PASS (never FAIL), got FAIL: %s", detail)
+		}
+		if !strings.Contains(detail, "could not be determined") {
+			t.Fatalf("detail = %q, want the neutral could-not-determine note", detail)
 		}
 	})
 }

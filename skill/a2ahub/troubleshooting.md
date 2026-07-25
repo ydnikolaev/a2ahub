@@ -20,15 +20,17 @@ space access: PASS
 space identity: PASS
 versions: FAIL: <detail>
 CI presence: PASS
+space scaffolding current: PASS · the space is behind this binary's template (workflow ref, write floor): ask the space admin to run `a2a space update`
 auto-merge enabled: PASS · auto-merge unverified for <space>: the credential cannot read this repo's settings (a fine-grained token needs "Repository metadata: read")
 statusline wiring: PASS
 skill discoverable: PASS · no a2ahub skill installed
 skill manual current: PASS · no skill installed
 ```
 
-All nine lines, in the order the binary prints them. Note that three rows can
-print `PASS · <note>`: `auto-merge enabled` when the setting could not be read,
-and both `skill` rows, which are advisory and never FAIL. **A `PASS` carrying a
+All ten lines, in the order the binary prints them. Note that FOUR rows can
+print `PASS · <note>`: `space scaffolding current` (advisory always),
+`auto-merge enabled` when the setting could not be read, and both `skill` rows,
+which are advisory and never FAIL. **A `PASS` carrying a
 note is a pass** — do not report it as a problem.
 
 A passing check prints `<name>: PASS`. A failing check prints
@@ -44,7 +46,7 @@ violated).
 | `1` | One or more checks failed, OR the local project/machine config could not be loaded (in which case doctor prints a `doctor: cannot load … config` line to stderr before exiting). |
 | `2` | Usage error — including the `--space` flag, which is the v2 admin host-drift diff and is explicitly rejected in v1-min (doctor prints `doctor: --space: v1-min: not available`). |
 
-## The nine checks
+## The ten checks
 
 Each check runs once per connected space (a project with no connected spaces
 passes every check trivially). They print in this order — if you are reading
@@ -57,6 +59,7 @@ passes every check trivially). They print in this order — if you are reading
 | **space identity** | The space id in your project config matches the id the space's own `space.yaml` declares. | Your config names a space id no space has — usually because `a2a init --space <url>` had to guess the id from the URL. Run `a2a connect <url>`, which reads the manifest and repairs the entry. |
 | **versions** | This build is not older than each space's `min_binary_version` pin in `space.yaml`. | Your local `a2a` binary is older than the space requires (or the space's `space.yaml` could not be read/parsed). Upgrade the binary; the write funnel will otherwise refuse your writes. |
 | **CI presence** | The space's mirror carries `.github/workflows/a2a-validate.yml`. | The validation workflow file is missing from the space's mirror. |
+| **space scaffolding current** | Whether the SPACE is behind what THIS binary's embedded template would write — the pinned reusable-workflow ref, `min_binary_version`, and the template-managed files. This is the REVERSE of `versions`, which only asks whether your binary is too old for the space. | **Advisory only — this row never FAILs**, because a behind space still accepts writes; what it costs is a weaker gate. A note means the space's CI may be running an older validator than you think, so a rule your binary enforces locally might not be enforced at merge. The note names who can act: if your credential has push/admin on the space repo it tells you to run `a2a space init`'s sibling `a2a space update` (which opens a PR — a2a changes no repo setting); if it does not, it gives you one sentence to hand the space admin. A note saying it could not be checked means no mirror, an unreadable manifest, or a dev build with no release version to compare against. |
 | **auto-merge enabled** | The space repo's GitHub `allow_auto_merge` setting is ON. It is OFF by default on a freshly created repository. | Every write stalls: `a2a submit` opens a PR and arms auto-merge, so with the setting off the PR sits there and the counterparty never sees the artifact. Enable Settings → General → "Allow auto-merge". **A PASS carrying `· auto-merge unverified` is not a failure** — it means your credential cannot read repo settings (a fine-grained token needs `Repository metadata: read`), so the answer is unknown rather than bad. |
 | **statusline wiring** | The `git` binary is on `PATH` (the prerequisite for §7.5's hub-less statusline-refresh fallback). | `git` is not on `PATH`, so the statusline's git-fetch fallback refresh cannot run. |
 | **skill discoverable** | The `a2ahub` skill tree is installed and reachable by your agent harness. | Advisory only — this row never FAILs. It reports whether a skill is installed at all. |

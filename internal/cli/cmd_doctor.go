@@ -10,6 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,17 +26,32 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
-// DoctorCommand implements the basic (non-`--space`) `a2a doctor` verb: the
-// five OP-218 checks — credentials, space access, versions, CI presence,
-// statusline wiring — one line per check, exit 0 iff all pass. `--space`
-// (the v2 admin host-drift diff, D-030) is rejected explicitly, never
-// silently ignored.
+// DoctorCommand implements the basic (non-`--space`) `a2a doctor` verb: one
+// line per check, exit 0 iff all pass. `--space` (the v2 admin host-drift
+// diff, D-030) is rejected explicitly, never silently ignored.
+//
+// The check LIST lives in Run's `checks` slice and nowhere else. This comment
+// used to enumerate "the five OP-218 checks" and the set had grown to ten —
+// the same drift that made Synopsis() lie for two releases. The enumeration
+// belongs somewhere it can be diffed against the code; here it can only rot.
 type DoctorCommand struct {
 	binaryVersion     string
 	projectConfigPath string
 	machineConfigPath string
 	projectRoot       string
 	h                 host.Host
+
+	// TemplateFiles is the embedded space-template/ tree (spacetemplate.Files
+	// — mirrors SpaceCommand.TemplateFiles' own role and doc). Exported and
+	// left NIL by NewDoctorCommand ("nil means not wired", this package's DI
+	// convention — see SpaceCommand's own six space-update-only fields): the
+	// lead wires it post-construction in cmd/a2a (`cmd.TemplateFiles =
+	// spacetemplate.Files`, the same shape update/init already use for
+	// SkillFiles), because internal/cli must not import space-template
+	// directly. The "space scaffolding current" check
+	// (doctorCheckScaffoldingCurrent) reports "could not be checked" rather
+	// than nil-panicking or silently skipping when this is unset.
+	TemplateFiles fs.FS
 
 	// The following are real-implementation-backed seams (rails DI):
 	// NewDoctorCommand defaults every one of them to the real internal/space
@@ -97,7 +113,7 @@ func (c *DoctorCommand) Name() string { return "doctor" }
 // stays green forever. A summary cannot go stale that way; the enumeration lives
 // where it can be checked against `checks` — troubleshooting.md's table.
 func (c *DoctorCommand) Synopsis() string {
-	return "run local health checks over every connected space (credentials, mirror access, identity, versions, CI, auto-merge, statusline, skill) — see troubleshooting.md for what each FAIL means"
+	return "run local health checks over every connected space (credentials, mirror access, identity, versions, CI, space scaffolding, auto-merge, statusline, skill) — see troubleshooting.md for what each FAIL means"
 }
 
 // Run implements cli.Command. Exit codes: 2 = usage error (including the
@@ -135,6 +151,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"space identity", func() (bool, string) { return c.doctorCheckSpaceIdentity(cfg, machine) }},
 		{"versions", func() (bool, string) { return c.doctorCheckVersions(cfg, machine) }},
 		{"CI presence", func() (bool, string) { return c.doctorCheckCIPresence(cfg, machine) }},
+		{"space scaffolding current", func() (bool, string) { return c.doctorCheckScaffoldingCurrent(ctx, cfg, machine) }},
 		{"auto-merge enabled", func() (bool, string) { return c.doctorCheckAutoMerge(ctx, cfg, machine) }},
 		{"statusline wiring", func() (bool, string) { return c.doctorCheckStatuslineWiring() }},
 		{"skill discoverable", func() (bool, string) { return c.doctorCheckSkillDiscoverable() }},
@@ -378,6 +395,138 @@ func (c *DoctorCommand) doctorCheckCIPresence(cfg space.ProjectConfig, machine s
 		}
 	}
 	return ok, strings.Join(failures, "; ")
+}
+
+// doctorSpaceScaffoldingReader is the consumer-side capability (rails:
+// consumer-side interfaces) doctorCheckScaffoldingCurrent's "who can fix it"
+// note needs — host.GitHubHost.RepoPermissions satisfies it structurally.
+// Declared here for the same reason doctorRepoSettingsReader is declared
+// next to doctorCheckAutoMerge: a second consumer promotes it to host.go,
+// not before.
+type doctorSpaceScaffoldingReader interface {
+	RepoPermissions(ctx context.Context, req host.RepoSettingsRequest) (host.RepoPermissions, error)
+}
+
+// doctorCheckScaffoldingCurrent is the tenth doctor row, closing the
+// asymmetry `doctorCheckCIPresence` and `doctorCheckVersions` leave open:
+// they check that a workflow FILE exists and that THIS BINARY is not too
+// old for the space, but nothing checked the reverse — whether the SPACE's
+// own scaffolding has fallen behind what this binary's embedded template
+// would write. The live getvisa space proved the cost is real: its reusable
+// -workflow caller sat pinned three releases behind its required check,
+// silently validating with an old binary, and doctor was green throughout.
+//
+// It computes the SAME drift `a2a space update --dry-run` would show —
+// spaceComputeUpdatePlanFor (cmd_space.go), the one function both this
+// check and `space update`'s own spaceComputeUpdatePlan call, so this row
+// can never disagree with what a real update run would do (mirrors
+// space.IsInfrastructurePath's own single-owner precedent, spec 35 §9).
+//
+// Never a FAIL. A space that is behind still writes fine — the cost is a
+// weaker CI gate, not a stoppage — and a red doctor on a working setup is
+// the exact disease this repo's advisory-on-PASS precedent
+// (doctorWorkflowScopeNote, doctorCheckAutoMerge's "unverified" outcome)
+// exists to avoid. Three PASS shapes:
+//   - in sync -> PASS, no note.
+//   - behind -> PASS, naming the drift AND who can act on it, resolved by
+//     what the credential can actually DO (doctorScaffoldingCanFix), never
+//     from a config field: a client-space participant must not be told to
+//     run a command the host will refuse, and a space admin must not be
+//     nagged with a raw error.
+//   - undecidable (no embedded template wired, an unparseable binary
+//     version, or the plan itself could not be computed — no mirror, an
+//     unreadable manifest) -> PASS, saying so plainly. The reason is a
+//     short class, never the raw underlying error: a plan error can embed
+//     an absolute mirror path, which is the same output-stability failure
+//     mode the auto-merge row's own doc warns against for a raw API body.
+func (c *DoctorCommand) doctorCheckScaffoldingCurrent(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+	if len(cfg.Spaces) == 0 {
+		return true, ""
+	}
+	if c.TemplateFiles == nil {
+		return true, " · scaffolding drift unverified: this build wires no embedded space template"
+	}
+	// The RUNNING BINARY's own clean version, exactly what spaceComputeUpdatePlan
+	// would be given by a real `space update` run right now — never the
+	// template's own baked-in version (spaceUpdateFloor's own reasoning: the
+	// template is the floor SSOT, but the caller-ref substitution is pinned
+	// to the binary that would actually perform the write). A dev build
+	// ("dev", no ldflags) cannot be cleaned — that space's drift is reported
+	// as undecidable rather than compared against a nonsense "@vdev" pin.
+	cleanVersion, versionErr := spaceCleanVersion(c.binaryVersion)
+
+	var notes []string
+	for _, ref := range cfg.Spaces {
+		if versionErr != nil {
+			notes = append(notes, fmt.Sprintf("%s: scaffolding drift could not be checked (binary version %q is not a release version)", ref.ID, c.binaryVersion))
+			continue
+		}
+		dir := c.resolveMirror(c.projectRoot, ref, machine)
+		plan, err := spaceComputeUpdatePlanFor(c.TemplateFiles, dir, ref.ID, cleanVersion, c.readFile)
+		if err != nil {
+			notes = append(notes, fmt.Sprintf("%s: scaffolding drift could not be checked (mirror unreadable or manifest malformed)", ref.ID))
+			continue
+		}
+		if len(plan.writes) == 0 {
+			// In sync — spaceComputeUpdatePlanFor's own drift-only entries
+			// (a customized seeded file, a floor pinned above the template's)
+			// are intentional divergence, not "behind": `space update` would
+			// write nothing here either.
+			continue
+		}
+
+		var whoNote string
+		switch canFix, known := c.doctorScaffoldingCanFix(ctx, ref, machine); {
+		case !known:
+			whoNote = "who can fix it could not be determined (repository permissions unreadable)"
+		case canFix:
+			whoNote = "run `a2a space update`"
+		default:
+			whoNote = "ask the space admin to run `a2a space update`"
+		}
+		notes = append(notes, fmt.Sprintf("%s: scaffolding is behind the current template (%s) — %s",
+			ref.ID, strings.Join(plan.summary, "; "), whoNote))
+	}
+	if len(notes) == 0 {
+		return true, ""
+	}
+	return true, " · " + strings.Join(notes, "; ")
+}
+
+// doctorScaffoldingCanFix reports whether the credential resolved for ref
+// can push (or admin) the space's repository — the ONLY input
+// doctorCheckScaffoldingCurrent's "who can fix it" note is allowed to use
+// (this phase's brief §3). known=false means the question could not be
+// answered (no repo-settings reader wired, an unparseable repo URL, no
+// resolvable credential, or the read itself failed) — the caller must
+// render the neutral form, never guess.
+func (c *DoctorCommand) doctorScaffoldingCanFix(ctx context.Context, ref space.Ref, machine space.MachineConfig) (canFix, known bool) {
+	reader, isReader := c.h.(doctorSpaceScaffoldingReader)
+	if !isReader {
+		return false, false
+	}
+	owner, name, err := doctorRepoOwnerName(ref.RepoURL)
+	if err != nil {
+		return false, false
+	}
+	var parsedRef space.CredentialReference
+	if raw, present := machine.Credentials[ref.ID]; present {
+		if parsed, perr := space.ParseCredentialReference(raw); perr == nil {
+			parsedRef = parsed
+		}
+	}
+	cred, err := c.resolveCredential(ctx, space.CredentialEnvVar(ref.ID), parsedRef)
+	if err != nil {
+		return false, false
+	}
+	perm, err := reader.RepoPermissions(ctx, host.RepoSettingsRequest{
+		Repo:       host.Repo{Owner: owner, Name: name},
+		Credential: cred,
+	})
+	if err != nil {
+		return false, false
+	}
+	return perm.Push || perm.Admin, true
 }
 
 // doctorRepoSettingsReader is the consumer-side capability this check
