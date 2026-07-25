@@ -145,6 +145,32 @@ changes:
       detect: ["a2a space update --dry-run"]
       run: ["a2a space update"]
 
+  - id: RN-0800-6b
+    kind: fix
+    impact: high
+    subject: "Two agents writing the same space at the same time could lose one of the writes"
+    detail: >
+      Every project's clone of a space lives in one place — that is what
+      `mirror_root` is for — and a2a refreshes it before a write by moving its
+      working tree onto the freshly fetched head. Nothing serialised that between
+      processes, so two a2a invocations against the same space could collide on
+      git's own lock file and one of them died outright with
+      `fatal: Unable to create ... .git/index.lock: File exists`. The write it was
+      carrying was simply lost. Two agents are the normal case for this product,
+      and a shell prompt's statusline refresh racing a foreground write is enough
+      to trigger it on one machine.
+      a2a now waits for git's lock instead of treating it as fatal: a bounded
+      retry (jittered, so concurrent waiters do not wake in lockstep) covering all
+      four lock files these operations take, then a typed refusal naming the
+      contention if the window expires. Found by the live matrix's own
+      concurrent-writes row, not in review — a concurrency defect is the kind a
+      real run settles and reading does not.
+    affects: [cli]
+    action:
+      scope: local
+      why: "the fix is in the binary; nothing in your space changes"
+      run: ["a2a update"]
+
   - id: RN-0800-7
     kind: fix
     impact: normal
