@@ -867,6 +867,20 @@ func TestEquivContractDeprecate(t *testing.T) {
 	seed := func(t *testing.T, mirrorDir string) {
 		writeContractDescriptorEquiv(t, mirrorDir, "widget-d002", "1.0.0")
 		equivWriteEvent(t, mirrorDir, "axon", 0, id, "publish", "axon")
+		// P37/F3 (US-971): the descriptor's own `to: [beta]` and the
+		// REGISTERED-CONSUMER set must be able to DISAGREE, or this fixture
+		// cannot tell a correct `contractDeprecateAddressees` copy from a
+		// stale one that still reads `probe.To` — an empty consumer
+		// registry falls back to `probe.To` on EITHER implementation and
+		// the two surfaces emit identical bytes while proving nothing about
+		// F3 (this was the pre-P37 gap that let the MCP surface drift for a
+		// full phase, silently). "gamma" registers as a consumer here
+		// deliberately WITHOUT ever appearing in the descriptor's `to:` —
+		// the correct addressee set is {gamma}, the stale/wrong one is
+		// {beta}. Do not remove this: reverting either surface's F3 fix
+		// must fail this test.
+		writeMirrorFileEquiv(t, mirrorDir, "gamma/consumes.yaml",
+			"schema: consumes/v1\nsystem: gamma\ndependencies:\n  - contract: "+id+"\n    major: 1\n    since: \"2026-01-01\"\n")
 	}
 
 	cliDir, cliFunnel, _ := newEquivMirror(t, "axon")

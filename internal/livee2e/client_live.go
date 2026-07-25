@@ -75,24 +75,63 @@ func (c *ghClient) attempt(ctx context.Context, method, path string, body []byte
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	// max+1, then check — never a bare LimitReader. A LimitReader TRUNCATES
+	// silently, and the 2026-07-25 run is what that costs: the space had
+	// accumulated ~100 pull requests, `GET /pulls?state=all&per_page=100`
+	// crossed the old 1 MiB ceiling, every response came back as valid JSON
+	// cut off mid-object, and 17 rows reported an unparseable body. The
+	// diagnosis only became possible once the error carried the body's
+	// size — exactly 1048576 bytes, which is not a number GitHub would ever
+	// pick. A bound that produces invalid data is worse than no bound: it
+	// turns "too big" into "malformed", which looks like someone else's bug.
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return resp.StatusCode, nil, fmt.Errorf("read response body: %w", err)
+	}
+	if int64(len(raw)) > maxResponseBytes {
+		return resp.StatusCode, nil, fmt.Errorf("response body exceeds the %d byte bound", maxResponseBytes)
 	}
 	return resp.StatusCode, raw, nil
 }
 
+// maxResponseBytes bounds a SINGLE response. A page of 100 pull requests
+// runs to roughly a megabyte, so this leaves real headroom while still
+// refusing a runaway; pagination, not a bigger ceiling, is what keeps a
+// listing bounded as the space ages (see listAllPages).
+const maxResponseBytes = 8 << 20
+
 // bodyOrErr renders whichever of a response body or a transport error is
 // available, for an error message — GitHub's error body usually names the
 // actionable part (a missing permission), so it is preferred when present.
+// The error is preferred over the body when both are present: when there IS
+// an error it is the more specific diagnosis (a transport failure names its
+// cause; a decode failure already embeds a bounded body prefix), whereas the
+// raw body alone is what left the 2026-07-25 run's operator staring at
+// `[{"number": 1, "head` with no indication that the problem was truncation.
+// A fatal status carries no error, so that path is unchanged.
 func bodyOrErr(body []byte, err error) string {
-	if len(body) > 0 {
-		return strings.TrimSpace(string(body))
-	}
 	if err != nil {
 		return err.Error()
 	}
+	if len(body) > 0 {
+		return strings.TrimSpace(string(body))
+	}
 	return "(no body)"
+}
+
+// bodyPrefix renders a bounded, single-line head of a response body for a
+// diagnostic message. An unparseable body is exactly the case where the
+// bytes matter and exactly the case where dumping all of them into a report
+// row would be useless — 200 characters is enough to tell a truncated JSON
+// array from an HTML error page from a rate-limit notice.
+func bodyPrefix(body []byte) string {
+	const max = 200
+	s := strings.TrimSpace(string(body))
+	s = strings.ReplaceAll(s, "\n", " ")
+	if len(s) > max {
+		return s[:max] + "…"
+	}
+	return s
 }
 
 // do is the ONE path every method in this file goes through, and it is
@@ -144,7 +183,29 @@ func (c *ghClient) do(ctx context.Context, method, path string, body any, out an
 		case OutcomeOK:
 			if out != nil && len(respBody) > 0 {
 				if decErr := json.Unmarshal(respBody, out); decErr != nil {
-					return status, fmt.Errorf("livee2e: decode %s %s: %w", method, path, decErr)
+					// A body we could not parse tells us NOTHING about the
+					// product, so it must not be decisive. This used to
+					// return the decode error straight out, and the
+					// 2026-07-25 run is what that costs: GitHub returned a
+					// truncated body on `GET /pulls`, every family's very
+					// first pullForBranch inherited an opaque "unexpected
+					// end of JSON input", and the report showed **15 rows
+					// as product failures** for a transport-level cause.
+					// In a pre-release ritual that is the worst possible
+					// error: it either blocks a good release or teaches the
+					// operator to discount reds.
+					//
+					// It is the same class this loop already handles for a
+					// 5xx — "we do not know" — so it takes the same route:
+					// retry, and if every attempt comes back unparseable,
+					// fail with ErrUnknownOutcome, which verdictForError
+					// renders as TIMED-OUT rather than FAIL. The body's
+					// length and a bounded prefix ride along, because
+					// "could not decode" with no evidence is undiagnosable
+					// the next time it happens.
+					lastTransportErr = fmt.Errorf("decode %d-byte body: %w (body starts: %q)",
+						len(respBody), decErr, bodyPrefix(respBody))
+					continue
 				}
 			}
 			return status, nil
@@ -306,16 +367,36 @@ func (c *ghClient) ListPulls(ctx context.Context, owner, name, state string) ([]
 	if state == "" {
 		state = "open"
 	}
-	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/pulls?state=" + url.QueryEscape(state) + "&per_page=100"
-	var payloads []pullPayload
-	if _, err := c.do(ctx, http.MethodGet, path, nil, &payloads); err != nil {
-		return nil, err
+	base := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) +
+		"/pulls?state=" + url.QueryEscape(state) + "&per_page=100"
+
+	// PAGINATED, because this is not a bounded question. `state=all` over a
+	// throwaway space that is reset but never emptied of pull requests grows
+	// by ~20 PRs every run; the single unpaginated call this replaced was
+	// fine on run 1 and broke the entire matrix by run ~5, in a way that
+	// looked like a GitHub fault rather than an accumulating one.
+	//
+	// A page cap that is reached is an ERROR, not a quiet stop: a truncated
+	// listing would make `pullForBranch` answer "no PR on that branch" for a
+	// PR that exists, which is the same silent-wrong-answer class as the
+	// truncating read above, one layer up.
+	const maxPages = 50
+	var out []PullState
+	for page := 1; ; page++ {
+		if page > maxPages {
+			return nil, fmt.Errorf("livee2e: listing pulls for %s/%s exceeded %d pages — the space needs emptying, not a bigger cap", owner, name, maxPages)
+		}
+		var payloads []pullPayload
+		if _, err := c.do(ctx, http.MethodGet, fmt.Sprintf("%s&page=%d", base, page), nil, &payloads); err != nil {
+			return nil, err
+		}
+		for _, p := range payloads {
+			out = append(out, p.toPullState())
+		}
+		if len(payloads) < 100 { // a short page is the last page
+			return out, nil
+		}
 	}
-	out := make([]PullState, 0, len(payloads))
-	for _, p := range payloads {
-		out = append(out, p.toPullState())
-	}
-	return out, nil
 }
 
 // SetPullState closes or reopens a PR — the §T6-c re-trigger mechanism that
