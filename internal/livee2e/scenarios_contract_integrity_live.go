@@ -136,25 +136,34 @@ func ac973DraftContractExcludingPeer(ctx context.Context, h *harness, c *checkou
 // relative to the descriptor's own directory — "fixtures/valid/<slug>.json"
 // here, NOT the repo-relative path), for the row's own assertion to match.
 //
-// FINDING (reported as a deviation, not fixed here — cmd_contract.go is
-// off-limits to this brief): `contract publish`'s own `files` list is
-// ALWAYS exactly [descriptor.md, event.yaml] (cmd_contract.go's runPublish
-// — "publish itself never rewrites [schema/fixtures]"), so this edit is
-// NEVER staged or committed by ANY `contract publish` call, including the
-// SUCCESSFUL major publish at step 4 below. It is purely a local,
-// uncommitted working-tree change, and internal/space/mirror.go's
-// checkoutRemoteHead runs `git reset --hard origin/<branch>` on every sync
-// — so the next `happyLandAndSync` silently discards it, and the schema
-// visible on main is UNCHANGED throughout this row. Yet `contract publish`
-// still computes v2.0.0's recorded digest (`artifact.DigestTreeFS`) over
-// THIS locally-edited, never-landed working tree — so the digest an
-// observer reads off the landed v2.0.0 publish event describes content
-// that was never actually pushed to the space. This row's own assertions
-// never depend on the schema content landing (they assert the REFUSAL, the
-// major bump's SUCCESS, and the deprecate/adopt/ack/retire story — never
-// the schema bytes on main), so the row's PASS verdict is unaffected; the
-// gap is real regardless and is named here so it is not silently exercised
-// and un-reported.
+// THIS PREMISE IS WRONG, and live run 3 (2026-07-25) is what proved it.
+// The row reported `contract publish --bump minor exited 0` on a genuinely
+// breaking edit, and the diagnosis is that this working-tree write never
+// reaches the check at all:
+//
+//	`a2a contract <verb>` resolves its deps through cmd/a2a/wire.go's
+//	runContract -> resolveLifecycleDeps -> space.CloneOrFetch ->
+//	checkoutRemoteHead, which runs `git checkout -B <branch>
+//	origin/<branch>` + `git reset --hard origin/<branch>` UNCONDITIONALLY,
+//	on every invocation ("a mirror is a cache, so the move is
+//	unconditional"). So the very next `a2a contract publish` wipes this
+//	edit BEFORE runPublish reads schema/** out of the working tree.
+//
+// An earlier revision of this comment claimed the opposite of one half of
+// that — that the digest recorded for v2.0.0 covers "content that was
+// never actually pushed". It does not: the edit is gone by the time
+// artifact.DigestTreeFS runs, so the digest describes the landed tree. The
+// claim is retracted here rather than left to be re-derived.
+//
+// The remaining half is real and is the deeper finding: `contract
+// publish`'s `files` list is ALWAYS exactly [descriptor.md, event.yaml], and
+// `a2a submit` is a permanent no-op for an id with committed history — so
+// there is NO supported path to land a schema change for a published
+// contract, and POL-007 is unreachable by construction. Both are filed to
+// docs/backlog.md ("a published contract's schema is immutable"). Until
+// that fork is decided this row cannot be made green by editing the
+// harness, and it must not be made to look green by weakening what it
+// asserts.
 func ac973BreakSchema(a *checkout, id string) (fixtureCompatKey string, err error) {
 	layout, err := space.NewLayout(a.System)
 	if err != nil {
