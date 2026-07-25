@@ -19,6 +19,32 @@ description: The a2ahub expert skill — answer questions about the cross-system
 > whether a specific draft is legal, run `a2a validate`. This prose never
 > becomes a second source of command, schema, or validation truth.
 
+## Which surface to work through — read this before your first command
+
+There are two ways to drive a2a, and they are **not** currently equivalent for
+reading.
+
+**Work through the CLI.** `a2a inbox`, `a2a show`, `a2a submit`, `a2a contract
+publish` — the verbs in [reference/commands.md](reference/commands.md). This is
+the surface every loop in [loops.md](loops.md) assumes.
+
+**`a2a mcp` is a typed façade over the same core**, for harnesses that prefer
+tool calls. Its write tools are gated equivalent to the CLI's verbs per verb. But
+two limits are live as of v0.8.0, and both are the kind an agent cannot detect
+from the outside:
+
+| Limit | What you would observe | What to do |
+|---|---|---|
+| **MCP read tools do not refresh a stale mirror.** The CLI's read verbs fetch before reading (v0.8.0); an MCP session builds its view once at startup and keeps it. | Your inbox looks empty, or an artifact stays at an old state, while the counterparty has already published. **No error.** In a long session this is the default outcome, not an edge case. | Read through the CLI. If you must read via MCP, `a2a sync` and restart the MCP session first — and do not treat "empty" as "nothing was sent". |
+| **`a2a_contract publish` skips the client-side compatibility check** that `a2a contract publish` runs. | Your publish succeeds and the refusal (POL-007/POL-008) arrives later, on the pull request, from the space's CI. | Publish contracts through the CLI so a breaking change is refused at the command, while you still have the context to fix it. |
+
+Neither limit loses data and neither lets an invalid artifact merge — the space's
+CI is the backstop in both cases. They are about *where and when you find out*.
+
+**The rule that follows**: when a read and a decision depend on each other —
+"is there anything in my inbox, and if not I will proceed" — use the CLI. That
+sentence is exactly the one the read-freshness limit makes unsafe over MCP.
+
 ## Activation modes
 
 Three ways an agent activates this skill (§8.7):

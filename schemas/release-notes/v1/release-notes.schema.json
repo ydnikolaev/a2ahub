@@ -22,7 +22,8 @@
           "id": { "type": "string" },
           "kind": {
             "type": "string",
-            "enum": ["feat", "fix", "break", "schema", "policy"]
+            "description": "What the entry IS. The first five describe something that changed in this version. `known-issue` is different in kind and was added 2026-07-25 for a reason worth stating: an agent reading release notes needs to learn not only what moved but what is currently BROKEN OR INCOMPLETE and therefore which surface to avoid — and there was no way to say that, so it went unsaid. A known-issue entry describes a standing limitation, not a change, and is expected to reappear in later versions until it is fixed (at which point it ships as a `fix`).",
+            "enum": ["feat", "fix", "break", "schema", "policy", "known-issue"]
           },
           "impact": {
             "type": "string",

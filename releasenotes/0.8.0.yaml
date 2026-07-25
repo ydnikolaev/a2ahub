@@ -161,6 +161,34 @@ changes:
       why: "repository-internal quality work; nothing to do"
 
   - id: RN-0800-8
+    kind: known-issue
+    impact: high
+    subject: "Use the CLI as your working surface. The MCP tools are a typed façade that is behind on two things"
+    detail: >
+      `a2a mcp` exposes the same core through typed tools, and for drafting and
+      writing it is equivalent to the CLI — that equivalence is gated per verb.
+      Two gaps mean it should not be your primary surface yet, and an agent that
+      knows about them will not be surprised by them.
+      FIRST, and this is the one that matters: the MCP read tools do NOT refresh
+      a stale mirror. RN-0800-1 fixed that for the CLI's read verbs, but an MCP
+      session builds its view once at startup and keeps it, so a long-running
+      session will not see what your counterparty published after it started —
+      the same silence RN-0800-1 describes, on the surface built for agents. Read
+      through the CLI (`a2a inbox`, `a2a show`), or run `a2a sync` and restart the
+      MCP session, until this is fixed.
+      SECOND: `a2a_contract publish` does not run the client-side compatibility
+      check the CLI's `a2a contract publish` runs. Nothing incorrect merges — the
+      space's own CI performs the same check on the pull request — but you learn
+      about a refusal one round trip later, at the PR instead of at the command.
+      Neither gap loses data or lets an invalid artifact land. Both are about
+      where and when you find out.
+    affects: [mcp]
+    action:
+      scope: none
+      why: "nothing to run — prefer the CLI for reads and for `contract publish`; the MCP write tools are fine"
+      detect: ["a2a inbox"]
+
+  - id: RN-0800-9
     kind: policy
     impact: normal
     subject: "The fleet write floor stays at 0.7.0"

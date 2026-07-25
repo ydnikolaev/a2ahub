@@ -1,0 +1,32 @@
+schema: release-notes/v1
+version: "0.1.1"
+released: "2026-01-02"
+headline: "A version that ships a standing limitation alongside a change"
+changes:
+  - id: RN-0101-1
+    kind: fix
+    impact: normal
+    subject: "an ordinary change, for contrast"
+    detail: "a known-issue entry sits beside change entries rather than replacing them."
+    action:
+      scope: local
+      why: "the fix is in the binary"
+      run: ["a2a update"]
+
+  # The shape this fixture exists for: an entry that describes something
+  # currently BROKEN or INCOMPLETE rather than something that moved. It carries
+  # the same required fields as any other entry — an action block included,
+  # because "what do I do about it" is the whole point of telling an agent.
+  - id: RN-0101-2
+    kind: known-issue
+    impact: high
+    subject: "a surface an agent should not rely on yet, and what to use instead"
+    detail: >
+      A known-issue entry names the limitation, says who hits it, and names the
+      working alternative. It is expected to reappear verbatim in later versions
+      until it is actually fixed — at which point the fix ships as `kind: fix`
+      and the known-issue entry stops being carried.
+    affects: [cli]
+    action:
+      scope: none
+      why: "there is nothing to run — this is guidance about which surface to use"
