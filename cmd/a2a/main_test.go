@@ -2,9 +2,24 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
+
+// TestMain hardens this package's own git spawns against git's gc --auto
+// grandchild racing a t.TempDir() cleanup's RemoveAll — see
+// testkit/gitfixture/gitfixture.go's package doc for the flake this
+// prevents. cmd/a2a's own production code has no direct git exec site, but
+// a test in this package (mcp_equivalence_test.go's CC-093 suite, and any
+// sibling driving runContract in-process) calls space.CloneOrFetch, whose
+// git IS a grandchild of this test binary — that's what this hook makes
+// safe.
+func TestMain(m *testing.M) {
+	os.Exit(gitfixture.RunTests(m))
+}
 
 func TestRun_noSubcommand(t *testing.T) {
 	t.Parallel()

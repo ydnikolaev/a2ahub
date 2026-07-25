@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
@@ -31,7 +32,7 @@ func fixValidManifest(t *testing.T, fx *spacefixture.Fixture, system string) {
 
 func runGitTest(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {

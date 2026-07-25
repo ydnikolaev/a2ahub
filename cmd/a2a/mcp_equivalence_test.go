@@ -67,6 +67,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
@@ -1141,7 +1142,7 @@ func TestEquivContractDiffAndVerifyExportAreReadOnly(t *testing.T) {
 }
 
 func execGit(dir string, args ...string) ([]byte, error) {
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	cmd.Dir = dir
 	return cmd.CombinedOutput()
 }

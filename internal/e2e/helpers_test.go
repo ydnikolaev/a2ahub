@@ -31,6 +31,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 // newIO builds the injected stdout/stderr capture pair every cli.Command
@@ -295,7 +296,7 @@ func seedAcceptedQuestion(t *testing.T, mirrorDir, id, to string) {
 
 func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=a2a-fixture", "GIT_AUTHOR_EMAIL=fixture@a2ahub.invalid",
@@ -309,7 +310,7 @@ func gitRun(t *testing.T, dir string, args ...string) {
 
 func gitOutput(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	cmd.Dir = dir
 	var out bytes.Buffer
 	cmd.Stdout = &out
