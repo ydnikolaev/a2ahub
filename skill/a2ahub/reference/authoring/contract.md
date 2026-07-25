@@ -25,3 +25,11 @@ compat_policy: default               # §5.4 — required
 
 <What this contract covers, error shape, key rules. `provides/<slug>/schema/`
 holds the machine schemas; `fixtures/valid|invalid/` the golden examples.>
+
+<!-- On a json-schema-* contract these two are REQUIRED, not optional:
+     `publish` refuses without a schema and at least one valid fixture,
+     because §5.4b's compatibility check has nothing to compute against
+     otherwise. `a2a contract new` scaffolds a starter pair; keep the
+     fixtures honest and they become the baseline the next version is
+     checked against. Other schema_format values are exempt — deep
+     compatibility for those is your own CI's job. -->
