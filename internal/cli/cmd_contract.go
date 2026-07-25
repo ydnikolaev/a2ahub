@@ -31,6 +31,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -188,11 +189,15 @@ func contractDeprecateSeed(contractID, version, sunset string) []byte {
 
 // contractDiffTree renders added/removed/changed paths between two
 // per-file digest maps (schema/**+fixtures/** only, both already scoped by
-// the caller).
+// the caller), plus F5/AC-975.1's own frontmatter field-change list
+// (contract.md itself, populated by the caller via
+// contractFrontmatterDiff — contractDiff below never touches it, since it
+// only ever sees the file-digest maps).
 type contractDiffTree struct {
-	Added   []string `json:"added"`
-	Removed []string `json:"removed"`
-	Changed []string `json:"changed"`
+	Added              []string `json:"added"`
+	Removed            []string `json:"removed"`
+	Changed            []string `json:"changed"`
+	FrontmatterChanged []string `json:"frontmatter_changed"`
 }
 
 func contractDiff(a, b map[string]string) contractDiffTree {
@@ -274,6 +279,71 @@ func contractDigestTreeAtSHA(ctx context.Context, repoDir, sha, descriptorDir st
 		}
 	}
 	return perFile, nil
+}
+
+// contractDescriptorProbeAtSHA reads and decodes the contract's own
+// descriptor (contract.md frontmatter) exactly as it existed at sha —
+// F5/AC-975.1's own read. Reuses contractResolveVersionSHA's git-show +
+// frontmatter-decode idiom (same read-only git plumbing, no new plumbing
+// added): contractResolveVersionSHA already had to do exactly this read,
+// once per candidate commit, to find sha in the first place — it just
+// discarded the decoded probe once the version matched. This is the
+// leftover kept, for a sha the caller already resolved.
+func contractDescriptorProbeAtSHA(ctx context.Context, repoDir, descriptorPath, sha string) (contractDescriptorProbe, error) {
+	content, err := exec.CommandContext(ctx, "git", "-C", repoDir, "show", sha+":"+descriptorPath).Output()
+	if err != nil {
+		return contractDescriptorProbe{}, fmt.Errorf("cli: git show %s:%s: %w", sha, descriptorPath, err)
+	}
+	fm, ferr := artifact.ParseFrontmatter(content)
+	if ferr != nil {
+		return contractDescriptorProbe{}, fmt.Errorf("cli: %s: %w", descriptorPath, ferr)
+	}
+	var probe contractDescriptorProbe
+	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+		return contractDescriptorProbe{}, fmt.Errorf("cli: %s: cannot decode descriptor: %w", descriptorPath, err)
+	}
+	return probe, nil
+}
+
+// contractFrontmatterDiff reports which of contractDescriptorProbe's own
+// fields changed between a and b (F5/AC-975.1) — a change confined to
+// contract.md, INCLUDING compat_policy itself, is exactly what
+// contractDiff's schema/**+fixtures/** file digest cannot see. Each entry
+// is "field: old -> new", sorted for determinism (a fixed non-nil empty
+// slice, not nil, matching contractDiff's own P26 "`[]` not `null`"
+// discipline for --json).
+//
+// Deliberately EXCLUDES two fields:
+//   - `id` — identity, never differs between two versions of the SAME
+//     descriptor path (both a and b were read from one contractResolveVersionSHA
+//     match on this exact id).
+//   - `version` — the diff's own two arguments (v1, v2) ALWAYS differ by
+//     construction (runDiff already refuses v1 == v2); reporting it here
+//     would fire on every single call and bury the compat_policy signal
+//     this function exists for.
+//
+// Scoped to what contractDescriptorProbe itself decodes: a change to
+// `title` or `category` (not part of the probe) is invisible here, same as
+// it always was to every other reader of this probe. Spec §7.3 defers
+// diffing contract.md's prose sections entirely.
+func contractFrontmatterDiff(a, b contractDescriptorProbe) []string {
+	out := []string{}
+	add := func(field, oldV, newV string) {
+		if oldV != newV {
+			out = append(out, fmt.Sprintf("%s: %s -> %s", field, oldV, newV))
+		}
+	}
+	add("space", a.Space, b.Space)
+	add("from", a.From, b.From)
+	if !slices.Equal(a.To, b.To) {
+		out = append(out, fmt.Sprintf("to: %v -> %v", a.To, b.To))
+	}
+	add("compat_policy", a.CompatPolicy, b.CompatPolicy)
+	add("schema_format", a.SchemaFormat, b.SchemaFormat)
+	add("generated_from.tool", a.GeneratedFrom.Tool, b.GeneratedFrom.Tool)
+	add("generated_from.source_digest", a.GeneratedFrom.SourceDigest, b.GeneratedFrom.SourceDigest)
+	sort.Strings(out)
+	return out
 }
 
 // --- ContractCommand ------------------------------------------------------
@@ -825,6 +895,51 @@ func contractPublishedVersions(all []lifecycleEventDoc, id string) []contractSem
 	return out
 }
 
+// contractDistinctPublishedVersions dedupes contractPublishedVersions' own
+// per-EVENT list into the distinct SET of versions ever published — a
+// retry that lands the same publish event twice, or a republish of an
+// identical version, must not multiply the version count. F4/AC-972.1
+// refuses on "how many DISTINCT versions has this contract ever
+// published", never "how many publish events exist". contractPublishedVersions
+// already returns its slice sorted ascending, so dedup-by-adjacency
+// preserves that order.
+func contractDistinctPublishedVersions(all []lifecycleEventDoc, id string) []contractSemver {
+	sorted := contractPublishedVersions(all, id)
+	out := make([]contractSemver, 0, len(sorted))
+	for i, v := range sorted {
+		if i > 0 && v == sorted[i-1] {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+// contractResolveVersionOrRefuse is F4/AC-972.1: `deprecate` and `retire`
+// both used to default an omitted `--version` to the descriptor's CURRENT
+// version — after a `--bump major` that is the NEW version, so the OLD one
+// silently got no announcement at all (the finding this fixes). With
+// exactly one distinct published version, defaulting to currentVersion is
+// unambiguous and stays; with MORE than one and explicit == "", this
+// REFUSES (a usage error — the operator must say which version) and lists
+// every published version, oldest first, so the refusal is actionable
+// rather than a bare "try again". Reuses contractPublishedVersions/
+// contractDistinctPublishedVersions — no second event walker.
+func contractResolveVersionOrRefuse(all []lifecycleEventDoc, id, explicit, currentVersion string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	versions := contractDistinctPublishedVersions(all, id)
+	if len(versions) <= 1 {
+		return currentVersion, nil
+	}
+	strs := make([]string, len(versions))
+	for i, v := range versions {
+		strs[i] = v.String()
+	}
+	return "", fmt.Errorf("--version is required: %s has %d published versions (%s) — say which one", id, len(versions), strings.Join(strs, ", "))
+}
+
 // contractInferBumpKind classifies the jump from baseline to newVersion
 // using contractBump's own major/minor/patch vocabulary. It is F1's
 // fallback for a publish that gave --version rather than --bump, so
@@ -888,11 +1003,19 @@ func contractPriorMajorDeprecated(all []lifecycleEventDoc, id string, priorMajor
 // runDeprecate implements `a2a contract deprecate <id> [--version
 // <semver>] --successor <XC-id@version> --sunset <date>`: authors the
 // deprecate event AND a linked deprecation announcement in the same PR
-// (§5.4).
+// (§5.4). F4/AC-972.1: `--version` may be omitted only while the contract
+// has AT MOST one published version — with more than one it is REQUIRED
+// (refused, exit 2, listing every published version) rather than silently
+// defaulting to the descriptor's current version. A consequence worth
+// stating (not a bug): an unscoped, whole-contract deprecate is therefore
+// unreachable once a contract has published a second version —
+// contractPriorMajorDeprecated's own `ev.Version == ""` branch still
+// exists for events written before this phase, but this verb no longer
+// produces one for any multi-version contract.
 func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("contract deprecate", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
-	version := fs.String("version", "", "version scope (omit = whole-contract)")
+	version := fs.String("version", "", "version to deprecate — required once more than one version is published (F4/AC-972.1); defaults to the sole published version otherwise")
 	successor := fs.String("successor", "", "successor XC-id@version (required)")
 	sunset := fs.String("sunset", "", "sunset date, YYYY-MM-DD (required)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
@@ -901,7 +1024,7 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 		return 2
 	}
 	if len(positional) != 1 || *successor == "" || *sunset == "" {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract deprecate <id> --successor <XC-id@version> --sunset <date>")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract deprecate <id> [--version <semver>] --successor <XC-id@version> --sunset <date>")
 		return 2
 	}
 	id := positional[0]
@@ -923,9 +1046,15 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %v\n", err)
 		return 1
 	}
-	deprecatedVersion := *version
-	if deprecatedVersion == "" {
-		deprecatedVersion = probe.Version
+	allEvents, err := lifecycleReadAllEvents(c.deps.mirrorDir)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %v\n", err)
+		return 1
+	}
+	deprecatedVersion, err := contractResolveVersionOrRefuse(allEvents, id, *version, probe.Version)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %v\n", err)
+		return 2
 	}
 
 	now := c.deps.now()
@@ -972,6 +1101,19 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: cannot mint announcement id: %v\n", err)
 		return 1
 	}
+	// F3/T4 (AC-971.1, AC-971.2): the announcement's addressees are the
+	// registered-consumer set — the SAME contractFindRegisteredConsumers
+	// query the retire precondition reads — not the descriptor's own
+	// authoring-time `to:`. Computed ONCE, here, and used directly: "who
+	// blocks my retire" and "who was told" become one query instead of two
+	// that can drift apart (a system that only ever ran `contract adopt`
+	// used to block retire forever while never being addressed).
+	to, err := contractDeprecateAddressees(c.deps.mirrorDir, id, probe.From, probe.To)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %v\n", err)
+		return 1
+	}
+
 	announcementDraft, err := template.Render(template.Input{
 		Type: "announcement", ID: announcementID, Actor: resolved, Created: now,
 		Fields: map[string]string{
@@ -993,16 +1135,17 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 	// already uses for its own descriptor edit) — see this phase's
 	// Deviations report.
 	announcementDraft, err = contractAddFrontmatterFields(announcementDraft, map[string]any{
-		// space/to/title are the template's own PLACEHOLDERS and
-		// template.Render fills none of them, so every deprecation
-		// announcement was authored with a literal `to:
-		// [<recipient-system>]` and refused by V2 (REF-006) — deprecate
-		// could not complete against a real space at all, which also made
-		// retire unreachable (it requires a prior deprecate). The
-		// announcement addresses the contract's OWN audience, already a
-		// validated participant list.
+		// space/title are the template's own PLACEHOLDERS and
+		// template.Render fills neither, so every deprecation announcement
+		// needs them set here regardless. `to` USED to be filled from
+		// probe.To for the same reason (a literal placeholder was refused
+		// by V2, REF-006, making deprecate impossible against a real
+		// space) — it is now `to` computed above (F3), which falls back to
+		// probe.To only when the registry has no registered consumers yet
+		// (nobody has adopted this contract), preserving the REF-006 fix
+		// for that case.
 		"space":         probe.Space,
-		"to":            probe.To,
+		"to":            to,
 		"title":         fmt.Sprintf("Deprecating %s@%s (sunset %s)", id, deprecatedVersion, *sunset),
 		"ack_requested": true,
 		"deprecates":    id + "@" + deprecatedVersion,
@@ -1042,11 +1185,15 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 
 // runRetire implements `a2a contract retire <id> [--version <semver>]
 // [--override]`: calls internal/validate's retire-precondition policy
-// hook (never re-derived here).
+// hook (never re-derived here). F4/AC-972.1: `--version` may be omitted
+// only while the contract has at most one published version — with more
+// than one it is REQUIRED (refused, exit 2, listing every published
+// version) rather than silently defaulting to the descriptor's current
+// version.
 func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("contract retire", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
-	version := fs.String("version", "", "version scope")
+	version := fs.String("version", "", "version to retire — required once more than one version is published (F4/AC-972.1); defaults to the sole published version otherwise")
 	override := fs.Bool("override", false, "human-gated override (§5.4)")
 	actorKind, actorName, actorModel := lifecycleActorFlags(fs)
 	positional, err := parseArgsAnyOrder(fs, args)
@@ -1076,9 +1223,15 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %v\n", err)
 		return 1
 	}
-	retiredVersion := *version
-	if retiredVersion == "" {
-		retiredVersion = probe.Version
+	allEvents, err := lifecycleReadAllEvents(c.deps.mirrorDir)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %v\n", err)
+		return 1
+	}
+	retiredVersion, err := contractResolveVersionOrRefuse(allEvents, id, *version, probe.Version)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %v\n", err)
+		return 2
 	}
 
 	// now is fetched ONCE, up front, and threaded through both the LOW
@@ -1310,6 +1463,47 @@ func contractFindRegisteredConsumers(mirrorDir, contractID string) (map[string]b
 	return out, nil
 }
 
+// contractDeprecateAddressees is F3/T4 (AC-971.1, AC-971.2): who a
+// deprecation announcement is addressed to. Computed from the SAME
+// contractFindRegisteredConsumers query the retire precondition reads —
+// "who blocks retire" and "who was told" are one query, not two that can
+// silently disagree (that disagreement is exactly how F3's deadlock
+// existed: a system that only ever ran `contract adopt` blocked the
+// producer's retire forever while never being addressed by the
+// deprecation). Sorted (contractFindRegisteredConsumers returns a map),
+// deduped, and excludes the contract's OWN `from` system — a producer does
+// not address itself.
+//
+// An EMPTY registered-consumer set (nobody has adopted this contract yet)
+// falls back to fallback (the descriptor's own authoring-time `to:`):
+// schemas/envelope/v1/base.schema.json's own `to` requires either
+// `minItems: 1` or the literal `"all"`, so `to: []` is refused by V2 — the
+// same REF-006 history runDeprecate's own doc comment records — and is not
+// an option. A fallback that is ALSO empty/nil is refused with an
+// actionable error rather than silently authoring an invalid `to: null`
+// announcement.
+func contractDeprecateAddressees(mirrorDir, contractID, from string, fallback []string) ([]string, error) {
+	consumers, err := contractFindRegisteredConsumers(mirrorDir, contractID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(consumers))
+	for sys := range consumers {
+		if sys == from {
+			continue
+		}
+		out = append(out, sys)
+	}
+	sort.Strings(out)
+	if len(out) > 0 {
+		return out, nil
+	}
+	if len(fallback) == 0 {
+		return nil, fmt.Errorf("cli: %s has no registered consumers and no fallback recipients (descriptor `to:` is empty) — nobody to address the deprecation to", contractID)
+	}
+	return fallback, nil
+}
+
 // contractParseConsumesStrict parses a committed consumes.yaml and
 // REFUSES anything that is not a real consumes/v1 registry. Plain
 // yaml.Unmarshal is not enough: the placeholder an external consumer's
@@ -1378,6 +1572,25 @@ func (c *ContractCommand) runDiff(ctx context.Context, args []string, stdio IO) 
 	}
 
 	delta := contractDiff(tree1, tree2)
+
+	// F5/AC-975.1: contractDiff above only ever sees the schema/**+
+	// fixtures/** file digests, so a change confined to contract.md itself
+	// — including compat_policy — is invisible to it. contractResolveVersionSHA
+	// already resolved sha1/sha2 above; reading the descriptor probe at
+	// each is the same git-show read that function performed internally to
+	// find them.
+	probe1, err := contractDescriptorProbeAtSHA(ctx, c.deps.mirrorDir, relPath, sha1)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract diff: %v\n", err)
+		return 1
+	}
+	probe2, err := contractDescriptorProbeAtSHA(ctx, c.deps.mirrorDir, relPath, sha2)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract diff: %v\n", err)
+		return 1
+	}
+	delta.FrontmatterChanged = contractFrontmatterDiff(probe1, probe2)
+
 	if *jsonOut {
 		enc := json.NewEncoder(stdio.Stdout)
 		enc.SetIndent("", "  ")
@@ -1392,6 +1605,9 @@ func (c *ContractCommand) runDiff(ctx context.Context, args []string, stdio IO) 
 	}
 	for _, p := range delta.Changed {
 		_, _ = fmt.Fprintf(stdio.Stdout, "changed %s\n", p)
+	}
+	for _, f := range delta.FrontmatterChanged {
+		_, _ = fmt.Fprintf(stdio.Stdout, "frontmatter %s\n", f)
 	}
 	return 0
 }
