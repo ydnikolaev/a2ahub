@@ -11,8 +11,10 @@ Cite: plan §4.2 write funnel, §10.3 AuthZ matrix.
 | Required status check | `a2a-validate / validate` (compound context — the caller job `a2a-validate` in `.github/workflows/a2a-validate.yml` calls a2ahub's reusable `validate` job; P33 amended spec 09 §4.2 / AC row 6, which named the flat `a2a-validate`) | §4.2 |
 | Require branches up to date before merge | OFF (concurrent event PRs must not serialize) | §4.2 |
 | Force-push | forbidden | §4.2 |
-| Require review from Code Owners | ON, applies only to CODEOWNERS-listed paths (`/space.yaml`, `/decisions/**`, and each system's `/provides/**` once onboarded) | §4.2 |
-| Auto-merge (repo setting) | ON — `a2a submit`'s PRs (OP-205) open with auto-merge enabled and merge unattended on green `a2a-validate / validate` for ungated paths | §4.2 |
+| Required approving review count | `0` — any positive value applies to EVERY PR regardless of path, which blocks every legal artifact PR and defeats the auto-merge row further below | spec 42 §T3 |
+| Require review from Code Owners | ON (`require_code_owner_reviews: true`), applies only to CODEOWNERS-listed paths (`/space.yaml`, `/decisions/**`, and each system's `/provides/**` once onboarded) — this is the whole of the G4 safety argument, and production runs it as the only thing gating G4 | §4.2, spec 42 §T3 |
+| Enforce admins | OFF (`enforce_admins: false`) — a sole code owner must be able to merge their own `space.yaml` edits; this is a DIFFERENT setting from "Direct pushes to `main`" above (that one blocks `git push` outright for every actor; this one is whether an admin may bypass PR requirements like reviews/checks when merging) — stated with its cost, not silently: an admin PR can merge without the review this table otherwise requires | spec 36 §T6-a, spec 42 §T3 |
+| Auto-merge (repo setting) | ON (`allow_auto_merge: true`) — `a2a submit`'s PRs (OP-205) open with auto-merge enabled and merge unattended on green `a2a-validate / validate` for ungated paths; GitHub ships this OFF by default on every newly created repo, and `a2a doctor` FAILs the "auto-merge enabled" check when it is off | §4.2, spec 42 §T3, spec 45 §T1 |
 | Private-repo protections require a paid plan | verified before space creation; `a2a doctor --space` (v2) re-checks it later | §4.5 |
 
 Notes:

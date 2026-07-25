@@ -47,7 +47,7 @@ Three ways an agent activates this skill (§8.7):
 |------|-----------------|
 | [loops.md](loops.md) | The canonical one editable home: condensed §0/§3 semantics + the 8.1–8.6 agent loops (session-start checklist, send/receive/contract-owner loops, escalation ladder, watch loop). Start here. |
 | [onboarding.md](onboarding.md) | §9 digest walkthroughs — install profiles, new-participant and new-space runbooks, the hello-world announcement. |
-| [troubleshooting.md](troubleshooting.md) | How to read `a2a doctor` output — the five checks, what a FAIL means, what to do next. Defers to the binary's actual checks. |
+| [troubleshooting.md](troubleshooting.md) | How to read `a2a doctor` output — the nine checks, what a FAIL means, what to do next. Defers to the binary's actual checks. |
 | [reference/commands.md](reference/commands.md) | **Generated from the binary.** Full `a2a` command catalog + MCP tool catalog. The source of truth for invocation syntax — never duplicated in prose. |
 | [reference/authoring/](reference/authoring/) | **Generated from schemas.** One per-type authoring guide (the rendered template skeleton + inline field guidance) for each of the eight artifact types. |
 | [reference/decompose-example.md](reference/decompose-example.md) | A worked single-intent decompose: one thread carrying an announcement + a question + a work_request, referencing the product-repo fixtures. |

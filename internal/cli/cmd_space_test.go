@@ -188,6 +188,29 @@ func TestSpaceInitScaffolds(t *testing.T) {
 	})
 }
 
+// TestSpaceInitResidualStepsNameAutoMerge is WAVE M2 / spec 45 AC-1050.6: the
+// printed residual manual steps must name enabling auto-merge alongside the
+// existing CODEOWNERS/push/branch-protection items — GitHub's
+// `allow_auto_merge` repo setting is OFF by default on a freshly created
+// repo, which is exactly what `space init` produces, and the operator has no
+// remote to check it against yet at scaffold time (the directive must print
+// regardless of whether the repo exists on GitHub already).
+func TestSpaceInitResidualStepsNameAutoMerge(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	target := filepath.Join(dir, "out")
+	cmd := cli.NewSpaceCommand(spacetemplate.Files, "1.2.3")
+
+	io, out, errOut := newSpaceIO()
+	code := cmd.Run(context.Background(), []string{"init", "myspace", "--dir", target}, io)
+	if code != 0 {
+		t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "Allow auto-merge") {
+		t.Fatalf("stdout = %q, want the residual steps to name enabling auto-merge", out.String())
+	}
+}
+
 // TestSpaceSubcommandsMatchesDispatch is the parity-gate tripwire mirroring
 // ContractSubcommands' own role: SpaceSubcommands() must name exactly the
 // sub-verbs SpaceCommand.Run's switch actually dispatches, so a future

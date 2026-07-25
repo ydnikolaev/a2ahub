@@ -126,6 +126,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"space identity", func() (bool, string) { return c.doctorCheckSpaceIdentity(cfg, machine) }},
 		{"versions", func() (bool, string) { return c.doctorCheckVersions(cfg, machine) }},
 		{"CI presence", func() (bool, string) { return c.doctorCheckCIPresence(cfg, machine) }},
+		{"auto-merge enabled", func() (bool, string) { return c.doctorCheckAutoMerge(ctx, cfg, machine) }},
 		{"statusline wiring", func() (bool, string) { return c.doctorCheckStatuslineWiring() }},
 		{"skill discoverable", func() (bool, string) { return c.doctorCheckSkillDiscoverable() }},
 		{"skill manual current", func() (bool, string) { return c.doctorCheckSkillManualCurrent() }},
@@ -368,6 +369,131 @@ func (c *DoctorCommand) doctorCheckCIPresence(cfg space.ProjectConfig, machine s
 		}
 	}
 	return ok, strings.Join(failures, "; ")
+}
+
+// doctorRepoSettingsReader is the consumer-side capability this check
+// needs (rails: consumer-side interfaces) — host.GitHubHost.AutoMergeAllowed
+// satisfies it structurally. It is declared HERE rather than next to
+// host.Forker/host.AutoMerger in internal/host/host.go because that file is
+// outside this phase's footprint (see this phase's reported deviation): if a
+// second consumer ever needs this same read, promoting it to host.go is the
+// natural next step.
+type doctorRepoSettingsReader interface {
+	AutoMergeAllowed(ctx context.Context, req host.RepoSettingsRequest) (bool, error)
+}
+
+// doctorCheckAutoMerge is WAVE M2's ninth basic-doctor row (spec 45 §T1,
+// AC-1050.5): GitHub's `allow_auto_merge` repo setting is OFF by default on a
+// freshly created repository — exactly what `a2a space init` produces — and
+// neither `a2a doctor` nor `space init`'s own residual-steps output named it
+// before this row. Left off, the funnel opens a PR and arms auto-merge on
+// every `a2a submit`, and nothing ever merges it: the publisher gets a
+// stderr warning (host.PRInfo.AutoMergeNote) and the consumer sees nothing
+// at all. This already happened on the live getvisa space (this phase's
+// evidence audit).
+//
+// Three outcomes, not two, and the third is NOT a failure (lead correction,
+// 2026-07-25 — the wave shipped it as one):
+//   - auto-merge ON  -> PASS.
+//   - auto-merge OFF -> FAIL, naming the setting, how to turn it on, and why
+//     it matters. This is the one genuinely broken state.
+//   - the READ itself failed (no credential, no permission to read repo
+//     metadata, no network, an unwired host) -> **PASS with an advisory note**,
+//     never a silent PASS and never a FAIL.
+//
+// Why the third is advisory: a red gate that fires on something that is not
+// broken teaches people to stop reading the gate — the disease P40 exists to
+// treat. This repo already settled the same question the same way once, for
+// `doctorWorkflowScopeNote`: "an advisory that fires on the most narrowly
+// scoped credentials would train people to ignore it". A fine-grained token
+// without `Repository metadata: read` cannot answer this question, and that is
+// a legitimate, common, working setup — it must not make `a2a doctor` exit 1.
+// The note is what keeps it from being a false PASS.
+//
+// The note text is deliberately TERSE and deterministic — it names the class
+// and the fix, and does NOT interpolate the raw API error. A doctor line that
+// embeds a multi-line 401 body is unstable output (it broke the e2e doctor
+// script) and, worse, buries the actionable sentence.
+func (c *DoctorCommand) doctorCheckAutoMerge(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+	if len(cfg.Spaces) == 0 {
+		return true, ""
+	}
+	// unverifiable collects the spaces this check could not answer for; broken
+	// collects the ones it answered NO for. They are kept apart because only
+	// the second is a failure — see this function's doc comment.
+	var unverifiable, broken []string
+
+	reader, isReader := c.h.(doctorRepoSettingsReader)
+	if !isReader {
+		return true, " · auto-merge unverified: this build wires no GitHub repo-settings reader"
+	}
+
+	for _, ref := range cfg.Spaces {
+		owner, name, err := doctorRepoOwnerName(ref.RepoURL)
+		if err != nil {
+			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+
+		var parsedRef space.CredentialReference
+		if raw, present := machine.Credentials[ref.ID]; present {
+			if parsed, perr := space.ParseCredentialReference(raw); perr == nil {
+				parsedRef = parsed
+			}
+		}
+		cred, err := c.resolveCredential(ctx, space.CredentialEnvVar(ref.ID), parsedRef)
+		if err != nil {
+			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+
+		allowed, err := reader.AutoMergeAllowed(ctx, host.RepoSettingsRequest{
+			Repo:       host.Repo{Owner: owner, Name: name},
+			Credential: cred,
+		})
+		if err != nil {
+			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+		if !allowed {
+			broken = append(broken, fmt.Sprintf(
+				"%s: auto-merge is disabled on this repository — enable Settings -> General -> \"Allow auto-merge\"; "+
+					"a2a submit opens a PR and arms auto-merge, so with this off every write stalls behind a PR nothing will merge",
+				ref.ID))
+		}
+	}
+
+	if len(broken) > 0 {
+		// A space that is genuinely misconfigured is the failure, even if a
+		// sibling space could not be read — the actionable half wins.
+		return false, strings.Join(broken, "; ")
+	}
+	if len(unverifiable) > 0 {
+		return true, fmt.Sprintf(" · auto-merge unverified for %s: the credential cannot read this repo's settings "+
+			"(a fine-grained token needs \"Repository metadata: read\")", strings.Join(unverifiable, ", "))
+	}
+	return true, ""
+}
+
+// doctorRepoOwnerName extracts owner/name from a GitHub remote URL
+// (https://github.com/<owner>/<name>[.git] or git@github.com:<owner>/<name>).
+//
+// This duplicates cmd/a2a/wire.go's parseGitHubRepo byte for byte (see this
+// phase's reported deviation): wire.go lives in package main and is
+// lead-reserved, so it cannot be imported from internal/cli. Deliberately
+// NOT guarded on a "looks like github.com" prefix — it takes the last two
+// path segments regardless of host, so a local-path fixture origin (the
+// fakegithub-backed tests, and any future non-GitHub host) still parses an
+// owner/name pair rather than being silently skipped.
+func doctorRepoOwnerName(url string) (owner, name string, err error) {
+	s := strings.TrimSuffix(url, ".git")
+	s = strings.TrimPrefix(s, "https://github.com/")
+	s = strings.TrimPrefix(s, "git@github.com:")
+	parts := strings.Split(s, "/")
+	if len(parts) < 2 || parts[len(parts)-2] == "" || parts[len(parts)-1] == "" {
+		return "", "", fmt.Errorf("cannot parse owner/name from repo URL %q", url)
+	}
+	return parts[len(parts)-2], parts[len(parts)-1], nil
 }
 
 // doctorCheckStatuslineWiring is a presence check only (spec 09 T1: "not

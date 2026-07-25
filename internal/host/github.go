@@ -590,6 +590,43 @@ func IsAutoMergeAlreadyClean(err error) bool {
 	return errors.Is(err, ErrGraphQLFailed) && strings.Contains(strings.ToLower(err.Error()), autoMergeCleanMarker)
 }
 
+// RepoSettingsRequest identifies the repository whose GitHub-side repo
+// SETTINGS (as opposed to any one PR's state) are read. Today's sole reader
+// is AutoMergeAllowed.
+type RepoSettingsRequest struct {
+	Repo       Repo
+	Credential Credential
+}
+
+// AutoMergeAllowed reads GET /repos/{owner}/{repo} and reports the repo's
+// `allow_auto_merge` setting — OFF by default on a freshly created GitHub
+// repository, which is exactly what `a2a space init` produces (WAVE M2 / spec
+// 45 §T1, AC-1050.5). This is a READ only: a2a mutates no repo setting and no
+// branch protection (spec 35's boundary; spec 42 §T3's coupling note).
+//
+// The two outcomes are deliberately NOT collapsed into one: a successful read
+// reporting `false` (err == nil, allowed == false) means auto-merge really is
+// off, while a non-nil error means the READ ITSELF failed (no token, no
+// permission, network) and nothing was learned about the setting. A caller
+// (doctor) that rendered the second case as "off" would reproduce this
+// phase's own defect — the funnel opens a PR and arms auto-merge on every
+// write, and with the repo setting off every write stalls behind a PR
+// nothing will merge — with a green check next to it.
+func (h *GitHubHost) AutoMergeAllowed(ctx context.Context, req RepoSettingsRequest) (bool, error) {
+	const op = "AutoMergeAllowed"
+	if req.Repo.Owner == "" || req.Repo.Name == "" {
+		return false, &Error{Op: op, Err: ErrInvalidRequest}
+	}
+	path := fmt.Sprintf("/repos/%s/%s", req.Repo.Owner, req.Repo.Name)
+	var resp struct {
+		AllowAutoMerge bool `json:"allow_auto_merge"`
+	}
+	if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &resp); err != nil {
+		return false, err
+	}
+	return resp.AllowAutoMerge, nil
+}
+
 func (h *GitHubHost) doJSON(ctx context.Context, op, method, url string, cred Credential, body any, out any) error {
 	_, raw, err := h.send(ctx, op, method, url, cred, body)
 	if err != nil {

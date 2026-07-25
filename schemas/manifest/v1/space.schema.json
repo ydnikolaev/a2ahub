@@ -9,7 +9,11 @@
       "const": "space/v1",
       "description": "Literal value per A2.13's golden fixture — NOT `manifest/v1` (see phase deviations note: naming tension between this value and the sibling envelope/event/consumes URI convention, unresolved upstream)."
     },
-    "space": { "type": "string" },
+    "space": {
+      "type": "string",
+      "description": "P41 variant c: lowercase letters/digits, hyphen-separated, no underscores — this is what makes internal/space.CredentialEnvVar's `-`->`_` mapping injective (no two distinct ids can ever collide on one A2A_TOKEN_<ID> variable, e.g. `my-space` vs. `my_space`). EXCEPTION: `REPLACE_WITH_SPACE_ID` is carved into the pattern rather than the id shape being enforced everywhere, because it is the literal scaffolding sentinel `internal/cli/cmd_space.go`'s spaceIDSentinel byte-matches and replaces (`a2a space init`) — that file is outside this pattern's authoring scope, so renaming the sentinel to a conforming value was not an option here. This reintroduces exactly the one collision the pattern otherwise forecloses (`REPLACE_WITH_SPACE_ID` and the legal id `replace-with-space-id` both render to `A2A_TOKEN_REPLACE_WITH_SPACE_ID`), accepted because the template's placeholder is never itself a live, connected space id.",
+      "pattern": "^(REPLACE_WITH_SPACE_ID|[a-z0-9]+(-[a-z0-9]+)*)$"
+    },
     "min_binary_version": {
       "type": "string",
       "description": "D-013: stale binaries refuse to operate against a space above their known version.",
