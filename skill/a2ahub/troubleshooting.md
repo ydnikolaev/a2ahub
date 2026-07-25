@@ -17,10 +17,19 @@ check passes.
 ```
 credentials: PASS
 space access: PASS
+space identity: PASS
 versions: FAIL: <detail>
 CI presence: PASS
+auto-merge enabled: PASS · auto-merge unverified for <space>: the credential cannot read this repo's settings (a fine-grained token needs "Repository metadata: read")
 statusline wiring: PASS
+skill discoverable: PASS · no a2ahub skill installed
+skill manual current: PASS · no skill installed
 ```
+
+All nine lines, in the order the binary prints them. Note that three rows can
+print `PASS · <note>`: `auto-merge enabled` when the setting could not be read,
+and both `skill` rows, which are advisory and never FAIL. **A `PASS` carrying a
+note is a pass** — do not report it as a problem.
 
 A passing check prints `<name>: PASS`. A failing check prints
 `<name>: FAIL: <detail>`, where `<detail>` names the offending space and the
