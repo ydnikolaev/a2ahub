@@ -126,13 +126,13 @@ var coverageManifest = []coverageEntry{
 	{Verb: "withdraw", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
 
 	// --- Contract ops (direct-construction, exec-unreachable) -----------
-	{Verb: "contract-adopt", GoTest: "internal/e2e.TestT3ContractAdopt"},
-	{Verb: "contract-deprecate", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},
-	{Verb: "contract-diff", GoTest: "internal/e2e.TestT3ContractDiff"},
-	{Verb: "contract-new", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},
-	{Verb: "contract-publish", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},
-	{Verb: "contract-retire", GoTest: "internal/e2e.TestT3ContractRetireCleanUngated"},
-	{Verb: "contract-verify-export", GoTest: "internal/e2e.TestT3ContractVerifyExportLocal"},
+	{Verb: "contract adopt", GoTest: "internal/e2e.TestT3ContractAdopt"},
+	{Verb: "contract deprecate", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},
+	{Verb: "contract diff", GoTest: "internal/e2e.TestT3ContractDiff"},
+	{Verb: "contract new", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},
+	{Verb: "contract publish", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},
+	{Verb: "contract retire", GoTest: "internal/e2e.TestT3ContractRetireCleanUngated"},
+	{Verb: "contract verify-export", GoTest: "internal/e2e.TestT3ContractVerifyExportLocal"},
 
 	// --- Ops & delivery --------------------------------------------------
 	{Verb: "completion", Txtar: "ops_completion.txtar"},
@@ -245,19 +245,27 @@ func parseCatalogVerbs(catalogOutput string) []string {
 }
 
 // verbInvocationPattern builds the regexp source matching a real `a2a
-// <verb>` invocation for verb. `contract-<sub>` verbs are catalog.go's own
-// documentation-only expansion of the single "contract" dispatch key
-// (cmd/a2a/wire.go registers ONE "contract" buildCommands() entry;
-// cli.ContractSubcommands() supplies the 6 sub-names catalog.go stitches
-// into "contract-<sub>" ROW NAMES only) — the actual exec'd/invoked form is
-// two words, `a2a contract <sub>` (see internal/e2e/contract_write_test.go,
-// which drives cmd.Run with args[0] == the bare sub-name, never a hyphen).
-// Every other verb is invoked literally as `a2a <verb>`.
+// <verb>` invocation for verb.
+//
+// A catalog verb may be MULTI-TOKEN: `contract` is a single dispatch key
+// (cmd/a2a/wire.go registers ONE "contract" buildCommands() entry) whose
+// sub-verb is its first ARGUMENT, so `a2a contract publish` is two words.
+// Each token is matched with `\s+` between, which is also what lets a txtar
+// script wrap or align an invocation without going invisible to this check.
+//
+// This used to special-case a `contract-<sub>` prefix, because catalog.go
+// stitched those row names with a HYPHEN while this function's own comment
+// recorded that the invoked form was really two words. That gap was not
+// harmless: commands.md ships into consumer repos as the list of things an
+// agent may invoke, and it advertised seven commands the dispatcher answers
+// with `unknown command`. catalog.go now emits the invocable form, so the
+// special case is gone and the generic split IS the rule.
 func verbInvocationPattern(verb string) string {
-	if sub, ok := strings.CutPrefix(verb, "contract-"); ok {
-		return `\ba2a\s+contract\s+` + regexp.QuoteMeta(sub) + `\b`
+	parts := strings.Fields(verb)
+	for i, p := range parts {
+		parts[i] = regexp.QuoteMeta(p)
 	}
-	return `\ba2a\s+` + regexp.QuoteMeta(verb) + `\b`
+	return `\ba2a\s+` + strings.Join(parts, `\s+`) + `\b`
 }
 
 // txtarInvokesVerb reports whether scriptContent's txtar source actually
