@@ -110,6 +110,32 @@ assert_floor_not_ahead() { # $1 = repo, $2 = version (vX.Y.Z or X.Y.Z)
   ok "release-preflight: template write floor $floor is not ahead of ${2}"
 }
 
+assert_ref_default_matches() { # $1 = repo, $2 = version (vX.Y.Z)
+  local repo="$1" want="$2" got
+  # The `a2a-ref` input's own default inside the reusable workflow: the module
+  # version a SPACE's CI will `go run` when its caller does not override it.
+  got="$(sed -n '/^      a2a-ref:/,/^      [a-z-]*:/p' "$repo/$REUSABLE_PATH" 2>/dev/null \
+    | sed -n 's/^ *default:[[:space:]]*"\{0,1\}\(v\{0,1\}[0-9][0-9.]*\)"\{0,1\}.*/\1/p' | head -1)"
+  if [ -z "$got" ]; then
+    fail "release-preflight: $REUSABLE_PATH declares no a2a-ref default —
+    every space caller would have to name a version itself."
+    return 1
+  fi
+  if [ "${got#v}" != "${want#v}" ]; then
+    fail "release-preflight: the reusable workflow's a2a-ref default is $got, but you are
+    cutting $want. A space pins the WORKFLOW by tag and inherits this default for the
+    VALIDATOR, so the two skewing means every space silently validates with $got while
+    believing it runs $want.
+    This is not hypothetical: v0.7.0 shipped with the default still at v0.5.0, so every
+    space at @v0.7.0 ran a validator two releases old — including one that predated the
+    v0.6.4 diff-authz fix, i.e. spaces kept an authorization bypass that the release
+    notes said was closed.
+    Fix: set \`default: \"$want\"\` in $REUSABLE_PATH before tagging."
+    return 1
+  fi
+  ok "release-preflight: reusable a2a-ref default $got matches $want"
+}
+
 # ── teeth: the gate must go RED on a violating fixture (offline) ──────────────
 
 teeth() {
@@ -215,6 +241,31 @@ teeth() {
   fi
   ok "teeth 9: a free version → GREEN"
 
+  # --- teeth 10/11/12: the a2a-ref-default assertion, both directions ---
+  # This is the one that reproduces a REAL miss: v0.7.0 shipped with the default
+  # still at v0.5.0, so every space at @v0.7.0 validated with a two-release-old
+  # binary. Seed both the skewed and the matching shape.
+  mkdir -p "$tmp/$(dirname "$REUSABLE_PATH")"
+  printf 'on:\n  workflow_call:\n    inputs:\n      a2a-ref:\n        type: string\n        default: "v0.5.0"\n      space-path:\n        type: string\n' > "$tmp/$REUSABLE_PATH"
+  if out="$(assert_ref_default_matches "$tmp" v0.8.0 2>&1)"; then
+    echo "release-preflight --teeth: FAILED — ref-default stayed GREEN while skewed (v0.5.0 vs v0.8.0)" >&2
+    echo "$out" >&2; exit 1
+  fi
+  ok "teeth 10: a2a-ref default behind the version being cut → RED"
+
+  printf 'on:\n  workflow_call:\n    inputs:\n      a2a-ref:\n        type: string\n        default: "v0.8.0"\n      space-path:\n        type: string\n' > "$tmp/$REUSABLE_PATH"
+  if ! assert_ref_default_matches "$tmp" v0.8.0 >/dev/null 2>&1; then
+    echo "release-preflight --teeth: FAILED — ref-default went RED when it matched" >&2; exit 1
+  fi
+  ok "teeth 11: a2a-ref default equal to the version → GREEN"
+
+  printf 'on:\n  workflow_call:\n    inputs:\n      a2a-ref:\n        type: string\n      space-path:\n        type: string\n' > "$tmp/$REUSABLE_PATH"
+  if out="$(assert_ref_default_matches "$tmp" v0.8.0 2>&1)"; then
+    echo "release-preflight --teeth: FAILED — ref-default stayed GREEN with NO default at all" >&2
+    echo "$out" >&2; exit 1
+  fi
+  ok "teeth 12: a2a-ref input with no default at all → RED"
+
   echo "release-preflight --teeth: all teeth bite."
 }
 
@@ -246,6 +297,7 @@ rc=0
 assert_version_free "$ROOT" "$VERSION" || rc=1
 assert_pins_resolve "$ROOT" || rc=1
 assert_floor_not_ahead "$ROOT" "$VERSION" || rc=1
+assert_ref_default_matches "$ROOT" "$VERSION" || rc=1
 
 if [ "$rc" -ne 0 ]; then
   echo "release-preflight: FAIL — do not cut $VERSION until the above is fixed." >&2
