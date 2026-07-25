@@ -3,8 +3,12 @@ package space
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/testkit/fakegithub"
@@ -960,5 +964,232 @@ func TestFunnelShortCircuitLandsAlreadyCleanPR_RealHostReachesMain(t *testing.T)
 	}
 	if err := runGit(ctx, req.RepoDir, "merge-base", "--is-ancestor", first.CommitSHA, "origin/main"); err != nil {
 		t.Fatalf("commit %s is not an ancestor of origin/main after landing: %v", first.CommitSHA, err)
+	}
+}
+
+// --- AcquireMirrorLock regression: the live-e2e concurrent-writes-no-lost-
+// write row (system B's branch carried system A's artifacts), reduced to a
+// hermetic test against a local bare origin ------------------------------
+
+// concurrentMirrorWriteRequest builds a SubmitRequest for system that
+// shares repoDir with every other system's own request — the live-e2e
+// defect's exact shape: mirror_root puts every project's clone of a space
+// in ONE directory, so two systems on one machine share the same mirror
+// working tree.
+func concurrentMirrorWriteRequest(repoDir, system, eventULID string, l Layout) SubmitRequest {
+	artifactID := "XQ-" + system + "-20260721-conc"
+	return SubmitRequest{
+		RepoDir:    repoDir,
+		System:     system,
+		Verb:       "submit",
+		ArtifactID: artifactID,
+		Files: []FileWrite{
+			{Path: l.Exchange(artifactID), Content: []byte("---\nid: " + artifactID + "\n---\nbody\n")},
+			{Path: l.EventFile("2026", eventULID), Content: []byte("event: submit\n")},
+		},
+		CommitMessage: "a2a(question): " + artifactID,
+		RemoteURL:     repoDir,
+		Repo:          host.Repo{Owner: "acme", Name: "getvisa"},
+		BaseBranch:    "main",
+	}
+}
+
+// runConcurrentMirrorWrites drives two Submit calls — one per system —
+// concurrently against ONE shared mirror directory, and returns each
+// result/error indexed the same way the caller's requests were: [0]=alpha,
+// [1]=bravo.
+func runConcurrentMirrorWrites(t *testing.T, funnel *WriteFunnel, reqA, reqB SubmitRequest) (results [2]WriteResult, errs [2]error) {
+	t.Helper()
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	reqs := [2]SubmitRequest{reqA, reqB}
+	for i := range reqs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			results[i], errs[i] = funnel.Submit(context.Background(), reqs[i])
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	return results, errs
+}
+
+// assertBranchOnlyContainsOwnFiles fails the test if branch's diff against
+// main touches any path outside prefix — the exact live-e2e assertion
+// ("changed path is outside the author's section") reduced to a direct
+// git-tree check.
+func assertBranchOnlyContainsOwnFiles(t *testing.T, repoDir, branch, prefix string) {
+	t.Helper()
+
+	changed, err := runGitOutput(context.Background(), repoDir, nil, "diff", "--name-only", "main", branch)
+	if err != nil {
+		t.Fatalf("diff --name-only main %s: %v", branch, err)
+	}
+	files := strings.Fields(changed)
+	if len(files) == 0 {
+		t.Fatalf("branch %s: diff against main is empty, want at least this system's own files", branch)
+	}
+	for _, f := range files {
+		if !strings.HasPrefix(f, prefix) {
+			t.Errorf("branch %s carries %q, outside the author's own section %q — a crossed write", branch, f, prefix)
+		}
+	}
+}
+
+// TestFunnelConcurrentSubmitsOneMirrorNoCrossedWrite is the hermetic
+// regression for the live-e2e matrix's `concurrent-writes-no-lost-write`
+// row: two systems (alpha, bravo) sharing ONE mirror directory (exactly
+// what mirror_root produces on one machine running two systems) each
+// Submit concurrently, and each system's resulting branch must carry ONLY
+// that system's own files — never the other's.
+//
+// This is the funnel's own commitAndPush span (checkout/write/add/commit,
+// then push) racing on the SAME git index and working tree: without
+// AcquireMirrorLock, one system's `git add` stages both systems' files (the
+// other's WriteFile landed on disk first), or one system's plain `git
+// commit` (no pathspec — see commitOne) sweeps whatever the other staged in
+// the shared index, and a branch ends up carrying the wrong author's paths
+// — observed live as `"path": ".../events/...", "message": "changed path is
+// outside the author's section"`.
+func TestFunnelConcurrentSubmitsOneMirrorNoCrossedWrite(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "alpha", "bravo")
+	shared := filepath.Join(t.TempDir(), "shared-mirror")
+	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL()); err != nil {
+		t.Fatalf("seed shared mirror: %v", err)
+	}
+
+	la, err := NewLayout("alpha")
+	if err != nil {
+		t.Fatalf("NewLayout(alpha): %v", err)
+	}
+	lb, err := NewLayout("bravo")
+	if err != nil {
+		t.Fatalf("NewLayout(bravo): %v", err)
+	}
+	reqA := concurrentMirrorWriteRequest(shared, "alpha", "01J8QYK2Z3ABCDEFGHJKMNPQRA", la)
+	reqB := concurrentMirrorWriteRequest(shared, "bravo", "01J8QYK2Z3ABCDEFGHJKMNPQRB", lb)
+
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	results, errs := runConcurrentMirrorWrites(t, funnel, reqA, reqB)
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent Submit[%d]: %v", i, err)
+		}
+	}
+
+	assertBranchOnlyContainsOwnFiles(t, shared, results[0].Branch, "alpha/")
+	assertBranchOnlyContainsOwnFiles(t, shared, results[1].Branch, "bravo/")
+}
+
+// TestFunnelSequentialSubmitsOneMirrorNoInheritedFiles isolates the SECOND,
+// independent defect the live-e2e symptom turned out to have: even with NO
+// race at all — two Submits run one after the other, no goroutines, nothing
+// for AcquireMirrorLock to serialize — a shared mirror used to produce a
+// crossed branch, because commitOne's `git checkout -B branch` had no start
+// point and forked from ambient HEAD (left standing on the FIRST system's
+// own ephemeral branch, per checkoutRemoteHead's own doc: "commitOne checks
+// it out and never leaves"). This fails without commitOne's explicit
+// `origin/<base>` start point — proved directly, before the fix, via this
+// exact sequential repro, no lock involved — and it PASSES on the lock
+// alone reverted (there is nothing to contend here): only the start-point
+// fix closes it. AcquireMirrorLock's own regression is
+// TestFunnelConcurrentSubmitsOneMirrorNoCrossedWrite, above; the two tests
+// are deliberately independent so a future regression in either fix fails
+// the right one, not "locking is broken" for a start-point defect or vice
+// versa.
+func TestFunnelSequentialSubmitsOneMirrorNoInheritedFiles(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "alpha", "bravo")
+	shared := filepath.Join(t.TempDir(), "shared-mirror")
+	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL()); err != nil {
+		t.Fatalf("seed shared mirror: %v", err)
+	}
+
+	la, err := NewLayout("alpha")
+	if err != nil {
+		t.Fatalf("NewLayout(alpha): %v", err)
+	}
+	lb, err := NewLayout("bravo")
+	if err != nil {
+		t.Fatalf("NewLayout(bravo): %v", err)
+	}
+	reqA := concurrentMirrorWriteRequest(shared, "alpha", "01J8QYK2Z3ABCDEFGHJKMNPQSA", la)
+	reqB := concurrentMirrorWriteRequest(shared, "bravo", "01J8QYK2Z3ABCDEFGHJKMNPQSB", lb)
+
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+
+	if _, err := funnel.Submit(context.Background(), reqA); err != nil {
+		t.Fatalf("Submit(alpha): %v", err)
+	}
+	resultB, err := funnel.Submit(context.Background(), reqB)
+	if err != nil {
+		t.Fatalf("Submit(bravo): %v", err)
+	}
+
+	assertBranchOnlyContainsOwnFiles(t, shared, resultB.Branch, "bravo/")
+}
+
+// TestFunnelReleasesMirrorLockOnPushErrorPath is the brief's own "release
+// on error paths too" requirement: a Submit refused mid-commitAndPush
+// (here, a push refusal with no fork fallback configured — the same shape
+// TestFunnelWithoutForkFallbackReportsTheRefusal already covers
+// behaviourally) must not leave the mirror's advisory lock file behind. A
+// refused write that leaks the lock would poison every later Submit
+// against the same mirror with ErrMirrorLocked until mirrorLockStaleAfter
+// elapses — this is what proves it does not.
+func TestFunnelReleasesMirrorLockOnPushErrorPath(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+	// AllowForkFallback left false: the push refusal below is reported as
+	// an error directly from inside commitAndPush's locked span, rather
+	// than routed through the fork fallback.
+
+	fake := host.NewFakeHost()
+	forbidPushTo(fake, fx.RemoteURL())
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+	if _, err := funnel.Submit(context.Background(), req); !errors.Is(err, host.ErrPushRejected) {
+		t.Fatalf("Submit error = %v, want ErrPushRejected", err)
+	}
+
+	gitDir, err := resolveGitDir(req.RepoDir)
+	if err != nil {
+		t.Fatalf("resolveGitDir: %v", err)
+	}
+	lockPath := filepath.Join(gitDir, mirrorLockFileName)
+	if _, statErr := os.Stat(lockPath); !os.IsNotExist(statErr) {
+		t.Fatalf("mirror lock file stat = %v, want IsNotExist — a refused write must not leak the lock", statErr)
+	}
+
+	// And the mirror must not now be poisoned for a later, different write:
+	// a fresh Submit on the same mirror must acquire the lock immediately,
+	// not wait out mirrorLockWaitBudget. A NEW fake host (without the push
+	// refusal wired in) so this second write actually succeeds — the
+	// refusal above only exists to reach the error path under test.
+	req2 := newTestSubmitRequest(fx, "axon", l)
+	req2.ArtifactID = "XQ-axon-20260721-second"
+	req2.Verb = "ack"
+	req2.Files = []FileWrite{{Path: l.Exchange(req2.ArtifactID), Content: []byte("---\nid: " + req2.ArtifactID + "\n---\n")}}
+	funnel2 := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	start := time.Now()
+	if _, err := funnel2.Submit(context.Background(), req2); err != nil {
+		t.Fatalf("Submit after a refused prior write: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed >= mirrorLockWaitBudget {
+		t.Fatalf("second Submit took %s, want well under the wait budget %s (i.e. the lock was not leaked)",
+			elapsed, mirrorLockWaitBudget)
 	}
 }

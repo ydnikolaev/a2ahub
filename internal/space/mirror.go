@@ -61,6 +61,29 @@ func CloneOrFetch(ctx context.Context, dir, repoURL string) error {
 	if !isGitRepo(dir) {
 		return &Error{Op: op, Input: dir, Err: ErrNonGitTarget}
 	}
+
+	// The refresh holds the SAME mirror lock the write funnel holds, for the
+	// same reason: `checkoutRemoteHead` below runs `reset --hard`, and a
+	// mirror is shared by every project on this machine that connects the
+	// space (mirror_root is a machine-level setting). Without this, a read
+	// verb refreshing a stale mirror can reset the working tree out from under
+	// a concurrent `a2a submit` between the moment it writes its files and the
+	// moment it commits them — the same crossed/lost write the funnel's own
+	// lock exists to prevent, arriving from the reader's side instead.
+	//
+	// The degradation is deliberately asymmetric and correct: a reader that
+	// cannot get the lock within the budget returns a named contention error,
+	// and internal/cache's SyncIfStale treats a refresh failure as non-fatal —
+	// so a read during a write shows slightly stale data with a note, which is
+	// strictly better than corrupting the write. No re-entrancy: Submit never
+	// calls CloneOrFetch (the caller runs it first, then submits), so the two
+	// lock holders are always sequential.
+	lock, err := AcquireMirrorLock(ctx, dir)
+	if err != nil {
+		return &Error{Op: op, Input: dir, Err: err}
+	}
+	defer func() { _ = lock.Release() }()
+
 	if err := runGit(ctx, dir, "fetch", "origin"); err != nil {
 		return &Error{Op: op, Input: dir, Err: err}
 	}
