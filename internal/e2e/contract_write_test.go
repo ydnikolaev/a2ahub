@@ -51,6 +51,7 @@ func TestT3ContractNewPublishDeprecate(t *testing.T) {
 	// tests use) rather than fabricating a submit round-trip this file
 	// doesn't otherwise need.
 	writeContractDescriptor(t, mirrorDir, "widget", "0.0.0")
+	writeContractSchemaFixture(t, mirrorDir, "axon", "widget")
 
 	io2, out2, errOut2 := newIO()
 	if code := cmd.Run(context.Background(), []string{"publish", "--version", "1.0.0", "XC-axon-widget"}, io2); code != 0 {

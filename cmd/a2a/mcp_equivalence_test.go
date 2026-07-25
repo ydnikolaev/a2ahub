@@ -51,6 +51,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -824,6 +825,16 @@ func TestEquivContractPublish(t *testing.T) {
 
 	seed := func(t *testing.T, mirrorDir string) {
 		writeContractDescriptorEquiv(t, mirrorDir, "widget-d001", "0.0.0")
+		// D-D/POL-009: `contract publish` refuses a JSON-Schema-dialect
+		// contract with no schema/** + fixtures/valid/** baseline
+		// (internal/validate/publishable.go's CheckContractPublishable) —
+		// seed a real one, named after the slug per D-E's stem-mapping rule
+		// (internal/validate/compat.go's planMapping doc comment), on both
+		// the CLI and MCP mirrors this seed closure feeds.
+		writeMirrorFileEquiv(t, mirrorDir, "axon/provides/widget-d001/schema/widget-d001.schema.json",
+			`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"example":{"type":"string"}},"additionalProperties":true}`)
+		writeMirrorFileEquiv(t, mirrorDir, "axon/provides/widget-d001/fixtures/valid/widget-d001.json",
+			`{"example":"replace-me"}`)
 	}
 
 	cliDir, cliFunnel, _ := newEquivMirror(t, "axon")
@@ -924,14 +935,7 @@ func TestEquivContractNew(t *testing.T) {
 	newCmd := cli.NewNewCommand(cliStaging, "beta", equivCLIActorResolver("agent", "bot"), nil)
 	cliCmd := cli.NewContractCommand(newCmd, nil, "", "fixture-space", "beta", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
 	runCLICommand(t, cliCmd, []string{"new", "widget-equiv"})
-	cliEntries, err := os.ReadDir(cliStaging)
-	if err != nil || len(cliEntries) != 1 {
-		t.Fatalf("contract new (CLI): expected 1 staged draft, got %v (err=%v)", cliEntries, err)
-	}
-	cliDraft, err := os.ReadFile(filepath.Join(cliStaging, cliEntries[0].Name()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	cliDraft, cliScaffold := readStagedContract(t, cliStaging)
 
 	mcpStaging := t.TempDir()
 	newDeps := mcp.NewDeps{
@@ -940,18 +944,81 @@ func TestEquivContractNew(t *testing.T) {
 	}
 	registry := mcp.BuildRegistry(nil, mcp.WriteDeps{}, "", nil, newDeps)
 	runMCPHandler(t, registry, "a2a_contract", "new", mcp.ContractNewInput{Slug: "widget-equiv"})
-	mcpEntries, err := os.ReadDir(mcpStaging)
-	if err != nil || len(mcpEntries) != 1 {
-		t.Fatalf("contract new (MCP): expected 1 staged draft, got %v (err=%v)", mcpEntries, err)
-	}
-	mcpDraft, err := os.ReadFile(filepath.Join(mcpStaging, mcpEntries[0].Name()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	mcpDraft, mcpScaffold := readStagedContract(t, mcpStaging)
 
 	if normalizeContent(cliDraft) != normalizeContent(mcpDraft) {
 		t.Fatalf("contract new: rendered draft mismatch (modulo id):\n--- CLI ---\n%s\n--- MCP ---\n%s", normalizeContent(cliDraft), normalizeContent(mcpDraft))
 	}
+
+	// P37 D-D: `new` on a JSON-Schema contract also scaffolds a starter
+	// schema + valid fixture. R-018 says this surface has no capability the
+	// CLI lacks and lacks none the CLI has, so the scaffold must be
+	// byte-identical on both sides — which is what caught the asymmetry
+	// when the scaffold shipped CLI-only: the two staged trees differed and
+	// this test reds rather than the gap reaching a consumer repo.
+	if len(cliScaffold) == 0 {
+		t.Fatal("contract new (CLI): expected a D-D schema/fixture scaffold beside the draft, got none")
+	}
+	if len(cliScaffold) != len(mcpScaffold) {
+		t.Fatalf("contract new: scaffold file sets differ — CLI %v, MCP %v", sortedKeysOf(cliScaffold), sortedKeysOf(mcpScaffold))
+	}
+	for rel, cliBytes := range cliScaffold {
+		mcpBytes, ok := mcpScaffold[rel]
+		if !ok {
+			t.Fatalf("contract new: MCP staged no %s (CLI did) — the two surfaces are not equivalent", rel)
+		}
+		if !bytes.Equal(cliBytes, mcpBytes) {
+			t.Fatalf("contract new: scaffold %s differs between surfaces:\n--- CLI ---\n%s\n--- MCP ---\n%s", rel, cliBytes, mcpBytes)
+		}
+	}
+}
+
+// readStagedContract splits a staging dir into the single top-level *.md
+// draft and every other staged file, keyed by its slash-separated path
+// relative to the staging root — i.e. the D-D scaffold subtree.
+func readStagedContract(t *testing.T, stagingDir string) ([]byte, map[string][]byte) {
+	t.Helper()
+	var draft []byte
+	scaffold := map[string][]byte{}
+	err := filepath.WalkDir(stagingDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		raw, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return rerr
+		}
+		rel, rerr := filepath.Rel(stagingDir, p)
+		if rerr != nil {
+			return rerr
+		}
+		rel = filepath.ToSlash(rel)
+		if !strings.Contains(rel, "/") && strings.HasSuffix(rel, ".md") {
+			if draft != nil {
+				return fmt.Errorf("more than one top-level draft staged (%s)", rel)
+			}
+			draft = raw
+			return nil
+		}
+		scaffold[rel] = raw
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("read staging %s: %v", stagingDir, err)
+	}
+	if draft == nil {
+		t.Fatalf("no staged draft found under %s", stagingDir)
+	}
+	return draft, scaffold
+}
+
+func sortedKeysOf(m map[string][]byte) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func writeContractDescriptorEquiv(t *testing.T, mirrorDir, slug, version string) {

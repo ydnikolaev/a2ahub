@@ -310,8 +310,23 @@ func TestContractNewDelegatesToNewDraft(t *testing.T) {
 		t.Fatalf("contract new failed: %v", err)
 	}
 	drafts, ok := result.([]newDraftResult)
-	if !ok || len(drafts) != 1 || !strings.HasPrefix(drafts[0].ID, "XC-") {
-		t.Fatalf("expected 1 drafted XC- contract, got %#v", result)
+	// P37 D-D: a JSON-Schema contract is drafted AND scaffolded — the .md
+	// plus its starter schema and valid fixture, so the contract is
+	// publishable (POL-009) and §5.4b has a baseline the moment it exists.
+	// Every entry reports the same contract id; the paths differ.
+	if !ok || len(drafts) != 3 {
+		t.Fatalf("expected the drafted contract plus its D-D schema/fixture scaffold (3 entries), got %#v", result)
+	}
+	for _, d := range drafts {
+		if !strings.HasPrefix(d.ID, "XC-") {
+			t.Fatalf("every entry must report the contract's own id, got %#v", d)
+		}
+	}
+	if !strings.HasSuffix(drafts[0].Path, ".md") {
+		t.Fatalf("the draft itself must come first, got %q", drafts[0].Path)
+	}
+	if !strings.HasSuffix(drafts[1].Path, "/schema/widget.schema.json") || !strings.HasSuffix(drafts[2].Path, "/fixtures/valid/widget.json") {
+		t.Fatalf("scaffold paths must follow D-E's stem mapping, got %q and %q", drafts[1].Path, drafts[2].Path)
 	}
 }
 

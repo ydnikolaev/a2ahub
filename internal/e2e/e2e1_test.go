@@ -132,6 +132,7 @@ func TestE2E1Cascade(t *testing.T) {
 
 	// --- step 5: contract version (gamma publishes) ----------------------
 	writeContractDescriptorFor(t, gammaMirror, "gamma", "widget", "0.0.0")
+	writeContractSchemaFixture(t, gammaMirror, "gamma", "widget")
 	contractCmd := cli.NewContractCommand(nil, funnel, gammaMirror, "fixture-space", "gamma", e2eManifest(), e2eHostConfig("gamma", origin), e2eActorResolver("agent", "bot"))
 	io, out, errOut := newIO()
 	if code := contractCmd.Run(context.Background(), []string{"publish", "--version", "1.0.0", "XC-gamma-widget"}, io); code != 0 {

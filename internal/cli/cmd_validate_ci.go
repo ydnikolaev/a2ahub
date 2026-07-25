@@ -404,6 +404,19 @@ func contractTouchedByPath(p string) (id, descriptorPath string, ok bool) {
 	return "XC-" + system + "-" + slug, descriptorPath, true
 }
 
+// isContractBaselinePath reports whether p is one of a contract's own
+// schema/** or fixtures/** files — the D-D baseline `submit` now carries
+// alongside contract.md — as opposed to the descriptor itself.
+//
+// Expressed on top of contractTouchedByPath so the funnel's admission and
+// the CI's classification cannot drift into disagreeing about which paths
+// belong to a contract. That divergence is P35's scar and AC-970.2's whole
+// subject; two hand-written path predicates for one shape is how it starts.
+func isContractBaselinePath(p string) bool {
+	_, descriptorPath, ok := contractTouchedByPath(p)
+	return ok && p != descriptorPath
+}
+
 // contractWorkingTreeFiles reads every file under
 // root/descriptorDir/sub (sub e.g. "schema" or "fixtures/valid"), keyed
 // the SAME way contractPriorVersionFiles/contractReadTreeAtSHA

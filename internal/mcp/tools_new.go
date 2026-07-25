@@ -17,6 +17,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/template"
+	"github.com/ydnikolaev/a2ahub/internal/validate"
 )
 
 // newTypePrefix maps an envelope type to its §3.3 ID prefix + mint class —
@@ -144,6 +145,34 @@ func newNewHandler(deps NewDeps) HandlerFunc {
 				return nil, "", fmt.Errorf("new: cannot write %s: %w", path, err)
 			}
 			out = append(out, newDraftResult{ID: mintedID, Path: path})
+
+			// D-D: a fresh JSON-Schema contract gets its starter schema +
+			// valid fixture, so §5.4b's compatibility check has a baseline
+			// from the moment the contract exists. R-018 says this surface
+			// exposes no capability the CLI lacks and lacks none the CLI
+			// has — so the scaffold happens here for the same reason and
+			// through the SAME function, never a second implementation.
+			// internal/mcp may not import internal/cli, which is exactly
+			// why it lives in internal/template.
+			if item.Type == "contract" {
+				schemaFormat, sfErr := template.ContractDraftSchemaFormat(draft)
+				if sfErr != nil {
+					return nil, "", fmt.Errorf("new: cannot read drafted schema_format: %w", sfErr)
+				}
+				if validate.IsJSONSchemaFormat(schemaFormat) {
+					slug := item.Slug
+					if slug == "" {
+						slug = item.Fields["slug"]
+					}
+					written, werr := template.ScaffoldContractInStaging(deps.StagingDir, deps.OwnSystem, slug, deps.WriteFile)
+					if werr != nil {
+						return nil, "", fmt.Errorf("new: cannot scaffold contract schema: %w", werr)
+					}
+					for _, p := range written {
+						out = append(out, newDraftResult{ID: mintedID, Path: p})
+					}
+				}
+			}
 		}
 
 		return out, "", nil
