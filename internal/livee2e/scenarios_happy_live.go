@@ -435,7 +435,17 @@ func happyContractLifecycle(ctx context.Context, h *harness, system string, c *c
 		return happyResultFromErr(scenario, system, fmt.Errorf("a2a contract deprecate %s: %w: %s", sub.ID, err, stderr),
 			"contract deprecate opens its own, distinct PR")
 	}
-	deprecatePR, err := h.pullForBranch(ctx, space.BranchName(c.System, "contract-deprecate", sub.ID))
+	// P36 defect fix: `contract deprecate` batches the deprecated contract
+	// AND its linked deprecation announcement into ONE write
+	// (lifecycleDeps.buildRequest sorts+joins both ids with "+"), so its
+	// branch is a2a/<sys>/contract-deprecate/<XA-id>+<XC-id> — not the bare
+	// contract id pullForBranch's exact-HeadRef lookup expects. Both live
+	// runs timed out here ("submit left no pull request on its branch") for
+	// a PR that had, in fact, opened, gone green, and auto-merged exactly as
+	// intended — the harness was asking for the wrong branch name, not the
+	// product failing to open one. pullForBranchContaining (harness_live.go)
+	// is the composite-aware lookup.
+	deprecatePR, err := h.pullForBranchContaining(ctx, c.System, "contract-deprecate", sub.ID)
 	if err != nil {
 		return happyResultFromErr(scenario, system, err, "contract deprecate's own branch has an open PR")
 	}

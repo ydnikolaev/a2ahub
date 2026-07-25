@@ -144,7 +144,18 @@ func (h *harness) DraftAndSubmit(ctx context.Context, c *checkout, artifactType 
 		// template asks for something the matrix cannot describe.
 		_ = unfilled
 	}
+	return h.submitDrafted(ctx, c, id)
+}
 
+// submitDrafted runs `a2a submit <id>` for an already-drafted+filled
+// artifact and resolves the PR the funnel opened for it (space.BranchName +
+// pullForBranch, never scraped stdout — see DraftAndSubmit's own doc for
+// why). It is DraftAndSubmit's own tail, extracted so a caller that must
+// EDIT a draft's staged file BETWEEN Draft and submit — the AC-973.1 row's
+// `to:`-exclusion edit (scenarios_contract_integrity_live.go) is the one
+// that needs this — reuses the exact same submit+resolve path rather than a
+// second, silently-drifting copy of it.
+func (h *harness) submitDrafted(ctx context.Context, c *checkout, id string) (submitted, error) {
 	branch := space.BranchName(c.System, "submit", id)
 	if _, stderr, subErr := c.Run(ctx, "submit", id); subErr != nil {
 		return submitted{ID: id, Branch: branch}, fmt.Errorf("livee2e: a2a submit %s (%s): %w: %s", id, c.System, subErr, strings.TrimSpace(stderr))
@@ -191,6 +202,69 @@ func (h *harness) pullForBranch(ctx context.Context, branch string) (PullState, 
 	return best, nil
 }
 
+// pullForBranchContaining is pullForBranch's composite-branch counterpart
+// (matchCompositeBranch, branchmatch.go): the ONE additional lookup
+// `contract deprecate`'s branch needs, because its branch folds TWO ids
+// (BranchName(system, verb, ArtifactID) where ArtifactID is the funnel's own
+// sorted, "+"-joined composite of every id one write touched —
+// cmd_lifecycle.go's buildRequest) into one branch a caller that only knows
+// the bare contract id cannot look up by exact HeadRef equality.
+//
+// The matching RULE itself (matchCompositeBranch) is pure and lives in an
+// untagged file so it is covered by the plain `go test ./internal/livee2e/...`
+// suite; this method is the thin, network-touching adapter: list every pull
+// (open+closed — same fa3ee82 reasoning pullForBranch's own doc records:
+// this space auto-merges, so a fast-green write is merged and closed before
+// a caller looks), narrow to the shape matchCompositeBranch needs, then map
+// its match back to the original PullState (which carries fields
+// matchCompositeBranch's own branchPull deliberately does not, e.g. HeadSHA).
+func (h *harness) pullForBranchContaining(ctx context.Context, system, verb, artifactID string) (PullState, error) {
+	pulls, err := h.Prov.ListPulls(ctx, h.Org, h.Repo, "all")
+	if err != nil {
+		return PullState{}, err
+	}
+	bps := make([]branchPull, 0, len(pulls))
+	for _, p := range pulls {
+		bps = append(bps, branchPull{HeadRef: p.HeadRef, State: p.State, Number: p.Number})
+	}
+	match, err := matchCompositeBranch(bps, system, verb, artifactID)
+	if err != nil {
+		return PullState{}, err
+	}
+	for _, p := range pulls {
+		if p.HeadRef == match.HeadRef && p.Number == match.Number {
+			return p, nil
+		}
+	}
+	// Unreachable in practice: match was derived FROM pulls, so it must be
+	// present. A defensive, honest error beats a zero-value PullState if
+	// this ever changes.
+	return PullState{}, fmt.Errorf("livee2e: pullForBranchContaining: matched PR #%d (%s) not found in the pulls list it was derived from", match.Number, match.HeadRef)
+}
+
+// countPRsForBranch counts every PR (open+closed) whose head is branch — the
+// AC-973.1 row's own "no PR opened" assertion (a refused `contract publish`
+// must never reach the funnel) compares this count before and after the
+// refused call, rather than asserting on pullForBranch's absence: the
+// refused call's branch is `contract-publish`'s own deterministic name,
+// which a PRIOR, successful publish on this same contract may already have
+// used (BranchName is keyed on system+verb+artifactID, not on version) —
+// so "a PR already exists on this branch" is expected, and the row's actual
+// claim is narrower: this SPECIFIC call did not add another one.
+func (h *harness) countPRsForBranch(ctx context.Context, branch string) (int, error) {
+	pulls, err := h.Prov.ListPulls(ctx, h.Org, h.Repo, "all")
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, p := range pulls {
+		if p.HeadRef == branch {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // AwaitCheck waits for a PR's required check using the credential of the
 // checkout that authored it — never a fixed token. Reading a boundary
 // scenario's check through the provisioner would be the §T5 mistake one layer
@@ -218,11 +292,19 @@ func (h *harness) AwaitCheck(ctx context.Context, c *checkout, prNumber int) (ho
 // It was right, so the coverage moved here rather than the other three
 // families each growing their own copy — which is the whole reason this
 // function exists.
+//
+// ErrNoBranchMatch (branchmatch.go) joins the same class as ErrNoPRForBranch:
+// "the composite branch this write should have opened is not visible yet" is
+// the identical §T6-d shape one level up, for the one verb whose branch a
+// caller cannot look up by exact HeadRef equality. ErrAmbiguousBranchMatch is
+// deliberately NOT here — an ambiguous match is an anomaly the row must
+// report as a FAILURE naming the candidates, never as "we did not wait long
+// enough" (brief: "a live tier that guesses is worse than one that fails").
 func verdictForError(err error) (Verdict, bool) {
 	switch {
 	case err == nil:
 		return VerdictNotRun, false
-	case errors.Is(err, ErrCheckWaitTimedOut), errors.Is(err, ErrUnknownOutcome), errors.Is(err, ErrNoPRForBranch):
+	case errors.Is(err, ErrCheckWaitTimedOut), errors.Is(err, ErrUnknownOutcome), errors.Is(err, ErrNoPRForBranch), errors.Is(err, ErrNoBranchMatch):
 		return VerdictTimedOut, true
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		// The whole-run ceiling expiring says nothing about the product.
