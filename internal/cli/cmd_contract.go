@@ -640,6 +640,44 @@ func contractReadWorkingTreeFiles(root, sub string) (map[string][]byte, error) {
 	return out, nil
 }
 
+// contractStagingOverlay merges landed (this contract's schema/**+
+// fixtures/** files as contractReadWorkingTreeFiles reads them off the
+// mirror's OWN working tree) with whatever staged carries for this SAME
+// contract (template.ContractSidecarsFromStaging's own space-relative
+// Path, e.g. "<system>/provides/<slug>/schema/<name>", re-rooted here to
+// relDir's own vocabulary: "schema/<name>") — PER FILE, never per
+// directory: a staging dir holding only a new schema must leave the
+// landed fixture in place, not fall back to "staging exists for this
+// contract, ignore the landed tree entirely" (that would silently DROP a
+// fixture nobody re-staged).
+//
+// Absence in staging means "unchanged", never "removed" — deliberately
+// the opposite of the more obvious reading (a caller might expect
+// "staging is now authoritative, anything landed but not restaged is
+// gone"). That reading would make publishing a schema-only edit silently
+// retire the contract's own fixtures the moment nobody bothered to
+// re-stage them untouched — staged content only ever ADDS or REPLACES a
+// file, it never deletes one relative to what publish would otherwise
+// carry. A staging dir holding nothing for this contract (nil newCmd, an
+// empty staging dir, or a contract nobody re-staged) therefore returns
+// landed byte-for-byte unmodified — the no-regression case (P37 Wave I
+// §3): a contract authored before the scaffold existed keeps publishing
+// exactly as before this wave.
+func contractStagingOverlay(landed map[string][]byte, staged []space.FileWrite, relDir string) map[string][]byte {
+	out := make(map[string][]byte, len(landed))
+	for k, v := range landed {
+		out[k] = v
+	}
+	prefix := relDir + "/"
+	for _, sc := range staged {
+		if !strings.HasPrefix(sc.Path, prefix) {
+			continue // defensive: a sidecar outside this contract's own directory never overlays it
+		}
+		out[strings.TrimPrefix(sc.Path, prefix)] = sc.Content
+	}
+	return out
+}
+
 func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("contract publish", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
@@ -680,23 +718,82 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 		return 1
 	}
 
+	// P37 Wave I: `contract publish` carries the schema/fixtures change it
+	// is declaring a version for. internal/space/mirror.go's
+	// checkoutRemoteHead hard-resets the mirror working tree to
+	// origin/<branch> on EVERY `a2a` invocation (a mirror is a cache — that
+	// reset is correct and out of scope here), so by the time this verb
+	// runs the mirror can never carry an author's own schema/fixture edit;
+	// only .a2a/staging/ (never touched by the reset) still can. Without
+	// this overlay the OLD and NEW sides of every check below always read
+	// the SAME just-reset bytes and can never disagree — which is exactly
+	// how §5.4b's computed compatibility check shipped unreachable (P37
+	// live-tier finding fb-20260725; see this wave's own doc comment at
+	// the top of this file's package).
+	//
+	// landedAll is this contract's schema/**+fixtures/** as the mirror's
+	// OWN working tree currently holds it — the SAME two keying prefixes
+	// ("schema/…", "fixtures/…") artifact.DigestTreeFS itself walks, kept
+	// as ONE map so contractStagingOverlay can override it per file.
+	workDir := filepath.Join(c.deps.mirrorDir, relDir)
+	landedSchema, err := contractReadWorkingTreeFiles(workDir, "schema")
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %v\n", err)
+		return 1
+	}
+	landedFixtures, err := contractReadWorkingTreeFiles(workDir, "fixtures")
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %v\n", err)
+		return 1
+	}
+	landedAll := make(map[string][]byte, len(landedSchema)+len(landedFixtures))
+	for k, v := range landedSchema {
+		landedAll[k] = v
+	}
+	for k, v := range landedFixtures {
+		landedAll[k] = v
+	}
+
+	// c.newCmd is P6's own `a2a new` command, reused here ONLY for its
+	// StagingDir() accessor — it is nil in many existing tests/call sites
+	// that predate this wave, and a nil newCmd (or a newCmd whose staging
+	// dir holds nothing for THIS contract) must degrade to exactly today's
+	// behaviour: overlayAll below then equals landedAll, unmodified.
+	var stagedSidecars []space.FileWrite
+	if c.newCmd != nil {
+		if stagingDir := c.newCmd.StagingDir(); stagingDir != "" {
+			parsed, perr := artifact.ParseID(id)
+			if perr != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %v\n", perr)
+				return 1
+			}
+			stagedSidecars, err = template.ContractSidecarsFromStaging(stagingDir, parsed.System, parsed.Slug)
+			if err != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %v\n", err)
+				return 1
+			}
+		}
+	}
+	overlayAll := contractStagingOverlay(landedAll, stagedSidecars, relDir)
+
 	// D-D/POL-009: a JSON-Schema contract must publish an actual baseline
 	// (schema/** + fixtures/valid/**) before publish records a version
 	// anything else will trust as compat-checkable. This runs on EVERY
 	// publish, including the first — CheckContractPublishable itself no-ops
 	// for a non-JSON-Schema schema_format (validate.IsJSONSchemaFormat), so
 	// calling it unconditionally here is always safe. newSchemas is also
-	// F1's own NewSchemas input below (read once, used twice).
-	workDir := filepath.Join(c.deps.mirrorDir, relDir)
-	newSchemas, err := contractReadWorkingTreeFiles(workDir, "schema")
-	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %v\n", err)
-		return 1
-	}
-	newFixturesValid, err := contractReadWorkingTreeFiles(workDir, filepath.Join("fixtures", "valid"))
-	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %v\n", err)
-		return 1
+	// F1's own NewSchemas input below (derived once from overlayAll, used
+	// twice) — both counted from the OVERLAY, never the landed tree alone,
+	// so POL-009 sees the version this commit is actually about to carry.
+	newSchemas := map[string][]byte{}
+	newFixturesValid := map[string][]byte{}
+	for k, v := range overlayAll {
+		switch {
+		case k == "schema" || strings.HasPrefix(k, "schema/"):
+			newSchemas[k] = v
+		case k == "fixtures/valid" || strings.HasPrefix(k, "fixtures/valid/"):
+			newFixturesValid[k] = v
+		}
 	}
 	if violation := validate.CheckContractPublishable(validate.PublishableInput{
 		SchemaFormat:  probe.SchemaFormat,
@@ -850,16 +947,27 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 	newRaw := artifact.SerializeFrontmatter(artifact.Frontmatter{YAML: newYAML, Body: fm.Body})
 
 	files := []space.FileWrite{{Path: relPath, Content: newRaw}}
+	// Carry EVERY staged sidecar into this commit verbatim — never diffed
+	// against the landed tree first (deterministic beats clever; an
+	// identical file is simply a no-op once git sees it).
+	files = append(files, stagedSidecars...)
 
 	// §5.7/D-029 multi-file digest tree over the published schema/**+
-	// fixtures/** — computed from the CURRENT working tree (the mirror
-	// already carries this contract's schema/fixtures files; publish
-	// itself never rewrites them, only the descriptor).
-	digest, _, derr := artifact.DigestTreeFS(filepath.Join(c.deps.mirrorDir, relDir), contractDigestSubtrees)
-	if derr != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: cannot compute digest tree: %v\n", derr)
-		return 1
+	// fixtures/** — computed from overlayAll (P37 Wave I), not the mirror
+	// tree alone: the recorded digest must describe what THIS COMMIT
+	// CARRIES, not merely what the mirror happened to hold before staging
+	// was folded in. Uses artifact.Digest + artifact.CombineDigestPairs
+	// DIRECTLY — the exact two calls artifact.DigestTreeFS itself makes per
+	// file — rather than approximating them, so this can never silently
+	// diverge from DigestTreeFS's own answer over the same bytes (contract
+	// verify-export/§5.7 both depend on that). When staging carries
+	// nothing for this contract, overlayAll IS landedAll unmodified and
+	// this reproduces DigestTreeFS's answer byte for byte (no-regression).
+	perFileDigest := make(map[string]string, len(overlayAll))
+	for k, v := range overlayAll {
+		perFileDigest[k] = artifact.Digest(v)
 	}
+	digest := artifact.CombineDigestPairs(perFileDigest)
 
 	ev := lifecycleEventDoc{
 		Schema: "event/v1", Event: eventID.String(), Space: probe.Space,

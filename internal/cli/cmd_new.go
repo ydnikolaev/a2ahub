@@ -98,6 +98,14 @@ func NewNewCommand(stagingDir, ownSystem string, resolveActor func(ActorFlags) t
 	}
 }
 
+// StagingDir returns the `.a2a/staging/` path this command was constructed
+// with — `contract publish`'s own overlay (cmd_contract.go's runPublish,
+// P37 Wave I) needs the SAME staging directory `contract new` scaffolds
+// into, and ContractCommand holds this NewCommand already (for `contract
+// new`'s own delegation) rather than a second, possibly-drifted staging
+// path threaded through NewContractCommand's own 60 call sites.
+func (c *NewCommand) StagingDir() string { return c.stagingDir }
+
 // Name implements cli.Command.
 func (c *NewCommand) Name() string { return "new" }
 
