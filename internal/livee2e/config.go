@@ -37,6 +37,23 @@ const (
 	// provisioner from the participant, which is the exact confusion the
 	// preflight guards exist to refuse.
 	EnvRetiredToken = "A2A_LIVE_E2E_TOKEN"
+
+	// EnvFamilies optionally narrows a run to a comma-separated subset of
+	// scenario families — an ITERATION aid while a family is being written,
+	// never a release verdict.
+	//
+	// It needs no guard of its own to stay honest, and that is by
+	// construction rather than by luck: a skipped family's rows keep their
+	// declared VerdictNotRun, and Report.ExitCode() returns non-zero for any
+	// verdict that is not a pass. So a narrowed run CANNOT exit 0, and its
+	// report shows the untouched families as not-run rather than as absent.
+	// The fail-closed matrix already answers the question a filter would
+	// otherwise reopen.
+	//
+	// It exists because the full matrix costs tens of minutes of Actions
+	// latency, and iterating on one family at that price is what pushes an
+	// author toward not running it at all.
+	EnvFamilies = "A2A_LIVE_E2E_FAMILIES"
 )
 
 // Ambient credential variables the tier refuses to be handed. Not a
