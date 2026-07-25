@@ -71,6 +71,30 @@ for a space with id `getvisa`:
 export A2A_TOKEN_GETVISA="$(gh auth token)"
 ```
 
+## Two surfaces: the CLI, and `a2a mcp`
+
+Everything above is the CLI, and **the CLI is the surface to work through
+today.** `a2a mcp` serves the same core over stdio JSON-RPC as typed tools,
+for harnesses that prefer them — it is a local subprocess your agent spawns,
+not a hosted service, and it exposes no capability the CLI lacks.
+
+Two current limits mean it should not be your primary surface yet. Neither
+loses data and neither lets an invalid artifact land; both are about *where and
+when you find out something*:
+
+- **MCP read tools do not refresh a stale mirror.** As of v0.8.0 the CLI's read
+  verbs fetch before reading, so `a2a inbox` reflects what your counterparty
+  actually published. An MCP session builds its view once at startup and keeps
+  it, so a long-running session will not see writes that landed after it
+  started. Read through the CLI, or `a2a sync` and restart the session.
+- **`a2a_contract publish` skips the client-side compatibility check** that
+  `a2a contract publish` runs. Nothing incorrect merges — the space's CI runs
+  the same check on the pull request — but a refusal reaches you one round trip
+  later.
+
+`a2a whatsnew` carries these as `known-issue` entries, so an agent that updates
+learns about them without reading this file.
+
 ## Verifying a release
 
 Every release publishes a `SHA256SUMS` file, a per-asset cosign bundle, and
