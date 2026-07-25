@@ -123,54 +123,74 @@ func ac973DraftContractExcludingPeer(ctx context.Context, h *harness, c *checkou
 	return h.submitDrafted(ctx, c, id)
 }
 
-// ac973BreakSchema overwrites the contract's D-D-scaffolded schema (working
-// tree, in A's own mirror — `contract publish` reads schema/fixtures from
-// there, not from staging) with a genuinely INCOMPATIBLE one: the
-// scaffolded schema declares `example` a string
-// (internal/template/scaffold/contract.schema.json) and the scaffolded
-// fixture is `{"example": "replace-me"}` (a string); this rewrite narrows
-// `example` to an integer, so the EXISTING fixture no longer validates — a
-// real breaking change, not a synthetic refusal. schemaPath is the file
-// written; fixtureCompatKey is the key CheckComputedCompatibility's own
-// refusal message names it by (contractReadWorkingTreeFiles: "<sub>/<file>"
-// relative to the descriptor's own directory — "fixtures/valid/<slug>.json"
-// here, NOT the repo-relative path), for the row's own assertion to match.
+// ac973BreakSchema overwrites the contract's D-D-scaffolded schema in A's
+// own STAGING tree with a genuinely INCOMPATIBLE one: the scaffolded schema
+// declares `example` a string (internal/template/scaffold/
+// contract.schema.json) and the scaffolded fixture is
+// `{"example": "replace-me"}` (a string); this rewrite narrows `example` to
+// an integer, so the EXISTING fixture no longer validates — a real breaking
+// change, not a synthetic refusal. fixtureCompatKey is the key
+// CheckComputedCompatibility's own refusal message names it by
+// ("<sub>/<file>" relative to the descriptor's own directory —
+// "fixtures/valid/<slug>.json" here, NOT the repo-relative path), for the
+// row's own assertion to match.
 //
-// THIS PREMISE IS WRONG, and live run 3 (2026-07-25) is what proved it.
-// The row reported `contract publish --bump minor exited 0` on a genuinely
-// breaking edit, and the diagnosis is that this working-tree write never
-// reaches the check at all:
+// STAGING, not the mirror — and getting that wrong is the entire story of
+// live run 3 (2026-07-25). This helper used to write into A's MIRROR
+// working tree, which read as the obvious place: `contract publish` reads
+// schema/** from a directory, and that was the directory. The row reported
+// `contract publish --bump minor exited 0` on a genuinely breaking edit,
+// and the diagnosis was that the write never reached the check at all:
 //
 //	`a2a contract <verb>` resolves its deps through cmd/a2a/wire.go's
 //	runContract -> resolveLifecycleDeps -> space.CloneOrFetch ->
 //	checkoutRemoteHead, which runs `git checkout -B <branch>
 //	origin/<branch>` + `git reset --hard origin/<branch>` UNCONDITIONALLY,
 //	on every invocation ("a mirror is a cache, so the move is
-//	unconditional"). So the very next `a2a contract publish` wipes this
-//	edit BEFORE runPublish reads schema/** out of the working tree.
+//	unconditional"). The very next `a2a contract publish` wiped this edit
+//	BEFORE runPublish read schema/** out of the working tree — so both
+//	sides of the compat comparison were the landed bytes, and the check
+//	compared a version against itself.
 //
-// An earlier revision of this comment claimed the opposite of one half of
-// that — that the digest recorded for v2.0.0 covers "content that was
-// never actually pushed". It does not: the edit is gone by the time
-// artifact.DigestTreeFS runs, so the digest describes the landed tree. The
-// claim is retracted here rather than left to be re-derived.
+// P37 wave I answered it: `contract publish` now folds `.a2a/staging/` over
+// the landed tree and carries the staged sidecars in the same commit as the
+// version bump. Staging is the one surface the reset never touches, so it
+// is where an author's schema edit has to live — which is exactly what this
+// row must exercise, because it is what a real producer does.
 //
-// The remaining half is real and is the deeper finding: `contract
-// publish`'s `files` list is ALWAYS exactly [descriptor.md, event.yaml], and
-// `a2a submit` is a permanent no-op for an id with committed history — so
-// there is NO supported path to land a schema change for a published
-// contract, and POL-007 is unreachable by construction. Both are filed to
-// docs/backlog.md ("a published contract's schema is immutable"). Until
-// that fork is decided this row cannot be made green by editing the
-// harness, and it must not be made to look green by weakening what it
-// asserts.
-func ac973BreakSchema(a *checkout, id string) (fixtureCompatKey string, err error) {
-	layout, err := space.NewLayout(a.System)
+// An earlier revision of this comment claimed the digest recorded for
+// v2.0.0 covered "content that was never actually pushed". It did not: the
+// edit was gone by the time the digest was computed. Retracted here rather
+// than left to be re-derived.
+// ac973SchemaDir is this family's ONE place that names the contract's
+// space-relative schema directory, so the staging write below and the
+// on-main read at step 4 cannot drift to different paths — which is the
+// failure this row is least able to notice, since a read of the wrong path
+// looks exactly like a publish that carried nothing.
+func ac973SchemaDir(system string) (string, error) {
+	layout, err := space.NewLayout(system)
 	if err != nil {
 		return "", err
 	}
-	schemaDir := layout.ProvidesSchemaDir(ac973Slug)
-	schemaPath := filepath.Join(a.MirrorDir(), filepath.FromSlash(schemaDir), ac973Slug+".schema.json")
+	return layout.ProvidesSchemaDir(ac973Slug), nil
+}
+
+func ac973BreakSchema(a *checkout, id string) (fixtureCompatKey string, err error) {
+	schemaDir, err := ac973SchemaDir(a.System)
+	if err != nil {
+		return "", err
+	}
+	// The same path `a2a contract new` scaffolded (template.
+	// ScaffoldContractInStaging), so this OVERWRITES the author's own staged
+	// schema rather than adding a second file beside it.
+	schemaPath := filepath.Join(a.Dir, ".a2a", "staging", filepath.FromSlash(schemaDir), ac973Slug+".schema.json")
+	if _, statErr := os.Stat(schemaPath); statErr != nil {
+		// Fail loudly. A missing staged scaffold would make os.WriteFile
+		// happily create a file the publish overlay still picks up, so the
+		// row would stay green while silently no longer testing the thing
+		// it names — an author EDITING a published contract's schema.
+		return "", fmt.Errorf("livee2e: expected `a2a contract new`'s staged schema at %s: %w", schemaPath, statErr)
+	}
 	broken := []byte(`{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
@@ -315,6 +335,30 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 	}
 	if err := happyLandAndSync(ctx, h, a, majorPR.Number); err != nil {
 		return ac973ResultFromErr("major-publish-land-sync", err, "v2.0.0 lands on main and reaches A's mirror")
+	}
+
+	// The carry, proven on main. Before P37 wave I `contract publish` wrote
+	// only [descriptor, event], so a schema change could not reach the space
+	// through ANY verb — this assertion is the one that would have caught
+	// that, and it reads the mirror AFTER a sync, i.e. it is reading
+	// origin/main rather than anything local. Without it the row could pass
+	// on a publish that refused the minor for the right reason and then
+	// landed a major carrying nothing.
+	landedSchemaDir, err := ac973SchemaDir(a.System)
+	if err != nil {
+		return ac973ResultFromErr("major-publish-carries-schema", err,
+			"the contract's schema directory resolves for A's own system")
+	}
+	landedSchema, err := os.ReadFile(filepath.Join(a.MirrorDir(),
+		filepath.FromSlash(landedSchemaDir), ac973Slug+".schema.json"))
+	if err != nil {
+		return ac973ResultFromErr("major-publish-carries-schema", err,
+			"the contract's schema is readable on main after the major publish landed")
+	}
+	if !strings.Contains(string(landedSchema), `"integer"`) {
+		return ac973Fail("major-publish-carries-schema", string(landedSchema),
+			"the major publish CARRIES the staged breaking schema onto main (P37 wave I) — `example` is typed integer there, not the scaffold's string",
+			"the schema on main is still the scaffolded one, so publish landed a version bump describing content it did not deliver")
 	}
 
 	// --- 5. A deprecates the PRIOR version. --version is REQUIRED now
