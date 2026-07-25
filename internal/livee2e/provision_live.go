@@ -134,7 +134,54 @@ func (h *harness) ResetSpace(ctx context.Context) error {
 		return fmt.Errorf("livee2e: ResetSpace: arm protection: %w", err)
 	}
 
+	// The last thing a reset does: record the PR number every write in THIS
+	// run must exceed.
+	//
+	// Live run 3 (2026-07-25) is why. `contract-publish-deprecate-retire`
+	// failed with "more than one branch matches this artifact id ... matches
+	// 2 branches" on a space that had just been reset. The branch pruning
+	// above is not the gap — it deletes every non-main ref, and it worked.
+	// The residue is PULL REQUESTS: GitHub has no API to delete one, a
+	// closed PR keeps its `head.ref` recorded forever, and every lookup here
+	// lists `state=all` (it must — this space auto-merges, so a fast-green
+	// write is closed before the caller looks). So each run's writes reuse
+	// the same deterministic branch names as the last run's ghosts, and
+	// matchCompositeBranch correctly refuses an ambiguity the harness
+	// manufactured.
+	//
+	// Fixing it at the matcher would be wrong twice over: an ambiguity
+	// WITHIN one run is a real defect the refusal must keep catching, and a
+	// run-unique slug would hide the collision while letting the listing
+	// grow forever. The harness's actual question was always "the PR THIS
+	// RUN opened" — it was just asking "any PR ever". This is that question,
+	// written down.
+	//
+	// Set AFTER everything else so a PR opened by provisioning itself (none
+	// today) could never land above the floor.
+	floor, err := h.maxPRNumber(ctx)
+	if err != nil {
+		return fmt.Errorf("livee2e: ResetSpace: record PR floor: %w", err)
+	}
+	h.PRFloor = floor
+
 	return nil
+}
+
+// maxPRNumber returns the highest pull-request number the space currently
+// carries, or 0 for a space that has never had one. Unfiltered by design —
+// it is what ESTABLISHES the filter.
+func (h *harness) maxPRNumber(ctx context.Context) (int, error) {
+	pulls, err := h.Prov.ListPulls(ctx, h.Org, h.Repo, "all")
+	if err != nil {
+		return 0, err
+	}
+	max := 0
+	for _, p := range pulls {
+		if p.Number > max {
+			max = p.Number
+		}
+	}
+	return max, nil
 }
 
 // scaffoldParticipants patches the freshly-scaffolded space.yaml with the
