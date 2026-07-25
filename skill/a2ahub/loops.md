@@ -168,7 +168,7 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
 ## §8.4 Contract-owner loop — "my interface changed"
 
 1. Regenerate the contract export from your code (your project's mechanism);
-   run `a2a contract-verify-export` — commit contract + fixtures together.
+   run `a2a contract verify-export` — commit contract + fixtures together.
    - **Edit the schema in staging, not in the mirror.** Your changed
      `schema/**` and `fixtures/**` go under
      `.a2a/staging/<system>/provides/<slug>/` — the same tree `a2a contract

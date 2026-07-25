@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
@@ -28,7 +29,7 @@ func expectedCatalogCommandNames() []string {
 	for name := range buildCommands() {
 		if name == "contract" {
 			for _, sub := range cli.ContractSubcommands() {
-				out = append(out, "contract-"+sub.Name)
+				out = append(out, "contract "+sub.Name)
 			}
 			continue
 		}
@@ -130,5 +131,52 @@ func TestCatalogRegisteredInDispatch(t *testing.T) {
 	t.Parallel()
 	if _, ok := buildCommands()["__catalog"]; !ok {
 		t.Fatal("expected \"__catalog\" to be registered in buildCommands()")
+	}
+}
+
+// TestEveryCatalogNameIsDispatchable is the guard the catalog was missing,
+// and it exists because the one above did not catch a real, shipped defect.
+//
+// TestCatalogCommandNameParity independently recomputes the expansion rule
+// and compares the two name sets — which proves the two derivations agree,
+// and proves nothing about whether the names they agree on can be typed.
+// They could not: the expansion joined `contract` to its sub-verb with a
+// HYPHEN, so `commands.md` — the machine-consumed catalog that ships into
+// every consumer repo via `a2a skill install` — advertised seven commands
+// (`contract-publish`, `contract-adopt`, `contract-diff`, `contract-new`,
+// `contract-deprecate`, `contract-retire`, `contract-verify-export`) that
+// the dispatcher answers with `unknown command`. `skill/a2ahub/loops.md`
+// had copied one of them into prose. Two independent derivations of one
+// wrong rule agree perfectly.
+//
+// `skill-drift` (.github/workflows/ci.yml) could not see it either: it
+// regenerates commands.md from this same code and byte-diffs, so it proves
+// the committed copy is CURRENT, never that what it advertises is REAL.
+//
+// This checks the property that actually matters: every catalog row names a
+// verb the dispatcher recognises. A two-token name is legal only when its
+// FIRST token is a dispatch key (the rest are that verb's arguments), which
+// is precisely the distinction the hyphen erased.
+//
+// TEETH: change catalog.go's expansion separator back to "-" and this reds,
+// naming every undispatchable row.
+func TestEveryCatalogNameIsDispatchable(t *testing.T) {
+	t.Parallel()
+
+	dispatch := buildCommands()
+	var broken []string
+	for _, r := range catalogCommandRows() {
+		verb, _, _ := strings.Cut(r.Name, " ")
+		if _, ok := dispatch[verb]; !ok {
+			broken = append(broken, r.Name)
+		}
+	}
+	if len(broken) > 0 {
+		sort.Strings(broken)
+		t.Fatalf("these catalog rows name commands the dispatcher does not recognise:\n  %s\n\n"+
+			"commands.md is read by agents as the list of things they may invoke. A row whose first "+
+			"token is not a buildCommands() key is a command that answers `unknown command`. "+
+			"A sub-verb is an ARGUMENT of its parent verb, so it is joined with a space, never a hyphen.",
+			strings.Join(broken, "\n  "))
 	}
 }
