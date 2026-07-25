@@ -60,6 +60,19 @@ func TestResolveSubmitTargets(t *testing.T) {
 		}
 	})
 
+	// TEETH: reverting ResolveSubmitTargets' parseArgsAnyOrder call
+	// (cmd_submit.go) back to a bare fs.Parse(args) reds this — Go's flag
+	// package stops parsing at the first non-flag token, so `--batch`
+	// written after the ids is never recognized as set and the call falls
+	// through to the single-artifact branch's usage error instead.
+	t.Run("--batch resolves each arg written BEFORE the flag (Wave K)", func(t *testing.T) {
+		t.Parallel()
+		got, err := cli.ResolveSubmitTargets(staging, []string{"XQ-axon-1", "XQ-axon-2", "--batch"})
+		if err != nil || len(got) != 2 {
+			t.Errorf("got %v, %v", got, err)
+		}
+	})
+
 	t.Run("--batch with no args is a usage error", func(t *testing.T) {
 		t.Parallel()
 		_, err := cli.ResolveSubmitTargets(staging, []string{"--batch"})

@@ -54,15 +54,19 @@ func (c *SearchCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	spaceFlag := fs.String("space", "", "filter by connected space id")
 	stateFlag := fs.String("state", "", "filter by folded state")
 	jsonOut := fs.Bool("json", false, "JSON array output")
-	if err := fs.Parse(args); err != nil {
+	// Wave K fix (live run 6, "thirteen verbs refuse a flag written after
+	// their positional argument"): parseArgsAnyOrder (cli.go), not a bare
+	// fs.Parse(args) — `search foo --type question` used to refuse.
+	positional, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
-	if fs.NArg() != 1 {
+	if len(positional) != 1 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a search <query> [--type --space --state] [--json]")
 		return 2
 	}
 
-	items, err := c.store.Search(ctx, fs.Arg(0), cache.SearchFilters{Type: *typeFlag, Space: *spaceFlag, State: *stateFlag})
+	items, err := c.store.Search(ctx, positional[0], cache.SearchFilters{Type: *typeFlag, Space: *spaceFlag, State: *stateFlag})
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "search: %v\n", err)
 		return 1

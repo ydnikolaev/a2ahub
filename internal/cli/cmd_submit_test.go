@@ -125,6 +125,39 @@ func TestValidateResolvesBareStagedID(t *testing.T) {
 	}
 }
 
+// TestValidateAcceptsFlagAfterPositional is Wave K's live-run 6 defect
+// applied to `a2a validate`: `validate <path> --all` used to leave --all
+// unset (Go's flag package stops parsing at the first non-flag token) and
+// then refuse on the single-artifact branch's fs.NArg() != 1 check, with
+// the unconsumed "--all" token itself counted as a second positional.
+// This exercises the SAME defect with `--author`, a flag that does not
+// change validate's own control flow, so the assertion is purely about
+// argument-order acceptance, not about --ci's separate branch.
+//
+// TEETH: reverting ValidateCommand.Run's parseArgsAnyOrder call
+// (cmd_submit.go) back to a bare `fs.Parse(args)` reds this.
+func TestValidateAcceptsFlagAfterPositional(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	writeQuestionDraft(t, stagingDir, "XQ-axon-20260721-k400", "axon", "other")
+
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+	cmd := cli.NewValidateCommand(engine, stagingDir)
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"XQ-axon-20260721-k400", "--author", "octocat"}, io)
+	if code != 0 {
+		t.Fatalf("validate <id> --author x: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "XQ-axon-20260721-k400.md") {
+		t.Fatalf("expected the JSON report to name the resolved staging path; got %q", out.String())
+	}
+}
+
 // TestSubmitForeignSectionRefusal is AC-201.3: an artifact whose `from`
 // does not match the configured own system is refused locally, exits
 // non-zero, and the write funnel is NEVER called (no git/network call).

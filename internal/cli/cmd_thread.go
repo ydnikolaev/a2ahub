@@ -41,15 +41,20 @@ func (c *ThreadCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("thread", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	jsonOut := fs.Bool("json", false, "JSON array output")
-	if err := fs.Parse(args); err != nil {
+	// Wave K fix (live run 6, "thirteen verbs refuse a flag written after
+	// their positional argument"): parseArgsAnyOrder (cli.go), not a bare
+	// fs.Parse(args) — both `thread <id> --json` and `thread --json <id>`
+	// must work.
+	positional, err := parseArgsAnyOrder(fs, args)
+	if err != nil {
 		return 2
 	}
-	if fs.NArg() != 1 {
+	if len(positional) != 1 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a thread <thread-id>")
 		return 2
 	}
 
-	items, err := c.store.Thread(ctx, fs.Arg(0))
+	items, err := c.store.Thread(ctx, positional[0])
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "thread: %v\n", err)
 		return 1

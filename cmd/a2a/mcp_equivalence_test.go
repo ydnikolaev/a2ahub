@@ -598,7 +598,23 @@ func TestEquivRespond(t *testing.T) {
 	// the content is identical) but the two isolated mirrors' entropy
 	// state for their OWN `respond` event ULID may differ (no CLI entropy
 	// seam) — normalize before comparing, same as every other verb.
-	assertRequestsEquivalent(t, "respond", cliFunnel.calls[0], mcpFunnel.calls[0])
+	//
+	// Wave K (live run 6) fixed `a2a respond` on BOTH surfaces: response.md
+	// leaves `to`, `space` and `title` as unfilled placeholders, and the
+	// funnel's own V2 pass refuses the artifact with REF-006. The CLI half
+	// landed first and this assertion went red immediately — the parity
+	// suite doing exactly its job, since ADR-001 makes the two respond
+	// implementations deliberate copies.
+	//
+	// It was briefly repaired by normalizing those three fields away on both
+	// sides. That is the one repair this suite must never accept: the three
+	// fields it would stop comparing are precisely the three that had just
+	// been proven breakable, and MCP would have stayed broken behind a green
+	// gate. Removed; the MCP half was fixed instead, and this compares the
+	// response artifact byte for byte again.
+	cliReq := cliFunnel.calls[0]
+	mcpReq := mcpFunnel.calls[0]
+	assertRequestsEquivalent(t, "respond", cliReq, mcpReq)
 
 	cliResponseID := extractResponseID(cliFunnel.calls[0].Files)
 	mcpResponseID := extractResponseID(mcpFunnel.calls[0].Files)

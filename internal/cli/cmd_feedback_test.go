@@ -132,6 +132,55 @@ status: new
 	}
 }
 
+// TestFeedbackValidate_FlagAfterPositional is Wave K's live-run 6 defect
+// applied to `a2a feedback validate`: `validate <file> --ci` used to leave
+// --ci unset (Go's flag package stops parsing at the first non-flag
+// token), so it validated with the LESS strict, non-CI ruleset than the
+// caller asked for — and a report that would fail the CI-only guards
+// silently reported 0/"valid" instead of catching it.
+//
+// TEETH: reverting FeedbackCommand.runValidate's parseArgsAnyOrder call
+// (cmd_feedback.go) back to a bare `fs.Parse(args)` reds this: the report
+// below fails ONLY the CI-mode filename guard, so it passes as 0/valid
+// again once --ci silently stops being recognized.
+func TestFeedbackValidate_FlagAfterPositional(t *testing.T) {
+	t.Parallel()
+	cmd := cli.NewFeedbackCommand(nil, nil, "", "", nil)
+
+	valid := `feedback: v1
+id: fb-20260701-1a2b3c
+kind: docs
+severity: minor
+title: "a clean, honestly-cleared report"
+summary: "summary"
+context:
+  a2a_version: v0.1.1
+  os_arch: darwin/arm64
+  surface: docs
+checks:
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+status: new
+`
+	// CI mode's own filename guard (§T1) requires the file's basename to
+	// match its own `id:` field — this path deliberately does NOT, so
+	// --ci recognized is the ONLY thing standing between "valid" and a
+	// refusal.
+	path := filepath.Join(t.TempDir(), "mismatched-name.yaml")
+	if err := os.WriteFile(path, []byte(valid), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"validate", path, "--ci"}, io)
+	if code != 1 {
+		t.Fatalf("feedback validate <file> --ci: code = %d, want 1 (CI filename guard must fire); stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+}
+
 func TestFeedbackStatus_EmptyLedger(t *testing.T) {
 	t.Parallel()
 	ledgerPath := filepath.Join(t.TempDir(), "ledger.yaml")
