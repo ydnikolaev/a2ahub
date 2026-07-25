@@ -73,6 +73,15 @@ var (
 	// ErrConsumesInvalid is returned when a consumes.yaml fails structural
 	// YAML parse.
 	ErrConsumesInvalid = errors.New("space: consumes is not valid yaml")
+
+	// ErrMirrorLocked is returned by the mirror-checkout step when another
+	// process's own concurrent CloneOrFetch still held one of the
+	// mirror's git lock files (index.lock, HEAD.lock, a branch ref lock,
+	// or config.lock) after indexLockWaitBudget (mirror.go) elapsed. The
+	// mirror is a shared cache (mirror_root puts every project's clone of
+	// a space in one place) and the write funnel is idempotent by head
+	// branch, so the caller's safe next move is simply to re-run.
+	ErrMirrorLocked = errors.New("space: mirror is locked by a concurrent git process; re-run")
 )
 
 // Error is the small typed error every exported operation in this package

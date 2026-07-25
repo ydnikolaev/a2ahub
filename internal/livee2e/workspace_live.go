@@ -194,12 +194,83 @@ func (c *checkout) RunWithAPIRoot(ctx context.Context, apiRoot string, args ...s
 // every read verb folds over, and the only directory a repo-scoped verb like
 // `validate --ci` may run from.
 //
-// NOTE, learned live: `a2a connect` leaves this directory EMPTY. It is
-// populated by the first `a2a sync`, so anything reading a file out of it
-// must sync first or it reads a hole (filed to the backlog as a product
-// question — connect arguably owes the caller a populated mirror).
+// It ASKS the product where the mirror is rather than recomputing the rule
+// itself (spec 35 §9's scar: a rule with two homes eventually disagrees with
+// itself). Before today's product fix, `a2a init --space <url>` persisted a
+// ref with no MirrorLocation — which always resolved project-locally, keyed
+// by the space id, and ignored `mirror_root` — while `connect` cloned into
+// the URL-id-keyed, `mirror_root`-aware location and never repaired the ref:
+// the clone and every read pointed at two different directories. `connect`
+// now repairs MirrorLocation (space.ResolveMirrorLocation's own doc), so the
+// one true mirror is whatever that resolver says it is; this method loads
+// the same two config files the product loads and asks the same question.
+//
+// NOTE, corrected after re-checking against today's fix (the prior version
+// of this comment claimed `a2a connect` leaves this directory EMPTY and only
+// `a2a sync` populates it): `connect` itself calls space.CloneOrFetch against
+// the resolved mirror location (cmd_init.go's ConnectCommand.Run), so the
+// mirror is already populated with the space's tree as of connect. `a2a
+// sync` re-fetches and resets it to the remote's current head; it is a
+// refresh, not the first write. The "empty after connect" observation was a
+// symptom of the very bug this fix addresses: the harness's old hardcoded
+// path here was project-local/id-keyed, which is where CONNECT NEVER WROTE
+// (it wrote to the id-agnostic, mirror_root-aware location) — so reading it
+// found a hole that had nothing to do with connect vs. sync timing.
+//
+// Residual gap, deliberately not hidden: MirrorDir cannot return an error
+// (its one call site assigns a bare string — scenarios_happy_live.go:206,
+// off-limits to this wave), so a config that HAS entries but none whose ID
+// matches c.SpaceSlug degrades to the same project-local/id-keyed fallback
+// as "no config at all" rather than failing loudly. That fallback is the
+// PRE-fix path shape and is silently wrong if it is ever hit for real —
+// pinned by TestMirrorDirUnmatchedSpaceIDFallsBackToLegacyPath so the
+// behavior is at least documented, not a surprise. In this run it is not
+// hit: harnessSpaceSlug ("livee2e") is what `a2a space init` seeds as the
+// manifest id, so `connect`'s ref repair always lands a ref with that exact
+// ID.
 func (c *checkout) MirrorDir() string {
-	return filepath.Join(c.Dir, ".a2a", "cache", "mirrors", c.SpaceSlug)
+	projectConfigPath := filepath.Join(c.Dir, ".a2a", "config.yaml")
+	// Absent/unreadable config is fine — the same tolerance the product's
+	// own connect/sync/doctor call sites use ("absent config is fine",
+	// cmd_init.go ConnectCommand.Run): a fresh checkout has no config yet,
+	// and the fallback ref below reproduces the pre-fix, project-local/
+	// id-keyed default in that case.
+	cfg, _ := space.LoadProjectConfig(projectConfigPath)
+	machine, _ := space.LoadMachineConfig(machineConfigPath())
+
+	// The config's space id is the MANIFEST id `connect` repairs the ref to
+	// (harnessSpaceSlug, "livee2e" — matched to c.SpaceSlug, not the URL id
+	// `connect` starts from), so the ref is looked up BY ID, never by
+	// position. A ref carrying no MirrorLocation (the pre-fix shape, and
+	// this method's own zero-value fallback below) still resolves — it just
+	// falls back to the project-local, id-keyed default ResolveMirrorLocation
+	// itself documents.
+	ref := space.Ref{ID: c.SpaceSlug}
+	for _, r := range cfg.Spaces {
+		if r.ID == c.SpaceSlug {
+			ref = r
+			break
+		}
+	}
+
+	return space.ResolveMirrorLocation(c.Dir, ref, machine)
+}
+
+// machineConfigPath resolves `~/.config/a2a/config.yaml` exactly as
+// cmd/a2a/wire.go's resolvePaths does (home + ".config/a2a/config.yaml").
+// The harness never sets HOME per checkout — both checkouts' child
+// processes inherit the ambient one via checkoutEnv's os.Environ() base —
+// so os.UserHomeDir() here resolves to the SAME machine config the child
+// `a2a` binary itself reads, and is also why a configured `mirror_root`
+// applies to this rig at all. An unresolvable home degrades to an empty
+// path, which LoadMachineConfig turns into a (correctly) ignored read
+// error, not a panic.
+func machineConfigPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "a2a", "config.yaml")
 }
 
 // draftedIDPattern extracts the id `a2a new` mints from its own stdout line

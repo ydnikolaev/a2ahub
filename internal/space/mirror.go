@@ -4,11 +4,34 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+// indexLockPollInterval is how long runGitRetryLocked sleeps between
+// attempts while another process holds a mirror's git index.lock. Short
+// enough that a competing checkout+reset — which on this project's
+// mirrors completes in tens of milliseconds on local disk — is caught on
+// the very next poll; long enough not to turn "wait for a lock" into a
+// busy-spin.
+const indexLockPollInterval = 100 * time.Millisecond
+
+// indexLockWaitBudget bounds the TOTAL time checkoutRemoteHead will wait
+// across BOTH its git calls (checkout, then reset — the deadline is
+// computed once and shared) for a contending process's index.lock to
+// clear before giving up. internal/cache's SyncIfStale gives the whole
+// CloneOrFetch call (fetch, which runs first, PLUS this wait) a single
+// perMirrorTimeout of 5s (internal/cache/refresh.go) so a stale lock
+// degrades a read verb like `a2a inbox` into "returns a named
+// contention error promptly", never "hangs until the caller's own outer
+// timeout fires" — 2s leaves at least 3s of that budget for the network
+// fetch and branch resolution that run before this wait even starts,
+// while comfortably outlasting a normal concurrent checkout+reset.
+const indexLockWaitBudget = 2 * time.Second
 
 // CloneOrFetch establishes or refreshes a plain mirror clone of repoURL at
 // dir (§7.4): clones if dir is absent or empty; fetches (never re-clones)
@@ -62,12 +85,189 @@ func CloneOrFetch(ctx context.Context, dir, repoURL string) error {
 // A mirror is a cache, so the move is unconditional: nothing in it is
 // authored by hand, and the write funnel commits and pushes within a single
 // invocation rather than leaving work parked here.
+//
+// The mirror directory is SHARED across processes by construction
+// (mirror_root puts every project's clone of a space in one place), and
+// this step is the only one that mutates the working tree — so it is the
+// only one that can collide with a second process's own concurrent
+// checkout/reset on one of git's OWN lock files. `checkout -B` alone can
+// take index.lock (the index itself), HEAD.lock and refs/heads/<b>.lock
+// (moving the branch ref), and config.lock (writing the upstream-tracking
+// config) depending on timing — this is not one lock but git's general
+// lock-then-rename-into-place convention applied to several files.
+// Neither git call below is retried blindly: runGitRetryLocked only
+// retries when the failure is one of THOSE locks (see
+// isLockContention's doc comment for how that is detected WITHOUT
+// matching a locale-translated die() sentence), and only within one
+// shared indexLockWaitBudget for the pair, so a second process WAITS
+// instead of losing its write outright (the live-e2e concurrent-writers
+// regression).
 func checkoutRemoteHead(ctx context.Context, dir string) error {
 	branch := remoteHeadBranch(ctx, dir)
-	if err := runGit(ctx, dir, "checkout", "-B", branch, "origin/"+branch); err != nil {
+	deadline := time.Now().Add(indexLockWaitBudget)
+	if err := runGitRetryLocked(ctx, dir, deadline, "checkout", "-B", branch, "origin/"+branch); err != nil {
 		return err
 	}
-	return runGit(ctx, dir, "reset", "--hard", "origin/"+branch)
+	return runGitRetryLocked(ctx, dir, deadline, "reset", "--hard", "origin/"+branch)
+}
+
+// runGitRetryLocked runs `git <args...>` with cwd=dir, retrying ONLY when
+// the failure is contention on one of git's own `*.lock` files (another
+// process's concurrent checkout/reset in the same mirror), until either
+// the call succeeds, deadline passes, or ctx is cancelled/times out —
+// whichever comes first.
+//
+// A failure that is NOT lock contention (a genuinely broken remote ref, a
+// corrupt repo, ...) is returned immediately, unretried — retrying it
+// would only slow down a real error, and it is not the failure mode this
+// function exists to smooth over.
+//
+// ctx is checked at the TOP of every iteration, not only while sleeping:
+// a git subprocess killed mid-run by ctx expiring can itself surface as a
+// failure that isLockContention would otherwise have to classify —
+// checking first means a cancelled/expired ctx always wins that race.
+func runGitRetryLocked(ctx context.Context, dir string, deadline time.Time, args ...string) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		_, err := runGitOutput(ctx, dir, []string{"LC_ALL=C"}, args...)
+		if err == nil {
+			return nil
+		}
+		if !isLockContention(dir, err) {
+			return err
+		}
+		if !time.Now().Before(deadline) {
+			// Both sentinels are wrapped: a caller may want to recognise the
+			// contention (ErrMirrorLocked) OR the underlying git failure, and
+			// dropping either to %v makes errors.Is blind to it.
+			return fmt.Errorf("%w: waited %s for a git lock file to clear (git %v): %w",
+				ErrMirrorLocked, indexLockWaitBudget, args, err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(jitteredPollInterval()):
+		}
+	}
+}
+
+// isLockContention reports whether a failed checkout/reset attempt was
+// caused by one of git's own `*.lock` files, checked two ways — either
+// is sufficient:
+//
+//  1. The failed attempt's stderr (folded into err by runGitOutput)
+//     names a lock collision. git's own die() prose is translated under
+//     a non-C locale — "Unable to create '<path>': File exists."
+//     becomes different wording per locale, "cannot lock ref '<ref>'"
+//     has its own separate translation, and the `checkout -B` upstream-
+//     tracking step's own config-lock failure doesn't even print a
+//     ".lock"-suffixed path in its message ("could not lock config file
+//     .git/config: File exists") — so neither ".lock"-path matching nor
+//     die()-sentence matching alone covers every one of git's own lock
+//     files this pair of commands can collide on. What IS stable across
+//     every one of those cases is the trailing OS errno text for
+//     EEXIST, "File exists" — and runGitRetryLocked forces LC_ALL=C on
+//     the git subprocess it runs (via runGitOutput's extraEnv)
+//     specifically so that text is guaranteed English regardless of the
+//     ambient locale, rather than relying on git's own high-level
+//     phrasing around it. False positives are not a concern here: this
+//     check is scoped to exactly two argv shapes (`checkout -B ...`,
+//     `reset --hard ...`) against an unconditional mirror clone, neither
+//     of which has another legitimate "File exists" failure mode.
+//  2. One of git's known lock files exists RIGHT NOW (gitLockHeld):
+//     covers the case where the holder is still mid-checkout — a
+//     pre-emptive signal a pure post-failure text check would miss.
+//
+// Checking (1) is what closes the race a pure post-failure file-exists
+// probe cannot: the holder frequently finishes and unlinks its lock file
+// in the gap between this process's own failed git subprocess exiting
+// and any check performed afterwards (fork/exec/wait teardown is tens of
+// milliseconds on darwin — comparable to the holder's entire
+// checkout+reset) — a file-existence-only probe reports "not locked" for
+// a failure that unambiguously WAS lock contention, and the raw git
+// error would escape unretried. See this phase's Deviations report.
+func isLockContention(dir string, err error) bool {
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, ".lock") || strings.Contains(msg, "File exists") {
+			return true
+		}
+	}
+	return gitLockHeld(dir)
+}
+
+// jitteredPollInterval returns indexLockPollInterval +/- 50% jitter.
+// Without jitter, N contenders that all failed on the same lock at
+// (near-)the same instant would all sleep the identical interval and
+// wake in lockstep, re-colliding on the SAME retry attempt over and
+// over (a thundering herd) — spreading the wake-ups avoids that.
+func jitteredPollInterval() time.Duration {
+	half := indexLockPollInterval / 2
+	//nolint:gosec // reason: G404 — this jitter spreads retry wake-ups so N
+	// contenders do not re-collide in lockstep. It decides nothing an attacker
+	// could exploit by predicting it (there is no secret, no token, no
+	// ordering guarantee derived from it), and crypto/rand here would add an
+	// error path to a sleep duration for no gain. math/rand/v2 is the correct
+	// tool for scheduling jitter.
+	return half + rand.N(indexLockPollInterval)
+}
+
+// gitLockHeld reports whether dir's git directory currently holds any of
+// the specific lock files checkoutRemoteHead's own two git calls are
+// known to take: the index, HEAD, the branch's own ref, or the repo
+// config. One of the two signals isLockContention checks — see its doc
+// comment for why a post-failure check on this alone is not sufficient
+// by itself.
+func gitLockHeld(dir string) bool {
+	gitDir, err := resolveGitDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, name := range []string{"index.lock", "HEAD.lock", "config.lock"} {
+		if _, err := os.Stat(filepath.Join(gitDir, name)); err == nil {
+			return true
+		}
+	}
+	matches, _ := filepath.Glob(filepath.Join(gitDir, "refs", "heads", "*.lock"))
+	return len(matches) > 0
+}
+
+// resolveGitDir returns the git directory backing the repository at dir.
+//
+// Every mirror this package creates is a plain `git clone` (never a
+// linked worktree or a submodule checkout), so in practice this is always
+// dir/.git as a directory — verified against this repo: nothing under
+// internal/space or internal/host runs `git worktree` or checks out a
+// submodule. isGitRepo (below) already tolerates dir/.git being a
+// regular FILE too (the linked-worktree/submodule form, "gitdir: <path>"
+// content), so this resolves that form as well rather than assuming the
+// directory case and leaving index.lock detection silently unable to
+// find the real git dir if that assumption ever stops holding.
+func resolveGitDir(dir string) (string, error) {
+	dotGit := filepath.Join(dir, ".git")
+	info, err := os.Stat(dotGit)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return dotGit, nil
+	}
+	raw, err := os.ReadFile(dotGit)
+	if err != nil {
+		return "", err
+	}
+	const prefix = "gitdir: "
+	line := strings.TrimSpace(string(raw))
+	if !strings.HasPrefix(line, prefix) {
+		return "", fmt.Errorf("space: %s: unrecognized .git file contents", dotGit)
+	}
+	gitDir := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(dir, gitDir)
+	}
+	return gitDir, nil
 }
 
 // remoteHeadBranch resolves the remote's default branch, falling back to
