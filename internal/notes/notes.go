@@ -22,6 +22,17 @@ type Action struct {
 	Run    []string `yaml:"run,omitempty" json:"run,omitempty"`
 }
 
+// KindKnownIssue is the one Change.Kind value a renderer must treat
+// differently, so it is named here rather than spelled as a literal at each
+// surface. The other kinds (feat/fix/break/schema/policy — the schema's enum is
+// the full list) all describe something that CHANGED in that version and render
+// identically; a known-issue describes something that is BROKEN OR INCOMPLETE
+// right now, which is a different statement to a reader and especially to an
+// agent: it means "do not rely on this surface, use the named alternative". It
+// is expected to reappear in later versions until it is fixed, at which point
+// the fix ships as a normal entry and this one stops being carried.
+const KindKnownIssue = "known-issue"
+
 // Change is one entry in a release-notes file's changes list.
 type Change struct {
 	ID      string   `yaml:"id" json:"id"`

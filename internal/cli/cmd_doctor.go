@@ -87,8 +87,17 @@ func NewDoctorCommand(h host.Host, binaryVersion, projectConfigPath, machineConf
 func (c *DoctorCommand) Name() string { return "doctor" }
 
 // Synopsis implements cli.Command.
+//
+// Deliberately NOT an enumeration of the check names. It used to list five of
+// them and the check set grew to nine, so the one artifact an agent is told is
+// "generated from the binary, the source of truth for invocation syntax"
+// (skill/a2ahub/reference/commands.md) described a doctor that had not existed
+// for two releases. The `skill-drift` gate could not catch it either: it
+// regenerates from this same string and byte-diffs, so a stale sentence here
+// stays green forever. A summary cannot go stale that way; the enumeration lives
+// where it can be checked against `checks` — troubleshooting.md's table.
 func (c *DoctorCommand) Synopsis() string {
-	return "run basic health checks: credentials, space access, versions, CI presence, statusline wiring"
+	return "run local health checks over every connected space (credentials, mirror access, identity, versions, CI, auto-merge, statusline, skill) — see troubleshooting.md for what each FAIL means"
 }
 
 // Run implements cli.Command. Exit codes: 2 = usage error (including the
