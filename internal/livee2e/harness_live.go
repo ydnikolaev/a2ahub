@@ -47,6 +47,16 @@ type harness struct {
 	Prov      *ghClient
 	Part      *ghClient
 	A, B      *checkout
+
+	// PRFloor is the highest PR number the space carried at the moment
+	// ResetSpace finished — every write THIS run makes is numbered above it.
+	// Every branch->PR lookup filters on it (runPulls), because a reset can
+	// delete branches but not the pull requests that pointed at them, and
+	// this tier's branch names are deterministic per (system, verb, id): two
+	// runs produce two PRs on the same head ref. Zero when ResetSpace has not
+	// run, which degrades to the pre-fix behaviour rather than hiding every
+	// PR.
+	PRFloor int
 }
 
 // requiredCheckWaitCeiling bounds WaitForRequiredCheck's poll.
@@ -180,8 +190,34 @@ func (h *harness) submitDrafted(ctx context.Context, c *checkout, id string) (su
 // Open is still PREFERRED: a branch can carry more than one PR over a run's
 // lifetime, and the one still open is the one a caller waiting on a gate means.
 // Falling back to the highest number picks the most recent of the closed ones.
-func (h *harness) pullForBranch(ctx context.Context, branch string) (PullState, error) {
+// runPulls lists every pull request THIS run opened: `state=all` (this
+// space auto-merges, so a fast-green write is closed before the caller
+// looks) narrowed to numbers above h.PRFloor, the watermark ResetSpace
+// records once provisioning is done.
+//
+// Every branch->PR lookup goes through here rather than calling ListPulls
+// directly, so no future lookup can reintroduce the live-run-3 defect by
+// forgetting the filter: a reset deletes branches but cannot delete the
+// pull requests that pointed at them, and this tier's branch names are
+// deterministic per (system, verb, artifact id) — so a prior run's ghost
+// PR sits on exactly the head ref this run is about to reuse. See
+// ResetSpace's own note for why this is fixed here and not at the matcher.
+func (h *harness) runPulls(ctx context.Context) ([]PullState, error) {
 	pulls, err := h.Prov.ListPulls(ctx, h.Org, h.Repo, "all")
+	if err != nil {
+		return nil, err
+	}
+	out := pulls[:0:0]
+	for _, p := range pulls {
+		if p.Number > h.PRFloor {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+func (h *harness) pullForBranch(ctx context.Context, branch string) (PullState, error) {
+	pulls, err := h.runPulls(ctx)
 	if err != nil {
 		return PullState{}, err
 	}
@@ -219,7 +255,7 @@ func (h *harness) pullForBranch(ctx context.Context, branch string) (PullState, 
 // its match back to the original PullState (which carries fields
 // matchCompositeBranch's own branchPull deliberately does not, e.g. HeadSHA).
 func (h *harness) pullForBranchContaining(ctx context.Context, system, verb, artifactID string) (PullState, error) {
-	pulls, err := h.Prov.ListPulls(ctx, h.Org, h.Repo, "all")
+	pulls, err := h.runPulls(ctx)
 	if err != nil {
 		return PullState{}, err
 	}
@@ -252,7 +288,7 @@ func (h *harness) pullForBranchContaining(ctx context.Context, system, verb, art
 // so "a PR already exists on this branch" is expected, and the row's actual
 // claim is narrower: this SPECIFIC call did not add another one.
 func (h *harness) countPRsForBranch(ctx context.Context, branch string) (int, error) {
-	pulls, err := h.Prov.ListPulls(ctx, h.Org, h.Repo, "all")
+	pulls, err := h.runPulls(ctx)
 	if err != nil {
 		return 0, err
 	}
