@@ -603,7 +603,22 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// first moment the truth is knowable, so it repairs the entry instead of
 	// leaving the operator with a green `a2a doctor` and a submit that tells
 	// them to run the command they already ran.
-	if repaired, was, ok := connectRepairStaleID(&cfg, id, repoURL); ok {
+	_, wasID, idFixed := connectRepairStaleID(&cfg, id, repoURL)
+
+	// The SAME lookup connectFindIndex uses below for "is this a fresh
+	// registration" also locates the entry any repair targets — a
+	// narrower match here (e.g. RepoURL only) would mean an entry
+	// "already connected" reports on is not the one a repair reaches,
+	// which is this defect's exact shape displaced rather than fixed
+	// (spec: "the mirror the tool clones is not the one it later reads").
+	idx, existed := connectFindIndex(cfg, id, repoURL)
+	var wasMirror string
+	var mirrorFixed bool
+	if existed {
+		wasMirror, mirrorFixed = connectRepairMirrorLocation(&cfg, idx, urlID)
+	}
+
+	if idFixed || mirrorFixed {
 		raw, err := yaml.Marshal(cfg)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "connect: cannot encode config: %v\n", err)
@@ -613,12 +628,20 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			_, _ = fmt.Fprintf(stdio.Stderr, "connect: cannot write %s: %v\n", c.projectConfigPath, err)
 			return 1
 		}
-		_, _ = fmt.Fprintf(stdio.Stdout, "connect: corrected space id %q -> %q (the space's own space.yaml is authoritative)\n", was, repaired)
+		if idFixed {
+			_, _ = fmt.Fprintf(stdio.Stdout, "connect: corrected space id %q -> %q (the space's own space.yaml is authoritative)\n", wasID, id)
+		}
+		if mirrorFixed {
+			if wasMirror == "" {
+				_, _ = fmt.Fprintf(stdio.Stdout, "connect: repaired missing mirror location for space %q (now resolves to the cloned mirror)\n", id)
+			} else {
+				_, _ = fmt.Fprintf(stdio.Stdout, "connect: corrected mirror location for space %q: %q -> %q\n", id, wasMirror, urlID)
+			}
+		}
 		_, _ = fmt.Fprintf(stdio.Stdout, "connect: space %q already connected; mirror refreshed\n", id)
 		return 0
 	}
 
-	_, existed := connectFind(cfg, id, repoURL)
 	if !existed {
 		ref := space.Ref{ID: id, RepoURL: repoURL, MirrorLocation: urlID}
 		cfg.Spaces = append(cfg.Spaces, ref)
@@ -737,13 +760,43 @@ func connectRepairStaleID(cfg *space.ProjectConfig, id, repoURL string) (repaire
 	return "", "", false
 }
 
-func connectFind(cfg space.ProjectConfig, id, repoURL string) (space.Ref, bool) {
-	for _, r := range cfg.Spaces {
+// connectFindIndex locates the config entry connect's "already registered"
+// path operates on, matched by resolved id OR repo URL — the same rule
+// connectRepairMirrorLocation's caller uses to decide WHICH entry to repair,
+// so "already connected" and "the entry a repair targets" can never
+// diverge (see Run's comment at the call site).
+func connectFindIndex(cfg space.ProjectConfig, id, repoURL string) (int, bool) {
+	for i, r := range cfg.Spaces {
 		if r.ID == id || r.RepoURL == repoURL {
-			return r, true
+			return i, true
 		}
 	}
-	return space.Ref{}, false
+	return -1, false
+}
+
+// connectRepairMirrorLocation sets/repairs the MirrorLocation of the
+// ALREADY-registered entry at cfg.Spaces[idx] to urlID — the same key
+// value the clone itself resolved against (Run, above: `dir :=
+// c.resolveMirror(..., space.Ref{ID: urlID, MirrorLocation: urlID}, ...)`)
+// — when it does not already carry that value.
+//
+// Without this, an entry `a2a init --space <url>` registered (which never
+// clones, so it never sets MirrorLocation at all) never converges with the
+// directory the clone actually landed in: ResolveMirrorLocation
+// (internal/space/config.go) treats an empty MirrorLocation as
+// project-relative-by-ID and ignores a configured mirror_root entirely, so
+// a configured mirror_root silently diverges the read path (inbox/outbox/
+// submit/doctor) from the write path (this clone) — the defect this fix
+// closes. Idempotent: an entry that already carries urlID is left alone
+// (ok=false) — this never adds, removes, or reorders entries.
+func connectRepairMirrorLocation(cfg *space.ProjectConfig, idx int, urlID string) (was string, ok bool) {
+	r := &cfg.Spaces[idx]
+	if r.MirrorLocation == urlID {
+		return "", false
+	}
+	was = r.MirrorLocation
+	r.MirrorLocation = urlID
+	return was, true
 }
 
 // connectResolveSpaceID resolves the authoritative space id from the

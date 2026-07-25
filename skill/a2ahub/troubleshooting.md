@@ -35,18 +35,23 @@ violated).
 | `1` | One or more checks failed, OR the local project/machine config could not be loaded (in which case doctor prints a `doctor: cannot load … config` line to stderr before exiting). |
 | `2` | Usage error — including the `--space` flag, which is the v2 admin host-drift diff and is explicitly rejected in v1-min (doctor prints `doctor: --space: v1-min: not available`). |
 
-## The five checks
+## The nine checks
 
 Each check runs once per connected space (a project with no connected spaces
-passes every check trivially).
+passes every check trivially). They print in this order — if you are reading
+`doctor`'s output top to bottom, this is the same order.
 
 | Check | What it verifies | A FAIL means |
 |-------|------------------|--------------|
-| **credentials** | A write credential resolves for every connected space, via the machine-config reference (`~/.config/a2a/config.yaml`). | The space has no configured credential reference, or the reference did not resolve. Re-check your machine config's credential entry for that space. |
+| **credentials** | A write credential resolves for every connected space, exactly the way a WRITE resolves it: the explicit `A2A_TOKEN_<SPACE_ID>` override first, the machine-config reference (`~/.config/a2a/config.yaml`) second. | The space resolves a credential through NEITHER path. Export the documented variable, or fix the machine config's credential entry for that space. |
 | **space access** | Every connected space's mirror clone is fetchable (clones on first use, fetches thereafter). | The mirror could not be cloned or fetched — a bad repo URL, a network/auth failure, or a missing local mirror path. |
+| **space identity** | The space id in your project config matches the id the space's own `space.yaml` declares. | Your config names a space id no space has — usually because `a2a init --space <url>` had to guess the id from the URL. Run `a2a connect <url>`, which reads the manifest and repairs the entry. |
 | **versions** | This build is not older than each space's `min_binary_version` pin in `space.yaml`. | Your local `a2a` binary is older than the space requires (or the space's `space.yaml` could not be read/parsed). Upgrade the binary; the write funnel will otherwise refuse your writes. |
 | **CI presence** | The space's mirror carries `.github/workflows/a2a-validate.yml`. | The validation workflow file is missing from the space's mirror. |
+| **auto-merge enabled** | The space repo's GitHub `allow_auto_merge` setting is ON. It is OFF by default on a freshly created repository. | Every write stalls: `a2a submit` opens a PR and arms auto-merge, so with the setting off the PR sits there and the counterparty never sees the artifact. Enable Settings → General → "Allow auto-merge". **A PASS carrying `· auto-merge unverified` is not a failure** — it means your credential cannot read repo settings (a fine-grained token needs `Repository metadata: read`), so the answer is unknown rather than bad. |
 | **statusline wiring** | The `git` binary is on `PATH` (the prerequisite for §7.5's hub-less statusline-refresh fallback). | `git` is not on `PATH`, so the statusline's git-fetch fallback refresh cannot run. |
+| **skill discoverable** | The `a2ahub` skill tree is installed and reachable by your agent harness. | Advisory only — this row never FAILs. It reports whether a skill is installed at all. |
+| **skill manual current** | The installed skill's generated reference matches this binary's own command catalog. | Advisory only — this row never FAILs. A note here means the installed manual describes a different binary version; `a2a skill install` refreshes it. |
 
 ## Known limits — do NOT over-read a PASS
 

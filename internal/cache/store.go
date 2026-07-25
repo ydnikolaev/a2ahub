@@ -39,6 +39,14 @@ type Store struct {
 	now       Clock
 	ttl       time.Duration
 
+	// cloneOrFetch is refresh.go's injected mirror-refresh primitive
+	// (SyncIfStale's own read of it — the M1 stale-read fix, AC-1050).
+	// NewStore defaults it to space.CloneOrFetch; SetCloneOrFetchForTest
+	// overrides it (same test-only DI convention as
+	// feedback.Submitter.SetCloneOrFetchForTest /
+	// cli.SyncCommand's own cloneOrFetch field).
+	cloneOrFetch func(ctx context.Context, dir, repoURL string) error
+
 	// update.go's T3/T4 fields — all zero-value until EnableUpdateNotice
 	// is called (never by NewStore itself, so every existing caller's
 	// Statusline output stays byte-unchanged until the lead wires the
@@ -61,7 +69,19 @@ func NewStore(ownSystem, cacheDir string, spaces []SpaceMirror, now Clock, ttl t
 	if ttl <= 0 {
 		ttl = DefaultStatuslineTTL
 	}
-	return &Store{ownSystem: ownSystem, cacheDir: cacheDir, spaces: spaces, now: now, ttl: ttl}
+	return &Store{
+		ownSystem: ownSystem, cacheDir: cacheDir, spaces: spaces, now: now, ttl: ttl,
+		cloneOrFetch: space.CloneOrFetch,
+	}
+}
+
+// SetCloneOrFetchForTest overrides the injected mirror-refresh seam
+// (test-only DI, rails anti-pattern #10 convention — same shape as
+// feedback.Submitter.SetCloneOrFetchForTest). Production always uses
+// NewStore's own space.CloneOrFetch default; refresh_test.go uses this to
+// inject a call-counting / failing fake without a real network fetch.
+func (s *Store) SetCloneOrFetchForTest(f func(ctx context.Context, dir, repoURL string) error) {
+	s.cloneOrFetch = f
 }
 
 func (s *Store) cursorPath() string { return filepath.Join(s.cacheDir, "cursor.json") }

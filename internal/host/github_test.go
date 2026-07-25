@@ -174,3 +174,86 @@ func TestPushBranchRejected(t *testing.T) {
 		t.Fatalf("remote branch head = %q after rejected push, want unchanged %q", remoteHead, firstPushHead)
 	}
 }
+
+// TestAutoMergeAllowed is WAVE M2 / spec 45 AC-1050.5's host-layer half: the
+// repo-settings read reports `allow_auto_merge` verbatim on success, and a
+// failed read (403 here — the "no permission" case AC-1050.5/spec 42 §6
+// name explicitly) returns a non-nil error rather than a false "off" — the
+// distinction doctorCheckAutoMerge depends on to never render a failed read
+// as a PASS or a plain "off".
+func TestAutoMergeAllowed(t *testing.T) {
+	t.Parallel()
+
+	t.Run("on", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet || r.URL.Path != "/repos/acme/space" {
+				t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"allow_auto_merge": true})
+		}))
+		defer srv.Close()
+
+		h := NewGitHubHost(srv.Client(), srv.URL)
+		allowed, err := h.AutoMergeAllowed(context.Background(), RepoSettingsRequest{
+			Repo: Repo{Owner: "acme", Name: "space"}, Credential: Credential{Token: "tok"},
+		})
+		if err != nil {
+			t.Fatalf("AutoMergeAllowed: %v", err)
+		}
+		if !allowed {
+			t.Fatal("allowed = false, want true")
+		}
+	})
+
+	t.Run("off", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"allow_auto_merge": false})
+		}))
+		defer srv.Close()
+
+		h := NewGitHubHost(srv.Client(), srv.URL)
+		allowed, err := h.AutoMergeAllowed(context.Background(), RepoSettingsRequest{
+			Repo: Repo{Owner: "acme", Name: "space"}, Credential: Credential{Token: "tok"},
+		})
+		if err != nil {
+			t.Fatalf("AutoMergeAllowed: %v", err)
+		}
+		if allowed {
+			t.Fatal("allowed = true, want false")
+		}
+	})
+
+	t.Run("read fails, distinct from off", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, `{"message":"Not Found"}`, http.StatusForbidden)
+		}))
+		defer srv.Close()
+
+		h := NewGitHubHost(srv.Client(), srv.URL)
+		allowed, err := h.AutoMergeAllowed(context.Background(), RepoSettingsRequest{
+			Repo: Repo{Owner: "acme", Name: "space"}, Credential: Credential{Token: "tok"},
+		})
+		if err == nil {
+			t.Fatal("expected a non-nil error on a failed read, got nil")
+		}
+		if allowed {
+			t.Fatal("allowed = true on a failed read, want false (never claim ON on a failed read)")
+		}
+		if !errors.Is(err, ErrRequestFailed) {
+			t.Fatalf("expected errors.Is(err, ErrRequestFailed), got %v", err)
+		}
+	})
+
+	t.Run("invalid request", func(t *testing.T) {
+		t.Parallel()
+		h := NewGitHubHost(nil, "")
+		if _, err := h.AutoMergeAllowed(context.Background(), RepoSettingsRequest{}); !errors.Is(err, ErrInvalidRequest) {
+			t.Fatalf("expected errors.Is(err, ErrInvalidRequest), got %v", err)
+		}
+	})
+}

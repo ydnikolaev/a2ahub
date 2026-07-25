@@ -214,6 +214,7 @@ func (c *SpaceCommand) runInit(_ context.Context, args []string, stdio IO) int {
 	_, _ = fmt.Fprintln(stdio.Stdout, "  - CODEOWNERS: replace the @REPLACE_WITH_ORG/... placeholders with real GitHub teams/logins")
 	_, _ = fmt.Fprintln(stdio.Stdout, "  - create the space repo on GitHub and push this tree")
 	_, _ = fmt.Fprintln(stdio.Stdout, `  - arm branch protection with required check "a2a-validate / validate" (see BRANCH-PROTECTION.md)`)
+	_, _ = fmt.Fprintln(stdio.Stdout, `  - enable Settings -> General -> "Allow auto-merge" (a2a submit relies on it to merge unattended; a2a doctor FAILs without it)`)
 	return 0
 }
 

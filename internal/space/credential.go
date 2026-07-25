@@ -15,12 +15,20 @@ import (
 
 // CredentialEnvVar renders the per-space override env var every surface
 // honours as ResolveCredential's precedence step (a) — "A2A_TOKEN_" plus
-// the uppercased space id (§7.4/§10.5). It is the SSOT for that name:
-// cmd/a2a, internal/mcp and `a2a doctor` all render it through here, so
-// the var a user is TOLD to export can never diverge from the var a write
-// path actually reads.
+// the uppercased space id, with every `-` mapped to `_` first (§7.4/§10.5,
+// P41 variant c). The mapping is required, not cosmetic: a hyphenated
+// space id (e.g. "my-space") uppercases to a name bash/zsh both REFUSE as
+// an identifier ("A2A_TOKEN_MY-SPACE" — `export` errors "not a valid
+// identifier"), which is exactly the remedy `a2a connect`/`a2a doctor`
+// print — an operator without `gh auth token` working could never type it.
+// The mapping stays injective (two distinct ids can never collide on one
+// var name) because schemas/manifest/v1/space.schema.json's `space`
+// pattern forbids `_` in a real space id (P41): only `-` can turn into `_`,
+// never the reverse. It is the SSOT for this name: cmd/a2a, internal/mcp
+// and `a2a doctor` all render it through here, so the var a user is TOLD
+// to export can never diverge from the var a write path actually reads.
 func CredentialEnvVar(spaceID string) string {
-	return "A2A_TOKEN_" + strings.ToUpper(spaceID)
+	return "A2A_TOKEN_" + strings.ToUpper(strings.ReplaceAll(spaceID, "-", "_"))
 }
 
 // DefaultCredentialReference picks the machine-config credential reference

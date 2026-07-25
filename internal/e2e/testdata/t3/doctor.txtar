@@ -12,6 +12,15 @@ stdout 'space access: PASS'
 stdout 'space identity: PASS'
 stdout 'versions: PASS'
 stdout 'CI presence: PASS'
+# P45's auto-merge row, in its ADVISORY state: A2A_GITHUB_API is pinned at a
+# closed local port (txtar_test.go's Setup), so the repo-settings read cannot
+# be answered here. That must render as a PASS carrying an explicit "unverified"
+# note — never a silent PASS (which would be a false green over the defect that
+# stalled every submit on the live space) and never a FAIL (which would red
+# `doctor` for every legitimately narrow-scoped token). Both directions are
+# unit-tested in internal/cli; this row is the through-the-binary proof that the
+# check exists at all and that its wording is stable.
+stdout 'auto-merge enabled: PASS · auto-merge unverified'
 stdout 'statusline wiring: PASS'
 
 # `--space` is explicitly rejected (v2, D-030) — never silently ignored.

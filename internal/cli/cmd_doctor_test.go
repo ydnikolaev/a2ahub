@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/testkit/fakegithub"
 	"gopkg.in/yaml.v3"
 )
 
@@ -91,7 +94,7 @@ func TestDoctorRunAllPassOnZeroConnectedSpaces(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 	}
-	for _, name := range []string{"credentials", "space access", "space identity", "versions", "CI presence", "statusline wiring"} {
+	for _, name := range []string{"credentials", "space access", "space identity", "versions", "CI presence", "auto-merge enabled", "statusline wiring"} {
 		if !strings.Contains(stdout.String(), name+": PASS") {
 			t.Errorf("stdout missing %q PASS line; got %q", name, stdout.String())
 		}
@@ -471,6 +474,148 @@ func TestDoctorCheckCIPresence(t *testing.T) {
 		}
 		if !strings.Contains(detail, "a2a-validate.yml") {
 			t.Fatalf("detail = %q, want the missing path named", detail)
+		}
+	})
+}
+
+// TestDoctorCheckAutoMerge is WAVE M2 / spec 45 AC-1050.5: three outcomes,
+// driven against fakegithub over real HTTP (the on/off cases) and an inline
+// httptest handler for the read-failure case — fakegithub's GET
+// /repos/{owner}/{name} always answers 200, so a 403 needs a handler of its
+// own (see this phase's reported deviation).
+func TestDoctorCheckAutoMerge(t *testing.T) {
+	t.Parallel()
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa", RepoURL: "https://github.com/acme/getvisa.git"}}}
+	machine := space.MachineConfig{}
+	withToken := func(context.Context, string, space.CredentialReference) (host.Credential, error) {
+		return host.Credential{Token: "tok"}, nil
+	}
+
+	t.Run("pass when auto-merge is on", func(t *testing.T) {
+		t.Parallel()
+		gh := fakegithub.New(t, t.TempDir())
+		gh.AllowAutoMerge = true
+
+		cmd := newTestDoctorCommand()
+		cmd.h = host.NewGitHubHost(nil, gh.URL)
+		cmd.resolveCredential = withToken
+
+		ok, detail := cmd.doctorCheckAutoMerge(context.Background(), cfg, machine)
+		if !ok {
+			t.Fatalf("want pass, got fail: %s", detail)
+		}
+	})
+
+	t.Run("fail naming the setting and the fix when auto-merge is off", func(t *testing.T) {
+		t.Parallel()
+		gh := fakegithub.New(t, t.TempDir())
+		gh.AllowAutoMerge = false
+
+		cmd := newTestDoctorCommand()
+		cmd.h = host.NewGitHubHost(nil, gh.URL)
+		cmd.resolveCredential = withToken
+
+		ok, detail := cmd.doctorCheckAutoMerge(context.Background(), cfg, machine)
+		if ok {
+			t.Fatal("want fail, got pass")
+		}
+		if !strings.Contains(detail, "getvisa") {
+			t.Fatalf("detail = %q, want the space named", detail)
+		}
+		if !strings.Contains(detail, "Allow auto-merge") {
+			t.Fatalf("detail = %q, want the setting and how to turn it on named", detail)
+		}
+		if !strings.Contains(detail, "stalls behind a PR nothing will merge") {
+			t.Fatalf("detail = %q, want the why-it-matters explanation", detail)
+		}
+	})
+
+	// AC-1050.5's third outcome, as CORRECTED lead-side 2026-07-25: an
+	// unanswerable read is an ADVISORY, not a failure. It must never be a
+	// silent PASS (that reproduces the original defect with a green check next
+	// to it) and must never be a FAIL either — a fine-grained token without
+	// "Repository metadata: read" is a legitimate, common, working setup, and a
+	// gate that reds on a working setup is a gate people stop reading. Same
+	// resolution this repo already reached for doctorWorkflowScopeNote.
+	t.Run("an unanswerable read is an advisory PASS, never silent, never a FAIL", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, `{"message":"Forbidden"}`, http.StatusForbidden)
+		}))
+		defer srv.Close()
+
+		cmd := newTestDoctorCommand()
+		cmd.h = host.NewGitHubHost(nil, srv.URL)
+		cmd.resolveCredential = withToken
+
+		ok, detail := cmd.doctorCheckAutoMerge(context.Background(), cfg, machine)
+		if !ok {
+			t.Fatalf("want an advisory PASS, got FAIL: %s", detail)
+		}
+		if !strings.Contains(detail, "unverified") {
+			t.Fatalf("detail = %q, want the note to say the setting is UNVERIFIED — a silent PASS here is the false-green this row exists to prevent", detail)
+		}
+		if !strings.Contains(detail, "getvisa") {
+			t.Fatalf("detail = %q, want the space named so the reader knows WHICH space is unverified", detail)
+		}
+		// The note must be stable output: doctor's line is asserted verbatim by
+		// the e2e doctor script, and an interpolated multi-line API body both
+		// destabilises it and buries the actionable sentence.
+		if strings.Contains(detail, "\n") || strings.Contains(detail, "Forbidden") {
+			t.Fatalf("detail = %q must not interpolate the raw API error", detail)
+		}
+	})
+
+	t.Run("an unwired repo-settings reader is the same advisory, not a failure", func(t *testing.T) {
+		t.Parallel()
+		cmd := newTestDoctorCommand() // host.NewFakeHost() implements no AutoMergeAllowed
+		ok, detail := cmd.doctorCheckAutoMerge(context.Background(), cfg, machine)
+		if !ok {
+			t.Fatalf("want an advisory PASS, got FAIL: %s", detail)
+		}
+		if !strings.Contains(detail, "unverified") {
+			t.Fatalf("detail = %q, want the unverified note", detail)
+		}
+	})
+
+	// The half that MUST stay a failure even when a sibling space is
+	// unreadable: a genuinely-off setting is actionable, so it wins over the
+	// advisory rather than being softened into it.
+	t.Run("a genuinely-off setting still FAILs even alongside an unverifiable space", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/repos/acme/getvisa") {
+				_, _ = w.Write([]byte(`{"allow_auto_merge": false}`))
+				return
+			}
+			http.Error(w, `{"message":"Forbidden"}`, http.StatusForbidden)
+		}))
+		defer srv.Close()
+
+		twoSpaces := space.ProjectConfig{System: cfg.System, Spaces: append(
+			append([]space.Ref{}, cfg.Spaces...),
+			space.Ref{ID: "other", RepoURL: "https://github.com/acme/other"},
+		)}
+
+		cmd := newTestDoctorCommand()
+		cmd.h = host.NewGitHubHost(nil, srv.URL)
+		cmd.resolveCredential = withToken
+
+		ok, detail := cmd.doctorCheckAutoMerge(context.Background(), twoSpaces, machine)
+		if ok {
+			t.Fatalf("want FAIL — one space really has auto-merge off; got pass with %q", detail)
+		}
+		if !strings.Contains(detail, "Allow auto-merge") {
+			t.Fatalf("detail = %q, want the actionable half, not the advisory", detail)
+		}
+	})
+
+	t.Run("no connected spaces vacuously passes", func(t *testing.T) {
+		t.Parallel()
+		cmd := newTestDoctorCommand()
+		ok, _ := cmd.doctorCheckAutoMerge(context.Background(), space.ProjectConfig{}, machine)
+		if !ok {
+			t.Fatal("want pass with zero connected spaces")
 		}
 	})
 }

@@ -252,9 +252,12 @@ func buildCommands() map[string]command {
 	}
 
 	// Read verbs (P7): federated over ALL connected spaces via one
-	// cache.Store; read-only, no network in the render path.
+	// cache.Store. Every verb in freshReadVerbs refreshes a stale mirror
+	// first (P45 §T1); `statusline` alone does not, and stays the only
+	// no-network render path.
 	for name, construct := range readVerbs() {
 		m[name] = func(args []string, stdout, stderr io.Writer) int {
+			ctx := context.Background()
 			p, err := resolvePaths()
 			if err != nil {
 				return fail(stderr, err)
@@ -263,7 +266,16 @@ func buildCommands() map[string]command {
 			if err != nil {
 				return failf(stderr, "a2a: %v", err)
 			}
-			return construct(store).Run(context.Background(), args, stdio(stdout, stderr))
+			if freshReadVerbs[name] {
+				// A refresh failure is NEVER fatal to a read (AC-1050.3):
+				// name it and read the local data anyway, so an offline
+				// machine still works. The note goes to stderr so a piped
+				// `--json` payload stays machine-clean.
+				for _, err := range store.SyncIfStale(ctx) {
+					_, _ = fmt.Fprintf(stderr, "a2a: %v — reading local data, which may be stale\n", err)
+				}
+			}
+			return construct(store).Run(ctx, args, stdio(stdout, stderr))
 		}
 	}
 
@@ -348,6 +360,32 @@ func completionSubFamilies() map[string][]string {
 }
 
 // readVerbs maps each P7 read verb to its cache.Store-backed constructor.
+// freshReadVerbs names the read verbs that refresh a stale mirror BEFORE
+// reading it (spec 45 §T1, AC-1050.1/.4). It exists because the protocol's
+// guaranteed floor tells every agent to open a session with `a2a inbox`, and a
+// non-fetching inbox reports "nothing" for a contract the counterparty
+// published after this side's last sync — the counterparty is invisible and
+// nobody sees an error.
+//
+// `statusline` is DELIBERATELY ABSENT and must stay absent: it renders inside a
+// shell prompt under a <100ms budget (asserted in internal/cache's
+// statusline_test.go) and already refreshes via its own detached,
+// fire-and-forget goroutine. A synchronous `git fetch` in a prompt is not
+// acceptable, and because that budget is asserted at the Store level rather
+// than through this wiring, a mistake here would pass every unit test — which
+// is why TestFreshReadVerbsClassifiesEveryReadVerb guards this map from both
+// sides instead of the exclusion resting on this comment.
+var freshReadVerbs = map[string]bool{
+	"inbox":     true,
+	"outbox":    true,
+	"show":      true,
+	"thread":    true,
+	"search":    true,
+	"contracts": true,
+	"dashboard": true,
+	"html":      true,
+}
+
 func readVerbs() map[string]func(*cache.Store) cli.Command {
 	return map[string]func(*cache.Store) cli.Command{
 		"inbox":     func(s *cache.Store) cli.Command { return cli.NewInboxCommand(s) },

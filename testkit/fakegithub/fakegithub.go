@@ -68,6 +68,11 @@ type Server struct {
 	CheckName string
 	// ReviewApprovals are the logins whose latest review is an approval.
 	ReviewApprovals []string
+	// AllowAutoMerge is what GET /repos/{owner}/{name} reports as the repo's
+	// `allow_auto_merge` setting (host.GitHubHost.AutoMergeAllowed). Defaults
+	// to true — a correctly-configured space — so no existing test's
+	// behaviour changes; set false to drive the WAVE M2 doctor FAIL path.
+	AllowAutoMerge bool
 
 	t    testing.TB
 	mu   sync.Mutex
@@ -93,6 +98,7 @@ func New(t testing.TB, originDir string) *Server {
 		CheckState:      "completed",
 		CheckConclusion: "success",
 		CheckName:       "a2a-validate / validate",
+		AllowAutoMerge:  true,
 		t:               t,
 		forks:           make(map[string]string),
 	}
@@ -180,7 +186,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			{"name": s.CheckName, "status": s.CheckState, "conclusion": s.CheckConclusion, "head_sha": parts[4]},
 		}})
 	case len(parts) == 3 && parts[0] == "repos" && r.Method == http.MethodGet:
-		s.writeJSON(w, map[string]any{"name": parts[2]})
+		s.writeJSON(w, map[string]any{"name": parts[2], "allow_auto_merge": s.AllowAutoMerge})
 	default:
 		http.Error(w, "fakegithub: unhandled "+r.Method+" "+r.URL.Path, http.StatusNotFound)
 	}

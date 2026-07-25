@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
@@ -280,6 +281,181 @@ func TestConnectRepairsAStaleURLDerivedID(t *testing.T) {
 		t.Fatalf("second connect: code = %d", code)
 	}
 	if strings.Contains(out2.String(), "corrected space id") {
+		t.Fatalf("second connect must find nothing to correct, got %q", out2.String())
+	}
+}
+
+// --- AC-1050.8: connect converges the persisted ref's MirrorLocation with
+// the directory it actually cloned into --------------------------------
+
+// countMirrorGitDirs counts ".git" directories found anywhere under root —
+// used to assert a mirror clone landed in exactly ONE place, never both the
+// project-relative default AND a configured mirror_root.
+func countMirrorGitDirs(t testing.TB, root string) int {
+	t.Helper()
+	n := 0
+	if err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // reason: best-effort walk — an entry this test cannot stat is by definition not a mirror it is counting, and aborting the whole walk over one would turn a permissions quirk into a spurious failure (same shape and same reason as cmd/a2a/wire.go's mirrorHoldsArtifact)
+		}
+		if info.IsDir() && info.Name() == ".git" {
+			n++
+			return filepath.SkipDir
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("Walk %s: %v", root, err)
+	}
+	return n
+}
+
+// TestConnectRepairsMissingMirrorLocationOnAlreadyRegisteredRef is AC-1050.8
+// (this phase's Defect 1): `a2a init --space <url>` persists a ref with NO
+// MirrorLocation (init never clones, so it cannot know one) — `connect` on
+// that SAME url must set/repair MirrorLocation on the ref it finds already
+// registered, not only on a freshly-registered one, so the persisted ref
+// converges with the directory the clone actually landed in.
+// space.ResolveMirrorLocation ignores mirror_root entirely when
+// MirrorLocation is empty, so this is exercised both with and without a
+// configured mirror_root — the exact bug shape: with mirror_root set, an
+// unrepaired ref would resolve project-relatively while the clone landed
+// under mirror_root, leaving an orphan mirror `disconnect` never removes.
+func TestConnectRepairsMissingMirrorLocationOnAlreadyRegisteredRef(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		mirrorRoot bool
+	}{
+		{name: "mirror_root unset"},
+		{name: "mirror_root set", mirrorRoot: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fx := spacefixture.New(t, "axon")
+			dir := t.TempDir()
+			cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+			machinePath := filepath.Join(dir, "machine.yaml")
+
+			initCmd := cli.NewInitCommand(cfgPath)
+			ioInit, outInit, _ := newIO()
+			if code := initCmd.Run(context.Background(), []string{"--system", "axon", "--space", fx.RemoteURL()}, ioInit); code != 0 {
+				t.Fatalf("init: code = %d; output=%s", code, outInit.String())
+			}
+			cfg0, err := space.LoadProjectConfig(cfgPath)
+			if err != nil {
+				t.Fatalf("LoadProjectConfig after init: %v", err)
+			}
+			if len(cfg0.Spaces) != 1 || cfg0.Spaces[0].MirrorLocation != "" {
+				t.Fatalf("precondition: init must persist a ref with no MirrorLocation, got %+v", cfg0.Spaces)
+			}
+
+			if tc.mirrorRoot {
+				machineYAML := "mirror_root: " + filepath.Join(dir, "mirrors") + "\n"
+				if err := os.WriteFile(machinePath, []byte(machineYAML), 0o644); err != nil {
+					t.Fatalf("seed machine config: %v", err)
+				}
+			}
+
+			connect := cli.NewConnectCommand(cfgPath, machinePath, dir)
+			connect.SetDefaultCredentialRefForTest(func(_ context.Context, id string) string { return "env:A2A_TOKEN_" + id })
+			io1, out1, errOut1 := newIO()
+			if code := connect.Run(context.Background(), []string{fx.RemoteURL()}, io1); code != 0 {
+				t.Fatalf("connect: code = %d; stdout=%s stderr=%s", code, out1.String(), errOut1.String())
+			}
+
+			cfg1, err := space.LoadProjectConfig(cfgPath)
+			if err != nil {
+				t.Fatalf("LoadProjectConfig after connect: %v", err)
+			}
+			if len(cfg1.Spaces) != 1 {
+				t.Fatalf("Spaces = %+v, want exactly one entry (repair, never a duplicate)", cfg1.Spaces)
+			}
+			if cfg1.Spaces[0].MirrorLocation == "" {
+				t.Fatalf("expected connect to repair the missing MirrorLocation, got %+v", cfg1.Spaces[0])
+			}
+
+			machine, _ := space.LoadMachineConfig(machinePath)
+			mirrorDir := space.ResolveMirrorLocation(dir, cfg1.Spaces[0], machine)
+			if _, err := os.Stat(filepath.Join(mirrorDir, ".git")); err != nil {
+				t.Fatalf("persisted ref must resolve to the real clone at %s: %v", mirrorDir, err)
+			}
+			if n := countMirrorGitDirs(t, dir); n != 1 {
+				t.Fatalf("expected exactly ONE mirror clone under %s, found %d", dir, n)
+			}
+
+			// Idempotent: a ref that already carries the right MirrorLocation
+			// is not rewritten and connect prints no repair message.
+			io2, out2, errOut2 := newIO()
+			if code := connect.Run(context.Background(), []string{fx.RemoteURL()}, io2); code != 0 {
+				t.Fatalf("second connect: code = %d; stdout=%s stderr=%s", code, out2.String(), errOut2.String())
+			}
+			if strings.Contains(out2.String(), "repaired missing mirror location") || strings.Contains(out2.String(), "corrected mirror location") {
+				t.Fatalf("second connect must find nothing to repair, got %q", out2.String())
+			}
+			cfg2, err := space.LoadProjectConfig(cfgPath)
+			if err != nil {
+				t.Fatalf("LoadProjectConfig after second connect: %v", err)
+			}
+			if len(cfg2.Spaces) != 1 || cfg2.Spaces[0].MirrorLocation != cfg1.Spaces[0].MirrorLocation {
+				t.Fatalf("second connect must not change the repaired ref, got %+v (was %+v)", cfg2.Spaces, cfg1.Spaces)
+			}
+		})
+	}
+}
+
+// TestConnectRepairsStaleIDAndMissingMirrorLocationTogether combines both
+// AC-1050.8 repair paths this phase calls out: a config entry keyed under
+// the WRONG id (as `a2a init --space <url>` guesses it, mirroring
+// TestConnectRepairsAStaleURLDerivedID) AND missing MirrorLocation (also
+// init's doing) — connect's single write must fix both in one pass.
+func TestConnectRepairsStaleIDAndMissingMirrorLocationTogether(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	machinePath := filepath.Join(dir, "machine.yaml")
+
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	stale := "system: axon\nspaces:\n  - id: wrong-guess\n    repo_url: " + fx.RemoteURL() + "\n"
+	if err := os.WriteFile(cfgPath, []byte(stale), 0o644); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	cmd := cli.NewConnectCommand(cfgPath, machinePath, dir)
+	cmd.SetDefaultCredentialRefForTest(func(_ context.Context, id string) string { return "env:A2A_TOKEN_" + id })
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{fx.RemoteURL()}, io); code != 0 {
+		t.Fatalf("connect: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig: %v", err)
+	}
+	if len(cfg.Spaces) != 1 {
+		t.Fatalf("Spaces = %+v, want the SAME single entry, repaired (never a duplicate)", cfg.Spaces)
+	}
+	if cfg.Spaces[0].ID == "wrong-guess" {
+		t.Fatalf("the stale id survived: %+v", cfg.Spaces[0])
+	}
+	if cfg.Spaces[0].MirrorLocation == "" {
+		t.Fatalf("expected MirrorLocation repaired alongside the id, got %+v", cfg.Spaces[0])
+	}
+	if !strings.Contains(out.String(), "corrected space id") {
+		t.Fatalf("expected connect to report the id correction, got %q", out.String())
+	}
+	if !strings.Contains(out.String(), "mirror location") {
+		t.Fatalf("expected connect to report the mirror location repair, got %q", out.String())
+	}
+
+	// Idempotent: a second connect finds nothing left to repair.
+	io2, out2, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{fx.RemoteURL()}, io2); code != 0 {
+		t.Fatalf("second connect: code = %d", code)
+	}
+	if strings.Contains(out2.String(), "corrected space id") || strings.Contains(out2.String(), "mirror location") {
 		t.Fatalf("second connect must find nothing to correct, got %q", out2.String())
 	}
 }
@@ -727,5 +903,66 @@ func TestInitDoesNotEmitProvisionalCredentialExport(t *testing.T) {
 	// correct credential instruction.
 	if !strings.Contains(out.String(), "a2a connect") {
 		t.Fatalf("init must point the user to run `a2a connect`; got %q", out.String())
+	}
+}
+
+// --- AC-1050.10: the schema's `space` pattern pins the id grammar -------
+
+// spaceManifestInstanceViolations decodes a minimal-but-valid space
+// manifest carrying the given id and runs it through the REAL schema
+// corpus (schemas/manifest/v1/space.schema.json), mirroring
+// TestDoctorSpaceTemplateManifestValidatesWithZeroParticipants's own
+// corpus-loading shape.
+func spaceManifestInstanceViolations(t *testing.T, id string) []schema.FieldViolation {
+	t.Helper()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	raw := []byte("schema: space/v1\nspace: " + id + "\nmin_binary_version: \"0.0.0\"\nparticipants: []\n")
+	instance, err := schema.DecodeYAMLInstance(raw)
+	if err != nil {
+		t.Fatalf("DecodeYAMLInstance(%q): %v", id, err)
+	}
+	violations, err := corpus.ValidateManifest("space/v1", instance)
+	if err != nil {
+		t.Fatalf("ValidateManifest(%q): %v", id, err)
+	}
+	return violations
+}
+
+// TestSpaceSchemaPatternAcceptsEveryIDInUse is AC-1050.10's positive half:
+// the pattern must accept every space id actually in use across the repo
+// (this phase's sweep) — a real space (getvisa), the live-e2e ids
+// (livee2e, live-e2e-space), the spacefixture default (fixture-space), and
+// the scaffolding sentinel itself (REPLACE_WITH_SPACE_ID, carved into the
+// pattern rather than the template being renamed — see this phase's
+// reported deviation and the pattern's own `description`).
+func TestSpaceSchemaPatternAcceptsEveryIDInUse(t *testing.T) {
+	t.Parallel()
+	for _, id := range []string{
+		"getvisa",
+		"a2a",
+		"livee2e",
+		"live-e2e-space",
+		"fixture-space",
+		"REPLACE_WITH_SPACE_ID",
+	} {
+		if v := spaceManifestInstanceViolations(t, id); len(v) != 0 {
+			t.Errorf("id %q: expected the schema to ACCEPT it, got violations: %+v", id, v)
+		}
+	}
+}
+
+// TestSpaceSchemaPatternRejectsInvalidShapes is AC-1050.10's negative half:
+// the pattern must reject an id carrying underscores, uppercase, or a
+// leading/trailing hyphen — exactly the shapes that would let
+// CredentialEnvVar's `-`->`_` mapping collide (P41 variant c).
+func TestSpaceSchemaPatternRejectsInvalidShapes(t *testing.T) {
+	t.Parallel()
+	for _, id := range []string{"My_Space", "my_space", "-lead", "trail-", "Up"} {
+		if v := spaceManifestInstanceViolations(t, id); len(v) == 0 {
+			t.Errorf("id %q: expected the schema to REJECT it, got no violations", id)
+		}
 	}
 }

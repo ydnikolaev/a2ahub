@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 )
 
@@ -41,11 +42,40 @@ func TestCredentialEnvVar(t *testing.T) {
 	t.Parallel()
 
 	for in, want := range map[string]string{
-		"getvisa": "A2A_TOKEN_GETVISA",
-		"a2a":     "A2A_TOKEN_A2A",
+		"getvisa":        "A2A_TOKEN_GETVISA",
+		"a2a":            "A2A_TOKEN_A2A",
+		"live-e2e-space": "A2A_TOKEN_LIVE_E2E_SPACE",
 	} {
 		if got := CredentialEnvVar(in); got != want {
 			t.Fatalf("CredentialEnvVar(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestCredentialEnvVarIsAlwaysALegalShellIdentifier is AC-1050.9: the
+// literal remedy `a2a connect`/`a2a doctor` print is `export
+// <CredentialEnvVar(id)>=<token>` — bash and zsh both REFUSE `export` on a
+// name that is not a valid identifier (verified: `export
+// A2A_TOKEN_MY-SPACE=x` errors "not a valid identifier" in both shells).
+// Every hyphenated id this table exercises — including the exact id
+// `live-e2e-space` named by this phase's brief — must render a name built
+// ONLY from [A-Z0-9_], never a hyphen.
+func TestCredentialEnvVarIsAlwaysALegalShellIdentifier(t *testing.T) {
+	t.Parallel()
+
+	legalShellIdentifier := regexp.MustCompile(`^[A-Z0-9_]+$`)
+	for _, id := range []string{
+		"getvisa",
+		"a2a",
+		"live-e2e-space",
+		"livee2e",
+		"fixture-space",
+		"my-space",
+		"a-b-c-d",
+	} {
+		got := CredentialEnvVar(id)
+		if !legalShellIdentifier.MatchString(got) {
+			t.Fatalf("CredentialEnvVar(%q) = %q, contains a character bash/zsh `export` refuses (want only [A-Z0-9_])", id, got)
 		}
 	}
 }
