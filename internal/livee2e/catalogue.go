@@ -155,5 +155,21 @@ func Catalogue() []Scenario {
 		{Name: "handoff-verify-pass-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"handoff"}},
 		{Name: "announcement-accept-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
 		{Name: "response-dispute-by-non-owner-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"response"}},
+
+		// AC-982.1/982.2/982.3 (spec 38 wave H, §T2 Layer 3) — failure and
+		// recovery: the layer an automated fleet actually lives in. Filed
+		// under SystemA, matching every Layer-1/Layer-2 row's own
+		// convention above (scenarios_failure_recovery_live.go).
+		//
+		// five-xx-mid-write-injected-unknown-then-recovered's own Result
+		// carries EvidenceClassInjectedFault (report.go) — the ONE row in
+		// this whole matrix driven through a proxy in front of the real
+		// GitHub API (spec 38 §6-Q1, plan D-G) rather than observing an
+		// unscheduled failure directly. Declared here exactly like every
+		// other row: the DISTINCT-evidence-class labelling lives in the
+		// rendered report, not in a second catalogue shape.
+		{Name: "five-xx-mid-write-injected-unknown-then-recovered", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
+		{Name: "interrupted-submit-retried-one-pr", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
+		{Name: "concurrent-writes-no-lost-write", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
 	}
 }

@@ -39,7 +39,35 @@ type Result struct {
 	// Detail carries the row's evidence — a PR URL, a check-run name, the
 	// workflow ref that actually executed (§T6-b). Free text, rendered as-is.
 	Detail string
+	// EvidenceClass marks a Result that is NOT ordinary live evidence —
+	// e.g. a write driven through the fault-injecting proxy
+	// (injectproxy_live.go, EvidenceClassInjectedFault). Empty for every
+	// ordinary live row.
+	//
+	// Rendered UNCONDITIONALLY (Render, below) — even on a pass — because
+	// D-G's own condition for allowing an injected row at all is that a
+	// reader can never mistake it for an unscheduled real 5xx (spec 38
+	// §6-Q1: "a proxied row is no longer live, so it must be labelled as a
+	// different class of evidence in the report, not silently mixed in").
+	//
+	// Deliberately NOT excluded from Tally/ExitCode: "never mixed into the
+	// live rows' verdicts" is about a READER never confusing the two kinds
+	// of evidence, not about a failing injected row being invisible to the
+	// summary — a row that reds because its own recovery leg failed is
+	// still a defect this report must not hide.
+	EvidenceClass string
 }
+
+// EvidenceClassInjectedFault marks a Result produced by a row that drove a
+// write through injectingProxy (injectproxy_live.go, spec 38 §6-Q1, plan
+// D-G) rather than by observing an unscheduled failure against real
+// GitHub. The write itself still reaches the real GitHub API — the proxy
+// genuinely forwards every request — but the CALLER never gets to see that
+// it succeeded, which is the whole point of the row it marks. A real 5xx
+// mid-write cannot be scheduled, so this is the only way to exercise
+// AC-982.1 on demand, and D-G's own condition for allowing it is that the
+// report never lets a reader mistake it for one.
+const EvidenceClassInjectedFault = "injected-fault (proxied — not a live row; spec 38 §6-Q1/D-G)"
 
 type cellKey struct {
 	scenario string
@@ -233,6 +261,12 @@ func (r Report) Render() string {
 	for _, res := range r.Results {
 		fmt.Fprintf(&b, "%-*s  %-*s  %-*s  %s\n",
 			scenarioWidth, res.Scenario, systemWidth, res.System, surfaceWidth, string(res.Surface), res.Verdict)
+		// Rendered on EVERY row that carries it, pass or fail — see
+		// Result.EvidenceClass's own doc comment for why this cannot wait
+		// for the non-pass branch below.
+		if res.EvidenceClass != "" {
+			fmt.Fprintf(&b, "    evidence-class: %s\n", res.EvidenceClass)
+		}
 		// Evidence is indented under its row rather than crammed into
 		// columns: a failing row is read, not scanned.
 		if res.Verdict.IsPass() {

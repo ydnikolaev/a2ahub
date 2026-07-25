@@ -125,6 +125,13 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 		// right after them, still ahead of boundary/refusal/space, which
 		// deliberately bend protection and the write floor.
 		{"illegal-transitions", runIllegalTransitionScenarios},
+		// AC-982.1/982.2/982.3 (spec 38 wave H) — Layer-3 failure/recovery
+		// rows. Same "no shared-state mutation" property as the four
+		// families above (every row authors its OWN fresh artifacts; the
+		// fault-injection row's proxy touches only its own one write), so
+		// placed right after them, still ahead of boundary/refusal/space,
+		// which deliberately bend protection and the write floor.
+		{"failure-recovery", runFailureRecoveryScenarios},
 		{"boundary", runBoundaryScenarios},
 		{"refusal", runRefusalScenarios},
 		{"space", runSpaceScenarios},

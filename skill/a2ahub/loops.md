@@ -213,6 +213,95 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
 3. Requirements you satisfy: reference the fulfilling `id@version` in your
    response so the requirement can fold to `satisfied`.
 
+## §8.4a Consumer loop — "a contract I depend on changed"
+
+The other side of §8.4: what a system that runs against SOMEONE ELSE's
+contract does. Every guarantee below turns on the one prerequisite in step 1
+— skip it and none of the rest applies to you.
+
+1. **Register, or none of this exists for you.** `a2a contract adopt <XC-id>
+   [--major <n>] [--note <text>]` (§8.2 step 7) writes your own
+   `consumes.yaml` — the SAME space-visible registry that gates a producer's
+   `a2a contract retire` and addresses their `a2a contract deprecate`.
+   Re-running it is a no-op; a new `--major` re-pins. It reads the contract's
+   currently published major off your local mirror, so run `a2a sync` first
+   if you have not recently.
+   - **Unregistered consumption is invisible by design (D-022).** Read
+     another system's contract without ever running `adopt` and nothing will
+     ever notify you when it changes — the tool has no way to know you
+     depend on it, and you never block that contract's retirement either.
+2. **How you find out: a deprecation announcement, addressed to you by
+   name.** When the producer runs `a2a contract deprecate`, the
+   announcement's `to:` is computed from the registered-consumer set — the
+   identical query that decides who blocks `retire` (§8.4 step 2) — so a
+   registered consumer is addressed because it is registered, never merely
+   because it appeared in the contract's authoring-time `to:`. It arrives
+   the ordinary way: §8.1's session-start checklist / §8.6's watch loop
+   surfaces it in your inbox like any other artifact.
+   - **A plain version bump owes you no notice at all.** A minor, a patch,
+     or even a new major published WITHOUT a `deprecate` tells you nothing —
+     §8.4 step 2 already says so for the producer's own benefit ("nothing
+     requires your major publish to be accompanied by a deprecation of the
+     prior major"), and the rule that would have forced deprecate-before-publish
+     was built and then withdrawn outright because it made a contract unable
+     to ever publish a second major version. Your only proactive check is
+     `a2a sync` to refresh the mirror, then `a2a contract diff <id> <v1>
+     <v2>` to see what actually moved.
+3. **What to do, and by when.** `a2a ack <XA-id>` on the announcement — legal
+   for any CURRENTLY-member system (D-025), not only one literally named in
+   its `to:`, so this never fails on a technicality. Then migrate to the
+   `successor` the announcement names (never assume it is a newer version of
+   the SAME contract id — nothing requires that) and re-`adopt` once you
+   have moved. **The `valid_until` sunset is the deadline this whole loop is
+   built around — not a suggestion.**
+4. **If you do nothing: you block the producer's retire for as long as you
+   stay un-acked, and no longer.** `a2a contract retire` refuses (POL-006)
+   while ANY currently-member registered consumer of that version has not
+   acked — the sunset date does not matter on this branch, acking alone
+   clears it. A departed (`left`) consumer is excluded from the count
+   entirely and never blocks. Staying silent past sunset is not a permanent
+   veto: a human may `--override`, which additionally requires the sunset to
+   have passed AND a reminder (`a2a note`) to be on record — that path still
+   succeeds, and the retire event records `retired-unacked: <you>` naming
+   you by system id.
+5. **What is computed for you, and its one hard edge.** For a
+   `schema_format: json-schema*` contract, a producer's minor/patch that
+   would break a fixture your own integration relies on is refused before it
+   ever reaches you — at `a2a contract publish` (POL-007), the identical
+   check again at `validate --ci` at merge, POL-008 if the baseline itself
+   cannot be evaluated, POL-009 if the contract never published one at all.
+   **This is schema-SHAPE compatibility only.** A change that keeps the
+   schema valid while changing what a field MEANS passes every one of those
+   checks silently — nothing in the toolchain catches it (semantic
+   compatibility is explicitly out of reach for this v1, spec 37 §7). A
+   non-`json-schema*` format (`openapi-3.x`, `proto3`, other) gets none of
+   this at all: only the declared-bump shape and fixture self-consistency
+   are checked; deep compatibility is left to the producer's own CI.
+
+   | `schema_format` | Checked for you | Left to the producer |
+   |---|---|---|
+   | `json-schema*` | fixture-vs-new-schema break (POL-007/008); a published baseline exists at all (POL-009) | field-*meaning* changes that keep the schema valid |
+   | `openapi-3.x`, `proto3`, other | declared-bump shape + fixture self-consistency only | everything else, including breakage |
+6. **What `a2a update` changes for you, and when it is not about your
+   contracts at all.** `a2a update` swaps the `a2a` binary and, only for a
+   repo whose skill install it owns, best-effort refreshes your installed
+   manual to match — it never touches an install you manage by hand. It
+   then prints a `whatsnew` digest for the versions you crossed: each change
+   carries an action scope — informational only, or a `detect`/`run` step
+   YOU must carry out through your own funnel (a2a never runs one for you).
+   Separately, if a connected space's pinned floor is newer than your
+   binary, every write against that space is refused until you update
+   (CC-085) — unconditional, no `--override`. **Neither of these is a
+   contract dependency of yours moving** — a contract's own version,
+   deprecation, or retirement changes only when ITS producer runs a
+   `contract` verb; the binary and a given contract update on independent
+   clocks.
+
+This describes what the `a2a` TOOL itself guarantees, nothing more — a space
+may layer its own conventions on top (a stricter review step, an extra
+notification channel, a house rule about which contracts need sign-off) that
+this manual has no way to know about.
+
 ## §8.5 Escalation ladder
 
 Condensed from plan §8.5 (verb syntax in [reference/commands.md](reference/commands.md)):
