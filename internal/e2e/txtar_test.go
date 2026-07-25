@@ -5,9 +5,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rogpeppe/go-internal/testscript"
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
@@ -72,6 +74,21 @@ func TestT3Scripts(t *testing.T) {
 			env.Setenv("FIXTURE_TOKEN", "dummy-token")
 			env.Setenv("ORIGIN", origin)
 			env.Setenv("PATH", binDir+string(os.PathListSeparator)+env.Getenv("PATH"))
+			// testscript builds its own curated Env.Vars — it does NOT
+			// inherit the outer test process's os.Environ() (see HOME/PATH
+			// being re-set above; if it did, that would be unnecessary). So
+			// runTestMain's gitfixture.HardenEnv() call, which only hardens
+			// THIS process's env, never reaches a git process the exec'd
+			// `a2a` binary spawns from inside a script. Copy the
+			// GIT_CONFIG_* trio HardenEnv already set on this process into
+			// the script's env explicitly, so the binary's own git children
+			// (e.g. a mirror clone/fetch) are hardened too.
+			for _, kv := range os.Environ() {
+				name, val, ok := strings.Cut(kv, "=")
+				if ok && strings.HasPrefix(name, "GIT_CONFIG_") {
+					env.Setenv(name, val)
+				}
+			}
 			return nil
 		},
 	})
@@ -88,7 +105,7 @@ func cloneFreshErr(originDir, dest string) error {
 }
 
 func gitCloneErr(originDir, dest string) error {
-	cmd := exec.Command("git", "clone", originDir, dest)
+	cmd := exec.Command("git", gitfixture.Args("clone", originDir, dest)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git clone %s %s: %w\n%s", originDir, dest, err, out)

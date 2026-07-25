@@ -11,6 +11,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
@@ -369,7 +370,7 @@ func TestDisconnectNeverConnectedIsIdempotentNoop(t *testing.T) {
 // and must commit + push that change itself.
 func runGitInDir(t testing.TB, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=a2a-fixture",

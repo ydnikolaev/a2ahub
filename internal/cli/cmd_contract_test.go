@@ -17,6 +17,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"gopkg.in/yaml.v3"
 )
 
@@ -508,7 +509,7 @@ func TestContractRetireOverrideFullPreconditionSucceeds(t *testing.T) {
 // gitRun runs `git <args...>` with cwd=dir, failing the test loudly.
 func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=a2a-fixture", "GIT_AUTHOR_EMAIL=fixture@a2ahub.invalid",

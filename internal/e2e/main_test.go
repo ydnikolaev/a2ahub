@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 // binDir holds the directory containing the ONE `a2a` binary TestMain
@@ -31,6 +33,15 @@ func TestMain(m *testing.M) {
 }
 
 func runTestMain(m *testing.M) int {
+	// Hardens THIS process's git spawns (and, via txtar_test.go's Setup
+	// copying the same GIT_CONFIG_* trio into the testscript env, the
+	// exec'd `a2a` binary's own git children too) against git's gc --auto
+	// grandchild racing a t.TempDir() cleanup's RemoveAll — see
+	// testkit/gitfixture/gitfixture.go's package doc. Called before the go
+	// build below so the build subprocess (which inherits os.Environ())
+	// sees it as well, though that subprocess itself never spawns git.
+	gitfixture.HardenEnv()
+
 	root, err := repoRoot()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "internal/e2e: TestMain: resolve repo root:", err)

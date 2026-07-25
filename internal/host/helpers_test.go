@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 // commitInDir writes relPath (relative to dir) with content, stages it and
@@ -38,7 +40,7 @@ func runGitClone(t testing.TB, remoteURL, dest string) {
 // optionally with extraEnv appended, failing the test loudly on error.
 func runGit(t testing.TB, dir string, extraEnv []string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	if dir != "" {
 		cmd.Dir = dir
 	}

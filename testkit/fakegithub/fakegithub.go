@@ -29,6 +29,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 // PR is one pull request the fake has seen.
@@ -453,7 +455,7 @@ func prAPIState(pr *PR) string {
 }
 
 func (s *Server) revParse(ref string) string {
-	cmd := exec.Command("git", "-C", s.OriginDir, "rev-parse", ref)
+	cmd := exec.Command("git", gitfixture.Args("-C", s.OriginDir, "rev-parse", ref)...)
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -466,7 +468,7 @@ func (s *Server) git(dir string, args ...string) error {
 	if dir != "" {
 		full = append([]string{"-C", dir}, args...)
 	}
-	cmd := exec.Command("git", full...)
+	cmd := exec.Command("git", gitfixture.Args(full...)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git %v: %w: %s", full, err, out)

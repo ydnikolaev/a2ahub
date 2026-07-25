@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"gopkg.in/yaml.v3"
 )
 
@@ -190,7 +191,7 @@ func (f *fixtureSpace) commitArtifactAndEvent(artifactPath string, artifactField
 
 func fxRunGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	cmd.Dir = dir
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -203,7 +204,7 @@ func fxRunGit(t *testing.T, dir string, args ...string) {
 func fxCommit(t *testing.T, dir, msg string) {
 	t.Helper()
 	fxRunGit(t, dir, "add", "-A")
-	cmd := exec.Command("git", "commit", "-m", msg)
+	cmd := exec.Command("git", gitfixture.Args("commit", "-m", msg)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=a2a-fixture", "GIT_AUTHOR_EMAIL=fixture@a2ahub.invalid",

@@ -17,6 +17,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 // Fixture is one throwaway space: a bare origin repo plus a working clone
@@ -166,7 +168,7 @@ func runGit(t testing.TB, dir string, args ...string) {
 
 func runGitWithEnv(t testing.TB, dir string, extraEnv []string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	cmd.Dir = dir
 	if len(extraEnv) > 0 {
 		cmd.Env = append(os.Environ(), extraEnv...)
@@ -181,7 +183,7 @@ func runGitWithEnv(t testing.TB, dir string, extraEnv []string, args ...string) 
 
 func runGitOutput(t testing.TB, dir string, args ...string) []byte {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	cmd.Dir = dir
 	var out, stderr bytes.Buffer
 	cmd.Stdout = &out

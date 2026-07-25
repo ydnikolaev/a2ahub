@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 // contractGitRun runs `git <args...>` with cwd=dir, failing the test
@@ -18,7 +20,7 @@ import (
 // global git identity, with no extra command needed.
 func contractGitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=a2a-fixture", "GIT_AUTHOR_EMAIL=fixture@a2ahub.invalid",
@@ -272,7 +274,7 @@ func TestContractGitShowBoundedContentReadsWithinBound(t *testing.T) {
 
 func contractGitRevParse(t *testing.T, dir, rev string) string {
 	t.Helper()
-	cmd := exec.Command("git", "-C", dir, "rev-parse", rev)
+	cmd := exec.Command("git", gitfixture.Args("-C", dir, "rev-parse", rev)...)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
