@@ -1,0 +1,212 @@
+schema: release-notes/v1
+version: "0.7.0"
+released: "2026-07-25"
+headline: "Contract compatibility is computed on the write path — and four verbs that could not complete at all now can"
+changes:
+  - id: RN-0700-1
+    kind: fix
+    impact: high
+    subject: "`a2a respond` could not complete at all, and thirteen verbs rejected a flag written after their positional argument"
+    detail: >
+      Two independent breakages that made ordinary invocations impossible, both
+      green on every hermetic tier and both found by driving the full live
+      matrix against real GitHub for the first time. `a2a respond` wrote three
+      of its template's placeholders verbatim — including the response's own
+      `to:` — and the write funnel then refused the artifact the command had
+      just produced, so the verb never finished for anyone. Separately, Go's
+      `flag` package stops parsing at the first non-flag token, so thirteen
+      verbs silently ignored (or errored on) a flag written after their id:
+      `a2a ack EX-… --actor-name me` did not do what it reads like. Flags are
+      now parsed on both sides of the positional argument for every verb that
+      takes one.
+    affects: [cli]
+    action:
+      scope: local
+      why: "the fix is in the binary; nothing in your space changes"
+
+  - id: RN-0700-2
+    kind: fix
+    impact: high
+    subject: "`a2a ack` on an announcement was refused unconditionally, leaving `contract retire` satisfiable only by --override"
+    detail: >
+      `fold.CheckLegality` never implemented the D-025 broadcast exemption that
+      the fold's own `applyBroadcastAck` already had, so a consumer could not
+      acknowledge an announcement addressed to it — the pre-write legality check
+      refused every attempt. Because `contract retire` requires the registered
+      consumers to have acked the deprecation, the only way to retire a contract
+      was `--override`, which is exactly the guard the precondition exists to
+      provide. Acking a broadcast now goes through the normal path.
+    affects: [cli, lifecycle]
+    action:
+      scope: local
+      why: "the legality check runs in the binary before the write"
+
+  - id: RN-0700-3
+    kind: feat
+    impact: high
+    subject: "A contract's declared version bump is now COMPUTED against the previous schema, at both layers, off one core"
+    detail: >
+      §5.4b's compatibility rule existed only as an opinion inside an e2e test
+      file: a producer could publish a breaking change labeled `minor` and both
+      the client and the space CI would accept it. The rule now runs on the
+      write path — `a2a contract publish` refuses a mislabeled bump (POL-007),
+      naming the schema field and the fixture that prove it — and again at
+      merge inside `a2a validate --ci`, so a hand-crafted PR cannot bypass the
+      client. Both layers call ONE exported core in `internal/validate`; the
+      previous two independent implementations had provably diverged. What is
+      computed is schema SHAPE only — semantic compatibility is still the
+      author's claim.
+    affects: [cli, ci, contracts]
+    action:
+      scope: space
+      why: "the merge-time half of the check only reaches your space once its reusable-workflow ref points at 0.7.0 or later"
+      detect: ["a2a space update --dry-run"]
+      run: ["a2a space update"]
+
+  - id: RN-0700-4
+    kind: policy
+    impact: high
+    subject: "A JSON-Schema contract must publish a schema and a valid fixture (POL-009), and `contract publish` now carries them"
+    detail: >
+      The compatibility check has nothing to compute against unless the schema
+      it names is actually in the space, and no contract in existence shipped
+      one. POL-009 makes the baseline a publication requirement: `a2a contract
+      new` scaffolds the schema and a fixture that validates against it, and
+      `submit` carries both through the funnel. `contract publish` also used to
+      read the mirror tree its own invocation had just hard-reset, so the
+      compatibility check compared the new version against itself and always
+      found full compatibility; the staged schema now travels in the same commit
+      as the version bump.
+    affects: [cli, contracts, schemas]
+    action:
+      scope: local
+      why: "a contract published before 0.7.0 has no baseline schema — the next publish will ask for one"
+
+  - id: RN-0700-5
+    kind: feat
+    impact: normal
+    subject: "A deprecation now addresses exactly the consumers who can block its retire"
+    detail: >
+      `contract adopt` registered a consumer in `consumes.yaml` but never made
+      that consumer an addressee, so a registered system blocked the producer's
+      `retire` while never being told the contract was going away — a deadlock
+      constructible with two ordinary commands. The deprecation's `to:` is now
+      the same consumer-registry query that gates retire, so "who blocks retire"
+      and "who was told" are one question. `deprecate` and `retire` also refuse
+      an omitted `--version` once more than one version is published, rather
+      than guessing, and `contract diff` now reports a changed `compat_policy`.
+    affects: [cli, contracts]
+    action:
+      scope: none
+      why: "no action — the addressing is computed at deprecate time"
+
+  - id: RN-0700-6
+    kind: schema
+    impact: normal
+    subject: "An empty `actor.name` is rejected at validation, and the CLI stops minting anonymous writes"
+    detail: >
+      Every event and artifact a2a minted recorded `actor: {kind: agent, name: \"\"}`
+      by default, and both schemas accepted it — listing a field in `required`
+      guarantees presence, not content. An exchange log whose permanent, shared
+      entries do not say who acted is a log you cannot answer a question with.
+      `actor.name` now carries `minLength: 1` in both `event/v1` and
+      `envelope/v1`, and `ResolveActor` falls back to the OS user so ordinary
+      CLI writes carry a real name. NB this reds any existing artifact with an
+      empty name — check your space's corpus. A hard refusal for environments
+      where no OS user exists (CI, containers) is still an open decision, not
+      shipped here.
+    affects: [schemas, cli]
+    action:
+      scope: local
+      why: "set A2A_ACTOR_NAME (or pass --actor-name) anywhere `os/user` is unavailable, or the write will fail validation"
+      detect: ["a2a validate <path>"]
+
+  - id: RN-0700-7
+    kind: fix
+    impact: normal
+    subject: "A retried submit could report success over a PR that never merges, and GraphQL failures were swallowed silently"
+    detail: >
+      Four host-layer defects found by the live matrix. A retried `submit`
+      re-used an existing branch and reported success even when the PR behind it
+      was in a state that could never merge. Every GraphQL failure — including
+      the auto-merge arming that decides whether a green PR ever lands — was
+      discarded without a word; they are surfaced now, and surfacing them does
+      not turn `submit` into a hard failure. `CheckStatus` could answer from a
+      stale re-triggered run and now reports which ref the check actually ran
+      against. And a merged PR is still recognised as the PR the write opened.
+    affects: [host, cli]
+    action:
+      scope: local
+      why: "host-layer behaviour, no space change"
+
+  - id: RN-0700-8
+    kind: fix
+    impact: normal
+    subject: "Onboarding papercuts: a lying `a2a new`, a wrong credential hint, an id the validator rejected, a mis-ranked statusline"
+    detail: >
+      `a2a new` left the space unfilled while `validate`/`submit` reported
+      otherwise; `a2a init` printed a credential instruction that was wrong in
+      two ways and now defers it to `connect`; `a2a contract new` accepts
+      `--slug`, matching `a2a new contract`; a2a could mint an id its own
+      validator then rejected; the contract sub-verbs accept the argument order
+      their own `--help` prints; the statusline ranked a p3 artifact as p1 and
+      hid the rest; and the shipped command catalog advertised seven commands
+      that do not exist — which every agent reading it took at face value.
+    affects: [cli]
+    action:
+      scope: none
+      why: "no action — corrected in the binary"
+
+  - id: RN-0700-9
+    kind: fix
+    impact: normal
+    subject: "`a2a space update` says up front when it cannot verify the token's workflow scope"
+    detail: >
+      `space update` writes `.github/workflows/`, which GitHub refuses from a
+      token without `workflow` scope — a scope `gh auth token` does not carry by
+      default. The refusal landed AFTER the full diff and both `scope: space`
+      directives had been printed, so it read like the command had worked and
+      then died. It now reports the missing or unverifiable scope before
+      printing a plan it cannot execute.
+    affects: [cli, space]
+    action:
+      scope: local
+      why: "if it reports a missing scope: gh auth refresh -h github.com -s workflow"
+      run: ["gh auth refresh -h github.com -s workflow"]
+
+  - id: RN-0700-10
+    kind: policy
+    impact: high
+    subject: "The fleet write floor rises to 0.7.0"
+    detail: >
+      `min_binary_version` moves from 0.6.4 to 0.7.0. The reason is RN-0700-3:
+      the client-side half of the compatibility check is a write-path guard, and
+      a pre-0.7.0 binary bypasses it entirely — it can publish a breaking change
+      labeled `minor` into a space whose CI has not yet been updated to catch it
+      at merge. Once a space takes this floor its funnel refuses writes from any
+      older binary, so update before (or with) `a2a space update`.
+    affects: [space, policy]
+    action:
+      scope: space
+      why: "the floor only reaches a space when its space.yaml is updated; every participant must be on 0.7.0 first"
+      detect: ["a2a doctor", "a2a space update --dry-run"]
+      run: ["a2a update", "a2a space update"]
+
+  - id: RN-0700-11
+    kind: feat
+    impact: normal
+    subject: "The seeded skill gains its consumer-side loop"
+    detail: >
+      The embedded a2ahub manual described how to PRODUCE a contract and said
+      nothing about what a consumer does when one changes underneath it. §8.4a
+      now carries that loop, and states the limits as plainly as the guarantees:
+      unregistered consumption is invisible by design, a plain version bump owes
+      you no notice, and what the compatibility check computes is schema shape
+      only. Every verb and error code the prose cites is gated against the
+      binary, so the manual cannot drift from the surface it documents.
+      `a2a update` refreshes the installed skill, so this reaches every wired
+      agent surface automatically.
+    affects: [skill]
+    action:
+      scope: local
+      why: "a2a update refreshes the installed skill; re-run `a2a skill install` if you vendored it by hand"
