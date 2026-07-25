@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -122,7 +123,28 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 		{"space", runSpaceScenarios},
 	}
 
+	declared := make([]string, 0, len(families))
+	for _, f := range families {
+		declared = append(declared, f.name)
+	}
+	// A typo here must be loud. Silently matching nothing would run zero
+	// families and, because every row then stays not-run, produce a report
+	// that looks exactly like a catastrophic matrix failure — the operator
+	// would go debugging the product instead of their own env var.
+	selected, selErr := selectedFamilies(os.Getenv(EnvFamilies), declared)
+	if selErr != nil {
+		t.Fatalf("%s: %v", EnvFamilies, selErr)
+	}
+	if len(selected) != len(families) {
+		t.Logf("=== %s NARROWS this run to: %s — every other family's rows stay not-run, so this run CANNOT exit 0 and is not a release verdict ===",
+			EnvFamilies, strings.Join(sortedKeys(selected), ", "))
+	}
+
 	for _, family := range families {
+		if !selected[family.name] {
+			t.Logf("=== family %s SKIPPED (%s) — its rows stay not-run ===", family.name, EnvFamilies)
+			continue
+		}
 		t.Logf("=== family %s ===", family.name)
 		for _, res := range runFamily(ctx, t, family.name, family.fn, h) {
 			if err := run.Record(res); err != nil {
