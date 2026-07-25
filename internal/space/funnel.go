@@ -26,8 +26,27 @@ const (
 	// deterministic branch.
 	WriteStateAlreadyOpen WriteState = "already-open"
 	// WriteStateAlreadyMerged is returned by the idempotent short-circuit
-	// when the deterministic branch's PR already merged.
+	// when the deterministic branch's PR was ALREADY merged before this
+	// call — including the repair path, where a re-run found the PR open and
+	// landed it: the artifact was submitted by an earlier invocation either
+	// way, which is what the caller's "already submitted" message says.
 	WriteStateAlreadyMerged WriteState = "already-merged"
+	// WriteStateMerged is returned when THIS call did the whole thing:
+	// a fresh push + PR-open, GitHub declined to arm auto-merge because the
+	// PR was already mergeable, the required check read explicitly green,
+	// and the funnel merged it directly (WAVE M4).
+	//
+	// It is a SEPARATE value from WriteStateAlreadyMerged, and that
+	// distinction is not bookkeeping: `a2a submit` prints "already
+	// submitted" for already-merged, which would be a plain lie about a
+	// write this call had just performed for the first time. Every consumer
+	// treats it like the already-* states for the purpose that matters —
+	// there is nothing pending and no marker to track — but the sentence
+	// the user reads is true. (M4 first shipped this as a reuse of
+	// already-merged, because the consumers switching on WriteState were off
+	// that wave's allowlist; that was an allowlist artifact, not a design
+	// conclusion, and the lead split it.)
+	WriteStateMerged WriteState = "merged"
 )
 
 // FileWrite is one file the write funnel commits — a path (relative to
@@ -207,10 +226,20 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 			})
 			// "Already clean" is GitHub declining because the PR can be
 			// merged right now — nothing to wait for. That is not a failed
-			// repair, it is the repair being unnecessary, so it must not
-			// fail the retry.
-			if err != nil && !host.IsAutoMergeAlreadyClean(err) {
-				return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
+			// repair; it means the write must LAND the PR itself instead
+			// (WAVE M4), guarded by tryLandCleanPR's explicit-green check —
+			// never merge, either way, must not fail the retry.
+			if err != nil {
+				if !host.IsAutoMergeAlreadyClean(err) {
+					return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
+				}
+				merged, merr := f.tryLandCleanPR(ctx, req, existing.Number)
+				if merr != nil {
+					return WriteResult{}, &Error{Op: op, Input: branch, Err: merr}
+				}
+				if merged {
+					existing.State = "merged"
+				}
 			}
 		}
 		return existingPRResult(branch, existing), nil
@@ -305,15 +334,109 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
 	}
 
+	// Step 4b (WAVE M4): OpenPR's own auto-merge arming can be refused
+	// because the PR is ALREADY mergeable — nothing to wait for. That is
+	// not a failure (armed stays false, a note is carried), but reporting
+	// "pending-merge" over it and stopping there is exactly the defect this
+	// wave closes: nothing else will ever merge that PR. Try to land it
+	// directly, gated by tryLandCleanPR's explicit-green guard.
+	state := WriteStatePendingMerge
+	note := pr.AutoMergeNote
+	if !pr.AutoMergeArmed && host.AutoMergeNoteIsAlreadyClean(pr.AutoMergeNote) {
+		merged, merr := f.tryLandCleanPR(ctx, req, pr.Number)
+		if merr != nil {
+			return WriteResult{}, &Error{Op: op, Input: branch, Err: merr}
+		}
+		if merged {
+			state, note = WriteStateMerged, ""
+		}
+	}
+
 	// Step 5: return the write-result (cache persistence is P7's, not
 	// this phase's — spec 05 §7).
 	return WriteResult{
 		Branch: branch, PRNumber: pr.Number, PRURL: pr.URL,
-		CommitSHA: sha, State: WriteStatePendingMerge,
+		CommitSHA: sha, State: state,
 		// Carried, not swallowed: "pending-merge" over a PR nobody will
 		// merge is the one outcome the caller must not read as done.
-		AutoMergeNote: pr.AutoMergeNote,
+		AutoMergeNote: note,
 	}, nil
+}
+
+// tryLandCleanPR attempts to merge a PR GitHub has already told us is
+// mergeable right now (the "clean status" auto-merge refusal — see
+// host.Merger's doc). Both places that arm auto-merge — the fresh-OpenPR
+// path above and the idempotent-retry repair path — route through this ONE
+// function so they cannot drift (WAVE M4 / AC-1050.12).
+//
+// merged=true, err=nil: MergePR succeeded — the PR is now merged.
+// merged=false, err=nil: the guard was not satisfied, OR the host implements
+//
+//	no Merger — today's pending-merge behaviour is unchanged, note preserved.
+//
+// err != nil: MergePR (or the CheckStatus read) itself failed — the caller
+//
+//	must surface it, never swallow a real failure as "not merged".
+//
+// The guard is AC-1050.13's entire safety argument, and is deliberately
+// strict: merge ONLY when CheckStatus reports the required context PRESENT
+// and EXPLICITLY green — State == "completed" AND Conclusion == "success"
+// AND no ambiguity. Every other shape falls through to false:
+//   - never reported at all: CheckStatus's own "no check matched" answer is
+//     {State: "queued", Conclusion: "", Name: ""} (github.go's CheckStatus,
+//     the not-ok branch of selectRequiredCheckRun) — State != "completed",
+//     so it is indistinguishable here from "still running", which is
+//     exactly the point: this function does not need a separate "absent"
+//     case because it never treats anything but a completed success as
+//     green in the first place.
+//   - pending: State == "in_progress" or "queued" — same, not "completed".
+//   - ambiguous: len(Ambiguous) > 0 — P34's own signal that the pick was
+//     not unique; a merge decided on an uncertain pick is not "explicitly"
+//     anything.
+//   - failing: Conclusion != "success" once State == "completed".
+//
+// a2a must never merge something CI has not passed; this is the one place
+// that decision is made, and it is made by requiring a positive answer, not
+// by excluding known-bad ones.
+func (f *WriteFunnel) tryLandCleanPR(ctx context.Context, req SubmitRequest, prNumber int) (merged bool, err error) {
+	merger, ok := f.host.(host.Merger)
+	if !ok {
+		return false, nil
+	}
+	// Both failures below are returned, not swallowed — an unevaluable or
+	// failed landing must never be reported as a completed write, which is
+	// this whole wave's point. But the message has to say WHAT ALREADY
+	// HAPPENED: the branch is pushed and the PR is open by the time this runs,
+	// so a bare wrapped transport error reads to an agent as "the write
+	// failed" and invites it to give up rather than re-run. Naming the PR and
+	// the safe next move is the difference between an actionable error and a
+	// confusing one; re-running is safe because the funnel is idempotent by
+	// head branch (verified live during the 2026-07-24 GitHub outage: the
+	// re-run produced no duplicate).
+	status, err := f.host.CheckStatus(ctx, host.StatusRequest{
+		Repo: req.Repo, PRNumber: prNumber, Credential: req.Credential,
+	})
+	if err != nil {
+		return false, fmt.Errorf("the write landed and PR #%d is open, but its required check could not be read, "+
+			"so a2a did not merge it — re-running is safe and will retry the merge: %w", prNumber, err)
+	}
+	if !checkStatusExplicitlyGreen(status) {
+		return false, nil
+	}
+	if err := merger.MergePR(ctx, host.MergePRRequest{
+		Repo: req.Repo, PRNumber: prNumber, Credential: req.Credential,
+	}); err != nil {
+		return false, fmt.Errorf("the write landed and PR #%d is green, but merging it failed, "+
+			"so the artifact is not on the base branch yet — re-running is safe and will retry: %w", prNumber, err)
+	}
+	return true, nil
+}
+
+// checkStatusExplicitlyGreen is AC-1050.13's guard condition in one place:
+// present AND explicitly successful, nothing looser. See tryLandCleanPR's
+// doc for why each of absent/pending/ambiguous/failing falls through false.
+func checkStatusExplicitlyGreen(s host.CheckStatusResult) bool {
+	return s.State == "completed" && s.Conclusion == "success" && len(s.Ambiguous) == 0
 }
 
 // BranchName renders the funnel's deterministic branch:

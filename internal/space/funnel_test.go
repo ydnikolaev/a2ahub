@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/testkit/fakegithub"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
@@ -630,5 +631,334 @@ func TestFunnelShortCircuitFailsWhenReArmingFails(t *testing.T) {
 
 	if _, err := funnel.Submit(context.Background(), req); !errors.Is(err, sentinel) {
 		t.Fatalf("re-run error = %v, want the arming failure to surface", err)
+	}
+}
+
+// --- WAVE M4: landing a PR GitHub declines to auto-merge because it is
+// already clean (AC-1050.12/.13) --------------------------------------------
+
+// openAlreadyCleanPR wires fake.OpenPRFunc to reproduce exactly what
+// host.GitHubHost.OpenPR returns when GitHub's auto-merge arming call is
+// refused because the PR is already mergeable: not armed, and the exact
+// note text host.AutoMergeNoteIsAlreadyClean recognises (host.
+// AutoMergeAlreadyCleanNote — reused here rather than a hand-typed literal,
+// so this test cannot silently drift from what the real host produces).
+func openAlreadyCleanPR(fake *host.FakeHost, prNumber int) {
+	fake.OpenPRFunc = func(context.Context, host.OpenPRRequest) (host.PRInfo, error) {
+		return host.PRInfo{
+			Number: prNumber, URL: "https://example.invalid/pr/99", State: "open",
+			AutoMergeArmed: false, AutoMergeNote: host.AutoMergeAlreadyCleanNote,
+		}, nil
+	}
+}
+
+// TestFunnelLandsAlreadyCleanPR is AC-1050.12: when GitHub declines to arm
+// auto-merge because the PR is already mergeable, and CheckStatus confirms
+// the required check reported PRESENT and EXPLICITLY green, the write LANDS
+// the PR itself instead of reporting "pending-merge" over a PR nothing else
+// will ever merge — the defect observed live as three stuck PRs on the
+// getvisa space.
+func TestFunnelLandsAlreadyCleanPR(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+
+	fake := host.NewFakeHost()
+	openAlreadyCleanPR(fake, 99)
+	fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
+		return host.CheckStatusResult{State: "completed", Conclusion: "success"}, nil
+	}
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+	result, err := funnel.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	// WriteStateMerged, not WriteStateAlreadyMerged: THIS call opened the PR
+	// and landed it, and `a2a submit` prints "already submitted" for
+	// already-merged — which would be a lie about a first-time write. The two
+	// states are separate for exactly that reason (lead split, see the enum's
+	// own doc comment).
+	if result.State != WriteStateMerged {
+		t.Fatalf("State = %v, want %v — the write must land the PR, not report pending-merge, and must not claim it was ALREADY submitted", result.State, WriteStateMerged)
+	}
+	if result.AutoMergeNote != "" {
+		t.Fatalf("AutoMergeNote = %q, want empty — the write landed, nothing is pending", result.AutoMergeNote)
+	}
+	if len(fake.MergePRs) != 1 {
+		t.Fatalf("MergePR called %d time(s), want exactly 1", len(fake.MergePRs))
+	}
+	if got := fake.MergePRs[0]; got.PRNumber != 99 || got.Repo != req.Repo {
+		t.Fatalf("MergePR request = %+v, want PR 99 on %+v", got, req.Repo)
+	}
+}
+
+// TestFunnelNeverMergesAnUnreportedCheck is AC-1050.13's central safety
+// guarantee, named to read as the guard it is: a PR whose required check has
+// NEVER REPORTED — CheckStatus's own answer for "no run matched the head SHA
+// yet", {State: "queued", Conclusion: "", Name: ""} — is never merged, even
+// though GitHub's own auto-merge arming call already says the PR is
+// otherwise clean. a2a must never merge something CI has not passed, and
+// "never ran" is the sharpest instance of that: nothing green has been
+// observed at all.
+func TestFunnelNeverMergesAnUnreportedCheck(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+
+	fake := host.NewFakeHost()
+	openAlreadyCleanPR(fake, 99)
+	fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
+		// The pre-existing "no check matched" answer (see github.go's
+		// CheckStatus, the not-ok branch of selectRequiredCheckRun) — the
+		// required context has not reported at all.
+		return host.CheckStatusResult{State: "queued"}, nil
+	}
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+	result, err := funnel.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if result.State != WriteStatePendingMerge {
+		t.Fatalf("State = %v, want %v — an unreported check must never be merged", result.State, WriteStatePendingMerge)
+	}
+	if result.AutoMergeNote != host.AutoMergeAlreadyCleanNote {
+		t.Fatalf("AutoMergeNote = %q, want the note preserved exactly as today", result.AutoMergeNote)
+	}
+	if len(fake.MergePRs) != 0 {
+		t.Fatalf("MergePR called %d time(s); the guard must refuse to merge an unreported check", len(fake.MergePRs))
+	}
+}
+
+// TestFunnelNeverMergesWithoutExplicitGreen rounds out AC-1050.13: pending,
+// ambiguous, and failing all fall through to the same refusal an unreported
+// check gets — none of them is "explicitly green", and the guard treats
+// anything short of that identically (see tryLandCleanPR's doc).
+func TestFunnelNeverMergesWithoutExplicitGreen(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		status host.CheckStatusResult
+	}{
+		{name: "pending (in progress)", status: host.CheckStatusResult{State: "in_progress"}},
+		{
+			name: "ambiguous (more than one compound run matched)",
+			status: host.CheckStatusResult{
+				State: "completed", Conclusion: "success",
+				Ambiguous: []string{"a2a-validate / validate", "a2a-validate / validate"},
+			},
+		},
+		{name: "failing", status: host.CheckStatusResult{State: "completed", Conclusion: "failure"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fx := spacefixture.New(t, "axon")
+			l, err := NewLayout("axon")
+			if err != nil {
+				t.Fatalf("NewLayout: %v", err)
+			}
+			req := newTestSubmitRequest(fx, "axon", l)
+
+			fake := host.NewFakeHost()
+			openAlreadyCleanPR(fake, 99)
+			fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
+				return tc.status, nil
+			}
+			funnel := NewWriteFunnel(fake, nil, "0.1.0")
+
+			result, err := funnel.Submit(context.Background(), req)
+			if err != nil {
+				t.Fatalf("Submit: %v", err)
+			}
+			if result.State != WriteStatePendingMerge {
+				t.Fatalf("State = %v, want %v", result.State, WriteStatePendingMerge)
+			}
+			if result.AutoMergeNote != host.AutoMergeAlreadyCleanNote {
+				t.Fatalf("AutoMergeNote = %q, want the note preserved exactly as today", result.AutoMergeNote)
+			}
+			if len(fake.MergePRs) != 0 {
+				t.Fatalf("MergePR called %d time(s); the guard must refuse to merge", len(fake.MergePRs))
+			}
+		})
+	}
+}
+
+// hostWithoutMerger is a Host (plus the AutoMerger capability the repair
+// path also needs) that does NOT satisfy the optional Merger capability —
+// the GitLab/Gitea-profile case ADR-003 keeps possible, and the concrete
+// "this build predates WAVE M4" case: today's pending-merge behaviour must
+// be byte-for-byte unchanged when nothing offers a direct-merge capability.
+type hostWithoutMerger struct{ inner *host.FakeHost }
+
+func (h hostWithoutMerger) PushBranch(ctx context.Context, req host.PushBranchRequest) (host.PushBranchResult, error) {
+	return h.inner.PushBranch(ctx, req)
+}
+
+func (h hostWithoutMerger) OpenPR(ctx context.Context, req host.OpenPRRequest) (host.PRInfo, error) {
+	return h.inner.OpenPR(ctx, req)
+}
+
+func (h hostWithoutMerger) TokenScopes(ctx context.Context, cred host.Credential) ([]string, bool, error) {
+	return h.inner.TokenScopes(ctx, cred)
+}
+
+func (h hostWithoutMerger) CheckStatus(ctx context.Context, req host.StatusRequest) (host.CheckStatusResult, error) {
+	return h.inner.CheckStatus(ctx, req)
+}
+
+func (h hostWithoutMerger) ReviewStatus(ctx context.Context, req host.StatusRequest) (host.ReviewStatusResult, error) {
+	return h.inner.ReviewStatus(ctx, req)
+}
+
+func (h hostWithoutMerger) FindPRByHeadBranch(ctx context.Context, req host.FindPRRequest) (*host.PRInfo, error) {
+	return h.inner.FindPRByHeadBranch(ctx, req)
+}
+
+func (h hostWithoutMerger) EnableAutoMerge(ctx context.Context, req host.EnableAutoMergeRequest) error {
+	return h.inner.EnableAutoMerge(ctx, req)
+}
+
+var (
+	_ host.Host       = hostWithoutMerger{}
+	_ host.AutoMerger = hostWithoutMerger{}
+)
+
+// TestFunnelKeepsPendingMergeWhenHostHasNoMerger is the optional-capability
+// half: a host implementing neither Merger keeps today's exact behaviour —
+// no panic, no failed type assertion, the same pending-merge note as before
+// this wave existed.
+func TestFunnelKeepsPendingMergeWhenHostHasNoMerger(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+
+	fake := host.NewFakeHost()
+	openAlreadyCleanPR(fake, 99)
+	// CheckStatus defaults to green — deliberately irrelevant here: the
+	// capability assertion must fail closed before CheckStatus is even
+	// consulted.
+	funnel := NewWriteFunnel(hostWithoutMerger{inner: fake}, nil, "0.1.0")
+
+	result, err := funnel.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if result.State != WriteStatePendingMerge {
+		t.Fatalf("State = %v, want %v — a host without Merger must keep today's behaviour", result.State, WriteStatePendingMerge)
+	}
+	if result.AutoMergeNote != host.AutoMergeAlreadyCleanNote {
+		t.Fatalf("AutoMergeNote = %q, want preserved", result.AutoMergeNote)
+	}
+}
+
+// TestFunnelLandsAlreadyCleanPR_RealHostReachesMain drives host.GitHubHost
+// (not FakeHost) against testkit/fakegithub's real HTTP+git plumbing — the
+// through-the-host proof for AC-1050.12 that a submit whose auto-merge
+// arming is refused because the PR is already clean still ends with the
+// artifact actually merged into main, not merely "reported merged".
+func TestFunnelLandsAlreadyCleanPR_RealHostReachesMain(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+
+	gh := fakegithub.New(t, fx.RemoteURL())
+	gh.AutoMergeAlreadyClean = true // GitHub declines to arm: the PR is already mergeable.
+
+	h := host.NewGitHubHost(nil, gh.URL)
+	funnel := NewWriteFunnel(h, nil, "0.1.0")
+
+	result, err := funnel.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if result.State != WriteStateMerged {
+		t.Fatalf("State = %v, want %v (this call did the whole thing — see the enum's doc)", result.State, WriteStateMerged)
+	}
+	if result.AutoMergeNote != "" {
+		t.Fatalf("AutoMergeNote = %q, want empty — the write landed", result.AutoMergeNote)
+	}
+
+	ctx := context.Background()
+	if err := runGit(ctx, req.RepoDir, "fetch", "origin"); err != nil {
+		t.Fatalf("fetch origin: %v", err)
+	}
+	if err := runGit(ctx, req.RepoDir, "merge-base", "--is-ancestor", result.CommitSHA, "origin/main"); err != nil {
+		t.Fatalf("commit %s is not an ancestor of origin/main after landing: %v", result.CommitSHA, err)
+	}
+}
+
+// TestFunnelShortCircuitLandsAlreadyCleanPR_RealHostReachesMain is the
+// repair-path sibling: the idempotent-retry short-circuit finds a PR the
+// FIRST submit opened and armed successfully but that never merged (the
+// interrupted-run scenario TestFunnelShortCircuitReArmsAutoMerge already
+// covers), and by the time of the retry GitHub reports the PR as already
+// clean — the repair path must land it directly too, through the SAME
+// tryLandCleanPR helper as the create path (so the two cannot drift).
+func TestFunnelShortCircuitLandsAlreadyCleanPR_RealHostReachesMain(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+
+	gh := fakegithub.New(t, fx.RemoteURL())
+	gh.AutoMerge = false // first OpenPR arms auto-merge successfully but nothing merges yet.
+
+	h := host.NewGitHubHost(nil, gh.URL)
+	funnel := NewWriteFunnel(h, nil, "0.1.0")
+
+	first, err := funnel.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("first Submit: %v", err)
+	}
+	if first.State != WriteStatePendingMerge {
+		t.Fatalf("first State = %v, want %v", first.State, WriteStatePendingMerge)
+	}
+
+	// By the time of the retry, GitHub would decline re-arming because
+	// nothing is left to wait for — the repair path must land it directly.
+	gh.AutoMergeAlreadyClean = true
+
+	second, err := funnel.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("second Submit: %v", err)
+	}
+	if second.State != WriteStateAlreadyMerged {
+		t.Fatalf("second State = %v, want %v", second.State, WriteStateAlreadyMerged)
+	}
+
+	ctx := context.Background()
+	if err := runGit(ctx, req.RepoDir, "fetch", "origin"); err != nil {
+		t.Fatalf("fetch origin: %v", err)
+	}
+	if err := runGit(ctx, req.RepoDir, "merge-base", "--is-ancestor", first.CommitSHA, "origin/main"); err != nil {
+		t.Fatalf("commit %s is not an ancestor of origin/main after landing: %v", first.CommitSHA, err)
 	}
 }

@@ -392,6 +392,17 @@ func (c *SubmitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	case space.WriteStateAlreadyOpen, space.WriteStateAlreadyMerged:
 		_, _ = fmt.Fprintf(stdio.Stdout, "submit: already submitted (PR %s, %s)\n", result.PRURL, result.State)
 		return 0
+	case space.WriteStateMerged:
+		// THIS call opened the PR and landed it (P45 M4): GitHub declined to
+		// arm auto-merge because the PR was already mergeable, the required
+		// check was explicitly green, so the funnel merged it. Deliberately
+		// NOT the "already submitted" branch — that sentence would be a lie
+		// about a first-time write — and deliberately not the default branch
+		// either: MarkPending would record a pending-merge marker for a write
+		// that has nothing left to wait for.
+		_, _ = fmt.Fprintf(stdio.Stdout, "submit: opened PR %s for %s and merged it — the artifact is on the space's base branch now\n",
+			result.PRURL, strings.Join(ids, ", "))
+		return 0
 	default:
 		if err := c.pending.MarkPending(ctx, c.spaceID, req.ArtifactID, result); err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "submit: pending-merge marker failed: %v\n", err)

@@ -549,6 +549,15 @@ func (h *GitHubHost) graphQLCall(ctx context.Context, op string, cred Credential
 // funnel's repair path reports it as such rather than as an error.
 const autoMergeCleanMarker = "clean status"
 
+// AutoMergeAlreadyCleanNote is the exact PRInfo.AutoMergeNote text emitted
+// for the "clean status" refusal — pinned here as an exported const, rather
+// than only inline in autoMergeRefusal's switch, so AutoMergeNoteIsAlreadyClean
+// can compare against the SAME string a caller actually received instead of
+// re-deriving the classification from scratch, and so a caller building a
+// test double (a fake OpenPR response) can reproduce this exact note without
+// duplicating GitHub's own wording by hand.
+const AutoMergeAlreadyCleanNote = "the PR is already mergeable, so GitHub declined to arm auto-merge — merge it"
+
 // autoMergeDisabledMarker is GitHub's refusal when the REPOSITORY has
 // auto-merge turned off (Settings -> Allow auto-merge). Verified against real
 // GitHub on 2026-07-24: "Auto merge is not allowed for this repository".
@@ -579,7 +588,7 @@ func autoMergeRefusal(err error) string {
 		return "auto-merge is disabled on this repository — merge the PR yourself, " +
 			"or enable Settings -> General -> Allow auto-merge so a2a can arm it"
 	case strings.Contains(lower, autoMergeCleanMarker):
-		return "the PR is already mergeable, so GitHub declined to arm auto-merge — merge it"
+		return AutoMergeAlreadyCleanNote
 	}
 	return ""
 }
@@ -588,6 +597,19 @@ func autoMergeRefusal(err error) string {
 // auto-merge because the PR can be merged right now.
 func IsAutoMergeAlreadyClean(err error) bool {
 	return errors.Is(err, ErrGraphQLFailed) && strings.Contains(strings.ToLower(err.Error()), autoMergeCleanMarker)
+}
+
+// AutoMergeNoteIsAlreadyClean reports whether note — a PRInfo.AutoMergeNote
+// value — is the "already mergeable" refusal specifically, as opposed to
+// "auto-merge disabled on this repository" (the other known refusal
+// autoMergeRefusal classifies). It exists because OpenPR's caller (the write
+// funnel) only ever sees the rendered note, not the underlying GraphQL
+// error IsAutoMergeAlreadyClean matches against — a direct-merge attempt is
+// worth trying for the first case (nothing but arming failed) and pointless
+// for the second (the repository forbids it outright, and MergePR would
+// merely repeat that refusal at the REST layer).
+func AutoMergeNoteIsAlreadyClean(note string) bool {
+	return note == AutoMergeAlreadyCleanNote
 }
 
 // RepoSettingsRequest identifies the repository whose GitHub-side repo
@@ -617,14 +639,126 @@ func (h *GitHubHost) AutoMergeAllowed(ctx context.Context, req RepoSettingsReque
 	if req.Repo.Owner == "" || req.Repo.Name == "" {
 		return false, &Error{Op: op, Err: ErrInvalidRequest}
 	}
-	path := fmt.Sprintf("/repos/%s/%s", req.Repo.Owner, req.Repo.Name)
-	var resp struct {
-		AllowAutoMerge bool `json:"allow_auto_merge"`
-	}
-	if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &resp); err != nil {
+	settings, err := h.readRepoSettings(ctx, op, req.Repo, req.Credential)
+	if err != nil {
 		return false, err
 	}
-	return resp.AllowAutoMerge, nil
+	return settings.AllowAutoMerge, nil
+}
+
+// repoMergeSettings is the subset of GET /repos/{owner}/{repo} both
+// AutoMergeAllowed and MergePR read — ONE response body, two callers, kept
+// as one struct so the fields can never drift apart (WAVE M4: MergePR needs
+// exactly the sibling fields AutoMergeAllowed already reads, per the same
+// GitHub response).
+type repoMergeSettings struct {
+	AllowAutoMerge   bool `json:"allow_auto_merge"`
+	AllowMergeCommit bool `json:"allow_merge_commit"`
+	AllowSquashMerge bool `json:"allow_squash_merge"`
+	AllowRebaseMerge bool `json:"allow_rebase_merge"`
+}
+
+// readRepoSettings issues the single GET /repos/{owner}/{repo} call both
+// AutoMergeAllowed and MergePR need.
+func (h *GitHubHost) readRepoSettings(ctx context.Context, op string, repo Repo, cred Credential) (repoMergeSettings, error) {
+	path := fmt.Sprintf("/repos/%s/%s", repo.Owner, repo.Name)
+	var settings repoMergeSettings
+	if err := h.restCall(ctx, op, http.MethodGet, path, cred, nil, &settings); err != nil {
+		return repoMergeSettings{}, err
+	}
+	return settings, nil
+}
+
+// mergeMethodPreference is the order MergePR tries direct-merge methods in.
+// GitHub exposes no "repository default merge method" field over REST — only
+// which methods are ALLOWED — so a direct merge cannot literally read the
+// same default armAutoMerge implicitly uses; it instead picks the first
+// allowed method in this order, which is both GitHub's own new-repository
+// default (merge commit) and the order `a2a space init`'s repos ship with all
+// three enabled. Pinning this (rather than leaving it to chance) is what
+// keeps a direct merge from landing a DIFFERENT commit shape than auto-merge
+// would have, and from failing outright on a repo that disallows merge
+// commits specifically.
+var mergeMethodPreference = []string{"merge", "squash", "rebase"}
+
+// pickMergeMethod selects the first allowed method in mergeMethodPreference.
+// ok=false means the repository allows none — MergePR must not guess.
+func (s repoMergeSettings) pickMergeMethod() (method string, ok bool) {
+	for _, m := range mergeMethodPreference {
+		switch m {
+		case "merge":
+			if s.AllowMergeCommit {
+				return m, true
+			}
+		case "squash":
+			if s.AllowSquashMerge {
+				return m, true
+			}
+		case "rebase":
+			if s.AllowRebaseMerge {
+				return m, true
+			}
+		}
+	}
+	return "", false
+}
+
+// MergePR implements the optional Merger capability: PUT
+// /repos/{owner}/{repo}/pulls/{number}/merge — a DIRECT merge, for the case
+// GitHub's own auto-merge toggle refused to arm because the PR is already
+// mergeable (see Merger's doc; WAVE M4).
+//
+// The merge method is PINNED, never left implicit: armAutoMerge sends no
+// merge_method (auto-merge falls back to the repository's own default), so a
+// direct merge that guessed a DIFFERENT method could land a different commit
+// shape than auto-merge would have, or fail outright on a repo that disallows
+// that specific method. MergePR reads the same GET /repos/{owner}/{repo}
+// response AutoMergeAllowed reads and picks the first method the repository
+// allows, in mergeMethodPreference's order. No method allowed at all is
+// ErrMergeMethodUnavailable — a typed, actionable error, never a guess.
+//
+// 405 and 409 are returned as distinguishable typed errors (ErrPRNotMergeable,
+// ErrPRHeadMoved) rather than the generic ErrRequestFailed every other status
+// collapses to: a 409 in particular means the head moved since the caller
+// last verified it, so the commit that would actually be merged is not the
+// one that was checked green — a caller MUST NOT report that as a landed
+// write.
+func (h *GitHubHost) MergePR(ctx context.Context, req MergePRRequest) error {
+	const op = "MergePR"
+	if req.Repo.Owner == "" || req.Repo.Name == "" || req.PRNumber == 0 {
+		return &Error{Op: op, Err: ErrInvalidRequest}
+	}
+
+	settings, err := h.readRepoSettings(ctx, op, req.Repo, req.Credential)
+	if err != nil {
+		return err
+	}
+	method, ok := settings.pickMergeMethod()
+	if !ok {
+		return &Error{
+			Op:    op,
+			Input: req.Repo.Owner + "/" + req.Repo.Name,
+			Err:   fmt.Errorf("%w: merge commit, squash, and rebase are all disabled — enable at least one in Settings -> General -> Pull Requests", ErrMergeMethodUnavailable),
+		}
+	}
+
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d/merge", req.Repo.Owner, req.Repo.Name, req.PRNumber)
+	status, _, raw, err := h.httpDo(ctx, op, http.MethodPut, h.BaseURL+path, req.Credential, map[string]any{"merge_method": method})
+	if err != nil {
+		return err
+	}
+
+	input := fmt.Sprintf("%s/%s#%d", req.Repo.Owner, req.Repo.Name, req.PRNumber)
+	switch {
+	case status >= 200 && status < 300:
+		return nil
+	case status == http.StatusMethodNotAllowed: // 405: not mergeable right now
+		return &Error{Op: op, Input: input, Err: fmt.Errorf("%w: %s", ErrPRNotMergeable, strings.TrimSpace(string(raw)))}
+	case status == http.StatusConflict: // 409: head moved under us
+		return &Error{Op: op, Input: input, Err: fmt.Errorf("%w: %s", ErrPRHeadMoved, strings.TrimSpace(string(raw)))}
+	default:
+		return &Error{Op: op, Input: input, Err: fmt.Errorf("%w: status %d: %s", ErrRequestFailed, status, strings.TrimSpace(string(raw)))}
+	}
 }
 
 func (h *GitHubHost) doJSON(ctx context.Context, op, method, url string, cred Credential, body any, out any) error {
@@ -678,22 +812,45 @@ func (h *GitHubHost) TokenScopes(ctx context.Context, cred Credential) ([]string
 }
 
 // send issues one request and returns the response HEADER alongside the
-// bounded body. doJSON is a thin wrapper over it; TokenScopes needs the
-// header, which is why this exists as its own step rather than a second
-// hand-rolled HTTP path.
+// bounded body, translating any non-2xx status into ErrRequestFailed. doJSON
+// is a thin wrapper over it; TokenScopes needs the header, which is why this
+// exists as its own step rather than a second hand-rolled HTTP path.
+//
+// MergePR uses httpDo directly instead: it needs to tell 405/409 apart from
+// every other status, which collapsing everything non-2xx into one sentinel
+// (what this function does) would lose.
 func (h *GitHubHost) send(ctx context.Context, op, method, url string, cred Credential, body any) (http.Header, []byte, error) {
+	status, header, raw, err := h.httpDo(ctx, op, method, url, cred, body)
+	if err != nil {
+		return nil, nil, err
+	}
+	if status < 200 || status >= 300 {
+		return nil, nil, &Error{
+			Op:  op,
+			Err: fmt.Errorf("%w: status %d: %s", ErrRequestFailed, status, strings.TrimSpace(string(raw))),
+		}
+	}
+	return header, raw, nil
+}
+
+// httpDo performs one HTTP round trip and returns the raw status code,
+// response header, and bounded body — WITHOUT interpreting the status code.
+// Every caller that wants a non-2xx status turned into an error uses send;
+// MergePR calls this directly because it must distinguish 405/409 from a
+// generic failure, and from each other.
+func (h *GitHubHost) httpDo(ctx context.Context, op, method, url string, cred Credential, body any) (status int, header http.Header, raw []byte, err error) {
 	var reqBody io.Reader
 	if body != nil {
-		raw, err := json.Marshal(body)
+		encoded, err := json.Marshal(body)
 		if err != nil {
-			return nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: encode request: %w", ErrRequestFailed, err)}
+			return 0, nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: encode request: %w", ErrRequestFailed, err)}
 		}
-		reqBody = bytes.NewReader(raw)
+		reqBody = bytes.NewReader(encoded)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
-		return nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: build request: %w", ErrRequestFailed, err)}
+		return 0, nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: build request: %w", ErrRequestFailed, err)}
 	}
 	httpReq.Header.Set("Accept", "application/vnd.github+json")
 	if body != nil {
@@ -705,23 +862,16 @@ func (h *GitHubHost) send(ctx context.Context, op, method, url string, cred Cred
 
 	resp, err := h.Client.Do(httpReq)
 	if err != nil {
-		return nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: %w", ErrRequestFailed, err)}
+		return 0, nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: %w", ErrRequestFailed, err)}
 	}
 	defer func() { _ = resp.Body.Close() }() // reason: response already fully read/discarded below
 
 	limited := io.LimitReader(resp.Body, maxResponseBytes)
-	raw, err := io.ReadAll(limited)
+	raw, err = io.ReadAll(limited)
 	if err != nil {
-		return nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: read response: %w", ErrRequestFailed, err)}
+		return 0, nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: read response: %w", ErrRequestFailed, err)}
 	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, nil, &Error{
-			Op:  op,
-			Err: fmt.Errorf("%w: status %d: %s", ErrRequestFailed, resp.StatusCode, strings.TrimSpace(string(raw))),
-		}
-	}
-	return resp.Header, raw, nil
+	return resp.StatusCode, resp.Header, raw, nil
 }
 
 // armAutoMerge runs the enable-auto-merge mutation for an already-created PR

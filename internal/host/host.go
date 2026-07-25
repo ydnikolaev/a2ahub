@@ -228,6 +228,42 @@ type AutoMerger interface {
 	EnableAutoMerge(ctx context.Context, req EnableAutoMergeRequest) error
 }
 
+// MergePRRequest identifies the PR a direct merge (PUT .../pulls/{n}/merge)
+// lands.
+type MergePRRequest struct {
+	Repo       Repo
+	PRNumber   int
+	Credential Credential
+}
+
+// Merger is an OPTIONAL capability a Host MAY satisfy — deliberately not a
+// 6th method on Host, the same shape as Forker/AutoMerger (ADR-003). Obtain
+// it by type assertion on a Host, never by widening a caller's dependency to
+// a concrete implementation.
+//
+// It exists because GitHub's auto-merge toggle refuses to arm on a PR that is
+// ALREADY mergeable ("Pull request is in clean status", see
+// autoMergeCleanMarker/IsAutoMergeAlreadyClean): there is nothing left for
+// auto-merge to wait for, so it declines and expects a plain merge instead.
+// Before this capability existed, the funnel treated that refusal as "the
+// repair being unnecessary" and reported the write as done — the PR then sat
+// open forever, because nothing else ever merges it. Observed live on
+// 2026-07-24/25: three open artifact PRs on the getvisa space, every one
+// CLEAN/MERGEABLE with a green required check and no auto-merge armed
+// (WAVE M4).
+//
+// Implementations MUST send an explicit merge_method rather than relying on
+// GitHub's own repository default — see GitHubHost.MergePR's doc for why the
+// two paths (auto-merge, direct merge) must land the PR the same shape.
+type Merger interface {
+	// MergePR merges req's PR directly. Callers MUST establish — independent
+	// of GitHub's own "clean status" claim — that the PR's required check is
+	// present AND explicitly successful before calling this; MergePR itself
+	// performs no such check, because it has no opinion on which check is
+	// required (that is space.yaml's concern, not this package's, D-019).
+	MergePR(ctx context.Context, req MergePRRequest) error
+}
+
 // Host is the 5-primitive host adapter interface (spec 05 §T1). It is
 // host-agnostic by design (D-019, Q-004 tracked): a GitLab/Gitea profile is
 // a new implementation of this same interface, never a redesign.
