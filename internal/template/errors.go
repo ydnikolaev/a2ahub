@@ -23,6 +23,17 @@ var (
 	// 8 §3.1 envelope types this package has an embedded template for.
 	ErrUnknownType = errors.New("template: unknown envelope type")
 
+	// ErrUnappliableField is returned when a --field override cannot be
+	// applied to the node the template has at that key.
+	//
+	// It exists because the alternative was SILENCE. Writing a scalar into a
+	// sequence node did nothing the encoder could see, so `--field to=alpha`
+	// was accepted, dropped, and surfaced minutes later as a validation
+	// complaint about the placeholder it had failed to replace. An override
+	// the renderer cannot apply is now refused at the point it is given,
+	// naming the field and both kinds.
+	ErrUnappliableField = errors.New("template: --field override cannot be applied to this field")
+
 	// ErrMalformedTemplate is returned when an embedded template's own
 	// frontmatter block fails to parse as a YAML mapping — a build-time
 	// bug in the embedded corpus, never expected at runtime (guarded by

@@ -1,6 +1,7 @@
 package template
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -106,7 +107,9 @@ func Render(in Input) ([]byte, error) {
 		return nil, &Error{Op: op, Input: in.Type, Err: ErrMalformedTemplate}
 	}
 
-	applyFills(doc.Content[0], in)
+	if ferr := applyFills(doc.Content[0], in); ferr != nil {
+		return nil, &Error{Op: op, Input: in.Type, Err: ferr}
+	}
 
 	out, merr := yaml.Marshal(&doc)
 	if merr != nil {
@@ -124,7 +127,7 @@ func Render(in Input) ([]byte, error) {
 // id/created/actor from in and every other field from in.Fields (if
 // present) or the enum-placeholder default rule (if the raw value matches
 // enumPlaceholder).
-func applyFills(mapping *yaml.Node, in Input) {
+func applyFills(mapping *yaml.Node, in Input) error {
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		key := mapping.Content[i]
 		val := mapping.Content[i+1]
@@ -137,7 +140,9 @@ func applyFills(mapping *yaml.Node, in Input) {
 			fillActor(val, in.Actor)
 		default:
 			if override, ok := in.Fields[key.Value]; ok {
-				setScalar(val, override)
+				if err := setField(val, key.Value, override); err != nil {
+					return err
+				}
 				continue
 			}
 			if val.Kind == yaml.ScalarNode {
@@ -147,6 +152,78 @@ func applyFills(mapping *yaml.Node, in Input) {
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// setField applies one --field override to whatever KIND of node the template
+// has there.
+//
+// # Why this is not just setScalar
+//
+// setScalar writes node.Value, and for a SEQUENCE node the encoder emits its
+// children and never looks at Value — so `--field to=alpha` was accepted and
+// silently did nothing. The template's `<recipient-system>` placeholder survived,
+// and the write was refused minutes later by `submit` with
+// "REF-006 to: `to` includes an unknown system: <recipient-system>": a complaint
+// about a placeholder the author believed they had replaced, with nothing
+// anywhere saying the flag had been dropped.
+//
+// Found on 2026-07-26 by drafting an announcement on a real space and reading
+// the refusal. Verified three ways first — `to=alpha`, `to=[alpha]` and
+// `to=- alpha` all did nothing — because "my syntax was wrong" is the likelier
+// explanation and had to be ruled out.
+//
+// Two readings are accepted for a sequence, both of which somebody will write:
+// a YAML list (`[alpha]`, or `- alpha`), and a bare scalar (`alpha`), which is
+// taken as the one-element list. Anything that cannot be applied is an ERROR
+// naming the field and both kinds — never silence. That is the whole point: the
+// old behaviour was not "unsupported", it was unsupported and quiet.
+func setField(node *yaml.Node, field, override string) error {
+	if node.Kind == yaml.ScalarNode {
+		setScalar(node, override)
+		return nil
+	}
+
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(override), &doc); err != nil || len(doc.Content) == 0 {
+		return fmt.Errorf("%w: --field %s=%q is not valid YAML, and this field is a %s in the template",
+			ErrUnappliableField, field, override, nodeKindName(node.Kind))
+	}
+	value := doc.Content[0]
+
+	// A bare scalar for a sequence field is the one-element reading — what
+	// `--field to=alpha` obviously means.
+	if node.Kind == yaml.SequenceNode && value.Kind == yaml.ScalarNode {
+		wrapped := *value
+		value = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: []*yaml.Node{&wrapped}}
+	}
+	if value.Kind != node.Kind {
+		return fmt.Errorf("%w: --field %s=%q is a %s, but this field is a %s in the template",
+			ErrUnappliableField, field, override, nodeKindName(value.Kind), nodeKindName(node.Kind))
+	}
+
+	// The template's trailing guidance comment ("# broadcast: array, or \"all\"")
+	// is guidance for filling the field IN; once filled it is noise, and the
+	// replacement node carries none. Head and foot comments are preserved,
+	// because those document the field itself rather than how to complete it.
+	head, foot := node.HeadComment, node.FootComment
+	*node = *value
+	node.HeadComment, node.FootComment = head, foot
+	return nil
+}
+
+// nodeKindName renders a yaml.Kind for an error a human reads.
+func nodeKindName(k yaml.Kind) string {
+	switch k {
+	case yaml.ScalarNode:
+		return "scalar"
+	case yaml.SequenceNode:
+		return "list"
+	case yaml.MappingNode:
+		return "mapping"
+	default:
+		return "value"
 	}
 }
 
