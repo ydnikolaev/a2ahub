@@ -123,8 +123,8 @@ func equivMCPHostConfig(remoteURL string) mcp.SubmitHostConfig {
 	}
 }
 
-func equivCLIActorResolver(kind, name string) func(cli.ActorFlags) template.Actor {
-	return func(cli.ActorFlags) template.Actor { return template.Actor{Kind: kind, Name: name} }
+func equivCLIActorResolver(kind, name string) func(cli.ActorFlags) (template.Actor, error) {
+	return func(cli.ActorFlags) (template.Actor, error) { return template.Actor{Kind: kind, Name: name}, nil }
 }
 
 func equivMCPActorResolver(kind, name string) func(mcp.ActorInput) template.Actor {

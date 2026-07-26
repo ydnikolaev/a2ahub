@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,11 +20,14 @@ import (
 
 func TestResolveActorOrderExplicitFlagWins(t *testing.T) {
 	t.Parallel()
-	a := cli.ResolveActor(
+	a, err := cli.ResolveActor(
 		cli.ActorFlags{Kind: "human", Name: "flag-name"},
 		cli.HarnessDefaults{Kind: "agent", Name: "harness-name"},
 		cli.ConfigActor{Kind: "agent", Name: "config-name"},
 	)
+	if err != nil {
+		t.Fatalf("ResolveActor: %v", err)
+	}
 	if a.Kind != "human" || a.Name != "flag-name" {
 		t.Fatalf("got %+v, want explicit flag values to win", a)
 	}
@@ -33,11 +37,14 @@ func TestResolveActorOrderEnvBeatsHarnessAndConfig(t *testing.T) {
 	// reason: mutates process env; not parallel-safe against sibling tests
 	// touching the same A2A_ACTOR_* variables.
 	t.Setenv("A2A_ACTOR_NAME", "env-name")
-	a := cli.ResolveActor(
+	a, err := cli.ResolveActor(
 		cli.ActorFlags{},
 		cli.HarnessDefaults{Name: "harness-name"},
 		cli.ConfigActor{Name: "config-name"},
 	)
+	if err != nil {
+		t.Fatalf("ResolveActor: %v", err)
+	}
 	if a.Name != "env-name" {
 		t.Fatalf("Name = %q, want env-name", a.Name)
 	}
@@ -45,7 +52,10 @@ func TestResolveActorOrderEnvBeatsHarnessAndConfig(t *testing.T) {
 
 func TestResolveActorOrderHarnessBeatsConfig(t *testing.T) {
 	t.Parallel()
-	a := cli.ResolveActor(cli.ActorFlags{}, cli.HarnessDefaults{Name: "harness-name"}, cli.ConfigActor{Name: "config-name"})
+	a, err := cli.ResolveActor(cli.ActorFlags{}, cli.HarnessDefaults{Name: "harness-name"}, cli.ConfigActor{Name: "config-name"})
+	if err != nil {
+		t.Fatalf("ResolveActor: %v", err)
+	}
 	if a.Name != "harness-name" {
 		t.Fatalf("Name = %q, want harness-name", a.Name)
 	}
@@ -53,7 +63,10 @@ func TestResolveActorOrderHarnessBeatsConfig(t *testing.T) {
 
 func TestResolveActorOrderConfigFallback(t *testing.T) {
 	t.Parallel()
-	a := cli.ResolveActor(cli.ActorFlags{}, cli.HarnessDefaults{}, cli.ConfigActor{Name: "config-name"})
+	a, err := cli.ResolveActor(cli.ActorFlags{}, cli.HarnessDefaults{}, cli.ConfigActor{Name: "config-name"})
+	if err != nil {
+		t.Fatalf("ResolveActor: %v", err)
+	}
 	if a.Name != "config-name" {
 		t.Fatalf("Name = %q, want config-name", a.Name)
 	}
@@ -61,7 +74,10 @@ func TestResolveActorOrderConfigFallback(t *testing.T) {
 
 func TestResolveActorDefaultsKindToAgent(t *testing.T) {
 	t.Parallel()
-	a := cli.ResolveActor(cli.ActorFlags{}, cli.HarnessDefaults{}, cli.ConfigActor{})
+	a, err := cli.ResolveActor(cli.ActorFlags{}, cli.HarnessDefaults{}, cli.ConfigActor{})
+	if err != nil {
+		t.Fatalf("ResolveActor: %v", err)
+	}
 	if a.Kind != "agent" {
 		t.Fatalf("Kind = %q, want agent (default when no source names one)", a.Kind)
 	}
@@ -80,7 +96,10 @@ func TestResolveActorNameFallsBackToOSUser(t *testing.T) {
 	// to "" rather than leaving it untouched guards against a leaked
 	// non-empty value from process env when this test runs standalone.
 	t.Setenv("A2A_ACTOR_NAME", "")
-	a := cli.ResolveActor(cli.ActorFlags{}, cli.HarnessDefaults{}, cli.ConfigActor{})
+	a, err := cli.ResolveActor(cli.ActorFlags{}, cli.HarnessDefaults{}, cli.ConfigActor{})
+	if err != nil {
+		t.Fatalf("ResolveActor: %v", err)
+	}
 	if a.Name == "" {
 		t.Fatal("Name = \"\" with no flag/env/harness/config source; want a non-empty OS-user fallback")
 	}
@@ -394,5 +413,26 @@ func TestNoopCacheRemover(t *testing.T) {
 	m := cli.NewNoopCacheRemover()
 	if err := m.RemoveSpace(context.Background(), "space-1"); err != nil {
 		t.Fatalf("RemoveSpace: %v", err)
+	}
+}
+
+// TestErrNoActorNameNamesBothRemedies pins the message, which IS the
+// deliverable: the schema violation it replaces named neither the flag nor the
+// env var, so an agent had nothing to act on. Asserted without touching the
+// environment, so it holds on every machine including the one where os/user
+// resolves and the case above skips.
+func TestErrNoActorNameNamesBothRemedies(t *testing.T) {
+	t.Parallel()
+
+	msg := cli.ErrNoActorName.Error()
+	for _, want := range []struct{ substr, why string }{
+		{"--actor-name", "name the flag — the first thing a caller reaches for"},
+		{"A2A_ACTOR_NAME", "name the env var — the only route for a non-interactive runner"},
+		{"permanently", "say why it is refused rather than defaulted: the actor is recorded in a shared log"},
+		{"container", "name where this happens, so the reader knows it is not their local setup"},
+	} {
+		if !strings.Contains(msg, want.substr) {
+			t.Errorf("ErrNoActorName is missing %q — %s\ngot: %s", want.substr, want.why, msg)
+		}
 	}
 }

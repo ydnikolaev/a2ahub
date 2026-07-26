@@ -16,8 +16,8 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 )
 
-func fixedActorResolver(cli.ActorFlags) template.Actor {
-	return template.Actor{Kind: "agent", Name: "test-bot", Model: "test-model"}
+func fixedActorResolver(cli.ActorFlags) (template.Actor, error) {
+	return template.Actor{Kind: "agent", Name: "test-bot", Model: "test-model"}, nil
 }
 
 // TestNewDraftsEveryTypeV1Valid is AC-401.1, the real cli-layer

@@ -388,14 +388,14 @@ type lifecycleDeps struct {
 	ownSystem    string
 	manifest     space.Manifest
 	hostCfg      SubmitHostConfig
-	resolveActor func(ActorFlags) template.Actor
+	resolveActor func(ActorFlags) (template.Actor, error)
 
 	now      func() time.Time
 	entropy  io.Reader
 	readFile func(path string) ([]byte, error)
 }
 
-func newLifecycleDeps(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) lifecycleDeps {
+func newLifecycleDeps(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) lifecycleDeps {
 	return lifecycleDeps{
 		funnel: funnel, mirrorDir: mirrorDir, spaceID: spaceID, ownSystem: ownSystem,
 		manifest: manifest, hostCfg: hostCfg, resolveActor: resolveActor,
@@ -515,83 +515,83 @@ type LifecycleCommand struct {
 // newLifecycleCommand is every generic-verb NewXCommand constructor's
 // shared body (table-driven, §9 Future-proofing — one place to extend
 // when a new §3.4 transition needs an OP-211 verb).
-func newLifecycleCommand(spec lifecycleVerbSpec, funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func newLifecycleCommand(spec lifecycleVerbSpec, funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return &LifecycleCommand{spec: spec, deps: newLifecycleDeps(funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)}
 }
 
 // NewAckCommand constructs `a2a ack <id...>`. funnel, manifest and
 // resolveActor must not be nil/zero-configured (rails anti-pattern #10).
-func NewAckCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewAckCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[0], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
 // NewAcceptCommand constructs `a2a accept <id...>`.
-func NewAcceptCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewAcceptCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[1], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
 // NewDeclineCommand constructs `a2a decline <id...> --reason <text> [--reason-code <enum>]`.
-func NewDeclineCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewDeclineCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[2], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
 // NewStartCommand constructs `a2a start <id...>`.
-func NewStartCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewStartCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[3], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
 // NewBlockCommand constructs `a2a block <id...> --refs <blocker-id>`.
-func NewBlockCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewBlockCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[4], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
 // NewUnblockCommand constructs `a2a unblock <id...>`.
-func NewUnblockCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewUnblockCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[5], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
 // NewCancelCommand constructs `a2a cancel <id...>`.
-func NewCancelCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewCancelCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[6], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
 // NewCloseCommand constructs `a2a close <parent-id...>`.
-func NewCloseCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewCloseCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[7], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
 // NewWithdrawCommand constructs `a2a withdraw <requirement-id...>`.
-func NewWithdrawCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewWithdrawCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[8], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
 // NewSupersedeCommand constructs `a2a supersede <id> --refs <successor-id>`.
-func NewSupersedeCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewSupersedeCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[9], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
 // NewSatisfyCommand constructs `a2a satisfy <requirement-id> --refs <XC-id@version>,<XS-id>`.
-func NewSatisfyCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewSatisfyCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[10], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
 // NewApproveCommand constructs `a2a approve <decision-id>` (ALWAYS G3-gated, P8-3).
-func NewApproveCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewApproveCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[11], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
 // NewRejectCommand constructs `a2a reject <decision-id> --reason <text>` (ALWAYS G3-gated, P8-3).
-func NewRejectCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewRejectCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[12], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
 // NewVerifyPassCommand constructs `a2a verify-pass <handoff-id>`.
-func NewVerifyPassCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewVerifyPassCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[13], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
 // NewVerifyFailCommand constructs `a2a verify-fail <handoff-id> --findings <text>`.
-func NewVerifyFailCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *LifecycleCommand {
+func NewVerifyFailCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *LifecycleCommand {
 	return newLifecycleCommand(lifecycleVerbTable[14], funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)
 }
 
@@ -640,7 +640,11 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 		return 2
 	}
 
-	resolved := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	resolved, actorErr := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	if actorErr != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "%s: %v\n", c.spec.Verb, actorErr)
+		return 1
+	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
 
 	now := c.deps.now()
@@ -750,7 +754,7 @@ type RespondCommand struct {
 }
 
 // NewRespondCommand constructs the respond command.
-func NewRespondCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *RespondCommand {
+func NewRespondCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *RespondCommand {
 	return &RespondCommand{deps: newLifecycleDeps(funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)}
 }
 
@@ -812,7 +816,11 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		bodyOverride = b
 	}
 
-	resolved := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	resolved, actorErr := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	if actorErr != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "respond: %v\n", actorErr)
+		return 1
+	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
 
 	now := c.deps.now()
@@ -1008,7 +1016,7 @@ type VerifyCommand struct {
 }
 
 // NewVerifyCommand constructs the verify command.
-func NewVerifyCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *VerifyCommand {
+func NewVerifyCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *VerifyCommand {
 	return &VerifyCommand{deps: newLifecycleDeps(funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)}
 }
 
@@ -1037,7 +1045,11 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 2
 	}
 
-	resolved := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	resolved, actorErr := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	if actorErr != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "verify: %v\n", actorErr)
+		return 1
+	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
 
 	now := c.deps.now()
@@ -1182,7 +1194,7 @@ type DisputeCommand struct {
 }
 
 // NewDisputeCommand constructs the dispute command.
-func NewDisputeCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *DisputeCommand {
+func NewDisputeCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *DisputeCommand {
 	return &DisputeCommand{deps: newLifecycleDeps(funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)}
 }
 
@@ -1216,7 +1228,11 @@ func (c *DisputeCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 2
 	}
 
-	resolved := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	resolved, actorErr := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	if actorErr != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "dispute: %v\n", actorErr)
+		return 1
+	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
 
 	now := c.deps.now()
@@ -1280,7 +1296,7 @@ type NoteCommand struct {
 }
 
 // NewNoteCommand constructs the note command.
-func NewNoteCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *NoteCommand {
+func NewNoteCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *NoteCommand {
 	return &NoteCommand{deps: newLifecycleDeps(funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)}
 }
 
@@ -1309,7 +1325,11 @@ func (c *NoteCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 2
 	}
 
-	resolved := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	resolved, actorErr := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	if actorErr != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "note: %v\n", actorErr)
+		return 1
+	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
 
 	now := c.deps.now()

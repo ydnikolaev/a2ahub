@@ -187,11 +187,7 @@ func buildCommands() map[string]command {
 		if err != nil {
 			return failf(stderr, "a2a new: no project config (run `a2a init` first): %v", err)
 		}
-		resolve := func(f cli.ActorFlags) template.Actor {
-			// ResolveActor reads A2A_ACTOR_* env internally at §7.4 priority
-			// 2; harness/config sources have no live provider yet (zero).
-			return cli.ResolveActor(f, cli.HarnessDefaults{}, cli.ConfigActor{})
-		}
+		resolve := actorResolver()
 		return cli.NewNewCommand(p.staging, cfg.System, resolve, connectedSpaceIDs(cfg)).Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["validate"] = func(args []string, stdout, stderr io.Writer) int {
@@ -467,7 +463,7 @@ type lifecycleDeps struct {
 	ownSystem    string
 	manifest     space.Manifest
 	hostCfg      cli.SubmitHostConfig
-	resolveActor func(cli.ActorFlags) template.Actor
+	resolveActor func(cli.ActorFlags) (template.Actor, error)
 }
 
 // lifecycleConstructor builds a cli.Command from the resolved deps.
@@ -475,67 +471,67 @@ type lifecycleConstructor func(d lifecycleDeps) cli.Command
 
 // lifecycleVerbs maps every OP-211 verb name to its constructor.
 func lifecycleVerbs() map[string]lifecycleConstructor {
-	simple := func(f func(*space.WriteFunnel, string, string, string, space.Manifest, cli.SubmitHostConfig, func(cli.ActorFlags) template.Actor) cli.Command) lifecycleConstructor {
+	simple := func(f func(*space.WriteFunnel, string, string, string, space.Manifest, cli.SubmitHostConfig, func(cli.ActorFlags) (template.Actor, error)) cli.Command) lifecycleConstructor {
 		return func(d lifecycleDeps) cli.Command {
 			return f(d.funnel, d.mirrorDir, d.spaceID, d.ownSystem, d.manifest, d.hostCfg, d.resolveActor)
 		}
 	}
 	return map[string]lifecycleConstructor{
-		"ack": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"ack": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewAckCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"accept": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"accept": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewAcceptCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"decline": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"decline": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewDeclineCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"start": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"start": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewStartCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"block": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"block": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewBlockCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"unblock": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"unblock": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewUnblockCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"cancel": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"cancel": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewCancelCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"close": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"close": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewCloseCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"withdraw": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"withdraw": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewWithdrawCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"supersede": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"supersede": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewSupersedeCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"satisfy": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"satisfy": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewSatisfyCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"approve": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"approve": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewApproveCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"reject": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"reject": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewRejectCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"verify-pass": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"verify-pass": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewVerifyPassCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"verify-fail": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"verify-fail": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewVerifyFailCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"respond": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"respond": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewRespondCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"verify": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"verify": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewVerifyCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"dispute": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"dispute": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewDisputeCommand(f, md, sid, own, m, hc, ra)
 		}),
-		"note": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) template.Actor) cli.Command {
+		"note": simple(func(f *space.WriteFunnel, md, sid, own string, m space.Manifest, hc cli.SubmitHostConfig, ra func(cli.ActorFlags) (template.Actor, error)) cli.Command {
 			return cli.NewNoteCommand(f, md, sid, own, m, hc, ra)
 		}),
 	}
@@ -716,8 +712,19 @@ func firstArtifactID(args []string) string {
 	return ""
 }
 
-func actorResolver() func(cli.ActorFlags) template.Actor {
-	return func(f cli.ActorFlags) template.Actor {
+// actorResolver is the ONE actor-resolution closure every CLI write verb
+// receives — `new`, `submit`, every lifecycle verb and every contract sub-verb.
+// It reads A2A_ACTOR_* env internally at §7.4 priority 2; harness and config
+// sources have no live provider yet, hence the zero values.
+//
+// It propagates ResolveActor's error rather than swallowing it: in a container
+// where no source names an actor, the verb refuses with the flag and the env
+// var named, instead of minting a write the schema then rejects for a field
+// the caller never knowingly set. `a2a new` used to build its own copy of this
+// closure inline; there is one now, so the refusal cannot reach one verb and
+// miss another.
+func actorResolver() func(cli.ActorFlags) (template.Actor, error) {
+	return func(f cli.ActorFlags) (template.Actor, error) {
 		return cli.ResolveActor(f, cli.HarnessDefaults{}, cli.ConfigActor{})
 	}
 }
