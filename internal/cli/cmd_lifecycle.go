@@ -431,6 +431,25 @@ func (d lifecycleDeps) buildRequest(ids []string, files []space.FileWrite, verb 
 		CommitMessage: commitMsg, CommitAuthorName: d.hostCfg.CommitAuthorName, CommitAuthorEmail: d.hostCfg.CommitAuthorEmail,
 		RemoteURL: d.hostCfg.RemoteURL, Repo: d.hostCfg.Repo, BaseBranch: baseBranch,
 		PRTitle: commitMsg, PRBody: prBody, Credential: d.hostCfg.Credential,
+		// The write floor (CC-085) belongs on EVERY write, not only on
+		// `a2a submit`. Until 2026-07-26 this field was set by exactly three
+		// call sites — submit (CLI and MCP) and `space update` — so the funnel's
+		// guard, which fires only `if req.MinBinaryVersion != ""`, was inert for
+		// all 15 lifecycle verbs and for `contract publish/deprecate/retire`.
+		//
+		// That is not hypothetical. The branch grammar BranchName renders — the
+		// funnel's idempotency key — changed in 0.4.0, and the getvisa space
+		// still carries two open PRs for ONE `contract publish` of one artifact,
+		// on the two grammars, because a pre-0.4.0 binary was allowed to write.
+		// Raising a space's floor is exactly how an operator stops that, and it
+		// was doing nothing on the verb that caused it.
+		//
+		// Read from the parsed manifest rather than re-probing space.yaml the
+		// way SubmitCommand.readMinBinaryVersion does: this path already
+		// REQUIRES a parsed manifest (membership resolution reads it), so if we
+		// got here the field is available and a second file read would only add
+		// a way for the two to disagree.
+		MinBinaryVersion: d.manifest.MinBinaryVersion,
 	}
 }
 
