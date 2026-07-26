@@ -1,9 +1,11 @@
 package e2e
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
@@ -70,4 +72,72 @@ func TestSkillReferenceIsByteCurrent(t *testing.T) {
 	// gitfixture is imported so this package's own hygiene gate sees the
 	// reference; this test spawns no git of its own.
 	_ = gitfixture.Args
+}
+
+// TestAuthoringPagesMatchTheTemplatesTheyDocument closes a drift channel that
+// nothing watched: `schemas/templates/v1/<type>.md` is what `a2a new` renders,
+// and `skill/a2ahub/reference/authoring/<type>.md` is a BYTE COPY of it that an
+// agent reads. Two files, one document, nothing comparing them.
+//
+// Both have to ship — the templates are embedded for rendering, the skill tree
+// is installed into consumer repos — so deduplicating them is not on the table.
+// What is on the table is noticing when they disagree, and the copy an AGENT
+// reads is the likelier of the two to rot: the one the binary renders is at least
+// exercised by every draft anyone writes.
+//
+// Found while giving the contract body four named sections; both were edited
+// together that time, which is precisely the accident this test removes the need
+// for. Verified 2026-07-26: all eight pairs were byte-identical, so this gate
+// starts from a clean corpus rather than grandfathering a difference.
+//
+// A gate rather than generation, and the earlier backlog note calling a gate
+// "just moving the work" was wrong. Generation would be nicer to maintain; a gate
+// makes drift unmergeable, which is the actual requirement. The cost it imposes —
+// editing two files together — is the cost of the two files existing, not of
+// checking them.
+func TestAuthoringPagesMatchTheTemplatesTheyDocument(t *testing.T) {
+	t.Parallel()
+
+	root := repoRootForTest(t)
+	tplDir := filepath.Join(root, "schemas", "templates", "v1")
+	entries, err := os.ReadDir(tplDir)
+	if err != nil {
+		t.Fatalf("read %s: %v", tplDir, err)
+	}
+
+	var checked int
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		tplPath := filepath.Join(tplDir, e.Name())
+		guidePath := filepath.Join(root, "skill", "a2ahub", "reference", "authoring", e.Name())
+
+		tpl, err := os.ReadFile(tplPath)
+		if err != nil {
+			t.Errorf("read %s: %v", tplPath, err)
+			continue
+		}
+		guide, err := os.ReadFile(guidePath)
+		if err != nil {
+			t.Errorf("template %s has no authoring page at %s: %v — every artifact type an agent can "+
+				"draft needs the page that documents it", e.Name(), guidePath, err)
+			continue
+		}
+		checked++
+		if !bytes.Equal(tpl, guide) {
+			t.Errorf("skill/a2ahub/reference/authoring/%s has drifted from schemas/templates/v1/%s.\n"+
+				"They are the same document: one is rendered by `a2a new`, the other is read by an agent. "+
+				"Copy the template over the page:\n"+
+				"    cp schemas/templates/v1/%s skill/a2ahub/reference/authoring/%s",
+				e.Name(), e.Name(), e.Name(), e.Name())
+		}
+	}
+
+	// A gate that found no pairs would pass silently forever — the same
+	// vacuity that let a manifest schema sit wired to nothing.
+	if checked == 0 {
+		t.Fatal("no template/authoring pairs were compared — this gate is guarding nothing")
+	}
+	t.Logf("compared %d template/authoring pairs", checked)
 }
