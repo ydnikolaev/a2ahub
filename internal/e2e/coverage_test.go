@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -226,5 +227,88 @@ func writeTempTxtar(t *testing.T, dir, name, content string) {
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write temp txtar %s: %v", path, err)
+	}
+}
+
+// refusalScenarioFloor is the number of t3 scenarios that assert a REFUSAL —
+// a non-zero exit or an expected stderr — as opposed to only a success.
+//
+// Measured, not chosen: 8 of 22 when this was written on 2026-07-26, then raised
+// to 9 in the same commit by giving `new_validate.txtar` the two refusals it was
+// missing — so the ratchet is demonstrated moving rather than merely declared.
+// It is a FLOOR: the number can only go up; raising it is a normal commit,
+// lowering it needs a reason in the message.
+//
+// The thirteen still on the happy path are named in this test's own output every
+// time it runs, so the remaining work is visible rather than filed.
+//
+// # Why this exists, and what it admits
+//
+// TestE2ECoverageParity above gates VERB parity: every catalog verb has at least
+// one scenario, and every scenario resolves. That is real and it works — 43 of 45
+// verbs carry evidence, the two skips are justified. But its own doc comment is
+// explicit that it requires "at least ONE row", and it says nothing about which
+// BEHAVIOURS of a verb are covered.
+//
+// The cost showed up on 2026-07-26. `a2a doctor`'s skill advisory named a remedy
+// that cannot work in the state it was advising about — and every layer of
+// coverage was green: the verb had evidence, the check had six test references,
+// and the specific test for that message was CORRECT (it created a `.claude/`
+// surface, so it exercised the branch where the remedy does work). The defect was
+// a missing DISTINCTION: one code branch where reality has two states. No
+// coverage metric finds a state the code never separated.
+//
+// This gate does not fix that class — nothing counting scenarios could. What it
+// does is stop the measurable half from drifting: two thirds of this tier's
+// scenarios never assert a refusal at all, so "the verb is covered" mostly means
+// "the happy path runs". Naming the number makes that visible instead of
+// inferable, and makes it a ratchet instead of a fact somebody rediscovers.
+const refusalScenarioFloor = 9
+
+// TestT3ScenariosAssertRefusalsNotOnlySuccess pins refusalScenarioFloor.
+func TestT3ScenariosAssertRefusalsNotOnlySuccess(t *testing.T) {
+	t.Parallel()
+
+	dir := filepath.Join(repoRootForTest(t), "internal", "e2e", "testdata", "t3")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+
+	var total int
+	var withRefusal []string
+	var happyOnly []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".txtar") {
+			continue
+		}
+		total++
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Errorf("read %s: %v", e.Name(), err)
+			continue
+		}
+		body := string(raw)
+		// testscript's own vocabulary for "this must fail": a `!`-negated
+		// command, or an assertion on stderr.
+		if strings.Contains(body, "! exec") || strings.Contains(body, "! a2a") || strings.Contains(body, "stderr ") {
+			withRefusal = append(withRefusal, e.Name())
+			continue
+		}
+		happyOnly = append(happyOnly, e.Name())
+	}
+
+	if total == 0 {
+		t.Fatal("no t3 scenarios found — this gate is guarding nothing")
+	}
+	t.Logf("t3 scenarios: %d total, %d assert a refusal, %d happy-path only", total, len(withRefusal), len(happyOnly))
+	t.Logf("happy-path only: %s", strings.Join(happyOnly, ", "))
+
+	if len(withRefusal) < refusalScenarioFloor {
+		t.Errorf("only %d of %d t3 scenarios assert a refusal, below the floor of %d.\n"+
+			"A tier where the happy path runs and nothing is ever refused certifies that the verb "+
+			"EXISTS, not that it guards anything. Raising this floor is a normal commit; lowering it "+
+			"needs a reason.\nhappy-path only: %s",
+			len(withRefusal), total, refusalScenarioFloor, strings.Join(happyOnly, ", "))
 	}
 }

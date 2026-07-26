@@ -4,3 +4,21 @@ exec a2a new question --field title=t --field space=fixture-space
 stdout 'drafted'
 exec a2a validate --all
 stdout '"valid": true'
+
+# --- and the refusals, because "the verb runs" is not "the verb guards" ---
+#
+# Added 2026-07-26 after measuring that 14 of 22 scenarios in this tier never
+# asserted a refusal at all: a tier where the happy path runs and nothing is
+# ever refused certifies that a verb EXISTS, not that it guards anything.
+
+# An unknown artifact type is refused, and the message names what IS known —
+# an agent that guessed the type has to be able to correct itself from the
+# refusal alone.
+! exec a2a new not-a-real-type
+stderr 'question'
+
+# A --field override the renderer cannot apply is refused where it is GIVEN,
+# never dropped. Dropping it is what made `--field to=beta` fail minutes later
+# as a validation complaint about the placeholder it had failed to replace.
+! exec a2a new question --field 'to={beta: yes}'
+stderr 'field'
