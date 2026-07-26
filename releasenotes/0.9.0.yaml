@@ -24,6 +24,14 @@ changes:
       together: a floor that binds the CLI but not MCP would only move the stale
       write to the other door. A structural gate now fails the build if a new
       write is added without one.
+      Know what the floor still does NOT do, because it is easy to over-read.
+      The check runs in the WRITER's own binary; nothing server-side reads the
+      field, and the space's CI does not enforce it. So raising your floor binds
+      every 0.9.0-or-newer writer on every verb, and every version's `a2a
+      submit` — but it cannot retroactively gate an older binary's `contract
+      publish`, because that binary's code never populates the field to check.
+      The way to close that gap is for everyone to be on 0.9.0, not to trust the
+      number in space.yaml.
     affects: [cli, mcp]
     action:
       scope: space
