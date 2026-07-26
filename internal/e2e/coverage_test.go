@@ -240,7 +240,25 @@ func writeTempTxtar(t *testing.T, dir, name, content string) {
 // lowering it needs a reason in the message.
 //
 // The thirteen still on the happy path are named in this test's own output every
-// time it runs, so the remaining work is visible rather than filed.
+// time it runs, so the state is visible rather than inferable.
+//
+// # This floor is NOT a coverage target, and that matters
+//
+// Checked after measuring: every one of those verbs except `disconnect` has unit
+// tests naming refusals, and `disconnect` has none because it HAS no refusal —
+// it is idempotent by design. And cmd/a2a's wire tier drives EVERY lifecycle verb
+// to a refusal through the real entry points, in `make check`, by handing each an
+// artifact that does not exist.
+//
+// So refusal LOGIC is covered at the unit tier, refusal WIRING per verb at the
+// wire tier, and what these thirteen lack is only the third slice — the same
+// refusal through the BUILT BINARY — which the other two bracket. Raise the floor
+// when a scenario is being edited anyway; grinding thirteen scenarios to move a
+// number is make-work, and a gate that induces make-work is worse than no gate.
+//
+// The 14-of-22 figure that prompted this was true and read as a hole because it
+// measured one tier in isolation. Left here as a caution rather than deleted: a
+// true number framed as a gap is its own kind of wrong answer.
 //
 // # Why this exists, and what it admits
 //
