@@ -210,11 +210,26 @@ func (c *SpaceCommand) runInit(_ context.Context, args []string, stdio IO) int {
 	}
 
 	_, _ = fmt.Fprintf(stdio.Stdout, "space init: wrote %d files to %s\n", written, target)
-	_, _ = fmt.Fprintln(stdio.Stdout, "space init: residual manual steps:")
-	_, _ = fmt.Fprintln(stdio.Stdout, "  - CODEOWNERS: replace the @REPLACE_WITH_ORG/... placeholders with real GitHub teams/logins")
-	_, _ = fmt.Fprintln(stdio.Stdout, "  - create the space repo on GitHub and push this tree")
-	_, _ = fmt.Fprintln(stdio.Stdout, `  - arm branch protection with required check "a2a-validate / validate" (see BRANCH-PROTECTION.md)`)
-	_, _ = fmt.Fprintln(stdio.Stdout, `  - enable Settings -> General -> "Allow auto-merge" (a2a submit relies on it to merge unattended; a2a doctor FAILs without it)`)
+	// The residual steps are printed IN ORDER, and the order is the part
+	// that used to be missing. Two of these steps brick a space when taken
+	// early, and neither ordering was stated in any published document:
+	// pushing after protection is armed is refused (nothing can merge into
+	// an empty protected main), and arming the required check before the
+	// pinned reusable-workflow release exists means no PR can ever satisfy
+	// it. Both were internal-runbook-only knowledge until now.
+	_, _ = fmt.Fprintln(stdio.Stdout, "space init: remaining steps, IN THIS ORDER:")
+	_, _ = fmt.Fprintln(stdio.Stdout, "  1. edit CODEOWNERS: replace every @REPLACE_WITH_ORG/... placeholder with a real GitHub team or login")
+	_, _ = fmt.Fprintln(stdio.Stdout, "  2. delete README.md from this tree — it documents the TEMPLATE, not your space")
+	_, _ = fmt.Fprintln(stdio.Stdout, "  3. create the space repo on GitHub, EMPTY (no README, no license)")
+	_, _ = fmt.Fprintln(stdio.Stdout, "  4. git init -b main && git add -A && git commit && git remote add origin <url> && git push -u origin main")
+	_, _ = fmt.Fprintln(stdio.Stdout, "     (push BEFORE arming protection: a protected empty main cannot accept its own bootstrap)")
+	_, _ = fmt.Fprintln(stdio.Stdout, `  5. enable Settings -> General -> "Allow auto-merge" (off by default on every new repo;`)
+	_, _ = fmt.Fprintln(stdio.Stdout, "     a2a submit arms auto-merge, so without it every write stalls behind a PR nothing will merge)")
+	_, _ = fmt.Fprintln(stdio.Stdout, `  6. arm branch protection: required check "a2a-validate / validate", 0 required approvals,`)
+	_, _ = fmt.Fprintln(stdio.Stdout, "     code-owner review ON, enforce_admins OFF — the full checklist is in BRANCH-PROTECTION.md")
+	_, _ = fmt.Fprintln(stdio.Stdout, "  7. for each participant: add them to space.yaml, scaffold their section, add their CODEOWNERS entry")
+	_, _ = fmt.Fprintln(stdio.Stdout, "")
+	_, _ = fmt.Fprintln(stdio.Stdout, "space init: then verify from a participant's checkout — `a2a connect <url>` and `a2a doctor`.")
 	return 0
 }
 

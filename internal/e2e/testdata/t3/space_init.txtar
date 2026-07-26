@@ -7,7 +7,18 @@
 #     -X main.version=0.1.0, so the pin must come out @v0.1.0).
 exec a2a space init acme-space
 stdout 'wrote 8 files'
-stdout 'residual manual steps'
+
+# The remaining steps are printed IN ORDER, and the two orderings that brick a
+# space when taken early are stated. Both were internal-runbook-only knowledge
+# until 2026-07-26, and both fail without naming their cause: a protected empty
+# main cannot accept its own bootstrap, and a required check whose pinned
+# reusable-workflow release does not exist can never go green. Asserting the
+# ORDER rather than merely "some steps printed" is the point — a list that
+# silently loses its ordering is the same defect coming back.
+stdout 'IN THIS ORDER'
+stdout 'push BEFORE arming protection'
+stdout 'Allow auto-merge'
+stdout 'delete README.md'
 
 # The scaffolded tree carries the CI caller + dependabot — the dotfile-embed trap.
 exists acme-space/.github/workflows/a2a-validate.yml

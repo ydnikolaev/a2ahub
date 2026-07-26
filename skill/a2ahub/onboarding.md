@@ -85,16 +85,62 @@ Guide the participant through these steps in order:
 
 ## Onboarding a new space, org, or offboarding (§9.2)
 
-- **Scaffolding the space tree** (space-admin step 1): copy `space-template/`
-  into the new repo — it ships the CI caller + `dependabot.yml` ready to go.
-  `a2a space init <space-id> [--dir <path>]` automates this: it writes the tree
-  from the embedded template with `space:` and `min_binary_version` filled and
-  the reusable-workflow ref pinned to the running binary's own release. It
-  refuses to run from an untagged dev build (it would pin a version that does
-  not exist) and refuses a non-empty target directory. CODEOWNERS org handles
-  stay `@REPLACE_WITH_ORG/...` placeholders — the command prints them, plus
-  creating the repo, pushing, arming branch protection, and **enabling GitHub's
-  "Allow auto-merge" repo setting**, as the owner's four remaining steps.
+### Creating a space from zero
+
+`a2a space init <space-id> [--dir <path>]` writes the tree — the manifest with
+`space:` and `min_binary_version` filled, the CI caller with the
+reusable-workflow ref pinned to the running binary's own release, CODEOWNERS,
+`BRANCH-PROTECTION.md`, `dependabot.yml`. It refuses to run from an untagged
+dev build (it would pin a version that does not exist) and refuses a non-empty
+target directory.
+
+**It writes files and nothing else.** It creates no git repository, makes no
+commit, pushes nothing, and never calls GitHub. Everything below is yours, and
+**the order is load-bearing** — two of these steps brick a space when taken
+early, and both fail without naming their cause:
+
+```sh
+a2a space init myspace --dir ./myspace
+cd myspace
+
+# 1. real owners in place of the placeholders
+$EDITOR CODEOWNERS                    # @REPLACE_WITH_ORG/... -> real teams/logins
+
+# 2. the template's own readme is not your space's
+rm README.md
+
+# 3. optional, and nothing else will prompt you for them:
+$EDITOR space.yaml                    # `gates:` (default is fine to start) and
+                                      # `notification_routes:` (leave [] if unused)
+
+# 4. create the repo EMPTY — no README, no license, or step 5 is a conflict
+gh repo create <org>/<repo> --private
+
+# 5. push BEFORE arming protection: a protected empty main cannot accept
+#    its own bootstrap (direct push forbidden, and no branch to PR from)
+git init -b main && git add -A && git commit -m "space: bootstrap"
+git remote add origin https://github.com/<org>/<repo>.git
+git push -u origin main
+
+# 6. the repo settings — auto-merge is OFF by default on every new repo
+gh api -X PATCH repos/<org>/<repo> -f allow_auto_merge=true -f delete_branch_on_merge=true
+
+# 7. branch protection — only now, and only because step 5's push already
+#    landed and the pinned reusable-workflow release exists
+#    (see BRANCH-PROTECTION.md for every value and why)
+```
+
+**Then each participant onboards** (§9.2 below): a manifest PR adding them to
+`space.yaml`, their section scaffold, and their CODEOWNERS entry. A section is
+six paths — `provides/ requires/ exchanges/ events/ docs/` plus a
+`consumes.yaml` that starts as `schema: consumes/v1`, `system: <name>`,
+`dependencies: []`. The template ships none of these: a space with no
+participants is deliberately valid so CI is green on the empty repo.
+
+**Verify from a participant's checkout, not from yours**: `a2a connect <url>`
+then `a2a doctor`. A green doctor does not prove branch protection is armed —
+no doctor check reads it — so also confirm by hand that a direct push to
+`main` is rejected and that an ungated PR auto-merges.
 - **Do not skip the auto-merge setting.** It is off by default on every newly
   created GitHub repository, it is a *repo setting* rather than part of branch
   protection, and without it the whole exchange stalls silently: `a2a submit`
