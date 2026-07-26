@@ -47,9 +47,36 @@ func TestUnexplainedSpaceFailures(t *testing.T) {
 			wantFlag: false,
 		},
 		{
-			name: "a green push on main",
+			// THE CASE THAT WAS MISSING, and it cost 96 false positives on
+			// this classifier's first live run.
+			//
+			// The caller measures JobCount only for FAILED runs, so a green
+			// run arrives here with the zero value — not with a real count.
+			// The original version of this case passed JobCount: 2, a value
+			// the caller never produces for a green run, so the test agreed
+			// with the code about a situation neither would ever see. Every
+			// successful run in the space was then reported as "ran zero
+			// jobs".
+			//
+			// The lesson is narrower than "test more cases": a fixture must
+			// use the values the real caller produces, especially the zero
+			// ones, because a zero that means "unmeasured" and a zero that
+			// means "none" are the same bits.
+			name: "a green push on main, with the UNMEASURED job count the caller actually passes",
 			run: SpaceRun{ID: 5, Event: "push", HeadBranch: "main", Status: "completed",
-				Conclusion: "success", JobCount: 2},
+				Conclusion: "success", JobCount: 0},
+			wantFlag: false,
+		},
+		{
+			name: "a green PR run, likewise unmeasured",
+			run: SpaceRun{ID: 8, Event: "pull_request", HeadBranch: "a2a/alpha/submit/XQ-1",
+				Status: "completed", Conclusion: "success", JobCount: 0},
+			wantFlag: false,
+		},
+		{
+			name: "a failed run whose job lookup errored is NOT called zero-jobs",
+			run: SpaceRun{ID: 9, Event: "pull_request", HeadBranch: "probe/xsec",
+				Status: "completed", Conclusion: "failure", JobCount: -1},
 			wantFlag: false,
 		},
 		{
