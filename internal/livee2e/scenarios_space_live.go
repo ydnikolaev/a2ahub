@@ -325,9 +325,13 @@ const scenarioSpaceCIHealthy = "space-ci-has-no-unexplained-failures"
 // cost to learn nothing about the green ones.
 func runSpaceCIHealth(ctx context.Context, h *harness, since string) Result {
 	const expected = "no workflow run in the space failed for a reason this matrix did not deliberately cause"
+	// PassEvidence, not Detail: Render skips Detail for a passing row, and this
+	// row's pass IS a claim about which red runs the matrix owns up to having
+	// caused. Naming the ids in a field the report never prints would have been
+	// evidence nobody could read.
 	res := func(v Verdict, observed, detail string) Result {
 		return Result{Scenario: scenarioSpaceCIHealthy, System: SystemA, Surface: SurfaceCLI,
-			Verdict: v, Expected: expected, Observed: observed, Detail: detail}
+			Verdict: v, Expected: expected, Observed: observed, Detail: detail, PassEvidence: detail}
 	}
 
 	runs, err := h.Prov.ListRunsSince(ctx, h.Org, h.Repo, since)
