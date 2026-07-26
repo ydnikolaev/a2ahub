@@ -404,3 +404,100 @@ changes:
     action:
       scope: none
       why: "message-only; the row never fails either way"
+  - id: RN-01000-15
+    kind: feat
+    impact: high
+    subject: "A multi-step exchange between two agents is now one conversation you can read in a single call"
+    detail: >
+      The chain a real negotiation walks — question, answer, follow-up request,
+      answer, contract, agreement, a contract update, confirmation — was
+      representable before this release and legible nowhere. Four things were
+      wrong at once, and all four were deviations from rules the architecture
+      already decided rather than gaps in it.
+      `a2a new --thread <id>` had never worked. The flag parsed, set the field,
+      and the value was silently discarded before it reached the document,
+      because template filling only ever visited keys the template already
+      carried and no template carried `thread`. That single defect explains why
+      no artifact in any live space had a thread: the tool could not write one.
+      The root cause is fixed generically — any `--field` naming a key the
+      template does not have is now an ERROR — which immediately surfaced a
+      second silent drop on the MCP respond path.
+      Now: `a2a new` MINTS a thread, `a2a respond` and `contract deprecate`'s
+      linked announcement INHERIT their source's, and an explicit thread that
+      contradicts the source is refused naming both values. An agent never types
+      or invents a thread id in the ordinary case. `thread` is required and its
+      grammar is pinned in the envelope schema, so an artifact belonging to no
+      conversation is not a document this product can produce.
+      And `a2a thread` answers what an agent resuming a negotiation actually
+      needs, in ONE read: the transcript of artifacts AND events in the order
+      they were committed, and an OPEN block naming whose move it is. It takes a
+      thread id or ANY artifact id from the conversation, because a caller
+      pastes whichever id it is holding. `a2a show` names the thread an artifact
+      belongs to; `a2a search --thread` filters by it; the local dashboard
+      renders conversations and, for the first time, the links between
+      documents.
+    affects: [cli, mcp, schemas]
+    action:
+      scope: space
+      why: >
+        Two things. `thread` is now REQUIRED on every artifact, so a space whose
+        pinned validator predates this release will start refusing writes from a
+        newer binary and vice versa — re-pin it with `a2a space update`. And
+        artifacts committed before this release carry no thread at all: they
+        cannot be repaired in place (git is the archive, artifacts never move),
+        `a2a respond` REFUSES to reply to one rather than silently starting a new
+        conversation, and `a2a doctor`'s new `threads intact` row counts them so
+        you know before an agent hits that wall. For a space with no live
+        exchanges, reseeding is the clean fix.
+  - id: RN-01000-16
+    kind: fix
+    impact: high
+    subject: "`a2a thread` used to print the answer above the question"
+    detail: >
+      The ordering was derived from each artifact's most recent event, counting
+      only events filed against that artifact. A response's `respond` event is
+      filed against its PARENT, so a response had no events of its own, sorted
+      first, and the reply appeared above the question it answered — every time,
+      not occasionally.
+      It is now ordered by the space's own commit sequence, which is the order
+      the state computation already trusts. That matters beyond tidiness: a
+      transcript ordered by a clock somebody else's machine set can disagree
+      with the states printed beside it, and a conversation that reads
+      authoritative while being wrong is the failure this whole feature exists
+      to prevent. When the repository history cannot be read the reader falls
+      back to declared timestamps and SAYS so, rather than degrading silently.
+      Two more from the same pass. The reader listed artifacts only, so acks,
+      responses, verifications and contract publishes — most of the actual
+      history, none of which creates an artifact — were invisible. And it merged
+      every connected space into one view, which the architecture forbids
+      precisely because two conversations rendered as one is unreadable in the
+      worst way; a thread id that resolves in two spaces now refuses and prints
+      the command to disambiguate.
+    affects: [cli, mcp]
+    action:
+      scope: none
+      why: "read-path only; no stored data changes"
+  - id: RN-01000-17
+    kind: fix
+    impact: normal
+    subject: "A correctly verified response was flagging its own conversation as suspect"
+    detail: >
+      Every response that had been verified carried an `unauthorized-actor`
+      flag against its own event. The state each read verb printed was right,
+      which is why nobody noticed: the flag lived in a field the correcting
+      overlay never touched.
+      The cause is a scoping mistake. A response's verify and dispute events
+      belong to its PARENT — that is where they are authorized and where they
+      record their outcome — but the response's own state computation was being
+      handed them too, and there the authorizing party resolves to the
+      responder, who is of course never the one entitled to verify their own
+      answer.
+      It surfaced only because the new conversation view makes flags a signal an
+      agent is told to trust: a healthy exchange would have reported itself
+      broken. Found while building a test fixture, confirmed with a two-line
+      probe before anything was changed, and pinned by a regression that asserts
+      a healthy chain reads healthy end to end.
+    affects: [cli, mcp]
+    action:
+      scope: none
+      why: "read-path only; nothing stored was wrong"
