@@ -619,7 +619,7 @@ const DOCS = /*A2A_DOCS_START*/[
 const I18N = {
   en:{
     types:{contract:"Contract",requirement:"Requirement",question:"Question",work_request:"Work request",decision:"Decision",handoff:"Handoff",response:"Response",announcement:"Announcement"},
-    states:{draft:"Draft",submitted:"Submitted",acked:"Acknowledged",accepted:"Accepted","in-progress":"In progress",responded:"Responded",verified:"Verified",closed:"Closed",disputed:"Disputed",published:"Published",acknowledged:"Acknowledged",proposed:"Proposed",in_progress:"In progress",retired:"Retired",deprecated:"Deprecated"},
+    states:{draft:"Draft",submitted:"Submitted",acked:"Acknowledged",accepted:"Accepted","in-progress":"In progress",responded:"Responded",verified:"Verified",closed:"Closed",disputed:"Disputed",published:"Published",acknowledged:"Acknowledged",proposed:"Proposed",in_progress:"In progress",retired:"Retired",deprecated:"Deprecated",superseded:"Superseded",rejected:"Rejected",cancelled:"Cancelled",withdrawn:"Withdrawn",blocked:"Blocked",satisfied:"Satisfied",approved:"Approved",declined:"Declined"},
     sev:{blocking:"Blocking",attention:"Attention",normal:"Normal"},
     drift:{current:"Current",behind:"Behind",deprecated:"Deprecated",retired:"Retired",dangling:"Dangling"},
     ui:{spaces:"Spaces",views:"Combined views",unified:"Unified mesh",clusters:"Clusters by space",guide:"Guide",
@@ -644,7 +644,7 @@ const I18N = {
       notConfT:"No spaces connected yet",notConfD:"This system isn't part of any a2a space. Connect one to see who you depend on and who's waiting on you. Open the Guide anytime to learn the model.",
       lastSync:"Last sync",repo:"Repository",participants:"Participants",statusLbl:"Status",fresh:"Fresh",staleWord:"Stale",unreadable:"Unreadable",all:"All",direction:"Direction",age:"Age",itemId:"ID",thread:"Thread",signals:"Signals",
       docs:"Documentation",docsSearch:"Search docs…",copy:"Copy",copied:"Copied",onThisPage:"On this page",docsEnHint:"Documentation is in English.",docsEmpty:"Documentation isn't available in this build.",docsNoResults:"No sections match your search.",
-      threadsCard:"Conversations",yourMove:"Your move",lastActivity:"Last activity",threadMembers:"Members",threadLinks:"Links",
+      threadsCard:"Conversations",threadsCount:"tracked",yourMove:"Your move",lastActivity:"Last activity",threadMembers:"Members",threadLinks:"Links",
       linkKind:{parent:"parent",ref:"ref",supersede:"supersede"}},
     guide:{eyebrow:"A newcomer's guide",title:"How a2ahub works",
       secTypes:"The 8 artifact types",secTypesSub:"Everything systems exchange is one of these typed files.",
@@ -655,7 +655,7 @@ const I18N = {
   },
   ru:{
     types:{contract:"Контракт",requirement:"Требование",question:"Вопрос",work_request:"Запрос работы",decision:"Решение",handoff:"Передача",response:"Ответ",announcement:"Объявление"},
-    states:{draft:"Черновик",submitted:"Отправлено",acked:"Получено",accepted:"Принято","in-progress":"В работе",responded:"Отвечено",verified:"Подтверждено",closed:"Закрыто",disputed:"Оспорено",published:"Опубликован",acknowledged:"Принято",proposed:"Предложено",in_progress:"В работе",retired:"Снят",deprecated:"Устаревает"},
+    states:{draft:"Черновик",submitted:"Отправлено",acked:"Получено",accepted:"Принято","in-progress":"В работе",responded:"Отвечено",verified:"Подтверждено",closed:"Закрыто",disputed:"Оспорено",published:"Опубликован",acknowledged:"Принято",proposed:"Предложено",in_progress:"В работе",retired:"Снят",deprecated:"Устаревает",superseded:"Заменено",rejected:"Отклонено",cancelled:"Отменено",withdrawn:"Отозвано",blocked:"Заблокировано",satisfied:"Удовлетворено",approved:"Одобрено",declined:"Отклонено (не берётся)"},
     sev:{blocking:"Блокирует",attention:"Внимание",normal:"Обычное"},
     drift:{current:"Актуально",behind:"Устарело",deprecated:"Устаревает",retired:"Снято",dangling:"Висячая"},
     ui:{spaces:"Спейсы",views:"Общие виды",unified:"Единый граф",clusters:"Кластеры по спейсам",guide:"Справка",
@@ -680,7 +680,7 @@ const I18N = {
       notConfT:"Спейсы ещё не подключены",notConfD:"Эта система не входит ни в один спейс a2a. Подключите спейс, чтобы видеть, от кого вы зависите и кто ждёт вас. Справку можно открыть в любой момент.",
       lastSync:"Синхронизация",repo:"Репозиторий",participants:"Участники",statusLbl:"Статус",fresh:"Свежо",staleWord:"Устарело",unreadable:"Нечитаемо",all:"Все",direction:"Направление",age:"Возраст",itemId:"ID",thread:"Тред",signals:"Сигналы",
       docs:"Документация",docsSearch:"Поиск по докам…",copy:"Копировать",copied:"Скопировано",onThisPage:"На этой странице",docsEnHint:"Документация на английском.",docsEmpty:"Документация недоступна в этой сборке.",docsNoResults:"Ничего не найдено.",
-      threadsCard:"Треды",yourMove:"Ваш ход",lastActivity:"Последняя активность",threadMembers:"Участники треда",threadLinks:"Связи",
+      threadsCard:"Треды",threadsCount:"в работе",yourMove:"Ваш ход",lastActivity:"Последняя активность",threadMembers:"Участники треда",threadLinks:"Связи",
       linkKind:{parent:"родитель",ref:"ссылка",supersede:"замена"}},
     guide:{eyebrow:"Гид для новичка",title:"Как устроен a2ahub",
       secTypes:"8 типов артефактов",secTypesSub:"Всё, чем обмениваются системы, — один из этих типизированных файлов.",
@@ -1512,7 +1512,7 @@ function threadsCard(threads,o){
   const card=el("div",{class:"card"});
   const head=el("div",{class:"card-h"});
   head.appendChild(el("h2",{text:L.ui.threadsCard}));
-  head.appendChild(el("span",{class:"cnt-note",text:threads.length+" "+L.ui.open}));
+  head.appendChild(el("span",{class:"cnt-note",text:threads.length+" "+L.ui.threadsCount}));
   head.appendChild(el("span",{class:"sp"}));
   card.appendChild(head);
   const scroll=el("div",{class:"panelscroll"});
