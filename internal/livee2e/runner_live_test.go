@@ -65,7 +65,21 @@ func TestLiveMatrix(t *testing.T) {
 			case hErr != nil:
 				run.Abort("harness construction failed: " + hErr.Error())
 			default:
+				// Stamped BEFORE the first write, so the health probe below
+				// asks about this run's own window and not about whatever a
+				// previous run left behind. Taken here rather than at the
+				// top of TestLiveMatrix because harness construction itself
+				// re-provisions the space and pushes to main — runs from
+				// that step belong to this run and must be inside the
+				// window.
+				since := time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339)
 				driveFamilies(ctx, t, run, h)
+				// Last, deliberately: it asks what ELSE went red in the
+				// space while everything above was running, so it has to run
+				// after everything above.
+				if err := run.Record(runSpaceCIHealth(ctx, h, since)); err != nil {
+					t.Errorf("record %s: %v", scenarioSpaceCIHealthy, err)
+				}
 			}
 		}
 	}

@@ -548,3 +548,61 @@ func (c *ghClient) RerunWorkflow(ctx context.Context, owner, name string, runID 
 	_, err := c.do(ctx, http.MethodPost, path, nil, nil)
 	return err
 }
+
+// ListRunsSince lists the repository's workflow runs created at or after
+// since (RFC3339), across every branch and event — NOT filtered to a head
+// SHA the way ListWorkflowRuns is.
+//
+// The distinction is the point. ListWorkflowRuns answers "what happened to
+// the PR I just opened", which is what every scenario needs. This answers
+// "what happened in this repository while I was working", which is what
+// nothing asked until a real failure on the space reached the operator by
+// email while this tier reported green.
+//
+// JobCount is left zero here and filled in only for runs worth a second
+// call — see FillJobCounts.
+func (c *ghClient) ListRunsSince(ctx context.Context, owner, name, since string) ([]SpaceRun, error) {
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) +
+		"/actions/runs?per_page=100&created=%3E%3D" + url.QueryEscape(since)
+	var payload struct {
+		WorkflowRuns []struct {
+			ID         int64  `json:"id"`
+			Name       string `json:"name"`
+			Event      string `json:"event"`
+			HeadBranch string `json:"head_branch"`
+			Status     string `json:"status"`
+			Conclusion string `json:"conclusion"`
+		} `json:"workflow_runs"`
+	}
+	if _, err := c.do(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	out := make([]SpaceRun, 0, len(payload.WorkflowRuns))
+	for _, r := range payload.WorkflowRuns {
+		out = append(out, SpaceRun{
+			ID: r.ID, Name: r.Name, Event: r.Event, HeadBranch: r.HeadBranch,
+			Status: r.Status, Conclusion: r.Conclusion,
+		})
+	}
+	return out, nil
+}
+
+// CountJobs returns how many jobs a workflow run actually ran.
+//
+// Zero is the signal that matters: a run whose workflow could not be loaded
+// (an unresolvable reusable-workflow ref, most often) completes as a FAILURE
+// having run nothing, and GitHub surfaces no failing check for it at all —
+// the required context simply never appears, so every waiter times out
+// instead of failing. That fault is indistinguishable from an ordinary
+// failed job by conclusion alone.
+func (c *ghClient) CountJobs(ctx context.Context, owner, name string, runID int64) (int, error) {
+	path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/jobs?per_page=100",
+		url.PathEscape(owner), url.PathEscape(name), runID)
+	var payload struct {
+		TotalCount int `json:"total_count"`
+	}
+	if _, err := c.do(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return 0, err
+	}
+	return payload.TotalCount, nil
+}
