@@ -37,6 +37,24 @@ const totalBudget = 10 * time.Second
 // first.
 var ErrSyncBudgetExhausted = errors.New("cache: SyncIfStale: budget exhausted")
 
+// readRefreshTTL is how recently a mirror must have been fetched for a READ
+// VERB to accept it without fetching again.
+//
+// Deliberately far shorter than DefaultStatuslineTTL, because the two answer
+// different questions. The statusline renders on every shell prompt, so it
+// needs a window wide enough that prompts are free. `a2a inbox`, `show`,
+// `thread` and `search` are asked on purpose, by a human or an agent that
+// wants the current answer, and the cost of being right is one bounded
+// `git fetch`.
+//
+// 30 seconds, not zero: an agent turn typically runs several read verbs
+// seconds apart (inbox, then show, then thread), and paying a fetch for each
+// buys nothing — nothing can have changed in between that the first fetch
+// missed. It IS long enough to dedupe that burst and short enough that a
+// counterparty's merge shows up on the next question rather than after the
+// conversation has moved on.
+const readRefreshTTL = 30 * time.Second
+
 // SyncIfStale refreshes every connected space's mirror whose sync-age
 // exceeds the Store's TTL (AC-1050, spec 45 M1): the read path's own
 // fix for a contract published on the other side after this side's last
@@ -52,21 +70,41 @@ var ErrSyncBudgetExhausted = errors.New("cache: SyncIfStale: budget exhausted")
 //     (internal/space/mirror.go). A read verb must never be able to
 //     poison a mirror that way. A missing mirror stays doctor/sync/
 //     connect's job; buildStore already copes with a zero manifest.
-//  2. Staleness reuses mirrorSyncAge + s.ttl (the same decision
-//     statusline's own detached refresh already makes) — never a second
-//     staleness computation. Never-synced (mirrorSyncAge's synced=false)
+//
+//  2. Staleness reuses mirrorSyncAge, but against readRefreshTTL — NOT the
+//     Store's statusline TTL. Never-synced (mirrorSyncAge's synced=false)
 //     counts as stale, same as spaceSyncStale's own convention.
+//
+//     Sharing the statusline's TTL was a real defect, found end-to-end on
+//     2026-07-26 against a live space: an artifact whose pull request had
+//     just merged was INVISIBLE to `a2a outbox` and `a2a show`, which
+//     answered "artifact not found", and one explicit `a2a sync` revealed
+//     it immediately. The mirror had been fetched moments earlier by the
+//     submit, so its age was inside DefaultStatuslineTTL (5 minutes) and
+//     this function skipped it as fresh.
+//
+//     Five minutes is exactly the window in which a counterparty's merge
+//     matters most, and the documented session-start loop says an empty
+//     inbox means proceed — so this reproduced the very blocker the read
+//     refresh was written to close, just narrower. The two callers were
+//     never the same question: the statusline renders on every shell prompt
+//     and needs a cheap window, while a read verb is a deliberate question
+//     asked seconds apart at worst.
+//
 //  3. Bounded: each attempted mirror gets its own context.WithTimeout(ctx,
 //     perMirrorTimeout) derived from ctx; the remaining totalBudget is
 //     checked BEFORE starting each mirror, and once it is spent,
 //     SyncIfStale stops and returns one error per mirror it never
 //     attempted, naming it.
+//
 //  4. Errors are returned, never logged (rails: log-or-return, never
 //     both) — one error per failed mirror, each naming the space id and
 //     wrapped so errors.Is still resolves the underlying cause.
+//
 //  5. Never fatal to the read: a failure here never panics and never
 //     leaves the mirror less usable than it was — see this method's own
 //     doc trailer on what a timed-out fetch does to the mirror on disk.
+//
 //  6. A successful fetch also refreshes this Store's own cached
 //     space.Manifest for that mirror (best-effort; a fetch that succeeds
 //     but leaves an unreadable/unparseable space.yaml keeps the prior
@@ -101,7 +139,7 @@ func (s *Store) SyncIfStale(ctx context.Context) []error {
 			continue // poisoning guard: never first-clone from a read verb
 		}
 		age, synced := mirrorSyncAge(s.now(), sm.Dir)
-		if synced && age <= s.ttl {
+		if synced && age <= readRefreshTTL {
 			continue // fresh
 		}
 		staleIdx = append(staleIdx, i)
