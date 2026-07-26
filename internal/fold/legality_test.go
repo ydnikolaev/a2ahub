@@ -210,3 +210,60 @@ func TestCheckLegalityBroadcastAck(t *testing.T) {
 		}
 	})
 }
+
+// TestContractCanPublishASuccessorAfterDeprecation is the regression for a
+// wall that only appears once a contract has been in real use.
+//
+// `a2a contract deprecate --version 1.0.0` deprecates a VERSION. This fold
+// records state per SUBJECT, so it moved the whole contract to `deprecated`
+// — and with no (deprecated, publish) row, every later publish was refused
+// LFC-001. The ordinary life of a live contract is publish 1.0, publish 2.0,
+// deprecate 1.0, publish 3.0; it hit the wall on that last step, which is
+// late enough that nobody meets it until two projects are genuinely
+// exchanging contracts.
+//
+// The test walks the whole sequence rather than asserting the single new
+// row, because the row is only worth having if the SEQUENCE works.
+func TestContractCanPublishASuccessorAfterDeprecation(t *testing.T) {
+	t.Parallel()
+
+	env := Envelope{Kind: KindContract, ID: "XC-alpha-widget", From: "alpha"}
+	actor := Actor{Kind: "agent", Name: "bot", System: "alpha"}
+
+	steps := []struct {
+		from       State
+		transition string
+		wantTo     State
+	}{
+		{StateNone, TCreate, StateDraft},
+		{StateDraft, TPublish, StatePublished},
+		{StatePublished, TPublish, StatePublished},    // 2.0.0
+		{StatePublished, TDeprecate, StateDeprecated}, // 1.0.0 sunset
+		{StateDeprecated, TPublish, StatePublished},   // 3.0.0 — the wall
+		{StatePublished, TDeprecate, StateDeprecated},
+		{StateDeprecated, TRetire, StateRetired},
+	}
+
+	for i, s := range steps {
+		verdict := CheckLegality(KindContract, s.from, s.transition, env, actor, MembershipMember)
+		if verdict != VerdictLegal {
+			t.Fatalf("step %d: %s from %s was refused (%v) — a contract that cannot publish after a "+
+				"deprecation is dead the moment its first version sunsets", i, s.transition, s.from, verdict)
+		}
+	}
+}
+
+// TestContractRetireStillRequiresDeprecation pins the boundary the row above
+// must NOT have widened: retire remains reachable only from `deprecated`, so
+// the live tier's contract-retire-without-deprecation-refused row keeps
+// asserting something.
+func TestContractRetireStillRequiresDeprecation(t *testing.T) {
+	t.Parallel()
+
+	env := Envelope{Kind: KindContract, ID: "XC-alpha-widget", From: "alpha"}
+	actor := Actor{Kind: "agent", Name: "bot", System: "alpha"}
+
+	if v := CheckLegality(KindContract, StatePublished, TRetire, env, actor, MembershipMember); v == VerdictLegal {
+		t.Fatal("retire from `published` became legal — the successor-publish row widened more than it meant to")
+	}
+}
