@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
@@ -157,10 +158,39 @@ func layer3FiveXXInjected(ctx context.Context, h *harness) Result {
 			"`a2a submit` exited 0 despite the proxy injecting a 5xx on its OpenPR call",
 			"a write whose OpenPR call comes back 5xx must surface to the caller as an error, not a silent success", stdout)
 	}
-	if !strings.Contains(stderr, injectedFaultMarker) {
+	// TWO shapes are correct here, and which one appears depends on the
+	// product's own bounded retry — which did not exist when this row was
+	// written.
+	//
+	// The row used to require the injected 5xx verbatim in stderr, citing
+	// "`send` issues OpenPR exactly once, no internal retry". P44 deliberately
+	// changed that: a 5xx is now retried, because during GitHub's real outage on
+	// 2026-07-24 every `a2a submit` died instantly on a bare `status 500:` and an
+	// agent could not tell a platform outage from a refusal.
+	//
+	// So with the retry in place, this proxy — which FORWARDS the request for
+	// real and only then discards the response (see injectingProxy) — has already
+	// created the pull request on attempt 1. The retry's second POST therefore
+	// hits a duplicate, and the product reports THAT: "refused as a duplicate,
+	// which means the FIRST attempt landed". Which is strictly better than the
+	// bare 504 this row used to demand, and is the very truth the injected 5xx
+	// withheld from the caller.
+	//
+	// Both are accepted; neither is optional. What must never happen is a
+	// failure that names NEITHER — that would be an unrelated error wearing this
+	// row's clothes, and the row would pass having proved nothing.
+	//
+	// Matched against the sentinel's OWN text rather than a copied literal, so
+	// rewording the product's message cannot silently un-anchor this assertion.
+	sawInjected := strings.Contains(stderr, injectedFaultMarker)
+	sawDuplicate := strings.Contains(stderr, host.ErrRetriedWriteWasDuplicate.Error())
+	if !sawInjected && !sawDuplicate {
 		return layer3InjectedFail("injected-write",
-			fmt.Sprintf("submit failed, but its stderr does not carry this row's own injected-fault marker: %s", stderr),
-			"the CLI's own error message must carry the SAME 5xx this row injected (internal/host/github.go's `send` issues OpenPR exactly once, no internal retry — spec 36 §T6-d)", stderr)
+			fmt.Sprintf("submit failed, but its stderr names neither this row's injected fault nor the "+
+				"retried-write-was-duplicate class: %s", stderr),
+			"the CLI's error must carry EITHER the 5xx this row injected, or — since P44's bounded retry "+
+				"re-issues it and the proxy forwards for real — the duplicate refusal that says the first "+
+				"attempt landed (spec 36 §T6-d, spec 44)", stderr)
 	}
 
 	// --- UNKNOWN, never FAIL: everything observed so far is exactly the
