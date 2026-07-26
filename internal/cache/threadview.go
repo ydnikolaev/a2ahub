@@ -264,6 +264,20 @@ func (s *Store) ThreadView(ctx context.Context, ref string, spaceID string) (Thr
 		if !found {
 			return ThreadResult{}, fmt.Errorf("%w: %q", ErrNotFound, ref)
 		}
+		// The artifact exists but carries NO thread — a document committed
+		// before threads were minted. Refuse by name instead of rendering it.
+		//
+		// Found by reading real output against a live space, not by a test:
+		// without this branch the empty thread value falls through and matches
+		// every OTHER threadless artifact in the space, so the reader presents
+		// a "conversation" with an empty id assembled from documents that have
+		// nothing to do with each other. That is the exact failure this whole
+		// feature exists to prevent — an authoritative-looking view of a
+		// relationship that does not exist — and it is worse than the error,
+		// because a caller cannot tell it from a real thread.
+		if threadID == "" {
+			return ThreadResult{}, fmt.Errorf("%w: %q carries no thread, so there is no conversation to read; that artifact predates thread propagation and cannot be repaired in place", ErrThreadNotFound, ref)
+		}
 	}
 
 	type hit struct {
