@@ -45,6 +45,13 @@ type GitHubHost struct {
 	// tests shrink them so no suite ever waits on a real clock.
 	ForkReadyAttempts int
 	ForkReadyDelay    time.Duration
+	// RetryAttempts/RetryDelayFn bound httpDo's retry of a transient
+	// failure. Zero/nil means MaxAttempts and RetryDelay (retry.go); tests
+	// shrink them, the same seam and for the same reason as ForkReady*
+	// above — a suite that waits on RetryDelay's real 14-second worst case
+	// is a suite people stop running.
+	RetryAttempts int
+	RetryDelayFn  func(attempt int) time.Duration
 }
 
 // Fork-readiness poll defaults: ~10s of patience in one-second steps,
@@ -863,18 +870,148 @@ func (h *GitHubHost) send(ctx context.Context, op, method, url string, cred Cred
 	return header, raw, nil
 }
 
-// httpDo performs one HTTP round trip and returns the raw status code,
-// response header, and bounded body — WITHOUT interpreting the status code.
-// Every caller that wants a non-2xx status turned into an error uses send;
-// MergePR calls this directly because it must distinguish 405/409 from a
-// generic failure, and from each other.
+// httpDo performs one HTTP request and returns the raw status code, response
+// header, and bounded body — WITHOUT interpreting the status code. Every
+// caller that wants a non-2xx status turned into an error uses send; MergePR
+// calls this directly because it must distinguish 405/409 from a generic
+// failure, and from each other.
+//
+// # A transient GitHub is retried here, once, for every caller
+//
+// This is the single transport chokepoint every REST and GraphQL call passes
+// through, which is why the retry lives here rather than in each verb. An
+// attempt classified OutcomeUnknown (retry.go: a 5xx, a rate limit, a
+// transport error) is retried on a bounded, deterministic schedule; anything
+// Fatal fails on the FIRST response, exactly as fast as before, because
+// retrying a 403 or a 422 wastes the budget on an answer that will not change.
+//
+// The reason is not tidiness. During GitHub's Pull Requests outage on
+// 2026-07-24, every `a2a submit` died instantly on a bare `status 500:` with
+// an empty body: the push had landed and only the PR had not, and nothing said
+// whether that was a platform problem or a refusal.
+//
+// # Retrying a POST, honestly
+//
+// This retries non-idempotent requests too, and that is a deliberate call
+// rather than an oversight. If a POST /pulls answered 5xx having in fact
+// created the pull request, the retry is refused as a duplicate — so the
+// caller sees ErrRetriedWriteWasDuplicate, which NAMES that the first attempt
+// landed, instead of the bare 500 it used to see. The recovery is identical
+// either way (re-run; the write funnel adopts an already-open PR by head
+// branch), so the retry can only improve the message, never the outcome.
+//
+// The whole window is capped by RetryTotalCap, including a server-supplied
+// Retry-After: a command that hangs is worse than one that reports a transient
+// failure and says re-running is safe.
 func (h *GitHubHost) httpDo(ctx context.Context, op, method, url string, cred Credential, body any) (status int, header http.Header, raw []byte, err error) {
-	var reqBody io.Reader
+	// Encoded ONCE, outside the loop: an io.Reader is consumed by the first
+	// attempt, so a retry that reused it would send an empty body — a
+	// silently different request, which is worse than no retry at all.
+	var encoded []byte
 	if body != nil {
-		encoded, err := json.Marshal(body)
+		encoded, err = json.Marshal(body)
 		if err != nil {
 			return 0, nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: encode request: %w", ErrRequestFailed, err)}
 		}
+	}
+
+	// A request this method/url cannot even BUILD fails deterministically, so
+	// it is caught once, here, rather than inside the loop: classified as a
+	// transport error it would be read as "unknown" and retried four times
+	// before surfacing as transient, which is the wrong word for a malformed
+	// URL and the wrong number of attempts for an answer that cannot change.
+	if _, buildErr := http.NewRequestWithContext(ctx, method, url, nil); buildErr != nil {
+		return 0, nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: build request: %w", ErrRequestFailed, buildErr)}
+	}
+
+	attempts := h.RetryAttempts
+	if attempts <= 0 {
+		attempts = MaxAttempts
+	}
+	delayFor := h.RetryDelayFn
+	if delayFor == nil {
+		delayFor = RetryDelay
+	}
+
+	start := time.Now()
+	var retried bool
+	var lastStatus int
+	var lastRaw []byte
+	var lastErr error
+
+	for attempt := 1; ; attempt++ {
+		status, header, raw, err = h.httpAttempt(ctx, op, method, url, cred, encoded, body != nil)
+
+		outcome := ClassifyStatus(status, err)
+		// The one case ClassifyStatus's own doc comment defers to a caller
+		// holding the headers: a 403 that is really a rate limit. Status code
+		// alone cannot tell it from a permission refusal, and guessing wrong
+		// in the permissive direction would burn the budget on a problem
+		// retrying cannot fix.
+		if outcome == OutcomeFatal && status == http.StatusForbidden && rateLimited(header) {
+			outcome = OutcomeUnknown
+		}
+
+		if outcome != OutcomeUnknown {
+			// A duplicate refusal AFTER a retry is evidence, not noise: the
+			// first attempt landed and GitHub failed only to say so.
+			if retried && status == http.StatusUnprocessableEntity {
+				return status, header, raw, &Error{Op: op, Err: fmt.Errorf("%w: status %d: %s",
+					ErrRetriedWriteWasDuplicate, status, strings.TrimSpace(string(raw)))}
+			}
+			return status, header, raw, err
+		}
+
+		lastStatus, lastRaw, lastErr = status, raw, err
+
+		if attempt >= attempts {
+			break
+		}
+		// A server-supplied Retry-After is honoured, but only as a request:
+		// GitHub asking for two minutes and this CLI hanging for two minutes
+		// are different products.
+		delay := delayFor(attempt)
+		if ra, ok := retryAfterDelay(header); ok && ra > delay {
+			delay = ra
+		}
+		if time.Since(start)+delay > RetryTotalCap {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			// The caller's own deadline wins over the retry budget, and the
+			// last observed failure is what explains the call — not the bare
+			// cancellation, which would hide a 500 behind "context canceled".
+			return lastStatus, header, lastRaw, h.transientError(op, method, attempt, lastStatus, lastRaw, lastErr)
+		case <-time.After(delay):
+		}
+		retried = true
+	}
+
+	return lastStatus, header, lastRaw, h.transientError(op, method, attempts, lastStatus, lastRaw, lastErr)
+}
+
+// transientError builds the error a caller sees when every attempt classified
+// as unknown. It names the class, the evidence, and the next move — the three
+// things `status 500:` with an empty body did not.
+func (h *GitHubHost) transientError(op, method string, attempts, status int, raw []byte, transportErr error) error {
+	observed := fmt.Sprintf("status %d", status)
+	if transportErr != nil {
+		observed = transportErr.Error()
+	}
+	if detail := strings.TrimSpace(string(raw)); detail != "" {
+		observed += ": " + detail
+	}
+	return &Error{Op: op, Err: fmt.Errorf("%w [%s, %d attempts, last: %s]",
+		ErrTransient, method, attempts, observed)}
+}
+
+// httpAttempt performs ONE round trip and reports what came back without
+// interpreting it. Split out of httpDo so each attempt closes its own response
+// body — a retry loop with a deferred close leaks every attempt but the last.
+func (h *GitHubHost) httpAttempt(ctx context.Context, op, method, url string, cred Credential, encoded []byte, hasBody bool) (status int, header http.Header, raw []byte, err error) {
+	var reqBody io.Reader
+	if hasBody {
 		reqBody = bytes.NewReader(encoded)
 	}
 
@@ -883,7 +1020,7 @@ func (h *GitHubHost) httpDo(ctx context.Context, op, method, url string, cred Cr
 		return 0, nil, nil, &Error{Op: op, Err: fmt.Errorf("%w: build request: %w", ErrRequestFailed, err)}
 	}
 	httpReq.Header.Set("Accept", "application/vnd.github+json")
-	if body != nil {
+	if hasBody {
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
 	if cred.Token != "" {
