@@ -305,3 +305,62 @@ func joinNonEmpty(base, addition string) string {
 	}
 	return base + "; " + addition
 }
+
+// scenarioSpaceCIHealthy is the row that looks at the repository rather
+// than at the checks this matrix asked for.
+const scenarioSpaceCIHealthy = "space-ci-has-no-unexplained-failures"
+
+// runSpaceCIHealth asks GitHub what ELSE failed in the space while the
+// matrix was working, and refuses a clean verdict if anything did.
+//
+// It exists because on 2026-07-26 the tier reported 38/38 green twice over
+// while the space's own Actions tab was red, and both times the operator
+// found out by email. Every other row here asserts a check this matrix
+// deliberately caused; nothing looked at the rest of the repository it had
+// just spent an hour writing to.
+//
+// Only failed runs pay for a second API call: the job count is what tells an
+// unloadable workflow (zero jobs, no check ever reported) apart from a job
+// that ran and failed, and fetching it for every run would triple this row's
+// cost to learn nothing about the green ones.
+func runSpaceCIHealth(ctx context.Context, h *harness, since string) Result {
+	const expected = "no workflow run in the space failed for a reason this matrix did not deliberately cause"
+	res := func(v Verdict, observed, detail string) Result {
+		return Result{Scenario: scenarioSpaceCIHealthy, System: SystemA, Surface: SurfaceCLI,
+			Verdict: v, Expected: expected, Observed: observed, Detail: detail}
+	}
+
+	runs, err := h.Prov.ListRunsSince(ctx, h.Org, h.Repo, since)
+	if err != nil {
+		if v, ok := verdictForError(err); ok {
+			return res(v, err.Error(), "")
+		}
+		return res(VerdictFail, "could not list the space's workflow runs: "+err.Error(), "")
+	}
+
+	for i := range runs {
+		if runs[i].Status == "completed" && runs[i].Conclusion == "failure" {
+			n, cerr := h.Prov.CountJobs(ctx, h.Org, h.Repo, runs[i].ID)
+			if cerr != nil {
+				// Unknown is not zero. Treating a failed lookup as "ran no
+				// jobs" would invent the most alarming finding this row can
+				// report out of a transient API error.
+				runs[i].JobCount = -1
+				continue
+			}
+			runs[i].JobCount = n
+		}
+	}
+
+	bad := UnexplainedSpaceFailures(runs, "main")
+	if len(bad) == 0 {
+		return res(VerdictPass, "", fmt.Sprintf("%d workflow run(s) since %s; every failure among them is one a scenario here caused on purpose", len(runs), since))
+	}
+
+	msgs := make([]string, 0, len(bad))
+	for _, f := range bad {
+		msgs = append(msgs, f.Reason)
+	}
+	return res(VerdictFail, strings.Join(msgs, " | "),
+		fmt.Sprintf("%d unexplained failure(s) among %d run(s) since %s", len(bad), len(runs), since))
+}

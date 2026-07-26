@@ -107,6 +107,15 @@ func Catalogue() []Scenario {
 		{Name: "space-update-scope-preflight", Systems: []string{SystemB}, Surfaces: cliOnly()},
 		{Name: "space-update", Systems: []string{SystemA}, Surfaces: cliOnly()},
 
+		// The tier's own blind spot, made a row. Every other cell asserts a
+		// check this matrix deliberately caused; NOTHING looked at the rest
+		// of the space's CI. Twice on 2026-07-26 a real failure there — a
+		// post-merge audit red on main, and a space left pinned to a tag that
+		// did not exist — reached the operator by email while this matrix
+		// reported 38/38 green. A tier that cannot see a repository it just
+		// spent an hour writing to is reporting on less than it claims.
+		{Name: "space-ci-has-no-unexplained-failures", Systems: []string{SystemA}, Surfaces: cliOnly()},
+
 		// AC-960.5 — a re-trigger after main moved must assert WHICH ref ran,
 		// because GitHub can serve a stale merge commit (§T6-b).
 		{Name: "executed-ref-not-stale", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
