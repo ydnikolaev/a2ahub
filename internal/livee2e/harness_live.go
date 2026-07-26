@@ -70,13 +70,6 @@ const requiredCheckWaitCeiling = 5 * time.Minute
 // requiredCheckPollInterval is the step between polls.
 const requiredCheckPollInterval = 10 * time.Second
 
-// ErrCheckWaitTimedOut is WaitForRequiredCheck's sentinel. Not part of the
-// pinned cross-agent API; a coordination point named in the wave report —
-// wave 3-2's scenario families map it to VerdictTimedOut, never to a fail
-// (spec 36 §T4: a bounded wait expiring is "we did not wait long enough",
-// not "the product is wrong").
-var ErrCheckWaitTimedOut = errors.New("livee2e: WaitForRequiredCheck: bounded wait expired before the check reached a terminal state")
-
 // ErrProvisionFailed wraps a ResetSpace failure surfaced through newHarness,
 // so a caller can errors.Is-discriminate "provisioning failed" from
 // "checkout setup failed" without substring-matching the wrapped message —
@@ -125,12 +118,6 @@ type submitted struct {
 	PRNumber int
 	HeadSHA  string
 }
-
-// ErrNoPRForBranch is returned when a submit reported success but no pull
-// request exists for its deterministic branch. Distinct from a submit error:
-// it is the §T6-d shape where the push landed and the PR did not, and a
-// caller must render it as unknown rather than as a product defect.
-var ErrNoPRForBranch = errors.New("livee2e: submit left no pull request on its branch")
 
 // DraftAndSubmit runs the whole author path for one artifact — draft, fill,
 // submit — and resolves the resulting PR.
@@ -307,47 +294,6 @@ func (h *harness) countPRsForBranch(ctx context.Context, branch string) (int, er
 // down: the observation would be made by an identity the scenario is not about.
 func (h *harness) AwaitCheck(ctx context.Context, c *checkout, prNumber int) (host.CheckStatusResult, error) {
 	return h.WaitForRequiredCheck(ctx, prNumber, c.Token)
-}
-
-// verdictForError maps an error to the honest verdict, so four scenario
-// families cannot each decide differently what a timeout or an unresolved
-// 5xx means. ok is false when err is nil (the caller decides pass/fail from
-// what it observed) or when the error is a genuine product failure.
-//
-// The mapped classes are the ones spec 36 §T4 and §T6-d say must never render
-// as VerdictFail: a bounded wait expiring is "we did not wait long enough", an
-// exhausted 5xx retry is "we do not know what happened", and a push that
-// landed without its PR appearing is the observed 504-on-OpenPR shape.
-// Reporting any of them as a defect is how a tier trains its readers to
-// ignore red.
-//
-// ErrNoPRForBranch and the context classes were missing from the first
-// version, and one of the four scenario families found it: it needed the
-// mapping, could not edit this file, and wrote a local extension with a
-// comment saying this helper's doc claimed a coverage its switch did not have.
-// It was right, so the coverage moved here rather than the other three
-// families each growing their own copy — which is the whole reason this
-// function exists.
-//
-// ErrNoBranchMatch (branchmatch.go) joins the same class as ErrNoPRForBranch:
-// "the composite branch this write should have opened is not visible yet" is
-// the identical §T6-d shape one level up, for the one verb whose branch a
-// caller cannot look up by exact HeadRef equality. ErrAmbiguousBranchMatch is
-// deliberately NOT here — an ambiguous match is an anomaly the row must
-// report as a FAILURE naming the candidates, never as "we did not wait long
-// enough" (brief: "a live tier that guesses is worse than one that fails").
-func verdictForError(err error) (Verdict, bool) {
-	switch {
-	case err == nil:
-		return VerdictNotRun, false
-	case errors.Is(err, ErrCheckWaitTimedOut), errors.Is(err, ErrUnknownOutcome), errors.Is(err, ErrNoPRForBranch), errors.Is(err, ErrNoBranchMatch):
-		return VerdictTimedOut, true
-	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
-		// The whole-run ceiling expiring says nothing about the product.
-		return VerdictTimedOut, true
-	default:
-		return VerdictNotRun, false
-	}
 }
 
 // resolvedCheckRun adapts what the PRODUCT resolved into the untagged

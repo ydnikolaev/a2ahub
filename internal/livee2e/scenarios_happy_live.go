@@ -100,10 +100,17 @@ func happyResultFromErr(scenario, system string, err error, expected string) Res
 }
 
 // happyAwaitMerged polls h.Prov (read access to a public repo needs no
-// specific identity) for prNumber's Merged flag until true or the bounded
-// wait expires. Only two returns are possible: (true, nil) or (false, an
-// error wrapping ErrCheckWaitTimedOut) — never (false, nil) — so a caller
-// never has to separately handle "not merged, no error".
+// specific identity) for prNumber's Merged flag until true, the required
+// check concludes FAILURE, or the bounded wait expires. Never (false, nil),
+// so a caller never has to separately handle "not merged, no error".
+//
+// Three returns, and the middle one is the point: (true, nil); (false,
+// ErrRequiredCheckFailed) when the gate went red, which no wait can undo;
+// (false, ErrCheckWaitTimedOut) when we genuinely did not wait long enough.
+// Before the middle case existed, a red gate spent the full budget and then
+// reported a TIMEOUT — which this tier's own rule reads as "we were
+// impatient", not "the product is wrong". That is how a production blocker
+// (the diff-authz base defect) survived a whole run unnamed.
 func happyAwaitMerged(ctx context.Context, h *harness, prNumber int) (bool, error) {
 	deadline := time.Now().Add(happyMergeWaitCeiling)
 	for {
@@ -113,6 +120,19 @@ func happyAwaitMerged(ctx context.Context, h *harness, prNumber int) (bool, erro
 		}
 		if pr.Merged {
 			return true, nil
+		}
+		// A red required check is DECISIVE — waiting cannot turn it into a
+		// merge, and reporting it as a timeout is how a real defect hid for a
+		// whole run on 2026-07-26. Asked every poll rather than only after the
+		// budget expires, so the row fails in seconds with the reason instead
+		// of in minutes without it.
+		if runs, cerr := h.Prov.CheckRuns(ctx, h.Org, h.Repo, pr.HeadSHA); cerr == nil {
+			for _, r := range runs {
+				if r.Name == requiredCheckContext && r.Conclusion == "failure" {
+					return false, fmt.Errorf("%w: PR #%d, check %q (mergeable_state=%q)",
+						ErrRequiredCheckFailed, prNumber, r.Name, pr.MergeableState)
+				}
+			}
 		}
 		if time.Now().After(deadline) {
 			return false, fmt.Errorf("%w: PR #%d not merged after %s (mergeable_state=%q)",
