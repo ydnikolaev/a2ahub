@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	yaml "gopkg.in/yaml.v3"
+
 	spacetemplate "github.com/ydnikolaev/a2ahub/space-template"
 )
 
@@ -192,5 +194,109 @@ func TestTemplateMinBinaryVersionRefusesWhatItCannotRead(t *testing.T) {
 				t.Fatalf("err = %v, want ErrNoTemplateFloor — guessing a floor builds a binary that cannot write to the space it scaffolded", err)
 			}
 		})
+	}
+}
+
+// TestTemplateFloorMatchesTemplateWorkflowPin guards a transitive coupling
+// that has no other guard and that already cost a live run.
+//
+// The chain, each link verified in source rather than assumed:
+//
+//	space-template/space.yaml `min_binary_version`
+//	  -> harnessBinaryVersion() stamps the harness binary with it
+//	     (workspace_live.go — deliberately, so a floor bump cannot make every
+//	     write row red on a CC-085 refusal that has nothing to do with the
+//	     product)
+//	  -> `a2a space init` pins the space's workflow to the RUNNING binary's
+//	     version (cmd_space.go's substitution)
+//	  -> the space's CI resolves
+//	     ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@vX.Y.Z
+//
+// So raising the template floor to a version that is not yet TAGGED makes the
+// reusable workflow unresolvable in every space the tier provisions. GitHub
+// does not report that as a failing check — it reports a run with NO JOBS, so
+// the required context never appears at all and every row that waits for a
+// green check simply times out an hour later. That happened on 2026-07-26:
+// the floor went to 0.9.0 before v0.9.0 was cut, and the run had to be killed.
+//
+// release-preflight already refuses a template PIN that is not a published
+// tag. This test makes the FLOOR inherit that guarantee, offline and on every
+// `make check`, by requiring the two to name the same version. Keeping them
+// equal is also just true: both mean "the release this template targets".
+func TestTemplateFloorMatchesTemplateWorkflowPin(t *testing.T) {
+	t.Parallel()
+
+	rawSpace, err := fs.ReadFile(spacetemplate.Files, "space.yaml")
+	if err != nil {
+		t.Fatalf("read template space.yaml: %v", err)
+	}
+	floor, err := TemplateMinBinaryVersion(string(rawSpace))
+	if err != nil {
+		t.Fatalf("TemplateMinBinaryVersion: %v", err)
+	}
+
+	rawWF, err := fs.ReadFile(spacetemplate.Files, ".github/workflows/a2a-validate.yml")
+	if err != nil {
+		t.Fatalf("read template workflow: %v", err)
+	}
+	pins := regexp.MustCompile(`a2a-validate-reusable\.yml@v([0-9]+\.[0-9]+\.[0-9]+)`).
+		FindAllStringSubmatch(string(rawWF), -1)
+	if len(pins) == 0 {
+		t.Fatal("the template workflow pins no reusable-workflow version — the scan is broken, not the template")
+	}
+
+	for _, p := range pins {
+		if p[1] != floor {
+			t.Fatalf("template drift: space.yaml min_binary_version is %s but the workflow pins @v%s.\n\n"+
+				"These must name the SAME already-RELEASED version. The floor is what the live harness "+
+				"stamps into its binary, and `a2a space init` pins the space's workflow to that binary's "+
+				"version — so a floor naming an unreleased tag makes the reusable workflow unresolvable, "+
+				"and GitHub reports a run with NO JOBS rather than a failing check: the required context "+
+				"never appears and every row times out an hour later.\n"+
+				"Bump BOTH, and only to a version that is already published.", floor, p[1])
+		}
+	}
+}
+
+// TestBoundaryProbeEnvelopeIsParseableFrontmatter is the hermetic guard for
+// the defect the space's own failure emails surfaced on 2026-07-26.
+//
+// The probe rendered its YAML with a CLOSING `---` and no opening one, so
+// the file parsed as having no frontmatter at all and failed POL-002. It
+// went unnoticed for weeks because the renderer lived behind the `livee2e`
+// build tag, where `make check` cannot see it — the reason it now lives in
+// an untagged file.
+//
+// The row that pushes this artifact straight to main therefore left an
+// invalid artifact in the space, and every later post-merge full-repo audit
+// failed. Nothing in the tier asserts that job (flag-only, never a required
+// check, by design), so the matrix stayed green while the space's CI was
+// red — visible only to whoever reads the repository's notification email.
+func TestBoundaryProbeEnvelopeIsParseableFrontmatter(t *testing.T) {
+	t.Parallel()
+
+	got := boundaryProbeEnvelope("XA-alpha-20260726-ab12")
+
+	if !strings.HasPrefix(got, "---\n") {
+		t.Fatalf("the probe artifact does not OPEN with a frontmatter delimiter, so it parses as "+
+			"having no frontmatter and fails POL-002 wherever it lands:\n%s", got)
+	}
+	parts := strings.SplitN(strings.TrimPrefix(got, "---\n"), "\n---\n", 2)
+	if len(parts) != 2 {
+		t.Fatalf("no closing frontmatter delimiter:\n%s", got)
+	}
+
+	var fm map[string]any
+	if err := yaml.Unmarshal([]byte(parts[0]), &fm); err != nil {
+		t.Fatalf("frontmatter is not valid YAML: %v\n%s", err, parts[0])
+	}
+	for _, key := range []string{"schema", "id", "type", "title", "space", "from", "to", "actor", "created", "category"} {
+		if _, ok := fm[key]; !ok {
+			t.Errorf("frontmatter is missing %q — an artifact short of a required field would red the "+
+				"check for the wrong reason, which is the vacuity this probe's own id helper warns about", key)
+		}
+	}
+	if strings.TrimSpace(parts[1]) == "" {
+		t.Error("the probe artifact has an empty body")
 	}
 }
