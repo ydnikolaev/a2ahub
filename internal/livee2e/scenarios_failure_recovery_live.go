@@ -182,8 +182,20 @@ func layer3FiveXXInjected(ctx context.Context, h *harness) Result {
 	//
 	// Matched against the sentinel's OWN text rather than a copied literal, so
 	// rewording the product's message cannot silently un-anchor this assertion.
+	// The sentinel's text carries its own "host: " prefix, and (*Error).Error()
+	// TRIMS that from the inner message when it renders — so the rendered stderr
+	// reads "host: OpenPR: a retry after …", and matching the sentinel's FULL
+	// text would find nothing.
+	//
+	// This is not hypothetical: matching the full text is what this row did for
+	// about an hour on 2026-07-26, between the row's fix and the prefix fix that
+	// followed it. The run in flight at the time passed because it predated the
+	// prefix change; the next one would have failed on an assertion about a
+	// product that was working. Trimming here matches either rendering, so the
+	// tier cannot be broken again by a change to how the prefix is composed.
+	dupMarker := strings.TrimPrefix(host.ErrRetriedWriteWasDuplicate.Error(), "host: ")
 	sawInjected := strings.Contains(stderr, injectedFaultMarker)
-	sawDuplicate := strings.Contains(stderr, host.ErrRetriedWriteWasDuplicate.Error())
+	sawDuplicate := strings.Contains(stderr, dupMarker)
 	if !sawInjected && !sawDuplicate {
 		return layer3InjectedFail("injected-write",
 			fmt.Sprintf("submit failed, but its stderr names neither this row's injected fault nor the "+

@@ -368,3 +368,34 @@ func TestErrorRendersThePackagePrefixOnce(t *testing.T) {
 		t.Errorf("a doubly-wrapped error printed the prefix more than once: %q", wrapped.Error())
 	}
 }
+
+// TestRetriedDuplicateTextSurvivesTheRenderedForm exists because a live-tier row
+// matches this sentinel against a CLI's stderr, and (*Error).Error() trims the
+// sentinel's own "host: " out of the inner message when it renders.
+//
+// So the full sentinel text is NOT a substring of what a user (or a tier) sees.
+// The row was written matching the full text, and for about an hour on 2026-07-26
+// — between fixing that row and fixing the doubled prefix — it would have failed
+// on an assertion about a product that was working. The run in flight passed only
+// because it predated the prefix change.
+//
+// This pins the relationship so the coupling is visible from BOTH sides: whoever
+// changes how the prefix is composed sees, here, that something matches on it.
+func TestRetriedDuplicateTextSurvivesTheRenderedForm(t *testing.T) {
+	t.Parallel()
+
+	rendered := (&Error{Op: "OpenPR", Err: fmt.Errorf("%w: status 422", ErrRetriedWriteWasDuplicate)}).Error()
+
+	// The full sentinel text is deliberately NOT expected to appear — asserting
+	// that documents why a matcher has to trim.
+	if strings.Contains(rendered, ErrRetriedWriteWasDuplicate.Error()) {
+		t.Errorf("the full sentinel text now appears verbatim in the rendered form. That is not wrong, "+
+			"but internal/livee2e trims the prefix before matching precisely because it did not — if this "+
+			"changed on purpose, simplify the matcher there too.\nrendered: %s", rendered)
+	}
+	trimmed := strings.TrimPrefix(ErrRetriedWriteWasDuplicate.Error(), "host: ")
+	if !strings.Contains(rendered, trimmed) {
+		t.Fatalf("the trimmed sentinel text is not in the rendered form either, so a tier matching on it "+
+			"would silently stop recognising this class:\nrendered: %s\nlooking for: %s", rendered, trimmed)
+	}
+}
