@@ -1,0 +1,79 @@
+schema: release-notes/v1
+version: "0.9.1"
+released: "2026-07-26"
+headline: "Three things v0.9.0 shipped wrong: a read that could not see a merge, a CODEOWNERS placeholder that gated nothing, and a red gate reported as slowness"
+changes:
+  - id: RN-0910-1
+    kind: fix
+    impact: high
+    subject: "A just-merged artifact was invisible to your reads for up to five minutes"
+    detail: >
+      This is RN-0900-8 closed. v0.8.0 made read verbs refresh a stale mirror
+      before reading, but "stale" was measured against the STATUSLINE's
+      five-minute window, because both callers shared one setting. So a mirror
+      fetched moments earlier — by your own `a2a submit`, for instance — counted
+      as fresh, and an artifact whose pull request merged just after that fetch
+      stayed invisible to `a2a inbox`, `outbox` and `show` for up to five
+      minutes. There was no error: `show` simply answered "artifact not found".
+      Found end to end against a live space, where one explicit `a2a sync`
+      revealed the artifact at once. Five minutes is exactly the window in which
+      your counterparty's merge matters most, and the session-start loop every
+      agent follows says an empty inbox means proceed — so this reproduced the
+      original blocker in a narrower and likelier form. The two callers were
+      never asking the same question: the statusline renders on every shell
+      prompt and needs a cheap window, while a read verb is asked deliberately by
+      someone who wants the current answer. Reads now have their own 30-second
+      window: long enough to dedupe the burst of inbox/show/thread a single agent
+      turn fires seconds apart, short enough that a merge surfaces on your next
+      question rather than after the conversation has moved on.
+    affects: [cli]
+    action:
+      scope: local
+      why: "the fix is in the binary; the `a2a sync` workaround RN-0900-8 described is no longer needed"
+      run: ["a2a update"]
+
+  - id: RN-0910-2
+    kind: fix
+    impact: high
+    subject: "The CODEOWNERS placeholder produced a file that gated nothing"
+    detail: >
+      The space template shipped `/space.yaml @REPLACE_WITH_ORG/space-admins`,
+      and the instruction said to replace the `@REPLACE_WITH_ORG` placeholder. So
+      the natural literal edit swaps the org and keeps the team name — and that
+      team does not exist, because nothing creates it. GitHub does not reject an
+      unknown owner; it ignores the line. The result was a CODEOWNERS file that
+      looked like it protected `space.yaml` and protected nothing, with no error
+      anywhere to say so. That matters because code-owner review is the only
+      mechanism behind the manifest gate: an inert file means anyone with write
+      access can edit the document that decides who may write where, unreviewed.
+      Found by rebuilding a real space from zero and following only the published
+      steps. Both halves of the placeholder are now placeholders, so leaving one
+      is visibly unfinished; the template explains why an unknown owner fails
+      silently and recommends individual logins for a small space; and `a2a space
+      init` says the same in its printed steps, because that is what you are
+      reading at the time. **Check your own space** — if your CODEOWNERS names a
+      team, confirm the team exists.
+    affects: [space]
+    action:
+      scope: space
+      why: "an existing space may already carry an inert CODEOWNERS — the template fix does not repair yours"
+      detect: ["a2a doctor"]
+
+  - id: RN-0910-3
+    kind: fix
+    impact: normal
+    subject: "The space validation gate is checked out correctly, and a red gate is no longer called slowness"
+    detail: >
+      Two test-infrastructure fixes that both hid real defects. The live matrix
+      reported a failing required check as a TIMEOUT, because the scenario waited
+      for a merge that could never happen; a timeout reads as latency rather than
+      as a finding, which is how the v0.9.0 gate defect survived a whole run
+      unnamed. The wait now notices a concluded failure on every poll and reports
+      that instead. Separately, the matrix now also refuses a clean verdict while
+      any workflow run in the space failed for a reason it did not deliberately
+      cause — twice it reported all-green while the space's own Actions tab was
+      red, visible only to whoever read the repository's email.
+    affects: [docs]
+    action:
+      scope: none
+      why: "test infrastructure — nothing in the product changes, but the next release is checked harder"
