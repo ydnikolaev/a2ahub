@@ -305,3 +305,66 @@ func TestARetriedWriteRefusedAsDuplicateSaysTheFirstAttemptLanded(t *testing.T) 
 			"happened: %v", err)
 	}
 }
+
+// TestErrorRendersThePackagePrefixOnce is the regression for a message defect
+// that was cosmetic right up until it landed in the middle of the one message
+// P44 exists to make readable.
+//
+// Every sentinel in errors.go opens with "host: " so that a sentinel printed on
+// its own says where it came from. (*Error).Error() added its own on top, so a
+// real user-facing failure read:
+//
+//	host: OpenPR: host: a retry after a transient failure was refused as a
+//	duplicate — which means the FIRST attempt landed after all …
+//
+// observed verbatim in the live matrix on 2026-07-26. Trimming happens in
+// Error() rather than by dropping the prefix from the sentinels, so both
+// printing paths stay correct: a bare sentinel keeps its attribution, and a
+// wrapped one carries it once.
+func TestErrorRendersThePackagePrefixOnce(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		err  *Error
+		want string
+	}{
+		{
+			name: "with an Input",
+			err:  &Error{Op: "OpenPR", Input: "owner/repo#1", Err: ErrRequestFailed},
+			want: "host: OpenPR: owner/repo#1: github api request failed",
+		},
+		{
+			name: "without an Input — the shape spec 44 quotes from the real outage",
+			err:  &Error{Op: "OpenPR", Err: ErrRequestFailed},
+			want: "host: OpenPR: github api request failed",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := tc.err.Error()
+			if got != tc.want {
+				t.Fatalf("Error() = %q, want %q", got, tc.want)
+			}
+			if n := strings.Count(got, "host: "); n != 1 {
+				t.Errorf("the package prefix appears %d times: %q", n, got)
+			}
+		})
+	}
+
+	// A bare sentinel still says which package it is from — the reason the trim
+	// lives in Error() rather than in the sentinel text.
+	if !strings.HasPrefix(ErrRequestFailed.Error(), "host: ") {
+		t.Error("a sentinel printed on its own lost its package attribution")
+	}
+
+	// And errors.Is is untouched: only the rendered string changed.
+	wrapped := &Error{Op: "OpenPR", Err: fmt.Errorf("%w: status 500", ErrTransient)}
+	if !errors.Is(wrapped, ErrTransient) {
+		t.Error("errors.Is stopped resolving through *Error")
+	}
+	if strings.Count(wrapped.Error(), "host: ") != 1 {
+		t.Errorf("a doubly-wrapped error printed the prefix more than once: %q", wrapped.Error())
+	}
+}
