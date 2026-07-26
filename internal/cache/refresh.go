@@ -55,6 +55,17 @@ var ErrSyncBudgetExhausted = errors.New("cache: SyncIfStale: budget exhausted")
 // conversation has moved on.
 const readRefreshTTL = 30 * time.Second
 
+// ReadRefreshTTLForTest exposes readRefreshTTL to guards in OTHER packages —
+// specifically cmd/a2a's wire tier, which drives the real `a2a inbox` closure
+// and must assert that its fixture's mirror age actually straddles this window.
+// Following the package's existing SetCloneOrFetchForTest convention.
+//
+// A cross-package test that hard-coded "30s" would keep passing after this
+// constant moved, while silently no longer exercising the window it was
+// written for — which is the precise vacuity that let RN-0910-1 ship past a
+// green matrix.
+const ReadRefreshTTLForTest = readRefreshTTL
+
 // SyncIfStale refreshes every connected space's mirror whose sync-age
 // exceeds the Store's TTL (AC-1050, spec 45 M1): the read path's own
 // fix for a contract published on the other side after this side's last
