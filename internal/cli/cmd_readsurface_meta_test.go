@@ -66,11 +66,17 @@ func TestReadSurfaceCommands_TextRendering(t *testing.T) {
 	})
 	t.Run("thread", func(t *testing.T) {
 		item2 := cliWR("XW-seomatrix-20260701-tx2", "tx2", "seomatrix", []string{"axon"}, "p2", false)
-		item2["thread"] = "TH-text-render"
+		// A §3.8-shaped value, not the bare "TH-text-render" this used to
+		// carry. The old flat reader matched the thread field by raw string
+		// equality, so any string "worked" — this fixture was never
+		// schema-valid (base.schema.json requires the `thread:` prefix and
+		// pins the grammar) and only passed because these bare-tree CLI
+		// fixtures skip schema validation.
+		item2["thread"] = "thread:seomatrix-20260701-tx2c"
 		cliWriteArtifact(t, dir, "seomatrix/exchanges/XW-seomatrix-20260701-tx2.md", item2, "body")
 		cliWriteEvent(t, dir, "seomatrix", "01HFX00000000000000000051", cliEvt("XW-seomatrix-20260701-tx2", "submit", "seomatrix", base))
 		io, out, _ := newIO()
-		if code := cli.NewThreadCommand(store).Run(context.Background(), []string{"TH-text-render"}, io); code != 0 {
+		if code := cli.NewThreadCommand(store).Run(context.Background(), []string{"thread:seomatrix-20260701-tx2c"}, io); code != 0 {
 			t.Fatalf("code = %d", code)
 		}
 		if out.Len() == 0 {
