@@ -27,14 +27,14 @@ changes:
       fine", which was false and was corrected in RN-0900-2 — and this entry
       is not the opposite claim. MCP writes work. They are second-class in
       where their refusals come from, not broken.
-      One consequence worth naming: the same fence is why the named
-      missing-actor refusal (pass --actor-name) is not in this release either.
-      Every single-door place to put it crosses into the MCP surface, and a
-      CLI-only version would manufacture exactly the disagreement between
-      surfaces that this decision chose to accept and document. The write is
-      still refused in that case — actor.name has a minLength on both
-      surfaces — but the message cites a schema violation instead of naming
-      the flag.
+      One thing this decision was briefly thought to block, and does not.
+      The named missing-actor refusal (RN-01000-8) looked like it needed the MCP
+      surface, on the reading that every single door for it crossed over. It does
+      not: the two surfaces have always had their own separate actor resolvers,
+      so the CLI fix is entirely contained and MCP keeps its own behaviour
+      untouched. Recorded because the earlier reading was reasoned about rather
+      than read, and an MCP fence that gets credited with blocking things it does
+      not block is how a deferral quietly grows.
     affects: [mcp]
     action:
       scope: none
@@ -200,3 +200,87 @@ changes:
     action:
       scope: none
       why: "test infrastructure — no product change"
+  - id: RN-01000-7
+    kind: schema
+    impact: high
+    subject: "Every event now names the tool and version that wrote it — the first server-side stop for a stale binary"
+    detail: >
+      `min_binary_version` is checked INSIDE the writer's own binary. That binds
+      a binary which honours the check and does nothing whatever to one that does
+      not — and that is not hypothetical: before 0.9.0 every lifecycle and
+      contract verb wrote with an EMPTY floor, because the shared request builder
+      never populated it, so raising a space's floor could not have gated those
+      writes even in principle. Nothing server-side read the floor at all.
+      event/v1 gains an optional `produced_by: {tool, version}`, written by the
+      write funnel for every event it commits, and `validate --ci` requires it on
+      every changed event — at MERGE, from the document, where an old binary can
+      finally be refused.
+      **The switch is your space's own floor, and the sequencing is automatic.**
+      A write stamps only once `min_binary_version` has reached 0.10.0, and the
+      gate requires it under exactly the same condition. That is not caution: an
+      event carries no unknown fields by schema, and a space's CI validator is
+      pinned BY THE SPACE — so a stamped event landing in a space still pinned to
+      an older release would be REJECTED outright, every write refused over a
+      field its validator has never heard of. `a2a space update` re-pins the
+      validator AND raises the floor in one pull request, and that pull request
+      carries no events, so the older validator accepts it. The field therefore
+      cannot appear in a space before the validator that understands it. Nothing
+      to coordinate between machines, no migration window, and no release that
+      has to ship before another.
+      **What it stops, precisely**: a colleague on a stale binary. Not forgery —
+      the stamp is written by the very client the space is distrusting, so
+      anything hand-crafting an event can claim any version. Said plainly here
+      because a field that looks like a security control and is not is worse than
+      no field at all.
+    affects: [cli, schemas, space]
+    action:
+      scope: space
+      why: "until the space raises min_binary_version to 0.10.0 nothing stamps and nothing is required — one `a2a space update` re-pins the validator and raises the floor together"
+      run: ["a2a update", "a2a space update"]
+
+  - id: RN-01000-8
+    kind: fix
+    impact: normal
+    subject: "A write with nobody attached is refused by name instead of by a schema violation"
+    detail: >
+      In a container `os/user` has no passwd entry and `$USER` is unset, so every
+      source that could name the acting identity is empty. The write was already
+      refused there — `actor.name` carries a minimum length in both event and
+      envelope schemas, so there was never a correctness hole — but the message
+      was a schema violation about a field the caller never knowingly set, naming
+      neither `--actor-name` nor `A2A_ACTOR_NAME`. It now names both, and says
+      why a write is refused rather than attributed to nobody: the actor is
+      recorded permanently in a shared log.
+      CLI only. The MCP surface keeps its own resolver and its own schema-level
+      refusal, by the same decision that leaves that surface alone this release
+      (see the known issue above). The two surfaces have always had separate
+      resolvers, so this is not a new divergence — a fact worth stating because
+      an earlier note in this repo claimed the opposite, having reasoned about it
+      instead of reading it.
+    affects: [cli]
+    action:
+      scope: local
+      why: "the fix is in the binary"
+      run: ["a2a update"]
+
+  - id: RN-01000-9
+    kind: feat
+    impact: low
+    subject: "The contract template gives its prose four named sections"
+    detail: >
+      A contract's machine surface is checked hard: the schema is validated, and
+      breaking changes are COMPUTED from it at publish and at merge. Its prose
+      had no agreed shape at all — so nothing ensured a contract said the things
+      the schema cannot express, which are exactly the things a consumer needs.
+      The template `a2a new contract` renders now carries: what it covers
+      (including what is deliberately out of scope), error shape, compatibility
+      intent beyond what the computed check enforces, and who to ask.
+      A convention, not a rule — nothing rejects a contract that renames or drops
+      them. Enforcing prose structure would mean a warning nobody is obliged to
+      act on, and a gate that fires on something not broken is a gate people stop
+      reading. The template is the enforcement that fits: it is what the author
+      actually fills in.
+    affects: [schemas]
+    action:
+      scope: none
+      why: "existing contracts are unaffected; new drafts get the shape"
