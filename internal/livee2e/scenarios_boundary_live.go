@@ -386,24 +386,6 @@ func boundaryProtectionBindsParticipant(ctx context.Context, h *harness) Result 
 // (["release","deprecation","migration","incident","notice","status"]) — a
 // real, previously undiscovered vacuity gap in that reference fixture,
 // caught while verifying the schema this row's honesty depends on.
-func boundaryProbeEnvelope(id string) string {
-	return "schema: envelope/v1\n" +
-		"id: " + id + "\n" +
-		"type: announcement\n" +
-		"title: xsec\n" +
-		"space: livee2e\n" +
-		"from: alpha\n" +
-		"to: [bravo]\n" +
-		"actor: {kind: agent, name: probe}\n" +
-		"created: " + time.Now().UTC().Format(time.RFC3339) + "\n" +
-		"category: notice\n" +
-		"priority: p3\n" +
-		"blocking: false\n" +
-		"classification: internal\n" +
-		"---\n" +
-		"body\n"
-}
-
 // boundaryCheckRunCount counts the check runs named requiredCheckContext at
 // headSHA, through CheckRuns' now-corrected `filter=all` (client_live.go).
 // It is NO LONGER the gating mechanism cross-section-retrigger-stays-red
