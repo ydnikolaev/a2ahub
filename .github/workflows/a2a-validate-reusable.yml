@@ -75,6 +75,31 @@ jobs:
         with:
           # Full history: v3-pr shells out to `git diff <base>...HEAD`.
           fetch-depth: 0
+          # In PR mode, check out the PR's OWN HEAD — never the merge ref.
+          #
+          # actions/checkout defaults to `refs/pull/<n>/merge` on a
+          # pull_request event, which is the branch already merged into the
+          # CURRENT base. `base` below is `pull_request.base.sha`, the base as
+          # of when the event fired. Those two drift apart the moment anybody
+          # else merges, and then `git diff base...HEAD` sweeps in every
+          # commit that landed on main in between — attributing another
+          # system's files to THIS pull request's author.
+          #
+          # That is not theoretical and it is not rare. Observed live on
+          # 2026-07-26: PR #838 changed four files, all under `alpha/`, its
+          # parent was exactly base.sha — and the gate refused it with two
+          # diff-authz violations naming `bravo/`, because bravo had merged
+          # while it was open. For two systems writing concurrently, which is
+          # the entire point of a space, a legitimate write gets refused
+          # whenever the counterparty happens to merge first. The refusal is
+          # loud, specific, and wrong, which is the worst combination.
+          #
+          # Checking out head.sha makes `base...HEAD` mean what diff-authz
+          # actually asks: what did THIS author change, relative to where they
+          # forked. The merge result is not the question — the space's
+          # post-merge audit (mode=v3-full-repo, on push) is what validates
+          # main as a whole.
+          ref: ${{ inputs.mode == 'v3-pr' && github.event.pull_request.head.sha || '' }}
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

@@ -148,3 +148,32 @@ changes:
       scope: local
       why: "the fix is in the binary; nothing in your space changes"
       run: ["a2a update"]
+
+  - id: RN-0900-7
+    kind: fix
+    impact: high
+    subject: "Your pull request was refused when your counterparty merged first"
+    detail: >
+      The space's own validation gate blamed the wrong author. On a pull request
+      it checked out the branch ALREADY MERGED into the current base, then diffed
+      that against the base as of when the event fired. Those two drift apart the
+      moment anybody else merges — and the diff then swept in every commit that
+      had landed in between, attributing another system's files to your pull
+      request. The result was a refusal naming paths you never touched, in
+      exactly the situation a shared space exists for: two systems writing at the
+      same time. Observed live on 2026-07-26 — a pull request that changed four
+      files, all in its own section, refused with two authorization violations
+      naming the other system's section, because the other system merged while it
+      was open. The gate now checks out the pull request's own head, so its diff
+      means what the authorization check asks: what did THIS author change,
+      relative to where they forked. Validating the merged result was never the
+      question — the post-merge audit on main is what checks the whole tree.
+      NOTE: your space inherits this only when it re-pins the workflow. Run `a2a
+      space update` after upgrading; `a2a doctor`'s "space scaffolding current"
+      row tells you whether you are behind.
+    affects: [space]
+    action:
+      scope: space
+      why: "the fix lives in the reusable workflow your space pins by tag — the space must re-pin to get it"
+      run: ["a2a space update"]
+      detect: ["a2a doctor"]
