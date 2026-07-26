@@ -66,6 +66,34 @@ func TestProtectionSkipsProvisionerIsProvisionerOnly(t *testing.T) {
 	t.Fatal("protection-skips-provisioner is missing from the catalogue — AC-961.4 asserts protection's reach in BOTH directions")
 }
 
+// The thread-chain row (P46, OP-210) is inherently two-system — it drives a
+// question through A and reads it back from both A and B — but must be
+// filed under SystemA only, matching subfamResultFromErr's own documented
+// convention (scenarios_submitted_live.go) for a row like this: a second
+// declaration under SystemB would double the Actions spend to re-observe
+// the exact same conversation from the other end, which is the coverage
+// this row's own name ("reads identically from BOTH sides") already
+// claims. It must also stay cliOnly() — same guard as
+// TestCatalogueDeclaresOnlyDrivableSurfaces below, checked here too so a
+// rename that widens this ONE row's Surfaces still fails by NAME.
+func TestThreadChainRowIsSystemAOnlyAndCLIOnly(t *testing.T) {
+	t.Parallel()
+	const name = "thread-chain-reads-identically-from-both-sides"
+	for _, scenario := range Catalogue() {
+		if scenario.Name != name {
+			continue
+		}
+		if len(scenario.Systems) != 1 || scenario.Systems[0] != SystemA {
+			t.Fatalf("%q declared for %v, want exactly [%s]", name, scenario.Systems, SystemA)
+		}
+		if len(scenario.Surfaces) != 1 || scenario.Surfaces[0] != SurfaceCLI {
+			t.Fatalf("%q declared for surfaces %v, want exactly [%s]", name, scenario.Surfaces, SurfaceCLI)
+		}
+		return
+	}
+	t.Fatalf("%q is missing from the catalogue", name)
+}
+
 // The catalogue may only declare a surface the tier can actually drive.
 //
 // This is the same rule as TestNewRunForHonoursPerScenarioApplicability, one

@@ -248,8 +248,40 @@ func buildIndex(ctx context.Context, spaceID, dir string, manifest space.Manifes
 // requires fold to apply against the SAME running Result as the parent's
 // own primary-scoped events (plan 07 Placement decision: "a naive
 // subject==X-only query silently misses them").
+// A RESPONSE artifact is the one case where "every event whose subject IS
+// id" over-collects. Its own verify/dispute events are, by fold's explicit
+// model (applyResponseScoped's doc comment), scoped to the PARENT: they
+// authorize against the parent's owner and they write the parent's
+// Result.Responses map. Handing them to the response's OWN independent fold
+// makes that fold resolve RoleOwner against the response's `from` — the
+// responder — who is never the party authorized to verify their own answer.
+// The result was a spurious `unauthorized-actor` flag on EVERY verified
+// response in the product, invisible because the closure-state overlay below
+// only overwrites Result.State and never Result.Flags.
+//
+// That mattered more than a cosmetic wrong flag: spec 46's thread reader
+// promises that a conversation carrying an illegal-transition or
+// unauthorized-actor flag never renders clean, so a healthy, correctly
+// verified exchange would have reported itself as suspect — the
+// authoritative-looking wrong answer this phase exists to prevent, produced
+// by the phase's own reader.
+//
+// Found while writing P46's e2e chain fixture, empirically: a two-line
+// fold.Fold(KindResponse, respEnv, []Event{verify}) probe reproduces it with
+// no cache involved at all.
 func gatherEvents(id string, parentOf map[string]string, eventsBySubject map[string][]fold.Event) []fold.Event {
-	out := append([]fold.Event(nil), eventsBySubject[id]...)
+	own := eventsBySubject[id]
+	if _, isResponse := parentOf[id]; isResponse {
+		filtered := make([]fold.Event, 0, len(own))
+		for _, ev := range own {
+			if ev.Transition == fold.TVerify || ev.Transition == fold.TDispute {
+				continue
+			}
+			filtered = append(filtered, ev)
+		}
+		own = filtered
+	}
+	out := append([]fold.Event(nil), own...)
 	for respID, parentID := range parentOf {
 		if parentID == id {
 			out = append(out, eventsBySubject[respID]...)

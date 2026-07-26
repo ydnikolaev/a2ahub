@@ -4,14 +4,55 @@
 exec a2a show XR-axon-demo
 stdout 'XR-axon-demo requirement \(published\) — t'
 
-# `a2a thread` is queried by THREAD id, not by artifact id. It used to be
-# passed XR-axon-demo and passed only because the fixture helper wrote the
-# artifact's own id into its `thread:` field — spec 46 records that as defect
-# D7: the single test claiming to cover this verb asserted a value that is not
-# a thread id at all, so it could not have caught a real thread bug.
+# `a2a thread` is queried by THREAD id, not by artifact id. Before P46 this
+# script passed XR-axon-demo's own id as the "thread id" and asserted one
+# line came back — spec 46 records that as defect D7: the single test
+# claiming to cover this verb asserted a value that is not a thread id at
+# all, so it could not have caught a real thread bug, and even once fixed to
+# query a real thread it still only asserted one artifact, no events, no
+# ordering.
 #
-# This is still the WEAK version of the assertion — one artifact, no events,
-# no ordering. Spec 46 §T7 replaces it with a real three-artifact chain; that
-# is P46 wave 6's job, and this line is deliberately not pretending to be it.
-exec a2a thread thread:axon-20260721-k3f9
-stdout 'XR-axon-demo'
+# spec 46 §T7 (P46 wave 6) replaces both gaps with a real chain: a question
+# (beta -> gamma), an acknowledge event, a response (gamma -> beta, carrying
+# the parent's own thread — never re-derived) and a verify — from TWO
+# systems, across FOUR real commits (internal/e2e/thread_chain_test.go's
+# seedThreadChainFixture; internal/e2e/helpers_test.go's seedOriginExtras
+# pushes it to this script's shared origin before the mirror is cloned).
+# Deliberately beta/gamma, not axon: this origin is shared by every T3
+# script and every script runs AS axon — a thread axon has no part in never
+# touches axon's own inbox/outbox/statusline (see this phase's own report:
+# an earlier axon-rooted version of this fixture broke both scripts).
+#
+# D3: the QUESTION transcripts strictly BEFORE the RESPONSE. Before this
+# wave's fix, a response carries no event of its own until it is verified
+# (the `respond` transition is recorded against the QUESTION's subject, not
+# the response's — cmd_lifecycle.go's own RespondCommand.Run), so the old
+# LatestEventAt-ordered reader sorted it FIRST; the real per-commit sequence
+# (mirror.go's commitOrder) puts it fourth, after the question, its two
+# events, and the response's own commit.
+#
+# D2: event rows are present at all — submit, acknowledge, respond, verify —
+# the old reader listed artifacts only.
+exec a2a thread thread:beta-20260722-c9h1
+stdout '(?s)artifact\tbeta\tquestion\tXQ-beta-20260722-q1a2\t.*artifact\tgamma\tresponse\tXS-gamma-20260722-r3b4\t'
+stdout 'event\tbeta\tsubmit\tXQ-beta-20260722-q1a2'
+stdout 'event\tgamma\tacknowledge\tXQ-beta-20260722-q1a2'
+stdout 'event\tgamma\trespond\tXQ-beta-20260722-q1a2'
+stdout 'event\tbeta\tverify\tXS-gamma-20260722-r3b4'
+
+# OPEN names BOTH parties actually able to act next: beta (close/supersede —
+# the question's own owner) and gamma (respond again — table.go's D-017
+# multi-response allowance keeps `respond` legal even from `responded`).
+stdout 'XQ-beta-20260722-q1a2\tresponded\twaiting_on=beta,gamma\tnext=respond:gamma;close:beta;supersede:beta'
+
+# US-6/D6: a member artifact id resolves to the SAME thread as the thread id
+# itself — --json makes the exact field values unambiguous.
+exec a2a thread XS-gamma-20260722-r3b4 --json
+stdout '"thread": "thread:beta-20260722-c9h1"'
+stdout '"resolved_from": "XS-gamma-20260722-r3b4"'
+
+# an unknown ref exits 1, never a silent empty success (D6) — exact exit
+# code via the `exec sh -c` idiom (feedback_intake_guards.txtar,
+# statusline.txtar).
+exec sh -c 'a2a thread thread:nowhere-20260101-0000; echo "exit=$?"'
+stdout 'exit=1'
