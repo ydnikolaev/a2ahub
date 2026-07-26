@@ -342,3 +342,20 @@ changes:
       scope: local
       why: "the fix is in the binary"
       run: ["a2a update"]
+  - id: RN-01000-12
+    kind: fix
+    impact: low
+    subject: "Host errors say `host:` once instead of twice"
+    detail: >
+      Every failure from the GitHub adapter read `host: OpenPR: host: …` — the
+      prefix twice, in the middle of the sentence you actually read. Cosmetic
+      right up until the live matrix printed it inside the transient-failure
+      message that RN-01000-4 exists to make readable under pressure.
+      Fixed so a wrapped error carries the prefix once while an error printed on
+      its own still says which layer it came from. Nothing about error handling
+      changes — only the text.
+    affects: [cli]
+    action:
+      scope: local
+      why: "message-only"
+      run: ["a2a update"]
