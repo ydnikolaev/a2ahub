@@ -48,15 +48,16 @@ const mirrorLockStaleAfter = 2 * time.Minute
 // staleness, not by every contender blocking for the full two minutes.
 //
 // This budget composes with (does not stack against) the *inner*
-// index.lock retry runGitRetryLocked performs inside CloneOrFetch: nothing
-// in this package acquires the mirror lock and then calls CloneOrFetch —
-// AcquireMirrorLock is used by WriteFunnel.Submit only (see its own doc),
-// and Submit never calls CloneOrFetch — so the two budgets never nest
-// inside a single caller's stack and cannot multiply into a longer stall.
-// A future caller that DOES hold the mirror lock across a CloneOrFetch
-// call would, in the worst case, add indexLockWaitBudget (2s) on top of
-// this one, not multiply it — see mirror.go's own git-lock retry, which is
-// bounded per-call, not per-poll-of-this-lock.
+// index.lock retry runGitRetryLocked performs inside CloneOrFetch. There
+// are exactly TWO acquirers — WriteFunnel.Submit (via commitAndPush) and
+// CloneOrFetch — and neither calls the other: Submit never refreshes (its
+// caller does that first, then submits), and CloneOrFetch never submits.
+// So the two budgets never nest inside a single caller's stack and cannot
+// multiply into a longer stall. A future caller that DOES hold the mirror
+// lock across a CloneOrFetch call would, in the worst case, add
+// indexLockWaitBudget (2s) on top of this one, not multiply it — see
+// mirror.go's own git-lock retry, which is bounded per-call, not
+// per-poll-of-this-lock.
 const mirrorLockWaitBudget = 5 * time.Second
 
 // mirrorLockPayload is the lock file's content: who holds it and when they
@@ -79,8 +80,21 @@ type MirrorLock struct {
 	path    string
 	payload mirrorLockPayload
 
+	// dir is the mirror WORKING TREE root this lock was acquired for. It
+	// exists so a mutation can be checked against the lock it was handed:
+	// holding *a* lock is not the invariant, holding the lock for *this*
+	// mirror is. See mutateTree.
+	dir string
+
 	releaseOnce sync.Once
 	releaseErr  error
+}
+
+// guards reports whether l is a live lock for the mirror rooted at dir.
+// A nil receiver answers false rather than panicking — the caller's own
+// error path is more useful than a crash inside a guard.
+func (l *MirrorLock) guards(dir string) bool {
+	return l != nil && l.dir == dir
 }
 
 // AcquireMirrorLock acquires the advisory per-mirror-directory lock for
@@ -120,6 +134,7 @@ func AcquireMirrorLock(ctx context.Context, dir string) (*MirrorLock, error) {
 			return nil, &Error{Op: op, Input: dir, Err: err}
 		}
 		if acquired {
+			lock.dir = dir
 			return lock, nil
 		}
 
