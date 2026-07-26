@@ -1,6 +1,9 @@
 package host
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 // Sentinel errors, one per failure class (P1 idiom: internal/artifact).
 // Callers use errors.Is against these; a typed *Error carries the
@@ -76,11 +79,32 @@ type Error struct {
 	Err error
 }
 
+// packagePrefix is what every sentinel in this file opens with, so that a
+// sentinel printed on its own still says which package it came from.
+const packagePrefix = "host: "
+
+// Error renders as `host: <Op>[: <Input>]: <wrapped>`.
+//
+// The wrapped text's own leading "host: " is TRIMMED, because every sentinel in
+// this file carries one and the result was `host: OpenPR: host: github api
+// request failed: …` — the prefix twice, in the middle of the sentence a user
+// actually reads. Cosmetic until 2026-07-26, when it turned up in the live
+// matrix inside the one message P44 exists to make readable, which is what moved
+// it from "tidy later" to worth doing.
+//
+// Trimmed HERE rather than dropped from the sentinels: a sentinel printed on its
+// own (returned bare, or wrapped by another package's formatting) still needs to
+// say where it came from. This composes the two without either duplicating or
+// losing the attribution, and yields exactly the form spec 44 quotes from the
+// real outage: `host: OpenPR: github api request failed: status 500:`.
+//
+// errors.Is/As are unaffected — only the rendered string changes.
 func (e *Error) Error() string {
+	inner := strings.TrimPrefix(e.Err.Error(), packagePrefix)
 	if e.Input == "" {
-		return "host: " + e.Op + ": " + e.Err.Error()
+		return packagePrefix + e.Op + ": " + inner
 	}
-	return "host: " + e.Op + ": " + e.Input + ": " + e.Err.Error()
+	return packagePrefix + e.Op + ": " + e.Input + ": " + inner
 }
 
 func (e *Error) Unwrap() error { return e.Err }
