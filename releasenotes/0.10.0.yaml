@@ -1,0 +1,202 @@
+schema: release-notes/v1
+version: "0.10.0"
+released: "2026-07-26"
+headline: "The document that decides who may write where was validated by nothing; a deliberately red check now says so; and the MCP write surface is named for what it is"
+changes:
+  - id: RN-01000-1
+    kind: known-issue
+    impact: high
+    subject: "The MCP write tools are not at parity with the CLI, and this release does not change that"
+    detail: >
+      Stated plainly because the alternative is you finding out from a refusal.
+      `a2a_contract publish` over MCP calls neither of the two local
+      pre-flight checks the CLI runs before a contract write:
+      CheckContractPublishable and CheckComputedCompatibility. It is NOT a
+      correctness hole — `validate --ci` is path-and-diff based and fires
+      against whoever opened the pull request, so an illegal publish is still
+      refused at the merge gate. What it costs is the loop: a refusal that
+      the CLI delivers in a second, locally, with the reason in front of you,
+      arrives from CI a minute later instead, attached to a pull request. For
+      the automated caller this product is built for, that is the difference
+      between a corrected write and a stalled turn.
+      Two low-severity tool-registration gaps ride along in the same surface.
+      Deferred by an explicit operator decision on 2026-07-26 rather than by
+      oversight, and this entry exists so the decision is visible rather than
+      implied. Two things it is worth being precise about, because the last two
+      releases were not: v0.8.0's RN-0800-8 claimed "the MCP write tools are
+      fine", which was false and was corrected in RN-0900-2 — and this entry
+      is not the opposite claim. MCP writes work. They are second-class in
+      where their refusals come from, not broken.
+      One consequence worth naming: the same fence is why the named
+      missing-actor refusal (pass --actor-name) is not in this release either.
+      Every single-door place to put it crosses into the MCP surface, and a
+      CLI-only version would manufacture exactly the disagreement between
+      surfaces that this decision chose to accept and document. The write is
+      still refused in that case — actor.name has a minLength on both
+      surfaces — but the message cites a schema violation instead of naming
+      the flag.
+    affects: [mcp]
+    action:
+      scope: none
+      why: "nothing to run; use the CLI for contract publishes if you want the refusal locally"
+
+  - id: RN-01000-2
+    kind: fix
+    impact: high
+    subject: "space.yaml is validated — the file that decides who may write where was checked nowhere"
+    detail: >
+      `space.yaml` is the space's trust document: the CI gate authorises every
+      pull request against its participants and their sections. Nothing
+      validated it. Not weakly — nowhere. A schema for it exists, a validator
+      seam for it exists, and an adapter implementing that seam against the
+      real schema corpus exists; on 2026-07-26 all three turned out to be
+      wired to no production path at all. Every read went through a
+      shape-only decode that says as much in its own comment.
+      Found by writing a manifest by hand while following the published
+      from-zero walkthrough. It omitted two schema-REQUIRED participant
+      fields. `a2a connect` accepted it, `a2a doctor` accepted it, and
+      `a2a validate --ci --mode=v3-full-repo` answered `"valid": true` — while
+      the schema, asked directly, rejects it. So a manifest could be merged in
+      a shape the schema forbids, and the guard that depends on it went on
+      reading it.
+      Now checked at the CI gate: a pull request that touches `space.yaml` is
+      validated against the schema, and a full-repo audit validates it
+      unconditionally. Deliberately NOT checked on the read path — making that
+      strict would mean a space whose manifest drifted stops being READABLE,
+      and a participant who did nothing wrong would get a hard failure on
+      every verb. An unvalidated manifest is a better product than an
+      unreadable space.
+      Equally deliberate: a pull request that touches only an artifact is not
+      reddened by a manifest it did not propose. Otherwise a manifest merged
+      before this check existed becomes a tripwire on every unrelated write,
+      with the only way out — a manifest pull request — blocked by the same
+      gate.
+      Every manifest in existence was run through the schema before this
+      shipped: the live production space, the test space, and the template all
+      pass. Three TEST fixtures did not, which is how three tiers had been
+      agreeing with each other about a document none of them would ever meet.
+    affects: [cli, space]
+    action:
+      scope: space
+      why: "the check arrives per-space when the space re-pins the reusable workflow — until then its manifest is still unchecked at merge"
+      run: ["a2a space update"]
+
+  - id: RN-01000-3
+    kind: fix
+    impact: normal
+    subject: "a2a doctor asks GitHub whether your CODEOWNERS owners actually exist"
+    detail: >
+      GitHub IGNORES a CODEOWNERS owner it cannot resolve — it does not reject
+      the line. So a file naming a team nobody created looks like it gates
+      `/space.yaml` and gates nothing, and code-owner review is the entire
+      mechanism behind that gate. An inert CODEOWNERS is an ungated trust
+      root with nothing at merge time to tell you.
+      This shipped twice as a documentation fix before becoming a check, and
+      the second time is the instructive one. The placeholder became
+      `@REPLACE_WITH_ORG/REPLACE_WITH_TEAM_OR_LOGIN` with an instruction to
+      replace BOTH halves — and replacing both halves literally produces
+      `@your-org/your-login`, which is still a team reference, still to a team
+      that does not exist. Following the instruction exactly still produced an
+      inert file.
+      Two changes, then. The placeholder is now a single login, because a shape
+      that cannot be filled in wrongly beats a warning about filling it in
+      wrongly. And the check is automated: `a2a doctor` reads GitHub's own
+      `codeowners/errors` endpoint, which answers with line numbers and names
+      all three conditions an owner must satisfy. The template had been telling
+      operators that GitHub's web view was "the only feedback you will get" —
+      wrong, and once a thing is machine-readable, asking a human to check it
+      by eye is a choice.
+      A credential that cannot read that endpoint gets an advisory, never a
+      FAIL: a fine-grained token without repository-metadata read is a
+      legitimate working setup, and a gate that reds on a working setup is a
+      gate people stop reading.
+    affects: [cli, space]
+    action:
+      scope: local
+      why: "the new doctor row ships in the binary; check your own space with it"
+      run: ["a2a update", "a2a doctor"]
+
+  - id: RN-01000-4
+    kind: fix
+    impact: normal
+    subject: "A transient GitHub is retried and named, instead of reported as a refusal"
+    detail: >
+      Observed, not theorised. During GitHub's Pull Requests outage on
+      2026-07-24 every `a2a submit` died instantly on a bare
+      `github api request failed: status 500:` with an empty body. The push
+      had landed; only the pull request had not. Nothing in that message let
+      an agent tell a platform outage from a real refusal, and the one correct
+      next move — re-run, which is safe because the write funnel is idempotent
+      by head branch — was named nowhere.
+      A 5xx, a rate limit and a transport error are now retried on a bounded
+      schedule at the single point every REST and GraphQL call passes through,
+      with the whole window capped. A refusal still fails on the FIRST
+      response, exactly as fast as before: burning the retry budget on a 403
+      or a 422 only delays an answer that will not change. When a transient
+      failure survives the retries, the message says so — transient, the write
+      may or may not have landed, re-running is safe, and why.
+      Two details worth knowing. A 403 is decided by its headers, because
+      GitHub uses that status for both a rate limit and a hard permission
+      refusal and the status alone cannot tell them apart; a bare 403 stays
+      fatal. And if a write DID land while GitHub failed to say so, the retry
+      is refused as a duplicate — which is now named as exactly that, rather
+      than surfacing as a puzzling 422 for a write you believe you never made.
+    affects: [cli]
+    action:
+      scope: local
+      why: "the fix is in the binary"
+      run: ["a2a update"]
+
+  - id: RN-01000-5
+    kind: fix
+    impact: normal
+    subject: "The branch-protection checklist stopped contradicting itself about admins"
+    detail: >
+      The checklist claimed direct pushes to `main` are "forbidden for all
+      actors, including admin" two rows above `enforce_admins: false` — which
+      is precisely what makes that untrue. Driven against a fresh space on
+      2026-07-26: an owner's `git push origin main` SUCCEEDS, with GitHub
+      answering `remote: Bypassed rule violations for refs/heads/main`.
+      The published onboarding then told you to "confirm by hand that a direct
+      push to main is rejected". So following the documentation makes a
+      correctly configured space look broken, and the natural conclusion —
+      that protection never armed — is wrong. The property that matters is
+      that a PARTICIPANT cannot push to `main`; an admin bypass is the
+      configuration working, because a sole code owner must be able to land
+      their own space-level edits.
+      Both documents now say this, the checklist ships the two `gh api` calls
+      that apply it (with a read-back so you verify what landed rather than
+      trusting the call), and a test holds the document to the configuration
+      the test rig actually applies — including the prose claim, which a
+      value-by-value comparison structurally cannot see.
+    affects: [space, docs]
+    action:
+      scope: space
+      why: "if you armed protection from the old checklist the VALUES are fine; what was wrong is what you were told to verify"
+      detect: ["a2a doctor"]
+
+  - id: RN-01000-6
+    kind: fix
+    impact: low
+    subject: "A deliberately failing test check now says it is deliberate"
+    detail: >
+      The live test matrix opens one pull request whose check MUST go red —
+      it proves the gate refuses a write into another system's section, and
+      keeps refusing after a privileged re-trigger. That red run appears in
+      the test space's Actions tab and in its failure mail, and it was titled
+      "probe xsec" with an empty body. Every failed run in that space over
+      three hours and three matrix runs was this probe: the product was
+      working and the operator was reading failure notifications for a row
+      that was passing.
+      The probe now labels itself where it is actually seen, and the matrix
+      accounts for the runs it reddened by RUN ID — so a red run that is not
+      on that list becomes a reported finding rather than something to squint
+      at. Keyed on ids rather than a branch-name pattern deliberately: a
+      pattern would absolve the next probe somebody adds without its having
+      asserted anything.
+      Test infrastructure only. Nothing in the product changes; the next
+      release is checked harder.
+    affects: [docs]
+    action:
+      scope: none
+      why: "test infrastructure — no product change"
