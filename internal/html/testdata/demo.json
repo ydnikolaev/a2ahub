@@ -41,47 +41,73 @@
       "self": true,
       "org": "axon",
       "status": "active",
-      "owners": ["yura"],
-      "spaces": ["getvisa", "platform"]
+      "owners": [
+        "yura"
+      ],
+      "spaces": [
+        "getvisa",
+        "platform"
+      ]
     },
     {
       "system": "gvcore",
       "self": false,
       "org": "getvisa",
       "status": "active",
-      "owners": ["priya", "sam"],
-      "spaces": ["getvisa", "platform"]
+      "owners": [
+        "priya",
+        "sam"
+      ],
+      "spaces": [
+        "getvisa",
+        "platform"
+      ]
     },
     {
       "system": "gvbilling",
       "self": false,
       "org": "getvisa",
       "status": "active",
-      "owners": ["priya"],
-      "spaces": ["getvisa"]
+      "owners": [
+        "priya"
+      ],
+      "spaces": [
+        "getvisa"
+      ]
     },
     {
       "system": "legacycrm",
       "self": false,
       "org": "getvisa",
       "status": "left",
-      "spaces": ["getvisa"]
+      "spaces": [
+        "getvisa"
+      ]
     },
     {
       "system": "seomatrix",
       "self": false,
       "org": "seomatrix",
       "status": "active",
-      "owners": ["dana"],
-      "spaces": ["platform"]
+      "owners": [
+        "dana"
+      ],
+      "spaces": [
+        "platform"
+      ]
     },
     {
       "system": "pgw",
       "self": false,
       "org": "seomatrix",
       "status": "active",
-      "owners": ["dana", "ops"],
-      "spaces": ["platform"]
+      "owners": [
+        "dana",
+        "ops"
+      ],
+      "spaces": [
+        "platform"
+      ]
     }
   ],
   "contractEdges": [
@@ -176,6 +202,197 @@
       "maxStale": "2h"
     }
   ],
+  "threads": [
+    {
+      "id": "thread:seomatrix-20260718-c3d4",
+      "space": "platform",
+      "participants": [
+        "seomatrix",
+        "axon"
+      ],
+      "memberCount": 3,
+      "openCount": 2,
+      "lastActivity": "5d",
+      "opener": {
+        "id": "XW-seomatrix-20260718-c3d4",
+        "title": "Rebuild crawl-report exporter for v4 schema"
+      },
+      "yourMove": true,
+      "members": [
+        {
+          "id": "XW-seomatrix-20260718-c3d4",
+          "type": "work_request",
+          "title": "Rebuild crawl-report exporter for v4 schema",
+          "from": "seomatrix",
+          "to": [
+            "axon"
+          ],
+          "state": "responded",
+          "seq": 41
+        },
+        {
+          "id": "XS-axon-20260720-p4q7",
+          "type": "response",
+          "title": "Response to XW-seomatrix-20260718-c3d4",
+          "from": "axon",
+          "to": [
+            "seomatrix"
+          ],
+          "state": "submitted",
+          "seq": 48
+        },
+        {
+          "id": "XQ-seomatrix-20260721-r9t2",
+          "type": "question",
+          "title": "does the v4 export keep the legacy column order",
+          "from": "seomatrix",
+          "to": [
+            "axon"
+          ],
+          "state": "acknowledged",
+          "seq": 52
+        }
+      ],
+      "links": [
+        {
+          "from": "XS-axon-20260720-p4q7",
+          "to": "XW-seomatrix-20260718-c3d4",
+          "kind": "parent"
+        },
+        {
+          "from": "XQ-seomatrix-20260721-r9t2",
+          "to": "XW-seomatrix-20260718-c3d4",
+          "kind": "ref"
+        }
+      ]
+    },
+    {
+      "id": "thread:axon-20260715-k2m8",
+      "space": "platform",
+      "participants": [
+        "axon",
+        "gvcore"
+      ],
+      "memberCount": 4,
+      "openCount": 0,
+      "lastActivity": "12d",
+      "opener": {
+        "id": "XQ-axon-20260715-k2m8",
+        "title": "can ingest accept a nullable tenant id"
+      },
+      "yourMove": false,
+      "members": [
+        {
+          "id": "XQ-axon-20260715-k2m8",
+          "type": "question",
+          "title": "can ingest accept a nullable tenant id",
+          "from": "axon",
+          "to": [
+            "gvcore"
+          ],
+          "state": "closed",
+          "seq": 12
+        },
+        {
+          "id": "XS-gvcore-20260716-w8x1",
+          "type": "response",
+          "title": "Response to XQ-axon-20260715-k2m8",
+          "from": "gvcore",
+          "to": [
+            "axon"
+          ],
+          "state": "verified",
+          "seq": 19
+        },
+        {
+          "id": "XW-axon-20260716-y3z5",
+          "type": "work_request",
+          "title": "make tenant id nullable in ingest v2",
+          "from": "axon",
+          "to": [
+            "gvcore"
+          ],
+          "state": "closed",
+          "seq": 23
+        },
+        {
+          "id": "XC-gvcore-new-ingest",
+          "type": "contract",
+          "title": "ingest v2 — nullable tenant id",
+          "from": "gvcore",
+          "to": [
+            "axon"
+          ],
+          "state": "published",
+          "seq": 31
+        }
+      ],
+      "links": [
+        {
+          "from": "XS-gvcore-20260716-w8x1",
+          "to": "XQ-axon-20260715-k2m8",
+          "kind": "parent"
+        },
+        {
+          "from": "XW-axon-20260716-y3z5",
+          "to": "XS-gvcore-20260716-w8x1",
+          "kind": "ref"
+        },
+        {
+          "from": "XC-gvcore-new-ingest",
+          "to": "XW-axon-20260716-y3z5",
+          "kind": "ref"
+        }
+      ]
+    },
+    {
+      "id": "thread:legacycrm-20260615-g7h8",
+      "space": "getvisa",
+      "participants": [
+        "legacycrm",
+        "axon"
+      ],
+      "memberCount": 2,
+      "openCount": 1,
+      "lastActivity": "3w",
+      "opener": {
+        "id": "XH-legacycrm-20260615-g7h8",
+        "title": "handoff: nightly reconciliation job"
+      },
+      "yourMove": true,
+      "members": [
+        {
+          "id": "XH-legacycrm-20260615-g7h8",
+          "type": "handoff",
+          "title": "handoff: nightly reconciliation job",
+          "from": "legacycrm",
+          "to": [
+            "axon"
+          ],
+          "state": "submitted",
+          "seq": 7
+        },
+        {
+          "id": "XD-axon-20260620-m1n4",
+          "type": "decision",
+          "title": "who owns the reconciliation job after handoff",
+          "from": "axon",
+          "to": [
+            "legacycrm"
+          ],
+          "state": "superseded",
+          "seq": 15
+        }
+      ],
+      "links": [
+        {
+          "from": "XD-axon-20260620-m1n4",
+          "to": "XH-legacycrm-20260615-g7h8",
+          "kind": "ref"
+        }
+      ]
+    }
+  ],
   "inbox": [
     {
       "space": "getvisa",
@@ -183,7 +400,9 @@
       "type": "question",
       "title": "Which auth provider version should billing pin to?",
       "from": "gvbilling",
-      "to": ["axon"],
+      "to": [
+        "axon"
+      ],
       "state": "submitted",
       "priority": "p2",
       "blocking": false,
@@ -191,7 +410,9 @@
       "age": "2h",
       "new": true,
       "severity": "normal",
-      "reasons": ["needs-input"],
+      "reasons": [
+        "needs-input"
+      ],
       "description": "Billing needs to know which visa-status auth major to pin so its token refresh keeps working after the gvcore v2 cutover. Blocking their release if unanswered by Friday."
     },
     {
@@ -200,16 +421,20 @@
       "type": "work_request",
       "title": "Rebuild crawl-report exporter for v4 schema",
       "from": "seomatrix",
-      "to": ["axon"],
+      "to": [
+        "axon"
+      ],
       "state": "responded",
       "priority": "p1",
       "blocking": true,
       "gatePending": false,
-      "thread": "THR-crawl-v4",
+      "thread": "thread:seomatrix-20260718-c3d4",
       "age": "5d",
       "new": false,
       "severity": "blocking",
-      "reasons": ["blocking-dependency"],
+      "reasons": [
+        "blocking-dependency"
+      ],
       "description": "The crawl-report v3 exporter breaks on the new v4 schema; seomatrix needs axon to rebuild it before the platform-wide migration or their reporting pipeline stalls."
     },
     {
@@ -218,7 +443,9 @@
       "type": "contract",
       "title": "New ingest-v2 contract awaiting acknowledgement",
       "from": "gvcore",
-      "to": ["axon"],
+      "to": [
+        "axon"
+      ],
       "state": "published",
       "priority": "p3",
       "blocking": false,
@@ -233,7 +460,9 @@
       "type": "requirement",
       "title": "Uptime SLO commitment for gateway webhook",
       "from": "pgw",
-      "to": ["axon"],
+      "to": [
+        "axon"
+      ],
       "state": "acknowledged",
       "priority": "p2",
       "blocking": false,
@@ -248,7 +477,9 @@
       "type": "decision",
       "title": "Decision: adopt visa-status v2 for billing",
       "from": "gvcore",
-      "to": ["axon"],
+      "to": [
+        "axon"
+      ],
       "state": "proposed",
       "priority": "p3",
       "blocking": false,
@@ -263,16 +494,20 @@
       "type": "handoff",
       "title": "</script><img src=x onerror=alert(1)>",
       "from": "legacycrm",
-      "to": ["axon"],
+      "to": [
+        "axon"
+      ],
       "state": "submitted",
       "priority": "p2",
       "blocking": false,
       "gatePending": true,
-      "thread": "THR-legacy-handoff",
+      "thread": "thread:legacycrm-20260615-g7h8",
       "age": "3w",
       "new": false,
       "severity": "blocking",
-      "reasons": ["gate-pending-on-me"]
+      "reasons": [
+        "gate-pending-on-me"
+      ]
     },
     {
       "space": "platform",
@@ -280,7 +515,9 @@
       "type": "response",
       "title": "",
       "from": "seomatrix",
-      "to": ["axon"],
+      "to": [
+        "axon"
+      ],
       "state": "submitted",
       "priority": "p3",
       "blocking": false,
@@ -295,7 +532,10 @@
       "type": "announcement",
       "title": "almanac 📚 v3 — Ünïcode ok · مرحبا",
       "from": "gvcore",
-      "to": ["axon", "gvbilling"],
+      "to": [
+        "axon",
+        "gvbilling"
+      ],
       "state": "published",
       "priority": "p3",
       "blocking": false,
@@ -310,7 +550,9 @@
       "type": "question",
       "title": "Please review the compatibility matrix for the getvisa visa-status v2 API migration including all affected downstream consumers before the Friday cutover window closes and file blocking issues immediately if regressions are found",
       "from": "pgw",
-      "to": ["axon"],
+      "to": [
+        "axon"
+      ],
       "state": "accepted",
       "priority": "p2",
       "blocking": false,
@@ -325,7 +567,9 @@
       "type": "work_request",
       "title": "Migrate onboarding flow docs to new template",
       "from": "gvbilling",
-      "to": ["axon"],
+      "to": [
+        "axon"
+      ],
       "state": "in_progress",
       "priority": "p3",
       "blocking": false,
@@ -342,7 +586,9 @@
       "type": "work_request",
       "title": "Confirm gvbilling rollout window",
       "from": "axon",
-      "to": ["gvbilling"],
+      "to": [
+        "gvbilling"
+      ],
       "state": "acknowledged",
       "priority": "p2",
       "blocking": false,
@@ -357,7 +603,9 @@
       "type": "question",
       "title": "Can seomatrix backport the crawl-report v3 fix?",
       "from": "axon",
-      "to": ["seomatrix"],
+      "to": [
+        "seomatrix"
+      ],
       "state": "submitted",
       "priority": "p1",
       "blocking": true,
@@ -372,7 +620,9 @@
       "type": "decision",
       "title": "Adopt pgw webhook v1 as the default integration",
       "from": "axon",
-      "to": ["pgw"],
+      "to": [
+        "pgw"
+      ],
       "state": "proposed",
       "priority": "p3",
       "blocking": false,
@@ -390,7 +640,9 @@
       "version": "1.4.2",
       "state": "published",
       "codeBacked": true,
-      "consumers": ["axon"]
+      "consumers": [
+        "axon"
+      ]
     },
     {
       "space": "getvisa",
@@ -399,7 +651,9 @@
       "version": "2.3.0",
       "state": "published",
       "codeBacked": true,
-      "consumers": ["gvbilling"]
+      "consumers": [
+        "gvbilling"
+      ]
     },
     {
       "space": "getvisa",
@@ -408,7 +662,9 @@
       "version": "1.0.0",
       "state": "retired",
       "codeBacked": false,
-      "consumers": ["gvbilling"]
+      "consumers": [
+        "gvbilling"
+      ]
     },
     {
       "space": "platform",
@@ -417,7 +673,9 @@
       "version": "3.1.0",
       "state": "deprecated",
       "codeBacked": true,
-      "consumers": ["axon"]
+      "consumers": [
+        "axon"
+      ]
     }
   ],
   "flags": [
