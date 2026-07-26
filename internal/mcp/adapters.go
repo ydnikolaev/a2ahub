@@ -252,7 +252,18 @@ type MirrorResolver struct {
 	manifest  space.Manifest
 
 	once  sync.Once
-	index map[string]string // artifact id -> mirror-relative path
+	index map[string]mirrorArtifact // artifact id -> indexed facts
+}
+
+// mirrorArtifact is one indexed artifact's facts. It carries `thread`
+// alongside the path because validate.ThreadResolver needs it and the walk
+// already decodes the frontmatter — re-reading every file to answer
+// ThreadOf would be a second pass over the same bytes. Mirrors
+// internal/cli's own copy (ADR-001: this package never imports
+// internal/cli, so the resolver is written twice on purpose).
+type mirrorArtifact struct {
+	path   string
+	thread string
 }
 
 // NewMirrorResolver constructs a MirrorResolver.
@@ -271,15 +282,47 @@ func (r *MirrorResolver) KnownArtifact(id string) bool {
 func (r *MirrorResolver) Digest(ref string) (string, bool) {
 	r.ensureIndex()
 	id, _, _ := splitRefGrammar(ref)
-	relPath, ok := r.index[id]
+	entry, ok := r.index[id]
 	if !ok {
 		return "", false
 	}
-	raw, err := os.ReadFile(filepath.Join(r.mirrorDir, relPath))
+	raw, err := os.ReadFile(filepath.Join(r.mirrorDir, entry.path))
 	if err != nil {
 		return "", false
 	}
 	return artifact.Digest(raw), true
+}
+
+// ThreadOf implements validate.ThreadResolver: the §3.8 thread id the
+// artifact carries, and whether the artifact was found at all. Without it
+// this surface's submit path fails OPEN on REF-009/REF-010 — the checks
+// run, find no capability, and return no violation, which is
+// indistinguishable from a clean document. internal/cli's resolver gained
+// the same pair; ADR-001 keeps the two copies deliberate.
+func (r *MirrorResolver) ThreadOf(id string) (thread string, found bool) {
+	r.ensureIndex()
+	entry, ok := r.index[id]
+	if !ok {
+		return "", false
+	}
+	return entry.thread, true
+}
+
+// ThreadExists implements validate.ThreadResolver: whether any indexed
+// artifact already carries this exact thread value. An empty thread is
+// never "carried" by anything, so it is answered false rather than
+// matching every threadless artifact.
+func (r *MirrorResolver) ThreadExists(thread string) bool {
+	if thread == "" {
+		return false
+	}
+	r.ensureIndex()
+	for _, entry := range r.index {
+		if entry.thread == thread {
+			return true
+		}
+	}
+	return false
 }
 
 // System implements validate.Resolver.
@@ -294,7 +337,7 @@ func (r *MirrorResolver) System(system string) (member bool, left bool) {
 
 func (r *MirrorResolver) ensureIndex() {
 	r.once.Do(func() {
-		r.index = map[string]string{}
+		r.index = map[string]mirrorArtifact{}
 		_ = filepath.WalkDir(r.mirrorDir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
 				return nil
@@ -308,7 +351,8 @@ func (r *MirrorResolver) ensureIndex() {
 				return nil
 			}
 			var probe struct {
-				ID string `yaml:"id"`
+				ID     string `yaml:"id"`
+				Thread string `yaml:"thread"`
 			}
 			if yerr := yaml.Unmarshal(fm.YAML, &probe); yerr != nil || probe.ID == "" {
 				return nil
@@ -317,7 +361,7 @@ func (r *MirrorResolver) ensureIndex() {
 			if relErr != nil {
 				return nil
 			}
-			r.index[probe.ID] = rel
+			r.index[probe.ID] = mirrorArtifact{path: rel, thread: probe.Thread}
 			return nil
 		})
 	})

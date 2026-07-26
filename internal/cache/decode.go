@@ -21,17 +21,25 @@ type refEntry struct {
 // every one of the 8 §3.1 types (response's `parent`/`result` fields are
 // simply empty/zero on every other type).
 type envelopeProbe struct {
-	Schema         string     `yaml:"schema"`
-	ID             string     `yaml:"id"`
-	Type           string     `yaml:"type"`
-	Title          string     `yaml:"title"`
-	Space          string     `yaml:"space"`
-	From           string     `yaml:"from"`
-	To             any        `yaml:"to"`
-	Priority       string     `yaml:"priority"`
-	Blocking       bool       `yaml:"blocking"`
-	NeededBy       string     `yaml:"needed_by"`
-	Thread         string     `yaml:"thread"`
+	Schema   string `yaml:"schema"`
+	ID       string `yaml:"id"`
+	Type     string `yaml:"type"`
+	Title    string `yaml:"title"`
+	Space    string `yaml:"space"`
+	From     string `yaml:"from"`
+	To       any    `yaml:"to"`
+	Priority string `yaml:"priority"`
+	Blocking bool   `yaml:"blocking"`
+	NeededBy string `yaml:"needed_by"`
+	Thread   string `yaml:"thread"`
+	// Created is the envelope's `created` field (§5.2.1, required on
+	// every artifact) — decoded here for spec 46 §T3's thread transcript,
+	// which renders it as DISPLAY metadata only (never the ordering key;
+	// commit sequence is) and as the fallback ordering key when a space's
+	// commit history is unreadable (`"order":"declared"`, §T3's own
+	// decision record on why `created` is the weaker candidate). No other
+	// verb in this package needed it before now.
+	Created        string     `yaml:"created"`
 	Refs           []refEntry `yaml:"refs"`
 	Classification string     `yaml:"classification"`
 	Actor          struct {

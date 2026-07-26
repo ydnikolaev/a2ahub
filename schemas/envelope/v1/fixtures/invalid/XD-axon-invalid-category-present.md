@@ -6,6 +6,7 @@ title: Provenance fields are mandatory for fact-gate bypass
 space: getvisa
 from: axon
 to: [axon, seomatrix]
+thread: thread:axon-20260721-k3f9
 actor: {kind: human, name: yura}
 created: 2026-08-02T16:00:00Z
 category: other

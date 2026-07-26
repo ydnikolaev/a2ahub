@@ -6,6 +6,7 @@ title: Add translation_key minted by factory to content payloads
 space: getvisa
 from: seomatrix
 to: [axon]
+thread: thread:seomatrix-20260721-k3f9
 actor: {kind: agent, name: claude}
 created: 2026-08-01T11:00:00Z
 category: contract-change

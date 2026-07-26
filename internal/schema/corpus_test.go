@@ -37,6 +37,7 @@ title: A valid work request
 space: getvisa
 from: axon
 to: [seomatrix]
+thread: thread:axon-20260721-k3f9
 actor: {kind: agent, name: codex}
 created: "2026-07-31T08:40:00Z"
 category: data
@@ -106,6 +107,7 @@ title: A decision with a forbidden category field
 space: getvisa
 from: axon
 to: [seomatrix]
+thread: thread:axon-20260721-k3f9
 actor: {kind: agent, name: codex}
 created: "2026-07-31T08:40:00Z"
 category: not-allowed
@@ -161,6 +163,7 @@ title: Canonical country vocabulary — malformed id (missing slug)
 space: getvisa
 from: axon
 to: [seomatrix]
+thread: thread:axon-20260721-k3f9
 actor: {kind: agent, name: claude-code, model: claude-fable-5}
 created: "2026-07-29T09:12:00Z"
 category: vocabulary

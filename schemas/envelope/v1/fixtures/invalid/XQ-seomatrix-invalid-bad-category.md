@@ -6,6 +6,7 @@ title: Ingest 422 error shape contradicts §4.3 example
 space: getvisa
 from: seomatrix
 to: [axon]
+thread: thread:seomatrix-20260721-k3f9
 actor: {kind: agent, name: claude, model: claude-fable-5}
 created: 2026-07-30T14:02:00Z
 category: not-a-real-category

@@ -49,6 +49,7 @@ func writeQuestionDraft(t *testing.T, dir, id, from, to string) string {
 		"space: fixture-space\n" +
 		"from: " + from + "\n" +
 		"to: [" + to + "]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: clarification\n" +
@@ -203,6 +204,7 @@ func TestSubmitRefusesUnfilledPlaceholderSpace(t *testing.T) {
 		"space: <space-id>\n" +
 		"from: axon\n" +
 		"to: [other]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: clarification\n" +
@@ -328,6 +330,7 @@ func writeContractDraft(t *testing.T, stagingDir, id string) string {
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [beta]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: api\n" +
@@ -616,6 +619,7 @@ func TestSubmitBatchAllOrNothing(t *testing.T) {
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [other]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"priority: p3\n" +

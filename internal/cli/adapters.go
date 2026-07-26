@@ -395,7 +395,19 @@ type MirrorResolver struct {
 	manifest  space.Manifest
 
 	once  sync.Once
-	index map[string]string // artifact id -> mirror-relative path
+	index map[string]mirrorArtifact // artifact id -> its indexed facts
+}
+
+// mirrorArtifact is the per-artifact record ensureIndex builds during its
+// one walk of the mirror clone: the mirror-relative path (KnownArtifact/
+// Digest's data source) plus the `thread` frontmatter field (ThreadOf/
+// ThreadExists' data source, validate.ThreadResolver). Both come from the
+// same single frontmatter parse per file — adding `thread` here means
+// ThreadOf/ThreadExists read the walk ensureIndex already performs rather
+// than opening files again or building a second index.
+type mirrorArtifact struct {
+	path   string
+	thread string
 }
 
 // NewMirrorResolver constructs a MirrorResolver over mirrorDir (the
@@ -419,15 +431,48 @@ func (r *MirrorResolver) KnownArtifact(id string) bool {
 func (r *MirrorResolver) Digest(ref string) (string, bool) {
 	r.ensureIndex()
 	id, _, _ := splitRefGrammar(ref)
-	relPath, ok := r.index[id]
+	entry, ok := r.index[id]
 	if !ok {
 		return "", false
 	}
-	raw, err := os.ReadFile(filepath.Join(r.mirrorDir, relPath))
+	raw, err := os.ReadFile(filepath.Join(r.mirrorDir, entry.path))
 	if err != nil {
 		return "", false
 	}
 	return artifact.Digest(raw), true
+}
+
+// ThreadOf implements validate.ThreadResolver.
+func (r *MirrorResolver) ThreadOf(id string) (thread string, found bool) {
+	r.ensureIndex()
+	entry, ok := r.index[id]
+	if !ok {
+		return "", false
+	}
+	return entry.thread, true
+}
+
+// ThreadExists implements validate.ThreadResolver: it reports whether any
+// artifact already indexed from the mirror carries this exact thread
+// value. An empty thread is never "carried" by anything — without this
+// guard a threadless indexed artifact (thread: "") would make
+// ThreadExists("") true, which is not what validate.ThreadResolver's own
+// doc comment promises ("already carries this exact thread value").
+// checkForeignMint (thread.go) already guards env.Thread == "" before
+// ever calling this, so no current caller can observe the difference —
+// this is belt-and-braces for the interface contract itself, not a fix
+// to a live bug.
+func (r *MirrorResolver) ThreadExists(thread string) bool {
+	if thread == "" {
+		return false
+	}
+	r.ensureIndex()
+	for _, entry := range r.index {
+		if entry.thread == thread {
+			return true
+		}
+	}
+	return false
 }
 
 // System implements validate.Resolver.
@@ -442,7 +487,7 @@ func (r *MirrorResolver) System(system string) (member bool, left bool) {
 
 func (r *MirrorResolver) ensureIndex() {
 	r.once.Do(func() {
-		r.index = map[string]string{}
+		r.index = map[string]mirrorArtifact{}
 		_ = filepath.WalkDir(r.mirrorDir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
 				// Best-effort index build: an unreadable file/dir is
@@ -458,7 +503,8 @@ func (r *MirrorResolver) ensureIndex() {
 				return nil
 			}
 			var probe struct {
-				ID string `yaml:"id"`
+				ID     string `yaml:"id"`
+				Thread string `yaml:"thread"`
 			}
 			if yerr := yaml.Unmarshal(fm.YAML, &probe); yerr != nil || probe.ID == "" {
 				return nil
@@ -467,7 +513,7 @@ func (r *MirrorResolver) ensureIndex() {
 			if relErr != nil {
 				return nil
 			}
-			r.index[probe.ID] = rel
+			r.index[probe.ID] = mirrorArtifact{path: rel, thread: probe.Thread}
 			return nil
 		})
 	})

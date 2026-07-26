@@ -23,6 +23,14 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 )
 
+// cliFixtureThread is the §3.8 thread every hand-built envelope fixture in
+// this file carries. Since P46 the schema REQUIRES the field and every
+// drafting verb mints or inherits one, so a threadless fixture no longer
+// represents a document this product can produce. (Declared here as well as in
+// the package's external test file: the two are separate Go packages, `cli`
+// and `cli_test`, and cannot share an identifier.)
+const cliFixtureThread = "thread:axon-20260721-k3f9"
+
 // ciSpaceYAML is the getvisa fixture manifest: axon (owner ydnikolaev) and
 // seomatrix (owner misha-gh), each with its own section.
 const ciSpaceYAML = `schema: space/v1
@@ -55,6 +63,7 @@ func validQuestion(id, from, to string) string {
 		"space: getvisa\n" +
 		"from: " + from + "\n" +
 		"to: [" + to + "]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: claude, model: claude-fable-5}\n" +
 		"created: 2026-07-30T14:02:00Z\n" +
 		"category: defect\n" +
@@ -167,6 +176,7 @@ func TestValidateCI_PRSchemaRed(t *testing.T) {
 		"space: getvisa\n" +
 		"from: axon\n" +
 		"to: [seomatrix]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: claude, model: claude-fable-5}\n" +
 		"created: 2026-07-30T14:02:00Z\n" +
 		"priority: p2\n" +
@@ -380,6 +390,7 @@ func validContract(from, slug string) string {
 		"space: getvisa\n" +
 		"from: " + from + "\n" +
 		"to: [seomatrix]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: claude, model: claude-fable-5}\n" +
 		"created: 2026-07-30T14:02:00Z\n" +
 		"category: data-feed\n" +
@@ -403,6 +414,7 @@ func validDecision(id, from string) string {
 		"space: getvisa\n" +
 		"from: " + from + "\n" +
 		"to: [axon, seomatrix]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: human, name: yura}\n" +
 		"created: 2026-07-30T14:02:00Z\n" +
 		"priority: p2\n" +

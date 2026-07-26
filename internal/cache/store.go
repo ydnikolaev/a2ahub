@@ -432,6 +432,19 @@ func (s *Store) mirrorDirFor(spaceID string) string {
 	return ""
 }
 
+// manifestFor returns spaceID's structurally-parsed manifest — threadview.go's
+// own open-items computation needs the participant list as its candidate-
+// system set (spec 46 §T3's documented "legalRole also takes a membership
+// status, and open_items passes a constant" V1 imprecision).
+func (s *Store) manifestFor(spaceID string) space.Manifest {
+	for _, sm := range s.spaces {
+		if sm.SpaceID == spaceID {
+			return sm.Manifest
+		}
+	}
+	return space.Manifest{}
+}
+
 func resolveRefFact(r refEntry, byID map[string]foldedArtifact) RefFact {
 	id, version, digest := splitRef(r.Ref)
 	out := RefFact{Ref: r.Ref, ID: id, Version: version, PinnedDigest: digest}

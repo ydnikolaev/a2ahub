@@ -6,6 +6,7 @@ title: Ingest API — missing required version field
 space: getvisa
 from: axon
 to: [seomatrix]
+thread: thread:axon-20260721-k3f9
 actor: {kind: agent, name: claude-code, model: claude-fable-5}
 created: 2026-07-28T10:00:00Z
 category: api

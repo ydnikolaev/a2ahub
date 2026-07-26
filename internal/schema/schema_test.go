@@ -80,6 +80,7 @@ title: A valid work request
 space: getvisa
 from: axon
 to: [seomatrix]
+thread: thread:axon-20260721-k3f9
 actor: {kind: agent, name: %s}
 created: "2026-07-31T08:40:00Z"
 category: data

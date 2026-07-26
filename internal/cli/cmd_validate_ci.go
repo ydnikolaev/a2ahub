@@ -188,6 +188,13 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 
 	report := ciReport{Mode: mode, Valid: true, Artifacts: []validateReport{}}
 	for _, relPath := range artifacts {
+		if rep, ok := validateCILinkageImmutable(ctx, root, base, relPath); rep != nil {
+			report.Artifacts = append(report.Artifacts, *rep)
+			if !ok {
+				report.Valid = false
+				continue
+			}
+		}
 		rep, ok := validateCIArtifact(engine, root, relPath, manifest, resolver)
 		if rep == nil {
 			// Absent on disk (deleted in this PR) — nothing to validate.
@@ -809,4 +816,98 @@ func gitDiffNameOnly(ctx context.Context, root, base string) ([]string, error) {
 		}
 	}
 	return files, nil
+}
+
+// linkageProbe decodes the two envelope fields whose value, once merged, is
+// the record itself: which conversation an artifact belongs to and which
+// artifact it answers.
+type linkageProbe struct {
+	Thread string `yaml:"thread"`
+	Parent string `yaml:"parent"`
+}
+
+// validateCILinkageImmutable is REF-011 (spec 46 §T2): `thread` and `parent`
+// may not CHANGE on an artifact that already exists at the merge base.
+//
+// Why this is a separate gate rather than another envelope rule: every other
+// check in this file asks "is this document well-formed", which a single
+// version of the document can answer. This one asks "is this document the same
+// document", which only a comparison can. The anti-fork code REF-009 keys on
+// `parent`, so it sees a reply that joins the wrong conversation — it cannot
+// see an artifact silently RE-PARENTED in a later PR, because after the edit
+// the document is perfectly consistent with itself. In a permanent
+// cross-company record whose whole pitch is that history does not move, an
+// artifact quietly changing which negotiation it belongs to is the failure
+// that matters most and is hardest to notice by reading.
+//
+// It reuses the mechanism `validate --ci`'s contract-compatibility half already
+// runs on every PR (`git show <base>:<path>`, contractGitBounded) rather than
+// introducing a second way to read the base tree.
+//
+// Returns (nil, true) when there is nothing to compare: no base (full-repo
+// mode), the file is absent at base (created in this PR), or either side is
+// unparseable — an unparseable document is already the schema class's problem
+// and reporting it twice would just be noise.
+func validateCILinkageImmutable(ctx context.Context, root, base, relPath string) (*validateReport, bool) {
+	if base == "" {
+		return nil, true
+	}
+	priorRaw, err := contractGitBounded(ctx, root, maxMirrorEventBytes, "show", base+":"+relPath)
+	if err != nil {
+		// Not at base = new in this PR. Nothing is being changed.
+		return nil, true
+	}
+	headRaw, err := os.ReadFile(filepath.Join(root, relPath))
+	if err != nil {
+		return nil, true
+	}
+	prior, ok1 := decodeLinkage(priorRaw)
+	head, ok2 := decodeLinkage(headRaw)
+	if !ok1 || !ok2 {
+		return nil, true
+	}
+
+	var violations []validate.Violation
+	if prior.Thread != head.Thread {
+		violations = append(violations, validate.Violation{
+			Code:     "REF-011",
+			Class:    validate.ClassReferential,
+			Path:     "thread",
+			Message:  fmt.Sprintf("thread changed after merge: %q at base, %q here — a committed artifact may not move to another conversation", prior.Thread, head.Thread),
+			Severity: validate.SeverityReject,
+		})
+	}
+	if prior.Parent != head.Parent {
+		violations = append(violations, validate.Violation{
+			Code:     "REF-011",
+			Class:    validate.ClassReferential,
+			Path:     "parent",
+			Message:  fmt.Sprintf("parent changed after merge: %q at base, %q here — a committed artifact may not be re-parented", prior.Parent, head.Parent),
+			Severity: validate.SeverityReject,
+		})
+	}
+	if len(violations) == 0 {
+		return nil, true
+	}
+	return &validateReport{Path: relPath, Result: &validate.Result{
+		Valid:           false,
+		InvocationPoint: validate.V2,
+		Violations:      violations,
+	}}, false
+}
+
+// decodeLinkage returns the two linkage fields and whether the document could
+// be decoded at all. A bool rather than an error because every caller's
+// response to "unparseable" is the same — leave it to the schema class — and a
+// returned error here would be a nilerr trap.
+func decodeLinkage(raw []byte) (linkageProbe, bool) {
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return linkageProbe{}, false
+	}
+	var probe linkageProbe
+	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+		return linkageProbe{}, false
+	}
+	return probe, true
 }

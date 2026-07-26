@@ -151,6 +151,7 @@ func writeContractDescriptorWithFormat(t *testing.T, mirrorDir, slug, version, f
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [beta]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: api\n" +
@@ -179,6 +180,7 @@ func writeContractDescriptorWithCompatPolicy(t *testing.T, mirrorDir, slug, vers
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [beta]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: api\n" +
@@ -370,6 +372,7 @@ func writeDeprecationAnnouncement(t *testing.T, mirrorDir, id, deprecates, sunse
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [beta]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: deprecation\n" +
@@ -724,6 +727,7 @@ func writeContractDescriptorWithGeneratedFrom(t *testing.T, mirrorDir, slug, ver
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [beta]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: api\n" +
@@ -1336,6 +1340,7 @@ func writeForeignContractDescriptor(t *testing.T, mirrorDir, system, slug, versi
 		"space: fixture-space\n" +
 		"from: " + system + "\n" +
 		"to: [axon]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: api\n" +

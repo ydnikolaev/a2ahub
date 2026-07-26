@@ -266,6 +266,63 @@ func TestMirrorResolverSystem(t *testing.T) {
 	}
 }
 
+// mirrorResolverThreadResolver is a compile-time assertion that
+// *cli.MirrorResolver actually satisfies validate.ThreadResolver — the
+// second half of REF-009/REF-010's wiring gap (thread.go's ThreadResolver
+// is an optional capability obtained by type assertion; nothing catches a
+// method-set drift at compile time otherwise).
+var _ validate.ThreadResolver = (*cli.MirrorResolver)(nil)
+
+// TestMirrorResolverThreadOfAndThreadExists exercises both ThreadResolver
+// methods over the SAME on-disk mirror ensureIndex already walks for
+// KnownArtifact/Digest (adapters.go's mirrorArtifact carries `thread`
+// alongside the indexed path) — no second index, no second file read.
+func TestMirrorResolverThreadOfAndThreadExists(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+
+	threaded := filepath.Join(mirrorDir, "axon", "exchanges", "XR-axon-country-vocabulary.md")
+	if err := os.MkdirAll(filepath.Dir(threaded), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	threadedContent := "---\nid: XR-axon-country-vocabulary\ntype: requirement\nthread: thread:axon-20260729-c7q2\n---\nbody\n"
+	if err := os.WriteFile(threaded, []byte(threadedContent), 0o644); err != nil {
+		t.Fatalf("write threaded artifact: %v", err)
+	}
+
+	threadless := filepath.Join(mirrorDir, "axon", "exchanges", "XQ-axon-20260721-k3f9.md")
+	threadlessContent := "---\nid: XQ-axon-20260721-k3f9\ntype: question\n---\nbody\n"
+	if err := os.WriteFile(threadless, []byte(threadlessContent), 0o644); err != nil {
+		t.Fatalf("write threadless artifact: %v", err)
+	}
+
+	r := cli.NewMirrorResolver(mirrorDir, space.Manifest{})
+
+	thread, found := r.ThreadOf("XR-axon-country-vocabulary")
+	if !found || thread != "thread:axon-20260729-c7q2" {
+		t.Fatalf("ThreadOf(XR-axon-country-vocabulary) = (%q, %v), want (thread:axon-20260729-c7q2, true)", thread, found)
+	}
+
+	thread, found = r.ThreadOf("XQ-axon-20260721-k3f9")
+	if !found || thread != "" {
+		t.Fatalf("ThreadOf(XQ-axon-20260721-k3f9) = (%q, %v), want (\"\", true)", thread, found)
+	}
+
+	if _, found := r.ThreadOf("XQ-axon-does-not-exist"); found {
+		t.Fatal("ThreadOf(nonexistent id): found = true, want false")
+	}
+
+	if !r.ThreadExists("thread:axon-20260729-c7q2") {
+		t.Fatal("ThreadExists(thread:axon-20260729-c7q2) = false, want true (carried by an indexed artifact)")
+	}
+	if r.ThreadExists("thread:does-not-exist") {
+		t.Fatal("ThreadExists(thread:does-not-exist) = true, want false")
+	}
+	if r.ThreadExists("") {
+		t.Fatal("ThreadExists(\"\") = true, want false — an empty thread is never \"carried\", even though the threadless fixture above indexes as thread: \"\"")
+	}
+}
+
 // --- SubmitValidatorAdapter ------------------------------------------------
 
 func TestSubmitValidatorAdapterValid(t *testing.T) {
@@ -290,6 +347,7 @@ func TestSubmitValidatorAdapterValid(t *testing.T) {
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [other]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: clarification\n" +
@@ -332,6 +390,7 @@ func TestSubmitValidatorAdapterInvalidReturnsViolations(t *testing.T) {
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [other]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"priority: p3\n" +
@@ -436,3 +495,10 @@ func TestErrNoActorNameNamesBothRemedies(t *testing.T) {
 		}
 	}
 }
+
+// cliFixtureThread is the §3.8 thread every hand-built envelope fixture in
+// this package carries. Since P46 the schema REQUIRES the field and every
+// drafting verb mints or inherits one, so a threadless fixture no longer
+// represents a document this product can produce — it would only exercise the
+// refusal path, which has its own dedicated tests.
+const cliFixtureThread = "thread:axon-20260721-k3f9"
