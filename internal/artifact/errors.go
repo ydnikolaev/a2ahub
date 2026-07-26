@@ -14,11 +14,12 @@ import "errors"
 // these; a typed *Error carries the operation and offending input on top.
 var (
 	// ErrMalformedID is returned when an ID string does not match either
-	// §3.3 grammar (standing or exchange/broadcast).
+	// §3.3 grammar (standing or exchange/broadcast) or the §3.8 thread-ID
+	// grammar (see thread.go).
 	ErrMalformedID = errors.New("artifact: malformed id")
 
-	// ErrEmptyField is returned when a mint input (prefix, system, slug)
-	// that MUST be non-empty is empty.
+	// ErrEmptyField is returned when a mint input (prefix, system, slug,
+	// or — for thread IDs — system alone) that MUST be non-empty is empty.
 	ErrEmptyField = errors.New("artifact: empty field")
 
 	// ErrIDMismatch is returned by Validate when the filename stem does
