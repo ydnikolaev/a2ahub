@@ -359,3 +359,26 @@ changes:
       scope: local
       why: "message-only"
       run: ["a2a update"]
+  - id: RN-01000-13
+    kind: fix
+    impact: low
+    subject: "`a2a doctor` stops telling a project with no agent surface to run `a2a skill link`"
+    detail: >
+      The "skill discoverable" advisory collapsed two situations into one
+      message. If your project has an agent surface and has not linked the skill,
+      `a2a skill link` is exactly right. If it has NO surface, that command
+      answers "nothing to link", changes nothing, and the advisory repeats
+      verbatim next time — so following the advice taught you the check was
+      unreliable.
+      Split. No surface now says plainly that there is nothing to link and that
+      this is expected for a project no agent drives; a surface that exists gets
+      the remedy AND the surface named, so you know what would be linked.
+      Found by following the tool's own advice and watching nothing happen. Loud,
+      specific and unactionable is the same family as a gate that names the wrong
+      cause: the cost is not the wasted command, it is that you stop trusting the
+      check.
+    affects: [cli]
+    action:
+      scope: local
+      why: "message-only"
+      run: ["a2a update"]
