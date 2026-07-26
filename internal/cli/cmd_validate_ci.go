@@ -206,6 +206,36 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 		}
 	}
 
+	// The MANIFEST itself, when this change touches it. See
+	// validate.ValidateManifest for the finding: the schema, the seam
+	// (space.LoadManifest) and the adapter (cli.ManifestValidatorAdapter) all
+	// existed and were wired to NOTHING, so `space.yaml` — the document that
+	// decides who may write where, and the input diff-authz authorises every
+	// PR against — could be merged in a shape the schema forbids.
+	//
+	// Gated on `space.yaml` being in the CHANGED set, deliberately. A space
+	// whose manifest was merged before this check existed must not have every
+	// unrelated artifact PR reddened by it: that would make an old manifest a
+	// tripwire on writes nobody proposed, and the operator's only route out is
+	// a manifest PR the gate itself is blocking. A change proposes the
+	// manifest, or the manifest is not this PR's business.
+	//
+	// v3-full-repo validates it UNCONDITIONALLY, and the condition below has
+	// to say so explicitly: in that mode `changed` comes from walkArtifacts,
+	// which walks artifacts, so `space.yaml` is never in it. An audit of the
+	// whole space that skips the file governing the space is not an audit —
+	// and a full-repo scan has no merge to block, so there is no tripwire
+	// concern to trade against.
+	if mode == "v3-full-repo" || manifestChanged(changed) {
+		rep, ok := validateCIManifest(engine, root)
+		if rep != nil {
+			report.Artifacts = append(report.Artifacts, *rep)
+			if !ok {
+				report.Valid = false
+			}
+		}
+	}
+
 	// Per-contract compat + publishability verdict (spec 37 §2 T2/T3,
 	// AC-970.2) — v3-pr only. A full-repo scan (`--mode=v3-full-repo`) has
 	// no single `--base` commit to diff a PRIOR version's fixtures out of
@@ -360,6 +390,45 @@ func validateCIConsumes(engine *validate.Engine, root, relPath string) (*validat
 		return &validateReport{Path: relPath, Error: err.Error()}, false
 	}
 	result, err := engine.ValidateConsumes(raw)
+	if err != nil {
+		return &validateReport{Path: relPath, Error: err.Error()}, false
+	}
+	r := result
+	return &validateReport{Path: relPath, Result: &r}, result.Valid
+}
+
+// manifestChanged reports whether this change set touches the space manifest.
+//
+// Matched at the repo ROOT only. `space.yaml` is a fixed, single-instance path
+// (§4.2); a file of the same name nested inside a system's section is that
+// system's business and is not the space's trust document, so matching on the
+// basename would let an unrelated file drag the manifest check in — and, worse,
+// would validate the ROOT manifest while reporting a path the author never
+// touched.
+func manifestChanged(changed []string) bool {
+	for _, p := range changed {
+		if p == "space.yaml" {
+			return true
+		}
+	}
+	return false
+}
+
+// validateCIManifest runs the manifest schema over the checkout's own
+// space.yaml. Mirrors validateCIConsumes: same report shape, and an absent file
+// is not a finding here — runValidateCI has already failed on an unreadable
+// manifest long before this point, so the only way to reach this with no file
+// is a deletion, which the diff-authz/CODEOWNERS half is what governs.
+func validateCIManifest(engine *validate.Engine, root string) (*validateReport, bool) {
+	const relPath = "space.yaml"
+	raw, err := os.ReadFile(filepath.Join(root, relPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, true
+		}
+		return &validateReport{Path: relPath, Error: err.Error()}, false
+	}
+	result, err := engine.ValidateManifest(raw)
 	if err != nil {
 		return &validateReport{Path: relPath, Error: err.Error()}, false
 	}

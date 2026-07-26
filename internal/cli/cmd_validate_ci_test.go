@@ -601,6 +601,41 @@ func TestValidateCI_PRDeletedFileSkipped(t *testing.T) {
 	}
 }
 
+// ciArtifactPaths returns the report's entry paths, EXCLUDING the manifest.
+//
+// Since 2026-07-26 a full-repo audit always validates space.yaml, so it appears
+// in every full-repo report. Assertions about "which artifacts were walked"
+// mean the artifacts, and rewriting each expected count as N+1 would hide what
+// the number is about. ciManifestChecked asserts the other half explicitly.
+func ciArtifactPaths(rep ciReport) []string {
+	var out []string
+	for _, a := range rep.Artifacts {
+		if a.Path == "space.yaml" {
+			continue
+		}
+		out = append(out, a.Path)
+	}
+	return out
+}
+
+// ciManifestChecked asserts the report carries a VALID verdict for the space's
+// own manifest — the file diff-authz authorises every write against, and which
+// nothing validated at all before this.
+func ciManifestChecked(t *testing.T, rep ciReport) {
+	t.Helper()
+	for _, a := range rep.Artifacts {
+		if a.Path != "space.yaml" {
+			continue
+		}
+		if a.Result == nil || !a.Result.Valid {
+			t.Errorf("space.yaml verdict is not a clean pass: %+v", a)
+		}
+		return
+	}
+	t.Error("the report carries no verdict for space.yaml — an audit that skips the file governing " +
+		"the space is not an audit, and its absence is invisible from the exit code")
+}
+
 func TestValidateCI_FullRepo(t *testing.T) {
 	t.Parallel()
 	engine := ciEngine(t)
@@ -614,9 +649,10 @@ func TestValidateCI_FullRepo(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0; stderr=%s; report=%+v", code, errOut, rep)
 	}
-	if !rep.Valid || len(rep.Artifacts) != 2 {
-		t.Fatalf("expected 2 valid artifacts (README excluded), got %+v", rep.Artifacts)
+	if !rep.Valid || len(ciArtifactPaths(rep)) != 2 {
+		t.Fatalf("expected 2 valid artifacts (README excluded), got %+v", ciArtifactPaths(rep))
 	}
+	ciManifestChecked(t, rep)
 	if len(rep.DiffAuthz) != 0 {
 		t.Fatalf("full-repo must not run diff-authz, got %+v", rep.DiffAuthz)
 	}
@@ -630,9 +666,12 @@ func TestValidateCI_FullRepoEmpty(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0; stderr=%s", code, errOut)
 	}
-	if !rep.Valid || len(rep.Artifacts) != 0 {
+	if !rep.Valid || len(ciArtifactPaths(rep)) != 0 {
 		t.Fatalf("empty repo should be clean, got %+v", rep)
 	}
+	// An empty space is not an UNCHECKED space: the manifest is still audited,
+	// and that is the one thing there is to audit here.
+	ciManifestChecked(t, rep)
 }
 
 func TestValidateCI_UsageErrors(t *testing.T) {
@@ -689,9 +728,10 @@ func TestValidateCI_ThroughRun(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &rep); err != nil {
 		t.Fatalf("decode report: %v\nstdout=%s", err, out.String())
 	}
-	if rep.Mode != "v3-full-repo" || !rep.Valid || len(rep.Artifacts) != 1 {
+	if rep.Mode != "v3-full-repo" || !rep.Valid || len(ciArtifactPaths(rep)) != 1 {
 		t.Fatalf("unexpected report through Run: %+v", rep)
 	}
+	ciManifestChecked(t, rep)
 }
 
 // TestValidate_NonCIPathsUnchanged proves the flag additions did not break
@@ -1170,4 +1210,155 @@ func TestContractBumpKindHasOneClassifier(t *testing.T) {
 	if len(classifiers) != 1 {
 		t.Fatalf("package cli has %d bump classifiers (%v) — both enforcement layers must read ONE, or they will disagree on an edge nobody tested", len(classifiers), classifiers)
 	}
+}
+
+// ciBadManifest is a manifest the SCHEMA rejects: the participant omits `org`
+// and `joined`, both of which schemas/manifest/v1/space.schema.json lists as
+// required. It is not a contrived shape — it is exactly what came out of
+// writing a manifest by hand while following the published from-zero
+// walkthrough on 2026-07-26, and it was accepted by `a2a connect`, by
+// `a2a doctor`, and by `validate --ci --mode=v3-full-repo`, which answered
+// `"valid": true`.
+const ciBadManifest = `schema: space/v1
+space: getvisa
+min_binary_version: 0.1.0
+participants:
+  - system: axon
+    section: axon/
+    status: active
+    owners: [ydnikolaev]
+  - system: seomatrix
+    section: seomatrix/
+    status: active
+    owners: [misha-gh]
+vendored: []
+`
+
+// TestValidateCI_ManifestIsValidatedWhenItChanges is the regression for a hole
+// that was three layers deep and open at every one of them.
+//
+// `space.yaml` is the document that decides WHO MAY WRITE WHERE — diff-authz
+// authorises every pull request against its participants and sections. A schema
+// for it exists; a validator seam for it exists (`space.LoadManifest`); an
+// adapter implementing that seam against the real corpus exists
+// (`cli.ManifestValidatorAdapter`). On 2026-07-26 a grep established that
+// LoadManifest had ZERO production callers and the adapter was constructed
+// nowhere outside its own tests. Every production path used
+// `space.ParseManifest`, a shape-only decode.
+//
+// So the trust document could be merged in a shape the schema forbids, and the
+// guard that reads it went on reading it.
+//
+// The pair below is the whole test, and the SECOND case is the one that decides
+// whether this is shippable:
+//
+//   - a change that touches space.yaml with a bad manifest must RED;
+//   - a change that touches only an artifact, with that same bad manifest
+//     already sitting on main, must NOT red.
+//
+// Without the second, an old manifest becomes a tripwire on every unrelated
+// write in the space — and the operator's only route out is a manifest PR that
+// the gate itself is blocking.
+func TestValidateCI_ManifestIsValidatedWhenItChanges(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+
+	t.Run("a PR that changes space.yaml reds on a schema-invalid manifest", func(t *testing.T) {
+		t.Parallel()
+		root := ciRepo(t, ciBadManifest, nil)
+
+		code, rep, _ := runCI(t, engine, root, fakeGit("space.yaml"), "v3-pr", "deadbeef", "ydnikolaev")
+		if code == 0 || rep.Valid {
+			t.Fatalf("a manifest the schema rejects was merged clean: code=%d valid=%v — this is the "+
+				"document diff-authz authorises every write against", code, rep.Valid)
+		}
+		var found bool
+		for _, a := range rep.Artifacts {
+			if a.Path != "space.yaml" {
+				continue
+			}
+			found = true
+			if a.Result == nil || a.Result.Valid {
+				t.Fatalf("space.yaml reported valid: %+v", a)
+			}
+			var named bool
+			for _, v := range a.Result.Violations {
+				if strings.Contains(v.Path, "participants") {
+					named = true
+				}
+			}
+			if !named {
+				t.Errorf("violations do not name the offending field: %+v — a reader has to be able to "+
+					"fix it without guessing", a.Result.Violations)
+			}
+		}
+		if !found {
+			t.Fatal("the report carries no entry for space.yaml at all — the check never ran, which is " +
+				"the failure this test exists to catch and is invisible from the exit code alone")
+		}
+	})
+
+	t.Run("a PR touching only an artifact does NOT red on a pre-existing bad manifest", func(t *testing.T) {
+		t.Parallel()
+		rel := "axon/exchanges/XQ-axon-20260730-ab12.md"
+		root := ciRepo(t, ciBadManifest, map[string]string{rel: validQuestion("XQ-axon-20260730-ab12", "axon", "seomatrix")})
+
+		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		if code != 0 || !rep.Valid {
+			t.Fatalf("an ordinary artifact PR was reddened by a manifest it did not touch: code=%d "+
+				"valid=%v stderr=%s\n"+
+				"That turns a manifest merged before this check existed into a tripwire on every write, "+
+				"and the way out — a manifest PR — is blocked by the same gate.", code, rep.Valid, errOut)
+		}
+		for _, a := range rep.Artifacts {
+			if a.Path == "space.yaml" {
+				t.Errorf("the report mentions space.yaml for a PR that never touched it: %+v", a)
+			}
+		}
+	})
+
+	t.Run("a full-repo audit always checks the manifest", func(t *testing.T) {
+		t.Parallel()
+		// walkArtifacts yields artifacts, never space.yaml — so an audit that
+		// only looked at the changed set would skip the file governing the
+		// space. There is no merge to block here, so there is no tripwire
+		// concern to trade against.
+		root := ciRepo(t, ciBadManifest, nil)
+
+		code, rep, _ := runCI(t, engine, root, fakeGit(), "v3-full-repo", "", "")
+		if code == 0 || rep.Valid {
+			t.Fatalf("a full-repo audit passed a space whose own manifest is schema-invalid: code=%d "+
+				"valid=%v — auditing everything except the file that governs it is not an audit",
+				code, rep.Valid)
+		}
+	})
+
+	t.Run("a valid manifest passes, and every manifest we actually operate is valid", func(t *testing.T) {
+		t.Parallel()
+		// ciSpaceYAML is the fixture shape; it must pass, or this gate would
+		// red every space in existence. Checked before wiring, not after: the
+		// production (r22d222/a2a), live-e2e and template manifests were each
+		// run through the corpus by hand on 2026-07-26 and all three passed.
+		root := ciRepo(t, ciSpaceYAML, nil)
+
+		code, rep, errOut := runCI(t, engine, root, fakeGit("space.yaml"), "v3-pr", "deadbeef", "ydnikolaev")
+		if code != 0 || !rep.Valid {
+			t.Fatalf("the fixture manifest was rejected: code=%d valid=%v stderr=%s", code, rep.Valid, errOut)
+		}
+	})
+
+	t.Run("a nested space.yaml is not the space's manifest", func(t *testing.T) {
+		t.Parallel()
+		// Matching on the basename would validate the ROOT manifest while
+		// reporting a path the author never touched — and would let any
+		// same-named file inside a section drag the check in.
+		root := ciRepo(t, ciBadManifest, map[string]string{"axon/docs/space.yaml": "not: a manifest\n"})
+
+		_, rep, _ := runCI(t, engine, root, fakeGit("axon/docs/space.yaml"), "v3-pr", "deadbeef", "ydnikolaev")
+		for _, a := range rep.Artifacts {
+			if a.Path == "space.yaml" {
+				t.Errorf("a nested file named space.yaml pulled in the root manifest check: %+v", a)
+			}
+		}
+	})
 }
