@@ -25,7 +25,7 @@
 | Profile | Who | What it covers | Budget |
 |---------|-----|----------------|--------|
 | **hub admin** | operator | Provision the hub on a VPS: binary + systemd + `hub.yaml` + space read-PATs + webhook registration + TLS + optional chat webhook. | ≤ 1 h |
-| **org/space admin** | operator (v1) | Create a space repo from the product's space template (layout, CI **caller** workflow + `dependabot.yml`, CODEOWNERS skeleton, `space.yaml`) + branch protection (PR-only main, required check `a2a-validate / validate`) + the SEPARATE repo setting "Allow auto-merge" (Settings → General — not part of branch protection, and off by default) + invite participants. Verify a direct push is rejected and an ungated PR auto-merges. | ≤ 30 min |
+| **org/space admin** | operator (v1) | Create a space repo from the product's space template (layout, CI **caller** workflow + `dependabot.yml`, CODEOWNERS skeleton, `space.yaml`) + branch protection (PR-only main, required check `a2a-validate / validate`) + the SEPARATE repo setting "Allow auto-merge" (Settings → General — not part of branch protection, and off by default) + invite participants. Verify an ungated PR auto-merges, and that a direct push is rejected **for a participant** — your own admin push is bypassed by design (`enforce_admins: false`). | ≤ 30 min |
 | **project dev** | each participating team | Install the binary + `a2a init` + `a2a connect` + credentials + the harness adapter, then `a2a doctor` green. | ≤ 30 min, no walkthrough |
 
 The project-dev profile is the one an agent most often assists. The end state is
@@ -104,7 +104,8 @@ a2a space init myspace --dir ./myspace
 cd myspace
 
 # 1. real owners in place of the placeholders
-$EDITOR CODEOWNERS                    # @REPLACE_WITH_ORG/... -> real teams/logins
+$EDITOR CODEOWNERS                    # @REPLACE_WITH_LOGIN -> a real login (verify:
+#                                      #   gh api repos/O/R/codeowners/errors)
 
 # 2. the template's own readme is not your space's
 rm README.md
@@ -119,7 +120,12 @@ gh repo create <org>/<repo> --private
 # 5. push BEFORE arming protection: a protected empty main cannot accept
 #    its own bootstrap (direct push forbidden, and no branch to PR from)
 git init -b main && git add -A && git commit -m "space: bootstrap"
-git remote add origin https://github.com/<org>/<repo>.git
+#    Use the URL form your git is actually authenticated for. An HTTPS remote
+#    needs a credential helper (`gh auth setup-git`); without one this push
+#    fails with `403 Permission ... denied`, which reads as "you lack access"
+#    rather than "git has no credential" — check `gh auth status`, whose
+#    "Git operations protocol" line tells you which form to use.
+git remote add origin git@github.com:<org>/<repo>.git    # or the https:// form
 git push -u origin main
 
 # 6. the repo settings — auto-merge is OFF by default on every new repo
@@ -139,8 +145,17 @@ participants is deliberately valid so CI is green on the empty repo.
 
 **Verify from a participant's checkout, not from yours**: `a2a connect <url>`
 then `a2a doctor`. A green doctor does not prove branch protection is armed —
-no doctor check reads it — so also confirm by hand that a direct push to
-`main` is rejected and that an ungated PR auto-merges.
+no doctor check reads it — so also confirm by hand that an ungated PR
+auto-merges and that a direct push to `main` is rejected.
+
+**And check that push with the PARTICIPANT's credential, not yours.** If you own
+the repo, your own `git push origin main` **succeeds**: the checklist runs
+`enforce_admins: false` on purpose (a sole code owner has to be able to merge
+their own `space.yaml` edits), so GitHub lets an admin through and answers
+`remote: Bypassed rule violations for refs/heads/main`. That is the configuration
+working, not a hole — but checking it as the owner and seeing the push land is
+how you conclude, wrongly, that protection never armed. The property that
+matters is that a *participant* cannot push to `main`, and that is what to test.
 - **Do not skip the auto-merge setting.** It is off by default on every newly
   created GitHub repository, it is a *repo setting* rather than part of branch
   protection, and without it the whole exchange stalls silently: `a2a submit`

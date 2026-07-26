@@ -5,33 +5,41 @@
 # step 2). Pre-seeding a system entry here would be a layout invention this
 # template does not make.
 #
-# ── AN OWNER THAT DOES NOT EXIST FAILS SILENTLY ───────────────────────────
+# ── AN OWNER THAT DOES NOT EXIST IS IGNORED, NOT REJECTED ─────────────────
 #
-# Replace BOTH halves of every placeholder below: the org AND the name after
-# the slash. `@REPLACE_WITH_ORG/space-admins` is a TEAM reference, and the
-# team `space-admins` almost certainly does not exist in your org — nothing
-# creates it. GitHub does not reject an unknown owner; it ignores the line.
-# So the natural literal edit (swap the org, keep the team name) produces a
-# file that LOOKS like it gates `/space.yaml` and gates nothing.
+# GitHub does not refuse an unknown owner; it drops the line. So a CODEOWNERS
+# that names a team nobody created LOOKS like it gates `/space.yaml` and gates
+# nothing — and that matters more than it sounds: code-owner review is the
+# whole of the G4 safety argument (BRANCH-PROTECTION.md), and this file is its
+# only mechanism. An inert CODEOWNERS is an ungated trust root.
 #
-# That matters more than it sounds: the code-owner review requirement is the
-# whole of the G4 safety argument (BRANCH-PROTECTION.md), and this is its
-# only mechanism. An inert CODEOWNERS is an ungated trust root, with no
-# error anywhere to tell you.
+# The placeholders below are therefore SINGLE LOGINS, not `@org/team`. That is
+# a deliberate change made on 2026-07-26 after walking this template from zero:
+# the previous placeholder was `@REPLACE_WITH_ORG/REPLACE_WITH_TEAM_OR_LOGIN`
+# with an instruction to replace both halves — and replacing both halves
+# literally produces `@your-org/your-login`, which is a TEAM reference to a
+# team that does not exist. The instruction was followed exactly and still
+# produced an inert file. A shape that cannot be filled in wrongly beats a
+# warning about filling it in wrongly.
 #
-# Verified on a real org 2026-07-26: the placeholder's team names did not
-# exist there, while three unrelated teams did — exactly the state in which a
-# copied placeholder is silently inert.
-#
-# Individual logins are the safe default and are what a small space wants:
+# Individual logins are also what a small space actually wants:
 #
 #   /space.yaml     @alice
 #   /decisions/**   @alice @bob
 #
-# Use a team only if you have confirmed it exists and that its members are
-# who you mean. After editing, check GitHub's own CODEOWNERS view (Settings
-# → Branches, or the file's page) — it flags unknown owners there, and that
-# flag is the only feedback you will get.
+# A TEAM is legal too — `@my-org/space-admins` — but only if you have
+# confirmed it exists, is publicly visible, and has write access to this repo.
+# All three are required; GitHub ignores the line if any is missing.
+#
+# ── VERIFY IT, DO NOT EYEBALL IT ──────────────────────────────────────────
+#
+# GitHub exposes exactly this, with line numbers:
+#
+#   gh api repos/OWNER/REPO/codeowners/errors
+#
+# An empty `errors` array means every owner here resolves. `a2a doctor` runs
+# this for you (the `codeowners resolvable` row) — it is the difference between
+# a trust root you checked and one you assumed.
 
-/space.yaml     @REPLACE_WITH_ORG/REPLACE_WITH_TEAM_OR_LOGIN
-/decisions/**   @REPLACE_WITH_ORG/REPLACE_WITH_TEAM_OR_LOGIN
+/space.yaml     @REPLACE_WITH_LOGIN
+/decisions/**   @REPLACE_WITH_LOGIN

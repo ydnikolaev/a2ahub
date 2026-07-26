@@ -653,6 +653,56 @@ func (h *GitHubHost) AutoMergeAllowed(ctx context.Context, req RepoSettingsReque
 	return settings.AllowAutoMerge, nil
 }
 
+// CodeownersError is one entry from GitHub's own CODEOWNERS validation: the
+// line, what kind of problem it is, and GitHub's suggested fix.
+//
+// Suggestion is carried rather than re-derived because GitHub's own wording
+// names all three conditions an owner must satisfy ("make sure the team X
+// exists, is publicly visible, and has write access to the repository"), and
+// a paraphrase would drop whichever one the reader's case actually is.
+type CodeownersError struct {
+	Line       int    `json:"line"`
+	Kind       string `json:"kind"`
+	Message    string `json:"message"`
+	Suggestion string `json:"suggestion"`
+	Path       string `json:"path"`
+}
+
+// CodeownersErrors reads GET /repos/{owner}/{repo}/codeowners/errors and
+// reports what GitHub thinks is wrong with the space's CODEOWNERS file on its
+// default branch. An empty slice means every owner named there resolves.
+//
+// This exists because an unknown owner is IGNORED, not rejected. A CODEOWNERS
+// naming a team nobody created looks like it gates `/space.yaml` and gates
+// nothing — and code-owner review is the entire mechanism behind the G4 safety
+// argument, so an inert file is an ungated trust root with no error anywhere at
+// merge time to say so.
+//
+// The template used to tell an operator to check GitHub's CODEOWNERS view by
+// eye, calling that "the only feedback you will get". That was wrong in a
+// useful direction: GitHub exposes the same thing through this endpoint, with
+// line numbers. Verified against a real repo on 2026-07-26, where both
+// `@org/some-login` (the literal both-halves placeholder replacement, which
+// reads as a team) and `@org/space-admins` came back as "Unknown owner" with
+// the line and the caret position.
+//
+// A READ only. a2a mutates no CODEOWNERS file — this is `a2a doctor`'s
+// evidence, not a repair.
+func (h *GitHubHost) CodeownersErrors(ctx context.Context, req RepoSettingsRequest) ([]CodeownersError, error) {
+	const op = "CodeownersErrors"
+	if req.Repo.Owner == "" || req.Repo.Name == "" {
+		return nil, &Error{Op: op, Err: ErrInvalidRequest}
+	}
+	path := fmt.Sprintf("/repos/%s/%s/codeowners/errors", req.Repo.Owner, req.Repo.Name)
+	var payload struct {
+		Errors []CodeownersError `json:"errors"`
+	}
+	if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Errors, nil
+}
+
 // repoMergeSettings is the subset of GET /repos/{owner}/{repo} both
 // AutoMergeAllowed and MergePR read — ONE response body, two callers, kept
 // as one struct so the fields can never drift apart (WAVE M4: MergePR needs

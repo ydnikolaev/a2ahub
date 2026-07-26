@@ -1334,3 +1334,137 @@ func TestDoctorCodeownersGatedPathsOnly(t *testing.T) {
 		}
 	}
 }
+
+// TestDoctorCheckCodeownersResolvable is the hermetic half of the check that a
+// live walk on 2026-07-26 turned from a hand-verification into a gate.
+//
+// The class it catches: GitHub IGNORES a CODEOWNERS owner it cannot resolve
+// rather than rejecting it, so a file naming a team nobody created looks like
+// it gates `/space.yaml` and gates nothing — and code-owner review is the
+// whole mechanism behind G4. This shipped TWICE as a documentation problem
+// (first a placeholder whose team name survived the natural edit, then one
+// whose "replace both halves" instruction still yields `@org/login`, a team
+// reference) before anybody thought to ask GitHub, which answers with line
+// numbers.
+//
+// Three outcomes, matching doctorCheckAutoMerge's shape rather than inventing
+// a second convention, and the third is the one worth stating: a read the
+// credential cannot make is an ADVISORY, never a FAIL. A fine-grained token
+// without "Repository metadata: read" is a legitimate working setup, and a
+// gate that reds on a working setup is a gate people stop reading.
+func TestDoctorCheckCodeownersResolvable(t *testing.T) {
+	t.Parallel()
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa", RepoURL: "https://github.com/acme/getvisa.git"}}}
+	machine := space.MachineConfig{}
+	withToken := func(context.Context, string, space.CredentialReference) (host.Credential, error) {
+		return host.Credential{Token: "tok"}, nil
+	}
+	// The handler shape mirrors what real GitHub returned when driven by hand
+	// against a fresh space — including that `errors` is an ARRAY on the happy
+	// path too, not an absent key.
+	serve := func(t *testing.T, status int, body string) *httptest.Server {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(body))
+		}))
+		t.Cleanup(srv.Close)
+		return srv
+	}
+
+	t.Run("pass when every owner resolves", func(t *testing.T) {
+		t.Parallel()
+		srv := serve(t, 200, `{"errors":[]}`)
+		cmd := newTestDoctorCommand()
+		cmd.h = host.NewGitHubHost(srv.Client(), srv.URL)
+		cmd.resolveCredential = withToken
+
+		ok, detail := cmd.doctorCheckCodeownersResolvable(context.Background(), cfg, machine)
+		if !ok {
+			t.Fatalf("want pass, got fail: %s", detail)
+		}
+		if detail != "" {
+			t.Errorf("detail = %q, want empty on a clean pass", detail)
+		}
+	})
+
+	t.Run("fail quoting GitHub's own line and suggestion", func(t *testing.T) {
+		t.Parallel()
+		// Verbatim from a real response (2026-07-26), including the wording that
+		// names all THREE conditions an owner must satisfy — the reason the
+		// suggestion is quoted rather than paraphrased.
+		srv := serve(t, 200, `{"errors":[
+			{"line":36,"kind":"Unknown owner","message":"Unknown owner on line 36",
+			 "suggestion":"make sure the team @acme/space-admins exists, is publicly visible, and has write access to the repository"},
+			{"line":37,"kind":"Unknown owner","message":"Unknown owner on line 37",
+			 "suggestion":"make sure the team @acme/space-admins exists, is publicly visible, and has write access to the repository"}
+		]}`)
+		cmd := newTestDoctorCommand()
+		cmd.h = host.NewGitHubHost(srv.Client(), srv.URL)
+		cmd.resolveCredential = withToken
+
+		ok, detail := cmd.doctorCheckCodeownersResolvable(context.Background(), cfg, machine)
+		if ok {
+			t.Fatal("want fail, got pass — an unresolvable owner means the trust root is ungated")
+		}
+		for _, want := range []struct{ substr, why string }{
+			{"getvisa", "name the space"},
+			{"line 36", "name the line, which is the only part a reader can act on directly"},
+			{"line 37", "name EVERY bad line, not just the first"},
+			{"publicly visible", "quote GitHub's own three conditions rather than paraphrasing one of them"},
+			{"gates nothing it appears to gate", "say what is actually at stake"},
+		} {
+			if !strings.Contains(detail, want.substr) {
+				t.Errorf("detail is missing %q — %s\ngot: %s", want.substr, want.why, detail)
+			}
+		}
+		// Driven live, one paragraph of explanation per bad line buried the part
+		// that differs under the part that does not.
+		if n := strings.Count(detail, "gates nothing it appears to gate"); n != 1 {
+			t.Errorf("the explanation appears %d times for one space — say it once and list the lines, "+
+				"or the line numbers drown in repetition", n)
+		}
+	})
+
+	t.Run("a read the credential cannot make is an advisory, never a fail", func(t *testing.T) {
+		t.Parallel()
+		srv := serve(t, 403, `{"message":"Resource not accessible by personal access token"}`)
+		cmd := newTestDoctorCommand()
+		cmd.h = host.NewGitHubHost(srv.Client(), srv.URL)
+		cmd.resolveCredential = withToken
+
+		ok, detail := cmd.doctorCheckCodeownersResolvable(context.Background(), cfg, machine)
+		if !ok {
+			t.Fatal("want PASS-with-advisory: a fine-grained token without \"Repository metadata: read\" " +
+				"is a legitimate working setup, and a gate that reds on one is a gate people stop reading")
+		}
+		if detail == "" {
+			t.Fatal("want an advisory note — a silent PASS here reproduces the original defect with a " +
+				"green check beside it")
+		}
+		if !strings.Contains(detail, "unverified") {
+			t.Errorf("detail = %q, want it to say the answer is UNKNOWN rather than good", detail)
+		}
+	})
+
+	t.Run("no connected spaces is not a finding", func(t *testing.T) {
+		t.Parallel()
+		cmd := newTestDoctorCommand()
+		ok, detail := cmd.doctorCheckCodeownersResolvable(context.Background(), space.ProjectConfig{}, machine)
+		if !ok || detail != "" {
+			t.Fatalf("want a silent pass with no spaces; got ok=%v detail=%q", ok, detail)
+		}
+	})
+
+	t.Run("a host wiring no reader says so rather than passing silently", func(t *testing.T) {
+		t.Parallel()
+		cmd := newTestDoctorCommand() // host.NewFakeHost() implements no CodeownersErrors
+		ok, detail := cmd.doctorCheckCodeownersResolvable(context.Background(), cfg, machine)
+		if !ok {
+			t.Fatalf("an unwired reader is not a failure; got fail: %s", detail)
+		}
+		if !strings.Contains(detail, "unverified") {
+			t.Errorf("detail = %q, want it to name that nothing was checked", detail)
+		}
+	})
+}

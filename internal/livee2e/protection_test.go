@@ -58,6 +58,57 @@ func TestChecklistStatesWhatTheRigActuallyApplies(t *testing.T) {
 	}
 }
 
+// TestChecklistDoesNotClaimAdminsAreBoundWhileTheyAreNot catches the class the
+// value-by-value comparison above structurally cannot see: a PROSE claim that
+// contradicts a value.
+//
+// The checklist said "Direct pushes to `main`: forbidden for all actors,
+// including admin" two rows above `enforce_admins: false`, which is what makes
+// exactly that not true. Both rows passed every check there was — the value
+// comparison only reads keys that appear in the applied body, and no key is
+// named "direct pushes are forbidden for admins".
+//
+// The cost is not academic. The published onboarding told an operator to
+// "confirm by hand that a direct push to main is rejected"; on 2026-07-26 that
+// push SUCCEEDED against a space configured exactly as this checklist says,
+// with GitHub answering `remote: Bypassed rule violations for refs/heads/main`.
+// Following the documentation made a correct space look broken.
+//
+// So: while `enforce_admins` is false, the document must say what an admin
+// actually experiences, in GitHub's own words — a positive assertion, because
+// requiring the ABSENCE of a wrong phrase is satisfied by any rewording of it.
+func TestChecklistDoesNotClaimAdminsAreBoundWhileTheyAreNot(t *testing.T) {
+	t.Parallel()
+
+	enforceAdmins, ok := ProtectionBody()["enforce_admins"].(bool)
+	if !ok {
+		t.Fatal("enforce_admins is not a bool in ProtectionBody() — this gate cannot reason about it")
+	}
+	if enforceAdmins {
+		t.Skip("enforce_admins is true, so admins ARE bound and the document may say so")
+	}
+
+	raw, err := os.ReadFile(filepath.Clean(checklistPath))
+	if err != nil {
+		t.Fatalf("read %s: %v", checklistPath, err)
+	}
+	doc := string(raw)
+
+	if !strings.Contains(doc, "Bypassed rule violations") {
+		t.Errorf("%s never mentions GitHub's own `Bypassed rule violations` answer, while the "+
+			"configuration it documents sets enforce_admins: false.\n"+
+			"An admin's direct push to main SUCCEEDS under this configuration. A reader who is told "+
+			"otherwise, and who checks, concludes their space is misconfigured — which is what happened "+
+			"on 2026-07-26.", checklistPath)
+	}
+	// The specific sentence that was wrong. Named as a literal because it is
+	// the one an operator acted on.
+	if strings.Contains(doc, "including admin (bypass reserved") {
+		t.Errorf("%s still carries the old claim that direct pushes are forbidden \"including admin\", "+
+			"which `enforce_admins: false` contradicts", checklistPath)
+	}
+}
+
 // TestChecklistShipsTheCallThatAppliesIt is AC-1020.2. The checklist is
 // followed by a human under time pressure, and prose has already been
 // translated into an API shape wrongly once — so it ships the call, not a
