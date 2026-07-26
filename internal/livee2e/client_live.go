@@ -581,29 +581,43 @@ func (c *ghClient) RerunWorkflow(ctx context.Context, owner, name string, runID 
 // JobCount is left zero here and filled in only for runs worth a second
 // call — see FillJobCounts.
 func (c *ghClient) ListRunsSince(ctx context.Context, owner, name, since string) ([]SpaceRun, error) {
-	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) +
+	base := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) +
 		"/actions/runs?per_page=100&created=%3E%3D" + url.QueryEscape(since)
-	var payload struct {
-		WorkflowRuns []struct {
-			ID         int64  `json:"id"`
-			Name       string `json:"name"`
-			Event      string `json:"event"`
-			HeadBranch string `json:"head_branch"`
-			Status     string `json:"status"`
-			Conclusion string `json:"conclusion"`
-		} `json:"workflow_runs"`
+
+	// PAGINATED. One matrix run pushes ~50 times and opens ~40 pull
+	// requests, so a single page of 100 is not a bound on the answer — it is
+	// roughly the answer's size, which means a truncated read is the DEFAULT
+	// rather than an edge case. The first live use of this call returned
+	// exactly 100 runs, i.e. it had already hit the cap.
+	const maxPages = 50
+	var out []SpaceRun
+	for page := 1; ; page++ {
+		if page > maxPages {
+			return nil, fmt.Errorf("livee2e: listing runs for %s/%s since %s exceeded %d pages", owner, name, since, maxPages)
+		}
+		var payload struct {
+			WorkflowRuns []struct {
+				ID         int64  `json:"id"`
+				Name       string `json:"name"`
+				Event      string `json:"event"`
+				HeadBranch string `json:"head_branch"`
+				Status     string `json:"status"`
+				Conclusion string `json:"conclusion"`
+			} `json:"workflow_runs"`
+		}
+		if _, err := c.do(ctx, http.MethodGet, fmt.Sprintf("%s&page=%d", base, page), nil, &payload); err != nil {
+			return nil, err
+		}
+		for _, r := range payload.WorkflowRuns {
+			out = append(out, SpaceRun{
+				ID: r.ID, Name: r.Name, Event: r.Event, HeadBranch: r.HeadBranch,
+				Status: r.Status, Conclusion: r.Conclusion,
+			})
+		}
+		if len(payload.WorkflowRuns) < 100 { // a short page is the last page
+			return out, nil
+		}
 	}
-	if _, err := c.do(ctx, http.MethodGet, path, nil, &payload); err != nil {
-		return nil, err
-	}
-	out := make([]SpaceRun, 0, len(payload.WorkflowRuns))
-	for _, r := range payload.WorkflowRuns {
-		out = append(out, SpaceRun{
-			ID: r.ID, Name: r.Name, Event: r.Event, HeadBranch: r.HeadBranch,
-			Status: r.Status, Conclusion: r.Conclusion,
-		})
-	}
-	return out, nil
 }
 
 // CountJobs returns how many jobs a workflow run actually ran.

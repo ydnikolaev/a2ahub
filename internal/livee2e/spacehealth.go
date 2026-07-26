@@ -39,9 +39,21 @@ package livee2e
 import "fmt"
 
 // SpaceRun is the subset of a GitHub workflow run needed to judge the
-// space's own CI health. JobCount is load-bearing and not derivable from
-// Conclusion: an unresolvable workflow yields a completed, FAILED run with
-// zero jobs, which is a different fault from a job that ran and failed.
+// space's own CI health.
+//
+// JobCount is load-bearing and not derivable from Conclusion: an
+// unresolvable workflow yields a completed, FAILED run with zero jobs, which
+// is a different fault from a job that ran and failed.
+//
+// It is MEASURED ONLY FOR FAILED RUNS, because that is the only place the
+// answer changes a verdict and every other run would pay an API call for
+// nothing. So a zero here means one of three things — genuinely no jobs, not
+// measured, or a lookup that failed — and only the first is a finding. The
+// first live run of this classifier flagged 96 of 100 runs because it read
+// the unmeasured zero of every SUCCESSFUL run as "ran nothing". The rule
+// below therefore requires a failed conclusion before it looks at JobCount
+// at all; a caller whose lookup errored sets -1 so it cannot collide with a
+// real zero either.
 type SpaceRun struct {
 	ID         int64
 	Name       string
@@ -49,7 +61,7 @@ type SpaceRun struct {
 	HeadBranch string
 	Status     string // "completed" while terminal
 	Conclusion string // "success", "failure", "cancelled"; empty while running
-	JobCount   int
+	JobCount   int    // measured only when Conclusion == "failure"; -1 = lookup failed
 }
 
 // SpaceFailure is one unexplained failure, carrying the reason in words a
@@ -75,11 +87,18 @@ func UnexplainedSpaceFailures(runs []SpaceRun, baseBranch string) []SpaceFailure
 			continue
 		}
 
-		// A completed run that ran nothing means the workflow file could not
-		// be loaded — most often a reusable-workflow ref that does not
-		// resolve. Checked FIRST because such a run also reports
-		// Conclusion "failure", and this is the more specific, more
-		// actionable diagnosis.
+		// Everything below is about a FAILED run. A successful one is not a
+		// finding, and — see SpaceRun.JobCount — its job count is never
+		// measured, so reading it would flag every green run in the space.
+		if r.Conclusion != "failure" {
+			continue
+		}
+
+		// A failed run that ran nothing means the workflow file could not be
+		// loaded — most often a reusable-workflow ref that does not resolve.
+		// Checked FIRST because such a run reports Conclusion "failure" like
+		// any other, and this is the more specific, more actionable
+		// diagnosis.
 		if r.JobCount == 0 {
 			out = append(out, SpaceFailure{Run: r, Reason: fmt.Sprintf(
 				"workflow run %d on %q ran ZERO jobs — the workflow could not be loaded "+
@@ -89,7 +108,7 @@ func UnexplainedSpaceFailures(runs []SpaceRun, baseBranch string) []SpaceFailure
 			continue
 		}
 
-		if r.Conclusion == "failure" && r.Event == "push" && r.HeadBranch == baseBranch {
+		if r.Event == "push" && r.HeadBranch == baseBranch {
 			out = append(out, SpaceFailure{Run: r, Reason: fmt.Sprintf(
 				"workflow run %d failed on the space's own base branch %q after a push — no scenario "+
 					"here should ever leave main red. This is the post-merge audit class: flag-only, "+
