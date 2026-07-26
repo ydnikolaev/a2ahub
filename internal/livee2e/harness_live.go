@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
@@ -57,6 +58,40 @@ type harness struct {
 	// run, which degrades to the pre-fix behaviour rather than hiding every
 	// PR.
 	PRFloor int
+
+	// reds carries the workflow-run ids scenarios declare they reddened ON
+	// PURPOSE, for runSpaceCIHealth to account for at the end of the run.
+	//
+	// A row that makes a gate go red says so BY ID. It is the only honest
+	// way to tell that red apart from one nobody meant: a branch-name or
+	// title pattern absolves the next probe somebody adds without their
+	// having asserted anything, and this classifier has already produced 96
+	// false findings once by inferring intent from a field rather than
+	// reading a declaration (see spacehealth.go).
+	reds   []int64
+	redsMu sync.Mutex
+}
+
+// claimRed declares that this matrix reddened these workflow runs on purpose.
+// Called by the scenario that caused them, with the ids it actually observed
+// — never with a guess, and never with a pattern.
+//
+// Guarded by a mutex even though driveFamilies runs the families serially:
+// the failure-recovery family drives two writes from two goroutines, and an
+// invariant that holds only because of who happens to call it today is one
+// refactor away from a data race that `-race` would report from somewhere
+// unrelated.
+func (h *harness) claimRed(ids ...int64) {
+	h.redsMu.Lock()
+	defer h.redsMu.Unlock()
+	h.reds = append(h.reds, ids...)
+}
+
+// claimedReds returns a copy of what has been claimed so far.
+func (h *harness) claimedReds() []int64 {
+	h.redsMu.Lock()
+	defer h.redsMu.Unlock()
+	return append([]int64(nil), h.reds...)
 }
 
 // requiredCheckWaitCeiling bounds WaitForRequiredCheck's poll.

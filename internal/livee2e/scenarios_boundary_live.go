@@ -552,10 +552,41 @@ func boundaryCrossSectionRetriggerStaysRed(ctx context.Context, h *harness) Resu
 	// source branch is gone.
 	defer func() { _ = h.Part.DeleteRef(ctx, h.Org, h.Repo, "heads/"+boundaryProbeBranch) }()
 
-	prNumber, err := h.Part.OpenPull(ctx, h.Org, h.Repo, "probe xsec", boundaryProbeBranch, "main")
+	prNumber, err := h.Part.OpenPull(ctx, h.Org, h.Repo,
+		boundaryProbeTitle, boundaryProbeBody(h.Org, h.Repo), boundaryProbeBranch, "main")
 	if err != nil {
 		return boundaryFromErr(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, err)
 	}
+
+	// The head SHA is read HERE rather than after the first assertion, so the
+	// deferred claim below can account for every run this probe reddens no
+	// matter which exit the row takes. A row that fails halfway still leaves
+	// real red runs in the space, and leaving them unclaimed would red the
+	// space-health row too — two findings for one cause, with the second one
+	// pointing at nothing.
+	pr, err := h.Part.Pull(ctx, h.Org, h.Repo, prNumber)
+	if err != nil {
+		return boundaryFromErr(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, err)
+	}
+	// Every workflow run at this head SHA belongs to this probe: the branch
+	// carries exactly the one probe commit, and both re-trigger mechanisms
+	// below act on the same head. Claimed by OBSERVED ID — never by branch
+	// name, which is the pattern that would absolve the next probe somebody
+	// adds without its having asserted anything (spacehealth.go).
+	defer func() {
+		runs, lerr := h.Prov.ListWorkflowRuns(ctx, h.Org, h.Repo, pr.HeadSHA)
+		if lerr != nil {
+			// Best effort. An unclaimed red is REPORTED by the health row,
+			// naming the run id — over-reporting, which is the safe
+			// direction, and never a silent pass.
+			return
+		}
+		ids := make([]int64, 0, len(runs))
+		for _, r := range runs {
+			ids = append(ids, r.ID)
+		}
+		h.claimRed(ids...)
+	}()
 
 	res1, err := h.AwaitCheck(ctx, h.B, prNumber)
 	if err != nil {
@@ -565,11 +596,6 @@ func boundaryCrossSectionRetriggerStaysRed(ctx context.Context, h *harness) Resu
 		return boundaryResult(scenarioCrossSectionRetriggerStaysRed, SystemB, VerdictFail, expected,
 			fmt.Sprintf("initial cross-section PR concluded %q, not failure — diff-authz did not refuse B writing into A's section", res1.Conclusion),
 			fmt.Sprintf("PR #%d", prNumber))
-	}
-
-	pr, err := h.Part.Pull(ctx, h.Org, h.Repo, prNumber)
-	if err != nil {
-		return boundaryFromErr(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, err)
 	}
 
 	// Mechanism (a): the literal "re-run CI" button — needs the

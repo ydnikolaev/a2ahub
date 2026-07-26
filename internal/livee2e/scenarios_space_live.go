@@ -352,15 +352,34 @@ func runSpaceCIHealth(ctx context.Context, h *harness, since string) Result {
 		}
 	}
 
-	bad := UnexplainedSpaceFailures(runs, "main")
-	if len(bad) == 0 {
-		return res(VerdictPass, "", fmt.Sprintf("%d workflow run(s) since %s; every failure among them is one a scenario here caused on purpose", len(runs), since))
+	verdict := ClassifySpaceRuns(runs, "main", h.claimedReds())
+
+	// The accounting is rendered on a PASS as well as on a fail, because on a
+	// pass it IS the evidence. This row used to pass with the words "every
+	// failure among them is one a scenario here caused on purpose" — an
+	// assumption dressed as a finding, and the exact sentence an operator was
+	// reading as green while their inbox filled with failure mail from this
+	// space. Naming the ids lets them check the list against what they see.
+	accounted := "no run failed"
+	if n := len(verdict.Accounted); n > 0 {
+		ids := make([]string, 0, n)
+		for _, id := range verdict.Accounted {
+			ids = append(ids, fmt.Sprintf("%d", id))
+		}
+		accounted = fmt.Sprintf("%d failure(s) claimed by the rows that caused them: run %s",
+			n, strings.Join(ids, ", "))
 	}
 
-	msgs := make([]string, 0, len(bad))
-	for _, f := range bad {
+	if len(verdict.Findings) == 0 {
+		return res(VerdictPass, "", fmt.Sprintf("%d workflow run(s) since %s; %s",
+			len(runs), since, accounted))
+	}
+
+	msgs := make([]string, 0, len(verdict.Findings))
+	for _, f := range verdict.Findings {
 		msgs = append(msgs, f.Reason)
 	}
 	return res(VerdictFail, strings.Join(msgs, " | "),
-		fmt.Sprintf("%d unexplained failure(s) among %d run(s) since %s", len(bad), len(runs), since))
+		fmt.Sprintf("%d unexplained failure(s) among %d run(s) since %s; %s",
+			len(verdict.Findings), len(runs), since, accounted))
 }
