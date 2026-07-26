@@ -48,7 +48,7 @@ on:
         # one it pinned. v0.7.0 shipped with this still at v0.5.0 — so every
         # space at @v0.7.0 validated with a binary that predated the v0.6.4
         # diff-authz fix, keeping an authorization bypass the notes called closed.
-        default: "v0.9.0"
+        default: "v0.9.1"
       space-path:
         description: "Working directory of the space content to validate (default: repo root)."
         required: false
