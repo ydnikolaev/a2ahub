@@ -288,6 +288,21 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		}
 	}
 
+	// Step 1b-2: stamp every event with the producer that wrote it — the one
+	// place BOTH surfaces pass through, so no verb has to remember and no new
+	// call site can be added without it. Eleven event-construction sites across
+	// three CLI files plus internal/mcp's own builder would otherwise each need
+	// the same line, which is the "enforced only in the caller" shape that gave
+	// this repo an inert write floor for four releases.
+	//
+	// BEFORE step 1c on purpose: the validator must see exactly the bytes that
+	// get committed, or a space would validate one document and receive another.
+	stamped, err := StampProducer(req.Files, f.binaryVersion, req.MinBinaryVersion)
+	if err != nil {
+		return WriteResult{}, &Error{Op: op, Err: err}
+	}
+	req.Files = stamped
+
 	// Step 1c: V2 validation via the submit-validator seam.
 	if f.validator != nil {
 		if err := f.validator.ValidateSubmit(ctx, req.Files); err != nil {

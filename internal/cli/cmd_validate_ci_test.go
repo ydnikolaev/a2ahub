@@ -1362,3 +1362,129 @@ func TestValidateCI_ManifestIsValidatedWhenItChanges(t *testing.T) {
 		}
 	})
 }
+
+// ciEventDoc is a valid event/v1 document, optionally stamped.
+func ciEventDoc(stamped bool) string {
+	s := "schema: event/v1\nevent: 01J40A7M9P1S3V5W7Y9A1C3E5G\nspace: getvisa\n" +
+		"subject: XQ-axon-20260730-ab12\ntransition: submit\n" +
+		"actor: {kind: agent, name: bot, system: axon}\nat: 2026-07-30T10:00:00Z\n"
+	if stamped {
+		s += "produced_by:\n  tool: a2a\n  version: \"0.10.0\"\n"
+	}
+	return s
+}
+
+// ciManifestWithFloor is ciSpaceYAML at a given min_binary_version.
+func ciManifestWithFloor(floor string) string {
+	return strings.Replace(ciSpaceYAML, "min_binary_version: 0.1.0", "min_binary_version: "+floor, 1)
+}
+
+// TestValidateCI_EventMustNameItsProducer is the server-side half of the
+// producer stamp, and the ONLY place an old binary can actually be stopped.
+//
+// `min_binary_version` is checked inside the WRITER's own binary, which binds a
+// binary that honours it and does nothing whatever to one that does not. That is
+// not hypothetical: before 0.9.0 every lifecycle and contract verb wrote with an
+// EMPTY floor because the shared request builder never populated it, so raising
+// a space's floor could not have gated those writes even in principle.
+//
+// The four cases below are two pairs, and the FLOOR pair is the one that decides
+// whether this is shippable at all. event/v1 is additionalProperties:false and a
+// space's CI validator is pinned BY THE SPACE, so requiring the stamp in a space
+// whose validator predates the field would refuse every write over an unknown
+// field — worse than the problem. Below the floor the rule must be silent, not
+// lenient-but-noisy: no verdict at all.
+func TestValidateCI_EventMustNameItsProducer(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	const rel = "axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E5G.yaml"
+
+	t.Run("floor reached, event unstamped: red, naming the remedy", func(t *testing.T) {
+		t.Parallel()
+		root := ciRepo(t, ciManifestWithFloor("0.10.0"), map[string]string{rel: ciEventDoc(false)})
+
+		code, rep, _ := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		if code == 0 || rep.Valid {
+			t.Fatalf("an unstamped event merged clean into a space whose floor requires the stamp: "+
+				"code=%d valid=%v", code, rep.Valid)
+		}
+		var found bool
+		for _, a := range rep.Artifacts {
+			if a.Path != rel {
+				continue
+			}
+			found = true
+			if a.Result == nil || a.Result.Valid {
+				t.Fatalf("the event reported valid: %+v", a)
+			}
+			msg := a.Result.Violations[0].Message
+			for _, want := range []string{"a2a update", "min_binary_version", "INSIDE the writer"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("message is missing %q — a reader must learn both the fix and why the "+
+						"client-side floor could not have caught this\ngot: %s", want, msg)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("no verdict for the event at all — the check never ran, which the exit code alone " +
+				"cannot distinguish from a pass")
+		}
+	})
+
+	t.Run("floor reached, event stamped: clean", func(t *testing.T) {
+		t.Parallel()
+		root := ciRepo(t, ciManifestWithFloor("0.10.0"), map[string]string{rel: ciEventDoc(true)})
+
+		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		if code != 0 || !rep.Valid {
+			t.Fatalf("a stamped event was refused: code=%d valid=%v stderr=%s", code, rep.Valid, errOut)
+		}
+	})
+
+	t.Run("floor NOT reached, event unstamped: silent, no verdict", func(t *testing.T) {
+		t.Parallel()
+		root := ciRepo(t, ciManifestWithFloor("0.9.1"), map[string]string{rel: ciEventDoc(false)})
+
+		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		if code != 0 || !rep.Valid {
+			t.Fatalf("a space below the floor was reddened by a rule not in force there: code=%d "+
+				"valid=%v stderr=%s", code, rep.Valid, errOut)
+		}
+		for _, a := range rep.Artifacts {
+			if a.Path == rel {
+				t.Errorf("a verdict was reported for a rule that is not in force in this space: %+v\n"+
+					"Below the floor the check must be SILENT — a note on every write in every space "+
+					"that has not migrated is noise, and noise is how a real finding gets missed", a)
+			}
+		}
+	})
+
+	t.Run("floor NOT reached, event stamped: also clean", func(t *testing.T) {
+		t.Parallel()
+		// The writer only stamps once the floor is reached, so this shape is
+		// unusual — but a hand-written or replayed event could carry it, and it
+		// must not be treated as a violation of anything.
+		root := ciRepo(t, ciManifestWithFloor("0.9.1"), map[string]string{rel: ciEventDoc(true)})
+
+		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		if code != 0 || !rep.Valid {
+			t.Fatalf("a stamped event in a pre-floor space was refused: code=%d valid=%v stderr=%s",
+				code, rep.Valid, errOut)
+		}
+	})
+
+	t.Run("a non-event yaml in the section is not checked", func(t *testing.T) {
+		t.Parallel()
+		// isEventDocument matches the /events/ segment, not the extension: a
+		// consumes.yaml or a docs/ yaml is not an event, and requiring a
+		// producer stamp on one would red an ordinary write.
+		root := ciRepo(t, ciManifestWithFloor("0.10.0"), map[string]string{
+			"axon/docs/notes.yaml": "anything: at all\n",
+		})
+		code, rep, errOut := runCI(t, engine, root, fakeGit("axon/docs/notes.yaml"), "v3-pr", "deadbeef", "ydnikolaev")
+		if code != 0 || !rep.Valid {
+			t.Fatalf("a non-event yaml was treated as an event: code=%d valid=%v stderr=%s",
+				code, rep.Valid, errOut)
+		}
+	})
+}
