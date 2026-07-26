@@ -164,6 +164,32 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	}
 
 	now := c.now()
+
+	// spec 46 §T1 R1/R6: drafting a NEW artifact never leaves it off-thread.
+	// An explicit thread (--thread or --field thread=<id>, merged above) is
+	// validated GRAMMAR ONLY (artifact.ParseThreadID, a pure call — whether
+	// the thread EXISTS in the space is the validator's job, not this
+	// drafting verb's, per R6). No thread supplied at all mints one here
+	// (artifact.MintThreadIDAt, the same injected clock/entropy this
+	// command already uses for id minting) — the agent never types or
+	// invents a thread id in the happy path.
+	if v, has := fields["thread"]; has && v != "" {
+		// v may have arrived via --thread OR --field thread=<id> (merged
+		// above) — the message names the malformed VALUE, not a flag that
+		// may not be the one the caller actually used.
+		if _, perr := artifact.ParseThreadID(v); perr != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "new: malformed thread id %q: %v\n", v, perr)
+			return 2
+		}
+	} else {
+		mintedThread, terr := artifact.MintThreadIDAt(c.ownSystem, now, c.entropy)
+		if terr != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "new: cannot mint thread id: %v\n", terr)
+			return 1
+		}
+		fields["thread"] = mintedThread
+	}
+
 	var mintedID string
 	// standingSlug captures the resolved slug for the contract scaffold
 	// step below (D-D) — only the ClassStanding branch computes a slug at

@@ -163,6 +163,41 @@ func TestThreadHandler(t *testing.T) {
 	}
 }
 
+// TestThreadInputCarriesOptionalSpace covers §T1's MCP-side obligation: an
+// optional `space` field decodes and is accepted by the handler (the
+// recovery path for §T4's ambiguity refusal). `cache.Store.Thread` does not
+// yet accept a space filter (a later wave's signature change), so this only
+// asserts the field decodes and the call still succeeds — not that `space`
+// narrows the result.
+func TestThreadInputCarriesOptionalSpace(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`{"thread_id":"T-1","space":"fixture-space"}`)
+	var in ThreadInput
+	if err := json.Unmarshal(raw, &in); err != nil {
+		t.Fatalf("decode ThreadInput: %v", err)
+	}
+	if in.Space != "fixture-space" {
+		t.Fatalf("Space = %q, want %q", in.Space, "fixture-space")
+	}
+
+	mirrorDir := t.TempDir()
+	id := "XQ-axon-20260721-c002"
+	writeMirrorFile(t, mirrorDir, "axon/exchanges/"+id+".md",
+		"---\nschema: envelope/v1\nid: "+id+"\ntype: question\ntitle: t\nspace: fixture-space\nfrom: axon\nto: [beta]\nthread: T-1\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\ncategory: clarification\npriority: p3\nblocking: true\nclassification: internal\n---\nbody\n")
+
+	handler := newThreadHandler(testStore(t, mirrorDir))
+	args, _ := json.Marshal(ThreadInput{ThreadID: "T-1", Space: "fixture-space"})
+	result, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("thread handler with space input failed: %v", err)
+	}
+	items := result.([]cache.Item)
+	if len(items) != 1 || items[0].ID != id {
+		t.Fatalf("expected 1 thread item, got %+v", items)
+	}
+}
+
 func TestSearchHandler(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()

@@ -34,13 +34,17 @@ import (
 // contract's descriptor (contract.md) fields (mirrors internal/cli's
 // contractDescriptorProbe).
 type contractDescriptorProbe struct {
-	ID            string   `yaml:"id"`
-	Space         string   `yaml:"space"`
-	From          string   `yaml:"from"`
-	To            []string `yaml:"to"`
-	Version       string   `yaml:"version"`
-	CompatPolicy  string   `yaml:"compat_policy"`
-	SchemaFormat  string   `yaml:"schema_format"`
+	ID      string   `yaml:"id"`
+	Space   string   `yaml:"space"`
+	From    string   `yaml:"from"`
+	To      []string `yaml:"to"`
+	Version string   `yaml:"version"`
+	// Thread is the contract's own §3.8 thread id — spec 46 §T1 R2: the
+	// deprecation announcement is DERIVED from this contract and inherits
+	// it. Mirrors internal/cli's contractDescriptorProbe field.
+	Thread        string `yaml:"thread"`
+	CompatPolicy  string `yaml:"compat_policy"`
+	SchemaFormat  string `yaml:"schema_format"`
 	GeneratedFrom struct {
 		Tool         string `yaml:"tool"`
 		SourceDigest string `yaml:"source_digest"`
@@ -644,6 +648,18 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract deprecate: %w", err)
 		}
 
+		// Spec 46 §T1 R2 + the threadless refusal, mirroring internal/cli's
+		// ContractDeprecateCommand exactly (ADR-001: this package may never
+		// import internal/cli, so the rule is written twice and
+		// cmd/a2a/mcp_equivalence_test.go is what keeps the copies honest —
+		// it went red the moment only the CLI half propagated, which is the
+		// parity suite doing precisely its job).
+		if probe.Thread == "" {
+			return nil, "", fmt.Errorf(
+				"contract deprecate: %s carries no thread, so its deprecation announcement has no conversation to join; "+
+					"that contract predates thread propagation — reseed the space or republish it with this version", in.ID)
+		}
+
 		announcementDraft, err = contractAddFrontmatterFields(announcementDraft, map[string]any{
 			// space/to/title are the template's own PLACEHOLDERS and
 			// template.Render fills none of them, so every deprecation
@@ -659,6 +675,7 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 			"ack_requested": true,
 			"deprecates":    in.ID + "@" + deprecatedVersion,
 			"valid_until":   in.Sunset,
+			"thread":        probe.Thread,
 		})
 		if err != nil {
 			return nil, "", fmt.Errorf("contract deprecate: %w", err)

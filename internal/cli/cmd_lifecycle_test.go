@@ -96,9 +96,25 @@ func writeMirrorFile(t *testing.T, mirrorDir, relPath, content string) {
 }
 
 // writeQuestionArtifact seeds a committed `question` exchange (§4.2) under
-// axon's own section, from axon to `to`.
+// axon's own section, from axon to `to`. It carries a well-formed `thread:`
+// (spec 46 §T1 R1: every real artifact `a2a new` drafts mints one) so
+// `respond`'s R2 propagation (cmd_lifecycle.go) has a real value to inherit.
 func writeQuestionArtifact(t *testing.T, mirrorDir, id, to string) {
 	t.Helper()
+	writeQuestionArtifactWithThread(t, mirrorDir, id, to, "thread:axon-20260721-t9a1")
+}
+
+// writeQuestionArtifactWithThread is writeQuestionArtifact's own
+// parameterized form — thread == "" omits the `thread:` key entirely
+// (the pre-spec-46 / legacy-fixture shape), used by
+// TestRespondThreadIsNotInTheResponseIDSeed (R5) to prove the parent's
+// thread value never changes the minted responseID.
+func writeQuestionArtifactWithThread(t *testing.T, mirrorDir, id, to, thread string) {
+	t.Helper()
+	threadLine := ""
+	if thread != "" {
+		threadLine = "thread: " + thread + "\n"
+	}
 	content := "---\n" +
 		"schema: envelope/v1\n" +
 		"id: " + id + "\n" +
@@ -113,6 +129,7 @@ func writeQuestionArtifact(t *testing.T, mirrorDir, id, to string) {
 		"priority: p3\n" +
 		"blocking: true\n" +
 		"classification: internal\n" +
+		threadLine +
 		"---\nbody\n"
 	writeMirrorFile(t, mirrorDir, "axon/exchanges/"+id+".md", content)
 }
@@ -943,6 +960,113 @@ func TestRespondDeterministicResponseID(t *testing.T) {
 			t.Fatalf("expected DIFFERENT ids for --result answered vs --result partial, got the same id %q", id1)
 		}
 	})
+}
+
+// TestRespondPropagatesParentThreadVerbatim is spec 46 §T1 R2: a response
+// is a DERIVED artifact — it inherits its parent's `thread` verbatim rather
+// than minting a fresh one (that would fork the conversation) or leaving
+// the template's placeholder unfilled.
+func TestRespondPropagatesParentThreadVerbatim(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-th01"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "answered", parentID}, io)
+	if code != 0 {
+		t.Fatalf("respond: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	var respContent string
+	for _, fw := range fake.calls[0].Files {
+		if strings.HasPrefix(filepath.Base(fw.Path), "XS-") {
+			respContent = string(fw.Content)
+		}
+	}
+	if respContent == "" {
+		t.Fatalf("no committed XS- response file found among %+v", fake.calls[0].Files)
+	}
+	if !strings.Contains(respContent, "thread: thread:axon-20260721-t9a1\n") {
+		t.Fatalf("expected the response to inherit the parent's thread verbatim, got:\n%s", respContent)
+	}
+}
+
+// TestRespondThreadIsNotInTheResponseIDSeed is spec 46 §T1 R5's own
+// discriminating proof: two respond calls against the SAME parentID,
+// result, and actor under a FIXED clock, differing ONLY in the underlying
+// parent's `thread:` value, must mint the IDENTICAL responseID — if the
+// derived thread default leaked into lifecycleRespondSeed (the hazard
+// R5 warns about), this test reds while
+// TestRespondDeterministicResponseID (which never varies the thread)
+// would stay green, which is exactly why that test alone cannot stand in
+// for this one.
+func TestRespondThreadIsNotInTheResponseIDSeed(t *testing.T) {
+	t.Parallel()
+	fixedNow := func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }
+	parentID := "XQ-axon-20260721-r900"
+
+	run := func(t *testing.T, thread string) string {
+		t.Helper()
+		mirrorDir := t.TempDir()
+		writeQuestionArtifactWithThread(t, mirrorDir, parentID, "beta", thread)
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, parentID, "submit", "axon")
+		writeLifecycleEvent(t, mirrorDir, "beta", 1, parentID, "acknowledge", "beta")
+		writeLifecycleEvent(t, mirrorDir, "beta", 2, parentID, "accept", "beta")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		cmd.SetClockForTest(fixedNow)
+		io, _, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{"--result", "answered", parentID}, io); code != 0 {
+			t.Fatalf("respond (thread=%q): code = %d; stderr=%s", thread, code, errOut.String())
+		}
+		id := extractResponseID(fake.calls[0].Files)
+		if id == "" {
+			t.Fatalf("respond (thread=%q): expected a minted response id", thread)
+		}
+		return id
+	}
+
+	idA := run(t, "thread:axon-20260721-t9a1")
+	idB := run(t, "thread:axon-20260721-zzzz")
+	if idA != idB {
+		t.Fatalf("responseID = %q vs %q; the parent's thread must NOT be part of lifecycleRespondSeed (R5) — got "+
+			"different ids for otherwise-identical respond calls that differ only in the parent's thread", idA, idB)
+	}
+}
+
+// TestRespondConflictingExplicitThreadRefused is spec 46 §T1 R4: an
+// explicit --field thread=<id> that differs from the PARENT's own thread is
+// an ERROR naming BOTH values — never a silent precedence, never a guess.
+func TestRespondConflictingExplicitThreadRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-th02"
+	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	const otherThread = "thread:beta-20260721-z9z9"
+	code := cmd.Run(context.Background(), []string{"--result", "answered", "--field", "thread=" + otherThread, parentID}, io)
+	if code != 2 {
+		t.Fatalf("respond: code = %d, want 2 (bad caller input — a --field thread that conflicts with the parent's own thread)", code)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the funnel to NEVER be called on a thread conflict, got %d calls", len(fake.calls))
+	}
+	msg := errOut.String()
+	if !strings.Contains(msg, otherThread) {
+		t.Fatalf("expected stderr to name the explicit conflicting value %q, got: %s", otherThread, msg)
+	}
+	if !strings.Contains(msg, "thread:axon-20260721-t9a1") {
+		t.Fatalf("expected stderr to name the parent's own thread value, got: %s", msg)
+	}
 }
 
 // TestRespondIdempotentRetryReturnsAlreadyOpen is HIGH-1's end-to-end

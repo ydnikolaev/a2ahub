@@ -22,7 +22,10 @@ import (
 )
 
 // writeContractDescriptor seeds axon's XC-axon-<slug> contract.md at
-// version (contract.schema.json's required fields).
+// version (contract.schema.json's required fields). It carries a
+// well-formed `thread:` (spec 46 §T1 R1: every real artifact `a2a new`
+// drafts mints one) so `contract deprecate`'s R2 propagation
+// (cmd_contract.go) has a real value to inherit onto its announcement.
 func writeContractDescriptor(t *testing.T, mirrorDir, slug, version string) {
 	t.Helper()
 	content := "---\n" +
@@ -42,6 +45,7 @@ func writeContractDescriptor(t *testing.T, mirrorDir, slug, version string) {
 		"version: \"" + version + "\"\n" +
 		"compat_policy: strict-semver\n" +
 		"schema_format: json-schema-2020-12\n" +
+		"thread: thread:axon-20260721-c9c1\n" +
 		"---\nbody\n"
 	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/contract.md", content)
 }
@@ -779,6 +783,41 @@ func TestContractDeprecateRealTemplateRender(t *testing.T) {
 	}
 	if !sawAnnouncement {
 		t.Fatalf("expected an announcement artifact among the committed files, got %+v", files)
+	}
+}
+
+// TestContractDeprecateAnnouncementInheritsContractThread is spec 46 §T1
+// R2: `contract deprecate`'s linked announcement is DERIVED from the
+// contract being deprecated, so it inherits the CONTRACT's own thread
+// verbatim rather than leaving the template's thread placeholder unfilled.
+func TestContractDeprecateAnnouncementInheritsContractThread(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "threaded", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-threaded", "publish", "axon")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"deprecate", "--successor", "XC-axon-threaded@2.0.0", "--sunset", "2026-12-31", "XC-axon-threaded"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	var sawAnnouncement bool
+	for _, fw := range fake.calls[0].Files {
+		if strings.Contains(fw.Path, "/exchanges/XA-") {
+			sawAnnouncement = true
+			content := string(fw.Content)
+			if !strings.Contains(content, "thread: thread:axon-20260721-c9c1\n") {
+				t.Fatalf("expected the announcement to inherit the contract's thread verbatim, got:\n%s", content)
+			}
+		}
+	}
+	if !sawAnnouncement {
+		t.Fatalf("expected an announcement artifact among the committed files, got %+v", fake.calls[0].Files)
 	}
 }
 

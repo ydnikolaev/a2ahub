@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -42,8 +43,9 @@ func TestNewHandlerBatchItemsOnOneThread(t *testing.T) {
 	staging := t.TempDir()
 	handler := newNewHandler(testNewDeps(staging))
 
+	const explicitThread = "thread:beta-20260721-abcd"
 	args, _ := json.Marshal(NewInput{
-		Thread: "T-shared",
+		Thread: explicitThread,
 		Items: []NewItem{
 			{Type: "question", Fields: map[string]string{"to": "axon"}},
 			{Type: "work_request", Fields: map[string]string{"to": "axon"}},
@@ -56,6 +58,115 @@ func TestNewHandlerBatchItemsOnOneThread(t *testing.T) {
 	drafts := result.([]newDraftResult)
 	if len(drafts) != 2 {
 		t.Fatalf("expected 2 drafted items, got %d", len(drafts))
+	}
+	for _, d := range drafts {
+		raw, rerr := os.ReadFile(d.Path)
+		if rerr != nil {
+			t.Fatalf("read drafted file: %v", rerr)
+		}
+		if !strings.Contains(string(raw), "thread: "+explicitThread) {
+			t.Fatalf("expected %s to carry the explicit thread %q, got:\n%s", d.Path, explicitThread, raw)
+		}
+	}
+}
+
+// TestNewHandlerBatchMintsSharedThreadWhenAbsent covers §T1 "Batch": no
+// --thread supplied on a multi-item call mints ONE thread on the first item
+// and applies it to every other item — the agent makes no per-item choice.
+func TestNewHandlerBatchMintsSharedThreadWhenAbsent(t *testing.T) {
+	t.Parallel()
+	staging := t.TempDir()
+	handler := newNewHandler(testNewDeps(staging))
+
+	args, _ := json.Marshal(NewInput{
+		Items: []NewItem{
+			{Type: "question", Fields: map[string]string{"to": "axon"}},
+			{Type: "work_request", Fields: map[string]string{"to": "axon"}},
+		},
+	})
+	result, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("new handler failed: %v", err)
+	}
+	drafts := result.([]newDraftResult)
+	if len(drafts) != 2 {
+		t.Fatalf("expected 2 drafted items, got %d", len(drafts))
+	}
+
+	var threads []string
+	for _, d := range drafts {
+		raw, rerr := os.ReadFile(d.Path)
+		if rerr != nil {
+			t.Fatalf("read drafted file: %v", rerr)
+		}
+		idx := strings.Index(string(raw), "thread: ")
+		if idx == -1 {
+			t.Fatalf("expected %s to carry a minted thread line, got:\n%s", d.Path, raw)
+		}
+		line, _, ok := strings.Cut(string(raw)[idx:], "\n")
+		if !ok {
+			t.Fatalf("expected the thread line in %s to be newline-terminated, got:\n%s", d.Path, raw)
+		}
+		threads = append(threads, line)
+	}
+	if threads[0] == "" || threads[0] != threads[1] {
+		t.Fatalf("expected the SAME minted thread on both items, got %q and %q", threads[0], threads[1])
+	}
+	if !strings.Contains(threads[0], "thread:beta-") {
+		t.Fatalf("expected a minted thread under the drafting system (beta), got %q", threads[0])
+	}
+}
+
+// TestNewHandlerItemFieldThreadConflictRefused guards against silently
+// clobbering a per-item `fields.thread` override with the batch-minted (or
+// batch-explicit) thread — the same D0 class of bug this phase exists to
+// close, applied within a batch call: a per-item value that disagrees with
+// the resolved batch thread is a conflict, named, never silently discarded.
+func TestNewHandlerItemFieldThreadConflictRefused(t *testing.T) {
+	t.Parallel()
+	staging := t.TempDir()
+	handler := newNewHandler(testNewDeps(staging))
+
+	args, _ := json.Marshal(NewInput{
+		Items: []NewItem{
+			{Type: "question", Fields: map[string]string{"to": "axon", "thread": "thread:beta-20260721-abcd"}},
+		},
+	})
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected an error: item-level fields.thread disagrees with the freshly minted batch thread")
+	}
+	entries, rerr := os.ReadDir(staging)
+	if rerr != nil {
+		t.Fatalf("read staging dir: %v", rerr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected NOTHING written for a refused thread conflict, got %d entries", len(entries))
+	}
+}
+
+// TestNewHandlerMalformedThreadRefused covers §T1's draft-time grammar
+// check: a --thread that fails ParseThreadID is refused before anything is
+// minted or written, never silently accepted or guessed at.
+func TestNewHandlerMalformedThreadRefused(t *testing.T) {
+	t.Parallel()
+	staging := t.TempDir()
+	handler := newNewHandler(testNewDeps(staging))
+
+	args, _ := json.Marshal(NewInput{
+		Thread: "not-a-real-thread-id",
+		Items:  []NewItem{{Type: "question", Fields: map[string]string{"to": "axon"}}},
+	})
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected an error for a malformed thread")
+	}
+	entries, rerr := os.ReadDir(staging)
+	if rerr != nil {
+		t.Fatalf("read staging dir: %v", rerr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected NOTHING written for a refused malformed thread, got %d entries", len(entries))
 	}
 }
 

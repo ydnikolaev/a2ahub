@@ -24,6 +24,7 @@ func writeContractDescriptor(t *testing.T, mirrorDir, slug, version string) {
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [beta]\n" +
+		"thread: " + testFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: api\n" +
@@ -505,6 +506,7 @@ func writeContractDescriptorWithDigest(t *testing.T, mirrorDir, slug, version, d
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [beta]\n" +
+		"thread: " + testFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: api\n" +

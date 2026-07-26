@@ -60,6 +60,10 @@ type lifecycleEnvelopeProbe struct {
 	To                any      `yaml:"to"`
 	RequiredApprovers []string `yaml:"required_approvers"`
 	Parent            string   `yaml:"parent"` // response only
+	// Thread is the source artifact's §3.8 thread id — spec 46 §T1 R2:
+	// `respond` propagates the PARENT's thread onto its response, never
+	// minting or inventing a new one for a derived artifact.
+	Thread string `yaml:"thread"`
 }
 
 // lifecyclePrefixInfo maps a §3.3 id prefix to its fold.Kind — the same
@@ -914,6 +918,40 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		if _, has := respFields["title"]; !has {
 			respFields["title"] = fmt.Sprintf("Response to %s", parentID)
 		}
+
+		// spec 46 §T1 R2/R4/R5: a derived artifact inherits its SOURCE's
+		// thread — the response is derived from parentID, so it inherits
+		// parentProbe.Thread, set here beside space/title (a derived
+		// default, added AFTER lifecycleRespondSeed/MintExchangeIDAt above
+		// for the exact reason space/title are: folding it into the seed
+		// would silently change every already-computed responseID, per
+		// this file's own comment above). An explicit --field thread=<id>
+		// that DIFFERS from the parent's thread is refused (exit 2 — bad
+		// caller input, same class as the --result usage check above)
+		// naming both values — never a silent precedence, never a guess
+		// (R4).
+		if explicit, has := respFields["thread"]; has && explicit != "" && explicit != parentProbe.Thread {
+			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: --field thread=%s conflicts with parent's thread %s\n", parentID, explicit, parentProbe.Thread)
+			return 2
+		}
+		// A parent with NO thread is refused, loudly and by name. Since
+		// `a2a new` always mints (R1), the only artifacts in this state are
+		// ones committed before P46 — and spec 46 carries no legacy path by
+		// operator decision (greenfield: the spaces are reseeded). The two
+		// alternatives are both worse and both were observed while this
+		// wave was built: propagating the empty value writes YAML `null`
+		// and the reply dies later with an opaque SCH-006 type error, while
+		// leaving the field unset lets the canonical template's own
+		// placeholder text survive into a committed document. Refusing here
+		// names the actual condition and the actual fix.
+		if parentProbe.Thread == "" {
+			_, _ = fmt.Fprintf(stdio.Stderr,
+				"respond: %s: the parent carries no thread, so this reply has no conversation to join.\n"+
+					"That artifact predates thread propagation; reseed the space (see `a2a space init`) or reply to an artifact drafted by this version.\n",
+				parentID)
+			return 1
+		}
+		respFields["thread"] = parentProbe.Thread
 
 		draft, err := template.Render(template.Input{
 			Type: "response", ID: responseID, Actor: resolved, Created: now,

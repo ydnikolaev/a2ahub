@@ -149,26 +149,26 @@ func writeMirrorFileEquiv(t *testing.T, mirrorDir, relPath, content string) {
 
 func equivWriteQuestion(t *testing.T, mirrorDir, id, to string) {
 	t.Helper()
-	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: question\ntitle: t\nspace: fixture-space\nfrom: axon\nto: [" + to + "]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\ncategory: clarification\npriority: p3\nblocking: true\nclassification: internal\n---\nbody\n"
+	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: question\ntitle: t\nspace: fixture-space\nthread: thread:axon-20260721-k3f9\nfrom: axon\nto: [" + to + "]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\ncategory: clarification\npriority: p3\nblocking: true\nclassification: internal\n---\nbody\n"
 	writeMirrorFileEquiv(t, mirrorDir, "axon/exchanges/"+id+".md", content)
 }
 
 func equivWriteRequirement(t *testing.T, mirrorDir, id string) {
 	t.Helper()
-	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: requirement\ntitle: t\nspace: fixture-space\nfrom: axon\nto: [beta]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\ncategory: new-capability\npriority: p3\nblocking: true\nclassification: internal\nacceptance_criteria: [\"works\"]\n---\nbody\n"
+	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: requirement\ntitle: t\nspace: fixture-space\nthread: thread:axon-20260721-k3f9\nfrom: axon\nto: [beta]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\ncategory: new-capability\npriority: p3\nblocking: true\nclassification: internal\nacceptance_criteria: [\"works\"]\n---\nbody\n"
 	writeMirrorFileEquiv(t, mirrorDir, "axon/requires/"+id+".md", content)
 }
 
 func equivWriteHandoff(t *testing.T, mirrorDir, id, to string) {
 	t.Helper()
-	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: handoff\ntitle: t\nspace: fixture-space\nfrom: axon\nto: [" + to + "]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\npriority: p3\nblocking: true\nclassification: internal\n---\nbody\n"
+	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: handoff\ntitle: t\nspace: fixture-space\nthread: thread:axon-20260721-k3f9\nfrom: axon\nto: [" + to + "]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\npriority: p3\nblocking: true\nclassification: internal\n---\nbody\n"
 	writeMirrorFileEquiv(t, mirrorDir, "axon/exchanges/"+id+".md", content)
 }
 
 func equivWriteDecision(t *testing.T, mirrorDir, id string, approvers []string) {
 	t.Helper()
 	joined := strings.Join(approvers, ", ")
-	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: decision\ntitle: t\nspace: fixture-space\nfrom: axon\nto: [" + joined + "]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\npriority: p3\nblocking: true\nclassification: internal\nrequired_approvers: [" + joined + "]\n---\nbody\n"
+	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: decision\ntitle: t\nspace: fixture-space\nthread: thread:axon-20260721-k3f9\nfrom: axon\nto: [" + joined + "]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\npriority: p3\nblocking: true\nclassification: internal\nrequired_approvers: [" + joined + "]\n---\nbody\n"
 	writeMirrorFileEquiv(t, mirrorDir, "decisions/"+id+".md", content)
 }
 
@@ -201,6 +201,21 @@ var (
 	createdLine = regexp.MustCompile(`(?m)^(created: )\S+`)
 	idLineRE    = regexp.MustCompile(`(?m)^(id: )\S+`)
 	eventPathRE = regexp.MustCompile(`events/\d{4}/[0-9A-Za-z]+\.yaml$`)
+	// threadLine joins the list for the same reason `id:` is on it: P46 made
+	// every drafting verb MINT a thread when none is supplied, and a mint is
+	// random by construction (`artifact.MintThreadIDAt`'s rand4 suffix), so
+	// the two surfaces cannot produce the same value and were never meant to.
+	//
+	// Be honest about the cost: a PROPAGATED thread (respond inheriting its
+	// parent's) has the identical §3.8 shape, so this normalization cannot tell
+	// the two apart and blanks both — meaning this file no longer proves the
+	// surfaces agree on propagation. That agreement is proven where it is
+	// actually cheap and precise, one level down, by a pair of tests that
+	// assert the parent's literal thread reaches the response:
+	// internal/cli's TestRespondPropagatesParentThreadVerbatim and
+	// internal/mcp's TestRespondHandlerInheritsParentThread. If either is
+	// deleted, nothing here will notice.
+	threadLine = regexp.MustCompile(`(?m)^(thread: )\S+`)
 )
 
 // normalizeContent blanks the fields internal/cli cannot make
@@ -212,6 +227,7 @@ func normalizeContent(raw []byte) string {
 	s = atLineRE.ReplaceAllString(s, "${1}<AT>")
 	s = createdLine.ReplaceAllString(s, "${1}<CREATED>")
 	s = idLineRE.ReplaceAllString(s, "${1}<ID>")
+	s = threadLine.ReplaceAllString(s, "${1}<THREAD>")
 	return s
 }
 
@@ -746,7 +762,7 @@ func TestEquivNote(t *testing.T) {
 
 func writeStagedDraftEquiv(t *testing.T, stagingDir, id string) {
 	t.Helper()
-	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: question\ntitle: t\nspace: fixture-space\nfrom: beta\nto: [axon]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\ncategory: clarification\npriority: p3\nblocking: true\nclassification: internal\n---\nbody\n"
+	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: question\ntitle: t\nspace: fixture-space\nthread: thread:axon-20260721-k3f9\nfrom: beta\nto: [axon]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\ncategory: clarification\npriority: p3\nblocking: true\nclassification: internal\n---\nbody\n"
 	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1078,7 +1094,7 @@ func sortedKeysOf(m map[string][]byte) []string {
 
 func writeContractDescriptorEquiv(t *testing.T, mirrorDir, slug, version string) {
 	t.Helper()
-	content := "---\nschema: envelope/v1\nid: XC-axon-" + slug + "\ntype: contract\ntitle: t\nspace: fixture-space\nfrom: axon\nto: [beta]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\ncategory: api\npriority: p3\nblocking: false\nclassification: internal\nversion: \"" + version + "\"\ncompat_policy: strict-semver\nschema_format: json-schema-2020-12\n---\nbody\n"
+	content := "---\nschema: envelope/v1\nid: XC-axon-" + slug + "\ntype: contract\ntitle: t\nspace: fixture-space\nthread: thread:axon-20260721-k3f9\nfrom: axon\nto: [beta]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\ncategory: api\npriority: p3\nblocking: false\nclassification: internal\nversion: \"" + version + "\"\ncompat_policy: strict-semver\nschema_format: json-schema-2020-12\n---\nbody\n"
 	writeMirrorFileEquiv(t, mirrorDir, "axon/provides/"+slug+"/contract.md", content)
 }
 

@@ -152,6 +152,102 @@ func TestRespondHandlerDeterministicResponseID(t *testing.T) {
 	}
 }
 
+// writeQuestionArtifactWithThread mirrors mcp_testutil_test.go's own
+// writeQuestionArtifact, plus a `thread:` line — mcp_testutil_test.go is
+// outside this wave's allowlist, so this is a local, file-scoped variant
+// rather than an edit to the shared helper.
+func writeQuestionArtifactWithThread(t *testing.T, mirrorDir, id, to, thread string) {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: " + id + "\n" +
+		"type: question\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [" + to + "]\n" +
+		"thread: " + thread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: clarification\n" +
+		"priority: p3\n" +
+		"blocking: true\n" +
+		"classification: internal\n" +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, "axon/exchanges/"+id+".md", content)
+}
+
+// TestRespondHandlerInheritsParentThread covers §T1 "Propagate": a derived
+// artifact (here, a response) inherits its SOURCE's thread with no field
+// supplied by the caller.
+func TestRespondHandlerInheritsParentThread(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	id := "XQ-axon-20260721-f001"
+	const parentThreadID = "thread:axon-20260720-wxyz"
+	writeQuestionArtifactWithThread(t, mirrorDir, id, "beta", parentThreadID)
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+	writeLifecycleEvent(t, mirrorDir, "beta", 1, id, "acknowledge", "beta")
+	writeLifecycleEvent(t, mirrorDir, "beta", 2, id, "accept", "beta")
+	writeLifecycleEvent(t, mirrorDir, "beta", 3, id, "start", "beta")
+
+	fake := &fakeFunnel{}
+	deps := testWriteDeps(mirrorDir, fake)
+	handler := newRespondHandler(deps)
+
+	in := RespondInput{ParentIDs: []string{id}, Result: "answered"}
+	args, _ := json.Marshal(in)
+	_, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("respond failed: %v", err)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected 1 funnel call, got %d", len(fake.calls))
+	}
+	found := false
+	for _, fw := range fake.calls[0].Files {
+		if strings.Contains(fw.Path, "exchanges") && strings.Contains(string(fw.Content), "thread: "+parentThreadID) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected the response draft to carry the parent's thread %q, got:\n%#v", parentThreadID, fake.calls[0].Files)
+	}
+}
+
+// TestRespondHandlerThreadConflictRefused covers §T1 "Explicit conflict
+// refuses": an explicit `thread` field that differs from the parent's is an
+// error naming both values, never a silent precedence or a guess.
+func TestRespondHandlerThreadConflictRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	id := "XQ-axon-20260721-g001"
+	const parentThreadID = "thread:axon-20260720-wxyz"
+	const conflictingThreadID = "thread:beta-20260721-zzzz"
+	writeQuestionArtifactWithThread(t, mirrorDir, id, "beta", parentThreadID)
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+	writeLifecycleEvent(t, mirrorDir, "beta", 1, id, "acknowledge", "beta")
+	writeLifecycleEvent(t, mirrorDir, "beta", 2, id, "accept", "beta")
+	writeLifecycleEvent(t, mirrorDir, "beta", 3, id, "start", "beta")
+
+	fake := &fakeFunnel{}
+	deps := testWriteDeps(mirrorDir, fake)
+	handler := newRespondHandler(deps)
+
+	in := RespondInput{ParentIDs: []string{id}, Result: "answered", Fields: map[string]string{"thread": conflictingThreadID}}
+	args, _ := json.Marshal(in)
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected an error for a thread that conflicts with the parent's")
+	}
+	if !strings.Contains(err.Error(), parentThreadID) || !strings.Contains(err.Error(), conflictingThreadID) {
+		t.Fatalf("expected the error to name BOTH values, got: %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the write funnel NEVER to be called on a thread conflict; got %d call(s)", len(fake.calls))
+	}
+}
+
 func TestRespondHandlerInvalidResult(t *testing.T) {
 	t.Parallel()
 	fake := &fakeFunnel{}

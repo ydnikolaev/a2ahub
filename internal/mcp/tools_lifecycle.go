@@ -15,6 +15,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -227,6 +228,10 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 			if err != nil {
 				return nil, "", fmt.Errorf("respond: %s: %w", parentID, err)
 			}
+			srcThread, err := parentThread(deps.MirrorDir, parentID)
+			if err != nil {
+				return nil, "", fmt.Errorf("respond: %s: %w", parentID, err)
+			}
 
 			respFields := map[string]string{}
 			for k, v := range in.Fields {
@@ -236,6 +241,31 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 			respFields["result"] = in.Result
 			if _, has := respFields["from"]; !has {
 				respFields["from"] = deps.OwnSystem
+			}
+
+			// §T1 "Explicit conflict refuses": an explicit thread that
+			// differs from the SOURCE's is an ERROR naming both values —
+			// never a silent precedence, never a guess. A pure
+			// error-or-continue branch, so its placement relative to the
+			// seed below is not load-bearing the way the propagation
+			// fill (after respFields["title"]) is.
+			if explicit, has := respFields["thread"]; has && explicit != "" && srcThread != "" && explicit != srcThread {
+				return nil, "", fmt.Errorf("respond: %s: thread conflict: explicit thread %q differs from parent thread %q", parentID, explicit, srcThread)
+			}
+			// A parent with NO thread is refused by name, identically to
+			// internal/cli's RespondCommand — see its comment for the full
+			// rationale. The short version: `a2a new` always mints, so the
+			// only artifacts in this state predate P46, spec 46 carries no
+			// legacy path (greenfield, the spaces are reseeded), and both
+			// alternatives were observed to be worse — the CLI half wrote
+			// YAML `null` and died later on an opaque SCH-006, this half
+			// left the field unset and let the canonical template's own
+			// placeholder text survive into a committed response.
+			if srcThread == "" {
+				return nil, "", fmt.Errorf(
+					"respond: %s: the parent carries no thread, so this reply has no conversation to join; "+
+						"that artifact predates thread propagation — reseed the space or reply to an artifact drafted by this version",
+					parentID)
 			}
 
 			seed := respondSeed(parentID, in.Result, respFields, bodyOverride, actor)
@@ -260,10 +290,17 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 			//
 			// Placed AFTER respondSeed, deliberately: both are derived
 			// defaults, and folding them into the seed would change every
-			// already-computed responseID's hash input.
+			// already-computed responseID's hash input. `thread` (§T1
+			// "Propagate") joins them here for the same reason — folding
+			// it into the seed would silently change every
+			// already-computed response ID, the hazard this comment
+			// already documents.
 			respFields["space"] = parentProbe.Space
 			if _, has := respFields["title"]; !has {
 				respFields["title"] = fmt.Sprintf("Response to %s", parentID)
+			}
+			if _, has := respFields["thread"]; !has {
+				respFields["thread"] = srcThread // non-empty: the refusal above guarantees it
 			}
 			responseID, err := artifact.MintExchangeIDAt("XS", deps.OwnSystem, now, bytes.NewReader(seed))
 			if err != nil {
@@ -324,6 +361,41 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 		result, err := deps.submit(ctx, req, "respond", ids)
 		return result, "", err
 	}
+}
+
+// parentThread reads parentID's committed envelope frontmatter for its
+// `thread` field — §T1 "Propagate"'s source of truth. loadEnvelope's own
+// envelopeProbe (eventdoc.go) does not decode `thread` and eventdoc.go is
+// outside this wave's allowlist, so this is a narrow, package-local
+// re-decode of the SAME committed file using the SAME unexported helpers
+// loadEnvelope already calls (artifactPath, readBoundedFile,
+// maxMirrorEventBytes) — a second file read, not a second layout/read
+// implementation. Flagged in this wave's deviations as a candidate for
+// folding into envelopeProbe as a one-field, lead-side cleanup.
+func parentThread(mirrorDir, id string) (string, error) {
+	parsed, err := artifact.ParseID(id)
+	if err != nil {
+		return "", fmt.Errorf("mcp: %s: %w", id, err)
+	}
+	relPath, err := artifactPath(parsed)
+	if err != nil {
+		return "", err
+	}
+	raw, err := readBoundedFile(filepath.Join(mirrorDir, relPath), maxMirrorEventBytes)
+	if err != nil {
+		return "", fmt.Errorf("mcp: cannot read %s: %w", id, err)
+	}
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return "", fmt.Errorf("mcp: %s: %w", id, err)
+	}
+	var probe struct {
+		Thread string `yaml:"thread"`
+	}
+	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+		return "", fmt.Errorf("mcp: %s: cannot decode envelope: %w", id, err)
+	}
+	return probe.Thread, nil
 }
 
 // respondSeed builds respond's own canonical, content-derived seed
