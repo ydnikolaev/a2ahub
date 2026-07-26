@@ -281,18 +281,37 @@ func (c *ghClient) DeleteProtection(ctx context.Context, owner, name, branch str
 // ListBranches lists every branch name on owner/name (first page, up to
 // 100 — the reset space never approaches that many).
 func (c *ghClient) ListBranches(ctx context.Context, owner, name string) ([]string, error) {
-	var payload []struct {
-		Name string `json:"name"`
+	base := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/branches?per_page=100"
+
+	// PAGINATED, for the reason ListPulls below already learned the hard way
+	// — the lesson simply had not been applied to this sibling. ResetSpace
+	// prunes exactly what this returns, so a truncated listing does not fail
+	// loudly: it leaves the space PARTLY clean and reports success. The next
+	// run then pushes onto a surviving branch and gets a non-fast-forward
+	// rejection, or re-opens a PR GitHub says already exists — failures that
+	// look like product defects and are not.
+	//
+	// A reached cap is an ERROR rather than a quiet stop, same as there: a
+	// silently short list is the exact failure mode being fixed.
+	const maxPages = 50
+	var out []string
+	for page := 1; ; page++ {
+		if page > maxPages {
+			return nil, fmt.Errorf("livee2e: listing branches for %s/%s exceeded %d pages — the space needs emptying, not a bigger cap", owner, name, maxPages)
+		}
+		var payload []struct {
+			Name string `json:"name"`
+		}
+		if _, err := c.do(ctx, http.MethodGet, fmt.Sprintf("%s&page=%d", base, page), nil, &payload); err != nil {
+			return nil, err
+		}
+		for _, b := range payload {
+			out = append(out, b.Name)
+		}
+		if len(payload) < 100 { // a short page is the last page
+			return out, nil
+		}
 	}
-	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/branches?per_page=100"
-	if _, err := c.do(ctx, http.MethodGet, path, nil, &payload); err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(payload))
-	for _, b := range payload {
-		out = append(out, b.Name)
-	}
-	return out, nil
 }
 
 // DeleteRef deletes a git ref (e.g. "heads/probe/xsec"). ref is passed
