@@ -56,8 +56,8 @@ func e2eManifest() space.Manifest {
 
 // e2eActorResolver is a fixed-identity resolveActor func (§7.4 seam) — the
 // same convenience internal/cli's own lifecycle tests use.
-func e2eActorResolver(kind, name string) func(cli.ActorFlags) template.Actor {
-	return func(cli.ActorFlags) template.Actor { return template.Actor{Kind: kind, Name: name} }
+func e2eActorResolver(kind, name string) func(cli.ActorFlags) (template.Actor, error) {
+	return func(cli.ActorFlags) (template.Actor, error) { return template.Actor{Kind: kind, Name: name}, nil }
 }
 
 // e2eHostConfig is a SubmitHostConfig for a given acting system, RemoteURL

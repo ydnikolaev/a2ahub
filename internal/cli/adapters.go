@@ -15,6 +15,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -85,21 +86,73 @@ type ConfigActor struct {
 // write could carry actor.name: "" straight through. This is deliberately
 // the LAST fallback, not a new higher-priority source — it never overrides
 // an explicit flag, env var, harness default, or config value.
-func ResolveActor(flags ActorFlags, harness HarnessDefaults, cfg ConfigActor) template.Actor {
+//
+// # And when even that resolves to nothing, it REFUSES here
+//
+// AC-1013.1. In a minimal container os/user has no passwd entry and $USER is
+// unset, so every source in the chain is empty. The write was already refused
+// in that case — actor.name carries a minLength in both event/v1 and
+// envelope/v1, so there was never a correctness hole — but the message an
+// agent got was a schema violation about a field it never knowingly set. It
+// named neither the flag nor the env var that fixes it.
+//
+// The refusal lives HERE, at the one place the CLI resolves an actor, rather
+// than at each of the ~10 verbs that write one. internal/mcp is deliberately
+// untouched and keeps its own resolver (internal/mcp/adapters.go's private
+// resolveActor) and its own schema-level refusal — the two surfaces have
+// always had separate resolvers, so this is not a new divergence and the
+// operator's MCP fence costs nothing here. An earlier reading of this file
+// claimed every fix crossed into MCP; that was wrong, and it was wrong
+// because it was reasoned about rather than read.
+func ResolveActor(flags ActorFlags, harness HarnessDefaults, cfg ConfigActor) (template.Actor, error) {
+	return resolveActorFrom(flags, harness, cfg, osUsername())
+}
+
+// resolveActorFrom is ResolveActor with the OS-user fallback passed IN rather
+// than looked up, which is what makes the refusal testable.
+//
+// The alternative was a test that cleared $USER and hoped os/user would fail —
+// and on a developer machine it does not, so that test SKIPPED and guarded
+// nothing on the only machine anyone runs it on. A skipped test for a refusal
+// is worse than no test: it reads as coverage. Taking the value as a parameter
+// makes the empty case an ordinary argument, deterministic and parallel-safe,
+// with no process environment involved.
+func resolveActorFrom(flags ActorFlags, harness HarnessDefaults, cfg ConfigActor, osUser string) (template.Actor, error) {
+	name := firstNonEmpty(flags.Name, os.Getenv(envActorName), harness.Name, cfg.Name, osUser)
+	if name == "" {
+		return template.Actor{}, ErrNoActorName
+	}
 	return template.Actor{
 		Kind:  firstNonEmpty(flags.Kind, os.Getenv(envActorKind), harness.Kind, cfg.Kind, "agent"),
-		Name:  firstNonEmpty(flags.Name, os.Getenv(envActorName), harness.Name, cfg.Name, osUsername()),
+		Name:  name,
 		Model: firstNonEmpty(flags.Model, os.Getenv(envActorModel), harness.Model, cfg.Model),
-	}
+	}, nil
 }
+
+// ErrNoActorName is returned when no §7.4 source names the acting identity and
+// even the OS-user fallback is empty — the CI/container case.
+//
+// The message names both remedies, in the order a caller would reach for them,
+// because the whole point of this error existing is that the schema violation
+// it replaces named neither.
+var ErrNoActorName = errors.New("cannot determine who is acting: pass --actor-name <name>, " +
+	"or set A2A_ACTOR_NAME. Every artifact and event records its actor permanently, so a write " +
+	"without one is refused rather than attributed to nobody (no OS user resolved either — " +
+	"expected in a container or CI runner)")
 
 // osUsername is ResolveActor's final non-empty fallback for actor.name: the
 // OS user (os/user.Current's Username, falling back to $USER when the
 // os/user lookup fails or returns an empty username — e.g. no /etc/passwd
 // entry in a minimal container). If neither resolves, osUsername returns ""
-// and ResolveActor leaves Name empty; this function does NOT invent a
-// placeholder — schema validation (actor.name minLength:1, both event/v1
-// and envelope/v1) is what then rejects the write with a clear message.
+// and ResolveActor REFUSES with ErrNoActorName. This function does NOT invent
+// a placeholder: an actor is recorded permanently in a shared log, and a
+// fabricated one is worse than a refusal.
+//
+// It used to be the last word here, with the schema's actor.name minLength
+// left to reject the write. That still holds as the backstop on both surfaces
+// — but a schema violation about a field the caller never knowingly set names
+// neither `--actor-name` nor A2A_ACTOR_NAME, which is the whole reason
+// ResolveActor now refuses first.
 func osUsername() string {
 	if u, err := user.Current(); err == nil && u.Username != "" {
 		return u.Username

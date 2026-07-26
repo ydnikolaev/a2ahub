@@ -69,7 +69,7 @@ type NewCommand struct {
 
 	now          func() time.Time
 	entropy      io.Reader
-	resolveActor func(ActorFlags) template.Actor
+	resolveActor func(ActorFlags) (template.Actor, error)
 	writeFile    func(path string, data []byte, perm os.FileMode) error
 }
 
@@ -86,7 +86,7 @@ type NewCommand struct {
 // zero-or-many-spaces case is left untouched (defect: a live-run bug
 // where the placeholder survived into the draft and the very next `a2a
 // submit` failed).
-func NewNewCommand(stagingDir, ownSystem string, resolveActor func(ActorFlags) template.Actor, connectedSpaceIDs []string) *NewCommand {
+func NewNewCommand(stagingDir, ownSystem string, resolveActor func(ActorFlags) (template.Actor, error), connectedSpaceIDs []string) *NewCommand {
 	return &NewCommand{
 		stagingDir:        stagingDir,
 		ownSystem:         ownSystem,
@@ -206,7 +206,11 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 		bodyOverride = body
 	}
 
-	resolvedActor := c.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	resolvedActor, actorErr := c.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	if actorErr != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "new: %v\n", actorErr)
+		return 1
+	}
 
 	draft, err := template.Render(template.Input{
 		Type:    typ,

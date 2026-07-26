@@ -62,8 +62,8 @@ func materializeFiles(t *testing.T, mirrorDir string, req space.SubmitRequest) {
 // lifecycle command needs one injected (§7.4 seam); tests never exercise
 // ResolveActor's own env/harness/config fallback chain (P6's own
 // coverage), just a stable actor.kind/name for state-fold assertions.
-func lifecycleActorResolver(kind, name string) func(cli.ActorFlags) template.Actor {
-	return func(cli.ActorFlags) template.Actor { return template.Actor{Kind: kind, Name: name} }
+func lifecycleActorResolver(kind, name string) func(cli.ActorFlags) (template.Actor, error) {
+	return func(cli.ActorFlags) (template.Actor, error) { return template.Actor{Kind: kind, Name: name}, nil }
 }
 
 func lifecycleManifest() space.Manifest {

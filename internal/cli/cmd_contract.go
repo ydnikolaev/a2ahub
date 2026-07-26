@@ -359,7 +359,7 @@ type ContractCommand struct {
 // `a2a new` command (reused verbatim for `contract new`'s delegation,
 // never duplicated); funnel/manifest/resolveActor must not be nil/zero
 // (rails anti-pattern #10).
-func NewContractCommand(newCmd *NewCommand, funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) template.Actor) *ContractCommand {
+func NewContractCommand(newCmd *NewCommand, funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *ContractCommand {
 	return &ContractCommand{newCmd: newCmd, deps: newLifecycleDeps(funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)}
 }
 
@@ -675,7 +675,11 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 		return 2
 	}
 
-	resolved := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	resolved, actorErr := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	if actorErr != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract: %v\n", actorErr)
+		return 1
+	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
 
 	verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TPublish, actor)
@@ -1101,7 +1105,11 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 	}
 	id := positional[0]
 
-	resolved := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	resolved, actorErr := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	if actorErr != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract: %v\n", actorErr)
+		return 1
+	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
 
 	verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TDeprecate, actor)
@@ -1278,7 +1286,11 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 	}
 	id := positional[0]
 
-	resolved := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	resolved, actorErr := c.deps.resolveActor(ActorFlags{Kind: *actorKind, Name: *actorName, Model: *actorModel})
+	if actorErr != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract: %v\n", actorErr)
+		return 1
+	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
 
 	verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TRetire, actor)
