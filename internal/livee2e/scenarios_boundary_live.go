@@ -334,9 +334,40 @@ func boundaryProtectionBindsParticipant(ctx context.Context, h *harness) Result 
 		return boundaryFromErr(scenarioProtectionBindsParticipant, SystemB, expected, err)
 	}
 	if !merged {
+		// A refused explicit merge is NOT yet a failure, and the first full
+		// 38-row run (2026-07-26) is why this branch exists: the check went
+		// green, this row's re-read above still saw the PR unmerged, the
+		// explicit merge got 405 — and GitHub's own auto-merge landed the PR
+		// 52 seconds later. The row's thesis ("lands merged only once the
+		// required check completes success") HELD; what raced was the method.
+		// Every narrowed run had passed this row, so it took an uninterrupted
+		// run to surface the timing at all.
+		//
+		// The retry is deliberately a re-read, never a second merge attempt:
+		// the funnel arms GitHub's native auto-merge, so the merge is already
+		// someone's job and this row's business is only whether it happens.
+		// Bounded, so a PR that genuinely never merges still fails — with the
+		// original 405 named, not swallowed.
+		deadline := time.Now().Add(boundaryMergeableStateCeiling)
+		for time.Now().Before(deadline) {
+			if err := boundaryDelay(ctx, boundaryMergeableStatePollInterval); err != nil {
+				return boundaryFromErr(scenarioProtectionBindsParticipant, SystemB, expected, err)
+			}
+			after, perr := h.Part.Pull(ctx, h.Org, h.Repo, sub.PRNumber)
+			if perr != nil {
+				return boundaryFromErr(scenarioProtectionBindsParticipant, SystemB, expected, perr)
+			}
+			if after.Merged {
+				return boundaryResult(scenarioProtectionBindsParticipant, SystemB, VerdictPass, "", "",
+					fmt.Sprintf("PR #%d: not merged while pending, check completed success, and auto-merge landed it "+
+						"after this row's own explicit merge raced it (status %d) — landed only once green, unattended",
+						sub.PRNumber, status))
+			}
+		}
 		return boundaryResult(scenarioProtectionBindsParticipant, SystemB, VerdictFail,
 			expected,
-			fmt.Sprintf("check completed success, but MergePull was still refused (status %d)", status),
+			fmt.Sprintf("check completed success, but MergePull was refused (status %d) and the PR was still unmerged %s later",
+				status, boundaryMergeableStateCeiling),
 			fmt.Sprintf("PR #%d", sub.PRNumber))
 	}
 	return boundaryResult(scenarioProtectionBindsParticipant, SystemB, VerdictPass, "", "",
