@@ -209,9 +209,17 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 		}
 	}
 
-	// Every EVENT this change carries must name the producer that wrote it,
-	// once the space's own floor has reached the release that introduced the
-	// field. See internal/space.StampProducer for why the FLOOR is the switch
+	// Every EVENT this change carries is validated against event/v1, and — once
+	// the space's own floor has reached the release that introduced the field —
+	// must also name the producer that wrote it.
+	//
+	// The SCHEMA half was missing entirely until 2026-07-26: a changed event
+	// merged as long as it was parseable YAML, and the fold read it afterwards —
+	// the same shape as the two holes closed alongside it. Wired only after every
+	// event in both live spaces (46 of them) had been run through the schema by
+	// hand and passed; a gate is not switched on to find out whether it reds.
+	//
+	// The PRODUCER half is the part that matters for a stale binary. See internal/space.StampProducer for why the FLOOR is the switch
 	// and not the binary's own version: event/v1 is additionalProperties:false
 	// and the validator is pinned BY THE SPACE, so a stamped event written to a
 	// space whose validator predates the field would be refused outright.
@@ -221,9 +229,9 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	// binary that honours it and does nothing at all to one that does not —
 	// before 0.9.0 that was every lifecycle and contract verb.
 	for _, relPath := range events {
-		rep, ok := validateCIEventProducer(engine, root, relPath, manifest.MinBinaryVersion)
+		rep, ok := validateCIEvent(engine, root, relPath, manifest.MinBinaryVersion)
 		if rep == nil {
-			continue // deleted in this PR, or the floor has not reached the field
+			continue // deleted in this PR
 		}
 		report.Artifacts = append(report.Artifacts, *rep)
 		if !ok {
@@ -430,30 +438,22 @@ func isEventDocument(p string) bool {
 	return strings.Contains(p, "/events/") && strings.HasSuffix(p, ".yaml")
 }
 
-// validateCIEventProducer requires an event to name the tool and version that
-// produced it, delegating the verdict to the engine
-// (validate.ValidateEventProducer) rather than re-deciding it here. This file
-// adds ZERO validation rules of its own — the same discipline the compat and
-// publishability checks follow, and the reason
-// TestValidateCIAndContractHaveNoSecondCompatCopy exists.
-//
-// Returns nil when there is nothing to say: the file was deleted in this pull
-// request, or the space's floor has not reached the release where the field
-// became required.
-func validateCIEventProducer(engine *validate.Engine, root, relPath, spaceFloor string) (*validateReport, bool) {
+// validateCIEvent validates one changed event: its event/v1 schema, and — once
+// the space's floor has reached the release that introduced the field — that it
+// names the producer that wrote it. The verdict comes from the engine
+// (validate.ValidateEvent); this file adds ZERO validation rules of its own, the
+// same discipline the compat and publishability checks follow.
+func validateCIEvent(engine *validate.Engine, root, relPath, spaceFloor string) (*validateReport, bool) {
 	raw, err := os.ReadFile(filepath.Join(root, relPath))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, true
+			return nil, true // deleted in this PR
 		}
 		return &validateReport{Path: relPath, Error: err.Error()}, false
 	}
-	result, required, err := engine.ValidateEventProducer(raw, spaceFloor)
+	result, err := engine.ValidateEvent(raw, spaceFloor)
 	if err != nil {
 		return &validateReport{Path: relPath, Error: err.Error()}, false
-	}
-	if !required {
-		return nil, true
 	}
 	r := result
 	return &validateReport{Path: relPath, Result: &r}, result.Valid

@@ -1441,7 +1441,7 @@ func TestValidateCI_EventMustNameItsProducer(t *testing.T) {
 		}
 	})
 
-	t.Run("floor NOT reached, event unstamped: silent, no verdict", func(t *testing.T) {
+	t.Run("floor NOT reached, event unstamped: schema-checked, but no stamp violation", func(t *testing.T) {
 		t.Parallel()
 		root := ciRepo(t, ciManifestWithFloor("0.9.1"), map[string]string{rel: ciEventDoc(false)})
 
@@ -1450,12 +1450,28 @@ func TestValidateCI_EventMustNameItsProducer(t *testing.T) {
 			t.Fatalf("a space below the floor was reddened by a rule not in force there: code=%d "+
 				"valid=%v stderr=%s", code, rep.Valid, errOut)
 		}
+		// An ENTRY is expected and correct — the event's schema is validated in
+		// every space, floor or no floor. What must be absent is the producer
+		// violation: below the floor that rule is not in force, and a note on
+		// every write in every unmigrated space is noise, which is how a real
+		// finding gets missed.
+		var seen bool
 		for _, a := range rep.Artifacts {
-			if a.Path == rel {
-				t.Errorf("a verdict was reported for a rule that is not in force in this space: %+v\n"+
-					"Below the floor the check must be SILENT — a note on every write in every space "+
-					"that has not migrated is noise, and noise is how a real finding gets missed", a)
+			if a.Path != rel {
+				continue
 			}
+			seen = true
+			if a.Result == nil {
+				t.Fatalf("no result for the event: %+v", a)
+			}
+			for _, v := range a.Result.Violations {
+				if strings.Contains(v.Path, "produced_by") {
+					t.Errorf("the producer rule fired in a space whose floor has not reached it: %+v", v)
+				}
+			}
+		}
+		if !seen {
+			t.Error("the event was not validated at all — its schema is checked regardless of the floor")
 		}
 	})
 
@@ -1485,6 +1501,74 @@ func TestValidateCI_EventMustNameItsProducer(t *testing.T) {
 		if code != 0 || !rep.Valid {
 			t.Fatalf("a non-event yaml was treated as an event: code=%d valid=%v stderr=%s",
 				code, rep.Valid, errOut)
+		}
+	})
+}
+
+// TestValidateCI_EventSchemaIsChecked pins the half that did not exist at all
+// until 2026-07-26: a changed event merged as long as it was parseable YAML,
+// and the fold read it afterwards.
+//
+// It is the same shape as the two holes closed the same day — a schema that
+// exists and documents nobody fed to it — and it was wired only AFTER every
+// event in both live spaces (46 of them) had been run through this schema by
+// hand and passed. A gate is not switched on to find out whether it reds.
+//
+// Unlike the producer stamp, this half is NOT floor-gated: event/v1 has been the
+// event schema since v0.1.0, so there is no space where an event is legitimately
+// not an event.
+func TestValidateCI_EventSchemaIsChecked(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	const rel = "axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E5G.yaml"
+
+	t.Run("an event missing a required field reds", func(t *testing.T) {
+		t.Parallel()
+		// No `transition`, which event/v1 requires — and which the fold reads to
+		// decide what happened to the artifact.
+		bad := "schema: event/v1\nevent: 01J40A7M9P1S3V5W7Y9A1C3E5G\nspace: getvisa\n" +
+			"subject: XQ-axon-20260730-ab12\nactor: {kind: agent, name: bot, system: axon}\n" +
+			"at: 2026-07-30T10:00:00Z\nproduced_by:\n  tool: a2a\n  version: \"0.10.0\"\n"
+		root := ciRepo(t, ciManifestWithFloor("0.10.0"), map[string]string{rel: bad})
+
+		code, rep, _ := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		if code == 0 || rep.Valid {
+			t.Fatalf("an event missing a schema-required field merged clean: code=%d valid=%v",
+				code, rep.Valid)
+		}
+	})
+
+	t.Run("an unquoted timestamp does not break the validator", func(t *testing.T) {
+		t.Parallel()
+		// `at:` is a timestamp, and yaml.v3 auto-types an unquoted one as a
+		// time.Time — which the JSON-schema validator cannot represent, so it
+		// aborts with "unmapped schema-class keyword" INSTEAD of validating.
+		// That exact failure was hit twice today on manifests before the decode
+		// was normalised; an event carries the same hazard on every single write.
+		good := ciEventDoc(true) // `at: 2026-07-30T10:00:00Z`, unquoted
+		root := ciRepo(t, ciManifestWithFloor("0.10.0"), map[string]string{rel: good})
+
+		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		if code != 0 || !rep.Valid {
+			t.Fatalf("a valid event with an unquoted timestamp was refused: code=%d valid=%v stderr=%s",
+				code, rep.Valid, errOut)
+		}
+		for _, a := range rep.Artifacts {
+			if a.Path == rel && a.Error != "" {
+				t.Fatalf("the validator errored rather than validating: %s\n"+
+					"An engine error here means the instance was not normalised — the timestamp reached "+
+					"the schema as a time.Time.", a.Error)
+			}
+		}
+	})
+
+	t.Run("a document that is not YAML at all is POL-002, not a crash", func(t *testing.T) {
+		t.Parallel()
+		root := ciRepo(t, ciManifestWithFloor("0.10.0"), map[string]string{rel: "\tthis: [is not\n  valid yaml\n"})
+
+		code, rep, _ := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		if code == 0 || rep.Valid {
+			t.Fatalf("an unparseable event merged clean: code=%d valid=%v", code, rep.Valid)
 		}
 	})
 }

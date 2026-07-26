@@ -3,6 +3,7 @@ package validate
 import (
 	"fmt"
 
+	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
 )
@@ -42,8 +43,8 @@ import (
 // reason the floor is the switch: event/v1 is additionalProperties:false and the
 // validator is pinned by the space, so the field cannot be REQUIRED before it
 // can be ACCEPTED.
-func (e *Engine) ValidateEventProducer(raw []byte, spaceFloor string) (result Result, required bool, err error) {
-	const op = "ValidateEventProducer"
+func (e *Engine) validateEventProducer(raw []byte, spaceFloor string) (result Result, required bool, err error) {
+	const op = "validateEventProducer"
 
 	active, aerr := version.ProducerStampActive(spaceFloor)
 	if aerr != nil {
@@ -114,4 +115,76 @@ func malformedEventViolation() Violation {
 		CCRef:    "CC-001",
 		Severity: SeverityReject,
 	}
+}
+
+// ValidateEvent validates one committed event document: its event/v1 SCHEMA, and
+// — once the space's floor has reached version.ProducerStampFloor — that it names
+// the producer that wrote it.
+//
+// # The schema half is new, and its absence was the same hole twice over
+//
+// Until 2026-07-26 `validate --ci` validated `*.md` artifacts, `consumes.yaml`,
+// contracts and (from the same day) `space.yaml` — and events not at all. A
+// changed event merged as long as it was parseable YAML, and the fold read it
+// afterwards. That is the identical shape as the two holes closed alongside it:
+// a schema that exists, and documents nobody fed to it.
+//
+// Wired only AFTER the corpus was checked, which is the discipline the manifest
+// check established: every event in the live production space and in the test
+// space — 46 of them — was run through this schema by hand first, and all
+// passed. A gate is not turned on to find out whether it reds.
+//
+// ONE Result for both halves, so a reader gets one verdict per event rather than
+// two entries for the same file disagreeing about how bad it is.
+func (e *Engine) ValidateEvent(raw []byte, spaceFloor string) (Result, error) {
+	const op = "ValidateEvent"
+
+	instance, probe, parseable := decodeEvent(raw)
+	if !parseable {
+		return newResult(V2, "", []Violation{malformedEventViolation()}), nil
+	}
+
+	fieldViolations, serr := e.corpus.ValidateEvent("event/v1", instance)
+	if serr != nil {
+		return Result{}, &Error{Op: op, Err: serr}
+	}
+	violations, merr := mapSchemaViolations(fieldViolations)
+	if merr != nil {
+		return Result{}, &Error{Op: op, Err: merr}
+	}
+
+	stampResult, required, perr := e.validateEventProducer(raw, spaceFloor)
+	if perr != nil {
+		return Result{}, perr
+	}
+	if required {
+		violations = append(violations, stampResult.Violations...)
+	}
+	return newResult(V2, probe.Event, violations), nil
+}
+
+// decodeEvent decodes raw twice — once as a schema instance, once into the
+// producer probe — and reports ok=false when it is not YAML at all.
+//
+// A BOOL rather than an error, for the same reason ValidateManifest's own decode
+// helper uses one: "this file is not YAML" is a verdict about CONTENT that
+// belongs in the Result as POL-002, while an error returned from ValidateEvent
+// means the ENGINE failed, which a caller handles differently.
+//
+// schema.DecodeYAMLInstance, NOT a plain unmarshal: yaml.v3 auto-types an
+// unquoted date/time as a time.Time, which the JSON-schema validator cannot
+// represent — it aborts with "unmapped schema-class keyword" instead of
+// validating anything. Every event carries `at:`, so this would have fired on
+// literally every write. It was hit twice the same day on manifests, and is the
+// reason this is a shared helper rather than an inline unmarshal per caller.
+func decodeEvent(raw []byte) (instance any, probe eventProducerProbe, ok bool) {
+	decoded, err := schema.DecodeYAMLInstance(raw)
+	if err != nil {
+		return nil, eventProducerProbe{}, false
+	}
+	p, ok := decodeEventProducer(raw)
+	if !ok {
+		return nil, eventProducerProbe{}, false
+	}
+	return decoded, p, true
 }
