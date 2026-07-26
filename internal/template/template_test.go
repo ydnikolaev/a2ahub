@@ -177,6 +177,15 @@ func TestRenderEnumDefaultAndFieldOverride(t *testing.T) {
 // this package's own copy of AC-401.1's guarantee (the full V1/`a2a new`
 // integration test lives at the cli layer, wired to the real
 // validate.Engine).
+//
+// `thread` is deliberately NOT overridden here, and the templates'
+// placeholder for it is deliberately free prose: it stays an optional,
+// unpatterned string until spec 46's T1 wires always-mint at the
+// `cmd_new.go` call site. The schema tightening (`required` + the §3.8
+// pattern) lands in the SAME wave as that minting, never before it — a
+// required field no producer fills makes every draft invalid, which is the
+// same sequencing error this epic already made once with the producer
+// stamp.
 func TestRenderEveryTypeSchemaValid(t *testing.T) {
 	t.Parallel()
 	corpus, err := schema.Load()
@@ -332,5 +341,74 @@ func TestRenderRefusesAFieldOverrideItCannotApply(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("err is missing %q — it must name the field and both kinds: %v", want, err)
 		}
+	}
+}
+
+// TestRenderThreadFieldLands is the D0 regression (spec 46, defect D0):
+// `a2a new --thread <id>` had never worked, because applyFills only ever
+// visited keys ALREADY IN the template's mapping, and no template carried a
+// `thread:` key at all — so `Fields{"thread": ...}` was silently dropped for
+// every one of the 8 types. This is the test whose absence let the flag
+// ship inert (spec 46 §T7): it must fail on the pre-fix template corpus and
+// pass once both the mechanism (applyFills) and the corpus (schemas/
+// templates/v1/*.md) carry a real `thread:` key.
+func TestRenderThreadFieldLands(t *testing.T) {
+	t.Parallel()
+
+	prefixes := map[string]string{
+		"contract":     "XC-axon-ingest",
+		"requirement":  "XR-axon-ingest",
+		"question":     "XQ-axon-20260726-a1b2",
+		"work_request": "XW-axon-20260726-a1b2",
+		"decision":     "XD-axon-20260726-a1b2",
+		"response":     "XS-axon-20260726-a1b2",
+		"handoff":      "XH-axon-20260726-a1b2",
+		"announcement": "XA-axon-20260726-a1b2",
+	}
+	const wantThread = "thread:axon-20260726-a1b2"
+
+	for _, typ := range schema.EnvelopeTypes() {
+		t.Run(typ, func(t *testing.T) {
+			t.Parallel()
+			in := fixedInput(typ, prefixes[typ])
+			in.Fields = map[string]string{"thread": wantThread}
+			out, err := template.Render(in)
+			if err != nil {
+				t.Fatalf("Render(%q) with Fields{\"thread\": %q}: %v", typ, wantThread, err)
+			}
+			if !containsLine(string(out), "thread: "+wantThread) {
+				t.Errorf("Render(%q): the --thread override never reached the document — this is D0 all "+
+					"over again — got:\n%s", typ, out)
+			}
+		})
+	}
+}
+
+// TestRenderUnknownFieldOverrideRefused is applyFills' generic guarantee,
+// underneath the thread-specific D0 fix: an in.Fields key that names no key
+// in the template's own mapping is refused with ErrUnappliableField, never
+// silently dropped. Fixing only `thread` and leaving every other field able
+// to vanish silently would be treating the symptom, not the root cause
+// (spec 46 §T1).
+func TestRenderUnknownFieldOverrideRefused(t *testing.T) {
+	t.Parallel()
+
+	_, err := template.Render(template.Input{
+		Type:    "question",
+		ID:      "XQ-axon-20260726-a1b2",
+		Actor:   template.Actor{Kind: "agent", Name: "bot"},
+		Created: time.Date(2026, 7, 26, 10, 0, 0, 0, time.UTC),
+		// "no_such_field" is not a key question.md's template carries.
+		Fields: map[string]string{"no_such_field": "whatever"},
+	})
+	if err == nil {
+		t.Fatal("a --field override naming a key the template does not carry must be refused, not dropped — " +
+			"a silently discarded --field is the same class of lie as the D0 --thread drop")
+	}
+	if !errors.Is(err, template.ErrUnappliableField) {
+		t.Fatalf("err = %v, want ErrUnappliableField so a caller can recognise the class", err)
+	}
+	if !strings.Contains(err.Error(), "no_such_field") {
+		t.Errorf("err is missing the offending field name: %v", err)
 	}
 }

@@ -19,6 +19,7 @@ acceptance_criteria:                  # required — verify (§3.4) runs against
 expected_response:                    # optional
   shape: "<what a good answer looks like>"
 classification: internal
+thread: <thread:system-YYYYMMDD-rand4 — the conversation this belongs to; a2a new mints it>
 ---
 ## What we need
 ## The rule for judging a value

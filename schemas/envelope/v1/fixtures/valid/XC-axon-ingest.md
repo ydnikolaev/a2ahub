@@ -20,6 +20,7 @@ generated_from:
   source_digest: "sha256:4f0c…"
 refs:
   - {ref: "XC-axon-todo-feed@1.0.0", note: "companion demand feed"}
+thread: thread:axon-20260728-c5h9
 ---
 # Ingest API
 Accepts catalog, facts and articles from the content factory. Error shape,

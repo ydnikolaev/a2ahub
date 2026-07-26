@@ -118,7 +118,12 @@ func TestRespondHandlerDeterministicResponseID(t *testing.T) {
 	deps := testWriteDeps(mirrorDir, fake)
 	handler := newRespondHandler(deps)
 
-	in := RespondInput{ParentIDs: []string{id}, Result: "answered", Fields: map[string]string{"summary": "done"}}
+	// `title`, not the invented `summary` this used to pass: response/v1 has
+	// no `summary` field and neither does its template, so the override was
+	// silently discarded — every MCP respond carrying one lost it without a
+	// word. P46 W1 made applyFills refuse an override naming no template key,
+	// which is what surfaced this; the test now exercises a field that exists.
+	in := RespondInput{ParentIDs: []string{id}, Result: "answered", Fields: map[string]string{"title": "done"}}
 	args, _ := json.Marshal(in)
 
 	_, _, err := handler(context.Background(), args)

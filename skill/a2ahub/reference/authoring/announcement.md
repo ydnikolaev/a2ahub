@@ -16,4 +16,5 @@ blocking: false
 # period: <e.g. 2026-W35>              # optional — only meaningful when category: status
 # valid_until: <YYYY-MM-DD>            # optional
 classification: internal
+thread: <thread:system-YYYYMMDD-rand4 — the conversation this belongs to; a2a new mints it>
 ---

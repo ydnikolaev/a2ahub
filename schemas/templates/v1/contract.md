@@ -18,6 +18,7 @@ compat_policy: default               # §5.4 — required
 # generated_from:                    # optional — REQUIRED only if this contract is code-generated (§5.3)
 #   tool: "<free text>"
 #   source_digest: "sha256:<hex>"
+thread: <thread:system-YYYYMMDD-rand4 — the conversation this belongs to; a2a new mints it>
 # refs:                              # optional — pin dependencies as id@version
 #   - {ref: "<XC-id>@<version>", note: "<why>"}
 ---
