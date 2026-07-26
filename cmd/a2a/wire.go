@@ -585,6 +585,35 @@ func runContract(args []string, stdout, stderr io.Writer) int {
 // guarded by TestFunnelBinaryVersionIsBare.
 func funnelBinaryVersion() string { return version }
 
+// loadMachineConfigForWrite loads the machine config for a WRITE path,
+// treating an ABSENT file as an empty config rather than as a failure.
+//
+// The write paths used to refuse on any error from LoadMachineConfig,
+// including os.ErrNotExist — while the read path (buildStore, see its own
+// doc) and the MCP wiring both deliberately tolerate exactly that. So the
+// same machine could read a space and be refused when writing to it, with
+// a message quoting a raw "no such file or directory".
+//
+// A missing machine config is a normal state, not a broken one: `.a2a/
+// config.yaml` is committed to the PROJECT, so a second person cloning it
+// onto a fresh machine has a project config and no machine config until
+// they run `a2a init`. The machine config only ever supplies a mirror root
+// and credential REFERENCES; absent, both fall back to their documented
+// defaults (a project-local mirror, the A2A_TOKEN_<SPACE> env var) — and if
+// the credential then does not resolve, ResolveCredential says so by name,
+// which is the error that actually helps.
+//
+// A machine config that EXISTS and does not parse is still a hard failure:
+// that is a broken file, and silently ignoring it would drop a configured
+// mirror_root or credential reference on the floor.
+func loadMachineConfigForWrite(path string) (space.MachineConfig, error) {
+	machine, err := space.LoadMachineConfig(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return space.MachineConfig{}, err
+	}
+	return machine, nil
+}
+
 // resolveLifecycleDeps loads config, resolves the target space (the one
 // whose mirror holds the first artifact id in args, else the first
 // connected space — so `contract new`/no-arg verbs still get a valid
@@ -598,9 +627,9 @@ func resolveLifecycleDeps(ctx context.Context, p paths, args []string, stderr io
 	if len(cfg.Spaces) == 0 {
 		return lifecycleDeps{}, failf(stderr, "a2a: no connected space (run `a2a connect` first)")
 	}
-	machine, err := space.LoadMachineConfig(p.machineConfig)
+	machine, err := loadMachineConfigForWrite(p.machineConfig)
 	if err != nil {
-		return lifecycleDeps{}, failf(stderr, "a2a: no machine config (%s): %v", p.machineConfig, err)
+		return lifecycleDeps{}, failf(stderr, "a2a: unreadable machine config (%s): %v", p.machineConfig, err)
 	}
 
 	ref := resolveTargetSpaceRef(cfg, machine, p.projectRoot, firstArtifactID(args))
@@ -760,9 +789,9 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 
 	// Machine config (credential refs + mirror root) is needed only from
 	// here on — after the config-only guards, before any network work.
-	machine, err := space.LoadMachineConfig(p.machineConfig)
+	machine, err := loadMachineConfigForWrite(p.machineConfig)
 	if err != nil {
-		return failf(stderr, "a2a submit: no machine config (%s): %v", p.machineConfig, err)
+		return failf(stderr, "a2a submit: unreadable machine config (%s): %v", p.machineConfig, err)
 	}
 
 	mirrorDir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
@@ -943,9 +972,9 @@ func wireSpaceUpdate(ctx context.Context, cmd *cli.SpaceCommand, args []string) 
 		return fmt.Errorf("a2a space update: %d connected spaces — name one with --space <id>", len(cfg.Spaces))
 	}
 
-	machine, err := space.LoadMachineConfig(p.machineConfig)
+	machine, err := loadMachineConfigForWrite(p.machineConfig)
 	if err != nil {
-		return fmt.Errorf("a2a space update: no machine config (%s): %w", p.machineConfig, err)
+		return fmt.Errorf("a2a space update: unreadable machine config (%s): %w", p.machineConfig, err)
 	}
 	mirrorDir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
 	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL); err != nil {
