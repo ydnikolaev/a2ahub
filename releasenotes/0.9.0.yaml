@@ -104,3 +104,47 @@ changes:
     action:
       scope: none
       why: "test infrastructure and its runbook — nothing in the product changes"
+
+  - id: RN-0900-5
+    kind: fix
+    impact: high
+    subject: "A contract could never publish a successor once any version had been deprecated"
+    detail: >
+      `a2a contract deprecate --version 1.0.0` deprecates a VERSION — that is
+      what the flag means and what you intend. Internally the lifecycle recorded
+      that state against the whole CONTRACT, and there was no legal way back to
+      published, so every later publish was refused as an illegal transition.
+      The ordinary life of a live contract is publish 1.0, publish 2.0, deprecate
+      1.0, publish 3.0 — and it hit that wall on the last step, permanently. The
+      wall only appears once a contract has been in use for a while, which is why
+      nothing found it earlier. Publishing now returns the contract to published;
+      retire still requires a deprecation first, so nothing else moved. This is an
+      interim: the real fix is tracking state per version, so that "1.0.0 is
+      deprecated" and "2.0.0 is published" can both be true at once instead of
+      competing for one state. That needs its own design and a migration, and is
+      filed rather than rushed.
+    affects: [cli, mcp]
+    action:
+      scope: local
+      why: "the fix is in the binary; a contract already stuck at deprecated can publish again as soon as you update"
+      run: ["a2a update"]
+
+  - id: RN-0900-6
+    kind: fix
+    impact: normal
+    subject: "`a2a mcp` no longer refuses to start when the space is unreachable"
+    detail: >
+      The server cloned or fetched the space at startup, so a network blip, an
+      expired credential, or a laptop with no connection stopped it from starting
+      at all — even though the read tools need nothing but the local mirror
+      already on disk. You lost your inbox for a reason that had nothing to do
+      with reading it. It now degrades instead: the write tools are not
+      registered, the read tools serve from the local mirror, and the reason is
+      printed so an agent sees why a tool is missing rather than guessing. The
+      CLI's read path has behaved this way for several releases; this brings the
+      second surface in line.
+    affects: [mcp]
+    action:
+      scope: local
+      why: "the fix is in the binary; nothing in your space changes"
+      run: ["a2a update"]
