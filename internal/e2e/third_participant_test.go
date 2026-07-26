@@ -171,6 +171,7 @@ func newcomerQuestion(id string) string {
 		"space: fixture-space",
 		"from: gamma",
 		"to: [axon]",
+		"thread: " + e2eFixtureThread,
 		"actor: {kind: agent, name: bot, system: gamma}",
 		"created: 2026-07-26T00:00:00Z",
 		"priority: p3",

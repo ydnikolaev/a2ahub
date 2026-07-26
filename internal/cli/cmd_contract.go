@@ -61,6 +61,11 @@ type contractDescriptorProbe struct {
 		Tool         string `yaml:"tool"`
 		SourceDigest string `yaml:"source_digest"`
 	} `yaml:"generated_from"`
+	// Thread is the contract's own §3.8 thread id — spec 46 §T1 R2:
+	// `contract deprecate`'s linked announcement is DERIVED from this
+	// contract, so it inherits the SAME thread rather than minting or
+	// leaving one unfilled.
+	Thread string `yaml:"thread"`
 }
 
 // contractReadDescriptor reads and parses a contract's committed
@@ -1214,6 +1219,20 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 	// (the same "decode map / mutate / re-encode" idiom `contract publish`
 	// already uses for its own descriptor edit) — see this phase's
 	// Deviations report.
+	if probe.Thread == "" {
+		// Same refusal, same reason as RespondCommand's (see its comment):
+		// a source with no thread predates P46 and spec 46 carries no
+		// legacy path. This path is the quieter of the two failure modes
+		// and therefore the more dangerous — `contractAddFrontmatterFields`
+		// marshals an empty Go string as `thread: ""`, which was
+		// schema-valid before the field was patterned, so a deprecation
+		// announcement would have SILENTLY published itself outside every
+		// conversation.
+		_, _ = fmt.Fprintf(stdio.Stderr,
+			"contract deprecate: %s carries no thread, so its deprecation announcement has no conversation to join.\n"+
+				"That contract predates thread propagation; reseed the space or republish it with this version.\n", id)
+		return 1
+	}
 	announcementDraft, err = contractAddFrontmatterFields(announcementDraft, map[string]any{
 		// space/title are the template's own PLACEHOLDERS and
 		// template.Render fills neither, so every deprecation announcement
@@ -1230,6 +1249,12 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 		"ack_requested": true,
 		"deprecates":    id + "@" + deprecatedVersion,
 		"valid_until":   *sunset,
+		// spec 46 §T1 R2: this announcement is DERIVED from the contract
+		// being deprecated — it inherits the CONTRACT's own thread, set
+		// alongside space/title (the same "computed once, added onto the
+		// rendered frontmatter" idiom this call already uses for the
+		// template's other unfilled placeholders).
+		"thread": probe.Thread,
 	})
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %v\n", err)

@@ -29,6 +29,16 @@ type envelope struct {
 	Blocking       *bool      `yaml:"blocking"`
 	Refs           []refEntry `yaml:"refs"`
 	Classification string     `yaml:"classification"`
+	// Thread is §3.8's free-form correlation ID (a plain scalar; still
+	// schema-optional at the time this package was written — the P46
+	// schema tightening to required+patterned is the lead's wave, not
+	// this one). Read by the referential class's REF-009/REF-010
+	// (internal/validate/thread.go).
+	Thread string `yaml:"thread"`
+	// Parent is a response's plain-scalar link to the artifact it
+	// answers (response.schema.json; absent on every other envelope
+	// type). Read by REF-009's fork check.
+	Parent string `yaml:"parent"`
 }
 
 // decodeEnvelope parses fm's raw YAML bytes into both a typed envelope

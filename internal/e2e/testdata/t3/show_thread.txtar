@@ -4,5 +4,14 @@
 exec a2a show XR-axon-demo
 stdout 'XR-axon-demo requirement \(published\) — t'
 
-exec a2a thread XR-axon-demo
+# `a2a thread` is queried by THREAD id, not by artifact id. It used to be
+# passed XR-axon-demo and passed only because the fixture helper wrote the
+# artifact's own id into its `thread:` field — spec 46 records that as defect
+# D7: the single test claiming to cover this verb asserted a value that is not
+# a thread id at all, so it could not have caught a real thread bug.
+#
+# This is still the WEAK version of the assertion — one artifact, no events,
+# no ordering. Spec 46 §T7 replaces it with a real three-artifact chain; that
+# is P46 wave 6's job, and this line is deliberately not pretending to be it.
+exec a2a thread thread:axon-20260721-k3f9
 stdout 'XR-axon-demo'

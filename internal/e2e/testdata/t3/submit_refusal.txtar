@@ -17,6 +17,7 @@ title: t
 space: fixture-space
 from: beta
 to: [axon]
+thread: thread:beta-20260721-k3f9
 actor: {kind: agent, name: bot}
 created: 2026-07-21T10:00:00Z
 category: clarification

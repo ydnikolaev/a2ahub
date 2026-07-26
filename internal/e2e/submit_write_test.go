@@ -27,6 +27,7 @@ func writeQuestionDraft(t *testing.T, dir, id, from, to string) string {
 		"space: fixture-space\n" +
 		"from: " + from + "\n" +
 		"to: [" + to + "]\n" +
+		"thread: " + e2eFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: clarification\n" +
@@ -156,6 +157,7 @@ func TestT3SubmitContract(t *testing.T) {
 		"space: fixture-space\n"+
 		"from: axon\n"+
 		"to: [beta]\n"+
+		"thread: "+e2eFixtureThread+"\n"+
 		"actor: {kind: agent, name: bot}\n"+
 		"created: 2026-07-23T10:00:00Z\n"+
 		"category: data-feed\n"+
@@ -191,6 +193,7 @@ func TestT3SubmitDecision(t *testing.T) {
 		"id: "+id+"\n"+
 		"type: decision\n"+
 		"title: provenance is mandatory\n"+
+		"thread: "+e2eFixtureThread+"\n"+
 		"space: fixture-space\n"+
 		"from: axon\n"+
 		"to: [axon, beta]\n"+

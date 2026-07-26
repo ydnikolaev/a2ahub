@@ -123,9 +123,19 @@ func showV5Warnings(result cache.ShowResult) []validate.Violation {
 	return out
 }
 
-// ThreadInput is a2a_thread's structured input.
+// ThreadInput is a2a_thread's structured input. `space` is OPTIONAL — §T4's
+// space-locality rule: when a thread id resolves in more than one connected
+// space, the reader refuses and prints the rerun command; `space` is the
+// recovery path for that refusal (the CLI already has an equivalent).
+//
+// `cache.Store.Thread` (internal/cache/store.go:455) does not yet accept a
+// space filter — that signature change belongs to a later wave (W4) and
+// internal/cache is outside this wave's allowlist. Until then this field is
+// accepted and validated (non-empty-or-absent) but NOT wired through to the
+// store call; see this wave's deviations.
 type ThreadInput struct {
 	ThreadID string `json:"thread_id"`
+	Space    string `json:"space,omitempty"`
 }
 
 func newThreadHandler(store *cache.Store) HandlerFunc {
@@ -137,6 +147,12 @@ func newThreadHandler(store *cache.Store) HandlerFunc {
 		if in.ThreadID == "" {
 			return nil, "", fmt.Errorf("a2a_thread: thread_id is required")
 		}
+		// `space` is decoded above (ThreadInput.Space) but NOT applied
+		// here: `cache.Store.Thread` has no space filter yet (see the
+		// ThreadInput doc comment). A caller who passes it gets results
+		// across every connected space, exactly as before — this input
+		// exists so the field is not rejected as unknown, not so it
+		// narrows anything today.
 		items, err := store.Thread(ctx, in.ThreadID)
 		if err != nil {
 			return nil, "", fmt.Errorf("a2a_thread: %w", err)

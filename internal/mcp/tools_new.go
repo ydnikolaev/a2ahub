@@ -79,10 +79,27 @@ func newNewHandler(deps NewDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("new: items is required")
 		}
 
+		// §T1 "--thread is checked in two places, for two different
+		// things": at draft time this is GRAMMAR ONLY (a pure
+		// ParseThreadID call, no I/O) — whether the thread actually
+		// EXISTS in the space is the validator's job (REF-010), not
+		// this drafting verb's. Checked once for the whole batch, so a
+		// malformed value never gets a chance to mint anything first.
+		if in.Thread != "" {
+			if _, err := artifact.ParseThreadID(in.Thread); err != nil {
+				return nil, "", fmt.Errorf("new: malformed thread %q: %w", in.Thread, err)
+			}
+		}
+
 		if err := os.MkdirAll(deps.StagingDir, 0o755); err != nil {
 			return nil, "", fmt.Errorf("new: cannot create staging directory: %w", err)
 		}
 
+		// batchThread is the ONE thread every item in this call shares
+		// (§T1 "Batch"): the caller's explicit --thread if given,
+		// otherwise minted ONCE on the first item and reused for every
+		// other item — the agent makes no per-item choice.
+		var batchThread string
 		var out []newDraftResult
 		for _, item := range in.Items {
 			prefixInfo, ok := newTypePrefix[item.Type]
@@ -94,14 +111,34 @@ func newNewHandler(deps NewDeps) HandlerFunc {
 			for k, v := range item.Fields {
 				fields[k] = v
 			}
-			if in.Thread != "" {
-				fields["thread"] = in.Thread
-			}
+			// itemThread captures a per-item `fields.thread` override
+			// BEFORE the batch-level fill below can touch it — D0's own
+			// class of bug is a silently discarded override, so an
+			// item-level value that turns out to disagree with the
+			// resolved batch thread is a conflict (§T1 "Explicit
+			// conflict refuses"), never a silent overwrite.
+			itemThread := fields["thread"]
 			if _, has := fields["from"]; !has {
 				fields["from"] = deps.OwnSystem
 			}
 
 			now := deps.Now()
+
+			// §T1 "Mint always": no artifact is ever drafted off-thread.
+			if in.Thread != "" {
+				batchThread = in.Thread
+			} else if batchThread == "" {
+				mintedThread, terr := artifact.MintThreadIDAt(deps.OwnSystem, now, deps.Entropy)
+				if terr != nil {
+					return nil, "", fmt.Errorf("new: cannot mint thread: %w", terr)
+				}
+				batchThread = mintedThread
+			}
+			if itemThread != "" && itemThread != batchThread {
+				return nil, "", fmt.Errorf("new: thread conflict: item field thread %q differs from batch thread %q", itemThread, batchThread)
+			}
+			fields["thread"] = batchThread
+
 			var mintedID string
 			switch prefixInfo.Class {
 			case artifact.ClassStanding:

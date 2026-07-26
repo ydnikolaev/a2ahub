@@ -170,6 +170,89 @@ func TestNewMintsIDFromOwnSystem(t *testing.T) {
 	}
 }
 
+// TestNewMintsThreadWhenNoneSupplied is spec 46 §T1 R1: drafting a NEW
+// artifact with no --thread supplied mints one rather than leaving the
+// template's literal `<thread:...>` placeholder in the committed draft —
+// the happy path never leaves an artifact off-thread, and the agent never
+// types or invents a thread id.
+func TestNewMintsThreadWhenNoneSupplied(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{"question"}, io); code != 0 {
+		t.Fatalf("code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	entries, err := os.ReadDir(stagingDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("ReadDir: %v, %v", err, entries)
+	}
+	raw, err := os.ReadFile(filepath.Join(stagingDir, entries[0].Name()))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var threadLine string
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(line, "thread: ") {
+			threadLine = strings.TrimPrefix(line, "thread: ")
+			break
+		}
+	}
+	if threadLine == "" {
+		t.Fatalf("no thread: line found in drafted artifact:\n%s", raw)
+	}
+	parsed, perr := artifact.ParseThreadID(threadLine)
+	if perr != nil {
+		t.Fatalf("ParseThreadID(%q) = %v; a minted thread must always parse", threadLine, perr)
+	}
+	if parsed.System != "axon" {
+		t.Fatalf("minted thread system = %q, want axon", parsed.System)
+	}
+}
+
+// TestNewMalformedThreadRefused is spec 46 §T1 R6: draft-time thread
+// validation is GRAMMAR ONLY (artifact.ParseThreadID, a pure call, no I/O)
+// — a malformed --thread value is refused with exit 2, naming the bad
+// value, rather than reaching the store or silently minting a fresh one.
+func TestNewMalformedThreadRefused(t *testing.T) {
+	t.Parallel()
+	cmd := cli.NewNewCommand(t.TempDir(), "axon", fixedActorResolver, nil)
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"question", "--thread", "not-a-thread-id"}, io)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2 (malformed --thread)", code)
+	}
+	if !strings.Contains(errOut.String(), "not-a-thread-id") {
+		t.Fatalf("expected the bad value in stderr, got: %s", errOut.String())
+	}
+}
+
+// TestNewExplicitThreadPropagatesVerbatim confirms a well-formed --thread
+// lands in the drafted artifact unchanged (the R1 mint-fallback must not
+// override an explicit, valid value).
+func TestNewExplicitThreadPropagatesVerbatim(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+	io, out, errOut := newIO()
+	const wantThread = "thread:axon-20260726-a1b2"
+	code := cmd.Run(context.Background(), []string{"question", "--thread", wantThread}, io)
+	if code != 0 {
+		t.Fatalf("code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	entries, err := os.ReadDir(stagingDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("ReadDir: %v, %v", err, entries)
+	}
+	raw, err := os.ReadFile(filepath.Join(stagingDir, entries[0].Name()))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !bytes.Contains(raw, []byte("thread: "+wantThread)) {
+		t.Fatalf("expected the explicit --thread to land verbatim; got:\n%s", raw)
+	}
+}
+
 // TestNewDefaultsSpaceFromSingleConnectedSpace is the regression test for
 // the live-run defect: `a2a new <type>` used to leave `space: <space-id>`
 // (the literal template placeholder) whenever --field space= was not

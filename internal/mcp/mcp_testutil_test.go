@@ -96,6 +96,13 @@ func writeMirrorFile(t *testing.T, mirrorDir, relPath, content string) {
 	}
 }
 
+// testFixtureThread is the thread every fixture artifact carries. Since P46
+// every artifact `a2a new` drafts is minted onto one and `respond` REFUSES a
+// parent without one, so a threadless fixture no longer represents anything
+// this product can produce — it would only exercise a refusal path that has
+// its own dedicated test.
+const testFixtureThread = "thread:axon-20260721-k3f9"
+
 func writeQuestionArtifact(t *testing.T, mirrorDir, id, to string) {
 	t.Helper()
 	content := "---\n" +
@@ -106,6 +113,7 @@ func writeQuestionArtifact(t *testing.T, mirrorDir, id, to string) {
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [" + to + "]\n" +
+		"thread: " + testFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: clarification\n" +

@@ -219,6 +219,7 @@ func submitArtifact(t *testing.T, mirrorDir, kind, id, from string, to []string,
 			"space: fixture-space\n" +
 			"from: " + from + "\n" +
 			"to: [" + strings.Join(to, ", ") + "]\n" +
+			"thread: " + e2eFixtureThread + "\n" +
 			"actor: {kind: agent, name: bot}\n" +
 			"created: 2026-07-21T10:00:00Z\n" +
 			"category: new-capability\n" +

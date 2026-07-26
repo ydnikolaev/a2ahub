@@ -83,6 +83,15 @@ func writeMirrorFile(t *testing.T, mirrorDir, relPath, content string) {
 	}
 }
 
+// e2eFixtureThread is the §3.8 thread every fixture artifact carries. Before
+// P46 the requirement helper below wrote the artifact's OWN id here — the
+// exact defect spec 46 records as D7: a value that is not a thread id at all,
+// in the one test that claimed to cover `a2a thread`. Since P46 every artifact
+// `a2a new` drafts is minted onto a real thread and `respond` refuses a parent
+// without one, so a threadless (or malformed-thread) fixture represents
+// nothing this product can produce.
+const e2eFixtureThread = "thread:axon-20260721-k3f9"
+
 // writeQuestionArtifact seeds a committed `question` exchange under axon's
 // own section, from axon to `to`.
 func writeQuestionArtifact(t *testing.T, mirrorDir, id, to string) {
@@ -95,6 +104,7 @@ func writeQuestionArtifact(t *testing.T, mirrorDir, id, to string) {
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [" + to + "]\n" +
+		"thread: " + e2eFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: clarification\n" +
@@ -117,6 +127,7 @@ func writeRequirementArtifact(t *testing.T, mirrorDir, id, from, to string) {
 		"space: fixture-space\n" +
 		"from: " + from + "\n" +
 		"to: [" + to + "]\n" +
+		"thread: " + e2eFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: new-capability\n" +
@@ -124,7 +135,6 @@ func writeRequirementArtifact(t *testing.T, mirrorDir, id, from, to string) {
 		"blocking: true\n" +
 		"classification: internal\n" +
 		"acceptance_criteria: [\"works\"]\n" +
-		"thread: " + id + "\n" +
 		"---\nbody\n"
 	writeMirrorFile(t, mirrorDir, from+"/requires/"+id+".md", content)
 }
@@ -141,6 +151,7 @@ func writeHandoffArtifact(t *testing.T, mirrorDir, id, to string) {
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [" + to + "]\n" +
+		"thread: " + e2eFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"priority: p3\n" +
@@ -193,6 +204,7 @@ func writeContractDescriptorFor(t *testing.T, mirrorDir, from, slug, version str
 		"space: fixture-space\n" +
 		"from: " + from + "\n" +
 		"to: [beta]\n" +
+		"thread: " + e2eFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: api\n" +
@@ -251,6 +263,7 @@ func writeDeprecationAnnouncement(t *testing.T, mirrorDir, id, deprecates, sunse
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [beta]\n" +
+		"thread: " + e2eFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: deprecation\n" +

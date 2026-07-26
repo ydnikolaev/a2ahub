@@ -109,6 +109,7 @@ func (r *hostRig) stageQuestion(id, to string) (path string) {
 		"space: " + r.spaceID + "\n" +
 		"from: " + r.system + "\n" +
 		"to: [" + to + "]\n" +
+		"thread: " + e2eFixtureThread + "\n" +
 		"actor: {kind: agent, name: e2e}\n" +
 		"created: 2026-07-23T10:00:00Z\n" +
 		"category: clarification\n" +
@@ -155,6 +156,7 @@ func (r *hostRig) stageContract(slug, version string) (path, id string) {
 		"space: " + r.spaceID + "\n" +
 		"from: " + r.system + "\n" +
 		"to: [beta]\n" +
+		"thread: " + e2eFixtureThread + "\n" +
 		"actor: {kind: agent, name: e2e}\n" +
 		"created: 2026-07-23T10:00:00Z\n" +
 		"category: api\n" +
