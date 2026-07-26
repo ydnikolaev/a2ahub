@@ -165,8 +165,14 @@ func TestCheckoutRemoteHeadLockNeverReleasedReturnsBoundedTypedError(t *testing.
 	}
 	t.Cleanup(func() { _ = os.Remove(lockPath) })
 
+	lock, err := AcquireMirrorLock(context.Background(), dest)
+	if err != nil {
+		t.Fatalf("AcquireMirrorLock: %v", err)
+	}
+	defer func() { _ = lock.Release() }()
+
 	start := time.Now()
-	err = checkoutRemoteHead(context.Background(), dest)
+	err = checkoutRemoteHead(context.Background(), lock, dest)
 	elapsed := time.Since(start)
 
 	if !errors.Is(err, ErrMirrorLocked) {
@@ -205,11 +211,17 @@ func TestCheckoutRemoteHeadCtxCancelWhileWaitingReturnsPromptly(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Remove(lockPath) })
 
+	lock, err := AcquireMirrorLock(context.Background(), dest)
+	if err != nil {
+		t.Fatalf("AcquireMirrorLock: %v", err)
+	}
+	defer func() { _ = lock.Release() }()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
 	start := time.Now()
-	err = checkoutRemoteHead(ctx, dest)
+	err = checkoutRemoteHead(ctx, lock, dest)
 	elapsed := time.Since(start)
 
 	if !errors.Is(err, context.DeadlineExceeded) {

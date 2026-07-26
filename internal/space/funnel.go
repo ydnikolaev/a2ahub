@@ -504,7 +504,7 @@ func (f *WriteFunnel) commitAndPush(ctx context.Context, req SubmitRequest, bran
 	// safety net for every error return in this function.
 	defer func() { _ = lock.Release() }() // reason: best-effort cleanup — a failed release self-heals via mirrorLockStaleAfter and must not turn a completed/refused write into a different error
 
-	sha, fresh, err := f.commitOne(ctx, req, branch)
+	sha, fresh, err := f.commitOne(ctx, lock, req, branch)
 	if err != nil {
 		return commitAndPushOutcome{}, &Error{Op: op, Err: err}
 	}
@@ -713,9 +713,12 @@ func hasPathPrefix(path, prefix string) bool {
 // two-sequential-Submit repro, no goroutines involved) and is a second,
 // independent defect from the shared-index race AcquireMirrorLock exists
 // to close — a lock alone does not fix it.
-func (f *WriteFunnel) commitOne(ctx context.Context, req SubmitRequest, branch string) (sha string, fresh bool, err error) {
+func (f *WriteFunnel) commitOne(ctx context.Context, lock *MirrorLock, req SubmitRequest, branch string) (sha string, fresh bool, err error) {
 	if len(req.Files) == 0 {
 		return "", false, fmt.Errorf("space: commitOne: no files to commit")
+	}
+	if err := mutateTree(lock, req.RepoDir); err != nil {
+		return "", false, err
 	}
 
 	startPoint := "origin/" + resolvedBaseBranch(req)

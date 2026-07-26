@@ -87,7 +87,7 @@ func CloneOrFetch(ctx context.Context, dir, repoURL string) error {
 	if err := runGit(ctx, dir, "fetch", "origin"); err != nil {
 		return &Error{Op: op, Input: dir, Err: err}
 	}
-	if err := checkoutRemoteHead(ctx, dir); err != nil {
+	if err := checkoutRemoteHead(ctx, lock, dir); err != nil {
 		return &Error{Op: op, Input: dir, Err: err}
 	}
 	return nil
@@ -125,13 +125,50 @@ func CloneOrFetch(ctx context.Context, dir, repoURL string) error {
 // shared indexLockWaitBudget for the pair, so a second process WAITS
 // instead of losing its write outright (the live-e2e concurrent-writers
 // regression).
-func checkoutRemoteHead(ctx context.Context, dir string) error {
+func checkoutRemoteHead(ctx context.Context, lock *MirrorLock, dir string) error {
+	if err := mutateTree(lock, dir); err != nil {
+		return err
+	}
 	branch := remoteHeadBranch(ctx, dir)
 	deadline := time.Now().Add(indexLockWaitBudget)
 	if err := runGitRetryLocked(ctx, dir, deadline, "checkout", "-B", branch, "origin/"+branch); err != nil {
 		return err
 	}
 	return runGitRetryLocked(ctx, dir, deadline, "reset", "--hard", "origin/"+branch)
+}
+
+// mutateTree is the guard every working-tree mutation in this package
+// passes through. It takes the lock as a VALUE, not as a convention: the
+// three defects the live tier found in July 2026 — a lost write, a
+// crossed write (system B's PR carrying system A's files), and a branch
+// forked from a stale HEAD — were all one shape, a shared mirror mutated
+// by two processes at once. Two of the three had been read in this file
+// and ranked "latent" before the matrix found them, which is the argument
+// for making the compiler ask the question instead of a reviewer.
+//
+// The signature is the enforcement. A caller that has no lock cannot
+// produce a *MirrorLock to pass, so an unlocked mutation is not a bug you
+// can write here — it is code that does not compile. This function then
+// checks the one thing the type cannot: that the lock is for THIS mirror,
+// not a different one the caller happened to be holding.
+//
+// It takes no ctx and runs no git. It is a precondition, deliberately
+// separated from the git call it guards so that adding a mutation means
+// adding a lock parameter, not remembering to route through one more
+// wrapper.
+//
+// ONE mutation in this package is exempt and cannot use it: the initial
+// `git clone` in CloneOrFetch. There is no repository yet, so there is no
+// .git/ to hold a lock file in — see AcquireMirrorLock's own doc. That
+// path is guarded differently and sufficiently: it runs only when the
+// destination is empty or absent, and a clone into a non-empty non-git
+// directory is refused outright (ErrNonGitTarget).
+func mutateTree(lock *MirrorLock, dir string) error {
+	if !lock.guards(dir) {
+		return fmt.Errorf("space: refusing to mutate the mirror at %s without holding its lock "+
+			"(a shared mirror mutated unlocked is the crossed/lost-write class this guard exists to make unwritable)", dir)
+	}
+	return nil
 }
 
 // runGitRetryLocked runs `git <args...>` with cwd=dir, retrying ONLY when
