@@ -21,6 +21,7 @@ type Data struct {
 	Nodes         []Node         `json:"nodes"`
 	ContractEdges []ContractEdge `json:"contractEdges"`
 	ExchangeEdges []ExchangeEdge `json:"exchangeEdges"`
+	Threads       []Thread       `json:"threads"`
 	Inbox         []Item         `json:"inbox"`
 	Outbox        []Item         `json:"outbox"`
 	Contracts     []Contract     `json:"contracts"`
@@ -106,6 +107,61 @@ type Item struct {
 	// Description is a short human-readable summary (from the artifact body) —
 	// UNTRUSTED, rendered via textContent (D-001). Omitted when the body is empty.
 	Description string `json:"description,omitempty"`
+}
+
+// Thread is one multi-member conversation on the dashboard (spec 46 §T6.1) —
+// Store.ThreadView's read model projected for render. A thread whose rendered
+// member count is exactly 1 is never turned into a Thread (§T3's own
+// presentation rule): since P46 every artifact mints a thread, without this
+// filter every artifact in the system would show up as a "conversation" on
+// day one and the section would be pure noise. Sorted by LastActivity,
+// most-recent-first (the conversation-list convention).
+type Thread struct {
+	ID           string         `json:"id"`
+	Space        string         `json:"space"`
+	Participants []string       `json:"participants"`
+	MemberCount  int            `json:"memberCount"`
+	OpenCount    int            `json:"openCount"`
+	LastActivity string         `json:"lastActivity"` // pre-formatted age (e.g. "5d"), "" if no timestamped member
+	Opener       ThreadOpener   `json:"opener"`
+	YourMove     bool           `json:"yourMove"` // true when an open member is waiting on Data.Self
+	Members      []ThreadMember `json:"members"`
+	Links        []DocLink      `json:"links"`
+}
+
+// ThreadOpener is a thread's computed opener — the brief's own {id,title}
+// shape (cache.ThreadOpener also carries `from`; deliberately dropped here,
+// the member list already carries every member's `from`).
+type ThreadOpener struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+// ThreadMember is one document inside a Thread's transcript, in transcript
+// order (Store.ThreadView's own committed/declared ordering — never
+// re-derived here).
+type ThreadMember struct {
+	ID    string   `json:"id"`
+	Type  string   `json:"type"`
+	Title string   `json:"title"`
+	From  string   `json:"from"`
+	To    []string `json:"to,omitempty"`
+	State string   `json:"state"`
+	Seq   int64    `json:"seq"`
+}
+
+// DocLink is one document-to-document edge inside a thread — the piece
+// Item.Thread's old flat mono-text rendering could never show: `parent`
+// comes from response.schema.json's own `parent` field, `ref` from an
+// envelope's `refs[]` entries resolved against the SAME thread's own
+// rendered member set (an edge whose target is not itself a rendered
+// member of this thread is not drawn — the forward ref already renders;
+// see this phase's Deviations report for `supersede`, never emitted: the
+// event refs it needs are not exposed past internal/cache today).
+type DocLink struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Kind string `json:"kind"` // parent | ref | supersede
 }
 
 // Contract is one contract in the catalog (from Store.Contracts).

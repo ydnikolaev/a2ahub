@@ -41,12 +41,11 @@ the manual-relay era was items with no individual state).
 
 1. **Classify** each part into exactly one type (the table above). One intent
    per artifact.
-2. **Draft each on one shared thread.** Mint a thread ID on the first artifact
-   (`thread:<system>-<YYYYMMDD>-<rand4>`, §3.8) and carry the same `thread` on
-   all three so tooling renders them as one conversation. Draft each with
-   `a2a new <type>` (per-type skeletons in [authoring/](authoring/)); via the
-   MCP surface, `a2a_new` accepts an `items[]` array that drafts several
-   artifacts on one thread in a single call.
+2. **Draft each on one shared thread.** The first draft via `a2a new <type>`
+   mints a thread automatically. For subsequent drafts on the same thread,
+   pass `--thread <that value>` (or use `a2a_new`'s `items[]` batch call via
+   the MCP surface, which handles all three on one thread in a single call).
+   Per-type skeletons are in [authoring/](authoring/).
 3. **Validate** each draft with `a2a validate`.
 4. **Submit as one batch.** `a2a submit --batch` lands all three in one commit /
    one PR (see [commands.md](commands.md) for exact flag grammar). The

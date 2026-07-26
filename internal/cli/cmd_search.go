@@ -42,7 +42,7 @@ func (c *SearchCommand) Name() string { return "search" }
 
 // Synopsis implements cli.Command.
 func (c *SearchCommand) Synopsis() string {
-	return "search the local cache: search <query> [--type --space --state]"
+	return "search the local cache: search <query> [--type --space --state --thread]"
 }
 
 // Run implements cli.Command. Exit codes: 2 = usage; 1 = a connected
@@ -53,6 +53,7 @@ func (c *SearchCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	typeFlag := fs.String("type", "", "filter by envelope type")
 	spaceFlag := fs.String("space", "", "filter by connected space id")
 	stateFlag := fs.String("state", "", "filter by folded state")
+	threadFlag := fs.String("thread", "", "filter by thread id")
 	jsonOut := fs.Bool("json", false, "JSON array output")
 	// Wave K fix (live run 6, "thirteen verbs refuse a flag written after
 	// their positional argument"): parseArgsAnyOrder (cli.go), not a bare
@@ -62,7 +63,7 @@ func (c *SearchCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 2
 	}
 	if len(positional) != 1 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a search <query> [--type --space --state] [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a search <query> [--type --space --state --thread] [--json]")
 		return 2
 	}
 
@@ -70,6 +71,19 @@ func (c *SearchCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "search: %v\n", err)
 		return 1
+	}
+	// --thread has no home in cache.SearchFilters (internal/cache is off
+	// limits this wave — see this phase's Deviations report): filtered
+	// here, client-side, over cache.Item's own Thread field, same exact-
+	// match semantics as --type/--space/--state.
+	if *threadFlag != "" {
+		filtered := make([]cache.Item, 0, len(items))
+		for _, it := range items {
+			if it.Thread == *threadFlag {
+				filtered = append(filtered, it)
+			}
+		}
+		items = filtered
 	}
 	if *jsonOut {
 		enc := json.NewEncoder(stdio.Stdout)

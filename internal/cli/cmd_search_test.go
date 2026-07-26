@@ -59,6 +59,43 @@ func TestSearchCommand_FlagAfterPositional(t *testing.T) {
 	}
 }
 
+// TestSearchCommand_ThreadFilter is the brief's own new clause: --thread
+// narrows results to items on that thread, client-side over cache.Item's
+// own Thread field (cache.SearchFilters has no thread slot; internal/cache
+// is off limits this wave — see this phase's Deviations report).
+func TestSearchCommand_ThreadFilter(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	manifest := cliWriteManifest(t, dir, "axon", "seomatrix")
+	base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+
+	onThread := cliWR("XW-axon-20260701-t1", "matching item", "axon", []string{"seomatrix"}, "p2", false)
+	onThread["thread"] = "TH-axon-target"
+	cliWriteArtifact(t, dir, "axon/exchanges/XW-axon-20260701-t1.md", onThread, "body")
+	cliWriteEvent(t, dir, "axon", "01HFX00000000000000000050", cliEvt("XW-axon-20260701-t1", "submit", "axon", base))
+
+	offThread := cliWR("XW-axon-20260701-t2", "matching item", "axon", []string{"seomatrix"}, "p2", false)
+	offThread["thread"] = "TH-axon-other"
+	cliWriteArtifact(t, dir, "axon/exchanges/XW-axon-20260701-t2.md", offThread, "body")
+	cliWriteEvent(t, dir, "axon", "01HFX00000000000000000051", cliEvt("XW-axon-20260701-t2", "submit", "axon", base))
+
+	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}}, func() time.Time { return base.Add(time.Hour) }, 0)
+	cmd := cli.NewSearchCommand(store)
+
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"matching", "--thread", "TH-axon-target", "--json"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	var items []cache.Item
+	if err := json.Unmarshal(out.Bytes(), &items); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "XW-axon-20260701-t1" {
+		t.Fatalf("got %+v, want exactly XW-axon-20260701-t1", items)
+	}
+}
+
 func TestSearchCommand_UsageError(t *testing.T) {
 	t.Parallel()
 	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)

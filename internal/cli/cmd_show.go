@@ -90,6 +90,13 @@ func (c *ShowCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 
 	_, _ = fmt.Fprintf(stdio.Stdout, "%s %s (%s) — %s\n", result.ID, result.Type, result.State, result.Title)
+	if result.Thread != "" {
+		// Printed as a runnable next step, not as a bare field: an agent
+		// holding one artifact id otherwise has no way to reach the
+		// conversation it belongs to (spec 46 D6), and naming the command
+		// is what turns "here is a value" into "here is your next move".
+		_, _ = fmt.Fprintf(stdio.Stdout, "thread: %s (a2a thread %s)\n", result.Thread, result.Thread)
+	}
 	_, _ = fmt.Fprintln(stdio.Stdout, result.Body)
 	for _, w := range out.Warnings {
 		code := w.Code

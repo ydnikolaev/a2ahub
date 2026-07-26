@@ -97,7 +97,12 @@ forge or skip a gate (§8.5).
 D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
 [reference/commands.md](reference/commands.md).)*
 
-4. **Ledger check (P25 addition, not part of the quoted plan text above):** if
+4. **Read each thread.** For any item in step 2 or 3 that you intend to act on
+   this session, run `a2a thread <thread-id>` to see the full conversation —
+   what was asked, all responses so far, and whose move it is next. (An
+   artifact's thread id is shown by `a2a show <id>` or in inbox/outbox
+   listings.)
+5. **Ledger check (P25 addition, not part of the quoted plan text above):** if
    your feedback ledger (`.a2a/feedback/ledger.yaml`) is non-empty, optionally
    run `a2a feedback status` — this closes the loop on anything you filed
    earlier and feeds the `duplicates_checked` gate (§8.7) the next time you
@@ -112,11 +117,14 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
    case: classify it into parts, draft each on a shared `thread`, and submit
    them together as one batch (one PR). Never park a secondary intent in another
    artifact's body — the receiver may decline with `split-required`.
-2. **Draft** with `a2a new <type>`. Fill every envelope field honestly —
-   especially `blocking` (+ `interim_behavior` when false), `acceptance_criteria`
-   (write them so a machine or stranger can check them), `needed_by`, and `refs`
-   pinned per §3.8. The per-type skeleton and field guidance are in
-   [reference/authoring/](reference/authoring/).
+2. **Draft** with `a2a new <type>`. The tool mints a thread automatically; your
+   job is: when hand-drafting multiple related artifacts, pass `--thread <id>`
+   on drafts after the first one (or use one batch call via `a2a_new` with
+   `items[]`, which handles all on one thread automatically). Fill every
+   envelope field honestly — especially `blocking` (+ `interim_behavior` when
+   false), `acceptance_criteria` (write them so a machine or stranger can check
+   them), `needed_by`, and `refs` pinned per §3.8. Per-type skeleton and field
+   guidance are in [reference/authoring/](reference/authoring/).
 3. **Body discipline:** specify, don't muse. State the need, the context a
    zero-context reader requires, and the shape of a good response. Never include
    secrets, private code, or raw prompts (§10.4).
@@ -127,8 +135,9 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
    the statusline surfaces movement. If `needed_by` passes silently, escalate
    per 8.5.
 6. **On response:** verify against YOUR acceptance criteria — actually check,
-   never rubber-stamp. Pass → `a2a verify` (for a single-response exchange this
-   also closes the parent; a requirement completes via `a2a satisfy`). Fail →
+   never rubber-stamp. `a2a respond` joins its reply to the parent's thread
+   automatically. Pass → `a2a verify` (for a single-response exchange this also
+   closes the parent; a requirement completes via `a2a satisfy`). Fail →
    `a2a dispute` with concrete findings, at most twice per exchange before human
    escalation (8.5).
 7. **Register consumed contracts:** `a2a contract adopt <XC-id>` writes your

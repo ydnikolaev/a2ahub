@@ -24,7 +24,7 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 	}
 	mirrors := store.SpaceMirrors()
 	d := Data{GeneratedAt: now, Self: self, Nodes: []Node{}, ContractEdges: []ContractEdge{},
-		ExchangeEdges: []ExchangeEdge{}, Inbox: []Item{}, Outbox: []Item{}, Contracts: []Contract{},
+		ExchangeEdges: []ExchangeEdge{}, Threads: []Thread{}, Inbox: []Item{}, Outbox: []Item{}, Contracts: []Contract{},
 		Spaces: []SpaceHealth{}, Flags: []Flag{}}
 
 	un := store.UpdateNotice()
@@ -139,7 +139,165 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 	// Exchange overlay: aggregate open items (inbox ∪ outbox) per from→to→space.
 	d.ExchangeEdges = exchangeEdges(append(append([]cache.Item{}, inItems...), outItems...), now)
 
+	// Conversations: multi-member threads, with their members and the
+	// document-to-document links inside them (spec 46 §T6.1).
+	threads, err := buildThreads(ctx, store, self, now)
+	if err != nil {
+		return Data{}, fmt.Errorf("html: threads: %w", err)
+	}
+	d.Threads = threads
+
 	return d, nil
+}
+
+// buildThreads discovers every thread with 2+ members (§T3's own
+// presentation rule — see Thread's own doc comment) by grouping
+// Store.Search's full (open + closed) item listing per (space, thread), then
+// renders each qualifying group through Store.ThreadView — the SAME reader
+// `a2a thread` itself uses, never a second traversal of the fold. spaceID is
+// ALWAYS passed explicitly (never ""): every group is already scoped to one
+// space, so this never triggers ThreadView's cross-space
+// *cache.ThreadAmbiguityError path (CC-073 — a thread present in two spaces
+// is two separate Data.Thread rows here, one per space, matching
+// Thread.Space). A ThreadView error for one group degrades that group away
+// (skip, continue) rather than failing the whole dashboard — same "degrade,
+// never fail the view" convention as this file's own consumes.yaml read.
+func buildThreads(ctx context.Context, store *cache.Store, self string, now time.Time) ([]Thread, error) {
+	items, err := store.Search(ctx, "", cache.SearchFilters{})
+	if err != nil {
+		return nil, fmt.Errorf("search: %w", err)
+	}
+
+	type groupKey struct{ space, thread string }
+	counts := map[groupKey]int{}
+	var order []groupKey
+	for _, it := range items {
+		if it.Thread == "" {
+			continue // threadless (pre-P46 / non-conforming) artifacts never group into a pseudo-thread
+		}
+		k := groupKey{it.Space, it.Thread}
+		if counts[k] == 0 {
+			order = append(order, k)
+		}
+		counts[k]++
+	}
+
+	type row struct {
+		t  Thread
+		at time.Time
+	}
+	var rows []row
+	for _, k := range order {
+		if counts[k] < 2 {
+			continue // cheap pre-filter before the full ThreadView traversal
+		}
+		result, tErr := store.ThreadView(ctx, k.thread, k.space)
+		if tErr != nil {
+			continue
+		}
+		if len(result.Artifacts) < 2 {
+			continue // ThreadView's own rendered member set is authoritative
+		}
+		th, at := toThread(result, self)
+		rows = append(rows, row{t: th, at: at})
+	}
+
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].at.After(rows[j].at) })
+	out := make([]Thread, 0, len(rows))
+	for _, r := range rows {
+		r.t.LastActivity = humanizeAge(now, r.at)
+		out = append(out, r.t)
+	}
+	return out, nil
+}
+
+// toThread projects one cache.ThreadResult into the dashboard's Thread shape
+// plus its own last-activity timestamp (the sort key buildThreads uses before
+// formatting it away into Thread.LastActivity).
+func toThread(result cache.ThreadResult, self string) (Thread, time.Time) {
+	byID := make(map[string]cache.ThreadArtifact, len(result.Artifacts))
+	for _, a := range result.Artifacts {
+		byID[a.ID] = a
+	}
+
+	members := make([]ThreadMember, 0, len(result.Artifacts))
+	var last time.Time
+	for _, entry := range result.Transcript {
+		if entry.At.After(last) {
+			last = entry.At
+		}
+		if entry.Kind != "artifact" || entry.Artifact == nil {
+			continue
+		}
+		state := byID[entry.Artifact.ID].State
+		members = append(members, ThreadMember{
+			ID: entry.Artifact.ID, Type: entry.Artifact.Type, Title: entry.Artifact.Title,
+			From: entry.Artifact.From, To: entry.Artifact.To, State: state, Seq: entry.Seq,
+		})
+	}
+
+	var links []DocLink
+	for _, a := range result.Artifacts {
+		if a.Parent != "" {
+			if _, ok := byID[a.Parent]; ok {
+				links = append(links, DocLink{From: a.ID, To: a.Parent, Kind: "parent"})
+			}
+		}
+		for _, r := range a.Refs {
+			target := refID(r.Ref)
+			if _, ok := byID[target]; ok {
+				links = append(links, DocLink{From: a.ID, To: target, Kind: "ref"})
+			}
+		}
+	}
+
+	yourMove := false
+	openCount := len(result.OpenItems)
+	for _, oi := range result.OpenItems {
+		if containsString(oi.WaitingOn, self) {
+			yourMove = true
+		}
+	}
+
+	if links == nil {
+		links = []DocLink{}
+	}
+
+	return Thread{
+		ID: result.Thread, Space: result.Space, Participants: result.Participants,
+		MemberCount: len(result.Artifacts), OpenCount: openCount,
+		Opener:   ThreadOpener{ID: result.Opener.ID, Title: result.Opener.Title},
+		YourMove: yourMove, Members: members, Links: links,
+	}, last
+}
+
+// refID extracts the bare artifact id from a §5.7 ref grammar string (`id`,
+// `id@version`, `id#digest`, or a cross-space `space:id...` form) — a local,
+// minimal re-projection of cache's own unexported splitRef (the "each layer
+// owns its own minimal decode" idiom internal/cache/decode.go's own doc
+// comment already establishes), needed because DocLink.To must be a bare id
+// to join against a thread's own rendered member set.
+func refID(ref string) string {
+	rest := ref
+	if i := strings.IndexByte(rest, '#'); i >= 0 {
+		rest = rest[:i]
+	}
+	if i := strings.IndexByte(rest, '@'); i >= 0 {
+		rest = rest[:i]
+	}
+	if i := strings.IndexByte(rest, ':'); i >= 0 {
+		rest = rest[i+1:]
+	}
+	return rest
+}
+
+func containsString(in []string, want string) bool {
+	for _, v := range in {
+		if v == want {
+			return true
+		}
+	}
+	return false
 }
 
 // toItem maps a cache.Item to the model Item with derived age + severity.

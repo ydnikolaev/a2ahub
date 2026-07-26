@@ -199,6 +199,30 @@ func TestRender_SanitizesScriptBreakout(t *testing.T) {
 	}
 }
 
+// TestRender_SanitizesThreadTitle is TestRender_SanitizesScriptBreakout's own
+// shape, for the newly-surfaced Thread.Opener/Thread.Members titles (spec 46
+// §T6.1): a hostile title anywhere in a Thread must not break out of the
+// <script> block either — same json.MarshalIndent escaping, exercised over
+// the new struct.
+func TestRender_SanitizesThreadTitle(t *testing.T) {
+	t.Parallel()
+	hostile := `</script><img src=x onerror=alert(1)>`
+	data := Data{Threads: []Thread{{
+		ID: "thread:x", Opener: ThreadOpener{ID: "XW-x", Title: hostile},
+		Members: []ThreadMember{{ID: "XW-x", Title: hostile}},
+	}}}
+	out, err := Render([]byte(bothRegionsTmpl), data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(out, []byte("</script><img")) {
+		t.Fatalf("hostile thread title broke out of the script block:\n%s", out)
+	}
+	if !bytes.Contains(out, []byte(`</script>`)) {
+		t.Fatalf("expected escaped < in the injected JSON:\n%s", out)
+	}
+}
+
 // TestRender_MarkerInTitleIsInert guards the two-region injection against an
 // untrusted title that contains the literal DOCS marker string: because both
 // regions are located on the ORIGINAL template (never re-scanned over the

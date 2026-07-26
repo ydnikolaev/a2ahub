@@ -85,14 +85,19 @@ type EventSummary struct {
 // ShowResult is `a2a show <ref>`'s full output shape (OP-209): artifact
 // body + folded state + event list + facts a V5 code lookup needs.
 type ShowResult struct {
-	Space     string         `json:"space"`
-	ID        string         `json:"id"`
-	Type      string         `json:"type"`
-	Title     string         `json:"title"`
-	From      string         `json:"from"`
-	To        []string       `json:"to,omitempty"`
-	State     string         `json:"state"`
-	Body      string         `json:"body"`
+	Space string   `json:"space"`
+	ID    string   `json:"id"`
+	Type  string   `json:"type"`
+	Title string   `json:"title"`
+	From  string   `json:"from"`
+	To    []string `json:"to,omitempty"`
+	State string   `json:"state"`
+	Body  string   `json:"body"`
+	// Thread is the §3.8 conversation this artifact belongs to. Surfaced by
+	// `a2a show` so an agent holding one id can reach the whole exchange —
+	// without it, the only way to find a conversation is to already know its
+	// thread id, which is the discovery dead-end spec 46 records as D6.
+	Thread    string         `json:"thread,omitempty"`
 	Digest    string         `json:"digest"`
 	Events    []EventSummary `json:"events"`
 	Flags     []string       `json:"flags,omitempty"`

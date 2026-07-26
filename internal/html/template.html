@@ -285,6 +285,15 @@ button{font:inherit}
 .showmore{width:100%;text-align:center;padding:10px;background:none;border:none;color:var(--accent);font-weight:600;cursor:pointer;font-size:12.5px}
 .showmore:hover{background:var(--surface-2)}
 
+/* ---------------------------------------------------------------- threads */
+.thread-members{display:flex;flex-direction:column;gap:6px;margin-top:12px}
+.thread-member{display:flex;align-items:center;gap:8px;font-size:12px;min-width:0}
+.thread-member .ititle{flex:1;font-size:12px}
+.thread-member .state{font-size:10.5px;color:var(--text-faint);white-space:nowrap}
+.thread-links{display:flex;flex-direction:column;gap:4px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.thread-link{font-size:11px;font-family:var(--mono);color:var(--text-dim);word-break:break-word}
+.thread-link .kind{color:var(--accent);font-weight:600}
+
 /* ---------------------------------------------------------------- deps */
 .dep{padding:12px 16px;border-top:1px solid var(--hair)}
 .dep:first-child{border-top:none}
@@ -634,7 +643,9 @@ const I18N = {
       degradedD:"The local mirror of this space is malformed or unreadable, so its artifacts can't be shown. Every other space is unaffected — this is a partial failure, not a page-wide error. Re-sync to repair it.",
       notConfT:"No spaces connected yet",notConfD:"This system isn't part of any a2a space. Connect one to see who you depend on and who's waiting on you. Open the Guide anytime to learn the model.",
       lastSync:"Last sync",repo:"Repository",participants:"Participants",statusLbl:"Status",fresh:"Fresh",staleWord:"Stale",unreadable:"Unreadable",all:"All",direction:"Direction",age:"Age",itemId:"ID",thread:"Thread",signals:"Signals",
-      docs:"Documentation",docsSearch:"Search docs…",copy:"Copy",copied:"Copied",onThisPage:"On this page",docsEnHint:"Documentation is in English.",docsEmpty:"Documentation isn't available in this build.",docsNoResults:"No sections match your search."},
+      docs:"Documentation",docsSearch:"Search docs…",copy:"Copy",copied:"Copied",onThisPage:"On this page",docsEnHint:"Documentation is in English.",docsEmpty:"Documentation isn't available in this build.",docsNoResults:"No sections match your search.",
+      threadsCard:"Conversations",yourMove:"Your move",lastActivity:"Last activity",threadMembers:"Members",threadLinks:"Links",
+      linkKind:{parent:"parent",ref:"ref",supersede:"supersede"}},
     guide:{eyebrow:"A newcomer's guide",title:"How a2ahub works",
       secTypes:"The 8 artifact types",secTypesSub:"Everything systems exchange is one of these typed files.",
       secLife:"The lifecycle of an exchange",secLifeSub:"Every item moves left to right through these states.",
@@ -668,7 +679,9 @@ const I18N = {
       degradedD:"Локальное зеркало спейса повреждено или нечитаемо, поэтому его артефакты показать нельзя. Остальные спейсы работают — это частичный сбой, а не ошибка всей страницы. Повторите синхронизацию, чтобы восстановить.",
       notConfT:"Спейсы ещё не подключены",notConfD:"Эта система не входит ни в один спейс a2a. Подключите спейс, чтобы видеть, от кого вы зависите и кто ждёт вас. Справку можно открыть в любой момент.",
       lastSync:"Синхронизация",repo:"Репозиторий",participants:"Участники",statusLbl:"Статус",fresh:"Свежо",staleWord:"Устарело",unreadable:"Нечитаемо",all:"Все",direction:"Направление",age:"Возраст",itemId:"ID",thread:"Тред",signals:"Сигналы",
-      docs:"Документация",docsSearch:"Поиск по докам…",copy:"Копировать",copied:"Скопировано",onThisPage:"На этой странице",docsEnHint:"Документация на английском.",docsEmpty:"Документация недоступна в этой сборке.",docsNoResults:"Ничего не найдено."},
+      docs:"Документация",docsSearch:"Поиск по докам…",copy:"Копировать",copied:"Скопировано",onThisPage:"На этой странице",docsEnHint:"Документация на английском.",docsEmpty:"Документация недоступна в этой сборке.",docsNoResults:"Ничего не найдено.",
+      threadsCard:"Треды",yourMove:"Ваш ход",lastActivity:"Последняя активность",threadMembers:"Участники треда",threadLinks:"Связи",
+      linkKind:{parent:"родитель",ref:"ссылка",supersede:"замена"}},
     guide:{eyebrow:"Гид для новичка",title:"Как устроен a2ahub",
       secTypes:"8 типов артефактов",secTypesSub:"Всё, чем обмениваются системы, — один из этих типизированных файлов.",
       secLife:"Жизненный цикл обмена",secLifeSub:"Каждая задача идёт слева направо через эти состояния.",
@@ -1054,6 +1067,8 @@ function renderDashboard(c,ctx){
   left.appendChild(inboxCard(inScope(DATA.inbox||[]),{combined,inbound:true}));
   const outbox=inScope(DATA.outbox||[]);
   if(outbox.length) left.appendChild(inboxCard(outbox,{combined,inbound:false}));
+  const threads=inScope(DATA.threads||[]);
+  if(threads.length) left.appendChild(threadsCard(threads,{combined}));
   right.appendChild(contractsCard(cEdges,inScope(DATA.contracts||[]),combined));
   right.appendChild(healthCard(ctx.spaces));
   const flags=inScope(DATA.flags||[]);
@@ -1486,6 +1501,80 @@ function itemDetail(it,o){
 }
 function searchIcon(){ return svgIcon([["circle",{cx:11,cy:11,r:7}],["path",{d:"M21 21l-4.3-4.3"}]]); }
 function searchBigIcon(){ return svgIcon([["circle",{cx:11,cy:11,r:7}],["path",{d:"M21 21l-4.3-4.3"}]],{width:22,height:22}); }
+
+/* ================================================================ THREADS
+ * spec 46 §T6.1: the conversation list, expandable into its members with
+ * the document-to-document links (parent/ref/supersede) drawn between
+ * them. threads is already the current scope's filtered Data.Threads —
+ * one-member threads never reach here (Assemble's own §T3 presentation
+ * rule, before this template ever sees the data). */
+function threadsCard(threads,o){
+  const card=el("div",{class:"card"});
+  const head=el("div",{class:"card-h"});
+  head.appendChild(el("h2",{text:L.ui.threadsCard}));
+  head.appendChild(el("span",{class:"cnt-note",text:threads.length+" "+L.ui.open}));
+  head.appendChild(el("span",{class:"sp"}));
+  card.appendChild(head);
+  const scroll=el("div",{class:"panelscroll"});
+  threads.forEach(th=>scroll.appendChild(threadRow(th,o)));
+  card.appendChild(scroll);
+  return card;
+}
+function threadRow(th,o){
+  const key="th:"+th.space+":"+th.id, open=S.rowOpen.has(key);
+  const row=el("div",{class:"ibx-row"+(th.yourMove?" blk":"")+(open?" open":"")});
+  const main=el("div",{class:"ibx-main",onclick:()=>{ if(open)S.rowOpen.delete(key); else S.rowOpen.add(key); render(); }});
+  main.appendChild(el("span",{class:"sdot "+(th.yourMove?"blocking":"normal")}));
+  const title=safeTitle(th.opener&&th.opener.title);
+  main.appendChild(el("span",{class:"ititle",title:title,text:title}));
+  const right=el("div",{class:"iright"});
+  right.appendChild(el("span",{class:"pslot"},th.yourMove?el("span",{class:"pri p1",text:L.ui.yourMove}):null));
+  right.appendChild(el("span",{class:"nslot"}));
+  right.appendChild(chevron(open));
+  main.appendChild(right);
+  row.appendChild(main);
+  if(open) row.appendChild(threadDetail(th,o));
+  return row;
+}
+function threadDetail(th,o){
+  const d=el("div",{class:"ibx-detail"});
+  const kv=el("div",{class:"d-kv"});
+  const add=(k,v,cls)=>{ kv.appendChild(el("span",{class:"dk",text:k}));
+    const dv=el("span",{class:"dv"+(cls?" "+cls:"")});
+    (Array.isArray(v)?v:[v]).forEach(x=>dv.appendChild(typeof x==="string"?document.createTextNode(x):x));
+    kv.appendChild(dv); };
+  add(L.ui.participants,(th.participants||[]).join(", "));
+  add(L.ui.lastActivity,th.lastActivity||"—");
+  if(o.combined) add(L.ui.space,[el("span",{class:"spacechip",text:th.space})]);
+  add(L.ui.itemId,trunc(th.id,34),"mono");
+  d.appendChild(kv);
+
+  const members=el("div",{class:"thread-members"});
+  (th.members||[]).forEach(m=>{
+    const mrow=el("div",{class:"thread-member"});
+    mrow.appendChild(typeBadge(m.type));
+    const mtitle=safeTitle(m.title);
+    mrow.appendChild(el("span",{class:"ititle",title:mtitle,text:mtitle}));
+    mrow.appendChild(el("span",{class:"party",text:m.from}));
+    mrow.appendChild(el("span",{class:"state",text:stateWord(m.state)}));
+    members.appendChild(mrow);
+  });
+  d.appendChild(members);
+
+  if((th.links||[]).length){
+    const links=el("div",{class:"thread-links"});
+    th.links.forEach(l=>{
+      const kindWord=(L.ui.linkKind&&L.ui.linkKind[l.kind])||l.kind;
+      links.appendChild(el("div",{class:"thread-link"},[
+        document.createTextNode(trunc(l.from,24)+" —"),
+        el("span",{class:"kind",text:kindWord}),
+        document.createTextNode("→ "+trunc(l.to,24))
+      ]));
+    });
+    d.appendChild(links);
+  }
+  return d;
+}
 
 /* ================================================================ CONTRACTS */
 function contractsCard(cEdges,contracts,combined){

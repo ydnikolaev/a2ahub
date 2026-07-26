@@ -418,7 +418,7 @@ func (s *Store) buildShowResult(fa foldedArtifact, spaceID string, all []foldedA
 	return ShowResult{
 		Space: spaceID, ID: fa.Env.ID, Type: fa.Env.Type, Title: fa.Env.Title,
 		From: fa.Env.From, To: normalizeTo(fa.Env.To), State: string(fa.Result.State),
-		Body: string(fm.Body), Digest: fa.Digest, Events: events, Flags: flags, Refs: refs,
+		Body: string(fm.Body), Thread: fa.Env.Thread, Digest: fa.Digest, Events: events, Flags: flags, Refs: refs,
 		SyncStale: syncStale, SyncAge: age.String(),
 	}
 }
