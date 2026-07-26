@@ -330,3 +330,78 @@ func TestServerNilRegistryPanics(t *testing.T) {
 	}()
 	NewServer(nil, "a2a-mcp", "0.0.1-test", nil)
 }
+
+// TestServerPreCallRunsBeforeEveryHandler is the regression for the defect
+// that made a long-lived session read a space frozen at startup.
+//
+// The CLI resolves its dependencies — the mirror refresh included — on
+// every invocation, so each command sees the space as of a fetch it just
+// did. An MCP server resolves ONCE, at construction, and then serves every
+// subsequent call from that view; before the pre-call hook, the legality
+// fold that decides whether a transition is legal read a working tree that
+// had not moved since the process started.
+//
+// The assertion is ORDERING, not merely "it was called": a refresh that
+// runs after the handler is worth nothing to the handler.
+func TestServerPreCallRunsBeforeEveryHandler(t *testing.T) {
+	t.Parallel()
+
+	var order []string
+	r := NewRegistry()
+	r.Register(ToolSpec{
+		Name:        "a2a_echo",
+		Description: "echoes its input",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handler: func(_ context.Context, _ json.RawMessage) (any, string, error) {
+			order = append(order, "handler")
+			return map[string]any{"ok": true}, "", nil
+		},
+	})
+
+	s := NewServer(r, "a2a-mcp", "0.0.1-test", nil)
+	s.SetPreCall(func(_ context.Context, tool string) error {
+		order = append(order, "refresh:"+tool)
+		return nil
+	})
+
+	req := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"a2a_echo","arguments":{}}}` + "\n" +
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"a2a_echo","arguments":{}}}` + "\n"
+	var out bytes.Buffer
+	if err := s.Serve(context.Background(), strings.NewReader(req), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+
+	want := []string{"refresh:a2a_echo", "handler", "refresh:a2a_echo", "handler"}
+	if len(order) != len(want) {
+		t.Fatalf("call order = %v, want %v", order, want)
+	}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("call order = %v, want %v — the SECOND call is the one that matters: "+
+				"a session that refreshes only at startup is the defect this exists to prevent", order, want)
+		}
+	}
+}
+
+// TestServerPreCallFailureStillServesTheCall pins the deliberate
+// asymmetry: an unreachable origin must not take the session down. The
+// CLI's own read path makes the same trade — serve the last good view with
+// a warning rather than refuse to work because the network is down.
+func TestServerPreCallFailureStillServesTheCall(t *testing.T) {
+	t.Parallel()
+
+	s := NewServer(testRegistry(), "a2a-mcp", "0.0.1-test", nil)
+	s.SetPreCall(func(_ context.Context, _ string) error {
+		return errors.New("origin unreachable")
+	})
+
+	req := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"a2a_echo","arguments":{"x":1}}}` + "\n"
+	var out bytes.Buffer
+	if err := s.Serve(context.Background(), strings.NewReader(req), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	resps := decodeLines(t, &out)
+	if len(resps) != 1 || resps[0].Error != nil {
+		t.Fatalf("a failed refresh must not turn the call into an RPC error: %+v", resps)
+	}
+}

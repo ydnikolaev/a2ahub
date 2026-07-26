@@ -23,6 +23,20 @@ type Server struct {
 	name     string
 	version  string
 	log      *slog.Logger
+
+	// preCall, when set, runs before every tools/call handler. It exists so
+	// a long-lived session can refresh its view of the space without this
+	// protocol layer knowing what a mirror is — wire.go supplies the
+	// behaviour, callTool supplies the one place it happens.
+	preCall func(ctx context.Context, tool string) error
+}
+
+// SetPreCall installs a hook that runs before every tools/call handler.
+// A nil hook disables it. Passing it here rather than to NewServer keeps
+// the constructor's signature — and every existing test that builds a
+// Server — unchanged.
+func (s *Server) SetPreCall(fn func(ctx context.Context, tool string) error) {
+	s.preCall = fn
 }
 
 // NewServer constructs a Server over registry. name/version populate the
@@ -164,6 +178,30 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (any, *rp
 	spec, ok := s.registry.Get(p.Name)
 	if !ok {
 		return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool: " + p.Name}
+	}
+
+	// Refresh the session's view of the space before every tool call.
+	//
+	// This is the difference between the two surfaces, and it was a real
+	// defect rather than a nicety. The CLI resolves its dependencies —
+	// CloneOrFetch included — on every invocation, so each command sees the
+	// space as of a fetch it just did. An MCP server resolves once, at
+	// construction, and then serves every subsequent call from that view. A
+	// long session therefore validated transitions against a snapshot taken
+	// when it started.
+	//
+	// One place, deliberately: a per-handler refresh is a rule ten handlers
+	// have to remember, and the eleventh will not.
+	//
+	// Best-effort by design, and the asymmetry is the same one the CLI's own
+	// read path makes: a refresh that fails leaves the session on its last
+	// good view, which is strictly better than refusing to work at all
+	// because the network is down. It is logged, never silent.
+	if s.preCall != nil {
+		if err := s.preCall(ctx, p.Name); err != nil {
+			s.log.Warn("mcp: pre-call mirror refresh failed; serving from the last good view",
+				"tool", p.Name, "err", err)
+		}
 	}
 
 	structured, body, err := spec.Handler(ctx, p.Arguments)

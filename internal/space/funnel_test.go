@@ -1193,3 +1193,74 @@ func TestFunnelReleasesMirrorLockOnPushErrorPath(t *testing.T) {
 			elapsed, mirrorLockWaitBudget)
 	}
 }
+
+// TestFunnelLeavesTheMirrorOnBaseNotOnTheWriteBranch is the regression for
+// the defect that made `a2a mcp` validate transitions against a state the
+// space never agreed to.
+//
+// commitOne checks out the ephemeral write branch and, before this fix,
+// never left. Only checkoutRemoteHead moved the tree back, and its single
+// production caller is CloneOrFetch — which the CLI runs per invocation
+// (so it was never bitten) and which an MCP server runs ONCE, at
+// construction. A long-lived process's second write therefore folded its
+// legality over a working tree standing on the first write's UNMERGED
+// branch.
+//
+// The assertion is deliberately about the TREE, not about HEAD's name: a
+// reader in this product globs files off the mirror directory
+// (<system>/events/**), it does not consult refs. So the property that
+// actually matters is "the files a reader would see are the space's, not
+// the in-flight write's".
+func TestFunnelLeavesTheMirrorOnBaseNotOnTheWriteBranch(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "alpha", "bravo")
+	shared := filepath.Join(t.TempDir(), "shared-mirror")
+	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL()); err != nil {
+		t.Fatalf("seed shared mirror: %v", err)
+	}
+
+	la, err := NewLayout("alpha")
+	if err != nil {
+		t.Fatalf("NewLayout(alpha): %v", err)
+	}
+	req := concurrentMirrorWriteRequest(shared, "alpha", "01J8QYK2Z3ABCDEFGHJKMNPQSA", la)
+
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	res, err := funnel.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	// The written artifact must NOT be visible in the mirror's working
+	// tree: it lives on an unmerged branch, and a reader of this mirror is
+	// reading the space.
+	written := filepath.Join(shared, filepath.FromSlash(la.Exchange("XQ-alpha-20260721-conc")))
+	if _, statErr := os.Stat(written); statErr == nil {
+		head, _ := runGitOutput(context.Background(), shared, nil, "rev-parse", "--abbrev-ref", "HEAD")
+		t.Fatalf("the mirror still shows the unmerged write at %s (HEAD=%s, branch=%s) — "+
+			"a long-lived reader would fold a transition over a state the space never agreed to",
+			written, strings.TrimSpace(head), res.Branch)
+	} else if !os.IsNotExist(statErr) {
+		t.Fatalf("stat %s: %v", written, statErr)
+	}
+
+	// And the tree is on base, not merely emptied of that one file.
+	head, err := runGitOutput(context.Background(), shared, nil, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		t.Fatalf("rev-parse HEAD: %v", err)
+	}
+	if got := strings.TrimSpace(head); got != "main" {
+		t.Fatalf("mirror left on %q, want the base branch %q", got, "main")
+	}
+
+	// The write itself still happened — a "restore" that quietly discarded
+	// the commit would satisfy every assertion above.
+	if res.Branch == "" || res.CommitSHA == "" {
+		t.Fatalf("Submit returned no branch/sha: %+v", res)
+	}
+	if err := runGit(context.Background(), shared, "merge-base", "--is-ancestor", res.CommitSHA, res.Branch); err != nil {
+		t.Fatalf("the write's commit %s is not on its own branch %s after the restore: %v",
+			res.CommitSHA, res.Branch, err)
+	}
+}

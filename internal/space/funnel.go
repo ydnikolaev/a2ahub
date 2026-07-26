@@ -8,6 +8,7 @@ import (
 	gopath "path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
 )
@@ -448,6 +449,41 @@ func resolvedBaseBranch(req SubmitRequest) string {
 	return req.BaseBranch
 }
 
+// restoreTreeToBase moves the mirror's working tree off the ephemeral
+// write branch and back onto the base branch as the mirror last fetched
+// it, so the funnel leaves the mirror the way it found it: a view of the
+// SPACE, not of one in-flight write.
+//
+// It deliberately resets to `origin/<base>` rather than to the local base
+// ref. The local ref can lag or have been moved by a previous write; the
+// remote-tracking ref is what "the space, as of the last fetch" means, and
+// it is the same anchor commitOne's own start point uses — so a write and
+// the cleanup after it can never disagree about which commit base is.
+//
+// What this does NOT do, stated so nobody reads a stronger guarantee into
+// it: it does not fetch. The tree is restored to the last-fetched base,
+// not to whatever the remote holds right now. Freshness is the reader's
+// concern (internal/cache's SyncIfStale, and CloneOrFetch behind it); this
+// function's only job is that a write does not leave the mirror pinned to
+// its own unmerged branch.
+func (f *WriteFunnel) restoreTreeToBase(ctx context.Context, lock *MirrorLock, req SubmitRequest) error {
+	if err := mutateTree(lock, req.RepoDir); err != nil {
+		return err
+	}
+	base := resolvedBaseBranch(req)
+	if err := runGit(ctx, req.RepoDir, "rev-parse", "--verify", "origin/"+base); err != nil {
+		// No remote-tracking base to restore to (a fixture with no origin,
+		// a base that has never been fetched). Leaving the tree where it is
+		// beats resetting it to something invented.
+		return nil //nolint:nilerr // reason: an unresolvable base means there is nothing to restore TO, which is not a failure of the write
+	}
+	deadline := time.Now().Add(indexLockWaitBudget)
+	if err := runGitRetryLocked(ctx, req.RepoDir, deadline, "checkout", "-B", base, "origin/"+base); err != nil {
+		return err
+	}
+	return runGitRetryLocked(ctx, req.RepoDir, deadline, "reset", "--hard", "origin/"+base)
+}
+
 // commitIsOnBase reports whether sha is already contained in the base
 // branch as the mirror last fetched it — i.e. this write's content is
 // already in the space. An unresolvable base ref answers "no": writing a
@@ -499,10 +535,41 @@ func (f *WriteFunnel) commitAndPush(ctx context.Context, req SubmitRequest, bran
 	if err != nil {
 		return commitAndPushOutcome{}, &Error{Op: op, Input: branch, Err: err}
 	}
-	// The explicit release on the success path below already ran by the
-	// time this fires; MirrorLock.Release is idempotent, so this is the
-	// safety net for every error return in this function.
-	defer func() { _ = lock.Release() }() // reason: best-effort cleanup — a failed release self-heals via mirrorLockStaleAfter and must not turn a completed/refused write into a different error
+
+	// Leaving the tree on the ephemeral branch and releasing is what made a
+	// long-lived process read a mirror that is not the space. commitOne
+	// checks out a2a/<system>/<verb>/<id> and never leaves; the only thing
+	// that ever moved it back was checkoutRemoteHead, reachable solely
+	// through CloneOrFetch. The CLI got away with it because it re-syncs on
+	// every invocation. `a2a mcp` does not: it clones once at server
+	// construction and then serves N writes, so write #2's legality read
+	// walked a tree standing on write #1's UNMERGED branch — validating a
+	// transition against a state the space had never agreed to.
+	//
+	// So the restore belongs here, at the writer, not at every reader: the
+	// invariant is that the funnel leaves the mirror as it found it.
+	//
+	// Ordering is the whole trick and it is why this is one closure rather
+	// than two defers. The restore is itself a mutation, so it must happen
+	// while the lock is still HELD; the success path below used to release
+	// early on purpose (nothing after it touches RepoDir, and every other
+	// writer should be unblocked the moment the push lands). Both paths now
+	// go through this, and it runs once.
+	restored := false
+	restoreAndRelease := func() {
+		if !restored {
+			restored = true
+			// Best-effort by design: the write has already succeeded or
+			// already failed, and neither verdict should change because
+			// tidying the tree afterwards did not work. A failed restore
+			// degrades to exactly the old behaviour — a mirror parked on a
+			// branch until the next CloneOrFetch — rather than losing a
+			// write or leaking the lock.
+			_ = f.restoreTreeToBase(ctx, lock, req)
+		}
+		_ = lock.Release() // reason: best-effort — a failed release self-heals via mirrorLockStaleAfter and must not turn a completed/refused write into a different error
+	}
+	defer restoreAndRelease()
 
 	sha, fresh, err := f.commitOne(ctx, lock, req, branch)
 	if err != nil {
@@ -546,11 +613,12 @@ func (f *WriteFunnel) commitAndPush(ctx context.Context, req SubmitRequest, bran
 		head = forkHead
 	}
 
-	// Release NOW, explicitly, rather than waiting for the deferred safety
-	// net: nothing left in this function touches req.RepoDir, and every
-	// other writer waiting on this mirror should be unblocked the moment
-	// this one's push lands, not after this function merely returns.
-	_ = lock.Release() // reason: best-effort — see the deferred release's own comment above
+	// Restore and release NOW, explicitly, rather than waiting for the
+	// deferred safety net: nothing left in this function touches
+	// req.RepoDir, and every other writer waiting on this mirror should be
+	// unblocked the moment this one's push lands, not after this function
+	// merely returns.
+	restoreAndRelease()
 
 	return commitAndPushOutcome{sha: sha, head: head}, nil
 }

@@ -146,7 +146,7 @@ func TestE2E1Cascade(t *testing.T) {
 	if code := respondCmd.Run(context.Background(), []string{"--result", "answered", qID}, io2); code != 0 {
 		t.Fatalf("respond: code = %d, want 0; stderr=%s", code, errOut2.String())
 	}
-	responseID := latestXSFile(t, gammaMirror)
+	responseID := latestXSFile(t, gammaMirror, lastOpenedBranch(fakeHost))
 	mergeBranchToMain(t, gammaMirror, lastOpenedBranch(fakeHost))
 	fetchMain(t, axonMirror)
 

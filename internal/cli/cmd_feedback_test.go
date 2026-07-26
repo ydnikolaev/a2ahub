@@ -279,12 +279,19 @@ status: new
 		t.Fatalf("PR title = %q, want %q", fakeHost.Opens[0].Title, wantTitle)
 	}
 
-	// One-file-payload assertion: the pushed commit's working tree carries
-	// exactly feedback/inbox/<id>.yaml (nothing else) — walk the committed
-	// tree at the pushed branch via the mirror's own git history.
-	committedPath := filepath.Join(mirrorDir, "feedback", "inbox", "fb-20260723-cafe01.yaml")
-	if _, err := os.Stat(committedPath); err != nil {
-		t.Fatalf("expected the committed file at %s: %v", committedPath, err)
+	// One-file-payload assertion: the pushed COMMIT carries exactly
+	// feedback/inbox/<id>.yaml.
+	//
+	// This is what the comment here always claimed — "walk the committed
+	// tree at the pushed branch" — while the code underneath it stat'ed the
+	// working tree, and passed only because the funnel used to leave the
+	// mirror parked on the write branch. Now that a write restores the
+	// mirror to its base (see space.WriteFunnel's restoreTreeToBase), the
+	// assertion has to read the commit it names.
+	committedPath := "feedback/inbox/fb-20260723-cafe01.yaml"
+	changed := strings.Fields(gitOutputForTest(t, mirrorDir, "show", "--name-only", "--pretty=format:", wantBranch))
+	if len(changed) != 1 || changed[0] != committedPath {
+		t.Fatalf("the pushed commit changed %v, want exactly [%s]", changed, committedPath)
 	}
 
 	// Idempotent resubmit: no second push/open.

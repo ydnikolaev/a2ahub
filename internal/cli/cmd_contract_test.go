@@ -1786,3 +1786,18 @@ func contractEventDigest(t *testing.T, files []space.FileWrite) string {
 	t.Fatalf("no axon/events/**/*.yaml file found in %+v", files)
 	return ""
 }
+
+// gitOutputForTest runs `git <args...>` with cwd=dir and returns stdout,
+// failing the test loudly. The read-only sibling of gitRun, for assertions
+// that must inspect a COMMIT rather than the working tree — since a write
+// no longer leaves the mirror standing on its own branch.
+func gitOutputForTest(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v (dir=%s): %v", args, dir, err)
+	}
+	return string(out)
+}

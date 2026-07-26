@@ -270,7 +270,7 @@ func TestT3LifecycleTransitionCoverage(t *testing.T) {
 		// latestXSFile reads the LATEST commit's own file list — it must
 		// run BEFORE mergeBranchToMain, whose own `merge --no-ff` commit
 		// carries no file list of its own.
-		responseID := latestXSFile(t, mirrorDir)
+		responseID := latestXSFile(t, mirrorDir, lastOpenedBranch(fakeHost))
 		mergeBranchToMain(t, mirrorDir, lastOpenedBranch(fakeHost))
 		assertShow(t, mirrorDir, "fixture-space", parentID, "responded")
 		assertShow(t, mirrorDir, "fixture-space", responseID, "submitted")
@@ -293,7 +293,7 @@ func TestT3LifecycleTransitionCoverage(t *testing.T) {
 
 		respondCmd := cli.NewRespondCommand(funnel, mirrorDir, "fixture-space", "beta", e2eManifest(), e2eHostConfig("beta", remote), e2eActorResolver("agent", "bot"))
 		mustRunLegal(t, "respond (setup)", respondCmd, []string{"--result", "answered", parentID})
-		responseID := latestXSFile(t, mirrorDir)
+		responseID := latestXSFile(t, mirrorDir, lastOpenedBranch(fakeHost))
 		mergeBranchToMain(t, mirrorDir, lastOpenedBranch(fakeHost))
 
 		verifyCmd := cli.NewVerifyCommand(funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", remote), e2eActorResolver("agent", "bot"))
@@ -315,15 +315,19 @@ func TestT3LifecycleTransitionCoverage(t *testing.T) {
 
 		respondCmd := cli.NewRespondCommand(funnel, mirrorDir, "fixture-space", "beta", e2eManifest(), e2eHostConfig("beta", remote), e2eActorResolver("agent", "bot"))
 		mustRunLegal(t, "respond (setup)", respondCmd, []string{"--result", "answered", parentID})
-		responseID := latestXSFile(t, mirrorDir)
+		responseID := latestXSFile(t, mirrorDir, lastOpenedBranch(fakeHost))
 		mergeBranchToMain(t, mirrorDir, lastOpenedBranch(fakeHost))
 
 		disputeCmd := cli.NewDisputeCommand(funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", remote), e2eActorResolver("agent", "bot"))
 		mustRunLegal(t, "dispute", disputeCmd, []string{"--reason", "wrong answer", "--reason-code", "out-of-scope", responseID})
 		// --reason-code is exercised for real (spec §2's "dispute --reason-code"
-		// callout): assert the committed event actually carries it, while
-		// still on the ephemeral branch (before the merge below).
-		diff := gitOutput(t, mirrorDir, "show", "HEAD")
+		// callout): assert the committed event actually carries it. Read the
+		// WRITE BRANCH by name, not HEAD: the funnel now restores the mirror
+		// to base before releasing its lock (a write must not leave the mirror
+		// parked on an unmerged branch — see the funnel's own restoreTreeToBase),
+		// so HEAD here is main and its tip is a merge commit carrying no file
+		// list of its own.
+		diff := gitOutput(t, mirrorDir, "show", lastOpenedBranch(fakeHost))
 		if !strings.Contains(diff, "reason_code: out-of-scope") {
 			t.Fatalf("dispute: expected the committed event to carry reason_code: out-of-scope; got:\n%s", diff)
 		}

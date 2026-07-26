@@ -71,6 +71,13 @@ func testE2E4G2GateAndLinkedDeprecation(t *testing.T) {
 		t.Fatalf("publish 1.0.0: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
 	}
 
+	// Land the first publish: the second one reads the COMMITTED descriptor,
+	// which reaches the mirror's base branch only when the first PR merges.
+	// This chain used to pass without the merge because the funnel left the
+	// mirror parked on the publish branch — never a behaviour a user had, as
+	// a real second invocation begins with CloneOrFetch's own reset to base.
+	mergeBranchToMain(t, mirrorDir, lastOpenedBranch(fakeHost))
+
 	// G2: a declared MAJOR bump on a non-first publish is gated (advisory
 	// PRBody marker — AC-202.1's own "G2" clause).
 	io2, out2, errOut2 := newIO()
@@ -107,6 +114,10 @@ func testE2E4G2GateAndLinkedDeprecation(t *testing.T) {
 	if code := cmd.Run(context.Background(), []string{"deprecate", "--version", "1.0.0", "--successor", "XC-axon-g2widget@2.0.0", "--sunset", "2099-01-01", "XC-axon-g2widget"}, io3); code != 0 {
 		t.Fatalf("deprecate: code = %d, want 0; stdout=%s stderr=%s", code, out3.String(), errOut3.String())
 	}
+	// Land the deprecation before reading its announcement off the working
+	// tree — same reason as above: the funnel no longer leaves the mirror on
+	// the write branch.
+	mergeBranchToMain(t, mirrorDir, lastOpenedBranch(fakeHost))
 	announcementID := latestAnnouncementFile(t, mirrorDir)
 	raw, err := os.ReadFile(filepath.Join(mirrorDir, "axon/exchanges/"+announcementID+".md"))
 	if err != nil {
@@ -180,6 +191,10 @@ func testE2E4RetireOverrideSucceeds(t *testing.T) {
 	if len(fakeHost.Opens) != 1 {
 		t.Fatalf("expected exactly one OpenPR call (override path), got %d", len(fakeHost.Opens))
 	}
+	// Land the retire before reading its event off the working tree: the
+	// funnel restores the mirror to base, so an unmerged write is no longer
+	// visible there (see the funnel's restoreTreeToBase).
+	mergeBranchToMain(t, mirrorDir, lastOpenedBranch(fakeHost))
 	retireEvent := latestEventFile(t, mirrorDir, "axon")
 	if !strings.Contains(retireEvent, "retired-unacked") {
 		t.Fatalf("expected the retire event to flag the overridden consumer, got:\n%s", retireEvent)
