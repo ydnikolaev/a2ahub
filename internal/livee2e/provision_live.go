@@ -19,11 +19,6 @@ import (
 // real" earns its keep on a space a mis-set env could otherwise reach.
 const testSpaceDescription = "a2ahub live-e2e test space — reset by the harness (spec 36). Nothing here is real."
 
-// requiredCheckContext is the compound required check branch protection
-// names (spec 33 §11 / spec 34 §2) — the exact string internal/host's
-// CheckStatus resolves against (AC-961.1).
-const requiredCheckContext = "a2a-validate / validate"
-
 // ResetSpace brings the dedicated test space to the clean, two-participant
 // scaffold every run starts from (spec 36 §T4 idempotency; ports
 // docs/runbooks/live-e2e/reset.sh with the two corrections the plan
@@ -108,29 +103,16 @@ func (h *harness) ResetSpace(ctx context.Context) error {
 		}
 	}
 
-	if err := h.Prov.PatchRepo(ctx, h.Org, h.Repo, map[string]any{
-		"allow_auto_merge":       true,
-		"delete_branch_on_merge": true,
-	}); err != nil {
+	if err := h.Prov.PatchRepo(ctx, h.Org, h.Repo, RepoSettingsBody()); err != nil {
 		return fmt.Errorf("livee2e: ResetSpace: patch repo settings: %w", err)
 	}
 
-	if err := h.Prov.PutProtection(ctx, h.Org, h.Repo, "main", map[string]any{
-		"required_status_checks": map[string]any{
-			"strict": false,
-			"checks": []map[string]any{{"context": requiredCheckContext}},
-		},
-		// §T6-a: mirrors production deliberately. Setting this true would
-		// test a config production does not run.
-		"enforce_admins": false,
-		"required_pull_request_reviews": map[string]any{
-			"require_code_owner_reviews":      true,
-			"required_approving_review_count": 0,
-		},
-		"restrictions":       nil,
-		"allow_force_pushes": false,
-		"allow_deletions":    false,
-	}); err != nil {
+	// The body is ProtectionBody()'s, not a literal here: it is the same data
+	// space-template/BRANCH-PROTECTION.md is checked against on every commit
+	// (protection.go, protection_test.go). A literal in this tagged file is
+	// invisible to `make check`, which is how the checklist and reality came to
+	// disagree in three places at once.
+	if err := h.Prov.PutProtection(ctx, h.Org, h.Repo, "main", ProtectionBody()); err != nil {
 		return fmt.Errorf("livee2e: ResetSpace: arm protection: %w", err)
 	}
 
