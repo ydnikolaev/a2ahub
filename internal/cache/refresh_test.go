@@ -76,6 +76,151 @@ func TestSyncIfStale_RefreshRevealsNewlyPublishedArtifact(t *testing.T) {
 	}
 }
 
+// TestSyncIfStale_RevealsAMergeInsideTheStatuslineWindow is the BEHAVIOURAL
+// regression for RN-0910-1, and it exists because the two tests either side of
+// it could not fail on that defect.
+//
+// The one above ages its mirror by TWO HOURS. That is outside every window
+// either version of this code ever used, so it passed before the fix and after
+// it — vacuous for this defect specifically. And
+// TestSyncIfStaleDoesNotInheritTheStatuslineTTL pins only the RELATIONSHIP
+// between two constants: it would still pass if the read path stopped calling
+// SyncIfStale altogether, or if the staleness check were dropped. Neither
+// asserts the thing a user experiences.
+//
+// So this row aims at the ONE window where the defect lived: a mirror synced
+// 60 seconds ago is INSIDE the statusline's five-minute window (which the read
+// path used to share) and OUTSIDE readRefreshTTL (which it has of its own).
+// The Store is therefore built with the real production DefaultStatuslineTTL
+// rather than the hour these tests usually pass, because the whole point is
+// what happens when the two windows disagree.
+//
+//	pre-fix:  60s < 5m  -> skipped as fresh -> the artifact stays invisible
+//	post-fix: 60s > 30s -> refreshed        -> the artifact is there
+//
+// Which is exactly the shape found by hand against a live space on
+// 2026-07-26: an artifact whose pull request had just merged was invisible to
+// `outbox` and answered "artifact not found" from `show`, and one explicit
+// `a2a sync` revealed it at once. Sixty seconds is not an edge case — it is
+// how long a counterparty's merge takes, and the session-start loop every
+// agent follows reads an empty inbox as permission to proceed.
+//
+// No sleeping and no wall-clock dependency: ageMirror backdates the sync
+// markers, so the window is exact.
+//
+// It runs as a PAIR — the same fixture, the same merge, two ages either side of
+// readRefreshTTL and opposite outcomes. The pair is what proves the visibility
+// assertion is actually sensitive to the refresh: a test that only ever asserts
+// "the artifact is visible" would also pass if the artifact were visible for
+// some reason having nothing to do with fetching, and this whole file exists
+// because of an assertion that agreed with the code about a situation neither
+// would ever meet.
+func TestSyncIfStale_RevealsAMergeInsideTheStatuslineWindow(t *testing.T) {
+	t.Parallel()
+
+	// Guard the premise rather than assume it. If the constants ever move so
+	// that a minute no longer sits between them, these cases would keep
+	// passing while asserting nothing about the defect — the same vacuity they
+	// were written to replace.
+	const insideTheOldWindow = time.Minute
+	if insideTheOldWindow <= readRefreshTTL || insideTheOldWindow >= DefaultStatuslineTTL {
+		t.Fatalf("this test's whole point is an age INSIDE the statusline window and OUTSIDE the read "+
+			"window; %s no longer sits between readRefreshTTL (%s) and DefaultStatuslineTTL (%s), so it "+
+			"would pass without exercising the defect", insideTheOldWindow, readRefreshTTL, DefaultStatuslineTTL)
+	}
+	const withinTheReadWindow = readRefreshTTL / 3
+
+	const merged = "XW-seomatrix-20260701-justmerged"
+
+	cases := []struct {
+		name        string
+		age         time.Duration
+		wantVisible bool
+	}{
+		{
+			// THE DEFECT. A minute old means recently fetched — by this side's
+			// own `a2a submit`, in the live reproduction — so a window sized
+			// for a shell prompt calls it fresh and the merge that happened
+			// since stays invisible.
+			name: "a minute old: fresh to the statusline, stale to a read verb — the merge must surface",
+			age:  insideTheOldWindow, wantVisible: true,
+		},
+		{
+			// The other direction, and it is not just symmetry: several read
+			// verbs in one agent turn (inbox, then show, then thread) must not
+			// each pay a fetch for an answer that cannot have changed between
+			// them. It also proves the case above is decided by the refresh
+			// and not by something incidental in the fixture.
+			name: "inside the read window: not refetched, so the merge is NOT yet visible",
+			age:  withinTheReadWindow, wantVisible: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+			store := NewStore("axon", t.TempDir(),
+				[]SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, RepoURL: fx.dir, Manifest: mustManifest(t, fx)}},
+				time.Now, DefaultStatuslineTTL)
+
+			// The counterparty publishes and merges behind this mirror's back,
+			// the same way the row above does it: a second independent clone of
+			// the same origin, never touching fx.dir.
+			origin := filepath.Join(filepath.Dir(fx.dir), "origin.git")
+			other := filepath.Join(t.TempDir(), "other-clone")
+			fxRunGit(t, "", "clone", origin, other)
+			second := &fixtureSpace{t: t, dir: other, year: fx.year}
+			base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+			second.commitArtifact("seomatrix/exchanges/"+merged+".md",
+				wr(merged, "just merged", "seomatrix", []string{"axon"}, "p2", false), "body")
+			second.commitEvent("seomatrix", fxULID(901), evt(merged, "submit", "seomatrix", base))
+
+			ageMirror(t, fx.dir, tc.age)
+
+			if errs := store.SyncIfStale(context.Background()); len(errs) != 0 {
+				t.Fatalf("SyncIfStale: %v", errs)
+			}
+
+			items, err := store.Inbox(context.Background(), false)
+			if err != nil {
+				t.Fatalf("Inbox: %v", err)
+			}
+			visible := len(items) == 1 && items[0].ID == merged
+			switch {
+			case tc.wantVisible && !visible:
+				t.Fatalf("Inbox = %+v, want the just-merged artifact.\n"+
+					"A mirror synced %s ago was treated as fresh, so a merge that happened since is "+
+					"invisible — this is RN-0910-1 exactly, and the agent reading this inbox is told by "+
+					"the documented session-start loop to proceed as if nothing arrived", items, tc.age)
+			case !tc.wantVisible && visible:
+				t.Fatalf("Inbox = %+v — a mirror synced %s ago was refetched, inside the %s read window. "+
+					"Either the dedupe window is gone (a burst of read verbs now pays a fetch each) or "+
+					"this artifact is visible for a reason unrelated to fetching, which would make the "+
+					"case above vacuous", items, tc.age, readRefreshTTL)
+			}
+
+			if !tc.wantVisible {
+				return
+			}
+			// `show` is named separately because it is the verb that answered
+			// "artifact not found" in the live reproduction, and it resolves a
+			// single ref rather than walking the index — a different code path
+			// to the same mirror, and the one whose failure reads as "that
+			// artifact does not exist" rather than as "nothing new".
+			shown, err := store.Show(context.Background(), merged)
+			if err != nil {
+				t.Fatalf("Show after the refresh: %v — this is the \"artifact not found\" the live "+
+					"space answered on v0.9.0", err)
+			}
+			if shown.ID != merged {
+				t.Fatalf("Show = %+v, want the just-merged artifact", shown)
+			}
+		})
+	}
+}
+
 // TestSyncIfStale_RefreshesManifestSoNewParticipantIsAuthorized covers a
 // narrower instance of the exact same defect class SyncIfStale exists to
 // kill: walkArtifacts/walkEvents (mirror.go) are generic tree walks, so

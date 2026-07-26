@@ -40,7 +40,9 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
@@ -308,5 +310,152 @@ func TestWireCorruptMachineConfigStillRefuses(t *testing.T) {
 
 	if code == 0 || !strings.Contains(strings.ToLower(out), "machine config") {
 		t.Fatalf("a CORRUPT machine config must still refuse by name; code=%d\noutput:\n%s", code, out)
+	}
+}
+
+// wireMirrorDir returns the one mirror the project resolved to, failing if
+// there is not exactly one — a glob that silently matched none is how a test
+// asserting on the mirror can pass having looked at nothing.
+func wireMirrorDir(t *testing.T, projectRoot string) string {
+	t.Helper()
+	dirs, err := filepath.Glob(filepath.Join(projectRoot, ".a2a", "cache", "mirrors", "*"))
+	if err != nil {
+		t.Fatalf("glob mirrors: %v", err)
+	}
+	if len(dirs) != 1 {
+		t.Fatalf("want exactly one mirror under the project, found %d: %v", len(dirs), dirs)
+	}
+	return dirs[0]
+}
+
+// wireAgeMirror backdates dir's sync-age markers — the same two files
+// internal/cache/staleness.go reads (.git/FETCH_HEAD and .git/HEAD) — so a
+// case can place the mirror at an exact age without sleeping.
+func wireAgeMirror(t *testing.T, dir string, past time.Duration) {
+	t.Helper()
+	old := time.Now().Add(-past)
+	var touched int
+	for _, rel := range []string{filepath.Join(".git", "FETCH_HEAD"), filepath.Join(".git", "HEAD")} {
+		p := filepath.Join(dir, rel)
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatalf("wireAgeMirror: Chtimes %s: %v", p, err)
+		}
+		touched++
+	}
+	if touched == 0 {
+		t.Fatalf("wireAgeMirror: neither sync-age marker exists under %s — the case would run against "+
+			"an unaged mirror and prove nothing", dir)
+	}
+}
+
+// TestWireReadVerbSeesAMergeItDidNotSyncFor is the wire-level half of
+// RN-0910-1, and it exists to guard the one link the hermetic tests cannot
+// reach: that a read verb's wired closure ACTUALLY calls the refresh.
+//
+// The chain has three links and, before this, only two were held:
+//
+//	internal/cache        — what the refresh does, and in which window
+//	                        (TestSyncIfStale_RevealsAMergeInsideTheStatuslineWindow)
+//	wire_freshness_test   — WHICH verbs are supposed to refresh (the set)
+//	the wired closure     — that the call is there at all  <- nothing
+//
+// Delete the `if freshReadVerbs[name] { store.SyncIfStale(ctx) }` block from
+// wire.go and both existing guards stay green: the set is still correct and
+// the cache still behaves. The product ships the v0.9.0 defect again.
+//
+// The sequence is the real one, in the real order:
+//
+//  1. a resolving invocation fetches the mirror   (this is `a2a submit`)
+//  2. the counterparty's pull request merges       (the peer pushes)
+//  3. the mirror is a minute old — recently fetched, so "fresh" to a window
+//     sized for a shell prompt
+//  4. `a2a inbox` is asked, with NO explicit `a2a sync` anywhere
+//
+// Step 3's age is the whole point and is asserted, not assumed: a minute must
+// sit outside the read window and inside the statusline's, or the case proves
+// nothing. That is how the live matrix stayed green either side of this defect
+// — no row asked the question in the window where the answer differed.
+func TestWireReadVerbSeesAMergeItDidNotSyncFor(t *testing.T) {
+	fx := newWireFixture(t, "axon", "beta")
+
+	const age = time.Minute
+	if age <= cache.ReadRefreshTTLForTest || age >= cache.DefaultStatuslineTTL {
+		t.Fatalf("this case needs an age OUTSIDE the read window and INSIDE the statusline's; %s no "+
+			"longer sits between %s and %s, so it would pass without exercising the defect",
+			age, cache.ReadRefreshTTLForTest, cache.DefaultStatuslineTTL)
+	}
+
+	// (1) A resolving invocation creates and fetches the mirror. In production
+	// this is the user's own `a2a submit` — which is exactly why the mirror is
+	// young at step 4, and exactly why a statusline-sized window called it
+	// fresh.
+	var w1, w2 strings.Builder
+	_ = runLifecycle([]string{"XQ-beta-20260726-seed"}, &w1, &w2, lifecycleVerbs()["ack"])
+	mirror := wireMirrorDir(t, fx.ProjectRoot)
+
+	// (2) The counterparty publishes and their PR merges. Written from an
+	// independent clone straight to the origin, so this side's mirror knows
+	// nothing about it.
+	peer := t.TempDir()
+	runGitFixture(t, "", "clone", fx.OriginDir, peer)
+	const id = "XQ-beta-20260726-merged"
+	envelope := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: " + id + "\n" +
+		"type: question\n" +
+		"title: a question that merged while we were not looking\n" +
+		"space: fixture-space\n" +
+		"from: beta\n" +
+		"to: [axon]\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-26T10:00:00Z\n" +
+		"priority: p2\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"---\nbody\n"
+	event := "schema: event/v1\nevent: 01J40A7M9P1S3V5W7Y9A1C3E5G\nspace: fixture-space\n" +
+		"subject: " + id + "\ntransition: submit\n" +
+		"actor: {kind: agent, name: bot, system: beta}\nat: 2026-07-26T10:00:00Z\n"
+	for rel, content := range map[string]string{
+		"beta/exchanges/" + id + ".md":                     envelope,
+		"beta/events/2026/01J40A7M9P1S3V5W7Y9A1C3E5G.yaml": event,
+	} {
+		p := filepath.Join(peer, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", filepath.Dir(p), err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", p, err)
+		}
+	}
+	runGitFixture(t, peer, "add", "-A")
+	runGitFixture(t, peer, "commit", "-m", "beta publishes; the PR merges")
+	runGitFixture(t, peer, "push", "origin", "HEAD")
+
+	// (3) A minute old: freshly fetched by our own write, moments ago.
+	wireAgeMirror(t, mirror, age)
+
+	// (4) The read, through the REAL wired closure — the one that decides
+	// whether to refresh — and with no explicit sync anywhere.
+	inbox, ok := buildCommands()["inbox"]
+	if !ok {
+		t.Fatal("buildCommands() has no \"inbox\" — this case is dispatching nothing")
+	}
+	var stdout, stderr strings.Builder
+	code := inbox([]string{}, &stdout, &stderr)
+	out := stdout.String()
+
+	if !strings.Contains(out, id) {
+		t.Fatalf("`a2a inbox` did not see an artifact whose PR merged after our last fetch; code=%d\n"+
+			"stdout:\n%s\nstderr:\n%s\n\n"+
+			"The mirror was %s old — young enough that a window sized for the shell prompt calls it "+
+			"fresh. This is RN-0910-1 through the real entry point: on v0.9.0 `outbox` printed nothing "+
+			"and `show` answered \"artifact not found\", and the documented session-start loop reads an "+
+			"empty inbox as permission to proceed.\n"+
+			"If internal/cache's own row is green and this one is not, the refresh is no longer WIRED: "+
+			"check the freshReadVerbs branch in buildCommands().", code, out, stderr.String(), age)
 	}
 }
