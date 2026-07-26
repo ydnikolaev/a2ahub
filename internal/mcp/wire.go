@@ -117,7 +117,26 @@ func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string) (*S
 
 	write, submitDeps, newDeps, err := buildWriteDeps(ctx, cfg, machine, p, binaryVersion)
 	if err != nil {
-		return nil, fmt.Errorf("mcp: %w", err)
+		// An unreachable space must not cost the agent its READ tools.
+		//
+		// buildWriteDeps clones or fetches the mirror, so a network blip, an
+		// expired credential, or a laptop on a plane made the whole server
+		// fail to START — while every read tool needs nothing but the local
+		// mirror that is already on disk. The CLI's own read path has made
+		// the opposite choice since CC-092 (buildStore is explicitly tolerant
+		// of an absent config, absent spaces, absent machine config), and
+		// this is the same judgement: a degraded session that can still tell
+		// you what your counterparty sent beats a session that will not open.
+		//
+		// The degradation is NAMED, not silent — an agent whose write tools
+		// simply were not registered would otherwise report "unknown tool"
+		// and have no idea why. stderr is safe: stdout is the JSON-RPC
+		// channel and this package never writes there.
+		fmt.Fprintf(os.Stderr,
+			"a2a mcp: write tools unavailable — could not reach the space (%v).\n"+
+				"a2a mcp: serving READ tools over the local mirror; re-start once the space is reachable.\n", err)
+		registerReadOnly(registry, store)
+		return NewServer(registry, "a2a-mcp", binaryVersion, nil), nil
 	}
 	registry = BuildRegistry(store, write, submitDeps.StagingDir, submitDeps.Legality, newDeps)
 	srv := NewServer(registry, "a2a-mcp", binaryVersion, nil)
