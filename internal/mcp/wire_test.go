@@ -151,3 +151,60 @@ func TestNewServerFromConfigNoProjectConfig(t *testing.T) {
 		t.Fatal("expected an error when no project config exists")
 	}
 }
+
+// TestNewServerFromConfigUnreachableSpaceStillServesReads is the regression
+// for a full outage where a partial degradation belongs.
+//
+// buildWriteDeps clones or fetches the mirror, so a network blip, an expired
+// credential, or a laptop on a plane made `a2a mcp` fail to START — while
+// every read tool needs nothing but the local mirror already on disk. The
+// CLI's read path has made the opposite choice since CC-092 (buildStore is
+// explicitly tolerant of absent config, absent spaces, absent machine
+// config); this brings the second surface in line.
+//
+// A session that can still tell you what your counterparty sent beats a
+// session that will not open.
+func TestNewServerFromConfigUnreachableSpaceStillServesReads(t *testing.T) {
+	t.Setenv("A2A_TOKEN_FIXTURE_SPACE", "test-token")
+
+	projectRoot := t.TempDir()
+	projectConfig := filepath.Join(projectRoot, ".a2a", "config.yaml")
+	machineConfig := filepath.Join(t.TempDir(), "machine-config.yaml")
+	if err := os.MkdirAll(filepath.Dir(projectConfig), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A repo_url that resolves to nothing — the shape of an unreachable
+	// space without needing the network to be down.
+	unreachable := filepath.Join(t.TempDir(), "no-such-origin.git")
+	if err := os.WriteFile(projectConfig, []byte(
+		"system: beta\nspaces:\n  - id: fixture-space\n    repo_url: "+unreachable+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(machineConfig, []byte(
+		"credentials:\n  fixture-space: \"env:A2A_TOKEN_FIXTURE_SPACE\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := Paths{ProjectConfig: projectConfig, MachineConfig: machineConfig, ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
+	server, err := NewServerFromConfig(context.Background(), p, "0.0.1-test")
+	if err != nil {
+		t.Fatalf("an unreachable space must not stop the server from starting: %v", err)
+	}
+	names := server.registry.ToolNames()
+	if len(names) != 6 {
+		t.Fatalf("expected exactly the 6 read tools when the space is unreachable, got %v", names)
+	}
+	// Exact names, not substrings: `a2a_contracts` (plural) is a READ tool
+	// and `a2a_contract` (singular) is the write one — a substring match
+	// cannot tell them apart and would fail on a correct registry.
+	writeTools := map[string]bool{
+		"a2a_submit": true, "a2a_lifecycle": true, "a2a_exchange": true,
+		"a2a_contract": true, "a2a_new": true,
+	}
+	for _, n := range names {
+		if writeTools[n] {
+			t.Errorf("write tool %q was registered over an unreachable space — a write that cannot "+
+				"reach the space would fail deep inside the funnel instead of not being offered", n)
+		}
+	}
+}
