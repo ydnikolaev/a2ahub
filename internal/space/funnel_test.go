@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -1368,5 +1369,244 @@ func TestSubmitRefusesANestingArtifactIDBeforeAnyGitAction(t *testing.T) {
 	}
 	if len(fake.Pushes) != 0 || len(fake.Opens) != 0 {
 		t.Fatalf("refused write still reached the host: %d pushes, %d opens", len(fake.Pushes), len(fake.Opens))
+	}
+}
+
+// assertBranchCarriesExactlyTheseFiles is the artifact-level assertion the
+// section-prefix helper cannot express.
+//
+// assertBranchOnlyContainsOwnFiles compares each changed path against the
+// author's SECTION prefix, which is the right check when two DIFFERENT
+// systems share a mirror. It is structurally blind to the same-system case:
+// with one system, both writers' paths share the prefix, so a branch
+// carrying the other write's artifact passes every assertion. Naming the
+// exact expected file set closes that.
+func assertBranchCarriesExactlyTheseFiles(t *testing.T, repoDir, branch string, want []string) {
+	t.Helper()
+
+	changed, err := runGitOutput(context.Background(), repoDir, nil, "diff", "--name-only", "main", branch)
+	if err != nil {
+		t.Fatalf("diff --name-only main %s: %v", branch, err)
+	}
+	got := strings.Fields(changed)
+	sort.Strings(got)
+	wantSorted := append([]string(nil), want...)
+	sort.Strings(wantSorted)
+
+	if len(got) != len(wantSorted) {
+		t.Fatalf("branch %s carries %v, want exactly %v — a same-system crossed write is invisible to a "+
+			"section-prefix check, which is why this asserts the file SET", branch, got, wantSorted)
+	}
+	for i := range got {
+		if got[i] != wantSorted[i] {
+			t.Fatalf("branch %s carries %v, want exactly %v", branch, got, wantSorted)
+		}
+	}
+}
+
+// TestFunnelConcurrentSubmitsSameSystemNoCrossedWrite covers the shape no
+// tier covered: TWO WRITES FROM THE SAME SYSTEM against one shared mirror.
+//
+// One agent doing two things at once — a submit and a lifecycle transition,
+// two lifecycle verbs on different artifacts — is at least as likely as two
+// systems on one machine, and it is strictly harder to detect: the existing
+// hermetic and live assertions both key on the author's section prefix, and
+// with a single system both writers' paths share it. A branch carrying the
+// other write's artifact would have passed every check this package had.
+func TestFunnelConcurrentSubmitsSameSystemNoCrossedWrite(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "alpha", "bravo")
+	shared := filepath.Join(t.TempDir(), "shared-mirror")
+	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL()); err != nil {
+		t.Fatalf("seed shared mirror: %v", err)
+	}
+
+	l, err := NewLayout("alpha")
+	if err != nil {
+		t.Fatalf("NewLayout(alpha): %v", err)
+	}
+
+	// Same system, DIFFERENT artifacts — so the two writes are legitimately
+	// distinct and each branch has an exact, checkable file set.
+	req1 := sameSystemWriteRequest(shared, "alpha", "XQ-alpha-20260726-one", "01J8QYK2Z3ABCDEFGHJKMNPQS1", l)
+	req2 := sameSystemWriteRequest(shared, "alpha", "XQ-alpha-20260726-two", "01J8QYK2Z3ABCDEFGHJKMNPQS2", l)
+
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	results, errs := runConcurrentMirrorWrites(t, funnel, req1, req2)
+
+	for i, err := range errs {
+		if err != nil && !errors.Is(err, ErrMirrorLocked) {
+			t.Fatalf("Submit[%d]: %v — want success or a named lock refusal, never a raw git failure", i, err)
+		}
+	}
+	if errs[0] != nil && errs[1] != nil {
+		t.Fatal("both same-system writes were refused — the lock is serialising nothing through")
+	}
+
+	for i, req := range []SubmitRequest{req1, req2} {
+		if errs[i] != nil {
+			continue // legitimately refused; a re-run is the caller's move
+		}
+		want := make([]string, 0, len(req.Files))
+		for _, f := range req.Files {
+			want = append(want, f.Path)
+		}
+		assertBranchCarriesExactlyTheseFiles(t, shared, results[i].Branch, want)
+	}
+}
+
+// sameSystemWriteRequest builds a write for `system` on a NAMED artifact —
+// concurrentMirrorWriteRequest derives its id from the system, so it cannot
+// express two distinct artifacts owned by one system.
+func sameSystemWriteRequest(repoDir, system, artifactID, eventULID string, l Layout) SubmitRequest {
+	return SubmitRequest{
+		RepoDir:    repoDir,
+		System:     system,
+		Verb:       "submit",
+		ArtifactID: artifactID,
+		Files: []FileWrite{
+			{Path: l.Exchange(artifactID), Content: []byte("---\nid: " + artifactID + "\n---\nbody\n")},
+			{Path: l.EventFile("2026", eventULID), Content: []byte("event: submit\n")},
+		},
+		CommitMessage: "a2a(question): " + artifactID,
+		RemoteURL:     repoDir,
+		Repo:          host.Repo{Owner: "acme", Name: "getvisa"},
+		BaseBranch:    "main",
+	}
+}
+
+// TestFunnelWriteConcurrentWithReadRefreshLeavesBothIntact covers the
+// shape that this package's own fix created and then never tested.
+//
+// TestCloneOrFetchConcurrentWritersNoLostWrite races refresh against
+// refresh. Once CloneOrFetch began taking the mirror lock, the interesting
+// race became refresh against WRITE — a reader's `reset --hard` landing
+// between a writer's WriteFile and its `git add` is precisely the crossed
+// write the lock exists to prevent, arriving from the reader's side. That
+// mixed shape was covered nowhere.
+func TestFunnelWriteConcurrentWithReadRefreshLeavesBothIntact(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "alpha", "bravo")
+	shared := filepath.Join(t.TempDir(), "shared-mirror")
+	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL()); err != nil {
+		t.Fatalf("seed shared mirror: %v", err)
+	}
+
+	l, err := NewLayout("alpha")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := sameSystemWriteRequest(shared, "alpha", "XQ-alpha-20260726-race", "01J8QYK2Z3ABCDEFGHJKMNPQS3", l)
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+
+	const readers = 6
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+
+	var writeRes WriteResult
+	var writeErr error
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		writeRes, writeErr = funnel.Submit(context.Background(), req)
+	}()
+
+	readErrs := make([]error, readers)
+	for i := 0; i < readers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			readErrs[i] = CloneOrFetch(context.Background(), shared, fx.RemoteURL())
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	// A reader may legitimately be refused (bounded wait). It must never
+	// fail in git's own words — that is the unserialised collision.
+	for i, err := range readErrs {
+		if err != nil && !errors.Is(err, ErrMirrorLocked) {
+			t.Errorf("refresh[%d] during a write: %v — want success or a named ErrMirrorLocked refusal", i, err)
+		}
+	}
+
+	// The write either completes intact or is refused by name. What it must
+	// NOT do is land a branch missing files a reader's reset swept away.
+	switch {
+	case writeErr == nil:
+		want := make([]string, 0, len(req.Files))
+		for _, f := range req.Files {
+			want = append(want, f.Path)
+		}
+		assertBranchCarriesExactlyTheseFiles(t, shared, writeRes.Branch, want)
+	case errors.Is(writeErr, ErrMirrorLocked):
+		// Refused under contention: correct, and the caller re-runs.
+	default:
+		t.Fatalf("Submit during concurrent refreshes: %v — want success or ErrMirrorLocked", writeErr)
+	}
+
+	// And the mirror is still usable by the next caller either way.
+	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL()); err != nil {
+		t.Fatalf("mirror unusable after the race: %v", err)
+	}
+}
+
+// TestFunnelThreeSystemsOneMirrorNoCrossedWrite is the operator's
+// "two now, more later" made checkable. Two writers can collide in exactly
+// one pairing; three can collide in three, and a lock that serialises a
+// pair by luck rather than by design shows it here first.
+func TestFunnelThreeSystemsOneMirrorNoCrossedWrite(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "alpha", "bravo", "gamma")
+	shared := filepath.Join(t.TempDir(), "shared-mirror")
+	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL()); err != nil {
+		t.Fatalf("seed shared mirror: %v", err)
+	}
+
+	systems := []string{"alpha", "bravo", "gamma"}
+	reqs := make([]SubmitRequest, len(systems))
+	for i, sys := range systems {
+		l, err := NewLayout(sys)
+		if err != nil {
+			t.Fatalf("NewLayout(%s): %v", sys, err)
+		}
+		reqs[i] = sameSystemWriteRequest(shared, sys,
+			"XQ-"+sys+"-20260726-tri", "01J8QYK2Z3ABCDEFGHJKMNPQT"+string(rune('1'+i)), l)
+	}
+
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	results := make([]WriteResult, len(reqs))
+	errs := make([]error, len(reqs))
+	for i := range reqs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			results[i], errs[i] = funnel.Submit(context.Background(), reqs[i])
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	landed := 0
+	for i, err := range errs {
+		switch {
+		case err == nil:
+			landed++
+			assertBranchOnlyContainsOwnFiles(t, shared, results[i].Branch, systems[i]+"/")
+		case errors.Is(err, ErrMirrorLocked):
+		default:
+			t.Errorf("Submit[%s]: %v — want success or a named lock refusal", systems[i], err)
+		}
+	}
+	if landed == 0 {
+		t.Fatal("all three systems were refused — the lock is serialising nothing through")
 	}
 }
