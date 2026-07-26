@@ -76,9 +76,29 @@ func New(t testing.TB, systems ...string) *Fixture {
 func seedTree(t testing.TB, root string, systems []string) {
 	t.Helper()
 
-	manifest := "id: fixture-space\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n"
+	// The REAL manifest/v1 shape, and it has to be: `space:` (not `id:`),
+	// `schema: space/v1` (not `schema_version:`), and participants as a LIST of
+	// objects carrying every schema-required field — system, org, section,
+	// owners, status, joined.
+	//
+	// This seed used to be `id:`/`schema_version:` with a participants MAP: a
+	// shape from an early schema draft that never shipped. It cost three tiers
+	// before it was fixed. `space.ParseManifest` accepted it silently (it is a
+	// shape-only decode and the unknown keys simply did not bind), so a fixture
+	// space "had" a manifest with zero participants and nothing noticed; the
+	// wire tier had to push a valid manifest of its own on top, documenting the
+	// seed as broken and deferring the fix as out of scope; and on 2026-07-26
+	// wiring the manifest SCHEMA into `validate --ci` turned it into a hard
+	// failure in the space-update e2e.
+	//
+	// A shared fixture that does not satisfy the product's own schema is a
+	// fixture that agrees with the code about a document neither would ever
+	// meet — the same class as the JobCount zero that produced 96 false
+	// findings. Fixed at the source.
+	manifest := "schema: space/v1\nspace: fixture-space\nmin_binary_version: \"0.0.0\"\nparticipants:\n"
 	for _, sys := range systems {
-		manifest += fmt.Sprintf("  %s-bot: %s\n", sys, sys)
+		manifest += fmt.Sprintf("  - system: %s\n    org: fixture\n    section: %s\n    owners: [%s-bot]\n    status: active\n    joined: \"2026-01-01\"\n",
+			sys, sys, sys)
 	}
 	writeFile(t, filepath.Join(root, "space.yaml"), manifest)
 

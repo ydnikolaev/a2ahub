@@ -371,15 +371,28 @@ func fetchMain(t *testing.T, dir string) {
 // needs this fixed-up manifest instead, or every fold's own participant/
 // role authorization check silently flags every event "unauthorized-actor"
 // and every state stays stuck at "draft".
+// It is also SCHEMA-valid, which it was not until 2026-07-26 and which
+// "proper" in its name had implied for a year. It wrote `schema: manifest/v1`
+// where space.schema.json's own const is `space/v1`, and participants carrying
+// only `system` and `status` where the schema requires six fields. Nothing
+// noticed because nothing validated a manifest anywhere — `space.ParseManifest`
+// is a shape-only decode by design, and the schema, its validator seam
+// (space.LoadManifest) and its adapter (cli.ManifestValidatorAdapter) were all
+// wired to nothing. Wiring the schema into `validate --ci` turned this into a
+// hard failure in the space-update e2e, which is how it was found.
 func properManifestYAML(spaceID string, systems ...string) string {
 	var b strings.Builder
-	b.WriteString("schema: manifest/v1\n")
+	b.WriteString("schema: space/v1\n")
 	b.WriteString("space: " + spaceID + "\n")
 	b.WriteString("min_binary_version: \"0.0.0\"\n")
 	b.WriteString("participants:\n")
 	for _, s := range systems {
 		b.WriteString("  - system: " + s + "\n")
+		b.WriteString("    org: fixture\n")
+		b.WriteString("    section: " + s + "\n")
+		b.WriteString("    owners: [" + s + "-bot]\n")
 		b.WriteString("    status: active\n")
+		b.WriteString("    joined: \"2026-01-01\"\n")
 	}
 	return b.String()
 }
@@ -389,17 +402,40 @@ func properManifestYAML(spaceID string, systems ...string) string {
 // seedOriginExtras uses), then fast-forwards every already-existing clone
 // dir onto the new main so callers who cloned BEFORE this fix still see
 // it. Must run before any exec'd-binary read-surface assertion.
+//
+// A NO-OP is now the normal case and is not an error. testkit/spacefixture used
+// to seed a manifest that did not decode into space.Manifest at all, so this
+// always had something to fix; since that seed was corrected the only thing
+// left for this to do is widen the participant list to axon/beta/gamma, which
+// matters when the fixture was built with fewer systems and is a clean tree
+// when it was not. Committing unconditionally then fails on "nothing to
+// commit" — a fixture helper failing because the fixture got better.
 func fixOriginManifest(t *testing.T, originDir, spaceID string, existingClones ...string) {
 	t.Helper()
 	dir := t.TempDir()
 	gitRun(t, "", "clone", originDir, dir)
 	writeMirrorFile(t, dir, "space.yaml", properManifestYAML(spaceID, "axon", "beta", "gamma"))
+	if !gitHasChanges(t, dir) {
+		return // the seed already carries exactly this manifest
+	}
 	gitRun(t, dir, "add", "-A")
-	gitRun(t, dir, "commit", "-m", "fix: list-shaped space.yaml participants")
+	gitRun(t, dir, "commit", "-m", "fix: widen space.yaml participants")
 	gitRun(t, dir, "push", "origin", "main")
 	for _, clone := range existingClones {
 		fetchMain(t, clone)
 	}
+}
+
+// gitHasChanges reports whether dir's working tree differs from HEAD.
+func gitHasChanges(t *testing.T, dir string) bool {
+	t.Helper()
+	cmd := exec.Command("git", gitfixture.Args("status", "--porcelain")...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git status --porcelain (dir=%q): %v\n%s", dir, err, out)
+	}
+	return len(strings.TrimSpace(string(out))) > 0
 }
 
 // seedOriginExtras pushes additional real content onto the shared fixture

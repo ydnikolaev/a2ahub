@@ -127,9 +127,15 @@ func seedTwoParticipantManifest(t *testing.T, originDir, spaceID string, existin
 	dir := t.TempDir()
 	gitRun(t, "", "clone", originDir, dir)
 	writeMirrorFile(t, dir, "space.yaml", properManifestYAML(spaceID, "axon", "beta"))
-	gitRun(t, dir, "add", "-A")
-	gitRun(t, dir, "commit", "-m", "space: the two founding participants")
-	gitRun(t, dir, "push", "origin", "main")
+	// A clean tree is the normal case now: spacefixture's own seed already
+	// carries exactly this manifest for exactly these systems. Committing
+	// anyway fails on "nothing to commit" — a fixture helper breaking because
+	// the fixture it patches was fixed.
+	if gitHasChanges(t, dir) {
+		gitRun(t, dir, "add", "-A")
+		gitRun(t, dir, "commit", "-m", "space: the two founding participants")
+		gitRun(t, dir, "push", "origin", "main")
+	}
 	for _, clone := range existingClones {
 		fetchMain(t, clone)
 	}
