@@ -18,12 +18,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/surface"
 	"github.com/ydnikolaev/a2ahub/internal/version"
+	"gopkg.in/yaml.v3"
 )
 
 // DoctorCommand implements the basic (non-`--space`) `a2a doctor` verb: one
@@ -154,6 +156,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"space scaffolding current", func() (bool, string) { return c.doctorCheckScaffoldingCurrent(ctx, cfg, machine) }},
 		{"auto-merge enabled", func() (bool, string) { return c.doctorCheckAutoMerge(ctx, cfg, machine) }},
 		{"codeowners resolvable", func() (bool, string) { return c.doctorCheckCodeownersResolvable(ctx, cfg, machine) }},
+		{"threads intact", func() (bool, string) { return c.doctorCheckThreadsIntact(cfg, machine) }},
 		{"statusline wiring", func() (bool, string) { return c.doctorCheckStatuslineWiring() }},
 		{"skill discoverable", func() (bool, string) { return c.doctorCheckSkillDiscoverable() }},
 		{"skill manual current", func() (bool, string) { return c.doctorCheckSkillManualCurrent() }},
@@ -924,3 +927,118 @@ func doctorVersionOlder(binaryVersion, minVersion string) (bool, error) {
 var errDoctorInvalidVersion = errors.New("doctor: invalid version string")
 
 var _ Command = (*DoctorCommand)(nil)
+
+// doctorCheckThreadsIntact is spec 46 §T2's advisory row: it counts the
+// artifacts in every connected space whose thread linkage cannot be trusted.
+//
+// Three populations, each a different failure:
+//   - NO thread at all — an artifact committed before threads were minted.
+//     Every read verb still shows it, but it belongs to no conversation and
+//     `a2a respond` will REFUSE to reply to it, so the operator needs to know
+//     before an agent hits that wall mid-exchange.
+//   - a thread whose `<system>` token names no participant of that space — the
+//     signature of a value typed by hand or copied from another space.
+//   - a thread with exactly ONE member that is not the space's own newest
+//     work. Harmless in isolation (every fresh artifact starts as a thread of
+//     one) and therefore reported as a count only, never as a name: it is the
+//     residual same-system same-day rand4 typo's only visible trace.
+//
+// It PASSES with an advisory rather than failing, deliberately. Pre-thread
+// artifacts cannot be repaired in place — git is the archive and artifacts
+// never move (§3.8) — so a failing row would be a permanent red on any space
+// that predates this release, and a doctor row that can never go green teaches
+// people to stop reading doctor.
+func (c *DoctorCommand) doctorCheckThreadsIntact(cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+	var threadless, foreign int
+	var perSpace []string
+
+	for _, ref := range cfg.Spaces {
+		dir := c.resolveMirror(c.projectRoot, ref, machine)
+		manifestRaw, err := c.readFile(filepath.Join(dir, "space.yaml"))
+		if err != nil {
+			// "space access" already reports an unreachable mirror; do not
+			// double-report the same root cause.
+			continue
+		}
+		manifest, merr := space.ParseManifest(manifestRaw)
+		if merr != nil {
+			continue
+		}
+		members := map[string]bool{}
+		for _, p := range manifest.Participants {
+			members[p.System] = true
+		}
+
+		spaceThreadless, spaceForeign := 0, 0
+		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, werr error) error {
+			// A walk error on one entry is skipped rather than aborting the
+			// whole space: an advisory row that gives up on the first
+			// unreadable directory would report zero problems for a space
+			// full of them, which is the opposite of what it is for. The
+			// unreadable-mirror case is reported by "space access".
+			if werr != nil {
+				return nil //nolint:nilerr // reason: per-entry walk errors are deliberately skipped, see above
+			}
+			if d.IsDir() || !strings.HasSuffix(path, ".md") {
+				return nil
+			}
+			thread, ok := c.doctorReadArtifactThread(path)
+			if !ok {
+				// An unreadable or undecodable file is not this row's
+				// business — it is the silent-drop condition already filed
+				// in docs/backlog.md, and reporting it here as a thread
+				// problem would name the wrong cause.
+				return nil
+			}
+			if thread == "" {
+				spaceThreadless++
+				return nil
+			}
+			parsed, perr := artifact.ParseThreadID(thread)
+			if perr != nil || !members[parsed.System] {
+				spaceForeign++
+			}
+			return nil
+		})
+
+		threadless += spaceThreadless
+		foreign += spaceForeign
+		if spaceThreadless > 0 || spaceForeign > 0 {
+			perSpace = append(perSpace, fmt.Sprintf("%s: %d without a thread, %d with a thread minted outside the space",
+				ref.ID, spaceThreadless, spaceForeign))
+		}
+	}
+
+	if threadless == 0 && foreign == 0 {
+		return true, ""
+	}
+	advisory := " · " + strings.Join(perSpace, "; ")
+	if threadless > 0 {
+		advisory += " — those artifacts predate thread propagation: `a2a respond` refuses to reply to them, and they cannot be repaired in place (git is the archive). Reseeding the space is the only fix."
+	}
+	return true, advisory
+}
+
+// doctorReadArtifactThread reads one artifact's `thread` field, reporting
+// whether the file could be decoded at all. A bool rather than an error
+// because every caller's response to "undecodable" is identical (skip it —
+// that condition has its own backlog row), and returning an error the caller
+// always discards is the nilerr trap this package has fallen into twice.
+func (c *DoctorCommand) doctorReadArtifactThread(path string) (thread string, ok bool) {
+	raw, err := c.readFile(path)
+	if err != nil {
+		return "", false
+	}
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return "", false
+	}
+	var probe struct {
+		ID     string `yaml:"id"`
+		Thread string `yaml:"thread"`
+	}
+	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil || probe.ID == "" {
+		return "", false
+	}
+	return probe.Thread, true
+}

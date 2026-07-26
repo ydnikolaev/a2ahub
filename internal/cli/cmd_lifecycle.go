@@ -930,7 +930,16 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// caller input, same class as the --result usage check above)
 		// naming both values — never a silent precedence, never a guess
 		// (R4).
-		if explicit, has := respFields["thread"]; has && explicit != "" && explicit != parentProbe.Thread {
+		// `parentProbe.Thread != ""` matters and is not defensive noise: without
+		// it, a threadless parent plus an explicit `--field thread=X` takes THIS
+		// branch and prints "conflicts with parent's thread " — an empty value in
+		// a message whose whole job is naming both sides — instead of falling
+		// through to the threadless refusal below, which names the real condition
+		// and the real fix. MCP's twin already carried the guard; the two
+		// surfaces disagreed on the message and the exit code for identical
+		// input, which is the divergence class ADR-001's deliberate duplication
+		// is supposed to be watched for rather than assumed away.
+		if explicit, has := respFields["thread"]; has && explicit != "" && parentProbe.Thread != "" && explicit != parentProbe.Thread {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: --field thread=%s conflicts with parent's thread %s\n", parentID, explicit, parentProbe.Thread)
 			return 2
 		}

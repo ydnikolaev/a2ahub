@@ -8,6 +8,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
@@ -123,16 +124,17 @@ func showV5Warnings(result cache.ShowResult) []validate.Violation {
 	return out
 }
 
-// ThreadInput is a2a_thread's structured input. `space` is OPTIONAL — §T4's
-// space-locality rule: when a thread id resolves in more than one connected
-// space, the reader refuses and prints the rerun command; `space` is the
-// recovery path for that refusal (the CLI already has an equivalent).
+// ThreadInput is a2a_thread's structured input.
 //
-// `cache.Store.Thread` (internal/cache/store.go:455) does not yet accept a
-// space filter — that signature change belongs to a later wave (W4) and
-// internal/cache is outside this wave's allowlist. Until then this field is
-// accepted and validated (non-empty-or-absent) but NOT wired through to the
-// store call; see this wave's deviations.
+// `thread_id` accepts EITHER a `thread:...` value or any member artifact id —
+// a weak caller pastes whichever id it is holding, and forcing it to find the
+// thread id first is a determinism tax with no upside.
+//
+// `space` is OPTIONAL and is the recovery path for §T4's space-locality
+// refusal: when a thread resolves in more than one connected space the reader
+// refuses rather than merging two conversations into one, and `space` is how
+// the caller then names which it meant. Without it this surface would hit an
+// unrecoverable error where the CLI prints the fix.
 type ThreadInput struct {
 	ThreadID string `json:"thread_id"`
 	Space    string `json:"space,omitempty"`
@@ -147,20 +149,22 @@ func newThreadHandler(store *cache.Store) HandlerFunc {
 		if in.ThreadID == "" {
 			return nil, "", fmt.Errorf("a2a_thread: thread_id is required")
 		}
-		// `space` is decoded above (ThreadInput.Space) but NOT applied
-		// here: `cache.Store.Thread` has no space filter yet (see the
-		// ThreadInput doc comment). A caller who passes it gets results
-		// across every connected space, exactly as before — this input
-		// exists so the field is not rejected as unknown, not so it
-		// narrows anything today.
-		items, err := store.Thread(ctx, in.ThreadID)
+		result, err := store.ThreadView(ctx, in.ThreadID, in.Space)
 		if err != nil {
+			// The ambiguity refusal must arrive with its RECOVERY, not as a
+			// bare failure: ThreadAmbiguityError's own Error() names each
+			// space, its member count and its opener, and the caller's next
+			// move is to re-ask with `space`. Merging the two conversations
+			// instead would be the silent cross-space merge the plan's
+			// CC-073 forbids, and it is exactly the shape a weak caller
+			// would misread as one exchange.
+			var ambiguous *cache.ThreadAmbiguityError
+			if errors.As(err, &ambiguous) {
+				return nil, "", fmt.Errorf("a2a_thread: %w — re-ask with the `space` input naming which one you mean", err)
+			}
 			return nil, "", fmt.Errorf("a2a_thread: %w", err)
 		}
-		if items == nil {
-			items = []cache.Item{}
-		}
-		return items, "", nil
+		return result, "", nil
 	}
 }
 
@@ -170,6 +174,10 @@ type SearchInput struct {
 	Type  string `json:"type,omitempty"`
 	Space string `json:"space,omitempty"`
 	State string `json:"state,omitempty"`
+	// Thread narrows to one conversation, matching the CLI's `--thread`.
+	// Without it this surface could find an artifact and offer no way to ask
+	// "what else is on its thread" in the same vocabulary the CLI uses.
+	Thread string `json:"thread,omitempty"`
 }
 
 func newSearchHandler(store *cache.Store) HandlerFunc {
@@ -178,7 +186,7 @@ func newSearchHandler(store *cache.Store) HandlerFunc {
 		if err := json.Unmarshal(args, &in); err != nil {
 			return nil, "", fmt.Errorf("a2a_search: invalid input: %w", err)
 		}
-		items, err := store.Search(ctx, in.Query, cache.SearchFilters{Type: in.Type, Space: in.Space, State: in.State})
+		items, err := store.Search(ctx, in.Query, cache.SearchFilters{Type: in.Type, Space: in.Space, State: in.State, Thread: in.Thread})
 		if err != nil {
 			return nil, "", fmt.Errorf("a2a_search: %w", err)
 		}

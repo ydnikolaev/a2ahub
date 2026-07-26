@@ -189,6 +189,7 @@ func buildThreadChainStore(t *testing.T, originDir string) *cache.Store {
 // became lower than the question's) — reverted before this file was
 // submitted. See this phase's own report for the exact diff exercised.
 func TestThreadChainFixtureOrdersQuestionBeforeResponse(t *testing.T) {
+	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	origin := fx.RemoteURL()
 	fixOriginManifest(t, origin, "fixture-space")

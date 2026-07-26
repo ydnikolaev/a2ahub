@@ -23,6 +23,20 @@ func testStore(t *testing.T, mirrorDir string) *cache.Store {
 		func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }, 0)
 }
 
+// threadFixtureQuestionID / threadFixtureStore seed one committed exchange with
+// events, so the thread handler has a real transcript to return rather than a
+// single artifact.
+const threadFixtureQuestionID = "XQ-axon-20260721-thr1"
+
+func threadFixtureStore(t *testing.T) (*cache.Store, string) {
+	t.Helper()
+	mirrorDir := t.TempDir()
+	writeQuestionArtifact(t, mirrorDir, threadFixtureQuestionID, "beta")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, threadFixtureQuestionID, "submit", "axon")
+	writeLifecycleEvent(t, mirrorDir, "beta", 1, threadFixtureQuestionID, "acknowledge", "beta")
+	return testStore(t, mirrorDir), testFixtureThread
+}
+
 func TestInboxHandler(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
@@ -144,31 +158,38 @@ func TestShowHandlerNotFound(t *testing.T) {
 	}
 }
 
+// TestThreadHandler is the baseline: one artifact on a thread comes back, keyed
+// by the thread id. Its fixture used to carry `thread: T-1` — a value that was
+// never schema-valid (base.schema.json pins the §3.8 grammar) and only "worked"
+// because the pre-P46 reader compared thread ids by raw string equality.
 func TestThreadHandler(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
 	id := "XQ-axon-20260721-c001"
-	writeMirrorFile(t, mirrorDir, "axon/exchanges/"+id+".md",
-		"---\nschema: envelope/v1\nid: "+id+"\ntype: question\ntitle: t\nspace: fixture-space\nfrom: axon\nto: [beta]\nthread: T-1\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\ncategory: clarification\npriority: p3\nblocking: true\nclassification: internal\n---\nbody\n")
+	writeQuestionArtifact(t, mirrorDir, id, "beta")
 
 	handler := newThreadHandler(testStore(t, mirrorDir))
-	args, _ := json.Marshal(ThreadInput{ThreadID: "T-1"})
+	args, _ := json.Marshal(ThreadInput{ThreadID: testFixtureThread})
 	result, _, err := handler(context.Background(), args)
 	if err != nil {
 		t.Fatalf("thread handler failed: %v", err)
 	}
-	items := result.([]cache.Item)
-	if len(items) != 1 || items[0].ID != id {
-		t.Fatalf("expected 1 thread item, got %+v", items)
+	res, ok := result.(cache.ThreadResult)
+	if !ok {
+		t.Fatalf("thread handler returned %T, want cache.ThreadResult", result)
+	}
+	if len(res.Artifacts) != 1 || res.Artifacts[0].ID != id {
+		t.Fatalf("expected exactly the one member %s, got %+v", id, res.Artifacts)
 	}
 }
 
 // TestThreadInputCarriesOptionalSpace covers §T1's MCP-side obligation: an
 // optional `space` field decodes and is accepted by the handler (the
-// recovery path for §T4's ambiguity refusal). `cache.Store.Thread` does not
-// yet accept a space filter (a later wave's signature change), so this only
-// asserts the field decodes and the call still succeeds — not that `space`
-// narrows the result.
+// recovery path for §T4's ambiguity refusal). This asserts the field is
+// decoded AND actually narrows the read — the closeout audit found it decoded
+// and then dropped, which is worse than not offering it: a caller's narrowing
+// intent silently ignored, on the one input that exists to recover from a
+// refusal.
 func TestThreadInputCarriesOptionalSpace(t *testing.T) {
 	t.Parallel()
 
@@ -183,18 +204,28 @@ func TestThreadInputCarriesOptionalSpace(t *testing.T) {
 
 	mirrorDir := t.TempDir()
 	id := "XQ-axon-20260721-c002"
-	writeMirrorFile(t, mirrorDir, "axon/exchanges/"+id+".md",
-		"---\nschema: envelope/v1\nid: "+id+"\ntype: question\ntitle: t\nspace: fixture-space\nfrom: axon\nto: [beta]\nthread: T-1\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\ncategory: clarification\npriority: p3\nblocking: true\nclassification: internal\n---\nbody\n")
-
+	writeQuestionArtifact(t, mirrorDir, id, "beta")
 	handler := newThreadHandler(testStore(t, mirrorDir))
-	args, _ := json.Marshal(ThreadInput{ThreadID: "T-1", Space: "fixture-space"})
+
+	// The right space renders.
+	args, _ := json.Marshal(ThreadInput{ThreadID: testFixtureThread, Space: "fixture-space"})
 	result, _, err := handler(context.Background(), args)
 	if err != nil {
 		t.Fatalf("thread handler with space input failed: %v", err)
 	}
-	items := result.([]cache.Item)
-	if len(items) != 1 || items[0].ID != id {
-		t.Fatalf("expected 1 thread item, got %+v", items)
+	res := result.(cache.ThreadResult)
+	if len(res.Artifacts) != 1 || res.Artifacts[0].ID != id {
+		t.Fatalf("expected exactly the one member %s, got %+v", id, res.Artifacts)
+	}
+	if res.Space != "fixture-space" {
+		t.Fatalf("space = %q, want fixture-space", res.Space)
+	}
+
+	// A space that is not connected must NOT quietly fall back to searching
+	// everywhere — that is precisely the silent behaviour the audit found.
+	argsWrong, _ := json.Marshal(ThreadInput{ThreadID: testFixtureThread, Space: "not-connected"})
+	if _, _, err := handler(context.Background(), argsWrong); err == nil {
+		t.Fatal("a space input naming no connected space must fail, not silently widen the search")
 	}
 }
 
@@ -310,5 +341,66 @@ func TestContractsHandler(t *testing.T) {
 	contracts := result.([]cache.ContractInfo)
 	if len(contracts) != 1 || contracts[0].ID != "XC-axon-widget" {
 		t.Fatalf("expected 1 contract, got %+v", contracts)
+	}
+}
+
+// TestThreadHandlerReadsTheTranscript is the regression for the closeout
+// audit's one HIGH finding: this handler used to call the pre-P46 flat reader,
+// so the MCP surface had none of the phase — no events, no commit ordering, no
+// open items, and no ambiguity refusal for its own `space` input to recover
+// from. The input decoded and was then dropped, which is worse than not
+// offering it: a caller's narrowing intent silently ignored.
+func TestThreadHandlerReadsTheTranscript(t *testing.T) {
+	t.Parallel()
+	store, threadID := threadFixtureStore(t)
+	handler := newThreadHandler(store)
+
+	args, _ := json.Marshal(ThreadInput{ThreadID: threadID})
+	got, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("a2a_thread: %v", err)
+	}
+	res, ok := got.(cache.ThreadResult)
+	if !ok {
+		t.Fatalf("a2a_thread returned %T, want cache.ThreadResult — the flat []Item shape means this surface is still on the old reader", got)
+	}
+	if res.Thread != threadID {
+		t.Fatalf("thread = %q, want %q", res.Thread, threadID)
+	}
+	if len(res.Transcript) == 0 {
+		t.Fatal("empty transcript: the whole point of this surface change is that events and artifacts both appear")
+	}
+	var sawEvent bool
+	for _, e := range res.Transcript {
+		if e.Kind == "event" {
+			sawEvent = true
+		}
+	}
+	if !sawEvent {
+		t.Fatal("transcript carries no event entries — the old reader listed artifacts only (spec 46 D2)")
+	}
+	if res.Flags == nil || res.Unresolved == nil {
+		t.Fatal("flags/unresolved must be non-nil empty arrays: an agent asserts completeness on them, and an absent key is indistinguishable from a reader too old to know")
+	}
+}
+
+// TestThreadHandlerAcceptsMemberArtifactID: a caller pastes whichever id it
+// holds. Forcing it to find the thread id first is a determinism tax.
+func TestThreadHandlerAcceptsMemberArtifactID(t *testing.T) {
+	t.Parallel()
+	store, threadID := threadFixtureStore(t)
+	handler := newThreadHandler(store)
+
+	args, _ := json.Marshal(ThreadInput{ThreadID: threadFixtureQuestionID})
+	got, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("a2a_thread with a member artifact id: %v", err)
+	}
+	res := got.(cache.ThreadResult)
+	if res.Thread != threadID {
+		t.Fatalf("thread = %q, want %q (resolved from the member id)", res.Thread, threadID)
+	}
+	if res.ResolvedFrom != threadFixtureQuestionID {
+		t.Fatalf("resolved_from = %q, want %q", res.ResolvedFrom, threadFixtureQuestionID)
 	}
 }
