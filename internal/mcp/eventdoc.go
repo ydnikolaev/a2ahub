@@ -368,6 +368,11 @@ func (d WriteDeps) buildRequest(ids []string, files []space.FileWrite, verb stri
 		CommitMessage: commitMsg, CommitAuthorName: d.HostCfg.CommitAuthorName, CommitAuthorEmail: d.HostCfg.CommitAuthorEmail,
 		RemoteURL: d.HostCfg.RemoteURL, Repo: d.HostCfg.Repo, BaseBranch: baseBranch,
 		PRTitle: commitMsg, PRBody: prBody, Credential: d.HostCfg.Credential,
+		// Same floor, same reason as internal/cli's buildRequest — see its
+		// comment for the production incident this closes. The two surfaces
+		// must agree here: a floor that binds the CLI and not MCP would just
+		// move the stale-binary write to the other door.
+		MinBinaryVersion: d.Manifest.MinBinaryVersion,
 	}
 }
 
