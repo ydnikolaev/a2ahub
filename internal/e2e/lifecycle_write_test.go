@@ -247,6 +247,13 @@ func TestT3BlockUnblock(t *testing.T) {
 		t.Fatalf("block: code = %d, want 0; stderr=%s", code, errOut.String())
 	}
 
+	// Land the first write before the second: the second reads state the
+	// first only puts in the space when its PR merges. This chain used to
+	// pass without the merge because the funnel left the mirror parked on
+	// the first write's branch — never a behaviour a user had, since a real
+	// second invocation starts with CloneOrFetch's own reset to base.
+	mergeBranchToMain(t, mirrorDir, lastOpenedBranch(fakeHost))
+
 	unblockCmd := cli.NewUnblockCommand(funnel, mirrorDir, "fixture-space", "beta", e2eManifest(), hostCfg, e2eActorResolver("agent", "bot"))
 	io2, _, errOut2 := newIO()
 	if code := unblockCmd.Run(context.Background(), []string{id}, io2); code != 0 {
@@ -292,7 +299,8 @@ func TestT3RespondVerifyDispute(t *testing.T) {
 		if code := respondCmd.Run(context.Background(), []string{"--result", "answered", parentID}, io); code != 0 {
 			t.Fatalf("respond: code = %d, want 0; stderr=%s", code, errOut.String())
 		}
-		responseID := latestXSFile(t, mirrorDir)
+		responseID := latestXSFile(t, mirrorDir, lastOpenedBranch(fakeHost))
+		mergeBranchToMain(t, mirrorDir, lastOpenedBranch(fakeHost))
 
 		verifyCmd := cli.NewVerifyCommand(funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 		io2, _, errOut2 := newIO()
@@ -316,7 +324,8 @@ func TestT3RespondVerifyDispute(t *testing.T) {
 		if code := respondCmd.Run(context.Background(), []string{"--result", "answered", parentID}, io); code != 0 {
 			t.Fatalf("respond: code = %d, want 0; stderr=%s", code, errOut.String())
 		}
-		responseID := latestXSFile(t, mirrorDir)
+		responseID := latestXSFile(t, mirrorDir, lastOpenedBranch(fakeHost))
+		mergeBranchToMain(t, mirrorDir, lastOpenedBranch(fakeHost))
 
 		disputeCmd := cli.NewDisputeCommand(funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 		io2, _, errOut2 := newIO()
@@ -342,6 +351,8 @@ func TestT3CloseFromResponded(t *testing.T) {
 	if code := respondCmd.Run(context.Background(), []string{"--result", "answered", id}, io); code != 0 {
 		t.Fatalf("respond: code = %d, want 0; stderr=%s", code, errOut.String())
 	}
+
+	mergeBranchToMain(t, mirrorDir, lastOpenedBranch(fakeHost))
 
 	closeCmd := cli.NewCloseCommand(funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 	io2, _, errOut2 := newIO()
@@ -395,9 +406,22 @@ func TestT3RespondIdempotentRetryReturnsAlreadyOpen(t *testing.T) {
 // latestXSFile finds the most-recently-written XS-*.md response file under
 // mirrorDir (the real funnel commits it directly to disk — no
 // materialization step needed, unlike internal/cli's fake-funnel tests).
-func latestXSFile(t *testing.T, mirrorDir string) string {
+// latestXSFile returns the XS- response id written by the most recent
+// commit on branch.
+//
+// It takes the branch EXPLICITLY, and that is the whole point of the
+// signature. It used to read HEAD — which worked only because the write
+// funnel left the mirror parked on its own ephemeral branch and never
+// moved it back. That leftover was a real defect (a long-lived `a2a mcp`
+// session folded legality over a tree standing on an unmerged write), and
+// once the funnel started restoring the mirror to base, every caller of
+// this helper went red. The helper was reading the right commit for the
+// wrong reason: what it always meant was "the commit this write just made",
+// which is the tip of the write's own branch, not whatever HEAD happens to
+// be.
+func latestXSFile(t *testing.T, mirrorDir, branch string) string {
 	t.Helper()
-	out := gitOutput(t, mirrorDir, "log", "--name-only", "--pretty=format:", "-1")
+	out := gitOutput(t, mirrorDir, "log", "--name-only", "--pretty=format:", "-1", branch)
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.Contains(line, "/exchanges/XS-") {
@@ -405,6 +429,6 @@ func latestXSFile(t *testing.T, mirrorDir string) string {
 			return strings.TrimSuffix(base, ".md")
 		}
 	}
-	t.Fatalf("latestXSFile: no XS- response file found in the latest commit under %s", mirrorDir)
+	t.Fatalf("latestXSFile: no XS- response file in the tip commit of %s under %s", branch, mirrorDir)
 	return ""
 }

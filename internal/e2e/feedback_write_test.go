@@ -110,16 +110,21 @@ func TestFeedbackSubmitWrite(t *testing.T) {
 	}
 
 	// The committed file itself is never carried on any host.Host call —
-	// the funnel commits it into the mirror clone's own working tree via
-	// real git (space.WriteFunnel's commitOne) before ever pushing; assert
-	// the path/content contract there (§T1: the single committed file is
-	// feedback/inbox/<id>.yaml).
+	// the funnel commits it via real git (space.WriteFunnel's commitOne)
+	// before ever pushing; assert the path/content contract on the COMMIT
+	// (§T1: the single committed file is feedback/inbox/<id>.yaml).
+	//
+	// Read it out of the write branch, not off the working tree. The funnel
+	// restores the mirror to its base branch before releasing the lock (a
+	// write must not leave shared state pointing at its own unmerged work —
+	// see restoreTreeToBase), so the tree correctly no longer shows an
+	// unmerged write. `git show <branch>:<path>` asserts what this test
+	// always meant: that the commit carries exactly this file, at this path,
+	// with this content.
 	mirrorDir := filepath.Join(projectRoot, ".a2a", "cache", "feedback-repo", slug)
-	committed := filepath.Join(mirrorDir, "feedback", "inbox", feedbackSubmitTestID+".yaml")
-	got, err := os.ReadFile(committed)
-	if err != nil {
-		t.Fatalf("read committed file: %v", err)
-	}
+	committedPath := "feedback/inbox/" + feedbackSubmitTestID + ".yaml"
+	gotRaw := gitOutput(t, mirrorDir, "show", wantBranch+":"+committedPath)
+	got := []byte(gotRaw)
 	want, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read source draft: %v", err)

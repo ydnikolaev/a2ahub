@@ -61,6 +61,18 @@ func TestT3ContractNewPublishDeprecate(t *testing.T) {
 		t.Fatalf("expected exactly one OpenPR call after publish, got %d", len(fakeHost.Opens))
 	}
 
+	// Land the publish before deprecating it, because that is what the
+	// product requires and this test used to skip. `deprecate` reads the
+	// COMMITTED descriptor out of the mirror; the descriptor reaches the
+	// mirror's base branch only when the publish PR merges. This test
+	// passed without the merge purely because the funnel used to leave the
+	// mirror parked on the publish branch — and even then only because the
+	// test drives commands directly: a real `a2a contract deprecate` starts
+	// with CloneOrFetch, whose `reset --hard origin/<base>` discarded that
+	// leftover before the descriptor could be read. So the old green was an
+	// artifact of the harness, never a behaviour a user had.
+	mergeBranchToMain(t, mirrorDir, lastOpenedBranch(fakeHost))
+
 	io3, out3, errOut3 := newIO()
 	if code := cmd.Run(context.Background(), []string{"deprecate", "--successor", "XC-axon-widget2@1.0.0", "--sunset", "2099-01-01", "XC-axon-widget"}, io3); code != 0 {
 		t.Fatalf("contract deprecate: code = %d, want 0; stdout=%s stderr=%s", code, out3.String(), errOut3.String())

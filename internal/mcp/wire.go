@@ -120,7 +120,22 @@ func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string) (*S
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
 	registry = BuildRegistry(store, write, submitDeps.StagingDir, submitDeps.Legality, newDeps)
-	return NewServer(registry, "a2a-mcp", binaryVersion, nil), nil
+	srv := NewServer(registry, "a2a-mcp", binaryVersion, nil)
+
+	// The session refreshes its mirror before every tool call. Without this,
+	// the CloneOrFetch above is the ONLY one the process ever runs: every
+	// later call — including the legality fold that decides whether a
+	// transition is legal — reads a working tree frozen at server start.
+	//
+	// The refresh takes the mirror's own lock and releases it before the
+	// funnel acquires its own, so the two holds are sequential and cannot
+	// nest (internal/space/mirrorlock.go's budget doc spells out why that
+	// matters).
+	refreshDir, refreshURL := write.MirrorDir, write.RepoURL
+	srv.SetPreCall(func(ctx context.Context, _ string) error {
+		return space.CloneOrFetch(ctx, refreshDir, refreshURL)
+	})
+	return srv, nil
 }
 
 // registerReadOnly registers only the six read tools — used when no
@@ -214,7 +229,7 @@ func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.
 		CommitAuthorName: cfg.System, CommitAuthorEmail: cfg.System + "@a2a.local",
 	}
 	write := WriteDeps{
-		Funnel: funnel, MirrorDir: mirrorDir, SpaceID: ref.ID, OwnSystem: cfg.System,
+		Funnel: funnel, MirrorDir: mirrorDir, RepoURL: ref.RepoURL, SpaceID: ref.ID, OwnSystem: cfg.System,
 		Manifest: manifest, HostCfg: hostCfg, ResolveActor: resolveActor,
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}

@@ -334,8 +334,11 @@ type SubmitHostConfig struct {
 // WriteDeps is the common constructor-injected dependency set every write
 // tool handler needs (mirrors internal/cli's lifecycleDeps).
 type WriteDeps struct {
-	Funnel       Funnel
-	MirrorDir    string
+	Funnel    Funnel
+	MirrorDir string
+	// RepoURL is the mirror's origin — carried so a long-lived session can
+	// REFRESH MirrorDir, not merely read it. See wire.go's pre-call hook.
+	RepoURL      string
 	SpaceID      string
 	OwnSystem    string
 	Manifest     space.Manifest

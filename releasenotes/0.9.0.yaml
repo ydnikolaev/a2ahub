@@ -1,0 +1,98 @@
+schema: release-notes/v1
+version: "0.9.0"
+released: "2026-07-26"
+headline: "The write path stops trusting itself: a version floor that binds every verb, an MCP session that sees the space instead of its own last write, and an unlocked mutation that no longer compiles"
+changes:
+  - id: RN-0900-1
+    kind: fix
+    impact: high
+    subject: "`min_binary_version` bound `a2a submit` and nothing else — every lifecycle and contract verb ignored it"
+    detail: >
+      A space's `min_binary_version` is the one lever an operator has for keeping
+      a stale binary out. It was disconnected from almost every write. The funnel
+      checks the floor only when a write actually carries it, which is reasonable
+      on its own — but three of six write-building sites never set it, and those
+      three are all 15 lifecycle verbs, `contract publish/deprecate/retire`, and
+      their MCP equivalents. So raising a floor gated `a2a submit` and left every
+      other verb writable by any binary, silently, with no error and no warning.
+      This is not theoretical. The branch name the funnel uses as its idempotency
+      key changed grammar in 0.4.0, and a live space still carries two open pull
+      requests for ONE `contract publish` of one artifact — identical contract
+      body, same transition, two branch shapes — because a pre-0.4.0 binary was
+      allowed to write. Raising the floor is exactly how you prevent that, and it
+      was doing nothing on the verb that caused it. Both surfaces are fixed
+      together: a floor that binds the CLI but not MCP would only move the stale
+      write to the other door. A structural gate now fails the build if a new
+      write is added without one.
+    affects: [cli, mcp]
+    action:
+      scope: space
+      why: "the guard is in the binary, but it only bites if your space.yaml declares a floor — check yours"
+      run: ["a2a doctor"]
+
+  - id: RN-0900-2
+    kind: fix
+    impact: high
+    subject: "An `a2a mcp` session no longer reads a space frozen at the moment it started"
+    detail: >
+      Two defects met here, and together they meant a long-running MCP session
+      could validate a transition against a state the space had never agreed to.
+      First, the write funnel checked out an ephemeral branch to commit on and
+      never left it; the only code that moved the mirror back lived inside the
+      clone-or-fetch step. Second, an MCP server ran that step exactly once, at
+      startup, and then served every later tool call from that view — where the
+      CLI re-resolves everything on every invocation. So the second write in a
+      session folded its legality over a working tree standing on the FIRST
+      write's unmerged branch. Both are fixed. The funnel now restores the mirror
+      to its base branch before releasing its lock, so a write leaves the mirror
+      the way it found it; and the MCP session refreshes the mirror before EVERY
+      tool call, in one place rather than in each of ten handlers. That second
+      half also closes the read-staleness gap v0.8.0 documented: an MCP session
+      now sees what your counterparty published after it started. v0.8.0's own
+      release note said the MCP write tools were fine — that sentence was wrong,
+      and this is the correction. One limit remains and is deliberate: if the
+      refresh fails (an unreachable origin), the session logs a warning and
+      serves your last good view rather than refusing to work offline.
+    affects: [mcp, cli]
+    action:
+      scope: local
+      why: "the fix is in the binary; nothing in your space changes"
+      run: ["a2a update"]
+
+  - id: RN-0900-3
+    kind: fix
+    impact: normal
+    subject: "A mirror mutated without holding its lock is now a compile error rather than a review note"
+    detail: >
+      The three defects the live matrix found in July — a lost write, a crossed
+      write where one system's pull request carried another system's files, and a
+      branch forked from a stale head — were one shape: a shared mirror mutated
+      by two processes at once. Two of them had been read in the source and
+      judged latent before the matrix found them. Every working-tree mutation now
+      takes the mirror lock as a parameter, so an unlocked mutation cannot be
+      written; a runtime check covers the half a type cannot express, that the
+      lock is for THIS mirror; and a structural scan catches a future mutation
+      added through a fresh helper that takes no lock. No behaviour changes for a
+      correct caller.
+    affects: [cli, mcp]
+    action:
+      scope: none
+      why: "an internal invariant — nothing to run, and no behaviour changes for a correct caller"
+
+  - id: RN-0900-4
+    kind: fix
+    impact: low
+    subject: "The live-matrix runbook told you to run a path no checkout carries"
+    detail: >
+      The committed runbook's commands named `.agents/scripts/live-e2e/...`,
+      which `.gitignore` excludes entirely — so every reader was pointed at files
+      git does not track, while an untracked local copy drifted from the tracked
+      one with nothing able to notice the difference. One tracked home now, and
+      the documented paths resolve. Also adds `detached.sh`, which runs the
+      matrix detached from whatever launched it: the run takes about an hour, and
+      every attempt driven from an agent session had been killed mid-row —
+      silently, with no verdict — which read as rate limiting and was not.
+    affects: [docs]
+    action:
+      scope: none
+      why: "test infrastructure and its runbook — nothing in the product changes"
