@@ -113,7 +113,7 @@ func (c *DoctorCommand) Name() string { return "doctor" }
 // stays green forever. A summary cannot go stale that way; the enumeration lives
 // where it can be checked against `checks` — troubleshooting.md's table.
 func (c *DoctorCommand) Synopsis() string {
-	return "run local health checks over every connected space (credentials, mirror access, identity, versions, CI, space scaffolding, auto-merge, statusline, skill) — see troubleshooting.md for what each FAIL means"
+	return "run local health checks over every connected space (credentials, mirror access, identity, versions, CI, space scaffolding, auto-merge, CODEOWNERS, statusline, skill) — see troubleshooting.md for what each FAIL means"
 }
 
 // Run implements cli.Command. Exit codes: 2 = usage error (including the
@@ -153,6 +153,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"CI presence", func() (bool, string) { return c.doctorCheckCIPresence(cfg, machine) }},
 		{"space scaffolding current", func() (bool, string) { return c.doctorCheckScaffoldingCurrent(ctx, cfg, machine) }},
 		{"auto-merge enabled", func() (bool, string) { return c.doctorCheckAutoMerge(ctx, cfg, machine) }},
+		{"codeowners resolvable", func() (bool, string) { return c.doctorCheckCodeownersResolvable(ctx, cfg, machine) }},
 		{"statusline wiring", func() (bool, string) { return c.doctorCheckStatuslineWiring() }},
 		{"skill discoverable", func() (bool, string) { return c.doctorCheckSkillDiscoverable() }},
 		{"skill manual current", func() (bool, string) { return c.doctorCheckSkillManualCurrent() }},
@@ -629,6 +630,115 @@ func (c *DoctorCommand) doctorCheckAutoMerge(ctx context.Context, cfg space.Proj
 	if len(unverifiable) > 0 {
 		return true, fmt.Sprintf(" · auto-merge unverified for %s: the credential cannot read this repo's settings "+
 			"(a fine-grained token needs \"Repository metadata: read\")", strings.Join(unverifiable, ", "))
+	}
+	return true, ""
+}
+
+// doctorCodeownersReader is the consumer-side capability the CODEOWNERS row
+// needs — host.GitHubHost.CodeownersErrors satisfies it structurally. Declared
+// here for the same reason doctorRepoSettingsReader is: a second consumer
+// promotes it to host.go, not before.
+type doctorCodeownersReader interface {
+	CodeownersErrors(ctx context.Context, req host.RepoSettingsRequest) ([]host.CodeownersError, error)
+}
+
+// doctorCheckCodeownersResolvable turns a hand-verification into a gate.
+//
+// An unknown CODEOWNERS owner is IGNORED by GitHub, never rejected. So a file
+// naming a team nobody created looks like it gates `/space.yaml` and gates
+// nothing — and code-owner review is the ENTIRE mechanism behind the G4 safety
+// argument (BRANCH-PROTECTION.md), which makes an inert CODEOWNERS an ungated
+// trust root with nothing at merge time to say so.
+//
+// This shipped twice as a documentation problem before becoming a check. First
+// the template's placeholder was `@REPLACE_WITH_ORG/space-admins` with an
+// instruction to replace the org — so the natural edit kept a team name nobody
+// creates. Then it became `@REPLACE_WITH_ORG/REPLACE_WITH_TEAM_OR_LOGIN` with
+// an instruction to replace BOTH halves — and replacing both halves literally
+// produces `@your-org/your-login`, which is still a team reference, still to a
+// team that does not exist. Two rounds of clearer prose, the same inert file.
+//
+// The template also told the operator that GitHub's CODEOWNERS view was "the
+// only feedback you will get". That was wrong in a useful direction: GitHub
+// answers the same question through an API, with line numbers — verified on a
+// real repo 2026-07-26, where both shapes came back as "Unknown owner". Once
+// a thing is machine-readable, asking a human to check it by eye is a choice,
+// and the wrong one.
+//
+// Three outcomes, matching doctorCheckAutoMerge's shape exactly rather than
+// inventing a second reporting convention:
+//
+//   - every owner resolves -> PASS.
+//   - GitHub reports errors -> FAIL, quoting its own line and suggestion.
+//   - the READ failed (no credential, no permission, no network, an unwired
+//     host) -> PASS with an advisory. A red gate that fires on something that
+//     is not broken teaches people to stop reading the gate.
+func (c *DoctorCommand) doctorCheckCodeownersResolvable(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+	if len(cfg.Spaces) == 0 {
+		return true, ""
+	}
+	reader, isReader := c.h.(doctorCodeownersReader)
+	if !isReader {
+		return true, " · CODEOWNERS unverified: this build wires no GitHub CODEOWNERS reader"
+	}
+
+	var unverifiable, broken []string
+	for _, ref := range cfg.Spaces {
+		owner, name, err := doctorRepoOwnerName(ref.RepoURL)
+		if err != nil {
+			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+
+		var parsedRef space.CredentialReference
+		if raw, present := machine.Credentials[ref.ID]; present {
+			if parsed, perr := space.ParseCredentialReference(raw); perr == nil {
+				parsedRef = parsed
+			}
+		}
+		cred, err := c.resolveCredential(ctx, space.CredentialEnvVar(ref.ID), parsedRef)
+		if err != nil {
+			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+
+		errs, err := reader.CodeownersErrors(ctx, host.RepoSettingsRequest{
+			Repo:       host.Repo{Owner: owner, Name: name},
+			Credential: cred,
+		})
+		if err != nil {
+			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+		if len(errs) == 0 {
+			continue
+		}
+		// One finding per SPACE, listing its lines — not one per line. Driven
+		// against a real space, three bad lines produced three copies of the
+		// same paragraph of explanation, which buries the part that differs
+		// (the line numbers) under the part that does not.
+		//
+		// GitHub's own suggestion is quoted rather than paraphrased: it names
+		// all three conditions an owner must satisfy (exists, is publicly
+		// visible, has write access), and a paraphrase would drop whichever one
+		// the reader's case actually is.
+		lines := make([]string, 0, len(errs))
+		for _, e := range errs {
+			lines = append(lines, fmt.Sprintf("line %d (%s): %s", e.Line, e.Kind, e.Suggestion))
+		}
+		broken = append(broken, fmt.Sprintf("%s: %s — GitHub IGNORES an owner it cannot resolve, "+
+			"so this file gates nothing it appears to gate, and code-owner review is the only thing "+
+			"standing behind space.yaml. Individual logins avoid all three conditions above",
+			ref.ID, strings.Join(lines, "; ")))
+	}
+
+	if len(broken) > 0 {
+		return false, strings.Join(broken, "; ")
+	}
+	if len(unverifiable) > 0 {
+		return true, fmt.Sprintf(" · CODEOWNERS unverified for %s: the credential cannot read this repo's "+
+			"CODEOWNERS errors (a fine-grained token needs \"Repository metadata: read\")",
+			strings.Join(unverifiable, ", "))
 	}
 	return true, ""
 }

@@ -7,7 +7,7 @@ Cite: plan §4.2 write funnel, §10.3 AuthZ matrix.
 
 | Setting | Value | Cite |
 |---|---|---|
-| Direct pushes to `main` | forbidden for all actors, including admin (bypass reserved for incident recovery, alarmed via F-7) | §4.2 |
+| Direct pushes to `main` | forbidden for every actor **except a repo admin** — see the `enforce_admins` row below, and read the two together. An admin's `git push origin main` SUCCEEDS, with GitHub answering `remote: Bypassed rule violations for refs/heads/main`. Verified against a fresh space on 2026-07-26. This row used to claim "forbidden for all actors, including admin", which contradicted `enforce_admins: false` two rows down and made a correctly configured space look broken to anyone who checked | §4.2 |
 | Required status check | `a2a-validate / validate` (compound context — the caller job `a2a-validate` in `.github/workflows/a2a-validate.yml` calls a2ahub's reusable `validate` job; P33 amended spec 09 §4.2 / AC row 6, which named the flat `a2a-validate`) | §4.2 |
 | Require branches up to date before merge | OFF (`strict: false`) — concurrent event PRs must not serialize (CC-095) | §4.2 |
 | Force-push | forbidden (`allow_force_pushes: false`) | §4.2 |
