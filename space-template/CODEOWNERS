@@ -5,8 +5,33 @@
 # step 2). Pre-seeding a system entry here would be a layout invention this
 # template does not make.
 #
-# Replace the placeholder handles below with the real GitHub teams/logins
-# when the space repo is created (§9.1 org/space admin runbook).
+# ── AN OWNER THAT DOES NOT EXIST FAILS SILENTLY ───────────────────────────
+#
+# Replace BOTH halves of every placeholder below: the org AND the name after
+# the slash. `@REPLACE_WITH_ORG/space-admins` is a TEAM reference, and the
+# team `space-admins` almost certainly does not exist in your org — nothing
+# creates it. GitHub does not reject an unknown owner; it ignores the line.
+# So the natural literal edit (swap the org, keep the team name) produces a
+# file that LOOKS like it gates `/space.yaml` and gates nothing.
+#
+# That matters more than it sounds: the code-owner review requirement is the
+# whole of the G4 safety argument (BRANCH-PROTECTION.md), and this is its
+# only mechanism. An inert CODEOWNERS is an ungated trust root, with no
+# error anywhere to tell you.
+#
+# Verified on a real org 2026-07-26: the placeholder's team names did not
+# exist there, while three unrelated teams did — exactly the state in which a
+# copied placeholder is silently inert.
+#
+# Individual logins are the safe default and are what a small space wants:
+#
+#   /space.yaml     @alice
+#   /decisions/**   @alice @bob
+#
+# Use a team only if you have confirmed it exists and that its members are
+# who you mean. After editing, check GitHub's own CODEOWNERS view (Settings
+# → Branches, or the file's page) — it flags unknown owners there, and that
+# flag is the only feedback you will get.
 
-/space.yaml     @REPLACE_WITH_ORG/space-admins
-/decisions/**   @REPLACE_WITH_ORG/all-participants
+/space.yaml     @REPLACE_WITH_ORG/REPLACE_WITH_TEAM_OR_LOGIN
+/decisions/**   @REPLACE_WITH_ORG/REPLACE_WITH_TEAM_OR_LOGIN

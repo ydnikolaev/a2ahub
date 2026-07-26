@@ -218,7 +218,10 @@ func (c *SpaceCommand) runInit(_ context.Context, args []string, stdio IO) int {
 	// pinned reusable-workflow release exists means no PR can ever satisfy
 	// it. Both were internal-runbook-only knowledge until now.
 	_, _ = fmt.Fprintln(stdio.Stdout, "space init: remaining steps, IN THIS ORDER:")
-	_, _ = fmt.Fprintln(stdio.Stdout, "  1. edit CODEOWNERS: replace every @REPLACE_WITH_ORG/... placeholder with a real GitHub team or login")
+	_, _ = fmt.Fprintln(stdio.Stdout, "  1. edit CODEOWNERS: replace BOTH halves of every placeholder — the org AND the name after the slash.")
+	_, _ = fmt.Fprintln(stdio.Stdout, "     An owner that does not exist is IGNORED by GitHub, not rejected: swapping only the org leaves a")
+	_, _ = fmt.Fprintln(stdio.Stdout, "     team nobody created, and the file then gates nothing while looking correct. Individual logins are")
+	_, _ = fmt.Fprintln(stdio.Stdout, "     the safe default; check GitHub's own CODEOWNERS view afterwards, it is the only feedback you get.")
 	_, _ = fmt.Fprintln(stdio.Stdout, "  2. delete README.md from this tree — it documents the TEMPLATE, not your space")
 	_, _ = fmt.Fprintln(stdio.Stdout, "  3. create the space repo on GitHub, EMPTY (no README, no license)")
 	_, _ = fmt.Fprintln(stdio.Stdout, "  4. git init -b main && git add -A && git commit && git remote add origin <url> && git push -u origin main")
