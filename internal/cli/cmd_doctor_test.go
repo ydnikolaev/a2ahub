@@ -1057,8 +1057,58 @@ func TestDoctorCheckSkillManualCurrent_UnparseableProvenance_VersionUnknown(t *t
 	if !ok {
 		t.Fatalf("want pass, got fail: %s", detail)
 	}
-	if !strings.Contains(detail, "version unknown") {
-		t.Fatalf("detail = %q, want a version-unknown note", detail)
+	// This used to assert the literal "version unknown", which is the phrase the
+	// row was changed to stop saying: it answered three different situations
+	// identically and named neither a cause nor an action. A test that pins an
+	// uninformative message keeps it, so the assertion is now about what the note
+	// must CONVEY.
+	for _, want := range []struct{ substr, why string }{
+		{"no version stamp", "name the CAUSE — the file carries nothing to read"},
+		{"a2a skill install", "name the action, which here genuinely does rewrite the file"},
+	} {
+		if !strings.Contains(detail, want.substr) {
+			t.Errorf("detail = %q, missing %q — %s", detail, want.substr, want.why)
+		}
+	}
+}
+
+// TestDoctorSkillManualNamesADevBuildRatherThanSayingVersionUnknown is the case
+// that actually fires in normal development, every single time: a dev build
+// stamps `(a2a dev)`, the version pattern requires a leading digit, and the row
+// reported "version unknown" with nothing to say why.
+//
+// It must NOT name a remedy here. `a2a skill install` from a dev build re-stamps
+// `dev` and changes nothing — which is the louder form of the defect this whole
+// line of fixes is about: a message that sends the reader somewhere that cannot
+// help.
+func TestDoctorSkillManualNamesADevBuildRatherThanSayingVersionUnknown(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	target := filepath.Join(root, skillDefaultDir)
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Verbatim from what skillProvenance writes on a dev build.
+	body := "Written by `a2a skill install` / `a2a init` (a2a dev).\n"
+	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewDoctorCommand(host.NewFakeHost(), "dev", "/unused/.a2a/config.yaml", "/unused/machine.yaml", root)
+	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
+
+	ok, detail := cmd.doctorCheckSkillManualCurrent()
+	if !ok {
+		t.Fatalf("this row never FAILs; got fail: %s", detail)
+	}
+	if !strings.Contains(detail, "development build") {
+		t.Errorf("detail = %q, want it to name the cause — a dev build stamps `a2a dev`, which is "+
+			"expected when running from source and is not a problem to fix", detail)
+	}
+	if strings.Contains(detail, "a2a skill install") {
+		t.Errorf("detail = %q, must NOT name a remedy: re-installing from a dev build re-stamps `dev` "+
+			"and changes nothing, which is exactly the dead-remedy defect this row was fixed for", detail)
 	}
 }
 
