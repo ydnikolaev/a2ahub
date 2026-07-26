@@ -242,3 +242,64 @@ func TestRenderOmitsEvidenceClassWhenUnset(t *testing.T) {
 		t.Fatalf("rendered report carries an evidence-class marker nobody set:\n%s", rendered)
 	}
 }
+
+// TestRenderPrintsEvidenceForAClaimingPass is the regression for a defect in
+// this tier's own instrumentation, found by reading the first live run after the
+// accounting shipped and noticing the line was simply not there.
+//
+// Render skips Expected/Observed/Detail for a passing row on purpose: a green
+// matrix that printed evidence for all 39 rows is unreadable. But the space-CI
+// health row's PASS is a claim — "these are the red runs this matrix owns up to
+// having caused, by id" — and that claim went into Detail, which a passing row
+// never prints. The ids were computed, carried, and dropped on the floor.
+//
+// That is the same mistake as a schema wired to no caller, at a smaller scale:
+// something built, correct, and connected to nothing that reads it. It replaced
+// a sentence that was an assumption dressed as a finding, so having it render
+// nowhere left the row asserting less than the sentence it improved on.
+func TestRenderPrintsEvidenceForAClaimingPass(t *testing.T) {
+	t.Parallel()
+
+	run := NewRun("a2ahub-live-e2e", "space", []string{"claiming-row"}, []string{SystemA}, []Surface{SurfaceCLI})
+	if err := run.Record(Result{
+		Scenario: "claiming-row", System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
+		Detail:       "detail that a passing row must NOT print",
+		PassEvidence: "4 failure(s) claimed by the rows that caused them: run 2116, 2117",
+	}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	out := run.Report().Render()
+
+	if !strings.Contains(out, "run 2116, 2117") {
+		t.Errorf("a claiming pass did not print its evidence — the ids ARE the verdict, and without them "+
+			"the row is back to asserting that the reds were deliberate:\n%s", out)
+	}
+	// And the ordinary Detail stays suppressed: the reason this needed its own
+	// field rather than "print Detail on a pass too" is that most rows carry a
+	// PR number there, and 39 of those is the noise this report avoids.
+	if strings.Contains(out, "detail that a passing row must NOT print") {
+		t.Errorf("Detail leaked onto a passing row — every row carries one, and printing them all is the "+
+			"unreadable report this suppression exists to prevent:\n%s", out)
+	}
+}
+
+// TestRenderStaysQuietForAnOrdinaryPass is the other half: a pass with no claim
+// prints nothing extra. Without this, "print the evidence" could be satisfied by
+// printing something for every row, which is the failure mode the suppression
+// exists to prevent.
+func TestRenderStaysQuietForAnOrdinaryPass(t *testing.T) {
+	t.Parallel()
+
+	run := NewRun("a2ahub-live-e2e", "space", []string{"ordinary-row"}, []string{SystemA}, []Surface{SurfaceCLI})
+	if err := run.Record(Result{
+		Scenario: "ordinary-row", System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
+		Detail: "PR #123",
+	}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	out := run.Report().Render()
+
+	if strings.Contains(out, "evidence:") {
+		t.Errorf("an ordinary pass printed an evidence line: %s", out)
+	}
+}

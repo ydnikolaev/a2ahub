@@ -39,6 +39,28 @@ type Result struct {
 	// Detail carries the row's evidence — a PR URL, a check-run name, the
 	// workflow ref that actually executed (§T6-b). Free text, rendered as-is.
 	Detail string
+	// PassEvidence is rendered even when the row PASSES, and exists because
+	// Detail is not.
+	//
+	// Render skips Expected/Observed/Detail for a passing row on purpose: a green
+	// matrix printing evidence for all 39 rows is unreadable, and a failing row
+	// is READ while a passing one is scanned. But some rows' pass is itself a
+	// CLAIM a reader has to be able to check, and for those, printing nothing is
+	// the same failure as having no evidence.
+	//
+	// The space-CI health row is why this exists. It used to pass with the words
+	// "every failure among them is one a scenario here caused on purpose" — an
+	// assumption rendered as a finding, and the exact sentence an operator read as
+	// green while their inbox filled with failure mail. Replacing it with the
+	// actual claimed run ids was pointless while the field carrying them could
+	// never reach the report: evidence nobody can read is not evidence, which is
+	// the same mistake as a schema wired to no caller. Found by reading the first
+	// live run after the accounting shipped and noticing the line was not there.
+	//
+	// Use it ONLY where the pass is a claim. A row whose pass means "the thing
+	// worked" needs no line.
+	PassEvidence string
+
 	// EvidenceClass marks a Result that is NOT ordinary live evidence —
 	// e.g. a write driven through the fault-injecting proxy
 	// (injectproxy_live.go, EvidenceClassInjectedFault). Empty for every
@@ -270,6 +292,12 @@ func (r Report) Render() string {
 		// Evidence is indented under its row rather than crammed into
 		// columns: a failing row is read, not scanned.
 		if res.Verdict.IsPass() {
+			// A pass that makes a CLAIM prints its evidence; a pass that
+			// merely means "it worked" prints nothing. See
+			// Result.PassEvidence.
+			if res.PassEvidence != "" {
+				fmt.Fprintf(&b, "    evidence: %s\n", res.PassEvidence)
+			}
 			continue
 		}
 		if res.Expected != "" {
