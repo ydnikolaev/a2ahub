@@ -19,16 +19,36 @@ package livee2e
 //     never appears at all, so a tier that only reads check conclusions sees
 //     nothing to complain about.
 //
-// The classifier is deliberately NARROW. Failing checks on pull requests are
-// normal and expected here — several rows exist precisely to prove that an
-// illegal write is refused, and each leaves a red PR check behind. Flagging
-// those would produce noise nobody reads, which is how a real signal gets
-// lost. Only two shapes are reported, and neither is ever legitimate:
+// # Why a red run is EXPLAINED by a claim, never by a name
 //
-//	1. a FAILED push-event run on the space's base branch — nothing the
-//	   matrix does should ever leave the space's own main red;
-//	2. a COMPLETED run that ran zero jobs — the workflow itself could not be
-//	   loaded, on any branch.
+// Failing checks on pull requests are normal here: at least one row exists
+// precisely to prove that an illegal write is refused, and it leaves a red
+// PR check behind by design. The first version of this file dealt with that
+// by staying NARROW — it reported two shapes and passed everything else,
+// while telling the reader "every failure among them is one a scenario here
+// caused on purpose". That sentence was never verified. It was an assumption
+// rendered as evidence, and it is exactly the sentence an operator was
+// reading as green while their inbox filled with failure mail.
+//
+// So a deliberately-red run is now EXPLAINED BY ITS ID: the scenario that
+// reddens it declares the run ids it caused (harness.claimRed), and this
+// classifier reports every failed run nobody claimed. Keying on ids rather
+// than on a branch-name or title pattern is the whole point — a pattern goes
+// stale the first time somebody adds a second probe, and then it silently
+// absolves a real failure. Inferring intent from a field the caller never
+// populated is also precisely how this file's first live run produced 96
+// false findings out of 100.
+//
+// A claim excuses a run's CONCLUSION. It never excuses its SHAPE: a claimed
+// run that ran zero jobs is still an unloadable workflow, and is still
+// reported. The two rules below are therefore checked unconditionally, and
+// the claim is consulted only for the third.
+//
+// The residual risk is deliberate and is the safe direction. If a row reddens
+// a run without claiming it, this over-reports: the matrix reds, and the
+// report names the exact run id so the fix is either one claim or a real
+// defect found. The opposite bias — passing over an unclaimed red — is the
+// bias that already shipped twice.
 //
 // This file is untagged on purpose. Every scenario file in this package sits
 // behind `//go:build livee2e`, where `make check` cannot see it — which is
@@ -71,17 +91,39 @@ type SpaceFailure struct {
 	Reason string
 }
 
-// UnexplainedSpaceFailures reports the runs that mean the space itself is
-// broken, as opposed to the many red PR checks this tier deliberately
-// causes. baseBranch is the space's own base (normally "main").
+// SpaceCIVerdict is the whole answer the health row renders: what is wrong,
+// and — just as important for a reader staring at a red Actions tab — which
+// red runs this matrix owns up to having caused.
+//
+// Accounted is reported even when Findings is empty, because it is the
+// evidence behind the row's pass. A pass that merely asserts "the reds were
+// all ours" is the claim this type exists to replace with a list.
+type SpaceCIVerdict struct {
+	// Findings are the runs that mean something is wrong — in the order the
+	// runs were given.
+	Findings []SpaceFailure
+	// Accounted lists the failed runs a scenario claimed, so the report can
+	// name them instead of asserting they exist.
+	Accounted []int64
+}
+
+// ClassifySpaceRuns judges every run the space produced during this matrix
+// against the three shapes that are never legitimate. baseBranch is the
+// space's own base (normally "main"); claimed carries the run ids scenarios
+// declared they reddened on purpose.
 //
 // A run still in flight is never reported: this is called at the end of a
 // matrix run, and a run that has not concluded has not failed.
-func UnexplainedSpaceFailures(runs []SpaceRun, baseBranch string) []SpaceFailure {
+func ClassifySpaceRuns(runs []SpaceRun, baseBranch string, claimed []int64) SpaceCIVerdict {
 	if baseBranch == "" {
 		baseBranch = "main"
 	}
-	var out []SpaceFailure
+	claims := make(map[int64]bool, len(claimed))
+	for _, id := range claimed {
+		claims[id] = true
+	}
+
+	var out SpaceCIVerdict
 	for _, r := range runs {
 		if r.Status != "completed" {
 			continue
@@ -99,8 +141,12 @@ func UnexplainedSpaceFailures(runs []SpaceRun, baseBranch string) []SpaceFailure
 		// Checked FIRST because such a run reports Conclusion "failure" like
 		// any other, and this is the more specific, more actionable
 		// diagnosis.
+		//
+		// Deliberately BEFORE the claim: a scenario claims that it made a
+		// gate go red, which says nothing about whether the workflow behind
+		// that gate could be loaded at all.
 		if r.JobCount == 0 {
-			out = append(out, SpaceFailure{Run: r, Reason: fmt.Sprintf(
+			out.Findings = append(out.Findings, SpaceFailure{Run: r, Reason: fmt.Sprintf(
 				"workflow run %d on %q ran ZERO jobs — the workflow could not be loaded "+
 					"(usually a reusable-workflow ref that does not resolve). The required check never "+
 					"reports at all, so every row waiting on it times out rather than failing",
@@ -109,12 +155,24 @@ func UnexplainedSpaceFailures(runs []SpaceRun, baseBranch string) []SpaceFailure
 		}
 
 		if r.Event == "push" && r.HeadBranch == baseBranch {
-			out = append(out, SpaceFailure{Run: r, Reason: fmt.Sprintf(
+			out.Findings = append(out.Findings, SpaceFailure{Run: r, Reason: fmt.Sprintf(
 				"workflow run %d failed on the space's own base branch %q after a push — no scenario "+
 					"here should ever leave main red. This is the post-merge audit class: flag-only, "+
 					"asserted by no row, and therefore invisible unless something looks for it",
 				r.ID, r.HeadBranch)})
+			continue
 		}
+
+		if claims[r.ID] {
+			out.Accounted = append(out.Accounted, r.ID)
+			continue
+		}
+
+		out.Findings = append(out.Findings, SpaceFailure{Run: r, Reason: fmt.Sprintf(
+			"workflow run %d failed on %q (%s event) and NO scenario claimed it. Either the row that "+
+				"caused it must claim the run id it reddened, or this is a real failure that would "+
+				"otherwise have reached the operator by email while this report read green",
+			r.ID, r.HeadBranch, r.Event)})
 	}
 	return out
 }

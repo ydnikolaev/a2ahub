@@ -358,9 +358,15 @@ func (p pullPayload) toPullState() PullState {
 }
 
 // OpenPull opens a PR from head into base, returning its number.
-func (c *ghClient) OpenPull(ctx context.Context, owner, name, title, head, base string) (int, error) {
+//
+// prBody is not decoration. The one caller opens a pull request whose check
+// is REQUIRED to go red, and that red run shows up in the space's Actions tab
+// (and in the repository's failure mail) under this title. Left unexplained
+// it is indistinguishable from a defect — so the title and body are where the
+// probe says what it is, to the only reader who will ever see it there.
+func (c *ghClient) OpenPull(ctx context.Context, owner, name, title, prBody, head, base string) (int, error) {
 	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/pulls"
-	body := map[string]any{"title": title, "head": head, "base": base}
+	body := map[string]any{"title": title, "body": prBody, "head": head, "base": base}
 	var created struct {
 		Number int `json:"number"`
 	}
