@@ -803,8 +803,27 @@ func (c *DoctorCommand) doctorCheckSkillDiscoverable() (bool, string) {
 			linked++
 		}
 	}
+	// THREE states, not two. This used to collapse the last two, and the
+	// collapsed message named a remedy that cannot work: it said to run
+	// `a2a skill link`, which in a project with no agent surface answers
+	// "no known agent surface detected (.claude/ or .codex/) — nothing to
+	// link" and leaves the advisory repeating verbatim on the next doctor.
+	//
+	// Found on 2026-07-26 by following the advice and watching nothing change.
+	// Loud, specific and unactionable is the same family as the validation gate
+	// that named the wrong author: it sends the reader somewhere that cannot
+	// help, and the reader's next move is to distrust the check.
+	if len(detected) == 0 {
+		return true, " · skill installed; this project shows no agent surface (.claude/ or .codex/), " +
+			"so there is nothing to link — expected for a project no agent drives"
+	}
 	if linked == 0 {
-		return true, " · ADVISORY: skill installed but no agent surface links it — run 'a2a skill link'"
+		ids := make([]string, 0, len(detected))
+		for _, s := range detected {
+			ids = append(ids, s.ID)
+		}
+		return true, fmt.Sprintf(" · ADVISORY: skill installed but not linked from this project's "+
+			"agent surface(s) (%s) — run 'a2a skill link'", strings.Join(ids, ", "))
 	}
 	return true, fmt.Sprintf(" · skill installed and linked (%d surface(s))", linked)
 }

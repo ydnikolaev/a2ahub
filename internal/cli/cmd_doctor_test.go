@@ -1468,3 +1468,74 @@ func TestDoctorCheckCodeownersResolvable(t *testing.T) {
 		}
 	})
 }
+
+// TestDoctorSkillAdvisoryDistinguishesNoSurfaceFromUnlinked is the regression
+// for an advisory that named a remedy which cannot work.
+//
+// Two states were collapsed into one message: a surface EXISTS and is not linked
+// (where `a2a skill link` is exactly right), and NO surface exists at all (where
+// `a2a skill link` answers "no known agent surface detected — nothing to link"
+// and the advisory then repeats verbatim on the next doctor).
+//
+// Found on 2026-07-26 by following the advice and watching nothing change. Loud,
+// specific and unactionable is the same family as the validation gate that named
+// the wrong author: it sends the reader somewhere that cannot help, and their
+// next move is to stop trusting the check.
+func TestDoctorSkillAdvisoryDistinguishesNoSurfaceFromUnlinked(t *testing.T) {
+	t.Parallel()
+
+	installSkill := func(t *testing.T, root string) {
+		t.Helper()
+		dir := filepath.Join(root, ".a2ahub", "skill")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("# skill\n"), 0o644); err != nil {
+			t.Fatalf("write SKILL.md: %v", err)
+		}
+	}
+
+	t.Run("no agent surface at all: says there is nothing to link", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		installSkill(t, root)
+
+		cmd := newTestDoctorCommand()
+		cmd.projectRoot = root
+		ok, detail := cmd.doctorCheckSkillDiscoverable()
+		if !ok {
+			t.Fatalf("this row never FAILs; got fail: %s", detail)
+		}
+		if strings.Contains(detail, "a2a skill link") {
+			t.Errorf("the advisory still tells a surface-less project to run `a2a skill link`, which "+
+				"answers \"nothing to link\" and changes nothing:\n%s", detail)
+		}
+		if !strings.Contains(detail, "nothing to link") {
+			t.Errorf("detail = %q, want it to say plainly that there is nothing to link here", detail)
+		}
+	})
+
+	t.Run("a surface exists but is unlinked: names it and the remedy", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		installSkill(t, root)
+		// A surface is DETECTED by its own directory existing.
+		if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+			t.Fatalf("mkdir .claude: %v", err)
+		}
+
+		cmd := newTestDoctorCommand()
+		cmd.projectRoot = root
+		ok, detail := cmd.doctorCheckSkillDiscoverable()
+		if !ok {
+			t.Fatalf("this row never FAILs; got fail: %s", detail)
+		}
+		if !strings.Contains(detail, "a2a skill link") {
+			t.Errorf("detail = %q, want the remedy — HERE it actually works", detail)
+		}
+		if !strings.Contains(detail, "claude") {
+			t.Errorf("detail = %q, want the detected surface named, so the reader knows what will be "+
+				"linked", detail)
+		}
+	})
+}
