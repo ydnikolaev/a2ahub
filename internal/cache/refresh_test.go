@@ -373,3 +373,42 @@ func TestSyncIfStale_BudgetExhaustion_NamesUnattemptedMirrors(t *testing.T) {
 		t.Fatalf("budgetErrs = %d, want exactly 1 (the third, unattempted mirror)", budgetErrs)
 	}
 }
+
+// TestSyncIfStaleDoesNotInheritTheStatuslineTTL is the regression for a
+// blocker that survived its own fix by five minutes.
+//
+// SyncIfStale used the Store's TTL, which defaults to
+// DefaultStatuslineTTL (5 minutes). Found end-to-end against a live space on
+// 2026-07-26: an artifact whose pull request had just merged was INVISIBLE to
+// `a2a outbox` and `a2a show` ("artifact not found"), and one explicit `a2a
+// sync` revealed it at once. The submit had fetched the mirror moments
+// earlier, so its age sat inside the statusline window and the read path
+// skipped it as fresh.
+//
+// That is the original read-path blocker, narrower: agent A publishes, it
+// merges, agent B reads within five minutes and is told there is nothing —
+// while the documented session-start loop says an empty inbox means proceed.
+//
+// The test asserts the THRESHOLD relationship rather than a literal, because
+// what matters is that a read verb never inherits a window sized for a shell
+// prompt.
+func TestSyncIfStaleDoesNotInheritTheStatuslineTTL(t *testing.T) {
+	t.Parallel()
+
+	if readRefreshTTL >= DefaultStatuslineTTL {
+		t.Fatalf("readRefreshTTL (%s) is not shorter than DefaultStatuslineTTL (%s) — a read verb would "+
+			"again accept a mirror stale enough to hide a counterparty's merge, which is the blocker "+
+			"the read refresh exists to close", readRefreshTTL, DefaultStatuslineTTL)
+	}
+	// And not zero: several read verbs in one agent turn must not each pay a
+	// fetch for an answer that cannot have changed between them.
+	if readRefreshTTL <= 0 {
+		t.Fatalf("readRefreshTTL is %s — every read verb in a burst would fetch again for nothing", readRefreshTTL)
+	}
+	// Short enough to be useful inside one exchange: a counterparty's merge
+	// must surface on the next question, not after the conversation moved on.
+	if readRefreshTTL > time.Minute {
+		t.Fatalf("readRefreshTTL is %s — long enough for a just-merged artifact to stay invisible "+
+			"across a normal back-and-forth", readRefreshTTL)
+	}
+}

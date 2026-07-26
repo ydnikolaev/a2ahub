@@ -177,3 +177,29 @@ changes:
       why: "the fix lives in the reusable workflow your space pins by tag — the space must re-pin to get it"
       run: ["a2a space update"]
       detect: ["a2a doctor"]
+
+  - id: RN-0900-8
+    kind: known-issue
+    impact: high
+    subject: "A just-merged artifact could stay invisible to your reads for five minutes (fixed in 0.9.1)"
+    detail: >
+      v0.8.0 made every read verb refresh a stale mirror before reading, which
+      closed the case where a contract published on the other side was silently
+      invisible. It did not close the narrower one, and the narrower one is more
+      likely: "stale" was measured against the STATUSLINE's five-minute window,
+      because both callers shared one setting. So a mirror fetched moments
+      earlier — by your own `a2a submit`, for instance — counted as fresh, and an
+      artifact whose pull request merged just after that fetch stayed invisible
+      to `a2a inbox`, `outbox` and `show` for up to five minutes. No error: `show`
+      answered "artifact not found". Found end to end against a live space on
+      2026-07-26, and one explicit `a2a sync` revealed the artifact at once. Five
+      minutes is exactly the window in which your counterparty's merge matters
+      most, and the documented session-start loop says an empty inbox means
+      proceed. If you are on 0.9.0 and a read looks emptier than you expect, run
+      `a2a sync` and read again — that is the reliable answer until you upgrade.
+    affects: [cli]
+    action:
+      scope: local
+      why: "run `a2a sync` before trusting an empty read on 0.9.0; the fix ships in 0.9.1"
+      run: ["a2a sync"]
+      detect: ["a2a show <id>"]
