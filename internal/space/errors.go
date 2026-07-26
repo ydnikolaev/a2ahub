@@ -59,6 +59,15 @@ var (
 	// the funnel rather than defaulted, so a new caller cannot regress it.
 	ErrMissingVerb = errors.New("space: submit request names no verb")
 
+	// ErrInvalidBranchSegment is returned when a write's system, verb, or
+	// artifact id would not survive being rendered into the funnel's
+	// deterministic branch — a slash (which silently nests the ref and
+	// breaks the idempotency lookup), a character git refuses in a ref, or
+	// an empty segment. Refused BEFORE any git action, so the failure names
+	// the field rather than arriving later in git's own words after a
+	// commit already exists.
+	ErrInvalidBranchSegment = errors.New("space: write branch segment is not usable in a ref name")
+
 	// ErrForkFallbackUnavailable is returned when a write opted into the
 	// P28 fork fallback, the push was refused for lack of write access,
 	// and no fork could be used — either the host profile has no fork

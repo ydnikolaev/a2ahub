@@ -204,6 +204,9 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	if req.Verb == "" {
 		return WriteResult{}, &Error{Op: op, Input: req.ArtifactID, Err: ErrMissingVerb}
 	}
+	if err := validateBranchSegments(req.System, req.Verb, req.ArtifactID); err != nil {
+		return WriteResult{}, &Error{Op: op, Input: req.ArtifactID, Err: err}
+	}
 	branch := BranchName(req.System, req.Verb, req.ArtifactID)
 
 	// Step 0: idempotent-retry short-circuit — before ANY other check or
@@ -434,8 +437,51 @@ func checkStatusExplicitlyGreen(s host.CheckStatusResult) bool {
 // that system on that artifact matched a merged PR and short-circuited —
 // `ack` then `accept` lost the accept, and a contract's publish/deprecate/
 // retire all collapsed into its submit. Silently, with exit 0.
+// BranchName IS PROTOCOL, not an implementation detail. Read
+// validateBranchSegments and TestBranchNameGrammarIsProtocol before changing
+// the format string.
 func BranchName(system, verb, artifactID string) string {
 	return fmt.Sprintf("a2a/%s/%s/%s", system, verb, artifactID)
+}
+
+// validateBranchSegments refuses a system/verb/artifactID that would make
+// BranchName render something other than the four-segment ref it promises.
+//
+// The failure this prevents is quiet, not loud. A slash in an artifact id
+// renders `a2a/<sys>/<verb>/a/b` — still a legal git ref, so the push
+// succeeds and a PR opens, but the branch no longer round-trips through the
+// funnel's own step-0 lookup the way its sibling writes do, and the space's
+// tooling parses one segment where two arrived. The same goes for the ref
+// characters git itself rejects (`~ ^ : ? * [ \` and whitespace), a segment
+// ending in `.lock`, and `..`: those fail at the push, after the commit, in
+// git's own words rather than the product's.
+//
+// This validates the SEGMENTS rather than the rendered branch on purpose:
+// the rendered string cannot tell an embedded slash from a real separator,
+// which is exactly the ambiguity being refused.
+func validateBranchSegments(system, verb, artifactID string) error {
+	for _, seg := range []struct{ name, value string }{
+		{"system", system},
+		{"verb", verb},
+		{"artifact id", artifactID},
+	} {
+		if seg.value == "" {
+			return fmt.Errorf("%w: %s is empty", ErrInvalidBranchSegment, seg.name)
+		}
+		if strings.ContainsAny(seg.value, "/") {
+			return fmt.Errorf("%w: %s %q contains a slash, which would silently nest the write branch "+
+				"and break the funnel's idempotency lookup", ErrInvalidBranchSegment, seg.name, seg.value)
+		}
+		if strings.ContainsAny(seg.value, " \t\n~^:?*[\\") {
+			return fmt.Errorf("%w: %s %q contains a character git refuses in a ref name",
+				ErrInvalidBranchSegment, seg.name, seg.value)
+		}
+		if strings.Contains(seg.value, "..") || strings.HasSuffix(seg.value, ".lock") ||
+			strings.HasPrefix(seg.value, ".") || strings.HasSuffix(seg.value, ".") {
+			return fmt.Errorf("%w: %s %q is not a legal git ref component", ErrInvalidBranchSegment, seg.name, seg.value)
+		}
+	}
+	return nil
 }
 
 // resolvedBaseBranch returns req.BaseBranch, defaulting to §4.2's
