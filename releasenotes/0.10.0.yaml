@@ -315,3 +315,30 @@ changes:
       scope: space
       why: "the check arrives per-space when the space re-pins the reusable workflow"
       run: ["a2a space update"]
+  - id: RN-01000-11
+    kind: fix
+    impact: normal
+    subject: "`a2a new --field to=beta` works — it used to be accepted and silently dropped"
+    detail: >
+      A `--field` override on a LIST field did nothing. The flag was accepted, the
+      template's placeholder survived, and you found out minutes later when
+      `submit` refused the write with "`to` includes an unknown system:
+      <recipient-system>" — a complaint about a placeholder you believed you had
+      replaced, with nothing anywhere saying your flag had been ignored.
+      Found by drafting an announcement on a real space and reading the refusal.
+      Three syntaxes were checked before calling it a defect rather than a typo:
+      `to=beta`, `to=[beta]` and `to=- beta` all did nothing.
+      Both halves are fixed. A list field now takes a YAML list (`[beta]`,
+      `- beta`) or a bare scalar (`beta`, read as the one-element list — what
+      anyone writing that means). And an override the renderer CANNOT apply is now
+      refused where you give it, naming the field and what shape the template
+      expects. That second half matters more: the old behaviour was not
+      "unsupported", it was unsupported and silent.
+      Both surfaces get it. `a2a new` and MCP's `a2a_new` render through the same
+      template code, so the fix reaches both — which is worth saying because this
+      was filed long ago as deferred FOR being cross-surface. It never was.
+    affects: [cli, mcp]
+    action:
+      scope: local
+      why: "the fix is in the binary"
+      run: ["a2a update"]

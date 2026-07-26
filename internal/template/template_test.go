@@ -2,7 +2,9 @@ package template_test
 
 import (
 	"encoding/json"
+	"errors"
 	"io/fs"
+	"strings"
 	"testing"
 	"time"
 
@@ -246,4 +248,89 @@ func indexOf(haystack, needle string) int {
 		}
 	}
 	return -1
+}
+
+// TestRenderAppliesAListValuedFieldOverride is the regression for a defect found
+// by drafting an announcement on a real space and reading the refusal that came
+// back minutes later.
+//
+// `--field to=alpha` was ACCEPTED and silently dropped. setScalar writes
+// node.Value, and for a sequence node the encoder emits the node's children and
+// never looks at Value — so the template's `<recipient-system>` placeholder
+// survived, and `submit` refused the write with
+// "REF-006 to: `to` includes an unknown system: <recipient-system>": a complaint
+// about a placeholder the author believed they had replaced, with nothing
+// anywhere saying the flag had been ignored.
+//
+// Three syntaxes were verified as broken before this was called a defect —
+// `to=alpha`, `to=[alpha]`, `to=- alpha` — because "my syntax was wrong" is the
+// likelier explanation and had to be ruled out first.
+//
+// The fix lives in internal/template, which means it covers BOTH surfaces: MCP's
+// a2a_new renders through the same template.Render. The deferral note that filed
+// this originally called it "cross-surface with MCP a2a_new" and parked it; the
+// shared door is exactly why it is not.
+func TestRenderAppliesAListValuedFieldOverride(t *testing.T) {
+	t.Parallel()
+
+	forms := map[string]string{
+		"bare scalar is the one-element reading": "beta",
+		"flow list":                              "[beta]",
+		"block list":                             "- beta",
+	}
+	for name, override := range forms {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			out, err := template.Render(template.Input{
+				Type:    "announcement",
+				ID:      "XA-axon-20260726-ab12",
+				Actor:   template.Actor{Kind: "agent", Name: "bot"},
+				Created: time.Date(2026, 7, 26, 10, 0, 0, 0, time.UTC),
+				Fields:  map[string]string{"to": override},
+			})
+			if err != nil {
+				t.Fatalf("Render with --field to=%q: %v", override, err)
+			}
+			got := string(out)
+			if strings.Contains(got, "<recipient-system>") {
+				t.Fatalf("the placeholder survived a --field override of %q — this is the silent drop, and "+
+					"the author only finds out when `submit` refuses the write:\n%s", override, got)
+			}
+			if !strings.Contains(got, "beta") {
+				t.Fatalf("the override %q did not reach the document:\n%s", override, got)
+			}
+		})
+	}
+}
+
+// TestRenderRefusesAFieldOverrideItCannotApply is the other half, and the one
+// that matters more than the fix.
+//
+// The old behaviour was not "lists are unsupported" — it was unsupported AND
+// SILENT. Anything the renderer cannot apply must now be refused where it is
+// given, naming the field and both kinds, so the failure is never again
+// discovered as a validation complaint about something else entirely.
+func TestRenderRefusesAFieldOverrideItCannotApply(t *testing.T) {
+	t.Parallel()
+
+	_, err := template.Render(template.Input{
+		Type:    "announcement",
+		ID:      "XA-axon-20260726-ab12",
+		Actor:   template.Actor{Kind: "agent", Name: "bot"},
+		Created: time.Date(2026, 7, 26, 10, 0, 0, 0, time.UTC),
+		// `to` is a list in the template; a mapping cannot become one.
+		Fields: map[string]string{"to": "{beta: yes}"},
+	})
+	if err == nil {
+		t.Fatal("a --field override that cannot be applied must be refused, not dropped — dropping it is " +
+			"how the original defect stayed invisible until a later, unrelated-looking refusal")
+	}
+	if !errors.Is(err, template.ErrUnappliableField) {
+		t.Fatalf("err = %v, want ErrUnappliableField so a caller can recognise the class", err)
+	}
+	for _, want := range []string{"to", "mapping", "list"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err is missing %q — it must name the field and both kinds: %v", want, err)
+		}
+	}
 }
