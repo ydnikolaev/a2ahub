@@ -34,6 +34,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -458,4 +460,207 @@ func TestWireReadVerbSeesAMergeItDidNotSyncFor(t *testing.T) {
 			"If internal/cache's own row is green and this one is not, the refresh is no longer WIRED: "+
 			"check the freshReadVerbs branch in buildCommands().", code, out, stderr.String(), age)
 	}
+}
+
+// runGitFixtureOutput is runGitFixture's output-returning twin — needed here
+// (unlike every other case in this file) to read back WHICH branch the
+// funnel pushed and what it committed there.
+func runGitFixtureOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=a2a-fixture", "GIT_AUTHOR_EMAIL=fixture@a2ahub.invalid",
+		"GIT_COMMITTER_NAME=a2a-fixture", "GIT_COMMITTER_EMAIL=fixture@a2ahub.invalid",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v (dir=%q): %v\n%s", args, dir, err, out)
+	}
+	return string(out)
+}
+
+// stubFindPRAlwaysEmpty answers WriteFunnel.Submit's step-0
+// FindPRByHeadBranch call (`GET .../pulls?...`) with an empty JSON array —
+// "no existing PR for this branch" — for ANY method/path. A real
+// api.github.com answers the same GET with 401 (this fixture's token is a
+// fixture value, not a real credential), which host.GitHubHost's
+// restCall treats as fatal and returns BEFORE the funnel ever commits or
+// pushes — the one host round-trip this tier cannot let reach the real
+// network. Every other verb in this file avoids the problem by refusing on
+// a nonexistent artifact before Submit is ever called; TestWireRespond
+// PropagatesParentThread is the first row that needs Submit to actually
+// run, so it is the first to need this stub. OpenPR (step 4, the POST this
+// stub does NOT answer) still has nowhere real to go and still fails —
+// exactly the boundary this file's own package doc names ("only the HOST
+// call (open PR) has nowhere real to go"); the commit and the PushBranch
+// (a REAL local `git push` against the filesystem origin, host/github.go's
+// own doc comment) both complete before that failure.
+func stubFindPRAlwaysEmpty(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/pulls") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("[]"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// TestWireRespondPropagatesParentThread drives `a2a respond` through the
+// REAL entry point (runLifecycle -> resolvePaths -> ... -> NewWriteFunnel
+// -> RespondCommand) against the local bare-repo origin every other case in
+// this file already sets up, and asserts the COMMITTED response's own
+// frontmatter carries the parent's thread VERBATIM (spec 46 §T1 R4/R5,
+// cmd_lifecycle.go's own RespondCommand.Run) — the wire-level half of
+// show_thread.txtar / TestThreadChainFixtureOrdersQuestionBeforeResponse's
+// direct-construction proof that thread propagation survives the real
+// write path, not just a hand-built fixture.
+//
+// beta is the fixture's own acting system (not axon, as most of this
+// file's other cases use): `respond` is RoleTarget-authorized
+// (cmd_lifecycle.go's own lifecycleCheckLegality), so the parent must be
+// addressed TO the acting system — a question FROM axon TO beta.
+func TestWireRespondPropagatesParentThread(t *testing.T) {
+	t.Setenv(githubAPIEnv, stubFindPRAlwaysEmpty(t))
+
+	// funnelBinaryVersion feeds NewWriteFunnel's CC-085 min_binary_version
+	// guard a BARE dotted version (funnelBinaryVersion's own doc comment,
+	// wire.go); main.version's own zero-ldflags default is the literal
+	// "dev", which is not a parseable semver and refuses every write in
+	// this in-process (no -ldflags) test binary — every other case in this
+	// file never reaches that guard (they refuse earlier, on a nonexistent
+	// artifact). internal/e2e's own exec'd-binary tier stamps the same
+	// value via `-ldflags -X main.version=0.1.0` (main_test.go); this is
+	// its in-process equivalent.
+	origVersion := version
+	version = "0.1.0"
+	t.Cleanup(func() { version = origVersion })
+
+	fx := newWireFixture(t, "beta", "axon")
+
+	// The parent already exists, submitted and acknowledged — a peer clone
+	// pushes that history directly, simulating state that predates this
+	// invocation (the same idiom TestWireMirrorIsFreshAfterResolution and
+	// TestWireReadVerbSeesAMergeItDidNotSyncFor already use in this file).
+	peer := t.TempDir()
+	runGitFixture(t, "", "clone", fx.OriginDir, peer)
+	const parentID = "XQ-axon-20260726-wr01"
+	const parentThread = "thread:axon-20260726-wr01"
+	envelope := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: " + parentID + "\n" +
+		"type: question\n" +
+		"title: does the export include soft-deleted rows\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [beta]\n" +
+		"thread: " + parentThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-26T09:00:00Z\n" +
+		"category: clarification\n" +
+		"priority: p3\n" +
+		"blocking: true\n" +
+		"classification: internal\n" +
+		"---\nbody\n"
+	submitEvent := "schema: event/v1\nevent: 01J40A7M9P1S3V5W7Y9A1C3E5F\nspace: fixture-space\n" +
+		"subject: " + parentID + "\ntransition: submit\n" +
+		"actor: {kind: agent, name: bot, system: axon}\nat: 2026-07-26T09:00:00Z\n"
+	ackEvent := "schema: event/v1\nevent: 01J40A7M9P1S3V5W7Y9A1C3E5G\nspace: fixture-space\n" +
+		"subject: " + parentID + "\ntransition: acknowledge\n" +
+		"actor: {kind: agent, name: bot, system: beta}\nat: 2026-07-26T09:05:00Z\n"
+	for rel, content := range map[string]string{
+		filepath.Join("axon", "exchanges", parentID+".md"):                         envelope,
+		filepath.Join("axon", "events", "2026", "01J40A7M9P1S3V5W7Y9A1C3E5F.yaml"): submitEvent,
+		filepath.Join("beta", "events", "2026", "01J40A7M9P1S3V5W7Y9A1C3E5G.yaml"): ackEvent,
+	} {
+		p := filepath.Join(peer, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	runGitFixture(t, peer, "add", "-A")
+	runGitFixture(t, peer, "commit", "-m", "axon asks; beta acknowledges")
+	runGitFixture(t, peer, "push", "origin", "HEAD")
+
+	var stdout, stderr strings.Builder
+	code := runLifecycle([]string{"--result", "answered", parentID}, &stdout, &stderr, lifecycleVerbs()["respond"])
+	out := stdout.String() + stderr.String()
+
+	for _, wiringFailure := range []string{
+		"no project config", "no connected space", "credential", "mirror sync failed", "cannot read space.yaml",
+	} {
+		if strings.Contains(strings.ToLower(out), wiringFailure) {
+			t.Fatalf("respond died in WIRING, not in the verb: %q; code=%d\noutput:\n%s", wiringFailure, code, out)
+		}
+	}
+	// The write itself is expected to end in OpenPR's own refusal (no real
+	// GitHub repo exists behind the local-path origin) — that boundary is
+	// this tier's own documented one (see stubFindPRAlwaysEmpty's doc
+	// comment), not a wiring failure. Pinned by name, not just by the
+	// commit having landed: a future change that instead fails EARLIER
+	// (e.g. back at FindPRByHeadBranch, or the version guard) would also
+	// leave no branch to find, but for a different, silently-regressed
+	// reason findRespondBranch's own failure message would not distinguish.
+	if code == 0 || !strings.Contains(out, "OpenPR") {
+		t.Fatalf("want the OpenPR boundary specifically (code != 0, output naming OpenPR); code=%d\noutput:\n%s", code, out)
+	}
+	// What this case exists to prove is that the COMMIT reached the branch
+	// before that refusal, so the committed content is read back from
+	// origin's own ephemeral branch — never main, which nothing here ever
+	// merges to (no host to do it).
+	mirror := wireMirrorDir(t, fx.ProjectRoot)
+	runGitFixture(t, mirror, "fetch", "origin", "+refs/heads/*:refs/remotes/origin/*")
+	branch := findRespondBranch(t, mirror, parentID)
+	responsePath := findResponseFilePath(t, mirror, branch)
+	committed := runGitFixtureOutput(t, mirror, "show", "origin/"+branch+":"+responsePath)
+
+	if !strings.Contains(committed, "thread: "+parentThread) {
+		t.Fatalf("committed response (branch %s, %s) does not carry the parent's thread (%s) verbatim; code=%d\noutput:\n%s\ncommitted:\n%s",
+			branch, responsePath, parentThread, code, out, committed)
+	}
+}
+
+// findRespondBranch locates the ONE remote branch the funnel pushed for
+// parentID's `respond` write (space.BranchName's own grammar:
+// a2a/<system>/<verb>/<artifactID> — artifactID here is
+// "<parentID>+<responseID>", D-024's multi-id write, so a prefix match on
+// parentID is the only stable anchor: the content-derived responseID
+// itself cannot be predicted ahead of the write).
+func findRespondBranch(t *testing.T, mirror, parentID string) string {
+	t.Helper()
+	out := runGitFixtureOutput(t, mirror, "branch", "-r")
+	prefix := "origin/a2a/beta/respond/" + parentID
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimPrefix(line, "origin/")
+		}
+	}
+	t.Fatalf("findRespondBranch: no remote branch with prefix %q under %s; branch -r:\n%s", prefix, mirror, out)
+	return ""
+}
+
+// findResponseFilePath locates the response's own committed path
+// (beta/exchanges/XS-*.md, space.Layout.Exchange's own shape) within
+// branch's tip commit.
+func findResponseFilePath(t *testing.T, mirror, branch string) string {
+	t.Helper()
+	out := runGitFixtureOutput(t, mirror, "ls-tree", "-r", "--name-only", "origin/"+branch)
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "/exchanges/XS-") {
+			return line
+		}
+	}
+	t.Fatalf("findResponseFilePath: no beta/exchanges/XS-*.md under origin/%s; ls-tree:\n%s", branch, out)
+	return ""
 }

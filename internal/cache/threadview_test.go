@@ -67,6 +67,23 @@ func buildExchangeThread(t *testing.T) (fx *fixtureSpace, threadID, parentID, re
 	return fx, threadID, parentID, responseID
 }
 
+// verifiedChainThreadView extends buildExchangeThread by one commit: the
+// asker verifies the response, closing the exchange. That single event is
+// what used to poison the thread's Flags — see the test below.
+func verifiedChainThreadView(t *testing.T) ThreadResult {
+	t.Helper()
+	fx, threadID, _, responseID := buildExchangeThread(t)
+	base := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	fx.commitEvent("axon", fxULID(5), evt(responseID, "verify", "axon", base.Add(40*time.Minute)))
+
+	store := newThreadStore(t, fx, "sp1")
+	res, err := store.ThreadView(context.Background(), threadID, "")
+	if err != nil {
+		t.Fatalf("ThreadView: %v", err)
+	}
+	return res
+}
+
 func newThreadStore(t *testing.T, fx *fixtureSpace, spaceID string) *Store {
 	t.Helper()
 	return NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: spaceID, Dir: fx.dir, Manifest: mustManifest(t, fx)}}, time.Now, 0)
@@ -463,5 +480,34 @@ func writeThreadArtifact(t *testing.T, dir, relPath string, fields map[string]an
 	content := "---\n" + string(raw) + "---\nbody\n"
 	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", full, err)
+	}
+}
+
+// TestThreadViewVerifiedResponseCarriesNoSpuriousFlag pins the fix for a
+// defect found while building P46's e2e chain fixture: a correctly verified
+// response used to produce an `unauthorized-actor` flag against its own event.
+//
+// Why it is worth its own test rather than riding along in an ordering test:
+// the flag was invisible. The closure-state overlay overwrites Result.State
+// and never Result.Flags, so every state a reader printed was correct while
+// the flags beside them said the exchange was suspect. Spec 46 promises a
+// thread carrying such a flag never renders clean — so the reader would have
+// reported a healthy conversation as broken, which is the authoritative-
+// looking wrong answer this whole phase exists to prevent, produced by the
+// phase's own reader.
+//
+// The assertion is deliberately on the THREAD view rather than on fold: what
+// must stay true is that a healthy chain reads healthy end to end.
+func TestThreadViewVerifiedResponseCarriesNoSpuriousFlag(t *testing.T) {
+	t.Parallel()
+	res := verifiedChainThreadView(t)
+	if len(res.Flags) != 0 {
+		t.Fatalf("a correctly verified response flagged the thread: %+v\n"+
+			"A healthy exchange must read healthy — spec 46 §T3 makes `flags` the signal "+
+			"that something is wrong, so a false positive there is worse than no flag at all.",
+			res.Flags)
+	}
+	if len(res.Unresolved) != 0 {
+		t.Fatalf("unexpected unresolved facts on a complete chain: %+v", res.Unresolved)
 	}
 }

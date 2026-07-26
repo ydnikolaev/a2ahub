@@ -459,6 +459,12 @@ func gitHasChanges(t *testing.T, dir string) bool {
 // (so `a2a doctor`'s CI-presence check, cmd_doctor.go's own
 // doctorCheckCIPresence, has something to find). Runs once per fixture, via
 // a throwaway clone + push — never mutates a per-script clone.
+//
+// Also seeds show_thread.txtar's own real thread chain (spec 46 D7 — see
+// seedThreadChainFixture's own doc comment, thread_chain_test.go) here
+// rather than adding a second call site: TestT3Scripts (txtar_test.go) is
+// off limits to this wave, and seedOriginExtras is the one hook it already
+// calls unconditionally before every T3 script runs.
 func seedOriginExtras(t *testing.T, originDir string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -469,4 +475,6 @@ func seedOriginExtras(t *testing.T, originDir string) {
 	gitRun(t, dir, "add", "-A")
 	gitRun(t, dir, "commit", "-m", "seed: e2e read-surface content")
 	gitRun(t, dir, "push", "origin", "main")
+
+	seedThreadChainFixture(t, originDir)
 }

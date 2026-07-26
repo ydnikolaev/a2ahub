@@ -180,5 +180,22 @@ func Catalogue() []Scenario {
 		{Name: "five-xx-mid-write-injected-unknown-then-recovered", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
 		{Name: "interrupted-submit-retried-one-pr", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
 		{Name: "concurrent-writes-no-lost-write", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
+
+		// P46 (spec 46 §T3/§T4, OP-210) — `a2a thread` read back from BOTH
+		// real participants after a full question/response chain. The
+		// mechanism (transcript ordering, open-items resolution, your-move
+		// computation) is covered hermetically already; the ONE thing only
+		// two real GitHub identities can prove is that A and B, each
+		// reading through their own local mirror and their own `--system`
+		// identity, see the SAME conversation while correctly DISAGREEING
+		// about whose move it is. Filed under SystemA only — the row
+		// inherently drives BOTH systems (A authors and reads, B
+		// acks/responds and reads), matching subfamResultFromErr's own
+		// documented convention (scenarios_submitted_live.go) for a row
+		// like this: a second declaration under SystemB would double the
+		// Actions spend to re-observe the exact same conversation from the
+		// other end, which is the coverage this row's own name already
+		// claims.
+		{Name: "thread-chain-reads-identically-from-both-sides", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"question", "response"}},
 	}
 }
