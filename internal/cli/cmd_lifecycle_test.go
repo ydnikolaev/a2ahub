@@ -149,6 +149,7 @@ func writeDecisionArtifact(t *testing.T, mirrorDir, id string, approvers []strin
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [" + strings.Join(quoted, ", ") + "]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"priority: p3\n" +
@@ -550,6 +551,7 @@ func writeRequirementArtifact(t *testing.T, mirrorDir, id string) {
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [beta]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"category: new-capability\n" +
@@ -571,6 +573,7 @@ func writeHandoffArtifact(t *testing.T, mirrorDir, id, to string) {
 		"space: fixture-space\n" +
 		"from: axon\n" +
 		"to: [" + to + "]\n" +
+		"thread: " + cliFixtureThread + "\n" +
 		"actor: {kind: agent, name: bot}\n" +
 		"created: 2026-07-21T10:00:00Z\n" +
 		"priority: p3\n" +

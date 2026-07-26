@@ -178,14 +178,19 @@ func TestRenderEnumDefaultAndFieldOverride(t *testing.T) {
 // integration test lives at the cli layer, wired to the real
 // validate.Engine).
 //
-// `thread` is deliberately NOT overridden here, and the templates'
-// placeholder for it is deliberately free prose: it stays an optional,
-// unpatterned string until spec 46's T1 wires always-mint at the
-// `cmd_new.go` call site. The schema tightening (`required` + the §3.8
-// pattern) lands in the SAME wave as that minting, never before it — a
-// required field no producer fills makes every draft invalid, which is the
-// same sequencing error this epic already made once with the producer
-// stamp.
+// `thread` is the ONE field this test cannot leave as a placeholder-only fill,
+// and the reason is worth stating rather than working around: unlike
+// priority/blocking/classification, the template cannot carry a generic
+// LITERAL default for it. Any fixed string would be a real, schema-valid
+// looking thread id — that is, a fake conversation, which is exactly the
+// authoritative-looking wrong answer spec 46 exists to kill. So the templates'
+// placeholder for `thread` is deliberately free prose that can never match the
+// §3.8 pattern, and the value is supplied by the MINTER at the `a2a new` call
+// site, not by this package.
+//
+// The cost, named rather than hidden: AC-401.1's "placeholder-only fills are
+// V1-valid" guarantee is narrowed for this one field, and the coverage that
+// replaces it lives at the cli layer where the minting actually happens.
 func TestRenderEveryTypeSchemaValid(t *testing.T) {
 	t.Parallel()
 	corpus, err := schema.Load()
@@ -208,6 +213,7 @@ func TestRenderEveryTypeSchemaValid(t *testing.T) {
 		t.Run(typ, func(t *testing.T) {
 			t.Parallel()
 			in := fixedInput(typ, prefixes[typ])
+			in.Fields = map[string]string{"thread": "thread:axon-20260721-k3f9"}
 			raw, err := template.Render(in)
 			if err != nil {
 				t.Fatalf("Render(%q): %v", typ, err)

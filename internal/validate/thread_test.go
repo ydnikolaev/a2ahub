@@ -2,6 +2,129 @@ package validate
 
 import "testing"
 
+// forkedResponseBody is a schema-valid response/v1 artifact whose own
+// `thread` deliberately differs from its parent's — the exact fork shape
+// TestCheckFork's "fork: thread differs from resolved parent's thread"
+// case exercises directly against checkFork, reused here to exercise the
+// SAME fork through the actual V2 entry point, engine.ValidateForSubmit.
+const forkedResponseBody = "---\n" + `
+schema: envelope/v1
+id: XS-seomatrix-20260805-b6n2
+type: response
+title: Country vocabulary delivered
+space: getvisa
+from: seomatrix
+to: [axon]
+actor: {kind: agent, name: claude}
+created: 2026-08-05T10:30:00Z
+priority: p3
+blocking: false
+parent: XR-axon-country-vocabulary
+result: delivered
+thread: thread:seomatrix-20260805-b6n2
+classification: internal
+` + "---\nBody text.\n"
+
+// foreignMintBody is a schema-valid work_request/v1 artifact whose
+// `thread` is grammar-valid but minted under a DIFFERENT system than its
+// own `from` — REF-010's foreign-mint shape — and names no artifact any
+// resolver below knows about.
+const foreignMintBody = "---\n" + `
+schema: envelope/v1
+id: XW-axon-20260731-p9d3
+type: work_request
+title: A valid work request
+space: getvisa
+from: axon
+to: [seomatrix]
+actor: {kind: agent, name: codex}
+created: "2026-07-31T08:40:00Z"
+category: data
+priority: p3
+blocking: false
+interim_behavior: "Fees rendered without normalization."
+acceptance_criteria:
+  - "Every code exists in the registry."
+thread: thread:seomatrix-20260805-b6n2
+classification: internal
+` + "---\nBody.\n"
+
+// TestValidateForSubmitComposesThreadChecks is the composition teeth: a
+// unit test against checkFork/checkForeignMint directly (above) cannot
+// distinguish a working guard from one wired to nothing, because a
+// fail-open guard and a clean call both return zero violations. This
+// test drives the actual V2 entry point, engine.ValidateForSubmit, so
+// that "REF-009/REF-010 fire" and "nothing calls checkFork/
+// checkForeignMint at all" are observably different outcomes.
+func TestValidateForSubmitComposesThreadChecks(t *testing.T) {
+	t.Parallel()
+	engine := mustEngine(t)
+
+	t.Run("resolver implements ThreadResolver: forked document is REF-009-rejected", func(t *testing.T) {
+		t.Parallel()
+		resolver := &fakeThreadResolver{
+			known:   map[string]bool{"XR-axon-country-vocabulary": true},
+			threads: map[string]string{"XR-axon-country-vocabulary": "thread:axon-20260729-c7q2"},
+		}
+		result, err := engine.ValidateForSubmit(
+			Draft{Path: "seomatrix/exchanges/XS-seomatrix-20260805-b6n2.md", Raw: []byte(forkedResponseBody)},
+			nil,
+			LocalContext{OwnSystem: "seomatrix", Resolver: resolver},
+		)
+		if err != nil {
+			t.Fatalf("ValidateForSubmit: %v", err)
+		}
+		if !hasCode(result.Violations, "REF-009") {
+			t.Fatalf("expected REF-009 among violations when the resolver implements ThreadResolver, got %+v", result.Violations)
+		}
+	})
+
+	t.Run("resolver implements ThreadResolver: foreign-mint thread is REF-010-rejected", func(t *testing.T) {
+		t.Parallel()
+		resolver := &fakeThreadResolver{exists: map[string]bool{}}
+		result, err := engine.ValidateForSubmit(
+			Draft{Path: "axon/exchanges/XW-axon-20260731-p9d3.md", Raw: []byte(foreignMintBody)},
+			nil,
+			LocalContext{OwnSystem: "axon", Resolver: resolver},
+		)
+		if err != nil {
+			t.Fatalf("ValidateForSubmit: %v", err)
+		}
+		if !hasCode(result.Violations, "REF-010") {
+			t.Fatalf("expected REF-010 among violations when the resolver implements ThreadResolver, got %+v", result.Violations)
+		}
+	})
+
+	// This is the documented LIMITATION, not a bug: thread.go's own doc
+	// comments on checkFork/checkForeignMint spell out why an absent
+	// ThreadResolver capability degrades to "no violation" rather than
+	// firing on incomplete information (parent-thread and thread-
+	// existence are both genuinely unknowable through the narrower
+	// Resolver alone). Pinning it here means a REGRESSION that makes the
+	// guard fail-open on a resolver that DOES implement ThreadResolver
+	// would be caught by the two subtests above, while a caller that
+	// hands ValidateForSubmit a plain Resolver still gets exactly this,
+	// on purpose.
+	t.Run("resolver lacks ThreadResolver: the same forked document produces NO thread violation (documented fail-open)", func(t *testing.T) {
+		t.Parallel()
+		resolver := &fakeResolver{known: map[string]bool{"XR-axon-country-vocabulary": true}}
+		result, err := engine.ValidateForSubmit(
+			Draft{Path: "seomatrix/exchanges/XS-seomatrix-20260805-b6n2.md", Raw: []byte(forkedResponseBody)},
+			nil,
+			LocalContext{OwnSystem: "seomatrix", Resolver: resolver},
+		)
+		if err != nil {
+			t.Fatalf("ValidateForSubmit: %v", err)
+		}
+		if hasCode(result.Violations, "REF-009") {
+			t.Fatalf("expected NO REF-009 when the resolver does not implement ThreadResolver (fail-open is deliberate), got %+v", result.Violations)
+		}
+		if hasCode(result.Violations, "REF-010") {
+			t.Fatalf("expected NO REF-010 either, got %+v", result.Violations)
+		}
+	})
+}
+
 // fakeThreadResolver is a hand-written mock implementing BOTH Resolver and
 // the optional ThreadResolver capability (thread.go) — the shape a
 // concrete cache-backed Resolver is expected to satisfy once it wires

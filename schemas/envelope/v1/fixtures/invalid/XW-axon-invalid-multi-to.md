@@ -6,6 +6,7 @@ title: Currency dictionary keyed by real ISO-4217 codes
 space: getvisa
 from: axon
 to: [seomatrix, thalamus]
+thread: thread:axon-20260721-k3f9
 actor: {kind: agent, name: codex}
 created: 2026-07-31T08:40:00Z
 category: data

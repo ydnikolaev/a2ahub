@@ -51,7 +51,11 @@
       "additionalProperties": false
     },
     "acceptance_criteria": { "type": "array", "items": { "type": "string" } },
-    "thread": { "type": "string" },
+    "thread": {
+      "type": "string",
+      "description": "Correlation ID per the-plan §3.8: the conversation this artifact belongs to. Minted by the tool (`a2a new`) and inherited by every derived artifact, so an author never types one. Same rand4 alphabet as the `id` pattern above. REQUIRED since P46 — every artifact is on a thread, which is what makes an incomplete conversation impossible to mistake for a complete one.",
+      "pattern": "^thread:[a-z0-9]+-[0-9]{8}-[0-9abcdefghjkmnpqrstvwxyz]{4}$"
+    },
     "supersedes": { "type": "string" },
     "refs": {
       "type": "array",
@@ -77,6 +81,6 @@
   },
   "required": [
     "schema", "id", "type", "title", "space", "from", "to", "actor",
-    "created", "priority", "blocking", "classification"
+    "created", "priority", "blocking", "classification", "thread"
   ]
 }

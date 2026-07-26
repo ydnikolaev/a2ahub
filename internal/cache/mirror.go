@@ -65,6 +65,22 @@ type foldedArtifact struct {
 	// publish events) — empty when none recorded (never published, or a
 	// non-contract kind).
 	LatestPublishVersion string
+	// Seq is this artifact's own file's per-space first-parent commit
+	// sequence (commitOrder's own return value, keyed by RelPath) —
+	// spec 46 §T3's primary thread-transcript ordering key, alongside
+	// fold.Event.CommitSeq (already carried per event). Zero both for "no
+	// commit found" (declared-order fallback, see OrderKnown) and for a
+	// genuinely first-ever commit — OrderKnown is what disambiguates them.
+	Seq int64
+	// OrderKnown is true when this space's commit history was readable
+	// (commitOrder returned a non-empty map) — every artifact in one
+	// space's index shares the same value (space-level fact, carried
+	// per-item the same way EventAt already is). False means Seq/CommitSeq
+	// are meaningless zero values and a reader must fall back to
+	// created/at ordering, reporting that degradation rather than
+	// pretending the commit guarantee still holds (§T3 "Degradation is
+	// designed, not silent").
+	OrderKnown bool
 }
 
 func (f foldedArtifact) kind() fold.Kind { return fold.Kind(f.Env.Type) }
@@ -90,6 +106,7 @@ func buildIndex(ctx context.Context, spaceID, dir string, manifest space.Manifes
 	for i := range events {
 		events[i].CommitSeq = seq[events[i].RelPath]
 	}
+	orderKnown := len(seq) > 0
 
 	membership := membershipView(manifest)
 
@@ -185,6 +202,7 @@ func buildIndex(ctx context.Context, spaceID, dir string, manifest space.Manifes
 			SpaceID: spaceID, RelPath: a.RelPath, Raw: a.Raw, Digest: a.Digest,
 			Env: a.Env, Result: result, Events: evs, LatestEventAt: latest,
 			EventAt: eventAt, LatestPublishVersion: latestPublishVersion,
+			Seq: seq[a.RelPath], OrderKnown: orderKnown,
 		})
 	}
 

@@ -87,6 +87,8 @@ func (e *Engine) ValidateForSubmit(d Draft, events []CandidateEvent, ctx LocalCo
 
 	violations = append(violations, checkIDForm(env, d.Path)...)
 	violations = append(violations, checkRefs(env, ctx.Resolver)...)
+	violations = append(violations, checkFork(env, ctx.Resolver)...)
+	violations = append(violations, checkForeignMint(env, ctx.Resolver)...)
 	violations = append(violations, checkAuthz(env, ctx.OwnSystem)...)
 	violations = append(violations, checkAddressees(env, ctx.Resolver)...)
 

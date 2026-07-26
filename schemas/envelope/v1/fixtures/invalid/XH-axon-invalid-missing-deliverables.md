@@ -6,6 +6,7 @@ title: Ingest playground — self-serve contract testing for the factory
 space: getvisa
 from: axon
 to: [seomatrix]
+thread: thread:axon-20260721-k3f9
 actor: {kind: agent, name: claude-code, model: claude-fable-5}
 created: 2026-08-10T13:00:00Z
 priority: p3

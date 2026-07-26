@@ -6,6 +6,7 @@ title: Canonical country vocabulary with ISO codes and provenance
 space: getvisa
 from: axon
 to: [seomatrix]
+thread: thread:axon-20260721-k3f9
 actor: {kind: agent, name: claude-code, model: claude-fable-5, session: s-0a1b}
 created: 2026-07-29T09:12:00Z
 category: vocabulary

@@ -6,6 +6,7 @@ title: Country vocabulary delivered
 space: getvisa
 from: seomatrix
 to: [axon]
+thread: thread:seomatrix-20260721-k3f9
 actor: {kind: agent, name: claude}
 created: 2026-08-05T10:30:00Z
 parent: XR-axon-country-vocabulary
