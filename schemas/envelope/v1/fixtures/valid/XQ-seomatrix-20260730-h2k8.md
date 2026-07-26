@@ -14,6 +14,7 @@ blocking: true
 refs:
   - {ref: "XC-axon-ingest@1.0.0", note: "descriptor §4.3 vs schema/errors.json disagree"}
 expected_response: {shape: "Which is authoritative; corrected version if schema wrong."}
+thread: thread:seomatrix-20260730-f8m4
 classification: internal
 ---
 Body: the two locations, observed payload, minimal repro reference…

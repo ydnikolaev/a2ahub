@@ -13,6 +13,7 @@ priority: p3
 blocking: false
 parent: <id of the exchange or requirement this answers>   # required
 result: <answered|delivered|partial|cannot>                  # required, closed enum
+thread: <thread:system-YYYYMMDD-rand4 — the conversation this belongs to; a2a new mints it>
 # refs:
 #   - {ref: "<id>@<version>", note: "<what this delivers>"}
 classification: internal

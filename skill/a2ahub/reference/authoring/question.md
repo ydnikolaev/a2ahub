@@ -11,6 +11,7 @@ created: <RFC-3339 UTC>
 category: <clarification|defect|choice>   # closed enum, §5.2.1
 priority: p3
 blocking: true                        # does the sender's own work block on the answer?
+thread: <thread:system-YYYYMMDD-rand4 — the conversation this belongs to; a2a new mints it>
 # refs:
 #   - {ref: "<id>#<digest>", note: "<what this points at>"}
 expected_response:

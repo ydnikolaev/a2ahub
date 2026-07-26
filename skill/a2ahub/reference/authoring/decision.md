@@ -15,4 +15,5 @@ required_approvers: [<system-1>, <system-2>]   # required
 context: "<why this decision is needed>"        # required
 options_considered: ["<option A>", "<option B>"]   # required
 classification: internal
+thread: <thread:system-YYYYMMDD-rand4 — the conversation this belongs to; a2a new mints it>
 ---

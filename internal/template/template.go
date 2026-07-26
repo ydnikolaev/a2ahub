@@ -126,11 +126,23 @@ func Render(in Input) ([]byte, error) {
 // applyFills walks mapping's top-level key/value pairs in place, filling
 // id/created/actor from in and every other field from in.Fields (if
 // present) or the enum-placeholder default rule (if the raw value matches
-// enumPlaceholder).
+// enumPlaceholder). Any in.Fields key that names no key in mapping is an
+// ERROR (ErrUnappliableField), never silence — see that sentinel's doc
+// comment.
+//
+// Found on 2026-07-26 as the D0 root cause: --field/--thread overrides for a
+// key the template does not carry were silently dropped (this loop only
+// ever visits keys ALREADY IN the mapping, so an absent key was never even
+// examined). `a2a new --thread <id>` parsed, set fields["thread"], and the
+// value never reached the document — no template carried a `thread:` key at
+// all. Fixing only `thread` would leave the mechanism itself lying about
+// every other field; the fix is generic.
 func applyFills(mapping *yaml.Node, in Input) error {
+	present := make(map[string]bool, len(mapping.Content)/2)
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		key := mapping.Content[i]
 		val := mapping.Content[i+1]
+		present[key.Value] = true
 		switch key.Value {
 		case "id":
 			setScalar(val, in.ID)
@@ -151,6 +163,12 @@ func applyFills(mapping *yaml.Node, in Input) error {
 					setScalar(val, strings.TrimSpace(alts[0]))
 				}
 			}
+		}
+	}
+	for field := range in.Fields {
+		if !present[field] {
+			return fmt.Errorf("%w: --field %s=%q was given, but this template has no %q key",
+				ErrUnappliableField, field, in.Fields[field], field)
 		}
 	}
 	return nil

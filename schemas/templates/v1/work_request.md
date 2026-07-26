@@ -16,6 +16,7 @@ needed_by: <YYYY-MM-DD>
 acceptance_criteria:                  # required
   - "<measurable AC 1>"
 # proposed_change: "<structured summary>"   # REQUIRED when category is contract-change or process-change
+thread: <thread:system-YYYYMMDD-rand4 — the conversation this belongs to; a2a new mints it>
 # refs:                                      # REQUIRED (with a pinned entry) when category is contract-change or process-change
 #   - {ref: "<XC-id>@<version>"}
 expected_response:

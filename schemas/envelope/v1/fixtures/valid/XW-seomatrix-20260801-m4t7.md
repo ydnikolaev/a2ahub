@@ -17,5 +17,6 @@ proposed_change: "New optional field translation_key (stable across locales), mi
 acceptance_criteria:
   - "Axon confirms integration constraints or declines with reason."
 expected_response: {shape: "accept/decline with integration constraints."}
+thread: thread:seomatrix-20260801-h1p6
 classification: internal
 ---

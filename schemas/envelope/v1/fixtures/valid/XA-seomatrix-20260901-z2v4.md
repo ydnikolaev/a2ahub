@@ -12,5 +12,6 @@ category: status
 priority: p4
 blocking: false
 period: 2026-W35
+thread: thread:seomatrix-20260901-b4g8
 classification: internal
 ---

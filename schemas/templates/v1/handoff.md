@@ -12,6 +12,7 @@ created: <RFC-3339 UTC>
 priority: p3
 blocking: false
 fulfills: [<originating exchange/requirement id>]   # required, §16.2 — NOT the base `origin` field
+thread: <thread:system-YYYYMMDD-rand4 — the conversation this belongs to; a2a new mints it>
 refs:
   - {ref: "<XC-id>@<version>", note: "<what this ships as part of>"}
 deliverables:                          # required, §16.2 — each: name, ref, kind
