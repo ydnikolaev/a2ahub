@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -509,5 +510,42 @@ func TestThreadViewVerifiedResponseCarriesNoSpuriousFlag(t *testing.T) {
 	}
 	if len(res.Unresolved) != 0 {
 		t.Fatalf("unexpected unresolved facts on a complete chain: %+v", res.Unresolved)
+	}
+}
+
+// TestThreadViewThreadlessArtifactRefuses pins a wart that only reading real
+// output against a live space exposed: an artifact committed before threads
+// were minted has an empty thread, and without a guard that empty value falls
+// through and matches every OTHER threadless artifact in the space. The reader
+// then presents a "conversation" with an empty id, assembled from documents
+// that have nothing to do with each other, and a caller cannot tell it from a
+// real thread.
+//
+// That is strictly worse than the error: the whole feature exists to stop an
+// authoritative-looking view of a relationship that does not exist.
+func TestThreadViewThreadlessArtifactRefuses(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	base := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+
+	// TWO threadless artifacts, so a missing guard would visibly group them.
+	first := "XW-axon-20260701-n1"
+	second := "XW-axon-20260701-n2"
+	for _, id := range []string{first, second} {
+		fx.commitArtifact("axon/exchanges/"+id+".md",
+			twWorkRequest(id, "question", "axon", []string{"seomatrix"}, "", base), "body")
+	}
+
+	store := newThreadStore(t, fx, "sp1")
+	_, err := store.ThreadView(context.Background(), first, "")
+	if err == nil {
+		t.Fatal("a threadless artifact rendered a thread: an empty thread id matches every other " +
+			"threadless artifact, so this would present unrelated documents as one conversation")
+	}
+	if !errors.Is(err, ErrThreadNotFound) {
+		t.Fatalf("err = %v, want ErrThreadNotFound so callers can distinguish it", err)
+	}
+	if !strings.Contains(err.Error(), "carries no thread") {
+		t.Fatalf("the error must name the actual condition, got: %v", err)
 	}
 }
