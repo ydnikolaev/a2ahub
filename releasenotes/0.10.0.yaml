@@ -382,3 +382,25 @@ changes:
       scope: local
       why: "message-only"
       run: ["a2a update"]
+  - id: RN-01000-14
+    kind: fix
+    impact: low
+    subject: "\"skill installed (version unknown)\" now says WHY, and stops pretending there is something to fix"
+    detail: >
+      One phrase answered three different situations and named neither a cause nor
+      an action. It also fired constantly in ordinary development: a build from
+      source stamps `a2a dev`, the version reader requires a digit, so every
+      locally-installed skill reported "version unknown" with no explanation.
+      Now each case says what it is. Installed by a development build — expected
+      when running from source, nothing to fix, and deliberately NO remedy named,
+      because re-installing from a dev build re-stamps `dev` and changes nothing.
+      A stamp that is present but not a release version, or absent entirely —
+      those DO name the action, because there it works.
+      Found by reading real `a2a doctor` output rather than a test, hunting for
+      siblings of the advisory that told you to run a command which could not
+      help. This is the milder form of the same defect: a note that names neither
+      cause nor action. Naming a remedy that cannot work is the louder form.
+    affects: [cli]
+    action:
+      scope: none
+      why: "message-only; the row never fails either way"

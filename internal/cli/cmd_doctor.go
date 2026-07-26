@@ -835,6 +835,18 @@ func (c *DoctorCommand) doctorCheckSkillDiscoverable() (bool, string) {
 // "version unknown".
 var doctorSkillManualVersionPattern = regexp.MustCompile(`a2a ([0-9][^)]*)\)`)
 
+// doctorSkillManualStampPattern captures whatever the stamp actually says, digit
+// or not — so a note can report the CAUSE ("a2a dev") instead of the useless
+// "version unknown" that covered every non-numeric value alike.
+//
+// Anchored on the OPENING PAREN, unlike its numeric sibling. Without it the match
+// is greedy from the first "a2a " in PROVENANCE.md's own prose ("Written by `a2a
+// skill install` / `a2a init` (a2a dev).") and captures the whole sentence. The
+// sibling gets away with a looser anchor only because its required leading digit
+// happens to constrain it — caught by this row's own new test on its first run,
+// which is the argument for having written the test before trusting the regexp.
+var doctorSkillManualStampPattern = regexp.MustCompile(`\(a2a ([^)]+)\)`)
+
 // doctorCheckSkillManualCurrent is P31 wave 5's out-of-band-update catch: an
 // `a2a update` that swapped the binary but was interrupted before (or never
 // reached, e.g. a manually-copied binary replacing the installed one)
@@ -849,15 +861,40 @@ func (c *DoctorCommand) doctorCheckSkillManualCurrent() (bool, string) {
 		return true, " · no skill installed"
 	}
 
+	// "version unknown" used to be the answer to THREE different situations, and
+	// it named neither the cause nor a remedy. It also fires constantly in normal
+	// development: a dev build stamps `(a2a dev)`, and the version pattern
+	// requires a leading digit, so every locally-installed skill reported
+	// "version unknown" with nothing to say why.
+	//
+	// Read from real doctor output on 2026-07-26, the same way the skill-link
+	// advisory's dead remedy was: a note that names neither cause nor action is
+	// the mildest form of the same defect. Naming a remedy here would be the
+	// louder form of it — `a2a skill install` from a dev build re-stamps `dev`
+	// and changes nothing.
+	stamp := doctorSkillManualStampPattern.FindStringSubmatch(string(data))
 	match := doctorSkillManualVersionPattern.FindStringSubmatch(string(data))
 	if match == nil {
-		return true, " · skill installed (version unknown)"
+		if len(stamp) > 1 && stamp[1] == "dev" {
+			return true, " · skill installed by a development build (a2a dev), so there is no version to " +
+				"compare — expected when running from source"
+		}
+		if len(stamp) > 1 {
+			return true, fmt.Sprintf(" · skill installed, but its version stamp %q is not a release "+
+				"version — `a2a skill install` from a released binary re-stamps it", stamp[1])
+		}
+		return true, " · skill installed, but PROVENANCE.md carries no version stamp (hand-edited, or " +
+			"written by a foreign tool) — `a2a skill install` rewrites it"
 	}
 	manualVersion := match[1]
 
 	older, err := version.OlderThan(manualVersion, c.binaryVersion)
 	if err != nil {
-		return true, " · skill installed (version unknown)"
+		// The MANUAL parsed as a version and the comparison still failed, which
+		// means this BINARY's own version is the unreadable one — a dev build.
+		// Saying "version unknown" here blamed the skill for the binary.
+		return true, fmt.Sprintf(" · skill manual is v%s; this binary's version (%q) is not comparable, "+
+			"so drift cannot be checked — expected on a development build", manualVersion, c.binaryVersion)
 	}
 	if older {
 		return true, fmt.Sprintf(
