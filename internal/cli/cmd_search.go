@@ -67,23 +67,12 @@ func (c *SearchCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 2
 	}
 
-	items, err := c.store.Search(ctx, positional[0], cache.SearchFilters{Type: *typeFlag, Space: *spaceFlag, State: *stateFlag})
+	items, err := c.store.Search(ctx, positional[0], cache.SearchFilters{
+		Type: *typeFlag, Space: *spaceFlag, State: *stateFlag, Thread: *threadFlag,
+	})
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "search: %v\n", err)
 		return 1
-	}
-	// --thread has no home in cache.SearchFilters (internal/cache is off
-	// limits this wave — see this phase's Deviations report): filtered
-	// here, client-side, over cache.Item's own Thread field, same exact-
-	// match semantics as --type/--space/--state.
-	if *threadFlag != "" {
-		filtered := make([]cache.Item, 0, len(items))
-		for _, it := range items {
-			if it.Thread == *threadFlag {
-				filtered = append(filtered, it)
-			}
-		}
-		items = filtered
 	}
 	if *jsonOut {
 		enc := json.NewEncoder(stdio.Stdout)

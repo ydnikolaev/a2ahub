@@ -1231,3 +1231,46 @@ func TestRespondSetsToAsParentAuthorAndPassesSubmitValidation(t *testing.T) {
 		t.Fatalf("the committed response still carries the unfilled template `title` placeholder:\n%s", content)
 	}
 }
+
+// TestRespondThreadlessParentWithExplicitThreadNamesTheRealCondition is the
+// gap a closeout audit found between this surface and its MCP twin: both
+// refuse, but for a threadless parent plus an explicit `--field thread=X` they
+// used to refuse DIFFERENTLY — this side took the conflict branch and printed
+// "conflicts with parent's thread " with an empty value where the message's
+// whole job is naming both sides, while MCP fell through to the informative
+// "the parent carries no thread" refusal.
+//
+// Why a test and not just the one-word guard: the two surfaces carry this rule
+// twice on purpose (ADR-001 forbids internal/mcp importing internal/cli), and
+// the parity suite cannot see this case — its own normalization comment says
+// so. A duplicated rule with no test on the branch where the copies differ is
+// how they drift.
+func TestRespondThreadlessParentWithExplicitThreadNamesTheRealCondition(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	parentID := "XQ-axon-20260721-th03"
+	// A pre-P46 parent: committed with no thread at all.
+	writeQuestionArtifactWithThread(t, mirrorDir, parentID, "beta", "")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, parentID, "submit", "axon")
+	writeLifecycleEvent(t, mirrorDir, "beta", 1, parentID, "acknowledge", "beta")
+	writeLifecycleEvent(t, mirrorDir, "beta", 2, parentID, "accept", "beta")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"--result", "answered", "--field", "thread=thread:beta-20260721-z9z9", parentID}, io)
+
+	if code != 1 {
+		t.Fatalf("respond: code = %d, want 1 (the threadless-parent refusal, not the conflict refusal's exit 2)", code)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the funnel never to be called, got %d calls", len(fake.calls))
+	}
+	msg := errOut.String()
+	if !strings.Contains(msg, "carries no thread") {
+		t.Fatalf("expected the refusal to name the actual condition (the parent has no thread), got: %s", msg)
+	}
+	if strings.Contains(msg, "conflicts with parent's thread") {
+		t.Fatalf("took the conflict branch and printed an empty parent value: %s", msg)
+	}
+}

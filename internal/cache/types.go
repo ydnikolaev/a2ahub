@@ -125,6 +125,12 @@ type SearchFilters struct {
 	Type  string
 	Space string
 	State string
+	// Thread narrows to one conversation. It lives HERE rather than as a
+	// client-side pass over the returned items so both surfaces filter with
+	// one piece of code — the CLI and MCP read paths are otherwise
+	// independent by ADR-001, and a filter written twice is a filter that
+	// can disagree with itself.
+	Thread string
 }
 
 // preAckState is the kind's own "not yet acknowledged" state — the exact

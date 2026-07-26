@@ -509,6 +509,9 @@ func (s *Store) Search(ctx context.Context, query string, filters SearchFilters)
 			if filters.State != "" && filters.State != string(fa.Result.State) {
 				continue
 			}
+			if filters.Thread != "" && filters.Thread != fa.Env.Thread {
+				continue
+			}
 			fm, _ := artifact.ParseFrontmatter(fa.Raw)
 			hay := strings.ToLower(fa.Env.ID + " " + fa.Env.Title + " " + string(fm.Body))
 			if q != "" && !strings.Contains(hay, q) {
