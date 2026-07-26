@@ -1264,3 +1264,109 @@ func TestFunnelLeavesTheMirrorOnBaseNotOnTheWriteBranch(t *testing.T) {
 			res.CommitSHA, res.Branch, err)
 	}
 }
+
+// TestBranchNameGrammarIsProtocol pins the rendered shape of the funnel's
+// deterministic branch.
+//
+// This is not a change-detector for its own sake. BranchName is the
+// funnel's IDEMPOTENCY KEY: step 0 looks up an existing PR by head branch,
+// so two binaries that render the branch differently do not recognise each
+// other's in-flight writes. That is not hypothetical — the grammar changed
+// from a2a/<system>/<id> to a2a/<system>/<verb>/<id> in 0.4.0, and a live
+// space still carries TWO open pull requests for ONE `contract publish` of
+// one artifact, identical content, because a binary from each side of that
+// change wrote to the space.
+//
+// So this test's job is to make the next such change deliberate. If you are
+// here because it went red, read the failure message: the change is a
+// breaking protocol change and needs min_binary_version raised in the SAME
+// release, or in-flight artifacts fork a duplicate PR on upgrade.
+func TestBranchNameGrammarIsProtocol(t *testing.T) {
+	t.Parallel()
+
+	const want = "a2a/axon/submit/XQ-axon-20260726-abcd"
+	got := BranchName("axon", "submit", "XQ-axon-20260726-abcd")
+	if got != want {
+		t.Fatalf("BranchName grammar changed: got %q, want %q\n\n"+
+			"This string is the write funnel's idempotency key (Submit's step 0 looks up an "+
+			"existing PR BY HEAD BRANCH). Changing it means a binary on the old grammar and a "+
+			"binary on the new one cannot see each other's in-flight writes, so every artifact "+
+			"with an open PR forks a SECOND pull request the moment someone upgrades — exactly "+
+			"what the 0.4.0 change did to a live space. If this change is intended, raise "+
+			"min_binary_version in the same release so the old grammar cannot still be writing.", got, want)
+	}
+}
+
+func TestValidateBranchSegmentsRefusesWhatWouldNotRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name                     string
+		system, verb, artifactID string
+		wantErr                  bool
+	}{
+		{"the ordinary case", "axon", "submit", "XQ-axon-20260726-abcd", false},
+		{"a composite batch id", "axon", "submit", "XQ-a+XQ-b", false},
+		{"a contract id with an @version", "axon", "contract-publish", "XC-axon-widget", false},
+		{"a hyphenated system", "my-system", "submit", "XQ-a", false},
+
+		{"a slash in the artifact id nests the ref", "axon", "submit", "XQ-a/b", true},
+		{"a slash in the system", "ax/on", "submit", "XQ-a", true},
+		{"a slash in the verb", "axon", "sub/mit", "XQ-a", true},
+		{"an empty system", "", "submit", "XQ-a", true},
+		{"an empty artifact id", "axon", "submit", "", true},
+		{"whitespace git refuses", "axon", "submit", "XQ a", true},
+		{"a caret git refuses", "axon", "submit", "XQ^a", true},
+		{"a colon git refuses", "axon", "submit", "XQ:a", true},
+		{"a .lock suffix git reserves", "axon", "submit", "XQ-a.lock", true},
+		{"a double dot git refuses", "axon", "submit", "XQ..a", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateBranchSegments(tc.system, tc.verb, tc.artifactID)
+			if tc.wantErr && err == nil {
+				t.Fatalf("validateBranchSegments(%q, %q, %q) = nil, want a refusal — "+
+					"BranchName would render %q", tc.system, tc.verb, tc.artifactID,
+					BranchName(tc.system, tc.verb, tc.artifactID))
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("validateBranchSegments(%q, %q, %q) = %v, want nil — "+
+					"refusing a legal id would block a real write", tc.system, tc.verb, tc.artifactID, err)
+			}
+			if tc.wantErr && !errors.Is(err, ErrInvalidBranchSegment) {
+				t.Fatalf("error = %v, want ErrInvalidBranchSegment so a caller can recognise the class", err)
+			}
+		})
+	}
+}
+
+// TestSubmitRefusesANestingArtifactIDBeforeAnyGitAction proves the guard
+// runs at the funnel, ahead of step 0 and ahead of any commit — a refusal
+// that arrives after a commit exists is a refusal that left a mess.
+func TestSubmitRefusesANestingArtifactIDBeforeAnyGitAction(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	mirror := filepath.Join(t.TempDir(), "mirror")
+	if err := CloneOrFetch(context.Background(), mirror, fx.RemoteURL()); err != nil {
+		t.Fatalf("seed clone: %v", err)
+	}
+
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := concurrentMirrorWriteRequest(mirror, "axon", "01J8QYK2Z3ABCDEFGHJKMNPQSA", l)
+	req.ArtifactID = "XQ-axon/nested"
+
+	if _, err := funnel.Submit(context.Background(), req); !errors.Is(err, ErrInvalidBranchSegment) {
+		t.Fatalf("Submit error = %v, want ErrInvalidBranchSegment", err)
+	}
+	if len(fake.Pushes) != 0 || len(fake.Opens) != 0 {
+		t.Fatalf("refused write still reached the host: %d pushes, %d opens", len(fake.Pushes), len(fake.Opens))
+	}
+}
