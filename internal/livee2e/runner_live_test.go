@@ -146,6 +146,12 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 		// placed right after them, still ahead of boundary/refusal/space,
 		// which deliberately bend protection and the write floor.
 		{"failure-recovery", runFailureRecoveryScenarios},
+		// P46 (spec 46 §T3/§T4) — one row: a chain across two real logins,
+		// read back from BOTH sides. Same "no shared-state mutation"
+		// property as the families above (it authors its own fresh
+		// question and response), so it sits with them, ahead of the
+		// families that bend protection and the write floor.
+		{"thread-chain", runThreadChainScenarios},
 		{"boundary", runBoundaryScenarios},
 		{"refusal", runRefusalScenarios},
 		{"space", runSpaceScenarios},
