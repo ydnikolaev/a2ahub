@@ -155,6 +155,7 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	var artifacts []string
 	var authzPaths []string
 	var consumes []string
+	var events []string
 	var contractIDs []string
 	contractDescPaths := map[string]string{}
 	seenContracts := map[string]bool{}
@@ -171,6 +172,8 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 				artifacts = append(artifacts, p)
 			case isConsumesRegistry(p):
 				consumes = append(consumes, p)
+			case isEventDocument(p):
+				events = append(events, p)
 			}
 			continue
 		}
@@ -199,6 +202,28 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 		rep, ok := validateCIConsumes(engine, root, relPath)
 		if rep == nil {
 			continue // deleted in this PR
+		}
+		report.Artifacts = append(report.Artifacts, *rep)
+		if !ok {
+			report.Valid = false
+		}
+	}
+
+	// Every EVENT this change carries must name the producer that wrote it,
+	// once the space's own floor has reached the release that introduced the
+	// field. See internal/space.StampProducer for why the FLOOR is the switch
+	// and not the binary's own version: event/v1 is additionalProperties:false
+	// and the validator is pinned BY THE SPACE, so a stamped event written to a
+	// space whose validator predates the field would be refused outright.
+	//
+	// This is the only place an old binary can actually be stopped.
+	// min_binary_version is checked inside the WRITER's binary, which binds a
+	// binary that honours it and does nothing at all to one that does not —
+	// before 0.9.0 that was every lifecycle and contract verb.
+	for _, relPath := range events {
+		rep, ok := validateCIEventProducer(engine, root, relPath, manifest.MinBinaryVersion)
+		if rep == nil {
+			continue // deleted in this PR, or the floor has not reached the field
 		}
 		report.Artifacts = append(report.Artifacts, *rep)
 		if !ok {
@@ -392,6 +417,43 @@ func validateCIConsumes(engine *validate.Engine, root, relPath string) (*validat
 	result, err := engine.ValidateConsumes(raw)
 	if err != nil {
 		return &validateReport{Path: relPath, Error: err.Error()}, false
+	}
+	r := result
+	return &validateReport{Path: relPath, Result: &r}, result.Valid
+}
+
+// isEventDocument reports whether a space-relative path is an event document —
+// §4.2's `<system>/events/<year>/<ulid>.yaml`. Matched on the path segment
+// rather than the extension alone: a `.yaml` elsewhere in a section (a
+// consumes.yaml, a docs/ file) is not an event.
+func isEventDocument(p string) bool {
+	return strings.Contains(p, "/events/") && strings.HasSuffix(p, ".yaml")
+}
+
+// validateCIEventProducer requires an event to name the tool and version that
+// produced it, delegating the verdict to the engine
+// (validate.ValidateEventProducer) rather than re-deciding it here. This file
+// adds ZERO validation rules of its own — the same discipline the compat and
+// publishability checks follow, and the reason
+// TestValidateCIAndContractHaveNoSecondCompatCopy exists.
+//
+// Returns nil when there is nothing to say: the file was deleted in this pull
+// request, or the space's floor has not reached the release where the field
+// became required.
+func validateCIEventProducer(engine *validate.Engine, root, relPath, spaceFloor string) (*validateReport, bool) {
+	raw, err := os.ReadFile(filepath.Join(root, relPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, true
+		}
+		return &validateReport{Path: relPath, Error: err.Error()}, false
+	}
+	result, required, err := engine.ValidateEventProducer(raw, spaceFloor)
+	if err != nil {
+		return &validateReport{Path: relPath, Error: err.Error()}, false
+	}
+	if !required {
+		return nil, true
 	}
 	r := result
 	return &validateReport{Path: relPath, Result: &r}, result.Valid

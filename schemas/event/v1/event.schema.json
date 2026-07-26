@@ -5,23 +5,48 @@
   "description": "Field set per the-plan §5.2.2 verbatim, plus `commit`/`digest` (optional, prose-only per §5.2.2's publish-event note: 'publish events also record commit (SHA) + digest of the published content' — no dedicated table row).",
   "type": "object",
   "properties": {
-    "schema": { "const": "event/v1" },
+    "schema": {
+      "const": "event/v1"
+    },
     "event": {
       "type": "string",
       "description": "ULID, intra-commit tiebreak only (§3.5 rule 1).",
       "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
     },
-    "space": { "type": "string" },
-    "subject": { "type": "string" },
+    "space": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "string"
+    },
     "transition": {
       "type": "string",
       "description": "Union of every §3.4 transition-table event name, plus `note` (`expired` is fold-computed, never an event).",
       "enum": [
-        "create", "publish", "deprecate", "retire",
-        "acknowledge", "satisfy", "decline", "withdraw", "supersede",
-        "submit", "accept", "start", "block", "unblock", "respond", "close", "dispute", "cancel",
-        "propose", "approve", "reject",
-        "verify-pass", "verify-fail", "verify",
+        "create",
+        "publish",
+        "deprecate",
+        "retire",
+        "acknowledge",
+        "satisfy",
+        "decline",
+        "withdraw",
+        "supersede",
+        "submit",
+        "accept",
+        "start",
+        "block",
+        "unblock",
+        "respond",
+        "close",
+        "dispute",
+        "cancel",
+        "propose",
+        "approve",
+        "reject",
+        "verify-pass",
+        "verify-fail",
+        "verify",
         "note"
       ]
     },
@@ -32,37 +57,107 @@
     "actor": {
       "type": "object",
       "properties": {
-        "kind": { "type": "string", "enum": ["human", "agent"] },
-        "name": { "type": "string", "minLength": 1 },
-        "system": { "type": "string" },
-        "model": { "type": "string" },
-        "session": { "type": "string" }
+        "kind": {
+          "type": "string",
+          "enum": [
+            "human",
+            "agent"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "system": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "session": {
+          "type": "string"
+        }
       },
-      "required": ["kind", "name", "system"],
+      "required": [
+        "kind",
+        "name",
+        "system"
+      ],
       "additionalProperties": false
     },
-    "at": { "type": "string", "format": "date-time" },
-    "note": { "type": "string" },
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "note": {
+      "type": "string"
+    },
     "refs": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "ref": { "type": "string" },
-          "note": { "type": "string" }
+          "ref": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
         },
-        "required": ["ref"],
+        "required": [
+          "ref"
+        ],
         "additionalProperties": false
       }
     },
-    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
     "reason_code": {
       "type": "string",
-      "enum": ["split-required", "security-concern", "out-of-scope", "duplicate", "other"]
+      "enum": [
+        "split-required",
+        "security-concern",
+        "out-of-scope",
+        "duplicate",
+        "other"
+      ]
     },
-    "commit": { "type": "string" },
-    "digest": { "type": "string" }
+    "commit": {
+      "type": "string"
+    },
+    "digest": {
+      "type": "string"
+    },
+    "produced_by": {
+      "type": "object",
+      "description": "Which tool and version produced this event. OPTIONAL, and it stays optional in the schema on purpose: whether it is REQUIRED is decided per space by min_binary_version reaching the release that introduced it (internal/space.ProducerStampFloor), enforced by `validate --ci`, not here — so a space that has not raised its floor is not retroactively invalidated. Written by the write funnel for every event it commits. It records what the producer CLAIMS: the stamp is emitted by the same client the space is distrusting, so it stops a colleague on a stale binary, not forgery.",
+      "properties": {
+        "tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "tool",
+        "version"
+      ],
+      "additionalProperties": false
+    }
   },
-  "required": ["schema", "event", "space", "subject", "transition", "actor", "at"],
+  "required": [
+    "schema",
+    "event",
+    "space",
+    "subject",
+    "transition",
+    "actor",
+    "at"
+  ],
   "additionalProperties": false
 }
