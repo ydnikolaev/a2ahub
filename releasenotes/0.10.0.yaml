@@ -284,3 +284,34 @@ changes:
     action:
       scope: none
       why: "existing contracts are unaffected; new drafts get the shape"
+  - id: RN-01000-10
+    kind: fix
+    impact: normal
+    subject: "Events are validated against their own schema at the merge gate — until now they were not validated at all"
+    detail: >
+      `validate --ci` checked artifacts, the consumer registry, contracts and (as
+      of this release) the space manifest. It did not check EVENTS. A changed
+      event merged as long as it was parseable YAML, and the fold — which decides
+      what state an artifact is in — read it afterwards. So an event missing
+      `transition`, the field the fold reads to know what happened, would land
+      and simply fold to nothing.
+      The same shape as the manifest hole in this release: a schema that exists,
+      and documents nobody fed to it.
+      Wired only after the corpus was checked, which is the point worth carrying
+      forward. Every event in the live production space and in the test space —
+      46 of them — was run through the schema by hand first, and all passed. A
+      gate is not switched on to find out whether it reds; the check on your own
+      space arrives when the space re-pins the validator, so if anything there
+      were invalid you would learn it on your next write rather than from a
+      release note.
+      One trap it would otherwise have hit on every single write: an event's `at:`
+      is a timestamp, and unquoted YAML timestamps decode to a native time value
+      the JSON-schema validator cannot represent — it aborts with an internal
+      "schema drift" error instead of validating anything. Caught in development
+      and normalised, with an unquoted timestamp driven through the whole gate as
+      a test.
+    affects: [cli, schemas]
+    action:
+      scope: space
+      why: "the check arrives per-space when the space re-pins the reusable workflow"
+      run: ["a2a space update"]
