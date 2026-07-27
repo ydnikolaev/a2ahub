@@ -17,7 +17,29 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 )
+
+// canonicalEventVersion reformats a committed event's own `version` field
+// through internal/version.Canonical, so two spellings of the same version
+// ("1.0.0" and "01.0.0") produce the IDENTICAL string once threaded into
+// fold.Event.Version — fold.Result.Versions is a map[string]State keyed on
+// the raw string with no canonicalization of its own (P4,
+// 04-per-version-lifecycle.plan.md; internal/fold is off-limits to this
+// phase, so this is the caller's own half of keeping that map's keys
+// consistent, at the one place every committed event's version enters
+// fold's own input). Fails open (returns v unchanged) on an empty or
+// unparseable v — canonicalization is never itself a refusal path; fold's
+// own legality checks decide whether an unparseable version is legal.
+func canonicalEventVersion(v string) string {
+	if v == "" {
+		return v
+	}
+	if c, err := version.Canonical(v); err == nil {
+		return c
+	}
+	return v
+}
 
 // maxCacheReadBytes bounds every mirror file read this package performs
 // (rails: "bounded reads everywhere").
@@ -47,13 +69,18 @@ type rawEvent struct {
 // package ever performs (composed over internal/fold, never
 // reimplemented, per spec §5).
 type foldedArtifact struct {
-	SpaceID       string
-	RelPath       string
-	Raw           []byte
-	Digest        string
-	Env           envelopeProbe
-	Result        fold.Result
-	Events        []fold.Event
+	SpaceID string
+	RelPath string
+	Raw     []byte
+	Digest  string
+	Env     envelopeProbe
+	Result  fold.Result
+	Events  []fold.Event
+	// EventRefs preserves each committed event's refs[] beside the pure fold
+	// input. fold.Event deliberately does not need relationship metadata, but
+	// read models do: contract deprecate records its successor on the
+	// deprecate event, and the dashboard must not lose that canonical link.
+	EventRefs     map[string][]refEntry
 	LatestEventAt time.Time
 	// EventAt maps a committed event's ULID to its `at` timestamp —
 	// fold.Event itself carries none (fold is a pure, timestamp-free
@@ -82,6 +109,16 @@ type foldedArtifact struct {
 	// pretending the commit guarantee still holds (§T3 "Degradation is
 	// designed, not silent").
 	OrderKnown bool
+
+	// DeprecatesMyDependency is P4's Edge 3, evaluated ONCE here rather
+	// than at each read site: true when this artifact is a deprecation
+	// announcement whose `deprecates:` names a contract listed in THIS
+	// system's own consumes.yaml. addressedToMe reads it, so every caller
+	// of that predicate — inbox, --actionable's condition 1, statusline,
+	// overdue — inherits the rule from one evaluation instead of four
+	// copies. This package has paid for one rule read in two places
+	// enough times (see broadcastAckPermitted and contractVersionVerdict).
+	DeprecatesMyDependency bool
 }
 
 func (f foldedArtifact) kind() fold.Kind { return fold.Kind(f.Env.Type) }
@@ -91,7 +128,7 @@ func (f foldedArtifact) kind() fold.Kind { return fold.Kind(f.Env.Type) }
 // (plan 07 Placement decision: parent events PLUS the events attached via
 // that parent's own respond events — never a naive subject==id-only
 // query, which silently misses verify/dispute).
-func buildIndex(ctx context.Context, spaceID, dir string, manifest space.Manifest) ([]foldedArtifact, []SkippedFile, error) {
+func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest space.Manifest) ([]foldedArtifact, []SkippedFile, error) {
 	artifacts, artifactSkips, err := walkArtifacts(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("cache: buildIndex(%s): walk artifacts: %w", spaceID, err)
@@ -118,6 +155,17 @@ func buildIndex(ctx context.Context, spaceID, dir string, manifest space.Manifes
 	orderKnown := len(seq) > 0
 
 	membership := membershipView(manifest)
+
+	// myDependencies is Edge 3's own input: the contract ids THIS system
+	// declares in its own consumes.yaml. An unreadable or absent registry
+	// yields an empty set plus a reported skip, never an error — see
+	// myDependencyContracts for why this direction of failure is the
+	// opposite of the retire gate's.
+	myDependencies, depSkip := myDependencyContracts(dir, ownSystem)
+	if depSkip != nil {
+		skips = append(skips, *depSkip)
+		sort.Slice(skips, func(i, j int) bool { return skips[i].Path < skips[j].Path })
+	}
 
 	// parentOf: response artifact ID -> parent artifact ID
 	// (response.schema.json's own `parent` field — the schema-grounded
@@ -159,6 +207,7 @@ func buildIndex(ctx context.Context, spaceID, dir string, manifest space.Manifes
 			Transition:   re.Ev.Transition,
 			ClaimedState: fold.State(re.Ev.State),
 			Actor:        fold.Actor{Kind: re.Ev.Actor.Kind, Name: re.Ev.Actor.Name, System: re.Ev.Actor.System},
+			Version:      canonicalEventVersion(re.Ev.Version),
 		}
 		if re.Ev.Transition == fold.TRespond {
 			if cands, ok := responsesBySeqAndParent[re.CommitSeq][re.Ev.Subject]; ok && len(cands) > 0 {
@@ -194,9 +243,13 @@ func buildIndex(ctx context.Context, spaceID, dir string, manifest space.Manifes
 		var latest time.Time
 		var latestPublishSeq int64 = -1
 		var latestPublishVersion string
+		eventRefs := map[string][]refEntry{}
 		for _, re := range events {
 			if re.Ev.Subject != a.Env.ID {
 				continue
+			}
+			if len(re.Ev.Refs) > 0 {
+				eventRefs[re.Ev.Event] = append([]refEntry(nil), re.Ev.Refs...)
 			}
 			if t, terr := time.Parse(time.RFC3339, re.Ev.At); terr == nil && t.After(latest) {
 				latest = t
@@ -210,8 +263,14 @@ func buildIndex(ctx context.Context, spaceID, dir string, manifest space.Manifes
 		out = append(out, foldedArtifact{
 			SpaceID: spaceID, RelPath: a.RelPath, Raw: a.Raw, Digest: a.Digest,
 			Env: a.Env, Result: result, Events: evs, LatestEventAt: latest,
-			EventAt: eventAt, LatestPublishVersion: latestPublishVersion,
+			EventAt: eventAt, EventRefs: eventRefs, LatestPublishVersion: latestPublishVersion,
 			Seq: seq[a.RelPath], OrderKnown: orderKnown,
+			// Edge 3, evaluated once — see foldedArtifact's own comment.
+			// The lookup is on the contract id alone; myDependencies is
+			// empty for every system that consumes nothing, which makes
+			// this false for every artifact, which is exactly today's
+			// behaviour for such a system.
+			DeprecatesMyDependency: myDependencies[a.Env.deprecatedContractID()],
 		})
 	}
 

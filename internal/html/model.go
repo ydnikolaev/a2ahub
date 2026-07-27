@@ -26,6 +26,7 @@ type Data struct {
 	Outbox        []Item         `json:"outbox"`
 	Contracts     []Contract     `json:"contracts"`
 	Flags         []Flag         `json:"flags"`
+	ReleaseNotes  []ReleaseNote  `json:"releaseNotes"`
 }
 
 // Tooling is the version/update strip (from cache.UpdateNotice).
@@ -42,10 +43,15 @@ type Tooling struct {
 type SpaceHealth struct {
 	ID               string `json:"id"`
 	RepoURL          string `json:"repoURL"`
-	SyncAge          string `json:"syncAge"` // pre-formatted (e.g. "3m"), "" if unknown
+	SyncAge          string `json:"syncAge"` // pre-formatted (e.g. "3m"), "" if never synced
 	Stale            bool   `json:"stale"`
+	Revision         string `json:"revision,omitempty"` // exact mirror HEAD for this static snapshot
 	ParticipantCount int    `json:"participantCount"`
 	Readable         bool   `json:"readable"` // false = mirror/manifest unreadable → degrade
+	SchemaVersion    string `json:"schemaVersion,omitempty"`
+	MinBinaryVersion string `json:"minBinaryVersion,omitempty"`
+	WorkflowVersion  string `json:"workflowVersion,omitempty"`
+	WorkflowRef      string `json:"workflowRef,omitempty"`
 }
 
 // Node is a graph node = a system (deduped across the spaces it is in).
@@ -65,11 +71,15 @@ type ContractEdge struct {
 	Space           string `json:"space"`
 	Contract        string `json:"contract"`
 	PinnedMajor     int    `json:"pinnedMajor"`
+	PinnedVersion   string `json:"pinnedVersion,omitempty"`
+	PinnedState     string `json:"pinnedState,omitempty"`
 	ProviderVersion string `json:"providerVersion,omitempty"`
 	State           string `json:"state,omitempty"` // published | deprecated | retired
-	// Drift: current | behind | deprecated | retired | dangling.
-	Drift  string `json:"drift"`
-	Sunset string `json:"sunset,omitempty"` // ISO date, if the provider set one
+	AvailableMajors []int  `json:"availableMajors,omitempty"`
+	// Drift: current | behind | deprecated | retired | missing | dangling.
+	Drift     string `json:"drift"`
+	Sunset    string `json:"sunset,omitempty"` // ISO date, if the provider set one
+	Successor string `json:"successor,omitempty"`
 	// Description is the provider contract's short summary (from its body) —
 	// UNTRUSTED, textContent-only (D-002). Omitted when unknown/empty.
 	Description string `json:"description,omitempty"`
@@ -166,23 +176,88 @@ type DocLink struct {
 
 // Contract is one contract in the catalog (from Store.Contracts).
 type Contract struct {
-	Space      string   `json:"space"`
-	ID         string   `json:"id"`
-	Provider   string   `json:"provider"`
-	Version    string   `json:"version"`
-	State      string   `json:"state"`
-	CodeBacked bool     `json:"codeBacked"`
-	Consumers  []string `json:"consumers,omitempty"`
+	Space         string   `json:"space"`
+	ID            string   `json:"id"`
+	Provider      string   `json:"provider"`
+	Version       string   `json:"version"`
+	State         string   `json:"state"`
+	CodeBacked    bool     `json:"codeBacked"`
+	Category      string   `json:"category,omitempty"`
+	SchemaFormat  string   `json:"schemaFormat,omitempty"`
+	CompatPolicy  string   `json:"compatPolicy,omitempty"`
+	GeneratedTool string   `json:"generatedTool,omitempty"`
+	SourceDigest  string   `json:"sourceDigest,omitempty"`
+	Consumers     []string `json:"consumers,omitempty"`
 	// Description is a short human-readable summary from the contract body —
 	// UNTRUSTED, textContent-only (D-002). Omitted when the body is empty.
 	Description string `json:"description,omitempty"`
+	// Versions is the rolling window: every published version and the state
+	// it holds now, semver-ascending (P4, agent-ops-2026-07). Version/State
+	// above stay the summary — newest published, and the projection over
+	// these. The dashboard needs both: the summary answers "is this contract
+	// alive", the window answers "which of its lines is".
+	//
+	// These come from the fold, not from a contract body, so unlike
+	// Description they are OURS rather than artifact-controlled — but the
+	// template still renders them as textContent, because the rule is per
+	// SURFACE, not per field, and one exception is how the next one gets
+	// made.
+	Versions []ContractVersion `json:"versions,omitempty"`
 }
 
-// Flag is one validation flag (V4/V5) surfaced per space/system.
+// ContractVersion is one version of a contract and the state it holds — the
+// page's contracts[].versions[] entry shape, mirroring cache.ContractVersion.
+type ContractVersion struct {
+	Version       string `json:"version"`
+	State         string `json:"state"`
+	Sunset        string `json:"sunset,omitempty"`
+	Successor     string `json:"successor,omitempty"`
+	DeprecationID string `json:"deprecationID,omitempty"`
+}
+
+// Flag is one read-health or committed protocol flag surfaced per
+// space/system. Source distinguishes fold from read-index; it never pretends
+// these are V4/V5 results unless that engine was actually mounted.
 type Flag struct {
 	Space    string `json:"space"`
 	System   string `json:"system"`
 	Code     string `json:"code"`
 	Message  string `json:"message"`
 	Severity string `json:"severity"`
+	Source   string `json:"source,omitempty"`
+	Artifact string `json:"artifact,omitempty"`
+	Event    string `json:"event,omitempty"`
+}
+
+// ReleaseNote is one embedded releasenotes/<version>.yaml document projected
+// into DATA. Its authored strings stay verbatim; RU/EN localizes the shell and
+// typed labels, never rewrites release claims.
+type ReleaseNote struct {
+	Version  string          `json:"version"`
+	Released string          `json:"released"`
+	Headline string          `json:"headline"`
+	Changes  []ReleaseChange `json:"changes"`
+}
+
+// ReleaseChange is one authored change entry inside an embedded release note.
+// The assembler preserves its source language and structured impact/action
+// fields so the renderer can explain consequence without parsing prose.
+type ReleaseChange struct {
+	ID      string        `json:"id"`
+	Kind    string        `json:"kind"`
+	Impact  string        `json:"impact"`
+	Subject string        `json:"subject"`
+	Detail  string        `json:"detail"`
+	Affects []string      `json:"affects,omitempty"`
+	Action  ReleaseAction `json:"action"`
+}
+
+// ReleaseAction describes the authored follow-up for a release change:
+// where action is required, why, how to detect exposure and which commands to
+// run. Empty command lists are meaningful for scope "none".
+type ReleaseAction struct {
+	Scope  string   `json:"scope"`
+	Why    string   `json:"why"`
+	Detect []string `json:"detect,omitempty"`
+	Run    []string `json:"run,omitempty"`
 }

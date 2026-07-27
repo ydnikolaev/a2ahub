@@ -1,6 +1,9 @@
 package fold
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 // TestCheckLegality exercises the pre-write legality primitive (§T1
 // "Legality check" row) — the only rejecting surface this package
@@ -224,31 +227,66 @@ func TestCheckLegalityBroadcastAck(t *testing.T) {
 //
 // The test walks the whole sequence rather than asserting the single new
 // row, because the row is only worth having if the SEQUENCE works.
+//
+// REWRITTEN 2026-07-28, P4 wave 4. The requirement above is unchanged and
+// still the point of this test; the mechanism under it is not. The interim
+// row is deleted, and this sequence is now legal because each version holds
+// its own state — which is what the row's own comment said the real fix
+// would be. So the walk is no longer a list of (fromState, transition)
+// pairs against a synthetic prior: it folds the events for real and checks
+// each candidate against the Result the previous ones produced, with the
+// versions the operator would actually type. That is strictly more than the
+// old test could express — a subject-state walk cannot say "deprecate 1.0.0
+// while 2.0.0 stays live", which is the entire situation being guarded.
+//
+// The pre-write check and the post-write fold are BOTH exercised at every
+// step, and their agreement is asserted: a step CheckCandidate calls legal
+// must be a step Apply does not flag.
 func TestContractCanPublishASuccessorAfterDeprecation(t *testing.T) {
 	t.Parallel()
 
 	env := Envelope{Kind: KindContract, ID: "XC-alpha-widget", From: "alpha"}
 	actor := Actor{Kind: "agent", Name: "bot", System: "alpha"}
+	member := func(string) MembershipStatus { return MembershipMember }
 
+	// The ordinary life of a live contract, in the order it actually
+	// happens — including the step that used to be the wall.
 	steps := []struct {
-		from       State
 		transition string
-		wantTo     State
+		version    string
+		wantState  State // the SUBJECT-level projection after this step
 	}{
-		{StateNone, TCreate, StateDraft},
-		{StateDraft, TPublish, StatePublished},
-		{StatePublished, TPublish, StatePublished},    // 2.0.0
-		{StatePublished, TDeprecate, StateDeprecated}, // 1.0.0 sunset
-		{StateDeprecated, TPublish, StatePublished},   // 3.0.0 — the wall
-		{StatePublished, TDeprecate, StateDeprecated},
-		{StateDeprecated, TRetire, StateRetired},
+		{TPublish, "1.0.0", StatePublished},
+		{TPublish, "2.0.0", StatePublished},
+		{TDeprecate, "1.0.0", StatePublished},  // 1.0 sunsets; 2.0 is live, so the contract is NOT deprecated
+		{TPublish, "3.0.0", StatePublished},    // the wall, now just a publish
+		{TDeprecate, "2.0.0", StatePublished},  // 3.0 still live
+		{TRetire, "1.0.0", StatePublished},     // the §5.4 cycle completes on the old line
+		{TDeprecate, "3.0.0", StateDeprecated}, // now every live version is deprecated
+		{TRetire, "2.0.0", StateDeprecated},
+		{TRetire, "3.0.0", StateRetired},
 	}
 
+	prior := NewResult(KindContract)
 	for i, s := range steps {
-		verdict := CheckLegality(KindContract, s.from, s.transition, env, actor, MembershipMember)
+		verdict := CheckCandidate(KindContract, prior, s.transition, s.version, env, actor, MembershipMember)
 		if verdict != VerdictLegal {
-			t.Fatalf("step %d: %s from %s was refused (%v) — a contract that cannot publish after a "+
-				"deprecation is dead the moment its first version sunsets", i, s.transition, s.from, verdict)
+			t.Fatalf("step %d: %s %s was refused (%v) — a contract that cannot publish after a "+
+				"deprecation is dead the moment its first version sunsets", i, s.transition, s.version, verdict)
+		}
+
+		flagsBefore := len(prior.Flags)
+		prior = Apply(KindContract, env, prior, Event{
+			ULID: fmt.Sprintf("01LIFE%018d", i), CommitSeq: int64(i),
+			Subject: env.ID, Transition: s.transition, Version: s.version, Actor: actor,
+		}, member)
+		if len(prior.Flags) != flagsBefore {
+			t.Fatalf("step %d: CheckCandidate called %s %s legal but Apply flagged it %+v — the pre-write "+
+				"check and the fold disagree", i, s.transition, s.version, prior.Flags[flagsBefore:])
+		}
+		if prior.State != s.wantState {
+			t.Fatalf("step %d (%s %s): subject state = %q, want %q (versions: %v)",
+				i, s.transition, s.version, prior.State, s.wantState, prior.Versions)
 		}
 	}
 }

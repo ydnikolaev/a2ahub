@@ -255,6 +255,15 @@ func lifecycleFoldEvents(all []lifecycleEventDoc, primaryID string) []fold.Event
 			ULID: ev.Event, Subject: ev.Subject, Transition: ev.Transition,
 			ClaimedState: fold.State(ev.State),
 			Actor:        fold.Actor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
+			// contractCanonicalVersion (cmd_contract.go): fold.Result.Versions
+			// is a map[string]State keyed on the raw string with no
+			// canonicalization of its own — two spellings of one version
+			// ("1.0.0" and "01.0.0") must reformat identically here, at the
+			// ONE place every committed event's `version` field enters
+			// fold's own input, or a non-canonically-spelled event (however
+			// it was authored — this predates cmd_contract.go's own P4
+			// write-side canonicalization) mismatches forever.
+			Version: contractCanonicalVersion(ev.Version),
 		}
 		if ev.Transition == fold.TRespond && len(ev.Refs) > 0 {
 			fe.ResponseID = ev.Refs[0].Ref
@@ -285,9 +294,20 @@ func lifecycleMembership(manifest space.Manifest) fold.MembershipView {
 
 // lifecycleCheckLegality is the generic (non-response-scoped) pre-write
 // legality check every OP-211 verb except verify/dispute uses: read id's
-// own committed envelope + full event history, fold to its current state,
-// and delegate to fold.CheckLegality — never re-deriving §3.4 locally.
-func lifecycleCheckLegality(mirrorDir string, manifest space.Manifest, id, transition string, actor fold.Actor) (fold.Verdict, fold.Envelope, error) {
+// own committed envelope + full event history, fold to its full prior
+// Result, and delegate to fold.CheckCandidate — never re-deriving §3.4
+// locally.
+//
+// version is "" for every non-contract-version transition (the fallback
+// this leans on lands unchanged on the legacy version-less path — see
+// fold.CheckCandidate's own doc comment); a contract publish/deprecate/
+// retire caller supplies the version the candidate event itself names
+// (P4, 04-per-version-lifecycle.plan.md). Passing "" for a contract that
+// already has ANY recorded version is a caller bug, not this function's
+// to guess around: contractVersionVerdict refuses a version-less publish
+// outright once any version is recorded (fold/contract.go), so a caller
+// must resolve its own version BEFORE calling this — never after.
+func lifecycleCheckLegality(mirrorDir string, manifest space.Manifest, id, transition, version string, actor fold.Actor) (fold.Verdict, fold.Envelope, error) {
 	env, _, err := lifecycleLoadEnvelope(mirrorDir, id)
 	if err != nil {
 		return "", fold.Envelope{}, err
@@ -299,14 +319,15 @@ func lifecycleCheckLegality(mirrorDir string, manifest space.Manifest, id, trans
 	events := lifecycleFoldEvents(all, id)
 	membership := lifecycleMembership(manifest)
 
-	var state fold.State
-	if len(events) == 0 {
-		state = fold.NewResult(env.Kind).State
-	} else {
-		state = fold.Fold(env.Kind, env, events, membership).State
+	// prior carries the FULL fold.Result (not just its .State) so a
+	// contract on the per-version path answers per-version rather than
+	// per-subject — see fold.CheckCandidate's own doc comment.
+	prior := fold.NewResult(env.Kind)
+	if len(events) > 0 {
+		prior = fold.Fold(env.Kind, env, events, membership)
 	}
 	actorStatus := membership(actor.System)
-	return fold.CheckLegality(env.Kind, state, transition, env, actor, actorStatus), env, nil
+	return fold.CheckCandidate(env.Kind, prior, transition, version, env, actor, actorStatus), env, nil
 }
 
 // lifecycleCheckResponseLegality is the verify/dispute pre-write legality
@@ -660,7 +681,7 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 
 	var files []space.FileWrite
 	for _, id := range ids {
-		verdict, env, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, c.spec.Transition, actor)
+		verdict, env, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, c.spec.Transition, "", actor)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s: %v\n", c.spec.Verb, id, err)
 			return 1
@@ -837,7 +858,7 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	var files []space.FileWrite
 	var ids []string
 	for _, parentID := range parents {
-		verdict, parentEnv, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, parentID, fold.TRespond, actor)
+		verdict, parentEnv, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, parentID, fold.TRespond, "", actor)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: %v\n", parentID, err)
 			return 1
@@ -1153,7 +1174,7 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// parent in the SAME PR. len(result.Responses) counts every
 		// response tracked so far (this one included, already legal).
 		if len(result.Responses) == 1 {
-			closeVerdict, _, cerr := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, parentID, fold.TClose, actor)
+			closeVerdict, _, cerr := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, parentID, fold.TClose, "", actor)
 			if cerr != nil {
 				_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s: %v\n", parentID, cerr)
 				return 1

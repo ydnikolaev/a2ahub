@@ -267,3 +267,75 @@ func TestUrgencyLabelNamesTheRealReason(t *testing.T) {
 		})
 	}
 }
+
+// TestSeverityOf pins the grading a scheduler branches on. The cases that
+// matter are the two ends: an empty list must be QUIET (a runner that treats
+// "nothing to do" as work spins forever), and one urgent item among many
+// ordinary ones must lift the whole answer (a runner that reads only the
+// first item's grade sleeps through a p1).
+func TestSeverityOf(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		items []Item
+		want  Severity
+	}{
+		{"empty is quiet", nil, SeverityQuiet},
+		{"empty slice is quiet", []Item{}, SeverityQuiet},
+		{"ordinary items are pending", []Item{{ID: "a"}, {ID: "b"}}, SeverityItemsPending},
+		{"p1 is urgent", []Item{{ID: "a", Priority: "p1"}}, SeverityUrgent},
+		{"blocking is urgent", []Item{{ID: "a", Blocking: true}}, SeverityUrgent},
+		{
+			"a gate pending on me is urgent",
+			[]Item{{ID: "a", Reasons: []string{"gate-pending-on-me"}}},
+			SeverityUrgent,
+		},
+		{
+			"one urgent item lifts a list of ordinary ones",
+			[]Item{{ID: "a"}, {ID: "b"}, {ID: "c", Priority: "p1"}, {ID: "d"}},
+			SeverityUrgent,
+		},
+		{
+			// The documented ceiling, pinned so it cannot change silently:
+			// widening urgency to a passed deadline would change what
+			// `a2a statusline` returns, which §7.5 specifies.
+			"a passed needed_by is pending, not urgent",
+			[]Item{{ID: "a", NeededBy: "2020-01-01", Reasons: []string{"needed-by-passed"}}},
+			SeverityItemsPending,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := SeverityOf(tc.items); got != tc.want {
+				t.Errorf("SeverityOf = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSeverityOfMatchesStatuslineGrading is the anti-fork check: the two
+// callers must not drift into two opinions of "urgent". It drives the same
+// inputs through SeverityOf and through urgencyLabel — the function the
+// statusline itself calls — and requires them to agree.
+func TestSeverityOfMatchesStatuslineGrading(t *testing.T) {
+	t.Parallel()
+
+	cases := []Item{
+		{ID: "plain"},
+		{ID: "p1", Priority: "p1"},
+		{ID: "blocking", Blocking: true},
+		{ID: "gate", Reasons: []string{"gate-pending-on-me"}},
+		{ID: "acked", Reasons: []string{"addressed-no-ack"}},
+	}
+	for _, it := range cases {
+		statuslineSaysUrgent := urgencyLabel(it.Priority, it.Blocking, it.Reasons) != ""
+		severitySaysUrgent := SeverityOf([]Item{it}) == SeverityUrgent
+		if statuslineSaysUrgent != severitySaysUrgent {
+			t.Errorf("%s: statusline urgency = %v but SeverityOf urgency = %v — the two "+
+				"surfaces have forked on what urgent means", it.ID, statuslineSaysUrgent, severitySaysUrgent)
+		}
+	}
+}

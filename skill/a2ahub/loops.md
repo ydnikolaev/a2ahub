@@ -207,11 +207,26 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
      compute compatibility against. `a2a contract new` scaffolds both, and
      `a2a submit` carries them into the space with the contract.
    - **The deprecation goes to whoever is REGISTERED**, computed from the same
-     consumer registry that blocks your `retire` — so the set that can block
-     you and the set that was told are one set. A system that only appears in
-     your contract's authoring-time `to:` and never ran `a2a contract adopt`
-     is not a registered consumer: it does not receive the announcement and it
-     does not block your retire.
+     consumer registry that blocks your `retire`. A system that only appears
+     in your contract's authoring-time `to:` and never ran `a2a contract
+     adopt` is not a registered consumer: it does not receive the
+     announcement and it does not block your retire.
+   - **Read the window before you plan the cycle.** `a2a contracts` shows a
+     sixth column for any contract with more than one published version —
+     `1.0.0=retired 1.4.1=published 2.0.0=published`, oldest first. The
+     `version`/`state` columns beside it are the SUMMARY (newest published,
+     and the whole contract's state projected over its versions), so a
+     contract reading `published` may still have a deprecated line inside it
+     waiting on somebody's ack. The dashboard (`a2a html`) renders the same
+     thing under each contract you provide.
+   - **One registry, two scopes — and the difference is deliberate.** The
+     deprecation is addressed to EVERY registered consumer, on any major.
+     Your `retire --version X` is blocked only by consumers registered on
+     X's OWN major. So a consumer pinned to major 2 hears that you are
+     sunsetting 1.x and does not stand in the way of it — which is the point:
+     before this, one consumer on a newer major blocked retiring an old line
+     forever. If your contract has consumers on more than one major, "who was
+     told" is the larger set and "who can block me" the smaller one.
    - **Not enforced (do not rely on it):** nothing requires your major publish
      to be accompanied by a deprecation of the prior major. Order those two
      yourself.
@@ -239,14 +254,25 @@ contract does. Every guarantee below turns on the one prerequisite in step 1
      another system's contract without ever running `adopt` and nothing will
      ever notify you when it changes — the tool has no way to know you
      depend on it, and you never block that contract's retirement either.
-2. **How you find out: a deprecation announcement, addressed to you by
-   name.** When the producer runs `a2a contract deprecate`, the
-   announcement's `to:` is computed from the registered-consumer set — the
-   identical query that decides who blocks `retire` (§8.4 step 2) — so a
-   registered consumer is addressed because it is registered, never merely
-   because it appeared in the contract's authoring-time `to:`. It arrives
-   the ordinary way: §8.1's session-start checklist / §8.6's watch loop
-   surfaces it in your inbox like any other artifact.
+2. **How you find out: a deprecation announcement, and your registration
+   is what puts it in front of you.** When the producer runs `a2a contract
+   deprecate`, the announcement's `to:` is computed from the
+   registered-consumer set — the same registry that decides who blocks
+   `retire` (§8.4 step 2), read UNSCOPED here, so you are named whichever
+   major you pinned. It arrives the ordinary way: §8.1's session-start
+   checklist / §8.6's watch loop surfaces it in your inbox like any other
+   artifact.
+   - **`to:` is a snapshot, and your inbox does not depend on it.** That
+     field is computed once, when the producer runs `deprecate`, and then
+     frozen — so if you `adopt` DURING a sunset window you were not in it,
+     and re-running the verb would not add you (the announcement already
+     exists and the write funnel dedups it). Your inbox therefore does not
+     ask `to:` alone: **an announcement whose `deprecates:` names a
+     contract in your own `consumes.yaml` is yours**, addressed or not. So
+     adopting late still shows you the deprecation that was announced
+     before you arrived. It is a union, never a swap: if you were named in
+     `to:` and have since removed the dependency, you keep seeing it while
+     you migrate off.
    - **A plain version bump owes you no notice at all.** A minor, a patch,
      or even a new major published WITHOUT a `deprecate` tells you nothing —
      §8.4 step 2 already says so for the producer's own benefit ("nothing
@@ -333,8 +359,25 @@ All provided by the toolchain — none of this is your manual bookkeeping:
    always runs, even when the statusline does not.
 3. **`a2a sync && a2a inbox`** on demand: before starting cross-boundary work,
    and whenever the statusline flags movement.
-4. Hub notifications to humans exist for gates and p1 — do not rely on humans
+4. **`a2a inbox --overdue`**: what you owe whose `needed_by` has passed.
+   Check it separately, because it is the one thing the list above cannot show
+   you: `--actionable`'s first condition is "addressed to me with no ack by
+   me", so an item leaves that list the moment you acknowledge it while the
+   work and its deadline remain yours. Until you ask, the only party seeing
+   that deadline is the requester — who cannot close it.
+5. Hub notifications to humans exist for gates and p1 — do not rely on humans
    relaying them; the sources above are yours.
+
+**Every source above is pull, and three of them need a session to exist.** If
+nothing in the project runs them on a schedule, "I did not notice" is a matter
+of time rather than diligence. Two setup steps fix it, once per repo, and they
+are the operator's to apply rather than yours to perform:
+a session-start hook that runs the §8.1 check, and a scheduled workflow in the
+project's OWN repository that polls and starts an agent when there is
+something to start it for. `--exit-code` on `inbox`/`outbox` returns §7.5's
+severity so a scheduler can branch without parsing. If you are working in a
+repo where neither exists, say so — see
+[onboarding.md](onboarding.md) § "Making the loop run without a human".
 
 ## §8.7 Feedback loop — "the tool itself got in my way"
 

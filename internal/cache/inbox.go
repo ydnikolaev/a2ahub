@@ -8,11 +8,34 @@ import "github.com/ydnikolaev/a2ahub/internal/fold"
 // DIFFERENT, broader query that is not pre-filtered by this (some
 // conditions, e.g. "responded awaiting my verify/close", key off `from`,
 // not `to` — see actionableReasons' own doc comment).
+// P4 Edge 3 (04-per-version-lifecycle.md §4) adds the third clause below,
+// and it is a UNION — it never takes anything away.
+//
+// A deprecation announcement's `to:` is the registered-consumer set
+// computed once, at deprecate time, and then frozen; the announcement's id
+// is seeded from {id, version, sunset} without the recipient set, so
+// re-running `contract deprecate` after a new `adopt` lands on the write
+// funnel's dedup branch and the newcomer is never addressed. Under a
+// rolling window deprecations ARE the steady state, so that race stops
+// being an edge case and starts being how a consumer silently fails to
+// learn the contract under them is expiring.
+//
+// The retire gate already reads the LIVE registry for "who blocks me".
+// Until now the two halves of one fact came from two sources — who blocks
+// me, live; who was told, frozen — and this closes that. `to:` degrades to
+// a courtesy snapshot: still honoured, never authoritative. Union rather
+// than replacement is deliberate, because a system that WAS in `to:` and
+// has since dropped the dependency would otherwise watch the announcement
+// vanish from its inbox, and disappearing messages are not an acceptable
+// price for fixing a race in an append-only system.
 func addressedToMe(fa foldedArtifact, me string) bool {
 	if fa.Env.isBroadcast() {
 		return true
 	}
-	return containsString(normalizeTo(fa.Env.To), me)
+	if containsString(normalizeTo(fa.Env.To), me) {
+		return true
+	}
+	return fa.DeprecatesMyDependency
 }
 
 // actionableReasons evaluates every one of OP-207's 5 normative

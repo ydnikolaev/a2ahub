@@ -57,6 +57,18 @@ type Item struct {
 	Description string `json:"-"`
 }
 
+// SpaceSyncInfo is the mirror snapshot fact the dashboard needs per connected
+// space: exact HEAD revision plus freshness. The computation stays in cache
+// because git inspection, mirrorSyncAge and Store.ttl are cache-owned policy;
+// renderers must not re-read .git or duplicate the stale threshold.
+type SpaceSyncInfo struct {
+	Space    string
+	Revision string
+	Age      time.Duration
+	Synced   bool
+	Stale    bool
+}
+
 // RefFact is one envelope `refs[]` entry's resolved digest/staleness
 // FACT (never a registry code — internal/cache stays validate-free per
 // ADR-001; internal/cli/cmd_show.go maps this to the V5 registry code).
@@ -114,10 +126,60 @@ type ContractInfo struct {
 	Provider string `json:"provider"`
 	Version  string `json:"version,omitempty"`
 	State    string `json:"state"`
+	// Contract-specific envelope facts are dashboard-only today. json:"-"
+	// preserves the established `a2a contracts --json` shape while allowing
+	// the richer HTML assembler to stop guessing whether a contract is
+	// code-generated and what compatibility vocabulary it declares.
+	Category      string `json:"-"`
+	SchemaFormat  string `json:"-"`
+	CompatPolicy  string `json:"-"`
+	GeneratedTool string `json:"-"`
+	SourceDigest  string `json:"-"`
 	// Description is a short human-readable summary from the contract's body,
 	// for the dashboard's dependency map. json:"-" keeps `a2a contracts --json`
 	// byte-stable for its existing consumers (read as a Go field only).
 	Description string `json:"-"`
+	// Versions is the ROLLING WINDOW: every version this contract has ever
+	// published, with the state it holds now, oldest first (P4,
+	// agent-ops-2026-07). `Version`/`State` above are the summary — newest
+	// published version, and the subject-level projection over these — and
+	// they stay exactly what they were. This is the detail neither of them
+	// can carry: "1.0 retired, 1.2 published, 2.0 published" is three facts,
+	// and a reader shown only the projection cannot tell a contract with one
+	// live version from one with three.
+	//
+	// `omitempty`, so a contract whose history records no version at all —
+	// the shape every history had before P4 — produces byte-identical
+	// `a2a contracts --json` output. For a contract that HAS versions this
+	// is a new field in that output, which is additive and deliberate: a
+	// consumer that could not see the window could not act on it.
+	Versions []ContractVersion `json:"versions,omitempty"`
+}
+
+// ContractVersion is one version of a contract and the state it holds, for
+// ContractInfo.Versions. A struct rather than a map so the order is part of
+// the value — semver ascending, which a map cannot express and which every
+// renderer would otherwise have to re-derive.
+type ContractVersion struct {
+	Version       string `json:"version"`
+	State         string `json:"state"`
+	Sunset        string `json:"sunset,omitempty"`
+	Successor     string `json:"successor,omitempty"`
+	DeprecationID string `json:"deprecation_id,omitempty"`
+}
+
+// ProtocolFlagInfo is one committed fold violation surfaced by the read
+// model. It deliberately carries fold's own stable vocabulary rather than
+// pretending to be a V4/V5 validation result: those invocations are a
+// different engine and require their own mounted context.
+type ProtocolFlagInfo struct {
+	Space     string
+	System    string
+	Artifact  string
+	Code      string
+	EventULID string
+	Message   string
+	Severity  string
 }
 
 // SearchFilters narrows `a2a search`'s free-text match.

@@ -653,6 +653,28 @@
       "codeBacked": true,
       "consumers": [
         "gvbilling"
+      ],
+      "versions": [
+        {
+          "version": "1.0.0",
+          "state": "retired"
+        },
+        {
+          "version": "1.4.0",
+          "state": "deprecated"
+        },
+        {
+          "version": "1.4.1",
+          "state": "published"
+        },
+        {
+          "version": "2.0.0",
+          "state": "published"
+        },
+        {
+          "version": "2.3.0",
+          "state": "published"
+        }
       ]
     },
     {
@@ -664,6 +686,12 @@
       "codeBacked": false,
       "consumers": [
         "gvbilling"
+      ],
+      "versions": [
+        {
+          "version": "1.0.0",
+          "state": "retired"
+        }
       ]
     },
     {
@@ -675,6 +703,55 @@
       "codeBacked": true,
       "consumers": [
         "axon"
+      ],
+      "versions": [
+        {
+          "version": "2.9.0",
+          "state": "retired"
+        },
+        {
+          "version": "3.0.0",
+          "state": "deprecated"
+        },
+        {
+          "version": "3.1.0",
+          "state": "deprecated"
+        }
+      ]
+    },
+    {
+      "space": "platform",
+      "id": "XC-axon-ingest",
+      "provider": "axon",
+      "version": "2.1.0",
+      "state": "published",
+      "codeBacked": true,
+      "consumers": [
+        "seomatrix",
+        "pgw"
+      ],
+      "description": "Ingest envelope accepted from crawl and payment producers.",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "state": "retired"
+        },
+        {
+          "version": "1.6.0",
+          "state": "deprecated"
+        },
+        {
+          "version": "1.6.1",
+          "state": "published"
+        },
+        {
+          "version": "2.0.0",
+          "state": "published"
+        },
+        {
+          "version": "2.1.0",
+          "state": "published"
+        }
       ]
     }
   ],
@@ -682,16 +759,20 @@
     {
       "space": "getvisa",
       "system": "legacycrm",
-      "code": "V4-STALE-MANIFEST",
-      "message": "legacycrm participant manifest not refreshed in 30d",
-      "severity": "attention"
+      "code": "read-index-skip",
+      "message": "legacycrm/exchanges/XA-legacy-archive.md (undecodable-yaml)",
+      "severity": "attention",
+      "source": "cache-index"
     },
     {
       "space": "platform",
       "system": "pgw",
-      "code": "V5-CODE-MISMATCH",
-      "message": "published contract version does not match the code-backed verifier output",
-      "severity": "blocking"
+      "code": "state-claim-mismatch",
+      "message": "committed event 01HFX00000000000000000493 on XH-pgw-20260727-webhooks was folded with state-claim-mismatch",
+      "severity": "attention",
+      "source": "fold",
+      "artifact": "XH-pgw-20260727-webhooks",
+      "event": "01HFX00000000000000000493"
     }
   ]
 }

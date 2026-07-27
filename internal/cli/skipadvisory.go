@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 )
@@ -43,13 +42,21 @@ func skipAdvisory(stdio IO, skipped []cache.SkippedFile, jsonOut bool) {
 		}{Skipped: skipped})
 		return
 	}
-	parts := make([]string, 0, len(skipped))
-	for _, sk := range skipped {
-		parts = append(parts, fmt.Sprintf("%s (%s)", sk.Path, sk.Reason))
-	}
 	_, _ = fmt.Fprintf(stdio.Stderr,
 		"note: %d file(s) are in this space but could not be decoded, so they are missing from this output: %s\n",
-		len(skipped), strings.Join(parts, ", "))
+		len(skipped), formatSkippedList(skipped))
+}
+
+// formatSkippedList renders skipped as "path (reason), path (reason), ..."
+// — the item-list fragment shared between skipAdvisory's own "note: N
+// file(s)..." prose above (a read verb's OWN output is missing these rows)
+// and ViolationError.Error()'s refusal-time note (adapters.go: the
+// resolver's INDEX could not decode these files, which is why a
+// resolvable ref may still fail). Same list formatting, deliberately
+// different framing sentences per call site — see ViolationError's own
+// doc comment for why conflating the two would misdirect a reader.
+func formatSkippedList(skipped []cache.SkippedFile) string {
+	return cache.FormatSkippedList(skipped)
 }
 
 // flattenSkipped merges a Store.AllSkippedFiles map into one deterministic

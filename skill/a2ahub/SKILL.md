@@ -78,6 +78,11 @@ Three ways an agent activates this skill (§8.7):
 | [reference/authoring/](reference/authoring/) | **Generated from schemas.** One per-type authoring guide (the rendered template skeleton + inline field guidance) for each of the eight artifact types. |
 | [reference/decompose-example.md](reference/decompose-example.md) | A worked single-intent decompose: one thread carrying an announcement + a question + a work_request, referencing the product-repo fixtures. |
 | [reference/feedback.md](reference/feedback.md) | The feedback channel — filing a defect or a gap against a2a itself (`a2a feedback new/validate/submit/status`), what the quarantined intake does with it, and what makes a report actionable. Hand-maintained prose, not generated. |
+| [reference/status-announcements.md](reference/status-announcements.md) | Feed liveness via `announcement` + `category: status` (+ `period`) — the shipped mechanism, no new type. Hand-maintained prose, not generated. |
+| [reference/retraction.md](reference/retraction.md) | Withdrawing a live datum via a `work_request` carrying an `x_retraction` block — schema-valid today, no release needed. Hand-maintained prose, not generated. |
+| [reference/bindings.md](reference/bindings.md) | A tracked, local `.a2a/bindings.yaml` mapping a consumed contract to where it lands in YOUR code — the missing half of `consumes.yaml`. Hand-maintained prose, not generated. |
+| [reference/threads.md](reference/threads.md) | What a thread IS and why it is the unit you read: one intent, both systems, ordered by commit rather than by anyone's clock, with "whose move is it" computed from the same engine the write verbs enforce. Hand-maintained prose, not generated. |
+| [reference/contract-versions.md](reference/contract-versions.md) | The rolling window — several versions of one contract alive at once, what each state means to each side, how a line retires without touching the others, and why a maintenance release needs an explicit `--version`. Hand-maintained prose, not generated. |
 
 ## The eight artifact types (map)
 
@@ -98,9 +103,12 @@ Full semantics in [loops.md](loops.md); template + fields per type in
 ## Sourcing & drift (D-015)
 
 The prose files in this skill — `SKILL.md`, `loops.md`, `troubleshooting.md`,
-`onboarding.md`, `reference/decompose-example.md` and `reference/feedback.md` —
-are **hand-maintained** and single-sourced here; they are reviewed at each tagged
-release against the maintainers' own release checklist, not by a machine gate.
+`onboarding.md`, `reference/decompose-example.md`, `reference/feedback.md`,
+`reference/status-announcements.md`, `reference/retraction.md`,
+`reference/bindings.md`, `reference/threads.md` and
+`reference/contract-versions.md` — are **hand-maintained** and single-sourced here;
+they are reviewed at each tagged release against the maintainers' own
+release checklist, not by a machine gate.
 (That checklist lives in the product repo, one directory above this tree, and is
 deliberately NOT shipped inside the installed skill: it is a maintainer
 procedure, not something a consuming agent acts on. A relative link to it used to

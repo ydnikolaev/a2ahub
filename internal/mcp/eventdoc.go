@@ -181,6 +181,12 @@ func foldEvents(all []eventDoc, primaryID string) []fold.Event {
 			ULID: ev.Event, Subject: ev.Subject, Transition: ev.Transition,
 			ClaimedState: fold.State(ev.State),
 			Actor:        fold.Actor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
+			// contractCanonicalVersion (tools_contract.go): see internal/cli's
+			// own lifecycleFoldEvents comment — fold.Result.Versions keys on
+			// the raw string with no canonicalization of its own, so every
+			// committed event's `version` field is reformatted here, at the
+			// one place it enters fold's own input.
+			Version: contractCanonicalVersion(ev.Version),
 		}
 		if ev.Transition == fold.TRespond && len(ev.Refs) > 0 {
 			fe.ResponseID = ev.Refs[0].Ref
@@ -208,7 +214,13 @@ func membership(manifest space.Manifest) fold.MembershipView {
 
 // checkLegality is the generic (non-response-scoped) pre-write legality
 // check every write tool except verify/dispute uses.
-func checkLegality(mirrorDir string, manifest space.Manifest, id, transition string, actor fold.Actor) (fold.Verdict, fold.Envelope, error) {
+//
+// version is "" for every non-contract-version transition; a contract
+// publish/deprecate/retire caller supplies the version the candidate
+// event itself names (P4, 04-per-version-lifecycle.plan.md) — resolved
+// BEFORE calling this, same requirement as internal/cli's own
+// lifecycleCheckLegality.
+func checkLegality(mirrorDir string, manifest space.Manifest, id, transition, version string, actor fold.Actor) (fold.Verdict, fold.Envelope, error) {
 	env, _, err := loadEnvelope(mirrorDir, id)
 	if err != nil {
 		return "", fold.Envelope{}, err
@@ -220,14 +232,12 @@ func checkLegality(mirrorDir string, manifest space.Manifest, id, transition str
 	events := foldEvents(all, id)
 	memb := membership(manifest)
 
-	var state fold.State
-	if len(events) == 0 {
-		state = fold.NewResult(env.Kind).State
-	} else {
-		state = fold.Fold(env.Kind, env, events, memb).State
+	prior := fold.NewResult(env.Kind)
+	if len(events) > 0 {
+		prior = fold.Fold(env.Kind, env, events, memb)
 	}
 	actorStatus := memb(actor.System)
-	return fold.CheckLegality(env.Kind, state, transition, env, actor, actorStatus), env, nil
+	return fold.CheckCandidate(env.Kind, prior, transition, version, env, actor, actorStatus), env, nil
 }
 
 // checkResponseLegality is the verify/dispute pre-write legality check.

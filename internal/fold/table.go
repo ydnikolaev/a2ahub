@@ -78,31 +78,6 @@ func contractRows() []Row {
 		{Kind: KindContract, From: StateDraft, Transition: TPublish, To: StatePublished, Role: RoleOwner, Scenario: "first-publish"},
 		{Kind: KindContract, From: StatePublished, Transition: TPublish, To: StatePublished, Role: RoleOwner, Scenario: "new-version-publish"},
 		{Kind: KindContract, From: StatePublished, Transition: TDeprecate, To: StateDeprecated, Role: RoleOwner},
-		// A contract that has been deprecated must still be able to publish
-		// a successor, or its first deprecation kills it permanently.
-		//
-		// `a2a contract deprecate --version 1.0.0` deprecates a VERSION —
-		// that is what the flag means and what the operator intends. This
-		// fold records state per SUBJECT, so deprecating an old version
-		// moved the whole contract to `deprecated`, and without this row the
-		// next `publish` was refused LFC-001 forever. The normal life of a
-		// live contract — publish 1.0, publish 2.0, deprecate 1.0, publish
-		// 3.0 — hit that wall on its second evolution, which is late enough
-		// that nobody meets it until the tool is genuinely in use.
-		//
-		// The destination is `published` for the same reason the row above
-		// it keeps `published` on a new-version publish: the subject has a
-		// live version again. `retire` still requires `deprecated`, so the
-		// deprecate-then-retire path is unchanged.
-		//
-		// THIS IS AN INTERIM. The real fix is a version dimension on the
-		// event and a version-aware CheckLegality, so that "1.0.0 is
-		// deprecated" and "2.0.0 is published" can both be true at once
-		// instead of fighting over one subject-level state. That change
-		// needs its own spec and a migration for already-folded events
-		// (docs/backlog.md, the per-VERSION lifecycle row). Until then this
-		// row makes the flow work without pretending the model is right.
-		{Kind: KindContract, From: StateDeprecated, Transition: TPublish, To: StatePublished, Role: RoleOwner, Scenario: "successor-publish"},
 		{Kind: KindContract, From: StateDeprecated, Transition: TRetire, To: StateRetired, Role: RoleOwner},
 	}
 }

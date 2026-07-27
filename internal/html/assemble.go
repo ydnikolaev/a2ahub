@@ -10,7 +10,10 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/releasenotes"
+	"gopkg.in/yaml.v3"
 )
 
 // Assemble builds the dashboard Data from a composed Store, as of now. self is
@@ -25,21 +28,32 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 	mirrors := store.SpaceMirrors()
 	d := Data{GeneratedAt: now, Self: self, Nodes: []Node{}, ContractEdges: []ContractEdge{},
 		ExchangeEdges: []ExchangeEdge{}, Threads: []Thread{}, Inbox: []Item{}, Outbox: []Item{}, Contracts: []Contract{},
-		Spaces: []SpaceHealth{}, Flags: []Flag{}}
+		Spaces: []SpaceHealth{}, Flags: []Flag{}, ReleaseNotes: []ReleaseNote{}}
 
 	un := store.UpdateNotice()
 	d.Tooling = Tooling{Current: un.Current, Latest: un.Latest, UpdateAvailable: un.UpdateAvailable,
 		Required: un.Required, Floor: un.Floor, FloorSpace: un.FloorSpace}
 
 	// Nodes (deduped across spaces) + per-space health.
+	syncBySpace := make(map[string]cache.SpaceSyncInfo, len(mirrors))
+	for _, fact := range store.SpaceSyncFacts(ctx) {
+		syncBySpace[fact.Space] = fact
+	}
 	nodeIdx := map[string]*Node{}
 	for _, m := range mirrors {
 		readable := m.Manifest.Space != "" || len(m.Manifest.Participants) > 0
+		syncFact := syncBySpace[m.SpaceID]
+		workflowVersion, workflowRef := spaceWorkflowVersion(m.Dir)
+		syncAge := ""
+		if syncFact.Synced {
+			syncAge = humanizeAge(now, now.Add(-syncFact.Age))
+		}
 		d.Spaces = append(d.Spaces, SpaceHealth{
 			ID: m.SpaceID, RepoURL: m.RepoURL,
 			ParticipantCount: len(m.Manifest.Participants), Readable: readable,
-			// SyncAge/Stale: not yet exposed by internal/cache (private
-			// spaceSyncStale/mirrorSyncAge) — populated in a follow-up.
+			SyncAge: syncAge, Stale: syncFact.Stale, Revision: syncFact.Revision,
+			SchemaVersion: m.Manifest.Schema, MinBinaryVersion: m.Manifest.MinBinaryVersion,
+			WorkflowVersion: workflowVersion, WorkflowRef: workflowRef,
 		})
 		for _, p := range m.Manifest.Participants {
 			n := nodeIdx[p.System]
@@ -101,7 +115,8 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 				default:
 					edge.ProviderVersion = ci.Version
 					edge.State = ci.State
-					edge.Drift = driftOf(ci.State, dep.Major, ci.Version)
+					edge.PinnedVersion, edge.PinnedState, edge.Sunset, edge.Successor,
+						edge.AvailableMajors, edge.Drift = dependencyFacts(ci, dep.Major)
 					edge.Description = ci.Description
 				}
 				d.ContractEdges = append(d.ContractEdges, edge)
@@ -116,8 +131,20 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 	for _, c := range cinfos {
 		cons := consumersOf[c.ID]
 		sort.Strings(cons)
+		vers := make([]ContractVersion, 0, len(c.Versions))
+		for _, v := range c.Versions {
+			vers = append(vers, ContractVersion{
+				Version: v.Version, State: v.State, Sunset: v.Sunset,
+				Successor: v.Successor, DeprecationID: v.DeprecationID,
+			})
+		}
 		d.Contracts = append(d.Contracts, Contract{Space: c.Space, ID: c.ID, Provider: c.Provider,
-			Version: c.Version, State: c.State, Consumers: dedupSorted(cons), Description: c.Description})
+			Version: c.Version, State: c.State, Consumers: dedupSorted(cons), Description: c.Description,
+			Versions: vers, Category: c.Category, SchemaFormat: c.SchemaFormat,
+			CompatPolicy: c.CompatPolicy, GeneratedTool: c.GeneratedTool,
+			SourceDigest: c.SourceDigest,
+			CodeBacked:   c.GeneratedTool != "" && c.SourceDigest != "",
+		})
 	}
 
 	// Inbox / outbox items (open only — the Store already filters to open).
@@ -146,6 +173,52 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 		return Data{}, fmt.Errorf("html: threads: %w", err)
 	}
 	d.Threads = threads
+
+	// Read-health facts: committed fold violations plus any mirror files the
+	// best-effort index could not decode. Both already exist in cache; the old
+	// dashboard model carried Flags but never wired either source.
+	protocolFlags, err := store.ProtocolFlags(ctx)
+	if err != nil {
+		return Data{}, fmt.Errorf("html: protocol flags: %w", err)
+	}
+	for _, f := range protocolFlags {
+		d.Flags = append(d.Flags, Flag{
+			Space: f.Space, System: f.System, Code: f.Code,
+			Message: f.Message, Severity: f.Severity, Source: "fold",
+			Artifact: f.Artifact, Event: f.EventULID,
+		})
+	}
+	skipped, err := store.AllSkippedFiles(ctx)
+	if err != nil {
+		return Data{}, fmt.Errorf("html: skipped files: %w", err)
+	}
+	for spaceID, files := range skipped {
+		for _, file := range files {
+			d.Flags = append(d.Flags, Flag{
+				Space: spaceID, Code: "read-index-skip",
+				Message:  file.Path + " (" + file.Reason + ")",
+				Severity: "attention", Source: "cache-index",
+			})
+		}
+	}
+	sort.Slice(d.Flags, func(i, j int) bool {
+		if d.Flags[i].Space != d.Flags[j].Space {
+			return d.Flags[i].Space < d.Flags[j].Space
+		}
+		if d.Flags[i].Code != d.Flags[j].Code {
+			return d.Flags[i].Code < d.Flags[j].Code
+		}
+		return d.Flags[i].Message < d.Flags[j].Message
+	})
+
+	// Release notes are already embedded in the binary and parsed by the same
+	// internal/notes package as `a2a whatsnew`; the HTML view projects that
+	// corpus instead of maintaining a second changelog.
+	releases, err := notes.Load(releasenotes.FS)
+	if err != nil {
+		return Data{}, fmt.Errorf("html: release notes: %w", err)
+	}
+	d.ReleaseNotes = toReleaseNotes(releases)
 
 	return d, nil
 }
@@ -391,6 +464,119 @@ func nodeStatus(idx map[string]*Node, system string) string {
 	return ""
 }
 
+// dependencyFacts answers the consumer's actual question: what is happening
+// on the MAJOR line I registered, not merely what the contract's newest major
+// is doing. ContractInfo.Versions is semver-ascending, so the last matching
+// entry is the newest version available on that line.
+func dependencyFacts(ci cache.ContractInfo, pinnedMajor int) (
+	pinnedVersion, pinnedState, sunset, successor string,
+	availableMajors []int, drift string,
+) {
+	seenMajors := map[int]bool{}
+	var pinned *cache.ContractVersion
+	for i := range ci.Versions {
+		v := &ci.Versions[i]
+		major, validMajor := parseMajor(v.Version)
+		if validMajor && !seenMajors[major] {
+			seenMajors[major] = true
+			availableMajors = append(availableMajors, major)
+		}
+		if validMajor && major == pinnedMajor {
+			pinned = v
+		}
+	}
+	sort.Ints(availableMajors)
+	if pinned == nil {
+		if len(ci.Versions) == 0 {
+			return "", ci.State, "", "", availableMajors,
+				driftOf(ci.State, pinnedMajor, ci.Version)
+		}
+		return "", "missing", "", "", availableMajors, "missing"
+	}
+
+	pinnedVersion, pinnedState = pinned.Version, pinned.State
+	sunset, successor = pinned.Sunset, pinned.Successor
+	switch pinned.State {
+	case "retired":
+		drift = "retired"
+	case "deprecated":
+		drift = "deprecated"
+	default:
+		if majorOf(ci.Version) > pinnedMajor {
+			drift = "behind"
+		} else {
+			drift = "current"
+		}
+	}
+	return pinnedVersion, pinnedState, sunset, successor, availableMajors, drift
+}
+
+// spaceWorkflowVersion reads the immutable reusable-workflow ref already
+// committed in a space mirror. It is a separate compatibility axis from
+// space.yaml's min_binary_version. Malformed/absent workflows degrade to
+// empty facts; the dashboard must label the axis unavailable, never guess it
+// from the binary or the template.
+func spaceWorkflowVersion(dir string) (version, ref string) {
+	raw, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", "a2a-validate.yml"))
+	if err != nil {
+		return "", ""
+	}
+	var workflow struct {
+		Jobs map[string]struct {
+			Uses string `yaml:"uses"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(raw, &workflow); err != nil {
+		return "", ""
+	}
+	var refs []string
+	for _, job := range workflow.Jobs {
+		if strings.Contains(job.Uses, "a2a-validate-reusable.yml@") {
+			refs = append(refs, job.Uses)
+		}
+	}
+	if len(refs) == 0 {
+		return "", ""
+	}
+	sort.Strings(refs)
+	ref = refs[0]
+	for _, candidate := range refs[1:] {
+		if candidate != ref {
+			return "mixed", strings.Join(refs, ", ")
+		}
+	}
+	at := strings.LastIndexByte(ref, '@')
+	if at < 0 || at == len(ref)-1 {
+		return "", ref
+	}
+	version = strings.TrimPrefix(ref[at+1:], "v")
+	return version, ref
+}
+
+func toReleaseNotes(in []notes.ReleaseNotes) []ReleaseNote {
+	out := make([]ReleaseNote, 0, len(in))
+	for _, release := range in {
+		row := ReleaseNote{
+			Version: release.Version, Released: release.Released,
+			Headline: release.Headline, Changes: []ReleaseChange{},
+		}
+		for _, change := range release.Changes {
+			row.Changes = append(row.Changes, ReleaseChange{
+				ID: change.ID, Kind: change.Kind, Impact: change.Impact,
+				Subject: change.Subject, Detail: change.Detail,
+				Affects: append([]string(nil), change.Affects...),
+				Action: ReleaseAction{
+					Scope: change.Action.Scope, Why: change.Action.Why,
+					Detect: append([]string(nil), change.Action.Detect...),
+					Run:    append([]string(nil), change.Action.Run...),
+				},
+			})
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
 // driftOf grades a dependency: retired/deprecated states win; else a newer
 // provider major than the pinned one is "behind"; else "current".
 func driftOf(state string, pinnedMajor int, providerVersion string) string {
@@ -407,21 +593,29 @@ func driftOf(state string, pinnedMajor int, providerVersion string) string {
 }
 
 func majorOf(version string) int {
+	major, _ := parseMajor(version)
+	return major
+}
+
+func parseMajor(version string) (int, bool) {
 	if version == "" {
-		return 0
+		return 0, false
 	}
 	seg := version
 	if i := strings.IndexByte(seg, '.'); i >= 0 {
 		seg = seg[:i]
 	}
+	if seg == "" {
+		return 0, false
+	}
 	n := 0
 	for _, r := range seg {
 		if r < '0' || r > '9' {
-			return 0
+			return 0, false
 		}
 		n = n*10 + int(r-'0')
 	}
-	return n
+	return n, true
 }
 
 // maxPriority returns the more-urgent of two priority strings (p1 > p2 > p3 > "").

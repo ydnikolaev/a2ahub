@@ -334,6 +334,148 @@ func TestContractPublishComputedCompatibility(t *testing.T) {
 	})
 }
 
+// TestContractPublishMaintenanceLineBaselineIsPriorInLine is epic AC-8
+// (04-per-version-lifecycle.md §4, Edge 2): publishing a maintenance 1.2
+// while 2.0 is already published must compare against 1.1 — the highest
+// PUBLISHED version strictly older than 1.2 — not 2.0, the globally-highest
+// published version. 1.1 is DEPRECATED by the time 1.2 publishes (the
+// literal sunset-window scenario the spec names), which also empirically
+// discharges the spec's own instruction to verify — not re-implement —
+// that per-version legality already allows `publish 1.2` while 1.1 is
+// deprecated and 2.0 is published (wave 3's contractVersionVerdict only
+// refuses a version key that already exists; 1.2.0 never has).
+//
+// The fixture makes the two answers OBSERVABLY different: 1.2's draft
+// schema narrows `x` from integer to string, which breaks 1.1's own fixture
+// ({"x":1,...}). If baseline is correctly 1.1, contractInferBumpKind
+// classifies 1.1->1.2 as "minor" (same major), the computed-compatibility
+// check actually RUNS, and it refuses (POL-007) naming 1.1's fixture. If
+// baseline were wrongly 2.0 (this file's former
+// `priorVersions[len(priorVersions)-1]` rule), contractInferBumpKind would
+// see components 1 and 2 differ and classify it "major" — and
+// CheckComputedCompatibility short-circuits ANY major bump BEFORE ever
+// looking at fixtures — so the broken schema would publish SILENTLY. TEETH:
+// reverting contractSelectBaseline's call site back to
+// `priorVersions[len(priorVersions)-1]` makes this test go GREEN (code 0,
+// no refusal) — the exact silently-wrong outcome AC-8 exists to close;
+// verified by making that revert and re-running (see this wave's own
+// report).
+func TestContractPublishMaintenanceLineBaselineIsPriorInLine(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	gitRun(t, mirrorDir, "init", "-b", "main")
+
+	writeContractDescriptor(t, mirrorDir, "maint", "1.0.0")
+	writeMirrorFile(t, mirrorDir, "axon/provides/maint/schema/main.schema.json", `{"type":"object","properties":{"x":{"type":"integer"}}}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/maint/fixtures/valid/ok.json", `{"x":1}`)
+	gitRun(t, mirrorDir, "add", "-A")
+	gitRun(t, mirrorDir, "commit", "-m", "publish 1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-maint", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+	writeContractDescriptor(t, mirrorDir, "maint", "1.1.0")
+	writeMirrorFile(t, mirrorDir, "axon/provides/maint/schema/main.schema.json", `{"type":"object","properties":{"x":{"type":"integer"},"y":{"type":"string"}}}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/maint/fixtures/valid/ok.json", `{"x":1,"y":"a"}`)
+	gitRun(t, mirrorDir, "add", "-A")
+	gitRun(t, mirrorDir, "commit", "-m", "publish 1.1.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-maint", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.1.0")
+
+	writeContractDescriptor(t, mirrorDir, "maint", "2.0.0")
+	writeMirrorFile(t, mirrorDir, "axon/provides/maint/schema/main.schema.json", `{"type":"object","properties":{"x":{"type":"string"}}}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/maint/fixtures/valid/ok.json", `{"x":"z"}`)
+	gitRun(t, mirrorDir, "add", "-A")
+	gitRun(t, mirrorDir, "commit", "-m", "publish 2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 2, "XC-axon-maint", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+
+	// 1.1 is deprecated — the literal sunset-window scenario the spec names
+	// ("publishing a maintenance 1.2 while 2.0 exists — the normal act
+	// during a sunset window"), and the brief's own instruction to VERIFY
+	// (not re-implement) that per-version legality already allows `publish
+	// 1.2` while 1.1 is deprecated and 2.0 is published (wave 3 makes this
+	// natural: contractVersionVerdict only refuses a version key that
+	// ALREADY exists, and 1.2.0 never has). contractPublishedVersions
+	// filters on TPublish only, so this does not change baseline selection
+	// — the refusal below is still POL-007, not a legality refusal.
+	writeLifecycleEvent(t, mirrorDir, "axon", 3, "XC-axon-maint", "deprecate", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.1.0")
+
+	// Draft state for 1.2.0: NARROWS x from integer to string relative to
+	// 1.1's own committed fixture ({"x":1,...}) — a genuine breaking change
+	// on the 1.x line the baseline-1.1 compat check must catch.
+	writeMirrorFile(t, mirrorDir, "axon/provides/maint/schema/main.schema.json", `{"type":"object","properties":{"x":{"type":"string"},"y":{"type":"string"}}}`)
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"publish", "--version", "1.2.0", "XC-axon-maint"}, io)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1 (AC-8: baseline must be 1.1.0, whose fixture breaks against the new schema); stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "POL-007") {
+		t.Fatalf("expected the refusal to carry POL-007, got %q", errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "fixtures/valid/ok.json") {
+		t.Fatalf("expected the refusal to name the 1.1 fixture, got %q", errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the write funnel NEVER to be called, got %d call(s)", len(fake.calls))
+	}
+}
+
+// TestContractPublishOpeningALowerLineHasNoBaseline is Edge 2's own edge:
+// prior versions exist, and NONE of them is older than the one being
+// published. Concretely, a contract whose only published version is 2.0.0,
+// publishing 1.0.0 — opening a lower line while a higher one is live. The
+// fold permits it (contractVersionVerdict refuses only a version key that
+// already exists, and 1.0.0 never has).
+//
+// The old globally-highest rule could not produce this case: it always
+// returned a real prior version. Edge 2's rule can return "none", and the
+// first revision of that call site discarded the `found` bool — so a
+// zero-value 0.0.0 flowed into contractPriorVersionFiles, which git-searches
+// for a descriptor version that was never published and aborted the publish
+// with "no commit found". A confusing hard error on a legal operation.
+//
+// There genuinely IS no baseline here, so this publish is treated exactly as
+// a first publish is: no compatibility computed, and gated for human review.
+//
+// TEETH: restore `baseline, _ := contractSelectBaseline(...)` and this test
+// reds with a resolve error instead of a gated success.
+func TestContractPublishOpeningALowerLineHasNoBaseline(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	gitRun(t, mirrorDir, "init", "-b", "main")
+
+	writeContractDescriptor(t, mirrorDir, "maint", "2.0.0")
+	writeMirrorFile(t, mirrorDir, "axon/provides/maint/schema/main.schema.json", `{"type":"object","properties":{"x":{"type":"string"}}}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/maint/fixtures/valid/ok.json", `{"x":"z"}`)
+	gitRun(t, mirrorDir, "add", "-A")
+	gitRun(t, mirrorDir, "commit", "-m", "publish 2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-maint", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"publish", "--version", "1.0.0", "XC-axon-maint"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 (no prior version is older than 1.0.0, so there is nothing to compare "+
+			"against — the same situation as a first publish); stderr=%s", code, errOut.String())
+	}
+	if strings.Contains(errOut.String(), "no commit") {
+		t.Fatalf("the publish tried to resolve a baseline that does not exist: %q", errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	if !strings.Contains(fake.calls[0].PRBody, "ADVISORY GATE") {
+		t.Fatalf("expected the publish to be GATED — with no baseline there is no computed compatibility, "+
+			"so it gets the same human review a first publish gets; PRBody=%q", fake.calls[0].PRBody)
+	}
+}
+
 // appendVersionToLatestEvent appends a `version:` line to the most
 // recently written event file under mirrorDir/system/events/**/*.yaml —
 // writeLifecycleEvent's own minimal content has no version field, and
@@ -1017,7 +1159,7 @@ func extractAnnouncementTo(t *testing.T, files []space.FileWrite) []string {
 
 // TestContractDeprecateAddressesRegisteredConsumers is F3/T4 (AC-971.1,
 // AC-971.2): the deprecation announcement's `to:` is the registered-
-// consumer set (contractFindRegisteredConsumers), not the descriptor's own
+// consumer set (cache.FindRegisteredConsumers), not the descriptor's own
 // authoring-time `to:`. The descriptor here carries `to: [beta]`
 // (writeContractDescriptor's own fixed shape); `gamma` is registered ONLY
 // via a `consumes.yaml` entry (the `contract adopt` shape) and never
@@ -1058,9 +1200,9 @@ func TestContractDeprecateAddressesRegisteredConsumers(t *testing.T) {
 // --override`'s own `retired-unacked` note (see
 // TestContractRetireOverrideFullPreconditionSucceeds — that note IS the
 // registered-consumer set the retire precondition reads, per
-// contractBuildRetirePrecondition/contractFindRegisteredConsumers) must be
+// contractBuildRetirePrecondition/cache.FindRegisteredConsumers) must be
 // the SAME set, because both are computed by calling
-// contractFindRegisteredConsumers(mirrorDir, contractID) — literally the
+// cache.FindRegisteredConsumers(mirrorDir, contractID) — literally the
 // one function, not two independently-written call sites that happen to
 // agree today. Materializing deprecate's own committed files into the
 // mirror (as a real commit would) and then running retire against that
@@ -1073,10 +1215,10 @@ func TestContractDeprecateAddressesRegisteredConsumers(t *testing.T) {
 // are equal in THIS test only because nobody has acked and nobody has
 // `left` — not because the two computations are defined to always match on
 // every input, only because they both start from the same
-// contractFindRegisteredConsumers query.
+// cache.FindRegisteredConsumers query.
 //
 // Reverting runDeprecate's `to:` back to `probe.To`, or computing the
-// addressee set any other way than calling contractFindRegisteredConsumers
+// addressee set any other way than calling cache.FindRegisteredConsumers
 // directly, reds this test: the descriptor's own `to: [beta]` differs from
 // the two-system registered set `[beta gamma]` that retire's own
 // `retired-unacked` note independently proves is correct.
@@ -1242,6 +1384,208 @@ func TestContractDeprecateRetireDefaultWithOneVersion(t *testing.T) {
 			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
 		}
 	})
+}
+
+// TestContractRetireSucceedsWhileAnotherVersionPublished is P4's AC-7/AC-9
+// (04-per-version-lifecycle.plan.md): `publish 2.0 -> deprecate 1.0 ->
+// retire 1.0` while 2.0 stays published and consumed. Before P4 this was
+// blocked by POL-011, a fail-closed stopgap for internal/fold's then
+// SUBJECT-scoped table (retiring 1.0 legally moved the whole contract
+// SUBJECT to Retired, bricking 2.0's own future publish/deprecate). P4
+// turns on internal/fold's per-version engine and deletes POL-011 in the
+// same wave (agent-ops-2026-07 wave 4): fold.CheckCandidate now answers
+// per VERSION (Versions["1.0.0"] == deprecated is independently legal to
+// retire, regardless of Versions["2.0.0"] == published), so this exact
+// sequence — the everyday rolling-window case P4 exists to enable — now
+// SUCCEEDS instead of refusing. Re-pinned from "refused (POL-011, exit
+// 2)" to "succeeds (exit 0, one funnel call)".
+func TestContractRetireSucceedsWhileAnotherVersionPublished(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "guarded", "2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-guarded", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-guarded", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 2, "XC-axon-guarded", "deprecate", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"retire", "--version", "1.0.0", "XC-axon-guarded"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 (P4: per-version retire, 2.0.0 stays published); stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+}
+
+// TestContractRetireBothCycleOrdersSucceed is P4's AC-P4.2
+// (04-per-version-lifecycle.plan.md): the two §5.4 event orders that
+// differ only in WHEN 1.0 is deprecated relative to 2.0's publish must
+// BOTH complete a `retire --version 1.0.0`, in either order, rather than
+// completing in one and refusing (or bricking the contract) in the
+// other. Before P4, internal/fold's SUBJECT-scoped table made this
+// order-dependent: "deprecate then publish" left the subject Published
+// (no (Published, retire) row — LFC-001) while "publish then deprecate"
+// left it Deprecated and reachable, but only past POL-011's own
+// still-published-elsewhere guard (deleted this wave). P4's per-version
+// engine answers both orders identically because it tracks 1.0 and 2.0
+// independently: 1.0 deprecated is retireable regardless of when 2.0
+// published relative to it. Re-pinned from "both refuse (one via
+// LFC-001, one via POL-011)" to "both succeed" — this is the exact
+// defect spec 02/agent-ops-2026-07 P2 filed and P4 now fixes at its
+// root, so the two orders converging is not a coincidence to merely
+// tolerate.
+func TestContractRetireBothCycleOrdersSucceed(t *testing.T) {
+	t.Parallel()
+
+	t.Run("deprecate_then_publish_succeeds", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeContractDescriptor(t, mirrorDir, "order-a", "2.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-order-a", "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-order-a", "deprecate", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 2, "XC-axon-order-a", "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"retire", "--version", "1.0.0", "XC-axon-order-a"}, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0 (P4: 1.0 deprecated is independently retireable); stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+	})
+
+	t.Run("publish_then_deprecate_succeeds", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeContractDescriptor(t, mirrorDir, "order-b", "2.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-order-b", "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-order-b", "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 2, "XC-axon-order-b", "deprecate", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"retire", "--version", "1.0.0", "XC-axon-order-b"}, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0 (P4: 1.0 deprecated is independently retireable); stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+	})
+}
+
+// TestContractRetireNotBlockedByConsumerOnAnotherMajor is epic AC-9
+// (04-per-version-lifecycle.md §4, Edge 1): a consumer registered on a
+// DIFFERENT major must not block retiring this line forever. "beta"
+// registers via consumes.yaml at major 2 while 1.0 is the line being
+// retired (2.0 stays published) — before the fix, the retire path's
+// consumer scan was CONTRACT-scoped (every registered system, regardless
+// of which major it consumes), so beta's major-2
+// registration would block this retire forever even though beta never
+// depends on the 1.x line, and no deprecation announcement even exists to
+// ack against. TEETH: calling the unscoped consumer query from the retire
+// path (or dropping cache.FindRegisteredConsumersForMajor's own major
+// filter) reds this test with POL-006 — verified by reverting the filter
+// and re-running (see this wave's own report).
+func TestContractRetireNotBlockedByConsumerOnAnotherMajor(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "majorgap", "2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-majorgap", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-majorgap", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 2, "XC-axon-majorgap", "deprecate", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	// "beta" depends on the 2.x line only — never the 1.x line being retired.
+	writeMirrorFile(t, mirrorDir, "beta/consumes.yaml",
+		"schema: consumes/v1\nsystem: beta\ndependencies:\n  - contract: XC-axon-majorgap\n    major: 2\n    since: \"2026-01-01\"\n")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"retire", "--version", "1.0.0", "XC-axon-majorgap"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 (AC-9: a major-2 consumer must not block retiring the 1.x line); stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 1 || fake.calls[0].PRBody != "" {
+		t.Fatalf("expected an ungated retire (no consumer registered on the major being retired), got %+v", fake.calls)
+	}
+}
+
+// TestContractRetireGuardAllowsSolePublishedVersion is spec 02's AC-2.2
+// regression guard — the single named regression risk: retiring the
+// ONLY published version, the everyday unremarkable case, must keep
+// working exactly as before this phase.
+func TestContractRetireGuardAllowsSolePublishedVersion(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "sole", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-sole", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-sole", "deprecate", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"retire", "XC-axon-sole"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 (sole published version, the guard must not block it); stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+}
+
+// TestContractRetireGuardNormalizesVersionComparison guards against a
+// review finding made while writing this guard: contractResolveVersionOrRefuse
+// returns retiredVersion VERBATIM (the raw descriptor `version:` spelling),
+// never reformatted through contractSemver — so the guard must compare
+// PARSED contractSemver values, not raw strings, or a non-canonically
+// spelled sole version (a redundant leading zero here) would fail to
+// exclude itself from "still published", and the guard would wrongly
+// refuse the everyday case AC-2.2 protects.
+func TestContractRetireGuardNormalizesVersionComparison(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	// The spellings MUST differ across the events. `publish` records its own
+	// parsed value; `deprecate`/`retire` record the operator's --version
+	// verbatim. Writing the same literal twice passes against the raw-string
+	// bug — the deprecate already unsets the key the delete would remove —
+	// and so proves nothing. This fixture is the wiring half; the
+	// discriminating unit repro lives in internal/validate.
+	writeContractDescriptor(t, mirrorDir, "normalize", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-normalize", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-normalize", "deprecate", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "01.0.0")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"retire", "XC-axon-normalize"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 (a non-canonical spelling of the sole version must still exclude itself); stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
 }
 
 // TestContractDeprecateDeterministicAnnouncementID is HIGH-1's own
