@@ -23,10 +23,12 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -144,6 +146,36 @@ func contractBump(prior contractSemver, kind string) contractSemver {
 	default:
 		return prior
 	}
+}
+
+// contractSelectBaseline mirrors internal/cli's own copy (ADR-001:
+// internal/mcp never imports internal/cli) — P4 wave 5's Edge 2
+// (04-per-version-lifecycle.md §4): the baseline is
+// max{v ∈ priorVersions : v < newVersion}, NOT necessarily the
+// globally-highest published version (`priorVersions[len(priorVersions)-1]`,
+// this file's own former rule). The DECISION itself lives in
+// internal/version.Baseline, shared with internal/cli's own copy of this
+// same bridge (decision 8, 04-per-version-lifecycle.plan.md); this is only
+// the adapter between contractSemver's own numeric shape and that
+// string-based rule. Every contractSemver.String() is always a
+// well-formed dotted-integer version, so version.Baseline can only ever
+// fail on an input this function itself produced wrong — never a
+// caller-reachable path — and such a failure is treated the same as "not
+// found" (the zero value, false).
+func contractSelectBaseline(priorVersions []contractSemver, newVersion contractSemver) (contractSemver, bool) {
+	published := make([]string, len(priorVersions))
+	for i, v := range priorVersions {
+		published[i] = v.String()
+	}
+	baseline, found, err := version.Baseline(published, newVersion.String())
+	if err != nil || !found {
+		return contractSemver{0, 0, 0}, false
+	}
+	parsed, perr := contractParseSemver(baseline)
+	if perr != nil {
+		return contractSemver{0, 0, 0}, false
+	}
+	return parsed, true
 }
 
 var contractDigestSubtrees = []string{"schema", "fixtures"}
@@ -399,9 +431,13 @@ func newContractPublishHandler(deps ContractDeps) HandlerFunc {
 		priorVersions := contractPublishedVersions(all, in.ID)
 		isFirstPublish := len(priorVersions) == 0
 
-		baseline := contractSemver{0, 0, 0}
+		// bumpSource is the globally-highest published version — `bump`
+		// must choose it BEFORE newVersion is known (Edge 2's own
+		// documented consequence, 04-per-version-lifecycle.md §4), so a
+		// maintenance-line publish uses an explicit `version` instead.
+		bumpSource := contractSemver{0, 0, 0}
 		if !isFirstPublish {
-			baseline = priorVersions[len(priorVersions)-1]
+			bumpSource = priorVersions[len(priorVersions)-1]
 		}
 
 		var newVersion contractSemver
@@ -411,8 +447,16 @@ func newContractPublishHandler(deps ContractDeps) HandlerFunc {
 				return nil, "", fmt.Errorf("contract publish: %w", err)
 			}
 		} else {
-			newVersion = contractBump(baseline, in.Bump)
+			newVersion = contractBump(bumpSource, in.Bump)
 		}
+
+		// baseline is Edge 2's own rule (max{v ∈ priorVersions : v <
+		// newVersion}) — NOT bumpSource above once newVersion names a
+		// maintenance line (AC-8). The two agree whenever newVersion came
+		// from `bump` (bumpSource is by construction the highest prior
+		// version strictly less than its own bump), so ordinary sequential
+		// publishing never regresses.
+		baseline, _ := contractSelectBaseline(priorVersions, newVersion)
 
 		verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, in.ID, fold.TPublish, newVersion.String(), actor)
 		if err != nil {
@@ -673,12 +717,13 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract deprecate: render announcement failed: %w", err)
 		}
 		// F3/T4 (AC-971.1, AC-971.2): the announcement's addressees are the
-		// registered-consumer set — the SAME contractFindRegisteredConsumers
-		// query the retire precondition reads — not the descriptor's own
+		// registered-consumer set — the SAME cache.FindRegisteredConsumers
+		// family the retire precondition reads (unscoped here; retire's own
+		// read is major-scoped, Edge 1) — not the descriptor's own
 		// authoring-time `to:`. "Who blocks my retire" and "who was told"
-		// become one query instead of two that can drift apart (mirrors
-		// internal/cli's own copy — ADR-001: internal/mcp never imports
-		// internal/cli).
+		// share one underlying query instead of two that can drift apart
+		// (mirrors internal/cli's own copy — ADR-001: internal/mcp never
+		// imports internal/cli).
 		to, err := contractDeprecateAddressees(deps.MirrorDir, in.ID, probe.From, probe.To)
 		if err != nil {
 			return nil, "", fmt.Errorf("contract deprecate: %w", err)
@@ -841,13 +886,13 @@ func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 	}
 }
 
-func contractBuildRetirePrecondition(mirrorDir string, manifest space.Manifest, contractID, version string, override, actorIsHuman bool, now time.Time) (validate.RetirePrecondition, error) {
+func contractBuildRetirePrecondition(mirrorDir string, manifest space.Manifest, contractID, contractVersion string, override, actorIsHuman bool, now time.Time) (validate.RetirePrecondition, error) {
 	all, err := readAllEvents(mirrorDir)
 	if err != nil {
 		return validate.RetirePrecondition{}, err
 	}
 
-	announcementID, sunset, err := contractFindDeprecationAnnouncement(mirrorDir, contractID, version)
+	announcementID, sunset, err := contractFindDeprecationAnnouncement(mirrorDir, contractID, contractVersion)
 	if err != nil {
 		return validate.RetirePrecondition{}, err
 	}
@@ -869,7 +914,18 @@ func contractBuildRetirePrecondition(mirrorDir string, manifest space.Manifest, 
 		}
 	}
 
-	consumerSystems, err := contractFindRegisteredConsumers(mirrorDir, contractID)
+	// Edge 1 (04-per-version-lifecycle.md §4, AC-9): the retire gate's
+	// registered-consumer scan is scoped to the MAJOR being retired — see
+	// internal/cli's own contractBuildRetirePrecondition for the full
+	// rationale (ADR-001: mirrored here, never imported). contractVersion
+	// has already been resolved (never "" at this call site), so an
+	// unparseable value here would be this function's own bug; fail CLOSED
+	// all the same.
+	major, err := version.Major(contractVersion)
+	if err != nil {
+		return validate.RetirePrecondition{}, fmt.Errorf("mcp: %s: %w", contractVersion, err)
+	}
+	consumerSystems, err := cache.FindRegisteredConsumersForMajor(mirrorDir, contractID, major)
 	if err != nil {
 		return validate.RetirePrecondition{}, err
 	}
@@ -925,78 +981,18 @@ func contractFindDeprecationAnnouncement(mirrorDir, contractID, version string) 
 	return "", "", nil
 }
 
-func contractFindRegisteredConsumers(mirrorDir, contractID string) (map[string]bool, error) {
-	out := map[string]bool{}
-
-	reqMatches, err := filepath.Glob(filepath.Join(mirrorDir, "*", "requires", "XR-*.md"))
-	if err != nil {
-		return nil, err
-	}
-	for _, m := range reqMatches {
-		raw, rerr := readBoundedFile(m, maxMirrorEventBytes)
-		if rerr != nil {
-			return nil, rerr
-		}
-		fm, ferr := artifact.ParseFrontmatter(raw)
-		if ferr != nil {
-			continue
-		}
-		var probe struct {
-			ID             string `yaml:"id"`
-			From           string `yaml:"from"`
-			TargetContract string `yaml:"target_contract"`
-		}
-		if yaml.Unmarshal(fm.YAML, &probe) != nil || probe.TargetContract != contractID {
-			continue
-		}
-		all, aerr := readAllEvents(mirrorDir)
-		if aerr != nil {
-			return nil, aerr
-		}
-		events := foldEvents(all, probe.ID)
-		var state fold.State
-		if len(events) == 0 {
-			state = fold.NewResult(fold.KindRequirement).State
-		} else {
-			state = fold.Fold(fold.KindRequirement, fold.Envelope{ID: probe.ID, Kind: fold.KindRequirement, From: probe.From}, events, func(string) fold.MembershipStatus { return fold.MembershipMember }).State
-		}
-		if state == fold.StateSatisfied {
-			out[probe.From] = true
-		}
-	}
-
-	consumesMatches, err := filepath.Glob(filepath.Join(mirrorDir, "*", "consumes.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	for _, m := range consumesMatches {
-		raw, rerr := readBoundedFile(m, maxMirrorEventBytes)
-		if rerr != nil {
-			return nil, rerr
-		}
-		registry, cerr := contractParseConsumesStrict(raw, m)
-		if cerr != nil {
-			// FAIL CLOSED — see internal/cli's own copy: an unreadable
-			// registry must never round down to "consumes nothing", or a
-			// retire runs out from under a subscribed system.
-			return nil, cerr
-		}
-		for _, d := range registry.Dependencies {
-			if d.Contract == contractID {
-				out[registry.System] = true
-			}
-		}
-	}
-	return out, nil
-}
-
 // contractDeprecateAddressees is F3/T4 (AC-971.1, AC-971.2): who a
-// deprecation announcement is addressed to. Computed from the SAME
-// contractFindRegisteredConsumers query the retire precondition reads —
-// "who blocks retire" and "who was told" are one query, not two that can
-// silently disagree. Sorted (contractFindRegisteredConsumers returns a
-// map), deduped, and excludes the contract's OWN `from` system — a producer
-// does not address itself.
+// deprecation announcement is addressed to. Computed from the SAME D-022
+// registered-consumer query the retire precondition reads
+// (cache.FindRegisteredConsumers — P4 wave 5 decision 8: this scan moved
+// down to internal/cache, ONE home shared with internal/cli, so "who
+// blocks retire" and "who was told" stay one query rather than two that can
+// silently disagree). UNSCOPED by major, deliberately — Edge 1
+// (04-per-version-lifecycle.md §4) scopes the RETIRE gate only; a
+// deprecation announcement still addresses every registered consumer
+// regardless of major, unchanged from before this wave. Sorted
+// (cache.FindRegisteredConsumers returns a map), deduped, and excludes the
+// contract's OWN `from` system — a producer does not address itself.
 //
 // An EMPTY registered-consumer set (nobody has adopted this contract yet)
 // falls back to fallback (the descriptor's own authoring-time `to:`):
@@ -1007,7 +1003,7 @@ func contractFindRegisteredConsumers(mirrorDir, contractID string) (map[string]b
 // invalid `to: null` announcement. Mirrors internal/cli's own copy —
 // ADR-001: internal/mcp never imports internal/cli.
 func contractDeprecateAddressees(mirrorDir, contractID, from string, fallback []string) ([]string, error) {
-	consumers, err := contractFindRegisteredConsumers(mirrorDir, contractID)
+	consumers, err := cache.FindRegisteredConsumers(mirrorDir, contractID)
 	if err != nil {
 		return nil, err
 	}
@@ -1262,22 +1258,4 @@ func contractUpsertDependency(registry space.Consumes, dep space.Dependency) (sp
 		return registry.Dependencies[i].Contract < registry.Dependencies[j].Contract
 	})
 	return registry, true
-}
-
-// contractParseConsumesStrict parses a committed consumes.yaml and refuses
-// anything that is not a real consumes/v1 registry (mirrors internal/cli's
-// own copy — ADR-001: internal/mcp never imports internal/cli). A
-// wrong-shaped file like `consumes: []` unmarshals cleanly into a
-// zero-valued struct, which is indistinguishable from "no dependencies".
-func contractParseConsumesStrict(raw []byte, path string) (space.Consumes, error) {
-	registry, err := space.ParseConsumes(raw)
-	if err != nil {
-		return space.Consumes{}, fmt.Errorf("mcp: %s is not valid yaml: %w", path, err)
-	}
-	if registry.Schema != "consumes/v1" || registry.System == "" {
-		return space.Consumes{}, fmt.Errorf(
-			"mcp: %s is not a consumes/v1 registry (needs `schema: consumes/v1`, `system: <id>`, `dependencies: [...]`) — "+
-				"refusing to treat it as \"no registered consumers\"; fix the file (or write it with contract adopt)", path)
-	}
-	return registry, nil
 }

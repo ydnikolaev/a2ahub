@@ -47,6 +47,133 @@ func TestOlderThan(t *testing.T) {
 	}
 }
 
+// TestMajor pins Major's extraction and its fail-closed shape (P4 wave 5,
+// Edge 1: the retire gate's major filter).
+func TestMajor(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name         string
+		in           string
+		want         int
+		wantParseErr bool
+	}{
+		{name: "bare major", in: "1.2.3", want: 1},
+		{name: "v prefix tolerated", in: "v2.0.0", want: 2},
+		{name: "missing components default to 0", in: "3", want: 3},
+		{name: "major zero", in: "0.9.9", want: 0},
+		{name: "unparseable fails closed", in: "not-a-version", wantParseErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := Major(tc.in)
+			if tc.wantParseErr {
+				if !errors.Is(err, ErrInvalidVersion) {
+					t.Fatalf("Major(%q) error = %v, want ErrInvalidVersion", tc.in, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Major(%q): %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Fatalf("Major(%q) = %d, want %d", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestBaseline pins P4 wave 5's Edge 2 rule: baseline = max{v ∈ published :
+// v < target}, NOT the globally-highest published version. The maintenance-
+// line case (AC-8) is the one that matters most: publishing 1.2 while 2.0
+// is already published must compare against 1.1, not 2.0.
+func TestBaseline(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name         string
+		published    []string
+		target       string
+		wantBaseline string
+		wantFound    bool
+		wantParseErr bool
+	}{
+		{
+			name:      "first-ever publish has no baseline",
+			published: nil,
+			target:    "1.0.0",
+			wantFound: false,
+		},
+		{
+			name:         "ordinary sequential publish picks the immediate prior",
+			published:    []string{"1.0.0"},
+			target:       "2.0.0",
+			wantBaseline: "1.0.0",
+			wantFound:    true,
+		},
+		{
+			name:         "maintenance line: 1.2 while 2.0 published compares against 1.1, not 2.0 (AC-8)",
+			published:    []string{"1.0.0", "1.1.0", "2.0.0"},
+			target:       "1.2.0",
+			wantBaseline: "1.1.0",
+			wantFound:    true,
+		},
+		{
+			name:      "target equal to a published version is not < it, so it is excluded",
+			published: []string{"1.0.0", "1.0.0"},
+			target:    "1.0.0",
+			wantFound: false,
+		},
+		{
+			name:         "unordered input still finds the correct max",
+			published:    []string{"2.0.0", "1.0.0", "1.1.0"},
+			target:       "1.2.0",
+			wantBaseline: "1.1.0",
+			wantFound:    true,
+		},
+		{
+			name:      "downgrade below every published version has no baseline",
+			published: []string{"1.0.0", "2.0.0"},
+			target:    "0.5.0",
+			wantFound: false,
+		},
+		{
+			name:         "unparseable target fails closed",
+			published:    []string{"1.0.0"},
+			target:       "not-a-version",
+			wantParseErr: true,
+		},
+		{
+			name:         "unparseable published entry fails closed",
+			published:    []string{"not-a-version"},
+			target:       "1.0.0",
+			wantParseErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			baseline, found, err := Baseline(tc.published, tc.target)
+			if tc.wantParseErr {
+				if !errors.Is(err, ErrInvalidVersion) {
+					t.Fatalf("Baseline(%v, %q) error = %v, want ErrInvalidVersion", tc.published, tc.target, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Baseline(%v, %q): %v", tc.published, tc.target, err)
+			}
+			if found != tc.wantFound {
+				t.Fatalf("Baseline(%v, %q) found = %v, want %v", tc.published, tc.target, found, tc.wantFound)
+			}
+			if found && baseline != tc.wantBaseline {
+				t.Fatalf("Baseline(%v, %q) = %q, want %q", tc.published, tc.target, baseline, tc.wantBaseline)
+			}
+		})
+	}
+}
+
 // TestCanonical pins the normalisation POL-011 depends on, and the reason it
 // exists: `contract publish` writes its own parsed value while `deprecate`
 // and `retire` write the operator's `--version` verbatim, so one version can
