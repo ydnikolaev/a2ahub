@@ -132,9 +132,70 @@ func TestNewServerFromConfigNoConnectedSpaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewServerFromConfig: %v", err)
 	}
-	names := server.registry.ToolNames()
-	if len(names) != 6 {
-		t.Fatalf("expected exactly the 6 read-only tools with no connected space, got %v", names)
+	assertSpaceFreeSurface(t, server.registry.ToolNames())
+}
+
+// spaceFreeToolNames is what a session with no usable space must offer:
+// `a2a_read` over the local cache, and `a2a_whatsnew` over the embedded
+// corpus. Sorted, because ToolNames() is.
+//
+// It used to be six names — `a2a_inbox`, `a2a_outbox`, `a2a_show`,
+// `a2a_thread`, `a2a_search`, `a2a_contracts` — the pre-P15 per-verb read
+// tools, kept alive by wire.go's own copy of the registration long after
+// BuildRegistry folded them into `a2a_read`'s `view` enum. tools_test's
+// `removed` list asserts those exact names are ABSENT from the connected
+// surface, so the two registries disagreed on what the read tools are
+// CALLED, and the catalogue an agent reads documented only one of them.
+var spaceFreeToolNames = []string{"a2a_read", "a2a_whatsnew"}
+
+// assertSpaceFreeSurface checks what a degraded session offers, TWICE, and the
+// second check is the one that catches a new fork.
+//
+// The literal comparison is the readable half: it says out loud which two tools
+// a session with no usable space serves. On its own it is weak — a literal can
+// always be edited to match whatever the code now does, which is how the six
+// retired names survived every release since v0.1.0 here.
+//
+// So the second half resolves the connected surface from BuildRegistry and
+// requires every offered name to exist there too. A degraded session must offer
+// FEWER tools than a healthy one, never DIFFERENT ones: an agent that learns a
+// tool name with no space connected must still find it after connecting, and
+// `skill/a2ahub/reference/commands.md` — the skill-drift-gated catalogue an
+// agent actually reads — is generated from the connected registry alone, so a
+// name only the degraded path serves is a name nothing documents.
+//
+// It matters that this runs on `names` from a server built by
+// NewServerFromConfig, not on a registry the test assembles itself. Asserting
+// the subset against a registry built by calling registerSpaceFree would be a
+// TAUTOLOGY, since BuildRegistry composes that same function — it could never
+// fail. Reading the real wire path is what makes a second registration added
+// there visible, and that was verified by planting one.
+//
+// The ceiling, stated so nobody credits this with more than it does: for the
+// same compositional reason, the subset half cannot see a wrong name added
+// INSIDE registerSpaceFree — BuildRegistry would then serve it too. That case
+// is the literal's, which is why both halves are here.
+func assertSpaceFreeSurface(t *testing.T, names []string) {
+	t.Helper()
+
+	if len(names) != len(spaceFreeToolNames) {
+		t.Fatalf("space-free surface = %v, want exactly %v", names, spaceFreeToolNames)
+	}
+	for i, want := range spaceFreeToolNames {
+		if names[i] != want {
+			t.Fatalf("space-free surface = %v, want exactly %v", names, spaceFreeToolNames)
+		}
+	}
+
+	connected := BuildRegistry(nil, WriteDeps{}, "", nil, NewDeps{})
+	for _, name := range names {
+		if _, ok := connected.Get(name); !ok {
+			t.Errorf("this session offers %q and a CONNECTED session does not — a degraded surface "+
+				"must be a subset of the healthy one, never a different set of names. That is the "+
+				"defect P15 left behind: wire.go kept registering a2a_inbox/outbox/show/thread/"+
+				"search/contracts after BuildRegistry folded them into a2a_read's view enum, so the "+
+				"onboarding session was served six tool names nothing documents.", name)
+		}
 	}
 }
 
@@ -191,9 +252,7 @@ func TestNewServerFromConfigUnreachableSpaceStillServesReads(t *testing.T) {
 		t.Fatalf("an unreachable space must not stop the server from starting: %v", err)
 	}
 	names := server.registry.ToolNames()
-	if len(names) != 6 {
-		t.Fatalf("expected exactly the 6 read tools when the space is unreachable, got %v", names)
-	}
+	assertSpaceFreeSurface(t, names)
 	// Exact names, not substrings: `a2a_contracts` (plural) is a READ tool
 	// and `a2a_contract` (singular) is the write one — a substring match
 	// cannot tell them apart and would fail on a correct registry.
