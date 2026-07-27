@@ -1,0 +1,233 @@
+schema: release-notes/v1
+version: "0.13.0"
+released: "2026-07-28"
+headline: "A contract's versions now hold independent states, so the deprecation cycle finishes instead of bricking the contract, a maintenance release is compared against its own line, and a consumer who adopts late still hears that the contract is sunsetting"
+changes:
+  - id: RN-01300-1
+    kind: break
+    impact: high
+    subject: "The contract lifecycle is per VERSION, and the cycle that used to destroy a contract now completes"
+    detail: >
+      This is the release the previous one told you to wait for. Read it
+      before your first contract evolution; it changes what several commands
+      answer.
+      Until now a contract's lifecycle was recorded per CONTRACT. One state
+      for the whole thing, with no way out of `retired`. So the steady state
+      of a maintained interface — 1.0 published, 1.1 published, 2.0
+      published, 1.x deprecated with a sunset, 0.x retired, all at once —
+      could not be written down at all, and the documented deprecation cycle
+      behaved differently depending on the order you took its steps in. One
+      order refused loudly. The other committed and left the whole contract
+      permanently inoperable while a newer version was live and being
+      consumed by the other side.
+      Versions now hold their own states. `deprecate 1.0` while 2.0 is
+      published leaves the contract `published`, because it is — 2.0 is live.
+      `retire 1.0` in that situation SUCCEEDS, and is the ordinary act it
+      should always have been. Both orders of the cycle complete.
+      The contract-level state every read surface shows you is now a
+      projection over the versions: published while any version is
+      published, deprecated once every published version is deprecated,
+      retired when they all are. So inbox, statusline, thread and the retire
+      precondition keep answering the same question and start answering it
+      truthfully.
+      POL-011 — 0.12.0's fail-closed guard, which refused the retire rather
+      than let it brick the contract — is REMOVED. It existed only until
+      this shipped.
+      If you already reached the broken state, nothing needs undoing: state
+      is recomputed from immutable history on every read and every event
+      carries its own version, so upgrading repairs the contract. What
+      exactly changes for an existing history is listed separately below.
+    affects: ["a2a contract publish", "a2a contract deprecate", "a2a contract retire", "a2a inbox", "a2a thread", "a2a_contract"]
+    action:
+      scope: local
+      why: >
+        Nothing to migrate and no flag to set — but a retire you were told
+        was impossible is now available, and a contract you believed was
+        dead may not be. Re-read the contracts you had given up on.
+      run:
+        - "a2a sync"
+        - "a2a contracts            # a contract you thought was retired may be live again"
+
+  - id: RN-01300-2
+    kind: fix
+    impact: high
+    subject: "A maintenance release is compared against its own line, not against the newest major"
+    detail: >
+      Publishing 1.2 while 2.0 exists — the normal act during a sunset
+      window — compared 1.2's schema against 2.0's fixtures, minted 2.1 under
+      `--bump minor`, and computed the major-bump gate against the wrong
+      line entirely. The baseline was whichever version was globally
+      highest, regardless of which line you were publishing on.
+      The baseline is now the highest published version strictly BELOW the
+      one you are publishing. The old behaviour is that rule's special case,
+      for when the new version happens to be the highest.
+      Two consequences worth knowing rather than discovering. `--bump` still
+      bumps the globally-highest version, because it has to choose before it
+      knows your target — so publish a maintenance release with an explicit
+      `--version`, the same way `deprecate` and `retire` already require
+      one. And a publish with no prior version below it (opening a lower
+      line while a higher one is live) has no baseline at all: it computes
+      no compatibility and is gated for human review, exactly as a first
+      publish is.
+    affects: ["a2a contract publish", "a2a_contract"]
+    action:
+      scope: local
+      why: >
+        Only if you maintain more than one line. A minor or patch published
+        on an older line under `--bump` picked the wrong baseline before
+        this; use `--version` and the comparison lands where you meant it.
+      run:
+        - "a2a contract publish --version 1.2.0 <XC-id>   # not --bump, on a maintenance line"
+
+  - id: RN-01300-3
+    kind: fix
+    impact: high
+    subject: "A consumer on a newer major no longer blocks retiring an old line forever"
+    detail: >
+      The retire precondition asked whether every registered consumer of the
+      CONTRACT had acknowledged the deprecation. A consumer pinned to major
+      2 therefore blocked retiring the 1.x line indefinitely — they had
+      nothing to acknowledge, and no way to stop blocking you.
+      It now asks about consumers registered on the major being retired.
+      Their pin is already in `consumes.yaml`; no registry change, no
+      migration.
+      The deprecation ANNOUNCEMENT is deliberately unaffected and still goes
+      to every registered consumer on any major. So "who was told" is the
+      larger set and "who can block me" the smaller one — a consumer on
+      major 2 hears that 1.x is sunsetting and is simply not standing in
+      the way of it.
+    affects: ["a2a contract retire", "a2a_contract"]
+    action:
+      scope: none
+      why: >
+        Nothing to run. A retire that was permanently blocked may now
+        proceed once the consumers on that line have acknowledged.
+
+  - id: RN-01300-4
+    kind: fix
+    impact: high
+    subject: "A consumer who adopts DURING a sunset window now sees the deprecation that was announced before they arrived"
+    detail: >
+      A deprecation announcement's `to:` is computed once, when the producer
+      runs `deprecate`, and then frozen. The announcement's id is derived
+      without the recipient set, so re-running the command after a new
+      `adopt` is deduplicated by the write funnel and the newcomer is never
+      addressed. Adopt during a sunset window and you were simply never
+      told — permanently, and with nothing to notice.
+      Under a rolling window, deprecations are the steady state rather than
+      an occasional event, so this stopped being an edge case.
+      Your inbox no longer asks `to:` alone: an announcement whose
+      `deprecates:` names a contract in your own `consumes.yaml` is yours,
+      addressed or not. `to:` becomes a courtesy snapshot — still honoured,
+      never authoritative.
+      It is a union, never a swap. If you were named in `to:` and have since
+      removed the dependency, the announcement stays in your inbox while you
+      migrate off; nothing disappears.
+      One degradation is deliberate and reported rather than silent: if your
+      own `consumes.yaml` cannot be read, the inbox falls back to `to:`
+      alone and names the file in its skipped-files advisory. The retire
+      gate fails CLOSED on that same input, for the opposite reason —
+      there, unreadable means "I cannot prove nobody depends on this".
+    affects: ["a2a inbox", "a2a statusline", "a2a_read"]
+    action:
+      scope: local
+      why: >
+        Run your inbox after upgrading: a deprecation announced before you
+        adopted may be waiting, and it may already be inside its sunset
+        window.
+      run:
+        - "a2a sync"
+        - "a2a inbox --actionable"
+
+  - id: RN-01300-5
+    kind: fix
+    impact: high
+    subject: "A consumer registered by a satisfied requirement now actually blocks retire — that half of the check never fired"
+    detail: >
+      A system counts as a registered consumer of a contract in two ways: a
+      `consumes.yaml` entry, or a satisfied requirement naming the contract
+      as its `target_contract`. The second half could never fire.
+      The scan folded each candidate requirement with an incomplete
+      envelope, omitting `to:`. A requirement reaches `satisfied` only via
+      an acknowledge by its TARGET, and the authorization check resolves the
+      target from that field — so the acknowledge was rejected, the fold
+      stopped at `published`, and every satisfied requirement in the space
+      read as unsatisfied.
+      The consequence was not cosmetic. A gate written to fail closed was
+      failing OPEN down one of its two branches, invisibly, because the
+      branch never evaluated true rather than because it evaluated wrongly:
+      a consumer who registered by filing a requirement never blocked the
+      retirement of the contract they depend on.
+      If you have been relying on a satisfied requirement as your
+      registration, a retire that previously would have proceeded without
+      your acknowledgement will now wait for it.
+    affects: ["a2a contract retire", "a2a_contract"]
+    action:
+      scope: space
+      why: >
+        The producer side may now find a retire blocked that was not blocked
+        before, by a consumer who was always supposed to be counted. That is
+        the check working. If you cannot identify who is blocking you, the
+        refusal names them.
+
+  - id: RN-01300-6
+    kind: break
+    impact: normal
+    subject: "What re-folding an existing history changes, in full"
+    detail: >
+      State is never stored — it is recomputed from immutable history on
+      every read — so upgrading re-folds every contract you already have.
+      Three subject-state outcomes change, and all three come from ONE
+      correction: the previous engine had an interim rule that let a publish
+      from `deprecated` silently re-publish the contract, and a version
+      number that has already been minted can no longer be published again.
+      A contract that went publish, deprecate, publish-the-same-version now
+      reads `deprecated` where it read `published`: the republish is refused
+      rather than resurrecting it.
+      A contract that then went on to retire reads `retired` where it read
+      `published`: with the bogus republish refused, the version was still
+      deprecated, so the retire — previously blocked — lands. This is the
+      cycle completing, seen as a state change.
+      A contract that deprecated once more after that reads `retired` where
+      it read `deprecated`, for the same reason one step further along.
+      Every one of these is the corrected answer, and every one is reachable
+      only through a history that republished a version number it had
+      already used. A history that publishes each version once is completely
+      unaffected — that is checked by an exhaustive comparison against a
+      frozen copy of the previous engine, over every sequence of contract
+      transitions up to length seven, which is past the point where new
+      differences can appear.
+    affects: ["a2a contracts", "a2a show", "a2a thread", "a2a inbox"]
+    action:
+      scope: local
+      why: >
+        Nothing to run and nothing to repair — the record was never wrong,
+        only its interpretation. Re-read any contract whose state surprises
+        you against the three cases above.
+      run:
+        - "a2a sync"
+
+  - id: RN-01300-7
+    kind: known-issue
+    impact: normal
+    subject: "The per-version lifecycle has not been exercised against a real space with a real counterparty"
+    detail: >
+      Everything above is verified hermetically — unit tests, an exhaustive
+      migration comparison, and an adversarial audit that reproduced each of
+      its findings before reporting them. None of it has run through the
+      live matrix against real GitHub with a second participant.
+      The row that would do it is authored and not dispatched: publish 1.0,
+      1.1, 2.0, deprecate 1.1, publish a maintenance 1.2, retire the 1.0
+      line — in both orders of the deprecation cycle. It needs a real space
+      and a real counterparty, and this release did not have one.
+      Recorded here rather than discovered later. The parts most likely to
+      differ under a real run are the ones a hermetic test structurally
+      cannot see: the write funnel's own deduplication of a re-run
+      `deprecate`, and CI's behaviour on a maintenance-line publish.
+    affects: ["a2a contract publish", "a2a contract deprecate", "a2a contract retire"]
+    action:
+      scope: none
+      why: >
+        Nothing to run. Treat the first real deprecation cycle you perform
+        as the verification it has not had, and report anything that
+        surprises you.
