@@ -232,6 +232,11 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	_, _ = fmt.Fprintln(stdio.Stdout, "init:   a session-start hook running `a2a sync && a2a inbox --actionable`, and a")
 	_, _ = fmt.Fprintln(stdio.Stdout, "init:   scheduled workflow in THIS repo polling it (`--exit-code` gives severity).")
 	_, _ = fmt.Fprintln(stdio.Stdout, "init:   see the skill's onboarding page, \"Making the loop run without a human\"")
+	// Named here for the same reason as the automation pointer above: feed
+	// liveness, retraction, and bindings are conventions on TOP of the
+	// shipped schema, not new fields the templates surface on their own —
+	// an agent that never opens reference/ would not discover them exist.
+	_, _ = fmt.Fprintln(stdio.Stdout, "init:   also see reference/status-announcements.md, retraction.md, and bindings.md")
 	return 0
 }
 
