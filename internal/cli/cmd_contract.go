@@ -476,7 +476,7 @@ func (c *ContractCommand) runNew(ctx context.Context, args []string, stdio IO) i
 		return 2
 	}
 	if slug == "" {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract new <slug> | --slug <slug> [--field k=v]...")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a contract new <slug> | --slug <slug> [--field k=v | k.nested=v]...")
 		return 2
 	}
 	delegated := append([]string{"contract", "--slug", slug}, rest...)

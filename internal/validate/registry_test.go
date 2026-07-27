@@ -201,6 +201,12 @@ func TestRegistryClosure(t *testing.T) {
 		record([]Violation{*v})
 	}
 
+	// POL-010: a frontmatter scalar still carries the template's own
+	// unfilled placeholder token.
+	record(checkUnfilledPlaceholders(map[string]any{
+		"expected_response": map[string]any{"shape": "<what a good answer looks like>"},
+	}))
+
 	for _, code := range append(append(registry.CodesInClass("referential"), registry.CodesInClass("lifecycle")...), registry.CodesInClass("policy")...) {
 		if !produced[code] {
 			t.Errorf("registry code %q is never produced by any exercised path in this test", code)

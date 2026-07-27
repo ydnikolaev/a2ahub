@@ -111,7 +111,7 @@ func (c *NewCommand) Name() string { return "new" }
 
 // Synopsis implements cli.Command.
 func (c *NewCommand) Synopsis() string {
-	return "draft a new artifact from its canonical template: new <type> [--field k=v]... [--body-file <path>]"
+	return "draft a new artifact from its canonical template: new <type> [--field k=v | k.nested=v]... [--body-file <path>]"
 }
 
 // Run implements cli.Command. Exit codes: 2 = usage (missing/unknown
@@ -119,12 +119,12 @@ func (c *NewCommand) Synopsis() string {
 // render/write failure; 0 = success.
 func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a new <type> [--field k=v]... [--body-file <path>] [--thread <id>] [--slug <slug>]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a new <type> [--field k=v | k.nested=v]... [--body-file <path>] [--thread <id>] [--slug <slug>]")
 		return 2
 	}
 	typ := args[0]
 	if IsHelpArg(typ) {
-		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a new <type> [--field k=v]... [--body-file <path>] [--thread <id>] [--slug <slug>]")
+		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a new <type> [--field k=v | k.nested=v]... [--body-file <path>] [--thread <id>] [--slug <slug>]")
 		_, _ = fmt.Fprintln(stdio.Stdout, "types: "+strings.Join(newTypeNames(), " | "))
 		return 0
 	}
@@ -137,7 +137,7 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("new "+typ, flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	var fieldFlags newStringList
-	fs.Var(&fieldFlags, "field", "k=v field override (repeatable)")
+	fs.Var(&fieldFlags, "field", "k=v field override (repeatable); k may be a dotted path into a nested field, e.g. expected_response.shape")
 	bodyFile := fs.String("body-file", "", "path to a file whose contents replace the draft body")
 	thread := fs.String("thread", "", "thread id to attach")
 	slug := fs.String("slug", "", "slug for a standing-type id (required for contract/requirement)")
