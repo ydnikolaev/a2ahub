@@ -8,7 +8,11 @@ package cache
 // internal/validate for this: it only needs the handful of fields its
 // own read-model computation consumes.
 
-import "gopkg.in/yaml.v3"
+import (
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
 
 // refEntry is one envelope/event `refs[]` entry (§5.7 ref grammar).
 type refEntry struct {
@@ -55,6 +59,30 @@ type envelopeProbe struct {
 	// convention.
 	Parent string `yaml:"parent"`
 	Result string `yaml:"result"`
+
+	// Deprecates is announcement/v1's own machine-readable
+	// `deprecates: <XC-id>@<version>` field — written by both surfaces on
+	// every `contract deprecate`. P4's Edge 3 reads it so the read model
+	// can answer "is this deprecation about a contract I depend on"
+	// without consulting the announcement's frozen `to:`.
+	Deprecates string `yaml:"deprecates"`
+}
+
+// deprecatedContractID returns the bare contract id from `deprecates`
+// (`XC-axon-widget@1.2.0` -> `XC-axon-widget`), or "" when the field is
+// absent. The version half is deliberately DISCARDED: Edge 1 scoped the
+// retire GATE to a major, but a deprecation is addressed to every
+// registered consumer on any major — a consumer pinned to major 2 hears
+// that 1.x is sunsetting and is simply not blocked by it. Matching on the
+// version here would silently re-narrow what the skill documents.
+func (e envelopeProbe) deprecatedContractID() string {
+	if e.Deprecates == "" {
+		return ""
+	}
+	if at := strings.IndexByte(e.Deprecates, '@'); at >= 0 {
+		return e.Deprecates[:at]
+	}
+	return e.Deprecates
 }
 
 // to0 returns the exchange's single target system (D-027), or "" if

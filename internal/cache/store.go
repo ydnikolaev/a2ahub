@@ -129,7 +129,7 @@ func (s *Store) index(ctx context.Context) (map[string][]foldedArtifact, map[str
 	out := make(map[string][]foldedArtifact, len(s.spaces))
 	skips := make(map[string][]SkippedFile, len(s.spaces))
 	for _, sm := range s.spaces {
-		fa, sk, err := buildIndex(ctx, sm.SpaceID, sm.Dir, sm.Manifest)
+		fa, sk, err := buildIndex(ctx, sm.SpaceID, sm.Dir, s.ownSystem, sm.Manifest)
 		if err != nil {
 			return nil, nil, fmt.Errorf("cache: Store.index: space %s: %w", sm.SpaceID, err)
 		}
