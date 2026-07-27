@@ -112,7 +112,7 @@ func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string,
 	})
 
 	// --- new / submit / whatsnew (action-free tools, unchanged shape) ----
-	r.Register(ToolSpec{Name: "a2a_new", Description: "draft one or more new artifacts (items[]) on one thread", InputSchema: rawSchema(map[string]string{"items": "array", "thread": "string"}, "items"), Handler: newNewHandler(newDeps)})
+	r.Register(ToolSpec{Name: "a2a_new", Description: "draft one or more new artifacts (items[]) on one thread; an item's fields key may be a dotted path into a nested field, e.g. expected_response.shape", InputSchema: rawSchema(map[string]string{"items": "array", "thread": "string"}, "items"), Handler: newNewHandler(newDeps)})
 	r.Register(ToolSpec{Name: "a2a_submit", Description: "validate (V2) and submit staged draft(s); accepts an id array (OP-220 batch) or a single id", InputSchema: rawSchema(map[string]string{"ids": "array"}, "ids"), Handler: newSubmitHandler(submitDeps)})
 	r.Register(ToolSpec{Name: "a2a_whatsnew", Description: "release directives: what changed and what to do — optional since=<version>", InputSchema: rawSchema(map[string]string{"since": "string"}), Handler: newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return notes.Load(releasenotes.FS) })})
 

@@ -252,6 +252,112 @@ func TestShowUnknownType(t *testing.T) {
 	}
 }
 
+// TestRenderAppliesADottedFieldOverride is A1's fix: `--field expected_
+// response.shape=...` reaches question.md's NESTED `expected_response:
+// {shape: ...}` placeholder — before this fix applyFills only ever walked
+// TOP-LEVEL keys, so a dotted key matched none of them and (after the D0
+// fix made unmatched keys an error rather than silence) tripped
+// ErrUnappliableField even though the field genuinely exists, just
+// nested.
+func TestRenderAppliesADottedFieldOverride(t *testing.T) {
+	t.Parallel()
+
+	out, err := template.Render(template.Input{
+		Type:    "question",
+		ID:      "XQ-axon-20260727-d0t1",
+		Actor:   template.Actor{Kind: "agent", Name: "bot"},
+		Created: time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC),
+		Fields: map[string]string{
+			"thread":                  "thread:axon-20260727-d0t1",
+			"expected_response.shape": "a yes/no answer with one sentence of rationale",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Render with --field expected_response.shape=...: %v", err)
+	}
+	got := string(out)
+	if strings.Contains(got, "<what a good answer looks like>") {
+		t.Fatalf("the nested placeholder survived a dotted --field override:\n%s", got)
+	}
+	if !strings.Contains(got, "a yes/no answer with one sentence of rationale") {
+		t.Fatalf("the dotted override never reached the document:\n%s", got)
+	}
+}
+
+// TestRenderDottedFieldOverrideMissingIntermediateKey is A1's error path:
+// a dotted key whose intermediate segment names no key anywhere on the
+// path is refused (ErrUnappliableField) naming the FULL dotted path —
+// never silence, and never a partial/confusing error that only names the
+// last segment.
+func TestRenderDottedFieldOverrideMissingIntermediateKey(t *testing.T) {
+	t.Parallel()
+
+	_, err := template.Render(template.Input{
+		Type:    "question",
+		ID:      "XQ-axon-20260727-d0t2",
+		Actor:   template.Actor{Kind: "agent", Name: "bot"},
+		Created: time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC),
+		// "expected_response" exists, but it has no "nope" key.
+		Fields: map[string]string{"expected_response.nope": "whatever"},
+	})
+	if err == nil {
+		t.Fatal("expected an error for a dotted --field whose intermediate segment resolves to nothing")
+	}
+	if !errors.Is(err, template.ErrUnappliableField) {
+		t.Fatalf("err = %v, want ErrUnappliableField", err)
+	}
+	if !strings.Contains(err.Error(), "expected_response.nope") {
+		t.Errorf("err must name the FULL dotted path %q: %v", "expected_response.nope", err)
+	}
+}
+
+// TestRenderDottedFieldOverrideThroughSequenceIndexUnsupported is the
+// explicit "must stay unsupported" guard: `refs[0].ref` is deliberately
+// NOT a supported grammar (A1 is map-only) — it must be refused, never
+// panic and never silently drop.
+func TestRenderDottedFieldOverrideThroughSequenceIndexUnsupported(t *testing.T) {
+	t.Parallel()
+
+	_, err := template.Render(template.Input{
+		Type:    "question",
+		ID:      "XQ-axon-20260727-d0t3",
+		Actor:   template.Actor{Kind: "agent", Name: "bot"},
+		Created: time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC),
+		Fields:  map[string]string{"refs[0].ref": "XC-axon-ingest#deadbeef"},
+	})
+	if err == nil {
+		t.Fatal("expected an error: refs[0].ref is a sequence-index grammar, which A1 deliberately does not support")
+	}
+	if !errors.Is(err, template.ErrUnappliableField) {
+		t.Fatalf("err = %v, want ErrUnappliableField", err)
+	}
+}
+
+// TestRenderDottedFieldOverrideThroughNonMapping proves descending
+// through a SCALAR node with more path remaining is a refusal, not a
+// panic — e.g. `title.shape` where `title` itself is a plain scalar in
+// every template.
+func TestRenderDottedFieldOverrideThroughNonMapping(t *testing.T) {
+	t.Parallel()
+
+	_, err := template.Render(template.Input{
+		Type:    "question",
+		ID:      "XQ-axon-20260727-d0t4",
+		Actor:   template.Actor{Kind: "agent", Name: "bot"},
+		Created: time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC),
+		Fields:  map[string]string{"title.shape": "whatever"},
+	})
+	if err == nil {
+		t.Fatal("expected an error descending through a scalar node (title), not a panic and not silence")
+	}
+	if !errors.Is(err, template.ErrUnappliableField) {
+		t.Fatalf("err = %v, want ErrUnappliableField", err)
+	}
+	if !strings.Contains(err.Error(), "title.shape") {
+		t.Errorf("err must name the FULL dotted path %q: %v", "title.shape", err)
+	}
+}
+
 func containsLine(haystack, needle string) bool {
 	return len(needle) > 0 && (indexOf(haystack, needle) >= 0)
 }
@@ -416,5 +522,39 @@ func TestRenderUnknownFieldOverrideRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no_such_field") {
 		t.Errorf("err is missing the offending field name: %v", err)
+	}
+}
+
+// TestRenderDottedActorFieldWinsOverTheResolvedActor pins the one behaviour
+// the dotted-path pass changes beyond "a nested field can now be filled":
+// `--field actor.name=X` overrides the actor Render already wrote from
+// in.Actor.
+//
+// This is the ordering plan §7.4 mandates — "Actor identity resolution
+// order (for `a2a new`/events): explicit flags > `A2A_ACTOR_*` env vars >
+// harness adapter defaults > config" — and a dotted `--field` is an
+// explicit flag. in.Actor arrives already resolved from the lower tiers of
+// that order, so a flag that lost to it would invert the rule.
+//
+// Pinned rather than left implicit because the opposite reading is
+// plausible enough that someone will "fix" it: making the resolved actor
+// authoritative would mean silently dropping a flag the caller passed,
+// which is the exact class of silence this pass was written to end.
+func TestRenderDottedActorFieldWinsOverTheResolvedActor(t *testing.T) {
+	t.Parallel()
+
+	in := fixedInput("question", "XQ-axon-20260727-k3f9")
+	in.Fields = map[string]string{"actor.name": "opus-explicit"}
+
+	out, err := template.Render(in)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	got := string(out)
+	if !strings.Contains(got, "opus-explicit") {
+		t.Errorf("rendered draft does not carry the explicit --field actor.name; §7.4 puts an explicit flag ABOVE the resolved actor:\n%s", got)
+	}
+	if strings.Contains(got, "test-bot") {
+		t.Errorf("rendered draft still carries in.Actor's resolved name %q alongside the explicit override:\n%s", "test-bot", got)
 	}
 }

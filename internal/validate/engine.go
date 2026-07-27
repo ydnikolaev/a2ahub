@@ -75,7 +75,7 @@ func (e *Engine) ValidateForSubmit(d Draft, events []CandidateEvent, ctx LocalCo
 	if ctx.OwnSystem == "" {
 		return Result{}, &Error{Op: op, Err: ErrNoOwnSystem}
 	}
-	violations, artifactID, env, ok, err := e.runCommonEnvelope(d)
+	violations, artifactID, env, instance, ok, err := e.runCommonEnvelope(d)
 	if err != nil {
 		return Result{}, &Error{Op: op, Err: err}
 	}
@@ -84,6 +84,10 @@ func (e *Engine) ValidateForSubmit(d Draft, events []CandidateEvent, ctx LocalCo
 		// further processing (runCommonEnvelope's ok=false path).
 		return newResult(V2, artifactID, violations), nil
 	}
+
+	// POL-010, V2-only (see placeholder.go's doc comment for why this
+	// never runs at V1/ValidateDraft — AC-401.1).
+	violations = append(violations, checkUnfilledPlaceholders(instance)...)
 
 	violations = append(violations, checkIDForm(env, d.Path)...)
 	violations = append(violations, checkRefs(env, ctx.Resolver)...)
@@ -108,35 +112,38 @@ func (e *Engine) ValidateForSubmit(d Draft, events []CandidateEvent, ctx LocalCo
 // violations + artifact ID — used by ValidateDraft, which never needs the
 // decoded envelope itself.
 func (e *Engine) runCommon(d Draft) ([]Violation, string, error) {
-	violations, artifactID, _, _, err := e.runCommonEnvelope(d)
+	violations, artifactID, _, _, _, err := e.runCommonEnvelope(d)
 	return violations, artifactID, err
 }
 
 // runCommonEnvelope is runCommon's fuller sibling: it also returns the
-// decoded envelope and whether processing reached that far (ok=false
-// means an admission/frontmatter failure already terminated the run —
-// the caller should not attempt referential/authz/lifecycle/policy
-// checks against a zero-value envelope).
-func (e *Engine) runCommonEnvelope(d Draft) (violations []Violation, artifactID string, env envelope, ok bool, err error) {
+// decoded envelope, the raw JSON-Schema-validatable frontmatter instance
+// (map[string]any / []any / scalars, per schema.DecodeYAMLInstance — used
+// by ValidateForSubmit's V2-only POL-010 placeholder check, never by V1),
+// and whether processing reached that far (ok=false means an admission/
+// frontmatter failure already terminated the run — the caller should not
+// attempt referential/authz/lifecycle/policy checks against a zero-value
+// envelope).
+func (e *Engine) runCommonEnvelope(d Draft) (violations []Violation, artifactID string, env envelope, instance any, ok bool, err error) {
 	violations = append(violations, checkAdmission(d.Raw)...)
 	for _, v := range violations {
 		if v.Severity == SeverityReject {
 			// CC-006/CC-007: cannot safely proceed to parse the
 			// artifact at all.
-			return violations, "", envelope{}, false, nil
+			return violations, "", envelope{}, nil, false, nil
 		}
 	}
 
 	fm, ferr := artifact.ParseFrontmatter(d.Raw)
 	if ferr != nil {
 		violations = append(violations, malformedFrontmatterViolation())
-		return violations, "", envelope{}, false, nil
+		return violations, "", envelope{}, nil, false, nil
 	}
 
 	env, instance, derr := decodeEnvelope(fm.YAML)
 	if derr != nil {
 		violations = append(violations, malformedFrontmatterViolation())
-		return violations, "", envelope{}, false, nil
+		return violations, "", envelope{}, nil, false, nil
 	}
 	artifactID = env.ID
 
@@ -150,24 +157,24 @@ func (e *Engine) runCommonEnvelope(d Draft) (violations []Violation, artifactID 
 			CCRef:    "CC-005",
 			Severity: SeverityReject,
 		})
-		return violations, artifactID, env, false, nil
+		return violations, artifactID, env, instance, false, nil
 	}
 
 	if !isKnownEnvelopeType(env.Type) {
-		return violations, artifactID, env, false, &Error{Err: fmt.Errorf("%w: %q", ErrUnknownEnvelopeType, env.Type)}
+		return violations, artifactID, env, instance, false, &Error{Err: fmt.Errorf("%w: %q", ErrUnknownEnvelopeType, env.Type)}
 	}
 
 	fieldViolations, serr := e.corpus.ValidateEnvelope(env.Type, env.Schema, instance)
 	if serr != nil {
-		return violations, artifactID, env, false, serr
+		return violations, artifactID, env, instance, false, serr
 	}
 	schemaViolations, merr := mapSchemaViolations(fieldViolations)
 	if merr != nil {
-		return violations, artifactID, env, false, merr
+		return violations, artifactID, env, instance, false, merr
 	}
 	violations = append(violations, schemaViolations...)
 
-	return violations, artifactID, env, true, nil
+	return violations, artifactID, env, instance, true, nil
 }
 
 func isKnownEnvelopeType(t string) bool {

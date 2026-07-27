@@ -3,6 +3,7 @@ package template
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -165,6 +166,50 @@ func applyFills(mapping *yaml.Node, in Input) error {
 			}
 		}
 	}
+	// Second pass: any --field key not yet applied and not matched by the
+	// top-level loop above is tried as a DOTTED path into a nested mapping
+	// (e.g. `expected_response.shape`) — never a sequence index (`refs[0].
+	// ref` stays unsupported; §A1's map-only grammar). An exact top-level
+	// key always wins first (the loop above already ran), so this can
+	// never change a non-dotted key's behaviour.
+	//
+	// Found on 2026-07-27 as the A1 half of the placeholder defect: a
+	// nested field like `expected_response.shape` could not be filled by
+	// `--field` at all, because applyFills only ever walked TOP-LEVEL
+	// keys — a dotted key matched none of them and fell straight into the
+	// trailing unappliable-field loop below with no chance to resolve.
+	// Splitting the key, descending, and marking the resolved path present
+	// land together in this one pass, so a dotted key can never silently
+	// fall through the way the pre-fix top-level lookup did.
+	//
+	// One consequence is deliberate rather than incidental, so it is stated
+	// here: because this pass runs AFTER the loop above, `--field
+	// actor.name=X` now OVERRIDES the actor fillActor already wrote from
+	// in.Actor. That is the ordering plan §7.4 mandates — "explicit flags >
+	// A2A_ACTOR_* env vars > harness adapter defaults > config" — and a
+	// dotted `--field` is an explicit flag, so it belongs at the top of that
+	// order. Pinned by a test, because the alternative reading (the resolved
+	// actor is authoritative and the flag is dropped) is exactly the silence
+	// this whole mechanism exists to refuse.
+	dotted := make([]string, 0, len(in.Fields))
+	for field := range in.Fields {
+		if present[field] || !strings.Contains(field, ".") {
+			continue
+		}
+		dotted = append(dotted, field)
+	}
+	sort.Strings(dotted)
+	for _, field := range dotted {
+		node, rerr := resolveDottedPath(mapping, field)
+		if rerr != nil {
+			return rerr
+		}
+		if err := setField(node, field, in.Fields[field]); err != nil {
+			return err
+		}
+		present[field] = true
+	}
+
 	for field := range in.Fields {
 		if !present[field] {
 			return fmt.Errorf("%w: --field %s=%q was given, but this template has no %q key",
@@ -172,6 +217,61 @@ func applyFills(mapping *yaml.Node, in Input) error {
 		}
 	}
 	return nil
+}
+
+// resolveDottedPath descends mapping through fullPath's dot-separated
+// segments, returning the leaf node reached by the FINAL segment. Every
+// intermediate segment must resolve to a MappingNode key that exists —
+// anything else (an absent key, or a segment landing on a non-mapping
+// node with more path remaining) is ErrUnappliableField naming fullPath
+// and the segment where resolution stopped, never a panic and never
+// silence: a dotted key that resolves to nothing is exactly the same
+// class of bug this package's whole ErrUnappliableField mechanism exists
+// to refuse instead of drop.
+func resolveDottedPath(mapping *yaml.Node, fullPath string) (*yaml.Node, error) {
+	segments := strings.Split(fullPath, ".")
+	cur := mapping
+	// walked is the path successfully descended through BEFORE the
+	// current segment — i.e. the segment whose resolved node is `cur`.
+	// Empty at i==0, since cur is still the template's own root mapping
+	// there (always a MappingNode by construction — Render already
+	// checked that before calling applyFills at all).
+	walked := ""
+	for i, seg := range segments {
+		if cur.Kind != yaml.MappingNode {
+			at := walked
+			if at == "" {
+				at = fullPath
+			}
+			return nil, fmt.Errorf("%w: --field %s=... cannot be applied — %q is a %s in the template, not a mapping, so it cannot be descended into",
+				ErrUnappliableField, fullPath, at, nodeKindName(cur.Kind))
+		}
+		found := false
+		var next *yaml.Node
+		for j := 0; j+1 < len(cur.Content); j += 2 {
+			if cur.Content[j].Value == seg {
+				next = cur.Content[j+1]
+				found = true
+				break
+			}
+		}
+		if walked == "" {
+			walked = seg
+		} else {
+			walked += "." + seg
+		}
+		if !found {
+			return nil, fmt.Errorf("%w: --field %s=... was given, but this template has no %q key",
+				ErrUnappliableField, fullPath, walked)
+		}
+		if i == len(segments)-1 {
+			return next, nil
+		}
+		cur = next
+	}
+	// Unreachable: fullPath always has >=1 segment (strings.Split never
+	// returns an empty slice), so the loop above always returns.
+	return nil, fmt.Errorf("%w: --field %s=... could not be resolved", ErrUnappliableField, fullPath)
 }
 
 // setField applies one --field override to whatever KIND of node the template
