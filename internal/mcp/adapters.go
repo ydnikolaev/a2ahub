@@ -6,9 +6,18 @@ package mcp
 // decisions, binding: "mcp re-wires the core... does NOT import
 // internal/cli"). The original only ever depended on core packages
 // (fold/schema/space/template/validate) — never anything internal/cli-
-// specific — so this is a faithful port, not a reinterpretation; any
-// future amendment to either copy is this phase's own drift to watch for
-// (there is no shared extraction point per the plan's binding decision).
+// specific — so this is a faithful port, not a reinterpretation.
+//
+// ADR-004 (docs/decisions.md) re-scopes plan 14's "no shared extraction"
+// to "no cli<->mcp sharing": the mirror-artifact walk MirrorResolver used
+// to carry as its own third, unreported copy now lives in internal/cache
+// (BuildArtifactIndex, CommittedEvents) — a core package both this file
+// and internal/cli/adapters.go were already allowed to import — so this
+// stops being a duplicate walk while staying a duplicate ADAPTER: this
+// package still never imports internal/cli, and internal/cli still never
+// imports internal/mcp. Any future amendment to the parts that ARE still
+// independently owned here (actor resolution, SubmitValidatorAdapter's
+// event/draft partitioning) is this phase's own drift to watch for.
 //
 // os.Getenv lives ONLY in this file within internal/mcp (rails "config &
 // secrets": env access confined to the actor-resolution layer) —
@@ -18,13 +27,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
@@ -179,50 +187,16 @@ func (a *LegalityAdapter) membershipView(system string) fold.MembershipStatus {
 // "bounded reads everywhere").
 const maxMirrorEventBytes = 1 << 20 // 1 MiB
 
+// committedEvents delegates to internal/cache.CommittedEvents — the
+// identical subject-filtered committed-history read this method and
+// internal/cli's own LegalityAdapter.committedEvents used to carry
+// verbatim in both adapter files (spec 01-resolver-one-home.md §5, "also
+// in scope, same disease"). readBoundedFile/maxMirrorEventBytes below stay
+// in this file: eventdoc.go/tools_contract.go/tools_lifecycle.go still
+// call them directly for unrelated reads, so they are not this method's to
+// remove.
 func (a *LegalityAdapter) committedEvents(subject string) ([]fold.Event, error) {
-	dir := filepath.Join(a.mirrorDir, a.system, "events")
-	years, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var out []fold.Event
-	for _, year := range years {
-		if !year.IsDir() {
-			continue
-		}
-		yearDir := filepath.Join(dir, year.Name())
-		files, err := os.ReadDir(yearDir)
-		if err != nil {
-			return nil, err
-		}
-		for _, f := range files {
-			if f.IsDir() || !strings.HasSuffix(f.Name(), ".yaml") {
-				continue
-			}
-			raw, err := readBoundedFile(filepath.Join(yearDir, f.Name()), maxMirrorEventBytes)
-			if err != nil {
-				return nil, err
-			}
-			var ev mirrorEvent
-			if err := yaml.Unmarshal(raw, &ev); err != nil {
-				return nil, fmt.Errorf("mcp: decode committed event %s: %w", f.Name(), err)
-			}
-			if ev.Subject != subject {
-				continue
-			}
-			out = append(out, fold.Event{
-				ULID:       ev.Event,
-				Subject:    ev.Subject,
-				Transition: ev.Transition,
-				Actor:      fold.Actor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
-			})
-		}
-	}
-	return out, nil
+	return cache.CommittedEvents(a.mirrorDir, a.system, subject)
 }
 
 func readBoundedFile(path string, max int64) ([]byte, error) {
@@ -245,25 +219,20 @@ func readBoundedFile(path string, max int64) ([]byte, error) {
 // --- MirrorResolver (validate.Resolver) ---------------------------------
 
 // MirrorResolver is the concrete validate.Resolver this package wires: it
-// resolves known-artifact/digest/system-membership facts from the
-// connected space's mirror clone on disk.
+// resolves known-artifact/digest/thread/system-membership facts from the
+// connected space's mirror clone on disk. KnownArtifact/Digest/ThreadOf/
+// ThreadExists resolve against internal/cache.BuildArtifactIndex — the
+// SAME best-effort walk internal/cli's own MirrorResolver now uses (ADR-004:
+// the walk moved DOWN into core; this package still never imports
+// internal/cli, so the ADAPTER stays a deliberate duplicate, only the walk
+// underneath it does not). System() stays manifest-local.
 type MirrorResolver struct {
 	mirrorDir string
 	manifest  space.Manifest
 
-	once  sync.Once
-	index map[string]mirrorArtifact // artifact id -> indexed facts
-}
-
-// mirrorArtifact is one indexed artifact's facts. It carries `thread`
-// alongside the path because validate.ThreadResolver needs it and the walk
-// already decodes the frontmatter — re-reading every file to answer
-// ThreadOf would be a second pass over the same bytes. Mirrors
-// internal/cli's own copy (ADR-001: this package never imports
-// internal/cli, so the resolver is written twice on purpose).
-type mirrorArtifact struct {
-	path   string
-	thread string
+	once    sync.Once
+	index   map[string]cache.ArtifactIndexEntry // artifact id -> indexed facts
+	skipped []cache.SkippedFile
 }
 
 // NewMirrorResolver constructs a MirrorResolver.
@@ -278,7 +247,9 @@ func (r *MirrorResolver) KnownArtifact(id string) bool {
 	return ok
 }
 
-// Digest implements validate.Resolver.
+// Digest implements validate.Resolver. The digest is captured AT WALK TIME
+// by internal/cache.BuildArtifactIndex (see its own doc comment) rather
+// than re-read per call, as the former adapter-local walk did.
 func (r *MirrorResolver) Digest(ref string) (string, bool) {
 	r.ensureIndex()
 	id, _, _ := splitRefGrammar(ref)
@@ -286,26 +257,21 @@ func (r *MirrorResolver) Digest(ref string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	raw, err := os.ReadFile(filepath.Join(r.mirrorDir, entry.path))
-	if err != nil {
-		return "", false
-	}
-	return artifact.Digest(raw), true
+	return entry.Digest, true
 }
 
 // ThreadOf implements validate.ThreadResolver: the §3.8 thread id the
 // artifact carries, and whether the artifact was found at all. Without it
 // this surface's submit path fails OPEN on REF-009/REF-010 — the checks
 // run, find no capability, and return no violation, which is
-// indistinguishable from a clean document. internal/cli's resolver gained
-// the same pair; ADR-001 keeps the two copies deliberate.
+// indistinguishable from a clean document.
 func (r *MirrorResolver) ThreadOf(id string) (thread string, found bool) {
 	r.ensureIndex()
 	entry, ok := r.index[id]
 	if !ok {
 		return "", false
 	}
-	return entry.thread, true
+	return entry.Thread, true
 }
 
 // ThreadExists implements validate.ThreadResolver: whether any indexed
@@ -318,7 +284,7 @@ func (r *MirrorResolver) ThreadExists(thread string) bool {
 	}
 	r.ensureIndex()
 	for _, entry := range r.index {
-		if entry.thread == thread {
+		if entry.Thread == thread {
 			return true
 		}
 	}
@@ -335,35 +301,27 @@ func (r *MirrorResolver) System(system string) (member bool, left bool) {
 	return false, false
 }
 
+// Skipped reports every mirror file this resolver's own index build could
+// not decode — internal/cache.SkippedFile, unchanged and unextended (§9,
+// out of scope). SubmitValidatorAdapter.ValidateSubmit reads this (via the
+// unexported skipReporter capability probe) to attach it to a returned
+// *ViolationError, so a REF-009/REF-010 refusal caused by an unrelated
+// file failing to parse names THAT file, not just the ref that looked
+// wrong (US-2).
+func (r *MirrorResolver) Skipped() []cache.SkippedFile {
+	r.ensureIndex()
+	return r.skipped
+}
+
 func (r *MirrorResolver) ensureIndex() {
 	r.once.Do(func() {
-		r.index = map[string]mirrorArtifact{}
-		_ = filepath.WalkDir(r.mirrorDir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
-				return nil
-			}
-			raw, rerr := os.ReadFile(path) //nolint:gosec // reason: path comes from walking this system's own already-cloned mirror dir, not attacker-controlled input
-			if rerr != nil {
-				return nil
-			}
-			fm, ferr := artifact.ParseFrontmatter(raw)
-			if ferr != nil {
-				return nil
-			}
-			var probe struct {
-				ID     string `yaml:"id"`
-				Thread string `yaml:"thread"`
-			}
-			if yerr := yaml.Unmarshal(fm.YAML, &probe); yerr != nil || probe.ID == "" {
-				return nil
-			}
-			rel, relErr := filepath.Rel(r.mirrorDir, path)
-			if relErr != nil {
-				return nil
-			}
-			r.index[probe.ID] = mirrorArtifact{path: rel, thread: probe.Thread}
-			return nil
-		})
+		idx, skipped, err := cache.BuildArtifactIndex(r.mirrorDir)
+		if err != nil {
+			r.index = map[string]cache.ArtifactIndexEntry{}
+			return
+		}
+		r.index = idx
+		r.skipped = skipped
 	})
 }
 
@@ -386,8 +344,24 @@ func splitRefGrammar(ref string) (id, version, digest string) {
 
 // ViolationError is returned by SubmitValidatorAdapter.ValidateSubmit and
 // carries the full violation list a non-Valid V2 Result found.
+//
+// Skipped mirrors internal/cli's own ViolationError.Skipped: the mirror
+// files this surface's resolver walk could not decode, named alongside the
+// violations they may have caused (US-2, spec 01-resolver-one-home.md
+// §1). Unlike the shipped `{items, skipped}` StructuredContent precedent
+// (internal/mcp/tools_read.go's itemsWithSkipped), this does NOT ride a
+// structured payload: a HandlerFunc's error branch has no such channel —
+// registry.go's own doc comment on HandlerFunc: "a non-nil error is
+// surfaced as an isError:true tools/call result", message-only, no data
+// field. A genuine structured error payload would need
+// internal/mcp/tools_submit.go (off this brief's allowlist) to intercept
+// *ViolationError before returning it as the handler's own error and
+// re-shape it into StructuredContent; reported as this phase's Deviations
+// item rather than routed around by smuggling JSON into the message
+// string.
 type ViolationError struct {
 	Violations []validate.Violation
+	Skipped    []cache.SkippedFile
 }
 
 func (e *ViolationError) Error() string {
@@ -396,7 +370,22 @@ func (e *ViolationError) Error() string {
 	for _, v := range e.Violations {
 		fmt.Fprintf(&b, " [%s %s: %s]", v.Code, v.Path, v.Message)
 	}
+	if len(e.Skipped) > 0 {
+		parts := make([]string, 0, len(e.Skipped))
+		for _, sk := range e.Skipped {
+			parts = append(parts, fmt.Sprintf("%s (%s)", sk.Path, sk.Reason))
+		}
+		fmt.Fprintf(&b, " (the reference index could not decode %d file(s), which is why a resolvable ref may still fail: %s)",
+			len(e.Skipped), strings.Join(parts, ", "))
+	}
 	return b.String()
+}
+
+// skipReporter is the optional capability a validate.Resolver may also
+// implement — mirrors internal/cli's own skipReporter (adapters.go), a
+// deliberate second copy per this file's own header comment.
+type skipReporter interface {
+	Skipped() []cache.SkippedFile
 }
 
 // SubmitValidatorAdapter is the concrete space.SubmitValidator the write
@@ -482,7 +471,11 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 	}
 
 	if len(violations) > 0 {
-		return &ViolationError{Violations: violations}
+		verr := &ViolationError{Violations: violations}
+		if sr, ok := v.resolver.(skipReporter); ok {
+			verr.Skipped = sr.Skipped()
+		}
+		return verr
 	}
 	return nil
 }
