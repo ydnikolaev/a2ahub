@@ -23,7 +23,13 @@ import (
 // scenarios_happy_live.go's happy* convention, so identifiers cannot
 // collide across the package's scenario families.
 func runContractIntegrityScenarios(ctx context.Context, h *harness) []Result {
-	results := []Result{ac973ContractIntegrity(ctx, h)}
+	// Two rows, one narrative apart: ac973 is the producer<->consumer
+	// integrity story, rwRollingWindow is that story one release on, with
+	// several version lines live at once (P4, agent-ops-2026-07). The
+	// rolling-window row runs SECOND — it is the more expensive of the two
+	// and depends on nothing ac973 leaves behind, so a failure in the
+	// cheaper row is reported before the costlier one spends its PRs.
+	results := []Result{ac973ContractIntegrity(ctx, h), rwRollingWindow(ctx, h)}
 
 	// Same parking discipline runHappyScenarios' own tail documents: leave
 	// both checkouts on a clean main so whichever family runs next does not
