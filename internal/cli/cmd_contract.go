@@ -1343,6 +1343,23 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 		return 2
 	}
 
+	// P2/spec 02: the §5.4 cycle destroys the contract when the events
+	// land publish-2.0 -> deprecate-1.0 -> retire-1.0 — the SUBJECT
+	// (fold-scoped, internal/fold is off-limits to this phase) is
+	// Deprecated at retire time, so `(Deprecated, retire)` is legal and
+	// commits, leaving the subject Retired with zero outgoing rows while
+	// 2.0 is still published and consumed: every later publish/deprecate
+	// on this contract is refused forever. Reuses the SAME allEvents scan
+	// that resolved retiredVersion above — no second walk. Exit 2 (spec
+	// 02 §3 "Verdict"), not the 1 every neighbouring refusal in this verb
+	// returns, because the spec treats this as the SAME class of usage
+	// refusal as the --version-required check just above, not a
+	// legality/precondition failure.
+	if v := validate.CheckRetireVersionScope(contractVersionEvents(allEvents), id, retiredVersion); v != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %s: %s\n", v.Code, v.Message)
+		return 2
+	}
+
 	// now is fetched ONCE, up front, and threaded through both the LOW
 	// fix-wave finding's contractSunsetPassed(sunset, now) call (via
 	// contractBuildRetirePrecondition) and the retire event's own
@@ -1963,4 +1980,16 @@ func (c *ContractCommand) runVerifyExport(_ context.Context, args []string, stdi
 	}
 	_, _ = fmt.Fprintf(stdio.Stderr, "contract verify-export: digest mismatch: local=%s want=%s\n", localDigest, wantDigest)
 	return 1
+}
+
+// contractVersionEvents projects this file's decoded lifecycle events onto
+// the neutral shape validate.CheckRetireVersionScope reads. The mapping is
+// per-surface because the doc type is; the RULE it feeds is not, which is
+// the whole reason POL-011 lives in internal/validate rather than here.
+func contractVersionEvents(all []lifecycleEventDoc) []validate.ContractVersionEvent {
+	out := make([]validate.ContractVersionEvent, 0, len(all))
+	for _, ev := range all {
+		out = append(out, validate.ContractVersionEvent{Subject: ev.Subject, Transition: ev.Transition, Version: ev.Version})
+	}
+	return out
 }

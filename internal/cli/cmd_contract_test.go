@@ -1244,6 +1244,165 @@ func TestContractDeprecateRetireDefaultWithOneVersion(t *testing.T) {
 	})
 }
 
+// TestContractRetireGuardRefusesWhileAnotherVersionPublished is
+// agent-ops-2026-07 spec 02 (P2)'s AC-2.1/AC-2.3: `publish 2.0 ->
+// deprecate 1.0 -> retire 1.0` is legal at internal/fold's own
+// SUBJECT-scoped table (Deprecated -retire-> Retired) and, before this
+// guard existed, committed — leaving the contract subject Retired while
+// 2.0.0 stays published and consumed (internal/fold carries no
+// per-version state at all, and is off-limits to this phase). The guard
+// must refuse BEFORE the event is built, name 2.0.0 by version, and say
+// the whole-contract consequence and that the per-version lifecycle is
+// pending (spec 02 §3 "Message").
+func TestContractRetireGuardRefusesWhileAnotherVersionPublished(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "guarded", "2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-guarded", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-guarded", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 2, "XC-axon-guarded", "deprecate", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"retire", "--version", "1.0.0", "XC-axon-guarded"}, io)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2 (spec 02 §3 verdict: refuse, exit 2); stderr=%s", code, errOut.String())
+	}
+	msg := errOut.String()
+	for _, want := range []string{"POL-011", "2.0.0", "WHOLE contract", "pending"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("expected the refusal to mention %q (spec 02 §3 Message); got %q", want, msg)
+		}
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+	}
+}
+
+// TestContractRetireBothCycleOrdersRefuse is spec 02's AC-2.5: the two
+// §5.4 event orders that differ only in WHEN 1.0 is deprecated relative
+// to 2.0's publish must both refuse a `retire --version 1.0.0` — one via
+// the pre-existing SUBJECT-scoped LFC-001 (the subject is back to
+// Published once 2.0 is published after the deprecate), the other via
+// THIS guard (POL-011) — never one refusing loudly and the other
+// committing and bricking the contract, which is the P2 defect this
+// guard closes. Hermetic-tier proof only: the true live/wire-tier
+// AC-2.5 row (a local bare-repo origin) is out of this phase's allowlist
+// — see the Deviations report.
+func TestContractRetireBothCycleOrdersRefuse(t *testing.T) {
+	t.Parallel()
+
+	t.Run("deprecate_then_publish_refuses_LFC001", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeContractDescriptor(t, mirrorDir, "order-a", "2.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-order-a", "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-order-a", "deprecate", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 2, "XC-axon-order-a", "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"retire", "--version", "1.0.0", "XC-axon-order-a"}, io)
+		if code == 0 {
+			t.Fatalf("expected a non-zero exit: subject is back to Published (the new-version publish moved it there), and (Published, retire) has no row")
+		}
+		if !strings.Contains(errOut.String(), "LFC-001") {
+			t.Fatalf("expected the pre-existing SUBJECT-scoped fold refusal (LFC-001), not this guard; got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+		}
+	})
+
+	t.Run("publish_then_deprecate_refuses_via_guard", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeContractDescriptor(t, mirrorDir, "order-b", "2.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-order-b", "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-order-b", "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 2, "XC-axon-order-b", "deprecate", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"retire", "--version", "1.0.0", "XC-axon-order-b"}, io)
+		if code != 2 {
+			t.Fatalf("code = %d, want 2 (guard refusal, POL-011); stderr=%s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "POL-011") {
+			t.Fatalf("expected THIS guard's own refusal (POL-011), not the SUBJECT-scoped fold; got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+		}
+	})
+}
+
+// TestContractRetireGuardAllowsSolePublishedVersion is spec 02's AC-2.2
+// regression guard — the single named regression risk: retiring the
+// ONLY published version, the everyday unremarkable case, must keep
+// working exactly as before this phase.
+func TestContractRetireGuardAllowsSolePublishedVersion(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "sole", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-sole", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-sole", "deprecate", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"retire", "XC-axon-sole"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 (sole published version, the guard must not block it); stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+}
+
+// TestContractRetireGuardNormalizesVersionComparison guards against a
+// review finding made while writing this guard: contractResolveVersionOrRefuse
+// returns retiredVersion VERBATIM (the raw descriptor `version:` spelling),
+// never reformatted through contractSemver — so the guard must compare
+// PARSED contractSemver values, not raw strings, or a non-canonically
+// spelled sole version (a redundant leading zero here) would fail to
+// exclude itself from "still published", and the guard would wrongly
+// refuse the everyday case AC-2.2 protects.
+func TestContractRetireGuardNormalizesVersionComparison(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "normalize", "1.00.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-normalize", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.00.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-normalize", "deprecate", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.00.0")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"retire", "XC-axon-normalize"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 (a non-canonical spelling of the sole version must still exclude itself); stderr=%s", code, errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+}
+
 // TestContractDeprecateDeterministicAnnouncementID is HIGH-1's own
 // discriminating test for `contract deprecate` (AC-301.1, anti-pattern
 // #4): with a FIXED injected clock, two deprecate invocations with
