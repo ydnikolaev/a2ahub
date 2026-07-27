@@ -718,6 +718,41 @@
           "state": "deprecated"
         }
       ]
+    },
+    {
+      "space": "platform",
+      "id": "XC-axon-ingest",
+      "provider": "axon",
+      "version": "2.1.0",
+      "state": "published",
+      "codeBacked": true,
+      "consumers": [
+        "seomatrix",
+        "pgw"
+      ],
+      "description": "Ingest envelope accepted from crawl and payment producers.",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "state": "retired"
+        },
+        {
+          "version": "1.6.0",
+          "state": "deprecated"
+        },
+        {
+          "version": "1.6.1",
+          "state": "published"
+        },
+        {
+          "version": "2.0.0",
+          "state": "published"
+        },
+        {
+          "version": "2.1.0",
+          "state": "published"
+        }
+      ]
     }
   ],
   "flags": [

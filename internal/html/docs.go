@@ -53,6 +53,8 @@ var docManifest = []docEntry{
 	{"getting-started", "Start", "Getting started", "a2ahub/onboarding.md"},
 	{"overview", "Concepts", "Overview", "a2ahub/SKILL.md"},
 	{"work-loops", "Concepts", "The work loops", "a2ahub/loops.md"},
+	{"threads", "Concepts", "Threads: one intent, one chain", "a2ahub/reference/threads.md"},
+	{"contract-versions", "Concepts", "Contract versions and sunsetting", "a2ahub/reference/contract-versions.md"},
 	{"commands", "Reference", "Command reference", "a2ahub/reference/commands.md"},
 	{"decompose", "Reference", "Decompose example", "a2ahub/reference/decompose-example.md"},
 	{"feedback", "Reference", "Feedback", "a2ahub/reference/feedback.md"},
