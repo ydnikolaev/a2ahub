@@ -7,6 +7,7 @@ package version
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -62,4 +63,24 @@ func parseVersion(s string) ([3]int, error) {
 		out[i] = n
 	}
 	return out, nil
+}
+
+// Canonical returns s in canonical major.minor.patch form, so two spellings
+// of the same version compare equal as map keys.
+//
+// It exists because a version reaches this codebase by two different routes
+// and only one of them normalises: `contract publish` writes its own parsed
+// value back (`newVersion.String()`), while `deprecate` and `retire` record
+// the operator's `--version` flag VERBATIM. So `publish 1.0.0` followed by
+// `deprecate 01.0.0` records two strings for one version, and any policy that
+// keys on the raw string sees two versions where there is one. POL-011 did
+// exactly that and produced a phantom refusal naming the contract's own sole
+// version — the authoritative-looking wrong answer this project treats as
+// worse than the defect it reports.
+func Canonical(s string) (string, error) {
+	v, err := parseVersion(s)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d.%d.%d", v[0], v[1], v[2]), nil
 }

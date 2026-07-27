@@ -3,6 +3,7 @@ package cache
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -112,5 +113,58 @@ func TestBuildArtifactIndex_ExcludesVendoredAndGit(t *testing.T) {
 	}
 	if _, ok := idx["XQ-axon-20260721-excluded"]; ok {
 		t.Fatal("an artifact under vendored/ or .git resolved — both must be excluded from the resolver index (spec §11 amendment)")
+	}
+}
+
+// TestBuildArtifactIndex_MalformedIrrelevantFieldStillResolves is the
+// discriminating repro for an audit finding, and it fails against the
+// implementation it replaced.
+//
+// The two adapter-local walks this index unified decoded exactly `id` and
+// `thread`. walkArtifacts decodes the FULL envelope, because the read model
+// needs it. Sharing the walk therefore silently shared the TOLERANCE too, and
+// an artifact with a clean id and thread beside one malformed IRRELEVANT key
+// stopped resolving — a `refs:` entry refused for a reason that has nothing to
+// do with the ref, which is the exact defect this file exists to end, re-run
+// one layer down.
+//
+// `refs: not-a-list` is a scalar where the envelope declares a sequence: it
+// breaks the full decode and cannot possibly affect whether the artifact
+// EXISTS or which thread it is on.
+func TestBuildArtifactIndex_MalformedIrrelevantFieldStillResolves(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("good.md", "---\nid: XQ-axon-20260701-aa11\nthread: TH-axon-20260701-zz99\n---\nbody\n")
+	write("odd.md", "---\nid: XQ-axon-20260701-bb22\nthread: TH-axon-20260701-zz99\nrefs: not-a-list\n---\nbody\n")
+
+	idx, skipped, err := BuildArtifactIndex(dir)
+	if err != nil {
+		t.Fatalf("BuildArtifactIndex: %v", err)
+	}
+
+	entry, ok := idx["XQ-axon-20260701-bb22"]
+	if !ok {
+		t.Fatalf("an artifact with a clean id/thread and one malformed irrelevant field must still resolve; index has %v, skipped %v", idx, skipped)
+	}
+	if entry.Thread != "TH-axon-20260701-zz99" {
+		t.Errorf("thread = %q, want the one in the frontmatter", entry.Thread)
+	}
+	if entry.Digest == "" {
+		t.Error("a recovered entry must still carry its digest — a resolver that cannot answer Digest is only half wired")
+	}
+	if _, ok := idx["XQ-axon-20260701-aa11"]; !ok {
+		t.Error("the well-formed artifact must resolve too")
+	}
+	for _, s := range skipped {
+		if strings.Contains(s.Path, "odd.md") {
+			t.Errorf("a file the resolver COULD answer for must not be reported as skipped by it: %+v", s)
+		}
 	}
 }

@@ -46,3 +46,43 @@ func TestOlderThan(t *testing.T) {
 		})
 	}
 }
+
+// TestCanonical pins the normalisation POL-011 depends on, and the reason it
+// exists: `contract publish` writes its own parsed value while `deprecate`
+// and `retire` write the operator's `--version` verbatim, so one version can
+// reach a policy under two spellings.
+func TestCanonical(t *testing.T) {
+	t.Parallel()
+
+	same := []struct{ in, want string }{
+		{"1.0.0", "1.0.0"},
+		{"01.0.0", "1.0.0"},
+		{"1.00.0", "1.0.0"},
+		{"1.0.00", "1.0.0"},
+		{"v1.0.0", "1.0.0"},
+		{"10.20.30", "10.20.30"},
+		// The parser pads a short form, and for POL-011 that is right: "1.0"
+		// and "1.0.0" name one version, so they must key alike.
+		{"1.0", "1.0.0"},
+		{"1", "1.0.0"},
+	}
+	for _, tc := range same {
+		got, err := Canonical(tc.in)
+		if err != nil {
+			t.Errorf("Canonical(%q): %v", tc.in, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("Canonical(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+
+	// An unparseable spelling must ERROR rather than pass itself through:
+	// a caller that silently accepts garbage as a key reintroduces exactly
+	// the two-keys-for-one-version bug this function was written to close.
+	for _, bad := range []string{"", "1.0.0.0", "one.0.0", "1.0.x"} {
+		if got, err := Canonical(bad); err == nil {
+			t.Errorf("Canonical(%q) = %q, want an error", bad, got)
+		}
+	}
+}

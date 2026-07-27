@@ -140,6 +140,20 @@ type ContractVersionEvent struct {
 // lifecycle is pending, because a reader who learns the step is pending
 // stops hunting for their own mistake.
 func CheckRetireVersionScope(events []ContractVersionEvent, contractID, retiredVersion string) *Violation {
+	// Keyed on the CANONICAL spelling, never the raw string. `publish`
+	// records its own parsed value while `deprecate`/`retire` record the
+	// operator's `--version` verbatim, so "1.0.0" and "01.0.0" can name one
+	// version across two events. Keying raw made this guard invent a phantom
+	// still-published version — the contract's own — and then assert the
+	// refusal was "not a mistake in your command". An unparseable spelling
+	// keys as itself: it can only ever match another identical unparseable
+	// spelling, which is the conservative reading.
+	canon := func(v string) string {
+		if c, err := version.Canonical(v); err == nil {
+			return c
+		}
+		return v
+	}
 	published := map[string]bool{}
 	for _, ev := range events {
 		if ev.Subject != contractID || ev.Version == "" {
@@ -147,12 +161,12 @@ func CheckRetireVersionScope(events []ContractVersionEvent, contractID, retiredV
 		}
 		switch ev.Transition {
 		case "publish":
-			published[ev.Version] = true
+			published[canon(ev.Version)] = true
 		case "deprecate", "retire":
-			published[ev.Version] = false
+			published[canon(ev.Version)] = false
 		}
 	}
-	delete(published, retiredVersion)
+	delete(published, canon(retiredVersion))
 
 	still := make([]string, 0, len(published))
 	for v, isPublished := range published {
@@ -166,7 +180,7 @@ func CheckRetireVersionScope(events []ContractVersionEvent, contractID, retiredV
 	sort.Slice(still, func(i, j int) bool {
 		older, err := version.OlderThan(still[i], still[j])
 		if err != nil {
-			return still[i] < still[j] // unparseable: stable, never a panic
+			return still[i] < still[j] // unparseable: falls back to byte order, which affects only the ORDER the message lists, never which versions it flags
 		}
 		return older
 	})

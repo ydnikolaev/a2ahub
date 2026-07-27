@@ -1385,11 +1385,17 @@ func TestContractRetireGuardAllowsSolePublishedVersion(t *testing.T) {
 func TestContractRetireGuardNormalizesVersionComparison(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
-	writeContractDescriptor(t, mirrorDir, "normalize", "1.00.0")
+	// The spellings MUST differ across the events. `publish` records its own
+	// parsed value; `deprecate`/`retire` record the operator's --version
+	// verbatim. Writing the same literal twice passes against the raw-string
+	// bug — the deprecate already unsets the key the delete would remove —
+	// and so proves nothing. This fixture is the wiring half; the
+	// discriminating unit repro lives in internal/validate.
+	writeContractDescriptor(t, mirrorDir, "normalize", "1.0.0")
 	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-normalize", "publish", "axon")
-	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.00.0")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
 	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-normalize", "deprecate", "axon")
-	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.00.0")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "01.0.0")
 
 	fake := &fakeLifecycleFunnel{}
 	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
