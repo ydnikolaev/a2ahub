@@ -384,7 +384,13 @@ func TestContractRetireRefusesOmittedVersionWithMultiplePublished(t *testing.T) 
 // (subject-scoped fold: Published -> Published -> Deprecated), then
 // retire 1.0.0 is legal at the fold table but would leave the contract
 // SUBJECT Retired while 2.0.0 is still published and consumed.
-func TestContractRetireGuardRefusesWhileAnotherVersionPublished(t *testing.T) {
+// TestContractRetireSucceedsWhileAnotherVersionPublished is P4's AC-7/AC-9
+// (04-per-version-lifecycle.plan.md), MCP parity with internal/cli's own
+// TestContractRetireSucceedsWhileAnotherVersionPublished — see that
+// test's doc comment for the full rationale. Re-pinned from "refused
+// (POL-011)" to "succeeds": POL-011 is deleted this wave, superseded by
+// internal/fold's own per-version legality (fold.CheckCandidate).
+func TestContractRetireSucceedsWhileAnotherVersionPublished(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
 	writeContractDescriptor(t, mirrorDir, "guarded", "2.0.0")
@@ -399,16 +405,11 @@ func TestContractRetireGuardRefusesWhileAnotherVersionPublished(t *testing.T) {
 	handler := newContractRetireHandler(contractTestDeps(mirrorDir, fake))
 	args, _ := json.Marshal(ContractRetireInput{ID: "XC-axon-guarded", Version: "1.0.0"})
 	_, _, err := handler(context.Background(), args)
-	if err == nil {
-		t.Fatal("expected a refusal: 2.0.0 is still published (spec 02 §3 verdict)")
+	if err != nil {
+		t.Fatalf("expected retire to succeed (P4: per-version retire, 2.0.0 stays published): %v", err)
 	}
-	for _, want := range []string{"POL-011", "2.0.0", "WHOLE contract", "pending"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("expected the refusal to mention %q (spec 02 §3 Message, parity with the CLI's own refusal); got %v", want, err)
-		}
-	}
-	if len(fake.calls) != 0 {
-		t.Fatalf("expected the funnel NEVER to be called, got %d calls", len(fake.calls))
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
 	}
 }
 

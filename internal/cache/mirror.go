@@ -17,7 +17,29 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 )
+
+// canonicalEventVersion reformats a committed event's own `version` field
+// through internal/version.Canonical, so two spellings of the same version
+// ("1.0.0" and "01.0.0") produce the IDENTICAL string once threaded into
+// fold.Event.Version — fold.Result.Versions is a map[string]State keyed on
+// the raw string with no canonicalization of its own (P4,
+// 04-per-version-lifecycle.plan.md; internal/fold is off-limits to this
+// phase, so this is the caller's own half of keeping that map's keys
+// consistent, at the one place every committed event's version enters
+// fold's own input). Fails open (returns v unchanged) on an empty or
+// unparseable v — canonicalization is never itself a refusal path; fold's
+// own legality checks decide whether an unparseable version is legal.
+func canonicalEventVersion(v string) string {
+	if v == "" {
+		return v
+	}
+	if c, err := version.Canonical(v); err == nil {
+		return c
+	}
+	return v
+}
 
 // maxCacheReadBytes bounds every mirror file read this package performs
 // (rails: "bounded reads everywhere").
@@ -159,6 +181,7 @@ func buildIndex(ctx context.Context, spaceID, dir string, manifest space.Manifes
 			Transition:   re.Ev.Transition,
 			ClaimedState: fold.State(re.Ev.State),
 			Actor:        fold.Actor{Kind: re.Ev.Actor.Kind, Name: re.Ev.Actor.Name, System: re.Ev.Actor.System},
+			Version:      canonicalEventVersion(re.Ev.Version),
 		}
 		if re.Ev.Transition == fold.TRespond {
 			if cands, ok := responsesBySeqAndParent[re.CommitSeq][re.Ev.Subject]; ok && len(cands) > 0 {

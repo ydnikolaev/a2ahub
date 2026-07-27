@@ -118,7 +118,7 @@ func LegalNextFor(kind Kind, prior Result, version string) []NextMove {
 	if kind == KindContract && (version != "" || len(prior.Versions) > 0) {
 		var out []NextMove
 		for _, t := range []string{TPublish, TDeprecate, TRetire} {
-			if contractVersionVerdict(prior.Versions, t, version) != VerdictLegal {
+			if !contractMoveAvailable(prior.Versions, t, version) {
 				continue
 			}
 			out = append(out, NextMove{Transition: t, To: contractVersionOutcome(t), Role: contractVersionRole})
@@ -126,6 +126,60 @@ func LegalNextFor(kind Kind, prior Result, version string) []NextMove {
 		return out
 	}
 	return LegalNext(kind, prior.State)
+}
+
+// contractMoveAvailable is LegalNextFor's own predicate, and it differs
+// from contractVersionVerdict in EXACTLY ONE case, deliberately: the
+// whole-contract form of `publish`.
+//
+// The two functions answer different questions. contractVersionVerdict
+// answers "may this EVENT be committed", and a publish event carrying no
+// version has no meaning in the per-version model, so it refuses.
+// LegalNextFor answers "what may this participant DO next", and
+// publishing the next version is always something a contract's owner may
+// do — they name the version as part of doing it (`a2a contract publish`
+// resolves one from --version or --bump before it authors anything).
+//
+// Collapsing the two costs a real surface. `a2a thread`'s open items are
+// one entry per ARTIFACT, so internal/cache asks the whole-contract form;
+// deriving that answer from the event predicate dropped `publish` from
+// the next actions of every contract that had ever published a version —
+// which is to say, from the single most common thing an owner does, on
+// every contract in real use. Found by reading what the caller migration
+// actually rendered, not by a failing test, which is why it is written
+// down here rather than left as a shape someone re-derives.
+//
+// TestLegalNextForAgreesWithCheckCandidate pins both halves: agreement
+// for every NAMED version, and this one deliberate difference.
+func contractMoveAvailable(versions map[string]State, transition, version string) bool {
+	if transition == TPublish && version == "" {
+		return true
+	}
+	return contractVersionVerdict(versions, transition, version) == VerdictLegal
+}
+
+// RoleAuthorizes reports whether actorSystem satisfies role against env's
+// own facts — the exported form of the resolution CheckCandidate, Apply
+// and CheckLegality all perform internally. It answers ONLY the role
+// question: membership validity is the caller's own (it is a fact about
+// the manifest as of a commit, which this package never reads), and so is
+// whether the transition is legal from the current state at all.
+//
+// It exists for the caller that has already established legality by
+// asking LegalNextFor, and now needs "which systems does this move belong
+// to". internal/cache/threadview.go's legalSystems is that caller, and
+// its doc comment used to explain that it called CheckLegality once per
+// participant PRECISELY BECAUSE this resolution was unexported — a
+// workaround, described as one, that then broke the moment a move existed
+// which is offered as an affordance but refused as an event (the
+// whole-contract `publish`; see contractMoveAvailable). Exporting the
+// resolution the workaround was approximating is the fix.
+//
+// This adds no new rule: NextMove.Role comes from the same table
+// CheckCandidate reads, and roleAuthorizes below is the same function
+// both paths already used.
+func RoleAuthorizes(role Role, env Envelope, actorSystem string) bool {
+	return roleAuthorizes(role, env, actorSystem)
 }
 
 func containsMove(moves []NextMove, m NextMove) bool {

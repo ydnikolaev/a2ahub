@@ -29,6 +29,7 @@ type mirrorCommittedEvent struct {
 	Event      string `yaml:"event"`
 	Subject    string `yaml:"subject"`
 	Transition string `yaml:"transition"`
+	Version    string `yaml:"version"`
 	Actor      struct {
 		Kind   string `yaml:"kind"`
 		Name   string `yaml:"name"`
@@ -39,10 +40,12 @@ type mirrorCommittedEvent struct {
 // CommittedEvents reads every committed event/v1 YAML file under
 // mirrorDir/system/events/<year>/*.yaml and returns the subset whose
 // `subject` equals subject, as fold.Event values (ULID/Subject/
-// Transition/Actor only — no ClaimedState, no CommitSeq: the identical
-// shape the two former adapter-local copies produced). An absent
-// events/ directory (fresh mirror, nothing committed for this system yet)
-// returns (nil, nil), never an error.
+// Transition/Version/Actor only — no ClaimedState, no CommitSeq: the
+// identical shape the two former adapter-local copies produced, now with
+// Version added so a contract publish/deprecate/retire read through this
+// path carries its per-version fact instead of silently dropping it). An
+// absent events/ directory (fresh mirror, nothing committed for this
+// system yet) returns (nil, nil), never an error.
 func CommittedEvents(mirrorDir, system, subject string) ([]fold.Event, error) {
 	dir := filepath.Join(mirrorDir, system, "events")
 	years, err := os.ReadDir(dir)
@@ -82,6 +85,7 @@ func CommittedEvents(mirrorDir, system, subject string) ([]fold.Event, error) {
 				ULID:       ev.Event,
 				Subject:    ev.Subject,
 				Transition: ev.Transition,
+				Version:    canonicalEventVersion(ev.Version),
 				Actor:      fold.Actor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
 			})
 		}

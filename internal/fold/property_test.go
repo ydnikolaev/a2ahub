@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -230,68 +231,102 @@ func foldContractSequence(transitions []string, version string) State {
 	return Fold(KindContract, env, events, alwaysMember).State
 }
 
-// TestMigrationCutoverProperty is spec 04 §8 AC-P4.1 (spec §5.1's
-// zero-history cutover gate): "any history touching AT MOST ONE distinct
-// version folds identically old vs new". Two lanes:
+// expectedCutoverDivergences is the COMPLETE set of ways the per-version
+// engine's answer differs from the frozen pre-P4 engine's, over every
+// sequence of up to four contract transitions. Keyed "<frozen> -> <live>".
 //
-//   - version == "": every one of the 120 sequences must agree, with no
-//     restriction — a version-less event ALWAYS hits applyContractScoped's
-//     own fallback (event.Version == "" and, since no version-carrying
-//     event is ever mixed in here, prior.Versions stays empty for the
-//     whole sequence), so this lane folds through the exact same
-//     applyPrimaryScoped/table.go code path as before this phase. It is
-//     the literal migration guarantee, not an approximation of it.
-//   - version == "1.0.0": restricted to sequences with AT MOST ONE
-//     `publish`. A real single-version history never publishes the same
-//     version number twice — spec §5.4a resolves `id@version` through the
-//     publish event's own SHA, so two publish events sharing one version
-//     string is not well-formed data, not a history this guarantee
-//     covers. Two publishes of the SAME version is also the one place
-//     this phase's engine and the frozen one deliberately disagree:
-//     the frozen engine's (deprecated, publish) interim row is
-//     version-blind and re-publishes; contractVersionVerdict correctly
-//     refuses a republish of an EXISTING version key regardless of its
-//     current state. That divergence is pinned separately and on
-//     purpose, never inside this property test — see
-//     TestContractVersionRepublishAfterDeprecateIsIllegal.
+// This is the migration's own audit (spec §5.1, epic AC-11: "every changed
+// subject state is named in the release notes") expressed as data a test
+// can enforce, rather than prose somebody has to remember to write. The
+// test below fails BOTH ways: an unlisted divergence fails, and a listed
+// divergence that stops occurring fails too, so this table cannot rot into
+// a stale claim.
+//
+// Both entries have ONE cause: the interim `(deprecated, publish)` row is
+// gone (P4 wave 4), and `contractVersionVerdict` refuses a republish of a
+// version key that already exists. The frozen engine let a publish from
+// `deprecated` resurrect the contract; nothing does that now.
+var expectedCutoverDivergences = map[string]string{
+	"published -> deprecated": "A publish from `deprecated` no longer resurrects the contract. Under the " +
+		"frozen engine the interim row silently re-published it — which is exactly the version-blind " +
+		"shortcut this phase removes.",
+	"published -> retired": "The sequence publish, deprecate, publish, retire. The frozen engine's bogus " +
+		"republish moved the subject back to `published`, where `retire` has no row and was refused; with " +
+		"the republish correctly refused, the version is still `deprecated` and the retire LANDS. The " +
+		"§5.4 cycle completing is the whole point of the phase, and here it is as a state change.",
+}
+
+// TestMigrationCutoverProperty is spec 04 §8 AC-P4.1 and §5.1's cutover
+// gate. It compares every sequence of up to four contract transitions
+// against frozenContractSubjectFold, in two lanes — version-less events
+// and single-version events — and requires one of two things per sequence:
+// the two engines agree, or they disagree in a way named in
+// expectedCutoverDivergences above.
+//
+// It used to SKIP the sequences that diverge (the single-version lane
+// excluded anything with more than one publish). That hid the interesting
+// half. A cutover audit whose job is to enumerate what changed cannot get
+// there by declining to look at the changes, so the skip is gone and the
+// divergences are declared instead — which also means the release notes'
+// AC-11 list is derived from a running test rather than from memory.
+//
+// Both lanes produce the SAME two divergence classes, which is itself
+// worth knowing: one behavioural change reached through two different code
+// paths (the deleted table row for version-less events, the
+// already-exists refusal for version-carrying ones).
 func TestMigrationCutoverProperty(t *testing.T) {
 	t.Parallel()
 	sequences := allTransitionSequences([]string{TPublish, TDeprecate, TRetire}, 4)
 
-	t.Run("version_less_history_agrees_for_every_sequence", func(t *testing.T) {
-		t.Parallel()
-		for _, seq := range sequences {
-			t.Run(strings.Join(seq, "_"), func(t *testing.T) {
-				t.Parallel()
-				want := frozenContractSubjectFold(seq)
-				got := foldContractSequence(seq, "")
-				if got != want {
-					t.Fatalf("version-less sequence %v: new engine state = %q, frozen engine state = %q", seq, got, want)
-				}
-			})
-		}
-	})
+	lanes := []struct {
+		name    string
+		version string
+	}{
+		{name: "version_less_history", version: ""},
+		{name: "single_version_history", version: "1.0.0"},
+	}
 
-	t.Run("single_version_history_with_at_most_one_publish_agrees_for_every_sequence", func(t *testing.T) {
-		t.Parallel()
-		for _, seq := range sequences {
-			publishCount := 0
-			for _, tr := range seq {
-				if tr == TPublish {
-					publishCount++
-				}
+	for _, lane := range lanes {
+		t.Run(lane.name, func(t *testing.T) {
+			t.Parallel()
+
+			seen := map[string]bool{}
+			var mu sync.Mutex
+
+			for _, seq := range sequences {
+				t.Run(strings.Join(seq, "_"), func(t *testing.T) {
+					t.Parallel()
+					want := frozenContractSubjectFold(seq)
+					got := foldContractSequence(seq, lane.version)
+					if got == want {
+						return
+					}
+					key := string(want) + " -> " + string(got)
+					reason, declared := expectedCutoverDivergences[key]
+					if !declared {
+						t.Fatalf("sequence %v folds %q under the frozen pre-P4 engine and %q under this one, "+
+							"and that divergence is not declared in expectedCutoverDivergences. Either it is a "+
+							"regression, or it is an intended change nobody wrote down — and an undeclared "+
+							"state change is exactly what AC-11 forbids shipping.", seq, want, got)
+					}
+					mu.Lock()
+					seen[key] = true
+					mu.Unlock()
+					t.Logf("declared divergence %v: %s — %s", seq, key, reason)
+				})
 			}
-			if publishCount > 1 {
-				continue
-			}
-			t.Run(strings.Join(seq, "_"), func(t *testing.T) {
-				t.Parallel()
-				want := frozenContractSubjectFold(seq)
-				got := foldContractSequence(seq, "1.0.0")
-				if got != want {
-					t.Fatalf("single-version sequence %v: new engine state = %q, frozen engine state = %q", seq, got, want)
+
+			t.Cleanup(func() {
+				mu.Lock()
+				defer mu.Unlock()
+				for key := range expectedCutoverDivergences {
+					if !seen[key] {
+						t.Errorf("declared divergence %q never occurred in lane %s — the table is claiming a "+
+							"change the engine no longer makes, which is how a cutover audit rots into fiction",
+							key, lane.name)
+					}
 				}
 			})
-		}
-	})
+		})
+	}
 }

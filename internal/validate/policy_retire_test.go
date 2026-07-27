@@ -1,7 +1,6 @@
 package validate
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -133,50 +132,4 @@ func TestCheckRetirePrecondition(t *testing.T) {
 			}
 		}
 	})
-}
-
-// TestCheckRetireVersionScope_NonCanonicalSpellingIsNotAPhantomVersion is the
-// discriminating repro for an audit finding, and it is written to FAIL against
-// the raw-string implementation it replaced.
-//
-// `publish` records its own parsed value ("1.0.0"); `deprecate` and `retire`
-// record the operator's `--version` verbatim, so a perfectly reasonable
-// operator typing "01.0.0" produced two map keys for one version. The guard
-// then reported the contract's OWN sole version as "also published" and told
-// the operator the refusal was "not a mistake in your command" — an
-// authoritative wrong answer, which this project treats as worse than the
-// condition it reports.
-//
-// The fixture must use DIFFERENT spellings across the events; using the same
-// literal twice passes against the bug (the deprecate already unsets the key
-// the delete would have removed) and proves nothing.
-func TestCheckRetireVersionScope_NonCanonicalSpellingIsNotAPhantomVersion(t *testing.T) {
-	t.Parallel()
-
-	got := CheckRetireVersionScope([]ContractVersionEvent{
-		{Subject: "XC-axon-ingest", Transition: "publish", Version: "1.0.0"},
-		{Subject: "XC-axon-ingest", Transition: "deprecate", Version: "01.0.0"},
-	}, "XC-axon-ingest", "01.0.0")
-	if got != nil {
-		t.Fatalf("phantom POL-011 on the contract's own sole version: %s", got.Message)
-	}
-}
-
-// TestCheckRetireVersionScope_StillFiresOnAGenuineSecondVersion guards the
-// other direction: canonicalising must not make the check blind. Without this,
-// the test above could be satisfied by a function that never fires at all.
-func TestCheckRetireVersionScope_StillFiresOnAGenuineSecondVersion(t *testing.T) {
-	t.Parallel()
-
-	got := CheckRetireVersionScope([]ContractVersionEvent{
-		{Subject: "XC-axon-ingest", Transition: "publish", Version: "1.0.0"},
-		{Subject: "XC-axon-ingest", Transition: "publish", Version: "2.0.0"},
-		{Subject: "XC-axon-ingest", Transition: "deprecate", Version: "01.0.0"},
-	}, "XC-axon-ingest", "1.0.0")
-	if got == nil {
-		t.Fatal("expected POL-011: 2.0.0 is still published while 1.0.0 retires")
-	}
-	if !strings.Contains(got.Message, "2.0.0") {
-		t.Errorf("message must name the still-published version, got: %s", got.Message)
-	}
 }

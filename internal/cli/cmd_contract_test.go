@@ -1244,17 +1244,20 @@ func TestContractDeprecateRetireDefaultWithOneVersion(t *testing.T) {
 	})
 }
 
-// TestContractRetireGuardRefusesWhileAnotherVersionPublished is
-// agent-ops-2026-07 spec 02 (P2)'s AC-2.1/AC-2.3: `publish 2.0 ->
-// deprecate 1.0 -> retire 1.0` is legal at internal/fold's own
-// SUBJECT-scoped table (Deprecated -retire-> Retired) and, before this
-// guard existed, committed — leaving the contract subject Retired while
-// 2.0.0 stays published and consumed (internal/fold carries no
-// per-version state at all, and is off-limits to this phase). The guard
-// must refuse BEFORE the event is built, name 2.0.0 by version, and say
-// the whole-contract consequence and that the per-version lifecycle is
-// pending (spec 02 §3 "Message").
-func TestContractRetireGuardRefusesWhileAnotherVersionPublished(t *testing.T) {
+// TestContractRetireSucceedsWhileAnotherVersionPublished is P4's AC-7/AC-9
+// (04-per-version-lifecycle.plan.md): `publish 2.0 -> deprecate 1.0 ->
+// retire 1.0` while 2.0 stays published and consumed. Before P4 this was
+// blocked by POL-011, a fail-closed stopgap for internal/fold's then
+// SUBJECT-scoped table (retiring 1.0 legally moved the whole contract
+// SUBJECT to Retired, bricking 2.0's own future publish/deprecate). P4
+// turns on internal/fold's per-version engine and deletes POL-011 in the
+// same wave (agent-ops-2026-07 wave 4): fold.CheckCandidate now answers
+// per VERSION (Versions["1.0.0"] == deprecated is independently legal to
+// retire, regardless of Versions["2.0.0"] == published), so this exact
+// sequence — the everyday rolling-window case P4 exists to enable — now
+// SUCCEEDS instead of refusing. Re-pinned from "refused (POL-011, exit
+// 2)" to "succeeds (exit 0, one funnel call)".
+func TestContractRetireSucceedsWhileAnotherVersionPublished(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
 	writeContractDescriptor(t, mirrorDir, "guarded", "2.0.0")
@@ -1269,34 +1272,35 @@ func TestContractRetireGuardRefusesWhileAnotherVersionPublished(t *testing.T) {
 	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
 	io, _, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{"retire", "--version", "1.0.0", "XC-axon-guarded"}, io)
-	if code != 2 {
-		t.Fatalf("code = %d, want 2 (spec 02 §3 verdict: refuse, exit 2); stderr=%s", code, errOut.String())
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 (P4: per-version retire, 2.0.0 stays published); stderr=%s", code, errOut.String())
 	}
-	msg := errOut.String()
-	for _, want := range []string{"POL-011", "2.0.0", "WHOLE contract", "pending"} {
-		if !strings.Contains(msg, want) {
-			t.Fatalf("expected the refusal to mention %q (spec 02 §3 Message); got %q", want, msg)
-		}
-	}
-	if len(fake.calls) != 0 {
-		t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
 	}
 }
 
-// TestContractRetireBothCycleOrdersRefuse is spec 02's AC-2.5: the two
-// §5.4 event orders that differ only in WHEN 1.0 is deprecated relative
-// to 2.0's publish must both refuse a `retire --version 1.0.0` — one via
-// the pre-existing SUBJECT-scoped LFC-001 (the subject is back to
-// Published once 2.0 is published after the deprecate), the other via
-// THIS guard (POL-011) — never one refusing loudly and the other
-// committing and bricking the contract, which is the P2 defect this
-// guard closes. Hermetic-tier proof only: the true live/wire-tier
-// AC-2.5 row (a local bare-repo origin) is out of this phase's allowlist
-// — see the Deviations report.
-func TestContractRetireBothCycleOrdersRefuse(t *testing.T) {
+// TestContractRetireBothCycleOrdersSucceed is P4's AC-P4.2
+// (04-per-version-lifecycle.plan.md): the two §5.4 event orders that
+// differ only in WHEN 1.0 is deprecated relative to 2.0's publish must
+// BOTH complete a `retire --version 1.0.0`, in either order, rather than
+// completing in one and refusing (or bricking the contract) in the
+// other. Before P4, internal/fold's SUBJECT-scoped table made this
+// order-dependent: "deprecate then publish" left the subject Published
+// (no (Published, retire) row — LFC-001) while "publish then deprecate"
+// left it Deprecated and reachable, but only past POL-011's own
+// still-published-elsewhere guard (deleted this wave). P4's per-version
+// engine answers both orders identically because it tracks 1.0 and 2.0
+// independently: 1.0 deprecated is retireable regardless of when 2.0
+// published relative to it. Re-pinned from "both refuse (one via
+// LFC-001, one via POL-011)" to "both succeed" — this is the exact
+// defect spec 02/agent-ops-2026-07 P2 filed and P4 now fixes at its
+// root, so the two orders converging is not a coincidence to merely
+// tolerate.
+func TestContractRetireBothCycleOrdersSucceed(t *testing.T) {
 	t.Parallel()
 
-	t.Run("deprecate_then_publish_refuses_LFC001", func(t *testing.T) {
+	t.Run("deprecate_then_publish_succeeds", func(t *testing.T) {
 		t.Parallel()
 		mirrorDir := t.TempDir()
 		writeContractDescriptor(t, mirrorDir, "order-a", "2.0.0")
@@ -1311,18 +1315,15 @@ func TestContractRetireBothCycleOrdersRefuse(t *testing.T) {
 		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
 		io, _, errOut := newIO()
 		code := cmd.Run(context.Background(), []string{"retire", "--version", "1.0.0", "XC-axon-order-a"}, io)
-		if code == 0 {
-			t.Fatalf("expected a non-zero exit: subject is back to Published (the new-version publish moved it there), and (Published, retire) has no row")
+		if code != 0 {
+			t.Fatalf("code = %d, want 0 (P4: 1.0 deprecated is independently retireable); stderr=%s", code, errOut.String())
 		}
-		if !strings.Contains(errOut.String(), "LFC-001") {
-			t.Fatalf("expected the pre-existing SUBJECT-scoped fold refusal (LFC-001), not this guard; got %q", errOut.String())
-		}
-		if len(fake.calls) != 0 {
-			t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
 		}
 	})
 
-	t.Run("publish_then_deprecate_refuses_via_guard", func(t *testing.T) {
+	t.Run("publish_then_deprecate_succeeds", func(t *testing.T) {
 		t.Parallel()
 		mirrorDir := t.TempDir()
 		writeContractDescriptor(t, mirrorDir, "order-b", "2.0.0")
@@ -1337,14 +1338,11 @@ func TestContractRetireBothCycleOrdersRefuse(t *testing.T) {
 		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
 		io, _, errOut := newIO()
 		code := cmd.Run(context.Background(), []string{"retire", "--version", "1.0.0", "XC-axon-order-b"}, io)
-		if code != 2 {
-			t.Fatalf("code = %d, want 2 (guard refusal, POL-011); stderr=%s", code, errOut.String())
+		if code != 0 {
+			t.Fatalf("code = %d, want 0 (P4: 1.0 deprecated is independently retireable); stderr=%s", code, errOut.String())
 		}
-		if !strings.Contains(errOut.String(), "POL-011") {
-			t.Fatalf("expected THIS guard's own refusal (POL-011), not the SUBJECT-scoped fold; got %q", errOut.String())
-		}
-		if len(fake.calls) != 0 {
-			t.Fatalf("expected the write funnel NEVER to be called; got %d call(s)", len(fake.calls))
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
 		}
 	})
 }
