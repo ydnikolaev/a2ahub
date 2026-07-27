@@ -116,8 +116,13 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 	for _, c := range cinfos {
 		cons := consumersOf[c.ID]
 		sort.Strings(cons)
+		vers := make([]ContractVersion, 0, len(c.Versions))
+		for _, v := range c.Versions {
+			vers = append(vers, ContractVersion{Version: v.Version, State: v.State})
+		}
 		d.Contracts = append(d.Contracts, Contract{Space: c.Space, ID: c.ID, Provider: c.Provider,
-			Version: c.Version, State: c.State, Consumers: dedupSorted(cons), Description: c.Description})
+			Version: c.Version, State: c.State, Consumers: dedupSorted(cons), Description: c.Description,
+			Versions: vers})
 	}
 
 	// Inbox / outbox items (open only — the Store already filters to open).

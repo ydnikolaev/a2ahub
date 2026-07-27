@@ -211,6 +211,14 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
      in your contract's authoring-time `to:` and never ran `a2a contract
      adopt` is not a registered consumer: it does not receive the
      announcement and it does not block your retire.
+   - **Read the window before you plan the cycle.** `a2a contracts` shows a
+     sixth column for any contract with more than one published version —
+     `1.0.0=retired 1.4.1=published 2.0.0=published`, oldest first. The
+     `version`/`state` columns beside it are the SUMMARY (newest published,
+     and the whole contract's state projected over its versions), so a
+     contract reading `published` may still have a deprecated line inside it
+     waiting on somebody's ack. The dashboard (`a2a html`) renders the same
+     thing under each contract you provide.
    - **One registry, two scopes — and the difference is deliberate.** The
      deprecation is addressed to EVERY registered consumer, on any major.
      Your `retire --version X` is blocked only by consumers registered on

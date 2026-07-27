@@ -551,6 +551,7 @@ func (s *Store) Contracts(ctx context.Context, provider string) ([]ContractInfo,
 				Space: spaceID, ID: fa.Env.ID, Provider: fa.Env.From,
 				Version: fa.LatestPublishVersion, State: string(fa.Result.State),
 				Description: bodySummary(fa.Raw, 240),
+				Versions:    contractVersionWindow(fa.Result),
 			})
 		}
 	}
