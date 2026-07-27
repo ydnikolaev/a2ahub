@@ -41,7 +41,7 @@ func CheckCandidate(kind Kind, prior Result, transition, version string, env Env
 		if verdict != VerdictLegal {
 			return verdict
 		}
-		if !legalRole(RoleOwner, env, actor.System, membership) {
+		if !legalRole(contractVersionRole, env, actor.System, membership) {
 			return VerdictUnauthorizedActor
 		}
 		return VerdictLegal

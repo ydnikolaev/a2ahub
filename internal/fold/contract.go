@@ -83,6 +83,22 @@ func contractVersionVerdict(versions map[string]State, transition, version strin
 	}
 }
 
+// contractVersionRole is the single declaration of WHO may make a
+// contract version transition. It is the role dimension's answer to the
+// same question contractVersionVerdict answers for the transition
+// dimension, and it exists for the same reason: three call sites read it
+// — applyContractScoped post-write, CheckCandidate pre-write, and
+// LegalNextFor when it reports who a legal move belongs to — and a bare
+// RoleOwner literal at each of them is three declarations of one rule
+// that nothing forces to agree.
+//
+// The early audit of this wave measured exactly that: changing one site
+// to RoleTarget was caught only INCIDENTALLY, by a property test that
+// happens to use the owner as its actor, because no test asked the three
+// sites whether they still agreed. TestContractVersionRoleIsOneRule now
+// does.
+const contractVersionRole = RoleOwner
+
 // contractVersionOutcome maps one contract version transition to the
 // state it puts THAT VERSION in — the third and last reader of the
 // version rules, alongside contractVersionVerdict's two. It exists so
@@ -170,7 +186,7 @@ func applyContractScoped(env Envelope, result *Result, event Event, membership M
 		result.Flags = append(result.Flags, Flag{Kind: FlagIllegalTransition, EventULID: event.ULID, Subject: event.Subject})
 		return
 	}
-	if !authorized(RoleOwner, env, event.Actor.System, membership) {
+	if !authorized(contractVersionRole, env, event.Actor.System, membership) {
 		result.Flags = append(result.Flags, Flag{Kind: FlagUnauthorizedActor, EventULID: event.ULID, Subject: event.Subject})
 		return
 	}
