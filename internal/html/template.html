@@ -630,7 +630,7 @@ const I18N = {
       you:"YOU",left:"LEFT",filter:"Filter items…",showMore:n=>"Show "+n+" more",showLess:"Show less",
       density:"Density",comfortable:"Comfortable",compact:"Compact",overlay:"open exchanges",
       graphHint:"Solid = contract dependency · Dashed = open exchanges",youProvide:"You provide",noConsumers:"no consumers",
-      notCodeBacked:"not code-backed",versionsWord:"lines",contract:"Contract",provider:"Provider",pinnedProvider:"Pinned → provider",state:"State",driftCol:"Drift",
+      notCodeBacked:"not code-backed",versionsWord:"lines",yourLine:"your pinned line",contract:"Contract",provider:"Provider",pinnedProvider:"Pinned → provider",state:"State",driftCol:"Drift",
       allSpaces:"All spaces",space:"space",viewingAs:"viewing as",oldest:"oldest",count:"count",owners:"owners",status:"status",org:"org",
       contractDep:"contract dependency",openExchanges:"open exchanges",self:"self",daysLeft:n=>"("+n+"d left)",passed:"(passed)",today:"(today)",sunsetLbl:"sunset",
       gatePending:"waiting on you",new:"new",
@@ -666,7 +666,7 @@ const I18N = {
       you:"ВЫ",left:"ПОКИНУЛ",filter:"Фильтр…",showMore:n=>"Показать ещё "+n,showLess:"Свернуть",
       density:"Плотность",comfortable:"Просторно",compact:"Компактно",overlay:"открытые обмены",
       graphHint:"Сплошная = зависимость контракта · Пунктир = открытые обмены",youProvide:"Вы предоставляете",noConsumers:"нет потребителей",
-      notCodeBacked:"без кода",versionsWord:"линии",contract:"Контракт",provider:"Провайдер",pinnedProvider:"Закреплено → провайдер",state:"Состояние",driftCol:"Дрейф",
+      notCodeBacked:"без кода",versionsWord:"линии",yourLine:"ваша линия",contract:"Контракт",provider:"Провайдер",pinnedProvider:"Закреплено → провайдер",state:"Состояние",driftCol:"Дрейф",
       allSpaces:"Все спейсы",space:"спейс",viewingAs:"вы вошли как",oldest:"старейшее",count:"кол-во",owners:"владельцы",status:"статус",org:"орг.",
       contractDep:"зависимость контракта",openExchanges:"открытые обмены",self:"сам",daysLeft:n=>"(осталось "+n+"д)",passed:"(прошло)",today:"(сегодня)",sunsetLbl:"снятие",
       gatePending:"ждёт вас",new:"новое",
@@ -1584,6 +1584,11 @@ function contractsCard(cEdges,contracts,combined){
     el("span",{class:"cnt-note",text:drifted?drifted+" · "+driftWord("behind").toLowerCase():""}),el("span",{class:"sp"})]));
   if(!cEdges.length && !contracts.length){ card.appendChild(emptyState(okIcon(),L.ui.noDepsT,L.ui.noDepsD)); return card; }
   const rank={dangling:0,retired:1,deprecated:2,behind:3,current:4};
+  /* A dependency row knows its contract id but carries no version window of
+     its own — the window lives on the CONTRACT. Joining them here is what
+     lets a consumer see which lines exist beside the one they are pinned to,
+     which is the question a rolling window is actually asked. */
+  const byContract={}; (contracts||[]).forEach(c=>{ byContract[c.id]=c; });
   const list=el("div");
   cEdges.slice().sort((a,b)=>(rank[a.drift]??9)-(rank[b.drift]??9)).forEach(e=>{
     const dep=el("div",{class:"dep"});
@@ -1595,6 +1600,7 @@ function contractsCard(cEdges,contracts,combined){
     if(e.sunset) d2.appendChild(el("span",{class:"sunset",text:L.ui.sunsetLbl+" "+e.sunset+" "+sunsetCountdown(e.sunset)}));
     if(combined) d2.appendChild(el("span",{class:"spacechip",text:e.space}));
     dep.appendChild(d2);
+    const cwin=versionWindow(byContract[e.contract],e.pinnedMajor); if(cwin) dep.appendChild(cwin);
     if(e.description) dep.appendChild(el("div",{class:"dep-desc",text:e.description}));  /* D-002: UNTRUSTED → textContent */
     list.appendChild(dep);
   });
@@ -1612,7 +1618,7 @@ function contractsCard(cEdges,contracts,combined){
       (c.consumers||[]).forEach(x=>cons.appendChild(el("span",{class:"chip",text:x})));
       if(!(c.consumers||[]).length) cons.appendChild(el("span",{class:"chip",text:L.ui.noConsumers}));
       line.appendChild(cons); pb.appendChild(line);
-      const win=versionWindow(c); if(win) pb.appendChild(win);
+      const win=versionWindow(c,null); if(win) pb.appendChild(win);
       if(c.description) pb.appendChild(el("div",{class:"dep-desc",style:"margin-top:-2px;margin-bottom:9px",text:c.description}));  /* D-002 */
     });
     card.appendChild(pb);
@@ -1627,15 +1633,21 @@ function contractsCard(cEdges,contracts,combined){
    State drives colour, not the version: `published` is ordinary, `deprecated`
    is the one a reader must act on, `retired` recedes. textContent throughout
    (D-002 is a rule per SURFACE, not per field). */
-function versionWindow(c){
-  const vs=c.versions||[]; if(vs.length<2) return null;
-  const wrap=el("div",{style:"display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:-3px 0 8px 0"});
-  wrap.appendChild(el("span",{class:"lab",style:"font-size:11px",text:L.ui.versionsWord}));
+function versionWindow(c,pinnedMajor){
+  const vs=(c&&c.versions)||[]; if(vs.length<2) return null;
+  const wrap=el("div",{style:"display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:3px 0 2px 0"});
+  wrap.appendChild(el("span",{class:"k",text:L.ui.versionsWord+" "}));
   vs.forEach(v=>{
     let st="";
     if(v.state==="deprecated") st="color:var(--attention);background:var(--attention-soft)";
-    else if(v.state==="retired") st="color:var(--text-faint)";
-    wrap.appendChild(el("span",{class:"chip",style:st,title:v.state,text:v.version}));
+    else if(v.state==="retired") st="color:var(--text-faint);opacity:.75";
+    /* A consumer's own line, marked. Without it the window answers "what
+       exists" when the question is "what is happening to MINE" — the reason
+       this row is being read at all during a sunset. */
+    const mine=pinnedMajor!=null && String(v.version).split(".")[0]===String(pinnedMajor);
+    if(mine) st+=";outline:1px solid var(--text-faint);outline-offset:1px";
+    const title=v.state+(mine?" · "+L.ui.yourLine:"");
+    wrap.appendChild(el("span",{class:"chip",style:st,title:title,text:v.version}));
   });
   return wrap;
 }

@@ -81,6 +81,8 @@ Three ways an agent activates this skill (§8.7):
 | [reference/status-announcements.md](reference/status-announcements.md) | Feed liveness via `announcement` + `category: status` (+ `period`) — the shipped mechanism, no new type. Hand-maintained prose, not generated. |
 | [reference/retraction.md](reference/retraction.md) | Withdrawing a live datum via a `work_request` carrying an `x_retraction` block — schema-valid today, no release needed. Hand-maintained prose, not generated. |
 | [reference/bindings.md](reference/bindings.md) | A tracked, local `.a2a/bindings.yaml` mapping a consumed contract to where it lands in YOUR code — the missing half of `consumes.yaml`. Hand-maintained prose, not generated. |
+| [reference/threads.md](reference/threads.md) | What a thread IS and why it is the unit you read: one intent, both systems, ordered by commit rather than by anyone's clock, with "whose move is it" computed from the same engine the write verbs enforce. Hand-maintained prose, not generated. |
+| [reference/contract-versions.md](reference/contract-versions.md) | The rolling window — several versions of one contract alive at once, what each state means to each side, how a line retires without touching the others, and why a maintenance release needs an explicit `--version`. Hand-maintained prose, not generated. |
 
 ## The eight artifact types (map)
 
@@ -102,8 +104,9 @@ Full semantics in [loops.md](loops.md); template + fields per type in
 
 The prose files in this skill — `SKILL.md`, `loops.md`, `troubleshooting.md`,
 `onboarding.md`, `reference/decompose-example.md`, `reference/feedback.md`,
-`reference/status-announcements.md`, `reference/retraction.md` and
-`reference/bindings.md` — are **hand-maintained** and single-sourced here;
+`reference/status-announcements.md`, `reference/retraction.md`,
+`reference/bindings.md`, `reference/threads.md` and
+`reference/contract-versions.md` — are **hand-maintained** and single-sourced here;
 they are reviewed at each tagged release against the maintainers' own
 release checklist, not by a machine gate.
 (That checklist lives in the product repo, one directory above this tree, and is

@@ -135,4 +135,35 @@ func TestDemoCarriesARollingWindow(t *testing.T) {
 		t.Error("no demo contract is version-less — a history that predates per-version recording must render " +
 			"as it always did, and the demo is where that is visible")
 	}
+
+	// The window is rendered in TWO places, and the first revision shipped
+	// only one of them: under "You provide". The demo's own `self` provided
+	// nothing, so that block never rendered at all and the feature was
+	// invisible in the only page anyone looks at before reading code. Both
+	// sides are pinned here because the consumer's side is the one that
+	// matters more — during a sunset the question is not "what exists" but
+	// "what is happening to the line I am pinned to".
+	var selfProvidesAWindow, selfConsumesAWindow bool
+	byID := map[string][]ContractVersion{}
+	for _, c := range d.Contracts {
+		byID[c.ID] = c.Versions
+		if c.Provider == d.Self && len(c.Versions) >= 2 {
+			selfProvidesAWindow = true
+		}
+	}
+	for _, e := range d.ContractEdges {
+		if e.From == d.Self && len(byID[e.Contract]) >= 2 {
+			selfConsumesAWindow = true
+		}
+	}
+	if !selfProvidesAWindow {
+		t.Errorf("no contract PROVIDED by the demo's own system (%q) has a version window — the "+
+			"\"You provide\" block is where the producer's own window renders, and it does not render at all "+
+			"when self provides nothing", d.Self)
+	}
+	if !selfConsumesAWindow {
+		t.Errorf("no contract CONSUMED by the demo's own system (%q) has a version window — that is the "+
+			"dependency row, and it is where a consumer reads which of the provider's lines exist beside "+
+			"their own pinned one", d.Self)
+	}
 }
