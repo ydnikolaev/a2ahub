@@ -61,6 +61,110 @@ func TestContractPublishFirstPublishGated(t *testing.T) {
 	}
 }
 
+// TestContractPublishNewMajorBaselineIsPriorInLine is epic AC-8
+// (04-per-version-lifecycle.md §4, Edge 2) on the MCP surface: the
+// baseline `contract publish` computes its G2 major-bump gate against is
+// max{v ∈ priorVersions : v < newVersion}, NOT the globally-highest
+// published version. This handler does not run the compat check locally
+// (see newContractPublishHandler's own doc comment — that half is
+// CLI-only, covered by TestContractPublishMaintenanceLineBaselineIsPriorInLine
+// in internal/cli), so the observable divergence here has to be through
+// the G2 gate itself: publishing 1.2 while 2.0 exists does not flip
+// isMajorBump either way (newVersion's major, 1, is not GREATER than
+// either candidate baseline's major, 1 or 2) — the scenario that DOES
+// distinguish the two rules is publishing a NEW major that is not the
+// globally-highest one: priorVersions = {1.0.0, 1.1.0, 3.0.0}, publish
+// "2.0.0". Correct baseline (max{v < 2.0.0} = 1.1.0, major 1): 2 > 1, a
+// real major bump, gated. Wrong baseline (globally-highest 3.0.0, major
+// 3): 2 > 3 is false, silently UNGATED — a major bump that should carry
+// the advisory PR marker would not. TEETH: reverting
+// contractSelectBaseline's call site back to
+// `priorVersions[len(priorVersions)-1]` makes this test go RED (PRBody
+// empty) — verified by making that revert and re-running (see this wave's
+// own report).
+func TestContractPublishNewMajorBaselineIsPriorInLine(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "newmajor", "3.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-newmajor", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-newmajor", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.1.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 2, "XC-axon-newmajor", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "3.0.0")
+
+	fake := &fakeFunnel{}
+	handler := newContractPublishHandler(contractTestDeps(mirrorDir, fake))
+	args, _ := json.Marshal(ContractPublishInput{ID: "XC-axon-newmajor", Version: "2.0.0"})
+	_, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("publish failed: %v", err)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	if fake.calls[0].PRBody == "" {
+		t.Fatalf("expected AC-8: baseline must be 1.1.0 (major 1), so 2.0.0 is a real major bump and must be G2-gated; got %+v", fake.calls)
+	}
+}
+
+// TestContractSelectBaseline asserts epic AC-8's own literal scenario
+// directly against the bridge (04-per-version-lifecycle.md §4, Edge 2):
+// publishing 1.2 while 2.0 is already published compares against 1.1, not
+// 2.0 — the globally-highest published version. The handler-level test
+// above (TestContractPublishNewMajorBaselineIsPriorInLine) has to use a
+// different numeric scenario because this handler runs no compat check
+// and `>` makes the literal 1.2-while-2.0 case invisible through the G2
+// gate alone; this unit test closes that gap by checking the bridge's own
+// return value. Mirrors internal/cli's own TestContractSelectBaseline
+// (ADR-001: contractSelectBaseline is unexported, never a shared symbol —
+// decision 8's DECISION lives in internal/version.Baseline, which both
+// bridges call).
+func TestContractSelectBaseline(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name          string
+		priorVersions []contractSemver
+		newVersion    contractSemver
+		wantBaseline  contractSemver
+		wantFound     bool
+	}{
+		{
+			name:          "first-ever publish has no baseline",
+			priorVersions: nil,
+			newVersion:    contractSemver{1, 0, 0},
+			wantFound:     false,
+		},
+		{
+			name:          "ordinary sequential publish picks the immediate prior",
+			priorVersions: []contractSemver{{1, 0, 0}},
+			newVersion:    contractSemver{2, 0, 0},
+			wantBaseline:  contractSemver{1, 0, 0},
+			wantFound:     true,
+		},
+		{
+			name:          "AC-8: maintenance 1.2 while 2.0 is published compares against 1.1, not 2.0",
+			priorVersions: []contractSemver{{1, 0, 0}, {1, 1, 0}, {2, 0, 0}},
+			newVersion:    contractSemver{1, 2, 0},
+			wantBaseline:  contractSemver{1, 1, 0},
+			wantFound:     true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, found := contractSelectBaseline(tc.priorVersions, tc.newVersion)
+			if found != tc.wantFound {
+				t.Fatalf("contractSelectBaseline(%v, %v) found = %v, want %v", tc.priorVersions, tc.newVersion, found, tc.wantFound)
+			}
+			if found && got != tc.wantBaseline {
+				t.Fatalf("contractSelectBaseline(%v, %v) = %v, want %v", tc.priorVersions, tc.newVersion, got, tc.wantBaseline)
+			}
+		})
+	}
+}
+
 func TestContractPublishMinorBumpUngated(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
@@ -410,6 +514,44 @@ func TestContractRetireSucceedsWhileAnotherVersionPublished(t *testing.T) {
 	}
 	if len(fake.calls) != 1 {
 		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+}
+
+// TestContractRetireNotBlockedByConsumerOnAnotherMajor is epic AC-9
+// (04-per-version-lifecycle.md §4, Edge 1), MCP parity with internal/cli's
+// own test of the same name: a consumer registered on a DIFFERENT major
+// must not block retiring this line forever. "beta" registers via
+// consumes.yaml at major 2 while 1.0 is the line being retired (2.0 stays
+// published) — before the fix, the retire precondition's consumer scan was
+// CONTRACT-scoped, so beta's major-2 registration would block this retire
+// forever even though beta never depends on the 1.x line, and no
+// deprecation announcement even exists to ack against. TEETH: dropping the
+// major filter (calling cache.FindRegisteredConsumers unscoped from the
+// retire path) reds this test with POL-006 — verified by reverting and
+// re-running (see this wave's own report).
+func TestContractRetireNotBlockedByConsumerOnAnotherMajor(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "majorgap", "2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-majorgap", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-majorgap", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 2, "XC-axon-majorgap", "deprecate", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	// "beta" depends on the 2.x line only — never the 1.x line being retired.
+	writeMirrorFile(t, mirrorDir, "beta/consumes.yaml",
+		"schema: consumes/v1\nsystem: beta\ndependencies:\n  - contract: XC-axon-majorgap\n    major: 2\n    since: \"2026-01-01\"\n")
+
+	fake := &fakeFunnel{}
+	handler := newContractRetireHandler(contractTestDeps(mirrorDir, fake))
+	args, _ := json.Marshal(ContractRetireInput{ID: "XC-axon-majorgap", Version: "1.0.0"})
+	_, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("expected retire to succeed (AC-9: a major-2 consumer must not block retiring the 1.x line): %v", err)
+	}
+	if len(fake.calls) != 1 || fake.calls[0].PRBody != "" {
+		t.Fatalf("expected an ungated retire (no consumer registered on the major being retired), got %+v", fake.calls)
 	}
 }
 

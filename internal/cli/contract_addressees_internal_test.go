@@ -5,20 +5,38 @@ import (
 	"path/filepath"
 	"sort"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 )
 
 // AC-971.2, asserted directly rather than through a proxy.
 //
 // The acceptance criterion is not "a registered consumer ends up addressed" —
 // that is AC-971.1 and cmd_contract_test.go proves it end to end. AC-971.2 is
-// the stronger claim §T4 actually rests on: the set a deprecation addresses
-// and the set that blocks a retire are **the same query**, not two queries
+// the stronger claim §T4 actually rests on: deprecate's addressee set and
+// retire's blocking-consumer set are computed by ONE shared D-022 scan
+// (cache.FindRegisteredConsumers), not two independently-written call sites
 // that happen to agree today. F3's deadlock existed precisely because they
 // were different sets, and a phase that merely made them agree would leave
 // the next divergence one refactor away.
 //
-// This file is `package cli` for that reason: contractDeprecateAddressees and
-// contractFindRegisteredConsumers are unexported, and the external
+// P4 wave 5 (Edge 1, 04-per-version-lifecycle.md §4) deliberately SPLITS
+// this invariant along one axis, and the split is intentional, not a
+// regression of it: `contractDeprecateAddressees` still calls the UNSCOPED
+// `cache.FindRegisteredConsumers` (this file's own comparison below), while
+// `contractBuildRetirePrecondition` calls `cache.FindRegisteredConsumersForMajor`
+// — the major-filtered sibling, added because a consumer registered on a
+// DIFFERENT major must not block retiring this line forever. Both functions
+// share ONE implementation (`findRegisteredConsumers` in internal/cache),
+// so the "one query, not two" guarantee this test protects is about the
+// SCAN, not about deprecate and retire always resolving to the identical
+// set — Edge 1 is the one place they are allowed to differ, by major, on
+// purpose.
+//
+// This file is `package cli` for that reason: contractDeprecateAddressees
+// is unexported (the registered-consumer scan itself moved to
+// cache.FindRegisteredConsumers in P4 wave 5, decision 8 — ONE home shared
+// with internal/mcp — and is exported there), and the external
 // cmd_contract_test.go could only chain through `retire --override`'s note to
 // infer the relationship. Inference is not the assertion.
 
@@ -74,10 +92,16 @@ func TestDeprecateAddresseesAreTheRetireBlockingSet(t *testing.T) {
 	t.Parallel()
 	mirrorDir, contractID, from, descriptorTo := contractAddresseeFixture(t)
 
-	// The set that blocks retire — read exactly as contractBuildRetirePrecondition reads it.
-	blocking, err := contractFindRegisteredConsumers(mirrorDir, contractID)
+	// The UNSCOPED registered-consumer set — the same
+	// cache.FindRegisteredConsumers call contractDeprecateAddressees below
+	// makes. contractBuildRetirePrecondition itself calls the major-scoped
+	// sibling, cache.FindRegisteredConsumersForMajor (Edge 1); both share
+	// ONE implementation, which is the invariant this test protects — see
+	// this file's own header for why "same query" no longer means
+	// "identical scope" post P4 wave 5.
+	blocking, err := cache.FindRegisteredConsumers(mirrorDir, contractID)
 	if err != nil {
-		t.Fatalf("contractFindRegisteredConsumers: %v", err)
+		t.Fatalf("cache.FindRegisteredConsumers: %v", err)
 	}
 	want := make([]string, 0, len(blocking))
 	for sys := range blocking {
@@ -119,7 +143,7 @@ func TestDeprecateAddresseesAreTheRetireBlockingSet(t *testing.T) {
 }
 
 // TestDeprecateAddresseesExcludeTheProducer keeps the one exclusion the
-// shared query cannot express: `contractFindRegisteredConsumers` legitimately
+// shared query cannot express: `cache.FindRegisteredConsumers` legitimately
 // returns the producer when it consumes its own contract, but a deprecation
 // addressed to its own author is noise, and `to:` naming `from` is refused
 // by the envelope's own referential rules.
@@ -127,9 +151,9 @@ func TestDeprecateAddresseesExcludeTheProducer(t *testing.T) {
 	t.Parallel()
 	mirrorDir, contractID, from, descriptorTo := contractAddresseeFixture(t)
 
-	blocking, err := contractFindRegisteredConsumers(mirrorDir, contractID)
+	blocking, err := cache.FindRegisteredConsumers(mirrorDir, contractID)
 	if err != nil {
-		t.Fatalf("contractFindRegisteredConsumers: %v", err)
+		t.Fatalf("cache.FindRegisteredConsumers: %v", err)
 	}
 	if !blocking[from] {
 		t.Fatalf("fixture is not discriminating: %q must be in the registered set for this test to mean anything", from)
