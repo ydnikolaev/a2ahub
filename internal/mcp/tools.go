@@ -109,8 +109,8 @@ func registerSpaceFree(r *Registry, store *cache.Store) {
 		Name:        "a2a_read",
 		Description: "read the local cache: view=inbox|outbox|show|thread|search|contracts",
 		InputSchema: groupedSchema("view", ReadViews, map[string]string{
-			"actionable": "boolean", "attention": "boolean", "ref": "string",
-			"thread_id": "string", "query": "string", "type": "string",
+			"actionable": "boolean", "attention": "boolean", "overdue": "boolean",
+			"ref": "string", "thread_id": "string", "query": "string", "type": "string",
 			"space": "string", "state": "string", "provider": "string",
 		}),
 		Handler: newReadDispatch(store),
