@@ -23,6 +23,8 @@ package cache
 
 import (
 	"fmt"
+	"os"
+	"path"
 	"path/filepath"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
@@ -85,6 +87,48 @@ func (t *envelopeTo) UnmarshalYAML(n *yaml.Node) error {
 	}
 	*t = xs
 	return nil
+}
+
+// myDependencyContracts returns the set of contract ids ownSystem declares
+// in its OWN consumes.yaml under dir, for P4's Edge 3. The second return
+// is a SkippedFile to report when the registry exists but cannot be read.
+//
+// The failure direction here is the OPPOSITE of the retire gate's, and the
+// asymmetry is deliberate rather than an inconsistency. On the gate,
+// "I cannot read this registry" must fail CLOSED: it means "I cannot prove
+// nobody depends on this contract", and retiring anyway destroys someone
+// else's build. Here it means "I may be showing you LESS than I should",
+// and refusing to render an inbox because one file is malformed is worse
+// than the condition — so it degrades to the announcement's own `to:` and
+// SAYS SO through the same skip channel skipped.go exists for. Silence is
+// the one option neither direction allows.
+//
+// An absent consumes.yaml is not a skip: a system that consumes nothing is
+// the ordinary case, not a degradation.
+func myDependencyContracts(dir, ownSystem string) (map[string]bool, *SkippedFile) {
+	out := map[string]bool{}
+	if ownSystem == "" {
+		return out, nil
+	}
+	rel := path.Join(ownSystem, "consumes.yaml")
+	full := filepath.Join(dir, ownSystem, "consumes.yaml")
+	raw, err := readBounded(full, maxCacheReadBytes)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return out, nil
+		}
+		return out, &SkippedFile{Path: rel, Reason: SkipReasonUnreadable}
+	}
+	registry, cerr := parseConsumesStrict(raw, rel)
+	if cerr != nil {
+		return out, &SkippedFile{Path: rel, Reason: SkipReasonUndecodableYAML}
+	}
+	for _, d := range registry.Dependencies {
+		if d.Contract != "" {
+			out[d.Contract] = true
+		}
+	}
+	return out, nil
 }
 
 // FindRegisteredConsumers returns every registered consumer of contractID,

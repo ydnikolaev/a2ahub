@@ -31,7 +31,7 @@ func TestBuildIndex_SimpleWorkRequestLifecycle(t *testing.T) {
 		"at":    fxAt(base.Add(time.Hour)),
 	})
 
-	idx, _, err := buildIndex(context.Background(), "sp1", fx.dir, mustManifest(t, fx))
+	idx, _, err := buildIndex(context.Background(), "sp1", fx.dir, "acme", mustManifest(t, fx))
 	if err != nil {
 		t.Fatalf("buildIndex: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestBuildIndex_ParentResponseDisputeGather(t *testing.T) {
 		"actor": map[string]any{"kind": "agent", "name": "axon-bot", "system": "axon"}, "at": fxAt(base.Add(4 * time.Hour)),
 	})
 
-	idx, _, err := buildIndex(context.Background(), "sp1", fx.dir, mustManifest(t, fx))
+	idx, _, err := buildIndex(context.Background(), "sp1", fx.dir, "acme", mustManifest(t, fx))
 	if err != nil {
 		t.Fatalf("buildIndex: %v", err)
 	}
