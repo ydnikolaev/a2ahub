@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 )
@@ -152,9 +153,43 @@ func (c *ContractsCommand) Run(ctx context.Context, args []string, stdio IO) int
 		return 0
 	}
 	for _, ci := range contracts {
+		// The five existing columns are UNCHANGED — this output is parsed by
+		// scripts and by agents, and the version/state summary they read
+		// still means exactly what it meant.
+		//
+		// The rolling window (P4) is appended as a SIXTH column, and only
+		// when there is more than one version: a contract with one line has
+		// nothing to add beyond the summary, and printing "1.4.2=published"
+		// beside "1.4.2 published" on every row is noise that trains a
+		// reader to stop reading the column where it matters. A version-less
+		// history — every history before P4 — prints byte-identically to
+		// before.
+		if window := contractsVersionWindow(ci); window != "" {
+			_, _ = fmt.Fprintf(stdio.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\n", ci.Space, ci.ID, ci.Provider, ci.Version, ci.State, window)
+			continue
+		}
 		_, _ = fmt.Fprintf(stdio.Stdout, "%s\t%s\t%s\t%s\t%s\n", ci.Space, ci.ID, ci.Provider, ci.Version, ci.State)
 	}
 	return 0
+}
+
+// contractsVersionWindow renders ci's per-version states as
+// "1.0.0=retired 1.4.1=published 2.0.0=published", semver-ascending (the
+// order internal/cache already put them in), or "" when the contract has
+// fewer than two recorded versions.
+//
+// Space-separated inside one tab-delimited column, so the row stays five
+// fields for every caller that splits on tab and six only where there is a
+// window to read.
+func contractsVersionWindow(ci cache.ContractInfo) string {
+	if len(ci.Versions) < 2 {
+		return ""
+	}
+	parts := make([]string, 0, len(ci.Versions))
+	for _, v := range ci.Versions {
+		parts = append(parts, v.Version+"="+v.State)
+	}
+	return strings.Join(parts, " ")
 }
 
 var _ Command = (*ContractsCommand)(nil)

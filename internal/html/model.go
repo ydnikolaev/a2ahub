@@ -176,6 +176,25 @@ type Contract struct {
 	// Description is a short human-readable summary from the contract body —
 	// UNTRUSTED, textContent-only (D-002). Omitted when the body is empty.
 	Description string `json:"description,omitempty"`
+	// Versions is the rolling window: every published version and the state
+	// it holds now, semver-ascending (P4, agent-ops-2026-07). Version/State
+	// above stay the summary — newest published, and the projection over
+	// these. The dashboard needs both: the summary answers "is this contract
+	// alive", the window answers "which of its lines is".
+	//
+	// These come from the fold, not from a contract body, so unlike
+	// Description they are OURS rather than artifact-controlled — but the
+	// template still renders them as textContent, because the rule is per
+	// SURFACE, not per field, and one exception is how the next one gets
+	// made.
+	Versions []ContractVersion `json:"versions,omitempty"`
+}
+
+// ContractVersion is one version of a contract and the state it holds — the
+// page's contracts[].versions[] entry shape, mirroring cache.ContractVersion.
+type ContractVersion struct {
+	Version string `json:"version"`
+	State   string `json:"state"`
 }
 
 // Flag is one validation flag (V4/V5) surfaced per space/system.

@@ -118,6 +118,30 @@ type ContractInfo struct {
 	// for the dashboard's dependency map. json:"-" keeps `a2a contracts --json`
 	// byte-stable for its existing consumers (read as a Go field only).
 	Description string `json:"-"`
+	// Versions is the ROLLING WINDOW: every version this contract has ever
+	// published, with the state it holds now, oldest first (P4,
+	// agent-ops-2026-07). `Version`/`State` above are the summary — newest
+	// published version, and the subject-level projection over these — and
+	// they stay exactly what they were. This is the detail neither of them
+	// can carry: "1.0 retired, 1.2 published, 2.0 published" is three facts,
+	// and a reader shown only the projection cannot tell a contract with one
+	// live version from one with three.
+	//
+	// `omitempty`, so a contract whose history records no version at all —
+	// the shape every history had before P4 — produces byte-identical
+	// `a2a contracts --json` output. For a contract that HAS versions this
+	// is a new field in that output, which is additive and deliberate: a
+	// consumer that could not see the window could not act on it.
+	Versions []ContractVersion `json:"versions,omitempty"`
+}
+
+// ContractVersion is one version of a contract and the state it holds, for
+// ContractInfo.Versions. A struct rather than a map so the order is part of
+// the value — semver ascending, which a map cannot express and which every
+// renderer would otherwise have to re-derive.
+type ContractVersion struct {
+	Version string `json:"version"`
+	State   string `json:"state"`
 }
 
 // SearchFilters narrows `a2a search`'s free-text match.

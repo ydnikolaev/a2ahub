@@ -653,6 +653,28 @@
       "codeBacked": true,
       "consumers": [
         "gvbilling"
+      ],
+      "versions": [
+        {
+          "version": "1.0.0",
+          "state": "retired"
+        },
+        {
+          "version": "1.4.0",
+          "state": "deprecated"
+        },
+        {
+          "version": "1.4.1",
+          "state": "published"
+        },
+        {
+          "version": "2.0.0",
+          "state": "published"
+        },
+        {
+          "version": "2.3.0",
+          "state": "published"
+        }
       ]
     },
     {
@@ -664,6 +686,12 @@
       "codeBacked": false,
       "consumers": [
         "gvbilling"
+      ],
+      "versions": [
+        {
+          "version": "1.0.0",
+          "state": "retired"
+        }
       ]
     },
     {
@@ -675,6 +703,20 @@
       "codeBacked": true,
       "consumers": [
         "axon"
+      ],
+      "versions": [
+        {
+          "version": "2.9.0",
+          "state": "retired"
+        },
+        {
+          "version": "3.0.0",
+          "state": "deprecated"
+        },
+        {
+          "version": "3.1.0",
+          "state": "deprecated"
+        }
       ]
     }
   ],

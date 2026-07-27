@@ -208,6 +208,40 @@ changes:
         - "a2a sync"
 
   - id: RN-01300-7
+    kind: feat
+    impact: normal
+    subject: "`a2a contracts` and the dashboard show the rolling window, not just the newest version"
+    detail: >
+      A contract with several live version lines used to render as one
+      version and one state — the newest published, and the whole contract's
+      projected state. Both are still there and still mean the same thing,
+      but neither can say "1.0 retired, 1.4.1 published, 2.0 published", and
+      a reader shown only the summary cannot tell a contract with one live
+      line from one with three.
+      `a2a contracts` now prints a sixth column for any contract with more
+      than one recorded version — `1.0.0=retired 1.4.1=published
+      2.0.0=published`, oldest first. The five existing columns are
+      byte-identical, and a contract with fewer than two versions prints
+      exactly as before, so nothing that parses this output breaks.
+      `a2a contracts --json` gains a `versions` array on the same condition,
+      and `a2a html` renders the window under each contract you provide,
+      with a deprecated line highlighted because it is the one you have to
+      act on.
+      Worth knowing when you read a state that looks wrong: a contract reads
+      `published` while one of its lines is deprecated — because it is
+      published, on another line. That is the projection working, not a
+      stale value.
+    affects: ["a2a contracts", "a2a html", "a2a_read"]
+    action:
+      scope: none
+      why: >
+        Additive. Run `a2a contracts` after upgrading to see which of your
+        contracts have more than one line live.
+      run:
+        - "a2a contracts"
+        - "a2a html --demo   # the demo fixture now shows a rolling window"
+
+  - id: RN-01300-8
     kind: known-issue
     impact: normal
     subject: "The per-version lifecycle has not been exercised against a real space with a real counterparty"
