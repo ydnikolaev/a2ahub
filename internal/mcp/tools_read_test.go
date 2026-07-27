@@ -573,3 +573,62 @@ func boolLabel(b bool) string {
 	}
 	return "clean"
 }
+
+// TestInboxHandler_Overdue keeps the two read surfaces level. The CLI grew
+// `--overdue` in the same change; a read filter that exists on one surface
+// only is exactly the asymmetry P43 was cut to close, and the cheapest
+// moment not to create one is the commit that adds the filter.
+func TestInboxHandler_Overdue(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	id := "XQ-axon-20260721-a002"
+	writeQuestionArtifact(t, mirrorDir, id, "beta")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
+
+	handler := newInboxHandler(testStore(t, mirrorDir))
+
+	// The fixture carries no needed_by, so nothing is overdue — the useful
+	// assertion here is that the parameter is READ and CHANGES the query,
+	// rather than being accepted and ignored, which is how a mirrored flag
+	// usually rots.
+	result, _, err := handler(context.Background(), json.RawMessage(`{"overdue":true}`))
+	if err != nil {
+		t.Fatalf("overdue handler failed: %v", err)
+	}
+	out, ok := result.(itemsWithSkipped)
+	if !ok {
+		t.Fatalf("expected itemsWithSkipped, got %T", result)
+	}
+	if len(out.Items) != 0 {
+		t.Fatalf("expected no overdue items for a fixture with no needed_by, got %+v", out.Items)
+	}
+	// Same store, no overdue filter: the item IS there. Without this the
+	// assertion above would pass just as well against a handler that always
+	// returns nothing.
+	plain, _, err := handler(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("plain handler failed: %v", err)
+	}
+	if len(plain.(itemsWithSkipped).Items) != 1 {
+		t.Fatalf("control case: expected the item to be visible without --overdue, got %+v", plain)
+	}
+}
+
+// TestInboxHandler_ActionableAndOverdueRefused mirrors the CLI's refusal.
+// Silently answering one of two contradictory questions is worse over MCP
+// than on a terminal: no human reads the result, so a caller that meant
+// "what is late" and received "what needs my move" acts on the wrong list
+// with no signal that it happened.
+func TestInboxHandler_ActionableAndOverdueRefused(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	handler := newInboxHandler(testStore(t, mirrorDir))
+
+	_, _, err := handler(context.Background(), json.RawMessage(`{"actionable":true,"overdue":true}`))
+	if err == nil {
+		t.Fatal("expected a refusal when both actionable and overdue are set")
+	}
+	if !strings.Contains(err.Error(), "different questions") {
+		t.Errorf("error = %v, want it to explain the two questions", err)
+	}
+}

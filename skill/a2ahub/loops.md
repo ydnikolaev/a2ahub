@@ -333,8 +333,25 @@ All provided by the toolchain — none of this is your manual bookkeeping:
    always runs, even when the statusline does not.
 3. **`a2a sync && a2a inbox`** on demand: before starting cross-boundary work,
    and whenever the statusline flags movement.
-4. Hub notifications to humans exist for gates and p1 — do not rely on humans
+4. **`a2a inbox --overdue`**: what you owe whose `needed_by` has passed.
+   Check it separately, because it is the one thing the list above cannot show
+   you: `--actionable`'s first condition is "addressed to me with no ack by
+   me", so an item leaves that list the moment you acknowledge it while the
+   work and its deadline remain yours. Until you ask, the only party seeing
+   that deadline is the requester — who cannot close it.
+5. Hub notifications to humans exist for gates and p1 — do not rely on humans
    relaying them; the sources above are yours.
+
+**Every source above is pull, and three of them need a session to exist.** If
+nothing in the project runs them on a schedule, "I did not notice" is a matter
+of time rather than diligence. Two setup steps fix it, once per repo, and they
+are the operator's to apply rather than yours to perform:
+a session-start hook that runs the §8.1 check, and a scheduled workflow in the
+project's OWN repository that polls and starts an agent when there is
+something to start it for. `--exit-code` on `inbox`/`outbox` returns §7.5's
+severity so a scheduler can branch without parsing. If you are working in a
+repo where neither exists, say so — see
+[onboarding.md](onboarding.md) § "Making the loop run without a human".
 
 ## §8.7 Feedback loop — "the tool itself got in my way"
 

@@ -37,16 +37,23 @@ func (c *OutboxCommand) Synopsis() string {
 
 // Run implements cli.Command. Exit codes: 2 = usage; 1 = a connected
 // space's mirror could not be read; 0 = success.
+//
+// With --exit-code, success instead carries §7.5's severity (see
+// cache.SeverityOf and InboxCommand.Run's own note). The session-start
+// floor names inbox AND outbox — verification of answers you requested is
+// yours to close — so a scheduler that can only branch on one of them
+// covers half the loop.
 func (c *OutboxCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("outbox", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	attention := fs.Bool("attention", false, "apply the normative --attention union (OP-208)")
 	jsonOut := fs.Bool("json", false, "JSON array output (guaranteed shape)")
+	exitCode := fs.Bool("exit-code", false, "exit with §7.5 severity instead of 0: 0 nothing, 10 items pending, 11 p1/blocking/gate (for schedulers and hooks)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a outbox [--attention] [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a outbox [--attention] [--json] [--exit-code]")
 		return 2
 	}
 
@@ -63,6 +70,10 @@ func (c *OutboxCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// every connected mirror.
 	if skipped, skErr := c.store.AllSkippedFiles(ctx); skErr == nil {
 		skipAdvisory(stdio, flattenSkipped(skipped), *jsonOut)
+	}
+	// Severity replaces the success code only — see InboxCommand.Run.
+	if *exitCode && code == 0 {
+		return int(cache.SeverityOf(items))
 	}
 	return code
 }

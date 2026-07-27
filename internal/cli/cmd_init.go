@@ -223,6 +223,15 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	_, _ = fmt.Fprintf(stdio.Stdout, "init: wrote %s\n", c.projectConfigPath)
 	_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a connect <url>` for each space to register and set up credentials")
 	_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a doctor` to verify credentials and space access")
+	// Named here because this is the step nobody discovers on their own: every
+	// trigger a2a ships is human-initiated, so a repo without a session-start
+	// hook and a scheduled poll goes quiet while both sides believe they are
+	// waiting on the other. It is a pointer, never a write — the harness config
+	// belongs to whoever owns the repo (D-021).
+	_, _ = fmt.Fprintln(stdio.Stdout, "init: set up the automatic checks so a counterparty's message cannot sit unread —")
+	_, _ = fmt.Fprintln(stdio.Stdout, "init:   a session-start hook running `a2a sync && a2a inbox --actionable`, and a")
+	_, _ = fmt.Fprintln(stdio.Stdout, "init:   scheduled workflow in THIS repo polling it (`--exit-code` gives severity).")
+	_, _ = fmt.Fprintln(stdio.Stdout, "init:   see the skill's onboarding page, \"Making the loop run without a human\"")
 	return 0
 }
 

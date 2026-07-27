@@ -61,6 +61,12 @@ func flattenSkippedFiles(bySpace map[string][]cache.SkippedFile) []cache.Skipped
 // InboxInput is a2a_inbox's structured input.
 type InboxInput struct {
 	Actionable bool `json:"actionable,omitempty"`
+	// Overdue selects the open items addressed to this system whose
+	// needed_by has passed — see internal/cache/overdue.go. Mirrored from
+	// the CLI's own `--overdue` in the same change that added it: a read
+	// filter that exists on one surface only is the asymmetry P43 exists to
+	// close, and the cheapest moment to not create one is now.
+	Overdue bool `json:"overdue,omitempty"`
 }
 
 func newInboxHandler(store *cache.Store) HandlerFunc {
@@ -70,6 +76,23 @@ func newInboxHandler(store *cache.Store) HandlerFunc {
 			if err := json.Unmarshal(args, &in); err != nil {
 				return nil, "", fmt.Errorf("a2a_inbox: invalid input: %w", err)
 			}
+		}
+		if in.Actionable && in.Overdue {
+			return nil, "", fmt.Errorf(
+				"a2a_inbox: actionable and overdue are different questions — pass one: " +
+					"actionable = what OP-207 says needs your move now; " +
+					"overdue = what you owe whose needed_by has passed (acked or not)")
+		}
+		if in.Overdue {
+			items, err := store.Overdue(ctx)
+			if err != nil {
+				return nil, "", fmt.Errorf("a2a_inbox: %w", err)
+			}
+			if items == nil {
+				items = []cache.Item{}
+			}
+			bySpace, _ := store.AllSkippedFiles(ctx)
+			return itemsWithSkipped{Items: items, Skipped: flattenSkippedFiles(bySpace)}, "", nil
 		}
 		items, err := store.Inbox(ctx, in.Actionable)
 		if err != nil {

@@ -184,6 +184,94 @@ portal.
 > yet — see [troubleshooting.md](troubleshooting.md)). Do not present a doctor
 > PASS as an expiry guarantee.
 
+## Making the loop run without a human (§8.6 automation)
+
+Set this up once per participating repo. Skipping it is the single most
+common reason a space goes quiet while both sides believe they are waiting on
+the other.
+
+**The problem it solves.** Every trigger a2a ships with is human-initiated:
+the §8.1 session-start checklist runs when somebody starts a session, and the
+statusline is read when somebody looks at a terminal. Both are correct and
+neither fires on its own. So a space whose whole purpose is to take humans off
+the critical path still waits for a human to open a session — the bottleneck
+moves rather than leaves. The two steps below are what actually remove it.
+
+### 1. Make the session-start check something the harness runs, not something an agent remembers
+
+The §8.1 checklist lives in this skill, which means it is in an agent's
+context — not that it executed. Wire it to your harness's session-start hook
+so it runs before the agent's first thought:
+
+```sh
+a2a sync && a2a inbox --actionable
+```
+
+In Claude Code that is a `SessionStart` hook in the project's own
+`.claude/settings.json`; other harnesses have their own equivalent. **a2a will
+never write this for you** (D-021: your harness config is yours, and nothing
+here replaces or silently edits it) — it is a recommendation you apply.
+
+### 2. Give the loop a clock, in your own repository
+
+A schedule on your side, never a push from the space:
+
+```yaml
+# .github/workflows/a2a-poll.yml — in the PARTICIPANT's repo, not the space
+on:
+  schedule:
+    - cron: "*/30 8-20 * * 1-5"   # your working hours; adjust
+  workflow_dispatch:
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - run: a2a sync
+      - id: check
+        run: a2a inbox --actionable --exit-code || echo "severity=$?" >> "$GITHUB_OUTPUT"
+      # severity: unset/0 nothing · 10 items pending · 11 p1, blocking or a gate.
+      # Start the agent only when there is something to start it for.
+```
+
+**Poll your own mirror; do not let the space dispatch into you.** A space that
+pushes events into participants' repositories needs a write credential from
+each of them — every company hands the shared space the keys to its private
+repo. Polling needs no transfer of trust in either direction, and for two
+organisations that is the difference that decides whether the model is
+adoptable at all. It costs latency measured in the poll interval, which is the
+right thing to trade.
+
+Run it in CI rather than a laptop cron: the laptop is closed exactly when the
+counterparty's Monday-morning question lands.
+
+### Two things that bite, both avoidable
+
+- **A poll can eat the human's `[new]` marks.** `a2a inbox` advances the read
+  cursor on every call, which is what makes `[new]` and the statusline's
+  "N new" meaningful. A timer sharing a cache directory with a person spends
+  that signal before they see it. In CI this is free — the runner has its own
+  fresh cache. On one machine, give the scheduled runner its own checkout, or
+  poll with `a2a inbox --overdue`, which deliberately does not advance the
+  cursor.
+- **Do not let an unattended agent write on day one.** The write funnel opens
+  a PR with auto-merge, so a bad automated write merges into a permanent,
+  shared, cross-company record with nobody watching. Start the scheduled loop
+  read-only, then let it draft (`a2a new` leaves the draft in staging and
+  submits nothing), and only then allow it to submit — beginning with the
+  narrow cases where the answer is derivable rather than judged: `a2a ack`,
+  and responses to a `question` you can answer from your own repository.
+
+### What to check on a timer
+
+| Command | Question it answers | Exit code with `--exit-code` |
+|---|---|---|
+| `a2a inbox --actionable` | what needs my move now (OP-207's union) | 0 nothing · 10 pending · 11 p1/blocking/gate |
+| `a2a inbox --overdue` | what I owe whose `needed_by` has passed — including items I already acknowledged, which leave `--actionable` while the work stays mine | same scale |
+| `a2a outbox --attention` | answers awaiting MY verification, declines, disputes, and items of mine that went stale | same scale |
+
+All three are needed. The first two are what the counterparty is waiting on;
+the third is what nobody else will ever close for you (S-7).
+
 ## Day-2 operations (§9.4) — quick reference
 
 | Situation | Runbook move |
