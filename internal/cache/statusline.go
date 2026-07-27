@@ -197,3 +197,38 @@ func urgencyLabel(priority string, blocking bool, reasons []string) string {
 	}
 	return ""
 }
+
+// SeverityOf grades an already-computed item list on §7.5's scale, so a
+// caller that is not the statusline can answer "is there anything for me,
+// and how bad is it?" without parsing output.
+//
+// It exists because an unattended runner had no way to ask. `a2a inbox`'s
+// exit codes are 2=usage, 1=a mirror could not be read, 0=everything else —
+// so "nothing to do" and "five p1 items" are the same code, and any
+// scheduled agent loop has to shell out through `--json | jq length` to find
+// out whether to start work at all. The severity vocabulary was already
+// specified (§7.5, OP-215) and already implemented for the statusline; only
+// its reach was missing.
+//
+// The grading rule is `urgencyLabel`'s, unchanged and un-forked — same
+// function, so the statusline segment and a scheduler's branch can never
+// disagree about what "urgent" means.
+//
+// One ceiling, stated because it is a reasonable thing to expect and it is
+// deliberately absent: an item whose `needed_by` has passed grades as
+// ItemsPending, not Urgent. §7.5's exit-code contract is quoted in the plan
+// as "0 quiet / 10 items pending / 11 p1 or gate pending", and widening
+// urgency to cover a missed deadline would change what `a2a statusline`
+// returns on a corpus nobody re-verified. That is a protocol change and
+// belongs in the surfaced-diff flow, not here.
+func SeverityOf(items []Item) Severity {
+	if len(items) == 0 {
+		return SeverityQuiet
+	}
+	for _, it := range items {
+		if urgencyLabel(it.Priority, it.Blocking, it.Reasons) != "" {
+			return SeverityUrgent
+		}
+	}
+	return SeverityItemsPending
+}
