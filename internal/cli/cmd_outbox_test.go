@@ -141,3 +141,37 @@ func TestOutboxCommand_UsageError(t *testing.T) {
 		t.Fatalf("code = %d, want 2", code)
 	}
 }
+
+// TestOutboxCommand_ExitCode wires the same scheduler contract onto the
+// other half of the session-start floor. The floor names outbox too —
+// verifying the answers you asked for is nobody else's job — so a loop that
+// can only branch on the inbox never notices a response waiting on it.
+func TestOutboxCommand_ExitCode(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+
+	t.Run("nothing needing attention is quiet", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		manifest := cliWriteManifest(t, dir, "axon", "seomatrix")
+		store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}}, func() time.Time { return base }, 0)
+		io, _, _ := newIO()
+		if code := cli.NewOutboxCommand(store).Run(context.Background(), []string{"--attention", "--exit-code"}, io); code != 0 {
+			t.Fatalf("code = %d, want 0 (quiet)", code)
+		}
+	})
+
+	t.Run("a declined p2 item is pending, not urgent", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		manifest := cliWriteManifest(t, dir, "axon", "seomatrix")
+		cliWriteArtifact(t, dir, "axon/exchanges/XW-axon-20260701-b1.md", cliWR("XW-axon-20260701-b1", "b1", "axon", []string{"seomatrix"}, "p2", false), "body")
+		cliWriteEvent(t, dir, "axon", "01HFX00000000000000000002", cliEvt("XW-axon-20260701-b1", "submit", "axon", base))
+		cliWriteEvent(t, dir, "seomatrix", "01HFX00000000000000000003", cliEvt("XW-axon-20260701-b1", "decline", "seomatrix", base.Add(time.Hour)))
+		store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}}, func() time.Time { return base.Add(2 * time.Hour) }, 0)
+		io, _, _ := newIO()
+		if code := cli.NewOutboxCommand(store).Run(context.Background(), []string{"--attention", "--exit-code"}, io); code != 10 {
+			t.Fatalf("code = %d, want 10 (items pending)", code)
+		}
+	})
+}
