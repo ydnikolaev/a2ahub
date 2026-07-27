@@ -207,11 +207,18 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
      compute compatibility against. `a2a contract new` scaffolds both, and
      `a2a submit` carries them into the space with the contract.
    - **The deprecation goes to whoever is REGISTERED**, computed from the same
-     consumer registry that blocks your `retire` — so the set that can block
-     you and the set that was told are one set. A system that only appears in
-     your contract's authoring-time `to:` and never ran `a2a contract adopt`
-     is not a registered consumer: it does not receive the announcement and it
-     does not block your retire.
+     consumer registry that blocks your `retire`. A system that only appears
+     in your contract's authoring-time `to:` and never ran `a2a contract
+     adopt` is not a registered consumer: it does not receive the
+     announcement and it does not block your retire.
+   - **One registry, two scopes — and the difference is deliberate.** The
+     deprecation is addressed to EVERY registered consumer, on any major.
+     Your `retire --version X` is blocked only by consumers registered on
+     X's OWN major. So a consumer pinned to major 2 hears that you are
+     sunsetting 1.x and does not stand in the way of it — which is the point:
+     before this, one consumer on a newer major blocked retiring an old line
+     forever. If your contract has consumers on more than one major, "who was
+     told" is the larger set and "who can block me" the smaller one.
    - **Not enforced (do not rely on it):** nothing requires your major publish
      to be accompanied by a deprecation of the prior major. Order those two
      yourself.
@@ -242,7 +249,8 @@ contract does. Every guarantee below turns on the one prerequisite in step 1
 2. **How you find out: a deprecation announcement, addressed to you by
    name.** When the producer runs `a2a contract deprecate`, the
    announcement's `to:` is computed from the registered-consumer set — the
-   identical query that decides who blocks `retire` (§8.4 step 2) — so a
+   same registry that decides who blocks `retire` (§8.4 step 2), read
+   UNSCOPED here, so you are addressed whichever major you pinned. A
    registered consumer is addressed because it is registered, never merely
    because it appeared in the contract's authoring-time `to:`. It arrives
    the ordinary way: §8.1's session-start checklist / §8.6's watch loop

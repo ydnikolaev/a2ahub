@@ -788,7 +788,20 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 	// two agree whenever newVersion came from --bump (bumpSource is by
 	// construction the highest prior version strictly less than its own
 	// bump), so this never regresses the ordinary sequential-publish case.
-	baseline, _ := contractSelectBaseline(priorVersions, newVersion)
+	//
+	// hasBaseline is NOT `!isFirstPublish`. Prior versions can exist with
+	// none of them older than newVersion — publishing 1.0.0 on a contract
+	// whose only published version is 2.0.0, i.e. opening a lower line while
+	// a higher one is live. The fold permits it (a version key that has
+	// never been minted), and the old globally-highest rule could not
+	// produce this case because it always returned a real prior version.
+	// Discarding `found` here let a zero-value 0.0.0 flow into
+	// contractPriorVersionFiles, which git-searches for a descriptor version
+	// that was never published and aborts the publish with a confusing
+	// "no commit found" error. There IS no baseline in that case, so this
+	// publish is treated exactly as a first publish is: nothing to compute
+	// compatibility against, and gated for human review.
+	baseline, hasBaseline := contractSelectBaseline(priorVersions, newVersion)
 
 	verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TPublish, newVersion.String(), actor)
 	if err != nil {
@@ -898,8 +911,8 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 	// baseline/newVersion are already in scope.
 
 	// G2: a self-declared MAJOR bump on a non-first publish.
-	isMajorBump := !isFirstPublish && newVersion[0] > baseline[0]
-	gated := isFirstPublish || isMajorBump
+	isMajorBump := hasBaseline && newVersion[0] > baseline[0]
+	gated := !hasBaseline || isMajorBump
 
 	// F1/POL-007/POL-008 (D-010, §5.4b): computed compatibility. Only makes
 	// sense once there IS a prior version to compare against, and only for
@@ -911,7 +924,7 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 	// Reason the SAME way a minor/patch's "nothing computed" prints is
 	// AC-970.3 — a caller-side special case would just re-derive the same
 	// sentence the core already owns.
-	if !isFirstPublish && validate.IsJSONSchemaFormat(probe.SchemaFormat) {
+	if hasBaseline && validate.IsJSONSchemaFormat(probe.SchemaFormat) {
 		declaredBump := *bump
 		if declaredBump == "" {
 			// --version was used instead of --bump: classify the jump from

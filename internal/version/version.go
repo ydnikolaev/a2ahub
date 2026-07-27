@@ -1,8 +1,13 @@
-// Package version is the SSOT bare-version comparator: dotted
-// major.minor.patch parsing and strict-older comparison, stdlib-only, with
-// no dependency on any other a2ahub package. internal/space, internal/cli,
-// and internal/release all consume OlderThan (spec 19 §7 anti-dup) instead
-// of writing a third copy.
+// Package version is the SSOT for reasoning about bare dotted
+// major.minor.patch versions: parsing, strict-older comparison,
+// canonicalisation, major extraction, and baseline selection. Stdlib-only,
+// with no dependency on any other a2ahub package — which is what lets any
+// layer consume it, including the ones that must stay pure.
+//
+// It exists so the rules live in ONE place rather than being re-derived per
+// caller (spec 19 §7 anti-dup). Consumers are deliberately not enumerated
+// here: the list only ever grows, and a stale enumeration reads as a limit
+// on who may use this.
 package version
 
 import (

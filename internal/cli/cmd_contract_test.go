@@ -424,6 +424,58 @@ func TestContractPublishMaintenanceLineBaselineIsPriorInLine(t *testing.T) {
 	}
 }
 
+// TestContractPublishOpeningALowerLineHasNoBaseline is Edge 2's own edge:
+// prior versions exist, and NONE of them is older than the one being
+// published. Concretely, a contract whose only published version is 2.0.0,
+// publishing 1.0.0 — opening a lower line while a higher one is live. The
+// fold permits it (contractVersionVerdict refuses only a version key that
+// already exists, and 1.0.0 never has).
+//
+// The old globally-highest rule could not produce this case: it always
+// returned a real prior version. Edge 2's rule can return "none", and the
+// first revision of that call site discarded the `found` bool — so a
+// zero-value 0.0.0 flowed into contractPriorVersionFiles, which git-searches
+// for a descriptor version that was never published and aborted the publish
+// with "no commit found". A confusing hard error on a legal operation.
+//
+// There genuinely IS no baseline here, so this publish is treated exactly as
+// a first publish is: no compatibility computed, and gated for human review.
+//
+// TEETH: restore `baseline, _ := contractSelectBaseline(...)` and this test
+// reds with a resolve error instead of a gated success.
+func TestContractPublishOpeningALowerLineHasNoBaseline(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	gitRun(t, mirrorDir, "init", "-b", "main")
+
+	writeContractDescriptor(t, mirrorDir, "maint", "2.0.0")
+	writeMirrorFile(t, mirrorDir, "axon/provides/maint/schema/main.schema.json", `{"type":"object","properties":{"x":{"type":"string"}}}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/maint/fixtures/valid/ok.json", `{"x":"z"}`)
+	gitRun(t, mirrorDir, "add", "-A")
+	gitRun(t, mirrorDir, "commit", "-m", "publish 2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-maint", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"publish", "--version", "1.0.0", "XC-axon-maint"}, io)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 (no prior version is older than 1.0.0, so there is nothing to compare "+
+			"against — the same situation as a first publish); stderr=%s", code, errOut.String())
+	}
+	if strings.Contains(errOut.String(), "no commit") {
+		t.Fatalf("the publish tried to resolve a baseline that does not exist: %q", errOut.String())
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	if !strings.Contains(fake.calls[0].PRBody, "ADVISORY GATE") {
+		t.Fatalf("expected the publish to be GATED — with no baseline there is no computed compatibility, "+
+			"so it gets the same human review a first publish gets; PRBody=%q", fake.calls[0].PRBody)
+	}
+}
+
 // appendVersionToLatestEvent appends a `version:` line to the most
 // recently written event file under mirrorDir/system/events/**/*.yaml —
 // writeLifecycleEvent's own minimal content has no version field, and
