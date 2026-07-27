@@ -41,14 +41,25 @@ on:
         required: false
         type: string
         # MUST equal the tag being cut. `make release-preflight VERSION=vX.Y.Z`
-        # now asserts exactly that (assert_ref_default_matches) because leaving
+        # asserts exactly that (assert_ref_default_matches) because leaving
         # it behind is not a cosmetic slip: a space pins the WORKFLOW by tag and
         # inherits this default for the VALIDATOR, so a stale value means every
         # space silently validates with an old binary while believing it runs the
         # one it pinned. v0.7.0 shipped with this still at v0.5.0 — so every
         # space at @v0.7.0 validated with a binary that predated the v0.6.4
         # diff-authz fix, keeping an authorization bypass the notes called closed.
-        default: "v0.9.1"
+        #
+        # It happened AGAIN at v0.10.0, and that is why an offline gate now
+        # exists beside the preflight: the tag shipped with this still at
+        # v0.9.1, so `r22d222/a2a` — pinned @v0.10.0, passing no `a2a-ref` of
+        # its own — ran the v0.9.1 validator at its merge gate and enforced
+        # NONE of v0.10.0's own CI-side work (space.yaml validation, event/v1
+        # validation, the producer stamp, thread-required). The preflight would
+        # have said so; it takes an explicit VERSION and a network call, so it
+        # is opt-in and out-of-band, and an opt-in gate is one somebody skips.
+        # releasenotes/refdefault_test.go holds this value equal to the newest
+        # authored release-notes version on every `make check`, offline.
+        default: "v0.11.0"
       space-path:
         description: "Working directory of the space content to validate (default: repo root)."
         required: false
