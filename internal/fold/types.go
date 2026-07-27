@@ -213,6 +213,14 @@ type Event struct {
 	// id (D-024). Fold uses it to open that response's own closure
 	// sub-state at StateSubmitted.
 	ResponseID string
+	// Version is the event's own "version" field (§5.2.2), the single
+	// point of loss this phase closes (spec 04 §1: "internal/validate,
+	// internal/cache, the CLI all carry/write it; fold.Event dropped it").
+	// Non-empty only on a contract publish/deprecate/retire event that
+	// names a version; empty for every non-contract kind and for a
+	// version-less WHOLE-contract deprecate/retire (03-domain.md §3.4.1:
+	// "deprecate (whole) = an event without version").
+	Version string
 }
 
 // Result is the full carrier a caller stores and re-supplies as
@@ -232,6 +240,18 @@ type Result struct {
 	Acks      map[string]bool  // broadcast per-recipient ack set (D-025), keyed by acting system
 	Approvals map[string]bool  // decision quorum bookkeeping, keyed by approving system
 
+	// Versions is a contract's per-version lifecycle state (spec 04 §3),
+	// keyed by version string; nil for every other Kind. A version-less
+	// contract history (the shape every history had before this phase)
+	// leaves this nil forever — applyContractScoped's own fallback keeps
+	// Result.State the direct table-driven value in that case, exactly as
+	// today. Once any version-carrying event lands, Result.State becomes
+	// a PROJECTION over this map (see projectContractState in
+	// contract.go) rather than an independently carried value — so every
+	// existing consumer of Result.State (inbox, statusline, thread, the
+	// retire precondition) stays meaningful without change.
+	Versions map[string]State
+
 	Flags []Flag // append-only, in event-application order (deterministic; never re-sorted from a map)
 
 	Applied map[string]bool // applied event ULIDs, for idempotent replay (T2 AC5)
@@ -243,6 +263,7 @@ type Result struct {
 func (r Result) clone() Result {
 	out := r
 	out.Responses = copyStateMap(r.Responses)
+	out.Versions = copyStateMap(r.Versions)
 	out.Acks = copyBoolMap(r.Acks)
 	out.Approvals = copyBoolMap(r.Approvals)
 	out.Applied = copyBoolMap(r.Applied)
@@ -290,6 +311,42 @@ func (r Result) AckedRecipients() []string {
 func (r Result) ResponseIDs() []string {
 	out := make([]string, 0, len(r.Responses))
 	for k := range r.Responses {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// VersionNumbers returns a contract's recorded version keys as a
+// deterministically sorted slice — maps have no iteration order, so any
+// output rendering sorts (constraint: "no maps with nondeterministic
+// iteration leaking into output ordering"), the same shape as
+// AckedRecipients/ResponseIDs above. nil or empty Versions (every
+// non-contract kind, and a contract still on the legacy version-less
+// path) returns an empty slice, never nil.
+//
+// The order is LEXICAL, and that is deliberately NOT semver order —
+// sort.Strings puts "1.10.0" before "1.9.0". The two siblings above are
+// keyed by ULIDs and system ids, where lexical IS the meaningful order;
+// version strings are the one case where it is not. This accessor's
+// contract is determinism, nothing more.
+//
+// Semver ordering is not this package's to give. ADR-001 (docs/decisions.md,
+// and this package's own doc.go) allows fold exactly one non-stdlib
+// import — internal/artifact — and comparing versions correctly means
+// either importing internal/version, the repo's SSOT bare-version
+// comparator, or hand-rolling a fourth semver parse next to the three
+// that already exist. The first needs an ADR amendment; the second is the
+// duplication P2's audit already caught once. Neither belongs in a
+// mechanical accessor.
+//
+// A caller that needs "oldest first" or "the newest published version"
+// sorts through internal/version itself. P4 wave 5 gives that ordering
+// ONE home, next to baseline selection, which is the other place in this
+// codebase that has to answer "which version comes before which".
+func (r Result) VersionNumbers() []string {
+	out := make([]string, 0, len(r.Versions))
+	for k := range r.Versions {
 		out = append(out, k)
 	}
 	sort.Strings(out)
