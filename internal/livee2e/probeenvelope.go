@@ -97,6 +97,18 @@ func boundaryProbeEnvelope(id string) string {
 // with SCH-001. Live run 2026-07-27 is what found it: the row
 // space-ci-has-no-unexplained-failures reported two failures nothing claimed.
 //
+// Making the probe VALID does not make its row pass — it makes the row
+// stricter, and that is the point. `cross-section-retrigger-stays-red`
+// asserts only that the required check concluded `failure`, never why. With
+// an invalid artifact the check was red for TWO reasons at once (the schema
+// violation and the section-authz refusal the row exists to prove), so
+// diff-authz could have regressed to nothing and the row would still have
+// passed. One reason is left now. Verified rather than assumed:
+// TestValidateCI_DiffAuthzOutsideSection (internal/cli) already pins that a
+// fully V2-VALID artifact written into another system's section exits 1 with
+// exactly one diff-authz violation — schema validity and write authorization
+// are independent inputs to that verdict.
+//
 // That is the SECOND time this artifact has reddened the space's own CI for a
 // reason no row asserts. The first (a missing opening `---`, POL-002) was
 // fixed by adding the delimiter and pinning "does it parse" — which fixed the
