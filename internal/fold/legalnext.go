@@ -87,6 +87,47 @@ func LegalNext(kind Kind, from State) []NextMove {
 	return out
 }
 
+// LegalNextFor answers "which transitions are legal from here" using the
+// full prior Result rather than a single State. For a contract on the
+// per-version path it answers about THAT version — never the projected
+// subject-level State, which cannot express "1.0 deprecated, 2.0
+// published" as two different answers for the same contract. Everything
+// else — every non-contract kind, and a contract still on the legacy
+// version-less path (prior.Versions empty and no version named, the same
+// fallback applyContractScoped and CheckCandidate apply) — delegates
+// unchanged to LegalNext(kind, prior.State). LegalNext itself is
+// untouched by this function.
+//
+// The contract answer is derived from contractVersionVerdict, NOT from a
+// table lookup on prior.Versions[version]. That is not a stylistic
+// preference; the table lookup is wrong for the single question this
+// function exists to answer during a rolling window. An unrecorded
+// version maps to StateNone, and StateNone's only contract row is
+// `create` — so "what may I do with 3.0.0?" would answer "create the
+// contract" when the true answer is "publish it". Deriving from the same
+// predicate applyContractScoped and CheckCandidate read keeps all three
+// answers to one rule (contract.go), which is what this package's own
+// broadcastAckPermitted comment exists to insist on.
+//
+// internal/cache/threadview.go composes LegalNext with CheckLegality
+// today to answer "whose move is it" for a thread's open items; leaving
+// the contract case subject-state-only here would reintroduce the exact
+// split brain one layer up that plan decision 7 closes inside this
+// package. That caller migrates to LegalNextFor in wave 4.
+func LegalNextFor(kind Kind, prior Result, version string) []NextMove {
+	if kind == KindContract && (version != "" || len(prior.Versions) > 0) {
+		var out []NextMove
+		for _, t := range []string{TPublish, TDeprecate, TRetire} {
+			if contractVersionVerdict(prior.Versions, t, version) != VerdictLegal {
+				continue
+			}
+			out = append(out, NextMove{Transition: t, To: contractVersionOutcome(t), Role: RoleOwner})
+		}
+		return out
+	}
+	return LegalNext(kind, prior.State)
+}
+
 func containsMove(moves []NextMove, m NextMove) bool {
 	for _, existing := range moves {
 		if existing == m {

@@ -1,8 +1,10 @@
 package fold
 
 import (
+	"fmt"
 	"math/rand"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -140,6 +142,156 @@ func TestFoldIdempotentReplay(t *testing.T) {
 		again := Fold(KindQuestion, env, events, alwaysMember)
 		if !reflect.DeepEqual(once, again) {
 			t.Fatalf("Fold is not deterministic across repeated calls with the same input")
+		}
+	})
+}
+
+// frozenContractSubjectFold is a deliberately hand-written
+// re-implementation of TODAY's six-row contract subject-state machinery
+// (table.go's contractRows(), as it stands going into this phase) — the
+// "old" side of spec 04 §5.1's cutover-audit property test. It must NEVER
+// be refactored to share code with contract.go/table.go: its entire
+// evidentiary value is that it does NOT track this phase's new
+// per-version rules, so any agreement found between it and the real
+// engine below is a genuine cutover guarantee, not a tautology from
+// shared implementation.
+//
+// State machine (contractRows(), reproduced verbatim, version-blind):
+//
+//	none       --create-->    draft        (not reachable via this
+//	                                         helper — it starts at draft,
+//	                                         matching NewResult(KindContract))
+//	draft      --publish-->   published
+//	published  --publish-->   published
+//	published  --deprecate--> deprecated
+//	deprecated --publish-->   published    (the interim row, table.go)
+//	deprecated --retire-->    retired
+//
+// Anything else is an illegal transition under this frozen model: no
+// state change (the real engine would additionally record a flag; this
+// reference only needs the resulting STATE for the comparison).
+func frozenContractSubjectFold(transitions []string) State {
+	state := StateDraft
+	for _, tr := range transitions {
+		switch {
+		case state == StateDraft && tr == TPublish:
+			state = StatePublished
+		case state == StatePublished && tr == TPublish:
+			state = StatePublished
+		case state == StatePublished && tr == TDeprecate:
+			state = StateDeprecated
+		case state == StateDeprecated && tr == TPublish:
+			state = StatePublished
+		case state == StateDeprecated && tr == TRetire:
+			state = StateRetired
+		}
+	}
+	return state
+}
+
+// allTransitionSequences returns every non-empty sequence over alphabet
+// of length 1..maxLen (a brute-force enumeration; alphabet has 3 members
+// and maxLen is 4 in the caller below, so this is 3+9+27+81 = 120
+// sequences — small enough that clarity beats cleverness here).
+func allTransitionSequences(alphabet []string, maxLen int) [][]string {
+	var out [][]string
+	var build func(prefix []string)
+	build = func(prefix []string) {
+		if len(prefix) > 0 {
+			out = append(out, append([]string(nil), prefix...))
+		}
+		if len(prefix) == maxLen {
+			return
+		}
+		for _, t := range alphabet {
+			build(append(append([]string(nil), prefix...), t))
+		}
+	}
+	build(nil)
+	return out
+}
+
+// foldContractSequence folds transitions (each carrying the same version
+// string) against a fresh contract via the real engine (Fold, canonical
+// commit order) and returns the resulting subject-level State.
+func foldContractSequence(transitions []string, version string) State {
+	env := Envelope{ID: "XC-migration-fixture", Kind: KindContract, From: "acme"}
+	events := make([]Event, 0, len(transitions))
+	for i, tr := range transitions {
+		events = append(events, Event{
+			ULID:       fmt.Sprintf("01MIGRATION%014d", i+1),
+			CommitSeq:  int64(i + 1),
+			Subject:    env.ID,
+			Transition: tr,
+			Version:    version,
+			Actor:      Actor{System: env.From},
+		})
+	}
+	return Fold(KindContract, env, events, alwaysMember).State
+}
+
+// TestMigrationCutoverProperty is spec 04 §8 AC-P4.1 (spec §5.1's
+// zero-history cutover gate): "any history touching AT MOST ONE distinct
+// version folds identically old vs new". Two lanes:
+//
+//   - version == "": every one of the 120 sequences must agree, with no
+//     restriction — a version-less event ALWAYS hits applyContractScoped's
+//     own fallback (event.Version == "" and, since no version-carrying
+//     event is ever mixed in here, prior.Versions stays empty for the
+//     whole sequence), so this lane folds through the exact same
+//     applyPrimaryScoped/table.go code path as before this phase. It is
+//     the literal migration guarantee, not an approximation of it.
+//   - version == "1.0.0": restricted to sequences with AT MOST ONE
+//     `publish`. A real single-version history never publishes the same
+//     version number twice — spec §5.4a resolves `id@version` through the
+//     publish event's own SHA, so two publish events sharing one version
+//     string is not well-formed data, not a history this guarantee
+//     covers. Two publishes of the SAME version is also the one place
+//     this phase's engine and the frozen one deliberately disagree:
+//     the frozen engine's (deprecated, publish) interim row is
+//     version-blind and re-publishes; contractVersionVerdict correctly
+//     refuses a republish of an EXISTING version key regardless of its
+//     current state. That divergence is pinned separately and on
+//     purpose, never inside this property test — see
+//     TestContractVersionRepublishAfterDeprecateIsIllegal.
+func TestMigrationCutoverProperty(t *testing.T) {
+	t.Parallel()
+	sequences := allTransitionSequences([]string{TPublish, TDeprecate, TRetire}, 4)
+
+	t.Run("version_less_history_agrees_for_every_sequence", func(t *testing.T) {
+		t.Parallel()
+		for _, seq := range sequences {
+			t.Run(strings.Join(seq, "_"), func(t *testing.T) {
+				t.Parallel()
+				want := frozenContractSubjectFold(seq)
+				got := foldContractSequence(seq, "")
+				if got != want {
+					t.Fatalf("version-less sequence %v: new engine state = %q, frozen engine state = %q", seq, got, want)
+				}
+			})
+		}
+	})
+
+	t.Run("single_version_history_with_at_most_one_publish_agrees_for_every_sequence", func(t *testing.T) {
+		t.Parallel()
+		for _, seq := range sequences {
+			publishCount := 0
+			for _, tr := range seq {
+				if tr == TPublish {
+					publishCount++
+				}
+			}
+			if publishCount > 1 {
+				continue
+			}
+			t.Run(strings.Join(seq, "_"), func(t *testing.T) {
+				t.Parallel()
+				want := frozenContractSubjectFold(seq)
+				got := foldContractSequence(seq, "1.0.0")
+				if got != want {
+					t.Fatalf("single-version sequence %v: new engine state = %q, frozen engine state = %q", seq, got, want)
+				}
+			})
 		}
 	})
 }
