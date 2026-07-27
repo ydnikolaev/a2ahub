@@ -749,6 +749,14 @@ func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract retire: %w", err)
 		}
 
+		// P2/spec 02: same refusal as internal/cli's runRetire — mirrors
+		// it exactly (mcp never imports cli, ADR-001) so a capability
+		// that refuses on one surface only is not the asymmetry P43
+		// exists to close. Reuses the SAME allEvents scan above.
+		if v := validate.CheckRetireVersionScope(contractVersionEvents(allEvents), in.ID, retiredVersion); v != nil {
+			return nil, "", fmt.Errorf("contract retire: %s: %s", v.Code, v.Message)
+		}
+
 		now := deps.Now()
 
 		precondition, err := contractBuildRetirePrecondition(deps.MirrorDir, deps.Manifest, in.ID, retiredVersion, in.Override, resolved.Kind == "human", now)
@@ -1231,4 +1239,15 @@ func contractParseConsumesStrict(raw []byte, path string) (space.Consumes, error
 				"refusing to treat it as \"no registered consumers\"; fix the file (or write it with contract adopt)", path)
 	}
 	return registry, nil
+}
+
+// contractVersionEvents projects this file's decoded events onto the neutral
+// shape validate.CheckRetireVersionScope reads — see internal/cli's twin.
+// The mapping is per-surface; the rule it feeds has one home.
+func contractVersionEvents(all []eventDoc) []validate.ContractVersionEvent {
+	out := make([]validate.ContractVersionEvent, 0, len(all))
+	for _, ev := range all {
+		out = append(out, validate.ContractVersionEvent{Subject: ev.Subject, Transition: ev.Transition, Version: ev.Version})
+	}
+	return out
 }

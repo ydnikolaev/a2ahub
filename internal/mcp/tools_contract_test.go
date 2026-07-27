@@ -376,6 +376,66 @@ func TestContractRetireRefusesOmittedVersionWithMultiplePublished(t *testing.T) 
 	}
 }
 
+// TestContractRetireGuardRefusesWhileAnotherVersionPublished is
+// agent-ops-2026-07 spec 02 (P2)'s MCP twin of the same guard in
+// internal/cli: `a2a_contract_retire` must refuse identically — a
+// capability that refuses on one surface only is exactly the asymmetry
+// P43 exists to close. Publish 1.0.0, publish 2.0.0, deprecate 1.0.0
+// (subject-scoped fold: Published -> Published -> Deprecated), then
+// retire 1.0.0 is legal at the fold table but would leave the contract
+// SUBJECT Retired while 2.0.0 is still published and consumed.
+func TestContractRetireGuardRefusesWhileAnotherVersionPublished(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "guarded", "2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-guarded", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-guarded", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "2.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 2, "XC-axon-guarded", "deprecate", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+	fake := &fakeFunnel{}
+	handler := newContractRetireHandler(contractTestDeps(mirrorDir, fake))
+	args, _ := json.Marshal(ContractRetireInput{ID: "XC-axon-guarded", Version: "1.0.0"})
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected a refusal: 2.0.0 is still published (spec 02 §3 verdict)")
+	}
+	for _, want := range []string{"POL-011", "2.0.0", "WHOLE contract", "pending"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected the refusal to mention %q (spec 02 §3 Message, parity with the CLI's own refusal); got %v", want, err)
+		}
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected the funnel NEVER to be called, got %d calls", len(fake.calls))
+	}
+}
+
+// TestContractRetireGuardAllowsSolePublishedVersion is spec 02's AC-2.2
+// regression guard on the MCP surface: retiring the ONLY published
+// version must keep working exactly as before this phase.
+func TestContractRetireGuardAllowsSolePublishedVersion(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "sole", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-sole", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-sole", "deprecate", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+	fake := &fakeFunnel{}
+	handler := newContractRetireHandler(contractTestDeps(mirrorDir, fake))
+	args, _ := json.Marshal(ContractRetireInput{ID: "XC-axon-sole"})
+	_, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("retire failed (sole published version, the guard must not block it): %v", err)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+}
+
 func gitRunTest(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", gitfixture.Args(args...)...)
