@@ -4,6 +4,9 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+
+	"github.com/ydnikolaev/a2ahub/internal/notes"
+	"github.com/ydnikolaev/a2ahub/releasenotes"
 )
 
 // demoJSON is the committed demo fixture (testdata/demo.json) — a
@@ -20,5 +23,10 @@ func DemoData() (Data, error) {
 	if err := json.Unmarshal(demoJSON, &d); err != nil {
 		return Data{}, fmt.Errorf("html: demo data: %w", err)
 	}
+	releases, err := notes.Load(releasenotes.FS)
+	if err != nil {
+		return Data{}, fmt.Errorf("html: demo release notes: %w", err)
+	}
+	d.ReleaseNotes = toReleaseNotes(releases)
 	return d, nil
 }

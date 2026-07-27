@@ -97,6 +97,24 @@ func (s *Store) OwnSystem() string { return s.ownSystem }
 // own (callers must not mutate it).
 func (s *Store) SpaceMirrors() []SpaceMirror { return s.spaces }
 
+// SpaceSyncFacts returns one cache-owned mirror snapshot fact per connected
+// space, in the same order as SpaceMirrors. It keeps exact HEAD revision,
+// mirrorSyncAge and the TTL in their owner instead of making the HTML layer
+// inspect .git metadata or duplicate stale policy.
+func (s *Store) SpaceSyncFacts(ctx context.Context) []SpaceSyncInfo {
+	out := make([]SpaceSyncInfo, 0, len(s.spaces))
+	now := s.now()
+	for _, sm := range s.spaces {
+		age, synced := mirrorSyncAge(now, sm.Dir)
+		revision, _ := runGitOutput(ctx, sm.Dir, "rev-parse", "--verify", "HEAD")
+		out = append(out, SpaceSyncInfo{
+			Space: sm.SpaceID, Revision: strings.TrimSpace(revision),
+			Age: age, Synced: synced, Stale: !synced || age > s.ttl,
+		})
+	}
+	return out
+}
+
 // EnableUpdateNotice turns on the T3/T4 update-notice mechanism on an
 // already-constructed Store: a post-construction setter, deliberately NOT a
 // NewStore parameter, so every existing call site's behavior (and
@@ -540,6 +558,7 @@ func (s *Store) Contracts(ctx context.Context, provider string) ([]ContractInfo,
 	}
 	out := []ContractInfo{}
 	for spaceID, artifacts := range idx {
+		deprecations := contractDeprecationIndex(artifacts)
 		for _, fa := range artifacts {
 			if fa.kind() != fold.KindContract {
 				continue
@@ -547,11 +566,17 @@ func (s *Store) Contracts(ctx context.Context, provider string) ([]ContractInfo,
 			if provider != "" && fa.Env.From != provider {
 				continue
 			}
+			versions := contractVersionWindow(fa.Result)
+			attachContractDeprecations(fa.Env.ID, versions, deprecations)
 			out = append(out, ContractInfo{
 				Space: spaceID, ID: fa.Env.ID, Provider: fa.Env.From,
 				Version: fa.LatestPublishVersion, State: string(fa.Result.State),
 				Description: bodySummary(fa.Raw, 240),
-				Versions:    contractVersionWindow(fa.Result),
+				Versions:    versions,
+				Category:    fa.Env.Category, SchemaFormat: fa.Env.SchemaFormat,
+				CompatPolicy:  fa.Env.CompatPolicy,
+				GeneratedTool: fa.Env.GeneratedFrom.Tool,
+				SourceDigest:  fa.Env.GeneratedFrom.SourceDigest,
 			})
 		}
 	}

@@ -7,6 +7,76 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
+type contractDeprecation struct {
+	AnnouncementID string
+	Sunset         string
+	Successor      string
+	seq            int64
+	created        string
+}
+
+// contractDeprecationIndex joins the version lifecycle to the deprecation
+// write that `a2a contract deprecate` commits atomically. The announcement is
+// the canonical home of the sunset/deprecated version; the deprecate event
+// carries the successor ref. A renderer inventing either from version order
+// would be wrong.
+func contractDeprecationIndex(artifacts []foldedArtifact) map[string]contractDeprecation {
+	out := map[string]contractDeprecation{}
+	successorByCommit := map[int64]string{}
+	for _, fa := range artifacts {
+		if fa.kind() != fold.KindContract || !fa.OrderKnown {
+			continue
+		}
+		for _, event := range fa.Events {
+			if event.Transition != fold.TDeprecate {
+				continue
+			}
+			refs := fa.EventRefs[event.ULID]
+			if len(refs) > 0 && successorByCommit[event.CommitSeq] == "" {
+				successorByCommit[event.CommitSeq] = refs[0].Ref
+			}
+		}
+	}
+	for _, fa := range artifacts {
+		if fa.Env.Type != string(fold.KindAnnouncement) ||
+			fa.Env.Category != "deprecation" || fa.Env.Deprecates == "" {
+			continue
+		}
+		successor := ""
+		if fa.OrderKnown {
+			successor = successorByCommit[fa.Seq]
+		}
+		if successor == "" && len(fa.Env.Refs) > 0 {
+			successor = fa.Env.Refs[0].Ref
+		}
+		candidate := contractDeprecation{
+			AnnouncementID: fa.Env.ID,
+			Sunset:         fa.Env.ValidUntil,
+			Successor:      successor,
+			seq:            fa.Seq,
+			created:        fa.Env.Created,
+		}
+		prior, ok := out[fa.Env.Deprecates]
+		if !ok || candidate.seq > prior.seq ||
+			(candidate.seq == prior.seq && candidate.created > prior.created) {
+			out[fa.Env.Deprecates] = candidate
+		}
+	}
+	return out
+}
+
+func attachContractDeprecations(contractID string, versions []ContractVersion, idx map[string]contractDeprecation) {
+	for i := range versions {
+		deprecation, ok := idx[contractID+"@"+versions[i].Version]
+		if !ok {
+			continue
+		}
+		versions[i].Sunset = deprecation.Sunset
+		versions[i].Successor = deprecation.Successor
+		versions[i].DeprecationID = deprecation.AnnouncementID
+	}
+}
+
 // contractVersionWindow renders a folded contract's per-version states as an
 // ordered slice — the ROLLING WINDOW a reader needs and neither
 // ContractInfo.Version (the newest published) nor ContractInfo.State (the

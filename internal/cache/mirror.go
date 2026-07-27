@@ -69,13 +69,18 @@ type rawEvent struct {
 // package ever performs (composed over internal/fold, never
 // reimplemented, per spec §5).
 type foldedArtifact struct {
-	SpaceID       string
-	RelPath       string
-	Raw           []byte
-	Digest        string
-	Env           envelopeProbe
-	Result        fold.Result
-	Events        []fold.Event
+	SpaceID string
+	RelPath string
+	Raw     []byte
+	Digest  string
+	Env     envelopeProbe
+	Result  fold.Result
+	Events  []fold.Event
+	// EventRefs preserves each committed event's refs[] beside the pure fold
+	// input. fold.Event deliberately does not need relationship metadata, but
+	// read models do: contract deprecate records its successor on the
+	// deprecate event, and the dashboard must not lose that canonical link.
+	EventRefs     map[string][]refEntry
 	LatestEventAt time.Time
 	// EventAt maps a committed event's ULID to its `at` timestamp —
 	// fold.Event itself carries none (fold is a pure, timestamp-free
@@ -238,9 +243,13 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 		var latest time.Time
 		var latestPublishSeq int64 = -1
 		var latestPublishVersion string
+		eventRefs := map[string][]refEntry{}
 		for _, re := range events {
 			if re.Ev.Subject != a.Env.ID {
 				continue
+			}
+			if len(re.Ev.Refs) > 0 {
+				eventRefs[re.Ev.Event] = append([]refEntry(nil), re.Ev.Refs...)
 			}
 			if t, terr := time.Parse(time.RFC3339, re.Ev.At); terr == nil && t.After(latest) {
 				latest = t
@@ -254,7 +263,7 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 		out = append(out, foldedArtifact{
 			SpaceID: spaceID, RelPath: a.RelPath, Raw: a.Raw, Digest: a.Digest,
 			Env: a.Env, Result: result, Events: evs, LatestEventAt: latest,
-			EventAt: eventAt, LatestPublishVersion: latestPublishVersion,
+			EventAt: eventAt, EventRefs: eventRefs, LatestPublishVersion: latestPublishVersion,
 			Seq: seq[a.RelPath], OrderKnown: orderKnown,
 			// Edge 3, evaluated once — see foldedArtifact's own comment.
 			// The lookup is on the contract id alone; myDependencies is

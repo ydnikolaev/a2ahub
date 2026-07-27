@@ -312,6 +312,7 @@ button{font:inherit}
 .drift.behind{color:var(--d-behind)} .drift.behind .dd{background:var(--d-behind)}
 .drift.deprecated{color:var(--d-deprecated)} .drift.deprecated .dd{background:var(--d-deprecated)}
 .drift.retired{color:var(--d-retired)} .drift.retired .dd{background:var(--d-retired)}
+.drift.missing{color:var(--d-dangling)} .drift.missing .dd{background:var(--d-dangling)}
 .drift.dangling{color:var(--d-dangling)} .drift.dangling .dd{background:var(--d-dangling)}
 .vers{font-family:var(--mono);font-size:11.5px;color:var(--text-dim)}
 .sunset{font-size:10.5px;color:var(--d-deprecated);font-family:var(--mono);display:block;margin-top:2px}
@@ -589,8 +590,8 @@ const DATA = /*A2A_DATA_START*/ {
     { "space":"platform", "id":"XC-seomatrix-crawl-report", "provider":"seomatrix", "version":"3.1.0", "state":"deprecated", "codeBacked":true, "consumers":["axon"] }
   ],
   "flags": [
-    { "space":"getvisa", "system":"legacycrm", "code":"V4-STALE-MANIFEST", "message":"legacycrm participant manifest not refreshed in 30d", "severity":"attention" },
-    { "space":"platform", "system":"pgw", "code":"V5-CODE-MISMATCH", "message":"published contract version does not match the code-backed verifier output", "severity":"blocking" }
+    { "space":"getvisa", "system":"legacycrm", "code":"read-index-skip", "message":"legacycrm/exchanges/XA-legacy-archive.md (undecodable-yaml)", "severity":"attention", "source":"cache-index" },
+    { "space":"platform", "system":"pgw", "code":"state-claim-mismatch", "message":"committed event 01HFX00000000000000000493 on XH-pgw-20260727-webhooks was folded with state-claim-mismatch", "severity":"attention", "source":"fold", "artifact":"XH-pgw-20260727-webhooks", "event":"01HFX00000000000000000493" }
   ]
 } /*A2A_DATA_END*/;
 </script>
@@ -621,7 +622,7 @@ const I18N = {
     types:{contract:"Contract",requirement:"Requirement",question:"Question",work_request:"Work request",decision:"Decision",handoff:"Handoff",response:"Response",announcement:"Announcement"},
     states:{draft:"Draft",submitted:"Submitted",acked:"Acknowledged",accepted:"Accepted","in-progress":"In progress",responded:"Responded",verified:"Verified",closed:"Closed",disputed:"Disputed",published:"Published",acknowledged:"Acknowledged",proposed:"Proposed",in_progress:"In progress",retired:"Retired",deprecated:"Deprecated",superseded:"Superseded",rejected:"Rejected",cancelled:"Cancelled",withdrawn:"Withdrawn",blocked:"Blocked",satisfied:"Satisfied",approved:"Approved",declined:"Declined"},
     sev:{blocking:"Blocking",attention:"Attention",normal:"Normal"},
-    drift:{current:"Current",behind:"Behind",deprecated:"Deprecated",retired:"Retired",dangling:"Dangling"},
+    drift:{current:"Current",behind:"Behind",deprecated:"Deprecated",retired:"Retired",missing:"Missing major",dangling:"Dangling"},
     ui:{spaces:"Spaces",views:"Combined views",unified:"Unified mesh",clusters:"Clusters by space",guide:"Guide",
       inbox:"Inbox",outbox:"Outbox",deps:"Contract dependencies",health:"Space health",flags:"Validation flags",
       graph:"Exchange graph",thisSpace:"This space",open:"open",blocking:"blocking",waiting:"waiting",
@@ -657,7 +658,7 @@ const I18N = {
     types:{contract:"Контракт",requirement:"Требование",question:"Вопрос",work_request:"Запрос работы",decision:"Решение",handoff:"Передача",response:"Ответ",announcement:"Объявление"},
     states:{draft:"Черновик",submitted:"Отправлено",acked:"Получено",accepted:"Принято","in-progress":"В работе",responded:"Отвечено",verified:"Подтверждено",closed:"Закрыто",disputed:"Оспорено",published:"Опубликован",acknowledged:"Принято",proposed:"Предложено",in_progress:"В работе",retired:"Снят",deprecated:"Устаревает",superseded:"Заменено",rejected:"Отклонено",cancelled:"Отменено",withdrawn:"Отозвано",blocked:"Заблокировано",satisfied:"Удовлетворено",approved:"Одобрено",declined:"Отклонено (не берётся)"},
     sev:{blocking:"Блокирует",attention:"Внимание",normal:"Обычное"},
-    drift:{current:"Актуально",behind:"Устарело",deprecated:"Устаревает",retired:"Снято",dangling:"Висячая"},
+    drift:{current:"Актуально",behind:"Устарело",deprecated:"Устаревает",retired:"Снято",missing:"Нет major-линии",dangling:"Висячая"},
     ui:{spaces:"Спейсы",views:"Общие виды",unified:"Единый граф",clusters:"Кластеры по спейсам",guide:"Справка",
       inbox:"Входящие",outbox:"Исходящие",deps:"Зависимости контрактов",health:"Состояние спейса",flags:"Флаги проверок",
       graph:"Граф обмена",thisSpace:"Этот спейс",open:"открыто",blocking:"блокирует",waiting:"ожидает",
@@ -787,6 +788,7 @@ const GRAPH_TEXT = {
     behind:{en:"A newer major version exists — consider upgrading.",ru:"Есть более новая мажорная версия — стоит обновиться."},
     deprecated:{en:"Provider marked this deprecated — migrate before the sunset date.",ru:"Провайдер пометил как устаревшее — мигрируйте до даты снятия."},
     retired:{en:"Provider retired this version — it's no longer supported.",ru:"Провайдер снял эту версию — она больше не поддерживается."},
+    missing:{en:"The registered major does not exist in the provider's version window.",ru:"Зарегистрированного major нет в окне версий провайдера."},
     dangling:{en:"The provider left the space, but you still depend on it.",ru:"Провайдер покинул спейс, но вы всё ещё зависите от него."}
   }
 };
@@ -866,7 +868,7 @@ function typeWord(t){ return (L.types[t])||t; }
 function stateWord(s){ return s==null?"—":((L.states[s])||s); }
 function sevWord(s){ return (L.sev[s])||s; }
 function driftWord(d){ return (L.drift[d])||d; }
-const DRIFT_COLOR={current:"var(--d-current)",behind:"var(--d-behind)",deprecated:"var(--d-deprecated)",retired:"var(--d-retired)",dangling:"var(--d-dangling)"};
+const DRIFT_COLOR={current:"var(--d-current)",behind:"var(--d-behind)",deprecated:"var(--d-deprecated)",retired:"var(--d-retired)",missing:"var(--d-dangling)",dangling:"var(--d-dangling)"};
 
 /* deterministic org / space color */
 const HUE={};
