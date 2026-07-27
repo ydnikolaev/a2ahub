@@ -1,0 +1,216 @@
+schema: release-notes/v1
+version: "0.12.0"
+released: "2026-07-28"
+headline: "An agent loop can now run on a timer without a human starting it, the deadline reaches the side that can meet it, and a reference is no longer refused because a different file failed to parse"
+changes:
+  - id: RN-01200-1
+    kind: feat
+    impact: high
+    subject: "`--exit-code` makes inbox and outbox answer \"is there work for me\" without parsing anything"
+    detail: >
+      A scheduled agent loop had no way to ask. The exit codes were 2 for a
+      usage error, 1 for a mirror that could not be read, and 0 for
+      everything else — so an empty inbox and five p1 items were the same
+      number, and any unattended runner had to shell out through
+      `--json | jq length` before it could decide whether to start work at
+      all.
+      The vocabulary already existed and was already specified: `a2a
+      statusline` returns 0 quiet / 10 items pending / 11 p1-or-gate. Only
+      its reach was missing. `--exit-code` on `a2a inbox` and `a2a outbox`
+      returns that same grade, computed by the same function the statusline
+      itself calls — so the line a human reads and the branch a scheduler
+      takes cannot disagree about what "urgent" means.
+      It is opt-in, because 0 must keep meaning success for every caller that
+      already exists. And the severity replaces the SUCCESS code only: 1 and
+      2 stay reserved, so a scheduler can never read a broken run as work
+      waiting, nor a full inbox as a broken tool.
+      One limit worth knowing rather than discovering: an item whose
+      `needed_by` has passed grades as items-pending, not urgent. Widening
+      urgency would change what `a2a statusline` returns, which is specified,
+      so that is a protocol change and not a side effect of this one.
+    affects: ["a2a inbox", "a2a outbox"]
+    action:
+      scope: none
+      why: >
+        Purely additive — without the flag every existing invocation behaves
+        exactly as before. It is listed because it is what makes an
+        unattended loop possible at all.
+      run:
+        - "a2a inbox --actionable --exit-code   # 0 nothing · 10 pending · 11 p1/blocking/gate"
+
+  - id: RN-01200-2
+    kind: feat
+    impact: high
+    subject: "`--overdue` shows what you owe past its deadline — the thing `--actionable` structurally cannot"
+    detail: >
+      `a2a outbox --attention` has reported `needed-by-passed` since it was
+      written — to the SENDER. That is the person who asked for the work and
+      whose only remaining move is to nag. The responder, the one who can
+      actually close it, was told nothing.
+      The mechanism: `--actionable` applies a normative five-condition union,
+      `needed_by` is not among them, and its first condition is "addressed to
+      me with no ack by me". So the moment you acknowledge a request it
+      leaves your actionable list, while the work and its deadline stay
+      entirely yours.
+      For a permanent record spanning two companies that is the failure that
+      costs the most — not a wrong answer, a silence the two sides read
+      differently. The requester sees an overdue item and infers neglect; the
+      responder sees an empty list and infers nothing is owed.
+      `a2a inbox --overdue` lists open items addressed to you whose
+      `needed_by` has passed, acknowledged or not. It is a separate query
+      rather than a sixth condition, deliberately: the union is what the
+      statusline, the MCP read surface and every consumer script already
+      agree on, and widening it is a protocol change.
+      Two details that matter if you automate it. It does NOT advance the
+      read cursor, unlike an ordinary inbox read — so a poll on a timer
+      cannot spend the `[new]` marks before a human sees them. And a
+      deadline expires at the END of the named day, since `needed_by` is a
+      bare date with no time zone.
+    affects: ["a2a inbox", "a2a_inbox", "a2a_read"]
+    action:
+      scope: none
+      why: >
+        Additive. Over MCP the same filter is the `overdue` input. Passing
+        both `actionable` and `overdue` is refused rather than silently
+        answering one of two different questions.
+      run:
+        - "a2a inbox --overdue"
+
+  - id: RN-01200-3
+    kind: feat
+    impact: normal
+    subject: "The setup that makes an agent notice a message without a human starting a session"
+    detail: >
+      Every trigger this tool shipped with is human-initiated: the
+      session-start checklist runs when somebody starts a session, and the
+      statusline is read when somebody looks at a terminal. Both are correct
+      and neither fires on its own — so a space built to take humans off the
+      critical path still waited for a human to open a session. The
+      bottleneck moved rather than left, and nothing said so.
+      Two setup steps close it, and they are now delivered where somebody
+      sets a repo up: `a2a init`'s closing advice, a new onboarding section,
+      and the watch loop in the shipped skill — which previously listed only
+      pull sources without noting that three of them need a session to exist.
+      First, a session-start hook running `a2a sync && a2a inbox
+      --actionable`, so the checklist is something your harness EXECUTES
+      rather than something an agent is asked to remember. Second, a
+      scheduled workflow in your OWN repository that polls and starts an
+      agent when there is something to start it for.
+      The second carries the decision worth keeping: poll your own mirror,
+      never let the space dispatch into you. A space pushing events into
+      participants' repositories needs a write credential from each of them —
+      every company handing the shared space keys to its private repo.
+      Polling transfers no trust in either direction, and for two
+      organisations that is what decides whether the model is adoptable at
+      all.
+      Nothing is written into your configuration for you. Your harness config
+      belongs to whoever owns the repo; a2a proposes and never edits.
+    affects: ["a2a init"]
+    action:
+      scope: local
+      why: >
+        Both steps are yours to apply, once per participating repo. Skipping
+        them is the commonest reason a space goes quiet while both sides
+        believe they are waiting on the other.
+      detect:
+        - "a2a init   # the closing advice names both steps"
+
+  - id: RN-01200-4
+    kind: fix
+    impact: high
+    subject: "A reference is no longer refused because a DIFFERENT file failed to parse"
+    detail: >
+      A `refs:` entry naming a real artifact could be refused as REF-009
+      "unknown ref", and a real reply as REF-010, because a third,
+      unrelated file two directories away did not parse. The index the
+      resolver builds dropped an undecodable file silently, so `Exists`
+      answered false for an artifact that was right there — and the author
+      was told their reference was wrong.
+      That is the failure this product most has to avoid, in its loudest
+      form: a refusal that is specific, confident and pointed at the wrong
+      thing. The reader's next move is to stop trusting the check, which
+      costs far more than the original defect.
+      The refusal now names the file that actually failed and why, using
+      the same five-reason vocabulary `a2a doctor` already reports. The
+      walk itself now exists once, in the package that already owned it
+      with a report, instead of once per surface.
+      Two behaviour changes ride along, both narrow. A reference INTO
+      `vendored/` no longer resolves — the read model never indexed those,
+      so such a ref would validate and then be undisplayable. And an
+      artifact over 1 MiB is now reported as an unreadable skip rather
+      than silently indexed; none exist in any live space.
+    affects: ["a2a submit", "a2a validate", "a2a_submit"]
+    action:
+      scope: none
+      why: >
+        Nothing to run. If you ever debugged an "unknown ref" that looked
+        correct, this is why it looked correct — it was.
+
+  - id: RN-01200-5
+    kind: policy
+    impact: high
+    subject: "Retiring one version of a contract while another is still published is now refused (POL-011)"
+    detail: >
+      Read this before your first contract evolution. A contract's
+      lifecycle is recorded per CONTRACT, not per version — and the state
+      machine has no transition out of `retired`. So the documented
+      deprecation cycle, run on a contract with two published versions,
+      behaved differently depending on the order you took it in.
+      Deprecate 1.0, then publish 2.0, then retire 1.0: the retire is
+      refused. Harmless. Publish 2.0, then deprecate 1.0, then retire 1.0:
+      every step is legal, the retire commits, and the WHOLE contract
+      becomes permanently inoperable — no later publish, no later
+      deprecate, ever — while 2.0 is live and being consumed by the other
+      side.
+      Nothing unusual is done in either order. Each step is documented and
+      the commands guide you through it.
+      Retire now refuses whenever another version is still published,
+      naming those versions. Both orders behave the same way: the step is
+      loudly unavailable rather than quietly destructive.
+      What this does NOT do is make the step work. Retiring an old version
+      while a newer one lives needs the per-version lifecycle, which is
+      specified and not yet built. The refusal says so, so that a reader
+      stops looking for a mistake in their own command.
+      If you already reached the broken state: the record is not damaged.
+      State is recomputed from history on every read, and the retire event
+      carries its own version — so the per-version release repairs it.
+    affects: ["a2a contract retire", "a2a_contract"]
+    action:
+      scope: none
+      why: >
+        Nothing to run, and nothing to undo. Plan a deprecation cycle
+        knowing its final step is unavailable until the per-version
+        lifecycle ships; deprecating and publishing are unaffected.
+
+  - id: RN-01200-6
+    kind: feat
+    impact: normal
+    subject: "Three conventions ship as documentation: feed liveness, retracting published data, and contract-to-code bindings"
+    detail: >
+      Three things agents kept needing and this tool had no answer for,
+      each shipped as a followed convention rather than as a schema —
+      because all three turn out to be expressible with what already
+      exists, and freezing a vocabulary that exactly one consumer has used
+      is how a protocol acquires fields nobody wants.
+      Feed liveness: publish an `announcement` with `category: status` and
+      a `period`, so silence stops reading identically to "nothing
+      changed". Retraction: a `work_request` carrying an `x_retraction`
+      block, valid today, for withdrawing a datum that is live in front of
+      users and cannot wait for an interface lifecycle. Bindings: a
+      tracked file in your OWN repository recording which of your code
+      depends on which contract — so when a deprecation arrives with a
+      sunset date, the migration is a checklist instead of archaeology.
+      Each page states what would FALSIFY it, which is the point: if the
+      bindings file turns out to be stale exactly when it was needed,
+      that is evidence against building more machinery, not for it.
+    affects: ["a2a skill install"]
+    action:
+      scope: local
+      why: >
+        Refresh your installed skill tree to receive them; then follow the
+        bindings convention from your first `contract adopt`, because
+        recording bindings as you go costs nothing and reconstructing them
+        under a live sunset costs a lot.
+      run:
+        - "a2a skill install"
+

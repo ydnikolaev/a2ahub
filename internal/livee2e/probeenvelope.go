@@ -9,7 +9,10 @@ package livee2e
 // could look at it. A pure string renderer has no reason to hide behind a
 // build tag, and out here its own test runs on every commit.
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // boundaryProbeTitle is what the operator actually sees. GitHub renders a
 // pull request's title as the workflow run's displayTitle, so THIS string is
@@ -79,6 +82,46 @@ func boundaryProbeEnvelope(id string) string {
 		"priority: p3\n" +
 		"blocking: false\n" +
 		"classification: internal\n" +
+		"thread: " + boundaryProbeThread(id) + "\n" +
 		"---\n" +
 		"body\n"
+}
+
+// boundaryProbeThread derives the probe's own thread id from its artifact id
+// (XA-alpha-20260726-ab12 -> thread:alpha-20260726-ab12), which is what an
+// artifact that STARTS a conversation carries.
+//
+// `thread` became required on every envelope in P46, and this renderer was
+// not updated — so from that release on, the probe was schema-invalid, and
+// every post-merge full-repo audit that ran on a main containing it went red
+// with SCH-001. Live run 2026-07-27 is what found it: the row
+// space-ci-has-no-unexplained-failures reported two failures nothing claimed.
+//
+// Making the probe VALID does not make its row pass — it makes the row
+// stricter, and that is the point. `cross-section-retrigger-stays-red`
+// asserts only that the required check concluded `failure`, never why. With
+// an invalid artifact the check was red for TWO reasons at once (the schema
+// violation and the section-authz refusal the row exists to prove), so
+// diff-authz could have regressed to nothing and the row would still have
+// passed. One reason is left now. Verified rather than assumed:
+// TestValidateCI_DiffAuthzOutsideSection (internal/cli) already pins that a
+// fully V2-VALID artifact written into another system's section exits 1 with
+// exactly one diff-authz violation — schema validity and write authorization
+// are independent inputs to that verdict.
+//
+// That is the SECOND time this artifact has reddened the space's own CI for a
+// reason no row asserts. The first (a missing opening `---`, POL-002) was
+// fixed by adding the delimiter and pinning "does it parse" — which fixed the
+// symptom and left the class open, because an artifact can parse perfectly and
+// still be invalid. The guard now reads the schema's own `required` list
+// instead of a hand-written one, so the next field added to the envelope
+// cannot repeat this a third time.
+func boundaryProbeThread(id string) string {
+	// Every artifact id is <PREFIX>-<system>-<date>-<rand4>; the thread id is
+	// the same tail under the `thread:` prefix (schemas/envelope/v1/
+	// base.schema.json's own pattern for both).
+	if i := strings.IndexByte(id, '-'); i >= 0 {
+		return "thread:" + id[i+1:]
+	}
+	return "thread:" + id
 }

@@ -93,6 +93,8 @@ func Apply(kind Kind, env Envelope, prior Result, event Event, membership Member
 		applyBroadcastAck(&result, event, membership)
 	case event.Transition == TVerify || event.Transition == TDispute:
 		applyResponseScoped(env, &result, event, membership)
+	case kind == KindContract && isContractVersionTransition(event.Transition):
+		applyContractScoped(env, &result, event, membership)
 	default:
 		applyPrimaryScoped(kind, env, &result, event, membership)
 	}

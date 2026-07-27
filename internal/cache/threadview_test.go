@@ -234,6 +234,103 @@ func TestThreadView_ExchangeDisputeRowOmittedOnParent(t *testing.T) {
 	}
 }
 
+// TestThreadView_ContractRollingWindowNextActions is P4's own
+// highest-risk item (04-per-version-lifecycle.plan.md): once
+// fold.Event.Version is populated, a contract's projected subject-level
+// State is a PROJECTION over its per-version map, so answering "whose
+// move is it" from that projected State alone (plain fold.LegalNext)
+// reproduces the exact split brain fold.LegalNextFor was built inside
+// internal/fold to close — one caller layer up, in buildOpenItems. This
+// pins the {1.0: deprecated, 2.0: published} rolling-window shape
+// directly: the contract's PROJECTED state is `published` (2.0 is live),
+// so a state-only reader would report "publish"/whatever `published`'s
+// OWN table row offers next — but the actual legal whole-contract moves
+// are governed by fold.LegalNextFor(KindContract, prior, ""), which
+// answers from the per-version map: `deprecate` (2.0 is still published,
+// so the whole-form question "is anything left to deprecate" is legal)
+// and NEITHER `publish` (a version-less publish is illegal once ANY
+// version is recorded, fold/contract.go) NOR `retire` (1.0 is deprecated
+// but 2.0 is not, so whole-contract retire is illegal). Teeth: reverting
+// buildOpenItems' fold.LegalNextFor/legalSystems calls back to plain
+// fold.LegalNext/fold.CheckLegality(kind, fa.Result.State, ...) makes
+// this red (`publish` reappears; `deprecate`'s presence becomes
+// coincidental rather than derived from the same rule table.go/contract.go
+// share).
+func TestThreadView_ContractRollingWindowNextActions(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	threadID := "thread:axon-20260701-rollingwindow"
+	contractID := "XC-axon-rollingwindow"
+	base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+
+	fx.commitArtifact("axon/provides/rollingwindow/contract.md", map[string]any{
+		"schema": "envelope/v1", "id": contractID, "type": "contract", "title": "rolling window",
+		"space": "fixture-space", "from": "axon", "to": []string{"seomatrix"}, "thread": threadID,
+		"actor": map[string]any{"kind": "agent", "name": "axon-bot"}, "created": fxAt(base),
+		"priority": "p2", "blocking": false, "classification": "internal",
+	}, "contract body")
+
+	publish1 := evt(contractID, "publish", "axon", base.Add(time.Minute))
+	publish1["version"] = "1.0.0"
+	fx.commitEvent("axon", fxULID(1), publish1)
+
+	publish2 := evt(contractID, "publish", "axon", base.Add(2*time.Minute))
+	publish2["version"] = "2.0.0"
+	fx.commitEvent("axon", fxULID(2), publish2)
+
+	deprecate1 := evt(contractID, "deprecate", "axon", base.Add(3*time.Minute))
+	deprecate1["version"] = "1.0.0"
+	fx.commitEvent("axon", fxULID(3), deprecate1)
+
+	store := newThreadStore(t, fx, "sp1")
+	result, err := store.ThreadView(context.Background(), threadID, "")
+	if err != nil {
+		t.Fatalf("ThreadView: %v", err)
+	}
+
+	var item *OpenItem
+	for i := range result.OpenItems {
+		if result.OpenItems[i].ID == contractID {
+			item = &result.OpenItems[i]
+		}
+	}
+	if item == nil {
+		t.Fatalf("no open item for contract %s: %+v", contractID, result.OpenItems)
+	}
+	if item.State != "published" {
+		t.Fatalf("contract state = %q, want published (2.0.0 keeps the subject live)", item.State)
+	}
+
+	transitions := map[string][]string{}
+	for _, a := range item.NextActions {
+		transitions[a.Transition] = a.By
+	}
+	// Publish MUST still be offered. An owner publishing the next version
+	// is the commonest thing that happens to a live contract, and a
+	// rolling window is the state in which it happens most; a thread view
+	// that drops it the moment a contract has any version is telling the
+	// owner their contract is finished. fold.LegalNextFor answers the
+	// whole-contract form with `publish` deliberately, for exactly this
+	// caller — see contractMoveAvailable's own doc comment.
+	pubBy, ok := transitions["publish"]
+	if !ok {
+		t.Fatalf("publish must still be offered on a live contract: %+v", item.NextActions)
+	}
+	if len(pubBy) != 1 || pubBy[0] != "axon" {
+		t.Fatalf("publish.by = %v, want exactly [axon] (RoleOwner resolves to the contract's own from)", pubBy)
+	}
+	if _, ok := transitions["retire"]; ok {
+		t.Fatalf("retire must not be offered while 2.0.0 is still published: %+v", item.NextActions)
+	}
+	by, ok := transitions["deprecate"]
+	if !ok {
+		t.Fatalf("expected deprecate (2.0.0 is still published) among next_actions: %+v", item.NextActions)
+	}
+	if len(by) != 1 || by[0] != "axon" {
+		t.Fatalf("deprecate.by = %v, want exactly [axon] (RoleOwner resolves to the contract's own from)", by)
+	}
+}
+
 // TestThreadView_TwoSpacesAmbiguity is CC-073/T4: the same thread ID
 // present in two connected spaces must refuse, never silently merge.
 func TestThreadView_TwoSpacesAmbiguity(t *testing.T) {

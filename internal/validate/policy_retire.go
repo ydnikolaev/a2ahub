@@ -13,7 +13,9 @@
 // scopes it ("CI wiring of this hook into V3 is P9's, not touched here").
 package validate
 
-import "sort"
+import (
+	"sort"
+)
 
 // RegisteredConsumer is one system whose acknowledgement the retire
 // precondition (§5.4/D-022) requires before a contract version may

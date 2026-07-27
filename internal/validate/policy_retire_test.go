@@ -1,6 +1,8 @@
 package validate
 
-import "testing"
+import (
+	"testing"
+)
 
 // TestCheckRetirePrecondition exercises the §5.4/D-022 retire-precondition
 // policy check (spec 08 T1 "contract retire", §8 AC-202.2/AC-202.3;

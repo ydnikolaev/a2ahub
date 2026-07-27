@@ -323,6 +323,58 @@ func TestMirrorResolverThreadOfAndThreadExists(t *testing.T) {
 	}
 }
 
+// TestMirrorResolverAdapterCarriesNoWalk is AC-1.3's structural gate: this
+// file must never regain its own filepath.WalkDir — the resolver's index
+// build lives in internal/cache.BuildArtifactIndex now (spec
+// 01-resolver-one-home.md), and a future edit re-adding a walk here would
+// resurrect the third, worse, unreported copy this phase deleted.
+func TestMirrorResolverAdapterCarriesNoWalk(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("adapters.go")
+	if err != nil {
+		t.Fatalf("read adapters.go: %v", err)
+	}
+	if strings.Contains(string(raw), "filepath.WalkDir") {
+		t.Fatal("internal/cli/adapters.go calls filepath.WalkDir directly — the resolver's own artifact walk must live in internal/cache only (AC-1.3)")
+	}
+}
+
+// TestMirrorResolverSkippedNamesTheBadFileAndGoodRefStillResolves is
+// AC-1.1/AC-1.2's core proof at the resolver layer: a file two directories
+// away from a real artifact whose frontmatter carries `thread:` twice
+// (the exact malformed shape filed 2026-07-26, SkipReasonUndecodableYAML)
+// must never blind KnownArtifact to the real artifact, and Skipped() must
+// name the bad file and its reason — the fact a REF-009/REF-010 refusal
+// needs in order to point a reader at the actual cause rather than the ref
+// that merely looked wrong.
+func TestMirrorResolverSkippedNamesTheBadFileAndGoodRefStillResolves(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+
+	goodPath := filepath.Join(mirrorDir, "axon", "exchanges", "XQ-axon-20260721-good1.md")
+	if err := os.MkdirAll(filepath.Dir(goodPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(goodPath, []byte("---\nid: XQ-axon-20260721-good1\ntype: question\n---\nbody\n"), 0o644); err != nil {
+		t.Fatalf("write good artifact: %v", err)
+	}
+
+	badRelPath := "beta/exchanges/XW-beta-20260721-bad.md"
+	writeMirrorFile(t, mirrorDir, badRelPath,
+		"---\nid: XW-beta-20260721-bad\nthread: thread:beta:one\nthread: thread:beta:two\n---\nbad body\n")
+
+	r := cli.NewMirrorResolver(mirrorDir, space.Manifest{})
+
+	if !r.KnownArtifact("XQ-axon-20260721-good1") {
+		t.Fatal("KnownArtifact(good) = false, want true — one bad file elsewhere must never blind the resolver to a real artifact")
+	}
+
+	skipped := r.Skipped()
+	if len(skipped) != 1 || skipped[0].Path != badRelPath || skipped[0].Reason != "undecodable-yaml" {
+		t.Fatalf("Skipped() = %+v, want exactly one entry naming %q/undecodable-yaml", skipped, badRelPath)
+	}
+}
+
 // --- SubmitValidatorAdapter ------------------------------------------------
 
 func TestSubmitValidatorAdapterValid(t *testing.T) {
@@ -412,6 +464,72 @@ func TestSubmitValidatorAdapterInvalidReturnsViolations(t *testing.T) {
 	}
 	if len(violationErr.Violations) == 0 {
 		t.Fatal("expected at least one violation")
+	}
+}
+
+// TestSubmitValidatorAdapterViolationNamesSkippedFile is AC-1.2's proof at
+// the ValidateSubmit layer: the mirror also carries a file elsewhere whose
+// frontmatter cannot decode, and the returned *ViolationError must both
+// carry it in Skipped and NAME it (and its reason) in Error() — the
+// refusal a caller reads must point at the file that actually failed to
+// parse, not just at the artifact whose `refs:`/`thread` looked wrong
+// (US-2, spec 01-resolver-one-home.md §1).
+func TestSubmitValidatorAdapterViolationNamesSkippedFile(t *testing.T) {
+	t.Parallel()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+	manifest := space.Manifest{Participants: []space.Participant{{System: "axon", Status: "active"}}}
+	mirrorDir := t.TempDir()
+
+	badRelPath := "beta/exchanges/XW-beta-20260721-bad.md"
+	writeMirrorFile(t, mirrorDir, badRelPath,
+		"---\nid: XW-beta-20260721-bad\nthread: thread:beta:one\nthread: thread:beta:two\n---\nbad body\n")
+
+	legality := cli.NewLegalityAdapter(mirrorDir, "axon", manifest)
+	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
+	adapter := cli.NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
+
+	// Same missing-`category` fixture as
+	// TestSubmitValidatorAdapterInvalidReturnsViolations — the violation's
+	// own cause is irrelevant here; what matters is that Skipped/Error
+	// surface the UNRELATED bad file regardless of which violation fired.
+	artifactContent := []byte("---\n" +
+		"schema: envelope/v1\n" +
+		"id: XQ-axon-20260721-k3f9\n" +
+		"type: question\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [other]\n" +
+		"thread: " + cliFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"priority: p3\n" +
+		"blocking: true\n" +
+		"classification: internal\n" +
+		"---\nbody\n")
+
+	files := []space.FileWrite{
+		{Path: "axon/exchanges/XQ-axon-20260721-k3f9.md", Content: artifactContent},
+	}
+
+	err = adapter.ValidateSubmit(context.Background(), files)
+	var violationErr *cli.ViolationError
+	if !errors.As(err, &violationErr) {
+		t.Fatalf("expected a *cli.ViolationError, got %T: %v", err, err)
+	}
+	if len(violationErr.Skipped) != 1 || violationErr.Skipped[0].Path != badRelPath || violationErr.Skipped[0].Reason != "undecodable-yaml" {
+		t.Fatalf("violationErr.Skipped = %+v, want exactly one entry naming %q/undecodable-yaml", violationErr.Skipped, badRelPath)
+	}
+	msg := violationErr.Error()
+	if !strings.Contains(msg, badRelPath) {
+		t.Fatalf("Error() = %q, want it to NAME the skipped path %q", msg, badRelPath)
+	}
+	if !strings.Contains(msg, "undecodable-yaml") {
+		t.Fatalf("Error() = %q, want the skip reason named", msg)
 	}
 }
 

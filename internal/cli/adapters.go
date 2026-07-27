@@ -18,14 +18,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/user"
-	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -181,6 +180,7 @@ type mirrorEvent struct {
 	Event      string `yaml:"event"`
 	Subject    string `yaml:"subject"`
 	Transition string `yaml:"transition"`
+	Version    string `yaml:"version"`
 	Actor      struct {
 		Kind   string `yaml:"kind"`
 		Name   string `yaml:"name"`
@@ -260,7 +260,10 @@ func (a *LegalityAdapter) CheckLegality(candidate validate.CandidateEvent) (vali
 		return 0, fmt.Errorf("cli: LegalityAdapter.CheckLegality: read committed history for %q: %w", candidate.Subject, err)
 	}
 
-	var state fold.State
+	// prior carries the FULL fold.Result (not just its .State) so a
+	// contract on the per-version path (P4) can answer per-version rather
+	// than per-subject — see fold.CheckCandidate's own doc comment.
+	prior := fold.NewResult(env.Kind)
 	if len(events) == 0 {
 		// No committed history at all: the pre-entry-event state is
 		// `draft` (fold.NewResult's own doc comment) — NOT fold.Fold's
@@ -268,13 +271,12 @@ func (a *LegalityAdapter) CheckLegality(candidate validate.CandidateEvent) (vali
 		// different question (an artifact already IN the space with no
 		// recorded event trail). This adapter never hits that case: the
 		// candidate event's own commit is what introduces the artifact.
-		state = fold.NewResult(env.Kind).State
 	} else {
-		state = fold.Fold(env.Kind, env, events, a.membershipView).State
+		prior = fold.Fold(env.Kind, env, events, a.membershipView)
 	}
 
 	actorStatus := a.membershipView(candidate.Actor.System)
-	verdict := fold.CheckLegality(env.Kind, state, candidate.Transition, env, fold.Actor{
+	verdict := fold.CheckCandidate(env.Kind, prior, candidate.Transition, candidate.Version, env, fold.Actor{
 		Kind: candidate.Actor.Kind, Name: candidate.Actor.Name, System: candidate.Actor.System,
 	}, actorStatus)
 
@@ -320,50 +322,16 @@ func (a *LegalityAdapter) membershipView(system string) fold.MembershipStatus {
 // "bounded reads everywhere").
 const maxMirrorEventBytes = 1 << 20 // 1 MiB
 
+// committedEvents delegates to internal/cache.CommittedEvents — the
+// identical subject-filtered committed-history read this method and
+// internal/mcp's own LegalityAdapter.committedEvents used to carry
+// verbatim in both adapter files (spec 01-resolver-one-home.md §5, "also
+// in scope, same disease"). readBoundedFile/maxMirrorEventBytes above stay
+// in this file: cmd_contract.go/cmd_lifecycle.go/cmd_validate_ci.go still
+// call them directly for unrelated reads, so they are not this method's to
+// remove.
 func (a *LegalityAdapter) committedEvents(subject string) ([]fold.Event, error) {
-	dir := filepath.Join(a.mirrorDir, a.system, "events")
-	years, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var out []fold.Event
-	for _, year := range years {
-		if !year.IsDir() {
-			continue
-		}
-		yearDir := filepath.Join(dir, year.Name())
-		files, err := os.ReadDir(yearDir)
-		if err != nil {
-			return nil, err
-		}
-		for _, f := range files {
-			if f.IsDir() || !strings.HasSuffix(f.Name(), ".yaml") {
-				continue
-			}
-			raw, err := readBoundedFile(filepath.Join(yearDir, f.Name()), maxMirrorEventBytes)
-			if err != nil {
-				return nil, err
-			}
-			var ev mirrorEvent
-			if err := yaml.Unmarshal(raw, &ev); err != nil {
-				return nil, fmt.Errorf("cli: decode committed event %s: %w", f.Name(), err)
-			}
-			if ev.Subject != subject {
-				continue
-			}
-			out = append(out, fold.Event{
-				ULID:       ev.Event,
-				Subject:    ev.Subject,
-				Transition: ev.Transition,
-				Actor:      fold.Actor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
-			})
-		}
-	}
-	return out, nil
+	return cache.CommittedEvents(a.mirrorDir, a.system, subject)
 }
 
 func readBoundedFile(path string, max int64) ([]byte, error) {
@@ -386,28 +354,27 @@ func readBoundedFile(path string, max int64) ([]byte, error) {
 // --- MirrorResolver (validate.Resolver) ---------------------------------
 
 // MirrorResolver is the concrete validate.Resolver P6 wires: it resolves
-// known-artifact/digest/system-membership facts from the connected
-// space's mirror clone on disk (never internal/cache, P7, absent). The
-// artifact index is built once, lazily, on first use, and is safe for
-// concurrent read after that (sync.Once).
+// known-artifact/digest/thread/system-membership facts from the connected
+// space's mirror clone on disk. KnownArtifact/Digest/ThreadOf/ThreadExists
+// resolve against internal/cache.BuildArtifactIndex — the SAME best-effort
+// walk (bounded read -> ParseFrontmatter -> envelope decode -> id
+// presence) internal/cache's own read model performs for its own index,
+// complete with its []SkippedFile report, rather than a third, worse copy
+// of that walk with no report at all (spec agent-ops-2026-07/specs/
+// 01-resolver-one-home.md, closing a filed defect: a file that failed to
+// parse used to drop silently from THIS index, so a legitimate `refs:`
+// entry into a real, unrelated artifact was refused REF-009/REF-010 with
+// no hint that the actual cause was a THIRD file elsewhere that would not
+// decode). System() stays manifest-local — no walk answers it. The index
+// is built once, lazily, on first use, and is safe for concurrent read
+// after that (sync.Once).
 type MirrorResolver struct {
 	mirrorDir string
 	manifest  space.Manifest
 
-	once  sync.Once
-	index map[string]mirrorArtifact // artifact id -> its indexed facts
-}
-
-// mirrorArtifact is the per-artifact record ensureIndex builds during its
-// one walk of the mirror clone: the mirror-relative path (KnownArtifact/
-// Digest's data source) plus the `thread` frontmatter field (ThreadOf/
-// ThreadExists' data source, validate.ThreadResolver). Both come from the
-// same single frontmatter parse per file — adding `thread` here means
-// ThreadOf/ThreadExists read the walk ensureIndex already performs rather
-// than opening files again or building a second index.
-type mirrorArtifact struct {
-	path   string
-	thread string
+	once    sync.Once
+	index   map[string]cache.ArtifactIndexEntry // artifact id -> its indexed facts
+	skipped []cache.SkippedFile
 }
 
 // NewMirrorResolver constructs a MirrorResolver over mirrorDir (the
@@ -426,8 +393,10 @@ func (r *MirrorResolver) KnownArtifact(id string) bool {
 
 // Digest implements validate.Resolver: ref is a §5.7 ref grammar string
 // (`id`, `id@version`, `id#digest`, `id@version#digest`); only the `id`
-// segment is used to resolve the target file, whose current on-disk
-// digest is returned.
+// segment is used to resolve the target file, whose digest — as captured
+// by the SAME walk-time bounded read that decoded its envelope (see
+// cache.BuildArtifactIndex's own doc comment on why this is walk-time, not
+// re-read-per-call) — is returned.
 func (r *MirrorResolver) Digest(ref string) (string, bool) {
 	r.ensureIndex()
 	id, _, _ := splitRefGrammar(ref)
@@ -435,11 +404,7 @@ func (r *MirrorResolver) Digest(ref string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	raw, err := os.ReadFile(filepath.Join(r.mirrorDir, entry.path))
-	if err != nil {
-		return "", false
-	}
-	return artifact.Digest(raw), true
+	return entry.Digest, true
 }
 
 // ThreadOf implements validate.ThreadResolver.
@@ -449,7 +414,7 @@ func (r *MirrorResolver) ThreadOf(id string) (thread string, found bool) {
 	if !ok {
 		return "", false
 	}
-	return entry.thread, true
+	return entry.Thread, true
 }
 
 // ThreadExists implements validate.ThreadResolver: it reports whether any
@@ -468,7 +433,7 @@ func (r *MirrorResolver) ThreadExists(thread string) bool {
 	}
 	r.ensureIndex()
 	for _, entry := range r.index {
-		if entry.thread == thread {
+		if entry.Thread == thread {
 			return true
 		}
 	}
@@ -485,37 +450,32 @@ func (r *MirrorResolver) System(system string) (member bool, left bool) {
 	return false, false
 }
 
+// Skipped reports every mirror file this resolver's own index build could
+// not decode — internal/cache.SkippedFile, unchanged and unextended (§9,
+// out of scope). SubmitValidatorAdapter.ValidateSubmit reads this (via the
+// unexported skipReporter capability probe) to attach it to a returned
+// *ViolationError, so a REF-009/REF-010 refusal caused by an unrelated
+// file failing to parse names THAT file, not just the ref that looked
+// wrong (US-2).
+func (r *MirrorResolver) Skipped() []cache.SkippedFile {
+	r.ensureIndex()
+	return r.skipped
+}
+
 func (r *MirrorResolver) ensureIndex() {
 	r.once.Do(func() {
-		r.index = map[string]mirrorArtifact{}
-		_ = filepath.WalkDir(r.mirrorDir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
-				// Best-effort index build: an unreadable file/dir is
-				// simply skipped, never fails the whole walk.
-				return nil
-			}
-			raw, rerr := os.ReadFile(path) //nolint:gosec // reason: path comes from walking this system's own already-cloned mirror dir, not attacker-controlled input
-			if rerr != nil {
-				return nil
-			}
-			fm, ferr := artifact.ParseFrontmatter(raw)
-			if ferr != nil {
-				return nil
-			}
-			var probe struct {
-				ID     string `yaml:"id"`
-				Thread string `yaml:"thread"`
-			}
-			if yerr := yaml.Unmarshal(fm.YAML, &probe); yerr != nil || probe.ID == "" {
-				return nil
-			}
-			rel, relErr := filepath.Rel(r.mirrorDir, path)
-			if relErr != nil {
-				return nil
-			}
-			r.index[probe.ID] = mirrorArtifact{path: rel, thread: probe.Thread}
-			return nil
-		})
+		idx, skipped, err := cache.BuildArtifactIndex(r.mirrorDir)
+		if err != nil {
+			// Best-effort index build: an error here means the walk root
+			// itself could not be traversed at all (walkArtifacts' own
+			// per-file errors are already folded into skipped, never
+			// returned here) — degrade to an empty index rather than
+			// panicking or blocking every V2 check on it.
+			r.index = map[string]cache.ArtifactIndexEntry{}
+			return
+		}
+		r.index = idx
+		r.skipped = skipped
 	})
 }
 
@@ -545,8 +505,18 @@ func splitRefGrammar(ref string) (id, version, digest string) {
 // funnel's SubmitValidator seam takes only a plain error; this type is
 // what preserves violation detail up to the CLI's JSON output
 // (errors.As(err, &violationErr)).
+//
+// Skipped names every mirror file the resolver's own index build could not
+// decode (internal/cache.SkippedFile) — populated from the resolver's
+// skipReporter capability (MirrorResolver implements it) whenever
+// ValidateSubmit returns violations. Before this, a REF-009/REF-010
+// refusal named only the ref that looked wrong, even when the actual cause
+// was a THIRD, unrelated file elsewhere in the mirror that failed to
+// parse and so never made it into the resolver's index (US-2, spec
+// 01-resolver-one-home.md §1).
 type ViolationError struct {
 	Violations []validate.Violation
+	Skipped    []cache.SkippedFile
 }
 
 func (e *ViolationError) Error() string {
@@ -555,7 +525,30 @@ func (e *ViolationError) Error() string {
 	for _, v := range e.Violations {
 		fmt.Fprintf(&b, " [%s %s: %s]", v.Code, v.Path, v.Message)
 	}
+	if len(e.Skipped) > 0 {
+		// A DIFFERENT framing sentence from skipAdvisory's own "missing
+		// from this output" (skipadvisory.go): that sentence describes a
+		// read verb's own item list, and reusing it here would tell a
+		// reader debugging a refusal to go check an output rather than the
+		// file that actually caused it — the exact wrong-target-named
+		// defect class this phase exists to close (see this file's own
+		// ViolationError doc comment). Only the item-list formatting is
+		// shared (formatSkippedList, skipadvisory.go).
+		fmt.Fprintf(&b, " (the reference index could not decode %d file(s), which is why a resolvable ref may still fail: %s)",
+			len(e.Skipped), formatSkippedList(e.Skipped))
+	}
 	return b.String()
+}
+
+// skipReporter is the optional capability a validate.Resolver may also
+// implement (the same type-assertion pattern ADR-003 uses for
+// host.Forker, and thread.go's own ThreadResolver): a resolver whose index
+// build produced a skip report. MirrorResolver implements it; a resolver
+// double used in a test that does not need one simply doesn't, and
+// ValidateSubmit degrades to an empty Skipped rather than requiring every
+// validate.Resolver implementation to grow this method.
+type skipReporter interface {
+	Skipped() []cache.SkippedFile
 }
 
 // SubmitValidatorAdapter is the concrete space.SubmitValidator the write
@@ -670,6 +663,7 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 				Subject:    ev.Subject,
 				Transition: ev.Transition,
 				Actor:      validate.Actor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
+				Version:    ev.Version,
 			}}
 		}
 
@@ -687,7 +681,11 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 	}
 
 	if len(violations) > 0 {
-		return &ViolationError{Violations: violations}
+		verr := &ViolationError{Violations: violations}
+		if sr, ok := v.resolver.(skipReporter); ok {
+			verr.Skipped = sr.Skipped()
+		}
+		return verr
 	}
 	return nil
 }

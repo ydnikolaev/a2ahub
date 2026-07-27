@@ -38,10 +38,12 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -149,6 +151,27 @@ func contractParseSemver(s string) (contractSemver, error) {
 
 func (v contractSemver) String() string { return fmt.Sprintf("%d.%d.%d", v[0], v[1], v[2]) }
 
+// contractCanonicalVersion reformats v through contractSemver, so that two
+// spellings of the same version ("1.0.0" and "01.0.0") produce the
+// IDENTICAL string — fold.Result.Versions is a map[string]State keyed on
+// the raw version string with no canonicalization of its own (P4,
+// 04-per-version-lifecycle.plan.md; internal/fold is off-limits here, so
+// this is the caller's own half of keeping that map's keys consistent).
+// `contract publish` already writes a canonical spelling unconditionally
+// (newVersion.String(), always a parsed contractSemver) — the ONLY
+// caller-introduced non-canonical spelling is an explicit `--version`
+// flag passed straight to deprecate/retire (contractResolveVersionOrRefuse
+// returns it VERBATIM, by its own doc comment). Fails open (returns v
+// unchanged) on an unparseable v — never itself the refusal path;
+// contractResolveVersionOrRefuse/the legality check downstream decide
+// whether an unparseable version is legal.
+func contractCanonicalVersion(v string) string {
+	if parsed, err := contractParseSemver(v); err == nil {
+		return parsed.String()
+	}
+	return v
+}
+
 func contractBump(prior contractSemver, kind string) contractSemver {
 	switch kind {
 	case "major":
@@ -160,6 +183,42 @@ func contractBump(prior contractSemver, kind string) contractSemver {
 	default:
 		return prior
 	}
+}
+
+// contractSelectBaseline is P4 wave 5's Edge 2 (04-per-version-lifecycle.md
+// §4): the baseline `contract publish` compares against and diffs is
+// max{v ∈ priorVersions : v < newVersion} — the highest PRIOR version
+// strictly older than the one being published, NOT necessarily the
+// globally-highest ever published (`priorVersions[len(priorVersions)-1]`,
+// this file's own former rule, is only that rule's special case when
+// newVersion IS the highest-ever publish). Publishing a maintenance 1.2
+// while 2.0 is already published must compare against 1.1, not 2.0
+// (AC-8) — the everyday act during a sunset window.
+//
+// The DECISION itself lives in internal/version.Baseline, shared with
+// internal/mcp's own copy of this bridge (decision 8,
+// 04-per-version-lifecycle.plan.md — "shared code moves DOWN into core,
+// never ACROSS between the surfaces"); this is only the adapter between
+// contractSemver's own numeric shape and that string-based rule. Every
+// contractSemver.String() is always a well-formed dotted-integer version,
+// so version.Baseline can only ever fail on an input this function itself
+// produced wrong — never a caller-reachable path — and such a failure is
+// treated the same as "not found" (the zero value, false) rather than
+// propagated as an error no caller actually needs to handle.
+func contractSelectBaseline(priorVersions []contractSemver, newVersion contractSemver) (contractSemver, bool) {
+	published := make([]string, len(priorVersions))
+	for i, v := range priorVersions {
+		published[i] = v.String()
+	}
+	baseline, found, err := version.Baseline(published, newVersion.String())
+	if err != nil || !found {
+		return contractSemver{0, 0, 0}, false
+	}
+	parsed, perr := contractParseSemver(baseline)
+	if perr != nil {
+		return contractSemver{0, 0, 0}, false
+	}
+	return parsed, true
 }
 
 // --- digest tree (§5.7/D-029) — the ONE impl publish/diff/verify-export
@@ -687,7 +746,64 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
 
-	verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TPublish, actor)
+	// P4: newVersion must be resolved BEFORE the legality check below —
+	// once a contract carries any recorded version, fold.CheckCandidate/
+	// contractVersionVerdict refuses a version-LESS publish outright
+	// (04-per-version-lifecycle.plan.md), so the version this commit is
+	// about to mint must be known first, not deferred to the old G1 block
+	// further down. This needs only the event history + the --version/
+	// --bump flags, not the descriptor, so hoisting it here is cheap.
+	all, err := lifecycleReadAllEvents(c.deps.mirrorDir)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %v\n", err)
+		return 1
+	}
+	priorVersions := contractPublishedVersions(all, id)
+	isFirstPublish := len(priorVersions) == 0
+
+	// bumpSource is the globally-highest published version — `--bump` must
+	// choose it BEFORE newVersion is known (Edge 2's own documented
+	// consequence, 04-per-version-lifecycle.md §4), so a maintenance-line
+	// publish uses explicit `--version` instead (F4 already trained
+	// operators to do this for deprecate/retire).
+	bumpSource := contractSemver{0, 0, 0}
+	if !isFirstPublish {
+		bumpSource = priorVersions[len(priorVersions)-1]
+	}
+
+	var newVersion contractSemver
+	if *version != "" {
+		newVersion, err = contractParseSemver(*version)
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %v\n", err)
+			return 2
+		}
+	} else {
+		newVersion = contractBump(bumpSource, *bump)
+	}
+
+	// baseline is Edge 2's own rule (max{v ∈ priorVersions : v < newVersion})
+	// — NOT bumpSource above once newVersion names a maintenance line
+	// (AC-8: publish 1.2 while 2.0 is published compares against 1.1). The
+	// two agree whenever newVersion came from --bump (bumpSource is by
+	// construction the highest prior version strictly less than its own
+	// bump), so this never regresses the ordinary sequential-publish case.
+	//
+	// hasBaseline is NOT `!isFirstPublish`. Prior versions can exist with
+	// none of them older than newVersion — publishing 1.0.0 on a contract
+	// whose only published version is 2.0.0, i.e. opening a lower line while
+	// a higher one is live. The fold permits it (a version key that has
+	// never been minted), and the old globally-highest rule could not
+	// produce this case because it always returned a real prior version.
+	// Discarding `found` here let a zero-value 0.0.0 flow into
+	// contractPriorVersionFiles, which git-searches for a descriptor version
+	// that was never published and aborts the publish with a confusing
+	// "no commit found" error. There IS no baseline in that case, so this
+	// publish is treated exactly as a first publish is: nothing to compute
+	// compatibility against, and gated for human review.
+	baseline, hasBaseline := contractSelectBaseline(priorVersions, newVersion)
+
+	verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TPublish, newVersion.String(), actor)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %s: %v\n", id, err)
 		return 1
@@ -790,34 +906,13 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 		return 1
 	}
 
-	// G1: no PRIOR publish event at all for this contract.
-	all, err := lifecycleReadAllEvents(c.deps.mirrorDir)
-	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %v\n", err)
-		return 1
-	}
-	priorVersions := contractPublishedVersions(all, id)
-	isFirstPublish := len(priorVersions) == 0
-
-	baseline := contractSemver{0, 0, 0}
-	if !isFirstPublish {
-		baseline = priorVersions[len(priorVersions)-1]
-	}
-
-	var newVersion contractSemver
-	if *version != "" {
-		newVersion, err = contractParseSemver(*version)
-		if err != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %v\n", err)
-			return 2
-		}
-	} else {
-		newVersion = contractBump(baseline, *bump)
-	}
+	// G1/newVersion resolution moved above the legality check (P4) — see
+	// this function's own comment there. all/priorVersions/isFirstPublish/
+	// baseline/newVersion are already in scope.
 
 	// G2: a self-declared MAJOR bump on a non-first publish.
-	isMajorBump := !isFirstPublish && newVersion[0] > baseline[0]
-	gated := isFirstPublish || isMajorBump
+	isMajorBump := hasBaseline && newVersion[0] > baseline[0]
+	gated := !hasBaseline || isMajorBump
 
 	// F1/POL-007/POL-008 (D-010, §5.4b): computed compatibility. Only makes
 	// sense once there IS a prior version to compare against, and only for
@@ -829,7 +924,7 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 	// Reason the SAME way a minor/patch's "nothing computed" prints is
 	// AC-970.3 — a caller-side special case would just re-derive the same
 	// sentence the core already owns.
-	if !isFirstPublish && validate.IsJSONSchemaFormat(probe.SchemaFormat) {
+	if hasBaseline && validate.IsJSONSchemaFormat(probe.SchemaFormat) {
 		declaredBump := *bump
 		if declaredBump == "" {
 			// --version was used instead of --bump: classify the jump from
@@ -1117,15 +1212,9 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
 
-	verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TDeprecate, actor)
-	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %s: %v\n", id, err)
-		return 1
-	}
-	if verdict != fold.VerdictLegal {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %s\n", verdictRefusalMessage(id, verdict))
-		return 1
-	}
+	// P4: deprecatedVersion must be resolved BEFORE the legality check
+	// below — see runRetire's own comment on why the order matters once a
+	// contract carries any recorded version.
 	_, probe, _, _, err := contractReadDescriptor(c.deps.mirrorDir, id)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %v\n", err)
@@ -1142,6 +1231,35 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 		return 2
 	}
 
+	// legalityVersion is "" (the legacy whole-subject path) unless this
+	// contract has AT LEAST ONE prior publish event that itself carried a
+	// `version` field. deprecatedVersion above is resolved for EVENT-
+	// AUTHORING purposes (F4/AC-972.1, predates P4) and is always non-empty
+	// once the contract has published at all — but the fold only tracks
+	// per-version state (Result.Versions) for versions a publish EVENT
+	// actually named. Passing deprecatedVersion unconditionally into the
+	// legality check would force the version-aware branch
+	// (contractVersionVerdict) even for a contract whose entire history is
+	// version-less, where Versions[deprecatedVersion] can never be found —
+	// refusing a deprecate that the legacy subject-state check correctly
+	// allows. This is the caller-side half of "version-less folds
+	// identically" (04-per-version-lifecycle.plan.md's cutover guarantee):
+	// the guarantee is about the FOLD, but a caller that hands a version to
+	// a version-blind history breaks it one layer up.
+	legalityVersion := ""
+	if len(contractPublishedVersions(allEvents, id)) > 0 {
+		legalityVersion = contractCanonicalVersion(deprecatedVersion)
+	}
+	verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TDeprecate, legalityVersion, actor)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %s: %v\n", id, err)
+		return 1
+	}
+	if verdict != fold.VerdictLegal {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %s\n", verdictRefusalMessage(id, verdict))
+		return 1
+	}
+
 	now := c.deps.now()
 	layout, err := space.NewLayout(c.deps.ownSystem)
 	if err != nil {
@@ -1154,9 +1272,19 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: cannot mint event id: %v\n", err)
 		return 1
 	}
+	// The COMMITTED event's own Version field is legalityVersion, not
+	// deprecatedVersion: it must name EXACTLY what the pre-write legality
+	// check above just verified against, or a later fold of this same
+	// event disagrees with the check that admitted it — the identical
+	// "one rule, two readings" failure fold.CheckCandidate's own doc
+	// comment exists to prevent, one caller layer up. deprecatedVersion
+	// (F4/AC-972.1, resolved above) still names the version everywhere
+	// else in this commit (the announcement's `deprecates:` field, its
+	// deterministic id seed) — those are audit-trail facts, independent
+	// of whether THIS contract's fold is on the per-version path yet.
 	deprecateEvent := lifecycleEventDoc{
 		Schema: "event/v1", Event: deprecateEventID.String(), Space: probe.Space,
-		Subject: id, Transition: fold.TDeprecate, Version: deprecatedVersion,
+		Subject: id, Transition: fold.TDeprecate, Version: legalityVersion,
 		Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 		At:    now.UTC().Format(time.RFC3339),
 		Refs:  []lifecycleRefEntry{{Ref: *successor}},
@@ -1187,12 +1315,14 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 		return 1
 	}
 	// F3/T4 (AC-971.1, AC-971.2): the announcement's addressees are the
-	// registered-consumer set — the SAME contractFindRegisteredConsumers
-	// query the retire precondition reads — not the descriptor's own
+	// registered-consumer set — the SAME cache.FindRegisteredConsumers
+	// family the retire precondition reads (unscoped here; retire's own
+	// read is major-scoped, Edge 1) — not the descriptor's own
 	// authoring-time `to:`. Computed ONCE, here, and used directly: "who
-	// blocks my retire" and "who was told" become one query instead of two
-	// that can drift apart (a system that only ever ran `contract adopt`
-	// used to block retire forever while never being addressed).
+	// blocks my retire" and "who was told" share one underlying query
+	// instead of two that can drift apart (a system that only ever ran
+	// `contract adopt` used to block retire forever while never being
+	// addressed).
 	to, err := contractDeprecateAddressees(c.deps.mirrorDir, id, probe.From, probe.To)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %v\n", err)
@@ -1318,15 +1448,13 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
 
-	verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TRetire, actor)
-	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %s: %v\n", id, err)
-		return 1
-	}
-	if verdict != fold.VerdictLegal {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %s\n", verdictRefusalMessage(id, verdict))
-		return 1
-	}
+	// P4: retiredVersion must be resolved BEFORE the legality check below —
+	// fold.CheckCandidate/contractVersionVerdict answers per-VERSION once a
+	// contract has any recorded version (04-per-version-lifecycle.plan.md),
+	// so a version-less check here would refuse a legal version-scoped
+	// retire (the pre-P4 "whole subject" table has no (published, retire)
+	// row at all, since a rolling window's other versions can still be
+	// published while one line retires).
 	_, probe, _, _, err := contractReadDescriptor(c.deps.mirrorDir, id)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %v\n", err)
@@ -1341,6 +1469,24 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %v\n", err)
 		return 2
+	}
+
+	// legalityVersion: see runDeprecate's own comment on why this is ""
+	// rather than retiredVersion when no prior publish event ever named a
+	// version — the legacy, fully version-less path must stay
+	// bit-identical to before this phase.
+	legalityVersion := ""
+	if len(contractPublishedVersions(allEvents, id)) > 0 {
+		legalityVersion = contractCanonicalVersion(retiredVersion)
+	}
+	verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TRetire, legalityVersion, actor)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %s: %v\n", id, err)
+		return 1
+	}
+	if verdict != fold.VerdictLegal {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %s\n", verdictRefusalMessage(id, verdict))
+		return 1
 	}
 
 	// now is fetched ONCE, up front, and threaded through both the LOW
@@ -1375,9 +1521,12 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 	if len(overridden) > 0 {
 		note = "retired-unacked: " + strings.Join(overridden, ", ")
 	}
+	// The COMMITTED event's own Version field is legalityVersion, not
+	// retiredVersion — see runDeprecate's own comment on why the two must
+	// agree.
 	ev := lifecycleEventDoc{
 		Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
-		Subject: id, Transition: fold.TRetire, Version: retiredVersion,
+		Subject: id, Transition: fold.TRetire, Version: legalityVersion,
 		Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 		At:    now.UTC().Format(time.RFC3339),
 		Note:  note,
@@ -1399,7 +1548,7 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 // mirror: registered consumers (satisfied requirement ∪ consumes.yaml
 // entry), the deprecation announcement's ack set + sunset + reminder
 // count.
-func contractBuildRetirePrecondition(mirrorDir string, manifest space.Manifest, contractID, version string, override, actorIsHuman bool, now time.Time) (validate.RetirePrecondition, error) {
+func contractBuildRetirePrecondition(mirrorDir string, manifest space.Manifest, contractID, contractVersion string, override, actorIsHuman bool, now time.Time) (validate.RetirePrecondition, error) {
 	all, err := lifecycleReadAllEvents(mirrorDir)
 	if err != nil {
 		return validate.RetirePrecondition{}, err
@@ -1409,7 +1558,7 @@ func contractBuildRetirePrecondition(mirrorDir string, manifest space.Manifest, 
 	// `refs[0].ref` on the contract's own `deprecate` event names the
 	// successor, not the announcement — the announcement instead is found
 	// by its own `deprecates` field, read off the committed artifact).
-	announcementID, sunset, err := contractFindDeprecationAnnouncement(mirrorDir, contractID, version)
+	announcementID, sunset, err := contractFindDeprecationAnnouncement(mirrorDir, contractID, contractVersion)
 	if err != nil {
 		return validate.RetirePrecondition{}, err
 	}
@@ -1431,7 +1580,19 @@ func contractBuildRetirePrecondition(mirrorDir string, manifest space.Manifest, 
 		}
 	}
 
-	consumerSystems, err := contractFindRegisteredConsumers(mirrorDir, contractID)
+	// Edge 1 (04-per-version-lifecycle.md §4, AC-9): the retire gate's
+	// registered-consumer scan is scoped to the MAJOR being retired — a
+	// consumer registered on a different major must not block this line's
+	// retire forever. contractVersion has already been resolved (never
+	// "" here — see runRetire's own comment on why legalityVersion/
+	// retiredVersion must be known before this call), so an unparseable
+	// value here would be this function's own bug, not a caller-reachable
+	// path; fail CLOSED (refuse, never silently unscoped) all the same.
+	major, err := version.Major(contractVersion)
+	if err != nil {
+		return validate.RetirePrecondition{}, fmt.Errorf("cli: %s: %w", contractVersion, err)
+	}
+	consumerSystems, err := cache.FindRegisteredConsumersForMajor(mirrorDir, contractID, major)
 	if err != nil {
 		return validate.RetirePrecondition{}, err
 	}
@@ -1496,92 +1657,21 @@ func contractFindDeprecationAnnouncement(mirrorDir, contractID, version string) 
 	return "", "", nil
 }
 
-// contractFindRegisteredConsumers is §5.2.3/D-022's union: every system
-// with a `satisfied` requirement whose `target_contract` names
-// contractID, OR a `consumes.yaml` entry naming it.
-func contractFindRegisteredConsumers(mirrorDir, contractID string) (map[string]bool, error) {
-	out := map[string]bool{}
-
-	reqMatches, err := filepath.Glob(filepath.Join(mirrorDir, "*", "requires", "XR-*.md"))
-	if err != nil {
-		return nil, err
-	}
-	for _, m := range reqMatches {
-		raw, rerr := readBoundedFile(m, maxMirrorEventBytes)
-		if rerr != nil {
-			return nil, rerr
-		}
-		fm, ferr := artifact.ParseFrontmatter(raw)
-		if ferr != nil {
-			continue
-		}
-		var probe struct {
-			ID             string `yaml:"id"`
-			From           string `yaml:"from"`
-			TargetContract string `yaml:"target_contract"`
-		}
-		if yaml.Unmarshal(fm.YAML, &probe) != nil || probe.TargetContract != contractID {
-			continue
-		}
-		// Determine the requirement's OWN folded state directly (no
-		// membership needed — Fold's own zero-events fallback / table
-		// lookup is membership-agnostic for reading state, only
-		// authorization checks consult membership, which this read-only
-		// resolution does not need).
-		all, aerr := lifecycleReadAllEvents(mirrorDir)
-		if aerr != nil {
-			return nil, aerr
-		}
-		events := lifecycleFoldEvents(all, probe.ID)
-		var state fold.State
-		if len(events) == 0 {
-			state = fold.NewResult(fold.KindRequirement).State
-		} else {
-			state = fold.Fold(fold.KindRequirement, fold.Envelope{ID: probe.ID, Kind: fold.KindRequirement, From: probe.From}, events, func(string) fold.MembershipStatus { return fold.MembershipMember }).State
-		}
-		if state == fold.StateSatisfied {
-			out[probe.From] = true
-		}
-	}
-
-	consumesMatches, err := filepath.Glob(filepath.Join(mirrorDir, "*", "consumes.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	for _, m := range consumesMatches {
-		raw, rerr := readBoundedFile(m, maxMirrorEventBytes)
-		if rerr != nil {
-			return nil, rerr
-		}
-		registry, cerr := contractParseConsumesStrict(raw, m)
-		if cerr != nil {
-			// FAIL CLOSED. This function's output is the retire
-			// precondition's consumer list: "I could not read this
-			// registry" must never round down to "this system consumes
-			// nothing", or a contract gets retired out from under a system
-			// that is subscribed to it. A malformed registry is an error
-			// that stops the retire and names the file to fix.
-			return nil, cerr
-		}
-		for _, d := range registry.Dependencies {
-			if d.Contract == contractID {
-				out[registry.System] = true
-			}
-		}
-	}
-	return out, nil
-}
-
 // contractDeprecateAddressees is F3/T4 (AC-971.1, AC-971.2): who a
-// deprecation announcement is addressed to. Computed from the SAME
-// contractFindRegisteredConsumers query the retire precondition reads —
-// "who blocks retire" and "who was told" are one query, not two that can
-// silently disagree (that disagreement is exactly how F3's deadlock
+// deprecation announcement is addressed to. Computed from the SAME D-022
+// registered-consumer query the retire precondition reads
+// (cache.FindRegisteredConsumers — P4 wave 5 decision 8: this scan moved
+// down to internal/cache, ONE home shared with internal/mcp, so "who
+// blocks retire" and "who was told" stay one query rather than two that can
+// silently disagree; that disagreement is exactly how F3's deadlock
 // existed: a system that only ever ran `contract adopt` blocked the
 // producer's retire forever while never being addressed by the
-// deprecation). Sorted (contractFindRegisteredConsumers returns a map),
-// deduped, and excludes the contract's OWN `from` system — a producer does
-// not address itself.
+// deprecation). UNSCOPED by major, deliberately — Edge 1 (04-per-version-
+// lifecycle.md §4) scopes the RETIRE gate only; a deprecation announcement
+// still addresses every registered consumer regardless of major, unchanged
+// from before this wave. Sorted (cache.FindRegisteredConsumers returns a
+// map), deduped, and excludes the contract's OWN `from` system — a
+// producer does not address itself.
 //
 // An EMPTY registered-consumer set (nobody has adopted this contract yet)
 // falls back to fallback (the descriptor's own authoring-time `to:`):
@@ -1592,7 +1682,7 @@ func contractFindRegisteredConsumers(mirrorDir, contractID string) (map[string]b
 // actionable error rather than silently authoring an invalid `to: null`
 // announcement.
 func contractDeprecateAddressees(mirrorDir, contractID, from string, fallback []string) ([]string, error) {
-	consumers, err := contractFindRegisteredConsumers(mirrorDir, contractID)
+	consumers, err := cache.FindRegisteredConsumers(mirrorDir, contractID)
 	if err != nil {
 		return nil, err
 	}
@@ -1611,26 +1701,6 @@ func contractDeprecateAddressees(mirrorDir, contractID, from string, fallback []
 		return nil, fmt.Errorf("cli: %s has no registered consumers and no fallback recipients (descriptor `to:` is empty) — nobody to address the deprecation to", contractID)
 	}
 	return fallback, nil
-}
-
-// contractParseConsumesStrict parses a committed consumes.yaml and
-// REFUSES anything that is not a real consumes/v1 registry. Plain
-// yaml.Unmarshal is not enough: the placeholder an external consumer's
-// space actually carried (`consumes: []`) unmarshals cleanly into a
-// zero-valued struct, so a silent "0 dependencies, empty system" is
-// exactly what a wrong-shaped file produces — indistinguishable from a
-// system that genuinely consumes nothing.
-func contractParseConsumesStrict(raw []byte, path string) (space.Consumes, error) {
-	registry, err := space.ParseConsumes(raw)
-	if err != nil {
-		return space.Consumes{}, fmt.Errorf("cli: %s is not valid yaml: %w", path, err)
-	}
-	if registry.Schema != "consumes/v1" || registry.System == "" {
-		return space.Consumes{}, fmt.Errorf(
-			"cli: %s is not a consumes/v1 registry (needs `schema: consumes/v1`, `system: <id>`, `dependencies: [...]`) — "+
-				"refusing to treat it as \"no registered consumers\"; fix the file (or write it with `a2a contract adopt`)", path)
-	}
-	return registry, nil
 }
 
 // runDiff implements `a2a contract diff <id> <v1> <v2> [--json]`.

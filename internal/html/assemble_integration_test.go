@@ -31,7 +31,15 @@ func TestAssemble_NodesAndContractEdges(t *testing.T) {
 	manifest := space.Manifest{Space: "getvisa", Participants: []space.Participant{
 		{System: "axon", Section: "axon/", Org: "r22d222", Status: "active", Owners: []string{"ydnikolaev"}},
 		{System: "seomatrix", Section: "seomatrix/", Org: "r22d222", Status: "active", Owners: []string{"xpressmike"}},
-	}}
+	}, Schema: "space/v1", MinBinaryVersion: "0.12.0"}
+	workflowDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(workflowDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workflow := "jobs:\n  validate:\n    uses: ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@v0.13.0\n"
+	if err := os.WriteFile(filepath.Join(workflowDir, "a2a-validate.yml"), []byte(workflow), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	store := cache.NewStore("axon", t.TempDir(),
 		[]cache.SpaceMirror{{SpaceID: "getvisa", Dir: dir, RepoURL: "https://github.com/r22d222/a2a", Manifest: manifest}},
 		time.Now, 0)
@@ -57,6 +65,14 @@ func TestAssemble_NodesAndContractEdges(t *testing.T) {
 	if len(data.Spaces) != 1 || data.Spaces[0].ParticipantCount != 2 || !data.Spaces[0].Readable {
 		t.Fatalf("space health: %+v", data.Spaces)
 	}
+	if data.Spaces[0].SchemaVersion != "space/v1" ||
+		data.Spaces[0].MinBinaryVersion != "0.12.0" ||
+		data.Spaces[0].WorkflowVersion != "0.13.0" {
+		t.Fatalf("space compatibility axes not assembled: %+v", data.Spaces[0])
+	}
+	if len(data.ReleaseNotes) == 0 {
+		t.Fatal("embedded release-note corpus must be available to the HTML data model")
+	}
 
 	if len(data.ContractEdges) != 1 {
 		t.Fatalf("contract edges = %d, want 1: %+v", len(data.ContractEdges), data.ContractEdges)
@@ -69,6 +85,65 @@ func TestAssemble_NodesAndContractEdges(t *testing.T) {
 
 	if data.Self != "axon" {
 		t.Fatalf("self = %q, want axon", data.Self)
+	}
+}
+
+func TestDependencyFacts_UsesPinnedMajorLifecycle(t *testing.T) {
+	t.Parallel()
+	ci := cache.ContractInfo{
+		Version: "2.3.0", State: "published",
+		Versions: []cache.ContractVersion{
+			{Version: "1.4.1", State: "deprecated", Sunset: "2026-10-01", Successor: "XC-axon-ingest@2.0.0"},
+			{Version: "2.3.0", State: "published"},
+		},
+	}
+
+	version, state, sunset, successor, majors, drift := dependencyFacts(ci, 1)
+	if version != "1.4.1" || state != "deprecated" || sunset != "2026-10-01" ||
+		successor != "XC-axon-ingest@2.0.0" || drift != "deprecated" ||
+		len(majors) != 2 || majors[0] != 1 || majors[1] != 2 {
+		t.Fatalf("pinned deprecated line wrong: version=%q state=%q sunset=%q successor=%q majors=%v drift=%q",
+			version, state, sunset, successor, majors, drift)
+	}
+
+	_, state, _, _, _, drift = dependencyFacts(ci, 3)
+	if state != "missing" || drift != "missing" {
+		t.Fatalf("unpublished registered major must be explicit, got state=%q drift=%q", state, drift)
+	}
+
+	zero := cache.ContractInfo{
+		Version: "1.0.0", State: "published",
+		Versions: []cache.ContractVersion{
+			{Version: "not-semver", State: "published"},
+			{Version: "0.9.0", State: "deprecated"},
+			{Version: "1.0.0", State: "published"},
+		},
+	}
+	version, state, _, _, majors, drift = dependencyFacts(zero, 0)
+	if version != "0.9.0" || state != "deprecated" || drift != "deprecated" ||
+		len(majors) != 2 || majors[0] != 0 || majors[1] != 1 {
+		t.Fatalf("major zero must remain a valid registration: version=%q state=%q majors=%v drift=%q",
+			version, state, majors, drift)
+	}
+}
+
+func TestSpaceWorkflowVersion_MixedRefsAreExplicit(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	workflowDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(workflowDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw := "jobs:\n" +
+		"  first:\n    uses: org/repo/.github/workflows/a2a-validate-reusable.yml@v0.12.0\n" +
+		"  second:\n    uses: org/repo/.github/workflows/a2a-validate-reusable.yml@v0.13.0\n"
+	if err := os.WriteFile(filepath.Join(workflowDir, "a2a-validate.yml"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	version, ref := spaceWorkflowVersion(dir)
+	if version != "mixed" ||
+		ref != "org/repo/.github/workflows/a2a-validate-reusable.yml@v0.12.0, org/repo/.github/workflows/a2a-validate-reusable.yml@v0.13.0" {
+		t.Fatalf("mixed workflow refs not explicit: version=%q ref=%q", version, ref)
 	}
 }
 

@@ -8,7 +8,11 @@ package cache
 // internal/validate for this: it only needs the handful of fields its
 // own read-model computation consumes.
 
-import "gopkg.in/yaml.v3"
+import (
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
 
 // refEntry is one envelope/event `refs[]` entry (§5.7 ref grammar).
 type refEntry struct {
@@ -32,6 +36,14 @@ type envelopeProbe struct {
 	Blocking bool   `yaml:"blocking"`
 	NeededBy string `yaml:"needed_by"`
 	Thread   string `yaml:"thread"`
+	Category string `yaml:"category"`
+	// Contract descriptor metadata. Empty on every non-contract artifact.
+	SchemaFormat  string `yaml:"schema_format"`
+	CompatPolicy  string `yaml:"compat_policy"`
+	GeneratedFrom struct {
+		Tool         string `yaml:"tool"`
+		SourceDigest string `yaml:"source_digest"`
+	} `yaml:"generated_from"`
 	// Created is the envelope's `created` field (§5.2.1, required on
 	// every artifact) — decoded here for spec 46 §T3's thread transcript,
 	// which renders it as DISPLAY metadata only (never the ordering key;
@@ -55,6 +67,35 @@ type envelopeProbe struct {
 	// convention.
 	Parent string `yaml:"parent"`
 	Result string `yaml:"result"`
+
+	// Deprecates is announcement/v1's own machine-readable
+	// `deprecates: <XC-id>@<version>` field — written by both surfaces on
+	// every `contract deprecate`. P4's Edge 3 reads it so the read model
+	// can answer "is this deprecation about a contract I depend on"
+	// without consulting the announcement's frozen `to:`.
+	Deprecates string `yaml:"deprecates"`
+	// ValidUntil is the base-envelope deadline used by contract deprecation
+	// announcements as their sunset. Keeping it beside Deprecates lets the
+	// contract catalog join lifecycle state to its authored migration
+	// deadline instead of asking each renderer to scan announcement files.
+	ValidUntil string `yaml:"valid_until"`
+}
+
+// deprecatedContractID returns the bare contract id from `deprecates`
+// (`XC-axon-widget@1.2.0` -> `XC-axon-widget`), or "" when the field is
+// absent. The version half is deliberately DISCARDED: Edge 1 scoped the
+// retire GATE to a major, but a deprecation is addressed to every
+// registered consumer on any major — a consumer pinned to major 2 hears
+// that 1.x is sunsetting and is simply not blocked by it. Matching on the
+// version here would silently re-narrow what the skill documents.
+func (e envelopeProbe) deprecatedContractID() string {
+	if e.Deprecates == "" {
+		return ""
+	}
+	if at := strings.IndexByte(e.Deprecates, '@'); at >= 0 {
+		return e.Deprecates[:at]
+	}
+	return e.Deprecates
 }
 
 // to0 returns the exchange's single target system (D-027), or "" if

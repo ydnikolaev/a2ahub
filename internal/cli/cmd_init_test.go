@@ -46,6 +46,15 @@ func TestInitNonInteractiveWritesConfig(t *testing.T) {
 	if len(cfg.Spaces) != 1 || cfg.Spaces[0].RepoURL != "https://example.invalid/org/space.git" {
 		t.Fatalf("Spaces = %+v, want one entry with the given repo URL", cfg.Spaces)
 	}
+	// AC-3.6 (agent-ops-2026-07 spec 03-conventions §8): the closing advice
+	// names the three convention reference pages — nothing else in the
+	// output points an agent at them, so a silently-dropped line here is a
+	// silently-undiscoverable page.
+	if !strings.Contains(out.String(), "status-announcements.md") ||
+		!strings.Contains(out.String(), "retraction.md") ||
+		!strings.Contains(out.String(), "bindings.md") {
+		t.Fatalf("expected the closing advice to name the three convention reference pages; got %q", out.String())
+	}
 }
 
 // TestInitIdempotentRerun: re-running init with identical flags is a

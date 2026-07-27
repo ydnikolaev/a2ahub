@@ -162,6 +162,21 @@ func Catalogue() []Scenario {
 		// row's own narrative follows.
 		{Name: "contract-integrity-registered-consumer", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "contract-integrity"},
 
+		// P4 (agent-ops-2026-07, spec 04) — the ROLLING WINDOW: several
+		// version lines of one contract live at once, a consumer who
+		// arrives mid-sunset, and a retirement that used to be
+		// impossible. Same family as the row above because it is the same
+		// producer<->consumer story one release on; filed under SystemA
+		// for the same reason, A being the producer the narrative follows.
+		//
+		// This row exists for the three things no hermetic test can see:
+		// the write funnel's own deduplication of a deprecation
+		// announcement (Edge 3 exists BECAUSE that dedup drops a late
+		// adopter), CI on a maintenance-line publish whose baseline is not
+		// the globally-highest version, and a retire succeeding against
+		// real branch protection while other versions are published.
+		{Name: "contract-rolling-window", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "contract-integrity"},
+
 		// AC-980.1 (spec 38 wave F) — Layer-1 rows for the five envelope
 		// kinds nothing else in this matrix drives: the whole legal
 		// lifecycle to a terminal state, against real GitHub, both

@@ -1,8 +1,10 @@
 package livee2e
 
 import (
+	"encoding/json"
 	"errors"
 	"io/fs"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -290,11 +292,45 @@ func TestBoundaryProbeEnvelopeIsParseableFrontmatter(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(parts[0]), &fm); err != nil {
 		t.Fatalf("frontmatter is not valid YAML: %v\n%s", err, parts[0])
 	}
-	for _, key := range []string{"schema", "id", "type", "title", "space", "from", "to", "actor", "created", "category"} {
-		if _, ok := fm[key]; !ok {
-			t.Errorf("frontmatter is missing %q — an artifact short of a required field would red the "+
-				"check for the wrong reason, which is the vacuity this probe's own id helper warns about", key)
+	// The required list is READ FROM THE SCHEMA, never hand-written here.
+	// A hand-written copy is what let this break twice: `thread` became
+	// required on every envelope in P46, this list was not updated, and from
+	// that release on the probe was schema-invalid — so every post-merge
+	// full-repo audit running on a main that contained it went red with
+	// SCH-001, asserted by no row, and found only by the live tier's own
+	// "what else went red" scan on 2026-07-27.
+	for _, schemaPath := range []string{
+		"../../schemas/envelope/v1/base.schema.json",
+		"../../schemas/envelope/v1/announcement.schema.json",
+	} {
+		raw, rerr := os.ReadFile(schemaPath)
+		if rerr != nil {
+			t.Fatalf("read %s: %v", schemaPath, rerr)
 		}
+		var doc struct {
+			Required []string `json:"required"`
+		}
+		if jerr := json.Unmarshal(raw, &doc); jerr != nil {
+			t.Fatalf("decode %s: %v", schemaPath, jerr)
+		}
+		if len(doc.Required) == 0 {
+			t.Fatalf("%s declares no required fields — this guard would then assert nothing", schemaPath)
+		}
+		for _, key := range doc.Required {
+			if _, ok := fm[key]; !ok {
+				t.Errorf("frontmatter is missing %q, which %s lists as REQUIRED — an artifact short of a "+
+					"required field reds the space's own post-merge audit for a reason no row claims, "+
+					"which is exactly how this shipped broken twice", key, schemaPath)
+			}
+		}
+	}
+
+	// The one required field whose VALUE has to be right rather than merely
+	// present: `thread` is pattern-constrained, so a present-but-malformed
+	// value fails exactly the way an absent one does.
+	thread, _ := fm["thread"].(string)
+	if !regexp.MustCompile(`^thread:[a-z0-9]+-[0-9]{8}-[0-9abcdefghjkmnpqrstvwxyz]{4}$`).MatchString(thread) {
+		t.Errorf("thread = %q does not match base.schema.json's own pattern", thread)
 	}
 	if strings.TrimSpace(parts[1]) == "" {
 		t.Error("the probe artifact has an empty body")

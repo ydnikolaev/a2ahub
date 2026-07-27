@@ -243,7 +243,7 @@ func TestBuildIndex_CarriesSkipsAsSpaceLevelFact(t *testing.T) {
 	writeMalformedArtifact(t, fx, "axon/exchanges/XW-axon-bad.md",
 		"---\nid: XW-axon-bad\nthread: thread:axon:one\nthread: thread:axon:two\n---\nbad\n")
 
-	artifacts, skips, err := buildIndex(context.Background(), "sp1", fx.dir, mustManifest(t, fx))
+	artifacts, skips, err := buildIndex(context.Background(), "sp1", fx.dir, "acme", mustManifest(t, fx))
 	if err != nil {
 		t.Fatalf("buildIndex: %v", err)
 	}
