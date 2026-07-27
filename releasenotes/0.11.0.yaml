@@ -1,0 +1,164 @@
+schema: release-notes/v1
+version: "0.11.0"
+released: "2026-07-27"
+headline: "A template placeholder can no longer merge into the shared record, a nested field can finally be filled without a text editor, and a document the read model could not decode now says so instead of vanishing"
+changes:
+  - id: RN-01100-1
+    kind: policy
+    impact: high
+    subject: "A frontmatter value still holding its template placeholder is refused at submit (POL-010)"
+    detail: >
+      `a2a new question` produced a draft whose
+      `expected_response.shape` still read `<what a good answer looks
+      like>`, `a2a validate` returned ZERO violations on it, and `a2a
+      submit` accepted it. So the field whose entire job is to tell a
+      responder what a good answer looks like could reach a counterparty
+      containing template prose. Verified on the released 0.10.0 binary
+      before being fixed, not reasoned about.
+      POL-010 now refuses any frontmatter value — at any depth, including
+      inside a mapping like `expected_response.shape` or a list element
+      like `refs[].ref` — that is still, verbatim, the template's own
+      `<...>` placeholder. It fires at V2 only: `a2a submit` and
+      `validate --ci`. `a2a validate` on a fresh draft deliberately still
+      passes, because a draft is meant to be inspectable before it is
+      filled; the refusal belongs at the boundary where a draft becomes a
+      shared record, not at the authoring point.
+      Two things about the message are deliberate. It names the field by
+      its full dotted path, so there is no guessing which one. And it
+      offers BOTH remedies, because for an optional field the fix is
+      DELETION, not invention: `needed_by`, `valid_until` and
+      `env_requirements` ship placeholders and reach this check as
+      schema-valid strings, and an author told only to "fill it" would
+      invent a date the requirement does not have. For a value inside a
+      list, where no flag can reach it, the message names the file edit
+      instead of a flag that would fail.
+      What this costs you: a value that GENUINELY is exactly `<foo>` is
+      refused too, and must be rephrased. Across the eight envelope types
+      no field has such a legitimate value.
+    affects: ["a2a submit", "a2a validate --ci", "a2a_submit"]
+    action:
+      scope: local
+      why: >
+        A submit that used to succeed now fails if a draft still carries a
+        placeholder. The refusal names the field and the fix, so it costs
+        one command — but an automated caller that never reads stderr will
+        see an exit code where it used to see success.
+      detect:
+        - "a2a submit <id>   # POL-010 names every unfilled field by path"
+      run:
+        - "a2a new question --field expected_response.shape=\"yes/no plus the flag that controls it\""
+
+  - id: RN-01100-2
+    kind: feat
+    impact: normal
+    subject: "--field accepts a dotted path, so a nested field no longer needs a text editor"
+    detail: >
+      `--field expected_response.shape=...` did nothing reachable: the
+      fill mechanism walked only TOP-LEVEL frontmatter keys, so a nested
+      key could not be supplied at all except by hand-editing the drafted
+      file — which is not an option for the automated caller this product
+      is built for. A dotted `--field` key (and, over MCP, a dotted
+      `fields` key) now descends nested mappings.
+      Mappings only, by design: `refs[0].ref` remains unsupported rather
+      than shipping a half-invented list-index grammar. An unresolvable
+      dotted path is still an ERROR naming the full path and the exact
+      segment where descent stopped — never silence, which was the
+      original defect and must not reappear on a new axis.
+      One consequence worth knowing: an explicit `--field actor.name=X`
+      now wins over the actor resolved from your environment and config.
+      That is the documented resolution order (explicit flags first), not
+      an accident.
+    affects: ["a2a new", "a2a_new"]
+    action:
+      scope: none
+      why: >
+        Purely additive — a non-dotted `--field` behaves exactly as
+        before. It is listed because it is the remedy POL-010's refusal
+        message points you at.
+
+  - id: RN-01100-3
+    kind: fix
+    impact: high
+    subject: "A file the read model cannot decode is now named, instead of silently missing from every read"
+    detail: >
+      Observed, not theorised. A `thread:` key accidentally written twice
+      in one envelope made the artifact undecodable, and the mirror walk
+      simply skipped it: `a2a show` still printed the document while
+      `a2a search`, `a2a inbox`, `a2a statusline` and `a2a thread` all
+      returned nothing for it, with no error anywhere. It took four test
+      failures across unrelated areas to trace back to one duplicated
+      line.
+      This is the failure mode this product most has to avoid: an
+      artifact that is silently absent reads exactly like an artifact
+      that does not exist. In a shared record spanning two companies, a
+      counterparty's document dropping out of your index without a word
+      is worse than a hard read error.
+      The walk stays best-effort — one bad file must never blind you to
+      every other document in the space — and the missing half, the
+      report, now exists. `a2a search`, `inbox`, `outbox` and `thread`
+      write an out-of-band advisory to STDERR naming each undecodable
+      file and why (`unreadable`, `not-frontmatter-shaped`,
+      `undecodable-yaml`, `no-id`, `unrelativizable-path`). Their stdout
+      is byte-for-byte unchanged, deliberately, so existing consumers of
+      the JSON item array are untouched. `a2a doctor` gained a
+      `skipped mirror files` row that names the same files.
+      `a2a statusline` is deliberately NOT wired: its whole output is one
+      line bound for a shell prompt.
+      The doctor row PASSES with an advisory rather than failing, and the
+      reason matters: the unreadable file may sit in a COUNTERPARTY's own
+      section of the space, where you are structurally unable to edit it.
+      A row permanently red on someone else's file is a row nobody reads.
+    affects: ["a2a search", "a2a inbox", "a2a outbox", "a2a thread", "a2a doctor"]
+    action:
+      scope: none
+      why: >
+        Nothing to run. But if you drive these verbs programmatically and
+        discard stderr, START READING IT — that is where the "one document
+        is missing from this answer" sentence now lives.
+
+  - id: RN-01100-4
+    kind: break
+    impact: normal
+    subject: "The MCP read tools return an object with the item list inside it, not a bare array"
+    detail: >
+      `a2a_inbox`, `a2a_outbox` and `a2a_search` returned a bare JSON
+      array as their structured result. They now return
+      `{"items": [...], "skipped": [...]}`, and `a2a_thread` gained a
+      top-level `"skipped"` alongside its existing fields.
+      Why the shape had to change rather than ride a side-channel: the
+      fact being reported — which files the read model could not decode,
+      and therefore which documents are missing from this answer — is
+      about the SPACE, not about any one item, and an array has nowhere to
+      put it. The CLI puts it on stderr; an MCP tool has no stderr, its
+      result IS the channel. Putting it in the human-readable text
+      content instead was considered and rejected: an agent reads the
+      structured content, so the report would have been present and
+      unread, which is the defect rather than the fix.
+    affects: ["a2a_inbox", "a2a_outbox", "a2a_search", "a2a_thread"]
+    action:
+      scope: local
+      why: >
+        Any MCP caller that indexed these results as an array must read
+        `.items` instead. This is a one-line change at each call site and
+        there is no compatibility shim — the product is pre-1.0 and a
+        silent dual shape would be worse than a named break.
+
+  - id: RN-01100-5
+    kind: fix
+    impact: low
+    subject: "The live matrix reports an undispatched test row in milliseconds instead of an hour"
+    detail: >
+      Harness-only, no product surface. A declared live-matrix row whose
+      scenario family nothing dispatched used to surface as `not-run` at
+      the END of a 59-minute run — the tier caught it, which is correct,
+      but reported in an hour what was knowable instantly. Each row now
+      declares its family, an untagged test asserts every declared family
+      is dispatched and every dispatched family is declared, and the
+      runner asserts the same before its first API call. `make check`
+      additionally type-checks the live tier's build-tagged tree, which
+      nothing did before — a compile error there previously surfaced only
+      when somebody started a two-hour run.
+    affects: ["make check", "make live-e2e"]
+    action:
+      scope: none
+      why: "Test-harness only; no behaviour a caller of the binary can observe."
