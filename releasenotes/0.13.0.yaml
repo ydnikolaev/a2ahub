@@ -1,6 +1,6 @@
 schema: release-notes/v1
 version: "0.13.0"
-released: "2026-07-28"
+released: "2026-07-27"
 headline: "A contract's versions now hold independent states, so the deprecation cycle finishes instead of bricking the contract, a maintenance release is compared against its own line, and a consumer who adopts late still hears that the contract is sunsetting"
 changes:
   - id: RN-01300-1
@@ -242,6 +242,40 @@ changes:
         - "a2a html --demo   # the demo fixture now shows a rolling window"
 
   - id: RN-01300-8
+    kind: fix
+    impact: normal
+    subject: "The dashboard grades a dependency by YOUR pinned line, not by the contract's overall state"
+    detail: >
+      Now that a contract holds several version lines at once, its own state is
+      a projection over them — so grading your dependency by that state answers
+      the wrong question. A contract reading `published` (because 2.0 is live)
+      told you `current` while the 1.x line you are actually pinned to had been
+      deprecated for weeks.
+      `a2a html` now grades each dependency from the state of the major you
+      registered on: deprecated shows deprecated, retired shows retired, and a
+      newer major existing beside yours shows behind. A new grade, `missing
+      major`, appears when the major in your `consumes.yaml` is not in the
+      provider's version window at all — previously indistinguishable from
+      being up to date.
+      Each dependency also carries its line's sunset date and named successor
+      where the provider set them, so the migration target is on the same row
+      as the warning.
+      The validation-flags panel now shows real facts from the read model —
+      fold's own protocol flags and the cache's skipped-file reports, each
+      naming its source — instead of the two invented codes the demo fixture
+      had been carrying.
+    affects: ["a2a html"]
+    action:
+      scope: local
+      why: >
+        Re-open the dashboard after upgrading. A dependency you believed was
+        current may be on a deprecated or absent line; that was true before
+        this release too, and the page simply could not say so.
+      run:
+        - "a2a sync"
+        - "a2a html"
+
+  - id: RN-01300-9
     kind: known-issue
     impact: normal
     subject: "The per-version lifecycle has not been exercised against a real space with a real counterparty"
