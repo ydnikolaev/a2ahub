@@ -237,10 +237,23 @@ func foldContractSequence(transitions []string, version string) State {
 // (`deprecated -> retired`) first appears at length 5 and was therefore
 // invisible: the table below claimed completeness, the claim was true for
 // the depth tested, and the AC-11 release-notes list it exists to generate
-// would have been silently short by one entry. "Complete over sequences up
-// to N" is only a useful claim if N is past where new classes stop
-// appearing — so it now runs to 7, where the class count has been flat for
-// three consecutive depths (3 classes at 5, at 6 and at 7, in both lanes).
+// would have been silently short by one entry.
+//
+// 7 is past a PROVABLE ceiling, not merely past an observed plateau —
+// which matters, because "flat for three depths" is the same kind of
+// argument that made 4 look sufficient. Both engines are deterministic
+// functions of (joint state, next transition), and an illegal transition
+// is a self-loop in each, so the pair forms a finite automaton over this
+// 3-symbol alphabet. Its reachable part is SEVEN joint states with
+// diameter FIVE: every reachable joint state is entered within 5
+// transitions, so depth 6 already takes every outgoing edge from every
+// reachable state at least once, and no longer sequence can produce an
+// edge the enumeration has not already walked. 7 keeps a step of margin.
+// (Established by the wave-4 re-audit, which also confirmed it
+// empirically to depth 12 — ~531k sequences — and checked that adding
+// `create` to the alphabet produces no new class, since
+// isContractVersionTransition excludes it and neither engine has a row
+// for it from `draft`.)
 //
 // 3279 sequences per lane at this depth. The loop below is deliberately
 // NOT one subtest per sequence: 6558 parallel subtests cost more in test
