@@ -1,7 +1,7 @@
 schema: release-notes/v1
 version: "0.11.0"
 released: "2026-07-27"
-headline: "A template placeholder can no longer merge into the shared record, a nested field can finally be filled without a text editor, and a document the read model could not decode now says so instead of vanishing"
+headline: "Your space's merge gate may have been running a validator two releases old — bump the pin; and a template placeholder can no longer merge into the shared record, a nested field can be filled without a text editor, and a document the read model could not decode now says so instead of vanishing"
 changes:
   - id: RN-01100-1
     kind: policy
@@ -162,3 +162,120 @@ changes:
     action:
       scope: none
       why: "Test-harness only; no behaviour a caller of the binary can observe."
+
+  - id: RN-01100-6
+    kind: fix
+    impact: high
+    subject: "Your space's merge gate may have been validating with a binary two releases old — bump the workflow pin"
+    detail: >
+      Read this one even if you change nothing else, because the fix is in
+      YOUR space's repository and not in this binary.
+      A space's `.github/workflows/a2a-validate.yml` is a thin caller: it
+      passes `mode` and `base` and nothing else, so which `a2a` actually
+      runs `validate --ci` at your merge gate is decided by the `a2a-ref`
+      DEFAULT inside the reusable workflow you pin. v0.10.0 shipped with
+      that default still reading `v0.9.1`. A tag is immutable, so every
+      space pinned `@v0.10.0` has been running the v0.9.1 validator at its
+      gate — and enforcing NONE of the CI-side work v0.10.0's own notes
+      announced: `space.yaml` was not validated (the document that decides
+      who may write where), events were not validated against event/v1,
+      the producer stamp was not checked, and `thread` was not required.
+      Nothing reported it. This is the second occurrence of exactly this
+      skew; v0.7.0 shipped with the default at v0.5.0.
+      What changed here: the v0.11.0 workflow carries `v0.11.0`, and the
+      coupling is now held by a test that runs offline on every `make
+      check` in this repository rather than by a pre-release script
+      somebody has to remember to invoke. The pre-release script had been
+      asserting it correctly since the v0.7.0 miss; being opt-in is what
+      made it miss the second one.
+      What it does NOT do: repair a space already pinned to an older tag.
+      That takes one command in the space, below.
+    affects: ["a2a space update", "a2a doctor", "validate --ci"]
+    action:
+      scope: space
+      why: >
+        A space pinned to a tag before v0.11.0 keeps running that tag's
+        `a2a-ref` default until its workflow pin moves. Until it does, your
+        gate is not enforcing the rules this binary refuses locally — so a
+        counterparty on an older binary can still merge what your side
+        would refuse. Bumping the pin is the whole remedy.
+      detect:
+        - "grep a2a-validate-reusable .github/workflows/a2a-validate.yml   # in the SPACE repo"
+      run:
+        - "a2a space update"
+        - "a2a doctor"
+
+  - id: RN-01100-7
+    kind: break
+    impact: normal
+    subject: "With no space connected, MCP now serves a2a_read and a2a_whatsnew — not six tool names retired before the first public release"
+    detail: >
+      `a2a mcp` has two degraded modes: no space connected yet, and a space
+      that is unreachable at startup. Both served `a2a_inbox`,
+      `a2a_outbox`, `a2a_show`, `a2a_thread`, `a2a_search` and
+      `a2a_contracts` — the per-verb read tools that were folded into
+      `a2a_read`'s `view` enum before v0.1.0, so they have never been part
+      of the connected surface any published release offered. They were
+      folded in the CONNECTED registry only; the wiring for the no-space
+      case carried its own copy of the registration and was never
+      migrated, in every release since.
+      So the very first MCP session in a fresh repository — before
+      `a2a connect` — was handed the one tool surface that nothing
+      documents: `skill/a2ahub/reference/commands.md`, the catalogue an
+      agent reads, is generated from the connected registry and lists
+      `a2a_read`. Those six names also vanish the moment you connect.
+      `a2a_whatsnew` was missing from that surface entirely, even though
+      its handler reads only the corpus embedded in this binary and needs
+      no space at all. The agent best placed to ask "what changed since the
+      version I know?" — one just arriving in an unfamiliar repository —
+      was the one that could not ask.
+      Both are fixed by deleting the second copy rather than keeping it in
+      step: one registrar now serves every tool that needs nothing but the
+      local cache, and the connected registry composes it, so a degraded
+      session offers a strict SUBSET of a healthy one by construction
+      instead of by discipline.
+    affects: ["a2a mcp", "a2a_read", "a2a_whatsnew"]
+    action:
+      scope: local
+      why: >
+        If you called `a2a_inbox` (or the other five) against a session
+        with no connected space, use `a2a_read` with `view: "inbox"` — the
+        same call you already make once a space IS connected. There is no
+        compatibility shim: a surface that answers to two different sets of
+        names depending on connection state is worse than a named break,
+        and this product is pre-1.0.
+      detect:
+        - "a2a mcp   # tools/list in a repo with no connected space"
+
+  - id: RN-01100-8
+    kind: known-issue
+    impact: normal
+    subject: "MCP's contract publish still gets its refusal from CI rather than locally, and `a2a skill link` is still missing from shell completion"
+    detail: >
+      Carried forward from v0.10.0's RN-01000-1, narrowed by what this
+      release fixed, and repeated here because a standing limitation that
+      only appears in the release that first declared it goes silent for
+      everyone who updates past it — you would be reading nothing at all
+      about this if it were not restated.
+      Still open: `a2a_contract publish` over MCP calls neither of the two
+      local pre-flight checks the CLI runs before a contract write
+      (CheckContractPublishable, CheckComputedCompatibility). It is NOT a
+      correctness hole — `validate --ci` is path-and-diff based and fires
+      against whoever opened the pull request, so an illegal publish is
+      still refused at the merge gate. What it costs is the loop: a refusal
+      the CLI delivers in a second, locally, with the reason in front of
+      you, arrives from CI a minute later attached to a pull request
+      instead. Use the CLI for contract publishes if you want the refusal
+      locally. Deferred by an explicit decision, not by oversight.
+      Also still open, and separate: `a2a skill link` does not appear in
+      `a2a completion bash|zsh|fish`. Cosmetic, CLI-side, and named here
+      only because v0.10.0's entry lumped it in with the MCP gap.
+      NOW CLOSED, and no longer part of this entry: the MCP tool-
+      registration gap it also named. `a2a_whatsnew` is registered, and the
+      forked no-space surface underneath that gap is gone — see RN-01100-7.
+    affects: ["a2a_contract", "a2a completion"]
+    action:
+      scope: none
+      why: >
+        Nothing to run. Prefer the CLI for `contract publish` if you want
+        the pre-flight refusal locally instead of from CI.
