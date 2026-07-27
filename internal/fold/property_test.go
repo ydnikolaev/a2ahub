@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"reflect"
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -231,9 +230,28 @@ func foldContractSequence(transitions []string, version string) State {
 	return Fold(KindContract, env, events, alwaysMember).State
 }
 
+// cutoverSequenceDepth is how deep the enumeration below goes. It is 7,
+// and the number is load-bearing rather than arbitrary.
+//
+// It was 4, and wave 4's audit is why it is not. A THIRD divergence class
+// (`deprecated -> retired`) first appears at length 5 and was therefore
+// invisible: the table below claimed completeness, the claim was true for
+// the depth tested, and the AC-11 release-notes list it exists to generate
+// would have been silently short by one entry. "Complete over sequences up
+// to N" is only a useful claim if N is past where new classes stop
+// appearing — so it now runs to 7, where the class count has been flat for
+// three consecutive depths (3 classes at 5, at 6 and at 7, in both lanes).
+//
+// 3279 sequences per lane at this depth. The loop below is deliberately
+// NOT one subtest per sequence: 6558 parallel subtests cost more in test
+// harness overhead than the folds themselves, and the failure message
+// names its own sequence anyway.
+const cutoverSequenceDepth = 7
+
 // expectedCutoverDivergences is the COMPLETE set of ways the per-version
 // engine's answer differs from the frozen pre-P4 engine's, over every
-// sequence of up to four contract transitions. Keyed "<frozen> -> <live>".
+// sequence of up to cutoverSequenceDepth contract transitions.
+// Keyed "<frozen> -> <live>".
 //
 // This is the migration's own audit (spec §5.1, epic AC-11: "every changed
 // subject state is named in the release notes") expressed as data a test
@@ -254,6 +272,11 @@ var expectedCutoverDivergences = map[string]string{
 		"republish moved the subject back to `published`, where `retire` has no row and was refused; with " +
 		"the republish correctly refused, the version is still `deprecated` and the retire LANDS. The " +
 		"§5.4 cycle completing is the whole point of the phase, and here it is as a state change.",
+	"deprecated -> retired": "The same cause as the entry above, observed one step later — e.g. publish, " +
+		"deprecate, publish, retire, deprecate. The frozen engine ends `deprecated` because its resurrected " +
+		"version was still there to deprecate again; the live engine already retired the only version, so " +
+		"the trailing deprecate has nothing published to act on and is correctly refused. Invisible until " +
+		"the enumeration went past length 4 — see cutoverSequenceDepth.",
 }
 
 // TestMigrationCutoverProperty is spec 04 §8 AC-P4.1 and §5.1's cutover
@@ -276,7 +299,7 @@ var expectedCutoverDivergences = map[string]string{
 // already-exists refusal for version-carrying ones).
 func TestMigrationCutoverProperty(t *testing.T) {
 	t.Parallel()
-	sequences := allTransitionSequences([]string{TPublish, TDeprecate, TRetire}, 4)
+	sequences := allTransitionSequences([]string{TPublish, TDeprecate, TRetire}, cutoverSequenceDepth)
 
 	lanes := []struct {
 		name    string
@@ -290,43 +313,36 @@ func TestMigrationCutoverProperty(t *testing.T) {
 		t.Run(lane.name, func(t *testing.T) {
 			t.Parallel()
 
-			seen := map[string]bool{}
-			var mu sync.Mutex
+			seen := map[string]string{} // divergence key -> the first sequence producing it
 
 			for _, seq := range sequences {
-				t.Run(strings.Join(seq, "_"), func(t *testing.T) {
-					t.Parallel()
-					want := frozenContractSubjectFold(seq)
-					got := foldContractSequence(seq, lane.version)
-					if got == want {
-						return
-					}
-					key := string(want) + " -> " + string(got)
-					reason, declared := expectedCutoverDivergences[key]
-					if !declared {
-						t.Fatalf("sequence %v folds %q under the frozen pre-P4 engine and %q under this one, "+
-							"and that divergence is not declared in expectedCutoverDivergences. Either it is a "+
-							"regression, or it is an intended change nobody wrote down — and an undeclared "+
-							"state change is exactly what AC-11 forbids shipping.", seq, want, got)
-					}
-					mu.Lock()
-					seen[key] = true
-					mu.Unlock()
-					t.Logf("declared divergence %v: %s — %s", seq, key, reason)
-				})
+				want := frozenContractSubjectFold(seq)
+				got := foldContractSequence(seq, lane.version)
+				if got == want {
+					continue
+				}
+				key := string(want) + " -> " + string(got)
+				if _, declared := expectedCutoverDivergences[key]; !declared {
+					t.Fatalf("sequence %v folds %q under the frozen pre-P4 engine and %q under this one, "+
+						"and that divergence is not declared in expectedCutoverDivergences. Either it is a "+
+						"regression, or it is an intended change nobody wrote down — and an undeclared "+
+						"state change is exactly what AC-11 forbids shipping.", seq, want, got)
+				}
+				if _, ok := seen[key]; !ok {
+					seen[key] = strings.Join(seq, ",")
+				}
 			}
 
-			t.Cleanup(func() {
-				mu.Lock()
-				defer mu.Unlock()
-				for key := range expectedCutoverDivergences {
-					if !seen[key] {
-						t.Errorf("declared divergence %q never occurred in lane %s — the table is claiming a "+
-							"change the engine no longer makes, which is how a cutover audit rots into fiction",
-							key, lane.name)
-					}
+			for key, reason := range expectedCutoverDivergences {
+				first, ok := seen[key]
+				if !ok {
+					t.Errorf("declared divergence %q never occurred in lane %s — the table is claiming a "+
+						"change the engine no longer makes, which is how a cutover audit rots into fiction",
+						key, lane.name)
+					continue
 				}
-			})
+				t.Logf("%s: %s (first at %s) — %s", lane.name, key, first, reason)
+			}
 		})
 	}
 }
