@@ -54,6 +54,12 @@ func (c *StatuslineCommand) Run(ctx context.Context, args []string, stdio IO) in
 		_, _ = fmt.Fprintf(stdio.Stderr, "statusline: %v\n", err)
 		return 1
 	}
+	// Deliberately NO skip-file advisory here (see skipadvisory.go, wired
+	// into search/inbox/outbox/thread): this verb's entire output is at
+	// most one line destined for a shell prompt, and stderr noise here is
+	// worse than the omission — `a2a doctor`'s own new row is where a
+	// skipped mirror file surfaces for an operator who never runs the other
+	// read verbs.
 	if result.Line != "" {
 		_, _ = fmt.Fprintln(stdio.Stdout, result.Line)
 	}

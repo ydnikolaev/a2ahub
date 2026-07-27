@@ -61,6 +61,13 @@ func (c *InboxCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 	code := inboxRender(stdio, items, *jsonOut)
 	inboxWriteUpdateAdvisory(stdio, c.store.UpdateNotice(), *jsonOut)
+	// Defect fix (filed 2026-07-26): a malformed mirror file used to drop
+	// out of the index without a word — see skipadvisory.go's own doc
+	// comment. inbox is cross-space, so this reports the union across every
+	// connected mirror.
+	if skipped, skErr := c.store.AllSkippedFiles(ctx); skErr == nil {
+		skipAdvisory(stdio, flattenSkipped(skipped), *jsonOut)
+	}
 	return code
 }
 

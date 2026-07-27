@@ -1589,3 +1589,151 @@ func TestDoctorSkillAdvisoryDistinguishesNoSurfaceFromUnlinked(t *testing.T) {
 		}
 	})
 }
+
+// --- doctorCheckSkippedFiles ("skipped mirror files" row) ------------------
+//
+// Stage 2 of the defect filed 2026-07-26: the read model's best-effort walk
+// (internal/cache/skipped.go) already reports which mirror files it could
+// not decode; this row surfaces that fact for the operator who runs `a2a
+// doctor` without ever hitting a skip through a read verb. Table-driven,
+// t.Parallel() throughout (this phase's own testing convention).
+
+// doctorSkippedFilesSpaceYAML is a minimal, always-parseable space.yaml —
+// participants are irrelevant to skip detection (buildIndex only consults
+// the manifest for FOLD, not for the decode stage skipped.go reports on),
+// so an empty list is deliberate, mirroring doctorCheckVersions' own
+// fixture shape (TestDoctorCheckVersions, this file).
+const doctorSkippedFilesSpaceYAML = "schema: space/v1\nspace: getvisa\nmin_binary_version: 0.0.0\nparticipants: []\n"
+
+func writeDoctorSkippedFilesSpaceYAML(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", dir, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "space.yaml"), []byte(doctorSkippedFilesSpaceYAML), 0o644); err != nil {
+		t.Fatalf("write space.yaml: %v", err)
+	}
+}
+
+func TestDoctorCheckSkippedFiles(t *testing.T) {
+	t.Parallel()
+
+	t.Run("zero connected spaces passes with no advisory", func(t *testing.T) {
+		t.Parallel()
+		cmd := newTestDoctorCommand()
+		ok, detail := cmd.doctorCheckSkippedFiles(context.Background(), space.ProjectConfig{}, space.MachineConfig{})
+		if !ok || detail != "" {
+			t.Fatalf("got ok=%v detail=%q, want pass with no advisory", ok, detail)
+		}
+	})
+
+	t.Run("clean space passes with no advisory", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeDoctorSkippedFilesSpaceYAML(t, dir)
+		// One well-formed artifact — the best-effort property this row
+		// depends on (a bad file elsewhere must not blind it) has nothing to
+		// prove here yet; this case is the "nothing skipped" baseline.
+		goodPath := filepath.Join(dir, "axon", "exchanges", "XW-axon-good.md")
+		if err := os.MkdirAll(filepath.Dir(goodPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(goodPath, []byte("---\nid: XW-axon-good\ntitle: t\n---\nbody\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		cmd := newTestDoctorCommand()
+		cmd.readFile = os.ReadFile
+		cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return dir }
+		cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa"}}}
+
+		ok, detail := cmd.doctorCheckSkippedFiles(context.Background(), cfg, space.MachineConfig{})
+		if !ok || detail != "" {
+			t.Fatalf("got ok=%v detail=%q, want pass with no advisory (a gate that fires on a clean space is a gate people silence)", ok, detail)
+		}
+	})
+
+	t.Run("skipped file: PASS with an advisory naming the path and reason", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeDoctorSkippedFilesSpaceYAML(t, dir)
+		badPath := filepath.Join(dir, "axon", "exchanges", "XW-axon-bad.md")
+		if err := os.MkdirAll(filepath.Dir(badPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// The exact defect shape: a `thread:` key written twice — well-formed
+		// frontmatter delimiters, undecodable YAML underneath (skipped_test.go's
+		// own fixture, internal/cache).
+		if err := os.WriteFile(badPath, []byte("---\nid: XW-axon-bad\nthread: thread:axon:one\nthread: thread:axon:two\n---\nbad\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		cmd := newTestDoctorCommand()
+		cmd.readFile = os.ReadFile
+		cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return dir }
+		cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa"}}}
+
+		ok, detail := cmd.doctorCheckSkippedFiles(context.Background(), cfg, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("this row never FAILs on an undecodable file — see its own doc comment (counterparty diff-authz); got fail: %s", detail)
+		}
+		if !strings.Contains(detail, "axon/exchanges/XW-axon-bad.md") {
+			t.Fatalf("detail = %q, want the skipped path named", detail)
+		}
+		if !strings.Contains(detail, "undecodable-yaml") {
+			t.Fatalf("detail = %q, want the skip reason named", detail)
+		}
+		if !strings.Contains(detail, "getvisa") {
+			t.Fatalf("detail = %q, want the owning space named", detail)
+		}
+	})
+
+	t.Run("Run wires the row into the aggregate report without failing doctor", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeDoctorSkippedFilesSpaceYAML(t, dir)
+		badPath := filepath.Join(dir, "axon", "exchanges", "XW-axon-bad2.md")
+		if err := os.MkdirAll(filepath.Dir(badPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(badPath, []byte("just some markdown, no frontmatter delimiters at all\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// The rest of the fleet must be green too, so this test isolates
+		// THIS row's own contribution to the exit code rather than proving
+		// nothing about it (a red run for an unrelated reason would still
+		// satisfy "stdout contains the PASS line" vacuously).
+		if err := os.MkdirAll(filepath.Join(dir, ".github", "workflows"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, ".github", "workflows", "a2a-validate.yml"), []byte("name: a2a-validate\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		cmd := newTestDoctorCommand()
+		cmd.readFile = os.ReadFile
+		cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return dir }
+		cmd.resolveCredential = func(context.Context, string, space.CredentialReference) (host.Credential, error) {
+			return host.Credential{Token: "test-token"}, nil
+		}
+		cmd.loadProjectConfig = func(string) (space.ProjectConfig, error) {
+			return space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa", RepoURL: "https://example.invalid/getvisa.git"}}}, nil
+		}
+		cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
+		cmd.lookupGit = func() error { return nil }
+		cmd.cloneOrFetch = func(context.Context, string, string) error { return nil }
+
+		var stdout, stderr bytes.Buffer
+		code := cmd.Run(context.Background(), nil, IO{Stdout: &stdout, Stderr: &stderr})
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0 (an advisory-only row must not fail doctor); stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+		}
+		if !strings.Contains(stdout.String(), "skipped mirror files: PASS") {
+			t.Fatalf("stdout missing the %q PASS line; got %q", "skipped mirror files", stdout.String())
+		}
+		if !strings.Contains(stdout.String(), "XW-axon-bad2.md") {
+			t.Fatalf("stdout = %q, want the skipped path named in the aggregate report", stdout.String())
+		}
+	})
+}

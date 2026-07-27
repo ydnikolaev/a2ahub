@@ -3,6 +3,7 @@ package cache
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -90,18 +91,26 @@ func (f foldedArtifact) kind() fold.Kind { return fold.Kind(f.Env.Type) }
 // (plan 07 Placement decision: parent events PLUS the events attached via
 // that parent's own respond events — never a naive subject==id-only
 // query, which silently misses verify/dispute).
-func buildIndex(ctx context.Context, spaceID, dir string, manifest space.Manifest) ([]foldedArtifact, error) {
-	artifacts, err := walkArtifacts(dir)
+func buildIndex(ctx context.Context, spaceID, dir string, manifest space.Manifest) ([]foldedArtifact, []SkippedFile, error) {
+	artifacts, artifactSkips, err := walkArtifacts(dir)
 	if err != nil {
-		return nil, fmt.Errorf("cache: buildIndex(%s): walk artifacts: %w", spaceID, err)
+		return nil, nil, fmt.Errorf("cache: buildIndex(%s): walk artifacts: %w", spaceID, err)
 	}
-	events, err := walkEvents(dir)
+	events, eventSkips, err := walkEvents(dir)
 	if err != nil {
-		return nil, fmt.Errorf("cache: buildIndex(%s): walk events: %w", spaceID, err)
+		return nil, nil, fmt.Errorf("cache: buildIndex(%s): walk events: %w", spaceID, err)
 	}
+	// skips is this space's SPACE-LEVEL fact (parallel to how OrderKnown
+	// below is a space-level fact carried per-item): a skip can never be
+	// "per-item" the way OrderKnown's per-artifact copy is, because the
+	// whole point of a skip is that no folded item exists for it. Merging
+	// two independently-sorted slices does not itself produce a sorted
+	// slice, so this re-sorts the union rather than assuming order.
+	skips := append(append([]SkippedFile{}, artifactSkips...), eventSkips...)
+	sort.Slice(skips, func(i, j int) bool { return skips[i].Path < skips[j].Path })
 	seq, err := commitOrder(ctx, dir)
 	if err != nil {
-		return nil, fmt.Errorf("cache: buildIndex(%s): commit order: %w", spaceID, err)
+		return nil, nil, fmt.Errorf("cache: buildIndex(%s): commit order: %w", spaceID, err)
 	}
 	for i := range events {
 		events[i].CommitSeq = seq[events[i].RelPath]
@@ -237,7 +246,7 @@ func buildIndex(ctx context.Context, spaceID, dir string, manifest space.Manifes
 		}
 	}
 
-	return out, nil
+	return out, skips, nil
 }
 
 // gatherEvents assembles the FULL event set fold.Fold needs to compute
@@ -311,13 +320,17 @@ func membershipView(manifest space.Manifest) fold.MembershipView {
 
 // walkArtifacts walks dir for every *.md file (excluding .git and
 // vendored/), best-effort decoding each as an envelope/v1 document — a
-// file that fails to parse (not frontmatter-shaped, or its YAML block
-// carries no `id`) is silently skipped, never fails the whole walk
-// (mirrors internal/cli's MirrorResolver.ensureIndex convention).
-func walkArtifacts(dir string) ([]rawArtifact, error) {
+// file that fails to parse is silently skipped from the returned
+// []rawArtifact, never fails the whole walk (mirrors internal/cli's
+// MirrorResolver.ensureIndex convention), but is reported (never dropped
+// without a trace) via the returned []SkippedFile — see skipped.go's own
+// doc comment for why that report exists at all.
+func walkArtifacts(dir string) ([]rawArtifact, []SkippedFile, error) {
 	var out []rawArtifact
+	var skips []SkippedFile
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			skips = append(skips, SkippedFile{Path: reportPath(dir, path), Reason: SkipReasonUnreadable})
 			return nil //nolint:nilerr // reason: best-effort walk — skip an inaccessible entry, don't abort the whole walk (see func doc)
 		}
 		if d.IsDir() {
@@ -329,38 +342,72 @@ func walkArtifacts(dir string) ([]rawArtifact, error) {
 		if !strings.HasSuffix(path, ".md") {
 			return nil
 		}
-		raw, rerr := readBounded(path, maxCacheReadBytes)
-		if rerr != nil {
-			return nil //nolint:nilerr // reason: best-effort walk — an unreadable file is silently skipped, not fatal (see func doc)
+		a, skip := decodeArtifactFile(dir, path)
+		if skip != nil {
+			skips = append(skips, *skip)
+			return nil
 		}
-		fm, ferr := artifact.ParseFrontmatter(raw)
-		if ferr != nil {
-			return nil //nolint:nilerr // reason: best-effort walk — a non-envelope file is silently skipped, not fatal (see func doc)
-		}
-		env, everr := decodeEnvelope(fm.YAML)
-		if everr != nil || env.ID == "" {
-			return nil //nolint:nilerr // reason: best-effort walk — an undecodable envelope is silently skipped, not fatal (see func doc)
-		}
-		rel, relErr := filepath.Rel(dir, path)
-		if relErr != nil {
-			return nil //nolint:nilerr // reason: best-effort walk — an unrelativizable path is silently skipped, not fatal (see func doc)
-		}
-		out = append(out, rawArtifact{RelPath: filepath.ToSlash(rel), Raw: raw, Env: env, Digest: artifact.Digest(raw)})
+		out = append(out, a)
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return out, nil
+	sort.Slice(skips, func(i, j int) bool { return skips[i].Path < skips[j].Path })
+	return out, skips, nil
+}
+
+// decodeArtifactFile attempts every stage of one candidate *.md file's
+// best-effort decode (path relativization, bounded read, frontmatter
+// split, envelope decode, `id` presence) and returns EITHER the
+// successfully decoded rawArtifact OR a SkippedFile naming the first stage
+// that rejected it — never both. Extracted from walkArtifacts as its own
+// function so each stage's failure path is independently testable without
+// going through a real filepath.WalkDir traversal.
+func decodeArtifactFile(dir, path string) (rawArtifact, *SkippedFile) {
+	rel, relErr := filepath.Rel(dir, path)
+	if relErr != nil {
+		return rawArtifact{}, &SkippedFile{Path: path, Reason: SkipReasonUnrelativizable}
+	}
+	relSlash := filepath.ToSlash(rel)
+
+	raw, rerr := readBounded(path, maxCacheReadBytes)
+	if rerr != nil {
+		return rawArtifact{}, &SkippedFile{Path: relSlash, Reason: SkipReasonUnreadable}
+	}
+
+	fm, ferr := artifact.ParseFrontmatter(raw)
+	if ferr != nil {
+		reason := SkipReasonNotFrontmatterShaped
+		if errors.Is(ferr, artifact.ErrMalformedFrontmatter) {
+			// The delimiter pair IS present and well-formed; it is the YAML
+			// inside it that fails to decode (e.g. a duplicate mapping key)
+			// — that is an undecodable-YAML fact, not a "not shaped like
+			// frontmatter at all" one (see SkipReasonUndecodableYAML's doc).
+			reason = SkipReasonUndecodableYAML
+		}
+		return rawArtifact{}, &SkippedFile{Path: relSlash, Reason: reason}
+	}
+
+	env, everr := decodeEnvelope(fm.YAML)
+	if everr != nil {
+		return rawArtifact{}, &SkippedFile{Path: relSlash, Reason: SkipReasonUndecodableYAML}
+	}
+	if env.ID == "" {
+		return rawArtifact{}, &SkippedFile{Path: relSlash, Reason: SkipReasonNoID}
+	}
+	return rawArtifact{RelPath: relSlash, Raw: raw, Env: env, Digest: artifact.Digest(raw)}, nil
 }
 
 // walkEvents walks dir for every committed event/v1 YAML file under any
 // system's events/ directory (best-effort skip on decode failure, same
-// convention as walkArtifacts).
-func walkEvents(dir string) ([]rawEvent, error) {
+// convention — and same skip-reporting — as walkArtifacts).
+func walkEvents(dir string) ([]rawEvent, []SkippedFile, error) {
 	var out []rawEvent
+	var skips []SkippedFile
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			skips = append(skips, SkippedFile{Path: reportPath(dir, path), Reason: SkipReasonUnreadable})
 			return nil //nolint:nilerr // reason: best-effort walk — skip an inaccessible entry, don't abort the whole walk (see func doc)
 		}
 		if d.IsDir() {
@@ -374,27 +421,57 @@ func walkEvents(dir string) ([]rawEvent, error) {
 		}
 		rel, relErr := filepath.Rel(dir, path)
 		if relErr != nil {
-			return nil //nolint:nilerr // reason: best-effort walk — an unrelativizable path is silently skipped, not fatal (see func doc)
+			skips = append(skips, SkippedFile{Path: path, Reason: SkipReasonUnrelativizable})
+			return nil //nolint:nilerr // reason: best-effort walk — an unrelativizable path is silently skipped (but reported, see skipped.go), not fatal (see func doc)
 		}
 		relSlash := filepath.ToSlash(rel)
 		if !strings.Contains(relSlash, "/events/") {
 			return nil
 		}
-		raw, rerr := readBounded(path, maxCacheReadBytes)
-		if rerr != nil {
-			return nil //nolint:nilerr // reason: best-effort walk — an unreadable file is silently skipped, not fatal (see func doc)
+		ev, skip := decodeEventFile(path, relSlash)
+		if skip != nil {
+			skips = append(skips, *skip)
+			return nil
 		}
-		ev, everr := decodeEvent(raw)
-		if everr != nil || ev.Event == "" {
-			return nil //nolint:nilerr // reason: best-effort walk — an undecodable event is silently skipped, not fatal (see func doc)
-		}
-		out = append(out, rawEvent{RelPath: relSlash, Ev: ev})
+		out = append(out, ev)
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return out, nil
+	sort.Slice(skips, func(i, j int) bool { return skips[i].Path < skips[j].Path })
+	return out, skips, nil
+}
+
+// decodeEventFile is walkEvents' own per-file stage runner (bounded read,
+// event decode, `event` id presence) — same "one function, independently
+// testable, no real WalkDir needed" shape as decodeArtifactFile.
+func decodeEventFile(path, relSlash string) (rawEvent, *SkippedFile) {
+	raw, rerr := readBounded(path, maxCacheReadBytes)
+	if rerr != nil {
+		return rawEvent{}, &SkippedFile{Path: relSlash, Reason: SkipReasonUnreadable}
+	}
+	ev, everr := decodeEvent(raw)
+	if everr != nil {
+		return rawEvent{}, &SkippedFile{Path: relSlash, Reason: SkipReasonUndecodableYAML}
+	}
+	if ev.Event == "" {
+		return rawEvent{}, &SkippedFile{Path: relSlash, Reason: SkipReasonNoID}
+	}
+	return rawEvent{RelPath: relSlash, Ev: ev}, nil
+}
+
+// reportPath best-effort relativizes path against dir for a SkippedFile
+// report where the walk has already failed before this package's own
+// filepath.Rel-based decode stage would run (the filepath.WalkDir
+// traversal-error branch) — falls back to the raw path so the report is
+// never simply dropped, even though it may then be absolute rather than
+// space-relative like every other SkippedFile.Path.
+func reportPath(dir, path string) string {
+	if rel, err := filepath.Rel(dir, path); err == nil {
+		return filepath.ToSlash(rel)
+	}
+	return path
 }
 
 // commitOrder recovers D-017's first-parent commit order on `main` for

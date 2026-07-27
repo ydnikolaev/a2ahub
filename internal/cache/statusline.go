@@ -53,7 +53,7 @@ func (s *Store) Statusline(ctx context.Context) (StatuslineResult, error) {
 		return StatuslineResult{Exit: int(SeverityQuiet)}, nil
 	}
 
-	idx, err := s.index(ctx)
+	idx, _, err := s.index(ctx)
 	if err != nil {
 		return StatuslineResult{}, err
 	}

@@ -233,7 +233,7 @@ var escapeHatchTransitions = map[string]bool{
 // (CC-073) — present in exactly one renders, present in two or more is a
 // *ThreadAmbiguityError, present in zero is ErrThreadNotFound.
 func (s *Store) ThreadView(ctx context.Context, ref string, spaceID string) (ThreadResult, error) {
-	idx, err := s.index(ctx)
+	idx, _, err := s.index(ctx)
 	if err != nil {
 		return ThreadResult{}, err
 	}

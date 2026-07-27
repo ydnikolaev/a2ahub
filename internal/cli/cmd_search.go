@@ -74,6 +74,14 @@ func (c *SearchCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintf(stdio.Stderr, "search: %v\n", err)
 		return 1
 	}
+	// Defect fix (filed 2026-07-26): a malformed mirror file used to drop
+	// out of the index without a word — see skipadvisory.go's own doc
+	// comment. search is cross-space (not scoped by --space, which is only
+	// a filter on the fold, not the walk), so this reports the union across
+	// every connected mirror, same as inbox/outbox below.
+	if skipped, skErr := c.store.AllSkippedFiles(ctx); skErr == nil {
+		skipAdvisory(stdio, flattenSkipped(skipped), *jsonOut)
+	}
 	if *jsonOut {
 		enc := json.NewEncoder(stdio.Stdout)
 		enc.SetIndent("", "  ")

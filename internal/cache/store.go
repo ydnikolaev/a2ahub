@@ -121,17 +121,22 @@ func (s *Store) EnableUpdateNotice(binaryVersion, cachePath string, ttl time.Dur
 }
 
 // index composes every connected space's read-model (buildIndex) — the
-// one place every verb below funnels through.
-func (s *Store) index(ctx context.Context) (map[string][]foldedArtifact, error) {
+// one place every verb below funnels through. The second return value is
+// each space's SkippedFile report (see skipped.go) — a space-level fact,
+// never merged into foldedArtifact, because a skip's whole point is that
+// no per-item foldedArtifact exists for it.
+func (s *Store) index(ctx context.Context) (map[string][]foldedArtifact, map[string][]SkippedFile, error) {
 	out := make(map[string][]foldedArtifact, len(s.spaces))
+	skips := make(map[string][]SkippedFile, len(s.spaces))
 	for _, sm := range s.spaces {
-		fa, err := buildIndex(ctx, sm.SpaceID, sm.Dir, sm.Manifest)
+		fa, sk, err := buildIndex(ctx, sm.SpaceID, sm.Dir, sm.Manifest)
 		if err != nil {
-			return nil, fmt.Errorf("cache: Store.index: space %s: %w", sm.SpaceID, err)
+			return nil, nil, fmt.Errorf("cache: Store.index: space %s: %w", sm.SpaceID, err)
 		}
 		out[sm.SpaceID] = fa
+		skips[sm.SpaceID] = sk
 	}
-	return out, nil
+	return out, skips, nil
 }
 
 // spaceSyncStale reports whether spaceID's mirror sync-age exceeds the
@@ -246,7 +251,7 @@ func sortItems(items []Item) {
 // advances the per-system read cursor (spec 07 "what to do" #2: "inbox
 // ... advances the read cursor on run" — unqualified by the flag).
 func (s *Store) Inbox(ctx context.Context, actionableOnly bool) ([]Item, error) {
-	idx, err := s.index(ctx)
+	idx, _, err := s.index(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +310,7 @@ func (s *Store) advanceCursor(idx map[string][]foldedArtifact) error {
 // (only `a2a inbox` does, per OP-207's own wording) — it reads whatever
 // cursor snapshot the last inbox run left behind.
 func (s *Store) Outbox(ctx context.Context, attentionOnly bool) ([]Item, error) {
-	idx, err := s.index(ctx)
+	idx, _, err := s.index(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +363,7 @@ func (s *Store) Show(ctx context.Context, ref string) (ShowResult, error) {
 		id = id[i+1:] // cross-space "space:id" form — id segment only
 	}
 
-	idx, err := s.index(ctx)
+	idx, _, err := s.index(ctx)
 	if err != nil {
 		return ShowResult{}, err
 	}
@@ -466,7 +471,7 @@ func resolveRefFact(r refEntry, byID map[string]foldedArtifact) RefFact {
 // already resolved (LatestEventAt is used as the ordering proxy — the
 // entry event's own timestamp).
 func (s *Store) Thread(ctx context.Context, threadID string) ([]Item, error) {
-	idx, err := s.index(ctx)
+	idx, _, err := s.index(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -492,7 +497,7 @@ func (s *Store) Thread(ctx context.Context, threadID string) ([]Item, error) {
 // hub-less, local-cache only. Zero hits returns an empty (non-nil)
 // slice, never an error (spec §6: "empty result, not error").
 func (s *Store) Search(ctx context.Context, query string, filters SearchFilters) ([]Item, error) {
-	idx, err := s.index(ctx)
+	idx, _, err := s.index(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -529,7 +534,7 @@ func (s *Store) Search(ctx context.Context, query string, filters SearchFilters)
 // provider (envelope `from`), latest recorded `publish` event's version
 // (D-023), and its folded state.
 func (s *Store) Contracts(ctx context.Context, provider string) ([]ContractInfo, error) {
-	idx, err := s.index(ctx)
+	idx, _, err := s.index(ctx)
 	if err != nil {
 		return nil, err
 	}
