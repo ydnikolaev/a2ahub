@@ -246,15 +246,25 @@ contract does. Every guarantee below turns on the one prerequisite in step 1
      another system's contract without ever running `adopt` and nothing will
      ever notify you when it changes — the tool has no way to know you
      depend on it, and you never block that contract's retirement either.
-2. **How you find out: a deprecation announcement, addressed to you by
-   name.** When the producer runs `a2a contract deprecate`, the
-   announcement's `to:` is computed from the registered-consumer set — the
-   same registry that decides who blocks `retire` (§8.4 step 2), read
-   UNSCOPED here, so you are addressed whichever major you pinned. A
-   registered consumer is addressed because it is registered, never merely
-   because it appeared in the contract's authoring-time `to:`. It arrives
-   the ordinary way: §8.1's session-start checklist / §8.6's watch loop
-   surfaces it in your inbox like any other artifact.
+2. **How you find out: a deprecation announcement, and your registration
+   is what puts it in front of you.** When the producer runs `a2a contract
+   deprecate`, the announcement's `to:` is computed from the
+   registered-consumer set — the same registry that decides who blocks
+   `retire` (§8.4 step 2), read UNSCOPED here, so you are named whichever
+   major you pinned. It arrives the ordinary way: §8.1's session-start
+   checklist / §8.6's watch loop surfaces it in your inbox like any other
+   artifact.
+   - **`to:` is a snapshot, and your inbox does not depend on it.** That
+     field is computed once, when the producer runs `deprecate`, and then
+     frozen — so if you `adopt` DURING a sunset window you were not in it,
+     and re-running the verb would not add you (the announcement already
+     exists and the write funnel dedups it). Your inbox therefore does not
+     ask `to:` alone: **an announcement whose `deprecates:` names a
+     contract in your own `consumes.yaml` is yours**, addressed or not. So
+     adopting late still shows you the deprecation that was announced
+     before you arrived. It is a union, never a swap: if you were named in
+     `to:` and have since removed the dependency, you keep seeing it while
+     you migrate off.
    - **A plain version bump owes you no notice at all.** A minor, a patch,
      or even a new major published WITHOUT a `deprecate` tells you nothing —
      §8.4 step 2 already says so for the producer's own benefit ("nothing
