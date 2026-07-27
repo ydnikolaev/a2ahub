@@ -456,7 +456,12 @@ func newContractPublishHandler(deps ContractDeps) HandlerFunc {
 		// from `bump` (bumpSource is by construction the highest prior
 		// version strictly less than its own bump), so ordinary sequential
 		// publishing never regresses.
-		baseline, _ := contractSelectBaseline(priorVersions, newVersion)
+		//
+		// hasBaseline is NOT `!isFirstPublish` — see internal/cli's own
+		// comment at the same call site: prior versions can exist with none
+		// older than newVersion (opening a lower line while a higher one is
+		// live), and there is genuinely no baseline to compare against then.
+		baseline, hasBaseline := contractSelectBaseline(priorVersions, newVersion)
 
 		verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, in.ID, fold.TPublish, newVersion.String(), actor)
 		if err != nil {
@@ -471,8 +476,8 @@ func newContractPublishHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract publish: %w", err)
 		}
 
-		isMajorBump := !isFirstPublish && newVersion[0] > baseline[0]
-		gated := isFirstPublish || isMajorBump
+		isMajorBump := hasBaseline && newVersion[0] > baseline[0]
+		gated := !hasBaseline || isMajorBump
 
 		now := deps.Now()
 		eventID, err := artifact.MintULIDAt(now, deps.Entropy)
