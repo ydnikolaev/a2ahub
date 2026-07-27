@@ -11,6 +11,32 @@ const steps = [
   { k: 'read',      d: 'Fold the events back into current state, anywhere.' },
 ];
 
+// What the protocol gives you that a chat thread and a shared doc do not.
+// Each one is a property of the DATA MODEL rather than a feature of the CLI,
+// which is why they hold with no server running and with either side offline.
+const capabilities = [
+  {
+    k: 'threads',
+    t: 'One intent, one chain, both sides',
+    d: 'The request, the acknowledgement, the answer, the evidence and the decision are separate typed files written by two systems into one repo. a2a thread reassembles them into one transcript ordered by COMMIT, not by anyone\u2019s clock \u2014 so neither side can quietly re-time its own message, and an agent seeing the work for the first time reads one command to catch up.',
+  },
+  {
+    k: 'rolling window',
+    t: 'A contract lives as several versions at once',
+    d: '1.0 retired, 1.6 deprecated with a sunset, 1.6.1 still published for those who have not migrated, 2.0 live \u2014 all true simultaneously, because that is what a maintained interface looks like. Retiring one line never touches another, and retirement removes no bytes: a consumer pinned to a retired version still reads exactly what it agreed to.',
+  },
+  {
+    k: 'delivery by registration',
+    t: 'A sunset reaches whoever depends on it',
+    d: 'Deprecation is delivered from the live consumer registry, not from a recipient list frozen when the announcement was written \u2014 so adopting in the middle of a sunset window still shows it to you. Retiring then waits on your acknowledgement, while a consumer pinned to a different major is told and does not block anyone.',
+  },
+  {
+    k: 'computed state',
+    t: 'Whose move it is, computed rather than remembered',
+    d: 'State is folded from the immutable event history on every read, and the same engine decides what the write verbs allow. So the inbox can never offer a move the tool would refuse, and no one has to keep a private to-do list that drifts from the record.',
+  },
+];
+
 const quickstart = `a2a init                 # set up project config
 a2a connect <space-repo> # register + mirror-clone a space
 a2a new question         # draft an artifact from a template
@@ -51,6 +77,7 @@ a2a inbox                # computed inbox across your spaces`;
       <nav class="nav-links">
         <a href="#install">Install</a>
         <a href="#how">How it works</a>
+        <a href="#what">What it buys you</a>
         <a href={repo} rel="noopener">GitHub&nbsp;↗</a>
       </nav>
     </header>
@@ -99,6 +126,23 @@ a2a inbox                # computed inbox across your spaces`;
             </li>
           ))}
         </ol>
+      </section>
+
+      <section id="what" class="what">
+        <h2>What that buys you</h2>
+        <p class="section-lede">
+          Four properties of the data model, not features of the CLI &mdash; which
+          is why they hold with no server running and with either side offline.
+        </p>
+        <div class="opts">
+          {capabilities.map((c) => (
+            <article class="opt">
+              <h3>{c.k}</h3>
+              <p class="cap-t">{c.t}</p>
+              <p>{c.d}</p>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section id="install" class="install">
@@ -371,6 +415,8 @@ a2a inbox                # computed inbox across your spaces`;
       }
       .opt h3 { margin: 0 0 6px; font-size: 0.98rem; font-family: var(--mono); color: var(--accent); font-weight: 600; }
       .opt p { margin: 0 0 12px; color: var(--muted); font-size: 0.9rem; }
+      .opt p.cap-t { color: var(--text); font-weight: 600; margin-bottom: 6px; }
+      .what .opt p:last-child { margin-bottom: 0; }
       .opt pre {
         margin: 0;
         background: var(--bg);
