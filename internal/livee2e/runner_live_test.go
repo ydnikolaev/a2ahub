@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -161,6 +162,26 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 	for _, f := range families {
 		declared = append(declared, f.name)
 	}
+
+	// Pre-flight (spec 46 postmortem, 2026-07-27): the dispatch table above
+	// is the ONE place a family goes from "declared in catalogue.go" to
+	// "actually runs" — spec 46 shipped "thread-chain-reads-identically-
+	// from-both-sides" in the catalogue and in scenarios_thread_live.go
+	// without adding it here, and it sat not-run for the full 59-minute
+	// live run before anyone noticed. Checked here, before this function's
+	// own first GitHub call (below, in selectedFamilies/runFamily) and
+	// before selectedFamilies can narrow anything: a mismatch fails in
+	// milliseconds, naming the exact family, instead of at the report an
+	// hour later. Compared against CanonicalFamilies() (catalogue.go/
+	// familyset.go) — hand-written, INDEPENDENT of `declared` above — never
+	// against `selected` below: selectedFamilies deliberately narrows a run
+	// via EnvFamilies, and comparing against ITS output would fire on every
+	// intentionally narrowed run.
+	if missing, extra := diffFamilyNames(CanonicalFamilies(), declared); len(missing) > 0 || len(extra) > 0 {
+		t.Fatalf("driveFamilies' dispatch table does not match CanonicalFamilies() (catalogue.go): missing %v, extra %v — a family declared in the catalogue with no dispatch entry stays not-run for the whole run (spec 46 postmortem, 2026-07-27)",
+			missing, extra)
+	}
+
 	// A typo here must be loud. Silently matching nothing would run zero
 	// families and, because every row then stays not-run, produce a report
 	// that looks exactly like a catastrophic matrix failure — the operator
@@ -203,4 +224,37 @@ func runFamily(ctx context.Context, t *testing.T, name string, fn func(context.C
 		}
 	}()
 	return fn(ctx, h)
+}
+
+// diffFamilyNames reports the SET difference between CanonicalFamilies()
+// (untagged data, catalogue.go/familyset.go) and driveFamilies' own dispatch
+// table (`declared`, built from the `families` slice a few lines above its
+// call site). Written directly against the two plain []string slices rather
+// than reusing missingCoveredFamilies/unknownDeclaredFamilies (familyset.go):
+// those compare a Scenario's Family field against the canonical list, a
+// different comparison (catalogue rows vs. canonical) from this one
+// (dispatch table vs. canonical) — sharing a helper between the two would
+// blur which comparison a failure came from.
+func diffFamilyNames(canonical, declared []string) (missing, extra []string) {
+	declaredSet := make(map[string]bool, len(declared))
+	for _, d := range declared {
+		declaredSet[d] = true
+	}
+	canonicalSet := make(map[string]bool, len(canonical))
+	for _, c := range canonical {
+		canonicalSet[c] = true
+	}
+	for _, c := range canonical {
+		if !declaredSet[c] {
+			missing = append(missing, c)
+		}
+	}
+	for _, d := range declared {
+		if !canonicalSet[d] {
+			extra = append(extra, d)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	return missing, extra
 }

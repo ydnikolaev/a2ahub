@@ -39,6 +39,31 @@ type Scenario struct {
 	// about a specific kind's lifecycle, and forcing a Kinds entry on them
 	// would be noise the gate would have to specifically ignore.
 	Kinds []string
+	// Family names the run*Scenarios function (runner_live_test.go,
+	// scenarios_*_live.go) that actually returns a Result for this row —
+	// e.g. "happy" for runHappyScenarios, "boundary" for
+	// runBoundaryScenarios. This is a SECOND explicit association mechanism,
+	// alongside Kinds and for the identical reason (spec 38 §T3's own
+	// argument, restated here because it applies even more directly): the
+	// defect this field exists to catch (spec 46 postmortem, filed
+	// 2026-07-27) is a row whose family was never added to driveFamilies'
+	// hardcoded dispatch table, so it stayed not-run for a full 59-minute
+	// live run before anyone noticed. An explicit field lets an UNTAGGED
+	// test (familyset_test.go) catch that in milliseconds, before any
+	// GitHub call — but only because the family is a field a reader can
+	// read, not a fact parsing the row NAME would have to reconstruct. And
+	// unlike Kinds, the row name genuinely cannot be parsed into it even in
+	// principle: "space-init" is produced by the "happy" family,
+	// "space-update" by "space", "decision-lifecycle-to-approved" by
+	// "draft-family" — the family is a fact about the IMPLEMENTATION's own
+	// file layout, not the scenario's own name, so a name-parsing rule here
+	// would not just rot on a rename (Kinds' failure mode) — it would never
+	// have worked in the first place.
+	//
+	// Must name a value from CanonicalFamilies() (familyset.go), with the
+	// one documented exception FamilySpaceCIHealth carries (a row TestLiveMatrix
+	// dispatches directly, never through driveFamilies' own per-family loop).
+	Family string
 }
 
 // bothSurfaces is the CLI/MCP pair — P15's parity claim, exercised rather
@@ -74,38 +99,38 @@ func Catalogue() []Scenario {
 		// AC-960.1 — the rig provisions and scaffolds its own space. No
 		// envelope kind: this row asserts the SPACE exists, not any
 		// artifact's lifecycle.
-		{Name: "space-init", Systems: []string{SystemA}, Surfaces: cliOnly()},
+		{Name: "space-init", Systems: []string{SystemA}, Surfaces: cliOnly(), Family: "happy"},
 		// AC-960.2 — the ordinary happy path, both systems.
-		{Name: "submit-gate-merge", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
-		{Name: "lifecycle-transitions", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly(), Kinds: []string{"requirement"}},
-		{Name: "contract-publish-deprecate-retire", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly(), Kinds: []string{"contract"}},
-		{Name: "cross-system-visibility", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
-		{Name: "validate-ci-both-modes", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
+		{Name: "submit-gate-merge", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "happy"},
+		{Name: "lifecycle-transitions", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly(), Kinds: []string{"requirement"}, Family: "happy"},
+		{Name: "contract-publish-deprecate-retire", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "happy"},
+		{Name: "cross-system-visibility", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "happy"},
+		{Name: "validate-ci-both-modes", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "happy"},
 
 		// AC-961.1 — host.CheckStatus resolves the REAL compound context
 		// `a2a-validate / validate` (the P34 defect class).
-		{Name: "checkstatus-compound-context", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
+		{Name: "checkstatus-compound-context", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "happy"},
 
 		// AC-961.2 — protection blocks until green; a direct push is rejected.
 		// SystemB only: the provisioner would sail through both.
-		{Name: "protection-blocks-until-green", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
+		{Name: "protection-blocks-until-green", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary"},
 		// direct-push-refused writes a raw marker file straight to main,
 		// never an envelope artifact — no Kinds entry.
-		{Name: "direct-push-refused", Systems: []string{SystemB}, Surfaces: cliOnly()},
+		{Name: "direct-push-refused", Systems: []string{SystemB}, Surfaces: cliOnly(), Family: "refusal"},
 
 		// AC-961.3 — THE row: a cross-section PR from B stays RED after the
 		// provisioner re-triggers the run (the v0.6.4 authorization bypass).
-		{Name: "cross-section-retrigger-stays-red", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
+		{Name: "cross-section-retrigger-stays-red", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary"},
 
 		// AC-961.4 — protection's reach, asserted in both directions.
-		{Name: "protection-binds-participant", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
-		{Name: "protection-skips-provisioner", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
+		{Name: "protection-binds-participant", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary"},
+		{Name: "protection-skips-provisioner", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary"},
 
 		// AC-961.5 — a scopeless credential is refused at pre-flight, not by
 		// a push rejection (the v0.6.3 class). Both rows are about the
 		// SPACE's own config, not an envelope kind.
-		{Name: "space-update-scope-preflight", Systems: []string{SystemB}, Surfaces: cliOnly()},
-		{Name: "space-update", Systems: []string{SystemA}, Surfaces: cliOnly()},
+		{Name: "space-update-scope-preflight", Systems: []string{SystemB}, Surfaces: cliOnly(), Family: "space"},
+		{Name: "space-update", Systems: []string{SystemA}, Surfaces: cliOnly(), Family: "space"},
 
 		// The tier's own blind spot, made a row. Every other cell asserts a
 		// check this matrix deliberately caused; NOTHING looked at the rest
@@ -114,22 +139,28 @@ func Catalogue() []Scenario {
 		// did not exist — reached the operator by email while this matrix
 		// reported 38/38 green. A tier that cannot see a repository it just
 		// spent an hour writing to is reporting on less than it claims.
-		{Name: "space-ci-has-no-unexplained-failures", Systems: []string{SystemA}, Surfaces: cliOnly()},
+		//
+		// Family: FamilySpaceCIHealth, not a CanonicalFamilies() member — see
+		// that constant's own doc (familyset.go) for why: this is the one
+		// cell TestLiveMatrix (runner_live_test.go) records directly,
+		// deliberately AFTER driveFamilies returns, rather than through
+		// driveFamilies' own per-family dispatch loop.
+		{Name: "space-ci-has-no-unexplained-failures", Systems: []string{SystemA}, Surfaces: cliOnly(), Family: FamilySpaceCIHealth},
 
 		// AC-960.5 — a re-trigger after main moved must assert WHICH ref ran,
 		// because GitHub can serve a stale merge commit (§T6-b).
-		{Name: "executed-ref-not-stale", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
+		{Name: "executed-ref-not-stale", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary"},
 
 		// Refusal paths that are cheap to keep honest live.
-		{Name: "out-of-section-write-refused", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
-		{Name: "stale-write-floor-refused", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
+		{Name: "out-of-section-write-refused", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "refusal"},
+		{Name: "stale-write-floor-refused", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "refusal"},
 
 		// AC-973.1 (spec 37) — the full producer<->consumer contract-
 		// integrity story, both systems (A publishes/deprecates/retires, B
 		// adopts/acks). Filed under SystemA: it is the one row this
 		// scenario family produces, and A is the producer whose writes the
 		// row's own narrative follows.
-		{Name: "contract-integrity-registered-consumer", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}},
+		{Name: "contract-integrity-registered-consumer", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "contract-integrity"},
 
 		// AC-980.1 (spec 38 wave F) — Layer-1 rows for the five envelope
 		// kinds nothing else in this matrix drives: the whole legal
@@ -140,11 +171,11 @@ func Catalogue() []Scenario {
 		// KIND, not per (kind x system)" — a second row in the other
 		// direction would double the Actions spend to re-observe the
 		// same fact).
-		{Name: "question-lifecycle-to-closed", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"question"}},
-		{Name: "work-request-lifecycle-to-closed", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"work_request"}},
-		{Name: "handoff-lifecycle-to-accepted", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"handoff"}},
-		{Name: "response-lifecycle-to-verified", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"response"}},
-		{Name: "decision-lifecycle-to-approved", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"decision"}},
+		{Name: "question-lifecycle-to-closed", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"question"}, Family: "submitted-family"},
+		{Name: "work-request-lifecycle-to-closed", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"work_request"}, Family: "submitted-family"},
+		{Name: "handoff-lifecycle-to-accepted", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"handoff"}, Family: "submitted-family"},
+		{Name: "response-lifecycle-to-verified", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"response"}, Family: "submitted-family"},
+		{Name: "decision-lifecycle-to-approved", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"decision"}, Family: "draft-family"},
 
 		// AC-981.1 (spec 38 wave G, §T2 Layer 2) — one illegal transition
 		// (or, for response, the unauthorized-actor case the brief itself
@@ -156,14 +187,14 @@ func Catalogue() []Scenario {
 		// deterministic branch (plus the run-wide PR count) did not grow.
 		// Filed under SystemA, matching every Layer-1 row's own convention
 		// above (scenarios_illegal_live.go).
-		{Name: "contract-retire-without-deprecation-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}},
-		{Name: "requirement-satisfy-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"requirement"}},
-		{Name: "question-accept-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"question"}},
-		{Name: "work-request-accept-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"work_request"}},
-		{Name: "decision-close-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"decision"}},
-		{Name: "handoff-verify-pass-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"handoff"}},
-		{Name: "announcement-accept-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
-		{Name: "response-dispute-by-non-owner-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"response"}},
+		{Name: "contract-retire-without-deprecation-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "illegal-transitions"},
+		{Name: "requirement-satisfy-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"requirement"}, Family: "illegal-transitions"},
+		{Name: "question-accept-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"question"}, Family: "illegal-transitions"},
+		{Name: "work-request-accept-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"work_request"}, Family: "illegal-transitions"},
+		{Name: "decision-close-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"decision"}, Family: "illegal-transitions"},
+		{Name: "handoff-verify-pass-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"handoff"}, Family: "illegal-transitions"},
+		{Name: "announcement-accept-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "illegal-transitions"},
+		{Name: "response-dispute-by-non-owner-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"response"}, Family: "illegal-transitions"},
 
 		// AC-982.1/982.2/982.3 (spec 38 wave H, §T2 Layer 3) — failure and
 		// recovery: the layer an automated fleet actually lives in. Filed
@@ -177,9 +208,9 @@ func Catalogue() []Scenario {
 		// unscheduled failure directly. Declared here exactly like every
 		// other row: the DISTINCT-evidence-class labelling lives in the
 		// rendered report, not in a second catalogue shape.
-		{Name: "five-xx-mid-write-injected-unknown-then-recovered", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
-		{Name: "interrupted-submit-retried-one-pr", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
-		{Name: "concurrent-writes-no-lost-write", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}},
+		{Name: "five-xx-mid-write-injected-unknown-then-recovered", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "failure-recovery"},
+		{Name: "interrupted-submit-retried-one-pr", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "failure-recovery"},
+		{Name: "concurrent-writes-no-lost-write", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "failure-recovery"},
 
 		// P46 (spec 46 §T3/§T4, OP-210) — `a2a thread` read back from BOTH
 		// real participants after a full question/response chain. The
@@ -196,6 +227,6 @@ func Catalogue() []Scenario {
 		// Actions spend to re-observe the exact same conversation from the
 		// other end, which is the coverage this row's own name already
 		// claims.
-		{Name: "thread-chain-reads-identically-from-both-sides", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"question", "response"}},
+		{Name: "thread-chain-reads-identically-from-both-sides", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"question", "response"}, Family: "thread-chain"},
 	}
 }

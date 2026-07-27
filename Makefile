@@ -25,6 +25,13 @@
 #
 # Recipes are POSIX sh — no bashisms — even though the gate scripts they call
 # are bash (invoked explicitly via `bash`, never relying on $(SHELL)).
+#
+# `check` also vets the `livee2e`-TAGGED tree, which `go vet ./...` does not
+# see: the live tier's scenarios and its runner sit behind //go:build livee2e,
+# so a type error there compiles nowhere in `check` and surfaces only when
+# somebody starts a 2-hour live run. Type-checking it costs a second. Note
+# what this is NOT: vet type-checks the tagged tree, it does not RUN it —
+# `make live-e2e` is still the only thing that touches a real GitHub space.
 
 .PHONY: check check-validators feature-lint epic-drift skill-citations classify-guard workflow-lint harness-check coverage vulncheck release-preflight live-e2e install
 
@@ -52,6 +59,7 @@ check: $(REPO_GATES) ## THE CEILING — repo gates, plus Go gates once go.mod ex
 	    exit 1; \
 	  fi; \
 	  go vet ./... || exit 1; \
+	  go vet -tags=livee2e ./internal/livee2e/... || exit 1; \
 	  if [ -f .golangci.yml ]; then \
 	    if command -v golangci-lint >/dev/null 2>&1; then \
 	      golangci-lint run ./... || exit 1; \
