@@ -106,12 +106,12 @@ func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string) (*S
 
 	registry := NewRegistry()
 	if len(cfg.Spaces) == 0 {
-		// No connected space yet: read tools still work (over zero
+		// No connected space yet: the space-free tools still work (over zero
 		// mirrors, cache.Store's own tolerant-of-absent-config contract);
 		// write tools have nothing to target, so this phase registers
 		// none — mirrors the CLI's own "no connected space" refusal, just
 		// surfaced as an absent tool rather than a runtime error.
-		registerReadOnly(registry, store)
+		registerSpaceFree(registry, store)
 		return NewServer(registry, "a2a-mcp", binaryVersion, nil), nil
 	}
 
@@ -135,7 +135,7 @@ func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string) (*S
 		fmt.Fprintf(os.Stderr,
 			"a2a mcp: write tools unavailable — could not reach the space (%v).\n"+
 				"a2a mcp: serving READ tools over the local mirror; re-start once the space is reachable.\n", err)
-		registerReadOnly(registry, store)
+		registerSpaceFree(registry, store)
 		return NewServer(registry, "a2a-mcp", binaryVersion, nil), nil
 	}
 	registry = BuildRegistry(store, write, submitDeps.StagingDir, submitDeps.Legality, newDeps)
@@ -155,17 +155,6 @@ func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string) (*S
 		return space.CloneOrFetch(ctx, refreshDir, refreshURL)
 	})
 	return srv, nil
-}
-
-// registerReadOnly registers only the six read tools — used when no
-// space is connected yet (write tools have no legitimate target).
-func registerReadOnly(r *Registry, store *cache.Store) {
-	r.Register(ToolSpec{Name: "a2a_inbox", Handler: newInboxHandler(store)})
-	r.Register(ToolSpec{Name: "a2a_outbox", Handler: newOutboxHandler(store)})
-	r.Register(ToolSpec{Name: "a2a_show", Handler: newShowHandler(store)})
-	r.Register(ToolSpec{Name: "a2a_thread", Handler: newThreadHandler(store)})
-	r.Register(ToolSpec{Name: "a2a_search", Handler: newSearchHandler(store)})
-	r.Register(ToolSpec{Name: "a2a_contracts", Handler: newContractsHandler(store)})
 }
 
 func buildStore(cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string) (*cache.Store, error) {

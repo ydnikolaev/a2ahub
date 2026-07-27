@@ -84,6 +84,40 @@ func groupedSchema(discKey string, enum []string, props map[string]string) json.
 	return json.RawMessage(b.String())
 }
 
+// registerSpaceFree registers every tool that needs NOTHING but the local
+// cache — `a2a_read` and `a2a_whatsnew`. It is the single home for both,
+// called by BuildRegistry and by wire.go's two degraded paths (no space
+// connected yet; the space unreachable at startup).
+//
+// One home, because two was a fork and the fork shipped. wire.go used to
+// carry its own `registerReadOnly`, written before P15 folded the six
+// per-verb read tools into `a2a_read`'s `view` enum — and it was never
+// migrated. So an agent with no connected space was served `a2a_inbox`,
+// `a2a_outbox`, `a2a_show`, `a2a_thread`, `a2a_search` and `a2a_contracts`:
+// six names that tools_test's own `removed` list asserts must be ABSENT once
+// a space IS connected, and that `skill/a2ahub/reference/commands.md` (the
+// skill-drift-gated catalogue an agent actually reads) does not document at
+// all. The onboarding case — the first session in a fresh repo — got the one
+// tool surface nothing describes, and `a2a_whatsnew` was missing from it
+// entirely, so the agent best placed to ask "what changed?" could not.
+//
+// The invariant this function exists to make structural: the no-space
+// surface is a strict SUBSET of the connected one, never a different set of
+// names. TestSpaceFreeToolsAreASubsetOfTheConnectedSurface holds it.
+func registerSpaceFree(r *Registry, store *cache.Store) {
+	r.Register(ToolSpec{
+		Name:        "a2a_read",
+		Description: "read the local cache: view=inbox|outbox|show|thread|search|contracts",
+		InputSchema: groupedSchema("view", ReadViews, map[string]string{
+			"actionable": "boolean", "attention": "boolean", "ref": "string",
+			"thread_id": "string", "query": "string", "type": "string",
+			"space": "string", "state": "string", "provider": "string",
+		}),
+		Handler: newReadDispatch(store),
+	})
+	r.Register(ToolSpec{Name: "a2a_whatsnew", Description: "release directives: what changed and what to do — optional since=<version>", InputSchema: rawSchema(map[string]string{"since": "string"}), Handler: newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return notes.Load(releasenotes.FS) })})
+}
+
 // BuildRegistry assembles the P15 capability-grouped tool set. store backs
 // a2a_read; write backs every write tool's shared plumbing (funnel, mirror,
 // manifest, actor resolution, clock/entropy); newDeps backs a2a_new and
@@ -99,22 +133,12 @@ func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string,
 	contractDeps := ContractDeps{WriteDeps: write, StagingDir: submitStagingDir}
 	submitDeps := SubmitDeps{WriteDeps: write, StagingDir: submitStagingDir, Legality: legality}
 
-	// --- a2a_read (view: the 6 folded read tools) ------------------------
-	r.Register(ToolSpec{
-		Name:        "a2a_read",
-		Description: "read the local cache: view=inbox|outbox|show|thread|search|contracts",
-		InputSchema: groupedSchema("view", ReadViews, map[string]string{
-			"actionable": "boolean", "attention": "boolean", "ref": "string",
-			"thread_id": "string", "query": "string", "type": "string",
-			"space": "string", "state": "string", "provider": "string",
-		}),
-		Handler: newReadDispatch(store),
-	})
+	// --- a2a_read + a2a_whatsnew (need no space; see registerSpaceFree) --
+	registerSpaceFree(r, store)
 
-	// --- new / submit / whatsnew (action-free tools, unchanged shape) ----
+	// --- new / submit (action-free tools, unchanged shape) ---------------
 	r.Register(ToolSpec{Name: "a2a_new", Description: "draft one or more new artifacts (items[]) on one thread; an item's fields key may be a dotted path into a nested field, e.g. expected_response.shape", InputSchema: rawSchema(map[string]string{"items": "array", "thread": "string"}, "items"), Handler: newNewHandler(newDeps)})
 	r.Register(ToolSpec{Name: "a2a_submit", Description: "validate (V2) and submit staged draft(s); accepts an id array (OP-220 batch) or a single id", InputSchema: rawSchema(map[string]string{"ids": "array"}, "ids"), Handler: newSubmitHandler(submitDeps)})
-	r.Register(ToolSpec{Name: "a2a_whatsnew", Description: "release directives: what changed and what to do — optional since=<version>", InputSchema: rawSchema(map[string]string{"since": "string"}), Handler: newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return notes.Load(releasenotes.FS) })})
 
 	// --- a2a_lifecycle (action: the 15 generic OP-211 verbs) -------------
 	r.Register(ToolSpec{
