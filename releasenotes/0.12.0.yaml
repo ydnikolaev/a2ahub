@@ -1,0 +1,116 @@
+schema: release-notes/v1
+version: "0.12.0"
+released: "2026-07-28"
+headline: "An agent loop can now run on a timer without a human starting it, the deadline reaches the side that can meet it, and a reference is no longer refused because a different file failed to parse"
+changes:
+  - id: RN-01200-1
+    kind: feat
+    impact: high
+    subject: "`--exit-code` makes inbox and outbox answer \"is there work for me\" without parsing anything"
+    detail: >
+      A scheduled agent loop had no way to ask. The exit codes were 2 for a
+      usage error, 1 for a mirror that could not be read, and 0 for
+      everything else — so an empty inbox and five p1 items were the same
+      number, and any unattended runner had to shell out through
+      `--json | jq length` before it could decide whether to start work at
+      all.
+      The vocabulary already existed and was already specified: `a2a
+      statusline` returns 0 quiet / 10 items pending / 11 p1-or-gate. Only
+      its reach was missing. `--exit-code` on `a2a inbox` and `a2a outbox`
+      returns that same grade, computed by the same function the statusline
+      itself calls — so the line a human reads and the branch a scheduler
+      takes cannot disagree about what "urgent" means.
+      It is opt-in, because 0 must keep meaning success for every caller that
+      already exists. And the severity replaces the SUCCESS code only: 1 and
+      2 stay reserved, so a scheduler can never read a broken run as work
+      waiting, nor a full inbox as a broken tool.
+      One limit worth knowing rather than discovering: an item whose
+      `needed_by` has passed grades as items-pending, not urgent. Widening
+      urgency would change what `a2a statusline` returns, which is specified,
+      so that is a protocol change and not a side effect of this one.
+    affects: ["a2a inbox", "a2a outbox"]
+    action:
+      scope: none
+      why: >
+        Purely additive — without the flag every existing invocation behaves
+        exactly as before. It is listed because it is what makes an
+        unattended loop possible at all.
+      run:
+        - "a2a inbox --actionable --exit-code   # 0 nothing · 10 pending · 11 p1/blocking/gate"
+
+  - id: RN-01200-2
+    kind: feat
+    impact: high
+    subject: "`--overdue` shows what you owe past its deadline — the thing `--actionable` structurally cannot"
+    detail: >
+      `a2a outbox --attention` has reported `needed-by-passed` since it was
+      written — to the SENDER. That is the person who asked for the work and
+      whose only remaining move is to nag. The responder, the one who can
+      actually close it, was told nothing.
+      The mechanism: `--actionable` applies a normative five-condition union,
+      `needed_by` is not among them, and its first condition is "addressed to
+      me with no ack by me". So the moment you acknowledge a request it
+      leaves your actionable list, while the work and its deadline stay
+      entirely yours.
+      For a permanent record spanning two companies that is the failure that
+      costs the most — not a wrong answer, a silence the two sides read
+      differently. The requester sees an overdue item and infers neglect; the
+      responder sees an empty list and infers nothing is owed.
+      `a2a inbox --overdue` lists open items addressed to you whose
+      `needed_by` has passed, acknowledged or not. It is a separate query
+      rather than a sixth condition, deliberately: the union is what the
+      statusline, the MCP read surface and every consumer script already
+      agree on, and widening it is a protocol change.
+      Two details that matter if you automate it. It does NOT advance the
+      read cursor, unlike an ordinary inbox read — so a poll on a timer
+      cannot spend the `[new]` marks before a human sees them. And a
+      deadline expires at the END of the named day, since `needed_by` is a
+      bare date with no time zone.
+    affects: ["a2a inbox", "a2a_inbox", "a2a_read"]
+    action:
+      scope: none
+      why: >
+        Additive. Over MCP the same filter is the `overdue` input. Passing
+        both `actionable` and `overdue` is refused rather than silently
+        answering one of two different questions.
+      run:
+        - "a2a inbox --overdue"
+
+  - id: RN-01200-3
+    kind: feat
+    impact: normal
+    subject: "The setup that makes an agent notice a message without a human starting a session"
+    detail: >
+      Every trigger this tool shipped with is human-initiated: the
+      session-start checklist runs when somebody starts a session, and the
+      statusline is read when somebody looks at a terminal. Both are correct
+      and neither fires on its own — so a space built to take humans off the
+      critical path still waited for a human to open a session. The
+      bottleneck moved rather than left, and nothing said so.
+      Two setup steps close it, and they are now delivered where somebody
+      sets a repo up: `a2a init`'s closing advice, a new onboarding section,
+      and the watch loop in the shipped skill — which previously listed only
+      pull sources without noting that three of them need a session to exist.
+      First, a session-start hook running `a2a sync && a2a inbox
+      --actionable`, so the checklist is something your harness EXECUTES
+      rather than something an agent is asked to remember. Second, a
+      scheduled workflow in your OWN repository that polls and starts an
+      agent when there is something to start it for.
+      The second carries the decision worth keeping: poll your own mirror,
+      never let the space dispatch into you. A space pushing events into
+      participants' repositories needs a write credential from each of them —
+      every company handing the shared space keys to its private repo.
+      Polling transfers no trust in either direction, and for two
+      organisations that is what decides whether the model is adoptable at
+      all.
+      Nothing is written into your configuration for you. Your harness config
+      belongs to whoever owns the repo; a2a proposes and never edits.
+    affects: ["a2a init"]
+    action:
+      scope: local
+      why: >
+        Both steps are yours to apply, once per participating repo. Skipping
+        them is the commonest reason a space goes quiet while both sides
+        believe they are waiting on the other.
+      detect:
+        - "a2a init   # the closing advice names both steps"
