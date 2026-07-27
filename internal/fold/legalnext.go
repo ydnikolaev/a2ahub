@@ -121,7 +121,7 @@ func LegalNextFor(kind Kind, prior Result, version string) []NextMove {
 			if contractVersionVerdict(prior.Versions, t, version) != VerdictLegal {
 				continue
 			}
-			out = append(out, NextMove{Transition: t, To: contractVersionOutcome(t), Role: RoleOwner})
+			out = append(out, NextMove{Transition: t, To: contractVersionOutcome(t), Role: contractVersionRole})
 		}
 		return out
 	}
