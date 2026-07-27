@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 )
@@ -57,11 +56,7 @@ func skipAdvisory(stdio IO, skipped []cache.SkippedFile, jsonOut bool) {
 // different framing sentences per call site — see ViolationError's own
 // doc comment for why conflating the two would misdirect a reader.
 func formatSkippedList(skipped []cache.SkippedFile) string {
-	parts := make([]string, 0, len(skipped))
-	for _, sk := range skipped {
-		parts = append(parts, fmt.Sprintf("%s (%s)", sk.Path, sk.Reason))
-	}
-	return strings.Join(parts, ", ")
+	return cache.FormatSkippedList(skipped)
 }
 
 // flattenSkipped merges a Store.AllSkippedFiles map into one deterministic

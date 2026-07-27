@@ -17,6 +17,14 @@ package cache
 // internal/cache) could never display it. Exporting THIS walk closes both
 // gaps in one place instead of two, worse, unreported copies.
 
+import (
+	"path/filepath"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
+)
+
 // ArtifactIndexEntry is one artifact's resolver-relevant facts, as decoded
 // by walkArtifacts' own best-effort stage chain: the space-relative path
 // (KnownArtifact/Digest's data source) and the `thread` frontmatter field
@@ -64,5 +72,55 @@ func BuildArtifactIndex(dir string) (map[string]ArtifactIndexEntry, []SkippedFil
 	for _, a := range artifacts {
 		idx[a.Env.ID] = ArtifactIndexEntry{Path: a.RelPath, Thread: a.Env.Thread, Digest: a.Digest}
 	}
-	return idx, skipped, nil
+	return idx, recoverIdentityOnlySkips(dir, idx, skipped), nil
+}
+
+// recoverIdentityOnlySkips is the resolver's own, deliberately LOOSER
+// tolerance, and it exists because unifying the WALK must not silently unify
+// the TOLERANCE.
+//
+// The two adapter-local walks this index replaced decoded exactly two fields —
+// `id` and `thread` — and looked at nothing else. `walkArtifacts` decodes the
+// FULL envelope, because the read model needs every field. So an artifact
+// carrying a clean `id` and `thread` beside one malformed IRRELEVANT key
+// (`refs: not-a-list` is the shape an audit reproduced) used to resolve and
+// stopped resolving the moment the walk was shared.
+//
+// That is a narrower re-run of the very defect this file was written to end: a
+// `refs:` entry refused for a reason that has nothing to do with the ref. The
+// two questions are genuinely different — "does this id exist and what thread
+// is it on" needs two fields; "render this artifact" needs all of them — so
+// the resolver recovers what it can answer and leaves the fuller failure to
+// the surfaces that actually need the fuller decode.
+//
+// Only SkipReasonUndecodableYAML is retried: a file that could not be read, or
+// that is not frontmatter-shaped at all, has no identity to recover.
+func recoverIdentityOnlySkips(dir string, idx map[string]ArtifactIndexEntry, skipped []SkippedFile) []SkippedFile {
+	kept := skipped[:0:0]
+	for _, s := range skipped {
+		if s.Reason != SkipReasonUndecodableYAML {
+			kept = append(kept, s)
+			continue
+		}
+		raw, err := readBounded(filepath.Join(dir, filepath.FromSlash(s.Path)), maxCacheReadBytes)
+		if err != nil {
+			kept = append(kept, s)
+			continue
+		}
+		front, ferr := artifact.ParseFrontmatter(raw)
+		if ferr != nil {
+			kept = append(kept, s)
+			continue
+		}
+		var probe struct {
+			ID     string `yaml:"id"`
+			Thread string `yaml:"thread"`
+		}
+		if err := yaml.Unmarshal(front.YAML, &probe); err != nil || probe.ID == "" {
+			kept = append(kept, s)
+			continue
+		}
+		idx[probe.ID] = ArtifactIndexEntry{Path: s.Path, Thread: probe.Thread, Digest: artifact.Digest(raw)}
+	}
+	return kept
 }

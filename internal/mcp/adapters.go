@@ -371,12 +371,8 @@ func (e *ViolationError) Error() string {
 		fmt.Fprintf(&b, " [%s %s: %s]", v.Code, v.Path, v.Message)
 	}
 	if len(e.Skipped) > 0 {
-		parts := make([]string, 0, len(e.Skipped))
-		for _, sk := range e.Skipped {
-			parts = append(parts, fmt.Sprintf("%s (%s)", sk.Path, sk.Reason))
-		}
 		fmt.Fprintf(&b, " (the reference index could not decode %d file(s), which is why a resolvable ref may still fail: %s)",
-			len(e.Skipped), strings.Join(parts, ", "))
+			len(e.Skipped), cache.FormatSkippedList(e.Skipped))
 	}
 	return b.String()
 }

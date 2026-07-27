@@ -1,5 +1,7 @@
 package cache
 
+import "strings"
+
 import "context"
 
 // SkippedFile is one mirror file (artifact or event) that walkArtifacts or
@@ -96,4 +98,23 @@ func (s *Store) AllSkippedFiles(ctx context.Context) (map[string][]SkippedFile, 
 		return nil, err
 	}
 	return skips, nil
+}
+
+// FormatSkippedList renders a skip report as `path (reason), path (reason)`.
+//
+// It lives here rather than once per surface for the reason the wave that
+// added it was already applying elsewhere: it operates purely on this
+// package's own type, both surfaces already import this package, and a
+// four-line formatter duplicated across `internal/cli` and `internal/mcp` is
+// the same shape of drift — smaller, but the same — as the duplicated walk
+// that wave existed to delete. The FRAMING sentence around this list stays
+// per-surface and deliberately differs: a read verb reporting its own item
+// list and a refusal explaining why a good ref failed must not send the
+// reader to the same place.
+func FormatSkippedList(skipped []SkippedFile) string {
+	parts := make([]string, 0, len(skipped))
+	for _, sk := range skipped {
+		parts = append(parts, sk.Path+" ("+sk.Reason+")")
+	}
+	return strings.Join(parts, ", ")
 }
