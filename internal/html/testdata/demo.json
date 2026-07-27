@@ -759,16 +759,20 @@
     {
       "space": "getvisa",
       "system": "legacycrm",
-      "code": "V4-STALE-MANIFEST",
-      "message": "legacycrm participant manifest not refreshed in 30d",
-      "severity": "attention"
+      "code": "read-index-skip",
+      "message": "legacycrm/exchanges/XA-legacy-archive.md (undecodable-yaml)",
+      "severity": "attention",
+      "source": "cache-index"
     },
     {
       "space": "platform",
       "system": "pgw",
-      "code": "V5-CODE-MISMATCH",
-      "message": "published contract version does not match the code-backed verifier output",
-      "severity": "blocking"
+      "code": "state-claim-mismatch",
+      "message": "committed event 01HFX00000000000000000493 on XH-pgw-20260727-webhooks was folded with state-claim-mismatch",
+      "severity": "attention",
+      "source": "fold",
+      "artifact": "XH-pgw-20260727-webhooks",
+      "event": "01HFX00000000000000000493"
     }
   ]
 }

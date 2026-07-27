@@ -57,6 +57,18 @@ type Item struct {
 	Description string `json:"-"`
 }
 
+// SpaceSyncInfo is the mirror snapshot fact the dashboard needs per connected
+// space: exact HEAD revision plus freshness. The computation stays in cache
+// because git inspection, mirrorSyncAge and Store.ttl are cache-owned policy;
+// renderers must not re-read .git or duplicate the stale threshold.
+type SpaceSyncInfo struct {
+	Space    string
+	Revision string
+	Age      time.Duration
+	Synced   bool
+	Stale    bool
+}
+
 // RefFact is one envelope `refs[]` entry's resolved digest/staleness
 // FACT (never a registry code — internal/cache stays validate-free per
 // ADR-001; internal/cli/cmd_show.go maps this to the V5 registry code).
@@ -114,6 +126,15 @@ type ContractInfo struct {
 	Provider string `json:"provider"`
 	Version  string `json:"version,omitempty"`
 	State    string `json:"state"`
+	// Contract-specific envelope facts are dashboard-only today. json:"-"
+	// preserves the established `a2a contracts --json` shape while allowing
+	// the richer HTML assembler to stop guessing whether a contract is
+	// code-generated and what compatibility vocabulary it declares.
+	Category      string `json:"-"`
+	SchemaFormat  string `json:"-"`
+	CompatPolicy  string `json:"-"`
+	GeneratedTool string `json:"-"`
+	SourceDigest  string `json:"-"`
 	// Description is a short human-readable summary from the contract's body,
 	// for the dashboard's dependency map. json:"-" keeps `a2a contracts --json`
 	// byte-stable for its existing consumers (read as a Go field only).
@@ -140,8 +161,25 @@ type ContractInfo struct {
 // the value — semver ascending, which a map cannot express and which every
 // renderer would otherwise have to re-derive.
 type ContractVersion struct {
-	Version string `json:"version"`
-	State   string `json:"state"`
+	Version       string `json:"version"`
+	State         string `json:"state"`
+	Sunset        string `json:"sunset,omitempty"`
+	Successor     string `json:"successor,omitempty"`
+	DeprecationID string `json:"deprecation_id,omitempty"`
+}
+
+// ProtocolFlagInfo is one committed fold violation surfaced by the read
+// model. It deliberately carries fold's own stable vocabulary rather than
+// pretending to be a V4/V5 validation result: those invocations are a
+// different engine and require their own mounted context.
+type ProtocolFlagInfo struct {
+	Space     string
+	System    string
+	Artifact  string
+	Code      string
+	EventULID string
+	Message   string
+	Severity  string
 }
 
 // SearchFilters narrows `a2a search`'s free-text match.

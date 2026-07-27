@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -73,6 +74,26 @@ func TestDemoFixtureParses(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("no Inbox item has the hostile title %q verbatim", hostileTitle)
+	}
+
+	for _, flag := range data.Flags {
+		if strings.HasPrefix(flag.Code, "V") {
+			t.Errorf("demo flag %q looks like an invented validation code; demo may only carry mounted fold/cache-index facts", flag.Code)
+		}
+		if flag.Source != "fold" && flag.Source != "cache-index" {
+			t.Errorf("demo flag %q has unsupported source %q", flag.Code, flag.Source)
+		}
+	}
+}
+
+func TestDemoDataCarriesEmbeddedReleaseNotes(t *testing.T) {
+	t.Parallel()
+	data, err := DemoData()
+	if err != nil {
+		t.Fatalf("DemoData: %v", err)
+	}
+	if len(data.ReleaseNotes) == 0 {
+		t.Fatal("a2a html --demo must demonstrate the embedded release-note surface")
 	}
 }
 

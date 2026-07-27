@@ -110,3 +110,61 @@ func TestContracts_ProviderFilterAndVersion(t *testing.T) {
 		t.Fatalf("provider filter should exclude: got %+v", none)
 	}
 }
+
+func TestContracts_ProjectsDescriptorAndDeprecationFacts(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+	const contractID = "XC-axon-ingest"
+	const deprecationID = "XA-axon-20260702-deprecate"
+
+	fx.commitArtifact("axon/provides/ingest/contract.md", map[string]any{
+		"schema": "envelope/v1", "id": contractID, "type": "contract", "title": "ingest",
+		"space": "fixture-space", "from": "axon", "to": []string{"seomatrix"},
+		"actor": map[string]any{"kind": "agent", "name": "axon-bot"}, "created": fxAt(base),
+		"category": "api", "priority": "p2", "blocking": false, "classification": "internal",
+		"version": "1.0.0", "schema_format": "json-schema-2020-12", "compat_policy": "strict-semver",
+		"generated_from": map[string]any{"tool": "openapi-codegen", "source_digest": "sha256:fixture"},
+	}, "The canonical ingest payload.")
+	publish := evt(contractID, "publish", "axon", base.Add(time.Hour))
+	publish["version"] = "1.0.0"
+	fx.commitEvent("axon", fxULID(921), publish)
+	deprecate := evt(contractID, "deprecate", "axon", base.Add(2*time.Hour))
+	deprecate["version"] = "1.0.0"
+	deprecate["refs"] = []map[string]any{{"ref": contractID + "@2.0.0"}}
+	fx.commitArtifactAndEvent("axon/exchanges/"+deprecationID+".md", map[string]any{
+		"schema": "envelope/v1", "id": deprecationID, "type": "announcement",
+		"title": "Ingest v1 sunset", "space": "fixture-space", "from": "axon",
+		"to": []string{"seomatrix"}, "actor": map[string]any{"kind": "agent", "name": "axon-bot"},
+		"created": fxAt(base.Add(2 * time.Hour)), "category": "deprecation",
+		"priority": "p2", "blocking": false, "ack_requested": true,
+		"deprecates":  contractID + "@1.0.0",
+		"valid_until": "2026-10-01", "classification": "internal",
+	}, "Migrate to v2 before the sunset.", "axon", fxULID(922), deprecate)
+
+	store := NewStore("axon", t.TempDir(),
+		[]SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, Manifest: mustManifest(t, fx)}},
+		func() time.Time { return base.Add(3 * time.Hour) }, 0)
+	got, err := store.Contracts(context.Background(), "")
+	if err != nil {
+		t.Fatalf("Contracts: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("Contracts len = %d, want 1: %+v", len(got), got)
+	}
+	c := got[0]
+	if c.Category != "api" || c.SchemaFormat != "json-schema-2020-12" ||
+		c.CompatPolicy != "strict-semver" || c.GeneratedTool != "openapi-codegen" ||
+		c.SourceDigest != "sha256:fixture" {
+		t.Fatalf("descriptor metadata not projected: %+v", c)
+	}
+	if len(c.Versions) != 1 {
+		t.Fatalf("Versions = %+v, want one line", c.Versions)
+	}
+	v := c.Versions[0]
+	if v.Version != "1.0.0" || v.State != "deprecated" ||
+		v.Sunset != "2026-10-01" || v.Successor != contractID+"@2.0.0" ||
+		v.DeprecationID != deprecationID {
+		t.Fatalf("deprecation join wrong: %+v", v)
+	}
+}
