@@ -52,12 +52,15 @@ func TestInboxHandler(t *testing.T) {
 	if body != "" {
 		t.Fatalf("expected no body for a list tool, got %q", body)
 	}
-	items, ok := result.([]cache.Item)
+	out, ok := result.(itemsWithSkipped)
 	if !ok {
-		t.Fatalf("expected []cache.Item, got %T", result)
+		t.Fatalf("expected itemsWithSkipped, got %T", result)
 	}
-	if len(items) != 1 || items[0].ID != id {
-		t.Fatalf("expected one inbox item for %s, got %+v", id, items)
+	if len(out.Items) != 1 || out.Items[0].ID != id {
+		t.Fatalf("expected one inbox item for %s, got %+v", id, out.Items)
+	}
+	if len(out.Skipped) != 0 {
+		t.Fatalf("expected no skipped files, got %+v", out.Skipped)
 	}
 }
 
@@ -69,9 +72,12 @@ func TestOutboxHandlerEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outbox handler failed: %v", err)
 	}
-	items, ok := result.([]cache.Item)
-	if !ok || items == nil {
-		t.Fatalf("expected a non-nil empty []cache.Item, got %#v", result)
+	out, ok := result.(itemsWithSkipped)
+	if !ok || out.Items == nil {
+		t.Fatalf("expected a non-nil empty []cache.Item wrapped in itemsWithSkipped, got %#v", result)
+	}
+	if len(out.Skipped) != 0 {
+		t.Fatalf("expected no skipped files, got %+v", out.Skipped)
 	}
 }
 
@@ -174,12 +180,15 @@ func TestThreadHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("thread handler failed: %v", err)
 	}
-	res, ok := result.(cache.ThreadResult)
+	res, ok := result.(threadOutput)
 	if !ok {
-		t.Fatalf("thread handler returned %T, want cache.ThreadResult", result)
+		t.Fatalf("thread handler returned %T, want threadOutput", result)
 	}
 	if len(res.Artifacts) != 1 || res.Artifacts[0].ID != id {
 		t.Fatalf("expected exactly the one member %s, got %+v", id, res.Artifacts)
+	}
+	if len(res.Skipped) != 0 {
+		t.Fatalf("expected no skipped files, got %+v", res.Skipped)
 	}
 }
 
@@ -213,7 +222,7 @@ func TestThreadInputCarriesOptionalSpace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("thread handler with space input failed: %v", err)
 	}
-	res := result.(cache.ThreadResult)
+	res := result.(threadOutput)
 	if len(res.Artifacts) != 1 || res.Artifacts[0].ID != id {
 		t.Fatalf("expected exactly the one member %s, got %+v", id, res.Artifacts)
 	}
@@ -241,9 +250,12 @@ func TestSearchHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("search handler failed: %v", err)
 	}
-	items := result.([]cache.Item)
-	if len(items) != 1 {
-		t.Fatalf("expected 1 search hit, got %+v", items)
+	out := result.(itemsWithSkipped)
+	if len(out.Items) != 1 {
+		t.Fatalf("expected 1 search hit, got %+v", out.Items)
+	}
+	if len(out.Skipped) != 0 {
+		t.Fatalf("expected no skipped files, got %+v", out.Skipped)
 	}
 }
 
@@ -360,9 +372,9 @@ func TestThreadHandlerReadsTheTranscript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a2a_thread: %v", err)
 	}
-	res, ok := got.(cache.ThreadResult)
+	res, ok := got.(threadOutput)
 	if !ok {
-		t.Fatalf("a2a_thread returned %T, want cache.ThreadResult — the flat []Item shape means this surface is still on the old reader", got)
+		t.Fatalf("a2a_thread returned %T, want threadOutput — the flat []Item shape means this surface is still on the old reader", got)
 	}
 	if res.Thread != threadID {
 		t.Fatalf("thread = %q, want %q", res.Thread, threadID)
@@ -396,11 +408,168 @@ func TestThreadHandlerAcceptsMemberArtifactID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a2a_thread with a member artifact id: %v", err)
 	}
-	res := got.(cache.ThreadResult)
+	res := got.(threadOutput)
 	if res.Thread != threadID {
 		t.Fatalf("thread = %q, want %q (resolved from the member id)", res.Thread, threadID)
 	}
 	if res.ResolvedFrom != threadFixtureQuestionID {
 		t.Fatalf("resolved_from = %q, want %q", res.ResolvedFrom, threadFixtureQuestionID)
 	}
+}
+
+// --- MCP parity: the "skipped" field (defect filed 2026-07-26) -------------
+//
+// Unlike internal/cli (whose stdout item array must stay byte-identical, so
+// the equivalent advisory rides stderr — see cmd_inbox.go's
+// inboxWriteUpdateAdvisory doc comment), an MCP tool's StructuredContent IS
+// the whole structured result: the skip list is folded into the result
+// itself, as its own field (itemsWithSkipped/threadOutput, tools_read.go).
+// These tests prove that field is populated for a2a_inbox/a2a_outbox/
+// a2a_search/a2a_thread and left empty on a clean mirror.
+
+// skippedFieldBadRelPath is the malformed artifact's space-relative path
+// every case below asserts is named in the populated Skipped field.
+const skippedFieldBadRelPath = "axon/exchanges/XQ-axon-20260721-bad.md"
+
+// buildSkippedFieldMirror writes a bare mirror tree with one well-formed
+// question FROM axon TO beta (reaches a2a_inbox, since testStore's own
+// system is "beta") and one well-formed question FROM beta TO axon
+// (reaches a2a_outbox, ownedByMe against "beta") — both on testFixtureThread
+// so a2a_thread renders them together — plus, when bad is true, one
+// artifact whose `thread:` key is written twice (the defect's own shape,
+// internal/cache/skipped_test.go's fixture), written via writeMirrorFile
+// (raw bytes) rather than any YAML-marshaling helper, which could never
+// reproduce a duplicate mapping key.
+func buildSkippedFieldMirror(t *testing.T, bad bool) string {
+	t.Helper()
+	mirrorDir := t.TempDir()
+	writeQuestionArtifact(t, mirrorDir, "XQ-axon-20260721-skip1", "beta")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XQ-axon-20260721-skip1", "submit", "axon")
+
+	writeMirrorFile(t, mirrorDir, "beta/exchanges/XQ-beta-20260721-skip2.md",
+		"---\n"+
+			"schema: envelope/v1\n"+
+			"id: XQ-beta-20260721-skip2\n"+
+			"type: question\n"+
+			"title: t\n"+
+			"space: fixture-space\n"+
+			"from: beta\n"+
+			"to: [axon]\n"+
+			"thread: "+testFixtureThread+"\n"+
+			"actor: {kind: agent, name: bot}\n"+
+			"created: 2026-07-21T10:00:00Z\n"+
+			"category: clarification\n"+
+			"priority: p3\n"+
+			"blocking: true\n"+
+			"classification: internal\n"+
+			"---\nbody\n")
+	writeLifecycleEvent(t, mirrorDir, "beta", 1, "XQ-beta-20260721-skip2", "submit", "beta")
+
+	if bad {
+		writeMirrorFile(t, mirrorDir, skippedFieldBadRelPath,
+			"---\nid: XQ-axon-20260721-bad\nthread: thread:axon:one\nthread: thread:axon:two\n---\nbad\n")
+	}
+	return mirrorDir
+}
+
+// assertSkippedField is the shared assertion every case below uses: on the
+// dirty mirror, exactly one entry naming skippedFieldBadRelPath and
+// cache.SkipReasonUndecodableYAML; on the clean mirror, none at all (a gate
+// that fires on a clean space is a gate people silence).
+func assertSkippedField(t *testing.T, got []cache.SkippedFile, wantBad bool) {
+	t.Helper()
+	if !wantBad {
+		if len(got) != 0 {
+			t.Fatalf("skipped = %+v, want none (clean mirror)", got)
+		}
+		return
+	}
+	if len(got) != 1 || got[0].Path != skippedFieldBadRelPath || got[0].Reason != cache.SkipReasonUndecodableYAML {
+		t.Fatalf("skipped = %+v, want exactly one entry naming %q/%q", got, skippedFieldBadRelPath, cache.SkipReasonUndecodableYAML)
+	}
+}
+
+func TestInboxHandler_SkippedField(t *testing.T) {
+	t.Parallel()
+	for _, bad := range []bool{false, true} {
+		t.Run(boolLabel(bad), func(t *testing.T) {
+			t.Parallel()
+			store := testStore(t, buildSkippedFieldMirror(t, bad))
+			result, _, err := newInboxHandler(store)(context.Background(), json.RawMessage(`{}`))
+			if err != nil {
+				t.Fatalf("a2a_inbox: %v", err)
+			}
+			out, ok := result.(itemsWithSkipped)
+			if !ok {
+				t.Fatalf("a2a_inbox returned %T, want itemsWithSkipped", result)
+			}
+			assertSkippedField(t, out.Skipped, bad)
+		})
+	}
+}
+
+func TestOutboxHandler_SkippedField(t *testing.T) {
+	t.Parallel()
+	for _, bad := range []bool{false, true} {
+		t.Run(boolLabel(bad), func(t *testing.T) {
+			t.Parallel()
+			store := testStore(t, buildSkippedFieldMirror(t, bad))
+			result, _, err := newOutboxHandler(store)(context.Background(), json.RawMessage(`{}`))
+			if err != nil {
+				t.Fatalf("a2a_outbox: %v", err)
+			}
+			out, ok := result.(itemsWithSkipped)
+			if !ok {
+				t.Fatalf("a2a_outbox returned %T, want itemsWithSkipped", result)
+			}
+			assertSkippedField(t, out.Skipped, bad)
+		})
+	}
+}
+
+func TestSearchHandler_SkippedField(t *testing.T) {
+	t.Parallel()
+	for _, bad := range []bool{false, true} {
+		t.Run(boolLabel(bad), func(t *testing.T) {
+			t.Parallel()
+			store := testStore(t, buildSkippedFieldMirror(t, bad))
+			args, _ := json.Marshal(SearchInput{Query: ""})
+			result, _, err := newSearchHandler(store)(context.Background(), args)
+			if err != nil {
+				t.Fatalf("a2a_search: %v", err)
+			}
+			out, ok := result.(itemsWithSkipped)
+			if !ok {
+				t.Fatalf("a2a_search returned %T, want itemsWithSkipped", result)
+			}
+			assertSkippedField(t, out.Skipped, bad)
+		})
+	}
+}
+
+func TestThreadHandler_SkippedField(t *testing.T) {
+	t.Parallel()
+	for _, bad := range []bool{false, true} {
+		t.Run(boolLabel(bad), func(t *testing.T) {
+			t.Parallel()
+			store := testStore(t, buildSkippedFieldMirror(t, bad))
+			args, _ := json.Marshal(ThreadInput{ThreadID: testFixtureThread})
+			result, _, err := newThreadHandler(store)(context.Background(), args)
+			if err != nil {
+				t.Fatalf("a2a_thread: %v", err)
+			}
+			out, ok := result.(threadOutput)
+			if !ok {
+				t.Fatalf("a2a_thread returned %T, want threadOutput", result)
+			}
+			assertSkippedField(t, out.Skipped, bad)
+		})
+	}
+}
+
+func boolLabel(b bool) string {
+	if b {
+		return "dirty"
+	}
+	return "clean"
 }

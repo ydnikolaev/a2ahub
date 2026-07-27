@@ -10,11 +10,53 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 )
+
+// itemsWithSkipped is a2a_inbox/a2a_outbox/a2a_search's StructuredContent
+// shape once a connected space carries a mirror file the read model's own
+// best-effort walk could not decode (internal/cache/skipped.go — the
+// defect filed 2026-07-26: a malformed file used to drop out of the index
+// without a word). internal/cli's equivalent verbs carry this same fact on
+// STDERR ONLY, because their stdout item array must stay byte-identical for
+// existing consumers (see cmd_inbox.go's inboxWriteUpdateAdvisory doc
+// comment for the precedent this mirrors). An MCP tool has no such stdout —
+// StructuredContent IS the whole structured result, and the response TEXT
+// body block is already spoken for by withUpdateNotice's own advisory — so
+// here the skip list is folded into the result itself, as its own field,
+// rather than smuggled into body prose. Skipped is omitted entirely
+// (omitempty) when nothing was skipped, matching the CLI's "write nothing
+// on a clean space" rule.
+type itemsWithSkipped struct {
+	Items   []cache.Item        `json:"items"`
+	Skipped []cache.SkippedFile `json:"skipped,omitempty"`
+}
+
+// flattenSkippedFiles merges a Store.AllSkippedFiles map into one
+// deterministic slice (space id order, then each space's own already-sorted
+// path order — skipped.go's own doc comment): a2a_inbox/a2a_outbox/
+// a2a_search read across every connected space (cache.AllSkippedFiles' own
+// doc comment), so their StructuredContent needs the union in one stable
+// order, the same way internal/cli's own flattenSkipped
+// (internal/cli/skipadvisory.go) does for the CLI's stderr advisory — kept
+// as its own copy here rather than shared: ADR-001 forbids this package
+// importing internal/cli.
+func flattenSkippedFiles(bySpace map[string][]cache.SkippedFile) []cache.SkippedFile {
+	spaceIDs := make([]string, 0, len(bySpace))
+	for id := range bySpace {
+		spaceIDs = append(spaceIDs, id)
+	}
+	sort.Strings(spaceIDs)
+	var out []cache.SkippedFile
+	for _, id := range spaceIDs {
+		out = append(out, bySpace[id]...)
+	}
+	return out
+}
 
 // InboxInput is a2a_inbox's structured input.
 type InboxInput struct {
@@ -36,7 +78,11 @@ func newInboxHandler(store *cache.Store) HandlerFunc {
 		if items == nil {
 			items = []cache.Item{}
 		}
-		return items, "", nil
+		// Defect fix (filed 2026-07-26): see itemsWithSkipped's own doc
+		// comment. inbox is cross-space, so this folds in the union across
+		// every connected mirror.
+		bySpace, _ := store.AllSkippedFiles(ctx)
+		return itemsWithSkipped{Items: items, Skipped: flattenSkippedFiles(bySpace)}, "", nil
 	}
 }
 
@@ -60,7 +106,11 @@ func newOutboxHandler(store *cache.Store) HandlerFunc {
 		if items == nil {
 			items = []cache.Item{}
 		}
-		return items, "", nil
+		// Defect fix (filed 2026-07-26): see itemsWithSkipped's own doc
+		// comment. outbox is cross-space, so this folds in the union across
+		// every connected mirror.
+		bySpace, _ := store.AllSkippedFiles(ctx)
+		return itemsWithSkipped{Items: items, Skipped: flattenSkippedFiles(bySpace)}, "", nil
 	}
 }
 
@@ -164,8 +214,29 @@ func newThreadHandler(store *cache.Store) HandlerFunc {
 			}
 			return nil, "", fmt.Errorf("a2a_thread: %w", err)
 		}
-		return result, "", nil
+		// Defect fix (filed 2026-07-26): see itemsWithSkipped's own doc
+		// comment (a2a_thread's own shape differs — embedded, like
+		// showOutput, since ThreadResult is already a struct, not a bare
+		// list). thread is scoped to the ONE resolved space (result.Space);
+		// advising about a different connected space's skips would be noise
+		// about a space this render never touches. Never reached on the
+		// error paths above (ambiguity/not-found) — there is no resolved
+		// space to advise about.
+		skipped, _ := store.SkippedFiles(ctx, result.Space)
+		return threadOutput{ThreadResult: result, Skipped: skipped}, "", nil
 	}
+}
+
+// threadOutput is a2a_thread's StructuredContent shape once its resolved
+// space carries a skipped mirror file — mirrors showOutput's own
+// embed-and-extend pattern (this file, above) rather than itemsWithSkipped's
+// items/skipped wrapper, because cache.ThreadResult is already a struct: an
+// embed keeps every existing top-level field (thread, space, transcript,
+// ...) exactly where a caller already expects it, with skipped added
+// alongside rather than nested under a new "result" key.
+type threadOutput struct {
+	cache.ThreadResult
+	Skipped []cache.SkippedFile `json:"skipped,omitempty"`
 }
 
 // SearchInput is a2a_search's structured input.
@@ -193,7 +264,12 @@ func newSearchHandler(store *cache.Store) HandlerFunc {
 		if items == nil {
 			items = []cache.Item{}
 		}
-		return items, "", nil
+		// Defect fix (filed 2026-07-26): see itemsWithSkipped's own doc
+		// comment. search is cross-space (in.Space is only a filter on the
+		// fold, not the walk), so this folds in the union across every
+		// connected mirror, same as inbox/outbox above.
+		bySpace, _ := store.AllSkippedFiles(ctx)
+		return itemsWithSkipped{Items: items, Skipped: flattenSkippedFiles(bySpace)}, "", nil
 	}
 }
 

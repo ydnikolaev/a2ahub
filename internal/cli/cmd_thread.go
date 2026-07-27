@@ -73,6 +73,16 @@ func (c *ThreadCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 1
 	}
 
+	// Defect fix (filed 2026-07-26): a malformed mirror file used to drop
+	// out of the index without a word — see skipadvisory.go's own doc
+	// comment. thread is scoped to ONE resolved space (result.Space), unlike
+	// inbox/outbox/search above — advising about a different connected
+	// space's skips here would be noise about a space this render never
+	// touches.
+	if skipped, skErr := c.store.SkippedFiles(ctx, result.Space); skErr == nil {
+		skipAdvisory(stdio, skipped, *jsonOut)
+	}
+
 	if *jsonOut {
 		enc := json.NewEncoder(stdio.Stdout)
 		enc.SetIndent("", "  ")

@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -157,6 +158,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"auto-merge enabled", func() (bool, string) { return c.doctorCheckAutoMerge(ctx, cfg, machine) }},
 		{"codeowners resolvable", func() (bool, string) { return c.doctorCheckCodeownersResolvable(ctx, cfg, machine) }},
 		{"threads intact", func() (bool, string) { return c.doctorCheckThreadsIntact(cfg, machine) }},
+		{"skipped mirror files", func() (bool, string) { return c.doctorCheckSkippedFiles(ctx, cfg, machine) }},
 		{"statusline wiring", func() (bool, string) { return c.doctorCheckStatuslineWiring() }},
 		{"skill discoverable", func() (bool, string) { return c.doctorCheckSkillDiscoverable() }},
 		{"skill manual current", func() (bool, string) { return c.doctorCheckSkillManualCurrent() }},
@@ -1041,4 +1043,98 @@ func (c *DoctorCommand) doctorReadArtifactThread(path string) (thread string, ok
 		return "", false
 	}
 	return probe.Thread, true
+}
+
+// doctorCheckSkippedFiles is stage 2 of the defect filed 2026-07-26: the
+// read model (internal/cache) was already best-effort BY DESIGN — one
+// malformed artifact/event file must never blind the whole space to every
+// other document in it — but the file it dropped was silently
+// indistinguishable from one that simply did not exist. `a2a search`,
+// `a2a inbox` and `a2a thread` all showed one FEWER row than the space
+// actually held, with no word anywhere, and an agent running those verbs
+// never runs `a2a doctor` on its own — so stage 1 (internal/cache/
+// skipped.go) computes the fact and stage 2's OTHER half wires it to
+// stderr on the read verbs themselves (skipadvisory.go); this row is doctor's
+// own half, for the operator who runs doctor without ever hitting a skipped
+// file through a read verb.
+//
+// Modeled on doctorCheckThreadsIntact (same file, immediately above): a
+// per-connected-space best-effort scan that PASSES with an advisory rather
+// than failing. But the REASON is different from that row's, and it matters:
+// a pre-thread artifact is unrepairable in place because git is the archive
+// (§3.8, doctorCheckThreadsIntact's own doc comment); a skipped file here
+// may equally be UNREADABLE not because it is broken but because it belongs
+// to a COUNTERPARTY's own section of a shared space — this project's own
+// diff-authz (space.IsInfrastructurePath's single-owner rule) can leave it
+// structurally unable to fix another participant's malformed document. A
+// doctor row that is permanently red on someone else's file is a row nobody
+// reads (the same disease doctorCheckAutoMerge's own doc comment names for
+// an unverifiable read). The advisory names every skipped path and its
+// reason so the operator can tell "not mine to fix" from "I broke this."
+//
+// This builds a throwaway *cache.Store over the resolved mirrors rather than
+// re-deriving the walk doctorCheckThreadsIntact hand-rolls: internal/cache/
+// skipped.go's AllSkippedFiles is the SSOT for "which files were skipped and
+// why" (the fixed SkipReason* vocabulary), and re-deriving that vocabulary
+// here would be exactly the second-copy risk this package's own anti-dup
+// rule warns against. cache.Store.index (AllSkippedFiles' own callee) is a
+// pure read over each mirror's working tree — no cursor file, no write —
+// so an empty ownSystem/cacheDir and time.Now are safe placeholders here;
+// none of them is read by AllSkippedFiles' own call path.
+func (c *DoctorCommand) doctorCheckSkippedFiles(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+	if len(cfg.Spaces) == 0 {
+		return true, ""
+	}
+	mirrors := make([]cache.SpaceMirror, 0, len(cfg.Spaces))
+	for _, ref := range cfg.Spaces {
+		dir := c.resolveMirror(c.projectRoot, ref, machine)
+		raw, err := c.readFile(filepath.Join(dir, "space.yaml"))
+		if err != nil {
+			// "space access" already reports an unreachable mirror; do not
+			// double-report the same root cause.
+			continue
+		}
+		manifest, merr := space.ParseManifest(raw)
+		if merr != nil {
+			// "versions" already reports an unparseable manifest.
+			continue
+		}
+		mirrors = append(mirrors, cache.SpaceMirror{SpaceID: ref.ID, Dir: dir, Manifest: manifest})
+	}
+	if len(mirrors) == 0 {
+		return true, ""
+	}
+
+	store := cache.NewStore("", "", mirrors, time.Now, 0)
+	bySpace, err := store.AllSkippedFiles(ctx)
+	if err != nil {
+		// Never a FAIL for a read-side failure this check cannot itself
+		// repair — see this function's own doc comment.
+		return true, " · skipped-file check could not run: " + err.Error()
+	}
+
+	spaceIDs := make([]string, 0, len(bySpace))
+	for id := range bySpace {
+		spaceIDs = append(spaceIDs, id)
+	}
+	sort.Strings(spaceIDs)
+
+	var notes []string
+	for _, id := range spaceIDs {
+		files := bySpace[id]
+		if len(files) == 0 {
+			continue
+		}
+		parts := make([]string, 0, len(files))
+		for _, f := range files {
+			parts = append(parts, fmt.Sprintf("%s (%s)", f.Path, f.Reason))
+		}
+		notes = append(notes, fmt.Sprintf("%s: %s", id, strings.Join(parts, ", ")))
+	}
+	if len(notes) == 0 {
+		return true, ""
+	}
+	return true, " · mirror files could not be decoded and are missing from every read verb's output — " +
+		strings.Join(notes, "; ") +
+		" — fixable only by whoever owns that file's section; a counterparty's document may be outside this project's diff-authz"
 }
