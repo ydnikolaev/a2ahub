@@ -114,3 +114,103 @@ changes:
         believe they are waiting on the other.
       detect:
         - "a2a init   # the closing advice names both steps"
+
+  - id: RN-01200-4
+    kind: fix
+    impact: high
+    subject: "A reference is no longer refused because a DIFFERENT file failed to parse"
+    detail: >
+      A `refs:` entry naming a real artifact could be refused as REF-009
+      "unknown ref", and a real reply as REF-010, because a third,
+      unrelated file two directories away did not parse. The index the
+      resolver builds dropped an undecodable file silently, so `Exists`
+      answered false for an artifact that was right there — and the author
+      was told their reference was wrong.
+      That is the failure this product most has to avoid, in its loudest
+      form: a refusal that is specific, confident and pointed at the wrong
+      thing. The reader's next move is to stop trusting the check, which
+      costs far more than the original defect.
+      The refusal now names the file that actually failed and why, using
+      the same five-reason vocabulary `a2a doctor` already reports. The
+      walk itself now exists once, in the package that already owned it
+      with a report, instead of once per surface.
+      Two behaviour changes ride along, both narrow. A reference INTO
+      `vendored/` no longer resolves — the read model never indexed those,
+      so such a ref would validate and then be undisplayable. And an
+      artifact over 1 MiB is now reported as an unreadable skip rather
+      than silently indexed; none exist in any live space.
+    affects: ["a2a submit", "a2a validate", "a2a_submit"]
+    action:
+      scope: none
+      why: >
+        Nothing to run. If you ever debugged an "unknown ref" that looked
+        correct, this is why it looked correct — it was.
+
+  - id: RN-01200-5
+    kind: policy
+    impact: high
+    subject: "Retiring one version of a contract while another is still published is now refused (POL-011)"
+    detail: >
+      Read this before your first contract evolution. A contract's
+      lifecycle is recorded per CONTRACT, not per version — and the state
+      machine has no transition out of `retired`. So the documented
+      deprecation cycle, run on a contract with two published versions,
+      behaved differently depending on the order you took it in.
+      Deprecate 1.0, then publish 2.0, then retire 1.0: the retire is
+      refused. Harmless. Publish 2.0, then deprecate 1.0, then retire 1.0:
+      every step is legal, the retire commits, and the WHOLE contract
+      becomes permanently inoperable — no later publish, no later
+      deprecate, ever — while 2.0 is live and being consumed by the other
+      side.
+      Nothing unusual is done in either order. Each step is documented and
+      the commands guide you through it.
+      Retire now refuses whenever another version is still published,
+      naming those versions. Both orders behave the same way: the step is
+      loudly unavailable rather than quietly destructive.
+      What this does NOT do is make the step work. Retiring an old version
+      while a newer one lives needs the per-version lifecycle, which is
+      specified and not yet built. The refusal says so, so that a reader
+      stops looking for a mistake in their own command.
+      If you already reached the broken state: the record is not damaged.
+      State is recomputed from history on every read, and the retire event
+      carries its own version — so the per-version release repairs it.
+    affects: ["a2a contract retire", "a2a_contract"]
+    action:
+      scope: none
+      why: >
+        Nothing to run, and nothing to undo. Plan a deprecation cycle
+        knowing its final step is unavailable until the per-version
+        lifecycle ships; deprecating and publishing are unaffected.
+
+  - id: RN-01200-6
+    kind: feat
+    impact: normal
+    subject: "Three conventions ship as documentation: feed liveness, retracting published data, and contract-to-code bindings"
+    detail: >
+      Three things agents kept needing and this tool had no answer for,
+      each shipped as a followed convention rather than as a schema —
+      because all three turn out to be expressible with what already
+      exists, and freezing a vocabulary that exactly one consumer has used
+      is how a protocol acquires fields nobody wants.
+      Feed liveness: publish an `announcement` with `category: status` and
+      a `period`, so silence stops reading identically to "nothing
+      changed". Retraction: a `work_request` carrying an `x_retraction`
+      block, valid today, for withdrawing a datum that is live in front of
+      users and cannot wait for an interface lifecycle. Bindings: a
+      tracked file in your OWN repository recording which of your code
+      depends on which contract — so when a deprecation arrives with a
+      sunset date, the migration is a checklist instead of archaeology.
+      Each page states what would FALSIFY it, which is the point: if the
+      bindings file turns out to be stale exactly when it was needed,
+      that is evidence against building more machinery, not for it.
+    affects: ["a2a skill install"]
+    action:
+      scope: local
+      why: >
+        Refresh your installed skill tree to receive them; then follow the
+        bindings convention from your first `contract adopt`, because
+        recording bindings as you go costs nothing and reconstructing them
+        under a live sunset costs a lot.
+      run:
+        - "a2a skill install"
+
