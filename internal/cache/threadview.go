@@ -561,15 +561,38 @@ func envelopeFrom(fa foldedArtifact) fold.Envelope {
 }
 
 // buildOpenItems answers "whose move is it" for every non-terminal
-// member (§T3). For each legal next transition (fold.LegalNext, a pure
+// member (§T3). For each legal next transition (fold.LegalNextFor, a pure
 // filter over fold's own table — never re-derived here), the candidate
-// `by` system set is computed by calling fold.CheckLegality once per
+// `by` system set is computed by calling fold.CheckCandidate once per
 // manifest participant with a CONSTANT fold.MembershipMember status — the
 // spec's own documented V1 imprecision ("a suspended participant can
 // still be listed as waiting_on"), and the only way to resolve a Role to
 // concrete system ids without either a second copy of roleAuthorizes
 // (unexported, and internal/fold is outside this wave's allowlist) or
 // re-deriving the rule by hand.
+//
+// P4 (04-per-version-lifecycle.plan.md): this view is one OpenItem per
+// ARTIFACT, not per version, so it asks fold.LegalNextFor/CheckCandidate
+// the WHOLE-CONTRACT form (version ""), never a specific version — the
+// same "" this file passes to BOTH halves below, which is the one
+// invariant that matters here: fold.LegalNextFor's own doc comment warns
+// that a caller composing it with a legality check must ask both the
+// SAME version, or reproduce, one layer up, exactly the split brain that
+// function exists inside internal/fold to close. The whole-form questions
+// this view actually asks are the ones it can answer: "may the owner
+// publish the next version", "is anything left published to deprecate",
+// "is everything deprecated so the whole contract may retire". A
+// per-version "whose move for 1.2 specifically" view is a different
+// question, needing one OpenItem per version, and is out of scope here.
+//
+// One asymmetry worth knowing before it reads as a bug: `publish` IS
+// offered for a version-less ask, while fold.CheckCandidate refuses a
+// version-less publish EVENT. Both are right, and the first revision of
+// this migration got it wrong in the expensive direction — deriving the
+// affordance from the event predicate dropped `publish` from the next
+// actions of every contract that had ever published anything, i.e. from
+// the commonest move an owner makes, on every contract in real use. See
+// fold's contractMoveAvailable for the full statement.
 //
 // The response-scoped trap (§T3's own "highest-stakes step"): for a
 // KindResponse member, CheckLegality's `verify`/`dispute` branch ALWAYS
@@ -621,7 +644,7 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 
 		var actions []NextAction
 		var waiting []string
-		for _, mv := range fold.LegalNext(fa.kind(), fa.Result.State) {
+		for _, mv := range fold.LegalNextFor(fa.kind(), fa.Result, "") {
 			if fa.kind() != fold.KindResponse && mv.Transition == fold.TDispute {
 				// Non-actionable duplicate — see buildOpenItems' own doc
 				// comment (the exchange-kind dispute row never resolves
@@ -629,7 +652,7 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 				// subject).
 				continue
 			}
-			by := legalSystems(fa.kind(), fa.Result.State, mv.Transition, authEnv, manifest)
+			by := legalSystems(mv, authEnv, manifest)
 			actions = append(actions, NextAction{Transition: mv.Transition, By: by})
 			if !escapeHatchTransitions[mv.Transition] {
 				waiting = append(waiting, by...)
@@ -672,15 +695,29 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 	return out
 }
 
-// legalSystems returns every manifest participant for whom
-// fold.CheckLegality verdicts VerdictLegal — the system-id resolution of
-// a fold.Role without a second copy of roleAuthorizes (see
-// buildOpenItems' own doc comment).
-func legalSystems(kind fold.Kind, state fold.State, transition string, env fold.Envelope, manifest space.Manifest) []string {
+// legalSystems resolves ONE already-legal move to the manifest
+// participants it belongs to — `fold.LegalNextFor` above established that
+// the move is legal for the artifact, so all that is left is turning its
+// fold.Role into system ids.
+//
+// It used to do that by calling fold.CheckLegality once per participant,
+// because the role resolution was unexported — a workaround this
+// function's own doc comment described as one. It broke on the first move
+// that is offered as an affordance but refused as an event (the
+// whole-contract `publish`: fold.CheckCandidate correctly refuses a
+// version-less publish EVENT, so every participant came back
+// unauthorized and `publish.by` rendered empty on every live contract).
+// fold.RoleAuthorizes is the resolution the workaround was approximating,
+// now exported for exactly this caller.
+//
+// Membership stays the spec's own documented V1 imprecision: every
+// manifest participant is treated as a current member ("a suspended
+// participant can still be listed as waiting_on"), which is what the
+// constant fold.MembershipMember expressed before.
+func legalSystems(mv fold.NextMove, env fold.Envelope, manifest space.Manifest) []string {
 	var out []string
 	for _, p := range manifest.Participants {
-		actor := fold.Actor{Kind: "agent", System: p.System}
-		if fold.CheckLegality(kind, state, transition, env, actor, fold.MembershipMember) == fold.VerdictLegal {
+		if fold.RoleAuthorizes(mv.Role, env, p.System) {
 			out = append(out, p.System)
 		}
 	}

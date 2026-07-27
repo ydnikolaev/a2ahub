@@ -42,6 +42,12 @@ type CandidateEvent struct {
 	Transition string
 	// Actor is the acting actor block.
 	Actor Actor
+	// Version is the event's own §5.2.2 "version" field, non-empty only on
+	// a contract publish/deprecate/retire event that names one (P4,
+	// agent-ops-2026-07/plans/04-per-version-lifecycle.plan.md). A
+	// concrete LegalityChecker threads this through to internal/fold's
+	// per-version legality primitive; validate itself never inspects it.
+	Version string
 }
 
 // LegalityChecker is the consumer-side seam onto internal/fold's

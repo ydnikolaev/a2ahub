@@ -60,14 +60,32 @@ func TestLegalNextForContract(t *testing.T) {
 		},
 		{
 			// The whole-contract form: no version named, but versions
-			// exist. Deprecate is legal (2.0.0 is published); retire is
-			// not (not every version is deprecated); publish has no
-			// whole form.
-			name:    "the_whole_contract_form_offers_only_what_the_predicate_allows",
+			// exist. Deprecate is offered (2.0.0 is published); retire is
+			// not (not every version is deprecated); publish IS offered,
+			// and that is the one place this function deliberately
+			// answers something CheckCandidate refuses — see
+			// contractMoveAvailable. Dropping it here empties
+			// `a2a thread`'s next actions of the commonest thing a
+			// contract owner does.
+			name:    "the_whole_contract_form_offers_publish_and_what_the_predicate_allows",
 			kind:    KindContract,
 			prior:   rolling,
 			version: "",
-			want:    []NextMove{{Transition: TDeprecate, To: StateDeprecated, Role: RoleOwner}},
+			want: []NextMove{
+				{Transition: TPublish, To: StatePublished, Role: RoleOwner},
+				{Transition: TDeprecate, To: StateDeprecated, Role: RoleOwner},
+			},
+		},
+		{
+			// Even with every version retired, the owner may publish a
+			// new one — a version number that has never been minted is
+			// always available (contractVersionVerdict), so a contract
+			// whose old lines are all closed is not itself closed.
+			name:    "a_fully_retired_contract_still_offers_publish",
+			kind:    KindContract,
+			prior:   Result{Kind: KindContract, State: StateRetired, Versions: map[string]State{"1.0.0": StateRetired}},
+			version: "",
+			want:    []NextMove{{Transition: TPublish, To: StatePublished, Role: RoleOwner}},
 		},
 		{
 			name:    "no_versions_and_no_version_named_falls_back_to_subject_state",
@@ -101,6 +119,14 @@ func TestLegalNextForContract(t *testing.T) {
 // LegalNextFor offers must be a move CheckCandidate accepts, and one it
 // withholds must be one CheckCandidate refuses. Two functions reading one
 // predicate is only worth anything if something checks that they still do.
+//
+// There is EXACTLY ONE deliberate exception — the whole-contract form of
+// `publish` (contractMoveAvailable's own doc comment says why: "may this
+// event commit" and "what may this participant do next" are different
+// questions, and only for that pair do they diverge). The exception is
+// asserted here rather than excluded, so it cannot quietly widen: if any
+// OTHER pair ever diverges, this test fails, and if this pair ever stops
+// diverging, it fails too.
 func TestLegalNextForAgreesWithCheckCandidate(t *testing.T) {
 	t.Parallel()
 
@@ -123,6 +149,20 @@ func TestLegalNextForAgreesWithCheckCandidate(t *testing.T) {
 				}
 				for _, tr := range []string{TPublish, TDeprecate, TRetire} {
 					accepted := CheckCandidate(KindContract, prior, tr, version, env, actor, MembershipMember) == VerdictLegal
+
+					if tr == TPublish && version == "" {
+						// The one deliberate divergence. Assert it in
+						// BOTH directions so it can neither widen nor
+						// silently disappear.
+						if !offered[tr] {
+							t.Fatalf("whole-form publish is not offered — a contract owner's commonest move vanished from next actions")
+						}
+						if accepted {
+							t.Fatalf("CheckCandidate accepted a version-less publish EVENT; it has no meaning in the per-version model and must refuse")
+						}
+						continue
+					}
+
 					if offered[tr] != accepted {
 						t.Fatalf("version %q transition %q: LegalNextFor offered=%v but CheckCandidate accepted=%v", version, tr, offered[tr], accepted)
 					}

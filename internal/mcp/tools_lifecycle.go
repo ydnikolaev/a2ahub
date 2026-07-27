@@ -105,7 +105,7 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 
 		var files []space.FileWrite
 		for _, id := range in.IDs {
-			verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, id, spec.Transition, actor)
+			verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, id, spec.Transition, "", actor)
 			if err != nil {
 				return nil, "", fmt.Errorf("%s: %s: %w", spec.Verb, id, err)
 			}
@@ -217,7 +217,7 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 		var files []space.FileWrite
 		var ids []string
 		for _, parentID := range in.ParentIDs {
-			verdict, parentEnv, err := checkLegality(deps.MirrorDir, deps.Manifest, parentID, fold.TRespond, actor)
+			verdict, parentEnv, err := checkLegality(deps.MirrorDir, deps.Manifest, parentID, fold.TRespond, "", actor)
 			if err != nil {
 				return nil, "", fmt.Errorf("respond: %s: %w", parentID, err)
 			}
@@ -493,7 +493,7 @@ func newVerifyHandler(deps WriteDeps) HandlerFunc {
 			// D-024 convenience: single-response exchange also closes the
 			// parent in the SAME PR.
 			if len(result.Responses) == 1 {
-				closeVerdict, _, cerr := checkLegality(deps.MirrorDir, deps.Manifest, parentID, fold.TClose, actor)
+				closeVerdict, _, cerr := checkLegality(deps.MirrorDir, deps.Manifest, parentID, fold.TClose, "", actor)
 				if cerr != nil {
 					return nil, "", fmt.Errorf("verify: %s: %w", parentID, cerr)
 				}

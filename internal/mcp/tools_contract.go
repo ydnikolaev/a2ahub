@@ -120,6 +120,19 @@ func contractParseSemver(s string) (contractSemver, error) {
 
 func (v contractSemver) String() string { return fmt.Sprintf("%d.%d.%d", v[0], v[1], v[2]) }
 
+// contractCanonicalVersion mirrors internal/cli's own copy (ADR-001:
+// internal/mcp never imports internal/cli) — see its doc comment for why
+// this exists: fold.Result.Versions is a map[string]State keyed on the
+// raw version string with no canonicalization of its own, so two
+// spellings of one version must be reformatted to the identical string
+// before either reaches fold.
+func contractCanonicalVersion(v string) string {
+	if parsed, err := contractParseSemver(v); err == nil {
+		return parsed.String()
+	}
+	return v
+}
+
 func contractBump(prior contractSemver, kind string) contractSemver {
 	switch kind {
 	case "major":
@@ -374,19 +387,11 @@ func newContractPublishHandler(deps ContractDeps) HandlerFunc {
 		resolved := deps.ResolveActor(in.Actor)
 		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: deps.OwnSystem}
 
-		verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, in.ID, fold.TPublish, actor)
-		if err != nil {
-			return nil, "", fmt.Errorf("contract publish: %s: %w", in.ID, err)
-		}
-		if verdict != fold.VerdictLegal {
-			return nil, "", fmt.Errorf("contract publish: %w", verdictError(in.ID, verdict))
-		}
-
-		fm, probe, relPath, relDir, err := contractReadDescriptor(deps.MirrorDir, in.ID)
-		if err != nil {
-			return nil, "", fmt.Errorf("contract publish: %w", err)
-		}
-
+		// P4: newVersion must be resolved BEFORE the legality check below —
+		// see internal/cli's own runPublish comment on why the order
+		// matters once a contract carries any recorded version. This needs
+		// only the event history + the version/bump input, not the
+		// descriptor.
 		all, err := readAllEvents(deps.MirrorDir)
 		if err != nil {
 			return nil, "", fmt.Errorf("contract publish: %w", err)
@@ -407,6 +412,19 @@ func newContractPublishHandler(deps ContractDeps) HandlerFunc {
 			}
 		} else {
 			newVersion = contractBump(baseline, in.Bump)
+		}
+
+		verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, in.ID, fold.TPublish, newVersion.String(), actor)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract publish: %s: %w", in.ID, err)
+		}
+		if verdict != fold.VerdictLegal {
+			return nil, "", fmt.Errorf("contract publish: %w", verdictError(in.ID, verdict))
+		}
+
+		fm, probe, relPath, relDir, err := contractReadDescriptor(deps.MirrorDir, in.ID)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract publish: %w", err)
 		}
 
 		isMajorBump := !isFirstPublish && newVersion[0] > baseline[0]
@@ -579,13 +597,9 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 		resolved := deps.ResolveActor(in.Actor)
 		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: deps.OwnSystem}
 
-		verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, in.ID, fold.TDeprecate, actor)
-		if err != nil {
-			return nil, "", fmt.Errorf("contract deprecate: %s: %w", in.ID, err)
-		}
-		if verdict != fold.VerdictLegal {
-			return nil, "", fmt.Errorf("contract deprecate: %w", verdictError(in.ID, verdict))
-		}
+		// P4: deprecatedVersion must be resolved BEFORE the legality check
+		// below — see internal/cli's own runDeprecate comment on why the
+		// order matters once a contract carries any recorded version.
 		_, probe, _, _, err := contractReadDescriptor(deps.MirrorDir, in.ID)
 		if err != nil {
 			return nil, "", fmt.Errorf("contract deprecate: %w", err)
@@ -599,6 +613,24 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract deprecate: %w", err)
 		}
 
+		// legalityVersion: see internal/cli's own runDeprecate comment —
+		// "" (the legacy whole-subject path) unless this contract has at
+		// least one prior publish event that itself carried a `version`
+		// field; deprecatedVersion is always non-empty once the contract
+		// has published at all (F4/AC-972.1, predates P4), but a
+		// version-less history's Result.Versions can never contain it.
+		legalityVersion := ""
+		if len(contractPublishedVersions(allEvents, in.ID)) > 0 {
+			legalityVersion = contractCanonicalVersion(deprecatedVersion)
+		}
+		verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, in.ID, fold.TDeprecate, legalityVersion, actor)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract deprecate: %s: %w", in.ID, err)
+		}
+		if verdict != fold.VerdictLegal {
+			return nil, "", fmt.Errorf("contract deprecate: %w", verdictError(in.ID, verdict))
+		}
+
 		now := deps.Now()
 		layout, err := space.NewLayout(deps.OwnSystem)
 		if err != nil {
@@ -609,9 +641,13 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 		if err != nil {
 			return nil, "", fmt.Errorf("contract deprecate: cannot mint event id: %w", err)
 		}
+		// The COMMITTED event's own Version field is legalityVersion, not
+		// deprecatedVersion — see internal/cli's own runDeprecate comment
+		// on why the two must agree (fold.CheckCandidate's own "one rule,
+		// never a second reading" invariant, one caller layer up).
 		deprecateEvent := eventDoc{
 			Schema: "event/v1", Event: deprecateEventID.String(), Space: probe.Space,
-			Subject: in.ID, Transition: fold.TDeprecate, Version: deprecatedVersion,
+			Subject: in.ID, Transition: fold.TDeprecate, Version: legalityVersion,
 			Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 			At:    now.UTC().Format(time.RFC3339),
 			Refs:  []refEntry{{Ref: in.Successor}},
@@ -729,13 +765,9 @@ func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 		resolved := deps.ResolveActor(in.Actor)
 		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: deps.OwnSystem}
 
-		verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, in.ID, fold.TRetire, actor)
-		if err != nil {
-			return nil, "", fmt.Errorf("contract retire: %s: %w", in.ID, err)
-		}
-		if verdict != fold.VerdictLegal {
-			return nil, "", fmt.Errorf("contract retire: %w", verdictError(in.ID, verdict))
-		}
+		// P4: retiredVersion must be resolved BEFORE the legality check
+		// below — see internal/cli's own runRetire comment on why the
+		// order matters once a contract carries any recorded version.
 		_, probe, _, _, err := contractReadDescriptor(deps.MirrorDir, in.ID)
 		if err != nil {
 			return nil, "", fmt.Errorf("contract retire: %w", err)
@@ -749,12 +781,19 @@ func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract retire: %w", err)
 		}
 
-		// P2/spec 02: same refusal as internal/cli's runRetire — mirrors
-		// it exactly (mcp never imports cli, ADR-001) so a capability
-		// that refuses on one surface only is not the asymmetry P43
-		// exists to close. Reuses the SAME allEvents scan above.
-		if v := validate.CheckRetireVersionScope(contractVersionEvents(allEvents), in.ID, retiredVersion); v != nil {
-			return nil, "", fmt.Errorf("contract retire: %s: %s", v.Code, v.Message)
+		// legalityVersion: see internal/cli's own runRetire comment — ""
+		// unless this contract has at least one prior publish event that
+		// itself carried a `version` field.
+		legalityVersion := ""
+		if len(contractPublishedVersions(allEvents, in.ID)) > 0 {
+			legalityVersion = contractCanonicalVersion(retiredVersion)
+		}
+		verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, in.ID, fold.TRetire, legalityVersion, actor)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract retire: %s: %w", in.ID, err)
+		}
+		if verdict != fold.VerdictLegal {
+			return nil, "", fmt.Errorf("contract retire: %w", verdictError(in.ID, verdict))
 		}
 
 		now := deps.Now()
@@ -780,9 +819,11 @@ func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 		if len(overridden) > 0 {
 			note = "retired-unacked: " + strings.Join(overridden, ", ")
 		}
+		// The COMMITTED event's own Version field is legalityVersion, not
+		// retiredVersion — see the deprecate handler's own comment above.
 		ev := eventDoc{
 			Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
-			Subject: in.ID, Transition: fold.TRetire, Version: retiredVersion,
+			Subject: in.ID, Transition: fold.TRetire, Version: legalityVersion,
 			Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 			At:    now.UTC().Format(time.RFC3339),
 			Note:  note,
@@ -1239,15 +1280,4 @@ func contractParseConsumesStrict(raw []byte, path string) (space.Consumes, error
 				"refusing to treat it as \"no registered consumers\"; fix the file (or write it with contract adopt)", path)
 	}
 	return registry, nil
-}
-
-// contractVersionEvents projects this file's decoded events onto the neutral
-// shape validate.CheckRetireVersionScope reads — see internal/cli's twin.
-// The mapping is per-surface; the rule it feeds has one home.
-func contractVersionEvents(all []eventDoc) []validate.ContractVersionEvent {
-	out := make([]validate.ContractVersionEvent, 0, len(all))
-	for _, ev := range all {
-		out = append(out, validate.ContractVersionEvent{Subject: ev.Subject, Transition: ev.Transition, Version: ev.Version})
-	}
-	return out
 }

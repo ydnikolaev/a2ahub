@@ -14,11 +14,7 @@
 package validate
 
 import (
-	"fmt"
 	"sort"
-	"strings"
-
-	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
 // RegisteredConsumer is one system whose acknowledgement the retire
@@ -104,96 +100,4 @@ func CheckRetirePrecondition(p RetirePrecondition) (violation *Violation, overri
 		CCRef:    "CC-081",
 		Severity: SeverityReject,
 	}, nil
-}
-
-// ContractVersionEvent is the minimal projection of a committed contract
-// lifecycle event that CheckRetireVersionScope needs: which contract, which
-// transition, which version. Both surfaces decode events into their own doc
-// type (internal/cli's lifecycleEventDoc, internal/mcp's eventDoc) and map
-// into this — the mapping is per-surface, the RULE is not.
-type ContractVersionEvent struct {
-	Subject    string
-	Transition string
-	Version    string
-}
-
-// CheckRetireVersionScope is POL-011: refuse to retire one version of a
-// contract while another version of it is still published.
-//
-// It exists because internal/fold's contract table is SUBJECT-scoped. Run
-// §5.4's cycle as publish 2.0 -> deprecate 1.0 -> retire 1.0 and every step
-// is legal, the retire commits, and the subject lands in a state with no
-// outgoing transitions — so every later publish or deprecate on that
-// contract is refused forever, while 2.0 is live and being consumed. The
-// other event order refuses harmlessly. This precondition makes both orders
-// behave the same: loudly unavailable, rather than destroying the contract
-// when the order happens to be the second one.
-//
-// It lives HERE, and not in the two verb files that call it, for the reason
-// the wave that added it was already fixing elsewhere: a rule implemented
-// once per surface is a rule that drifts. `CheckRetirePrecondition` above is
-// the shape this follows, and the error registry's own closure test is what
-// makes a policy code with no core home visible — it failed on POL-011 the
-// moment the guard shipped from the verb layer, which is the gate working.
-//
-// The refusal names every still-published version and says the per-version
-// lifecycle is pending, because a reader who learns the step is pending
-// stops hunting for their own mistake.
-func CheckRetireVersionScope(events []ContractVersionEvent, contractID, retiredVersion string) *Violation {
-	// Keyed on the CANONICAL spelling, never the raw string. `publish`
-	// records its own parsed value while `deprecate`/`retire` record the
-	// operator's `--version` verbatim, so "1.0.0" and "01.0.0" can name one
-	// version across two events. Keying raw made this guard invent a phantom
-	// still-published version — the contract's own — and then assert the
-	// refusal was "not a mistake in your command". An unparseable spelling
-	// keys as itself: it can only ever match another identical unparseable
-	// spelling, which is the conservative reading.
-	canon := func(v string) string {
-		if c, err := version.Canonical(v); err == nil {
-			return c
-		}
-		return v
-	}
-	published := map[string]bool{}
-	for _, ev := range events {
-		if ev.Subject != contractID || ev.Version == "" {
-			continue
-		}
-		switch ev.Transition {
-		case "publish":
-			published[canon(ev.Version)] = true
-		case "deprecate", "retire":
-			published[canon(ev.Version)] = false
-		}
-	}
-	delete(published, canon(retiredVersion))
-
-	still := make([]string, 0, len(published))
-	for v, isPublished := range published {
-		if isPublished {
-			still = append(still, v)
-		}
-	}
-	if len(still) == 0 {
-		return nil
-	}
-	sort.Slice(still, func(i, j int) bool {
-		older, err := version.OlderThan(still[i], still[j])
-		if err != nil {
-			return still[i] < still[j] // unparseable: falls back to byte order, which affects only the ORDER the message lists, never which versions it flags
-		}
-		return older
-	})
-
-	list := strings.Join(still, ", ")
-	return &Violation{
-		Code:     "POL-011",
-		Severity: SeverityReject,
-		Path:     contractID,
-		Message: fmt.Sprintf(
-			"version(s) %s are also published — retiring %s@%s today would mark the WHOLE contract retired, "+
-				"because the lifecycle is recorded per contract rather than per version. That per-version "+
-				"lifecycle is pending; this refusal is the step being unavailable, not a mistake in your command",
-			list, contractID, retiredVersion),
-	}
 }

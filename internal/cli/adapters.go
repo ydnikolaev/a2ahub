@@ -180,6 +180,7 @@ type mirrorEvent struct {
 	Event      string `yaml:"event"`
 	Subject    string `yaml:"subject"`
 	Transition string `yaml:"transition"`
+	Version    string `yaml:"version"`
 	Actor      struct {
 		Kind   string `yaml:"kind"`
 		Name   string `yaml:"name"`
@@ -259,7 +260,10 @@ func (a *LegalityAdapter) CheckLegality(candidate validate.CandidateEvent) (vali
 		return 0, fmt.Errorf("cli: LegalityAdapter.CheckLegality: read committed history for %q: %w", candidate.Subject, err)
 	}
 
-	var state fold.State
+	// prior carries the FULL fold.Result (not just its .State) so a
+	// contract on the per-version path (P4) can answer per-version rather
+	// than per-subject — see fold.CheckCandidate's own doc comment.
+	prior := fold.NewResult(env.Kind)
 	if len(events) == 0 {
 		// No committed history at all: the pre-entry-event state is
 		// `draft` (fold.NewResult's own doc comment) — NOT fold.Fold's
@@ -267,13 +271,12 @@ func (a *LegalityAdapter) CheckLegality(candidate validate.CandidateEvent) (vali
 		// different question (an artifact already IN the space with no
 		// recorded event trail). This adapter never hits that case: the
 		// candidate event's own commit is what introduces the artifact.
-		state = fold.NewResult(env.Kind).State
 	} else {
-		state = fold.Fold(env.Kind, env, events, a.membershipView).State
+		prior = fold.Fold(env.Kind, env, events, a.membershipView)
 	}
 
 	actorStatus := a.membershipView(candidate.Actor.System)
-	verdict := fold.CheckLegality(env.Kind, state, candidate.Transition, env, fold.Actor{
+	verdict := fold.CheckCandidate(env.Kind, prior, candidate.Transition, candidate.Version, env, fold.Actor{
 		Kind: candidate.Actor.Kind, Name: candidate.Actor.Name, System: candidate.Actor.System,
 	}, actorStatus)
 
@@ -660,6 +663,7 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 				Subject:    ev.Subject,
 				Transition: ev.Transition,
 				Actor:      validate.Actor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
+				Version:    ev.Version,
 			}}
 		}
 

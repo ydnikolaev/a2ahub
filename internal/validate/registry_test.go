@@ -201,17 +201,6 @@ func TestRegistryClosure(t *testing.T) {
 		record([]Violation{*v})
 	}
 
-	// POL-011: retiring one version of a contract while another version of
-	// it is still published — the refusal that keeps §5.4's cycle from
-	// bricking a contract whose lifecycle is recorded per subject.
-	if v := CheckRetireVersionScope([]ContractVersionEvent{
-		{Subject: "XC-axon-ingest", Transition: "publish", Version: "1.0.0"},
-		{Subject: "XC-axon-ingest", Transition: "publish", Version: "2.0.0"},
-		{Subject: "XC-axon-ingest", Transition: "deprecate", Version: "1.0.0"},
-	}, "XC-axon-ingest", "1.0.0"); v != nil {
-		record([]Violation{*v})
-	}
-
 	// POL-010: a frontmatter scalar still carries the template's own
 	// unfilled placeholder token.
 	record(checkUnfilledPlaceholders(map[string]any{
