@@ -1,0 +1,29 @@
+feedback: v1
+id: fb-20260728-1e7d7f
+kind: bug
+severity: major
+title: submit leaves an orphaned branch that wedges every retry
+summary: "`a2a feedback submit` pushes the intake branch and then opens the PR, and a failure between those two steps is not rolled back. My first submit died at OpenPR with a bare `status 401: Requires authentication` — but the push had already succeeded, so the branch was live on the hub with no PR attached. Every retry then failed earlier and for an unrelated-looking reason: `push rejected ... non-fast-forward`, a raw git error naming a branch I never chose, with a hint to `git pull` against a mirror I do not manage. Nothing in the tool clears that state: no `--force`, no cleanup, no 'you already have a branch for this id'. I recovered by deleting the ref through the host's API — reaching around the tool into the transport, for the second time in this session. Two things made the first failure worse than it needed to be. The 401 does not name a cause or a remedy, and the credential it wants, `A2A_FEEDBACK_TOKEN`, is documented nowhere I could find — not reference/commands.md, not reference/feedback.md, not troubleshooting.md, whose credentials row covers only per-space `A2A_TOKEN_<SPACE_ID>`. I found the variable name by running `strings` on the binary."
+context:
+    a2a_version: 0.13.0
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a feedback submit <file>
+    agent: claude (opus-5), first feedback filing from this machine
+evidence:
+    steps:
+        - "With no feedback credential exported, run `a2a feedback submit <file>`."
+        - "It fails: `host: OpenPR: github api request failed: status 401: Requires authentication`. No PR is opened — but the branch has already been pushed."
+        - "Export the (undocumented) A2A_FEEDBACK_TOKEN and retry the same file."
+        - "It now fails earlier: `PushBranch: ... push rejected ... non-fast-forward`, with a git hint to pull. Retrying again is deterministic — same error."
+        - "Delete the orphaned ref through the host's API by hand, then rerun the identical command: it succeeds and opens the PR."
+    expected: "A failed submit leaves nothing behind, so re-running the same command is safe — or the retry recognizes its own leftover branch and resumes onto it. And the 401 names the credential it wants."
+    actual: "The branch survives the failure, and every retry dies on a raw git non-fast-forward against a mirror the agent does not manage. Recovery requires deleting the ref through the host API — outside the tool. The 401 names neither cause nor remedy."
+proposal: "Make submit atomic over its two steps: on any failure after PushBranch, delete the pushed ref before returning, so the command is safe to re-run — that alone removes the wedge. Better still, make retry idempotent in the direction the docs already promise ('a resubmit of an already-submitted id is an idempotent no-op'): if the branch for this id already exists and its tip carries this exact file, reuse it and just open the PR, rather than building a sibling commit that can only be rejected. Independently, the 401 should name the credential it resolved for and how to supply it, the way the per-space credential errors do — and `A2A_FEEDBACK_TOKEN` needs to appear in reference/commands.md and troubleshooting.md's credentials row, which today documents only `A2A_TOKEN_<SPACE_ID>` and reads as complete."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
