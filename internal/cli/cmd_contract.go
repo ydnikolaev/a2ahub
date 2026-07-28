@@ -893,19 +893,23 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 	// so POL-009 sees the version this commit is actually about to carry.
 	newSchemas := map[string][]byte{}
 	newFixturesValid := map[string][]byte{}
+	newFixturesInvalid := map[string][]byte{}
 	for k, v := range overlayAll {
 		switch {
 		case k == "schema" || strings.HasPrefix(k, "schema/"):
 			newSchemas[k] = v
 		case k == "fixtures/valid" || strings.HasPrefix(k, "fixtures/valid/"):
 			newFixturesValid[k] = v
+		case k == "fixtures/invalid" || strings.HasPrefix(k, "fixtures/invalid/"):
+			newFixturesInvalid[k] = v
 		}
 	}
 	if violation := validate.CheckContractPublishable(validate.PublishableInput{
-		SchemaFormat:  probe.SchemaFormat,
-		ContractID:    id,
-		Schemas:       len(newSchemas),
-		ValidFixtures: len(newFixturesValid),
+		SchemaFormat:    probe.SchemaFormat,
+		ContractID:      id,
+		Schemas:         len(newSchemas),
+		ValidFixtures:   len(newFixturesValid),
+		InvalidFixtures: len(newFixturesInvalid),
 	}); violation != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %s: refused: %s (%s)\n", id, violation.Message, violation.Code)
 		return 1

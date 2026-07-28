@@ -49,6 +49,9 @@ func writeContractDescriptor(t *testing.T, mirrorDir, slug, version string) {
 		"thread: thread:axon-20260721-c9c1\n" +
 		"---\nbody\n"
 	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/contract.md", content)
+	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/schema/main.schema.json", `{"type":"object","additionalProperties":true}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/fixtures/valid/ok.json", `{}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/fixtures/invalid/bad.json", `null`)
 }
 
 // TestContractPublishGatePosture is P8-2: first-ever publish (G1) and a
@@ -308,6 +311,12 @@ func TestContractPublishComputedCompatibility(t *testing.T) {
 		t.Parallel()
 		mirrorDir := t.TempDir()
 		writeContractDescriptor(t, mirrorDir, "empty", "0.0.0")
+		if err := os.RemoveAll(filepath.Join(mirrorDir, "axon", "provides", "empty", "schema")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.RemoveAll(filepath.Join(mirrorDir, "axon", "provides", "empty", "fixtures")); err != nil {
+			t.Fatal(err)
+		}
 		fake := &fakeLifecycleFunnel{}
 		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
 		io, _, errOut := newIO()
@@ -323,19 +332,19 @@ func TestContractPublishComputedCompatibility(t *testing.T) {
 		}
 	})
 
-	t.Run("proto3_contract_with_no_fixtures_publishes_fine", func(t *testing.T) {
+	t.Run("proto3_contract_with_no_baseline_is_refused_by_format_neutral_policy", func(t *testing.T) {
 		t.Parallel()
 		mirrorDir := t.TempDir()
 		writeContractDescriptorWithFormat(t, mirrorDir, "protoish", "0.0.0", "proto3")
 		fake := &fakeLifecycleFunnel{}
 		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
-		io, out, errOut := newIO()
+		io, _, errOut := newIO()
 		code := cmd.Run(context.Background(), []string{"publish", "--version", "1.0.0", "XC-axon-protoish"}, io)
-		if code != 0 {
-			t.Fatalf("code = %d, want 0 (D-D is JSON-Schema-only; a non-JSON-Schema contract publishes with zero schema/fixtures files); stdout=%s stderr=%s", code, out.String(), errOut.String())
+		if code != 1 {
+			t.Fatalf("code = %d, want 1 (plan §5.3 requires the baseline for every format); stderr=%s", code, errOut.String())
 		}
-		if len(fake.calls) != 1 {
-			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		if !strings.Contains(errOut.String(), "POL-009") || len(fake.calls) != 0 {
+			t.Fatalf("expected POL-009 before the funnel; stderr=%s calls=%d", errOut.String(), len(fake.calls))
 		}
 	})
 }

@@ -180,11 +180,14 @@ func (r *hostRig) stageContract(slug, version string) (path, id string) {
 	// it, exactly the gap this end-to-end rig exists to catch.
 	schemaDir := filepath.Join(r.projectDir, ".a2a", "staging", r.system, "provides", slug, "schema")
 	fixturesValidDir := filepath.Join(r.projectDir, ".a2a", "staging", r.system, "provides", slug, "fixtures", "valid")
+	fixturesInvalidDir := filepath.Join(r.projectDir, ".a2a", "staging", r.system, "provides", slug, "fixtures", "invalid")
 	mustMkdirAll(r.t, schemaDir)
 	mustMkdirAll(r.t, fixturesValidDir)
+	mustMkdirAll(r.t, fixturesInvalidDir)
 	mustWrite(r.t, filepath.Join(schemaDir, slug+".schema.json"),
 		`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"example":{"type":"string"}},"additionalProperties":true}`+"\n")
 	mustWrite(r.t, filepath.Join(fixturesValidDir, slug+".json"), `{"example":"replace-me"}`+"\n")
+	mustWrite(r.t, filepath.Join(fixturesInvalidDir, slug+".json"), "null\n")
 
 	return path, id
 }

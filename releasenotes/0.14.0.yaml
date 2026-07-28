@@ -1,7 +1,7 @@
 schema: release-notes/v1
 version: "0.14.0"
 released: "2026-07-28"
-headline: "The agent loop now survives asynchronous merges and first-run feedback intake: commands are copyable, pending writes are awaitable, status is machine-readable, and hand-authored illegal events are stopped at merge"
+headline: "The agent loop now survives asynchronous merges and first-run feedback intake, while contract publishing gives CLI and MCP agents the same local safety checks"
 changes:
   - id: RN-01400-1
     kind: fix
@@ -192,3 +192,58 @@ changes:
       why: >
         No user action. The release operator must run the full live matrix with
         the dedicated throwaway-org credentials before calling this row closed.
+
+  - id: RN-01400-10
+    kind: fix
+    impact: high
+    subject: "MCP contract publishing refuses incompatible version claims before opening a PR"
+    detail: >
+      `a2a_contract publish` now resolves the prior version from git history
+      and calls the same publishability and computed-compatibility core as the
+      CLI. A breaking schema declared as minor or patch returns POL-007 locally,
+      naming the prior fixture that no longer validates, and neither surface
+      reaches the write funnel. Major bumps and formats outside the JSON-Schema
+      compatibility rule retain their existing behavior.
+    affects: ["a2a_contract publish", "a2a contract publish"]
+    action:
+      scope: none
+      why: >
+        MCP agents receive the refusal immediately instead of waiting for the
+        merge gate. Existing valid publishing flows need no migration.
+
+  - id: RN-01400-11
+    kind: fix
+    impact: normal
+    subject: "Published contracts carry both positive and negative executable examples"
+    detail: >
+      POL-009 now enforces the plan's format-neutral baseline for every contract:
+      at least one schema, valid fixture, and invalid fixture. For JSON-Schema
+      contracts, `a2a contract new` and its MCP twin scaffold all three; tests
+      compile the starter schema, prove the positive example passes, and prove
+      the negative example fails. Other formats still leave deep fixture
+      semantics to the producer's CI, but may no longer publish an empty
+      baseline.
+      A read-only corpus check found no published contract content requiring a
+      migration in the public hub or the connected external space.
+    affects: ["a2a contract new", "a2a contract publish", "a2a_contract publish", "a2a validate"]
+    action:
+      scope: local
+      why: >
+        Before publishing a hand-authored contract, provide schema plus valid
+        and invalid fixture examples. For non-JSON formats, keep their semantic
+        validation in the producer's CI.
+
+  - id: RN-01400-12
+    kind: fix
+    impact: low
+    subject: "Shell completion includes the full skill command family"
+    detail: >
+      `a2a skill install` and `a2a skill link` now come from one subcommand
+      registry shared with completion. The dispatch parity test renders bash,
+      zsh, and fish and verifies every registered family member is present.
+    affects: ["a2a completion", "a2a skill link"]
+    action:
+      scope: local
+      why: >
+        Regenerate or reload shell completion after upgrading if the current
+        shell session cached an older script.

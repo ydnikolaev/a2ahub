@@ -366,12 +366,14 @@ func completionContractSubs() []string {
 
 // completionSubFamilies maps each `a2a <verb> <sub>` family to its sub-verb
 // names from the same SSOTs the catalog/MCP parity use — contract
-// (ContractSubcommands) + feedback (FeedbackSubcommands). Adding a family here
+// (ContractSubcommands), feedback (FeedbackSubcommands), and skill
+// (SkillSubcommands). Adding a family here
 // is the ONLY completion edit a new sub-verb family needs (renderer is N-family).
 func completionSubFamilies() map[string][]string {
 	return map[string][]string{
 		"contract": completionContractSubs(),
 		"feedback": cli.FeedbackSubcommands(),
+		"skill":    cli.SkillSubcommands(),
 	}
 }
 

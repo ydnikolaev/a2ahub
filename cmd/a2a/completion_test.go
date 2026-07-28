@@ -12,7 +12,7 @@ import (
 // `a2a completion` (because completionCmds() drifted from the dispatch map) is
 // exactly the silent gap this test exists to red. It independently recomputes
 // the expected completion vocabulary from buildCommands() + the hidden-verb
-// rule, then renders the real bash script and asserts every name is present —
+// rule, then renders every supported shell and asserts every name is present —
 // so completion tracks the dispatch surface automatically as verbs are added.
 
 // hiddenFromCompletion is the ONE verb `a2a completion` omits: the machine-only
@@ -22,33 +22,38 @@ var hiddenFromCompletion = map[string]bool{"__catalog": true}
 func TestCompletionCoversEveryDispatchVerb(t *testing.T) {
 	t.Parallel()
 
-	script, err := cli.RenderCompletion("bash", completionCmds(), completionSubFamilies())
-	if err != nil {
-		t.Fatalf("render bash completion: %v", err)
-	}
-
-	// Every non-hidden dispatch verb must be offered.
-	for name := range buildCommands() {
-		present := containsWord(script, name)
-		if hiddenFromCompletion[name] {
-			if present {
-				t.Errorf("hidden verb %q leaked into completion", name)
+	for _, shell := range cli.CompletionShells {
+		t.Run(shell, func(t *testing.T) {
+			t.Parallel()
+			script, err := cli.RenderCompletion(shell, completionCmds(), completionSubFamilies())
+			if err != nil {
+				t.Fatalf("render %s completion: %v", shell, err)
 			}
-			continue
-		}
-		if !present {
-			t.Errorf("dispatch verb %q missing from completion — completionCmds() has drifted from buildCommands()", name)
-		}
-	}
 
-	// Every sub-verb of every family (contract, feedback, …) must be offered —
-	// the parity guard now covers N families via completionSubFamilies().
-	for family, subs := range completionSubFamilies() {
-		for _, sub := range subs {
-			if !containsWord(script, sub) {
-				t.Errorf("%s sub-verb %q missing from completion", family, sub)
+			// Every non-hidden dispatch verb must be offered.
+			for name := range buildCommands() {
+				present := containsWord(script, name)
+				if hiddenFromCompletion[name] {
+					if present {
+						t.Errorf("hidden verb %q leaked into completion", name)
+					}
+					continue
+				}
+				if !present {
+					t.Errorf("dispatch verb %q missing from completion — completionCmds() has drifted from buildCommands()", name)
+				}
 			}
-		}
+
+			// Every sub-verb of every family (contract, feedback, skill, …)
+			// must be offered.
+			for family, subs := range completionSubFamilies() {
+				for _, sub := range subs {
+					if !containsWord(script, sub) {
+						t.Errorf("%s sub-verb %q missing from completion", family, sub)
+					}
+				}
+			}
+		})
 	}
 }
 
