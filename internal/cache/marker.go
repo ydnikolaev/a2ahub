@@ -71,6 +71,28 @@ func ReadMarkers(cacheDir, spaceID string) ([]PendingMarker, error) {
 	return out, nil
 }
 
+// ReadMarker reads one artifact's pending marker.
+func ReadMarker(cacheDir, spaceID, artifactID string) (PendingMarker, error) {
+	raw, err := os.ReadFile(markerPath(cacheDir, spaceID, artifactID))
+	if err != nil {
+		return PendingMarker{}, err
+	}
+	var marker PendingMarker
+	if err := json.Unmarshal(raw, &marker); err != nil {
+		return PendingMarker{}, err
+	}
+	return marker, nil
+}
+
+// RemoveMarker removes one artifact's pending marker. Absence is success.
+func RemoveMarker(cacheDir, spaceID, artifactID string) error {
+	err := os.Remove(markerPath(cacheDir, spaceID, artifactID))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
 // RemoveSpaceMarkers deletes every pending marker recorded for spaceID —
 // the cache-side half of `a2a disconnect`'s "remove ... cache for that
 // space" step (§7.2 OP-202); the cursor's own item-state entries for

@@ -110,7 +110,8 @@ imply the stronger property the plan's §9.3 runbook eventually describes:
   diff is `a2a doctor --space`
   territory (v2, rejected in v1-min).
 - **statusline wiring** is a presence check for the git fallback only, NOT a
-  test of statusline rendering.
+  test of statusline rendering. Test the render/consumer pipe separately with
+  `a2a statusline --sample --json`; it needs no connected space or cache.
 
 If a user needs the stronger guarantees (expiry warnings, host-drift diff),
 that is a v2/`--space` concern — say so rather than implying doctor already
