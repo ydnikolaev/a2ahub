@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -40,5 +41,21 @@ func TestMarker_ReadMissingSpaceIsEmpty(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("want empty, got %+v", got)
+	}
+}
+
+func TestMarker_RejectsPathTraversal(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	m := PendingMarker{ArtifactID: "../../outside"}
+
+	if err := WriteMarker(dir, "sp1", m); err == nil || !strings.Contains(err.Error(), "invalid pending marker artifact id") {
+		t.Fatalf("WriteMarker traversal error = %v, want invalid artifact id", err)
+	}
+	if _, err := ReadMarker(dir, "../outside", "XW-axon-1"); err == nil || !strings.Contains(err.Error(), "invalid pending marker space id") {
+		t.Fatalf("ReadMarker traversal error = %v, want invalid space id", err)
+	}
+	if err := RemoveMarker(dir, "sp1", "../outside"); err == nil || !strings.Contains(err.Error(), "invalid pending marker artifact id") {
+		t.Fatalf("RemoveMarker traversal error = %v, want invalid artifact id", err)
 	}
 }

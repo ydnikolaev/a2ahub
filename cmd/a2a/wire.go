@@ -585,6 +585,9 @@ func runContract(args []string, stdout, stderr io.Writer) int {
 
 func awaitResolver(p paths) cli.AwaitResolver {
 	return func(ctx context.Context, artifactID string) (cli.AwaitTarget, error) {
+		if _, err := artifact.ParseID(artifactID); err != nil {
+			return cli.AwaitTarget{}, fmt.Errorf("invalid artifact id %q: %w", artifactID, err)
+		}
 		cfg, err := space.LoadProjectConfig(p.projectConfig)
 		if err != nil {
 			return cli.AwaitTarget{}, fmt.Errorf("no project config (run `a2a init` first): %w", err)
