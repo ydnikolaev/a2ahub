@@ -382,6 +382,31 @@ func TestFeedbackSubmit_MultipleFilesAndAllKeepOnePRPerItem(t *testing.T) {
 	if len(fakeHost.Opens) != 3 {
 		t.Fatalf("--all reopened ledgered items: opens=%d, want 3 total", len(fakeHost.Opens))
 	}
+
+	// Once external writes begin there is no transaction to roll back. A
+	// failed item must make the invocation red while later independent items
+	// still get their own result/PR.
+	fourth := filepath.Join(feedbackDir, "fb-20260728-ddd444.yaml")
+	fifth := filepath.Join(feedbackDir, "fb-20260728-eee555.yaml")
+	if err := os.WriteFile(fourth, []byte(feedbackDraftYAML("fb-20260728-ddd444", "the simulated failed item")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fifth, []byte(feedbackDraftYAML("fb-20260728-eee555", "the later successful item")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeHost.PushBranchFunc = func(_ context.Context, req host.PushBranchRequest) (host.PushBranchResult, error) {
+		if strings.Contains(req.Branch, "ddd444") {
+			return host.PushBranchResult{}, fmt.Errorf("%w: simulated push failure", host.ErrPushRejected)
+		}
+		return host.PushBranchResult{Branch: req.Branch}, nil
+	}
+	partialIO, partialOut, partialErr := newIO()
+	if code := cmd.Run(context.Background(), []string{"submit", fourth, fifth}, partialIO); code != 1 {
+		t.Fatalf("partial batch code=%d, want 1; stdout=%s stderr=%s", code, partialOut.String(), partialErr.String())
+	}
+	if len(fakeHost.Opens) != 4 || !strings.Contains(partialOut.String(), "eee555") {
+		t.Fatalf("later item did not continue after failure: opens=%d stdout=%s stderr=%s", len(fakeHost.Opens), partialOut.String(), partialErr.String())
+	}
 }
 
 func TestFeedbackSubmit_ValidatesWholeBatchBeforeFirstWrite(t *testing.T) {

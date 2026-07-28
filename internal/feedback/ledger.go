@@ -1,10 +1,13 @@
 package feedback
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -65,8 +68,21 @@ func FindLedgerItem(path, id string) (*LedgerItem, error) {
 // idempotent per id: if a row with item.ID already exists, AppendLedger
 // is a no-op (submit.go's own idempotent-resubmit contract relies on
 // this).
-func AppendLedger(path string, item LedgerItem) error {
+func AppendLedger(path string, item LedgerItem) (err error) {
 	const op = "AppendLedger"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("feedback: %s: %w", op, err)
+	}
+	lock, err := acquireLedgerLock(path)
+	if err != nil {
+		return fmt.Errorf("feedback: %s: %w", op, err)
+	}
+	defer func() {
+		if releaseErr := lock.release(); err == nil && releaseErr != nil {
+			err = fmt.Errorf("feedback: %s: %w", op, releaseErr)
+		}
+	}()
+
 	items, err := ReadLedger(path)
 	if err != nil {
 		return err
@@ -81,11 +97,79 @@ func AppendLedger(path string, item LedgerItem) error {
 	if merr != nil {
 		return fmt.Errorf("feedback: %s: %w", op, merr)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("feedback: %s: %w", op, err)
-	}
 	if err := os.WriteFile(path, out, 0o644); err != nil {
 		return fmt.Errorf("feedback: %s: %w", op, err)
 	}
 	return nil
+}
+
+const (
+	ledgerLockWait  = 2 * time.Second
+	ledgerLockStale = 2 * time.Minute
+	ledgerLockPoll  = 25 * time.Millisecond
+)
+
+type ledgerLock struct {
+	path  string
+	token string
+}
+
+// acquireLedgerLock serializes ledger read-modify-write across processes with
+// a portable O_EXCL lock file. A crashed holder becomes recoverable after the
+// stale bound; a live holder produces a bounded, actionable retry error.
+func acquireLedgerLock(ledgerPath string) (*ledgerLock, error) {
+	lockPath := ledgerPath + ".lock"
+	deadline := time.Now().Add(ledgerLockWait)
+	for {
+		token, err := ledgerLockToken()
+		if err != nil {
+			return nil, err
+		}
+		file, err := os.OpenFile(lockPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err == nil {
+			if _, writeErr := file.WriteString(token); writeErr != nil {
+				_ = file.Close()
+				_ = os.Remove(lockPath)
+				return nil, writeErr
+			}
+			if closeErr := file.Close(); closeErr != nil {
+				_ = os.Remove(lockPath)
+				return nil, closeErr
+			}
+			return &ledgerLock{path: lockPath, token: token}, nil
+		}
+		if !os.IsExist(err) {
+			return nil, err
+		}
+		if info, statErr := os.Stat(lockPath); statErr == nil && time.Since(info.ModTime()) > ledgerLockStale {
+			_ = os.Remove(lockPath) // reason: recovery is re-raced through O_EXCL; an active replacement wins safely
+			continue
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("ledger is locked by another feedback submit; retry")
+		}
+		time.Sleep(ledgerLockPoll)
+	}
+}
+
+func ledgerLockToken() (string, error) {
+	var raw [12]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw[:]), nil
+}
+
+func (l *ledgerLock) release() error {
+	current, err := os.ReadFile(l.path) //nolint:gosec // reason: fixed local lock path owned by this ledger
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if string(current) != l.token {
+		return nil
+	}
+	return os.Remove(l.path)
 }

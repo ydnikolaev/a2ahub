@@ -1,8 +1,10 @@
 package feedback
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -14,6 +16,41 @@ func TestReadLedger_MissingFile(t *testing.T) {
 	}
 	if len(items) != 0 {
 		t.Fatalf("expected empty list for a missing ledger, got %+v", items)
+	}
+}
+
+func TestAppendLedger_ConcurrentWritersLoseNoRows(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), ".a2a", "feedback", "ledger.yaml")
+	const writers = 24
+	var wg sync.WaitGroup
+	errs := make(chan error, writers)
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			id := fmt.Sprintf("fb-20260728-%06x", n)
+			errs <- AppendLedger(path, LedgerItem{
+				ID: id, Kind: "bug", Title: id,
+				PRURL: "https://example.invalid/" + id, Filed: "2026-07-28T00:00:00Z",
+			})
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent AppendLedger: %v", err)
+		}
+	}
+
+	items, err := ReadLedger(path)
+	if err != nil {
+		t.Fatalf("ReadLedger: %v", err)
+	}
+	if len(items) != writers {
+		t.Fatalf("ledger lost rows: got %d, want %d", len(items), writers)
 	}
 }
 
