@@ -71,3 +71,12 @@ entries:
     when: >-
       An intake PR's file is not located at `feedback/inbox/<id>.yaml`
       (`a2a feedback validate --ci` intake constraint, §T1).
+
+  - code: FB-009
+    title: Hidden or direction-changing content
+    when: >-
+      The report contains an HTML comment delimiter, a disallowed control
+      character, or a Unicode format character such as zero-width or
+      bidirectional text controls. These bytes make the content a human sees
+      differ from the data an agent may consume. Ordinary visible discussion
+      of prompts or prompt injection remains valid.

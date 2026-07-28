@@ -247,3 +247,30 @@ changes:
       why: >
         Regenerate or reload shell completion after upgrading if the current
         shell session cached an older script.
+
+  - id: RN-01400-13
+    kind: fix
+    impact: high
+    subject: "Public feedback intake now has a branch-wide least-privilege merge policy"
+    detail: >
+      The public product repository had no branch protection while its
+      feedback workflow assumed protection would hold auto-merge. The intake
+      check was also path-filtered, so it could not safely become a required
+      branch-wide context. A universal read-only `merge-policy` now classifies
+      every pull request. Ordinary code receives no write privilege; a pull
+      request touching the quarantine must be exactly one newly added feedback
+      YAML, validated by a pinned release without checking out its head. Only
+      then does a separate job receive the closed-enum kind and permission to
+      label and arm auto-merge.
+      Feedback validation now rejects HTML comments, control bytes, zero-width
+      characters, and bidirectional controls as FB-009. This guards the
+      human/agent visibility boundary without a brittle blacklist that would
+      reject legitimate reports discussing prompt injection.
+      The indirect gRPC module is updated to the first release fixing
+      GO-2026-6061.
+    affects: ["a2a feedback validate", "feedback intake", "public repository CI"]
+    action:
+      scope: none
+      why: >
+        No consumer migration. Repository protection and free security signals
+        are applied by the release operator after this validator release exists.

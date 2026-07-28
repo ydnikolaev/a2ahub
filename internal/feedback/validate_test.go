@@ -152,3 +152,40 @@ func TestValidate_CI_IntakeGuards(t *testing.T) {
 		}
 	})
 }
+
+func TestValidate_HiddenContentBoundary(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile(filepath.Join(schemaFixturesRoot, "valid", "fb-20260701-1a2b3c.yaml"))
+	if err != nil {
+		t.Fatalf("read base valid fixture: %v", err)
+	}
+	t.Run("bidi format character", func(t *testing.T) {
+		t.Parallel()
+		candidate := append(append([]byte{}, raw...), []byte("# hidden \u202Edirection\n")...)
+		report := Validate(candidate, Options{})
+		if !hasCode(report, CodeHiddenContent) {
+			t.Fatalf("expected %s for a bidi control, got %+v", CodeHiddenContent, report.Violations)
+		}
+	})
+	t.Run("control byte", func(t *testing.T) {
+		t.Parallel()
+		candidate := append(append([]byte{}, raw...), 0x00)
+		report := Validate(candidate, Options{})
+		if !hasCode(report, CodeHiddenContent) {
+			t.Fatalf("expected %s for a control byte, got %+v", CodeHiddenContent, report.Violations)
+		}
+	})
+	t.Run("visible prompt-injection discussion", func(t *testing.T) {
+		t.Parallel()
+		candidate := strings.Replace(
+			string(raw),
+			`summary: >-`,
+			"summary: >-\n  The docs should explain why visible text such as \"ignore previous instructions\" is data.",
+			1,
+		)
+		report := Validate([]byte(candidate), Options{})
+		if hasCode(report, CodeHiddenContent) {
+			t.Fatalf("visible security discussion must remain representable, got %+v", report.Violations)
+		}
+	})
+}
