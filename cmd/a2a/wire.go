@@ -848,8 +848,9 @@ const canonicalFeedbackRepo = "https://github.com/ydnikolaev/a2ahub"
 // feedbackToken resolves the push credential for `a2a feedback submit`. Feedback
 // targets a fixed repo, not a connected space, so it does not use the machine
 // config's per-space credential refs; it reads an ambient token (A2A_FEEDBACK_
-// TOKEN, else GITHUB_TOKEN/GH_TOKEN). Empty is tolerated — only a real push
-// needs it (the e2e submit path uses FakeHost, §11 A5).
+// TOKEN, else GITHUB_TOKEN/GH_TOKEN). feedback.Submitter refuses an empty
+// credential before git when the target is GitHub; local fixture remotes stay
+// credential-free (§11 A5).
 func feedbackToken() string {
 	for _, k := range []string{"A2A_FEEDBACK_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"} {
 		if v := os.Getenv(k); v != "" {

@@ -2,6 +2,8 @@ package cli_test
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +53,67 @@ func TestStatuslineCommand_UsageError(t *testing.T) {
 	io, _, _ := newIO()
 	if code := cmd.Run(context.Background(), []string{"unexpected"}, io); code != 2 {
 		t.Fatalf("code = %d, want 2", code)
+	}
+}
+
+func TestStatuslineCommand_SampleJSONAndPrefixModes(t *testing.T) {
+	t.Parallel()
+	cmd := cli.NewStatuslineCommand(nil)
+
+	textIO, textOut, textErr := newIO()
+	if code := cmd.Run(context.Background(), []string{"--sample"}, textIO); code != 11 {
+		t.Fatalf("sample code = %d, want 11; stderr=%s", code, textErr.String())
+	}
+	if !strings.HasPrefix(textOut.String(), "a2a: ") {
+		t.Fatalf("default sample = %q, want published prefix", textOut.String())
+	}
+
+	plainIO, plainOut, plainErr := newIO()
+	if code := cmd.Run(context.Background(), []string{"--sample", "--no-prefix"}, plainIO); code != 11 {
+		t.Fatalf("no-prefix sample code = %d; stderr=%s", code, plainErr.String())
+	}
+	if strings.HasPrefix(plainOut.String(), "a2a: ") || strings.TrimPrefix(textOut.String(), "a2a: ") != plainOut.String() {
+		t.Fatalf("default=%q no-prefix=%q, want only prefix removed", textOut.String(), plainOut.String())
+	}
+
+	jsonIO, jsonOut, jsonErr := newIO()
+	if code := cmd.Run(context.Background(), []string{"--sample", "--json"}, jsonIO); code != 11 {
+		t.Fatalf("JSON sample code = %d; stderr=%s", code, jsonErr.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(jsonOut.Bytes(), &got); err != nil {
+		t.Fatalf("sample JSON: %v", err)
+	}
+	for _, key := range []string{"new", "urgent", "urgent_kind", "urgent_id", "urgent_title", "stale", "update", "severity", "quiet"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("sample JSON missing %q: %s", key, jsonOut.String())
+		}
+	}
+}
+
+func TestStatuslineCommand_QuietJSONAndInvalidCombination(t *testing.T) {
+	t.Parallel()
+	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)
+	cmd := cli.NewStatuslineCommand(store)
+
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{"--json"}, io); code != 0 {
+		t.Fatalf("quiet JSON code = %d; stderr=%s", code, errOut.String())
+	}
+	var got struct {
+		Quiet    bool `json:"quiet"`
+		Severity int  `json:"severity"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("quiet JSON: %v", err)
+	}
+	if !got.Quiet || got.Severity != 0 {
+		t.Fatalf("quiet JSON = %+v", got)
+	}
+
+	badIO, _, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{"--json", "--no-prefix"}, badIO); code != 2 {
+		t.Fatalf("--json --no-prefix code = %d, want 2", code)
 	}
 }
 

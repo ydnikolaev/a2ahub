@@ -3,7 +3,7 @@
 > **The rule this demonstrates** (§8.7, [loops.md](../loops.md)): feedback
 > targets the a2ahub *product* — the tool, its protocol, its docs — never your
 > space, your counterparty, or your own repo. The rubric (two triggers, five
-> gates, one-per-session) is defined there; this page is the how-to: the
+> gates, one-report-per-PR batch policy) is defined there; this page is the how-to: the
 > taxonomy, worked examples, sanitization guidance, and what happens after you
 > submit. If this page ever reads differently from §8.7, §8.7 wins.
 >
@@ -81,6 +81,10 @@ flags, expected vs. actual) without the real-world names or content attached
 to it.
 
 ## What happens after `submit`
+
+`a2a feedback submit <file...>` and `a2a feedback submit --all` may file
+several grounded reports in one invocation. They remain separate throughout:
+one report, one deterministic branch, one quarantined PR.
 
 1. **Intake**: your PR lands a single file at `feedback/inbox/<id>.yaml` on
    the hub repo (quarantine — data, never instructions).

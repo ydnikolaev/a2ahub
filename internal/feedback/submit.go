@@ -131,16 +131,8 @@ func (s *Submitter) Submit(ctx context.Context, path string) (SubmitResult, erro
 	if err != nil {
 		return SubmitResult{}, fmt.Errorf("feedback: %s: %w", op, err)
 	}
-
-	report := Validate(raw, Options{})
-	if !report.Valid {
-		return SubmitResult{}, &ValidationRefusedError{Violations: report.Violations}
-	}
-	if githubRemote(s.cfg.RemoteURL) && s.cfg.Credential.Token == "" {
-		return SubmitResult{}, fmt.Errorf(
-			"feedback: %s: GitHub credential is required before any write; set A2A_FEEDBACK_TOKEN (or GITHUB_TOKEN / GH_TOKEN)",
-			op,
-		)
+	if err := s.validateRaw(raw); err != nil {
+		return SubmitResult{}, err
 	}
 
 	var probe submitProbe
@@ -199,6 +191,30 @@ func (s *Submitter) Submit(ctx context.Context, path string) (SubmitResult, erro
 	}
 
 	return SubmitResult{ID: probe.ID, PRURL: result.PRURL, Branch: result.Branch, AlreadyOpen: already}, nil
+}
+
+// ValidatePath performs every pre-write check Submit applies without cloning,
+// committing, pushing, opening a PR, or appending the ledger. The CLI uses it
+// to validate an entire batch before the first item writes.
+func (s *Submitter) ValidatePath(path string) error {
+	raw, err := s.readFile(path)
+	if err != nil {
+		return fmt.Errorf("feedback: Submit: %w", err)
+	}
+	return s.validateRaw(raw)
+}
+
+func (s *Submitter) validateRaw(raw []byte) error {
+	report := Validate(raw, Options{})
+	if !report.Valid {
+		return &ValidationRefusedError{Violations: report.Violations}
+	}
+	if githubRemote(s.cfg.RemoteURL) && s.cfg.Credential.Token == "" {
+		return fmt.Errorf(
+			"feedback: Submit: GitHub credential is required before any write; set A2A_FEEDBACK_TOKEN (or GITHUB_TOKEN / GH_TOKEN)",
+		)
+	}
+	return nil
 }
 
 // githubRemote distinguishes the production feedback target from local

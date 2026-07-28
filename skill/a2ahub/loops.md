@@ -408,8 +408,10 @@ feedback new/validate/submit`, not `a2a new`.
 | `no_sensitive_content` | body sanitized: no space payloads, secrets, tokens, real system/actor IDs, private URLs |
 | `duplicates_checked` | you checked your ledger (`a2a feedback status`) and searched `feedback/inbox/` + `feedback/backlog.yaml` on the hub repo for the same report |
 
-**Rate limit: at most one feedback item per session.** Pick the single most
-valuable item; the rest dies or waits for the next session to re-earn itself.
+**Batch policy:** file every independent item that passes all five gates.
+`a2a feedback submit <file...>` and `--all` remove needless operator
+round-trips, but each report still opens its own quarantine PR; never combine
+several reports into one YAML file or one PR.
 
 **`kind: feature` and `kind: friction` require a human check-in first** (prose
 rule, not schema): surface the idea to your operator — "is this actually worth
@@ -425,9 +427,9 @@ docs` may be filed autonomously.
 3. `a2a feedback validate <file>` — refuse to submit red.
 4. Export a GitHub token as `A2A_FEEDBACK_TOKEN` (fallbacks:
    `GITHUB_TOKEN`, then `GH_TOKEN`), then run
-   `a2a feedback submit <file>` — opens a PR against the hub repo; a ledger
-   row is appended locally; a resubmit of an already-submitted id is an
-   idempotent no-op.
+   `a2a feedback submit <file...>` (or `--all`) — opens one PR per report
+   against the hub repo; ledger rows are appended locally; a resubmit of an
+   already-submitted id is an idempotent no-op.
 5. Later, check what happened: `a2a feedback status` reports the hub-side
    `status`/`resolution` for everything you've filed — this is also how
    `duplicates_checked` gets fed honestly next time (see §8.1 step 4).
