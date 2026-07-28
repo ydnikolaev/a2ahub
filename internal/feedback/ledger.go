@@ -161,7 +161,7 @@ func ledgerLockToken() (string, error) {
 }
 
 func (l *ledgerLock) release() error {
-	current, err := os.ReadFile(l.path) //nolint:gosec // reason: fixed local lock path owned by this ledger
+	current, err := os.ReadFile(l.path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
