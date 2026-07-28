@@ -136,6 +136,11 @@ epic-drift: ## An epic's committed docs (status.md stamp, receipts) must match i
 harness-check: ## Run the gates' --teeth self-tests (harness gates are private/presence-gated; release-preflight is public).
 	@bash scripts/release-preflight.sh --teeth
 	@bash scripts/check-release-notes-freshness.sh --teeth
+	@if [ -f docs/runbooks/publish-to-public.sh ]; then \
+	  bash docs/runbooks/publish-to-public.sh --teeth; \
+	else \
+	  echo "harness-check: skip — private publish runbook absent (public checkout)."; \
+	fi
 	@if [ -f scripts/check-feature-lint.sh ]; then \
 	  bash scripts/check-feature-lint.sh --teeth; \
 	else \
