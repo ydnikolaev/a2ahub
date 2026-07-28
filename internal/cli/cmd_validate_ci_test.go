@@ -1386,6 +1386,29 @@ func ciEventDoc(stamped bool) string {
 	return s
 }
 
+// ciEventCandidateRepo models a new submit event in a PR: the merge-base has
+// only the manifest, while the PR head adds both the artifact envelope and the
+// event document. The event path is left uncommitted so validate --ci reads it
+// from the head working tree while reading prior history from base.
+func ciEventCandidateRepo(t *testing.T, manifest, event string) (root, base string) {
+	t.Helper()
+	root = ciRepo(t, manifest, nil)
+	contractGitRun(t, root, "init", "-q", "-b", "main")
+	contractGitRun(t, root, "add", "space.yaml")
+	contractGitRun(t, root, "commit", "-q", "-m", "space base")
+	base = contractGitRevParse(t, root, "HEAD")
+
+	contractWriteFile(t, root,
+		"axon/exchanges/XQ-axon-20260730-ab12.md",
+		validQuestion("XQ-axon-20260730-ab12", "axon", "seomatrix"),
+	)
+	contractWriteFile(t, root,
+		"axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E5G.yaml",
+		event,
+	)
+	return root, base
+}
+
 // ciManifestWithFloor is ciSpaceYAML at a given min_binary_version.
 func ciManifestWithFloor(floor string) string {
 	return strings.Replace(ciSpaceYAML, "min_binary_version: 0.1.0", "min_binary_version: "+floor, 1)
@@ -1445,9 +1468,9 @@ func TestValidateCI_EventMustNameItsProducer(t *testing.T) {
 
 	t.Run("floor reached, event stamped: clean", func(t *testing.T) {
 		t.Parallel()
-		root := ciRepo(t, ciManifestWithFloor("0.10.0"), map[string]string{rel: ciEventDoc(true)})
+		root, base := ciEventCandidateRepo(t, ciManifestWithFloor("0.10.0"), ciEventDoc(true))
 
-		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", base, "ydnikolaev")
 		if code != 0 || !rep.Valid {
 			t.Fatalf("a stamped event was refused: code=%d valid=%v stderr=%s", code, rep.Valid, errOut)
 		}
@@ -1455,9 +1478,9 @@ func TestValidateCI_EventMustNameItsProducer(t *testing.T) {
 
 	t.Run("floor NOT reached, event unstamped: schema-checked, but no stamp violation", func(t *testing.T) {
 		t.Parallel()
-		root := ciRepo(t, ciManifestWithFloor("0.9.1"), map[string]string{rel: ciEventDoc(false)})
+		root, base := ciEventCandidateRepo(t, ciManifestWithFloor("0.9.1"), ciEventDoc(false))
 
-		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", base, "ydnikolaev")
 		if code != 0 || !rep.Valid {
 			t.Fatalf("a space below the floor was reddened by a rule not in force there: code=%d "+
 				"valid=%v stderr=%s", code, rep.Valid, errOut)
@@ -1492,9 +1515,9 @@ func TestValidateCI_EventMustNameItsProducer(t *testing.T) {
 		// The writer only stamps once the floor is reached, so this shape is
 		// unusual — but a hand-written or replayed event could carry it, and it
 		// must not be treated as a violation of anything.
-		root := ciRepo(t, ciManifestWithFloor("0.9.1"), map[string]string{rel: ciEventDoc(true)})
+		root, base := ciEventCandidateRepo(t, ciManifestWithFloor("0.9.1"), ciEventDoc(true))
 
-		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", base, "ydnikolaev")
 		if code != 0 || !rep.Valid {
 			t.Fatalf("a stamped event in a pre-floor space was refused: code=%d valid=%v stderr=%s",
 				code, rep.Valid, errOut)
@@ -1558,9 +1581,9 @@ func TestValidateCI_EventSchemaIsChecked(t *testing.T) {
 		// That exact failure was hit twice today on manifests before the decode
 		// was normalised; an event carries the same hazard on every single write.
 		good := ciEventDoc(true) // `at: 2026-07-30T10:00:00Z`, unquoted
-		root := ciRepo(t, ciManifestWithFloor("0.10.0"), map[string]string{rel: good})
+		root, base := ciEventCandidateRepo(t, ciManifestWithFloor("0.10.0"), good)
 
-		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", base, "ydnikolaev")
 		if code != 0 || !rep.Valid {
 			t.Fatalf("a valid event with an unquoted timestamp was refused: code=%d valid=%v stderr=%s",
 				code, rep.Valid, errOut)
@@ -1583,4 +1606,185 @@ func TestValidateCI_EventSchemaIsChecked(t *testing.T) {
 			t.Fatalf("an unparseable event merged clean: code=%d valid=%v", code, rep.Valid)
 		}
 	})
+}
+
+func ciLifecycleEvent(id, subject, transition, actorSystem, version string, refs ...string) string {
+	out := "schema: event/v1\n" +
+		"event: " + id + "\n" +
+		"space: getvisa\n" +
+		"subject: " + subject + "\n" +
+		"transition: " + transition + "\n" +
+		"actor: {kind: agent, name: bot, system: " + actorSystem + "}\n" +
+		"at: 2026-07-30T10:00:00Z\n" +
+		"produced_by:\n  tool: a2a\n  version: \"0.10.0\"\n"
+	if version != "" {
+		out += "version: \"" + version + "\"\n"
+	}
+	if len(refs) > 0 {
+		out += "refs:\n"
+		for _, ref := range refs {
+			out += "  - ref: " + ref + "\n"
+		}
+	}
+	return out
+}
+
+func ciLifecycleCandidateRepo(
+	t *testing.T,
+	baseFiles map[string]string,
+	candidatePath, candidate string,
+) (root, base string) {
+	t.Helper()
+	root = ciRepo(t, ciManifestWithFloor("0.10.0"), baseFiles)
+	contractGitRun(t, root, "init", "-q", "-b", "main")
+	contractGitRun(t, root, "add", "-A")
+	contractGitRun(t, root, "commit", "-q", "-m", "merge base")
+	base = contractGitRevParse(t, root, "HEAD")
+	contractWriteFile(t, root, candidatePath, candidate)
+	return root, base
+}
+
+func ciResponseEnvelope(id, parent string) string {
+	return "---\n" +
+		"schema: envelope/v1\n" +
+		"id: " + id + "\n" +
+		"type: response\n" +
+		"title: Test response\n" +
+		"space: getvisa\n" +
+		"from: seomatrix\n" +
+		"to: [axon]\n" +
+		"thread: " + cliFixtureThread + "\n" +
+		"parent: " + parent + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-30T14:03:00Z\n" +
+		"---\nBody.\n"
+}
+
+// TestValidateCI_EventLifecycleCandidates is AC-1106.1. Each candidate first
+// passes the real event schema and then reaches validate's existing LFC mapping
+// through fold's canonical legality primitive against merge-base history.
+func TestValidateCI_EventLifecycleCandidates(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	const (
+		questionID   = "XQ-axon-20260730-ab12"
+		questionPath = "axon/exchanges/XQ-axon-20260730-ab12.md"
+		submitPath   = "axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E50.yaml"
+		ackPath      = "seomatrix/events/2026/01J40A7M9P1S3V5W7Y9A1C3E51.yaml"
+	)
+	submit := ciLifecycleEvent("01J40A7M9P1S3V5W7Y9A1C3E50", questionID, "submit", "axon", "")
+
+	t.Run("legal candidate is green", func(t *testing.T) {
+		t.Parallel()
+		root, base := ciLifecycleCandidateRepo(t, map[string]string{
+			questionPath: validQuestion(questionID, "axon", "seomatrix"),
+			submitPath:   submit,
+		}, ackPath, ciLifecycleEvent("01J40A7M9P1S3V5W7Y9A1C3E51", questionID, "acknowledge", "seomatrix", ""))
+
+		code, rep, errOut := runCI(t, engine, root, fakeGit(ackPath), "v3-pr", base, "misha-gh")
+		if code != 0 || !rep.Valid {
+			t.Fatalf("legal candidate refused: code=%d report=%+v stderr=%s", code, rep, errOut)
+		}
+	})
+
+	t.Run("illegal transition is LFC-001", func(t *testing.T) {
+		t.Parallel()
+		const path = "axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E52.yaml"
+		root, base := ciLifecycleCandidateRepo(t, map[string]string{
+			questionPath: validQuestion(questionID, "axon", "seomatrix"),
+			submitPath:   submit,
+		}, path, ciLifecycleEvent("01J40A7M9P1S3V5W7Y9A1C3E52", questionID, "submit", "axon", ""))
+
+		code, rep, _ := runCI(t, engine, root, fakeGit(path), "v3-pr", base, "ydnikolaev")
+		if code != 1 || rep.Valid || !ciReportHasViolation(rep, path, "LFC-001") {
+			t.Fatalf("illegal candidate did not produce LFC-001: code=%d report=%+v", code, rep)
+		}
+	})
+
+	t.Run("unauthorized actor is LFC-002", func(t *testing.T) {
+		t.Parallel()
+		const path = "axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E53.yaml"
+		root, base := ciLifecycleCandidateRepo(t, map[string]string{
+			questionPath: validQuestion(questionID, "axon", "seomatrix"),
+			submitPath:   submit,
+		}, path, ciLifecycleEvent("01J40A7M9P1S3V5W7Y9A1C3E53", questionID, "acknowledge", "axon", ""))
+
+		code, rep, _ := runCI(t, engine, root, fakeGit(path), "v3-pr", base, "ydnikolaev")
+		if code != 1 || rep.Valid || !ciReportHasViolation(rep, path, "LFC-002") {
+			t.Fatalf("unauthorized candidate did not produce LFC-002: code=%d report=%+v", code, rep)
+		}
+	})
+
+	t.Run("modified candidate is excluded from prior", func(t *testing.T) {
+		t.Parallel()
+		root, base := ciLifecycleCandidateRepo(t, map[string]string{
+			questionPath: validQuestion(questionID, "axon", "seomatrix"),
+			submitPath:   submit,
+		}, submitPath, submit+"\nnote: rewritten without changing the transition\n")
+
+		code, rep, errOut := runCI(t, engine, root, fakeGit(submitPath), "v3-pr", base, "ydnikolaev")
+		if code != 0 || !rep.Valid {
+			t.Fatalf("candidate was folded into its own prior: code=%d report=%+v stderr=%s", code, rep, errOut)
+		}
+	})
+
+	t.Run("response-scoped verify uses parent closure", func(t *testing.T) {
+		t.Parallel()
+		const (
+			responseID   = "XS-seomatrix-20260730-rs12"
+			responsePath = "seomatrix/exchanges/XS-seomatrix-20260730-rs12.md"
+			ackBasePath  = "seomatrix/events/2026/01J40A7M9P1S3V5W7Y9A1C3E53.yaml"
+			respondPath  = "seomatrix/events/2026/01J40A7M9P1S3V5W7Y9A1C3E54.yaml"
+			verifyPath   = "axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E55.yaml"
+		)
+		root, base := ciLifecycleCandidateRepo(t, map[string]string{
+			questionPath: validQuestion(questionID, "axon", "seomatrix"),
+			responsePath: ciResponseEnvelope(responseID, questionID),
+			submitPath:   submit,
+			ackBasePath: ciLifecycleEvent(
+				"01J40A7M9P1S3V5W7Y9A1C3E53", questionID, "acknowledge", "seomatrix", "",
+			),
+			respondPath: ciLifecycleEvent(
+				"01J40A7M9P1S3V5W7Y9A1C3E54", questionID, "respond", "seomatrix", "", responseID,
+			),
+		}, verifyPath, ciLifecycleEvent("01J40A7M9P1S3V5W7Y9A1C3E55", responseID, "verify", "axon", ""))
+
+		code, rep, errOut := runCI(t, engine, root, fakeGit(verifyPath), "v3-pr", base, "ydnikolaev")
+		if code != 0 || !rep.Valid {
+			t.Fatalf("legal response-scoped verify refused: code=%d result=%+v stderr=%s", code, *rep.Artifacts[0].Result, errOut)
+		}
+	})
+
+	t.Run("contract version candidate uses versioned prior", func(t *testing.T) {
+		t.Parallel()
+		const (
+			contractID   = "XC-axon-widget"
+			contractPath = "axon/provides/widget/contract.md"
+			publish1Path = "axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E56.yaml"
+			publish2Path = "axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E57.yaml"
+		)
+		root, base := ciLifecycleCandidateRepo(t, map[string]string{
+			contractPath: validContract("axon", "widget"),
+			publish1Path: ciLifecycleEvent("01J40A7M9P1S3V5W7Y9A1C3E56", contractID, "publish", "axon", "1.0.0"),
+		}, publish2Path, ciLifecycleEvent("01J40A7M9P1S3V5W7Y9A1C3E57", contractID, "publish", "axon", "2.0.0"))
+
+		code, rep, errOut := runCI(t, engine, root, fakeGit(publish2Path), "v3-pr", base, "ydnikolaev")
+		if code != 0 || !rep.Valid {
+			t.Fatalf("legal versioned publish refused: code=%d report=%+v stderr=%s", code, rep, errOut)
+		}
+	})
+}
+
+func ciReportHasViolation(report ciReport, path, code string) bool {
+	for _, artifact := range report.Artifacts {
+		if artifact.Path != path || artifact.Result == nil {
+			continue
+		}
+		for _, violation := range artifact.Result.Violations {
+			if violation.Code == code {
+				return true
+			}
+		}
+	}
+	return false
 }
