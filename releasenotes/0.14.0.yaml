@@ -179,9 +179,9 @@ changes:
       GitHub with both provisioned identities: several published lines, a
       deprecation, a late adoption, a maintenance publish, acknowledgement,
       retirement while newer lines remain live, and a post-retire publish.
-      This release session could not dispatch it because the dedicated
-      A2A_LIVE_E2E credentials are not configured and the local GitHub CLI
-      credential is invalid.
+      This backlog wave deliberately did not dispatch it at the release
+      operator's request. GitHub CLI authentication was verified separately,
+      but that does not substitute for executing this exact-tree scenario.
       Unit, race, merge-gate, and harness tests remain green, but they do not
       substitute for the real Actions/protection/write-funnel path. The known
       issue from 0.13.0 therefore remains open rather than being rounded up to
