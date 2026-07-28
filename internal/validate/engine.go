@@ -107,6 +107,27 @@ func (e *Engine) ValidateForSubmit(d Draft, events []CandidateEvent, ctx LocalCo
 	return newResult(V2, artifactID, violations), nil
 }
 
+// ValidateLifecycleCandidates runs only the lifecycle class over candidate
+// events. It exists for the V3 merge gate: the event document has already
+// passed ValidateEvent, while its legality must be re-derived against the
+// merge-base history rather than the PR checkout's post-write history.
+//
+// Keeping the LFC verdict mapping here means submit-time and merge-time
+// validation cannot grow separate translations of fold's three-valued
+// verdict into registry codes.
+func (e *Engine) ValidateLifecycleCandidates(events []CandidateEvent, checker LegalityChecker) (Result, error) {
+	const op = "ValidateLifecycleCandidates"
+	violations, err := checkLifecycle(events, checker)
+	if err != nil {
+		return Result{}, &Error{Op: op, Err: err}
+	}
+	artifactID := ""
+	if len(events) > 0 {
+		artifactID = events[0].Subject
+	}
+	return newResult(V2, artifactID, violations), nil
+}
+
 // runCommon runs the shared V1/V2 prefix (admission guards, frontmatter
 // parse, schema class, ID-form) and returns just the accumulated
 // violations + artifact ID — used by ValidateDraft, which never needs the
