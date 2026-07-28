@@ -423,7 +423,9 @@ docs` may be filed autonomously.
 2. Fill the body honestly and flip every `checks.*` gate consciously — the
    drafter starts them all `false`.
 3. `a2a feedback validate <file>` — refuse to submit red.
-4. `a2a feedback submit <file>` — opens a PR against the hub repo; a ledger
+4. Export a GitHub token as `A2A_FEEDBACK_TOKEN` (fallbacks:
+   `GITHUB_TOKEN`, then `GH_TOKEN`), then run
+   `a2a feedback submit <file>` — opens a PR against the hub repo; a ledger
    row is appended locally; a resubmit of an already-submitted id is an
    idempotent no-op.
 5. Later, check what happened: `a2a feedback status` reports the hub-side

@@ -3,9 +3,11 @@ package feedback
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	gopath "path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
@@ -134,6 +136,12 @@ func (s *Submitter) Submit(ctx context.Context, path string) (SubmitResult, erro
 	if !report.Valid {
 		return SubmitResult{}, &ValidationRefusedError{Violations: report.Violations}
 	}
+	if githubRemote(s.cfg.RemoteURL) && s.cfg.Credential.Token == "" {
+		return SubmitResult{}, fmt.Errorf(
+			"feedback: %s: GitHub credential is required before any write; set A2A_FEEDBACK_TOKEN (or GITHUB_TOKEN / GH_TOKEN)",
+			op,
+		)
+	}
 
 	var probe submitProbe
 	if err := yaml.Unmarshal(raw, &probe); err != nil {
@@ -171,6 +179,10 @@ func (s *Submitter) Submit(ctx context.Context, path string) (SubmitResult, erro
 		// the submitter's own fork (P28). A collaborator's submit never
 		// reaches the fallback: their push succeeds.
 		AllowForkFallback: true,
+		// The deterministic feedback branch can outlive a failed OpenPR API
+		// call. The funnel has already proved no PR owns it, so a retry may
+		// replace only the exact remote SHA it observed.
+		ReplaceOrphanBranch: true,
 	}
 
 	result, err := s.funnel.Submit(ctx, req)
@@ -187,6 +199,18 @@ func (s *Submitter) Submit(ctx context.Context, path string) (SubmitResult, erro
 	}
 
 	return SubmitResult{ID: probe.ID, PRURL: result.PRURL, Branch: result.Branch, AlreadyOpen: already}, nil
+}
+
+// githubRemote distinguishes the production feedback target from local
+// filesystem fixtures, which deliberately remain credential-free. cmd/a2a has
+// already parsed the production repository before constructing Submitter; this
+// check owns only the pre-write refusal boundary.
+func githubRemote(remote string) bool {
+	if strings.HasPrefix(remote, "git@github.com:") {
+		return true
+	}
+	u, err := url.Parse(remote)
+	return err == nil && strings.EqualFold(u.Hostname(), "github.com")
 }
 
 // ValidationRefusedError is returned when Submit refuses a red report

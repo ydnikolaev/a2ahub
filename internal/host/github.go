@@ -90,7 +90,11 @@ func (h *GitHubHost) PushBranch(ctx context.Context, req PushBranchRequest) (Pus
 		basicAuth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + req.Credential.Token))
 		args = append(args, "-c", "http.extraheader=AUTHORIZATION: basic "+basicAuth)
 	}
-	args = append(args, "push", req.RemoteURL, req.LocalRef+":refs/heads/"+req.Branch)
+	args = append(args, "push")
+	if req.ForceWithLeaseSHA != "" {
+		args = append(args, "--force-with-lease=refs/heads/"+req.Branch+":"+req.ForceWithLeaseSHA)
+	}
+	args = append(args, req.RemoteURL, req.LocalRef+":refs/heads/"+req.Branch)
 
 	cmd := exec.CommandContext(ctx, "git", args...)
 	var stderr bytes.Buffer
@@ -111,6 +115,43 @@ func (h *GitHubHost) PushBranch(ctx context.Context, req PushBranchRequest) (Pus
 		}
 	}
 	return PushBranchResult{Branch: req.Branch}, nil
+}
+
+// ReadRemoteBranch implements RemoteBranchReader through `git ls-remote`.
+// It observes exactly one fully-qualified head and returns the SHA later
+// supplied to --force-with-lease; a concurrent remote update therefore makes
+// the subsequent push fail instead of being overwritten.
+func (h *GitHubHost) ReadRemoteBranch(ctx context.Context, req RemoteBranchRequest) (RemoteBranchHead, error) {
+	const op = "ReadRemoteBranch"
+	if req.RepoDir == "" || req.RemoteURL == "" || req.Branch == "" {
+		return RemoteBranchHead{}, &Error{Op: op, Err: ErrInvalidRequest}
+	}
+	args := []string{"-C", req.RepoDir}
+	if req.Credential.Token != "" {
+		basicAuth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + req.Credential.Token))
+		args = append(args, "-c", "http.extraheader=AUTHORIZATION: basic "+basicAuth)
+	}
+	args = append(args, "ls-remote", "--heads", req.RemoteURL, "refs/heads/"+req.Branch)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		return RemoteBranchHead{}, &Error{
+			Op: op, Input: req.Branch,
+			Err: fmt.Errorf("%w: %s", ErrPushRejected, strings.TrimSpace(stderr.String())),
+		}
+	}
+	fields := strings.Fields(stdout.String())
+	if len(fields) == 0 {
+		return RemoteBranchHead{}, nil
+	}
+	if len(fields) != 2 || fields[1] != "refs/heads/"+req.Branch {
+		return RemoteBranchHead{}, &Error{
+			Op: op, Input: req.Branch,
+			Err: fmt.Errorf("%w: malformed git ls-remote output", ErrRequestFailed),
+		}
+	}
+	return RemoteBranchHead{SHA: fields[0], Exists: true}, nil
 }
 
 // pushForbiddenMarkers are the phrases git/GitHub emit when a push is
