@@ -824,6 +824,7 @@ type RespondCommand struct {
 	deps lifecycleDeps
 }
 
+// SetPendingMarker replaces the command's pending-write recorder.
 func (c *RespondCommand) SetPendingMarker(pending PendingMarker) {
 	c.deps.setPendingMarker(pending)
 }
@@ -1133,6 +1134,7 @@ type VerifyCommand struct {
 	deps lifecycleDeps
 }
 
+// SetPendingMarker replaces the command's pending-write recorder.
 func (c *VerifyCommand) SetPendingMarker(pending PendingMarker) {
 	c.deps.setPendingMarker(pending)
 }
@@ -1315,6 +1317,7 @@ type DisputeCommand struct {
 	deps lifecycleDeps
 }
 
+// SetPendingMarker replaces the command's pending-write recorder.
 func (c *DisputeCommand) SetPendingMarker(pending PendingMarker) {
 	c.deps.setPendingMarker(pending)
 }
@@ -1421,6 +1424,7 @@ type NoteCommand struct {
 	deps lifecycleDeps
 }
 
+// SetPendingMarker replaces the command's pending-write recorder.
 func (c *NoteCommand) SetPendingMarker(pending PendingMarker) {
 	c.deps.setPendingMarker(pending)
 }

@@ -9,17 +9,22 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/host"
 )
 
-var (
-	ErrAwaitPRNotFound  = errors.New("space: recorded pending PR was not found")
-	ErrAwaitClosed      = errors.New("space: pending PR closed without merge")
-	ErrAwaitCheckFailed = errors.New("space: required check failed")
-)
+// ErrAwaitPRNotFound means the marker's recorded branch has no pull request.
+var ErrAwaitPRNotFound = errors.New("space: recorded pending PR was not found")
 
+// ErrAwaitClosed means the pull request closed without merging.
+var ErrAwaitClosed = errors.New("space: pending PR closed without merge")
+
+// ErrAwaitCheckFailed means the required check completed unsuccessfully.
+var ErrAwaitCheckFailed = errors.New("space: required check failed")
+
+// AwaitHost is the host read surface required by the pending-write poller.
 type AwaitHost interface {
 	FindPRByHeadBranch(context.Context, host.FindPRRequest) (*host.PRInfo, error)
 	CheckStatus(context.Context, host.StatusRequest) (host.CheckStatusResult, error)
 }
 
+// AwaitRequest identifies a pending branch and supplies post-merge cleanup.
 type AwaitRequest struct {
 	Branch     string
 	Repo       host.Repo
@@ -28,6 +33,7 @@ type AwaitRequest struct {
 	Clear      func() error
 }
 
+// AwaitResult reports the merged pull request.
 type AwaitResult struct {
 	PRURL string
 }
@@ -39,6 +45,7 @@ type Awaiter struct {
 	wait func(context.Context) error
 }
 
+// NewAwaiter constructs a pending-write poller.
 func NewAwaiter(h AwaitHost) *Awaiter {
 	return &Awaiter{
 		host: h,
@@ -55,10 +62,12 @@ func NewAwaiter(h AwaitHost) *Awaiter {
 	}
 }
 
+// SetWaitForTest replaces the polling delay with a deterministic test seam.
 func (a *Awaiter) SetWaitForTest(wait func(context.Context) error) {
 	a.wait = wait
 }
 
+// Await polls until the recorded pull request merges or reaches a refusal.
 func (a *Awaiter) Await(ctx context.Context, req AwaitRequest) (AwaitResult, error) {
 	if a == nil || a.host == nil || req.Branch == "" || req.Repo.Owner == "" ||
 		req.Repo.Name == "" || req.Refresh == nil || req.Clear == nil {

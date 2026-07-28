@@ -10,11 +10,13 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
+// AwaitTarget is the one resolved pending write and its owning space.
 type AwaitTarget struct {
 	SpaceID string
 	Await   func(context.Context) (space.AwaitResult, error)
 }
 
+// AwaitResolver resolves an artifact id to exactly one recorded pending write.
 type AwaitResolver func(context.Context, string) (AwaitTarget, error)
 
 // AwaitCommand owns only transport: argument parsing and result rendering.
@@ -23,16 +25,20 @@ type AwaitCommand struct {
 	resolve AwaitResolver
 }
 
+// NewAwaitCommand constructs the await transport.
 func NewAwaitCommand(resolve AwaitResolver) *AwaitCommand {
 	return &AwaitCommand{resolve: resolve}
 }
 
+// Name implements Command.
 func (c *AwaitCommand) Name() string { return "await" }
 
+// Synopsis implements Command.
 func (c *AwaitCommand) Synopsis() string {
 	return "wait for a recorded pending write to merge: await <artifact-id> [--timeout <duration>]"
 }
 
+// Run implements Command.
 func (c *AwaitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("await", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
