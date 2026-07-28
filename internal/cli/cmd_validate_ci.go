@@ -697,13 +697,18 @@ func validateCIContract(ctx context.Context, root, base, id, descriptorPath stri
 	if err != nil {
 		return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read fixtures/valid/**: %v", id, err)}, false
 	}
+	fixturesInvalidNew, err := contractWorkingTreeFiles(root, relDir, "fixtures/invalid")
+	if err != nil {
+		return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read fixtures/invalid/**: %v", id, err)}, false
+	}
 
 	var violations []validate.Violation
 	if v := validate.CheckContractPublishable(validate.PublishableInput{
-		SchemaFormat:  probe.SchemaFormat,
-		ContractID:    id,
-		Schemas:       len(schemasNew),
-		ValidFixtures: len(fixturesValidNew),
+		SchemaFormat:    probe.SchemaFormat,
+		ContractID:      id,
+		Schemas:         len(schemasNew),
+		ValidFixtures:   len(fixturesValidNew),
+		InvalidFixtures: len(fixturesInvalidNew),
 	}); v != nil {
 		violations = append(violations, *v)
 	}

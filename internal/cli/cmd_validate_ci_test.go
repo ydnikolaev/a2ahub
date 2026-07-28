@@ -447,8 +447,9 @@ func TestValidateCI_PRContractAtItsCanonicalPath(t *testing.T) {
 	rel := "axon/provides/content-feed/contract.md"
 	root := ciRepo(t, ciSpaceYAML, map[string]string{
 		rel: validContract("axon", "content-feed"),
-		"axon/provides/content-feed/schema/main.schema.json": `{"type":"object"}`,
-		"axon/provides/content-feed/fixtures/valid/ok.json":  `{}`,
+		"axon/provides/content-feed/schema/main.schema.json":   `{"type":"object"}`,
+		"axon/provides/content-feed/fixtures/valid/ok.json":    `{}`,
+		"axon/provides/content-feed/fixtures/invalid/bad.json": `null`,
 	})
 	contractGitRun(t, root, "init", "-q", "-b", "main")
 	contractGitRun(t, root, "add", "-A")
@@ -792,11 +793,12 @@ func TestValidate_NonCIPathsUnchanged(t *testing.T) {
 // state out of git history at base, exactly like a real PR checkout.
 
 const (
-	ciContractDescriptorDir  = "axon/provides/widget"
-	ciContractDescriptorPath = ciContractDescriptorDir + "/contract.md"
-	ciContractSchemaPath     = ciContractDescriptorDir + "/schema/main.schema.json"
-	ciContractFixtureRel     = "fixtures/valid/ok.json" // relative to ciContractDescriptorDir
-	ciContractFixturePath    = ciContractDescriptorDir + "/" + ciContractFixtureRel
+	ciContractDescriptorDir      = "axon/provides/widget"
+	ciContractDescriptorPath     = ciContractDescriptorDir + "/contract.md"
+	ciContractSchemaPath         = ciContractDescriptorDir + "/schema/main.schema.json"
+	ciContractFixtureRel         = "fixtures/valid/ok.json" // relative to ciContractDescriptorDir
+	ciContractFixturePath        = ciContractDescriptorDir + "/" + ciContractFixtureRel
+	ciContractInvalidFixturePath = ciContractDescriptorDir + "/fixtures/invalid/bad.json"
 )
 
 // ciContractDescriptorAt renders validContract's own genuinely V2-valid
@@ -822,6 +824,7 @@ func ciContractPriorCommit(t *testing.T, descriptorMD, schemaJSON, fixtureJSON s
 	contractWriteFile(t, root, ciContractDescriptorPath, descriptorMD)
 	contractWriteFile(t, root, ciContractSchemaPath, schemaJSON)
 	contractWriteFile(t, root, ciContractFixturePath, fixtureJSON)
+	contractWriteFile(t, root, ciContractInvalidFixturePath, `null`)
 	contractGitRun(t, root, "init", "-q", "-b", "main")
 	contractGitRun(t, root, "add", "-A")
 	contractGitRun(t, root, "commit", "-q", "-m", "publish prior")
@@ -928,8 +931,9 @@ func TestValidateCI_ContractCompat_FirstPublishNotChecked(t *testing.T) {
 	contractWriteFile(t, root, ciContractDescriptorPath, ciContractDescriptorAt("1.0.0", "json-schema-2020-12"))
 	contractWriteFile(t, root, ciContractSchemaPath, `{"type":"object"}`)
 	contractWriteFile(t, root, ciContractFixturePath, `{}`)
+	contractWriteFile(t, root, ciContractInvalidFixturePath, `null`)
 
-	code, rep, errOut := runCI(t, engine, root, fakeGit(ciContractDescriptorPath, ciContractSchemaPath, ciContractFixturePath), "v3-pr", base, "ydnikolaev")
+	code, rep, errOut := runCI(t, engine, root, fakeGit(ciContractDescriptorPath, ciContractSchemaPath, ciContractFixturePath, ciContractInvalidFixturePath), "v3-pr", base, "ydnikolaev")
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0; report=%+v; stderr=%s", code, rep, errOut)
 	}
@@ -940,8 +944,8 @@ func TestValidateCI_ContractCompat_FirstPublishNotChecked(t *testing.T) {
 
 // TestValidateCI_ContractCompat_Proto3NotChecked proves the §5.4b format
 // gate: a proto3 (non-JSON-Schema) contract is never handed to
-// CheckComputedCompatibility, and D-D's fixture requirement (POL-009) does
-// not apply to it either.
+// CheckComputedCompatibility. The format-neutral §5.3/POL-009 baseline is
+// present independently, so this test isolates only the deep-check carve-out.
 func TestValidateCI_ContractCompat_Proto3NotChecked(t *testing.T) {
 	t.Parallel()
 	engine := ciEngine(t)
