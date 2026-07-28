@@ -213,6 +213,13 @@ func buildCommands() map[string]command {
 		}
 		return cli.NewSyncCommand(p.projectConfig, p.machineConfig, p.projectRoot, cli.NewCacheBackedPendingMarker(cacheDirOf(p))).Run(context.Background(), args, stdio(stdout, stderr))
 	}
+	m["await"] = func(args []string, stdout, stderr io.Writer) int {
+		p, err := resolvePaths()
+		if err != nil {
+			return fail(stderr, err)
+		}
+		return cli.NewAwaitCommand(awaitResolver(p)).Run(context.Background(), args, stdio(stdout, stderr))
+	}
 	m["doctor"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
 		if err != nil {
@@ -549,7 +556,11 @@ func runLifecycle(args []string, stdout, stderr io.Writer, construct lifecycleCo
 	if code >= 0 {
 		return code
 	}
-	return construct(deps).Run(ctx, args, stdio(stdout, stderr))
+	cmd := construct(deps)
+	if markerAware, ok := cmd.(interface{ SetPendingMarker(cli.PendingMarker) }); ok {
+		markerAware.SetPendingMarker(cli.NewCacheBackedPendingMarker(cacheDirOf(p)))
+	}
+	return cmd.Run(ctx, args, stdio(stdout, stderr))
 }
 
 func runContract(args []string, stdout, stderr io.Writer) int {
@@ -568,7 +579,71 @@ func runContract(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 	cmd := cli.NewContractCommand(newCmd, deps.funnel, deps.mirrorDir, deps.spaceID, deps.ownSystem, deps.manifest, deps.hostCfg, deps.resolveActor)
+	cmd.SetPendingMarker(cli.NewCacheBackedPendingMarker(cacheDirOf(p)))
 	return cmd.Run(ctx, args, stdio(stdout, stderr))
+}
+
+func awaitResolver(p paths) cli.AwaitResolver {
+	return func(ctx context.Context, artifactID string) (cli.AwaitTarget, error) {
+		cfg, err := space.LoadProjectConfig(p.projectConfig)
+		if err != nil {
+			return cli.AwaitTarget{}, fmt.Errorf("no project config (run `a2a init` first): %w", err)
+		}
+		machine, err := loadMachineConfigForWrite(p.machineConfig)
+		if err != nil {
+			return cli.AwaitTarget{}, fmt.Errorf("unreadable machine config: %w", err)
+		}
+		type match struct {
+			ref    space.Ref
+			marker cache.PendingMarker
+		}
+		var matches []match
+		for _, ref := range cfg.Spaces {
+			marker, readErr := cache.ReadMarker(cacheDirOf(p), ref.ID, artifactID)
+			switch {
+			case readErr == nil:
+				matches = append(matches, match{ref: ref, marker: marker})
+			case os.IsNotExist(readErr):
+				continue
+			default:
+				return cli.AwaitTarget{}, fmt.Errorf("read pending marker for %s: %w", ref.ID, readErr)
+			}
+		}
+		if len(matches) == 0 {
+			return cli.AwaitTarget{}, fmt.Errorf("no pending write recorded for %s", artifactID)
+		}
+		if len(matches) > 1 {
+			return cli.AwaitTarget{}, fmt.Errorf("pending write for %s is ambiguous across %d spaces", artifactID, len(matches))
+		}
+		selected := matches[0]
+		cred, err := resolveCredential(ctx, selected.ref.ID, machine)
+		if err != nil {
+			return cli.AwaitTarget{}, err
+		}
+		owner, name, err := parseGitHubRepo(selected.ref.RepoURL)
+		if err != nil {
+			return cli.AwaitTarget{}, err
+		}
+		mirrorDir := space.ResolveMirrorLocation(p.projectRoot, selected.ref, machine)
+		h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
+		awaiter := space.NewAwaiter(h)
+		req := space.AwaitRequest{
+			Branch: selected.marker.Branch,
+			Repo:   host.Repo{Owner: owner, Name: name}, Credential: cred,
+			Refresh: func(refreshCtx context.Context) error {
+				return space.CloneOrFetch(refreshCtx, mirrorDir, selected.ref.RepoURL)
+			},
+			Clear: func() error {
+				return cache.RemoveMarker(cacheDirOf(p), selected.ref.ID, artifactID)
+			},
+		}
+		return cli.AwaitTarget{
+			SpaceID: selected.ref.ID,
+			Await: func(awaitCtx context.Context) (space.AwaitResult, error) {
+				return awaiter.Await(awaitCtx, req)
+			},
+		}, nil
+	}
 }
 
 // funnelBinaryVersion is the single seam feeding space.NewWriteFunnel across

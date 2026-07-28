@@ -57,6 +57,7 @@ var mcpExcludedVerbs = map[string]bool{
 	"validate":   true,
 	"mcp":        true, // the mcp verb itself: no self-referencing tool
 	"statusline": true, // spec 14 scope note + AC #6 (see file doc comment)
+	"await":      true, // P47: waits on a machine-local pending marker and refreshes that machine's mirror
 	"__catalog":  true, // P13's CLI-only meta verb (catalog.go): no MCP tool
 	"skill":      true, // P20: installs the skill tree to the local repo — a host-machine act, CLI-only (like update)
 	"html":       true, // OP-214: renders a local HTML file — a host-machine act, CLI-only

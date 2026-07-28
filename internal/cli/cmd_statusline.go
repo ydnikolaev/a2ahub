@@ -41,8 +41,9 @@ func (c *StatuslineCommand) Synopsis() string {
 	return "print status facts for prompt integration [--json] [--sample] [--no-prefix] (§7.5)"
 }
 
-// Run implements cli.Command. Takes no flags/args (§7.5: "reads config
-// only"). Exit codes are Store.Statusline's own severity contract
+// Run implements cli.Command. The default remains cache/config-only;
+// --sample bypasses both for integration checks. Exit codes are
+// Store.Statusline's own severity contract
 // (0/10/11); a computation error is exit 1 with nothing written to
 // stdout (never a partial/malformed line).
 func (c *StatuslineCommand) Run(ctx context.Context, args []string, stdio IO) int {

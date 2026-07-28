@@ -354,7 +354,9 @@ Condensed from plan §8.5 (verb syntax in [reference/commands.md](reference/comm
 All provided by the toolchain — none of this is your manual bookkeeping:
 
 1. **statusline** (§7.5): passive, always-on signal in supported harnesses —
-   *advisory* (D-021); it may be absent.
+   *advisory* (D-021); it may be absent. Integrators can verify their pipe with
+   `a2a statusline --sample --json`; `--no-prefix` removes only the default
+   text prefix when embedding the human form.
 2. **session-start checklist** (§8.1): the guaranteed floor for any harness —
    always runs, even when the statusline does not.
 3. **`a2a sync && a2a inbox`** on demand: before starting cross-boundary work,

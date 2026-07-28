@@ -135,6 +135,8 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		return cli.NewSubmitCommand(nil, nil, nil, "", "", "", "", cli.SubmitHostConfig{}), true
 	case "feedback":
 		return cli.NewFeedbackCommand(nil, nil, "", "", nil), true
+	case "await":
+		return cli.NewAwaitCommand(nil), true
 	case "whatsnew":
 		return cli.NewWhatsnewCommand(""), true
 	}

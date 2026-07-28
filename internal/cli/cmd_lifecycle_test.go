@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
@@ -528,6 +529,9 @@ func TestAckEndToEndWithRealFunnelAndFakeHost(t *testing.T) {
 	hostCfg.RemoteURL = fx.RemoteURL()
 
 	cmd := cli.NewAckCommand(funnel, mirrorDir, "fixture-space", "beta", lifecycleManifest(), hostCfg, lifecycleActorResolver("agent", "bot"))
+	cacheDir := t.TempDir()
+	pending := cli.NewCacheBackedPendingMarker(cacheDir)
+	cmd.SetPendingMarker(pending)
 	io, out, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{id}, io)
 	if code != 0 {
@@ -538,6 +542,25 @@ func TestAckEndToEndWithRealFunnelAndFakeHost(t *testing.T) {
 	}
 	if len(fakeHost.Pushes) != 1 {
 		t.Fatalf("expected exactly one PushBranch call, got %d", len(fakeHost.Pushes))
+	}
+	marker, err := cache.ReadMarker(cacheDir, "fixture-space", id)
+	if err != nil {
+		t.Fatalf("lifecycle write did not persist a pending marker: %v", err)
+	}
+	if marker.PRURL == "" {
+		t.Fatalf("pending marker = %+v, want PR URL", marker)
+	}
+
+	// The ack is not on main yet, so accept is genuinely early. Its LFC-001
+	// refusal must identify the pending PR and the supported recovery command.
+	accept := cli.NewAcceptCommand(funnel, mirrorDir, "fixture-space", "beta", lifecycleManifest(), hostCfg, lifecycleActorResolver("agent", "bot"))
+	accept.SetPendingMarker(pending)
+	acceptIO, _, acceptErr := newIO()
+	if code := accept.Run(context.Background(), []string{id}, acceptIO); code != 1 {
+		t.Fatalf("early accept code = %d, want 1", code)
+	}
+	if !strings.Contains(acceptErr.String(), "a2a await "+id) || !strings.Contains(acceptErr.String(), marker.PRURL) {
+		t.Fatalf("early refusal = %q, want pending PR and await remedy", acceptErr.String())
 	}
 }
 
