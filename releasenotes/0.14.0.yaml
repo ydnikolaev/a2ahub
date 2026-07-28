@@ -150,6 +150,27 @@ changes:
         migration.
 
   - id: RN-01400-8
+    kind: feat
+    impact: normal
+    subject: "Release notes can no longer silently lag behind product fixes"
+    detail: >
+      `make check` now anchors on the newest semver release-notes file and
+      rejects later feat, fix, perf, or breaking commits that touch product
+      surfaces. The failure lists every uncovered commit. Documentation,
+      chores, tests, and refactors without a breaking marker do not create
+      noise. The gate is offline and carries teeth proving an uncovered fix
+      and a breaking change go red, a notes update clears them, and non-product
+      work stays green.
+      This is a freshness guarantee, not an automated claim that the prose
+      describes every diff correctly; release review still owns that judgment.
+    affects: ["make check", "make harness-check"]
+    action:
+      scope: none
+      why: >
+        Release operators get an automatic reminder in the normal quality
+        gate. Product users need no migration.
+
+  - id: RN-01400-9
     kind: known-issue
     impact: normal
     subject: "The authored per-version live scenario still has no successful exact-tree run"
