@@ -432,21 +432,37 @@ func (h *GitHubHost) CheckStatus(ctx context.Context, req StatusRequest) (CheckS
 
 	// filter=latest is GitHub's own default (one run per name, the most
 	// recent) — stated explicitly because the selection below depends on it.
-	//
-	// Only the first page is read. Dropping the server-side check_name filter
-	// widened this listing to EVERY check on the head SHA, so a repo with more
-	// than 100 distinct check names could push ours past page 1 — a space repo
-	// runs two checks, so the ceiling is far off, and the failure mode is the
-	// fail-safe "no check", never a false green. Following the Link header is
-	// a backlog row, not a silent assumption.
-	path := fmt.Sprintf("/repos/%s/%s/commits/%s/check-runs?filter=latest&per_page=100", req.Repo.Owner, req.Repo.Name, headSHA)
-	var resp struct {
-		CheckRuns []checkRun `json:"check_runs"`
+	// The name filter cannot be used (compound P33 names), so page through the
+	// widened result instead of silently treating a page-2 required check as
+	// absent. The bound prevents a hostile/misbehaving endpoint looping forever.
+	const (
+		checkRunsPerPage = 100
+		maxCheckRunPages = 100
+	)
+	var runs []checkRun
+	for page := 1; page <= maxCheckRunPages; page++ {
+		path := fmt.Sprintf(
+			"/repos/%s/%s/commits/%s/check-runs?filter=latest&per_page=%d&page=%d",
+			req.Repo.Owner, req.Repo.Name, headSHA, checkRunsPerPage, page,
+		)
+		var resp struct {
+			CheckRuns []checkRun `json:"check_runs"`
+		}
+		if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &resp); err != nil {
+			return CheckStatusResult{}, err
+		}
+		runs = append(runs, resp.CheckRuns...)
+		if len(resp.CheckRuns) < checkRunsPerPage {
+			break
+		}
+		if page == maxCheckRunPages {
+			return CheckStatusResult{}, &Error{
+				Op: op, Input: headSHA,
+				Err: fmt.Errorf("%w: check-runs listing exceeded %d pages", ErrRequestFailed, maxCheckRunPages),
+			}
+		}
 	}
-	if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &resp); err != nil {
-		return CheckStatusResult{}, err
-	}
-	run, ambiguous, ok := selectRequiredCheckRun(resp.CheckRuns)
+	run, ambiguous, ok := selectRequiredCheckRun(runs)
 	if !ok {
 		return CheckStatusResult{State: "queued"}, nil
 	}

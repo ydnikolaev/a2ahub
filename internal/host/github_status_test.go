@@ -122,6 +122,48 @@ func TestCheckStatusResolvesFlatCheckRun(t *testing.T) {
 	}
 }
 
+func TestCheckStatusFindsRequiredRunAfterFirstPage(t *testing.T) {
+	t.Parallel()
+
+	var pages []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/repos/acme/space/pulls/7":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"head": map[string]any{"sha": "deadbeef"},
+			})
+		case "/repos/acme/space/commits/deadbeef/check-runs":
+			page := r.URL.Query().Get("page")
+			pages = append(pages, page)
+			if page == "1" {
+				runs := make([]map[string]any, 100)
+				for i := range runs {
+					runs[i] = map[string]any{
+						"name": "unrelated", "status": "completed", "conclusion": "success",
+					}
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"check_runs": runs})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"check_runs": []map[string]any{
+				{"name": "a2a-validate / validate", "status": "completed", "conclusion": "success"},
+			}})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	got := checkStatus(t, NewGitHubHost(srv.Client(), srv.URL))
+	if got.Name != "a2a-validate / validate" || got.Conclusion != "success" {
+		t.Fatalf("CheckStatus = %+v, want page-2 required run", got)
+	}
+	if strings.Join(pages, ",") != "1,2" {
+		t.Fatalf("pages = %v, want [1 2]", pages)
+	}
+}
+
 // A space mid-migration can briefly emit BOTH; the compound one is the shape
 // branch protection now requires, so it wins (spec 34 §2.2).
 func TestCheckStatusPrefersCompoundOverFlat(t *testing.T) {

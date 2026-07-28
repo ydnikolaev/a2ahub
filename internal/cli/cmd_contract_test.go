@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
@@ -73,6 +74,8 @@ func TestContractPublishGatePosture(t *testing.T) {
 		writeMirrorFile(t, mirrorDir, "axon/provides/widget-a/fixtures/valid/ok.json", `{}`)
 		fake := &fakeLifecycleFunnel{}
 		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		cacheDir := t.TempDir()
+		cmd.SetPendingMarker(cli.NewCacheBackedPendingMarker(cacheDir))
 		io, _, errOut := newIO()
 		code := cmd.Run(context.Background(), []string{"publish", "--version", "1.0.0", "XC-axon-widget-a"}, io)
 		if code != 0 {
@@ -80,6 +83,9 @@ func TestContractPublishGatePosture(t *testing.T) {
 		}
 		if len(fake.calls) != 1 || fake.calls[0].PRBody == "" {
 			t.Fatalf("expected first publish to be gated (advisory marker), got %+v", fake.calls)
+		}
+		if _, err := cache.ReadMarker(cacheDir, "fixture-space", "XC-axon-widget-a"); err != nil {
+			t.Fatalf("contract write did not persist pending marker: %v", err)
 		}
 	})
 
