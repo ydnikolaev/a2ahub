@@ -124,7 +124,18 @@ run_teeth() {
     exit 1
   fi
 
-  echo "release-notes-freshness --teeth: uncovered fix reds with id; notes touch greens; docs/chore stay green."
+  printf '%s\n' 'package widget' 'const Fixed = true' 'const Metadata = true' 'const Breaking = true' >"$tmp/internal/widget/widget.go"
+  git -C "$tmp" add internal/widget/widget.go
+  git -C "$tmp" commit -q -m 'refactor(widget)!: remove legacy behavior'
+  out="$(ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check 2>&1)"
+  rc=$?
+  if [ "$rc" -eq 0 ] || ! grep -q 'refactor(widget)!:' <<<"$out"; then
+    echo "release-notes-freshness --teeth: FAILED — breaking product commit stayed green:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+
+  echo "release-notes-freshness --teeth: uncovered fix reds with id; notes touch greens; docs/chore stay green; breaking commit reds."
 }
 
 case "${1:-check}" in
