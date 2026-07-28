@@ -10,6 +10,8 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"flag"
 	"fmt"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
@@ -36,7 +38,7 @@ func (c *StatuslineCommand) Name() string { return "statusline" }
 
 // Synopsis implements cli.Command.
 func (c *StatuslineCommand) Synopsis() string {
-	return "print at most one status line for embedding in your own statusline (§7.5)"
+	return "print status facts for prompt integration [--json] [--sample] [--no-prefix] (§7.5)"
 }
 
 // Run implements cli.Command. Takes no flags/args (§7.5: "reads config
@@ -44,15 +46,29 @@ func (c *StatuslineCommand) Synopsis() string {
 // (0/10/11); a computation error is exit 1 with nothing written to
 // stdout (never a partial/malformed line).
 func (c *StatuslineCommand) Run(ctx context.Context, args []string, stdio IO) int {
-	if len(args) != 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a statusline")
+	fs := flag.NewFlagSet("statusline", flag.ContinueOnError)
+	fs.SetOutput(stdio.Stderr)
+	jsonOut := fs.Bool("json", false, "emit structured statusline facts")
+	sample := fs.Bool("sample", false, "emit deterministic representative output without reading config/cache")
+	noPrefix := fs.Bool("no-prefix", false, "omit the leading a2a: presentation prefix")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 || (*jsonOut && *noPrefix) {
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a statusline [--json] [--sample] [--no-prefix]")
 		return 2
 	}
 
-	result, err := c.store.Statusline(ctx)
-	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "statusline: %v\n", err)
-		return 1
+	var result cache.StatuslineResult
+	if *sample {
+		result = cache.SampleStatusline()
+	} else {
+		var err error
+		result, err = c.store.Statusline(ctx)
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "statusline: %v\n", err)
+			return 1
+		}
 	}
 	// Deliberately NO skip-file advisory here (see skipadvisory.go, wired
 	// into search/inbox/outbox/thread): this verb's entire output is at
@@ -60,8 +76,19 @@ func (c *StatuslineCommand) Run(ctx context.Context, args []string, stdio IO) in
 	// worse than the omission — `a2a doctor`'s own new row is where a
 	// skipped mirror file surfaces for an operator who never runs the other
 	// read verbs.
-	if result.Line != "" {
-		_, _ = fmt.Fprintln(stdio.Stdout, result.Line)
+	if *jsonOut {
+		if err := json.NewEncoder(stdio.Stdout).Encode(result); err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "statusline: %v\n", err)
+			return 1
+		}
+		return result.Exit
+	}
+	line := result.Line
+	if *noPrefix {
+		line = cache.RenderStatusline(result, false)
+	}
+	if line != "" {
+		_, _ = fmt.Fprintln(stdio.Stdout, line)
 	}
 	return result.Exit
 }

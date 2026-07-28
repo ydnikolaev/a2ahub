@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,32 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
+
+func feedbackDraftYAML(id, title string) string {
+	return fmt.Sprintf(`feedback: v1
+id: %s
+kind: bug
+severity: major
+title: %q
+summary: "a grounded batch-submission report"
+context:
+  a2a_version: v0.13.0
+  os_arch: darwin/arm64
+  surface: cli
+evidence:
+  steps:
+    - "run the affected command"
+  expected: "the documented result"
+  actual: "the observed conflicting result"
+checks:
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+status: new
+`, id, title)
+}
 
 func TestFeedbackSubcommands_MatchDispatch(t *testing.T) {
 	t.Parallel()
@@ -305,5 +332,86 @@ status: new
 	}
 	if len(fakeHost.Pushes) != 1 || len(fakeHost.Opens) != 1 {
 		t.Fatalf("expected STILL exactly one push/open after the retry, got pushes=%d opens=%d", len(fakeHost.Pushes), len(fakeHost.Opens))
+	}
+}
+
+func TestFeedbackSubmit_MultipleFilesAndAllKeepOnePRPerItem(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "feedback")
+	fakeHost := host.NewFakeHost()
+	funnel := space.NewWriteFunnel(fakeHost, nil, "0.13.0")
+	projectRoot := t.TempDir()
+	feedbackDir := filepath.Join(projectRoot, ".a2a", "feedback")
+	if err := os.MkdirAll(feedbackDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ledgerPath := filepath.Join(feedbackDir, "ledger.yaml")
+	submitter := feedback.NewSubmitter(funnel, ledgerPath, projectRoot, "test-repo", feedback.SubmitConfig{
+		RemoteURL: fx.RemoteURL(), Repo: host.Repo{Owner: "a2ahub", Name: "a2ahub"}, BaseBranch: "main",
+	})
+	submitter.SetMirrorDirForTest(func(string, string) string { return fx.Clone("feedback") })
+	submitter.SetCloneOrFetchForTest(func(context.Context, string, string) error { return nil })
+	cmd := cli.NewFeedbackCommand(nil, submitter, ledgerPath, "", nil)
+
+	first := filepath.Join(feedbackDir, "fb-20260728-aaa111.yaml")
+	second := filepath.Join(feedbackDir, "fb-20260728-bbb222.yaml")
+	for path, raw := range map[string]string{
+		first:  feedbackDraftYAML("fb-20260728-aaa111", "first independent batch item"),
+		second: feedbackDraftYAML("fb-20260728-bbb222", "second independent batch item"),
+	} {
+		if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{"submit", first, second}, io); code != 0 {
+		t.Fatalf("multi submit code=%d stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(fakeHost.Opens) != 2 || len(fakeHost.Pushes) != 2 {
+		t.Fatalf("opens=%d pushes=%d, want two independent PRs", len(fakeHost.Opens), len(fakeHost.Pushes))
+	}
+
+	third := filepath.Join(feedbackDir, "fb-20260728-ccc333.yaml")
+	if err := os.WriteFile(third, []byte(feedbackDraftYAML("fb-20260728-ccc333", "third unledgered item")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	allIO, _, allErr := newIO()
+	if code := cmd.Run(context.Background(), []string{"submit", "--all"}, allIO); code != 0 {
+		t.Fatalf("--all code=%d stderr=%s", code, allErr.String())
+	}
+	if len(fakeHost.Opens) != 3 {
+		t.Fatalf("--all reopened ledgered items: opens=%d, want 3 total", len(fakeHost.Opens))
+	}
+}
+
+func TestFeedbackSubmit_ValidatesWholeBatchBeforeFirstWrite(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "feedback")
+	fakeHost := host.NewFakeHost()
+	projectRoot := t.TempDir()
+	ledgerPath := filepath.Join(projectRoot, ".a2a", "feedback", "ledger.yaml")
+	submitter := feedback.NewSubmitter(
+		space.NewWriteFunnel(fakeHost, nil, "0.13.0"),
+		ledgerPath, projectRoot, "test-repo",
+		feedback.SubmitConfig{RemoteURL: fx.RemoteURL(), Repo: host.Repo{Owner: "a2ahub", Name: "a2ahub"}, BaseBranch: "main"},
+	)
+	submitter.SetMirrorDirForTest(func(string, string) string { return fx.Clone("feedback") })
+	submitter.SetCloneOrFetchForTest(func(context.Context, string, string) error { return nil })
+	cmd := cli.NewFeedbackCommand(nil, submitter, ledgerPath, "", nil)
+
+	valid := filepath.Join(t.TempDir(), "fb-20260728-ddd444.yaml")
+	invalid := filepath.Join(t.TempDir(), "fb-20260728-eee555.yaml")
+	if err := os.WriteFile(valid, []byte(feedbackDraftYAML("fb-20260728-ddd444", "valid item must not write early")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(invalid, []byte("feedback: v1\nkind: bug\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	io, _, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{"submit", valid, invalid}, io); code != 1 {
+		t.Fatalf("code=%d, want validation refusal", code)
+	}
+	if len(fakeHost.Pushes) != 0 || len(fakeHost.Opens) != 0 {
+		t.Fatalf("invalid batch wrote before full validation: pushes=%d opens=%d", len(fakeHost.Pushes), len(fakeHost.Opens))
 	}
 }
