@@ -22,12 +22,13 @@ on:
     paths:
       - "feedback/inbox/**"
 
-# Least privilege: only what steps 5 (label) and 6 (auto-merge) need.
-# `pull-requests: write` covers PR labels; `contents: write` is required to
-# enable auto-merge (the GraphQL mutation needs repo write access at
-# enable-time — branch protection + required checks gate the actual merge).
+# Least privilege: only what steps 5 (ensure/apply labels) and 6 (auto-merge)
+# need. Label resources belong to the issues API even when attached to a PR,
+# so a fresh hub needs `issues: write`; `contents: write` is required to enable
+# auto-merge (branch protection + required checks gate the actual merge).
 permissions:
   contents: write
+  issues: write
   pull-requests: write
 
 env:
@@ -122,9 +123,12 @@ jobs:
           FILE_PATH: ${{ steps.guard.outputs.path }}
         run: ./a2a feedback validate --ci "$FILE_PATH"
 
-      # Step 5 (spec §T5): label the PR. `kind` is a validated top-level
-      # scalar field (spec 25 §T2) — safe to read after step 4 passed.
-      - name: Label the PR (feedback + feedback:<kind>)
+      # Step 5 (spec §T5): ensure and apply the PR labels. A newly-created hub
+      # has no labels; requiring an operator to pre-seed them made the first
+      # valid feedback PR fail after validation and remain stuck forever.
+      # `kind` is schema-validated in step 4 and defended again by the fixed
+      # case below before it reaches `gh`.
+      - name: Ensure and apply labels (feedback + feedback:<kind>)
         env:
           FILE_PATH: ${{ steps.guard.outputs.path }}
         run: |
@@ -136,6 +140,23 @@ jobs:
             echo "::error::feedback-intake: could not read a non-empty kind from the validated file" >&2
             exit 1
           fi
+          case "$kind" in
+            bug|feature|docs|friction|protocol) ;;
+            *)
+              echo "::error::feedback-intake: unexpected validated kind $kind" >&2
+              exit 1
+              ;;
+          esac
+          gh label create "feedback" \
+            --repo "${REPO}" \
+            --color "5319E7" \
+            --description "Agent feedback intake" \
+            --force
+          gh label create "feedback:${kind}" \
+            --repo "${REPO}" \
+            --color "BFDADC" \
+            --description "Agent feedback: ${kind}" \
+            --force
           gh pr edit "${PR_NUMBER}" --repo "${REPO}" --add-label "feedback,feedback:${kind}"
 
       # Step 6 (spec §T5): enable auto-merge (squash) — the D-002 GraphQL
