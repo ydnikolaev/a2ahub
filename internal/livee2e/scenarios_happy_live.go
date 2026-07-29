@@ -492,7 +492,8 @@ func happyContractLifecycle(ctx context.Context, h *harness, system string, c *c
 	}
 
 	successor := sub.ID + "-successor@2.0.0"
-	if _, stderr, err := c.Run(ctx, "contract", "deprecate", sub.ID, "--successor", successor, "--sunset", "2020-01-01"); err != nil {
+	deprecateStdout, stderr, err := c.Run(ctx, "contract", "deprecate", sub.ID, "--successor", successor, "--sunset", "2020-01-01")
+	if err != nil {
 		return happyResultFromErr(scenario, system, fmt.Errorf("a2a contract deprecate %s: %w: %s", sub.ID, err, stderr),
 			"contract deprecate opens its own, distinct PR")
 	}
@@ -508,7 +509,8 @@ func happyContractLifecycle(ctx context.Context, h *harness, system string, c *c
 	// is the composite-aware lookup.
 	deprecatePR, err := h.pullForBranchContaining(ctx, c.System, "contract-deprecate", sub.ID)
 	if err != nil {
-		return happyResultFromErr(scenario, system, err, "contract deprecate's own branch has an open PR")
+		return happyResultFromErr(scenario, system, fmt.Errorf("%w; command stdout: %q", err, strings.TrimSpace(deprecateStdout)),
+			"contract deprecate's own branch has an open PR")
 	}
 
 	if err := happyLandAndSync(ctx, h, c, deprecatePR.Number); err != nil {
@@ -516,13 +518,15 @@ func happyContractLifecycle(ctx context.Context, h *harness, system string, c *c
 			"the deprecation lands on main and reaches the mirror before retire reads it (retire needs a prior deprecate)")
 	}
 
-	if _, stderr, err := c.Run(ctx, "contract", "retire", sub.ID); err != nil {
+	retireStdout, stderr, err := c.Run(ctx, "contract", "retire", sub.ID)
+	if err != nil {
 		return happyResultFromErr(scenario, system, fmt.Errorf("a2a contract retire %s: %w: %s", sub.ID, err, stderr),
 			"contract retire opens its own, distinct PR (no registered consumers, so it succeeds ungated)")
 	}
 	retirePR, err := h.pullForBranch(ctx, space.BranchName(c.System, "contract-retire", sub.ID))
 	if err != nil {
-		return happyResultFromErr(scenario, system, err, "contract retire's own branch has an open PR")
+		return happyResultFromErr(scenario, system, fmt.Errorf("%w; command stdout: %q", err, strings.TrimSpace(retireStdout)),
+			"contract retire's own branch has an open PR")
 	}
 
 	if sub.PRNumber == deprecatePR.Number || deprecatePR.Number == retirePR.Number || sub.PRNumber == retirePR.Number {

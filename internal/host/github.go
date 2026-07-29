@@ -524,11 +524,12 @@ func (h *GitHubHost) FindPRByHeadBranch(ctx context.Context, req FindPRRequest) 
 	}
 	path := fmt.Sprintf("/repos/%s/%s/pulls?state=all&head=%s:%s", req.Repo.Owner, req.Repo.Name, headOwner, req.Branch)
 	var results []struct {
-		Number  int    `json:"number"`
-		HTMLURL string `json:"html_url"`
-		State   string `json:"state"` // "open" | "closed"
-		Merged  bool   `json:"merged"`
-		Body    string `json:"body"`
+		Number   int    `json:"number"`
+		HTMLURL  string `json:"html_url"`
+		State    string `json:"state"` // "open" | "closed"
+		Merged   bool   `json:"merged"`
+		MergedAt string `json:"merged_at"`
+		Body     string `json:"body"`
 	}
 	if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &results); err != nil {
 		return nil, err
@@ -537,7 +538,7 @@ func (h *GitHubHost) FindPRByHeadBranch(ctx context.Context, req FindPRRequest) 
 		switch {
 		case r.State == "open":
 			return &PRInfo{Number: r.Number, URL: r.HTMLURL, State: "open", Body: r.Body}, nil
-		case r.Merged:
+		case r.Merged || r.MergedAt != "":
 			return &PRInfo{Number: r.Number, URL: r.HTMLURL, State: "merged", Body: r.Body}, nil
 		}
 	}

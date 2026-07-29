@@ -341,6 +341,34 @@ func TestFindPRByHeadBranchReturnsOpenMatch(t *testing.T) {
 	}
 }
 
+func TestFindPRByHeadBranchRecognisesMergedAtFromListPulls(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{
+				"number":    10,
+				"html_url":  "https://example.invalid/pr/10",
+				"state":     "closed",
+				"merged_at": "2026-07-29T17:50:55Z",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	h := NewGitHubHost(srv.Client(), srv.URL)
+	got, err := h.FindPRByHeadBranch(context.Background(), FindPRRequest{
+		Repo: Repo{Owner: "acme", Name: "space"}, Branch: "a2a/axon/retire/XC-axon-widget",
+	})
+	if err != nil {
+		t.Fatalf("FindPRByHeadBranch: %v", err)
+	}
+	if got == nil || got.Number != 10 || got.State != "merged" {
+		t.Fatalf("FindPRByHeadBranch = %+v, want merged PR #10", got)
+	}
+}
+
 func TestFindPRByHeadBranchNoneFound(t *testing.T) {
 	t.Parallel()
 

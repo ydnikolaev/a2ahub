@@ -105,6 +105,17 @@ const requiredCheckWaitCeiling = 5 * time.Minute
 // requiredCheckPollInterval is the step between polls.
 const requiredCheckPollInterval = 10 * time.Second
 
+// A successful POST /pulls and LIST /pulls are not one atomic visibility
+// boundary on GitHub. The 2026-07-29 targeted happy run opened deprecation PR
+// #1549, then the immediately-following list omitted it; the PR appeared and
+// auto-merged normally while the scenario had already reported a false
+// failure. Poll narrowly for that one provider-consistency gap instead of
+// rerunning a full matrix.
+const (
+	prVisibilityAttempts     = 18
+	prVisibilityPollInterval = 5 * time.Second
+)
+
 // ErrProvisionFailed wraps a ResetSpace failure surfaced through newHarness,
 // so a caller can errors.Is-discriminate "provisioning failed" from
 // "checkout setup failed" without substring-matching the wrapped message —
@@ -237,23 +248,35 @@ func (h *harness) runPulls(ctx context.Context) ([]PullState, error) {
 }
 
 func (h *harness) pullForBranch(ctx context.Context, branch string) (PullState, error) {
-	pulls, err := h.runPulls(ctx)
+	var best PullState
+	err := awaitLookupVisibility(
+		ctx,
+		prVisibilityAttempts,
+		func() error {
+			pulls, err := h.runPulls(ctx)
+			if err != nil {
+				return err
+			}
+			var found bool
+			for _, p := range pulls {
+				if p.HeadRef != branch {
+					continue
+				}
+				switch {
+				case !found, p.State == "open" && best.State != "open", p.State == best.State && p.Number > best.Number:
+					best, found = p, true
+				}
+			}
+			if !found {
+				return fmt.Errorf("%w: %s", ErrNoPRForBranch, branch)
+			}
+			return nil
+		},
+		func(err error) bool { return errors.Is(err, ErrNoPRForBranch) },
+		pauseForPRVisibility,
+	)
 	if err != nil {
 		return PullState{}, err
-	}
-	var best PullState
-	var found bool
-	for _, p := range pulls {
-		if p.HeadRef != branch {
-			continue
-		}
-		switch {
-		case !found, p.State == "open" && best.State != "open", p.State == best.State && p.Number > best.Number:
-			best, found = p, true
-		}
-	}
-	if !found {
-		return PullState{}, fmt.Errorf("%w: %s", ErrNoPRForBranch, branch)
 	}
 	return best, nil
 }
@@ -275,27 +298,49 @@ func (h *harness) pullForBranch(ctx context.Context, branch string) (PullState, 
 // its match back to the original PullState (which carries fields
 // matchCompositeBranch's own branchPull deliberately does not, e.g. HeadSHA).
 func (h *harness) pullForBranchContaining(ctx context.Context, system, verb, artifactID string) (PullState, error) {
-	pulls, err := h.runPulls(ctx)
+	var best PullState
+	err := awaitLookupVisibility(
+		ctx,
+		prVisibilityAttempts,
+		func() error {
+			pulls, err := h.runPulls(ctx)
+			if err != nil {
+				return err
+			}
+			bps := make([]branchPull, 0, len(pulls))
+			for _, p := range pulls {
+				bps = append(bps, branchPull{HeadRef: p.HeadRef, State: p.State, Number: p.Number})
+			}
+			match, err := matchCompositeBranch(bps, system, verb, artifactID)
+			if err != nil {
+				return err
+			}
+			for _, p := range pulls {
+				if p.HeadRef == match.HeadRef && p.Number == match.Number {
+					best = p
+					return nil
+				}
+			}
+			// Unreachable in practice: match was derived FROM pulls, so it
+			// must be present. A defensive error beats a zero PullState.
+			return fmt.Errorf("livee2e: pullForBranchContaining: matched PR #%d (%s) not found in the pulls list it was derived from", match.Number, match.HeadRef)
+		},
+		func(err error) bool { return errors.Is(err, ErrNoBranchMatch) },
+		pauseForPRVisibility,
+	)
 	if err != nil {
 		return PullState{}, err
 	}
-	bps := make([]branchPull, 0, len(pulls))
-	for _, p := range pulls {
-		bps = append(bps, branchPull{HeadRef: p.HeadRef, State: p.State, Number: p.Number})
+	return best, nil
+}
+
+func pauseForPRVisibility(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(prVisibilityPollInterval):
+		return nil
 	}
-	match, err := matchCompositeBranch(bps, system, verb, artifactID)
-	if err != nil {
-		return PullState{}, err
-	}
-	for _, p := range pulls {
-		if p.HeadRef == match.HeadRef && p.Number == match.Number {
-			return p, nil
-		}
-	}
-	// Unreachable in practice: match was derived FROM pulls, so it must be
-	// present. A defensive, honest error beats a zero-value PullState if
-	// this ever changes.
-	return PullState{}, fmt.Errorf("livee2e: pullForBranchContaining: matched PR #%d (%s) not found in the pulls list it was derived from", match.Number, match.HeadRef)
 }
 
 // countPRsForBranch counts every PR (open+closed) whose head is branch — the
