@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 // defaultAPIRoot is GitHub's REST root. Overridable on GitHubProber for tests
@@ -44,7 +43,7 @@ func (g *GitHubProber) client() *http.Client {
 	if g.Client != nil {
 		return g.Client
 	}
-	return &http.Client{Timeout: 30 * time.Second}
+	return newBoundedGitHubHTTPClient()
 }
 
 // get performs an authenticated GET and decodes the JSON body into out.

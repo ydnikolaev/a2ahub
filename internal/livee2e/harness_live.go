@@ -130,7 +130,7 @@ var ErrProvisionFailed = errors.New("livee2e: provisioning the test space failed
 // §"Constraints a faithful port would get wrong": "row 7 ... must go
 // THROUGH the real host.CheckStatus, not a curl").
 func (h *harness) WaitForRequiredCheck(ctx context.Context, prNumber int, token string) (host.CheckStatusResult, error) {
-	hc := host.NewGitHubHost(nil, defaultAPIRoot)
+	hc := host.NewGitHubHost(newBoundedGitHubHTTPClient(), defaultAPIRoot)
 	deadline := time.Now().Add(requiredCheckWaitCeiling)
 	req := host.StatusRequest{
 		Repo:       host.Repo{Owner: h.Org, Name: h.Repo},
