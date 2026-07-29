@@ -1,0 +1,29 @@
+checks:
+    docs_consulted: true
+    duplicates_checked: true
+    grounded_in_real_work: true
+    no_sensitive_content: true
+    not_space_specific: true
+context:
+    a2a_version: 0.13.0
+    agent: claude (opus-5), embedding the segment into a host status line
+    command: a2a statusline
+    os_arch: darwin/arm64
+    surface: cli
+evidence:
+    actual: Silence when quiet with no way to distinguish it from breakage, no --json, and a hard-coded `a2a:` prefix the host must strip.
+    expected: A machine-readable mode (`--json` with counts and severity) so a host renders its own shape without re-deriving; a way to see a non-empty rendering while quiet; and no built-in prefix on a segment meant to be embedded.
+    steps:
+        - 'a2a statusline   # in a space with nothing pending: no output, exit 0'
+        - (no flag renders a sample or a would-be line, so the wiring cannot be tested)
+        - 'a2a statusline --json   # not supported; counts must come from inbox/outbox --json + jq length'
+        - '(later, with a real inbound) a2a statusline   # output begins with its own ''a2a:'' prefix'
+feedback: v1
+id: fb-20260728-a85a71
+kind: feature
+proposal: '`--json` is the high-value piece: emit the counts and the severity the line already computes, and hosts stop re-deriving them from inbox/outbox — one source of truth for what ''needs attention'' means, and no drift between a host''s numbers and the binary''s. For verifiability, either a `--sample`/`--dry-run` that renders a representative non-empty line, or simply a documented example of the non-empty shape in the skill (today neither the reference nor troubleshooting shows one; `doctor`''s statusline row checks only that git is present, which reads as ''wired'' but proves nothing about rendering). For the prefix, dropping it is cleanest given the segment is by definition embedded, or gate it behind a `--prefix` flag for standalone use.'
+resolution: 'Shipped in v0.15.0 under P47: statusline has machine-readable JSON, a sample mode, and explicit prefix control without re-deriving inbox/outbox semantics.'
+severity: minor
+status: shipped
+summary: 'Wiring `a2a statusline` into a host status line this session hit three gaps. (1) It prints nothing when nothing needs attention, and there is no way to render a sample, so while the space is quiet you cannot tell ''wired and clear'' from ''wired wrong'' — I built and shipped the integration having never seen a non-empty rendering, and only learned it worked when a real inbound arrived hours later. (2) There is no --json, so a host that wants to render its own shape (counts, its own colors, its own severity mapping) must call `inbox --json` and `outbox --json` and count them, re-deriving what the binary already knows. Worse, that re-derivation is exactly what D-015 says not to do, and it silently diverges: my counts include seen items, the binary''s line counts new ones, so the two disagree side by side. (3) The output carries its own `a2a:` prefix — but for a segment whose stated job is embedding in someone else''s line, the host has already drawn a label, so the prefix duplicates and has to be stripped.'
+title: statusline is not machine-readable and cannot be verified when quiet

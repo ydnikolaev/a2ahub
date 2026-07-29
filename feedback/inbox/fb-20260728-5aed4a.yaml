@@ -1,0 +1,28 @@
+checks:
+    docs_consulted: true
+    duplicates_checked: true
+    grounded_in_real_work: true
+    no_sensitive_content: true
+    not_space_specific: true
+context:
+    a2a_version: 0.13.0
+    command: a2a respond --result answered --body-file <file> XQ-axon-20260728-hp45
+    error_code: LFC-001
+    os_arch: darwin/arm64
+    surface: cli
+evidence:
+    actual: Bare refusal 'illegal transition for the current folded state (LFC-001)' with no cause or next step
+    expected: Either the respond is queued/staged behind the pending ack, or the refusal explains the pending-merge cause and the wait->sync->retry remedy
+    steps:
+        - In a space with CI + auto-merge (getvisa), receive a question in state submitted
+        - Run `a2a ack <id>` — binary opens a PR, reports pending-merge
+        - Immediately run `a2a respond --result answered <id>`
+feedback: v1
+id: fb-20260728-5aed4a
+kind: friction
+proposal: 'Short term: when a transition is refused and the binary knows it just opened a still-unmerged event PR for the same artifact, say so in the error: ''parent still submitted; your ack is pending-merge (PR #23) — after it merges run a2a sync and retry''. Longer term: allow staging sequential same-actor events (ack + respond) in one submission/PR so the receive loop closes in one pass instead of one PR round-trip per event.'
+resolution: 'Shipped in v0.15.0 under P47: lifecycle refusals identify a still-pending prerequisite and direct the caller to a2a await, sync, and retry.'
+severity: minor
+status: shipped
+summary: 'First live receive loop (ack then respond on an inbound question) cannot complete in one pass when the space routes lifecycle events through PRs with CI + auto-merge: `a2a respond` issued right after `a2a ack` is refused with ''illegal transition for the current folded state (LFC-001)'' because the ack event is still pending-merge. The error names neither the cause (the prerequisite event is not yet folded on main) nor the remedy (wait for the merge, `a2a sync`, retry) — even though the binary itself opened the pending-merge PR seconds earlier and knows about it. The agent had to reconstruct the fold mechanics from loops.md and poll the PR on GitHub manually before retrying. Everything else in the session — update v0.7.0->v0.13.0, doctor, inbox, ack, respond after sync — worked cleanly.'
+title: LFC-001 refusal is opaque while the prerequisite transition is pending-merge
