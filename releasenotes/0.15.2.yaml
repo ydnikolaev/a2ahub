@@ -1,0 +1,28 @@
+schema: release-notes/v1
+version: "0.15.2"
+released: "2026-07-29"
+headline: "The macOS notification companion now builds on a Swift 6 GitHub runner"
+changes:
+  - id: RN-01502-1
+    kind: fix
+    impact: high
+    subject: "The hosted macOS job uses a toolchain that can build the notifier"
+    detail: >
+      v0.15.1 introduced the accepted ad-hoc distribution path, but its GitHub
+      job still ran on `macos-14`. That image selected Xcode 15.4 and Swift
+      5.10, so SwiftPM rejected the notifier's declared tools version 6.0 before
+      compiling anything. The release now uses GitHub's `macos-15` ARM64 image,
+      prints the selected Swift version in the log, and exercises the same
+      Swift tests plus ad-hoc universal packager in ordinary CI before a tag is
+      cut. The signing, Gatekeeper, cohort, and retry semantics from v0.15.1 are
+      unchanged.
+    affects: ["macOS notifications", "CI", "release workflow"]
+    action:
+      scope: local
+      why: >
+        Update to the completed cohort, then install the macOS channel. If
+        Gatekeeper requests it, approve A2A Notifier under Privacy & Security
+        and repeat the install command.
+      run:
+        - "a2a update --yes"
+        - "a2a notifications install --channel macos"
