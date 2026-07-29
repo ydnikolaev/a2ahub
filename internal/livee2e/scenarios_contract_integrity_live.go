@@ -44,10 +44,9 @@ func runContractIntegrityScenarios(ctx context.Context, h *harness) []Result {
 // ac973Scenario is this row's catalogue name (catalogue.go).
 const ac973Scenario = "contract-integrity-registered-consumer"
 
-// ac973Slug is this row's fixed, lowercase-kebab standing slug — same
-// per-run-fixed-slug convention happyContractLifecycleSlug uses, kept
-// distinct from every other family's slug so a single run never mints two
-// contracts of the same id.
+// ac973Slug is this row's lowercase-kebab standing-slug base. The actual
+// artifact is scoped to h.PRFloor through liveRunSlug so a destructive reset
+// cannot collide with a merged semantic operation retained by GitHub.
 const ac973Slug = "ac973-registered-consumer"
 
 // ac973AnnouncementIDPattern extracts an XA- id from `a2a contract
@@ -102,7 +101,7 @@ func ac973Fail(step, observed, expected, detail string) Result {
 // comment on runDeprecate) while genuinely excluding the peer. It is a
 func ac973DraftContractExcludingPeer(ctx context.Context, h *harness, c *checkout) (submitted, error) {
 	id, _, err := c.Draft(ctx, "contract",
-		"--slug", ac973Slug,
+		"--slug", liveRunSlug(ac973Slug, h.PRFloor),
 		"--field", "to=["+c.System+"]",
 	)
 	if err != nil {
