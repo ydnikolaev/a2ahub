@@ -1,0 +1,142 @@
+schema: release-notes/v1
+version: "0.16.0"
+released: "2026-07-29"
+headline: "Autonomous exchanges now rest on fail-closed authority, durable retries, live MCP proof, and an exact release-candidate gate"
+changes:
+  - id: RN-01600-1
+    kind: fix
+    impact: high
+    subject: "Ambiguous space authority and repository symlink writes fail closed"
+    detail: >
+      One manifest-policy owner now rejects duplicate participant systems,
+      duplicate active logins, missing active owners, overlapping sections,
+      and departed participants attempting to authorize new writes. The same
+      policy feeds manifest loading and the merge validator, so participant
+      order can no longer choose an authorization result.
+      Before any funnel mutation, every existing repository path component and
+      final target is also checked with symlink-aware semantics. A committed
+      link can no longer redirect an ordinary or infrastructure write outside
+      the checkout. Skill discovery applies the same ownership principle:
+      only a link resolving exactly to the configured install is managed
+      without explicit `--force`.
+    affects: ["a2a validate", "a2a submit", "a2a space update", "a2a skill link"]
+    action:
+      scope: space
+      why: >
+        Existing valid manifests need no migration. If validation now reports
+        REF-013, make participant systems, active GitHub owners, and top-level
+        owned sections unambiguous before writing.
+      run:
+        - "a2a validate"
+
+  - id: RN-01600-2
+    kind: fix
+    impact: high
+    subject: "A semantic retry remains one operation across midnight and partial GitHub failures"
+    detail: >
+      `respond` and `contract deprecate` now derive a private, versioned
+      operation key from canonical command intent instead of relying on the
+      public date-bearing artifact id for retry identity. The same intent
+      resolves the original artifact and PR across UTC midnight, an orphaned
+      remote branch, an open PR, or stale local pending state after merge.
+      Changed body, actor, parents, result, successor, sunset, fields, or
+      contract version produce a different operation; an unproven orphan is
+      refused rather than overwritten. CLI and MCP call the same implementation.
+      Doctor now also names historical PRs that are explicitly green,
+      unmerged, and not armed for auto-merge, including the safe exact retry
+      command. Contract retirement refusals list every consumer still missing
+      its acknowledgement.
+    affects: ["a2a respond", "a2a contract deprecate", "a2a doctor", "a2a_contract"]
+    action:
+      scope: local
+      why: >
+        Retry the same semantic command after upgrading; it will recover the
+        existing remote operation instead of minting a second one. Run doctor
+        to expose older green PRs that predate this recovery path.
+      run:
+        - "a2a doctor"
+
+  - id: RN-01600-3
+    kind: feat
+    impact: normal
+    subject: "Custom skill installs remain linked, refreshed, and visible to doctor"
+    detail: >
+      `a2a skill install --dir` now accepts only a normalized path beneath the
+      project root and persists it as `skill_dir` in `.a2a/config.yaml`.
+      Install, link, binary update, and both doctor skill checks resolve that
+      one location. Existing configs keep `.a2ahub/skill`; repeating
+      `a2a init` preserves a custom value and never moves or deletes the old
+      tree implicitly. Doctor also treats the exact local version stamp `dev`
+      as an unreleased-build advisory while continuing to fail every other
+      malformed released version.
+    affects: ["a2a skill install", "a2a skill link", "a2a update", "a2a doctor", ".a2a/config.yaml"]
+    action:
+      scope: local
+      why: >
+        No action is required for the default location. A custom location is
+        now project-relative and team-visible; reinstall once with `--dir` to
+        record an older untracked custom install.
+      run:
+        - "a2a skill install --dir agent/skill"
+        - "a2a skill link"
+
+  - id: RN-01600-4
+    kind: fix
+    impact: high
+    subject: "A release verdict exercises the exact public commit that is tagged"
+    detail: >
+      Publishing first creates a temporary public candidate ref without moving
+      public `main` or creating a tag. The full live space pins both reusable
+      workflow source and its `a2a-ref` input to that immutable commit SHA.
+      Promotion then accepts only the proven SHA, restores branch protection,
+      tags that same commit, verifies the remote tag, and deletes the candidate.
+      A red run therefore leaves the current public release untouched.
+      The validator emits structured authorization annotations, so the
+      cross-section row requires the intended code and path rather than any red
+      check. The live matrix also drives the nine missing CLI/MCP parity cells
+      through the shipped JSON-RPC stdio server, bringing the declared release
+      matrix from 40 to 49 cells.
+    affects: ["release workflow", "a2a validate", "a2a mcp"]
+    action:
+      scope: none
+      why: >
+        This changes maintainer proof and release ordering. Operators and
+        exchange participants receive the stronger validator and MCP evidence
+        automatically with the release.
+
+  - id: RN-01600-5
+    kind: fix
+    impact: low
+    subject: "The decomposition guide now cites one real three-document thread"
+    detail: >
+      The shipped a2ahub skill previously illustrated announcement, question,
+      and work request decomposition with three unrelated fixture documents
+      and an explicit deviation. Its cited trio is now schema-valid on disk,
+      carries three distinct single intents, and shares one thread. Agents can
+      copy the demonstrated coordination shape without inventing links between
+      independent examples.
+    affects: ["a2ahub skill", "schema fixtures"]
+    action:
+      scope: none
+      why: >
+        Reinstalling or updating the skill refreshes the guide; exchange
+        protocol and existing artifacts are unchanged.
+
+  - id: RN-01600-6
+    kind: known-issue
+    impact: normal
+    subject: "The macOS companion remains ad-hoc signed and may require manual approval"
+    detail: >
+      The release cohort authenticates the exact macOS app and ad-hoc signing
+      protects its bundle integrity, but the app is not identified or
+      notarized through a paid Apple Developer account. A quarantined download
+      may require one explicit System Settings → Privacy & Security → Open
+      Anyway decision. Interactive Notification Center, Focus, Login Items,
+      VS Code trust/profile, and remote-window checks remain release-environment
+      evidence rather than claims inferred from hermetic tests.
+    affects: ["macOS notifications", "VS Code notifications"]
+    action:
+      scope: none
+      why: >
+        Keep Gatekeeper enabled and approve only the A2A Notifier version
+        obtained through the verified a2a release cohort.
