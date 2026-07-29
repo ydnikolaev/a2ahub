@@ -17,6 +17,9 @@ type FakeHost struct {
 	// simulate CC-061 push rejection). Default: records the call and
 	// succeeds.
 	PushBranchFunc func(ctx context.Context, req PushBranchRequest) (PushBranchResult, error)
+	// ReadRemoteBranchFunc overrides the optional exact-ref read used by
+	// tool-owned orphan recovery. Default: branch absent.
+	ReadRemoteBranchFunc func(ctx context.Context, req RemoteBranchRequest) (RemoteBranchHead, error)
 	// OpenPRFunc, when set, overrides OpenPR's behavior. Default: mints a
 	// deterministic incrementing PR number/URL and marks the PR open.
 	OpenPRFunc func(ctx context.Context, req OpenPRRequest) (PRInfo, error)
@@ -50,6 +53,7 @@ type FakeHost struct {
 
 	// Recorded calls, for test assertions.
 	Pushes   []PushBranchRequest
+	Reads    []RemoteBranchRequest
 	Opens    []OpenPRRequest
 	Forks    []EnsureForkRequest
 	AutoArms []EnableAutoMergeRequest
@@ -75,6 +79,19 @@ func (f *FakeHost) PushBranch(ctx context.Context, req PushBranchRequest) (PushB
 		return fn(ctx, req)
 	}
 	return PushBranchResult{Branch: req.Branch}, nil
+}
+
+// ReadRemoteBranch records the request and delegates to
+// ReadRemoteBranchFunc, or reports an absent branch by default.
+func (f *FakeHost) ReadRemoteBranch(ctx context.Context, req RemoteBranchRequest) (RemoteBranchHead, error) {
+	f.mu.Lock()
+	f.Reads = append(f.Reads, req)
+	fn := f.ReadRemoteBranchFunc
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, req)
+	}
+	return RemoteBranchHead{}, nil
 }
 
 // OpenPR records the request and delegates to OpenPRFunc, or mints a
@@ -173,11 +190,13 @@ func headRef(owner, branch string) string {
 }
 
 var (
-	_ Host   = (*FakeHost)(nil)
-	_ Forker = (*FakeHost)(nil)
-	_ Forker = (*GitHubHost)(nil)
-	_ Merger = (*FakeHost)(nil)
-	_ Merger = (*GitHubHost)(nil)
+	_ Host               = (*FakeHost)(nil)
+	_ Forker             = (*FakeHost)(nil)
+	_ Forker             = (*GitHubHost)(nil)
+	_ RemoteBranchReader = (*FakeHost)(nil)
+	_ RemoteBranchReader = (*GitHubHost)(nil)
+	_ Merger             = (*FakeHost)(nil)
+	_ Merger             = (*GitHubHost)(nil)
 )
 
 // EnableAutoMerge implements the optional AutoMerger capability: it records

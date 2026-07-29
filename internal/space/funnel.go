@@ -118,6 +118,11 @@ type SubmitRequest struct {
 	// around. `a2a feedback submit` is the one caller that sets it: its
 	// audience is precisely the non-collaborator.
 	AllowForkFallback bool
+	// ReplaceOrphanBranch allows this deterministic, tool-owned branch to
+	// replace a prior remote head only with an exact force-with-lease. The
+	// funnel performs this after its no-PR check. Feedback submission is the
+	// sole caller; ordinary space writes remain fast-forward-only.
+	ReplaceOrphanBranch bool
 
 	// MinBinaryVersion is space.yaml's pin for the CC-085 guard (caller
 	// already parsed the manifest; the funnel does not parse YAML).
@@ -696,10 +701,25 @@ func existingPRResult(branch string, pr *host.PRInfo) WriteResult {
 
 // push sends the committed branch to remoteURL.
 func (f *WriteFunnel) push(ctx context.Context, req SubmitRequest, branch, remoteURL string) error {
-	_, err := f.host.PushBranch(ctx, host.PushBranchRequest{
+	pushReq := host.PushBranchRequest{
 		RepoDir: req.RepoDir, LocalRef: branch, Branch: branch,
 		RemoteURL: remoteURL, Credential: req.Credential,
-	})
+	}
+	if req.ReplaceOrphanBranch {
+		if reader, ok := f.host.(host.RemoteBranchReader); ok {
+			remote, err := reader.ReadRemoteBranch(ctx, host.RemoteBranchRequest{
+				RepoDir: req.RepoDir, RemoteURL: remoteURL, Branch: branch,
+				Credential: req.Credential,
+			})
+			if err != nil {
+				return err
+			}
+			if remote.Exists {
+				pushReq.ForceWithLeaseSHA = remote.SHA
+			}
+		}
+	}
+	_, err := f.host.PushBranch(ctx, pushReq)
 	return err
 }
 

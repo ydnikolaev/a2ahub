@@ -1,0 +1,50 @@
+schema: release-notes/v1
+version: "0.15.1"
+released: "2026-07-29"
+headline: "The macOS notification companion now ships without requiring a paid Apple Developer account"
+changes:
+  - id: RN-01501-1
+    kind: fix
+    impact: high
+    subject: "The macOS notification companion is present in the coordinated release"
+    detail: >
+      v0.15.0 published the CLI and VS Code extension, but its macOS release job
+      required Apple Developer ID and notarization credentials that the project
+      does not have. The job failed closed, which also prevented the coordinated
+      cohort and standalone release notes from being published.
+      The release path now selects an explicit ad-hoc signing mode. It builds the
+      same universal Apple-Silicon/Intel app, enables hardened-runtime options,
+      verifies the ad-hoc code signature and literal `TeamIdentifier=not set`,
+      and binds the exact app hash, bundle ID, version, and protocol into the
+      Sigstore-signed release cohort. It does not claim Apple developer identity
+      or notarization.
+    affects: ["a2a notifications install --channel macos", "release workflow"]
+    action:
+      scope: local
+      why: >
+        Install the macOS channel normally. If Gatekeeper blocks its first
+        launch, explicitly allow A2A Notifier under System Settings → Privacy &
+        Security → Open Anyway, then repeat the install command. a2a never
+        clears quarantine or changes Gatekeeper settings.
+      run:
+        - "a2a update --yes"
+        - "a2a notifications install --channel macos"
+
+  - id: RN-01501-2
+    kind: known-issue
+    impact: normal
+    subject: "The macOS companion is not identified or notarized by Apple"
+    detail: >
+      Ad-hoc code signing protects the app bundle's internal integrity and the
+      signed release cohort authenticates the exact downloaded asset, but
+      Gatekeeper cannot identify it as software from an enrolled Apple
+      developer. A browser-quarantined copy may therefore require one manual
+      Open Anyway decision. A future paid Developer ID can remove that friction
+      through the already-separated developer-id packaging mode; until then the
+      product reports the limitation instead of bypassing macOS security.
+    affects: ["macOS notifications"]
+    action:
+      scope: none
+      why: >
+        Keep Gatekeeper enabled. Approve only the A2A Notifier version obtained
+        through the verified a2a release cohort.

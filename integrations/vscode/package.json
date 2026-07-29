@@ -1,0 +1,96 @@
+{
+  "name": "a2ahub-notifications",
+  "displayName": "A2A Notifications",
+  "description": "Local A2A status and notifications backed by the trusted a2a CLI.",
+  "version": "0.1.0",
+  "publisher": "a2ahub",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ydnikolaev/a2ahub.git",
+    "directory": "integrations/vscode"
+  },
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "a2a",
+    "notifications"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true,
+      "description": "Only a machine-scoped absolute a2a path and fixed protocol argv are executed; workspace settings and content are not executable inputs."
+    },
+    "virtualWorkspaces": {
+      "supported": true
+    }
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./src/extension.js",
+  "files": [
+    "src/**",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/build.js",
+    "test": "node --test",
+    "check": "npm run build && npm test",
+    "package:vsix": "node -e \"require('node:fs').mkdirSync('dist',{recursive:true})\" && vsce package --no-dependencies --out dist/a2ahub-notifications.vsix"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "a2ahub.notifications.open",
+        "title": "A2A: Open Notifications"
+      },
+      {
+        "command": "a2ahub.notifications.refresh",
+        "title": "A2A: Refresh Notifications"
+      },
+      {
+        "command": "a2ahub.notifications.showOutput",
+        "title": "A2A: Show Notification Health"
+      }
+    ],
+    "configuration": {
+      "title": "A2A Notifications",
+      "properties": {
+        "a2ahub.notifications.cliPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Absolute path to the CLI-managed a2a executable. Workspace and folder values are never used."
+        },
+        "a2ahub.notifications.pollIntervalSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 15,
+          "maximum": 3600,
+          "scope": "machine",
+          "description": "Polling interval for local A2A status and transition claims."
+        },
+        "a2ahub.notifications.quietPresentation": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "description": "Hide the status item and pause notification claims without changing A2A project state."
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@vscode/vsce": "3.9.2"
+  }
+}

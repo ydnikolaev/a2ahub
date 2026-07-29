@@ -414,6 +414,7 @@ type lifecycleDeps struct {
 	manifest     space.Manifest
 	hostCfg      SubmitHostConfig
 	resolveActor func(ActorFlags) (template.Actor, error)
+	pending      PendingMarker
 
 	now      func() time.Time
 	entropy  io.Reader
@@ -424,8 +425,32 @@ func newLifecycleDeps(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem stri
 	return lifecycleDeps{
 		funnel: funnel, mirrorDir: mirrorDir, spaceID: spaceID, ownSystem: ownSystem,
 		manifest: manifest, hostCfg: hostCfg, resolveActor: resolveActor,
-		now: time.Now, entropy: rand.Reader, readFile: os.ReadFile,
+		pending: NewNoopPendingMarker(),
+		now:     time.Now, entropy: rand.Reader, readFile: os.ReadFile,
 	}
+}
+
+func (d *lifecycleDeps) setPendingMarker(pending PendingMarker) {
+	if pending == nil {
+		pending = NewNoopPendingMarker()
+	}
+	d.pending = pending
+}
+
+func (d lifecycleDeps) refusalMessage(id string, verdict fold.Verdict) string {
+	message := verdictRefusalMessage(id, verdict)
+	if verdict != fold.VerdictIllegalTransition {
+		return message
+	}
+	reader, ok := d.pending.(PendingMarkerReader)
+	if !ok {
+		return message
+	}
+	pending, found, err := reader.Pending(d.spaceID, id)
+	if err != nil || !found {
+		return message
+	}
+	return fmt.Sprintf("%s; previous write is pending-merge (PR %s); run `a2a await %s` and retry", message, pending.PRURL, id)
 }
 
 // lifecycleActorFlags registers the §7.4 explicit-actor-override flags
@@ -484,6 +509,22 @@ func (d lifecycleDeps) submit(ctx context.Context, req space.SubmitRequest, verb
 		_, _ = fmt.Fprintf(stdio.Stderr, "%s: %v\n", verb, err)
 		return 1
 	}
+	for _, id := range ids {
+		switch result.State {
+		case space.WriteStatePendingMerge, space.WriteStateAlreadyOpen:
+			if err := d.pending.MarkPending(ctx, d.spaceID, id, result); err != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "%s: pending-merge marker failed: %v\n", verb, err)
+				return 1
+			}
+		default:
+			if clearer, ok := d.pending.(PendingMarkerClearer); ok {
+				if err := clearer.ClearPending(d.spaceID, id); err != nil {
+					_, _ = fmt.Fprintf(stdio.Stderr, "%s: pending-merge marker cleanup failed: %v\n", verb, err)
+					return 1
+				}
+			}
+		}
+	}
 	switch result.State {
 	case space.WriteStateAlreadyOpen, space.WriteStateAlreadyMerged:
 		_, _ = fmt.Fprintf(stdio.Stdout, "%s: already submitted (PR %s, %s)\n", verb, result.PRURL, result.State)
@@ -535,6 +576,11 @@ var lifecycleVerbTable = []lifecycleVerbSpec{
 type LifecycleCommand struct {
 	spec lifecycleVerbSpec
 	deps lifecycleDeps
+}
+
+// SetPendingMarker wires the machine-local pending-write store.
+func (c *LifecycleCommand) SetPendingMarker(pending PendingMarker) {
+	c.deps.setPendingMarker(pending)
 }
 
 // newLifecycleCommand is every generic-verb NewXCommand constructor's
@@ -687,7 +733,7 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 			return 1
 		}
 		if verdict != fold.VerdictLegal {
-			_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s\n", c.spec.Verb, verdictRefusalMessage(id, verdict))
+			_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s\n", c.spec.Verb, c.deps.refusalMessage(id, verdict))
 			return 1
 		}
 
@@ -778,6 +824,11 @@ type RespondCommand struct {
 	deps lifecycleDeps
 }
 
+// SetPendingMarker replaces the command's pending-write recorder.
+func (c *RespondCommand) SetPendingMarker(pending PendingMarker) {
+	c.deps.setPendingMarker(pending)
+}
+
 // NewRespondCommand constructs the respond command.
 func NewRespondCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *RespondCommand {
 	return &RespondCommand{deps: newLifecycleDeps(funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)}
@@ -864,7 +915,7 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return 1
 		}
 		if verdict != fold.VerdictLegal {
-			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s\n", verdictRefusalMessage(parentID, verdict))
+			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s\n", c.deps.refusalMessage(parentID, verdict))
 			return 1
 		}
 		_, parentProbe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, parentID)
@@ -1083,6 +1134,11 @@ type VerifyCommand struct {
 	deps lifecycleDeps
 }
 
+// SetPendingMarker replaces the command's pending-write recorder.
+func (c *VerifyCommand) SetPendingMarker(pending PendingMarker) {
+	c.deps.setPendingMarker(pending)
+}
+
 // NewVerifyCommand constructs the verify command.
 func NewVerifyCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *VerifyCommand {
 	return &VerifyCommand{deps: newLifecycleDeps(funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)}
@@ -1142,7 +1198,7 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return 1
 		}
 		if verdict != fold.VerdictLegal {
-			_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s\n", verdictRefusalMessage(responseID, verdict))
+			_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s\n", c.deps.refusalMessage(responseID, verdict))
 			return 1
 		}
 		_, parentProbe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, parentID)
@@ -1261,6 +1317,11 @@ type DisputeCommand struct {
 	deps lifecycleDeps
 }
 
+// SetPendingMarker replaces the command's pending-write recorder.
+func (c *DisputeCommand) SetPendingMarker(pending PendingMarker) {
+	c.deps.setPendingMarker(pending)
+}
+
 // NewDisputeCommand constructs the dispute command.
 func NewDisputeCommand(funnel lifecycleFunnel, mirrorDir, spaceID, ownSystem string, manifest space.Manifest, hostCfg SubmitHostConfig, resolveActor func(ActorFlags) (template.Actor, error)) *DisputeCommand {
 	return &DisputeCommand{deps: newLifecycleDeps(funnel, mirrorDir, spaceID, ownSystem, manifest, hostCfg, resolveActor)}
@@ -1318,7 +1379,7 @@ func (c *DisputeCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return 1
 		}
 		if verdict != fold.VerdictLegal {
-			_, _ = fmt.Fprintf(stdio.Stderr, "dispute: %s\n", verdictRefusalMessage(responseID, verdict))
+			_, _ = fmt.Fprintf(stdio.Stderr, "dispute: %s\n", c.deps.refusalMessage(responseID, verdict))
 			return 1
 		}
 		_, parentProbe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, parentID)
@@ -1361,6 +1422,11 @@ var _ Command = (*DisputeCommand)(nil)
 // at fold-apply time (non-fatal flag only, never a local refusal).
 type NoteCommand struct {
 	deps lifecycleDeps
+}
+
+// SetPendingMarker replaces the command's pending-write recorder.
+func (c *NoteCommand) SetPendingMarker(pending PendingMarker) {
+	c.deps.setPendingMarker(pending)
 }
 
 // NewNoteCommand constructs the note command.
