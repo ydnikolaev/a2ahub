@@ -18,6 +18,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/template"
 	"gopkg.in/yaml.v3"
 )
 
@@ -176,6 +177,24 @@ func buildSubmitRequest(deps SubmitDeps, fresh []submitItem) (space.SubmitReques
 			return space.SubmitRequest{}, nil, fmt.Errorf("%s: %w", it.path, err)
 		}
 		files = append(files, space.FileWrite{Path: sectionPath, Content: it.raw})
+
+		// D-D/POL-009, MCP parity with internal/cli's buildRequest: the
+		// schema and positive/negative fixtures a2a_new scaffolded beside a
+		// JSON-Schema contract are part of the same first-publish commit.
+		// Omitting them creates a locally valid draft whose real space CI
+		// rejects with POL-009. The shared template helper is the one reader
+		// for both surfaces; MCP must not grow a second sidecar walker.
+		if it.env.Type == "contract" {
+			parsed, err := artifact.ParseID(it.env.ID)
+			if err != nil {
+				return space.SubmitRequest{}, nil, fmt.Errorf("%s: %w", it.path, err)
+			}
+			sidecars, err := template.ContractSidecarsFromStaging(deps.StagingDir, deps.OwnSystem, parsed.Slug)
+			if err != nil {
+				return space.SubmitRequest{}, nil, fmt.Errorf("%s: %w", it.path, err)
+			}
+			files = append(files, sidecars...)
+		}
 
 		transition, ok := submitFirstTransition[it.env.Type]
 		if !ok {

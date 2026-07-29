@@ -807,6 +807,79 @@ func TestEquivSubmit(t *testing.T) {
 	assertRequestsEquivalent(t, "submit", cliFunnel.calls[0], mcpFunnel.calls[0])
 }
 
+// TestEquivContractSubmitCarriesScaffold is the regression for the
+// 2026-07-29 live finding: both surfaces scaffolded a JSON-Schema contract,
+// but MCP submit dropped schema/** and fixtures/** from the funnel request.
+// The real space CI correctly rejected that PR with POL-009. This drives
+// new -> submit on both public surfaces and compares the complete five-file
+// write (descriptor, three sidecars, publish event).
+func TestEquivContractSubmitCarriesScaffold(t *testing.T) {
+	t.Parallel()
+
+	const (
+		slug = "widget-submit-equiv"
+		id   = "XC-beta-widget-submit-equiv"
+	)
+	cliDir, cliFunnel, _ := newEquivMirror(t, "beta")
+	writeMirrorFileEquiv(t, cliDir, "space.yaml", "id: fixture-space\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
+	cliStaging := t.TempDir()
+	newCmd := cli.NewNewCommand(cliStaging, "beta", equivCLIActorResolver("agent", "bot"), nil)
+	runCLICommand(t, newCmd, []string{
+		"contract", "--slug", slug,
+		"--field", "title=widget contract",
+		"--field", "space=fixture-space",
+		"--field", "to=[axon]",
+		"--field", "category=other",
+	})
+	cliSubmit := cli.NewSubmitCommand(
+		cliFunnel,
+		cli.NewLegalityAdapter(cliDir, "beta", equivManifest()),
+		cli.NewNoopPendingMarker(),
+		cliDir, "fixture-space", "beta", cliStaging, equivCLIHostConfig(""),
+	)
+	runCLICommand(t, cliSubmit, []string{id})
+	if len(cliFunnel.calls) != 1 {
+		t.Fatalf("contract submit: expected 1 CLI funnel call, got %d", len(cliFunnel.calls))
+	}
+
+	mcpDir, mcpFunnel, _ := newEquivMirror(t, "beta")
+	writeMirrorFileEquiv(t, mcpDir, "space.yaml", "id: fixture-space\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
+	mcpStaging := t.TempDir()
+	writeDeps := mcp.WriteDeps{
+		Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "beta",
+		Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
+		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
+	}
+	newDeps := mcp.NewDeps{
+		StagingDir: mcpStaging, OwnSystem: "beta", Now: time.Now, Entropy: rand.Reader,
+		ResolveActor: equivMCPActorResolver("agent", "bot"), WriteFile: os.WriteFile,
+	}
+	registry := mcp.BuildRegistry(
+		nil,
+		writeDeps,
+		mcpStaging,
+		mcp.NewLegalityAdapter(mcpDir, "beta", equivManifest()),
+		newDeps,
+	)
+	runMCPHandler(t, registry, "a2a_new", "", mcp.NewInput{Items: []mcp.NewItem{{
+		Type: "contract",
+		Slug: slug,
+		Fields: map[string]string{
+			"title": "widget contract", "space": "fixture-space",
+			"to": "[axon]", "category": "other",
+		},
+	}}})
+	runMCPHandler(t, registry, "a2a_submit", "", mcp.SubmitInput{IDs: []string{id}})
+	if len(mcpFunnel.calls) != 1 {
+		t.Fatalf("contract submit: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
+	}
+
+	assertRequestsEquivalent(t, "contract-submit", cliFunnel.calls[0], mcpFunnel.calls[0])
+	if got := len(mcpFunnel.calls[0].Files); got != 5 {
+		t.Fatalf("contract submit: MCP carried %d files, want descriptor + 3 sidecars + publish event", got)
+	}
+}
+
 // --- new (draft-writer, no event/commit — see this file's own classification) ---
 
 // TestEquivNew is spec 14 §8 AC #4 applied to a draft-writer verb: `new`
