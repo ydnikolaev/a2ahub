@@ -68,6 +68,14 @@ var (
 	// commit already exists.
 	ErrInvalidBranchSegment = errors.New("space: write branch segment is not usable in a ref name")
 
+	// ErrInvalidOperationKey is returned when a caller opts into semantic
+	// idempotency with a key that is not the canonical op-v1 SHA-256 shape.
+	ErrInvalidOperationKey = errors.New("space: invalid operation key")
+
+	// ErrOperationMismatch refuses adoption of a PR found on an operation
+	// branch when its body does not carry matching operation metadata.
+	ErrOperationMismatch = errors.New("space: operation branch metadata does not match the requested intent")
+
 	// ErrForkFallbackUnavailable is returned when a write opted into the
 	// P28 fork fallback, the push was refused for lack of write access,
 	// and no fork could be used — either the host profile has no fork

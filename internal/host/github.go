@@ -528,6 +528,7 @@ func (h *GitHubHost) FindPRByHeadBranch(ctx context.Context, req FindPRRequest) 
 		HTMLURL string `json:"html_url"`
 		State   string `json:"state"` // "open" | "closed"
 		Merged  bool   `json:"merged"`
+		Body    string `json:"body"`
 	}
 	if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &results); err != nil {
 		return nil, err
@@ -535,12 +536,48 @@ func (h *GitHubHost) FindPRByHeadBranch(ctx context.Context, req FindPRRequest) 
 	for _, r := range results {
 		switch {
 		case r.State == "open":
-			return &PRInfo{Number: r.Number, URL: r.HTMLURL, State: "open"}, nil
+			return &PRInfo{Number: r.Number, URL: r.HTMLURL, State: "open", Body: r.Body}, nil
 		case r.Merged:
-			return &PRInfo{Number: r.Number, URL: r.HTMLURL, State: "merged"}, nil
+			return &PRInfo{Number: r.Number, URL: r.HTMLURL, State: "merged", Body: r.Body}, nil
 		}
 	}
 	return nil, nil
+}
+
+// ListOpenPRs implements OpenPRLister with bounded pagination. GitHub's
+// auto_merge field is null when no merge queue is armed and an object when it
+// is; the diagnostic needs only that distinction.
+func (h *GitHubHost) ListOpenPRs(ctx context.Context, req ListOpenPRsRequest) ([]OpenPRSummary, error) {
+	const op = "ListOpenPRs"
+	if req.Repo.Owner == "" || req.Repo.Name == "" {
+		return nil, &Error{Op: op, Err: ErrInvalidRequest}
+	}
+	const (
+		perPage  = 100
+		maxPages = 100
+	)
+	var out []OpenPRSummary
+	for page := 1; page <= maxPages; page++ {
+		path := fmt.Sprintf("/repos/%s/%s/pulls?state=open&per_page=%d&page=%d",
+			req.Repo.Owner, req.Repo.Name, perPage, page)
+		var results []struct {
+			Number    int    `json:"number"`
+			HTMLURL   string `json:"html_url"`
+			AutoMerge any    `json:"auto_merge"`
+		}
+		if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &results); err != nil {
+			return nil, err
+		}
+		for _, result := range results {
+			out = append(out, OpenPRSummary{
+				Number: result.Number, URL: result.HTMLURL, AutoMergeArmed: result.AutoMerge != nil,
+			})
+		}
+		if len(results) < perPage {
+			return out, nil
+		}
+	}
+	return nil, &Error{Op: op, Err: fmt.Errorf("%w: open PR listing exceeded %d pages", ErrRequestFailed, maxPages)}
 }
 
 // prHeadSHA fetches a PR's head commit SHA (used by CheckStatus, which

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/operation"
 	"github.com/ydnikolaev/a2ahub/testkit/fakegithub"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
@@ -183,6 +184,153 @@ func TestFunnelIdempotentShortCircuit(t *testing.T) {
 	}
 	if len(fake.Pushes) != 1 || len(fake.Opens) != 1 {
 		t.Fatalf("expected NO second push/open cycle, got pushes=%d opens=%d", len(fake.Pushes), len(fake.Opens))
+	}
+}
+
+func TestFunnelOperationRetryReturnsOriginalIDsAcrossDateChange(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	first := newTestSubmitRequest(fx, "axon", l)
+	first.ArtifactID = "XS-axon-20260729-old1"
+	first.ArtifactIDs = []string{"XQ-peer-20260729-parent", first.ArtifactID}
+	first.OperationKey = operation.Respond(
+		"axon", "agent", "bot", []string{"XQ-peer-20260729-parent"}, "answered", nil, []byte("same"),
+	)
+
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	created, err := funnel.Submit(context.Background(), first)
+	if err != nil {
+		t.Fatalf("first Submit: %v", err)
+	}
+
+	retry := first
+	retry.ArtifactID = "XS-axon-20260730-new1"
+	retry.ArtifactIDs = []string{"XQ-peer-20260729-parent", retry.ArtifactID}
+	retried, err := funnel.Submit(context.Background(), retry)
+	if err != nil {
+		t.Fatalf("retry Submit: %v", err)
+	}
+	if retried.State != WriteStateAlreadyOpen {
+		t.Fatalf("retry State = %q, want already-open", retried.State)
+	}
+	if strings.Join(retried.ArtifactIDs, ",") != strings.Join(first.ArtifactIDs, ",") {
+		t.Fatalf("retry IDs = %v, want original submitted IDs %v", retried.ArtifactIDs, first.ArtifactIDs)
+	}
+	if retried.Branch != created.Branch || len(fake.Pushes) != 1 || len(fake.Opens) != 1 {
+		t.Fatalf("retry duplicated operation: branch=%q/%q pushes=%d opens=%d",
+			created.Branch, retried.Branch, len(fake.Pushes), len(fake.Opens))
+	}
+}
+
+func TestFunnelOperationResumesMatchingOrphanBranch(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+	req.ArtifactIDs = []string{req.ArtifactID}
+	req.OperationKey = operation.Respond("axon", "agent", "bot", []string{req.ArtifactID}, "answered", nil, nil)
+
+	fake := host.NewFakeHost()
+	openFailure := errors.New("simulated PR creation outage")
+	fake.OpenPRFunc = func(context.Context, host.OpenPRRequest) (host.PRInfo, error) {
+		return host.PRInfo{}, openFailure
+	}
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	if _, err := funnel.Submit(context.Background(), req); !errors.Is(err, openFailure) {
+		t.Fatalf("first Submit error = %v, want OpenPR failure", err)
+	}
+	branch := BranchName(req.System, req.Verb, req.OperationKey)
+	remoteSHA, err := runGitOutput(context.Background(), req.RepoDir, nil, "rev-parse", branch)
+	if err != nil {
+		t.Fatalf("rev-parse orphan branch: %v", err)
+	}
+
+	fake.OpenPRFunc = nil
+	fake.ReadRemoteBranchFunc = func(context.Context, host.RemoteBranchRequest) (host.RemoteBranchHead, error) {
+		return host.RemoteBranchHead{SHA: remoteSHA, Exists: true}, nil
+	}
+	result, err := funnel.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("retry Submit: %v", err)
+	}
+	if result.State != WriteStatePendingMerge || len(fake.Pushes) != 1 {
+		t.Fatalf("orphan was not resumed in place: result=%+v pushes=%d", result, len(fake.Pushes))
+	}
+	if len(fake.Opens) != 2 {
+		t.Fatalf("OpenPR calls = %d, want failed first attempt + resumed second attempt", len(fake.Opens))
+	}
+}
+
+func TestFunnelOperationRetryRecognizesMergedRemoteDespiteStaleLocalIntent(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+	req.ArtifactIDs = []string{"XS-axon-20260729-old1"}
+	req.OperationKey = operation.Respond("axon", "agent", "bot", []string{"XQ-peer-parent"}, "answered", nil, nil)
+
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	first, err := funnel.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("first Submit: %v", err)
+	}
+	if err := fake.MergePR(context.Background(), host.MergePRRequest{
+		Repo: req.Repo, PRNumber: first.PRNumber,
+	}); err != nil {
+		t.Fatalf("MergePR: %v", err)
+	}
+
+	retry := req
+	retry.ArtifactIDs = []string{"XS-axon-20260730-new1"}
+	result, err := funnel.Submit(context.Background(), retry)
+	if err != nil {
+		t.Fatalf("retry Submit: %v", err)
+	}
+	if result.State != WriteStateAlreadyMerged || strings.Join(result.ArtifactIDs, ",") != req.ArtifactIDs[0] {
+		t.Fatalf("merged retry = %+v, want original ID and already-merged", result)
+	}
+	if len(fake.AutoArms) != 0 {
+		t.Fatalf("retry tried to re-arm an already merged PR: %+v", fake.AutoArms)
+	}
+}
+
+func TestFunnelOperationRefusesMismatchedOrphan(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+	req.ArtifactIDs = []string{req.ArtifactID}
+	req.OperationKey = operation.Respond("axon", "agent", "bot", []string{req.ArtifactID}, "answered", nil, nil)
+	fake := host.NewFakeHost()
+	fake.ReadRemoteBranchFunc = func(context.Context, host.RemoteBranchRequest) (host.RemoteBranchHead, error) {
+		return host.RemoteBranchHead{SHA: strings.Repeat("a", 40), Exists: true}, nil
+	}
+
+	_, err = NewWriteFunnel(fake, nil, "0.1.0").Submit(context.Background(), req)
+	if !errors.Is(err, ErrOperationMismatch) {
+		t.Fatalf("Submit error = %v, want ErrOperationMismatch", err)
+	}
+	if len(fake.Pushes) != 0 || len(fake.Opens) != 0 {
+		t.Fatalf("mismatched orphan mutated host: pushes=%d opens=%d", len(fake.Pushes), len(fake.Opens))
 	}
 }
 

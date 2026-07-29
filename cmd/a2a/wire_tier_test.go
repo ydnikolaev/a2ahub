@@ -619,7 +619,7 @@ func TestWireRespondPropagatesParentThread(t *testing.T) {
 	// merges to (no host to do it).
 	mirror := wireMirrorDir(t, fx.ProjectRoot)
 	runGitFixture(t, mirror, "fetch", "origin", "+refs/heads/*:refs/remotes/origin/*")
-	branch := findRespondBranch(t, mirror, parentID)
+	branch := findRespondBranch(t, mirror)
 	responsePath := findResponseFilePath(t, mirror, branch)
 	committed := runGitFixtureOutput(t, mirror, "show", "origin/"+branch+":"+responsePath)
 
@@ -629,16 +629,14 @@ func TestWireRespondPropagatesParentThread(t *testing.T) {
 	}
 }
 
-// findRespondBranch locates the ONE remote branch the funnel pushed for
-// parentID's `respond` write (space.BranchName's own grammar:
-// a2a/<system>/<verb>/<artifactID> — artifactID here is
-// "<parentID>+<responseID>", D-024's multi-id write, so a prefix match on
-// parentID is the only stable anchor: the content-derived responseID
-// itself cannot be predicted ahead of the write).
-func findRespondBranch(t *testing.T, mirror, parentID string) string {
+// findRespondBranch locates the ONE semantic-operation branch the funnel
+// pushed for respond. Public response IDs remain date-bearing protocol data;
+// the branch is keyed by the private op-v1 digest so a retry across midnight
+// still finds this write.
+func findRespondBranch(t *testing.T, mirror string) string {
 	t.Helper()
 	out := runGitFixtureOutput(t, mirror, "branch", "-r")
-	prefix := "origin/a2a/beta/respond/" + parentID
+	prefix := "origin/a2a/beta/respond/op-v1-"
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, prefix) {

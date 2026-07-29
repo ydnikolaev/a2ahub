@@ -79,6 +79,9 @@ type Violation struct {
 	// site in this package sets it explicitly; the zero-value fallback
 	// is a defensive default, not a relied-upon path).
 	Severity Severity `json:"severity"`
+	// Subjects carries the complete machine-readable entity set implicated by
+	// a bounded human message (for example every consumer blocking POL-006).
+	Subjects []string `json:"subjects,omitempty"`
 }
 
 // isReject reports whether v should flip Result.Valid to false.

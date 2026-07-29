@@ -2,6 +2,7 @@ package space
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/operation"
 )
 
 // WriteState is the funnel's own claim about a Submit outcome — the
@@ -84,6 +86,13 @@ type SubmitRequest struct {
 	Verb string
 	// ArtifactID is the artifact's §3.3 id (branch name suffix).
 	ArtifactID string
+	// ArtifactIDs names every public protocol id produced by this write.
+	// Operation-key retries return the IDs recorded on the original PR rather
+	// than newly minted date-bearing IDs that were never submitted.
+	ArtifactIDs []string
+	// OperationKey opts this request into semantic idempotency across public
+	// ID/date changes. It is internal branch identity, never protocol data.
+	OperationKey string
 	// Files are committed together, exactly once. Every Path must be
 	// under System's own section (or decisions/, the funnel-level
 	// exception) — checked BEFORE any git action.
@@ -153,6 +162,9 @@ type WriteResult struct {
 	PRURL     string
 	CommitSHA string
 	State     WriteState
+	// ArtifactIDs are the IDs actually present on the operation's PR. They
+	// may differ from this invocation's candidates on a cross-midnight retry.
+	ArtifactIDs []string
 	// AutoMergeNote is non-empty when the PR opened but auto-merge could NOT
 	// be armed — the repository forbids it, or the PR is already mergeable.
 	// The write succeeded either way, so this is not an error; it is the one
@@ -209,10 +221,17 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	if req.Verb == "" {
 		return WriteResult{}, &Error{Op: op, Input: req.ArtifactID, Err: ErrMissingVerb}
 	}
-	if err := validateBranchSegments(req.System, req.Verb, req.ArtifactID); err != nil {
+	branchID := req.ArtifactID
+	if req.OperationKey != "" {
+		if !operation.Valid(req.OperationKey) {
+			return WriteResult{}, &Error{Op: op, Input: req.OperationKey, Err: ErrInvalidOperationKey}
+		}
+		branchID = req.OperationKey
+	}
+	if err := validateBranchSegments(req.System, req.Verb, branchID); err != nil {
 		return WriteResult{}, &Error{Op: op, Input: req.ArtifactID, Err: err}
 	}
-	branch := BranchName(req.System, req.Verb, req.ArtifactID)
+	branch := BranchName(req.System, req.Verb, branchID)
 
 	// Step 0: idempotent-retry short-circuit — before ANY other check or
 	// git action (spec 05 §7 idempotency note). Only an OPEN PR
@@ -226,7 +245,15 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	if err != nil {
 		return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
 	}
-	if existing != nil && existing.State != "merged" {
+	if existing != nil && (existing.State != "merged" || req.OperationKey != "") {
+		existingIDs := req.ArtifactIDs
+		if req.OperationKey != "" {
+			key, ids, ok := parseOperationMetadata(existing.Body)
+			if !ok || key != req.OperationKey {
+				return WriteResult{}, &Error{Op: op, Input: branch, Err: ErrOperationMismatch}
+			}
+			existingIDs = ids
+		}
 		// Re-arm auto-merge before reporting success. OpenPR is NOT atomic
 		// on GitHub — creating the PR and arming auto-merge are two calls —
 		// so the interrupted run this short-circuit exists for may have
@@ -238,29 +265,31 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		// open with a green required check and `auto_merge: null`, and every
 		// retry answered "already-open". Arming is idempotent, so the common
 		// case — the PR was fully configured — costs one no-op call.
-		if am, isAutoMerger := f.host.(host.AutoMerger); isAutoMerger {
-			err := am.EnableAutoMerge(ctx, host.EnableAutoMergeRequest{
-				Repo: req.Repo, PRNumber: existing.Number, Credential: req.Credential,
-			})
-			// "Already clean" is GitHub declining because the PR can be
-			// merged right now — nothing to wait for. That is not a failed
-			// repair; it means the write must LAND the PR itself instead
-			// (WAVE M4), guarded by tryLandCleanPR's explicit-green check —
-			// never merge, either way, must not fail the retry.
-			if err != nil {
-				if !host.IsAutoMergeAlreadyClean(err) {
-					return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
-				}
-				merged, merr := f.tryLandCleanPR(ctx, req, existing.Number)
-				if merr != nil {
-					return WriteResult{}, &Error{Op: op, Input: branch, Err: merr}
-				}
-				if merged {
-					existing.State = "merged"
+		if existing.State != "merged" {
+			if am, isAutoMerger := f.host.(host.AutoMerger); isAutoMerger {
+				err := am.EnableAutoMerge(ctx, host.EnableAutoMergeRequest{
+					Repo: req.Repo, PRNumber: existing.Number, Credential: req.Credential,
+				})
+				// "Already clean" is GitHub declining because the PR can be
+				// merged right now — nothing to wait for. That is not a failed
+				// repair; it means the write must LAND the PR itself instead
+				// (WAVE M4), guarded by tryLandCleanPR's explicit-green check —
+				// never merge, either way, must not fail the retry.
+				if err != nil {
+					if !host.IsAutoMergeAlreadyClean(err) {
+						return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
+					}
+					merged, merr := f.tryLandCleanPR(ctx, req, existing.Number)
+					if merr != nil {
+						return WriteResult{}, &Error{Op: op, Input: branch, Err: merr}
+					}
+					if merged {
+						existing.State = "merged"
+					}
 				}
 			}
 		}
-		return existingPRResult(branch, existing), nil
+		return existingPRResult(branch, existing, existingIDs), nil
 	}
 
 	// Step 1a: section guard — wrong-section files refused before any
@@ -335,9 +364,13 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	// UNLOCKED: commitAndPush already released the mirror lock once the
 	// push completed, so this network round trip does not hold up any
 	// other writer on the mirror.
+	prBody := req.PRBody
+	if req.OperationKey != "" {
+		prBody = appendOperationMetadata(prBody, req.OperationKey, req.ArtifactIDs)
+	}
 	pr, err := f.host.OpenPR(ctx, host.OpenPRRequest{
 		Repo: req.Repo, Head: head, Base: req.BaseBranch,
-		Title: req.PRTitle, Body: req.PRBody, Credential: req.Credential,
+		Title: req.PRTitle, Body: prBody, Credential: req.Credential,
 	})
 	if err != nil {
 		return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
@@ -365,7 +398,7 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	// this phase's — spec 05 §7).
 	return WriteResult{
 		Branch: branch, PRNumber: pr.Number, PRURL: pr.URL,
-		CommitSHA: sha, State: state,
+		CommitSHA: sha, State: state, ArtifactIDs: append([]string(nil), req.ArtifactIDs...),
 		// Carried, not swallowed: "pending-merge" over a PR nobody will
 		// merge is the one outcome the caller must not read as done.
 		AutoMergeNote: note,
@@ -462,6 +495,45 @@ func checkStatusExplicitlyGreen(s host.CheckStatusResult) bool {
 // the format string.
 func BranchName(system, verb, artifactID string) string {
 	return fmt.Sprintf("a2a/%s/%s/%s", system, verb, artifactID)
+}
+
+const (
+	operationMetadataPrefix = "<!-- a2a-operation: "
+	operationMetadataSuffix = " -->"
+)
+
+type operationMetadata struct {
+	Key string   `json:"key"`
+	IDs []string `json:"ids"`
+}
+
+func appendOperationMetadata(body, key string, ids []string) string {
+	raw, err := json.Marshal(operationMetadata{Key: key, IDs: ids})
+	if err != nil {
+		// The shape contains strings only, so encoding cannot fail. Keep the
+		// funnel API error-free here while refusing adoption later if that
+		// invariant is ever broken.
+		return body
+	}
+	if body != "" && !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	return body + operationMetadataPrefix + string(raw) + operationMetadataSuffix
+}
+
+func parseOperationMetadata(body string) (key string, ids []string, ok bool) {
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(line, operationMetadataPrefix) || !strings.HasSuffix(line, operationMetadataSuffix) {
+			continue
+		}
+		raw := strings.TrimSuffix(strings.TrimPrefix(line, operationMetadataPrefix), operationMetadataSuffix)
+		var metadata operationMetadata
+		if err := json.Unmarshal([]byte(raw), &metadata); err != nil || !operation.Valid(metadata.Key) || len(metadata.IDs) == 0 {
+			return "", nil, false
+		}
+		return metadata.Key, append([]string(nil), metadata.IDs...), true
+	}
+	return "", nil, false
 }
 
 // validateBranchSegments refuses a system/verb/artifactID that would make
@@ -637,6 +709,34 @@ func (f *WriteFunnel) commitAndPush(ctx context.Context, req SubmitRequest, bran
 	}
 	defer restoreAndRelease()
 
+	// A semantic-operation branch may already have been pushed by an earlier
+	// invocation that failed before OpenPR. Resume it only when the remote SHA
+	// is still exactly the locally preserved tool-owned commit and that commit
+	// carries this operation key. No force push and no branch-name-only trust.
+	if req.OperationKey != "" {
+		reader, ok := f.host.(host.RemoteBranchReader)
+		if !ok {
+			return commitAndPushOutcome{}, &Error{Op: op, Input: branch, Err: ErrOperationMismatch}
+		}
+		remote, readErr := reader.ReadRemoteBranch(ctx, host.RemoteBranchRequest{
+			RepoDir: req.RepoDir, RemoteURL: req.RemoteURL, Branch: branch, Credential: req.Credential,
+		})
+		if readErr != nil {
+			return commitAndPushOutcome{}, &Error{Op: op, Input: branch, Err: readErr}
+		}
+		if remote.Exists {
+			matches, matchErr := operationCommitMatches(ctx, req.RepoDir, branch, remote.SHA, req.OperationKey)
+			if matchErr != nil {
+				return commitAndPushOutcome{}, &Error{Op: op, Input: branch, Err: matchErr}
+			}
+			if !matches {
+				return commitAndPushOutcome{}, &Error{Op: op, Input: branch, Err: ErrOperationMismatch}
+			}
+			restoreAndRelease()
+			return commitAndPushOutcome{sha: remote.SHA, head: branch}, nil
+		}
+	}
+
 	sha, fresh, err := f.commitOne(ctx, lock, req, branch)
 	if err != nil {
 		return commitAndPushOutcome{}, &Error{Op: op, Err: err}
@@ -652,7 +752,10 @@ func (f *WriteFunnel) commitAndPush(ctx context.Context, req SubmitRequest, bran
 			return commitAndPushOutcome{}, &Error{Op: op, Err: berr}
 		}
 		if onBase {
-			done := WriteResult{Branch: branch, CommitSHA: sha, State: WriteStateAlreadyMerged}
+			done := WriteResult{
+				Branch: branch, CommitSHA: sha, State: WriteStateAlreadyMerged,
+				ArtifactIDs: append([]string(nil), req.ArtifactIDs...),
+			}
 			return commitAndPushOutcome{done: &done}, nil
 		}
 	}
@@ -673,7 +776,7 @@ func (f *WriteFunnel) commitAndPush(ctx context.Context, req SubmitRequest, bran
 			// The fork already carries this branch's PR — the fork-head
 			// idempotency check step 0 could not make, because the fork's
 			// owner was unknown until now.
-			done := existingPRResult(branch, forked)
+			done := existingPRResult(branch, forked, req.ArtifactIDs)
 			return commitAndPushOutcome{done: &done}, nil
 		}
 		head = forkHead
@@ -691,12 +794,30 @@ func (f *WriteFunnel) commitAndPush(ctx context.Context, req SubmitRequest, bran
 
 // existingPRResult renders the idempotent short-circuit's result for a PR
 // the host already has open or merged for this branch.
-func existingPRResult(branch string, pr *host.PRInfo) WriteResult {
+func existingPRResult(branch string, pr *host.PRInfo, artifactIDs []string) WriteResult {
 	state := WriteStateAlreadyOpen
 	if pr.State == "merged" {
 		state = WriteStateAlreadyMerged
 	}
-	return WriteResult{Branch: branch, PRNumber: pr.Number, PRURL: pr.URL, State: state}
+	return WriteResult{
+		Branch: branch, PRNumber: pr.Number, PRURL: pr.URL, State: state,
+		ArtifactIDs: append([]string(nil), artifactIDs...),
+	}
+}
+
+func operationCommitMatches(ctx context.Context, repoDir, branch, remoteSHA, key string) (bool, error) {
+	localSHA, err := runGitOutput(ctx, repoDir, nil, "rev-parse", "--verify", branch)
+	if err != nil {
+		return false, nil //nolint:nilerr // absent local provenance means "not proven", not an engine failure
+	}
+	if localSHA != remoteSHA {
+		return false, nil
+	}
+	message, err := runGitOutput(ctx, repoDir, nil, "show", "-s", "--format=%B", remoteSHA)
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains("\n"+message+"\n", "\nA2A-Operation-Key: "+key+"\n"), nil
 }
 
 // push sends the committed branch to remoteURL.
@@ -942,6 +1063,9 @@ func (f *WriteFunnel) commitOne(ctx context.Context, lock *MirrorLock, req Submi
 	msg := req.CommitMessage
 	if msg == "" {
 		msg = "a2a: submit " + req.ArtifactID
+	}
+	if req.OperationKey != "" {
+		msg += "\n\nA2A-Operation-Key: " + req.OperationKey
 	}
 	if _, err := runGitOutput(ctx, req.RepoDir, env, "commit", "-m", msg); err != nil {
 		return "", false, err

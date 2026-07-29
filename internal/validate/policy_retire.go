@@ -14,7 +14,9 @@
 package validate
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 )
 
 // RegisteredConsumer is one system whose acknowledgement the retire
@@ -75,11 +77,13 @@ type RetirePrecondition struct {
 //     and notify (AC-202.3 second clause).
 func CheckRetirePrecondition(p RetirePrecondition) (violation *Violation, overridden []string) {
 	var unacked []string
+	seen := map[string]bool{}
 	for _, c := range p.Consumers {
 		if c.Left {
 			continue
 		}
-		if !c.Acked {
+		if !c.Acked && !seen[c.System] {
+			seen[c.System] = true
 			unacked = append(unacked, c.System)
 		}
 	}
@@ -92,12 +96,22 @@ func CheckRetirePrecondition(p RetirePrecondition) (violation *Violation, overri
 		return nil, unacked
 	}
 
+	const textLimit = 8
+	shown := unacked
+	suffix := ""
+	if len(shown) > textLimit {
+		shown = shown[:textLimit]
+		suffix = fmt.Sprintf(" (+%d more)", len(unacked)-textLimit)
+	}
 	return &Violation{
-		Code:     "POL-006",
-		Class:    ClassPolicy,
-		Path:     "",
-		Message:  "retire refused: registered consumers have not acknowledged the deprecation (§5.4) — retire un-acked, or resubmit as a human-reviewed override once sunset has passed and a reminder is recorded",
+		Code:  "POL-006",
+		Class: ClassPolicy,
+		Path:  "",
+		Message: "retire refused: registered consumers missing acknowledgement: " +
+			strings.Join(shown, ", ") + suffix +
+			" (§5.4) — ask them to acknowledge, or resubmit as a human-reviewed override once sunset has passed and a reminder is recorded",
 		CCRef:    "CC-081",
 		Severity: SeverityReject,
+		Subjects: append([]string(nil), unacked...),
 	}, nil
 }

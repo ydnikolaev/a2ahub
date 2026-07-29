@@ -161,6 +161,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"CI presence", func() (bool, string) { return c.doctorCheckCIPresence(cfg, machine) }},
 		{"space scaffolding current", func() (bool, string) { return c.doctorCheckScaffoldingCurrent(ctx, cfg, machine) }},
 		{"auto-merge enabled", func() (bool, string) { return c.doctorCheckAutoMerge(ctx, cfg, machine) }},
+		{"stuck green PRs", func() (bool, string) { return c.doctorCheckStuckGreenPRs(ctx, cfg, machine) }},
 		{"codeowners resolvable", func() (bool, string) { return c.doctorCheckCodeownersResolvable(ctx, cfg, machine) }},
 		{"threads intact", func() (bool, string) { return c.doctorCheckThreadsIntact(cfg, machine) }},
 		{"skipped mirror files", func() (bool, string) { return c.doctorCheckSkippedFiles(ctx, cfg, machine) }},
@@ -693,6 +694,74 @@ func (c *DoctorCommand) doctorCheckAutoMerge(ctx context.Context, cfg space.Proj
 	if len(unverifiable) > 0 {
 		return true, fmt.Sprintf(" · auto-merge unverified for %s: the credential cannot read this repo's settings "+
 			"(a fine-grained token needs \"Repository metadata: read\")", strings.Join(unverifiable, ", "))
+	}
+	return true, ""
+}
+
+func (c *DoctorCommand) doctorCheckStuckGreenPRs(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+	if len(cfg.Spaces) == 0 {
+		return true, ""
+	}
+	lister, ok := c.h.(host.OpenPRLister)
+	if !ok {
+		return true, " · stuck-green state unverified: this build wires no open-PR reader"
+	}
+
+	var stuck, unverifiable []string
+	for _, ref := range cfg.Spaces {
+		owner, name, err := doctorRepoOwnerName(ref.RepoURL)
+		if err != nil {
+			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+		var parsedRef space.CredentialReference
+		if raw, present := machine.Credentials[ref.ID]; present {
+			if parsed, parseErr := space.ParseCredentialReference(raw); parseErr == nil {
+				parsedRef = parsed
+			}
+		}
+		credential, err := c.resolveCredential(ctx, space.CredentialEnvVar(ref.ID), parsedRef)
+		if err != nil {
+			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+		repo := host.Repo{Owner: owner, Name: name}
+		prs, err := lister.ListOpenPRs(ctx, host.ListOpenPRsRequest{Repo: repo, Credential: credential})
+		if err != nil {
+			unverifiable = append(unverifiable, ref.ID)
+			continue
+		}
+		for _, pr := range prs {
+			if pr.AutoMergeArmed {
+				continue
+			}
+			status, statusErr := c.h.CheckStatus(ctx, host.StatusRequest{
+				Repo: repo, PRNumber: pr.Number, Credential: credential,
+			})
+			if statusErr != nil {
+				unverifiable = append(unverifiable, fmt.Sprintf("%s#%d", ref.ID, pr.Number))
+				continue
+			}
+			if status.State != "completed" || status.Conclusion != "success" || len(status.Ambiguous) != 0 {
+				continue
+			}
+			url := pr.URL
+			if url == "" {
+				url = fmt.Sprintf("PR #%d", pr.Number)
+			}
+			stuck = append(stuck, fmt.Sprintf(
+				"%s %s is open with a green required check but auto-merge is not armed — run `gh pr merge %d --auto --repo %s/%s`; doctor will never merge it itself",
+				ref.ID, url, pr.Number, owner, name,
+			))
+		}
+	}
+	sort.Strings(stuck)
+	sort.Strings(unverifiable)
+	if len(stuck) > 0 {
+		return false, strings.Join(stuck, "; ")
+	}
+	if len(unverifiable) > 0 {
+		return true, " · stuck-green state unverified for " + strings.Join(unverifiable, ", ")
 	}
 	return true, ""
 }
