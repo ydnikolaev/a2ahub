@@ -22,3 +22,30 @@ stderr 'question'
 # as a validation complaint about the placeholder it had failed to replace.
 ! exec a2a new question --field 'to={beta: yes}'
 stderr 'field'
+
+# Regression from the first immutable v0.16 candidate: an empty durable actor
+# name is a content violation with a stable machine code. It must never escape
+# as "unmapped schema-class keyword ... schema/registry drift", which would
+# make an agent diagnose the validator instead of repairing its identity.
+cp anonymous-actor.md .a2a/staging/anonymous-actor.md
+! exec a2a validate --all
+stdout 'SCH-009'
+
+-- anonymous-actor.md --
+---
+schema: envelope/v1
+id: XQ-axon-20260729-k3f9
+type: question
+title: Anonymous writes are refused
+space: fixture-space
+from: axon
+to: [beta]
+thread: thread:axon-20260729-k3f9
+actor: {kind: agent, name: ""}
+created: 2026-07-29T16:00:00Z
+category: clarification
+priority: p3
+blocking: true
+classification: internal
+---
+This document exists only to guard SCH-009 at the executable CLI boundary.
