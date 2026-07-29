@@ -208,3 +208,24 @@ changes:
       why: >
         Existing staged JSON-Schema contracts can be submitted again through
         MCP; their scaffold is included automatically.
+
+  - id: RN-01600-10
+    kind: fix
+    impact: normal
+    subject: "Live verification tolerates GitHub list propagation without weakening its verdict"
+    detail: >
+      A newly-created pull request can be returned by GitHub's create endpoint
+      before the same PR appears in the list endpoint. The live harness now
+      waits within a small bounded window for that exact visibility gap instead
+      of falsely failing a healthy write and forcing another full matrix. A
+      dependent transition starts only after the merged commit is present on
+      origin/main and the mirror working tree is parked on that base tip.
+      Host idempotency lookup also recognises merged list entries through
+      merged_at, matching GitHub's list response while retaining the older
+      merged-boolean response shape.
+    affects: ["live release gate", "GitHub retry recovery"]
+    action:
+      scope: none
+      why: >
+        This is a maintainer reliability correction. It adds no optimistic
+        pass: lookup and mirror waits remain bounded and fail closed.

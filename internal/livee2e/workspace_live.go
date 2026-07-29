@@ -167,24 +167,12 @@ func (c *checkout) RunIn(ctx context.Context, dir string, args ...string) (stdou
 }
 
 // MainContains reports whether sha is an ancestor of the checkout's fetched
-// origin/main. This is the post-sync proof happyLandAndSync needs: GitHub may
-// report a PR merged a few seconds before a fetch can observe the updated
-// base ref, while `a2a sync` itself still exits successfully.
+// origin/main AND the mirror working tree is actually parked on that exact
+// base tip. Readers fold files from the working tree, not from a remote ref,
+// so proving only origin/main moved would allow a stale ephemeral branch to
+// masquerade as a successful sync.
 func (c *checkout) MainContains(ctx context.Context, sha string) (bool, error) {
-	cmd := exec.CommandContext(ctx, "git", "merge-base", "--is-ancestor", sha, "origin/main")
-	cmd.Dir = c.MirrorDir()
-	var errBuf strings.Builder
-	cmd.Stderr = &errBuf
-	err := cmd.Run()
-	if err == nil {
-		return true, nil
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-		return false, nil
-	}
-	return false, fmt.Errorf("livee2e: test whether origin/main contains %s: %w: %s",
-		sha, err, strings.TrimSpace(errBuf.String()))
+	return gitMainContains(ctx, c.MirrorDir(), sha)
 }
 
 // RunWithAPIRoot execs the a2a binary exactly like Run, except A2A_GITHUB_API

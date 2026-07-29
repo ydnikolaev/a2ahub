@@ -112,3 +112,48 @@ func TestEveryPullLookupGoesThroughRunPulls(t *testing.T) {
 			strings.Join(offenders, "\n  "))
 	}
 }
+
+// TestBranchLookupsAwaitProviderVisibility is the structural half of the
+// 2026-07-29 PR #1549 regression. awaitLookupVisibility's unit tests prove
+// the retry state machine, while this test proves the two production branch
+// lookups actually route through it. Without this tooth the helper could stay
+// green and unused while a future simplification restored the one-shot list
+// query that produced the false live red.
+func TestBranchLookupsAwaitProviderVisibility(t *testing.T) {
+	t.Parallel()
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "harness_live.go", nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parse harness_live.go: %v", err)
+	}
+	required := map[string]bool{
+		"pullForBranch":           false,
+		"pullForBranchContaining": false,
+	}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		if _, tracked := required[fn.Name.Name]; !tracked {
+			continue
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			id, ok := call.Fun.(*ast.Ident)
+			if ok && id.Name == "awaitLookupVisibility" {
+				required[fn.Name.Name] = true
+			}
+			return true
+		})
+	}
+	for fn, guarded := range required {
+		if !guarded {
+			t.Errorf("%s does not call awaitLookupVisibility — a newly-created PR omitted from the first LIST /pulls response will be reported missing", fn)
+		}
+	}
+}
