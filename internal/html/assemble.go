@@ -32,7 +32,22 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 
 	un := store.UpdateNotice()
 	d.Tooling = Tooling{Current: un.Current, Latest: un.Latest, UpdateAvailable: un.UpdateAvailable,
-		Required: un.Required, Floor: un.Floor, FloorSpace: un.FloorSpace}
+		Required: un.Required, Floor: un.Floor, FloorSpace: un.FloorSpace,
+		CheckedAt: un.CheckedAt, Source: un.Source, Fresh: un.Fresh, ReleaseURL: un.ReleaseURL}
+	if !un.CheckedAt.IsZero() {
+		d.Tooling.CacheAge = humanizeAge(now, un.CheckedAt)
+	}
+	ud := store.UpdateDetail()
+	d.UpdateDetail = UpdateDetail{Status: string(ud.Status), Version: ud.TargetVersion, Changes: []UpdateChange{}}
+	if ud.Detail != nil {
+		d.UpdateDetail.Headline = ud.Detail.Headline
+		for _, change := range ud.Detail.Changes {
+			d.UpdateDetail.Changes = append(d.UpdateDetail.Changes, UpdateChange{
+				Kind: change.Kind, Impact: change.Impact, Subject: change.Subject,
+				Detail: change.Detail, Run: append([]string(nil), change.Action.Run...),
+			})
+		}
+	}
 
 	// Nodes (deduped across spaces) + per-space health.
 	syncBySpace := make(map[string]cache.SpaceSyncInfo, len(mirrors))
@@ -148,7 +163,7 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 	}
 
 	// Inbox / outbox items (open only — the Store already filters to open).
-	inItems, err := store.Inbox(ctx, false)
+	inItems, err := store.InboxSnapshot(ctx, false)
 	if err != nil {
 		return Data{}, fmt.Errorf("html: inbox: %w", err)
 	}

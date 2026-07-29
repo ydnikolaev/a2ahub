@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -225,7 +226,7 @@ func TestUpdateCommand_CheckJSON_Shape(t *testing.T) {
 		FloorSpace:      "",
 		Required:        false,
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("--json = %+v, want %+v", got, want)
 	}
 	assertUpdateExecUnchanged(t, execPath, orig)
@@ -410,6 +411,13 @@ func TestUpdateCommand_PostSwapDigest_JSONMode_NoHumanDigest(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "what changed") {
 		t.Fatalf("stdout = %q, want no human digest in --json mode", stdout.String())
+	}
+	var result updateJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("full update --json is not one JSON document: %v (raw: %s)", err, stdout.String())
+	}
+	if result.Current != "0.1.0" || result.Latest != "0.3.0" {
+		t.Fatalf("full update --json = %+v", result)
 	}
 	if len(calls) != 0 {
 		t.Fatalf("whatsnewRunner calls = %d, want 0 (never invoked in --json mode)", len(calls))
@@ -676,6 +684,41 @@ func TestUpdateCommand_NameAndSynopsis(t *testing.T) {
 	}
 	if cmd.Synopsis() == "" {
 		t.Fatal("Synopsis() is empty")
+	}
+}
+
+func TestUpdateCommandRefreshesOnlyManagedEnabledNotificationComponents(t *testing.T) {
+	// reason: newTestUpdateCommand owns process environment through t.Setenv.
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	var calls [][]string
+	cmd.companionRunner = func(_ context.Context, executable, dir string, args ...string) error {
+		calls = append(calls, append([]string{executable, dir}, args...))
+		return nil
+	}
+	machine := space.MachineConfig{Notifications: space.NotificationConfig{
+		Projects: []space.NotificationProject{
+			{Root: "/projects/one", Channels: []string{"vscode"}},
+		},
+		Components: []space.NotificationComponent{
+			{Channel: "macos", Version: "0.1.0"},
+			{Channel: "vscode", Profile: "Work", CodePath: "/opt/code", Version: "0.1.0"},
+		},
+	}}
+	stdio, _, _ := newUpdateIO("")
+
+	results := cmd.refreshManagedNotificationComponents(context.Background(), "/opt/a2a", machine, stdio)
+
+	want := []string{
+		"/opt/a2a", "/projects/one",
+		"notifications", "install", "--channel", "vscode",
+		"--project", "/projects/one", "--json",
+		"--profile", "Work", "--code", "/opt/code",
+	}
+	if len(calls) != 1 || strings.Join(calls[0], "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("companion calls = %v, want [%v]", calls, want)
+	}
+	if len(results) != 1 || results[0].Status != "updated" || results[0].Profile != "Work" {
+		t.Fatalf("component results = %+v", results)
 	}
 }
 

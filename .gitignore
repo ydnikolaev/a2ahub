@@ -35,6 +35,7 @@ scripts/*
 !scripts/classify-guard.sh
 !scripts/release-preflight.sh
 !scripts/check-release-notes-freshness.sh
+!scripts/build-release-cohort.sh
 # install.sh's regression net (P40 AC-1002.*). A directory, not a file: `scripts/*`
 # excludes the DIRECTORY `scripts/installsh`, and git cannot re-include a file whose
 # parent directory is excluded — so `!scripts/installsh/install_test.go` alone would

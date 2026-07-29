@@ -27,16 +27,50 @@ type Data struct {
 	Contracts     []Contract     `json:"contracts"`
 	Flags         []Flag         `json:"flags"`
 	ReleaseNotes  []ReleaseNote  `json:"releaseNotes"`
+	UpdateDetail  UpdateDetail   `json:"updateDetail"`
+	Focus         *Focus         `json:"focus,omitempty"`
+}
+
+// Focus is a trusted route hint supplied by the CLI after resolving a local
+// notification route. It contains only qualified protocol identity.
+type Focus struct {
+	Space      string `json:"space"`
+	ArtifactID string `json:"artifactID"`
+	Update     bool   `json:"update,omitempty"`
+	Found      bool   `json:"found"`
+}
+
+// UpdateDetail is the safe, network-free future-release card. Headline and
+// changes are populated only from a verified release-cohort detail cache.
+type UpdateDetail struct {
+	Status   string         `json:"status"`
+	Version  string         `json:"version"`
+	Headline string         `json:"headline,omitempty"`
+	Changes  []UpdateChange `json:"changes"`
+}
+
+// UpdateChange is one safe, schema-validated future-release summary row.
+type UpdateChange struct {
+	Kind    string   `json:"kind"`
+	Impact  string   `json:"impact"`
+	Subject string   `json:"subject"`
+	Detail  string   `json:"detail"`
+	Run     []string `json:"run,omitempty"`
 }
 
 // Tooling is the version/update strip (from cache.UpdateNotice).
 type Tooling struct {
-	Current         string `json:"current"`
-	Latest          string `json:"latest"`
-	UpdateAvailable bool   `json:"updateAvailable"`
-	Required        bool   `json:"required"` // local binary below a space's min floor
-	Floor           string `json:"floor"`
-	FloorSpace      string `json:"floorSpace"`
+	Current         string    `json:"current"`
+	Latest          string    `json:"latest"`
+	UpdateAvailable bool      `json:"updateAvailable"`
+	Required        bool      `json:"required"` // local binary below a space's min floor
+	Floor           string    `json:"floor"`
+	FloorSpace      string    `json:"floorSpace"`
+	CheckedAt       time.Time `json:"checkedAt"`
+	CacheAge        string    `json:"cacheAge"`
+	Source          string    `json:"source"`
+	Fresh           bool      `json:"fresh"`
+	ReleaseURL      string    `json:"releaseURL"`
 }
 
 // SpaceHealth is one connected space's row (per-space health panel).

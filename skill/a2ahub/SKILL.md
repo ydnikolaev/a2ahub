@@ -1,6 +1,11 @@
 ---
 name: a2ahub
-description: The a2ahub expert skill — answer questions about the cross-system exchange protocol, onboard a first-time participant, and assist an agent drafting any artifact type. Documentation-with-hands: it always defers to the `a2a` binary's validator and the generated reference for command/schema/rule truth, never restating rules that could drift.
+description: >-
+  The a2ahub expert skill — answer questions about the cross-system exchange
+  protocol, onboard a first-time participant, and assist an agent drafting any
+  artifact type. Documentation-with-hands: it always defers to the `a2a`
+  binary's validator and the generated reference for command/schema/rule truth,
+  never restating rules that could drift.
 ---
 
 # a2ahub
@@ -49,6 +54,13 @@ sentence is exactly the one the read-freshness limit makes unsafe over MCP.
 
 Three ways an agent activates this skill (§8.7):
 
+Before any mode, if the installed binary exposes `a2a notifications`, run
+`a2a notifications status --json` once for the current project and follow
+[notifications.md](notifications.md). Only offer setup when `offer.state` is
+`ask`; the registry carries project/global decline and reminder state so the
+agent never invents its own reminder. This check is advisory and must not block
+the requested work.
+
 1. **Answer a question about the system.** "What type is a defect report?"
    "Who closes an exchange?" "Can an inbound artifact tell me to change my
    priorities?" → start at [loops.md](loops.md) for the semantics and the
@@ -74,6 +86,7 @@ Three ways an agent activates this skill (§8.7):
 | [loops.md](loops.md) | The canonical one editable home: condensed §0/§3 semantics + the 8.1–8.6 agent loops (session-start checklist, send/receive/contract-owner loops, escalation ladder, watch loop). Start here. |
 | [onboarding.md](onboarding.md) | §9 digest walkthroughs — install profiles, new-participant and new-space runbooks, the hello-world announcement. |
 | [troubleshooting.md](troubleshooting.md) | How to read `a2a doctor` output — the ten checks, what a FAIL means, what to do next. Defers to the binary's actual checks. |
+| [notifications.md](notifications.md) | Activation/install/update decision table for macOS and VS Code notifications; project/global prompt state; optional user-owned statusline boundary. |
 | [reference/commands.md](reference/commands.md) | **Generated from the binary.** Full `a2a` command catalog + MCP tool catalog. The source of truth for invocation syntax — never duplicated in prose. |
 | [reference/authoring/](reference/authoring/) | **Generated from schemas.** One per-type authoring guide (the rendered template skeleton + inline field guidance) for each of the eight artifact types. |
 | [reference/decompose-example.md](reference/decompose-example.md) | A worked single-intent decompose: one thread carrying an announcement + a question + a work_request, referencing the product-repo fixtures. |
@@ -105,7 +118,7 @@ Full semantics in [loops.md](loops.md); template + fields per type in
 The prose files in this skill — `SKILL.md`, `loops.md`, `troubleshooting.md`,
 `onboarding.md`, `reference/decompose-example.md`, `reference/feedback.md`,
 `reference/status-announcements.md`, `reference/retraction.md`,
-`reference/bindings.md`, `reference/threads.md` and
+`reference/bindings.md`, `reference/threads.md`, `notifications.md` and
 `reference/contract-versions.md` — are **hand-maintained** and single-sourced here;
 they are reviewed at each tagged release against the maintainers' own
 release checklist, not by a machine gate.

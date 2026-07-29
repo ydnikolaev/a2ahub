@@ -25,15 +25,16 @@ auto-merge enabled: PASS · auto-merge unverified for <space>: the credential ca
 codeowners resolvable: PASS
 threads intact: PASS
 skipped mirror files: PASS
+notification components: PASS · notifications not enabled for this project
 statusline wiring: PASS
 skill discoverable: PASS · no a2ahub skill installed
 skill manual current: PASS · no skill installed
 ```
 
-All thirteen lines, in the order the binary prints them. **A `PASS` carrying a
+All fourteen lines, in the order the binary prints them. **A `PASS` carrying a
 note is a pass** — do not report it as a problem.
 
-EIGHT rows can print `PASS · <note>`, not four:
+NINE rows can print `PASS · <note>`:
 
 | Row | When it carries a note |
 |---|---|
@@ -45,6 +46,7 @@ EIGHT rows can print `PASS · <note>`, not four:
 | `skill manual current` | the installed manual is older than the binary |
 | `threads intact` | the space holds artifacts written before threads existed, so they carry no `thread:` |
 | `skipped mirror files` | a file in the mirror could not be decoded, so it is missing from every read verb's output |
+| `notification components` | notifications are not enabled, or this build has no notification probe wired |
 
 Five of those rows — `space scaffolding current`, both `skill` rows,
 `threads intact` and `skipped mirror files` — can **never** FAIL. The other
@@ -72,7 +74,7 @@ violated).
 | `1` | One or more checks failed, OR the local project/machine config could not be loaded (in which case doctor prints a `doctor: cannot load … config` line to stderr before exiting). |
 | `2` | Usage error — including the `--space` flag, which is the v2 admin host-drift diff and is explicitly rejected in v1-min (doctor prints `doctor: --space: v1-min: not available`). |
 
-## The thirteen checks
+## The fourteen checks
 
 Each check runs once per connected space (a project with no connected spaces
 passes every check trivially). They print in this order — if you are reading
@@ -90,6 +92,7 @@ passes every check trivially). They print in this order — if you are reading
 | **codeowners resolvable** | Every owner named in the space's `CODEOWNERS` actually resolves — read from GitHub's own `repos/{owner}/{repo}/codeowners/errors`, with the line number. | GitHub **ignores** an owner it cannot resolve rather than rejecting it, so a `CODEOWNERS` naming a team nobody created looks like it gates `/space.yaml` and gates nothing — and code-owner review is the only thing standing behind the file that decides who may write where. A FAIL quotes GitHub's own suggestion, which names all three conditions an owner must meet: the team exists, is publicly visible, and has write access to the repo. Individual logins avoid all three. **A PASS carrying `· CODEOWNERS unverified` is not a failure** — your credential cannot read that endpoint (a fine-grained token needs `Repository metadata: read`), so the answer is unknown rather than bad. |
 | **threads intact** | Every artifact in the space carries a `thread:`, so `a2a thread` can place it in a conversation. | Advisory only — this row never FAILs. A note counts the artifacts written before threads existed and names their spaces. Those predate thread propagation: `a2a respond` refuses to reply to one, and they cannot appear in any thread view. Nothing repairs them in place; a new exchange that references them starts a fresh thread. |
 | **skipped mirror files** | Every `.md` artifact and every event file in each mirror actually decodes, so the read model holds the whole space. | Advisory only — this row never FAILs. A note names each undecodable file and why (`unreadable`, `not-frontmatter-shaped`, `undecodable-yaml`, `no-id`, `unrelativizable-path`). **This is the row to read when a document you know exists does not show up.** A skipped file is missing from `search`, `inbox`, `outbox`, `thread` and `statusline` — `show` still prints it, because that path parses the file itself. Fixable only by whoever owns that file's section, which under diff-authz may not be you. |
+| **notification components** | Every channel enabled for this project has an installed component with a compatible CLI handshake; macOS permission/login-item state is healthy when available. | The companion is absent, version-skewed, permission-denied, or its login item is missing. Run `a2a notifications status --probe --json`, then repeat `a2a notifications install --channel <channel>` to repair it. |
 | **statusline wiring** | The `git` binary is on `PATH` (the prerequisite for §7.5's hub-less statusline-refresh fallback). | `git` is not on `PATH`, so the statusline's git-fetch fallback refresh cannot run. |
 | **skill discoverable** | The `a2ahub` skill tree is installed and reachable by your agent harness. | Advisory only — this row never FAILs. It reports whether a skill is installed at all. |
 | **skill manual current** | The installed skill's generated reference matches this binary's own command catalog. | Advisory only — this row never FAILs. A note here means the installed manual describes a different binary version; `a2a skill install` refreshes it. |
@@ -126,6 +129,7 @@ covers it.
 | `space access: FAIL` | Check the repo URL and your network/auth; a first `a2a sync` clones the mirror. |
 | `versions: FAIL: … older than min_binary_version` | Upgrade the `a2a` binary to at least the pinned version. |
 | `CI presence: FAIL` | The space repo is missing the validate workflow — a space-admin fix (see [onboarding.md](onboarding.md), space-admin profile). |
+| `notification components: FAIL` | Inspect `a2a notifications status --probe --json`; repair the named channel with `a2a notifications install --channel <channel>`. |
 | `statusline wiring: FAIL` | Install `git` / put it on `PATH`. |
 | `--space: v1-min: not available` (exit 2) | The host-drift diff is v2; drop the flag. |
 | `auto-merge enabled: FAIL` | The space repo has GitHub's `allow_auto_merge` setting off — every write stalls behind a pull request nothing will merge. A space admin enables Settings → General → "Allow auto-merge". This is not your local setup. |

@@ -64,6 +64,10 @@ func TestUpdateNotice_GradeAvailable(t *testing.T) {
 	if n.Segment == "" {
 		t.Fatal("want a non-empty segment")
 	}
+	if n.CheckedAt != now || n.Source != "github" || !n.Fresh ||
+		n.ReleaseURL != "https://github.com/ydnikolaev/a2ahub/releases/tag/v0.3.0" {
+		t.Fatalf("update provenance = %+v", n)
+	}
 }
 
 // TestUpdateNotice_GradeRequired is spec 19 T4: a connected space's
