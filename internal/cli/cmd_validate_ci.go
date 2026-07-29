@@ -163,7 +163,7 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	// contractIDs is the P37 wave B2 fourth bucket: every CONTRACT (by id)
 	// this PR touches — a changed path that IS a contract descriptor, or
 	// that lives under a descriptor's schema/**, fixtures/valid/** or
-	// fixtures/invalid/** subtree (contractTouchedByPath). Deduped to ONE
+	// fixtures/invalid/** subtree (space.ContractForPath). Deduped to ONE
 	// entry per descriptor directory (contractDescPaths, seenContracts): a
 	// PR changing five of a contract's schema files must produce ONE
 	// compat verdict below, not five (AC-970.2's acceptance).
@@ -175,7 +175,7 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	contractDescPaths := map[string]string{}
 	seenContracts := map[string]bool{}
 	for _, p := range changed {
-		if id, descPath, ok := contractTouchedByPath(p); ok && !seenContracts[id] {
+		if id, descPath, ok := space.ContractForPath(p); ok && !seenContracts[id] {
 			seenContracts[id] = true
 			contractIDs = append(contractIDs, id)
 			contractDescPaths[id] = descPath
@@ -599,50 +599,6 @@ func validateCIManifest(engine *validate.Engine, root string) (*validateReport, 
 // consumes.yaml — the §4.2 name is fixed, one per section.
 func isConsumesRegistry(p string) bool {
 	return filepath.Base(p) == "consumes.yaml"
-}
-
-// contractTouchedByPath reports whether repo-relative path p is a
-// contract's own descriptor file, or lives under that descriptor's
-// schema/**, fixtures/valid/** or fixtures/invalid/** subtree
-// (internal/space/layout.go's Layout.ProvidesContract/ProvidesSchemaDir/
-// ProvidesFixturesValidDir/ProvidesFixturesInvalidDir — the §4.2
-// <system>/provides/<slug>/{contract.md,schema/,fixtures/{valid,invalid}/}
-// shape). Returns the contract's id and the descriptor's own repo-relative
-// path.
-//
-// The id is reconstructed directly from the path, not looked up: a
-// contract id's own grammar (artifact.ParseID) makes its <rest> token
-// (the third `-`-separated segment) identical to its slug verbatim, so
-// "XC-"+system+"-"+slug IS the id — the same identity ProvidesContractPath
-// (internal/artifact/id.go) renders the path from, just run in reverse.
-func contractTouchedByPath(p string) (id, descriptorPath string, ok bool) {
-	parts := strings.Split(p, "/")
-	if len(parts) < 4 || parts[1] != "provides" {
-		return "", "", false
-	}
-	system, slug := parts[0], parts[2]
-	switch {
-	case len(parts) == 4 && parts[3] == "contract.md":
-	case len(parts) >= 5 && parts[3] == "schema":
-	case len(parts) >= 6 && parts[3] == "fixtures" && (parts[4] == "valid" || parts[4] == "invalid"):
-	default:
-		return "", "", false
-	}
-	descriptorPath = strings.Join(parts[:3], "/") + "/contract.md"
-	return "XC-" + system + "-" + slug, descriptorPath, true
-}
-
-// isContractBaselinePath reports whether p is one of a contract's own
-// schema/** or fixtures/** files — the D-D baseline `submit` now carries
-// alongside contract.md — as opposed to the descriptor itself.
-//
-// Expressed on top of contractTouchedByPath so the funnel's admission and
-// the CI's classification cannot drift into disagreeing about which paths
-// belong to a contract. That divergence is P35's scar and AC-970.2's whole
-// subject; two hand-written path predicates for one shape is how it starts.
-func isContractBaselinePath(p string) bool {
-	_, descriptorPath, ok := contractTouchedByPath(p)
-	return ok && p != descriptorPath
 }
 
 // contractWorkingTreeFiles reads every file under

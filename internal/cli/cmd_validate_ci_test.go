@@ -435,7 +435,7 @@ func validDecision(id, from string) string {
 // Wave B2 note: this fixture is now also a git repo (contractGitRun) with
 // schema/**+fixtures/valid/** on disk and a real `base` — a bare temp dir
 // with the placeholder base "deadbeef" (this test's pre-wave-B2 shape) made
-// the new merge-side compat check (contractTouchedByPath matches any
+// the new merge-side compat check (space.ContractForPath matches any
 // provides/<slug>/contract.md path, unconditionally in v3-pr mode) fail
 // with a git error, which is a real defect this setup exposed, not a test
 // artifact to route around. The report now carries TWO entries for the

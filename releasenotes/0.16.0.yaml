@@ -328,3 +328,24 @@ changes:
       why: >
         This is a maintainer verification correction. Product operation keys,
         artifact schemas, and user commands are unchanged.
+
+  - id: RN-01600-16
+    kind: fix
+    impact: high
+    subject: "MCP contract submit validates the descriptor without misreading its baseline"
+    detail: >
+      MCP first-publish now carries a contract descriptor, schema, valid
+      fixtures, invalid fixtures, and publish event through one atomic write
+      without treating the JSON sidecars as envelope frontmatter. The CLI,
+      MCP, and merge validator consume one layout-owned reverse classifier for
+      the contract descriptor and baseline path family, preventing the two
+      submit adapters from drifting on which files are artifacts. Schema and
+      fixture policy remains owned by the existing contract publishability and
+      compatibility checks; this correction only routes each file to its
+      canonical validator.
+    affects: ["a2a mcp", "a2a_submit", "contract publishing"]
+    action:
+      scope: none
+      why: >
+        MCP-authored JSON Schema contracts can be submitted with the scaffold
+        created by a2a_new; no migration or command change is required.

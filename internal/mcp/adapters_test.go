@@ -191,3 +191,57 @@ func TestSubmitValidatorAdapterViolationNamesSkippedFile(t *testing.T) {
 		t.Fatalf("Error() = %q, want the skip reason named", msg)
 	}
 }
+
+// TestSubmitValidatorAdapterAcceptsContractBaselineFiles is the hermetic
+// regression for the v0.16.0 full-live finding: a2a_submit correctly carried
+// the scaffolded schema and fixtures, but this MCP adapter treated every
+// non-event file as an envelope and fed the JSON schema to ParseFrontmatter.
+// The CLI adapter already classified these files as contract baseline data.
+func TestSubmitValidatorAdapterAcceptsContractBaselineFiles(t *testing.T) {
+	t.Parallel()
+
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+	manifest := testManifest()
+	mirrorDir := t.TempDir()
+	legality := NewLegalityAdapter(mirrorDir, "axon", manifest)
+	resolver := NewMirrorResolver(mirrorDir, manifest)
+	adapter := NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
+
+	contract := []byte("---\n" +
+		"schema: envelope/v1\n" +
+		"id: XC-axon-widget\n" +
+		"type: contract\n" +
+		"title: Widget contract\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [beta]\n" +
+		"thread: " + testFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: api\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: 1.0.0\n" +
+		"schema_format: json-schema-2020-12\n" +
+		"compat_policy: default\n" +
+		"---\ncontract body\n")
+	event := []byte("schema: event/v1\nevent: 01J8QYK2Z3ABCDEFGHJKMNPQRS\nspace: fixture-space\n" +
+		"subject: XC-axon-widget\ntransition: publish\nactor: {kind: agent, name: bot, system: axon}\n" +
+		"at: 2026-07-21T10:00:00Z\n")
+	files := []space.FileWrite{
+		{Path: "axon/provides/widget/contract.md", Content: contract},
+		{Path: "axon/provides/widget/schema/widget.schema.json", Content: []byte(`{"type":"object"}`)},
+		{Path: "axon/provides/widget/fixtures/valid/widget.json", Content: []byte(`{}`)},
+		{Path: "axon/provides/widget/fixtures/invalid/widget.json", Content: []byte(`null`)},
+		{Path: "axon/events/2026/01J8QYK2Z3ABCDEFGHJKMNPQRS.yaml", Content: event},
+	}
+
+	if err := adapter.ValidateSubmit(context.Background(), files); err != nil {
+		t.Fatalf("ValidateSubmit with contract baseline: %v", err)
+	}
+}
