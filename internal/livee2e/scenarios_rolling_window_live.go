@@ -76,30 +76,18 @@ func rwDetailSuffix(detail string) string {
 	return " — " + detail
 }
 
-// rwSchemaDir is this row's ONE place naming the contract's space-relative
-// schema directory, so a staging write and an on-main read can never drift
-// to different paths (ac973SchemaDir's own reason, restated: a read of the
-// wrong path looks exactly like a publish that carried nothing).
-func rwSchemaDir(system string) (string, error) {
-	layout, err := space.NewLayout(system)
-	if err != nil {
-		return "", err
-	}
-	return layout.ProvidesSchemaDir(rwSlug), nil
-}
-
 // rwWriteSchema overwrites the contract's scaffolded schema in the AUTHOR's
 // STAGING tree — never the mirror. The mirror is reset unconditionally on
 // every `a2a contract` invocation (live run 3, 2026-07-25: an edit written
 // there was gone before the compat check read it, so the check compared a
 // version against itself). Staging is the one surface that reset never
 // touches.
-func rwWriteSchema(a *checkout, body string) error {
-	schemaDir, err := rwSchemaDir(a.System)
+func rwWriteSchema(a *checkout, contractID, body string) error {
+	paths, err := contractPathsForID(contractID)
 	if err != nil {
 		return err
 	}
-	schemaPath := filepath.Join(a.Dir, ".a2a", "staging", filepath.FromSlash(schemaDir), rwSlug+".schema.json")
+	schemaPath := filepath.Join(a.Dir, ".a2a", "staging", filepath.FromSlash(paths.SchemaFile))
 	if _, statErr := os.Stat(schemaPath); statErr != nil {
 		// Loudly, for the reason ac973BreakSchema documents: os.WriteFile
 		// would happily create a file the publish overlay still picks up,
@@ -200,7 +188,7 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	// --- 2. A opens a SECOND line: 2.0.0, carrying a breaking schema. A
 	// major is not compat-checked (D-B), which is what lets the 1.x line
 	// keep a fixture 2.0 would reject — the asymmetry step 4 depends on. ---
-	if err := rwWriteSchema(a, rwSchemaNarrowedToInteger); err != nil {
+	if err := rwWriteSchema(a, sub.ID, rwSchemaNarrowedToInteger); err != nil {
 		return rwResultFromErr("stage-2.0.0-schema", err, "the contract's staged schema can be narrowed for the 2.x line")
 	}
 	v200PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "2.0.0", "publish-2.0.0")
@@ -277,7 +265,7 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	// fixture, so a correct baseline lets the compat check RUN and pass;
 	// under the old globally-highest rule the jump 2.0.0 -> 1.2.0 reads as
 	// a major and the check is skipped entirely. ---
-	if err := rwWriteSchema(a, rwSchemaWidened); err != nil {
+	if err := rwWriteSchema(a, sub.ID, rwSchemaWidened); err != nil {
 		return rwResultFromErr("stage-1.2.0-schema", err, "the contract's staged schema can be widened for the maintenance line")
 	}
 	v120PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "1.2.0", "publish-1.2.0-maintenance")

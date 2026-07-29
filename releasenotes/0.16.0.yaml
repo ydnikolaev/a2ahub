@@ -349,3 +349,22 @@ changes:
       why: >
         MCP-authored JSON Schema contracts can be submitted with the scaffold
         created by a2a_new; no migration or command change is required.
+
+  - id: RN-01600-17
+    kind: fix
+    impact: normal
+    subject: "Live contract-integrity verification follows run-scoped contract paths"
+    detail: >
+      Contract-integrity scenarios now derive staged schemas, fixtures, and
+      landed-schema reads from the actual contract ID returned by authoring.
+      Previously they created a run-scoped contract but later edited the
+      unscoped base slug, so two healthy contract workflows were reported as
+      missing local schema files. A path regression and structural wiring
+      check keep both scenario families on the same destructive-space
+      generation.
+    affects: ["live release gate"]
+    action:
+      scope: none
+      why: >
+        This corrects release verification only. Contract IDs, schema layout,
+        and user commands are unchanged.
