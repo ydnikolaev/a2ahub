@@ -13,7 +13,7 @@ import (
 // is exactly what the CLI/MCP parity suite exists to forbid. These tests
 // moved with it.
 
-func TestScaffoldContractInStagingWritesBothFilesAtTheLayoutShape(t *testing.T) {
+func TestScaffoldContractInStagingWritesAllFilesAtTheLayoutShape(t *testing.T) {
 	t.Parallel()
 	staging := t.TempDir()
 
@@ -21,8 +21,8 @@ func TestScaffoldContractInStagingWritesBothFilesAtTheLayoutShape(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ScaffoldContractInStaging: %v", err)
 	}
-	if len(written) != 2 {
-		t.Fatalf("written = %v, want the schema and the fixture", written)
+	if len(written) != 3 {
+		t.Fatalf("written = %v, want the schema and both fixtures", written)
 	}
 
 	// The paths must match what a later publish and `submit`'s sidecar
@@ -30,7 +30,8 @@ func TestScaffoldContractInStagingWritesBothFilesAtTheLayoutShape(t *testing.T) 
 	// staging. A scaffold at any other path is invisible to both.
 	wantSchema := filepath.Join(staging, "axon", "provides", "widget", "schema", "widget.schema.json")
 	wantFixture := filepath.Join(staging, "axon", "provides", "widget", "fixtures", "valid", "widget.json")
-	for _, want := range []string{wantSchema, wantFixture} {
+	wantInvalidFixture := filepath.Join(staging, "axon", "provides", "widget", "fixtures", "invalid", "widget.json")
+	for _, want := range []string{wantSchema, wantFixture, wantInvalidFixture} {
 		if _, err := os.Stat(want); err != nil {
 			t.Fatalf("expected a scaffolded file at %s: %v", want, err)
 		}
@@ -71,9 +72,9 @@ func TestScaffoldContractInStagingNeverOverwrites(t *testing.T) {
 	if string(raw) != authored {
 		t.Fatalf("the author's schema was clobbered: %s", raw)
 	}
-	// The fixture was absent, so it still gets written.
-	if len(written) != 1 {
-		t.Fatalf("written = %v, want only the missing fixture", written)
+	// Both fixtures were absent, so they still get written.
+	if len(written) != 2 {
+		t.Fatalf("written = %v, want only the two missing fixtures", written)
 	}
 }
 

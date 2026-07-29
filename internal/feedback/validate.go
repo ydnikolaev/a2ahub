@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	iSchema "github.com/ydnikolaev/a2ahub/internal/schema"
@@ -95,8 +96,9 @@ var requiredChecks = []string{
 // file content) and returns feedback's own Report (§11 A1): schema
 // structure (FB-001, or FB-002 for the bug-evidence conditional), the
 // checks-all-true honesty gate (FB-003), the size cap (FB-004), status ==
-// "new" (FB-005), a secret-scan re-map (FB-006, §11 A3), and — only when
-// opts.CI — the intake filename/path guards (FB-007/FB-008).
+// "new" (FB-005), a secret-scan re-map (FB-006, §11 A3), hidden-content
+// rejection (FB-009), and — only when opts.CI — the intake filename/path
+// guards (FB-007/FB-008).
 func Validate(raw []byte, opts Options) Report {
 	var violations []Violation
 
@@ -146,6 +148,13 @@ func Validate(raw []byte, opts Options) Report {
 		violations = append(violations, Violation{Code: CodeSecretDetected, Field: v.Path, Message: v.Message})
 	}
 
+	if detail := hiddenContentDetail(raw); detail != "" {
+		violations = append(violations, Violation{
+			Code:    CodeHiddenContent,
+			Message: "feedback contains hidden or direction-changing content: " + detail,
+		})
+	}
+
 	if opts.CI {
 		id := probe.ID
 		base := filepath.Base(opts.Path)
@@ -158,6 +167,30 @@ func Validate(raw []byte, opts Options) Report {
 	}
 
 	return Report{Valid: len(violations) == 0, Violations: violations}
+}
+
+// hiddenContentDetail protects the human/agent instruction boundary without
+// pretending that a keyword blacklist can recognize semantic prompt
+// injection. Feedback may discuss prompts and attacks legitimately. What it
+// may not do is hide bytes from the reviewer or change their visual order.
+func hiddenContentDetail(raw []byte) string {
+	lower := strings.ToLower(string(raw))
+	if strings.Contains(lower, "<!--") || strings.Contains(lower, "-->") {
+		return "HTML comment delimiter"
+	}
+	for _, r := range string(raw) {
+		switch r {
+		case '\t', '\n', '\r':
+			continue
+		}
+		if r < 0x20 || r == 0x7f {
+			return fmt.Sprintf("control character U+%04X", r)
+		}
+		if unicode.Is(unicode.Cf, r) {
+			return fmt.Sprintf("Unicode format character U+%04X", r)
+		}
+	}
+	return ""
 }
 
 func evidenceIncomplete(e *feedbackEvidenceProbe) bool {

@@ -36,6 +36,9 @@ func writeContractDescriptor(t *testing.T, mirrorDir, slug, version string) {
 		"schema_format: json-schema-2020-12\n" +
 		"---\nbody\n"
 	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/contract.md", content)
+	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/schema/main.schema.json", `{"type":"object","additionalProperties":true}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/fixtures/valid/ok.json", `{}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/fixtures/invalid/bad.json", `null`)
 }
 
 func contractTestDeps(mirrorDir string, funnel Funnel) ContractDeps {
@@ -65,11 +68,8 @@ func TestContractPublishFirstPublishGated(t *testing.T) {
 // (04-per-version-lifecycle.md §4, Edge 2) on the MCP surface: the
 // baseline `contract publish` computes its G2 major-bump gate against is
 // max{v ∈ priorVersions : v < newVersion}, NOT the globally-highest
-// published version. This handler does not run the compat check locally
-// (see newContractPublishHandler's own doc comment — that half is
-// CLI-only, covered by TestContractPublishMaintenanceLineBaselineIsPriorInLine
-// in internal/cli), so the observable divergence here has to be through
-// the G2 gate itself: publishing 1.2 while 2.0 exists does not flip
+// published version. The observable divergence here is through the G2 gate
+// itself: publishing 1.2 while 2.0 exists does not flip
 // isMajorBump either way (newVersion's major, 1, is not GREATER than
 // either candidate baseline's major, 1 or 2) — the scenario that DOES
 // distinguish the two rules is publishing a NEW major that is not the
@@ -85,7 +85,16 @@ func TestContractPublishFirstPublishGated(t *testing.T) {
 func TestContractPublishNewMajorBaselineIsPriorInLine(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
+	gitRunTest(t, mirrorDir, "init", "-b", "main")
+	writeContractDescriptor(t, mirrorDir, "newmajor", "1.0.0")
+	gitRunTest(t, mirrorDir, "add", "-A")
+	gitRunTest(t, mirrorDir, "commit", "-m", "publish 1.0.0")
+	writeContractDescriptor(t, mirrorDir, "newmajor", "1.1.0")
+	gitRunTest(t, mirrorDir, "add", "-A")
+	gitRunTest(t, mirrorDir, "commit", "-m", "publish 1.1.0")
 	writeContractDescriptor(t, mirrorDir, "newmajor", "3.0.0")
+	gitRunTest(t, mirrorDir, "add", "-A")
+	gitRunTest(t, mirrorDir, "commit", "-m", "publish 3.0.0")
 	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-newmajor", "publish", "axon")
 	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
 	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-newmajor", "publish", "axon")
@@ -168,26 +177,86 @@ func TestContractSelectBaseline(t *testing.T) {
 func TestContractPublishMinorBumpUngated(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
+	gitRunTest(t, mirrorDir, "init", "-b", "main")
 	writeContractDescriptor(t, mirrorDir, "widget-c", "1.0.0")
+	gitRunTest(t, mirrorDir, "add", "-A")
+	gitRunTest(t, mirrorDir, "commit", "-m", "publish 1.0.0")
 	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-widget-c", "publish", "axon")
 	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
 
 	fake := &fakeFunnel{}
 	handler := newContractPublishHandler(contractTestDeps(mirrorDir, fake))
 	args, _ := json.Marshal(ContractPublishInput{ID: "XC-axon-widget-c", Bump: "minor"})
-	_, _, err := handler(context.Background(), args)
+	_, message, err := handler(context.Background(), args)
 	if err != nil {
 		t.Fatalf("publish failed: %v", err)
 	}
 	if len(fake.calls) != 1 || fake.calls[0].PRBody != "" {
 		t.Fatalf("expected a declared-minor bump to be UNGATED, got %+v", fake.calls)
 	}
+	if !strings.Contains(message, "computed compatibility confirmed") {
+		t.Fatalf("expected the MCP surface to report the shared compatibility verdict, got %q", message)
+	}
+}
+
+func TestContractPublishRefusesBreakingMinorLocally(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	gitRunTest(t, mirrorDir, "init", "-b", "main")
+	writeContractDescriptor(t, mirrorDir, "narrowed", "1.0.0")
+	writeMirrorFile(t, mirrorDir, "axon/provides/narrowed/schema/main.schema.json", `{"type":"object","properties":{"x":{"type":"integer"}}}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/narrowed/fixtures/valid/ok.json", `{"x":1}`)
+	gitRunTest(t, mirrorDir, "add", "-A")
+	gitRunTest(t, mirrorDir, "commit", "-m", "publish 1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-narrowed", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+	stagingDir := t.TempDir()
+	stagedSchema := filepath.Join(stagingDir, "axon", "provides", "narrowed", "schema", "main.schema.json")
+	if err := os.MkdirAll(filepath.Dir(stagedSchema), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stagedSchema, []byte(`{"type":"object","properties":{"x":{"type":"string"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fake := &fakeFunnel{}
+	deps := contractTestDeps(mirrorDir, fake)
+	deps.StagingDir = stagingDir
+	handler := newContractPublishHandler(deps)
+	args, _ := json.Marshal(ContractPublishInput{ID: "XC-axon-narrowed", Bump: "minor"})
+	_, _, err := handler(context.Background(), args)
+	if err == nil || !strings.Contains(err.Error(), "POL-007") || !strings.Contains(err.Error(), "fixtures/valid/ok.json") {
+		t.Fatalf("expected a local POL-007 refusal naming the prior fixture, got %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("compatibility refusal must happen before the funnel, got %d calls", len(fake.calls))
+	}
+}
+
+func TestContractPublishRequiresInvalidFixtureLocally(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "half-baseline", "0.0.0")
+	if err := os.RemoveAll(filepath.Join(mirrorDir, "axon", "provides", "half-baseline", "fixtures", "invalid")); err != nil {
+		t.Fatal(err)
+	}
+
+	fake := &fakeFunnel{}
+	handler := newContractPublishHandler(contractTestDeps(mirrorDir, fake))
+	args, _ := json.Marshal(ContractPublishInput{ID: "XC-axon-half-baseline", Version: "1.0.0"})
+	_, _, err := handler(context.Background(), args)
+	if err == nil || !strings.Contains(err.Error(), "POL-009") || !strings.Contains(err.Error(), "fixtures/invalid/**") {
+		t.Fatalf("expected a local POL-009 refusal naming fixtures/invalid/**, got %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("publishability refusal must happen before the funnel, got %d calls", len(fake.calls))
+	}
 }
 
 // TestContractPublishOverlayCarriesStagedSchema is P37 Wave I's MCP-parity
-// coverage (mirrors internal/cli's own TestContractPublishOverlayCarriesStagedSchema,
-// minus the POL-007/POL-009 assertions this handler deliberately does not
-// run locally — see newContractPublishHandler's own doc comment). TEETH:
+// coverage (mirrors internal/cli's own TestContractPublishOverlayCarriesStagedSchema).
+// TEETH:
 // reverting newContractPublishHandler to compute Files/digest from the
 // mirror's own contractReadDescriptor-relative tree alone (dropping the
 // contractStagingOverlay fold-in) reds this test — the staged schema would
@@ -636,6 +705,8 @@ func TestContractVerifyExportMatch(t *testing.T) {
 
 	localPath := t.TempDir()
 	writeMirrorFile(t, localPath, "schema/main.schema.json", `{"type":"object"}`)
+	writeMirrorFile(t, localPath, "fixtures/valid/ok.json", `{}`)
+	writeMirrorFile(t, localPath, "fixtures/invalid/bad.json", `null`)
 
 	digest, _, err := artifact.DigestTreeFS(filepath.Join(mirrorDir, "axon/provides/exportable"), contractDigestSubtrees)
 	if err != nil {
@@ -734,12 +805,12 @@ func TestContractNewDelegatesToNewDraft(t *testing.T) {
 		t.Fatalf("contract new failed: %v", err)
 	}
 	drafts, ok := result.([]newDraftResult)
-	// P37 D-D: a JSON-Schema contract is drafted AND scaffolded — the .md
-	// plus its starter schema and valid fixture, so the contract is
+	// P37 D-D/P43: a JSON-Schema contract is drafted AND scaffolded — the .md
+	// plus its starter schema and valid and invalid fixtures, so the contract is
 	// publishable (POL-009) and §5.4b has a baseline the moment it exists.
 	// Every entry reports the same contract id; the paths differ.
-	if !ok || len(drafts) != 3 {
-		t.Fatalf("expected the drafted contract plus its D-D schema/fixture scaffold (3 entries), got %#v", result)
+	if !ok || len(drafts) != 4 {
+		t.Fatalf("expected the drafted contract plus its schema/fixture scaffold (4 entries), got %#v", result)
 	}
 	for _, d := range drafts {
 		if !strings.HasPrefix(d.ID, "XC-") {
@@ -749,8 +820,10 @@ func TestContractNewDelegatesToNewDraft(t *testing.T) {
 	if !strings.HasSuffix(drafts[0].Path, ".md") {
 		t.Fatalf("the draft itself must come first, got %q", drafts[0].Path)
 	}
-	if !strings.HasSuffix(drafts[1].Path, "/schema/widget.schema.json") || !strings.HasSuffix(drafts[2].Path, "/fixtures/valid/widget.json") {
-		t.Fatalf("scaffold paths must follow D-E's stem mapping, got %q and %q", drafts[1].Path, drafts[2].Path)
+	if !strings.HasSuffix(drafts[1].Path, "/schema/widget.schema.json") ||
+		!strings.HasSuffix(drafts[2].Path, "/fixtures/valid/widget.json") ||
+		!strings.HasSuffix(drafts[3].Path, "/fixtures/invalid/widget.json") {
+		t.Fatalf("scaffold paths must follow D-E's stem mapping, got %q, %q, and %q", drafts[1].Path, drafts[2].Path, drafts[3].Path)
 	}
 }
 

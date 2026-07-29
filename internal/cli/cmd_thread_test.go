@@ -109,6 +109,33 @@ func TestThreadCommand_FlagAfterPositional(t *testing.T) {
 	}
 }
 
+func TestThreadCommand_TextNextActionIsInvocableAck(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	manifest := cliWriteManifest(t, dir, "axon", "seomatrix")
+	base := time.Date(2026, 7, 28, 8, 0, 0, 0, time.UTC)
+
+	item := cliWR("XW-axon-20260728-next", "next", "axon", []string{"seomatrix"}, "p2", false)
+	item["thread"] = "thread:axon-next"
+	cliWriteArtifact(t, dir, "axon/exchanges/XW-axon-20260728-next.md", item, "body")
+	cliWriteEvent(t, dir, "axon", "01NEXT000000000000000001", cliEvt("XW-axon-20260728-next", "submit", "axon", base))
+
+	store := cache.NewStore("seomatrix", t.TempDir(), []cache.SpaceMirror{{
+		SpaceID: "sp1", Dir: dir, Manifest: manifest,
+	}}, func() time.Time { return base.Add(time.Hour) }, 0)
+	cmd := cli.NewThreadCommand(store)
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{"thread:axon-next"}, io); code != 0 {
+		t.Fatalf("code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "next=ack:seomatrix") {
+		t.Fatalf("stdout = %q, want copyable ack invocation", out.String())
+	}
+	if strings.Contains(out.String(), "next=acknowledge:") {
+		t.Fatalf("stdout leaked protocol transition as a command: %q", out.String())
+	}
+}
+
 // TestThreadCommand_SpaceFlagAcceptedUnconditionally is the brief's own
 // "--space accepted unconditionally (harmless when unambiguous)" clause:
 // passing --space on a thread that resolves in exactly one connected

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/notification"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -46,6 +47,52 @@ func TestDoctorNameAndSynopsis(t *testing.T) {
 	}
 	if cmd.Synopsis() == "" {
 		t.Fatal("Synopsis() must not be empty")
+	}
+}
+
+func TestDoctorNotificationComponentsUsesCanonicalStatusHealth(t *testing.T) {
+	t.Parallel()
+	cmd := newTestDoctorCommand()
+	cmd.projectRoot = "/project"
+	cmd.NotificationStatus = func(_ context.Context, root string) (notification.Status, error) {
+		if root != "/project" {
+			t.Fatalf("status root = %q", root)
+		}
+		return notification.Status{
+			Project: &notification.Project{
+				ID: "project", Root: root, Channels: []notification.Channel{notification.ChannelMacOS},
+			},
+			Components: []notification.ComponentHealth{{
+				Channel: notification.ChannelMacOS, Installed: true,
+				Permission: "authorized", LoginItem: "enabled", Handshake: "ok",
+			}},
+		}, nil
+	}
+	if ok, detail := cmd.doctorCheckNotificationComponents(context.Background()); !ok || detail != "" {
+		t.Fatalf("healthy notifications = ok:%t detail:%q", ok, detail)
+	}
+	cmd.NotificationStatus = func(context.Context, string) (notification.Status, error) {
+		return notification.Status{
+			Project: &notification.Project{Channels: []notification.Channel{notification.ChannelVSCode}},
+			Components: []notification.ComponentHealth{{
+				Channel: notification.ChannelVSCode, Installed: true, Handshake: "mismatch", Profile: "Work",
+			}},
+		}, nil
+	}
+	if ok, detail := cmd.doctorCheckNotificationComponents(context.Background()); ok || !strings.Contains(detail, "mismatch") {
+		t.Fatalf("mismatched notifications = ok:%t detail:%q", ok, detail)
+	}
+	cmd.NotificationStatus = func(context.Context, string) (notification.Status, error) {
+		return notification.Status{
+			Project: &notification.Project{Channels: []notification.Channel{notification.ChannelMacOS}},
+			Components: []notification.ComponentHealth{{
+				Channel: notification.ChannelMacOS, Installed: true,
+				Handshake: "failed", Detail: "status probe timed out",
+			}},
+		}, nil
+	}
+	if ok, detail := cmd.doctorCheckNotificationComponents(context.Background()); ok || !strings.Contains(detail, "status probe timed out") {
+		t.Fatalf("failed probe notifications = ok:%t detail:%q", ok, detail)
 	}
 }
 

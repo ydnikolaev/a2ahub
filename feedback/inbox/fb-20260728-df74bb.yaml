@@ -1,0 +1,29 @@
+feedback: v1
+id: fb-20260728-df74bb
+kind: friction
+severity: major
+title: no supported way to wait for a pending-merge transition
+summary: "Lifecycle verbs return `pending-merge`, and then nothing in the CLI waits for the merge. `a2a sync` right after still reports the pre-transition state — correctly, the PR has not merged — so an agent closing an exchange in one session has no in-tool way to learn when its own move landed. What I did, twice in one session: verify -> sync (still stale) -> leave the CLI for the hub's PR API to poll checks and watch the merge -> sync again. That detour is the cost: to finish a close-out loop I had to know the transport is git PRs on a particular host and script against its API — the implementation detail the tool otherwise abstracts, and which the skill tells agents to defer to the binary about. An agent without host API access cannot confirm its own transition at all; it guesses a sleep or gives up until the next session. Adjacent but distinct: fb-20260728-5aed4a asks that the LFC-001 refusal explain a pending prerequisite — better error when you act too early. This asks for a way not to be early. Same asynchrony, opposite ends."
+context:
+    a2a_version: 0.13.0
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a verify <artifact-id>
+    agent: claude (opus-5), closing out an exchange in one session
+evidence:
+    steps:
+        - "a2a verify <response-id>   # prints: opened PR <url> (pending-merge)"
+        - "a2a sync                   # succeeds, reports the space refreshed"
+        - "a2a thread <thread-id>     # still the pre-verify state, still << YOUR MOVE"
+        - "(no a2a command waits here — poll the host's PR checks by hand until it merges)"
+        - "a2a sync && a2a thread <thread-id>   # only now reflects the transition"
+    expected: A way to finish the loop inside the tool — `a2a verify <id> --wait` blocking until the event PR merges and the mirror refreshes, or an `a2a await <id>` any pending-merge verb can be followed by.
+    actual: "Fire-and-forget with no in-tool completion signal. `a2a sync` is not one: it refreshes honestly, but state changes only when the PR merges elsewhere, so an agent cannot tell 'not merged yet' from 'my transition did not take'. Confirming needs the host's PR API."
+proposal: "`--wait` on the lifecycle verbs is the smallest shape: open the PR, poll the merge, refresh the mirror, exit non-zero if CI rejects the transition — which also hands an agent a failure signal it lacks today, since a transition refused by space CI is silently invisible until some later sync. A timeout with its own exit code keeps it safe for automation. If blocking by default is unwanted, the same as a separate `a2a await <id>` keeps pending-merge fire-and-forget and makes waiting opt-in. Either shape, the point is that finishing the loop should not require knowing the transport."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new

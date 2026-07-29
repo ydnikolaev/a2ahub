@@ -13,6 +13,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/feedback"
@@ -62,7 +65,7 @@ func (c *FeedbackCommand) Name() string { return "feedback" }
 
 // Synopsis implements cli.Command.
 func (c *FeedbackCommand) Synopsis() string {
-	return "agent feedback loop: new <kind> [--title] | validate <file> [--ci] | submit <file> | status [--json] | triage [--json] [--apply <file>]"
+	return "agent feedback loop: new <kind> [--title] | validate <file> [--ci] | submit <file...> [--all] | status [--json] | triage [--json] [--apply <file>]"
 }
 
 // Run implements cli.Command.
@@ -167,28 +170,82 @@ func (c *FeedbackCommand) runValidate(args []string, stdio IO) int {
 	return 0
 }
 
-// runSubmit implements `a2a feedback submit <file>`.
+// runSubmit implements `a2a feedback submit <file...> [--all]`.
 func (c *FeedbackCommand) runSubmit(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("feedback submit", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	if fs.NArg() != 1 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a feedback submit <file>")
-		return 2
-	}
-	result, err := c.submitter.Submit(ctx, fs.Arg(0))
+	all := fs.Bool("all", false, "submit every unledgered feedback draft")
+	paths, err := parseArgsAnyOrder(fs, args)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "feedback submit: %v\n", err)
+		return 2
+	}
+	if (*all && len(paths) != 0) || (!*all && len(paths) == 0) {
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a feedback submit <file...> [--all]")
+		return 2
+	}
+	if *all {
+		paths, err = c.unledgeredDrafts()
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "feedback submit: %v\n", err)
+			return 1
+		}
+		if len(paths) == 0 {
+			_, _ = fmt.Fprintln(stdio.Stdout, "feedback submit: no unsubmitted drafts")
+			return 0
+		}
+	}
+
+	// Batch atomicity ends at the first external write, so validate the whole
+	// selected set first. A bad final file must never leave earlier PRs open.
+	for _, path := range paths {
+		if err := c.submitter.ValidatePath(path); err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "feedback submit: %s: %v\n", path, err)
+			return 1
+		}
+	}
+	failed := false
+	for _, path := range paths {
+		result, err := c.submitter.Submit(ctx, path)
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "feedback submit: %s: %v\n", path, err)
+			failed = true
+			continue
+		}
+		if result.AlreadyOpen {
+			_, _ = fmt.Fprintf(stdio.Stdout, "feedback submit: already submitted (PR %s)\n", result.PRURL)
+			continue
+		}
+		_, _ = fmt.Fprintf(stdio.Stdout, "feedback submit: opened PR %s for %s\n", result.PRURL, result.ID)
+	}
+	if failed {
 		return 1
 	}
-	if result.AlreadyOpen {
-		_, _ = fmt.Fprintf(stdio.Stdout, "feedback submit: already submitted (PR %s)\n", result.PRURL)
-		return 0
-	}
-	_, _ = fmt.Fprintf(stdio.Stdout, "feedback submit: opened PR %s for %s\n", result.PRURL, result.ID)
 	return 0
+}
+
+func (c *FeedbackCommand) unledgeredDrafts() ([]string, error) {
+	dir := filepath.Dir(c.ledgerPath)
+	paths, err := filepath.Glob(filepath.Join(dir, "fb-*.yaml"))
+	if err != nil {
+		return nil, err
+	}
+	items, err := feedback.ReadLedger(c.ledgerPath)
+	if err != nil {
+		return nil, err
+	}
+	filed := make(map[string]bool, len(items))
+	for _, item := range items {
+		filed[item.ID] = true
+	}
+	var selected []string
+	for _, path := range paths {
+		id := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		if !filed[id] {
+			selected = append(selected, path)
+		}
+	}
+	sort.Strings(selected)
+	return selected, nil
 }
 
 // runStatus implements `a2a feedback status [--json]`.

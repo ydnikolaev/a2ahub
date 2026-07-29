@@ -10,6 +10,7 @@ package cli
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
@@ -52,6 +53,23 @@ func (m *CacheBackedPendingMarker) MarkPending(_ context.Context, spaceID, artif
 		State:      string(result.State),
 		MarkedAt:   m.now(),
 	})
+}
+
+// Pending implements PendingMarkerReader.
+func (m *CacheBackedPendingMarker) Pending(spaceID, artifactID string) (PendingWrite, bool, error) {
+	marker, err := cache.ReadMarker(m.cacheDir, spaceID, artifactID)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return PendingWrite{}, false, nil
+		}
+		return PendingWrite{}, false, err
+	}
+	return PendingWrite{Branch: marker.Branch, PRNumber: marker.PRNumber, PRURL: marker.PRURL}, true, nil
+}
+
+// ClearPending implements PendingMarkerClearer.
+func (m *CacheBackedPendingMarker) ClearPending(spaceID, artifactID string) error {
+	return cache.RemoveMarker(m.cacheDir, spaceID, artifactID)
 }
 
 var _ PendingMarker = (*CacheBackedPendingMarker)(nil)

@@ -80,6 +80,13 @@ func (c *SkillCommand) Synopsis() string {
 	return "install the a2ahub expert-skill tree into this repo, and link it so an agent surface can discover it"
 }
 
+// SkillSubcommands is the SSOT list used by shell completion and the command's
+// own dispatch surface. Keep the returned slice isolated from callers so a
+// renderer cannot mutate the command vocabulary.
+func SkillSubcommands() []string {
+	return []string{"install", "link"}
+}
+
 // Run implements Command. Exit codes: 2 = usage; 1 = install/link error; 0 =
 // ok. `install` materializes the SSOT tree under a local namespace (never a
 // consumer harness path); `link` (P32) installs a per-surface discovery
@@ -96,7 +103,7 @@ func (c *SkillCommand) Run(_ context.Context, args []string, stdio IO) int {
 	case "link":
 		return c.runLink(args[1:], stdio)
 	default:
-		_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill: unknown subcommand %q (want: install, link)\n", args[0])
+		_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill: unknown subcommand %q (want: %s)\n", args[0], strings.Join(SkillSubcommands(), ", "))
 		return 2
 	}
 }
