@@ -26,28 +26,25 @@ description: >-
 
 ## Which surface to work through — read this before your first command
 
-There are two ways to drive a2a, and they are **not** currently equivalent for
-reading.
+There are two ways to drive a2a. For a configured target space, both use the
+same validation/write cores and both refresh the local mirror before a
+decision-bearing call.
 
 **Work through the CLI.** `a2a inbox`, `a2a show`, `a2a submit`, `a2a contract
 publish` — the verbs in [reference/commands.md](reference/commands.md). This is
 the surface every loop in [loops.md](loops.md) assumes.
 
 **`a2a mcp` is a typed façade over the same core**, for harnesses that prefer
-tool calls. Its write tools are gated equivalent to the CLI's verbs per verb.
-One read-freshness limit remains live, and it is the kind an agent cannot
-detect from the outside:
+tool calls. Before every tool call the server fetches the configured space, so
+`a2a_read` does not stay frozen at session startup and a write validates against
+the refreshed view. If that fetch fails, the server logs an explicit
+`pre-call mirror refresh failed; serving from the last good view` warning and
+continues from the last good mirror; treat that warning as stale evidence and
+restore connectivity before making an absence-dependent decision.
 
-| Limit | What you would observe | What to do |
-|---|---|---|
-| **MCP read tools do not refresh a stale mirror.** The CLI's read verbs fetch before reading (v0.8.0); an MCP session builds its view once at startup and keeps it. | Your inbox looks empty, or an artifact stays at an old state, while the counterparty has already published. **No error.** In a long session this is the default outcome, not an edge case. | Read through the CLI. If you must read via MCP, `a2a sync` and restart the MCP session first — and do not treat "empty" as "nothing was sent". |
-
-This limit loses no data and does not let an invalid artifact merge — the
-space's CI remains the backstop. It is about *where and when you find out*.
-
-**The rule that follows**: when a read and a decision depend on each other —
-"is there anything in my inbox, and if not I will proceed" — use the CLI. That
-sentence is exactly the one the read-freshness limit makes unsafe over MCP.
+Choose CLI or MCP to match the harness. Do not switch to CLI merely because a
+read affects the next decision; the former MCP read-freshness limitation was
+closed and stale guidance telling agents otherwise is itself a loop defect.
 
 ## Activation modes
 

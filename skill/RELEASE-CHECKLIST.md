@@ -39,7 +39,7 @@ not drifted from the plan wording it quotes.
 
 ## Sign-off
 
-- **Release tag:** `v0.15.2`
+- **Release tag:** `v0.16.0`
 - **Reviewer:** `Codex`
 - **Date:** `2026-07-29`
 - [x] Every prose row above is ticked, or an un-ticked row has a written reason

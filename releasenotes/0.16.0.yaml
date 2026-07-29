@@ -123,6 +123,31 @@ changes:
         protocol and existing artifacts are unchanged.
 
   - id: RN-01600-6
+    kind: fix
+    impact: high
+    subject: "The shipped skill no longer warns agents away from fresh MCP reads"
+    detail: >
+      MCP has refreshed the configured space before every tool call since the
+      earlier read-freshness fix, but the installed skill and troubleshooting
+      guide still described the old startup snapshot and told agents to switch
+      to CLI. That stale instruction directly serialized autonomous loops that
+      can safely use typed reads. The guide now matches the server: a successful
+      pre-call refresh gives a current view; a failed refresh logs an explicit
+      last-good-view warning that must not be treated as proof of absence.
+      Troubleshooting also lists all fifteen current doctor checks, including
+      the new historical stuck-green PR diagnostic and exact local `dev`
+      version behavior.
+    affects: ["a2ahub skill", "a2a mcp", "a2a doctor"]
+    action:
+      scope: local
+      why: >
+        Refresh the installed skill. MCP agents may keep using typed reads for
+        decision-bearing loops; react only when the server reports a failed
+        pre-call refresh.
+      run:
+        - "a2a skill install"
+
+  - id: RN-01600-7
     kind: known-issue
     impact: normal
     subject: "The macOS companion remains ad-hoc signed and may require manual approval"
