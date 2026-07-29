@@ -108,6 +108,11 @@ entries:
     title: A digest-pinned ref's target could not be resolved to verify
     applies_to: envelope/v1 refs[].ref pinned with `#digest` but unresolvable (§5.7) — warning, not a reject ("can't verify" ≠ "verified")
 
+  - code: REF-013
+    class: referential
+    title: Space manifest authority map is ambiguous or cannot safely grant write authority
+    applies_to: space/v1 participants — unique non-empty systems and top-level sections, active participants with owners, one active system per owner login, and left participants granting no authority
+
   - code: LFC-001
     class: lifecycle
     title: Event encodes an illegal transition for the subject's current folded state

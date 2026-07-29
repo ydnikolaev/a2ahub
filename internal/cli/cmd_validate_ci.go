@@ -119,6 +119,18 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 		}
 	}
 
+	// Authority policy is evaluated BEFORE any path is classified through the
+	// manifest. Schema defects remain changed-file-scoped for migration safety,
+	// but an ambiguous ownership map is categorically different: it must never
+	// be consulted to grant diff authorization, even when space.yaml predates
+	// this PR.
+	manifestPolicy, err := engine.ValidateManifestPolicy(raw)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "validate --ci: manifest policy: %v\n", err)
+		return 1
+	}
+	manifestAuthorityValid := manifestPolicy.Valid
+
 	// One pass over the changed set builds two lists:
 	//   - artifacts: *.md files under a participant section — the V2 engine's
 	//     input (schema/referential/authz/secret run per artifact).
@@ -187,6 +199,11 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	resolver := NewMirrorResolver(root, manifest)
 
 	report := ciReport{Mode: mode, Valid: true, Artifacts: []validateReport{}}
+	if !manifestAuthorityValid && mode == "v3-pr" && len(changed) > 0 && !manifestChanged(changed) {
+		policy := manifestPolicy
+		report.Artifacts = append(report.Artifacts, validateReport{Path: "space.yaml", Result: &policy})
+		report.Valid = false
+	}
 	for _, relPath := range artifacts {
 		if rep, ok := validateCILinkageImmutable(ctx, root, base, relPath); rep != nil {
 			report.Artifacts = append(report.Artifacts, *rep)
@@ -352,7 +369,7 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	// authorize — an empty changed set is a clean exit 0, never an
 	// unmapped-author red. Gated on authzPaths (not artifacts): a PR touching
 	// ONLY another system's non-artifact files must still be authorized.
-	if mode == "v3-pr" && len(authzPaths) > 0 {
+	if mode == "v3-pr" && manifestAuthorityValid && len(authzPaths) > 0 {
 		if authz := diffAuthz(manifest, author, authzPaths); len(authz) > 0 {
 			report.DiffAuthz = authz
 			report.Valid = false
@@ -453,16 +470,23 @@ func diffAuthz(manifest space.Manifest, author string, paths []string) []ciAuthz
 // participant section contains it, per the manifest's `section` entries
 // (e.g. "axon/"). Returns ("", false) for a path under no section.
 func systemForPath(manifest space.Manifest, p string) (string, bool) {
+	system := ""
 	for _, part := range manifest.Participants {
+		if part.Status != "active" {
+			continue
+		}
 		sec := strings.TrimSuffix(part.Section, "/")
 		if sec == "" {
 			continue
 		}
 		if p == sec || strings.HasPrefix(p, sec+"/") {
-			return part.System, true
+			if system != "" && system != part.System {
+				return "", false
+			}
+			system = part.System
 		}
 	}
-	return "", false
+	return system, system != ""
 }
 
 // validateCIConsumes runs the consumes/v1 schema check over one

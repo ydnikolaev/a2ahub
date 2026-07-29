@@ -96,6 +96,12 @@ var (
 	// the write funnel is idempotent by head branch — so the caller's
 	// safe next move is simply to re-run.
 	ErrMirrorLocked = errors.New("space: mirror is locked by a concurrent git process; re-run")
+
+	// ErrSymlinkWrite is returned when any existing component of a funnel
+	// destination is a symbolic link. Artifact paths are data from the write
+	// request; following a repository-controlled link could redirect an
+	// otherwise section-valid write outside the clone.
+	ErrSymlinkWrite = errors.New("space: write destination crosses a symbolic link")
 )
 
 // Error is the small typed error every exported operation in this package

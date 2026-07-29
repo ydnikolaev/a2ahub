@@ -53,8 +53,9 @@ var symlink = os.Symlink
 // SSOT tree's own SKILL.md.
 //
 // Ownership probe (mirrors cmd_skill.go's skillTargetState/errSkillForeignTarget
-// gate): an existing target is "ours" when it is a symlink whose raw link
-// text ends in ssotRel, or a directory/file carrying linkMarkerTag. A
+// gate): an existing target is "ours" when its symlink destination resolves
+// exactly to this repository's SSOT path, or a directory/file carries
+// linkMarkerTag. A
 // foreign target (present, not ours) is refused with ErrForeignLinkTarget
 // and nothing is written, unless force is set. An absent target is always
 // free to create. An authorized target (ours, or force over foreign) is
@@ -63,7 +64,7 @@ func Link(root string, s Surface, ssotRel string, force bool) (LinkResult, error
 	target := filepath.Join(root, s.SkillsHome, "a2ahub")
 	relPath := filepath.Join(s.SkillsHome, "a2ahub")
 
-	exists, owned, err := linkTargetState(target, ssotRel)
+	exists, owned, err := linkTargetState(root, target, ssotRel)
 	if err != nil {
 		return LinkResult{}, &Error{Op: "Link", Input: target, Err: err}
 	}
@@ -127,13 +128,13 @@ func linkStubContent(s Surface, ssotRel string) string {
 
 // linkTargetState inspects an existing (or absent) link target. exists is
 // true when target is present at all, of any type. owned is true when
-// target is a2ahub-owned: a symlink whose raw link text ends in ssotRel, or
-// a directory/file carrying linkMarkerTag. An absent target is (false,
+// target is a2ahub-owned: a symlink whose resolved destination is exactly the
+// configured SSOT tree, or a directory/file carrying linkMarkerTag. An absent target is (false,
 // false, nil) — free to create without force. err surfaces only a genuine
 // unexpected filesystem failure (never "target absent" or "marker
 // unreadable" — those degrade to unowned, matching skillTargetState's
 // idiom in cmd_skill.go).
-func linkTargetState(target, ssotRel string) (exists, owned bool, err error) {
+func linkTargetState(root, target, ssotRel string) (exists, owned bool, err error) {
 	info, statErr := os.Lstat(target)
 	if statErr != nil {
 		if os.IsNotExist(statErr) {
@@ -147,7 +148,27 @@ func linkTargetState(target, ssotRel string) (exists, owned bool, err error) {
 		if rlErr != nil {
 			return true, false, nil //nolint:nilerr // unreadable symlink target => treat as foreign, not a hard error
 		}
-		return true, strings.HasSuffix(dest, ssotRel), nil
+		resolvedDest := dest
+		if !filepath.IsAbs(resolvedDest) {
+			resolvedDest = filepath.Join(filepath.Dir(target), resolvedDest)
+		}
+		resolvedDest, destErr := filepath.Abs(filepath.Clean(resolvedDest))
+		if destErr != nil {
+			return true, false, nil //nolint:nilerr // unresolvable destination is foreign, not a hard filesystem failure
+		}
+		expected, expectedErr := filepath.Abs(filepath.Clean(filepath.Join(root, ssotRel)))
+		if expectedErr != nil {
+			return true, false, expectedErr
+		}
+
+		// Compare canonical filesystem destinations when both exist, while
+		// retaining a clean absolute comparison for a temporarily missing SSOT.
+		if evaluatedDest, evalErr := filepath.EvalSymlinks(resolvedDest); evalErr == nil {
+			if evaluatedExpected, expectedEvalErr := filepath.EvalSymlinks(expected); expectedEvalErr == nil {
+				return true, evaluatedDest == evaluatedExpected, nil
+			}
+		}
+		return true, resolvedDest == expected, nil
 	}
 
 	if info.IsDir() {

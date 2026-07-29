@@ -329,6 +329,59 @@ func TestLinkForeignTargetRefusedWithoutForce(t *testing.T) {
 	}
 }
 
+func TestLinkForeignSymlinkWithMatchingSuffixIsNotOwned(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	setupSSOT(t, root)
+	claude, _ := ByID("claude")
+
+	foreignSSOT := filepath.Join(root, "foreign", ".a2ahub", "skill")
+	mustMkdirAll(t, foreignSSOT)
+	foreignMarker := filepath.Join(foreignSSOT, "KEEP")
+	if err := os.WriteFile(foreignMarker, []byte("foreign"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, claude.SkillsHome, "a2ahub")
+	mustMkdirAll(t, filepath.Dir(target))
+	if err := os.Symlink(foreignSSOT, target); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	_, err := Link(root, claude, ssotRel, false)
+	if !errors.Is(err, ErrForeignLinkTarget) {
+		t.Fatalf("Link() error = %v, want ErrForeignLinkTarget", err)
+	}
+	resolved, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatalf("foreign link disappeared after refusal: %v", err)
+	}
+	wantForeign, err := filepath.EvalSymlinks(foreignSSOT)
+	if err != nil {
+		t.Fatalf("EvalSymlinks foreign SSOT: %v", err)
+	}
+	if resolved != wantForeign {
+		t.Fatalf("foreign link changed to %q, want %q", resolved, wantForeign)
+	}
+	if data, err := os.ReadFile(foreignMarker); err != nil || string(data) != "foreign" {
+		t.Fatalf("foreign target changed: data=%q err=%v", data, err)
+	}
+
+	if _, err := Link(root, claude, ssotRel, true); err != nil {
+		t.Fatalf("Link(force=true): %v", err)
+	}
+	resolved, err = filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatalf("EvalSymlinks after force: %v", err)
+	}
+	want, err := filepath.EvalSymlinks(filepath.Join(root, ssotRel))
+	if err != nil {
+		t.Fatalf("EvalSymlinks SSOT: %v", err)
+	}
+	if resolved != want {
+		t.Fatalf("forced link resolves to %q, want %q", resolved, want)
+	}
+}
+
 // TestLinkSymlinkFallbackToStub is intentionally NOT t.Parallel(): it
 // mutates the package-level `symlink` var. Keeping it sequential means its
 // mutate/restore window runs entirely inside testing's sequential phase,
