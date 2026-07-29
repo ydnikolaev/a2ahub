@@ -11,6 +11,10 @@ import (
 // caller's own report row — they are deliberately NOT part of the currency
 // comparison below, which is about WHICH commit ran, not what it concluded.
 type CheckRunRef struct {
+	// ID is GitHub's immutable check-run id. It is ignored by the ref
+	// currency assertion but lets the live refusal row fetch annotations
+	// without reconstructing check selection from workflow logs.
+	ID int64
 	// Name is the check run's own name (e.g. the compound
 	// `a2a-validate / validate` — see internal/host's requiredCheckName and
 	// compoundSeparator). Named in detail so a stale-ref row identifies

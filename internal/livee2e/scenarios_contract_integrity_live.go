@@ -50,11 +50,6 @@ const ac973Scenario = "contract-integrity-registered-consumer"
 // contracts of the same id.
 const ac973Slug = "ac973-registered-consumer"
 
-// ac973ToLinePattern matches the drafted contract's filled `to:` line
-// (draftfill.go's FillDraft always writes `to: [<peer>]`) so
-// ac973DraftContractExcludingPeer can override it.
-var ac973ToLinePattern = regexp.MustCompile(`(?m)^to: \[.*\]$`)
-
 // ac973AnnouncementIDPattern extracts an XA- id from `a2a contract
 // deprecate`'s own composite branch name (a2a/<sys>/contract-deprecate/
 // <XA-id>+<XC-id> — buildRequest's sorted, "+"-joined ArtifactID), never
@@ -93,39 +88,26 @@ func ac973Fail(step, observed, expected, detail string) Result {
 	}
 }
 
-// ac973DraftContractExcludingPeer drafts+fills a contract exactly as
-// h.DraftAndSubmit does (c.Draft, then submitDrafted), with ONE override in
-// between: draftfill.go's FillDraft always fills `to: [<peer>]`, and this
+// ac973DraftContractExcludingPeer drafts a contract through the public
+// authoring API with ONE explicit field override. The default targets the
+// peer, and this
 // harness's topology has exactly two systems — so with the default fill, B
 // would ALWAYS already be a member of the contract's authoring-time `to:`,
 // which would make this row's whole premise (AC-971.1: a system registered
 // ONLY via `contract adopt`, never in `to:`, still receives the
 // deprecation) unconstructible. This edit — self-addressing `to:
-// [<own system>]` — is the smallest change that keeps `to:` non-empty
+// [<own system>]` — is the smallest input that keeps `to:` non-empty
 // (schemas/envelope/v1/base.schema.json's own `to` requires either
 // `minItems: 1` or the literal `"all"` — REF-006, cmd_contract.go's own doc
 // comment on runDeprecate) while genuinely excluding the peer. It is a
-// deviation from a literal h.DraftAndSubmit call, recorded as such in the
-// wave report.
 func ac973DraftContractExcludingPeer(ctx context.Context, h *harness, c *checkout) (submitted, error) {
-	id, _, err := c.Draft(ctx, "contract", "--slug", ac973Slug)
+	id, _, err := c.Draft(ctx, "contract",
+		"--slug", ac973Slug,
+		"--field", "to=["+c.System+"]",
+	)
 	if err != nil {
 		return submitted{}, err
 	}
-
-	path := filepath.Join(c.Dir, ".a2a", "staging", id+".md")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return submitted{}, fmt.Errorf("livee2e: read staged draft %s: %w", path, err)
-	}
-	edited := ac973ToLinePattern.ReplaceAllLiteralString(string(raw), "to: ["+c.System+"]")
-	if edited == string(raw) {
-		return submitted{}, fmt.Errorf("livee2e: staged draft %s: expected filled `to:` line not found to override", path)
-	}
-	if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
-		return submitted{}, fmt.Errorf("livee2e: write edited draft %s: %w", path, err)
-	}
-
 	return h.submitDrafted(ctx, c, id)
 }
 

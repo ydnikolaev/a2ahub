@@ -92,8 +92,8 @@ func cliOnly() []Surface { return []Surface{SurfaceCLI} }
 //
 // Each entry names the acceptance criterion it answers.
 //
-// Every entry is cliOnly() for now — see bothSurfaces() for why, and spec §10's
-// 2026-07-24 amendment for the decision that made it so.
+// Critical write parity is declared on both surfaces; GitHub-administration
+// and other host-only properties remain CLI-only.
 func Catalogue() []Scenario {
 	return []Scenario{
 		// AC-960.1 — the rig provisions and scaffolds its own space. No
@@ -101,10 +101,10 @@ func Catalogue() []Scenario {
 		// artifact's lifecycle.
 		{Name: "space-init", Systems: []string{SystemA}, Surfaces: cliOnly(), Family: "happy"},
 		// AC-960.2 — the ordinary happy path, both systems.
-		{Name: "submit-gate-merge", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "happy"},
-		{Name: "lifecycle-transitions", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly(), Kinds: []string{"requirement"}, Family: "happy"},
-		{Name: "contract-publish-deprecate-retire", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "happy"},
-		{Name: "cross-system-visibility", Systems: []string{SystemA, SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "happy"},
+		{Name: "submit-gate-merge", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"announcement"}, Family: "happy"},
+		{Name: "lifecycle-transitions", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"requirement"}, Family: "happy"},
+		{Name: "contract-publish-deprecate-retire", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"contract"}, Family: "happy"},
+		{Name: "cross-system-visibility", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"announcement"}, Family: "happy"},
 		{Name: "validate-ci-both-modes", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "happy"},
 
 		// AC-961.1 — host.CheckStatus resolves the REAL compound context
@@ -152,7 +152,7 @@ func Catalogue() []Scenario {
 		{Name: "executed-ref-not-stale", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary"},
 
 		// Refusal paths that are cheap to keep honest live.
-		{Name: "out-of-section-write-refused", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "refusal"},
+		{Name: "out-of-section-write-refused", Systems: []string{SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"announcement"}, Family: "refusal"},
 		{Name: "stale-write-floor-refused", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "refusal"},
 
 		// AC-973.1 (spec 37) — the full producer<->consumer contract-

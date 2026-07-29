@@ -3,6 +3,7 @@ package livee2e
 import (
 	"errors"
 	"fmt"
+	"regexp"
 )
 
 // Environment variables the live tier reads. Deliberately dedicated names:
@@ -54,7 +55,14 @@ const (
 	// latency, and iterating on one family at that price is what pushes an
 	// author toward not running it at all.
 	EnvFamilies = "A2A_LIVE_E2E_FAMILIES"
+
+	// EnvCandidateSHA is the immutable commit in the public product repo that
+	// both the reusable-workflow `uses:` ref and its `a2a-ref` input must run.
+	// A live release verdict against a branch or tag is intentionally refused.
+	EnvCandidateSHA = "A2A_LIVE_E2E_CANDIDATE_SHA"
 )
+
+var candidateSHAPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // Ambient credential variables the tier refuses to be handed. Not a
 // stylistic preference: these are the variables that are already exported in
@@ -96,6 +104,8 @@ type Config struct {
 	// narrowness is an assertion, not thrift: it is exactly what a real
 	// participating system holds (spec 36 §9.5.3).
 	ParticipantToken string
+	// CandidateSHA is the immutable public product commit under test.
+	CandidateSHA string
 }
 
 // LoadConfig resolves the configuration from an environment lookup —
@@ -121,6 +131,7 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		Org:              getenv(EnvOrg),
 		ProvisionerToken: getenv(EnvProvisionerToken),
 		ParticipantToken: getenv(EnvParticipantToken),
+		CandidateSHA:     getenv(EnvCandidateSHA),
 	}
 
 	for _, missing := range []struct {
@@ -130,10 +141,15 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		{EnvOrg, cfg.Org},
 		{EnvProvisionerToken, cfg.ProvisionerToken},
 		{EnvParticipantToken, cfg.ParticipantToken},
+		{EnvCandidateSHA, cfg.CandidateSHA},
 	} {
 		if missing.value == "" {
 			return Config{}, fmt.Errorf("%w: %s is unset", ErrNotConfigured, missing.name)
 		}
+	}
+	if !candidateSHAPattern.MatchString(cfg.CandidateSHA) {
+		return Config{}, fmt.Errorf("%w: %s must be a full lowercase 40-hex public commit SHA",
+			ErrNotConfigured, EnvCandidateSHA)
 	}
 
 	if cfg.ProvisionerToken == cfg.ParticipantToken {

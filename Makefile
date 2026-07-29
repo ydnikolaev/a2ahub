@@ -19,8 +19,8 @@
 # make vulncheck         govulncheck ./... gated by .govulncheck-allow.txt (network; not in `check`).
 # make live-e2e          THE LIVE TIER — the real binary against a real throwaway
 #                         GitHub space (spec 36). Network + two credentials +
-#                         Actions latency: NEVER in `check`, never a merge gate.
-#                         Its home is beside `release-preflight`, pre-release.
+#                         immutable public candidate SHA + Actions latency:
+#                         NEVER in `check`, never a merge gate.
 # make install           put a dev `a2a` on your PATH that always runs THIS source tree.
 #
 # Recipes are POSIX sh — no bashisms — even though the gate scripts they call
@@ -105,7 +105,7 @@ vulncheck: ## govulncheck ./... gated by .govulncheck-allow.txt (NEW called vuln
 	if [ -n "$$new" ]; then printf '%s\n' "$$out"; echo; echo "vulncheck: FAIL — NEW vulnerabilities (not in .govulncheck-allow.txt):$$new"; exit 1; fi; \
 	if [ -n "$$found" ]; then echo "vulncheck: OK — only accepted vulns present:$$(printf '%s' "$$found" | tr '\n' ' ' | sed 's/^/ /')"; else echo "vulncheck: OK — no called vulnerabilities"; fi
 
-live-e2e: ## THE LIVE TIER: the real binary against a real throwaway GitHub space (spec 36). Needs network + A2A_LIVE_E2E_{ORG,PROVISIONER_TOKEN,PARTICIPANT_TOKEN}. NEVER in `check`, NEVER a merge gate — run it beside `release-preflight` before cutting a tag. While iterating on one family, A2A_LIVE_E2E_FAMILIES=<comma-separated> narrows the run; a narrowed run always exits non-zero (the skipped rows stay not-run), so it can never be mistaken for a release verdict.
+live-e2e: ## THE LIVE TIER: the real binary against a real GitHub space (spec 36). Needs A2A_LIVE_E2E_{ORG,PROVISIONER_TOKEN,PARTICIPANT_TOKEN,CANDIDATE_SHA}; CANDIDATE_SHA is the immutable public release candidate used for workflow source and validator. NEVER in `check` or a merge gate. A narrowed A2A_LIVE_E2E_FAMILIES run always exits non-zero.
 	@test -f go.mod || { echo "live-e2e: no go.mod — nothing to run."; exit 2; }
 	go test ./internal/livee2e/... -tags=livee2e -count=1 -v -timeout 125m
 
