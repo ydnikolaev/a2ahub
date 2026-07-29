@@ -171,27 +171,26 @@ changes:
         gate. Product users need no migration.
 
   - id: RN-01500-9
-    kind: known-issue
+    kind: fix
     impact: normal
-    subject: "The authored per-version live scenario still has no successful exact-tree run"
+    subject: "The per-version contract lifecycle is proven through the real protected write funnel"
     detail: >
-      The rolling-window scenario is present in the live matrix and drives real
-      GitHub with both provisioned identities: several published lines, a
-      deprecation, a late adoption, a maintenance publish, acknowledgement,
-      retirement while newer lines remain live, and a post-retire publish.
-      This backlog wave deliberately did not dispatch it at the release
-      operator's request. GitHub CLI authentication was verified separately,
-      but that does not substitute for executing this exact-tree scenario.
-      Unit, race, merge-gate, and harness tests remain green, but they do not
-      substitute for the real Actions/protection/write-funnel path. The known
-      issue from 0.13.0 therefore remains open rather than being rounded up to
-      verified.
+      The exact release-candidate product tree completed the full two-identity
+      live matrix against the protected GitHub test space: 40 of 40 rows
+      passed with EXIT=0. The rolling-window row published several version
+      lines, deprecated one, added a late adopter, published maintenance,
+      acknowledged, retired the old line while newer lines stayed live, and
+      published again after retirement. The same run proved required checks,
+      auto-merge, stale-write refusal, unauthorized boundaries, idempotent
+      recovery and both participants' view of the thread. This closes the
+      verification limitation carried from 0.13.0 instead of inferring live
+      behavior from hermetic coverage.
     affects: ["a2a contract publish", "a2a contract deprecate", "a2a contract retire"]
     action:
       scope: none
       why: >
-        No user action. The release operator must run the full live matrix with
-        the dedicated throwaway-org credentials before calling this row closed.
+        No user action. The release audit records the clean source commit,
+        timestamps, all row verdicts and the successful process exit.
 
   - id: RN-01500-10
     kind: fix
