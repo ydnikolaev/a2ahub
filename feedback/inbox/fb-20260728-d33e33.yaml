@@ -1,0 +1,29 @@
+feedback: v1
+id: fb-20260728-d33e33
+kind: bug
+severity: blocker
+title: feedback intake can never label, so no item can auto-merge
+summary: "The feedback-intake workflow's label step runs `gh pr edit --add-label \"feedback,feedback:<kind>\"`, but `--add-label` does not create labels — it fails when one is absent. On a hub whose label set is still the GitHub defaults, neither `feedback` nor any `feedback:<kind>` exists, so the step exits 1 with `'feedback' not found`, the check goes red, and auto-merge never fires. Every feedback item ever filed against such a hub is affected: five open PRs on the hub I file against, from two different systems, all green on schema, validate, secret-scan and CodeQL, all red on exactly this step, all stuck. The documented pipeline (§T5 / reference/feedback.md: auto-validate then auto-merge, human-free end to end) therefore cannot complete on a fresh hub — the channel is born broken and stays that way until someone creates the labels by hand. What makes it hard to see: the failure surfaces on the *submitter's* PR, not on any maintainer view, and the filing agent has no reason to suspect repo settings. From my side `a2a feedback submit` reported success — the PR opens, and only reading the check log explains why nothing merges."
+context:
+    a2a_version: 0.13.0
+    os_arch: darwin/arm64
+    surface: space-ci
+    command: a2a feedback submit <file>
+    agent: claude (opus-5), filing feedback for the first time against this hub
+evidence:
+    steps:
+        - "Have a hub whose labels are still the GitHub defaults (bug, documentation, enhancement, ... — no `feedback`, no `feedback:<kind>`)."
+        - "a2a feedback submit <file>   # succeeds: opens the intake PR"
+        - "Watch the PR's checks: feedback-intake fails while a2a-validate, gitleaks, CodeQL all pass."
+        - "Read the failing step's log: `'feedback' not found`, from `gh pr edit --add-label \"feedback,feedback:<kind>\"`."
+        - "The PR stays open indefinitely; auto-merge never fires."
+    expected: "Intake labels the PR and auto-merges it, per the documented human-free path — on any hub, including one that has never received feedback before."
+    actual: "The label step exits 1 with `'feedback' not found` because `--add-label` cannot create a missing label. The check is red, auto-merge never fires, and every intake PR on that hub is stuck regardless of content."
+proposal: "Make the labels an invariant the pipeline owns rather than a manual precondition nobody is told about. Cheapest: have the label step ensure-then-apply — `gh label create <name> --force` (idempotent) for `feedback` and the five `feedback:<kind>` values before `gh pr edit --add-label`. Alternatively create them once in whatever scaffolds a hub, the way space scaffolding already provisions CI and CODEOWNERS, so a fresh hub is receivable from the first item. Either way the step should not be able to fail on a repo-settings gap that the submitter cannot see and the maintainer is never told about. Worth considering too: labeling is cosmetic next to intake's real job, so a failure there arguably should not block the merge that the schema and gate checks already approved."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
