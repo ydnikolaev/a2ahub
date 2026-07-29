@@ -249,3 +249,22 @@ changes:
       why: >
         This prevents false short-circuits in repeated maintainer test runs
         without changing user spaces or public artifact schemas.
+
+  - id: RN-01600-12
+    kind: fix
+    impact: normal
+    subject: "Live required-check polling can no longer hang on one GitHub request"
+    detail: >
+      The live matrix already bounded how long it would poll for a required
+      check, but its product CheckStatus path used Go's default HTTP client,
+      whose individual requests have no timeout. A stalled GitHub round trip
+      could therefore consume the entire matrix budget before the poll
+      deadline was evaluated. Every live-harness GitHub client now shares a
+      30-second transport timeout beneath its existing fail-closed poll
+      ceilings.
+    affects: ["live release gate"]
+    action:
+      scope: none
+      why: >
+        This is a maintainer reliability correction and does not change
+        product networking or user-visible protocol behavior.

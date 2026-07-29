@@ -44,7 +44,7 @@ func (c *ghClient) client() *http.Client {
 	if c.HTTP != nil {
 		return c.HTTP
 	}
-	return &http.Client{Timeout: 30 * time.Second}
+	return newBoundedGitHubHTTPClient()
 }
 
 // attempt issues ONE HTTP round trip. transportErr is set only for a genuine
