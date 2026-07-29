@@ -72,3 +72,36 @@ func TestFeedbackIntakeHasAUniversalReadOnlyMergePolicy(t *testing.T) {
 		t.Fatal("merge-policy must be universal; a path-filtered required check wedges unrelated PRs")
 	}
 }
+
+// TestFeedbackIntakeArmsBeforeRequiredMergePolicy guards the live race exposed
+// by PR #3. GitHub refuses enablePullRequestAutoMerge once the sole required
+// check has already passed on an up-to-date PR in unstable/clean state. The
+// stable required context must therefore be a final read-only job which stays
+// pending while the conditional write job arms auto-merge.
+func TestFeedbackIntakeArmsBeforeRequiredMergePolicy(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(repoRootForTest(t), ".github", "workflows", "feedback-intake.yml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read feedback intake workflow: %v", err)
+	}
+	workflow := string(raw)
+	arm := strings.Index(workflow, "\n  arm-feedback:")
+	gate := strings.Index(workflow, "\n  merge-policy:")
+	if arm < 0 || gate < 0 || arm > gate {
+		t.Fatalf("required merge-policy must be a final job after arm-feedback")
+	}
+	finalGate := workflow[gate:]
+	for _, required := range []string{
+		"name: merge-policy",
+		"needs: [policy, arm-feedback]",
+		"if: always()",
+		"POLICY_RESULT: ${{ needs.policy.result }}",
+		"ARM_RESULT: ${{ needs.arm-feedback.result }}",
+	} {
+		if !strings.Contains(finalGate, required) {
+			t.Errorf("final merge-policy does not contain %q", required)
+		}
+	}
+}
