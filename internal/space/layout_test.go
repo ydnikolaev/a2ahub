@@ -49,6 +49,43 @@ func TestLayoutPaths(t *testing.T) {
 	}
 }
 
+func TestContractForPathOwnsDescriptorAndBaselineShape(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		path       string
+		ok         bool
+		isBaseline bool
+	}{
+		{path: "axon/provides/widget/contract.md", ok: true},
+		{path: "axon/provides/widget/schema/widget.schema.json", ok: true, isBaseline: true},
+		{path: "axon/provides/widget/schema/common/types.schema.json", ok: true, isBaseline: true},
+		{path: "axon/provides/widget/fixtures/valid/ok.json", ok: true, isBaseline: true},
+		{path: "axon/provides/widget/fixtures/invalid/bad.json", ok: true, isBaseline: true},
+		{path: "axon/provides/widget/fixtures/other/no.json"},
+		{path: "axon/provides/widget/schema"},
+		{path: "axon/provides/widget/fixtures/valid"},
+		{path: "axon/provides/Bad/schema/x.json"},
+		{path: "axon/provides/widget/../contract.md"},
+		{path: "/axon/provides/widget/contract.md"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			t.Parallel()
+			id, descriptor, ok := ContractForPath(tc.path)
+			if ok != tc.ok {
+				t.Fatalf("ContractForPath(%q) ok = %v, want %v", tc.path, ok, tc.ok)
+			}
+			if ok && (id != "XC-axon-widget" || descriptor != "axon/provides/widget/contract.md") {
+				t.Fatalf("ContractForPath(%q) = (%q, %q, true)", tc.path, id, descriptor)
+			}
+			if got := IsContractBaselinePath(tc.path); got != tc.isBaseline {
+				t.Fatalf("IsContractBaselinePath(%q) = %v, want %v", tc.path, got, tc.isBaseline)
+			}
+		})
+	}
+}
+
 // TestLayoutPathsPassTheirIDPlacementGuard is the standing gate over the
 // defect fb-20260723-9ae145 reported: the path a write COMMITS an artifact
 // to (this Layout) and the placement guard V2/V3 then RUN over that path

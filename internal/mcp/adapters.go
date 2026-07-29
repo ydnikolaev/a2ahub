@@ -452,15 +452,21 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 	events := map[string]mirrorEvent{}
 	var drafts []space.FileWrite
 	for _, f := range files {
-		if strings.Contains(f.Path, "/events/") {
+		switch {
+		case strings.Contains(f.Path, "/events/"):
 			var ev mirrorEvent
 			if err := yaml.Unmarshal(f.Content, &ev); err != nil {
 				return fmt.Errorf("mcp: SubmitValidatorAdapter: decode event %s: %w", f.Path, err)
 			}
 			events[ev.Subject] = ev
-			continue
+		case space.IsContractBaselinePath(f.Path):
+			// Contract schema/** and fixtures/** are data carried beside the
+			// descriptor, not envelope artifacts. Compatibility/publishability
+			// owns their validation; feeding them to ParseFrontmatter makes a
+			// correct MCP first-publish impossible.
+		default:
+			drafts = append(drafts, f)
 		}
-		drafts = append(drafts, f)
 	}
 
 	var violations []validate.Violation

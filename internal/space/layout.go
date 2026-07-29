@@ -2,6 +2,7 @@ package space
 
 import (
 	"path"
+	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 )
@@ -65,6 +66,54 @@ func (l Layout) ProvidesFixturesValidDir(slug string) string {
 // <system>/provides/<slug>/fixtures/invalid/.
 func (l Layout) ProvidesFixturesInvalidDir(slug string) string {
 	return path.Join(l.System, "provides", slug, "fixtures", "invalid")
+}
+
+// ContractForPath recognises the §4.2 path family owned by one contract:
+//
+//	<system>/provides/<slug>/contract.md
+//	<system>/provides/<slug>/schema/**
+//	<system>/provides/<slug>/fixtures/{valid,invalid}/**
+//
+// It returns the standing contract ID and descriptor path. Keeping this reverse
+// mapping beside Layout's forward constructors prevents CLI, MCP and CI from
+// growing different definitions of "contract baseline file".
+func ContractForPath(p string) (id, descriptorPath string, ok bool) {
+	parts := strings.Split(p, "/")
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return "", "", false
+		}
+	}
+	if len(parts) < 4 || parts[1] != "provides" {
+		return "", "", false
+	}
+
+	system, slug := parts[0], parts[2]
+	contractID, err := artifact.MintStandingID("XC", system, slug)
+	if err != nil {
+		return "", "", false
+	}
+	layout, err := NewLayout(system)
+	if err != nil {
+		return "", "", false
+	}
+	descriptorPath = layout.ProvidesContract(slug)
+
+	switch {
+	case p == descriptorPath:
+	case len(parts) >= 5 && parts[3] == "schema":
+	case len(parts) >= 6 && parts[3] == "fixtures" && (parts[4] == "valid" || parts[4] == "invalid"):
+	default:
+		return "", "", false
+	}
+	return contractID, descriptorPath, true
+}
+
+// IsContractBaselinePath reports whether p is schema/fixture data carried
+// beside a contract descriptor, rather than an envelope artifact itself.
+func IsContractBaselinePath(p string) bool {
+	_, descriptorPath, ok := ContractForPath(p)
+	return ok && p != descriptorPath
 }
 
 // Requires returns <system>/requires/<id>.md (an XR requirement).

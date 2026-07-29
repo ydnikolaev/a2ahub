@@ -614,7 +614,7 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 			// SAME one the space's V3 runs, so a write can never land a
 			// registry the space would then reject.
 			registries = append(registries, f)
-		case isContractBaselinePath(f.Path):
+		case space.IsContractBaselinePath(f.Path):
 			// A contract's own schema/** and fixtures/** (P37 D-D), carried
 			// alongside contract.md by `submit`. They are not artifacts:
 			// no envelope, no frontmatter, no id. Feeding one to the drafts
