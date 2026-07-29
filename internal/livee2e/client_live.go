@@ -331,8 +331,13 @@ type PullState struct {
 	// for this write" without scraping CLI output: the funnel's branch name
 	// is deterministic (space.BranchName), which is also what its own
 	// idempotent-retry path looks a PR up by.
-	HeadRef        string
-	HeadSHA        string
+	HeadRef string
+	HeadSHA string
+	// MergeCommitSHA is GitHub's base-reachable commit for a merged PR. It
+	// is the merge commit for merge mode and the resulting commit for
+	// squash/rebase, so visibility checks do not assume a repository's
+	// merge strategy.
+	MergeCommitSHA string
 	Merged         bool
 	MergeableState string
 	State          string
@@ -345,6 +350,7 @@ type pullPayload struct {
 		SHA string `json:"sha"`
 		Ref string `json:"ref"`
 	} `json:"head"`
+	MergeCommitSHA string `json:"merge_commit_sha"`
 	Merged         bool   `json:"merged"`
 	MergeableState string `json:"mergeable_state"`
 	State          string `json:"state"`
@@ -352,7 +358,7 @@ type pullPayload struct {
 
 func (p pullPayload) toPullState() PullState {
 	return PullState{
-		Number: p.Number, HeadRef: p.Head.Ref, HeadSHA: p.Head.SHA, Merged: p.Merged,
+		Number: p.Number, HeadRef: p.Head.Ref, HeadSHA: p.Head.SHA, MergeCommitSHA: p.MergeCommitSHA, Merged: p.Merged,
 		MergeableState: p.MergeableState, State: p.State,
 	}
 }
