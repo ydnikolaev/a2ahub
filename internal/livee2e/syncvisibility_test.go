@@ -4,7 +4,21 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
+
+func TestMergeVisibilityBudgetCoversObservedGitPropagationLag(t *testing.T) {
+	t.Parallel()
+
+	const observedLag = 5 * time.Minute
+	waitWindow := time.Duration(mergeVisibilityAttempts-1) * mergeVisibilityPollInterval
+	if waitWindow < observedLag {
+		t.Fatalf("merge visibility window = %s, want at least observed %s", waitWindow, observedLag)
+	}
+	if waitWindow >= mergeVisibilityCeiling {
+		t.Fatalf("merge visibility window = %s, must stay below declared ceiling %s", waitWindow, mergeVisibilityCeiling)
+	}
+}
 
 func TestAwaitSyncVisibilityDoesNotTrustOneSuccessfulRefresh(t *testing.T) {
 	t.Parallel()

@@ -268,3 +268,39 @@ changes:
       why: >
         This is a maintainer reliability correction and does not change
         product networking or user-visible protocol behavior.
+
+  - id: RN-01600-13
+    kind: fix
+    impact: normal
+    subject: "Live merge verification tolerates delayed smart-Git visibility"
+    detail: >
+      GitHub can report a pull request merged through REST several minutes
+      before the same base commit becomes visible through the authenticated
+      smart-Git endpoint used by a2a sync. The live harness previously gave
+      this split three minutes, producing a false failure twice at measured
+      delays of nearly five minutes. It now polls for up to seven minutes and
+      still passes only after the exact merge commit is present on
+      origin/main and checked out in the mirror tree.
+    affects: ["live release gate"]
+    action:
+      scope: none
+      why: >
+        No Actions job runs during this propagation wait; the larger bounded
+        window avoids rerunning already-green workflow compute.
+
+  - id: RN-01600-14
+    kind: feat
+    impact: normal
+    subject: "Maintainers can rerun one exact happy-path live matrix cell"
+    detail: >
+      A2A_LIVE_E2E_CELLS accepts an exact scenario/system/surface triple for
+      diagnostic reruns inside the happy family. Unknown or unsupported
+      selections refuse before the first write, while every unselected cell
+      remains not-run, so a three-PR repair probe cannot be mistaken for the
+      full release verdict.
+    affects: ["live release gate", "maintainer workflow"]
+    action:
+      scope: none
+      why: >
+        This reduces GitHub Actions use after a narrowly scoped fix. The full
+        matrix remains mandatory once on the final immutable candidate.

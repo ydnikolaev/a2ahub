@@ -27,27 +27,41 @@ import (
 // Every helper below is prefixed happy* so four concurrent scenario-family
 // agents sharing this package cannot collide on an identifier.
 func runHappyScenarios(ctx context.Context, h *harness) []Result {
-	results := []Result{
-		happySpaceInit(ctx, h),
-		happySubmitGateMerge(ctx, h, SystemA, h.A),
-		happySubmitGateMerge(ctx, h, SystemB, h.B),
-		happyLifecycleTransitions(ctx, h, SystemA, h.A),
-		happyLifecycleTransitions(ctx, h, SystemB, h.B),
-		happyContractLifecycle(ctx, h, SystemA, h.A),
-		happyContractLifecycle(ctx, h, SystemB, h.B),
-		happyCrossSystemVisibility(ctx, h, SystemA, h.A, h.B),
-		happyCrossSystemVisibility(ctx, h, SystemB, h.B, h.A),
-		happyValidateCIBothModes(ctx, h),
-		happyCheckstatusCompoundContext(ctx, h),
+	var results []Result
+	appendOne := func(scenario, system string, surface Surface, run func() Result) {
+		if h.cellSelected(scenario, system, surface) {
+			results = append(results, run())
+		}
 	}
-	results = append(results, mcpSubmitAndVisibility(ctx, h, SystemA, h.A, h.B)...)
-	results = append(results, mcpSubmitAndVisibility(ctx, h, SystemB, h.B, h.A)...)
-	results = append(results,
-		mcpLifecycle(ctx, h, SystemA, h.A),
-		mcpLifecycle(ctx, h, SystemB, h.B),
-		mcpContractLifecycle(ctx, h, SystemA, h.A),
-		mcpContractLifecycle(ctx, h, SystemB, h.B),
-	)
+	appendOne("space-init-two-participants", SystemA, SurfaceCLI, func() Result { return happySpaceInit(ctx, h) })
+	appendOne("submit-gate-merge", SystemA, SurfaceCLI, func() Result { return happySubmitGateMerge(ctx, h, SystemA, h.A) })
+	appendOne("submit-gate-merge", SystemB, SurfaceCLI, func() Result { return happySubmitGateMerge(ctx, h, SystemB, h.B) })
+	appendOne("lifecycle-transitions", SystemA, SurfaceCLI, func() Result { return happyLifecycleTransitions(ctx, h, SystemA, h.A) })
+	appendOne("lifecycle-transitions", SystemB, SurfaceCLI, func() Result { return happyLifecycleTransitions(ctx, h, SystemB, h.B) })
+	appendOne("contract-publish-deprecate-retire", SystemA, SurfaceCLI, func() Result { return happyContractLifecycle(ctx, h, SystemA, h.A) })
+	appendOne("contract-publish-deprecate-retire", SystemB, SurfaceCLI, func() Result { return happyContractLifecycle(ctx, h, SystemB, h.B) })
+	appendOne("cross-system-visibility", SystemA, SurfaceCLI, func() Result { return happyCrossSystemVisibility(ctx, h, SystemA, h.A, h.B) })
+	appendOne("cross-system-visibility", SystemB, SurfaceCLI, func() Result { return happyCrossSystemVisibility(ctx, h, SystemB, h.B, h.A) })
+	appendOne("validate-ci-both-modes", SystemA, SurfaceCLI, func() Result { return happyValidateCIBothModes(ctx, h) })
+	appendOne("checkstatus-compound-context", SystemB, SurfaceCLI, func() Result { return happyCheckstatusCompoundContext(ctx, h) })
+
+	appendMCPSubmit := func(system string, author, observer *checkout) {
+		if !h.cellSelected("submit-gate-merge", system, SurfaceMCP) &&
+			!h.cellSelected("cross-system-visibility", system, SurfaceMCP) {
+			return
+		}
+		for _, result := range mcpSubmitAndVisibility(ctx, h, system, author, observer) {
+			if h.cellSelected(result.Scenario, result.System, result.Surface) {
+				results = append(results, result)
+			}
+		}
+	}
+	appendMCPSubmit(SystemA, h.A, h.B)
+	appendMCPSubmit(SystemB, h.B, h.A)
+	appendOne("lifecycle-transitions", SystemA, SurfaceMCP, func() Result { return mcpLifecycle(ctx, h, SystemA, h.A) })
+	appendOne("lifecycle-transitions", SystemB, SurfaceMCP, func() Result { return mcpLifecycle(ctx, h, SystemB, h.B) })
+	appendOne("contract-publish-deprecate-retire", SystemA, SurfaceMCP, func() Result { return mcpContractLifecycle(ctx, h, SystemA, h.A) })
+	appendOne("contract-publish-deprecate-retire", SystemB, SurfaceMCP, func() Result { return mcpContractLifecycle(ctx, h, SystemB, h.B) })
 
 	// Leave both checkouts parked on a clean main before returning — this
 	// family never mutates SHARED space state (protection/space.yaml/
@@ -386,10 +400,9 @@ func happyLandAndSync(ctx context.Context, h *harness, c *checkout, prNumber int
 	if merged.MergeCommitSHA == "" {
 		return fmt.Errorf("waiting for PR #%d to merge: GitHub returned an empty merge_commit_sha", prNumber)
 	}
-	const visibilityAttempts = 18
 	if err := awaitSyncVisibility(
 		ctx,
-		visibilityAttempts,
+		mergeVisibilityAttempts,
 		func() error {
 			_, stderr, syncErr := c.Run(ctx, "sync")
 			if syncErr != nil {
@@ -404,7 +417,7 @@ func happyLandAndSync(ctx context.Context, h *harness, c *checkout, prNumber int
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(happyMergeWaitInterval):
+			case <-time.After(mergeVisibilityPollInterval):
 				return nil
 			}
 		},
