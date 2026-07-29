@@ -22,6 +22,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -75,6 +76,12 @@ type UpdateCommand struct {
 	// canned Runner.
 	whatsnewRunner release.Runner
 
+	// companionRunner executes the newly swapped binary in the project that
+	// already owns a channel. It repairs only a2a-managed component
+	// installations recorded in machine config, preserving VS Code profile
+	// ownership and never enabling a disabled channel.
+	companionRunner func(context.Context, string, string, ...string) error
+
 	// SkillFiles is the embedded a2ahub skill tree (skill.Files), DI'd by
 	// wire.go exactly like SkillCommand/InitCommand. When set (and this
 	// command's projectRoot has a MANAGED skill install already), a
@@ -117,6 +124,11 @@ func NewUpdateCommand(binaryVersion, projectConfigPath, machineConfigPath, proje
 		// repo is the resolved update_repo, so a repo rename flows through.
 		verifier:       func(repo string) release.Verifier { return release.KeylessVerifier(repo) },
 		whatsnewRunner: release.DefaultRunner,
+		companionRunner: func(ctx context.Context, executable, dir string, args ...string) error {
+			cmd := exec.CommandContext(ctx, executable, args...)
+			cmd.Dir = dir
+			return cmd.Run()
+		},
 	}
 }
 
@@ -129,15 +141,22 @@ func (c *UpdateCommand) Synopsis() string {
 }
 
 // updateJSON is the `--json` machine-readable shape (spec 19 T1 flag
-// table): {current, latest, update_available, floor, floor_space,
-// required}.
+// table), with additive managed-component outcomes on a full P49 update.
 type updateJSON struct {
-	Current         string `json:"current"`
-	Latest          string `json:"latest"`
-	UpdateAvailable bool   `json:"update_available"`
-	Floor           string `json:"floor"`
-	FloorSpace      string `json:"floor_space"`
-	Required        bool   `json:"required"`
+	Current         string                `json:"current"`
+	Latest          string                `json:"latest"`
+	UpdateAvailable bool                  `json:"update_available"`
+	Floor           string                `json:"floor"`
+	FloorSpace      string                `json:"floor_space"`
+	Required        bool                  `json:"required"`
+	Components      []updateComponentJSON `json:"components,omitempty"`
+}
+
+type updateComponentJSON struct {
+	Channel string `json:"channel"`
+	Profile string `json:"profile,omitempty"`
+	Status  string `json:"status"`
+	Error   string `json:"error,omitempty"`
 }
 
 // Run implements cli.Command. Exit codes (spec 19 T1): 2 = usage error; 1 =
@@ -202,24 +221,30 @@ func (c *UpdateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// UpdateNotice that inbox --json / MCP a2a_read render.
 	info := release.Info(dec.Current, dec.Latest, dec.Floor, dec.FloorSpace)
 
-	if *jsonFlag {
+	jsonResult := updateJSON{
+		Current:         info.Current,
+		Latest:          info.Latest,
+		UpdateAvailable: info.UpdateAvailable,
+		Floor:           info.Floor,
+		FloorSpace:      info.FloorSpace,
+		Required:        info.Required,
+	}
+	encodeJSON := func() int {
 		enc := json.NewEncoder(stdio.Stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(updateJSON{
-			Current:         info.Current,
-			Latest:          info.Latest,
-			UpdateAvailable: info.UpdateAvailable,
-			Floor:           info.Floor,
-			FloorSpace:      info.FloorSpace,
-			Required:        info.Required,
-		}); err != nil {
+		if err := enc.Encode(jsonResult); err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "update: cannot encode JSON output: %v\n", err)
 			return 1
 		}
+		return 0
 	}
 
 	if *checkFlag {
-		if !*jsonFlag {
+		if *jsonFlag {
+			if code := encodeJSON(); code != 0 {
+				return code
+			}
+		} else {
 			if dec.UpToDate {
 				_, _ = fmt.Fprintf(stdio.Stdout, "a2a: up to date (v%s)\n", dec.Current)
 			} else {
@@ -234,10 +259,16 @@ func (c *UpdateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	// Full update path (spec 19 T1 steps 2-5).
 	if dec.UpToDate {
+		if *jsonFlag {
+			return encodeJSON()
+		}
 		_, _ = fmt.Fprintf(stdio.Stdout, "a2a: already up to date (v%s)\n", dec.Current)
 		return 0
 	}
 	if dec.BelowFloor {
+		if *jsonFlag {
+			_ = encodeJSON()
+		}
 		_, _ = fmt.Fprintf(stdio.Stderr, "update: latest v%s is below floor v%s pinned by %s\n", dec.Latest, dec.Floor, dec.FloorSpace)
 		return 1
 	}
@@ -284,7 +315,15 @@ func (c *UpdateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 1
 	}
 
-	_, _ = fmt.Fprintf(stdio.Stdout, "a2a: updated v%s -> v%s (%s)\n", res.FromVersion, res.ToVersion, res.Commit)
+	if !*jsonFlag {
+		_, _ = fmt.Fprintf(stdio.Stdout, "a2a: updated v%s -> v%s (%s)\n", res.FromVersion, res.ToVersion, res.Commit)
+	}
+	jsonResult.Components = c.refreshManagedNotificationComponents(ctx, execPath, machine, stdio)
+	if *jsonFlag {
+		if code := encodeJSON(); code != 0 {
+			return code
+		}
+	}
 
 	// P31 wave 5: hand the agent the release directives for the range it
 	// just crossed, and refresh the installed skill manual — both
@@ -296,6 +335,58 @@ func (c *UpdateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	c.refreshInstalledSkill(res, stdio, *jsonFlag)
 
 	return 0
+}
+
+// refreshManagedNotificationComponents repairs the exact a2a-owned companion
+// installs after the core swap. Optional component failure never rolls the
+// verified CLI back; it is reported and remains visible to `notifications
+// status`. A channel with no enrolled project is disabled and is not touched.
+func (c *UpdateCommand) refreshManagedNotificationComponents(
+	ctx context.Context,
+	execPath string,
+	machine space.MachineConfig,
+	stdio IO,
+) []updateComponentJSON {
+	var results []updateComponentJSON
+	if c.companionRunner == nil {
+		return results
+	}
+	rootForChannel := make(map[string]string)
+	for _, project := range machine.Notifications.Projects {
+		for _, channel := range project.Channels {
+			if rootForChannel[channel] == "" {
+				rootForChannel[channel] = project.Root
+			}
+		}
+	}
+	for _, component := range machine.Notifications.Components {
+		root := rootForChannel[component.Channel]
+		if root == "" {
+			continue
+		}
+		result := updateComponentJSON{
+			Channel: component.Channel, Profile: component.Profile, Status: "updated",
+		}
+		args := []string{"notifications", "install", "--channel", component.Channel, "--project", root, "--json"}
+		if component.Profile != "" {
+			args = append(args, "--profile", component.Profile)
+		}
+		if component.CodePath != "" {
+			args = append(args, "--code", component.CodePath)
+		}
+		if err := c.companionRunner(ctx, execPath, root, args...); err != nil {
+			result.Status = "failed"
+			result.Error = err.Error()
+			_, _ = fmt.Fprintf(
+				stdio.Stderr,
+				"update: managed %s notification component repair failed (non-fatal): %v\n",
+				component.Channel,
+				err,
+			)
+		}
+		results = append(results, result)
+	}
+	return results
 }
 
 // printPostUpdateDigest execs the just-swapped NEW binary's own `whatsnew

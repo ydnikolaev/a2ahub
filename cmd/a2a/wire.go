@@ -17,6 +17,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/feedback"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
+	"github.com/ydnikolaev/a2ahub/internal/notification"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
@@ -162,6 +163,20 @@ func buildCommands() map[string]command {
 	m["completion"] = func(args []string, stdout, stderr io.Writer) int {
 		return cli.NewCompletionCommand(completionCmds(), completionSubFamilies()).Run(context.Background(), args, stdio(stdout, stderr))
 	}
+	// P49 (OP-223): host-native notification surfaces. The controller owns
+	// the personal registry, channel components, leases, and trusted routes;
+	// the transport remains a thin argv/JSON boundary.
+	m["notifications"] = func(args []string, stdout, stderr io.Writer) int {
+		p, err := resolvePaths()
+		if err != nil {
+			return fail(stderr, err)
+		}
+		controller, err := newNotificationController(p)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		return cli.NewNotificationsCommand(controller).Run(context.Background(), args, stdio(stdout, stderr))
+	}
 	m["connect"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
 		if err != nil {
@@ -213,6 +228,13 @@ func buildCommands() map[string]command {
 		}
 		return cli.NewSyncCommand(p.projectConfig, p.machineConfig, p.projectRoot, cli.NewCacheBackedPendingMarker(cacheDirOf(p))).Run(context.Background(), args, stdio(stdout, stderr))
 	}
+	m["await"] = func(args []string, stdout, stderr io.Writer) int {
+		p, err := resolvePaths()
+		if err != nil {
+			return fail(stderr, err)
+		}
+		return cli.NewAwaitCommand(awaitResolver(p)).Run(context.Background(), args, stdio(stdout, stderr))
+	}
 	m["doctor"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
 		if err != nil {
@@ -236,6 +258,11 @@ func buildCommands() map[string]command {
 		// advisory nobody set up is indistinguishable from one that has nothing
 		// to report.
 		cmd.TemplateFiles = spacetemplate.Files
+		if notifications, notificationsErr := newNotificationController(p); notificationsErr == nil {
+			cmd.NotificationStatus = func(ctx context.Context, root string) (notification.Status, error) {
+				return notifications.Status(ctx, notification.StatusRequest{Root: root, Probe: true})
+			}
+		}
 		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["update"] = func(args []string, stdout, stderr io.Writer) int {
@@ -359,12 +386,15 @@ func completionContractSubs() []string {
 
 // completionSubFamilies maps each `a2a <verb> <sub>` family to its sub-verb
 // names from the same SSOTs the catalog/MCP parity use — contract
-// (ContractSubcommands) + feedback (FeedbackSubcommands). Adding a family here
+// (ContractSubcommands), feedback (FeedbackSubcommands), notifications
+// (NotificationsSubcommands), and skill (SkillSubcommands). Adding a family here
 // is the ONLY completion edit a new sub-verb family needs (renderer is N-family).
 func completionSubFamilies() map[string][]string {
 	return map[string][]string{
-		"contract": completionContractSubs(),
-		"feedback": cli.FeedbackSubcommands(),
+		"contract":      completionContractSubs(),
+		"feedback":      cli.FeedbackSubcommands(),
+		"notifications": cli.NotificationsSubcommands(),
+		"skill":         cli.SkillSubcommands(),
 	}
 }
 
@@ -549,7 +579,11 @@ func runLifecycle(args []string, stdout, stderr io.Writer, construct lifecycleCo
 	if code >= 0 {
 		return code
 	}
-	return construct(deps).Run(ctx, args, stdio(stdout, stderr))
+	cmd := construct(deps)
+	if markerAware, ok := cmd.(interface{ SetPendingMarker(cli.PendingMarker) }); ok {
+		markerAware.SetPendingMarker(cli.NewCacheBackedPendingMarker(cacheDirOf(p)))
+	}
+	return cmd.Run(ctx, args, stdio(stdout, stderr))
 }
 
 func runContract(args []string, stdout, stderr io.Writer) int {
@@ -568,7 +602,74 @@ func runContract(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 	cmd := cli.NewContractCommand(newCmd, deps.funnel, deps.mirrorDir, deps.spaceID, deps.ownSystem, deps.manifest, deps.hostCfg, deps.resolveActor)
+	cmd.SetPendingMarker(cli.NewCacheBackedPendingMarker(cacheDirOf(p)))
 	return cmd.Run(ctx, args, stdio(stdout, stderr))
+}
+
+func awaitResolver(p paths) cli.AwaitResolver {
+	return func(ctx context.Context, artifactID string) (cli.AwaitTarget, error) {
+		if _, err := artifact.ParseID(artifactID); err != nil {
+			return cli.AwaitTarget{}, fmt.Errorf("invalid artifact id %q: %w", artifactID, err)
+		}
+		cfg, err := space.LoadProjectConfig(p.projectConfig)
+		if err != nil {
+			return cli.AwaitTarget{}, fmt.Errorf("no project config (run `a2a init` first): %w", err)
+		}
+		machine, err := loadMachineConfigForWrite(p.machineConfig)
+		if err != nil {
+			return cli.AwaitTarget{}, fmt.Errorf("unreadable machine config: %w", err)
+		}
+		type match struct {
+			ref    space.Ref
+			marker cache.PendingMarker
+		}
+		var matches []match
+		for _, ref := range cfg.Spaces {
+			marker, readErr := cache.ReadMarker(cacheDirOf(p), ref.ID, artifactID)
+			switch {
+			case readErr == nil:
+				matches = append(matches, match{ref: ref, marker: marker})
+			case os.IsNotExist(readErr):
+				continue
+			default:
+				return cli.AwaitTarget{}, fmt.Errorf("read pending marker for %s: %w", ref.ID, readErr)
+			}
+		}
+		if len(matches) == 0 {
+			return cli.AwaitTarget{}, fmt.Errorf("no pending write recorded for %s", artifactID)
+		}
+		if len(matches) > 1 {
+			return cli.AwaitTarget{}, fmt.Errorf("pending write for %s is ambiguous across %d spaces", artifactID, len(matches))
+		}
+		selected := matches[0]
+		cred, err := resolveCredential(ctx, selected.ref.ID, machine)
+		if err != nil {
+			return cli.AwaitTarget{}, err
+		}
+		owner, name, err := parseGitHubRepo(selected.ref.RepoURL)
+		if err != nil {
+			return cli.AwaitTarget{}, err
+		}
+		mirrorDir := space.ResolveMirrorLocation(p.projectRoot, selected.ref, machine)
+		h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
+		awaiter := space.NewAwaiter(h)
+		req := space.AwaitRequest{
+			Branch: selected.marker.Branch,
+			Repo:   host.Repo{Owner: owner, Name: name}, Credential: cred,
+			Refresh: func(refreshCtx context.Context) error {
+				return space.CloneOrFetch(refreshCtx, mirrorDir, selected.ref.RepoURL)
+			},
+			Clear: func() error {
+				return cache.RemoveMarker(cacheDirOf(p), selected.ref.ID, artifactID)
+			},
+		}
+		return cli.AwaitTarget{
+			SpaceID: selected.ref.ID,
+			Await: func(awaitCtx context.Context) (space.AwaitResult, error) {
+				return awaiter.Await(awaitCtx, req)
+			},
+		}, nil
+	}
 }
 
 // funnelBinaryVersion is the single seam feeding space.NewWriteFunnel across
@@ -848,8 +949,9 @@ const canonicalFeedbackRepo = "https://github.com/ydnikolaev/a2ahub"
 // feedbackToken resolves the push credential for `a2a feedback submit`. Feedback
 // targets a fixed repo, not a connected space, so it does not use the machine
 // config's per-space credential refs; it reads an ambient token (A2A_FEEDBACK_
-// TOKEN, else GITHUB_TOKEN/GH_TOKEN). Empty is tolerated — only a real push
-// needs it (the e2e submit path uses FakeHost, §11 A5).
+// TOKEN, else GITHUB_TOKEN/GH_TOKEN). feedback.Submitter refuses an empty
+// credential before git when the target is GitHub; local fixture remotes stay
+// credential-free (§11 A5).
 func feedbackToken() string {
 	for _, k := range []string{"A2A_FEEDBACK_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"} {
 		if v := os.Getenv(k); v != "" {

@@ -32,6 +32,11 @@ The project-dev profile is the one an agent most often assists. The end state is
 a green `a2a doctor` — if any check fails, jump to
 [troubleshooting.md](troubleshooting.md).
 
+After the core profile is usable, follow [notifications.md](notifications.md):
+read `a2a notifications status --json` and offer the available macOS/VS Code
+channels only when its project-scoped `offer.state` is `ask`. Notification
+setup is optional and must not delay the green core profile.
+
 ### Two roles — don't conflate them (P33 space-CI model)
 
 - **Space owner** *creates* the space repo from `space-template/`. That template

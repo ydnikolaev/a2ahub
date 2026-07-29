@@ -39,6 +39,32 @@ go install github.com/ydnikolaev/a2ahub/cmd/a2a@latest
 Windows) from the [releases page](https://github.com/ydnikolaev/a2ahub/releases/latest),
 unpack, and put `a2a` on your `PATH`.
 
+### Native notifications (optional)
+
+Install the surface you actually work in:
+
+```sh
+a2a notifications install --channel macos
+a2a notifications install --channel vscode
+a2a notifications install --channel all
+```
+
+The command fetches the companion from the **matching a2a GitHub release**,
+verifies the signed release cohort, asset hash, signature, version, protocol,
+and platform identity, then installs or repairs it. The macOS companion is a
+real universal app with an ad-hoc code signature. Because it has no paid Apple
+Developer ID/notarization, macOS may require one explicit
+**System Settings → Privacy & Security → Open Anyway** approval before the
+install command is retried. `a2a` never clears quarantine or weakens Gatekeeper.
+The VS Code companion is installed as a version-matched VSIX through the
+canonical `code` CLI. No agent is required.
+
+Run the command from each project that should notify; enrolment is per project,
+while the app/extension installation is per user. `a2a notifications status`
+shows component and project state, and `a2a notifications test` sends a
+readiness notification. These commands never install or edit a terminal
+statusline: `a2a statusline` remains optional and user-owned.
+
 ## Quick usage
 
 ```sh

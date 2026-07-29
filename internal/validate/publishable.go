@@ -44,50 +44,49 @@ type PublishableInput struct {
 	Schemas int
 	// ValidFixtures is how many fixtures/valid/** files it publishes.
 	ValidFixtures int
+	// InvalidFixtures is how many fixtures/invalid/** files it publishes.
+	InvalidFixtures int
 }
 
-// CheckContractPublishable enforces decision D-D: a contract that declares
-// a JSON-Schema dialect must actually publish a schema and at least one
-// valid fixture, or it is refused (POL-009).
+// CheckContractPublishable enforces plan §5.3: every contract must actually
+// publish a schema and at least one valid and invalid fixture, or it is
+// refused (POL-009).
 //
-// Why a refusal and not a warning. Nothing in the product reads a
-// contract's schema/** or fixtures/** today, and `contract new` scaffolds
-// neither — so before this rule, every contract in existence published
-// zero fixtures, and §5.4b's compatibility check would have answered
-// "the prior version published no fixtures, nothing computed" for all of
-// them, forever. A guarantee a producer has to opt into is not a
-// guarantee, and in a fleet where the producer is an agent, nobody opts
-// in. Requiring the baseline is what makes the check able to bite.
+// Why a refusal and not a warning. A published contract without executable
+// examples cannot satisfy §5.3, and for JSON Schema specifically leaves
+// §5.4b with no compatibility baseline. A guarantee a producer has to opt
+// into is not a guarantee, and in a fleet where the producer is an agent,
+// nobody reliably opts in. Requiring the baseline is what makes the checks
+// able to bite.
 //
-// A non-JSON-Schema contract is not subject to this: §5.4b hands deep
-// compatibility for those formats to the owner's own CI, so demanding
-// fixtures this engine would never read would be ceremony.
+// This presence rule applies to every schema_format. What remains format
+// specific is DEEP validation: §5.4b is computed here only for JSON Schema,
+// while openapi/proto/other leave fixture semantics to the owner's CI. The
+// binary can still enforce §5.3's format-neutral directory contract.
 //
 // Returns nil when the contract may be published.
 func CheckContractPublishable(in PublishableInput) *Violation {
-	if !IsJSONSchemaFormat(in.SchemaFormat) {
-		return nil
-	}
-	if in.Schemas > 0 && in.ValidFixtures > 0 {
+	if in.Schemas > 0 && in.ValidFixtures > 0 && in.InvalidFixtures > 0 {
 		return nil
 	}
 
-	var missing string
-	switch {
-	case in.Schemas == 0 && in.ValidFixtures == 0:
-		missing = "no schema/** files and no fixtures/valid/** files"
-	case in.Schemas == 0:
-		missing = "no schema/** files"
-	default:
-		missing = "no fixtures/valid/** files"
+	var missing []string
+	if in.Schemas == 0 {
+		missing = append(missing, "no schema/** files")
+	}
+	if in.ValidFixtures == 0 {
+		missing = append(missing, "no fixtures/valid/** files")
+	}
+	if in.InvalidFixtures == 0 {
+		missing = append(missing, "no fixtures/invalid/** files")
 	}
 
 	return &Violation{
 		Code:  "POL-009",
 		Class: ClassPolicy,
 		Message: "contract " + in.ContractID + " declares schema_format " + in.SchemaFormat +
-			" but publishes " + missing +
-			"; §5.4b's computed compatibility check has nothing to compute against, so a later breaking change could not be detected",
+			" but publishes " + strings.Join(missing, " and ") +
+			"; plan §5.3 requires a machine-validatable schema plus positive and negative executable examples before a version can be trusted",
 		Severity: SeverityReject,
 	}
 }

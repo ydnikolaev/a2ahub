@@ -40,7 +40,7 @@ func TestFBClosure(t *testing.T) {
 		}
 	}
 
-	// FB-001..FB-006: drive every shipped invalid fixture.
+	// Fixture-backed codes: drive every shipped invalid fixture.
 	matches, err := filepath.Glob(filepath.Join(schemaFixturesRoot, "invalid", "*.yaml"))
 	if err != nil {
 		t.Fatalf("glob: %v", err)
