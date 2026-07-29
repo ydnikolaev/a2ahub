@@ -50,6 +50,10 @@ type Item struct {
 	// `--json` stay byte-stable for their existing consumers (a time.Time would
 	// not honor omitempty anyway).
 	LatestEventAt time.Time `json:"-"`
+	// LatestEventID is the current transition identity for local
+	// notification projections. It stays outside the established inbox JSON
+	// contract, just like LatestEventAt.
+	LatestEventID string `json:"-"`
 	// Description is a short human-readable summary from the artifact's body —
 	// the "what is this" line the dashboard shows under an inbox/outbox item.
 	// json:"-" (like LatestEventAt): a dashboard-only Go field, so inbox/outbox

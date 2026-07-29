@@ -124,6 +124,33 @@ func TestFunnelForkFallbackIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestFunnelFeedbackRetryUsesObservedOrphanAsExactLease(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	req := forkFallbackRequest(t, fx)
+	req.ReplaceOrphanBranch = true
+	const orphanSHA = "1111111111111111111111111111111111111111"
+
+	fake := host.NewFakeHost()
+	fake.ReadRemoteBranchFunc = func(_ context.Context, got host.RemoteBranchRequest) (host.RemoteBranchHead, error) {
+		if got.Branch != BranchName(req.System, req.Verb, req.ArtifactID) {
+			t.Fatalf("ReadRemoteBranch branch = %q", got.Branch)
+		}
+		return host.RemoteBranchHead{SHA: orphanSHA, Exists: true}, nil
+	}
+
+	if _, err := NewWriteFunnel(fake, nil, "0.1.0").Submit(context.Background(), req); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if len(fake.Reads) != 1 || len(fake.Pushes) != 1 {
+		t.Fatalf("reads=%d pushes=%d, want one of each", len(fake.Reads), len(fake.Pushes))
+	}
+	if got := fake.Pushes[0].ForceWithLeaseSHA; got != orphanSHA {
+		t.Fatalf("ForceWithLeaseSHA = %q, want %q", got, orphanSHA)
+	}
+}
+
 // TestFunnelWithoutForkFallbackReportsTheRefusal is AC-904.2: a space
 // write (the default) never forks. A refused push is a credential fault to
 // report, not to route around, and the host is never asked for a fork.

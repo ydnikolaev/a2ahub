@@ -33,7 +33,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check check-validators feature-lint epic-drift skill-citations classify-guard workflow-lint harness-check coverage vulncheck release-preflight live-e2e install
+.PHONY: check check-validators feature-lint epic-drift skill-citations release-notes-freshness classify-guard workflow-lint harness-check coverage vulncheck release-preflight live-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -44,7 +44,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := classify-guard workflow-lint feature-lint epic-drift skill-citations
+REPO_GATES := classify-guard workflow-lint feature-lint epic-drift skill-citations release-notes-freshness
 
 check-validators: $(REPO_GATES) ## Repo gates only, no tests, no build — the static lane.
 	@echo "check-validators: repo gates green ($(REPO_GATES)). No tests ran."
@@ -123,6 +123,9 @@ skill-citations: ## Every `a2a <verb>` and error code the shipped skill PROSE ci
 	  echo "skill-citations: skip — scripts/check-skill-citations.sh absent (public checkout)."; \
 	fi
 
+release-notes-freshness: ## User-visible product commits cannot outrun the newest authored release notes.
+	@bash scripts/check-release-notes-freshness.sh
+
 epic-drift: ## An epic's committed docs (status.md stamp, receipts) must match its tracker (private harness gate, presence-gated).
 	@if [ -f .agents/scripts/epic_docs_drift.sh ]; then \
 	  bash .agents/scripts/epic_docs_drift.sh; \
@@ -132,6 +135,12 @@ epic-drift: ## An epic's committed docs (status.md stamp, receipts) must match i
 
 harness-check: ## Run the gates' --teeth self-tests (harness gates are private/presence-gated; release-preflight is public).
 	@bash scripts/release-preflight.sh --teeth
+	@bash scripts/check-release-notes-freshness.sh --teeth
+	@if [ -f docs/runbooks/publish-to-public.sh ]; then \
+	  bash docs/runbooks/publish-to-public.sh --teeth; \
+	else \
+	  echo "harness-check: skip — private publish runbook absent (public checkout)."; \
+	fi
 	@if [ -f scripts/check-feature-lint.sh ]; then \
 	  bash scripts/check-feature-lint.sh --teeth; \
 	else \

@@ -781,6 +781,25 @@ type PendingMarker interface {
 	MarkPending(ctx context.Context, spaceID, artifactID string, result space.WriteResult) error
 }
 
+// PendingWrite is the CLI-facing projection of a machine-local marker.
+type PendingWrite struct {
+	Branch   string
+	PRNumber int
+	PRURL    string
+}
+
+// PendingMarkerReader is the optional marker lookup used by lifecycle
+// diagnosis and await without widening the original P6 seam.
+type PendingMarkerReader interface {
+	Pending(spaceID, artifactID string) (PendingWrite, bool, error)
+}
+
+// PendingMarkerClearer is the optional marker cleanup used after await
+// observes a successful merge and refresh.
+type PendingMarkerClearer interface {
+	ClearPending(spaceID, artifactID string) error
+}
+
 // NoopPendingMarker is P6's injected no-op PendingMarker.
 type NoopPendingMarker struct{}
 
@@ -791,6 +810,14 @@ func NewNoopPendingMarker() *NoopPendingMarker { return &NoopPendingMarker{} }
 func (NoopPendingMarker) MarkPending(context.Context, string, string, space.WriteResult) error {
 	return nil
 }
+
+// Pending implements PendingMarkerReader as a pure no-op lookup.
+func (NoopPendingMarker) Pending(string, string) (PendingWrite, bool, error) {
+	return PendingWrite{}, false, nil
+}
+
+// ClearPending implements PendingMarkerClearer as a pure no-op cleanup.
+func (NoopPendingMarker) ClearPending(string, string) error { return nil }
 
 // CacheRemover is the future internal/cache seam for `a2a disconnect`'s
 // "remove config entry + mirror + cache for that space" step (§7.2

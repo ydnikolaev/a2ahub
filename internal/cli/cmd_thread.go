@@ -151,7 +151,7 @@ func threadPrintText(w io.Writer, result cache.ThreadResult) {
 	for _, oi := range result.OpenItems {
 		var moves []string
 		for _, na := range oi.NextActions {
-			moves = append(moves, na.Transition+":"+strings.Join(na.By, ","))
+			moves = append(moves, threadInvocation(oi.Type, na.Transition)+":"+strings.Join(na.By, ","))
 		}
 		marker := ""
 		if oi.YourMove {
@@ -164,6 +164,22 @@ func threadPrintText(w io.Writer, result cache.ThreadResult) {
 	if len(result.Unresolved) > 0 || len(result.Flags) > 0 {
 		_, _ = fmt.Fprintf(w, "!! %d unresolved / %d flags\n", len(result.Unresolved), len(result.Flags))
 	}
+}
+
+// threadInvocation translates protocol transition vocabulary into an actual
+// CLI invocation. JSON deliberately keeps the protocol word; only the text
+// surface promises a copyable `next=` command.
+func threadInvocation(artifactType, transition string) string {
+	if transition == "acknowledge" {
+		return "ack"
+	}
+	if artifactType == "contract" {
+		switch transition {
+		case "publish", "deprecate", "retire":
+			return "contract " + transition
+		}
+	}
+	return transition
 }
 
 var _ Command = (*ThreadCommand)(nil)

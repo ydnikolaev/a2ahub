@@ -35,6 +35,10 @@ const (
 	// CodePathNotUnderInbox (FB-008) is an intake file not located at
 	// feedback/inbox/<id>.yaml (--ci intake-only guard).
 	CodePathNotUnderInbox = "FB-008"
+	// CodeHiddenContent (FB-009) is hidden or direction-changing content
+	// that makes the bytes a human reviews differ from the data an agent
+	// may consume (HTML comments, control/format runes).
+	CodeHiddenContent = "FB-009"
 )
 
 // CodeEntry is one schemas/feedback/v1/codes.yaml row.

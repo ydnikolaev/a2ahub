@@ -33,6 +33,9 @@ var contractScaffoldSchemaRaw []byte
 //go:embed scaffold/contract.fixture.json
 var contractScaffoldFixtureRaw []byte
 
+//go:embed scaffold/contract.fixture.invalid.json
+var contractScaffoldInvalidFixtureRaw []byte
+
 // contractScaffoldSlugToken is the literal placeholder ContractScaffold
 // fills with the contract's own slug. The embedded scaffold files are
 // plain JSON (not YAML frontmatter), so this is a simple substring fill
@@ -42,11 +45,11 @@ var contractScaffoldFixtureRaw []byte
 const contractScaffoldSlugToken = "<slug>"
 
 // ContractScaffold renders decision D-D's starter JSON Schema and matching
-// valid fixture for a contract named slug: a minimal but real 2020-12
+// valid and invalid fixtures for a contract named slug: a minimal but real 2020-12
 // schema with no `$ref` outside the document (so it compiles under
 // internal/schema.CompileExternal's refusing loader, which treats any
-// unresolved reference as a hard compile error by design), and one
-// instance that validates against it.
+// unresolved reference as a hard compile error by design), one instance
+// that validates against it, and one that it rejects.
 //
 // This package has no opinion on WHETHER a caller should write these
 // files — that decision (schema_format is a JSON-Schema dialect, per
@@ -54,23 +57,24 @@ const contractScaffoldSlugToken = "<slug>"
 // package never imports internal/validate (§9 "Coupling: soft") and only
 // fills and returns bytes.
 //
-// D-E's fixture->schema mapping matches by base name
+// D-E's valid-fixture->schema mapping matches by base name
 // (fixtures/valid/<stem>.json -> schema/<stem>.schema.json); callers are
 // expected to name both returned files after slug so the mapping is
 // unambiguous the moment the contract publishes.
-func ContractScaffold(slug string) (schema []byte, fixture []byte) {
+func ContractScaffold(slug string) (schema, validFixture, invalidFixture []byte) {
 	token := []byte(contractScaffoldSlugToken)
 	schema = bytes.ReplaceAll(contractScaffoldSchemaRaw, token, []byte(slug))
-	fixture = bytes.ReplaceAll(contractScaffoldFixtureRaw, token, []byte(slug))
-	return schema, fixture
+	validFixture = bytes.ReplaceAll(contractScaffoldFixtureRaw, token, []byte(slug))
+	invalidFixture = bytes.ReplaceAll(contractScaffoldInvalidFixtureRaw, token, []byte(slug))
+	return schema, validFixture, invalidFixture
 }
 
-// ScaffoldContractInStaging writes decision D-D's starter schema and valid
-// fixture for slug under stagingDir, at the SAME relative shape
+// ScaffoldContractInStaging writes decision D-D's starter schema plus valid
+// and invalid fixtures for slug under stagingDir, at the SAME relative shape
 // internal/space.Layout will place them at once submitted — so the author
 // edits the paths a later publish actually looks for, and
 // internal/cli/cmd_submit.go's sidecar carry finds them where it expects.
-// D-E's fixture->schema stem mapping is satisfied by naming both files
+// D-E's fixture->schema stem mapping is satisfied by naming all three files
 // after slug.
 //
 // It lives here, beside ContractScaffold, because BOTH surfaces need it:
@@ -81,7 +85,7 @@ func ContractScaffold(slug string) (schema []byte, fixture []byte) {
 // wave C2 shipped the scaffold CLI-side only, TestEquivContractNew went
 // red on a real capability asymmetry, not a stale fixture.
 //
-// Never overwrites: an existing file at either path is left exactly as it
+// Never overwrites: an existing file at any path is left exactly as it
 // is, so a re-run cannot clobber an author's own schema or fixture.
 // Returns the paths it actually wrote, in order.
 func ScaffoldContractInStaging(stagingDir, ownSystem, slug string, writeFile func(string, []byte, os.FileMode) error) ([]string, error) {
@@ -90,13 +94,14 @@ func ScaffoldContractInStaging(stagingDir, ownSystem, slug string, writeFile fun
 		return nil, err
 	}
 
-	schemaBytes, fixtureBytes := ContractScaffold(slug)
+	schemaBytes, validFixtureBytes, invalidFixtureBytes := ContractScaffold(slug)
 	candidates := []struct {
 		path string
 		data []byte
 	}{
 		{filepath.Join(stagingDir, filepath.FromSlash(layout.ProvidesSchemaDir(slug)), slug+".schema.json"), schemaBytes},
-		{filepath.Join(stagingDir, filepath.FromSlash(layout.ProvidesFixturesValidDir(slug)), slug+".json"), fixtureBytes},
+		{filepath.Join(stagingDir, filepath.FromSlash(layout.ProvidesFixturesValidDir(slug)), slug+".json"), validFixtureBytes},
+		{filepath.Join(stagingDir, filepath.FromSlash(layout.ProvidesFixturesInvalidDir(slug)), slug+".json"), invalidFixtureBytes},
 	}
 
 	var written []string

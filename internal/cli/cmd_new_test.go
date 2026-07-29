@@ -368,6 +368,15 @@ func TestNewContractScaffoldsCompilableSchemaAndValidatingFixture(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ReadFile(fixture) %s: %v", fixturePath, err)
 	}
+	layout, err := space.NewLayout("axon")
+	if err != nil {
+		t.Fatalf("space.NewLayout: %v", err)
+	}
+	invalidFixturePath := filepath.Join(stagingDir, filepath.FromSlash(layout.ProvidesFixturesInvalidDir("ingest")), "ingest.json")
+	invalidFixtureRaw, err := os.ReadFile(invalidFixturePath)
+	if err != nil {
+		t.Fatalf("ReadFile(invalid fixture) %s: %v", invalidFixturePath, err)
+	}
 
 	compiled, err := schema.CompileExternal("ingest.schema.json", schemaRaw)
 	if err != nil {
@@ -376,6 +385,9 @@ func TestNewContractScaffoldsCompilableSchemaAndValidatingFixture(t *testing.T) 
 	if err := compiled.ValidateInstance(fixtureRaw); err != nil {
 		t.Fatalf("scaffolded fixture does not validate against scaffolded schema: %v", err)
 	}
+	if err := compiled.ValidateInstance(invalidFixtureRaw); err == nil {
+		t.Fatal("scaffolded invalid fixture unexpectedly validates against the scaffolded schema")
+	}
 
 	// The output names every file it wrote, not only the descriptor.
 	if !bytes.Contains(out.Bytes(), []byte(schemaPath)) {
@@ -383,6 +395,9 @@ func TestNewContractScaffoldsCompilableSchemaAndValidatingFixture(t *testing.T) 
 	}
 	if !bytes.Contains(out.Bytes(), []byte(fixturePath)) {
 		t.Errorf("expected stdout to name the scaffolded fixture path %s; got %q", fixturePath, out.String())
+	}
+	if !bytes.Contains(out.Bytes(), []byte(invalidFixturePath)) {
+		t.Errorf("expected stdout to name the scaffolded invalid fixture path %s; got %q", invalidFixturePath, out.String())
 	}
 }
 
@@ -407,6 +422,7 @@ func TestNewContractScaffoldSatisfiesCheckContractPublishable(t *testing.T) {
 	}
 	schemaDir := filepath.Join(stagingDir, filepath.FromSlash(layout.ProvidesSchemaDir("ingest")))
 	fixturesDir := filepath.Join(stagingDir, filepath.FromSlash(layout.ProvidesFixturesValidDir("ingest")))
+	invalidFixturesDir := filepath.Join(stagingDir, filepath.FromSlash(layout.ProvidesFixturesInvalidDir("ingest")))
 
 	schemas, err := os.ReadDir(schemaDir)
 	if err != nil {
@@ -416,12 +432,17 @@ func TestNewContractScaffoldSatisfiesCheckContractPublishable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadDir(fixtures): %v", err)
 	}
+	invalidFixtures, err := os.ReadDir(invalidFixturesDir)
+	if err != nil {
+		t.Fatalf("ReadDir(invalid fixtures): %v", err)
+	}
 
 	violation := validate.CheckContractPublishable(validate.PublishableInput{
-		SchemaFormat:  "json-schema-2020-12",
-		ContractID:    "XC-axon-ingest",
-		Schemas:       len(schemas),
-		ValidFixtures: len(fixtures),
+		SchemaFormat:    "json-schema-2020-12",
+		ContractID:      "XC-axon-ingest",
+		Schemas:         len(schemas),
+		ValidFixtures:   len(fixtures),
+		InvalidFixtures: len(invalidFixtures),
 	})
 	if violation != nil {
 		t.Fatalf("CheckContractPublishable: expected nil for a freshly-scaffolded contract, got %+v", violation)
