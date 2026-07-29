@@ -44,6 +44,7 @@ type DoctorCommand struct {
 	machineConfigPath string
 	projectRoot       string
 	h                 host.Host
+	skillDir          string
 
 	// TemplateFiles is the embedded space-template/ tree (spacetemplate.Files
 	// — mirrors SpaceCommand.TemplateFiles' own role and doc). Exported and
@@ -104,6 +105,7 @@ func NewDoctorCommand(h host.Host, binaryVersion, projectConfigPath, machineConf
 		readFile:          os.ReadFile,
 		lookupGit:         func() error { _, err := exec.LookPath("git"); return err },
 		cachePath:         release.CachePath,
+		skillDir:          skillDefaultDir,
 	}
 }
 
@@ -142,6 +144,10 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	cfg, err := c.loadProjectConfig(c.projectConfigPath)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "doctor: cannot load project config %s: %v\n", c.projectConfigPath, err)
+		return 1
+	}
+	if c.skillDir, err = space.NormalizeSkillDir(cfg.SkillDir); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "doctor: invalid skill_dir: %v\n", err)
 		return 1
 	}
 	machine, err := c.loadMachineConfig(c.machineConfigPath)
@@ -386,6 +392,9 @@ func (c *DoctorCommand) doctorCheckSpaceIdentity(cfg space.ProjectConfig, machin
 // access" check could not reach also fails this check (a stale/absent
 // mirror has nothing to compare against).
 func (c *DoctorCommand) doctorCheckVersions(cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+	if c.binaryVersion == "dev" {
+		return true, " · unreleased local build (dev); released-version floor comparison skipped"
+	}
 	ok := true
 	var failures []string
 	for _, ref := range cfg.Spaces {
@@ -924,7 +933,7 @@ func (c *DoctorCommand) doctorCheckStatuslineWiring() (bool, string) {
 // only reports what it finds, an advisory on PASS, matching
 // doctorCheckVersions's own advisory-on-PASS convention).
 func (c *DoctorCommand) doctorCheckSkillDiscoverable() (bool, string) {
-	if _, err := os.Stat(filepath.Join(c.projectRoot, skillDefaultDir, "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(c.projectRoot, filepath.FromSlash(c.skillDir), "SKILL.md")); err != nil {
 		return true, " · no a2ahub skill installed"
 	}
 
@@ -988,7 +997,7 @@ var doctorSkillManualStampPattern = regexp.MustCompile(`\(a2a ([^)]+)\)`)
 // advisory-on-PASS convention; an absent install is simply not this check's
 // concern (nothing to compare).
 func (c *DoctorCommand) doctorCheckSkillManualCurrent() (bool, string) {
-	data, err := os.ReadFile(filepath.Join(c.projectRoot, skillDefaultDir, skillProvenanceFile))
+	data, err := os.ReadFile(filepath.Join(c.projectRoot, filepath.FromSlash(c.skillDir), skillProvenanceFile))
 	if err != nil {
 		return true, " · no skill installed"
 	}

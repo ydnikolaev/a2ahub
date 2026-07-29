@@ -57,28 +57,15 @@ The `blocking` field is per-artifact and honest: the announcement is
 (axon's work waits on the answer); the work_request may be `blocking: false`
 with an `interim_behavior`.
 
-## Fixtures illustrating each type's shape
+## The coordinated fixture trio
 
 The product-repo fixture set under `schemas/envelope/v1/fixtures/valid/`
-contains a **valid, on-disk exemplar of each of the three types** in this
-scenario. Use them as *shape* references for the frontmatter and body of each
-part:
+contains the exact three documents below. They share
+`thread:axon-20260729-d3c0` and are validated together by the fixture guard;
+they are one decomposition, not three unrelated shape examples.
 
 | Type in this scenario | Closest real fixture | Notes |
 |-----------------------|----------------------|-------|
-| `announcement` / `deprecation` | `XA-axon-20260901-d8k1.md` | axon → seomatrix; "Deprecation: ingest v1 destination handle sunset 2026-10-01"; carries the machine-readable successor `ref` (`XC-axon-ingest@2.0.0`). |
-| `question` / `defect` | `XQ-seomatrix-20260730-h2k8.md` | "Ingest 422 error shape contradicts §4.3 example"; `blocking: true`. (Authored seomatrix → axon; mirror the direction for an axon-authored part.) |
-| `work_request` / `data` | `XW-axon-20260731-p9d3.md` | axon → seomatrix; "Currency dictionary keyed by real ISO-4217 codes". |
-
-> **Deviation — read this.** These three fixtures are **separate, independent
-> fixtures; they do NOT share a `thread` on disk.** No coordinated
-> announcement + question + work_request trio on one thread exists in the
-> fixture set today. The only threaded pair in the fixtures is
-> `thread:axon-20260729-c7q2`, which links `XR-axon-country-vocabulary`
-> (requirement) and `XS-seomatrix-20260805-b6n2` (its response) — a
-> requirement→response pair, not the decompose trio §8.7 describes. This file
-> therefore cites each type's fixture as a *shape exemplar* and narrates the
-> shared-thread decompose against them; it deliberately does **not** invent a
-> thread ID linking the three real fixtures, and it invents no fixture IDs. If a
-> coordinated single-thread trio is later added to the fixture set, replace the
-> table above with its actual IDs and thread.
+| `announcement` / `deprecation` | `XA-axon-20260729-d3c1.md` | One-way sunset notice with the machine-readable successor. |
+| `question` / `defect` | `XQ-axon-20260729-d3c2.md` | One blocking request for an authoritative answer about the 422 shape. |
+| `work_request` / `data` | `XW-axon-20260729-d3c3.md` | One executable dictionary request with its own acceptance criteria. |

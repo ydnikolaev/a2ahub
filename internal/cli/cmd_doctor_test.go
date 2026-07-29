@@ -219,6 +219,22 @@ func TestDoctorRunCannotLoadProjectConfigIsRuntimeFailure(t *testing.T) {
 	}
 }
 
+func TestDoctorVersionsTreatsLiteralDevAsUnreleasedBuild(t *testing.T) {
+	t.Parallel()
+	cmd := NewDoctorCommand(nil, "dev", "", "", t.TempDir())
+	ok, detail := cmd.doctorCheckVersions(space.ProjectConfig{
+		Spaces: []space.Ref{{ID: "space"}},
+	}, space.MachineConfig{})
+	if !ok {
+		t.Fatal("literal dev must be an advisory/skip, not a broken released version")
+	}
+	for _, want := range []string{"unreleased local build", "skipped"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("detail=%q, want %q", detail, want)
+		}
+	}
+}
+
 // --- Per-check unit tests: each of OP-218's five basic checks independently
 // drivable to both PASS and FAIL (spec 09 §6 "Basic doctor" testing row). ---
 
@@ -1089,6 +1105,42 @@ func TestDoctorRunRendersSkillDiscoverableWithSeparator(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "skill discoverable: PASS · ") {
 		t.Fatalf("stdout = %q, want a properly separated PASS line", stdout.String())
+	}
+}
+
+func TestDoctorRunUsesCustomSkillDirectoryForBothChecks(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	target := filepath.Join(root, "agent", "manual")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "SKILL.md"), []byte("---\nname: a2ahub\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte(skillProvenance("0.3.0")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewDoctorCommand(host.NewFakeHost(), "0.3.0", "/unused/project.yaml", "/unused/machine.yaml", root)
+	cmd.loadProjectConfig = func(string) (space.ProjectConfig, error) {
+		return space.ProjectConfig{SkillDir: "agent/manual"}, nil
+	}
+	cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
+	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
+	cmd.lookupGit = func() error { return nil }
+
+	var stdout, stderr bytes.Buffer
+	if code := cmd.Run(context.Background(), nil, IO{Stdout: &stdout, Stderr: &stderr}); code != 0 {
+		t.Fatalf("Run code=%d stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"skill discoverable: PASS · skill installed",
+		"skill manual current: PASS · skill manual current (v0.3.0)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("stdout missing %q:\n%s", want, stdout.String())
+		}
 	}
 }
 
