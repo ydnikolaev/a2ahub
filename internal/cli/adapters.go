@@ -717,50 +717,32 @@ func toStringSlice(v any) []string {
 
 // --- ManifestValidatorAdapter (space.ManifestValidator) -----------------
 
-// ManifestValidatorAdapter is the concrete space.ManifestValidator P6
-// wires: SCHEMA-CLASS validation only (internal/schema's manifest corpus)
-// — referential/policy manifest checks exist in no package yet (a tracked
-// backlog row per space.ManifestValidator's own doc comment); this
-// adapter does not invent that scope.
+// ManifestValidatorAdapter is the concrete space.ManifestValidator. It calls
+// validate.Engine rather than addressing the schema corpus directly so manifest
+// shape and authority-map policy have one owner on both the load seam and V3.
 type ManifestValidatorAdapter struct {
-	corpus *schema.Corpus
+	engine *validate.Engine
 }
 
 // NewManifestValidatorAdapter constructs a ManifestValidatorAdapter over
 // corpus (schema.Load's result).
 func NewManifestValidatorAdapter(corpus *schema.Corpus) *ManifestValidatorAdapter {
-	return &ManifestValidatorAdapter{corpus: corpus}
+	return &ManifestValidatorAdapter{engine: validate.New(corpus)}
 }
 
 // ValidateManifest implements space.ManifestValidator.
 func (m *ManifestValidatorAdapter) ValidateManifest(_ context.Context, raw []byte) error {
-	instance, err := schema.DecodeYAMLInstance(raw)
-	if err != nil {
-		return fmt.Errorf("cli: ManifestValidatorAdapter: decode: %w", err)
-	}
-
-	// space.schema.json's own `schema` const is literally "space/v1" (not
-	// "manifest/v1" — a documented naming tension in the schema file's own
-	// description, unresolved upstream); the fallback below only matters
-	// when raw carries no `schema` field of its own to read.
-	version := "space/v1"
-	if doc, ok := instance.(map[string]any); ok {
-		if s, ok := doc["schema"].(string); ok && s != "" {
-			version = s
-		}
-	}
-
-	violations, err := m.corpus.ValidateManifest(version, instance)
+	result, err := m.engine.ValidateManifest(raw)
 	if err != nil {
 		return fmt.Errorf("cli: ManifestValidatorAdapter: %w", err)
 	}
-	if len(violations) == 0 {
+	if result.Valid {
 		return nil
 	}
 	var b strings.Builder
-	b.WriteString("manifest schema violations:")
-	for _, v := range violations {
-		fmt.Fprintf(&b, " [%s: %s]", v.Path, v.Keyword)
+	b.WriteString("manifest violations:")
+	for _, v := range result.Violations {
+		fmt.Fprintf(&b, " [%s %s: %s]", v.Code, v.Path, v.Message)
 	}
 	return fmt.Errorf("cli: %s", b.String())
 }

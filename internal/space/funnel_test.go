@@ -222,6 +222,49 @@ func TestFunnelWrongSectionRefusedBeforeGitAction(t *testing.T) {
 	}
 }
 
+func TestFunnelRefusesSymlinkDestinationBeforeAnyFileMutation(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	l, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", l)
+
+	external := t.TempDir()
+	link := filepath.Join(req.RepoDir, "axon", "exchanges", "escape")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatalf("mkdir link parent: %v", err)
+	}
+	if err := os.Symlink(external, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	req.Files = []FileWrite{
+		{Path: "axon/exchanges/safe-before-escape.md", Content: []byte("must not be written")},
+		{Path: "axon/exchanges/escape/outside.md", Content: []byte("must not escape")},
+	}
+
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	_, err = funnel.Submit(context.Background(), req)
+	if !errors.Is(err, ErrSymlinkWrite) {
+		t.Fatalf("Submit error = %v, want ErrSymlinkWrite", err)
+	}
+	if _, err := os.Stat(filepath.Join(external, "outside.md")); !os.IsNotExist(err) {
+		t.Fatalf("external destination was mutated, stat error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(req.RepoDir, "axon", "exchanges", "safe-before-escape.md")); !os.IsNotExist(err) {
+		t.Fatalf("safe file was partially written before refusal, stat error = %v", err)
+	}
+	staged, err := runGitOutput(context.Background(), req.RepoDir, nil, "diff", "--cached", "--name-only")
+	if err != nil {
+		t.Fatalf("git diff --cached: %v", err)
+	}
+	if staged != "" {
+		t.Fatalf("refusal left staged mutations: %q", staged)
+	}
+}
+
 // TestSectionOKRejectsTraversal is the security regression net for the
 // wave-2 audit HIGH: a crafted path with `..` segments (or an absolute
 // path, or any non-canonical form) must not pass the single-writer

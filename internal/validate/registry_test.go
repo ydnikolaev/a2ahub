@@ -111,6 +111,11 @@ func TestRegistryClosure(t *testing.T) {
 	record(checkAddressees(envelope{To: []any{"unknown-system"}}, resolver))
 	// REF-006 (left branch): to includes a system marked left.
 	record(checkAddressees(envelope{To: []any{"seomatrix"}}, resolver))
+	// REF-013: manifest authority map assigns one active login twice.
+	record(checkManifestPolicy(manifestProbe{Participants: []manifestParticipantProbe{
+		{System: "axon", Section: "axon/", Owners: []string{"alice"}, Status: "active"},
+		{System: "matrix", Section: "matrix/", Owners: []string{"alice"}, Status: "active"},
+	}}))
 
 	// LFC-001 / LFC-002.
 	lfc1, err := checkLifecycle([]CandidateEvent{{Subject: "XW-axon-20260731-p9d3", Transition: "respond"}}, &fakeLegality{verdict: VerdictIllegalTransition})

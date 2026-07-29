@@ -33,7 +33,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check check-validators feature-lint epic-drift skill-citations release-notes-freshness classify-guard workflow-lint harness-check coverage vulncheck release-preflight live-e2e install
+.PHONY: check check-validators feature-lint epic-drift skill-citations release-notes-freshness classify-guard workflow-lint gosec-scope harness-check coverage vulncheck release-preflight live-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -44,7 +44,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := classify-guard workflow-lint feature-lint epic-drift skill-citations release-notes-freshness
+REPO_GATES := classify-guard workflow-lint gosec-scope feature-lint epic-drift skill-citations release-notes-freshness
 
 check-validators: $(REPO_GATES) ## Repo gates only, no tests, no build — the static lane.
 	@echo "check-validators: repo gates green ($(REPO_GATES)). No tests ran."
@@ -84,6 +84,9 @@ workflow-lint: ## Every GitHub Action `uses:` must be SHA-pinned (defeats tag-hi
 	if [ -n "$$bad" ]; then echo "workflow-lint: FAIL — unpinned action(s), pin to a full 40-hex SHA (# vX.Y.Z):"; echo "$$bad"; exit 1; fi; \
 	echo "workflow-lint: all actions SHA-pinned."
 	@command -v actionlint >/dev/null 2>&1 && actionlint || echo "workflow-lint: actionlint not installed locally (CI runs it) — go install github.com/rhysd/actionlint/cmd/actionlint@latest"
+
+gosec-scope: ## G204/G304 stay live outside the exact reviewed path allowlist.
+	@bash scripts/check-gosec-scope.sh
 
 coverage: ## go test -race with coverage, gated by the coveragepolicy SSOT floor (same code path as `check`).
 	@if [ ! -f go.mod ]; then echo "coverage: no go.mod — skipped."; exit 0; fi
@@ -134,6 +137,7 @@ epic-drift: ## An epic's committed docs (status.md stamp, receipts) must match i
 	fi
 
 harness-check: ## Run the gates' --teeth self-tests (harness gates are private/presence-gated; release-preflight is public).
+	@bash scripts/check-gosec-scope.sh --teeth
 	@bash scripts/release-preflight.sh --teeth
 	@bash scripts/check-release-notes-freshness.sh --teeth
 	@if [ -f docs/runbooks/publish-to-public.sh ]; then \

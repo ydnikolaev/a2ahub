@@ -1,6 +1,10 @@
 package validate
 
 import (
+	"path"
+	"strconv"
+	"strings"
+
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"gopkg.in/yaml.v3"
 )
@@ -77,14 +81,40 @@ func (e *Engine) ValidateManifest(raw []byte) (Result, error) {
 	if merr != nil {
 		return Result{}, &Error{Op: op, Err: merr}
 	}
+	violations = append(violations, checkManifestPolicy(probe)...)
 	return newResult(V2, probe.Space, violations), nil
 }
 
-// manifestProbe is the two fields ValidateManifest needs before it can choose
-// which schema version to validate against.
+// ValidateManifestPolicy runs the authority-map half of manifest validation
+// without repeating the schema check. V3 uses it on every PR before consulting
+// the manifest for diff authorization: an old schema-only defect may remain a
+// changed-file tripwire, but an ambiguous authority map must never grant write
+// permission just because space.yaml itself was not changed by this PR.
+func (e *Engine) ValidateManifestPolicy(raw []byte) (Result, error) {
+	_, probe, parseable := decodeManifest(raw)
+	if !parseable {
+		// The structural/schema path owns malformed YAML. Callers cannot have
+		// parsed a Manifest from these bytes in the first place, so returning
+		// that second verdict here would only duplicate POL-002.
+		return newResult(V2, "", nil), nil
+	}
+	return newResult(V2, probe.Space, checkManifestPolicy(probe)), nil
+}
+
+// manifestProbe is validate's own minimal projection of the authority-bearing
+// manifest fields. Keeping it here preserves ADR-001: validate owns policy and
+// does not import the I/O-facing space package.
 type manifestProbe struct {
-	Schema string `yaml:"schema"`
-	Space  string `yaml:"space"`
+	Schema       string                     `yaml:"schema"`
+	Space        string                     `yaml:"space"`
+	Participants []manifestParticipantProbe `yaml:"participants"`
+}
+
+type manifestParticipantProbe struct {
+	System  string   `yaml:"system"`
+	Section string   `yaml:"section"`
+	Owners  []string `yaml:"owners"`
+	Status  string   `yaml:"status"`
 }
 
 // decodeManifest decodes raw twice — once as a schema instance, once into the
@@ -131,6 +161,99 @@ func malformedManifestViolation() Violation {
 		Path:     "",
 		Message:  "space.yaml is not valid YAML",
 		CCRef:    "CC-001",
+		Severity: SeverityReject,
+	}
+}
+
+// checkManifestPolicy is the one canonical authority-map policy check. REF-013
+// deliberately groups the invariant as one stable machine code: every branch
+// has the same consequence — the map is ambiguous and therefore cannot
+// authorize a write — while Path and Message identify the repair.
+func checkManifestPolicy(probe manifestProbe) []Violation {
+	var violations []Violation
+	systems := make(map[string]int, len(probe.Participants))
+	sections := make(map[string]int, len(probe.Participants))
+	activeOwners := make(map[string]string)
+
+	for i, participant := range probe.Participants {
+		base := "participants." + strconv.Itoa(i)
+		system := strings.TrimSpace(participant.System)
+		if system == "" {
+			violations = append(violations, manifestAuthorityViolation(base+".system", "participant system must be non-empty"))
+		} else if prior, exists := systems[system]; exists {
+			violations = append(violations, manifestAuthorityViolation(
+				base+".system",
+				"participant system duplicates participants."+strconv.Itoa(prior)+".system",
+			))
+		} else {
+			systems[system] = i
+		}
+
+		section, clean := cleanTopLevelSection(participant.Section)
+		if !clean {
+			violations = append(violations, manifestAuthorityViolation(
+				base+".section",
+				"participant section must be one clean relative top-level directory",
+			))
+		} else if prior, exists := sections[section]; exists {
+			violations = append(violations, manifestAuthorityViolation(
+				base+".section",
+				"participant section overlaps participants."+strconv.Itoa(prior)+".section",
+			))
+		} else {
+			sections[section] = i
+		}
+
+		// A participant that left remains historical manifest data, but it
+		// grants no current authority and its owners are not considered in
+		// the active login map.
+		if participant.Status != "active" {
+			continue
+		}
+		if len(participant.Owners) == 0 {
+			violations = append(violations, manifestAuthorityViolation(
+				base+".owners",
+				"active participant must name at least one owner",
+			))
+		}
+		for ownerIndex, rawOwner := range participant.Owners {
+			owner := strings.TrimSpace(rawOwner)
+			ownerPath := base + ".owners." + strconv.Itoa(ownerIndex)
+			if owner == "" {
+				violations = append(violations, manifestAuthorityViolation(ownerPath, "active owner login must be non-empty"))
+				continue
+			}
+			if priorSystem, exists := activeOwners[owner]; exists && priorSystem != system {
+				violations = append(violations, manifestAuthorityViolation(
+					ownerPath,
+					"active owner login is already assigned to system "+priorSystem,
+				))
+				continue
+			}
+			activeOwners[owner] = system
+		}
+	}
+	return violations
+}
+
+func cleanTopLevelSection(raw string) (string, bool) {
+	if raw == "" || strings.Contains(raw, `\`) {
+		return "", false
+	}
+	trimmed := strings.TrimSuffix(raw, "/")
+	if trimmed == "" || strings.HasSuffix(trimmed, "/") || path.IsAbs(trimmed) || strings.Contains(trimmed, "/") {
+		return "", false
+	}
+	cleaned := path.Clean(trimmed)
+	return cleaned, cleaned == trimmed && cleaned != "." && cleaned != ".."
+}
+
+func manifestAuthorityViolation(path, message string) Violation {
+	return Violation{
+		Code:     "REF-013",
+		Class:    ClassReferential,
+		Path:     path,
+		Message:  message,
 		Severity: SeverityReject,
 	}
 }

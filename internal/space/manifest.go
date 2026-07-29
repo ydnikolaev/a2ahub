@@ -52,28 +52,32 @@ func ParseManifest(raw []byte) (Manifest, error) {
 // SystemForLogin resolves a GitHub login to its owning system via the
 // participant→owners map (§4.2's "github-login→system-id" mapping used by
 // V3 diff-authz; read-only helper here, enforcement itself is
-// internal/validate's, P3). Returns ("", false) when unmapped (CC-097).
+// internal/validate). A participant marked left grants no authority. An
+// ambiguous active mapping fails closed even if a caller bypassed the
+// canonical manifest-policy gate. Returns ("", false) when unmapped or
+// ambiguous (CC-097).
 func (m Manifest) SystemForLogin(login string) (string, bool) {
+	system := ""
 	for _, p := range m.Participants {
+		if p.Status != "active" {
+			continue
+		}
 		for _, owner := range p.Owners {
 			if owner == login {
-				return p.System, true
+				if system != "" && system != p.System {
+					return "", false
+				}
+				system = p.System
 			}
 		}
 	}
-	return "", false
+	return system, system != ""
 }
 
-// ManifestValidator is the consumer-side seam (rails ISP/DI) for
-// space.yaml validation. Today the only engine behind it is SCHEMA-CLASS
-// validation (internal/schema's manifest corpus, P2/P3) — referential/
-// policy manifest checks (missing participant map entries, login→system
-// map integrity) exist in NO package yet; their ownership is a tracked
-// backlog row (docs/backlog.md), and the min_binary_version pin is
-// enforced by the write funnel itself (CC-085), not this seam. Real
-// engines are wired at cmd/a2a (P6); this phase depends only on this
-// interface and tests it with a fake (ADR-001's import grant is a
-// ceiling, not a mandate — see plan 05 Placement decisions).
+// ManifestValidator is the consumer-side seam (rails ISP/DI) for space.yaml
+// schema and authority-map policy validation. The canonical implementation is
+// internal/validate, wired through the CLI adapter; min_binary_version remains
+// a separate write-funnel guard (CC-085).
 type ManifestValidator interface {
 	// ValidateManifest checks raw space.yaml bytes and returns a non-nil
 	// error describing every schema/policy violation found (or nil).

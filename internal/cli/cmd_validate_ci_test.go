@@ -1333,6 +1333,37 @@ func TestValidateCI_ManifestIsValidatedWhenItChanges(t *testing.T) {
 		}
 	})
 
+	t.Run("a pre-existing ambiguous authority map fails closed before diff authz", func(t *testing.T) {
+		t.Parallel()
+		ambiguous := strings.Replace(ciSpaceYAML, "owners: [misha-gh]", "owners: [ydnikolaev]", 1)
+		rel := "axon/exchanges/XQ-axon-20260730-ab12.md"
+		root := ciRepo(t, ambiguous, map[string]string{
+			rel: validQuestion("XQ-axon-20260730-ab12", "axon", "seomatrix"),
+		})
+
+		code, rep, _ := runCI(t, engine, root, fakeGit(rel), "v3-pr", "deadbeef", "ydnikolaev")
+		if code == 0 || rep.Valid {
+			t.Fatalf("ambiguous active owner mapping authorized a PR: code=%d report=%+v", code, rep)
+		}
+		var found bool
+		for _, artifact := range rep.Artifacts {
+			if artifact.Path != "space.yaml" || artifact.Result == nil {
+				continue
+			}
+			for _, violation := range artifact.Result.Violations {
+				if violation.Code == "REF-013" {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("report does not expose REF-013 authority failure: %+v", rep)
+		}
+		if len(rep.DiffAuthz) != 0 {
+			t.Fatalf("diff authz ran against an authority map already known ambiguous: %+v", rep.DiffAuthz)
+		}
+	})
+
 	t.Run("a full-repo audit always checks the manifest", func(t *testing.T) {
 		t.Parallel()
 		// walkArtifacts yields artifacts, never space.yaml — so an audit that

@@ -875,6 +875,17 @@ func (f *WriteFunnel) commitOne(ctx context.Context, lock *MirrorLock, req Submi
 		return "", false, err
 	}
 
+	// Preflight the ENTIRE write set before creating a directory or writing a
+	// byte. A repository-controlled symlink anywhere below the clone could
+	// redirect a path that passed sectionOK outside the repository. Checking
+	// all destinations first also preserves the funnel's atomic local shape:
+	// one unsafe file cannot leave earlier files partially mutated.
+	for _, file := range req.Files {
+		if err := refuseSymlinkDestination(req.RepoDir, file.Path); err != nil {
+			return "", false, err
+		}
+	}
+
 	paths := make([]string, 0, len(req.Files))
 	for _, file := range req.Files {
 		full := filepath.Join(req.RepoDir, filepath.FromSlash(file.Path))
@@ -941,4 +952,25 @@ func (f *WriteFunnel) commitOne(ctx context.Context, lock *MirrorLock, req Submi
 		return "", false, err
 	}
 	return head, true, nil
+}
+
+func refuseSymlinkDestination(root, rel string) error {
+	current := filepath.Clean(root)
+	for _, component := range strings.Split(filepath.FromSlash(rel), string(filepath.Separator)) {
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// Once a component is absent, every deeper component is absent
+				// too; MkdirAll may safely create the remainder after all
+				// destinations have passed this preflight.
+				return nil
+			}
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return &Error{Op: "commitOne", Input: rel, Err: ErrSymlinkWrite}
+		}
+	}
+	return nil
 }
