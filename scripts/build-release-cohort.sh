@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-DIST="${1:?usage: build-release-cohort.sh DIST VERSION APPLE_TEAM_ID}"
-VERSION="${2:?usage: build-release-cohort.sh DIST VERSION APPLE_TEAM_ID}"
-APPLE_TEAM_ID="${3:?usage: build-release-cohort.sh DIST VERSION APPLE_TEAM_ID}"
+DIST="${1:?usage: build-release-cohort.sh DIST VERSION MACOS_TEAM_ID}"
+VERSION="${2:?usage: build-release-cohort.sh DIST VERSION MACOS_TEAM_ID}"
+MACOS_TEAM_ID="${3:?usage: build-release-cohort.sh DIST VERSION MACOS_TEAM_ID}"
 PROTOCOL_VERSION=1
 MAC_ASSET="a2a-notifier-${VERSION}.zip"
 VSCODE_ASSET="a2ahub-notifications.vsix"
@@ -42,7 +42,7 @@ done
 test "$(jq 'length' "$components")" -gt 0
 jq \
   --arg name "$MAC_ASSET" --arg sha "$(digest "${DIST}/${MAC_ASSET}")" \
-  --arg version "$VERSION" --arg team "$APPLE_TEAM_ID" \
+  --arg version "$VERSION" --arg team "$MACOS_TEAM_ID" \
   --argjson protocol "$PROTOCOL_VERSION" \
   '. + [{kind:"macos",name:$name,sha256:$sha,product_version:$version,protocol_version:$protocol,bundle_id:"io.a2ahub.notifier",team_id:$team}]' \
   "$components" > "${components}.next"

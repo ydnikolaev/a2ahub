@@ -84,3 +84,18 @@ jobs:
               exit 1
             }
           done
+
+  macos-notifier:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Test and package the ad-hoc companion
+        env:
+          VERSION: 0.0.0
+          SIGNING_MODE: adhoc
+          OUTPUT_DIR: ${{ runner.temp }}/a2a-notifier
+        run: |
+          integrations/macos-notifier/scripts/test.sh
+          integrations/macos-notifier/scripts/package-release.sh

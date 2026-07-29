@@ -74,40 +74,10 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Import Developer ID and notarization credentials
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
-          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
-          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
-          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
-        run: |
-          test -n "$APPLE_CERTIFICATE"
-          test -n "$APPLE_CERTIFICATE_PASSWORD"
-          test -n "$APPLE_NOTARY_KEY"
-          test -n "$APPLE_NOTARY_KEY_ID"
-          test -n "$APPLE_NOTARY_ISSUER_ID"
-          keychain="$RUNNER_TEMP/a2a-signing.keychain-db"
-          password="$(openssl rand -hex 24)"
-          security create-keychain -p "$password" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$password" "$keychain"
-          printf '%s' "$APPLE_CERTIFICATE" | openssl base64 -d -A -out "$RUNNER_TEMP/developer-id.p12"
-          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security list-keychains -d user -s "$keychain"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain"
-          printf '%s' "$APPLE_NOTARY_KEY" | openssl base64 -d -A -out "$RUNNER_TEMP/notary.p8"
-          xcrun notarytool store-credentials a2a-release \
-            --key "$RUNNER_TEMP/notary.p8" \
-            --key-id "$APPLE_NOTARY_KEY_ID" \
-            --issuer "$APPLE_NOTARY_ISSUER_ID"
-
-      - name: Build, sign, notarize, and staple the macOS companion
+      - name: Build and ad-hoc sign the macOS companion
         env:
           VERSION: ${{ github.ref_name }}
-          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          SIGNING_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          NOTARY_PROFILE: a2a-release
+          SIGNING_MODE: adhoc
         run: |
           VERSION="${VERSION#v}" integrations/macos-notifier/scripts/package-release.sh
 
@@ -159,14 +129,15 @@ jobs:
       - name: Assemble and sign the coordinated release cohort
         env:
           GH_TOKEN: ${{ github.token }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # `codesign -d` reports this literal identity for an ad-hoc signature.
+          # The app is still hash-bound to this Sigstore-signed cohort.
+          MACOS_TEAM_ID: "not set"
         run: |
-          test -n "$APPLE_TEAM_ID"
           version="${GITHUB_REF_NAME#v}"
           mkdir -p dist
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir dist
           cp "releasenotes/${version}.yaml" "dist/release-notes-${version}.yaml"
-          scripts/build-release-cohort.sh dist "$version" "$APPLE_TEAM_ID"
+          scripts/build-release-cohort.sh dist "$version" "$MACOS_TEAM_ID"
 
           : > dist/SHA256SUMS
           while IFS= read -r asset; do

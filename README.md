@@ -52,8 +52,11 @@ a2a notifications install --channel all
 The command fetches the companion from the **matching a2a GitHub release**,
 verifies the signed release cohort, asset hash, signature, version, protocol,
 and platform identity, then installs or repairs it. The macOS companion is a
-real signed/notarized app and requests Notification Center/login-item approval;
-the VS Code companion is installed as a version-matched VSIX through the
+real universal app with an ad-hoc code signature. Because it has no paid Apple
+Developer ID/notarization, macOS may require one explicit
+**System Settings → Privacy & Security → Open Anyway** approval before the
+install command is retried. `a2a` never clears quarantine or weakens Gatekeeper.
+The VS Code companion is installed as a version-matched VSIX through the
 canonical `code` CLI. No agent is required.
 
 Run the command from each project that should notify; enrolment is per project,

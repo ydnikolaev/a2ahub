@@ -491,9 +491,17 @@ func (m *localComponentManager) installMacOS(ctx context.Context) (notification.
 	if err := runBounded(ctx, binary, "--install", "--config", m.macConfigPath()); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 4 {
-			// Permission denial is not a broken install: keep the signed app
+			// Permission denial is not a broken install: keep the verified app
 			// in place so System Settings can grant it later.
 			return notification.ChannelResult{Channel: notification.ChannelMacOS, Status: "approval-required", Reason: err.Error()}, nil
+		}
+		if reason, preserve := adHocMacApprovalReason(expectedTeam, dest, err); preserve {
+			// Gatekeeper may refuse the first launch of an app with no Developer
+			// ID. Keep the exact cohort-verified app in place so the user can
+			// make the explicit Open Anyway decision, then safely retry.
+			return notification.ChannelResult{
+				Channel: notification.ChannelMacOS, Status: "approval-required", Reason: reason,
+			}, nil
 		}
 		if rollbackErr := rollbackMacInstall(dest, backup, hadPrevious); rollbackErr != nil {
 			err = errors.Join(err, fmt.Errorf("restore previous macOS notifier: %w", rollbackErr))
@@ -513,6 +521,16 @@ func (m *localComponentManager) installMacOS(ctx context.Context) (notification.
 		reason = "previous signed app retained at " + backup
 	}
 	return notification.ChannelResult{Channel: notification.ChannelMacOS, Status: status, Reason: reason}, nil
+}
+
+func adHocMacApprovalReason(expectedTeamID, appPath string, launchErr error) (string, bool) {
+	if expectedTeamID != release.MacOSAdHocTeamID || launchErr == nil {
+		return "", false
+	}
+	return fmt.Sprintf(
+		"macOS did not launch the ad-hoc app: %v; open %s once, approve it under System Settings > Privacy & Security > Open Anyway, then repeat `a2a notifications install --channel macos`",
+		launchErr, appPath,
+	), true
 }
 
 func rollbackMacInstall(destination, backup string, hadPrevious bool) error {

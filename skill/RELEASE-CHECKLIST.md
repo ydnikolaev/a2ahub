@@ -33,13 +33,13 @@ not drifted from the plan wording it quotes.
 | `skill/a2ahub/reference/bindings.md` | The file is still described as local-tracked with no space-visible path or aggregate; if the first real deprecation in `getvisa` (conventions spec §10) has happened since the last review, its pass/fail verdict has been recorded in the spec's §11 amendments — not left for this row alone to remember. | ☑ | Codex | 2026-07-29 |
 | `skill/a2ahub/reference/threads.md` | Thread order, open-item/next-move semantics and the space-local boundary match the current read/fold implementation; no prose implies two independent threads can be merged after authoring. | ☑ | Codex | 2026-07-29 |
 | `skill/a2ahub/reference/contract-versions.md` | Rolling-window, maintenance-baseline, major-scoped retirement and late-adopter deprecation guidance match the per-version engine and current command surface. | ☑ | Codex | 2026-07-29 |
-| `skill/a2ahub/notifications.md` | Offer-state handling, optional statusline boundary, trusted click routing and verified-future-notes fallback match the P49 binary/adapters; no prose claims protected signing or interactive platform proof was run locally. | ☑ | Codex | 2026-07-29 |
+| `skill/a2ahub/notifications.md` | Offer-state handling, optional statusline boundary, trusted click routing, verified-future-notes fallback, and the ad-hoc macOS Gatekeeper approval path match the P49 binary/adapters; no prose claims Developer ID/notarization or interactive platform proof was run locally. | ☑ | Codex | 2026-07-29 |
 | `skill/a2ahub/SKILL.md` § "Which surface to work through" | The stated MCP limits are still the actual ones. When a limit is FIXED, the row must be removed here and in `troubleshooting.md`, and the fix shipped as a `kind: fix` note — a stale "do not use MCP for reads" is as harmful as the missing warning was, because an agent will keep avoiding a surface that works. | ☑ | Codex | 2026-07-29 |
 | `skill/RELEASE-CHECKLIST.md` (this file) | The prose-file list is complete — every hand-maintained prose file has a row; no generated `reference/**` file was added here by mistake. **Check it against `SKILL.md`'s own D-015 list, in both directions**: this clause silently held for two releases while `reference/feedback.md` was missing from both. | ☑ | Codex | 2026-07-29 |
 
 ## Sign-off
 
-- **Release tag:** `v0.15.0`
+- **Release tag:** `v0.15.1`
 - **Reviewer:** `Codex`
 - **Date:** `2026-07-29`
 - [x] Every prose row above is ticked, or an un-ticked row has a written reason

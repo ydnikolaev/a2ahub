@@ -80,6 +80,15 @@ func TestCohortParseBoundedStrictAndComplete(t *testing.T) {
 	}
 }
 
+func TestCohortAcceptsObservedAdHocMacIdentity(t *testing.T) {
+	t.Parallel()
+	manifest := validCohortManifest()
+	manifest.Components[1].TeamID = MacOSAdHocTeamID
+	if _, err := ParseCohort(bytes.NewReader(marshalCohortForTest(t, manifest))); err != nil {
+		t.Fatalf("ParseCohort(ad-hoc mac identity): %v", err)
+	}
+}
+
 func TestCohortRejectsIdentityVersionAndDuplicateFailures(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
