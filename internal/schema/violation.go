@@ -23,8 +23,8 @@ type FieldViolation struct {
 	Path string
 	// Keyword names the JSON-Schema keyword that failed: one of
 	// "required", "enum", "pattern", "type", "falseSchema" (additional/
-	// unevaluatedProperties), "maxItems", "minItems", or an "other:<Go
-	// type>" fallback for anything this package doesn't classify — the
+	// unevaluatedProperties), "maxItems", "minItems", "minLength", or an
+	// "other:<Go type>" fallback for anything this package doesn't classify — the
 	// fallback is deliberate: an unrecognized keyword should surface as
 	// an unmapped code in internal/validate's own tests, never be
 	// silently absorbed.
@@ -138,6 +138,8 @@ func classifyKeyword(k jsonschema.ErrorKind) string {
 		return "maxItems"
 	case *kind.MinItems:
 		return "minItems"
+	case *kind.MinLength:
+		return "minLength"
 	case *kind.Format:
 		return "format"
 	default:

@@ -21,7 +21,6 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
-	"github.com/ydnikolaev/a2ahub/internal/template"
 	"gopkg.in/yaml.v3"
 )
 
@@ -353,7 +352,7 @@ type WriteDeps struct {
 	OwnSystem    string
 	Manifest     space.Manifest
 	HostCfg      SubmitHostConfig
-	ResolveActor func(ActorInput) template.Actor
+	ResolveActor ActorResolver
 
 	Now      func() time.Time
 	Entropy  io.Reader

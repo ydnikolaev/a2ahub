@@ -121,6 +121,9 @@ func mcpLifecycle(ctx context.Context, h *harness, system string, c *checkout) R
 		return Result{Scenario: scenario, System: system, Surface: SurfaceMCP, Verdict: VerdictFail,
 			Expected: "publish and withdraw use distinct PRs", Observed: fmt.Sprintf("both PR #%d", publishPR)}
 	}
+	if err := happyLandAndSync(ctx, h, c, withdrawPR); err != nil {
+		return mcpFail(scenario, system, "MCP withdraw lands with a green required check", err)
+	}
 	return Result{Scenario: scenario, System: system, Surface: SurfaceMCP, Verdict: VerdictPass,
 		Detail: fmt.Sprintf("%s: publish PR #%d, withdraw PR #%d via JSON-RPC", publish.IDs[0], publishPR, withdrawPR)}
 }
@@ -176,6 +179,9 @@ func mcpContractLifecycle(ctx context.Context, h *harness, system string, c *che
 		return Result{Scenario: scenario, System: system, Surface: SurfaceMCP, Verdict: VerdictFail,
 			Expected: "publish, deprecate and retire use three PRs",
 			Observed: fmt.Sprintf("publish=%d deprecate=%d retire=%d", publishPR, deprecatePR, retirePR)}
+	}
+	if err := happyLandAndSync(ctx, h, c, retirePR); err != nil {
+		return mcpFail(scenario, system, "MCP retirement lands with a green required check", err)
 	}
 	return Result{Scenario: scenario, System: system, Surface: SurfaceMCP, Verdict: VerdictPass,
 		Detail: fmt.Sprintf("%s: publish #%d, deprecate #%d, retire #%d via JSON-RPC", id, publishPR, deprecatePR, retirePR)}

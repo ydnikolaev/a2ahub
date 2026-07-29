@@ -165,3 +165,26 @@ changes:
       why: >
         Keep Gatekeeper enabled and approve only the A2A Notifier version
         obtained through the verified a2a release cohort.
+
+  - id: RN-01600-8
+    kind: fix
+    impact: high
+    subject: "MCP refuses anonymous writes before mutation and live proof gates every lifecycle PR"
+    detail: >
+      MCP write tools now resolve durable actor identity from explicit tool
+      input, A2A_ACTOR_* environment values, then the local OS user. If no
+      honest name exists, the tool returns actionable remedies before writing
+      a draft, branch, or pull request. The schema engine classifies
+      minLength failures as stable SCH-009 content violations instead of
+      reporting internal registry drift. The live CLI and MCP lifecycle and
+      contract-lifecycle rows also wait for the required check and merge of
+      every created PR, including the final withdraw or retire operation; a
+      parsed PR number can no longer hide a red candidate or leave main moving
+      underneath the next scenario.
+    affects: ["a2a mcp", "a2a validate", "live release gate"]
+    action:
+      scope: none
+      why: >
+        Existing callers with actor.name, A2A_ACTOR_NAME, or an OS user are
+        unchanged. Minimal containers must provide one of the first two
+        identities before an MCP write.

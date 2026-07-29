@@ -95,7 +95,10 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("%s: findings is required", spec.Verb)
 		}
 
-		resolved := deps.ResolveActor(in.Actor)
+		resolved, actorErr := deps.ResolveActor(in.Actor)
+		if actorErr != nil {
+			return nil, "", fmt.Errorf("%s: %w", spec.Verb, actorErr)
+		}
 		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: deps.OwnSystem}
 
 		now := deps.Now()
@@ -193,7 +196,10 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("respond: result must be one of answered|delivered|partial|cannot")
 		}
 
-		resolved := deps.ResolveActor(in.Actor)
+		resolved, actorErr := deps.ResolveActor(in.Actor)
+		if actorErr != nil {
+			return nil, "", fmt.Errorf("respond: %w", actorErr)
+		}
 		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: deps.OwnSystem}
 
 		now := deps.Now()
@@ -449,7 +455,10 @@ func newVerifyHandler(deps WriteDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("verify: targets is required")
 		}
 
-		resolved := deps.ResolveActor(in.Actor)
+		resolved, actorErr := deps.ResolveActor(in.Actor)
+		if actorErr != nil {
+			return nil, "", fmt.Errorf("verify: %w", actorErr)
+		}
 		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: deps.OwnSystem}
 
 		now := deps.Now()
@@ -550,7 +559,10 @@ func newDisputeHandler(deps WriteDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("dispute: ids and reason are required")
 		}
 
-		resolved := deps.ResolveActor(in.Actor)
+		resolved, actorErr := deps.ResolveActor(in.Actor)
+		if actorErr != nil {
+			return nil, "", fmt.Errorf("dispute: %w", actorErr)
+		}
 		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: deps.OwnSystem}
 
 		now := deps.Now()
@@ -616,7 +628,10 @@ func newNoteHandler(deps WriteDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("note: ids and note are required")
 		}
 
-		resolved := deps.ResolveActor(in.Actor)
+		resolved, actorErr := deps.ResolveActor(in.Actor)
+		if actorErr != nil {
+			return nil, "", fmt.Errorf("note: %w", actorErr)
+		}
 		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: deps.OwnSystem}
 
 		now := deps.Now()

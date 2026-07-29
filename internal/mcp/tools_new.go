@@ -43,7 +43,7 @@ type NewDeps struct {
 	OwnSystem    string
 	Now          func() time.Time
 	Entropy      io.Reader
-	ResolveActor func(ActorInput) template.Actor
+	ResolveActor ActorResolver
 	WriteFile    func(path string, data []byte, perm os.FileMode) error
 }
 
@@ -91,6 +91,19 @@ func newNewHandler(deps NewDeps) HandlerFunc {
 			}
 		}
 
+		// Resolve the entire batch before creating the staging directory,
+		// minting ids, or writing the first draft. Otherwise an anonymous
+		// later item could leave earlier items behind despite the call
+		// returning a refusal.
+		resolvedActors := make([]template.Actor, len(in.Items))
+		for i, item := range in.Items {
+			resolved, actorErr := deps.ResolveActor(item.Actor)
+			if actorErr != nil {
+				return nil, "", fmt.Errorf("new: item %d: %w", i, actorErr)
+			}
+			resolvedActors[i] = resolved
+		}
+
 		if err := os.MkdirAll(deps.StagingDir, 0o755); err != nil {
 			return nil, "", fmt.Errorf("new: cannot create staging directory: %w", err)
 		}
@@ -101,7 +114,7 @@ func newNewHandler(deps NewDeps) HandlerFunc {
 		// other item — the agent makes no per-item choice.
 		var batchThread string
 		var out []newDraftResult
-		for _, item := range in.Items {
+		for itemIndex, item := range in.Items {
 			prefixInfo, ok := newTypePrefix[item.Type]
 			if !ok {
 				return nil, "", fmt.Errorf("new: unknown type %q", item.Type)
@@ -168,9 +181,8 @@ func newNewHandler(deps NewDeps) HandlerFunc {
 				bodyOverride = []byte(item.Body)
 			}
 
-			resolvedActor := deps.ResolveActor(item.Actor)
 			draft, err := template.Render(template.Input{
-				Type: item.Type, ID: mintedID, Actor: resolvedActor, Created: now,
+				Type: item.Type, ID: mintedID, Actor: resolvedActors[itemIndex], Created: now,
 				Fields: fields, Body: bodyOverride,
 			})
 			if err != nil {

@@ -421,6 +421,10 @@ func happyLifecycleTransitions(ctx context.Context, h *harness, system string, c
 			Detail:   sub.ID,
 		}
 	}
+	if err := happyLandAndSync(ctx, h, c, withdrawPR.Number); err != nil {
+		return happyResultFromErr(scenario, system, err,
+			"the final withdraw PR passes its required check, lands, and leaves main stable for the next scenario")
+	}
 
 	return Result{
 		Scenario: scenario, System: system, Surface: SurfaceCLI, Verdict: VerdictPass,
@@ -499,6 +503,10 @@ func happyContractLifecycle(ctx context.Context, h *harness, system string, c *c
 			Observed: fmt.Sprintf("publish=#%d deprecate=#%d retire=#%d", sub.PRNumber, deprecatePR.Number, retirePR.Number),
 			Detail:   sub.ID,
 		}
+	}
+	if err := happyLandAndSync(ctx, h, c, retirePR.Number); err != nil {
+		return happyResultFromErr(scenario, system, err,
+			"the final retirement PR passes its required check, lands, and leaves main stable for the next scenario")
 	}
 
 	return Result{
