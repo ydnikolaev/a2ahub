@@ -19,7 +19,11 @@ import (
 const (
 	mergeVisibilityPollInterval = 10 * time.Second
 	mergeVisibilityCeiling      = 7 * time.Minute
-	mergeVisibilityAttempts     = int(mergeVisibilityCeiling / mergeVisibilityPollInterval)
+	// Include both endpoints of the declared window. N attempts contain
+	// N-1 pauses; omitting the +1 made a "seven minute" budget stop at
+	// 6m50s and left the family's best-effort cleanup sync to discover a
+	// ref that crossed the boundary immediately afterwards.
+	mergeVisibilityAttempts = int(mergeVisibilityCeiling/mergeVisibilityPollInterval) + 1
 )
 
 // ErrSyncVisibilityTimedOut means every bounded refresh succeeded but the

@@ -1,6 +1,26 @@
 # OP-206 `a2a sync`: fetches every connected space's mirror — AC-301.3
 # (offline/no-hub direct-git path): the fixture's remote is a local
 # filesystem path, so this proves the git-fallback path needs no network.
-# Idempotent: a second run is also a plain success (AC-301.1).
+#
+# Live regression, 2026-07-29: a successful sync after a merged PR must move
+# both origin/main AND the working tree readers consume. Advancing a second
+# clone between the two invocations makes this an executable CLI contract,
+# rather than two idempotent successes against an unchanged remote.
 exec a2a sync
+
+exec git clone $ORIGIN writer
+cp after-live.txt writer/after-live.txt
+exec git -C writer add after-live.txt
+exec git -C writer commit -m 'test: advance sync origin'
+exec git -C writer push origin main
+
+! exists .a2a/cache/mirrors/fixture-space/after-live.txt
 exec a2a sync
+exists .a2a/cache/mirrors/fixture-space/after-live.txt
+
+# Idempotent: a third run against the now-current mirror is also a plain
+# success (AC-301.1).
+exec a2a sync
+
+-- after-live.txt --
+visible only after the second sync

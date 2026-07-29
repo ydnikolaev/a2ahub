@@ -280,7 +280,10 @@ changes:
       this split three minutes, producing a false failure twice at measured
       delays of nearly five minutes. It now polls for up to seven minutes and
       still passes only after the exact merge commit is present on
-      origin/main and checked out in the mirror tree.
+      origin/main and checked out in the mirror tree. The retry arithmetic
+      includes both endpoints of that declared window, and a permanent CLI
+      testscript now advances a real local origin between sync invocations to
+      prove the remote-tracking ref and reader-visible tree both move.
     affects: ["live release gate"]
     action:
       scope: none
