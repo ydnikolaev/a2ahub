@@ -22,6 +22,10 @@ const (
 	ReleaseNotesSchemaV1 = "release-notes/v1"
 	// MacOSBundleID is the fixed identity required by P49 T4.1.
 	MacOSBundleID = "io.a2ahub.notifier"
+	// MacOSAdHocTeamID is the literal TeamIdentifier emitted by codesign for
+	// the explicit no-Developer-ID release mode. The signed cohort binds this
+	// observed absence of an Apple team rather than pretending it is one.
+	MacOSAdHocTeamID = "not set"
 	// CohortAssetName is fetched and verified before an older binary trusts
 	// any future component or release-note identity.
 	CohortAssetName = "release-cohort.json"

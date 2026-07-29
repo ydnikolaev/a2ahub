@@ -57,9 +57,9 @@ No signing secret is needed for unit tests or a structural app build:
 
 The build script produces `dist/A2A Notifier.app`. A development build proves
 the bundle shape and compilation only. It does **not** prove Notification
-Center authorization, login-item approval, Developer ID identity,
-notarization, Gatekeeper acceptance, or delivery under Focus/lock-screen
-policy. The default release build uses SwiftPM's `--triple` and separate
+Center authorization, login-item approval, Gatekeeper override behavior, or
+delivery under Focus/lock-screen policy. The default release build uses
+SwiftPM's `--triple` and separate
 scratch paths to compile `arm64` and `x86_64`, combines them into one universal
 executable, and verifies both slices with `lipo`. For a faster host-native
 development bundle, run `CONFIGURATION=debug ./scripts/build-app.sh`; unit
@@ -84,25 +84,30 @@ entries.
 
 ## Release contract
 
-`scripts/package-release.sh` intentionally refuses to run without all three
-release inputs:
+`scripts/package-release.sh` requires one explicit `SIGNING_MODE`; it never
+silently downgrades because a credential is missing:
 
-- `SIGNING_IDENTITY`: Developer ID Application certificate;
-- `SIGNING_TEAM_ID`: the team ID pinned by the signed a2a release cohort;
-- `NOTARY_PROFILE`: a `notarytool` keychain profile.
+- `adhoc` is the public default while the project has no paid Apple Developer
+  Program membership. It applies hardened-runtime options with an ad-hoc code
+  signature, verifies `Signature=adhoc` and `TeamIdentifier=not set`, and
+  packages the universal app. The signed cohort still binds its exact hash,
+  bundle ID, product version, and protocol. macOS may require the user to
+  approve **Privacy & Security → Open Anyway** once. Neither the packager nor
+  the installer clears quarantine or changes Gatekeeper settings.
+- `developer-id` requires `SIGNING_IDENTITY`, `SIGNING_TEAM_ID`, and
+  `NOTARY_PROFILE`. It signs with a secure timestamp, verifies the actual team
+  ID, notarizes, staples and validates the ticket, and requires a successful
+  Gatekeeper assessment.
 
-It builds, signs with secure timestamp and hardened runtime, verifies the
-actual team ID, submits the zip for notarization, staples and validates the
-ticket, asks Gatekeeper to assess the app, recreates the zip with the stapled
-ticket, and writes a SHA-256 file. Cohort assembly must bind that checksum,
-bundle/team identity, product version, and protocol range together with the
-CLI and VSIX. This directory has no credentials and makes no notarization
-claim without those checks succeeding.
+Both modes write the release ZIP and SHA-256 file. Cohort assembly binds that
+checksum and observed code-signing identity together with the CLI and VSIX.
+The directory contains no credentials and never claims notarization in
+`adhoc` mode.
 
 ## Provider facts checked
 
 Implementation was built and tested on macOS 26.1 (25B78), Xcode 26.3
 (17C529), and Swift 6.2.4. The adapter follows Apple's current documented
 surfaces for notification authorization, `LSUIElement`, `SMAppService.mainApp`,
-and outside-App-Store notarization. The provider references are recorded in
-`PROVIDER_FACTS.md`.
+and Gatekeeper handling for an unidentified developer. The provider references
+are recorded in `PROVIDER_FACTS.md`.

@@ -38,9 +38,14 @@ project on this machine. A project choice must remain project-scoped. Reset a
 previous choice only on request.
 
 Installation is agent-free: the same commands are intended for a human to run
-directly. They install or repair the signed macOS app or version-matched VSIX,
-enrol only the current project in the chosen channels, and keep other project
-enrolments intact. Use `status` to diagnose and `test` for a synthetic
+directly. They install or repair the cohort-verified macOS app or
+version-matched VSIX, enrol only the current project in the chosen channels,
+and keep other project enrolments intact. The macOS app currently uses an
+ad-hoc code signature rather than a paid Developer ID. If the result is
+`approval-required`, tell the human to open the installed **A2A Notifier**
+once, choose **System Settings → Privacy & Security → Open Anyway**, and repeat
+the same install command. Never run `xattr`, clear quarantine, or disable
+Gatekeeper for them. Use `status` to diagnose and `test` for a synthetic
 readiness notification.
 
 ## Statusline boundary

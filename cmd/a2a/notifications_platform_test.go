@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/notification"
@@ -211,5 +212,22 @@ func TestRollbackMacInstallRestoresPreviousAndReportsMissingBackup(t *testing.T)
 	}
 	if err := rollbackMacInstall(destination, backup, true); err == nil {
 		t.Fatal("missing backup restore was silently accepted")
+	}
+}
+
+func TestAdHocMacLaunchFailureKeepsAppForExplicitApproval(t *testing.T) {
+	t.Parallel()
+	app := "/Users/test/Applications/A2A Notifier.app"
+	reason, preserve := adHocMacApprovalReason(release.MacOSAdHocTeamID, app, errors.New("signal: killed"))
+	if !preserve {
+		t.Fatal("ad-hoc launch failure would roll back the app before the user can approve it")
+	}
+	for _, want := range []string{app, "Privacy & Security > Open Anyway", "a2a notifications install --channel macos"} {
+		if !strings.Contains(reason, want) {
+			t.Fatalf("approval reason %q does not contain %q", reason, want)
+		}
+	}
+	if reason, preserve := adHocMacApprovalReason("A2ADEVTEAM", app, errors.New("crash")); preserve || reason != "" {
+		t.Fatalf("Developer ID failure was misclassified as Gatekeeper approval: preserve=%v reason=%q", preserve, reason)
 	}
 }
