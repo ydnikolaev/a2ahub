@@ -11,7 +11,7 @@ func TestLoadCodes(t *testing.T) {
 	want := []string{
 		CodeSchemaStructural, CodeMissingBugEvidence, CodeChecksGateFalse,
 		CodeOversize, CodeStatusNotNew, CodeSecretDetected,
-		CodeFilenameMismatch, CodePathNotUnderInbox,
+		CodeFilenameMismatch, CodePathNotUnderInbox, CodeHiddenContent,
 	}
 	for _, code := range want {
 		if !table.Has(code) {

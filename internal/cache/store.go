@@ -10,6 +10,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"gopkg.in/yaml.v3"
 )
@@ -54,6 +55,8 @@ type Store struct {
 	updateEnabled       bool
 	updateBinaryVersion string
 	updateCachePath     string
+	updateDetailPath    string
+	updateRepo          string
 	updateTTL           time.Duration
 	updateChecker       func(context.Context)
 }
@@ -134,6 +137,8 @@ func (s *Store) EnableUpdateNotice(binaryVersion, cachePath string, ttl time.Dur
 	s.updateEnabled = true
 	s.updateBinaryVersion = binaryVersion
 	s.updateCachePath = cachePath
+	s.updateDetailPath = filepath.Join(filepath.Dir(cachePath), "release-detail.json")
+	s.updateRepo = release.DefaultUpdateRepo
 	s.updateTTL = ttl
 	s.updateChecker = checker
 }
@@ -197,12 +202,22 @@ func slaFromManifest(m space.Manifest) time.Duration {
 }
 
 func toItem(fa foldedArtifact, syncStale, pendingMerge bool) Item {
+	latestEventID := ""
+	var latestEventAt time.Time
+	for _, event := range fa.Events {
+		at := fa.EventAt[event.ULID]
+		if at.After(latestEventAt) || (at.Equal(latestEventAt) && event.ULID > latestEventID) {
+			latestEventAt = at
+			latestEventID = event.ULID
+		}
+	}
 	return Item{
 		Space: fa.SpaceID, ID: fa.Env.ID, Type: fa.Env.Type, Title: fa.Env.Title,
 		From: fa.Env.From, To: normalizeTo(fa.Env.To), State: string(fa.Result.State),
 		Priority: fa.Env.Priority, Blocking: fa.Env.Blocking, NeededBy: fa.Env.NeededBy,
 		Thread: fa.Env.Thread, PendingMerge: pendingMerge, SyncStale: syncStale,
-		LatestEventAt: fa.LatestEventAt, Description: bodySummary(fa.Raw, 240),
+		LatestEventAt: fa.LatestEventAt, LatestEventID: latestEventID,
+		Description: bodySummary(fa.Raw, 240),
 	}
 }
 
@@ -269,6 +284,17 @@ func sortItems(items []Item) {
 // advances the per-system read cursor (spec 07 "what to do" #2: "inbox
 // ... advances the read cursor on run" — unqualified by the flag).
 func (s *Store) Inbox(ctx context.Context, actionableOnly bool) ([]Item, error) {
+	return s.inbox(ctx, actionableOnly, true)
+}
+
+// InboxSnapshot computes the same read model as Inbox without advancing the
+// human read cursor. Passive presentation surfaces such as local HTML use
+// this method; OP-207's explicit inbox read remains the only cursor writer.
+func (s *Store) InboxSnapshot(ctx context.Context, actionableOnly bool) ([]Item, error) {
+	return s.inbox(ctx, actionableOnly, false)
+}
+
+func (s *Store) inbox(ctx context.Context, actionableOnly, advance bool) ([]Item, error) {
 	idx, _, err := s.index(ctx)
 	if err != nil {
 		return nil, err
@@ -302,8 +328,10 @@ func (s *Store) Inbox(ctx context.Context, actionableOnly bool) ([]Item, error) 
 	}
 	sortItems(out)
 
-	if err := s.advanceCursor(idx); err != nil {
-		return nil, err
+	if advance {
+		if err := s.advanceCursor(idx); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }

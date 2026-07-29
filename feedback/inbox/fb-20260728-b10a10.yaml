@@ -1,0 +1,28 @@
+feedback: v1
+id: fb-20260728-b10a10
+kind: bug
+severity: minor
+title: thread next= names verbs the CLI does not have
+summary: "`a2a thread` is the surface an agent reads to pick its next move: each OPEN row ends in a machine-shaped hint like `next=supersede:<sys>;acknowledge:<sys>` followed by `<< YOUR MOVE`. Every token in that field is a CLI verb — except `acknowledge`, which is not a command: the binary registers `ack`. So the one output designed to tell an agent what to type names something that exits 2. Checked the whole lifecycle vocabulary against `a2a completion bash`: accept, ack, block, cancel, close, decline, dispute, respond, start, supersede, unblock, verify, withdraw. `supersede`, `respond`, `close`, `verify`, `dispute` all appear in next= hints and all resolve; `acknowledge` is the sole mismatch. The same long form is also what the event log prints (`event <sys> acknowledge <id>`), so the protocol's action name and the CLI's verb genuinely differ — the hint is not a typo, it is the action name leaking through a surface that promises invocable commands. Cost was small but it is the kind an agent pays every time: one failed invocation, then a grep of reference/commands.md to learn the verb is `ack` (documented there correctly)."
+context:
+    a2a_version: 0.13.0
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a acknowledge <artifact-id>
+    agent: claude (opus-5), driving a close-out loop from thread output
+evidence:
+    steps:
+        - Have an announcement of your own that a counterparty has already acknowledged, so it stays OPEN with your side still able to act.
+        - "a2a thread <thread-id>  # the OPEN row prints: next=supersede:<sys>;acknowledge:<sys>  << YOUR MOVE"
+        - "a2a acknowledge <artifact-id>  # the verb the hint just named"
+        - "a2a ack <artifact-id>  # the verb that actually exists; opens the PR as documented"
+    expected: A verb printed in a `next=` hint is invocable as written — either the hint emits `ack:<sys>`, or `acknowledge` is registered as an alias of `ack`.
+    actual: '`a2a acknowledge <id>` prints `unknown command "acknowledge"` and exits 2. Only `a2a ack <id>` works. `acknowledge` is absent from `a2a completion bash`, while every other verb appearing in next= hints is present.'
+proposal: "Cheapest fix is to render the hint from the CLI's own verb table rather than from the protocol action name, so `next=` can never name an unregistered command — that keeps one source of truth and fixes any future divergence for free. If the long form is wanted in the event log for readability (it reads better there, and event logs are for humans and history rather than for invocation), then register `acknowledge` as an alias of `ack` so both surfaces stay typable. A doc-only fix is the weakest option here: the value of `next=` is that an agent can act on it without consulting docs, and that property is exactly what breaks."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new

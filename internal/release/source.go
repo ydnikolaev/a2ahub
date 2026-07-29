@@ -31,6 +31,18 @@ const maxListResponseBytes = 4 << 20 // 4 MiB
 // is internal/version's job; this is only the fetch-time filter.
 var tagPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 
+var repoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+
+// PageURL constructs a trusted GitHub release page only from the
+// configured owner/repository grammar and a validated canonical release
+// version. Invalid cache/config data yields no link.
+func PageURL(repo, productVersion string) string {
+	if !repoPattern.MatchString(repo) || !tagPattern.MatchString("v"+productVersion) {
+		return ""
+	}
+	return "https://github.com/" + repo + "/releases/tag/v" + productVersion
+}
+
 // Asset is one release asset (a platform binary, SHA256SUMS, or a
 // per-asset .cosign.bundle).
 type Asset struct {

@@ -22,6 +22,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/notification"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/surface"
@@ -72,6 +73,10 @@ type DoctorCommand struct {
 	// "versions" check's advisory half (doctorCheckVersions): defaults to
 	// release.CachePath; tests override it to point at a seeded temp cache.
 	cachePath func() (string, error)
+
+	// NotificationStatus is wired by cmd/a2a to the same controller as
+	// `a2a notifications status`; doctor never grows a second platform probe.
+	NotificationStatus func(context.Context, string) (notification.Status, error)
 }
 
 // NewDoctorCommand constructs the basic doctor command. h is the host
@@ -116,7 +121,7 @@ func (c *DoctorCommand) Name() string { return "doctor" }
 // stays green forever. A summary cannot go stale that way; the enumeration lives
 // where it can be checked against `checks` — troubleshooting.md's table.
 func (c *DoctorCommand) Synopsis() string {
-	return "run local health checks over every connected space (credentials, mirror access, identity, versions, CI, space scaffolding, auto-merge, CODEOWNERS, statusline, skill) — see troubleshooting.md for what each FAIL means"
+	return "run local health checks over every connected space (credentials, mirror access, identity, versions, CI, space scaffolding, auto-merge, CODEOWNERS, notifications, statusline, skill) — see troubleshooting.md for what each FAIL means"
 }
 
 // Run implements cli.Command. Exit codes: 2 = usage error (including the
@@ -159,6 +164,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"codeowners resolvable", func() (bool, string) { return c.doctorCheckCodeownersResolvable(ctx, cfg, machine) }},
 		{"threads intact", func() (bool, string) { return c.doctorCheckThreadsIntact(cfg, machine) }},
 		{"skipped mirror files", func() (bool, string) { return c.doctorCheckSkippedFiles(ctx, cfg, machine) }},
+		{"notification components", func() (bool, string) { return c.doctorCheckNotificationComponents(ctx) }},
 		{"statusline wiring", func() (bool, string) { return c.doctorCheckStatuslineWiring() }},
 		{"skill discoverable", func() (bool, string) { return c.doctorCheckSkillDiscoverable() }},
 		{"skill manual current", func() (bool, string) { return c.doctorCheckSkillManualCurrent() }},
@@ -184,6 +190,58 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 1
 	}
 	return 0
+}
+
+func (c *DoctorCommand) doctorCheckNotificationComponents(ctx context.Context) (bool, string) {
+	if c.NotificationStatus == nil {
+		return true, " · notification probe not wired"
+	}
+	status, err := c.NotificationStatus(ctx, c.projectRoot)
+	if err != nil {
+		return false, err.Error()
+	}
+	if status.Project == nil || len(status.Project.Channels) == 0 {
+		return true, " · notifications not enabled for this project"
+	}
+	healthByChannel := make(map[notification.Channel][]notification.ComponentHealth)
+	for _, component := range status.Components {
+		healthByChannel[component.Channel] = append(healthByChannel[component.Channel], component)
+	}
+	var failures []string
+	for _, channel := range status.Project.Channels {
+		components := healthByChannel[channel]
+		healthy := false
+		var detail string
+		for _, component := range components {
+			platformHealthy := component.Detail == "" && component.Installed && component.Handshake == "ok"
+			if channel == notification.ChannelMacOS {
+				platformHealthy = platformHealthy &&
+					component.Permission == "authorized" && component.LoginItem == "enabled"
+			}
+			if component.Enabled != nil && !*component.Enabled {
+				platformHealthy = false
+			}
+			if platformHealthy {
+				healthy = true
+				break
+			}
+			detail = fmt.Sprintf(
+				"installed=%t handshake=%s permission=%s login_item=%s profile=%s detail=%s",
+				component.Installed, component.Handshake, component.Permission,
+				component.LoginItem, component.Profile, component.Detail,
+			)
+		}
+		if !healthy {
+			if detail == "" {
+				detail = "no component health record"
+			}
+			failures = append(failures, fmt.Sprintf("%s: %s", channel, detail))
+		}
+	}
+	if len(failures) > 0 {
+		return false, strings.Join(failures, "; ")
+	}
+	return true, ""
 }
 
 // doctorCheckCredentials resolves a write credential for every connected

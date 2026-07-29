@@ -2,11 +2,13 @@ package space
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -156,6 +158,90 @@ func TestLoadMachineConfigRejectsLiteralSecret(t *testing.T) {
 	_, err := LoadMachineConfig(path)
 	if !errors.Is(err, ErrInvalidCredentialReference) {
 		t.Fatalf("LoadMachineConfig error = %v, want ErrInvalidCredentialReference", err)
+	}
+}
+
+func TestNotificationConfigRoundTripAndValidation(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	want := MachineConfig{
+		MirrorRoot: "/tmp/mirrors",
+		Notifications: NotificationConfig{
+			PromptPolicy: NotificationPromptPolicy{State: "ask"},
+			Projects: []NotificationProject{{
+				ID: "01JPROJECT", Root: filepath.Join(dir, "project"),
+				Channels: []string{"macos", "vscode"},
+				Prompt:   NotificationProjectPrompt{State: "snoozed", RemindAfter: time.Date(2026, 8, 5, 0, 0, 0, 0, time.UTC)},
+			}},
+			CoalesceWindow: "10s", PollInterval: "1m",
+		},
+	}
+	if err := SaveMachineConfig(path, want); err != nil {
+		t.Fatalf("SaveMachineConfig: %v", err)
+	}
+	got, err := LoadMachineConfig(path)
+	if err != nil {
+		t.Fatalf("LoadMachineConfig: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("round trip = %#v, want %#v", got, want)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if gotMode := info.Mode().Perm(); gotMode != 0o600 {
+		t.Fatalf("mode = %o, want 600", gotMode)
+	}
+}
+
+func TestNotificationConfigRefusesInvalidPersonalState(t *testing.T) {
+	t.Parallel()
+
+	cases := []MachineConfig{
+		{Notifications: NotificationConfig{PromptPolicy: NotificationPromptPolicy{State: "sometimes"}}},
+		{Notifications: NotificationConfig{Projects: []NotificationProject{{ID: "p", Root: "relative"}}}},
+		{Notifications: NotificationConfig{Projects: []NotificationProject{{ID: "p", Root: "/one"}, {ID: "p", Root: "/two"}}}},
+		{Notifications: NotificationConfig{Projects: []NotificationProject{{ID: "p", Root: "/one", Channels: []string{"pager"}}}}},
+		{Notifications: NotificationConfig{PollInterval: "never"}},
+	}
+	for i, cfg := range cases {
+		t.Run(fmt.Sprintf("case-%d", i), func(t *testing.T) {
+			t.Parallel()
+			if err := SaveMachineConfig(filepath.Join(t.TempDir(), "config.yaml"), cfg); !errors.Is(err, ErrManifestInvalid) {
+				t.Fatalf("SaveMachineConfig error = %v, want ErrManifestInvalid", err)
+			}
+		})
+	}
+}
+
+func TestSaveMachineConfigPreservesUnknownKeysAndComments(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	existing := "# operator comment\nmirror_root: /tmp/mirrors\nfuture_key: keep-me # inline\n"
+	if err := os.WriteFile(path, []byte(existing), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	cfg, err := LoadMachineConfig(path)
+	if err != nil {
+		t.Fatalf("LoadMachineConfig: %v", err)
+	}
+	cfg.Notifications.PromptPolicy.State = "never"
+	if err := SaveMachineConfig(path, cfg); err != nil {
+		t.Fatalf("SaveMachineConfig: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	body := string(raw)
+	for _, want := range []string{"# operator comment", "future_key: keep-me", "# inline", "state: never"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("saved config lost %q:\n%s", want, body)
+		}
 	}
 }
 

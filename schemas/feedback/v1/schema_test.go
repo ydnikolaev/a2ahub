@@ -1,7 +1,7 @@
 // Package feedback self-verifies the schemas/feedback/v1/ family (P25 13a):
 // both schemas compile, every valid fixture validates green, every
 // SCHEMA-LEVEL invalid fixture (FB-001/FB-002 sidecars) validates red, the
-// SEMANTIC invalid fixtures (FB-003/004/005/006 — schema-valid by design,
+// SEMANTIC invalid fixtures (FB-003/004/005/006/009 — schema-valid by design,
 // refused only by 13b's runtime validator) parse and validate green, and
 // feedback/backlog.yaml validates green against backlog.schema.json.
 //
@@ -79,7 +79,7 @@ type sidecar struct {
 
 // schemaLevelCodes are the FB-### codes (codes.yaml) whose fixtures are
 // genuine JSON-Schema violations — schema_test asserts these fixtures RED.
-// Every other invalid fixture's code (FB-003/004/005/006) is a SEMANTIC
+// Every other invalid fixture's code (FB-003/004/005/006/009) is a SEMANTIC
 // gate 13b's runtime validator enforces; those fixtures are schema-VALID
 // by design (brief's "do NOT assert them red" instruction) and are
 // asserted GREEN below alongside fixtures/valid/*.yaml.
@@ -90,7 +90,7 @@ var schemaLevelCodes = map[string]bool{
 
 // TestFeedbackFixtures is acceptance items 2-4: every fixtures/valid/*.yaml
 // validates green; every schema-level invalid fixture (FB-001/FB-002)
-// validates red; every semantic invalid fixture (FB-003/004/005/006)
+// validates red; every semantic invalid fixture (FB-003/004/005/006/009)
 // parses and validates green (schema-valid by design, per the brief).
 func TestFeedbackFixtures(t *testing.T) {
 	t.Parallel()
@@ -130,7 +130,7 @@ func TestFeedbackFixtures(t *testing.T) {
 				}
 				return
 			}
-			// Semantic class (FB-003/004/005/006): schema-valid by design —
+			// Semantic class (FB-003/004/005/006/009): schema-valid by design —
 			// 13b's runtime validator rejects these, not this schema.
 			if err != nil {
 				t.Fatalf("expected %s (code %s, semantic class) to be schema-valid so 13b can consume it, got: %v", f, wantCode, err)
