@@ -461,10 +461,6 @@ func happyLifecycleTransitions(ctx context.Context, h *harness, system string, c
 	}
 }
 
-// happyContractLifecycleSlug is contract-publish-deprecate-retire's fixed
-// slug — same lowercase-kebab reasoning as happyLifecycleTransitionsSlug.
-const happyContractLifecycleSlug = "matrix-contract-lifecycle"
-
 // happyContractLifecycle is row 4 (A and B): the full contract lifecycle —
 // submit (publish), `a2a contract deprecate`, `a2a contract retire` — the
 // SAME P30(a) concern as lifecycle-transitions, now over THREE writes on one
@@ -481,7 +477,8 @@ func happyContractLifecycle(ctx context.Context, h *harness, system string, c *c
 			"a2a sync succeeds before a fresh publish/deprecate/retire sequence")
 	}
 
-	sub, err := h.DraftAndSubmit(ctx, c, "contract", "--slug", happyContractLifecycleSlug)
+	slug := liveRunSlug("matrix-contract-lifecycle", h.PRFloor)
+	sub, err := h.DraftAndSubmit(ctx, c, "contract", "--slug", slug)
 	if err != nil {
 		return happyResultFromErr(scenario, system, err, "submit publishes a new contract, opening its own PR")
 	}

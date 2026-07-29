@@ -93,9 +93,9 @@ const (
 // required for standing types (contract, requirement)") — unlike every
 // other kind this file drafts, whose ids are minted automatically
 // (artifact.ClassExchangeBroadcast). Fixed, lowercase-kebab, this row's own
-// (matching ac973Slug's/happyContractLifecycleSlug's own precedent), so a
-// second live run against the same never-emptied space reuses rather than
-// collides.
+// (matching the other standing-id scenario bases). These refusal rows do not
+// submit a semantic operation, so unlike deprecate scenarios they need no
+// per-generation suffix.
 const (
 	illegalfamContractSlug    = "illegalfam-contract-retire"
 	illegalfamRequirementSlug = "illegalfam-requirement-satisfy"

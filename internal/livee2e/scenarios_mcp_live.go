@@ -138,7 +138,7 @@ func mcpContractLifecycle(ctx context.Context, h *harness, system string, c *che
 		return mcpFail(scenario, system, "MCP initializes", err)
 	}
 	defer session.Close()
-	slug := "matrix-mcp-contract-" + c.System
+	slug := liveRunSlug("matrix-mcp-contract-"+c.System, h.PRFloor)
 	publish, err := mcpDraftAndSubmit(session, c, "contract", slug, nil)
 	if err != nil {
 		return mcpFail(scenario, system, "MCP publishes contract", err)

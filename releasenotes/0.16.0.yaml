@@ -229,3 +229,23 @@ changes:
       why: >
         This is a maintainer reliability correction. It adds no optimistic
         pass: lookup and mirror waits remain bounded and fail closed.
+
+  - id: RN-01600-11
+    kind: fix
+    impact: normal
+    subject: "Destructive live-space resets no longer collide with retained semantic-operation history"
+    detail: >
+      GitHub correctly retains merged pull requests even when the dedicated
+      throwaway live space force-resets main. Contract scenarios previously
+      reused fixed standing ids, so an identical deprecation in a new reset
+      generation could be mistaken for the prior merged semantic operation.
+      Every live contract scenario that submits such an operation now scopes
+      its standing slug to the post-reset PR watermark. Product idempotency
+      remains unchanged; only disposable release-test data becomes
+      generation-specific.
+    affects: ["live release gate"]
+    action:
+      scope: none
+      why: >
+        This prevents false short-circuits in repeated maintainer test runs
+        without changing user spaces or public artifact schemas.

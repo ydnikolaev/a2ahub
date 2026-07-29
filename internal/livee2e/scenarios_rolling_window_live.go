@@ -50,9 +50,9 @@ import (
 // footnote; it is the argument for this row, made concrete.
 const rwScenario = "contract-rolling-window"
 
-// rwSlug is this row's fixed, lowercase-kebab standing slug — the same
-// per-run-fixed-slug convention ac973Slug uses, kept distinct so a single
-// run never mints two contracts of the same id.
+// rwSlug is this row's lowercase-kebab standing-slug base, kept distinct so
+// one run never mints two contracts of the same id. liveRunSlug adds the
+// destructive-space generation before authoring.
 const rwSlug = "rw-rolling-window"
 
 // rwAnnouncementIDPattern extracts an XA- id from `contract deprecate`'s own
@@ -148,7 +148,7 @@ const rwSchemaWidened = `{
 // `to:` cannot simply be emptied (REF-006 requires minItems 1 or "all").
 func rwDraftContractExcludingPeer(ctx context.Context, h *harness, c *checkout) (submitted, error) {
 	id, _, err := c.Draft(ctx, "contract",
-		"--slug", rwSlug,
+		"--slug", liveRunSlug(rwSlug, h.PRFloor),
 		"--field", "to=["+c.System+"]",
 	)
 	if err != nil {
