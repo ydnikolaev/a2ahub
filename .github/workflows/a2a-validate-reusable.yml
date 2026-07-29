@@ -146,6 +146,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$SPACE_PATH"
+          report="$(mktemp)"
           args=(validate --ci --mode="$A2A_MODE")
           if [ "$A2A_MODE" = "v3-pr" ]; then
             if [ -z "$A2A_BASE" ]; then
@@ -159,8 +160,43 @@ jobs:
           fi
           if [ -n "$A2A_REF" ]; then
             # Spaces: pinned module from the Go checksum DB (no local source).
-            go run "github.com/ydnikolaev/a2ahub/cmd/a2a@$A2A_REF" "${args[@]}"
+            set +e
+            go run "github.com/ydnikolaev/a2ahub/cmd/a2a@$A2A_REF" "${args[@]}" >"$report"
+            status=$?
+            set -e
           else
             # a2ahub dogfood: the caller checkout IS a2ahub — build current code.
-            go run "$GITHUB_WORKSPACE/cmd/a2a" "${args[@]}"
+            set +e
+            go run "$GITHUB_WORKSPACE/cmd/a2a" "${args[@]}" >"$report"
+            status=$?
+            set -e
           fi
+          cat "$report"
+
+          # Preserve the canonical JSON as structured evidence and project each
+          # rejecting violation into a GitHub annotation. Human logs are not an
+          # assertion API: live E2E reads the check-run annotations by
+          # code+path. Escape workflow-command metacharacters because paths are
+          # inbound repository data.
+          if jq -e . "$report" >/dev/null 2>&1; then
+            {
+              echo "### a2a validation report"
+              echo '```json'
+              cat "$report"
+              echo '```'
+            } >>"$GITHUB_STEP_SUMMARY"
+            jq -r '
+              (.artifacts[]? as $a
+                | $a.result.violations[]?
+                | select(.severity == "reject")
+                | [.code, $a.path, .severity, (.artifact_id // ""), .message]),
+              (.diff_authz_violations[]?
+                | [.code, (.path // "space.yaml"), .severity, (.artifact_id // ""), .message])
+              | @tsv
+            ' "$report" | while IFS=$'\t' read -r code path severity artifact_id message; do
+              path="${path//'%'/'%25'}"; path="${path//$'\r'/'%0D'}"; path="${path//$'\n'/'%0A'}"
+              message="${message//'%'/'%25'}"; message="${message//$'\r'/'%0D'}"; message="${message//$'\n'/'%0A'}"
+              echo "::error file=$path::[$code] severity=$severity artifact_id=$artifact_id $message"
+            done
+          fi
+          exit "$status"

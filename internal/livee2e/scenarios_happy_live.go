@@ -40,6 +40,14 @@ func runHappyScenarios(ctx context.Context, h *harness) []Result {
 		happyValidateCIBothModes(ctx, h),
 		happyCheckstatusCompoundContext(ctx, h),
 	}
+	results = append(results, mcpSubmitAndVisibility(ctx, h, SystemA, h.A, h.B)...)
+	results = append(results, mcpSubmitAndVisibility(ctx, h, SystemB, h.B, h.A)...)
+	results = append(results,
+		mcpLifecycle(ctx, h, SystemA, h.A),
+		mcpLifecycle(ctx, h, SystemB, h.B),
+		mcpContractLifecycle(ctx, h, SystemA, h.A),
+		mcpContractLifecycle(ctx, h, SystemB, h.B),
+	)
 
 	// Leave both checkouts parked on a clean main before returning — this
 	// family never mutates SHARED space state (protection/space.yaml/
@@ -502,7 +510,7 @@ func happyContractLifecycle(ctx context.Context, h *harness, system string, c *c
 
 // happyCrossSystemVisibility is row 5 (A and B, the P30(c) class): after
 // author merges a write addressed to observer (every drafted announcement
-// is auto-addressed to the peer — draftfill.go's DraftContext.Peer), the
+// is addressed to the peer by draftFieldArgs), the
 // OTHER system's `a2a sync` then `a2a inbox` must actually SEE it — sync
 // must MOVE the mirror's working tree, not merely fetch refs
 // (space/mirror.go's checkoutRemoteHead exists for exactly this defect

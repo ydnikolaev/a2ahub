@@ -100,7 +100,7 @@ func draftfamInboxContains(ctx context.Context, c *checkout, id string) (found b
 
 // draftfamDecisionLifecycle drives decision's Layer-1 story — spec 38 §T2's
 // own illustrative "decision propose -> approve", driven with a REAL
-// quorum rather than a single approver: draftfill.go fills
+// quorum rather than a single approver: the public authoring map supplies
 // `required_approvers: [<Me>, <Peer>]` for every decision draft (both
 // systems), and internal/fold's quorumReached (fold.go) requires EVERY
 // entry in env.RequiredApprovers to have approved before the dynamic

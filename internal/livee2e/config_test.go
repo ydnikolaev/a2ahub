@@ -17,6 +17,7 @@ func validEnv() map[string]string {
 		EnvOrg:              "a2ahub-live-e2e",
 		EnvProvisionerToken: "tok-provisioner",
 		EnvParticipantToken: "tok-participant",
+		EnvCandidateSHA:     strings.Repeat("a", 40),
 	}
 }
 
@@ -36,7 +37,7 @@ func TestLoadConfigResolvesBothCredentials(t *testing.T) {
 // missing one lets the other two through.
 func TestLoadConfigFailsClosedOnEachMissingVar(t *testing.T) {
 	t.Parallel()
-	for _, missing := range []string{EnvOrg, EnvProvisionerToken, EnvParticipantToken} {
+	for _, missing := range []string{EnvOrg, EnvProvisionerToken, EnvParticipantToken, EnvCandidateSHA} {
 		t.Run(missing, func(t *testing.T) {
 			t.Parallel()
 			pairs := validEnv()
@@ -47,6 +48,21 @@ func TestLoadConfigFailsClosedOnEachMissingVar(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), missing) {
 				t.Errorf("error does not name the missing variable %q: %v", missing, err)
+			}
+		})
+	}
+}
+
+func TestLoadConfigRefusesMutableOrShortCandidateRef(t *testing.T) {
+	t.Parallel()
+	for _, candidate := range []string{"main", "v0.15.2", strings.Repeat("a", 12), strings.Repeat("A", 40)} {
+		t.Run(candidate, func(t *testing.T) {
+			t.Parallel()
+			pairs := validEnv()
+			pairs[EnvCandidateSHA] = candidate
+			_, err := LoadConfig(env(pairs))
+			if !errors.Is(err, ErrNotConfigured) || !strings.Contains(err.Error(), EnvCandidateSHA) {
+				t.Fatalf("want candidate refusal naming %s, got %v", EnvCandidateSHA, err)
 			}
 		})
 	}

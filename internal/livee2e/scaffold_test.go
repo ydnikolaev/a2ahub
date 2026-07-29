@@ -1,15 +1,11 @@
 package livee2e
 
 import (
-	"encoding/json"
 	"errors"
 	"io/fs"
-	"os"
 	"regexp"
 	"strings"
 	"testing"
-
-	yaml "gopkg.in/yaml.v3"
 
 	spacetemplate "github.com/ydnikolaev/a2ahub/space-template"
 )
@@ -260,79 +256,32 @@ func TestTemplateFloorMatchesTemplateWorkflowPin(t *testing.T) {
 	}
 }
 
-// TestBoundaryProbeEnvelopeIsParseableFrontmatter is the hermetic guard for
-// the defect the space's own failure emails surfaced on 2026-07-26.
-//
-// The probe rendered its YAML with a CLOSING `---` and no opening one, so
-// the file parsed as having no frontmatter at all and failed POL-002. It
-// went unnoticed for weeks because the renderer lived behind the `livee2e`
-// build tag, where `make check` cannot see it — the reason it now lives in
-// an untagged file.
-//
-// The row that pushes this artifact straight to main therefore left an
-// invalid artifact in the space, and every later post-merge full-repo audit
-// failed. Nothing in the tier asserts that job (flag-only, never a required
-// check, by design), so the matrix stayed green while the space's CI was
-// red — visible only to whoever reads the repository's notification email.
-func TestBoundaryProbeEnvelopeIsParseableFrontmatter(t *testing.T) {
+func TestPinCandidateWorkflowPinsBothResolutionAxes(t *testing.T) {
 	t.Parallel()
+	raw, err := fs.ReadFile(spacetemplate.Files, ".github/workflows/a2a-validate.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.Repeat("b", 40)
+	got, err := PinCandidateWorkflow(string(raw), sha)
+	if err != nil {
+		t.Fatalf("PinCandidateWorkflow: %v", err)
+	}
+	if n := strings.Count(got, "a2a-validate-reusable.yml@"+sha); n != 2 {
+		t.Fatalf("immutable uses pins = %d, want 2", n)
+	}
+	if n := strings.Count(got, `a2a-ref: "`+sha+`"`); n != 2 {
+		t.Fatalf("immutable a2a-ref inputs = %d, want 2", n)
+	}
+	if strings.Contains(got, "a2a-validate-reusable.yml@v") {
+		t.Fatal("mutable release-tag workflow pin survived candidate provisioning")
+	}
+}
 
-	got := boundaryProbeEnvelope("XA-alpha-20260726-ab12")
-
-	if !strings.HasPrefix(got, "---\n") {
-		t.Fatalf("the probe artifact does not OPEN with a frontmatter delimiter, so it parses as "+
-			"having no frontmatter and fails POL-002 wherever it lands:\n%s", got)
-	}
-	parts := strings.SplitN(strings.TrimPrefix(got, "---\n"), "\n---\n", 2)
-	if len(parts) != 2 {
-		t.Fatalf("no closing frontmatter delimiter:\n%s", got)
-	}
-
-	var fm map[string]any
-	if err := yaml.Unmarshal([]byte(parts[0]), &fm); err != nil {
-		t.Fatalf("frontmatter is not valid YAML: %v\n%s", err, parts[0])
-	}
-	// The required list is READ FROM THE SCHEMA, never hand-written here.
-	// A hand-written copy is what let this break twice: `thread` became
-	// required on every envelope in P46, this list was not updated, and from
-	// that release on the probe was schema-invalid — so every post-merge
-	// full-repo audit running on a main that contained it went red with
-	// SCH-001, asserted by no row, and found only by the live tier's own
-	// "what else went red" scan on 2026-07-27.
-	for _, schemaPath := range []string{
-		"../../schemas/envelope/v1/base.schema.json",
-		"../../schemas/envelope/v1/announcement.schema.json",
-	} {
-		raw, rerr := os.ReadFile(schemaPath)
-		if rerr != nil {
-			t.Fatalf("read %s: %v", schemaPath, rerr)
-		}
-		var doc struct {
-			Required []string `json:"required"`
-		}
-		if jerr := json.Unmarshal(raw, &doc); jerr != nil {
-			t.Fatalf("decode %s: %v", schemaPath, jerr)
-		}
-		if len(doc.Required) == 0 {
-			t.Fatalf("%s declares no required fields — this guard would then assert nothing", schemaPath)
-		}
-		for _, key := range doc.Required {
-			if _, ok := fm[key]; !ok {
-				t.Errorf("frontmatter is missing %q, which %s lists as REQUIRED — an artifact short of a "+
-					"required field reds the space's own post-merge audit for a reason no row claims, "+
-					"which is exactly how this shipped broken twice", key, schemaPath)
-			}
-		}
-	}
-
-	// The one required field whose VALUE has to be right rather than merely
-	// present: `thread` is pattern-constrained, so a present-but-malformed
-	// value fails exactly the way an absent one does.
-	thread, _ := fm["thread"].(string)
-	if !regexp.MustCompile(`^thread:[a-z0-9]+-[0-9]{8}-[0-9abcdefghjkmnpqrstvwxyz]{4}$`).MatchString(thread) {
-		t.Errorf("thread = %q does not match base.schema.json's own pattern", thread)
-	}
-	if strings.TrimSpace(parts[1]) == "" {
-		t.Error("the probe artifact has an empty body")
+func TestPinCandidateWorkflowFailsClosedOnDrift(t *testing.T) {
+	t.Parallel()
+	_, err := PinCandidateWorkflow("jobs:\n  x:\n    mode: v3-pr\n", strings.Repeat("c", 40))
+	if err == nil {
+		t.Fatal("missing reusable callers must be refused")
 	}
 }

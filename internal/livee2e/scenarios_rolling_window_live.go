@@ -55,12 +55,6 @@ const rwScenario = "contract-rolling-window"
 // run never mints two contracts of the same id.
 const rwSlug = "rw-rolling-window"
 
-// rwToLinePattern matches the drafted contract's filled `to:` line so the
-// peer can be excluded from the contract's authoring-time addressing —
-// exactly as ac973 does, and for the same reason: a consumer that is in
-// `to:` proves nothing about delivery driven by REGISTRATION.
-var rwToLinePattern = regexp.MustCompile(`(?m)^to: \[.*\]$`)
-
 // rwAnnouncementIDPattern extracts an XA- id from `contract deprecate`'s own
 // composite branch name, never from stdout prose.
 var rwAnnouncementIDPattern = regexp.MustCompile(`XA-[A-Za-z0-9-]+`)
@@ -153,21 +147,12 @@ const rwSchemaWidened = `{
 // OWN system, so the peer is genuinely not in the authoring-time `to:`.
 // `to:` cannot simply be emptied (REF-006 requires minItems 1 or "all").
 func rwDraftContractExcludingPeer(ctx context.Context, h *harness, c *checkout) (submitted, error) {
-	id, _, err := c.Draft(ctx, "contract", "--slug", rwSlug)
+	id, _, err := c.Draft(ctx, "contract",
+		"--slug", rwSlug,
+		"--field", "to=["+c.System+"]",
+	)
 	if err != nil {
 		return submitted{}, err
-	}
-	path := filepath.Join(c.Dir, ".a2a", "staging", id+".md")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return submitted{}, fmt.Errorf("livee2e: read staged draft %s: %w", path, err)
-	}
-	edited := rwToLinePattern.ReplaceAllLiteralString(string(raw), "to: ["+c.System+"]")
-	if edited == string(raw) {
-		return submitted{}, fmt.Errorf("livee2e: staged draft %s: expected filled `to:` line not found to override", path)
-	}
-	if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
-		return submitted{}, fmt.Errorf("livee2e: write edited draft %s: %w", path, err)
 	}
 	return h.submitDrafted(ctx, c, id)
 }

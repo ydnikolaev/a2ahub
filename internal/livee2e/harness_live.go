@@ -154,8 +154,8 @@ type submitted struct {
 	HeadSHA  string
 }
 
-// DraftAndSubmit runs the whole author path for one artifact — draft, fill,
-// submit — and resolves the resulting PR.
+// DraftAndSubmit runs the whole public author path for one artifact — draft
+// with typed fields, submit — and resolves the resulting PR.
 //
 // It exists on the harness rather than in each scenario family because all
 // four families need it and four copies would drift; that is also why it
@@ -173,20 +173,18 @@ func (h *harness) DraftAndSubmit(ctx context.Context, c *checkout, artifactType 
 	if len(unfilled) > 0 {
 		// Not fatal: the draft may still validate. Carried up so a scenario
 		// can put it in its Detail — an unfilled field is how we learn a
-		// template asks for something the matrix cannot describe.
+		// template asks for something the public authoring map cannot describe.
 		_ = unfilled
 	}
 	return h.submitDrafted(ctx, c, id)
 }
 
-// submitDrafted runs `a2a submit <id>` for an already-drafted+filled
+// submitDrafted runs `a2a submit <id>` for an already-authored
 // artifact and resolves the PR the funnel opened for it (space.BranchName +
 // pullForBranch, never scraped stdout — see DraftAndSubmit's own doc for
-// why). It is DraftAndSubmit's own tail, extracted so a caller that must
-// EDIT a draft's staged file BETWEEN Draft and submit — the AC-973.1 row's
-// `to:`-exclusion edit (scenarios_contract_integrity_live.go) is the one
-// that needs this — reuses the exact same submit+resolve path rather than a
-// second, silently-drifting copy of it.
+// why). It is DraftAndSubmit's own tail, extracted so a caller that supplies
+// specialized public `--field` inputs can reuse the exact same
+// submit+resolve path rather than a second, silently-drifting copy of it.
 func (h *harness) submitDrafted(ctx context.Context, c *checkout, id string) (submitted, error) {
 	branch := space.BranchName(c.System, "submit", id)
 	if _, stderr, subErr := c.Run(ctx, "submit", id); subErr != nil {

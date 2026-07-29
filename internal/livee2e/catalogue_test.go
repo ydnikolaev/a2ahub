@@ -94,28 +94,31 @@ func TestThreadChainRowIsSystemAOnlyAndCLIOnly(t *testing.T) {
 	t.Fatalf("%q is missing from the catalogue", name)
 }
 
-// The catalogue may only declare a surface the tier can actually drive.
-//
-// This is the same rule as TestNewRunForHonoursPerScenarioApplicability, one
-// level up: a declared cell nobody can reach is not coverage, it is a
-// permanently not-run row — and because ExitCode is 0 only when EVERY declared
-// cell passes, nine such rows would pin `make live-e2e` at exit 1 forever. A
-// tier that is always red stops being read, which costs more than the missing
-// rows do.
-//
-// So this guard is NOT "MCP is unwanted". It is the tripwire on the follow-up:
-// the commit that declares an MCP cell must be the commit that can drive one,
-// and it deletes this test rather than working around it. Spec §6 asked the
-// question, §10's 2026-07-24 amendment answers it.
-func TestCatalogueDeclaresOnlyDrivableSurfaces(t *testing.T) {
+func TestCatalogueDeclaresExactlyTheNineMCPParityCells(t *testing.T) {
 	t.Parallel()
+	want := map[string]int{
+		"submit-gate-merge":                 2,
+		"lifecycle-transitions":             2,
+		"contract-publish-deprecate-retire": 2,
+		"cross-system-visibility":           2,
+		"out-of-section-write-refused":      1,
+	}
+	got := map[string]int{}
 	for _, scenario := range Catalogue() {
 		for _, surface := range scenario.Surfaces {
-			if surface != SurfaceCLI {
-				t.Errorf("scenario %q declares surface %q, which the live tier has no driver for — nothing in the repo speaks MCP over stdio, so the cell could only ever be not-run (spec §10, 2026-07-24)",
-					scenario.Name, surface)
+			if surface == SurfaceMCP {
+				got[scenario.Name] += len(scenario.Systems)
 			}
 		}
+	}
+	for name, cells := range want {
+		if got[name] != cells {
+			t.Errorf("%s MCP cells=%d, want %d", name, got[name], cells)
+		}
+		delete(got, name)
+	}
+	for name, cells := range got {
+		t.Errorf("unexpected MCP parity scope: %s has %d cells", name, cells)
 	}
 }
 

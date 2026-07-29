@@ -52,39 +52,6 @@ const boundaryProbeBranch = "probe/xsec"
 // §T6-c's two re-trigger mechanisms reruns.
 const requiredWorkflowName = "a2a-validate"
 
-// crockfordAlphabet is the digit/letter set
-// schemas/envelope/v1/base.schema.json's id pattern requires for the
-// exchange/broadcast id shape's random suffix (Crockford base32, excluding
-// i/l/o/u — the schema's own character class,
-// "[0-9abcdefghjkmnpqrstvwxyz]{4}").
-const crockfordAlphabet = "0123456789abcdefghjkmnpqrstvwxyz"
-
-// boundaryEnvelopeID mints a SCHEMA-VALID exchange/broadcast id
-// (XA-<system>-<YYYYMMDD>-<4 crockford chars>) for an envelope this file
-// writes directly via raw git, never through the funnel, so nothing else
-// mints or validates this id before GitHub's own check does.
-//
-// This matters more than it looks: docs/runbooks/live-e2e/run.sh's own
-// probe/xsec fixture is NOT reused verbatim here on purpose. This row's only
-// observable is the check's Conclusion — if the envelope were invalid for
-// any reason OTHER than the section it writes into, the check would still
-// report "failure", and the row would PASS having asserted nothing about
-// diff-authz specifically (the exact vacuity failure spec 36 §T5 exists to
-// rule out, one field down). The suffix is derived from the nanosecond clock
-// rather than a fixed literal because boundaryMoveMainDirect's use of this
-// same id shape DOES land permanently on main — a fixed id there would find
-// nothing to stage (identical content already committed) on a second live
-// run against the same space.
-func boundaryEnvelopeID(system string) string {
-	n := time.Now().UnixNano()
-	suffix := make([]byte, 4)
-	for i := range suffix {
-		suffix[i] = crockfordAlphabet[n%int64(len(crockfordAlphabet))]
-		n /= int64(len(crockfordAlphabet))
-	}
-	return fmt.Sprintf("XA-%s-%s-%s", system, time.Now().UTC().Format("20060102"), suffix)
-}
-
 // boundaryRetriggerPollInterval / boundaryRetriggerPropagationCeiling bound
 // the wait for a re-trigger to actually have STARTED on GitHub's side (a new
 // or reused workflow run leaving/re-entering a non-"completed" state) before
@@ -531,10 +498,9 @@ func boundaryCrossSectionRetriggerStaysRed(ctx context.Context, h *harness) Resu
 		}
 	}
 
-	id := boundaryEnvelopeID(systemAlpha)
-	envelopePath := filepath.Join(dir, "alpha", "exchanges", id+".md")
-	if err := os.WriteFile(envelopePath, []byte(boundaryProbeEnvelope(id)), 0o644); err != nil {
-		return boundaryRefused(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, "write probe envelope: "+err.Error())
+	_, expectedPath, err := boundaryDraftProbe(ctx, h, dir)
+	if err != nil {
+		return boundaryRefused(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, "author probe envelope: "+err.Error())
 	}
 	if err := runCmd(ctx, "git", "-C", dir, "add", "-A"); err != nil {
 		return boundaryRefused(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, "git add: "+err.Error())
@@ -597,6 +563,9 @@ func boundaryCrossSectionRetriggerStaysRed(ctx context.Context, h *harness) Resu
 			fmt.Sprintf("initial cross-section PR concluded %q, not failure — diff-authz did not refuse B writing into A's section", res1.Conclusion),
 			fmt.Sprintf("PR #%d", prNumber))
 	}
+	if err := boundaryRequireAuthzAnnotation(ctx, h, pr.HeadSHA, expectedPath); err != nil {
+		return boundaryFromErr(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, err)
+	}
 
 	// Mechanism (a): the literal "re-run CI" button — needs the
 	// provisioner's Actions:write.
@@ -642,6 +611,9 @@ func boundaryCrossSectionRetriggerStaysRed(ctx context.Context, h *harness) Resu
 			fmt.Sprintf("after the provisioner's rerun-API re-trigger, the check concluded %q, not failure — the v0.6.4 GITHUB_ACTOR bypass is back", res2.Conclusion),
 			fmt.Sprintf("PR #%d, rerun of workflow run %d, check-run count %d -> %d", prNumber, runID, baseline, afterRerunCount))
 	}
+	if err := boundaryRequireAuthzAnnotation(ctx, h, pr.HeadSHA, expectedPath); err != nil {
+		return boundaryFromErr(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, err)
+	}
 
 	// Mechanism (b): close then reopen — needs only Pull requests:write, the
 	// one the original report described, so it is the more important of the
@@ -673,10 +645,37 @@ func boundaryCrossSectionRetriggerStaysRed(ctx context.Context, h *harness) Resu
 			fmt.Sprintf("after the provisioner's close/reopen re-trigger, the check concluded %q, not failure — the v0.6.4 GITHUB_ACTOR bypass is back", res3.Conclusion),
 			fmt.Sprintf("PR #%d, closed+reopened, check-run count %d -> %d", prNumber, baseline2, afterReopenCount))
 	}
+	if err := boundaryRequireAuthzAnnotation(ctx, h, pr.HeadSHA, expectedPath); err != nil {
+		return boundaryFromErr(scenarioCrossSectionRetriggerStaysRed, SystemB, expected, err)
+	}
 
 	return boundaryResult(scenarioCrossSectionRetriggerStaysRed, SystemB, VerdictPass, "", "",
-		fmt.Sprintf("PR #%d stayed failure throughout: initial=%s, after rerun-API=%s (check-run count %d->%d), after close/reopen=%s (check-run count %d->%d) — the count is recorded evidence, not the gate (see boundaryCheckRunCount's own doc comment)",
-			prNumber, res1.Conclusion, res2.Conclusion, baseline, afterRerunCount, res3.Conclusion, baseline2, afterReopenCount))
+		fmt.Sprintf("PR #%d stayed failure throughout with AUTHZ-001 on %s: initial=%s, after rerun-API=%s (check-run count %d->%d), after close/reopen=%s (check-run count %d->%d)",
+			prNumber, expectedPath, res1.Conclusion, res2.Conclusion, baseline, afterRerunCount, res3.Conclusion, baseline2, afterReopenCount))
+}
+
+func boundaryRequireAuthzAnnotation(ctx context.Context, h *harness, headSHA, expectedPath string) error {
+	runs, err := h.Prov.CheckRuns(ctx, h.Org, h.Repo, headSHA)
+	if err != nil {
+		return fmt.Errorf("read check runs for structured authz evidence: %w", err)
+	}
+	for _, run := range runs {
+		if run.Name != requiredCheckContext || run.Status != "completed" || run.Conclusion != "failure" {
+			continue
+		}
+		annotations, err := h.Prov.CheckRunAnnotations(ctx, h.Org, h.Repo, run.ID)
+		if err != nil {
+			return fmt.Errorf("read annotations for check run %d: %w", run.ID, err)
+		}
+		for _, annotation := range annotations {
+			if annotation.Path == expectedPath &&
+				annotation.Level == "failure" &&
+				strings.Contains(annotation.Message, "[AUTHZ-001]") {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("no failing AUTHZ-001 annotation names exact path %q on head %s", expectedPath, headSHA)
 }
 
 // boundaryPushMain fast-forward pushes dir's current HEAD onto main as
@@ -734,10 +733,8 @@ func boundaryMoveMainDirect(ctx context.Context, h *harness) error {
 		}
 	}
 
-	id := boundaryEnvelopeID(systemAlpha)
-	path := filepath.Join(dir, "alpha", "exchanges", id+".md")
-	if err := os.WriteFile(path, []byte(boundaryProbeEnvelope(id)), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+	if _, _, err := boundaryDraftProbe(ctx, h, dir); err != nil {
+		return fmt.Errorf("author main-move artifact: %w", err)
 	}
 	if err := runCmd(ctx, "git", "-C", dir, "add", "-A"); err != nil {
 		return fmt.Errorf("add: %w", err)
@@ -749,6 +746,35 @@ func boundaryMoveMainDirect(ctx context.Context, h *harness) error {
 		return fmt.Errorf("push main: %w", err)
 	}
 	return nil
+}
+
+// boundaryDraftProbe uses the public authoring path to create a fully valid
+// alpha announcement, then moves the staged document byte-for-byte into the
+// raw Git clone. The cross-section row still pushes that alpha path as B;
+// only the transport bypasses the funnel, never the document authoring API.
+func boundaryDraftProbe(ctx context.Context, h *harness, dir string) (string, string, error) {
+	remoteURL := "https://github.com/" + h.Org + "/" + h.Repo + ".git"
+	c := &checkout{
+		Dir: dir, System: systemAlpha, Peer: systemBravo,
+		Bin: h.Bin, SpaceSlug: h.SpaceSlug,
+	}
+	if _, stderr, err := c.Run(ctx,
+		"init", "--system", systemAlpha, "--space", remoteURL,
+		"--no-skill", "--no-skill-link", "--no-agents-pointer",
+	); err != nil {
+		return "", "", fmt.Errorf("a2a init probe project: %w: %s", err, strings.TrimSpace(stderr))
+	}
+	id, _, err := c.Draft(ctx, boundaryArtifactType)
+	if err != nil {
+		return "", "", err
+	}
+	rel := filepath.ToSlash(filepath.Join(systemAlpha, "exchanges", id+".md"))
+	src := filepath.Join(dir, ".a2a", "staging", id+".md")
+	dst := filepath.Join(dir, filepath.FromSlash(rel))
+	if err := os.Rename(src, dst); err != nil {
+		return "", "", fmt.Errorf("move publicly-authored probe into raw clone: %w", err)
+	}
+	return id, rel, nil
 }
 
 // scenarioExecutedRefNotStale is row 15 (AC-960.5, §T6-b): GitHub can serve a

@@ -56,16 +56,19 @@ type ciReport struct {
 	DiffAuthz []ciAuthzViolation `json:"diff_authz_violations,omitempty"`
 }
 
-// ciAuthzViolation is a diff-authz finding — deliberately NOT a
-// validate.Violation: diff-authz is not one of the engine's registry
-// classes ({SCH,REF,LFC,POL}), so it carries no registry Code (fabricating
-// one would corrupt the registry-code invariant). CC-097 (unmapped author)
-// is reported in the corner-case CCRef field instead.
+// ciAuthzViolation is the stable machine shape for the CI-owned authorization
+// boundary. AUTHZ-001 is intentionally outside the envelope validation-code
+// registry: this verdict is about a PR diff, not an artifact's contents.
+// Keeping a code, path and severity here lets GitHub surface an annotation and
+// lets live evidence prove the intended refusal instead of accepting any red.
 type ciAuthzViolation struct {
-	Path    string `json:"path,omitempty"`
-	Author  string `json:"author"`
-	CCRef   string `json:"cc_ref,omitempty"`
-	Message string `json:"message"`
+	Code       string `json:"code"`
+	Path       string `json:"path,omitempty"`
+	Severity   string `json:"severity"`
+	ArtifactID string `json:"artifact_id,omitempty"`
+	Author     string `json:"author"`
+	CCRef      string `json:"cc_ref,omitempty"`
+	Message    string `json:"message"`
 }
 
 // runValidateCI is the `--ci` path. Exit codes: 2 = usage (missing/unknown
@@ -447,9 +450,11 @@ func diffAuthz(manifest space.Manifest, author string, paths []string) []ciAuthz
 	authorSystem, ok := manifest.SystemForLogin(author)
 	if !ok {
 		return []ciAuthzViolation{{
-			Author:  author,
-			CCRef:   "CC-097",
-			Message: fmt.Sprintf("PR author %q is not mapped to any system in space.yaml", author),
+			Code:     "AUTHZ-001",
+			Severity: "reject",
+			Author:   author,
+			CCRef:    "CC-097",
+			Message:  fmt.Sprintf("PR author %q is not mapped to any system in space.yaml", author),
 		}}
 	}
 	var out []ciAuthzViolation
@@ -457,13 +462,27 @@ func diffAuthz(manifest space.Manifest, author string, paths []string) []ciAuthz
 		sys, _ := systemForPath(manifest, relPath)
 		if sys != authorSystem {
 			out = append(out, ciAuthzViolation{
-				Path:    relPath,
-				Author:  author,
-				Message: fmt.Sprintf("changed path is outside the author's section (author system %q, path in system %q)", authorSystem, sys),
+				Code:       "AUTHZ-001",
+				Path:       relPath,
+				Severity:   "reject",
+				ArtifactID: artifactIDFromPath(relPath),
+				Author:     author,
+				Message:    fmt.Sprintf("changed path is outside the author's section (author system %q, path in system %q)", authorSystem, sys),
 			})
 		}
 	}
 	return out
+}
+
+func artifactIDFromPath(relPath string) string {
+	if filepath.Ext(relPath) != ".md" {
+		return ""
+	}
+	candidate := strings.TrimSuffix(filepath.Base(relPath), ".md")
+	if _, err := artifact.ParseID(candidate); err != nil {
+		return ""
+	}
+	return candidate
 }
 
 // systemForPath resolves a space-relative path to the system whose

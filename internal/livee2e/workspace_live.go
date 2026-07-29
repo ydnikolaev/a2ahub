@@ -286,38 +286,26 @@ func parseDraftedID(stdout string) (string, bool) {
 	return m[1], true
 }
 
-// Draft drafts an artifactType via `a2a new`, then runs the sibling's
-// FillDraft over the staged draft and writes it back — the author-edit step
-// docs/runbooks/live-e2e/fill.py models. extra is passed straight through as
-// additional `a2a new` flags (e.g. --slug for a standing-type artifact),
-// exactly as run.sh's own draft() helper does.
-//
-// unfilled is returned rather than swallowed: a placeholder FillDraft could
-// not resolve is either a field the matrix needs to learn to fill, or a
-// template asking for something it cannot describe — either way the caller
-// (a wave-3-2 scenario) decides what that means for the row, not this
-// function.
+// Draft authors scenario data exclusively through the shipped `a2a new`
+// interface. No staged frontmatter is reopened or regex-patched by the
+// harness. extra is appended last so a scenario can explicitly override a
+// default with another repeatable --field.
 func (c *checkout) Draft(ctx context.Context, artifactType string, extra ...string) (id string, unfilled []string, err error) {
-	args := append([]string{"new", artifactType, "--field", "title=matrix " + artifactType, "--field", "space=" + c.SpaceSlug}, extra...)
+	fields, ok := draftFieldArgs(artifactType, c.SpaceSlug, c.System, c.Peer)
+	if !ok {
+		return "", nil, fmt.Errorf("livee2e: no public authoring fields for artifact type %q", artifactType)
+	}
+	args := append([]string{"new", artifactType}, fields...)
+	args = append(args, extra...)
 	stdout, stderr, runErr := c.Run(ctx, args...)
 	if runErr != nil {
 		return "", nil, fmt.Errorf("livee2e: a2a new %s (%s): %w: %s", artifactType, c.System, runErr, strings.TrimSpace(stderr))
 	}
-	id, ok := parseDraftedID(stdout)
+	id, ok = parseDraftedID(stdout)
 	if !ok {
 		return "", nil, fmt.Errorf("livee2e: a2a new %s (%s): could not parse drafted id from: %s", artifactType, c.System, strings.TrimSpace(stdout))
 	}
-
-	path := filepath.Join(c.Dir, ".a2a", "staging", id+".md")
-	raw, readErr := os.ReadFile(path)
-	if readErr != nil {
-		return id, nil, fmt.Errorf("livee2e: read staged draft %s: %w", path, readErr)
-	}
-	filled, unfilled := FillDraft(string(raw), DraftContext{Space: c.SpaceSlug, Me: c.System, Peer: c.Peer})
-	if writeErr := os.WriteFile(path, []byte(filled), 0o644); writeErr != nil {
-		return id, unfilled, fmt.Errorf("livee2e: write filled draft %s: %w", path, writeErr)
-	}
-	return id, unfilled, nil
+	return id, nil, nil
 }
 
 // setupCheckout runs `a2a init` then `a2a connect`, exactly as

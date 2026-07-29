@@ -63,6 +63,9 @@ func (h *harness) ResetSpace(ctx context.Context) error {
 	if err := scaffoldParticipants(spaceDir, h.Org, h.Pre); err != nil {
 		return fmt.Errorf("livee2e: ResetSpace: scaffold participants: %w", err)
 	}
+	if err := pinCandidateWorkflowFile(spaceDir, h.Cfg.CandidateSHA); err != nil {
+		return fmt.Errorf("livee2e: ResetSpace: pin candidate workflow: %w", err)
+	}
 	for _, sys := range []string{systemAlpha, systemBravo} {
 		exchanges := filepath.Join(spaceDir, sys, "exchanges")
 		if err := os.MkdirAll(exchanges, 0o755); err != nil {
@@ -146,6 +149,22 @@ func (h *harness) ResetSpace(ctx context.Context) error {
 	}
 	h.PRFloor = floor
 
+	return nil
+}
+
+func pinCandidateWorkflowFile(spaceDir, sha string) error {
+	path := filepath.Join(spaceDir, ".github", "workflows", "a2a-validate.yml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read caller workflow: %w", err)
+	}
+	pinned, err := PinCandidateWorkflow(string(raw), sha)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(pinned), 0o644); err != nil {
+		return fmt.Errorf("write caller workflow: %w", err)
+	}
 	return nil
 }
 

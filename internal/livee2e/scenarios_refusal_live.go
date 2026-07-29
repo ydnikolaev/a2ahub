@@ -36,6 +36,7 @@ func runRefusalScenarios(ctx context.Context, h *harness) []Result {
 	return []Result{
 		refusalDirectPushScenario(ctx, h),
 		refusalOutOfSectionWriteScenario(ctx, h),
+		mcpOutOfSectionRefused(ctx, h),
 		refusalStaleWriteFloorScenario(ctx, h),
 	}
 }

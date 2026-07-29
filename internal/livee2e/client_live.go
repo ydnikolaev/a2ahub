@@ -515,6 +515,7 @@ func (c *ghClient) CheckRuns(ctx context.Context, owner, name, sha string) ([]Ch
 	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/commits/" + url.PathEscape(sha) + "/check-runs?filter=all&per_page=100"
 	var payload struct {
 		CheckRuns []struct {
+			ID         int64  `json:"id"`
 			Name       string `json:"name"`
 			HeadSHA    string `json:"head_sha"`
 			Status     string `json:"status"`
@@ -526,7 +527,23 @@ func (c *ghClient) CheckRuns(ctx context.Context, owner, name, sha string) ([]Ch
 	}
 	out := make([]CheckRunRef, 0, len(payload.CheckRuns))
 	for _, r := range payload.CheckRuns {
-		out = append(out, CheckRunRef{Name: r.Name, HeadSHA: r.HeadSHA, Status: r.Status, Conclusion: r.Conclusion})
+		out = append(out, CheckRunRef{ID: r.ID, Name: r.Name, HeadSHA: r.HeadSHA, Status: r.Status, Conclusion: r.Conclusion})
+	}
+	return out, nil
+}
+
+type CheckAnnotation struct {
+	Path    string `json:"path"`
+	Message string `json:"message"`
+	Level   string `json:"annotation_level"`
+}
+
+func (c *ghClient) CheckRunAnnotations(ctx context.Context, owner, name string, runID int64) ([]CheckAnnotation, error) {
+	path := fmt.Sprintf("/repos/%s/%s/check-runs/%d/annotations?per_page=100",
+		url.PathEscape(owner), url.PathEscape(name), runID)
+	var out []CheckAnnotation
+	if _, err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

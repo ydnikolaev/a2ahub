@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // Participant is one row `a2a space init` needs patched into the scaffolded
@@ -83,6 +84,39 @@ func RenderCODEOWNERS(owner string) string {
 		"/space.yaml   @" + owner + "\n" +
 		"/CODEOWNERS   @" + owner + "\n" +
 		"/.github/**   @" + owner + "\n"
+}
+
+// PinCandidateWorkflow rewrites the two reusable-workflow calls in a
+// scaffolded space to one immutable public candidate commit. It pins both
+// independent resolution axes: GitHub's `uses:` target and the Go module
+// revision passed as `a2a-ref`. Exact cardinality is enforced so a new caller
+// job cannot silently remain on a release tag.
+func PinCandidateWorkflow(src, sha string) (string, error) {
+	if !candidateSHAPattern.MatchString(sha) {
+		return "", fmt.Errorf("livee2e: candidate SHA must be full lowercase 40-hex")
+	}
+	lines := strings.Split(src, "\n")
+	uses, refs := 0, 0
+	for i := 0; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		const reusable = "uses: ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@"
+		if strings.HasPrefix(trimmed, reusable) {
+			indent := lines[i][:len(lines[i])-len(strings.TrimLeft(lines[i], " \t"))]
+			lines[i] = indent + reusable + sha
+			uses++
+			continue
+		}
+		if strings.HasPrefix(trimmed, "mode: ") {
+			indent := lines[i][:len(lines[i])-len(strings.TrimLeft(lines[i], " \t"))]
+			lines = append(lines[:i+1], append([]string{indent + `a2a-ref: "` + sha + `"`}, lines[i+1:]...)...)
+			i++
+			refs++
+		}
+	}
+	if uses != 2 || refs != 2 {
+		return "", fmt.Errorf("livee2e: candidate workflow pin cardinality uses=%d refs=%d, want 2/2", uses, refs)
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 // ErrNoTemplateFloor is returned by TemplateMinBinaryVersion when the space
