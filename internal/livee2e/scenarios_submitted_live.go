@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -168,25 +167,6 @@ func subfamInboxContains(ctx context.Context, c *checkout, id string) (found boo
 	return strings.Contains(stdout, id), stdout, nil
 }
 
-// subfamResponseIDPattern extracts an XS- id out of `a2a respond`'s own
-// composite branch name, never from stdout text — the same
-// ac973ExtractAnnouncementID reasoning (scenarios_contract_integrity_live.go):
-// it keeps working even if the CLI's own "opened PR ... for X, Y" sentence
-// changes, and it doubles as this row's own live exercise of
-// pullForBranchContaining's composite-branch fix. Unlike
-// ac973ExtractAnnouncementID (which must exclude the OTHER id sharing its
-// own XA-/XC- alphabet), a bare "XS-" prefix match is unambiguous here: the
-// parent (XQ-/XW-) never shares that prefix.
-var subfamResponseIDPattern = regexp.MustCompile(`XS-[A-Za-z0-9-]+`)
-
-func subfamExtractResponseID(headRef string) (string, error) {
-	m := subfamResponseIDPattern.FindString(headRef)
-	if m == "" {
-		return "", fmt.Errorf("livee2e: branch %q carries no XS- response id", headRef)
-	}
-	return m, nil
-}
-
 // subfamAwaitGreenAndLand is happyLandAndSync's (scenarios_happy_live.go)
 // stricter sibling, used ONLY at this family's `respond` steps — see this
 // file's own top-of-file "KNOWN RISK" comment for why.
@@ -265,19 +245,18 @@ func subfamExchangeLifecycle(ctx context.Context, h *harness, kind, scenario str
 		return subfamResultFromErr(scenario, "ack-land-sync", err, "the ack lands on main and reaches B's mirror")
 	}
 
-	// --- B answers: acknowledged -> responded. `a2a respond` batches the
-	// new XS response artifact AND the parent's own `respond` event into
-	// ONE PR (D-026), so its branch is composite
-	// (a2a/<sys>/respond/<parentID>+<XS-id>) — the same shape
-	// happyContractLifecycle's own doc comment records for `contract
-	// deprecate`; pullForBranch's exact-HeadRef lookup cannot find it,
-	// pullForBranchContaining can. ---
-	if _, stderr, err := b.Run(ctx, "respond", "--result", "answered", sub.ID); err != nil {
+	// --- B answers: acknowledged -> responded. D6 keys this two-artifact
+	// write by canonical intent, so its branch is opaque op-v1 data. ---
+	respondKey, respondBranch := respondOperation(b.System, sub.ID, "answered")
+	if _, stderr, err := b.Run(ctx, respondCommandArgs(sub.ID, "answered")...); err != nil {
 		return subfamResultFromErr(scenario, "counterpart-respond", fmt.Errorf("%w: %s", err, stderr), "B's a2a respond succeeds and opens its own PR")
 	}
-	respondPR, err := h.pullForBranchContaining(ctx, b.System, "respond", sub.ID)
+	respondPR, err := h.pullForBranch(ctx, respondBranch)
 	if err != nil {
-		return subfamResultFromErr(scenario, "counterpart-respond", err, "respond's own composite branch has an open PR")
+		return subfamResultFromErr(scenario, "counterpart-respond", err, "respond's semantic-operation branch has a PR")
+	}
+	if _, err := operationArtifactID(respondPR.Body, respondKey, sub.ID, "XS-"); err != nil {
+		return subfamResultFromErr(scenario, "counterpart-respond", err, "respond's PR metadata names the new XS response artifact")
 	}
 	if err := subfamAwaitGreenAndLand(ctx, h, b, respondPR.Number); err != nil {
 		return subfamResultFromErr(scenario, "respond-land-sync", err, "the response lands on main and reaches B's mirror (required check concludes success)")
@@ -506,19 +485,19 @@ func subfamResponseLifecycle(ctx context.Context, h *harness) Result {
 		return subfamResultFromErr(scenario, "ack-land-sync", err, "the ack lands on main and reaches B's mirror")
 	}
 
-	// --- B responds: draft+submit collapsed (D-026) into one PR that
-	// authors BOTH the new XS response artifact and the parent's own
-	// `respond` event — composite branch, pullForBranchContaining required. ---
-	if _, stderr, err := b.Run(ctx, "respond", "--result", "answered", parent.ID); err != nil {
+	// --- B responds: draft+submit collapsed (D-026) into one PR, keyed by
+	// D6's stable semantic operation identity. ---
+	respondKey, respondBranch := respondOperation(b.System, parent.ID, "answered")
+	if _, stderr, err := b.Run(ctx, respondCommandArgs(parent.ID, "answered")...); err != nil {
 		return subfamResultFromErr(scenario, "counterpart-respond", fmt.Errorf("%w: %s", err, stderr), "B's a2a respond succeeds and opens its own PR")
 	}
-	respondPR, err := h.pullForBranchContaining(ctx, b.System, "respond", parent.ID)
+	respondPR, err := h.pullForBranch(ctx, respondBranch)
 	if err != nil {
-		return subfamResultFromErr(scenario, "counterpart-respond", err, "respond's own composite branch has an open PR")
+		return subfamResultFromErr(scenario, "counterpart-respond", err, "respond's semantic-operation branch has a PR")
 	}
-	responseID, err := subfamExtractResponseID(respondPR.HeadRef)
+	responseID, err := operationArtifactID(respondPR.Body, respondKey, parent.ID, "XS-")
 	if err != nil {
-		return subfamResultFromErr(scenario, "counterpart-respond", err, "respond's own branch names the new XS response artifact")
+		return subfamResultFromErr(scenario, "counterpart-respond", err, "respond's PR metadata names the new XS response artifact")
 	}
 	if err := subfamAwaitGreenAndLand(ctx, h, b, respondPR.Number); err != nil {
 		return subfamResultFromErr(scenario, "respond-land-sync", err, "the response lands on main and reaches B's mirror (required check concludes success)")

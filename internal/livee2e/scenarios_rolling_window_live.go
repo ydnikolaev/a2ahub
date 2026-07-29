@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -54,10 +53,6 @@ const rwScenario = "contract-rolling-window"
 // one run never mints two contracts of the same id. liveRunSlug adds the
 // destructive-space generation before authoring.
 const rwSlug = "rw-rolling-window"
-
-// rwAnnouncementIDPattern extracts an XA- id from `contract deprecate`'s own
-// composite branch name, never from stdout prose.
-var rwAnnouncementIDPattern = regexp.MustCompile(`XA-[A-Za-z0-9-]+`)
 
 func rwResultFromErr(step string, err error, expected string) Result {
 	return Result{
@@ -216,18 +211,22 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	// --- 3. A deprecates 1.1.0 while 2.0.0 is live. THIS is the shape the
 	// old subject-scoped engine misreported: the contract is NOT deprecated
 	// — 2.0.0 is published — and every read surface must say so. ---
+	successor := sub.ID + "@2.0.0"
+	deprecateKey, deprecateBranch := contractDeprecateOperation(
+		a.System, sub.ID, "1.1.0", successor, "2020-01-01",
+	)
 	if _, stderr, err := a.Run(ctx, "contract", "deprecate", sub.ID,
-		"--version", "1.1.0", "--successor", sub.ID+"@2.0.0", "--sunset", "2020-01-01"); err != nil {
+		"--version", "1.1.0", "--successor", successor, "--sunset", "2020-01-01"); err != nil {
 		return rwResultFromErr("deprecate-1.1.0", fmt.Errorf("%w: %s", err, stderr),
 			"`a2a contract deprecate --version 1.1.0` succeeds while 2.0.0 is published")
 	}
-	deprecatePR, err := h.pullForBranchContaining(ctx, a.System, "contract-deprecate", sub.ID)
+	deprecatePR, err := h.pullForBranch(ctx, deprecateBranch)
 	if err != nil {
-		return rwResultFromErr("deprecate-1.1.0", err, "contract deprecate's own composite branch has an open PR")
+		return rwResultFromErr("deprecate-1.1.0", err, "contract deprecate's semantic-operation branch has a PR")
 	}
-	announcementID, err := rwExtractAnnouncementID(deprecatePR.HeadRef, sub.ID)
+	announcementID, err := operationArtifactID(deprecatePR.Body, deprecateKey, sub.ID, "XA-")
 	if err != nil {
-		return rwResultFromErr("deprecate-1.1.0", err, "the deprecate PR's branch names the linked deprecation announcement")
+		return rwResultFromErr("deprecate-1.1.0", err, "the deprecate PR metadata names the linked deprecation announcement")
 	}
 	if err := happyLandAndSync(ctx, h, a, deprecatePR.Number); err != nil {
 		return rwResultFromErr("deprecate-land-sync", err, "the deprecation lands on main and reaches A's mirror")
@@ -341,17 +340,4 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 			"%s: 1.0.0 (PR #%d) -> 1.1.0 (PR #%d) -> 2.0.0 (PR #%d) -> deprecate 1.1.0 (PR #%d, %s) while 2.0.0 live, contract still reads published -> B adopts LATE and still sees the deprecation -> maintenance 1.2.0 baselined on 1.1.0 (PR #%d) -> B acks (PR #%d) -> retire 1.1.0 while 1.2.0+2.0.0 published (PR #%d) -> contract still operable, 2.1.0 lands (PR #%d)",
 			sub.ID, v100PR, v110PR, v200PR, deprecatePR.Number, announcementID, v120PR, ackPR.Number, retirePR.Number, stillOperablePR.Number),
 	}
-}
-
-// rwExtractAnnouncementID pulls the deprecation announcement's id out of the
-// composite branch (a2a/<sys>/contract-deprecate/<XA-id>+<XC-id>) rather
-// than parsing the CLI's own stdout sentence, so it stays correct when that
-// wording changes.
-func rwExtractAnnouncementID(headRef, contractID string) (string, error) {
-	for _, m := range rwAnnouncementIDPattern.FindAllString(headRef, -1) {
-		if m != contractID {
-			return m, nil
-		}
-	}
-	return "", fmt.Errorf("livee2e: no XA- id in deprecate branch %q", headRef)
 }

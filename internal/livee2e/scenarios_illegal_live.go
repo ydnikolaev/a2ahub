@@ -365,18 +365,6 @@ func illegalfamAnnouncement(ctx context.Context, h *harness) Result {
 		"accept", sub.ID)
 }
 
-// illegalfamExtractResponseID reuses subfamResponseIDPattern
-// (scenarios_submitted_live.go) rather than a third copy of the same
-// stateless regex: unlike subfamShowState/subfamInboxContains (small
-// per-family DECODE types the "disjoint files" idiom deliberately
-// duplicates so each family owns its own shape), an XS- id pattern carries
-// no family-specific semantics to own — it is the same schema-level fact
-// (schemas/envelope/v1/base.schema.json's id pattern) regardless of which
-// family's branch it is extracted from.
-func illegalfamExtractResponseID(headRef string) (string, error) {
-	return subfamExtractResponseID(headRef)
-}
-
 // illegalfamResponse drives spec 38 §T2's brief-named alternative Layer-2
 // shape: not an absent table row, but the WRONG ACTOR for a row that does
 // exist. responseRows()'s TDispute row IS legal from `submitted` — but
@@ -423,16 +411,17 @@ func illegalfamResponse(ctx context.Context, h *harness) Result {
 		return illegalfamResultFromErr(scenario, "ack-land-sync", err, "the ack lands on main and reaches B's mirror")
 	}
 
-	if _, stderr, err := b.Run(ctx, "respond", "--result", "answered", parent.ID); err != nil {
+	respondKey, respondBranch := respondOperation(b.System, parent.ID, "answered")
+	if _, stderr, err := b.Run(ctx, respondCommandArgs(parent.ID, "answered")...); err != nil {
 		return illegalfamResultFromErr(scenario, "counterpart-respond", fmt.Errorf("%w: %s", err, stderr), "B's a2a respond succeeds and opens its own PR")
 	}
-	respondPR, err := h.pullForBranchContaining(ctx, b.System, "respond", parent.ID)
+	respondPR, err := h.pullForBranch(ctx, respondBranch)
 	if err != nil {
-		return illegalfamResultFromErr(scenario, "counterpart-respond", err, "respond's own composite branch has an open PR")
+		return illegalfamResultFromErr(scenario, "counterpart-respond", err, "respond's semantic-operation branch has a PR")
 	}
-	responseID, err := illegalfamExtractResponseID(respondPR.HeadRef)
+	responseID, err := operationArtifactID(respondPR.Body, respondKey, parent.ID, "XS-")
 	if err != nil {
-		return illegalfamResultFromErr(scenario, "counterpart-respond", err, "respond's own branch names the new XS response artifact")
+		return illegalfamResultFromErr(scenario, "counterpart-respond", err, "respond's PR metadata names the new XS response artifact")
 	}
 	if err := subfamAwaitGreenAndLand(ctx, h, b, respondPR.Number); err != nil {
 		return illegalfamResultFromErr(scenario, "respond-land-sync", err, "the response lands on main and reaches B's mirror (required check concludes success)")
