@@ -10,6 +10,7 @@ These are adapter inputs; they are not inferred from the provider name.
 | Login item | <https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp> | macOS floor is 13; explicit install/uninstall owns `SMAppService.mainApp`; normal polling never registers. |
 | Developer ID distribution | <https://developer.apple.com/support/developer-id/> | Developer ID and notarization require Apple Developer Program membership. The `developer-id` packaging mode keeps this protected path but is not the current public default. |
 | Unidentified developer | <https://support.apple.com/102445> | The current `adhoc` release mode requires an explicit user Gatekeeper override when macOS quarantines the app. The product must never clear quarantine or weaken Gatekeeper automatically. |
+| GitHub-hosted build image | <https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md> | The Swift package declares tools 6.0, so CI and release use `macos-15` (Xcode 16.x/Swift 6) and print `swift --version`; `macos-14` selected Swift 5.10 and cannot parse the package. |
 
 Apple's documentation pages require JavaScript in a basic HTTP reader; the
 listed SDK symbols were additionally compiled against the Xcode build above.
