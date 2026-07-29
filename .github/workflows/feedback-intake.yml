@@ -35,7 +35,7 @@ env:
 
 jobs:
   policy:
-    name: merge-policy
+    name: validate-feedback-policy
     runs-on: ubuntu-latest
     outputs:
       is-feedback: ${{ steps.guard.outputs.is-feedback }}
@@ -181,3 +181,37 @@ jobs:
                 }
               }' \
             -f id="${node_id}"
+
+  # The stable branch-protection context deliberately completes AFTER the
+  # conditional write job. While arm-feedback enables auto-merge this required
+  # check is still pending, which is the state GitHub's auto-merge API expects.
+  # Ordinary code PRs skip arm-feedback and still receive this universal,
+  # read-only verdict without ever acquiring write privilege.
+  merge-policy:
+    name: merge-policy
+    needs: [policy, arm-feedback]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      POLICY_RESULT: ${{ needs.policy.result }}
+      IS_FEEDBACK: ${{ needs.policy.outputs.is-feedback }}
+      ARM_RESULT: ${{ needs.arm-feedback.result }}
+    steps:
+      - name: Publish the branch-wide merge verdict
+        run: |
+          set -euo pipefail
+          if [ "$POLICY_RESULT" != "success" ]; then
+            echo "::error::merge-policy: read-only validation did not succeed (got $POLICY_RESULT)" >&2
+            exit 1
+          fi
+          if [ "$IS_FEEDBACK" = "true" ]; then
+            if [ "$ARM_RESULT" != "success" ]; then
+              echo "::error::merge-policy: validated feedback was not armed (got $ARM_RESULT)" >&2
+              exit 1
+            fi
+          elif [ "$ARM_RESULT" != "skipped" ]; then
+            echo "::error::merge-policy: ordinary PR unexpectedly entered the write job (got $ARM_RESULT)" >&2
+            exit 1
+          fi
