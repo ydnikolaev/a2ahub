@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -48,15 +47,6 @@ const ac973Scenario = "contract-integrity-registered-consumer"
 // artifact is scoped to h.PRFloor through liveRunSlug so a destructive reset
 // cannot collide with a merged semantic operation retained by GitHub.
 const ac973Slug = "ac973-registered-consumer"
-
-// ac973AnnouncementIDPattern extracts an XA- id from `a2a contract
-// deprecate`'s own composite branch name (a2a/<sys>/contract-deprecate/
-// <XA-id>+<XC-id> — buildRequest's sorted, "+"-joined ArtifactID), never
-// from stdout text: parsing the branch the row ALREADY resolved through
-// pullForBranchContaining (the Part-1 fix) means this extraction keeps
-// working even if the CLI's own "opened PR ... for X, Y" sentence changes,
-// and it doubles as this row's own live exercise of that fix.
-var ac973AnnouncementIDPattern = regexp.MustCompile(`XA-[A-Za-z0-9-]+`)
 
 // ac973ResultFromErr renders err into this row's ONE Result, tagging
 // Expected with step so a failing report line says WHICH step of the
@@ -191,22 +181,6 @@ func ac973BreakSchema(a *checkout, id string) (fixtureCompatKey string, err erro
 		return "", fmt.Errorf("livee2e: write breaking schema %s: %w", schemaPath, err)
 	}
 	return "fixtures/valid/" + ac973Slug + ".json", nil
-}
-
-// ac973ExtractAnnouncementID pulls the deprecation announcement's id out of
-// the composite branch pullForBranchContaining already resolved
-// (a2a/<sys>/contract-deprecate/<XA-id>+<XC-id>) rather than parsing the
-// CLI's own stdout sentence — it stays correct even if that sentence's
-// wording changes, and it is this row's own live exercise of the Part-1
-// fix's return value.
-func ac973ExtractAnnouncementID(headRef, contractID string) (string, error) {
-	matches := ac973AnnouncementIDPattern.FindAllString(headRef, -1)
-	for _, m := range matches {
-		if m != contractID {
-			return m, nil
-		}
-	}
-	return "", fmt.Errorf("livee2e: branch %q carries no XA- id distinct from %s", headRef, contractID)
 }
 
 // ac973ContractIntegrity is AC-973.1's own row: publish -> adopt (by the
@@ -351,21 +325,21 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 	// --- 5. A deprecates the PRIOR version. --version is REQUIRED now
 	// (two distinct published versions: 1.0.0 and 2.0.0 — AC-972.1). ---
 	successor := sub.ID + "@2.0.0"
+	deprecateKey, deprecateBranch := contractDeprecateOperation(
+		a.System, sub.ID, "1.0.0", successor, "2020-01-01",
+	)
 	if _, stderr, err := a.Run(ctx, "contract", "deprecate", sub.ID, "--version", "1.0.0", "--successor", successor, "--sunset", "2020-01-01"); err != nil {
 		return ac973ResultFromErr("deprecate-prior-version", fmt.Errorf("%w: %s", err, stderr), "`a2a contract deprecate --version 1.0.0` succeeds and opens its own PR")
 	}
-	// Part-1 fix in action: `contract deprecate`'s branch is
-	// a2a/<sys>/contract-deprecate/<XA-id>+<XC-id> (buildRequest's sorted,
-	// "+"-joined composite of both ids the write touched), which
-	// pullForBranch's exact-HeadRef lookup cannot find from the bare
-	// contract id alone (the P36 defect this brief's Part 1 fixes).
-	deprecatePR, err := h.pullForBranchContaining(ctx, a.System, "contract-deprecate", sub.ID)
+	// D6 superseded the former XA+XC composite grammar with a stable opaque
+	// operation key. Resolve the exact branch with the product's core helper.
+	deprecatePR, err := h.pullForBranch(ctx, deprecateBranch)
 	if err != nil {
-		return ac973ResultFromErr("deprecate-prior-version", err, "contract deprecate's own composite branch has an open PR")
+		return ac973ResultFromErr("deprecate-prior-version", err, "contract deprecate's semantic-operation branch has a PR")
 	}
-	announcementID, err := ac973ExtractAnnouncementID(deprecatePR.HeadRef, sub.ID)
+	announcementID, err := operationArtifactID(deprecatePR.Body, deprecateKey, sub.ID, "XA-")
 	if err != nil {
-		return ac973ResultFromErr("deprecate-prior-version", err, "the deprecate PR's own branch names the linked deprecation announcement")
+		return ac973ResultFromErr("deprecate-prior-version", err, "the deprecate PR metadata names the linked deprecation announcement")
 	}
 	if err := happyLandAndSync(ctx, h, a, deprecatePR.Number); err != nil {
 		return ac973ResultFromErr("deprecate-land-sync", err, "the deprecation lands on main and reaches A's mirror")

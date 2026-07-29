@@ -341,6 +341,9 @@ type PullState struct {
 	Merged         bool
 	MergeableState string
 	State          string
+	// Body carries the funnel-owned operation metadata used to recover the
+	// original artifact IDs from an opaque semantic-operation branch.
+	Body string
 }
 
 // pullPayload is PullState's wire shape.
@@ -354,12 +357,13 @@ type pullPayload struct {
 	Merged         bool   `json:"merged"`
 	MergeableState string `json:"mergeable_state"`
 	State          string `json:"state"`
+	Body           string `json:"body"`
 }
 
 func (p pullPayload) toPullState() PullState {
 	return PullState{
 		Number: p.Number, HeadRef: p.Head.Ref, HeadSHA: p.Head.SHA, MergeCommitSHA: p.MergeCommitSHA, Merged: p.Merged,
-		MergeableState: p.MergeableState, State: p.State,
+		MergeableState: p.MergeableState, State: p.State, Body: p.Body,
 	}
 }
 

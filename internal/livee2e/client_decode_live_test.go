@@ -138,6 +138,27 @@ func TestPullCarriesTheBaseReachableMergeCommit(t *testing.T) {
 	}
 }
 
+func TestListPullsCarriesOperationMetadataBody(t *testing.T) {
+	t.Parallel()
+
+	const body = `generated artifacts
+<!-- a2a-operation: {"key":"op-v1-example","ids":["XQ-alpha-parent","XS-bravo-response"]} -->`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `[{"number":17,"state":"open","body":%q,"head":{"ref":"a2a/bravo/respond/op-v1-example"}}]`, body)
+	}))
+	defer srv.Close()
+
+	c := &ghClient{Token: "t", APIRoot: srv.URL}
+	got, err := c.ListPulls(context.Background(), "o", "r", "open")
+	if err != nil {
+		t.Fatalf("ListPulls: %v", err)
+	}
+	if len(got) != 1 || got[0].Body != body {
+		t.Fatalf("ListPulls = %+v, want one pull carrying operation metadata body %q", got, body)
+	}
+}
+
 // TestReadBoundRefusesRatherThanTruncates is the root cause of the
 // 2026-07-25 run, kept as a regression.
 //

@@ -502,25 +502,26 @@ func happyContractLifecycle(ctx context.Context, h *harness, system string, c *c
 	}
 
 	successor := sub.ID + "-successor@2.0.0"
+	deprecateKey, deprecateBranch := contractDeprecateOperation(
+		c.System, sub.ID, "1.0.0", successor, "2020-01-01",
+	)
 	deprecateStdout, stderr, err := c.Run(ctx, "contract", "deprecate", sub.ID, "--successor", successor, "--sunset", "2020-01-01")
 	if err != nil {
 		return happyResultFromErr(scenario, system, fmt.Errorf("a2a contract deprecate %s: %w: %s", sub.ID, err, stderr),
 			"contract deprecate opens its own, distinct PR")
 	}
-	// P36 defect fix: `contract deprecate` batches the deprecated contract
-	// AND its linked deprecation announcement into ONE write
-	// (lifecycleDeps.buildRequest sorts+joins both ids with "+"), so its
-	// branch is a2a/<sys>/contract-deprecate/<XA-id>+<XC-id> — not the bare
-	// contract id pullForBranch's exact-HeadRef lookup expects. Both live
-	// runs timed out here ("submit left no pull request on its branch") for
-	// a PR that had, in fact, opened, gone green, and auto-merged exactly as
-	// intended — the harness was asking for the wrong branch name, not the
-	// product failing to open one. pullForBranchContaining (harness_live.go)
-	// is the composite-aware lookup.
-	deprecatePR, err := h.pullForBranchContaining(ctx, c.System, "contract-deprecate", sub.ID)
+	// D6 replaced the former XA+XC composite branch with a stable opaque
+	// operation key. Ask the same core derivation the product uses; matching
+	// artifact IDs in the branch is now structurally impossible.
+	deprecatePR, err := h.pullForBranch(ctx, deprecateBranch)
 	if err != nil {
 		return happyResultFromErr(scenario, system, fmt.Errorf("%w; command stdout: %q", err, strings.TrimSpace(deprecateStdout)),
 			"contract deprecate's own branch has an open PR")
+	}
+	if _, err := operationArtifactID(deprecatePR.Body, deprecateKey, sub.ID, "XA-"); err != nil {
+		return happyResultFromErr(scenario, system,
+			fmt.Errorf("deprecate PR #%d metadata: %w", deprecatePR.Number, err),
+			"contract deprecate's PR records the contract and linked announcement under its operation key")
 	}
 
 	if err := happyLandAndSync(ctx, h, c, deprecatePR.Number); err != nil {

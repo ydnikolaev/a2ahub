@@ -307,3 +307,24 @@ changes:
       why: >
         This reduces GitHub Actions use after a narrowly scoped fix. The full
         matrix remains mandatory once on the final immutable candidate.
+
+  - id: RN-01600-15
+    kind: fix
+    impact: normal
+    subject: "Live verification follows semantic-operation branches without scraping artifact IDs"
+    detail: >
+      D6 moved `respond` and `contract deprecate` from composite artifact-ID
+      branches to opaque keys derived from canonical command intent. The live
+      harness still searched those branches for generated artifact IDs, so a
+      correct checked and merged deprecation PR could be reported missing and
+      later response scenarios would fail the same way. Every affected
+      scenario now derives the exact operation branch through the product's
+      core helper and recovers generated response or announcement IDs only
+      from the funnel-owned PR metadata used by retry recovery. A structural
+      regression rejects any future composite lookup for these verbs.
+    affects: ["live release gate"]
+    action:
+      scope: none
+      why: >
+        This is a maintainer verification correction. Product operation keys,
+        artifact schemas, and user commands are unchanged.

@@ -248,7 +248,7 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	if existing != nil && (existing.State != "merged" || req.OperationKey != "") {
 		existingIDs := req.ArtifactIDs
 		if req.OperationKey != "" {
-			key, ids, ok := parseOperationMetadata(existing.Body)
+			key, ids, ok := ParseOperationMetadata(existing.Body)
 			if !ok || key != req.OperationKey {
 				return WriteResult{}, &Error{Op: op, Input: branch, Err: ErrOperationMismatch}
 			}
@@ -521,7 +521,11 @@ func appendOperationMetadata(body, key string, ids []string) string {
 	return body + operationMetadataPrefix + string(raw) + operationMetadataSuffix
 }
 
-func parseOperationMetadata(body string) (key string, ids []string, ok bool) {
+// ParseOperationMetadata reads the funnel-owned recovery marker from a pull
+// request body. It is exported only inside this repository's internal tree so
+// recovery observers (including the live release harness) use the same parser
+// as Submit instead of re-deriving the private comment format.
+func ParseOperationMetadata(body string) (key string, ids []string, ok bool) {
 	for _, line := range strings.Split(body, "\n") {
 		if !strings.HasPrefix(line, operationMetadataPrefix) || !strings.HasSuffix(line, operationMetadataSuffix) {
 			continue

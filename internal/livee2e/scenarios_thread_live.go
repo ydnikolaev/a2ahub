@@ -192,7 +192,7 @@ func threadChainOpenItem(items []threadChainOpenItemDoc, id string) (threadChain
 // threadChainRun drives this row's whole chain. It reuses
 // scenarios_submitted_live.go's own helpers (h.DraftAndSubmit,
 // happyLandAndSync, subfamInboxContains, subfamAwaitGreenAndLand,
-// subfamExtractResponseID) rather than re-deriving the submit -> ack ->
+// operationArtifactID) rather than re-deriving the submit -> ack ->
 // respond sequence — this is the SAME spine subfamResponseLifecycle already
 // walks, up to and including "B responds".
 //
@@ -261,21 +261,21 @@ func threadChainRun(ctx context.Context, h *harness) Result {
 
 	// --- B responds: draft+submit collapsed (D-026) into one PR that
 	// authors BOTH the new XS response artifact and the parent's own
-	// `respond` event — composite branch, pullForBranchContaining required
-	// (same shape subfamExchangeLifecycle/subfamResponseLifecycle
-	// document). subfamAwaitGreenAndLand, not happyLandAndSync, at this
+	// `respond` event under D6's opaque semantic-operation branch.
+	// subfamAwaitGreenAndLand, not happyLandAndSync, at this
 	// step — scenarios_submitted_live.go's own top-of-file KNOWN RISK
 	// comment on `a2a respond`'s unfilled `to:` field is exactly why. ---
-	if _, stderr, err := b.Run(ctx, "respond", "--result", "answered", parent.ID); err != nil {
+	respondKey, respondBranch := respondOperation(b.System, parent.ID, "answered")
+	if _, stderr, err := b.Run(ctx, respondCommandArgs(parent.ID, "answered")...); err != nil {
 		return threadChainResultFromErr("counterpart-respond", fmt.Errorf("%w: %s", err, stderr), "B's a2a respond succeeds and opens its own PR")
 	}
-	respondPR, err := h.pullForBranchContaining(ctx, b.System, "respond", parent.ID)
+	respondPR, err := h.pullForBranch(ctx, respondBranch)
 	if err != nil {
-		return threadChainResultFromErr("counterpart-respond", err, "respond's own composite branch has an open PR")
+		return threadChainResultFromErr("counterpart-respond", err, "respond's semantic-operation branch has a PR")
 	}
-	responseID, err := subfamExtractResponseID(respondPR.HeadRef)
+	responseID, err := operationArtifactID(respondPR.Body, respondKey, parent.ID, "XS-")
 	if err != nil {
-		return threadChainResultFromErr("counterpart-respond", err, "respond's own branch names the new XS response artifact")
+		return threadChainResultFromErr("counterpart-respond", err, "respond's PR metadata names the new XS response artifact")
 	}
 	if err := subfamAwaitGreenAndLand(ctx, h, b, respondPR.Number); err != nil {
 		return threadChainResultFromErr("respond-land-sync", err, "the response lands on main and reaches B's mirror (required check concludes success)")
