@@ -3,10 +3,14 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ydnikolaev/a2ahub/internal/template"
 )
 
 func testNewDeps(stagingDir string) NewDeps {
@@ -67,6 +71,41 @@ func TestNewHandlerBatchItemsOnOneThread(t *testing.T) {
 		if !strings.Contains(string(raw), "thread: "+explicitThread) {
 			t.Fatalf("expected %s to carry the explicit thread %q, got:\n%s", d.Path, explicitThread, raw)
 		}
+	}
+}
+
+func TestNewHandlerResolvesWholeBatchBeforeMutation(t *testing.T) {
+	t.Parallel()
+
+	staging := filepath.Join(t.TempDir(), "staging")
+	deps := testNewDeps(staging)
+	var resolveCalls, writeCalls int
+	deps.ResolveActor = func(ActorInput) (template.Actor, error) {
+		resolveCalls++
+		if resolveCalls == 2 {
+			return template.Actor{}, ErrNoActorName
+		}
+		return template.Actor{Kind: "agent", Name: "bot"}, nil
+	}
+	deps.WriteFile = func(string, []byte, os.FileMode) error {
+		writeCalls++
+		return nil
+	}
+	handler := newNewHandler(deps)
+	args, _ := json.Marshal(NewInput{Items: []NewItem{
+		{Type: "question", Fields: map[string]string{"to": "axon"}},
+		{Type: "work_request", Fields: map[string]string{"to": "axon"}},
+	}})
+
+	_, _, err := handler(context.Background(), args)
+	if !errors.Is(err, ErrNoActorName) {
+		t.Fatalf("batch error = %v, want ErrNoActorName", err)
+	}
+	if writeCalls != 0 {
+		t.Fatalf("WriteFile called %d times before batch actor refusal, want 0", writeCalls)
+	}
+	if _, statErr := os.Stat(staging); !os.IsNotExist(statErr) {
+		t.Fatalf("staging directory exists after preflight refusal (stat error %v)", statErr)
 	}
 }
 

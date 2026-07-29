@@ -25,9 +25,11 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 	"strings"
 	"sync"
 
@@ -57,17 +59,47 @@ type ActorInput struct {
 	Model string `json:"model,omitempty"`
 }
 
-// resolveActor resolves the actor identity to fill into a new draft or
-// event per §7.4's binding order: explicit input > A2A_ACTOR_* env vars >
-// harness/config defaults (this phase has no live harness-adapter
-// integration, mirroring internal/cli's own P6 scope); actor.kind
+// ActorResolver resolves the durable identity attached to an MCP-authored
+// draft or event. A missing identity is an input error, never a schema-level
+// failure discovered after a remote branch and PR have already been created.
+type ActorResolver func(ActorInput) (template.Actor, error)
+
+// resolveActor resolves the actor identity per §7.4's binding order:
+// explicit input > A2A_ACTOR_* env vars > OS user. MCP has no harness/config
+// actor defaults, so the OS user is its final honest fallback. actor.kind
 // defaults to "agent" when no source names one.
-func resolveActor(in ActorInput) template.Actor {
-	return template.Actor{
-		Kind:  firstNonEmpty(in.Kind, os.Getenv(envActorKind), "agent"),
-		Name:  firstNonEmpty(in.Name, os.Getenv(envActorName)),
-		Model: firstNonEmpty(in.Model, os.Getenv(envActorModel)),
+func resolveActor(in ActorInput) (template.Actor, error) {
+	return resolveActorFrom(in, ActorInput{
+		Kind:  os.Getenv(envActorKind),
+		Name:  os.Getenv(envActorName),
+		Model: os.Getenv(envActorModel),
+	}, osUsername())
+}
+
+func resolveActorFrom(in, env ActorInput, osUser string) (template.Actor, error) {
+	name := firstNonEmpty(in.Name, env.Name, osUser)
+	if name == "" {
+		return template.Actor{}, ErrNoActorName
 	}
+	return template.Actor{
+		Kind:  firstNonEmpty(in.Kind, env.Kind, "agent"),
+		Name:  name,
+		Model: firstNonEmpty(in.Model, env.Model),
+	}, nil
+}
+
+// ErrNoActorName is returned before any MCP write when no durable actor name
+// can be resolved. The remedies use MCP's structured-input vocabulary.
+var ErrNoActorName = errors.New("cannot determine who is acting: pass actor.name in the tool input, " +
+	"or set A2A_ACTOR_NAME. Every artifact and event records its actor permanently, so a write " +
+	"without one is refused rather than attributed to nobody (no OS user resolved either — " +
+	"expected in a container or CI runner)")
+
+func osUsername() string {
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	return os.Getenv("USER")
 }
 
 func firstNonEmpty(vals ...string) string {

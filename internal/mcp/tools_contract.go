@@ -544,7 +544,10 @@ func newContractPublishHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract publish: id and one of version or bump are required")
 		}
 
-		resolved := deps.ResolveActor(in.Actor)
+		resolved, actorErr := deps.ResolveActor(in.Actor)
+		if actorErr != nil {
+			return nil, "", fmt.Errorf("contract publish: %w", actorErr)
+		}
 		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: deps.OwnSystem}
 
 		// P4: newVersion must be resolved BEFORE the legality check below —
@@ -816,7 +819,10 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract deprecate: id, successor and sunset are required")
 		}
 
-		resolved := deps.ResolveActor(in.Actor)
+		resolved, actorErr := deps.ResolveActor(in.Actor)
+		if actorErr != nil {
+			return nil, "", fmt.Errorf("contract deprecate: %w", actorErr)
+		}
 		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: deps.OwnSystem}
 
 		// P4: deprecatedVersion must be resolved BEFORE the legality check
@@ -988,7 +994,10 @@ func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract retire: id is required")
 		}
 
-		resolved := deps.ResolveActor(in.Actor)
+		resolved, actorErr := deps.ResolveActor(in.Actor)
+		if actorErr != nil {
+			return nil, "", fmt.Errorf("contract retire: %w", actorErr)
+		}
 		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: deps.OwnSystem}
 
 		// P4: retiredVersion must be resolved BEFORE the legality check

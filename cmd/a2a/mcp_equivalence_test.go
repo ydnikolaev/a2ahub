@@ -127,8 +127,10 @@ func equivCLIActorResolver(kind, name string) func(cli.ActorFlags) (template.Act
 	return func(cli.ActorFlags) (template.Actor, error) { return template.Actor{Kind: kind, Name: name}, nil }
 }
 
-func equivMCPActorResolver(kind, name string) func(mcp.ActorInput) template.Actor {
-	return func(mcp.ActorInput) template.Actor { return template.Actor{Kind: kind, Name: name} }
+func equivMCPActorResolver(kind, name string) mcp.ActorResolver {
+	return func(mcp.ActorInput) (template.Actor, error) {
+		return template.Actor{Kind: kind, Name: name}, nil
+	}
 }
 
 func equivIO() (cli.IO, *bytes.Buffer, *bytes.Buffer) {

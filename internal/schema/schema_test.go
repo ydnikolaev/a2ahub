@@ -2,7 +2,6 @@ package schema
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 )
 
@@ -34,16 +33,9 @@ at: 2026-08-05T17:45:00Z
 		if len(violations) == 0 {
 			t.Fatal("expected a violation for actor.name: \"\", got none")
 		}
-		// FieldViolation.Keyword has no dedicated minLength case (violation.go's
-		// switch only classifies required/enum/const/pattern/type/falseSchema/
-		// maxItems/minItems/format); an unrecognized keyword deliberately
-		// surfaces via the "other:<Go type>" fallback per that switch's own
-		// doc comment ("an unmapped code ... never silently absorbed"), so
-		// this asserts on that fallback shape rather than a "minLength" this
-		// package does not emit.
 		found := false
 		for _, v := range violations {
-			if v.Path == "actor.name" && strings.Contains(v.Keyword, "MinLength") {
+			if v.Path == "actor.name" && v.Keyword == "minLength" {
 				found = true
 			}
 		}
@@ -99,16 +91,9 @@ classification: internal
 		if err != nil {
 			t.Fatalf("ValidateEnvelope: %v", err)
 		}
-		// FieldViolation.Keyword has no dedicated minLength case (violation.go's
-		// switch only classifies required/enum/const/pattern/type/falseSchema/
-		// maxItems/minItems/format); an unrecognized keyword deliberately
-		// surfaces via the "other:<Go type>" fallback per that switch's own
-		// doc comment ("an unmapped code ... never silently absorbed"), so
-		// this asserts on that fallback shape rather than a "minLength" this
-		// package does not emit.
 		found := false
 		for _, v := range violations {
-			if v.Path == "actor.name" && strings.Contains(v.Keyword, "MinLength") {
+			if v.Path == "actor.name" && v.Keyword == "minLength" {
 				found = true
 			}
 		}

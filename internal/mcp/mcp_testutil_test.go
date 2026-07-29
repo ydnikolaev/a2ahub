@@ -49,8 +49,10 @@ func testHostConfig() SubmitHostConfig {
 	}
 }
 
-func fixedActorResolver(kind, name string) func(ActorInput) template.Actor {
-	return func(ActorInput) template.Actor { return template.Actor{Kind: kind, Name: name} }
+func fixedActorResolver(kind, name string) ActorResolver {
+	return func(ActorInput) (template.Actor, error) {
+		return template.Actor{Kind: kind, Name: name}, nil
+	}
 }
 
 // repeatingReader is an unlimited io.Reader over a fixed byte pattern —

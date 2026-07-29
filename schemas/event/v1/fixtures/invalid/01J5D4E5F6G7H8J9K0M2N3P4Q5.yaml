@@ -1,0 +1,7 @@
+schema: event/v1
+event: 01J5D4E5F6G7H8J9K0M2N3P4Q5
+space: getvisa
+subject: XR-axon-country-vocabulary
+transition: satisfy
+actor: {kind: agent, name: "", system: axon}
+at: 2026-07-29T15:20:00Z

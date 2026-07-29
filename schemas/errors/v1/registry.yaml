@@ -57,6 +57,11 @@ entries:
     title: interim_behavior missing while blocking is false
     applies_to: envelope/v1 requirement.schema.json, work_request.schema.json (§5.2 `interim_behavior` row, CC-011)
 
+  - code: SCH-009
+    class: schema
+    title: String value is shorter than the schema's minimum length
+    applies_to: any schemas/** schema with minLength (including durable actor names)
+
   # --- P3 (internal/schema + internal/validate) additions below ---
   # referential/lifecycle/policy rows this phase adds per spec 02 Open Q2
   # resolution and spec 03 §5/§8 row 5 (single registry, no Go-side

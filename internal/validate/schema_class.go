@@ -71,6 +71,8 @@ func schemaCode(fv schema.FieldViolation) (code, ccRef string, err error) {
 		return "SCH-006", "", nil
 	case "maxItems", "minItems":
 		return "SCH-004", "", nil
+	case "minLength":
+		return "SCH-009", "", nil
 	}
 	// NOTE on "format": internal/schema's Load deliberately does NOT
 	// enable format assertion (see its doc comment) precisely because no

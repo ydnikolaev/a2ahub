@@ -25,6 +25,30 @@ import (
 // makes this class of gap survive a green test suite.
 var _ validate.ThreadResolver = (*MirrorResolver)(nil)
 
+func TestResolveActorFromRefusesAnonymousMCPWrites(t *testing.T) {
+	t.Parallel()
+
+	_, err := resolveActorFrom(ActorInput{}, ActorInput{}, "")
+	if !errors.Is(err, ErrNoActorName) {
+		t.Fatalf("resolveActorFrom(empty) error = %v, want ErrNoActorName", err)
+	}
+	if !strings.Contains(err.Error(), "actor.name") || !strings.Contains(err.Error(), "A2A_ACTOR_NAME") {
+		t.Fatalf("ErrNoActorName must name both MCP remedies, got: %v", err)
+	}
+}
+
+func TestResolveActorFromUsesOSUserAsFinalFallback(t *testing.T) {
+	t.Parallel()
+
+	got, err := resolveActorFrom(ActorInput{}, ActorInput{}, "local-user")
+	if err != nil {
+		t.Fatalf("resolveActorFrom(OS user): %v", err)
+	}
+	if got.Kind != "agent" || got.Name != "local-user" || got.Model != "" {
+		t.Fatalf("resolved actor = %+v, want agent/local-user with no model", got)
+	}
+}
+
 // TestMirrorResolverThreadOfAndThreadExists covers the pair behaviourally: the
 // index carries the thread, an unknown id is not found, and an empty thread is
 // never reported as "carried" (which would otherwise make every threadless
