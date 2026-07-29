@@ -188,3 +188,23 @@ changes:
         Existing callers with actor.name, A2A_ACTOR_NAME, or an OS user are
         unchanged. Minimal containers must provide one of the first two
         identities before an MCP write.
+
+  - id: RN-01600-9
+    kind: fix
+    impact: high
+    subject: "MCP contract submit carries its schema and executable fixtures"
+    detail: >
+      `a2a_new` already scaffolded a starter schema plus valid and invalid
+      fixtures for a JSON-Schema contract, but MCP `a2a_submit` omitted those
+      sidecars from the first-publish commit. Real space CI therefore rejected
+      an otherwise valid MCP-authored contract with POL-009. MCP submit now
+      uses the same bounded, symlink-refusing sidecar collector as CLI submit
+      and carries the descriptor, schema, both fixture classes, and publish
+      event atomically. The CLI≡MCP equivalence suite now covers this complete
+      contract-submit path.
+    affects: ["a2a mcp", "a2a_new", "a2a_submit", "contract publishing"]
+    action:
+      scope: none
+      why: >
+        Existing staged JSON-Schema contracts can be submitted again through
+        MCP; their scaffold is included automatically.

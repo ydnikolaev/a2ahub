@@ -68,6 +68,63 @@ func TestSubmitHandlerFreshArtifact(t *testing.T) {
 	}
 }
 
+func TestSubmitHandlerContractCarriesTheNewScaffold(t *testing.T) {
+	t.Parallel()
+
+	mirrorDir := t.TempDir()
+	staging := t.TempDir()
+	newHandler := newNewHandler(testNewDeps(staging))
+	newArgs, _ := json.Marshal(NewInput{Items: []NewItem{{
+		Type: "contract",
+		Slug: "widget-submit",
+		Fields: map[string]string{
+			"title": "widget contract", "space": "fixture-space",
+			"to": "[axon]", "category": "other",
+		},
+	}}})
+	result, _, err := newHandler(context.Background(), newArgs)
+	if err != nil {
+		t.Fatalf("a2a_new contract: %v", err)
+	}
+	drafts := result.([]newDraftResult)
+	if len(drafts) != 4 {
+		t.Fatalf("a2a_new returned %d paths, want contract.md + 3 scaffold sidecars", len(drafts))
+	}
+	id := drafts[0].ID
+
+	writeMirrorFile(t, mirrorDir, "space.yaml", "id: fixture-space\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
+	fake := &fakeFunnel{}
+	write := testWriteDeps(mirrorDir, fake)
+	legality := NewLegalityAdapter(mirrorDir, "beta", testManifest())
+	handler := newSubmitHandler(SubmitDeps{WriteDeps: write, StagingDir: staging, Legality: legality})
+
+	submitArgs, _ := json.Marshal(SubmitInput{IDs: []string{id}})
+	if _, _, err := handler(context.Background(), submitArgs); err != nil {
+		t.Fatalf("a2a_submit contract: %v", err)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("funnel calls = %d, want 1", len(fake.calls))
+	}
+
+	got := map[string]bool{}
+	for _, file := range fake.calls[0].Files {
+		got[file.Path] = true
+	}
+	for _, want := range []string{
+		"beta/provides/widget-submit/contract.md",
+		"beta/provides/widget-submit/schema/widget-submit.schema.json",
+		"beta/provides/widget-submit/fixtures/valid/widget-submit.json",
+		"beta/provides/widget-submit/fixtures/invalid/widget-submit.json",
+	} {
+		if !got[want] {
+			t.Fatalf("submit omitted %s; carried paths: %v", want, got)
+		}
+	}
+	if len(fake.calls[0].Files) != 5 {
+		t.Fatalf("submit carried %d files, want descriptor + 3 sidecars + publish event", len(fake.calls[0].Files))
+	}
+}
+
 func TestSubmitHandlerForeignSectionRefused(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
