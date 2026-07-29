@@ -154,6 +154,7 @@ func buildCommands() map[string]command {
 		}
 		cmd := cli.NewSkillCommand(skill.Files, version)
 		cmd.ProjectRoot = p.projectRoot
+		cmd.ProjectConfigPath = p.projectConfig
 		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	// P23 (OP-222): shell completion. A pure host-side render — no store, no

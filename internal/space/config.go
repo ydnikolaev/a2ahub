@@ -26,8 +26,30 @@ const defaultMirrorSubdir = ".a2a/cache/mirrors"
 // system id and every connected space (repo URL + mirror-location key).
 // It never carries credentials.
 type ProjectConfig struct {
-	System string `yaml:"system"`
-	Spaces []Ref  `yaml:"spaces"`
+	System   string `yaml:"system"`
+	Spaces   []Ref  `yaml:"spaces"`
+	SkillDir string `yaml:"skill_dir,omitempty"`
+}
+
+// DefaultSkillDir is the provider-neutral installed-skill home used by old
+// configs. SkillDir is always stored relative to the project root.
+const DefaultSkillDir = ".a2ahub/skill"
+
+// NormalizeSkillDir validates and normalizes ProjectConfig.SkillDir. Absolute
+// paths, the project root itself and any path escaping through `..` are
+// refused. The slash form is stable in committed config across platforms.
+func NormalizeSkillDir(value string) (string, error) {
+	if value == "" {
+		return DefaultSkillDir, nil
+	}
+	if filepath.IsAbs(value) {
+		return "", fmt.Errorf("%w: skill_dir must be relative to the project root", ErrManifestInvalid)
+	}
+	clean := filepath.Clean(filepath.FromSlash(value))
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%w: skill_dir must stay below the project root", ErrManifestInvalid)
+	}
+	return filepath.ToSlash(clean), nil
 }
 
 // Ref is one connected-space entry in ProjectConfig.
@@ -112,6 +134,13 @@ func LoadProjectConfig(path string) (ProjectConfig, error) {
 	var cfg ProjectConfig
 	if err := yaml.Unmarshal(raw, &cfg); err != nil {
 		return ProjectConfig{}, &Error{Op: op, Input: path, Err: fmt.Errorf("%w: %w", ErrManifestInvalid, err)}
+	}
+	if cfg.SkillDir != "" {
+		normalized, err := NormalizeSkillDir(cfg.SkillDir)
+		if err != nil {
+			return ProjectConfig{}, &Error{Op: op, Input: path, Err: err}
+		}
+		cfg.SkillDir = normalized
 	}
 	return cfg, nil
 }

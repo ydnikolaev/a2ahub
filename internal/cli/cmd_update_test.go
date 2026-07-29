@@ -478,6 +478,43 @@ func TestUpdateCommand_SkillRefresh_ManagedInstall_Refreshed(t *testing.T) {
 	}
 }
 
+func TestUpdateCommand_SkillRefresh_CustomConfiguredInstall(t *testing.T) {
+	// reason: newTestUpdateCommand uses t.Setenv for update-source isolation.
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	cmd.loadProjectConfig = func(string) (space.ProjectConfig, error) {
+		return space.ProjectConfig{SkillDir: "agent/manual"}, nil
+	}
+	target := filepath.Join(cmd.projectRoot, "agent", "manual")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "SKILL.md"), []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, skillProvenanceFile), []byte(skillProvenance("0.1.0")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd.SkillFiles = fstest.MapFS{
+		"a2ahub/SKILL.md": &fstest.MapFile{Data: []byte("fresh")},
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.refreshInstalledSkill(release.ApplyResult{ToVersion: "0.3.0"}, IO{Stdout: &stdout, Stderr: &stderr}, false)
+
+	got, err := os.ReadFile(filepath.Join(target, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "fresh" {
+		t.Fatalf("custom SKILL.md=%q, want refreshed content", got)
+	}
+	if !strings.Contains(stdout.String(), "agent/manual -> v0.3.0") || stderr.Len() != 0 {
+		t.Fatalf("stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(cmd.projectRoot, skillDefaultDir)); !os.IsNotExist(err) {
+		t.Fatalf("refresh unexpectedly touched default target: %v", err)
+	}
+}
+
 func TestUpdateCommand_SkillRefresh_NoInstall_SkippedSilently(t *testing.T) {
 	rel, _, _ := newUpdateReleaseFixture(t, "0.3.0")
 	execPath, _ := newUpdateExecFixture(t)

@@ -175,6 +175,13 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		refs = append(refs, space.Ref{ID: initSpaceIDFromURL(s), RepoURL: s})
 	}
 	cfg := space.ProjectConfig{System: *system, Spaces: refs}
+	existing, hasExisting := c.loadExisting()
+	if hasExisting {
+		// init owns system/space onboarding, not the skill install location.
+		// Preserve the additive project setting when init refreshes the rest of
+		// the config so a custom install cannot silently snap back to default.
+		cfg.SkillDir = existing.SkillDir
+	}
 
 	// FIX B runs before the idempotent short-circuit so a repeat `a2a
 	// init` still ensures/hints the machine config (e.g. an operator who
@@ -199,7 +206,7 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		c.ensureClaudeMdPointer(stdio)   // best-effort; never fatal to init
 	}
 
-	if existing, ok := c.loadExisting(); ok && initConfigsEquivalent(existing, cfg) {
+	if hasExisting && initConfigsEquivalent(existing, cfg) {
 		_, _ = fmt.Fprintln(stdio.Stdout, "init: already configured")
 		_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a connect <url>` for each space to register and set up credentials")
 		_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a doctor` to verify credentials and space access")
@@ -470,9 +477,10 @@ func (c *InitCommand) ensureAgentsPointer(stdio IO) int {
 
 // initConfigsEquivalent compares two ProjectConfigs for the "identical
 // flags -> no-op" idempotency check: same system id, same set of
-// connected-space repo URLs (order-independent).
+// connected-space repo URLs (order-independent), and the configured skill
+// install location.
 func initConfigsEquivalent(a, b space.ProjectConfig) bool {
-	if a.System != b.System {
+	if a.System != b.System || a.SkillDir != b.SkillDir {
 		return false
 	}
 	if len(a.Spaces) != len(b.Spaces) {

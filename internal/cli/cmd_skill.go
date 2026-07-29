@@ -23,7 +23,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/surface"
+	"gopkg.in/yaml.v3"
 )
 
 // errSkillForeignTarget is returned by installSkillTree when the target is
@@ -45,7 +47,7 @@ const skillProvenanceTag = "<!-- a2ahub-skill-install -->"
 // skillDefaultDir is the default install target, relative to cwd. A dedicated,
 // provider-neutral namespace: it cannot collide with .claude/ (Claude Code) or
 // a hand-written AGENTS.md, so a re-install never touches the harness.
-const skillDefaultDir = ".a2ahub/skill"
+const skillDefaultDir = space.DefaultSkillDir
 
 // SkillCommand implements `a2a skill <subcommand>`: `install` (materialize
 // the SSOT tree) and `link` (P32, OP-916/917: install a per-surface
@@ -64,12 +66,21 @@ type SkillCommand struct {
 	// that never sets it), `runLink` reports an error rather than silently
 	// no-opping — link has no other sensible default target.
 	ProjectRoot string
+	// ProjectConfigPath is the config seam that owns a custom install
+	// location. It is wired by cmd/a2a; direct tests may leave it empty.
+	ProjectConfigPath string
+	loadProjectConfig func(string) (space.ProjectConfig, error)
+	writeFile         func(string, []byte, os.FileMode) error
 }
 
 // NewSkillCommand constructs the command. files is the embedded a2ahub skill
 // tree (cmd/a2a passes skill.Files); version is the binary's version stamp.
 func NewSkillCommand(files fs.FS, version string) *SkillCommand {
-	return &SkillCommand{files: files, version: version}
+	return &SkillCommand{
+		files: files, version: version,
+		loadProjectConfig: space.LoadProjectConfig,
+		writeFile:         os.WriteFile,
+	}
 }
 
 // Name implements Command.
@@ -111,7 +122,7 @@ func (c *SkillCommand) Run(_ context.Context, args []string, stdio IO) int {
 func (c *SkillCommand) runInstall(args []string, stdio IO) int {
 	fset := flag.NewFlagSet("skill install", flag.ContinueOnError)
 	fset.SetOutput(stdio.Stderr)
-	dir := fset.String("dir", skillDefaultDir, "install target directory")
+	dir := fset.String("dir", "", "project-relative install target (stored in .a2a/config.yaml)")
 	force := fset.Bool("force", false, "overwrite a target that is not an a2ahub-managed skill install")
 	if err := fset.Parse(args); err != nil {
 		return 2
@@ -120,19 +131,53 @@ func (c *SkillCommand) runInstall(args []string, stdio IO) int {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a skill install [--dir <path>] [--force]")
 		return 2
 	}
-	written, err := installSkillTree(c.files, *dir, c.version, *force)
+	cfg, configured, err := c.skillConfig()
+	if err != nil && *dir != "" {
+		_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill install: custom --dir requires a readable project config: %v\n", err)
+		return 1
+	}
+	if *dir != "" && (!configured || c.ProjectConfigPath == "") {
+		_, _ = fmt.Fprintln(stdio.Stderr, "a2a skill install: cannot store custom --dir without .a2a/config.yaml")
+		return 1
+	}
+	requested := cfg.SkillDir
+	if *dir != "" {
+		requested = *dir
+	}
+	rel, err := space.NormalizeSkillDir(requested)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill install: %v\n", err)
+		return 1
+	}
+	target := rel
+	if c.ProjectRoot != "" {
+		target = filepath.Join(c.ProjectRoot, filepath.FromSlash(rel))
+	}
+	written, err := installSkillTree(c.files, target, c.version, *force)
 	if errors.Is(err, errSkillForeignTarget) {
 		_, _ = fmt.Fprintf(stdio.Stderr,
-			"a2a skill install: %s exists and is not an a2ahub skill install — refusing to overwrite (pass --force or --dir <path>)\n", *dir)
+			"a2a skill install: %s exists and is not an a2ahub skill install — refusing to overwrite (pass --force or --dir <path>)\n", rel)
 		return 1
 	}
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill install: %v\n", err)
 		return 1
 	}
+	if *dir != "" {
+		cfg.SkillDir = rel
+		raw, merr := yaml.Marshal(cfg)
+		if merr != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill install: encode project config: %v\n", merr)
+			return 1
+		}
+		if werr := c.writeFile(c.ProjectConfigPath, raw, 0o644); werr != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill install: store custom --dir: %v\n", werr)
+			return 1
+		}
+	}
 
-	_, _ = fmt.Fprintf(stdio.Stdout, "a2a skill: installed %d files to %s\n", written, *dir)
-	_, _ = fmt.Fprintf(stdio.Stdout, "  entry point: %s\n", filepath.Join(*dir, "SKILL.md"))
+	_, _ = fmt.Fprintf(stdio.Stdout, "a2a skill: installed %d files to %s\n", written, rel)
+	_, _ = fmt.Fprintf(stdio.Stdout, "  entry point: %s\n", filepath.ToSlash(filepath.Join(rel, "SKILL.md")))
 	_, _ = fmt.Fprintln(stdio.Stdout, "  point your repo's AGENTS.md/CLAUDE.md at it (or run `a2a init` / `a2a init --agents-pointer`)")
 	return 0
 }
@@ -160,7 +205,16 @@ func (c *SkillCommand) runLink(args []string, stdio IO) int {
 		return 1
 	}
 
-	ssotRel := skillDefaultDir
+	cfg, _, err := c.skillConfig()
+	if err != nil && c.ProjectConfigPath != "" {
+		_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill link: cannot load project config: %v\n", err)
+		return 1
+	}
+	ssotRel, err := space.NormalizeSkillDir(cfg.SkillDir)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "a2a skill link: %v\n", err)
+		return 1
+	}
 	if _, err := os.Stat(filepath.Join(c.ProjectRoot, ssotRel, "SKILL.md")); err != nil {
 		_, _ = fmt.Fprintln(stdio.Stderr, "a2a skill link: no a2ahub skill installed — run 'a2a skill install' first")
 		return 1
@@ -206,6 +260,17 @@ func (c *SkillCommand) runLink(args []string, stdio IO) int {
 		return 1
 	}
 	return 0
+}
+
+func (c *SkillCommand) skillConfig() (space.ProjectConfig, bool, error) {
+	if c.ProjectConfigPath == "" {
+		return space.ProjectConfig{}, false, nil
+	}
+	cfg, err := c.loadProjectConfig(c.ProjectConfigPath)
+	if err != nil {
+		return space.ProjectConfig{}, false, err
+	}
+	return cfg, true, nil
 }
 
 // installSkillTree is the reusable install core shared by `a2a skill install`

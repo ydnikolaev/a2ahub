@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/skill"
 )
 
@@ -15,9 +16,26 @@ import (
 // code + captured stdout/stderr.
 func runSkill(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
+	copied := append([]string(nil), args...)
+	cmd := NewSkillCommand(skill.Files, "test")
+	for i := 0; i+1 < len(copied); i++ {
+		if copied[i] != "--dir" || !filepath.IsAbs(copied[i+1]) {
+			continue
+		}
+		target := copied[i+1]
+		cmd.ProjectRoot = filepath.Dir(target)
+		copied[i+1] = filepath.Base(target)
+		cmd.ProjectConfigPath = filepath.Join(cmd.ProjectRoot, ".a2a", "config.yaml")
+		if err := os.MkdirAll(filepath.Dir(cmd.ProjectConfigPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(cmd.ProjectConfigPath, []byte("system: test\nspaces: []\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		break
+	}
 	var out, errBuf strings.Builder
-	code := NewSkillCommand(skill.Files, "test").Run(
-		context.Background(), args, IO{Stdout: &out, Stderr: &errBuf})
+	code := cmd.Run(context.Background(), copied, IO{Stdout: &out, Stderr: &errBuf})
 	return code, out.String(), errBuf.String()
 }
 
@@ -182,6 +200,73 @@ func TestSkillInstall_EmptyDirOK(t *testing.T) {
 	target := t.TempDir() // exists, empty
 	if code, _, stderr := runSkill(t, "install", "--dir", target); code != 0 {
 		t.Fatalf("empty-dir install exit = %d; stderr=%s", code, stderr)
+	}
+}
+
+func TestSkillInstallCustomDirPersistsAndLinkFollowsIt(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, ".a2a", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgPath, []byte("system: alpha\nspaces: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := NewSkillCommand(skill.Files, "test")
+	cmd.ProjectRoot, cmd.ProjectConfigPath = root, cfgPath
+	var out, errOut strings.Builder
+	if code := cmd.Run(context.Background(), []string{"install", "--dir", "tools/../agent/skill"}, IO{Stdout: &out, Stderr: &errOut}); code != 0 {
+		t.Fatalf("install code=%d stderr=%s", code, errOut.String())
+	}
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SkillDir != "agent/skill" {
+		t.Fatalf("stored skill_dir=%q, want normalized agent/skill", cfg.SkillDir)
+	}
+	if _, err := os.Stat(filepath.Join(root, "agent", "skill", "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := cmd.Run(context.Background(), []string{"link", "--surface", "codex"}, IO{Stdout: &out, Stderr: &errOut}); code != 0 {
+		t.Fatalf("link code=%d stderr=%s", code, errOut.String())
+	}
+	link := filepath.Join(root, ".codex", "skills", "a2ahub")
+	resolved, err := filepath.EvalSymlinks(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(filepath.Join(root, "agent", "skill"))
+	if resolved != want {
+		t.Fatalf("link resolves to %s, want %s", resolved, want)
+	}
+}
+
+func TestSkillInstallCustomDirRefusesAbsoluteAndEscape(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, ".a2a", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgPath, []byte("system: alpha\nspaces: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{filepath.Join(root, "absolute"), "../escape", "."} {
+		t.Run(strings.ReplaceAll(bad, "/", "_"), func(t *testing.T) {
+			cmd := NewSkillCommand(skill.Files, "test")
+			cmd.ProjectRoot, cmd.ProjectConfigPath = root, cfgPath
+			var out, errOut strings.Builder
+			if code := cmd.Run(context.Background(), []string{"install", "--dir", bad}, IO{Stdout: &out, Stderr: &errOut}); code != 1 {
+				t.Fatalf("code=%d, want refusal; stderr=%s", code, errOut.String())
+			}
+		})
 	}
 }
 

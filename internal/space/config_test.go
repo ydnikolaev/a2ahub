@@ -13,6 +13,26 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func TestNormalizeSkillDir(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"", DefaultSkillDir, false},
+		{"tools/../agent/skill", "agent/skill", false},
+		{"../escape", "", true},
+		{".", "", true},
+		{filepath.Join(string(filepath.Separator), "absolute"), "", true},
+	} {
+		got, err := NormalizeSkillDir(tc.in)
+		if (err != nil) != tc.wantErr || got != tc.want {
+			t.Errorf("NormalizeSkillDir(%q)=(%q,%v), want (%q, err=%v)", tc.in, got, err, tc.want, tc.wantErr)
+		}
+	}
+}
+
 // TestMirrorLocationResolution is spec 05 §8 AC row 7: mirror clone
 // location resolves per the project config's per-space mirror-location
 // key.

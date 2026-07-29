@@ -424,7 +424,12 @@ func (c *UpdateCommand) refreshInstalledSkill(res release.ApplyResult, stdio IO,
 	if c.projectRoot == "" || c.SkillFiles == nil {
 		return
 	}
-	target := filepath.Join(c.projectRoot, skillDefaultDir)
+	cfg, _ := c.loadProjectConfig(c.projectConfigPath)
+	rel, err := space.NormalizeSkillDir(cfg.SkillDir)
+	if err != nil {
+		return
+	}
+	target := filepath.Join(c.projectRoot, filepath.FromSlash(rel))
 	_, owned, err := skillTargetState(target)
 	if err != nil || !owned {
 		return
@@ -434,7 +439,7 @@ func (c *UpdateCommand) refreshInstalledSkill(res release.ApplyResult, stdio IO,
 		return
 	}
 	if !jsonMode {
-		_, _ = fmt.Fprintf(stdio.Stdout, "a2a: refreshed skill install (%s -> v%s)\n", skillDefaultDir, res.ToVersion)
+		_, _ = fmt.Fprintf(stdio.Stdout, "a2a: refreshed skill install (%s -> v%s)\n", rel, res.ToVersion)
 	}
 }
 

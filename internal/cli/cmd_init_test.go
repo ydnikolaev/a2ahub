@@ -90,6 +90,40 @@ func TestInitIdempotentRerun(t *testing.T) {
 	}
 }
 
+func TestInitPreservesCustomSkillDirectory(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	const initial = "system: axon\nskill_dir: agent/skill\nspaces:\n  - id: old\n    repo_url: https://example.invalid/org/old.git\n"
+	if err := os.WriteFile(cfgPath, []byte(initial), 0o644); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	cmd := cli.NewInitCommand(cfgPath)
+	io, out, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{
+		"--system", "axon",
+		"--space", "https://example.invalid/org/new.git",
+		"--no-skill", "--no-skill-link", "--no-agents-pointer",
+	}, io)
+	if code != 0 {
+		t.Fatalf("Run: code=%d stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig: %v", err)
+	}
+	if cfg.SkillDir != "agent/skill" {
+		t.Fatalf("skill_dir=%q, want preserved custom location", cfg.SkillDir)
+	}
+	if len(cfg.Spaces) != 1 || cfg.Spaces[0].RepoURL != "https://example.invalid/org/new.git" {
+		t.Fatalf("spaces=%+v, want refreshed space list", cfg.Spaces)
+	}
+}
+
 // TestInitMissingSystemNeverHangs is AC row 6's negative case: a missing
 // required flag with stdin closed/non-TTY errors immediately (exit 2),
 // never blocks reading stdin for a prompt.
