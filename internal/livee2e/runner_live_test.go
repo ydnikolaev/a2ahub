@@ -190,6 +190,35 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 	if selErr != nil {
 		t.Fatalf("%s: %v", EnvFamilies, selErr)
 	}
+	cells, cellErr := selectedCells(os.Getenv(EnvCells), Catalogue())
+	if cellErr != nil {
+		t.Fatalf("%s: %v", EnvCells, cellErr)
+	}
+	if cells != nil {
+		cellFamilies := map[string]bool{}
+		for key := range cells {
+			var family string
+			for _, scenario := range Catalogue() {
+				if scenario.Name == key.scenario {
+					family = scenario.Family
+					break
+				}
+			}
+			if family != "happy" {
+				t.Fatalf("%s: exact-cell execution currently supports the happy family; %s belongs to %q",
+					EnvCells, renderCellKey(key), family)
+			}
+			if !selected[family] {
+				t.Fatalf("%s selects %s, but %s excludes its family %q",
+					EnvCells, renderCellKey(key), EnvFamilies, family)
+			}
+			cellFamilies[family] = true
+		}
+		selected = cellFamilies
+		h.SelectedCells = cells
+		t.Logf("=== %s NARROWS this run to exact cells: %s — every other cell stays not-run, so this run CANNOT exit 0 and is not a release verdict ===",
+			EnvCells, strings.Join(sortedCellKeys(cells), ", "))
+	}
 	if len(selected) != len(families) {
 		t.Logf("=== %s NARROWS this run to: %s — every other family's rows stay not-run, so this run CANNOT exit 0 and is not a release verdict ===",
 			EnvFamilies, strings.Join(sortedKeys(selected), ", "))
@@ -213,6 +242,15 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 			t.Logf("  %-34s %-2s %s", res.Scenario, res.System, res.Verdict)
 		}
 	}
+}
+
+func sortedCellKeys(cells map[cellKey]bool) []string {
+	out := make([]string, 0, len(cells))
+	for key := range cells {
+		out = append(out, renderCellKey(key))
+	}
+	sort.Strings(out)
+	return out
 }
 
 // runFamily isolates one family's panic. A live tier that loses fifteen rows

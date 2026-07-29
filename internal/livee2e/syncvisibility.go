@@ -4,6 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+)
+
+// A merged commit can reach GitHub's REST ref before the authenticated smart
+// Git endpoint used by `git fetch`. Two targeted v0.16 runs observed that
+// split directly: the PR was merged, while repeated successful `a2a sync`
+// calls kept the old origin/main for almost five minutes. The former
+// three-minute window therefore produced a false product failure.
+//
+// Keep this provider-consistency budget separate from the required-check and
+// merge budgets. No Actions job is running during it; it only waits for the
+// already-merged commit to become fetch-visible.
+const (
+	mergeVisibilityPollInterval = 10 * time.Second
+	mergeVisibilityCeiling      = 7 * time.Minute
+	mergeVisibilityAttempts     = int(mergeVisibilityCeiling / mergeVisibilityPollInterval)
 )
 
 // ErrSyncVisibilityTimedOut means every bounded refresh succeeded but the

@@ -59,6 +59,12 @@ type harness struct {
 	// PR.
 	PRFloor int
 
+	// SelectedCells is nil for the full matrix and contains the exact cells
+	// an operator requested for a diagnostic rerun otherwise. Today the
+	// execution-side adapter is deliberately limited to the happy family;
+	// driveFamilies refuses any other selection before the first write.
+	SelectedCells map[cellKey]bool
+
 	// reds carries the workflow-run ids scenarios declare they reddened ON
 	// PURPOSE, for runSpaceCIHealth to account for at the end of the run.
 	//
@@ -70,6 +76,14 @@ type harness struct {
 	// reading a declaration (see spacehealth.go).
 	reds   []int64
 	redsMu sync.Mutex
+}
+
+func (h *harness) cellSelected(scenario, system string, surface Surface) bool {
+	return h.SelectedCells == nil || h.SelectedCells[cellKey{
+		scenario: scenario,
+		system:   system,
+		surface:  surface,
+	}]
 }
 
 // claimRed declares that this matrix reddened these workflow runs on purpose.

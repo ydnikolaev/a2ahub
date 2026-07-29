@@ -105,7 +105,7 @@ vulncheck: ## govulncheck ./... gated by .govulncheck-allow.txt (NEW called vuln
 	if [ -n "$$new" ]; then printf '%s\n' "$$out"; echo; echo "vulncheck: FAIL — NEW vulnerabilities (not in .govulncheck-allow.txt):$$new"; exit 1; fi; \
 	if [ -n "$$found" ]; then echo "vulncheck: OK — only accepted vulns present:$$(printf '%s' "$$found" | tr '\n' ' ' | sed 's/^/ /')"; else echo "vulncheck: OK — no called vulnerabilities"; fi
 
-live-e2e: ## THE LIVE TIER: the real binary against a real GitHub space (spec 36). Needs A2A_LIVE_E2E_{ORG,PROVISIONER_TOKEN,PARTICIPANT_TOKEN,CANDIDATE_SHA}; CANDIDATE_SHA is the immutable public release candidate used for workflow source and validator. NEVER in `check` or a merge gate. A narrowed A2A_LIVE_E2E_FAMILIES run always exits non-zero.
+live-e2e: ## THE LIVE TIER: the real binary against a real GitHub space (spec 36). Needs A2A_LIVE_E2E_{ORG,PROVISIONER_TOKEN,PARTICIPANT_TOKEN,CANDIDATE_SHA}; CANDIDATE_SHA is the immutable public release candidate used for workflow source and validator. NEVER in `check` or a merge gate. A narrowed A2A_LIVE_E2E_FAMILIES/A2A_LIVE_E2E_CELLS run always exits non-zero.
 	@test -f go.mod || { echo "live-e2e: no go.mod — nothing to run."; exit 2; }
 	go test ./internal/livee2e/... -tags=livee2e -count=1 -v -timeout 125m
 
