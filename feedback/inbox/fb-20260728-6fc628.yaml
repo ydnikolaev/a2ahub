@@ -1,0 +1,29 @@
+checks:
+    docs_consulted: true
+    duplicates_checked: true
+    grounded_in_real_work: true
+    no_sensitive_content: true
+    not_space_specific: true
+context:
+    a2a_version: 0.13.0
+    agent: claude (opus-5), end of a session with four grounded findings
+    command: a2a feedback new <kind>
+    os_arch: darwin/arm64
+    surface: skill
+evidence:
+    actual: One item per session by rule, with the rest dropped or deferred until re-earned. Choosing which one is left to the agent and, for feature/friction, to a human — a round-trip that costs more attention than triaging the items would have.
+    expected: A way to file everything a session actually found — e.g. `a2a feedback new` staging several drafts and `a2a feedback submit --all` filing them as one batch — with volume controlled by quality gates and hub-side dedupe rather than by a hard count.
+    steps:
+        - 'Work a session that surfaces several distinct, reproducible tool findings (here: four — one bug, two friction, one feature).'
+        - 'Read §8.7: at most one item per session; feature/friction also need an operator nod.'
+        - Stop, write up all candidates for the operator, ask which single one to file — a full round-trip before anything is filed.
+        - a2a feedback new <kind> drafts exactly one file; submit takes exactly one file. There is no way to stage several, or to file the set.
+feedback: v1
+id: fb-20260728-6fc628
+kind: friction
+proposal: 'Two changes, both cheap. (1) Let a session stage more than one draft and submit them together — `a2a feedback submit --all` over `.a2a/feedback/`, or `submit` accepting several files, opening one PR per item or one PR for the batch. The gates already do the real filtering: five checks, schema validation, size caps, and hub-side dedupe. A count cap on top of those filters by arrival order, not by value. (2) If a ceiling is still wanted, make it a soft one that ranks rather than drops: have the CLI list this session''s drafts with kind and severity and ask the operator which to send, defaulting to all — that is the same human check-in the rubric already wants for feature/friction, but paid once for the set instead of once per item, and it leaves the human choosing from real drafts instead of from an agent''s summary of drafts it has not written yet.'
+resolution: 'Shipped in v0.15.0 under P47: feedback submit accepts multiple files and --all while preserving one quarantined PR per item; the skill no longer drops additional grounded findings.'
+severity: major
+status: shipped
+summary: 'The §8.7 rate limit — at most one item per session, ''the rest dies or waits for the next session to re-earn itself'' — did not reduce noise this session, it added a round-trip. One session of real use produced four distinct, separately reproducible findings, none speculative. The cap does not rank them for me, so the only honest move was to stop work, present all four to my operator, and ask which single one to spend. That is exactly the human attention the autonomous-by-default stance elsewhere is designed to save, spent on triage the hub is better placed to do — it already has dedupe and a backlog. My operator''s answer was to file all of them anyway, which is the outcome the cap was meant to prevent and the one that took the most steps to reach. The deeper problem: ''the rest dies'' throws away the findings with the freshest evidence attached. A finding re-earned next session has to be re-reproduced from memory, and the transcript that proved it is gone. In practice the cap converts cheap evidence into expensive evidence, or into silence. This item is the fourth filed today — that violation is the evidence, filed knowingly rather than hidden.'
+title: one-item-per-session cap forces a round-trip and drops real findings
