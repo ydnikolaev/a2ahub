@@ -89,6 +89,9 @@ type PRInfo struct {
 	Number int
 	URL    string
 	State  string
+	// Body carries tool-owned operation metadata on semantic-idempotency
+	// branches. Ordinary callers may leave it empty.
+	Body string
 	// AutoMergeArmed reports whether auto-merge is actually armed on the PR.
 	//
 	// It exists because arming is a SECOND call that GitHub can decline for
@@ -101,6 +104,26 @@ type PRInfo struct {
 	// AutoMergeNote explains, in words the operator can act on, why arming
 	// did not happen. Empty when AutoMergeArmed is true.
 	AutoMergeNote string
+}
+
+// OpenPRSummary is the historical diagnostic projection needed to find
+// green PRs that will never land because auto-merge is not armed.
+type OpenPRSummary struct {
+	Number         int
+	URL            string
+	AutoMergeArmed bool
+}
+
+// ListOpenPRsRequest identifies one repository whose current open PRs are read.
+type ListOpenPRsRequest struct {
+	Repo       Repo
+	Credential Credential
+}
+
+// OpenPRLister is an optional read capability. Doctor uses it diagnostically;
+// write paths keep depending on the five-method Host contract.
+type OpenPRLister interface {
+	ListOpenPRs(ctx context.Context, req ListOpenPRsRequest) ([]OpenPRSummary, error)
 }
 
 // StatusRequest identifies the PR whose check/review state is queried.

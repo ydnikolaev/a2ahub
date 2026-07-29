@@ -142,7 +142,7 @@ func TestDoctorRunAllPassOnZeroConnectedSpaces(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 	}
-	for _, name := range []string{"credentials", "space access", "space identity", "versions", "CI presence", "auto-merge enabled", "statusline wiring"} {
+	for _, name := range []string{"credentials", "space access", "space identity", "versions", "CI presence", "auto-merge enabled", "stuck green PRs", "statusline wiring"} {
 		if !strings.Contains(stdout.String(), name+": PASS") {
 			t.Errorf("stdout missing %q PASS line; got %q", name, stdout.String())
 		}
@@ -664,6 +664,75 @@ func TestDoctorCheckAutoMerge(t *testing.T) {
 		ok, _ := cmd.doctorCheckAutoMerge(context.Background(), space.ProjectConfig{}, machine)
 		if !ok {
 			t.Fatal("want pass with zero connected spaces")
+		}
+	})
+}
+
+func TestDoctorCheckStuckGreenPRs(t *testing.T) {
+	t.Parallel()
+	cfg := space.ProjectConfig{Spaces: []space.Ref{{
+		ID: "getvisa", RepoURL: "https://github.com/acme/getvisa.git",
+	}}}
+	resolve := func(context.Context, string, space.CredentialReference) (host.Credential, error) {
+		return host.Credential{Token: "tok"}, nil
+	}
+
+	t.Run("fails with exact remedy for green unarmed PR", func(t *testing.T) {
+		t.Parallel()
+		fake := host.NewFakeHost()
+		fake.ListOpenPRsFunc = func(context.Context, host.ListOpenPRsRequest) ([]host.OpenPRSummary, error) {
+			return []host.OpenPRSummary{{Number: 42, URL: "https://github.com/acme/getvisa/pull/42"}}, nil
+		}
+		fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
+			return host.CheckStatusResult{State: "completed", Conclusion: "success"}, nil
+		}
+		cmd := newTestDoctorCommand()
+		cmd.h = fake
+		cmd.resolveCredential = resolve
+
+		ok, detail := cmd.doctorCheckStuckGreenPRs(context.Background(), cfg, space.MachineConfig{})
+		if ok {
+			t.Fatal("green unarmed PR passed")
+		}
+		if !strings.Contains(detail, "pull/42") ||
+			!strings.Contains(detail, "`gh pr merge 42 --auto --repo acme/getvisa`") ||
+			!strings.Contains(detail, "doctor will never merge") {
+			t.Fatalf("detail is not actionable/read-only: %q", detail)
+		}
+	})
+
+	t.Run("armed or red PRs do not fail", func(t *testing.T) {
+		t.Parallel()
+		fake := host.NewFakeHost()
+		fake.ListOpenPRsFunc = func(context.Context, host.ListOpenPRsRequest) ([]host.OpenPRSummary, error) {
+			return []host.OpenPRSummary{
+				{Number: 1, AutoMergeArmed: true},
+				{Number: 2, AutoMergeArmed: false},
+			}, nil
+		}
+		fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
+			return host.CheckStatusResult{State: "completed", Conclusion: "failure"}, nil
+		}
+		cmd := newTestDoctorCommand()
+		cmd.h = fake
+		cmd.resolveCredential = resolve
+		if ok, detail := cmd.doctorCheckStuckGreenPRs(context.Background(), cfg, space.MachineConfig{}); !ok {
+			t.Fatalf("non-stuck PRs failed: %s", detail)
+		}
+	})
+
+	t.Run("unreadable state is an advisory", func(t *testing.T) {
+		t.Parallel()
+		fake := host.NewFakeHost()
+		fake.ListOpenPRsFunc = func(context.Context, host.ListOpenPRsRequest) ([]host.OpenPRSummary, error) {
+			return nil, errors.New("forbidden")
+		}
+		cmd := newTestDoctorCommand()
+		cmd.h = fake
+		cmd.resolveCredential = resolve
+		ok, detail := cmd.doctorCheckStuckGreenPRs(context.Background(), cfg, space.MachineConfig{})
+		if !ok || !strings.Contains(detail, "unverified") || strings.Contains(detail, "forbidden") {
+			t.Fatalf("unreadable state = (%v, %q), want stable advisory", ok, detail)
 		}
 	})
 }

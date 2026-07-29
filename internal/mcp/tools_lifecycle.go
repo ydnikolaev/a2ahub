@@ -22,6 +22,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/operation"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"gopkg.in/yaml.v3"
@@ -213,6 +214,9 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 		if in.BodyOverride != "" {
 			bodyOverride = []byte(in.BodyOverride)
 		}
+		operationKey := operation.Respond(
+			deps.OwnSystem, actor.Kind, actor.Name, in.ParentIDs, in.Result, in.Fields, bodyOverride,
+		)
 
 		var files []space.FileWrite
 		var ids []string
@@ -358,6 +362,7 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 		}
 
 		req := deps.buildRequest(ids, files, "respond", false)
+		req.OperationKey = operationKey
 		result, err := deps.submit(ctx, req, "respond", ids)
 		return result, "", err
 	}

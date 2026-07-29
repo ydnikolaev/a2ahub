@@ -40,6 +40,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/operation"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
@@ -1424,6 +1425,9 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 	}
 
 	req := c.deps.buildRequest([]string{id, announcementID}, files, "contract-deprecate", false)
+	req.OperationKey = operation.ContractDeprecate(
+		c.deps.ownSystem, id, contractCanonicalVersion(deprecatedVersion), *successor, *sunset,
+	)
 	return c.deps.submit(ctx, req, "contract deprecate", []string{id, announcementID}, stdio)
 }
 

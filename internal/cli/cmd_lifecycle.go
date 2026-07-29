@@ -34,6 +34,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/operation"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"gopkg.in/yaml.v3"
@@ -477,7 +478,7 @@ func (d lifecycleDeps) buildRequest(ids []string, files []space.FileWrite, verb 
 	}
 	return space.SubmitRequest{
 		RepoDir: d.mirrorDir, System: d.ownSystem,
-		Verb: verb, ArtifactID: strings.Join(sorted, "+"), Files: files,
+		Verb: verb, ArtifactID: strings.Join(sorted, "+"), ArtifactIDs: sorted, Files: files,
 		CommitMessage: commitMsg, CommitAuthorName: d.hostCfg.CommitAuthorName, CommitAuthorEmail: d.hostCfg.CommitAuthorEmail,
 		RemoteURL: d.hostCfg.RemoteURL, Repo: d.hostCfg.Repo, BaseBranch: baseBranch,
 		PRTitle: commitMsg, PRBody: prBody, Credential: d.hostCfg.Credential,
@@ -509,7 +510,11 @@ func (d lifecycleDeps) submit(ctx context.Context, req space.SubmitRequest, verb
 		_, _ = fmt.Fprintf(stdio.Stderr, "%s: %v\n", verb, err)
 		return 1
 	}
-	for _, id := range ids {
+	effectiveIDs := ids
+	if len(result.ArtifactIDs) > 0 {
+		effectiveIDs = result.ArtifactIDs
+	}
+	for _, id := range effectiveIDs {
 		switch result.State {
 		case space.WriteStatePendingMerge, space.WriteStateAlreadyOpen:
 			if err := d.pending.MarkPending(ctx, d.spaceID, id, result); err != nil {
@@ -527,9 +532,10 @@ func (d lifecycleDeps) submit(ctx context.Context, req space.SubmitRequest, verb
 	}
 	switch result.State {
 	case space.WriteStateAlreadyOpen, space.WriteStateAlreadyMerged:
-		_, _ = fmt.Fprintf(stdio.Stdout, "%s: already submitted (PR %s, %s)\n", verb, result.PRURL, result.State)
+		_, _ = fmt.Fprintf(stdio.Stdout, "%s: already submitted for %s (PR %s, %s)\n",
+			verb, strings.Join(effectiveIDs, ", "), result.PRURL, result.State)
 	default:
-		_, _ = fmt.Fprintf(stdio.Stdout, "%s: opened PR %s for %s (%s)\n", verb, result.PRURL, strings.Join(ids, ", "), result.State)
+		_, _ = fmt.Fprintf(stdio.Stdout, "%s: opened PR %s for %s (%s)\n", verb, result.PRURL, strings.Join(effectiveIDs, ", "), result.State)
 		warnAutoMerge(stdio, verb, result.AutoMergeNote)
 	}
 	return 0
@@ -898,6 +904,9 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 1
 	}
 	actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: c.deps.ownSystem}
+	operationKey := operation.Respond(
+		c.deps.ownSystem, actor.Kind, actor.Name, parents, *result, fields, bodyOverride,
+	)
 
 	now := c.deps.now()
 	layout, err := space.NewLayout(c.deps.ownSystem)
@@ -1118,6 +1127,7 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 
 	req := c.deps.buildRequest(ids, files, "respond", false)
+	req.OperationKey = operationKey
 	return c.deps.submit(ctx, req, "respond", ids, stdio)
 }
 

@@ -362,6 +362,30 @@ func TestFindPRByHeadBranchNoneFound(t *testing.T) {
 	}
 }
 
+func TestListOpenPRsReportsAutoMergeArmed(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"number":7,"html_url":"https://example.invalid/pull/7","auto_merge":{"merge_method":"SQUASH"}},
+			{"number":8,"html_url":"https://example.invalid/pull/8","auto_merge":null}
+		]`))
+	}))
+	defer srv.Close()
+
+	h := NewGitHubHost(srv.Client(), srv.URL)
+	prs, err := h.ListOpenPRs(context.Background(), ListOpenPRsRequest{
+		Repo: Repo{Owner: "acme", Name: "space"},
+	})
+	if err != nil {
+		t.Fatalf("ListOpenPRs: %v", err)
+	}
+	if len(prs) != 2 || !prs[0].AutoMergeArmed || prs[1].AutoMergeArmed {
+		t.Fatalf("ListOpenPRs = %+v, want armed then unarmed", prs)
+	}
+}
+
 func TestGitHubHostRequestFailedOnNon2xx(t *testing.T) {
 	t.Parallel()
 
@@ -403,6 +427,9 @@ func TestInvalidRequestsRejected(t *testing.T) {
 	}
 	if _, err := h.FindPRByHeadBranch(ctx, FindPRRequest{}); !errors.Is(err, ErrInvalidRequest) {
 		t.Errorf("FindPRByHeadBranch({}) error = %v, want ErrInvalidRequest", err)
+	}
+	if _, err := h.ListOpenPRs(ctx, ListOpenPRsRequest{}); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("ListOpenPRs({}) error = %v, want ErrInvalidRequest", err)
 	}
 }
 

@@ -34,6 +34,7 @@ type FakeHost struct {
 	// classic token (see the method).
 	TokenScopesFunc  func(ctx context.Context, cred Credential) ([]string, bool, error)
 	ReviewStatusFunc func(ctx context.Context, req StatusRequest) (ReviewStatusResult, error)
+	ListOpenPRsFunc  func(ctx context.Context, req ListOpenPRsRequest) ([]OpenPRSummary, error)
 	// EnableAutoMergeFunc, when set, overrides the optional AutoMerger
 	// capability. Default: records the call and succeeds, which is what a
 	// real host does when auto-merge is already armed.
@@ -108,7 +109,7 @@ func (f *FakeHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, error
 
 	f.mu.Lock()
 	f.nextPR++
-	info := PRInfo{Number: f.nextPR, URL: "https://example.invalid/pr/" + req.Head, State: "open"}
+	info := PRInfo{Number: f.nextPR, URL: "https://example.invalid/pr/" + req.Head, State: "open", Body: req.Body}
 	f.byBranch[req.Head] = info
 	f.mu.Unlock()
 	return info, nil
@@ -140,6 +141,14 @@ func (f *FakeHost) ReviewStatus(ctx context.Context, req StatusRequest) (ReviewS
 		return f.ReviewStatusFunc(ctx, req)
 	}
 	return ReviewStatusResult{Approved: true}, nil
+}
+
+// ListOpenPRs delegates to ListOpenPRsFunc, or returns an empty list.
+func (f *FakeHost) ListOpenPRs(ctx context.Context, req ListOpenPRsRequest) ([]OpenPRSummary, error) {
+	if f.ListOpenPRsFunc != nil {
+		return f.ListOpenPRsFunc(ctx, req)
+	}
+	return []OpenPRSummary{}, nil
 }
 
 // FindPRByHeadBranch delegates to FindPRFunc, or (default) returns any PR
@@ -197,6 +206,8 @@ var (
 	_ RemoteBranchReader = (*GitHubHost)(nil)
 	_ Merger             = (*FakeHost)(nil)
 	_ Merger             = (*GitHubHost)(nil)
+	_ OpenPRLister       = (*FakeHost)(nil)
+	_ OpenPRLister       = (*GitHubHost)(nil)
 )
 
 // EnableAutoMerge implements the optional AutoMerger capability: it records

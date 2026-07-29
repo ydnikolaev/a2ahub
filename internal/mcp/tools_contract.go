@@ -26,6 +26,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/operation"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
@@ -961,6 +962,9 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 		}
 
 		req := deps.buildRequest([]string{in.ID, announcementID}, files, "contract-deprecate", false)
+		req.OperationKey = operation.ContractDeprecate(
+			deps.OwnSystem, in.ID, contractCanonicalVersion(deprecatedVersion), in.Successor, in.Sunset,
+		)
 		result, err := deps.submit(ctx, req, "contract deprecate", []string{in.ID, announcementID})
 		return result, "", err
 	}

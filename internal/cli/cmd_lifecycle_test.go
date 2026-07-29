@@ -986,6 +986,32 @@ func TestRespondDeterministicResponseID(t *testing.T) {
 			t.Fatalf("expected DIFFERENT ids for --result answered vs --result partial, got the same id %q", id1)
 		}
 	})
+
+	t.Run("same_intent_across_midnight_keeps_operation_key", func(t *testing.T) {
+		t.Parallel()
+		parentID := "XQ-axon-20260721-r003"
+		runAt := func(t *testing.T, now time.Time) space.SubmitRequest {
+			t.Helper()
+			mirrorDir := t.TempDir()
+			seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
+			fake := &fakeLifecycleFunnel{}
+			cmd := cli.NewRespondCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+			cmd.SetClockForTest(func() time.Time { return now })
+			io, _, errOut := newIO()
+			if code := cmd.Run(context.Background(), []string{"--result", "answered", parentID}, io); code != 0 {
+				t.Fatalf("respond: code=%d stderr=%s", code, errOut.String())
+			}
+			return fake.calls[0]
+		}
+		before := runAt(t, time.Date(2026, 7, 21, 23, 59, 0, 0, time.UTC))
+		after := runAt(t, time.Date(2026, 7, 22, 0, 1, 0, 0, time.UTC))
+		if before.ArtifactID == after.ArtifactID {
+			t.Fatalf("public date-bearing IDs unexpectedly equal: %q", before.ArtifactID)
+		}
+		if before.OperationKey == "" || before.OperationKey != after.OperationKey {
+			t.Fatalf("operation keys differ across midnight: %q vs %q", before.OperationKey, after.OperationKey)
+		}
+	})
 }
 
 // TestRespondPropagatesParentThreadVerbatim is spec 46 §T1 R2: a response

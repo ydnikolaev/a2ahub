@@ -377,7 +377,7 @@ func (d WriteDeps) buildRequest(ids []string, files []space.FileWrite, verb stri
 	}
 	return space.SubmitRequest{
 		RepoDir: d.MirrorDir, System: d.OwnSystem,
-		Verb: verb, ArtifactID: strings.Join(sorted, "+"), Files: files,
+		Verb: verb, ArtifactID: strings.Join(sorted, "+"), ArtifactIDs: sorted, Files: files,
 		CommitMessage: commitMsg, CommitAuthorName: d.HostCfg.CommitAuthorName, CommitAuthorEmail: d.HostCfg.CommitAuthorEmail,
 		RemoteURL: d.HostCfg.RemoteURL, Repo: d.HostCfg.Repo, BaseBranch: baseBranch,
 		PRTitle: commitMsg, PRBody: prBody, Credential: d.HostCfg.Credential,
@@ -407,7 +407,11 @@ func (d WriteDeps) submit(ctx context.Context, req space.SubmitRequest, verb str
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", verb, err)
 	}
+	effectiveIDs := ids
+	if len(result.ArtifactIDs) > 0 {
+		effectiveIDs = result.ArtifactIDs
+	}
 	return submitResult{
-		Verb: verb, IDs: ids, Branch: result.Branch, PRURL: result.PRURL, State: string(result.State),
+		Verb: verb, IDs: effectiveIDs, Branch: result.Branch, PRURL: result.PRURL, State: string(result.State),
 	}, nil
 }

@@ -1,6 +1,8 @@
 package validate
 
 import (
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -61,6 +63,25 @@ func TestCheckRetirePrecondition(t *testing.T) {
 		}
 		if overridden != nil {
 			t.Fatalf("got overridden %v, want none (override not requested)", overridden)
+		}
+	})
+
+	t.Run("blocked_names_sorted_consumers_and_keeps_full_machine_set", func(t *testing.T) {
+		t.Parallel()
+		consumers := make([]RegisteredConsumer, 0, 11)
+		for _, system := range []string{"k", "j", "i", "h", "g", "f", "e", "d", "c", "b", "a"} {
+			consumers = append(consumers, RegisteredConsumer{System: system})
+		}
+		v, _ := CheckRetirePrecondition(RetirePrecondition{Consumers: consumers})
+		if v == nil {
+			t.Fatal("got no violation")
+		}
+		want := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"}
+		if !slices.Equal(v.Subjects, want) {
+			t.Fatalf("Subjects = %v, want full sorted set %v", v.Subjects, want)
+		}
+		if !strings.Contains(v.Message, "a, b, c, d, e, f, g, h (+3 more)") {
+			t.Fatalf("bounded Message does not name the actionable prefix/count: %q", v.Message)
 		}
 	})
 
