@@ -68,12 +68,135 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # SLSA build provenance for every artifact goreleaser hashed into
-      # dist/SHA256SUMS (our checksum filename — see .goreleaser.yaml's
-      # `checksum.name_template`, NOT sporo's `checksums.txt`) — one
-      # attestation call covers the whole release. Must run AFTER goreleaser,
-      # which produces that file. Users verify with
-      # `gh attestation verify <file> -R ydnikolaev/a2ahub`.
+  macos-notifier:
+    needs: goreleaser
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Import Developer ID and notarization credentials
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          test -n "$APPLE_CERTIFICATE"
+          test -n "$APPLE_CERTIFICATE_PASSWORD"
+          test -n "$APPLE_NOTARY_KEY"
+          test -n "$APPLE_NOTARY_KEY_ID"
+          test -n "$APPLE_NOTARY_ISSUER_ID"
+          keychain="$RUNNER_TEMP/a2a-signing.keychain-db"
+          password="$(openssl rand -hex 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$APPLE_CERTIFICATE" | openssl base64 -d -A -out "$RUNNER_TEMP/developer-id.p12"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security list-keychains -d user -s "$keychain"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain"
+          printf '%s' "$APPLE_NOTARY_KEY" | openssl base64 -d -A -out "$RUNNER_TEMP/notary.p8"
+          xcrun notarytool store-credentials a2a-release \
+            --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$APPLE_NOTARY_KEY_ID" \
+            --issuer "$APPLE_NOTARY_ISSUER_ID"
+
+      - name: Build, sign, notarize, and staple the macOS companion
+        env:
+          VERSION: ${{ github.ref_name }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          SIGNING_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARY_PROFILE: a2a-release
+        run: |
+          VERSION="${VERSION#v}" integrations/macos-notifier/scripts/package-release.sh
+
+      - name: Upload macOS companion
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          gh release upload "$GITHUB_REF_NAME" \
+            "integrations/macos-notifier/dist/a2a-notifier-${version}.zip" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+
+  vscode-notifier:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: integrations/vscode/package-lock.json
+
+      - name: Package VSIX with the release version
+        working-directory: integrations/vscode
+        run: |
+          npm ci
+          npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+          npm run check
+          npm run package:vsix
+
+      - name: Upload VS Code companion
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            integrations/vscode/dist/a2ahub-notifications.vsix \
+            --repo "$GITHUB_REPOSITORY" --clobber
+
+  cohort:
+    needs: [goreleaser, macos-notifier, vscode-notifier]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Assemble and sign the coordinated release cohort
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          test -n "$APPLE_TEAM_ID"
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir dist
+          cp "releasenotes/${version}.yaml" "dist/release-notes-${version}.yaml"
+          scripts/build-release-cohort.sh dist "$version" "$APPLE_TEAM_ID"
+
+          : > dist/SHA256SUMS
+          while IFS= read -r asset; do
+            name="$(basename "$asset")"
+            case "$name" in
+              SHA256SUMS|*.cosign.bundle) continue ;;
+            esac
+            sha256sum "$asset" | sed 's#  dist/#  #' >> dist/SHA256SUMS
+          done < <(find dist -maxdepth 1 -type f | sort)
+
+          for asset in \
+            "dist/a2a-notifier-${version}.zip" \
+            dist/a2ahub-notifications.vsix \
+            "dist/release-notes-${version}.yaml" \
+            dist/release-cohort.json \
+            dist/SHA256SUMS
+          do
+            cosign sign-blob --bundle="${asset}.cosign.bundle" "$asset" --yes
+          done
+
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber \
+            dist/SHA256SUMS dist/SHA256SUMS.cosign.bundle \
+            dist/release-cohort.json dist/release-cohort.json.cosign.bundle \
+            "dist/a2a-notifier-${version}.zip.cosign.bundle" \
+            dist/a2ahub-notifications.vsix.cosign.bundle \
+            "dist/release-notes-${version}.yaml" \
+            "dist/release-notes-${version}.yaml.cosign.bundle"
+
+      # The final checksum set now covers the Go binaries, both companions,
+      # and the standalone future What’s New asset.
       - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-checksums: ./dist/SHA256SUMS

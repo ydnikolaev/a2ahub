@@ -165,6 +165,13 @@ button{font:inherit}
 .card-h .cnt-note{font-size:11.5px;color:var(--text-faint);font-family:var(--mono)}
 .card-h .sp{flex:1}
 .card-b{padding:15px 16px}
+.update-card{margin-bottom:18px;border-color:var(--attention-line)}
+.update-card.focus{outline:3px solid var(--accent-ring);outline-offset:3px}
+.update-change{padding:12px 0;border-top:1px solid var(--hair)}
+.update-change:first-child{border-top:0;padding-top:0}
+.update-change h3{margin:0 0 5px;font-size:13.5px}
+.update-change p{margin:0;color:var(--text-dim)}
+.update-run{display:block;margin-top:8px;padding:7px 9px;border-radius:7px;background:var(--surface-2);font-family:var(--mono);font-size:12px;white-space:pre-wrap}
 .grid2{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px;align-items:start;margin-top:18px}
 @media(max-width:900px){.grid2{grid-template-columns:1fr}}
 
@@ -1007,6 +1014,7 @@ function go(mode,space){
 function render(){
   renderTopbar(); renderSidebar();
   const c=document.getElementById("root"); c.textContent="";
+  renderUpdateCard(c);
   const spaces=DATA.spaces||[];
   if(S.mode==="guide"){ c.appendChild(renderGuide()); return; }
   if(S.mode==="docs"){ c.appendChild(renderDocs()); return; }
@@ -1018,6 +1026,42 @@ function render(){
     const readable=spaces.filter(x=>x.readable!==false);
     renderDashboard(c,{mode:S.mode,spaces:readable,allSpaces:spaces});
   }
+}
+
+function renderUpdateCard(c){
+  const t=DATA.tooling||{}, d=DATA.updateDetail||{};
+  if(!t.updateAvailable&&!t.required&&!DATA.focus?.update) return;
+  const focused=location.hash==="#a2a-update"||DATA.focus?.update;
+  const card=el("section",{id:"a2a-update-card",class:"card update-card"+(focused?" focus":"")});
+  const h=el("div",{class:"card-h"});
+  h.appendChild(el("h2",{text:"What’s new in a2a "+(d.version||t.latest||"")}));
+  h.appendChild(el("span",{class:"sp"}));
+  h.appendChild(el("span",{class:"cnt-note",text:d.status==="verified"?"verified release detail":"version-only fallback"}));
+  card.appendChild(h);
+  const body=el("div",{class:"card-b"});
+  body.appendChild(el("p",{text:"Current "+(t.current||"unknown")+" · latest "+(t.latest||"unknown")+
+    (t.floor?(" · required floor "+t.floor+(t.floorSpace?(" from "+t.floorSpace):"")):"")}));
+  body.appendChild(el("p",{text:"Update cache: "+(t.cacheAge||"unknown age")+" · "+(t.fresh?"fresh":"stale")+
+    (t.source?(" · source "+t.source):"")}));
+  if(d.status==="verified"&&d.headline){
+    body.appendChild(el("p",{text:d.headline}));
+    (d.changes||[]).forEach(ch=>{
+      const row=el("div",{class:"update-change"});
+      row.appendChild(el("h3",{text:ch.subject||ch.kind||"Change"}));
+      row.appendChild(el("p",{text:ch.detail||ch.impact||""}));
+      (ch.run||[]).forEach(cmd=>row.appendChild(el("code",{class:"update-run",text:cmd})));
+      body.appendChild(row);
+    });
+  }else{
+    body.appendChild(el("p",{text:"A newer a2a release is available. Its signed What’s New detail is not cached and verified on this machine, so this older binary shows version information only."}));
+  }
+  body.appendChild(el("code",{class:"update-run",text:"a2a update --yes"}));
+  if(t.releaseURL){
+    const link=el("a",{href:t.releaseURL,text:"Open verified release page"});
+    link.rel="noopener noreferrer"; link.target="_blank"; body.appendChild(link);
+  }
+  card.appendChild(body); c.appendChild(card);
+  if(focused) setTimeout(()=>card.scrollIntoView({block:"start"}),0);
 }
 
 function pageHead(c,title,sub){
@@ -1033,6 +1077,10 @@ function renderDashboard(c,ctx){
   // scope collections
   const inScope = arr => combined ? arr.filter(x=>ctx.spaces.some(s=>s.id===x.space)) : arr.filter(x=>x.space===ctx.spaces[0].id);
   const sp0=ctx.spaces[0];
+  if(DATA.focus && !DATA.focus.found){
+    c.appendChild(el("div",{class:"card",style:"border-color:var(--attention);margin-bottom:12px;padding:12px",text:
+      "The notification item is resolved, moved, or no longer present in the current cache. Showing the project overview."}));
+  }
 
   // page header + graph-mode segmented
   const title = combined ? L.ui.unified : sp0.id;
@@ -1469,6 +1517,7 @@ function chevron(open){ const s=svgIcon([["path",{d:"M6 9l6 6 6-6"}]],{width:"15
 function itemRow(it,o,refresh){
   const open=S.rowOpen.has(it.id);
   const row=el("div",{class:"ibx-row"+(it.severity==="blocking"?" blk":"")+(open?" open":"")});
+  row.dataset.focusKey=it.space+":"+it.id;
   const main=el("div",{class:"ibx-main",onclick:()=>{ if(open)S.rowOpen.delete(it.id); else S.rowOpen.add(it.id); refresh(); }});
   main.appendChild(el("span",{class:"sdot "+(it.severity||"normal")}));
   main.appendChild(el("span",{class:"tcell"},[typeBadge(it.type)]));
@@ -2007,8 +2056,13 @@ function boot(){
   if(!spaces.length && S.mode!=="guide") S.mode="guide";
   if(S.mode==="clusters") S.mode="unified";
   if(S.mode==="space"||!["unified","guide","docs"].includes(S.mode)){ S.mode="space"; S.activeSpace=spaces[0]?spaces[0].id:null; if(!S.activeSpace) S.mode="guide"; }
-  try{ const h=(location.hash||"").slice(1); if(h && Array.isArray(DOCS) && DOCS.some(d=>d.id===h)){ S.mode="docs"; S.docSection=h; } }catch(e){}
+  let focusKey="";
+  try{ const h=(location.hash||"").slice(1); if(h.startsWith("a2a-focus=")){ focusKey=decodeURIComponent(h.slice(10)); const sep=focusKey.indexOf(":");
+      if(sep>0){ S.mode="space"; S.activeSpace=focusKey.slice(0,sep); S.rowOpen.add(focusKey.slice(sep+1)); } }
+    else if(h && Array.isArray(DOCS) && DOCS.some(d=>d.id===h)){ S.mode="docs"; S.docSection=h; } }catch(e){}
   render();
+  if(focusKey) setTimeout(()=>{ const row=[...document.querySelectorAll("[data-focus-key]")].find(x=>x.dataset.focusKey===focusKey);
+    if(row) row.scrollIntoView({block:"center"}); },0);
 }
 document.addEventListener("DOMContentLoaded",boot);
 </script>

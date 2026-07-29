@@ -56,6 +56,7 @@ var docManifest = []docEntry{
 	{"threads", "Concepts", "Threads: one intent, one chain", "a2ahub/reference/threads.md"},
 	{"contract-versions", "Concepts", "Contract versions and sunsetting", "a2ahub/reference/contract-versions.md"},
 	{"commands", "Reference", "Command reference", "a2ahub/reference/commands.md"},
+	{"notifications", "Reference", "Native and editor notifications", "a2ahub/notifications.md"},
 	{"decompose", "Reference", "Decompose example", "a2ahub/reference/decompose-example.md"},
 	{"feedback", "Reference", "Feedback", "a2ahub/reference/feedback.md"},
 	{"status-announcements", "Reference", "Feed liveness: status announcements", "a2ahub/reference/status-announcements.md"},

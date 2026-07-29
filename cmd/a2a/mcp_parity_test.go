@@ -46,25 +46,26 @@ var groupedToolNames = []string{
 // mcpExcludedVerbs is the CLI-only verb set with NO MCP tool by design
 // (spec 14 §T1 scope note + AC #6, carried into P15 unchanged).
 var mcpExcludedVerbs = map[string]bool{
-	"version":    true,
-	"init":       true,
-	"connect":    true,
-	"disconnect": true,
-	"doctor":     true,
-	"template":   true,
-	"sync":       true,
-	"update":     true, // P19 OP-217: self-update is a host-machine act, CLI-only (spec 19 §9, R-018)
-	"validate":   true,
-	"mcp":        true, // the mcp verb itself: no self-referencing tool
-	"statusline": true, // spec 14 scope note + AC #6 (see file doc comment)
-	"await":      true, // P47: waits on a machine-local pending marker and refreshes that machine's mirror
-	"__catalog":  true, // P13's CLI-only meta verb (catalog.go): no MCP tool
-	"skill":      true, // P20: installs the skill tree to the local repo — a host-machine act, CLI-only (like update)
-	"html":       true, // OP-214: renders a local HTML file — a host-machine act, CLI-only
-	"dashboard":  true, // alias of html — CLI-only
-	"completion": true, // P23/OP-222: prints a shell completion script — a host-machine act, CLI-only
-	"feedback":   true, // P25: files feedback on a2a itself (consumer submit + hub-operator triage) — a host act, CLI-only (spec 25 §T1: triage "Not exposed via MCP")
-	"space":      true, // P33 §12: scaffolds a NEW space repo onto the local filesystem — an operator/host act outside any connected space, CLI-only (like init/skill/html)
+	"version":       true,
+	"init":          true,
+	"connect":       true,
+	"disconnect":    true,
+	"doctor":        true,
+	"template":      true,
+	"sync":          true,
+	"update":        true, // P19 OP-217: self-update is a host-machine act, CLI-only (spec 19 §9, R-018)
+	"validate":      true,
+	"mcp":           true, // the mcp verb itself: no self-referencing tool
+	"statusline":    true, // spec 14 scope note + AC #6 (see file doc comment)
+	"await":         true, // P47: waits on a machine-local pending marker and refreshes that machine's mirror
+	"__catalog":     true, // P13's CLI-only meta verb (catalog.go): no MCP tool
+	"skill":         true, // P20: installs the skill tree to the local repo — a host-machine act, CLI-only (like update)
+	"html":          true, // OP-214: renders a local HTML file — a host-machine act, CLI-only
+	"dashboard":     true, // alias of html — CLI-only
+	"completion":    true, // P23/OP-222: prints a shell completion script — a host-machine act, CLI-only
+	"notifications": true, // P49/OP-223: installs and coordinates host-native UI components — CLI-only
+	"feedback":      true, // P25: files feedback on a2a itself (consumer submit + hub-operator triage) — a host act, CLI-only (spec 25 §T1: triage "Not exposed via MCP")
+	"space":         true, // P33 §12: scaffolds a NEW space repo onto the local filesystem — an operator/host act outside any connected space, CLI-only (like init/skill/html)
 }
 
 // toolAction is one reachable MCP capability: a grouped tool plus one of its

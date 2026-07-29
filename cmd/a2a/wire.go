@@ -17,6 +17,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/feedback"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
+	"github.com/ydnikolaev/a2ahub/internal/notification"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
@@ -162,6 +163,20 @@ func buildCommands() map[string]command {
 	m["completion"] = func(args []string, stdout, stderr io.Writer) int {
 		return cli.NewCompletionCommand(completionCmds(), completionSubFamilies()).Run(context.Background(), args, stdio(stdout, stderr))
 	}
+	// P49 (OP-223): host-native notification surfaces. The controller owns
+	// the personal registry, channel components, leases, and trusted routes;
+	// the transport remains a thin argv/JSON boundary.
+	m["notifications"] = func(args []string, stdout, stderr io.Writer) int {
+		p, err := resolvePaths()
+		if err != nil {
+			return fail(stderr, err)
+		}
+		controller, err := newNotificationController(p)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		return cli.NewNotificationsCommand(controller).Run(context.Background(), args, stdio(stdout, stderr))
+	}
 	m["connect"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
 		if err != nil {
@@ -243,6 +258,11 @@ func buildCommands() map[string]command {
 		// advisory nobody set up is indistinguishable from one that has nothing
 		// to report.
 		cmd.TemplateFiles = spacetemplate.Files
+		if notifications, notificationsErr := newNotificationController(p); notificationsErr == nil {
+			cmd.NotificationStatus = func(ctx context.Context, root string) (notification.Status, error) {
+				return notifications.Status(ctx, notification.StatusRequest{Root: root, Probe: true})
+			}
+		}
 		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["update"] = func(args []string, stdout, stderr io.Writer) int {
@@ -366,14 +386,15 @@ func completionContractSubs() []string {
 
 // completionSubFamilies maps each `a2a <verb> <sub>` family to its sub-verb
 // names from the same SSOTs the catalog/MCP parity use — contract
-// (ContractSubcommands), feedback (FeedbackSubcommands), and skill
-// (SkillSubcommands). Adding a family here
+// (ContractSubcommands), feedback (FeedbackSubcommands), notifications
+// (NotificationsSubcommands), and skill (SkillSubcommands). Adding a family here
 // is the ONLY completion edit a new sub-verb family needs (renderer is N-family).
 func completionSubFamilies() map[string][]string {
 	return map[string][]string{
-		"contract": completionContractSubs(),
-		"feedback": cli.FeedbackSubcommands(),
-		"skill":    cli.SkillSubcommands(),
+		"contract":      completionContractSubs(),
+		"feedback":      cli.FeedbackSubcommands(),
+		"notifications": cli.NotificationsSubcommands(),
+		"skill":         cli.SkillSubcommands(),
 	}
 }
 

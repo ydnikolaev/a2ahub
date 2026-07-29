@@ -10,10 +10,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
@@ -58,11 +60,13 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	jsonOut := fs.Bool("json", false, "emit the DATA model as JSON to stdout (no HTML file)")
 	demo := fs.Bool("demo", false, "render the embedded demo fixture (all states/types) — no connected space needed")
 	noOpen := fs.Bool("no-open", false, "don't open the rendered file in your browser (for scripts/CI)")
+	focus := fs.String("focus", "", "focus one trusted space:artifact route")
+	updateFocus := fs.Bool("update", false, "focus the trusted local update card")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 {
-		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a %s [--system <id>] [--out <path>] [--json] [--demo] [--no-open]\n", c.name)
+		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a %s [--system <id>] [--out <path>] [--json] [--demo] [--no-open] [--focus <space:id>] [--update]\n", c.name)
 		return 2
 	}
 
@@ -76,6 +80,23 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a %s: %v\n", c.name, err)
 		return 1
+	}
+	if *focus != "" {
+		spaceID, artifactID, ok := parseHTMLFocus(*focus)
+		if !ok {
+			_, _ = fmt.Fprintf(stdio.Stderr, "a2a %s: --focus requires a qualified space:artifact id\n", c.name)
+			return 2
+		}
+		found := false
+		for _, item := range append(append([]html.Item(nil), data.Inbox...), data.Outbox...) {
+			if item.Space == spaceID && item.ID == artifactID {
+				found = true
+				break
+			}
+		}
+		data.Focus = &html.Focus{Space: spaceID, ArtifactID: artifactID, Found: found}
+	} else if *updateFocus {
+		data.Focus = &html.Focus{Update: true, Found: data.Tooling.UpdateAvailable || data.Tooling.Required}
 	}
 
 	if *jsonOut {
@@ -112,7 +133,11 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// Open it in the default browser (default-on convenience; --no-open for
 	// scripts/CI). Best-effort: a launch failure never fails the render.
 	if !*noOpen {
-		if oErr := openInBrowser(*out); oErr != nil {
+		browserFocus := *focus
+		if *updateFocus {
+			browserFocus = "update"
+		}
+		if oErr := openInBrowser(*out, browserFocus); oErr != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "a2a %s: couldn't open a browser (%v) — open %s yourself\n", c.name, oErr, *out)
 		} else {
 			_, _ = fmt.Fprintf(stdio.Stdout, "a2a %s: opening it in your browser…\n", c.name)
@@ -125,11 +150,27 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 // fire-and-forget — it does NOT wait for the browser. The path is a2a's own
 // computed output file, never external input. Absolute-izes the path so the
 // launcher resolves it regardless of the browser's working directory.
-func openInBrowser(path string) error {
+func openInBrowser(path, focus string) error {
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
-	return browserCommand(runtime.GOOS, path).Start()
+	target := path
+	if focus != "" {
+		fragment := "a2a-focus=" + focus
+		if focus == "update" {
+			fragment = "a2a-update"
+		}
+		target = (&url.URL{Scheme: "file", Path: path, Fragment: fragment}).String()
+	}
+	return browserCommand(runtime.GOOS, target).Start()
+}
+
+func parseHTMLFocus(value string) (string, string, bool) {
+	spaceID, artifactID, ok := strings.Cut(value, ":")
+	if !ok || spaceID == "" || artifactID == "" || strings.ContainsAny(value, "\r\n\t/#?") {
+		return "", "", false
+	}
+	return spaceID, artifactID, true
 }
 
 // browserCommand builds (but does not start) the OS default-handler command for
