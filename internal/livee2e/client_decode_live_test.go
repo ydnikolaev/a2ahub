@@ -113,6 +113,31 @@ func TestDoTreatsAnEmptyBodyAsAnEmptyAnswer(t *testing.T) {
 	}
 }
 
+func TestPullCarriesTheBaseReachableMergeCommit(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"number": 17,
+			"head": {"ref": "a2a/alpha/submit/XA-alpha-example", "sha": "head-sha"},
+			"merge_commit_sha": "base-result-sha",
+			"merged": true,
+			"state": "closed"
+		}`))
+	}))
+	defer srv.Close()
+
+	c := &ghClient{Token: "t", APIRoot: srv.URL}
+	got, err := c.Pull(context.Background(), "o", "r", 17)
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if got.HeadSHA != "head-sha" || got.MergeCommitSHA != "base-result-sha" {
+		t.Fatalf("Pull = %+v, want distinct head and base-reachable merge commits", got)
+	}
+}
+
 // TestReadBoundRefusesRatherThanTruncates is the root cause of the
 // 2026-07-25 run, kept as a regression.
 //

@@ -109,25 +109,28 @@ func happyResultFromErr(scenario, system string, err error, expected string) Res
 
 // happyAwaitMerged polls h.Prov (read access to a public repo needs no
 // specific identity) for prNumber's Merged flag until true, the required
-// check concludes FAILURE, or the bounded wait expires. Never (false, nil),
-// so a caller never has to separately handle "not merged, no error".
+// check concludes FAILURE, or the bounded wait expires. On success it
+// returns the merged PR state, including the exact base-reachable merge
+// commit the checkout must prove visible before a dependent transition
+// starts.
 //
-// Three returns, and the middle one is the point: (true, nil); (false,
-// ErrRequiredCheckFailed) when the gate went red, which no wait can undo;
-// (false, ErrCheckWaitTimedOut) when we genuinely did not wait long enough.
+// Three outcomes, and the middle one is the point: (PR, nil);
+// (zero, ErrRequiredCheckFailed) when the gate went red, which no wait can
+// undo; (zero, ErrCheckWaitTimedOut) when we genuinely did not wait long
+// enough.
 // Before the middle case existed, a red gate spent the full budget and then
 // reported a TIMEOUT — which this tier's own rule reads as "we were
 // impatient", not "the product is wrong". That is how a production blocker
 // (the diff-authz base defect) survived a whole run unnamed.
-func happyAwaitMerged(ctx context.Context, h *harness, prNumber int) (bool, error) {
+func happyAwaitMerged(ctx context.Context, h *harness, prNumber int) (PullState, error) {
 	deadline := time.Now().Add(happyMergeWaitCeiling)
 	for {
 		pr, err := h.Prov.Pull(ctx, h.Org, h.Repo, prNumber)
 		if err != nil {
-			return false, err
+			return PullState{}, err
 		}
 		if pr.Merged {
-			return true, nil
+			return pr, nil
 		}
 		// A red required check is DECISIVE — waiting cannot turn it into a
 		// merge, and reporting it as a timeout is how a real defect hid for a
@@ -137,18 +140,18 @@ func happyAwaitMerged(ctx context.Context, h *harness, prNumber int) (bool, erro
 		if runs, cerr := h.Prov.CheckRuns(ctx, h.Org, h.Repo, pr.HeadSHA); cerr == nil {
 			for _, r := range runs {
 				if r.Name == requiredCheckContext && r.Conclusion == "failure" {
-					return false, fmt.Errorf("%w: PR #%d, check %q (mergeable_state=%q)",
+					return PullState{}, fmt.Errorf("%w: PR #%d, check %q (mergeable_state=%q)",
 						ErrRequiredCheckFailed, prNumber, r.Name, pr.MergeableState)
 				}
 			}
 		}
 		if time.Now().After(deadline) {
-			return false, fmt.Errorf("%w: PR #%d not merged after %s (mergeable_state=%q)",
+			return PullState{}, fmt.Errorf("%w: PR #%d not merged after %s (mergeable_state=%q)",
 				ErrCheckWaitTimedOut, prNumber, happyMergeWaitCeiling, pr.MergeableState)
 		}
 		select {
 		case <-ctx.Done():
-			return false, ctx.Err()
+			return PullState{}, ctx.Err()
 		case <-time.After(happyMergeWaitInterval):
 		}
 	}
@@ -376,11 +379,37 @@ func happyLandAndSync(ctx context.Context, h *harness, c *checkout, prNumber int
 	if _, err := h.AwaitCheck(ctx, c, prNumber); err != nil {
 		return fmt.Errorf("waiting for PR #%d's required check: %w", prNumber, err)
 	}
-	if _, err := happyAwaitMerged(ctx, h, prNumber); err != nil {
+	merged, err := happyAwaitMerged(ctx, h, prNumber)
+	if err != nil {
 		return fmt.Errorf("waiting for PR #%d to merge: %w", prNumber, err)
 	}
-	if _, stderr, err := c.Run(ctx, "sync"); err != nil {
-		return fmt.Errorf("sync after PR #%d merged: %w: %s", prNumber, err, stderr)
+	if merged.MergeCommitSHA == "" {
+		return fmt.Errorf("waiting for PR #%d to merge: GitHub returned an empty merge_commit_sha", prNumber)
+	}
+	const visibilityAttempts = 18
+	if err := awaitSyncVisibility(
+		ctx,
+		visibilityAttempts,
+		func() error {
+			_, stderr, syncErr := c.Run(ctx, "sync")
+			if syncErr != nil {
+				return fmt.Errorf("sync after PR #%d merged: %w: %s", prNumber, syncErr, stderr)
+			}
+			return nil
+		},
+		func() (bool, error) {
+			return c.MainContains(ctx, merged.MergeCommitSHA)
+		},
+		func(ctx context.Context) error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(happyMergeWaitInterval):
+				return nil
+			}
+		},
+	); err != nil {
+		return fmt.Errorf("waiting for PR #%d merge commit %s to reach origin/main: %w", prNumber, merged.MergeCommitSHA, err)
 	}
 	return nil
 }

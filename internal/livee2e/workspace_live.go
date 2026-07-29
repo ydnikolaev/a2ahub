@@ -166,6 +166,27 @@ func (c *checkout) RunIn(ctx context.Context, dir string, args ...string) (stdou
 	return out.String(), errBuf.String(), runErr
 }
 
+// MainContains reports whether sha is an ancestor of the checkout's fetched
+// origin/main. This is the post-sync proof happyLandAndSync needs: GitHub may
+// report a PR merged a few seconds before a fetch can observe the updated
+// base ref, while `a2a sync` itself still exits successfully.
+func (c *checkout) MainContains(ctx context.Context, sha string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "merge-base", "--is-ancestor", sha, "origin/main")
+	cmd.Dir = c.MirrorDir()
+	var errBuf strings.Builder
+	cmd.Stderr = &errBuf
+	err := cmd.Run()
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, fmt.Errorf("livee2e: test whether origin/main contains %s: %w: %s",
+		sha, err, strings.TrimSpace(errBuf.String()))
+}
+
 // RunWithAPIRoot execs the a2a binary exactly like Run, except A2A_GITHUB_API
 // is set to apiRoot for THIS ONE invocation only — the seam spec 38's Layer
 // 3 fault-injection row uses to point a single real write at a proxy in
