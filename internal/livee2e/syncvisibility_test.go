@@ -15,8 +15,8 @@ func TestMergeVisibilityBudgetCoversObservedGitPropagationLag(t *testing.T) {
 	if waitWindow < observedLag {
 		t.Fatalf("merge visibility window = %s, want at least observed %s", waitWindow, observedLag)
 	}
-	if waitWindow >= mergeVisibilityCeiling {
-		t.Fatalf("merge visibility window = %s, must stay below declared ceiling %s", waitWindow, mergeVisibilityCeiling)
+	if waitWindow != mergeVisibilityCeiling {
+		t.Fatalf("merge visibility window = %s, want the full declared ceiling %s", waitWindow, mergeVisibilityCeiling)
 	}
 }
 
