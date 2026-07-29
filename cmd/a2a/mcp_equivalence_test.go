@@ -868,6 +868,8 @@ func TestEquivContractPublish(t *testing.T) {
 			`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"example":{"type":"string"}},"additionalProperties":true}`)
 		writeMirrorFileEquiv(t, mirrorDir, "axon/provides/widget-d001/fixtures/valid/widget-d001.json",
 			`{"example":"replace-me"}`)
+		writeMirrorFileEquiv(t, mirrorDir, "axon/provides/widget-d001/fixtures/invalid/widget-d001.json",
+			`null`)
 	}
 
 	// P37 Wave I: STAGE an additional sidecar file, identically on both
@@ -916,6 +918,92 @@ func TestEquivContractPublish(t *testing.T) {
 	}
 
 	assertRequestsEquivalent(t, "contract-publish", cliFunnel.calls[0], mcpFunnel.calls[0])
+}
+
+func TestEquivContractPublishRefusesBreakingMinorOnBothSurfaces(t *testing.T) {
+	t.Parallel()
+	const (
+		id   = "XC-axon-widget-parity"
+		slug = "widget-parity"
+	)
+
+	seedPrior := func(t *testing.T, mirrorDir string) {
+		t.Helper()
+		writeContractDescriptorEquiv(t, mirrorDir, slug, "1.0.0")
+		writeMirrorFileEquiv(t, mirrorDir, "axon/provides/"+slug+"/schema/main.schema.json",
+			`{"type":"object","properties":{"x":{"type":"integer"}}}`)
+		writeMirrorFileEquiv(t, mirrorDir, "axon/provides/"+slug+"/fixtures/valid/ok.json", `{"x":1}`)
+		writeMirrorFileEquiv(t, mirrorDir, "axon/provides/"+slug+"/fixtures/invalid/bad.json", `null`)
+		eventID, err := artifact.MintULIDAt(time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeMirrorFileEquiv(t, mirrorDir, "axon/events/2020/"+eventID.String()+".yaml",
+			fmt.Sprintf("schema: event/v1\nevent: %s\nspace: fixture-space\nsubject: %s\ntransition: publish\nactor: {kind: agent, name: bot, system: axon}\nat: 2020-01-01T00:00:00Z\nversion: 1.0.0\n", eventID, id))
+		if out, err := execGit(mirrorDir, "add", "-A"); err != nil {
+			t.Fatalf("git add: %v\n%s", err, out)
+		}
+		if out, err := execGit(mirrorDir, "-c", "user.name=a2a-test", "-c", "user.email=a2a-test@a2ahub.invalid", "commit", "-m", "publish 1.0.0"); err != nil {
+			t.Fatalf("git commit: %v\n%s", err, out)
+		}
+	}
+	stageBreaking := func(t *testing.T, stagingDir string) {
+		t.Helper()
+		writeMirrorFileEquiv(t, stagingDir, "axon/provides/"+slug+"/schema/main.schema.json",
+			`{"type":"object","properties":{"x":{"type":"string"}}}`)
+	}
+	refusal := func(raw string) string {
+		const marker = "refused: "
+		at := strings.Index(raw, marker)
+		if at < 0 {
+			return strings.TrimSpace(raw)
+		}
+		return strings.TrimSpace(raw[at+len(marker):])
+	}
+
+	cliDir, cliFunnel, _ := newEquivMirror(t, "axon")
+	seedPrior(t, cliDir)
+	cliStaging := t.TempDir()
+	stageBreaking(t, cliStaging)
+	cliNewCmd := cli.NewNewCommand(cliStaging, "axon", equivCLIActorResolver("agent", "bot"), nil)
+	cliCmd := cli.NewContractCommand(cliNewCmd, cliFunnel, cliDir, "fixture-space", "axon", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+	cliIO, _, cliErr := equivIO()
+	if code := cliCmd.Run(context.Background(), []string{"publish", "--bump", "minor", id}, cliIO); code != 1 {
+		t.Fatalf("CLI code = %d, want local refusal; stderr=%s", code, cliErr)
+	}
+
+	mcpDir, mcpFunnel, _ := newEquivMirror(t, "axon")
+	seedPrior(t, mcpDir)
+	mcpStaging := t.TempDir()
+	stageBreaking(t, mcpStaging)
+	writeDeps := mcp.WriteDeps{
+		Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "axon",
+		Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
+		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
+	}
+	registry := mcp.BuildRegistry(nil, writeDeps, mcpStaging, nil, mcp.NewDeps{})
+	spec, ok := registry.Get("a2a_contract")
+	if !ok {
+		t.Fatal("a2a_contract is not registered")
+	}
+	raw, err := marshalWithAction("publish", mcp.ContractPublishInput{ID: id, Bump: "minor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, mcpErr := spec.Handler(context.Background(), raw)
+	if mcpErr == nil {
+		t.Fatal("MCP publish accepted the breaking minor")
+	}
+
+	if got, want := refusal(mcpErr.Error()), refusal(cliErr.String()); got != want {
+		t.Fatalf("publish refusal differs by surface:\nCLI: %s\nMCP: %s", want, got)
+	}
+	if !strings.Contains(refusal(cliErr.String()), "POL-007") || !strings.Contains(refusal(cliErr.String()), "fixtures/valid/ok.json") {
+		t.Fatalf("shared refusal must carry POL-007 and name the fixture, got %q", refusal(cliErr.String()))
+	}
+	if len(cliFunnel.calls) != 0 || len(mcpFunnel.calls) != 0 {
+		t.Fatalf("local refusal must precede both funnels: CLI=%d MCP=%d", len(cliFunnel.calls), len(mcpFunnel.calls))
+	}
 }
 
 func TestEquivContractDeprecate(t *testing.T) {

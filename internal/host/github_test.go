@@ -175,6 +175,57 @@ func TestPushBranchRejected(t *testing.T) {
 	}
 }
 
+func TestPushBranchForceWithExactLeaseReplacesOrphanAndRejectsStaleLease(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "first", "retry", "stale")
+	branch := "a2a/feedback/submit/fb-20260728-abc123"
+	firstDir := fx.Clone("first")
+	commitInDir(t, firstDir, "feedback/inbox/old.yaml", "orphan")
+	h := NewGitHubHost(nil, "")
+	if _, err := h.PushBranch(context.Background(), PushBranchRequest{
+		RepoDir: firstDir, LocalRef: "HEAD", Branch: branch, RemoteURL: fx.RemoteURL(),
+	}); err != nil {
+		t.Fatalf("seed orphan: %v", err)
+	}
+	firstHead := fx.HeadSHA(firstDir, "HEAD")
+
+	observed, err := h.ReadRemoteBranch(context.Background(), RemoteBranchRequest{
+		RepoDir: firstDir, RemoteURL: fx.RemoteURL(), Branch: branch,
+	})
+	if err != nil {
+		t.Fatalf("ReadRemoteBranch: %v", err)
+	}
+	if !observed.Exists || observed.SHA != firstHead {
+		t.Fatalf("observed = %+v, want existing %s", observed, firstHead)
+	}
+
+	retryDir := fx.Clone("retry")
+	commitInDir(t, retryDir, "feedback/inbox/new.yaml", "retry")
+	if _, err := h.PushBranch(context.Background(), PushBranchRequest{
+		RepoDir: retryDir, LocalRef: "HEAD", Branch: branch, RemoteURL: fx.RemoteURL(),
+		ForceWithLeaseSHA: observed.SHA,
+	}); err != nil {
+		t.Fatalf("replace orphan with exact lease: %v", err)
+	}
+	retryHead := fx.HeadSHA(retryDir, "HEAD")
+
+	staleDir := fx.Clone("stale")
+	commitInDir(t, staleDir, "feedback/inbox/stale.yaml", "stale")
+	_, err = h.PushBranch(context.Background(), PushBranchRequest{
+		RepoDir: staleDir, LocalRef: "HEAD", Branch: branch, RemoteURL: fx.RemoteURL(),
+		ForceWithLeaseSHA: firstHead,
+	})
+	if !errors.Is(err, ErrPushRejected) {
+		t.Fatalf("stale lease err = %v, want ErrPushRejected", err)
+	}
+	checkDir := t.TempDir()
+	runGitClone(t, fx.RemoteURL(), checkDir)
+	if got := fx.HeadSHA(checkDir, "refs/remotes/origin/"+branch); got != retryHead {
+		t.Fatalf("stale lease changed remote to %s, want %s", got, retryHead)
+	}
+}
+
 // TestAutoMergeAllowed is WAVE M2 / spec 45 AC-1050.5's host-layer half: the
 // repo-settings read reports `allow_auto_merge` verbatim on success, and a
 // failed read (403 here — the "no permission" case AC-1050.5/spec 42 §6

@@ -219,7 +219,7 @@ func writeContractDescriptorFor(t *testing.T, mirrorDir, from, slug, version str
 }
 
 // writeContractSchemaFixture seeds decision D-D/POL-009's own baseline (>=1
-// schema/** file + >=1 fixtures/valid/** file) for from's XC-<from>-<slug>
+// schema/** file plus >=1 valid and invalid fixture) for from's XC-<from>-<slug>
 // contract — the "constructed directly" shape (internal/space.Layout's own
 // ProvidesSchemaDir/ProvidesFixturesValidDir path constructors, never
 // filepath.Join'd against Layout's forward-slash output — see its own doc
@@ -227,7 +227,7 @@ func writeContractDescriptorFor(t *testing.T, mirrorDir, from, slug, version str
 // mirror (writeContractDescriptor/writeContractDescriptorFor) rather than
 // driving `a2a contract new`'s real scaffold.
 //
-// Both files are named after slug (D-E's stem-mapping rule,
+// All three files are named after slug (D-E's stem-mapping rule,
 // internal/validate/compat.go's planMapping doc comment: fixtures/valid/
 // <stem>.json <-> schema/<stem>.schema.json), and shaped exactly like
 // internal/template/scaffold's own starter pair (a permissive
@@ -245,6 +245,7 @@ func writeContractSchemaFixture(t *testing.T, mirrorDir, from, slug string) {
 	fixture := `{"example":"replace-me"}` + "\n"
 	writeMirrorFile(t, mirrorDir, layout.ProvidesSchemaDir(slug)+"/"+slug+".schema.json", schema)
 	writeMirrorFile(t, mirrorDir, layout.ProvidesFixturesValidDir(slug)+"/"+slug+".json", fixture)
+	writeMirrorFile(t, mirrorDir, layout.ProvidesFixturesInvalidDir(slug)+"/"+slug+".json", "null\n")
 }
 
 func writeConsumesYAML(t *testing.T, mirrorDir, system, contractID string) {

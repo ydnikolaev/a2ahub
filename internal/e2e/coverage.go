@@ -93,6 +93,7 @@ var coverageManifest = []coverageEntry{
 	{Verb: "submit", GoTest: "internal/e2e.TestT3Submit"},
 	{Verb: "submit", Txtar: "submit_refusal.txtar"},
 	{Verb: "sync", Txtar: "sync.txtar"},
+	{Verb: "await", GoTest: "internal/e2e.TestT3Await"},
 
 	// --- Read surface --------------------------------------------------
 	{Verb: "contracts", Txtar: "search_contracts.txtar"},
@@ -138,6 +139,7 @@ var coverageManifest = []coverageEntry{
 	{Verb: "completion", Txtar: "ops_completion.txtar"},
 	{Verb: "dashboard", Txtar: "ops_html.txtar"},
 	{Verb: "html", Txtar: "ops_html.txtar"},
+	{Verb: "notifications", GoTest: "internal/e2e.TestT3Notifications"},
 	{Verb: "skill", Txtar: "ops_skill.txtar"},
 	{Verb: "version", Txtar: "ops_version.txtar"},
 	{Verb: "whatsnew", Txtar: "whatsnew.txtar"},

@@ -150,3 +150,20 @@ func TestNewGitHubSource_Defaults(t *testing.T) {
 		t.Fatalf("Name() = %q, want github", src.Name())
 	}
 }
+
+func TestPageURLRejectsUntrustedRepoAndVersion(t *testing.T) {
+	t.Parallel()
+	if got := PageURL("ydnikolaev/a2ahub", "1.2.3"); got != "https://github.com/ydnikolaev/a2ahub/releases/tag/v1.2.3" {
+		t.Fatalf("PageURL = %q", got)
+	}
+	for _, input := range [][2]string{
+		{"https://attacker.example/x", "1.2.3"},
+		{"owner/repo/extra", "1.2.3"},
+		{"owner/repo", "../../latest"},
+		{"owner/repo", "1.2"},
+	} {
+		if got := PageURL(input[0], input[1]); got != "" {
+			t.Fatalf("PageURL(%q, %q) = %q, want empty", input[0], input[1], got)
+		}
+	}
+}

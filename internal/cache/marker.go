@@ -2,8 +2,10 @@ package cache
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -24,13 +26,30 @@ type PendingMarker struct {
 	MarkedAt   time.Time `json:"marked_at"`
 }
 
-func markerPath(cacheDir, spaceID, artifactID string) string {
-	return filepath.Join(cacheDir, "pending", spaceID, artifactID+".json")
+func safeMarkerComponent(kind, value string) error {
+	if value == "" || value == "." || value == ".." || filepath.Base(value) != value ||
+		strings.ContainsAny(value, `/\`) {
+		return fmt.Errorf("cache: invalid pending marker %s %q", kind, value)
+	}
+	return nil
+}
+
+func markerPath(cacheDir, spaceID, artifactID string) (string, error) {
+	if err := safeMarkerComponent("space id", spaceID); err != nil {
+		return "", err
+	}
+	if err := safeMarkerComponent("artifact id", artifactID); err != nil {
+		return "", err
+	}
+	return filepath.Join(cacheDir, "pending", spaceID, artifactID+".json"), nil
 }
 
 // WriteMarker persists m for (spaceID, m.ArtifactID) under cacheDir.
 func WriteMarker(cacheDir, spaceID string, m PendingMarker) error {
-	path := markerPath(cacheDir, spaceID, m.ArtifactID)
+	path, err := markerPath(cacheDir, spaceID, m.ArtifactID)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -45,6 +64,9 @@ func WriteMarker(cacheDir, spaceID string, m PendingMarker) error {
 // cacheDir. A never-created "pending" directory is not an error (nothing
 // pending yet).
 func ReadMarkers(cacheDir, spaceID string) ([]PendingMarker, error) {
+	if err := safeMarkerComponent("space id", spaceID); err != nil {
+		return nil, err
+	}
 	dir := filepath.Join(cacheDir, "pending", spaceID)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -71,6 +93,36 @@ func ReadMarkers(cacheDir, spaceID string) ([]PendingMarker, error) {
 	return out, nil
 }
 
+// ReadMarker reads one artifact's pending marker.
+func ReadMarker(cacheDir, spaceID, artifactID string) (PendingMarker, error) {
+	path, err := markerPath(cacheDir, spaceID, artifactID)
+	if err != nil {
+		return PendingMarker{}, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return PendingMarker{}, err
+	}
+	var marker PendingMarker
+	if err := json.Unmarshal(raw, &marker); err != nil {
+		return PendingMarker{}, err
+	}
+	return marker, nil
+}
+
+// RemoveMarker removes one artifact's pending marker. Absence is success.
+func RemoveMarker(cacheDir, spaceID, artifactID string) error {
+	path, err := markerPath(cacheDir, spaceID, artifactID)
+	if err != nil {
+		return err
+	}
+	err = os.Remove(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
 // RemoveSpaceMarkers deletes every pending marker recorded for spaceID —
 // the cache-side half of `a2a disconnect`'s "remove ... cache for that
 // space" step (§7.2 OP-202); the cursor's own item-state entries for
@@ -78,6 +130,9 @@ func ReadMarkers(cacheDir, spaceID string) ([]PendingMarker, error) {
 // disconnected space's items simply stop appearing in any future index,
 // D-001 rebuildability).
 func RemoveSpaceMarkers(cacheDir, spaceID string) error {
+	if err := safeMarkerComponent("space id", spaceID); err != nil {
+		return err
+	}
 	return os.RemoveAll(filepath.Join(cacheDir, "pending", spaceID))
 }
 

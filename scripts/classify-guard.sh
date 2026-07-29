@@ -29,8 +29,8 @@ cd "$(git rev-parse --show-toplevel)"
 # Every DENY entry MUST also be in .gitignore — check 3 asserts it, so the two can
 # never drift into a leak. PENDING entries are deliberately NOT required to be
 # gitignored (see docs/ above) until they graduate to DENY.
-ALLOW_DIRS=( .github cmd internal schemas skill space-template testkit seeds feedback web releasenotes )
-ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh )
+ALLOW_DIRS=( .github cmd integrations internal schemas skill space-template testkit seeds feedback web releasenotes )
+ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh scripts/check-release-notes-freshness.sh scripts/build-release-cohort.sh )
 DENY_DIRS=( .agents .claude .codex .mate .sporo )   # scripts/ handled below (install.sh + e2e-authoring-smoke.sh are the public exceptions)
 DENY_FILES=( AGENTS.md CLAUDE.md )
 PENDING_DIRS=( docs )   # deferred to P6 — tracked today, tolerated by check 1, classified by check 2, exempt from check 3.
@@ -67,6 +67,8 @@ while IFS= read -r f; do
     [ "$f" = "scripts/dev-install.sh" ] && continue
     [ "$f" = "scripts/e2e-authoring-smoke.sh" ] && continue
     [ "$f" = "scripts/release-preflight.sh" ] && continue
+    [ "$f" = "scripts/check-release-notes-freshness.sh" ] && continue
+    [ "$f" = "scripts/build-release-cohort.sh" ] && continue
     # install.sh's own regression net (P40 AC-1002.*) — public for the same
     # reason install.sh is. Matched as a prefix, not a filename: it is a Go
     # test package, so a second file in it is normal growth, not a new
@@ -128,6 +130,12 @@ if git check-ignore -q --no-index -- scripts/e2e-authoring-smoke.sh; then
 fi
 if git check-ignore -q --no-index -- scripts/release-preflight.sh; then
   flag "scripts/release-preflight.sh must stay PUBLIC (the pre-tag release gate)  → add '!scripts/release-preflight.sh' to .gitignore"
+fi
+if git check-ignore -q --no-index -- scripts/check-release-notes-freshness.sh; then
+  flag "scripts/check-release-notes-freshness.sh must stay PUBLIC (the offline notes gate)  → add '!scripts/check-release-notes-freshness.sh' to .gitignore"
+fi
+if git check-ignore -q --no-index -- scripts/build-release-cohort.sh; then
+  flag "scripts/build-release-cohort.sh must stay PUBLIC (the signed cohort manifest builder)  → add '!scripts/build-release-cohort.sh' to .gitignore"
 fi
 if git check-ignore -q --no-index -- scripts/classify-guard.sh; then
   flag "scripts/classify-guard.sh must stay PUBLIC (it IS this gate)  → add '!scripts/classify-guard.sh' to .gitignore"

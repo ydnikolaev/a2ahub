@@ -52,6 +52,12 @@ type PushBranchRequest struct {
 	// credential-less remotes (local fixtures); real GitHub pushes always
 	// supply one.
 	Credential Credential
+	// ForceWithLeaseSHA opts this push into replacing Branch only when the
+	// remote ref still equals this exact SHA. Empty means an ordinary
+	// fast-forward-only push. This is reserved for deterministic,
+	// tool-owned branches whose previous push succeeded but whose PR
+	// creation did not; callers must first prove that no PR owns the branch.
+	ForceWithLeaseSHA string
 }
 
 // PushBranchResult confirms the branch pushed.
@@ -195,6 +201,28 @@ type Forker interface {
 	// reports it usable. Returns an error wrapping ErrForkUnavailable when
 	// the fork can neither be found nor created.
 	EnsureFork(ctx context.Context, req EnsureForkRequest) (ForkInfo, error)
+}
+
+// RemoteBranchRequest identifies one exact branch on a git remote.
+type RemoteBranchRequest struct {
+	RepoDir    string
+	RemoteURL  string
+	Branch     string
+	Credential Credential
+}
+
+// RemoteBranchHead is the observed state used to construct an exact
+// force-with-lease. Exists=false means the branch is absent.
+type RemoteBranchHead struct {
+	SHA    string
+	Exists bool
+}
+
+// RemoteBranchReader is an OPTIONAL git-mechanics capability. It lets the
+// write funnel recover a tool-owned orphan branch without using an
+// unconditional force push.
+type RemoteBranchReader interface {
+	ReadRemoteBranch(ctx context.Context, req RemoteBranchRequest) (RemoteBranchHead, error)
 }
 
 // EnableAutoMergeRequest identifies the PR whose auto-merge is (re-)armed.

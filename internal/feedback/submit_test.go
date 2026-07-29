@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,6 +86,9 @@ func TestSubmit_HappyPath(t *testing.T) {
 	if len(fakeHost.Pushes) != 1 || len(fakeHost.Opens) != 1 {
 		t.Fatalf("expected exactly one PushBranch + OpenPR call, got pushes=%d opens=%d", len(fakeHost.Pushes), len(fakeHost.Opens))
 	}
+	if len(fakeHost.Reads) != 1 {
+		t.Fatalf("expected one orphan-branch observation before push, got %d", len(fakeHost.Reads))
+	}
 	if fakeHost.Pushes[0].Branch != "a2a/feedback/submit/fb-20260723-abc123" {
 		t.Fatalf("push branch = %q, want a2a/feedback/fb-20260723-abc123", fakeHost.Pushes[0].Branch)
 	}
@@ -160,5 +164,44 @@ status: new
 	}
 	if len(fakeHost.Pushes) != 0 || len(fakeHost.Opens) != 0 {
 		t.Fatalf("expected no funnel call for a refused submit, got pushes=%d opens=%d", len(fakeHost.Pushes), len(fakeHost.Opens))
+	}
+}
+
+func TestSubmit_GitHubWithoutCredentialRefusesBeforeGit(t *testing.T) {
+	t.Parallel()
+
+	fakeHost := host.NewFakeHost()
+	sub := NewSubmitter(
+		space.NewWriteFunnel(fakeHost, nil, "0.13.0"),
+		filepath.Join(t.TempDir(), "ledger.yaml"),
+		t.TempDir(),
+		"ydnikolaev-a2ahub",
+		SubmitConfig{
+			RemoteURL:  "https://github.com/ydnikolaev/a2ahub",
+			Repo:       host.Repo{Owner: "ydnikolaev", Name: "a2ahub"},
+			BaseBranch: "main",
+		},
+	)
+	cloneCalls := 0
+	sub.SetCloneOrFetchForTest(func(context.Context, string, string) error {
+		cloneCalls++
+		return nil
+	})
+	path := filepath.Join(t.TempDir(), "fb-20260723-abc123.yaml")
+	if err := os.WriteFile(path, []byte(validFeedbackYAML), 0o644); err != nil {
+		t.Fatalf("write draft: %v", err)
+	}
+
+	_, err := sub.Submit(context.Background(), path)
+	if err == nil {
+		t.Fatal("Submit succeeded without a GitHub credential")
+	}
+	for _, source := range []string{"A2A_FEEDBACK_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"} {
+		if !strings.Contains(err.Error(), source) {
+			t.Errorf("error %q does not name %s", err, source)
+		}
+	}
+	if cloneCalls != 0 || len(fakeHost.Pushes) != 0 || len(fakeHost.Opens) != 0 {
+		t.Fatalf("credential refusal performed writes: clone=%d push=%d open=%d", cloneCalls, len(fakeHost.Pushes), len(fakeHost.Opens))
 	}
 }

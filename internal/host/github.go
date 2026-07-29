@@ -90,7 +90,11 @@ func (h *GitHubHost) PushBranch(ctx context.Context, req PushBranchRequest) (Pus
 		basicAuth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + req.Credential.Token))
 		args = append(args, "-c", "http.extraheader=AUTHORIZATION: basic "+basicAuth)
 	}
-	args = append(args, "push", req.RemoteURL, req.LocalRef+":refs/heads/"+req.Branch)
+	args = append(args, "push")
+	if req.ForceWithLeaseSHA != "" {
+		args = append(args, "--force-with-lease=refs/heads/"+req.Branch+":"+req.ForceWithLeaseSHA)
+	}
+	args = append(args, req.RemoteURL, req.LocalRef+":refs/heads/"+req.Branch)
 
 	cmd := exec.CommandContext(ctx, "git", args...)
 	var stderr bytes.Buffer
@@ -111,6 +115,43 @@ func (h *GitHubHost) PushBranch(ctx context.Context, req PushBranchRequest) (Pus
 		}
 	}
 	return PushBranchResult{Branch: req.Branch}, nil
+}
+
+// ReadRemoteBranch implements RemoteBranchReader through `git ls-remote`.
+// It observes exactly one fully-qualified head and returns the SHA later
+// supplied to --force-with-lease; a concurrent remote update therefore makes
+// the subsequent push fail instead of being overwritten.
+func (h *GitHubHost) ReadRemoteBranch(ctx context.Context, req RemoteBranchRequest) (RemoteBranchHead, error) {
+	const op = "ReadRemoteBranch"
+	if req.RepoDir == "" || req.RemoteURL == "" || req.Branch == "" {
+		return RemoteBranchHead{}, &Error{Op: op, Err: ErrInvalidRequest}
+	}
+	args := []string{"-C", req.RepoDir}
+	if req.Credential.Token != "" {
+		basicAuth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + req.Credential.Token))
+		args = append(args, "-c", "http.extraheader=AUTHORIZATION: basic "+basicAuth)
+	}
+	args = append(args, "ls-remote", "--heads", req.RemoteURL, "refs/heads/"+req.Branch)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		return RemoteBranchHead{}, &Error{
+			Op: op, Input: req.Branch,
+			Err: fmt.Errorf("%w: %s", ErrPushRejected, strings.TrimSpace(stderr.String())),
+		}
+	}
+	fields := strings.Fields(stdout.String())
+	if len(fields) == 0 {
+		return RemoteBranchHead{}, nil
+	}
+	if len(fields) != 2 || fields[1] != "refs/heads/"+req.Branch {
+		return RemoteBranchHead{}, &Error{
+			Op: op, Input: req.Branch,
+			Err: fmt.Errorf("%w: malformed git ls-remote output", ErrRequestFailed),
+		}
+	}
+	return RemoteBranchHead{SHA: fields[0], Exists: true}, nil
 }
 
 // pushForbiddenMarkers are the phrases git/GitHub emit when a push is
@@ -391,21 +432,37 @@ func (h *GitHubHost) CheckStatus(ctx context.Context, req StatusRequest) (CheckS
 
 	// filter=latest is GitHub's own default (one run per name, the most
 	// recent) — stated explicitly because the selection below depends on it.
-	//
-	// Only the first page is read. Dropping the server-side check_name filter
-	// widened this listing to EVERY check on the head SHA, so a repo with more
-	// than 100 distinct check names could push ours past page 1 — a space repo
-	// runs two checks, so the ceiling is far off, and the failure mode is the
-	// fail-safe "no check", never a false green. Following the Link header is
-	// a backlog row, not a silent assumption.
-	path := fmt.Sprintf("/repos/%s/%s/commits/%s/check-runs?filter=latest&per_page=100", req.Repo.Owner, req.Repo.Name, headSHA)
-	var resp struct {
-		CheckRuns []checkRun `json:"check_runs"`
+	// The name filter cannot be used (compound P33 names), so page through the
+	// widened result instead of silently treating a page-2 required check as
+	// absent. The bound prevents a hostile/misbehaving endpoint looping forever.
+	const (
+		checkRunsPerPage = 100
+		maxCheckRunPages = 100
+	)
+	var runs []checkRun
+	for page := 1; page <= maxCheckRunPages; page++ {
+		path := fmt.Sprintf(
+			"/repos/%s/%s/commits/%s/check-runs?filter=latest&per_page=%d&page=%d",
+			req.Repo.Owner, req.Repo.Name, headSHA, checkRunsPerPage, page,
+		)
+		var resp struct {
+			CheckRuns []checkRun `json:"check_runs"`
+		}
+		if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &resp); err != nil {
+			return CheckStatusResult{}, err
+		}
+		runs = append(runs, resp.CheckRuns...)
+		if len(resp.CheckRuns) < checkRunsPerPage {
+			break
+		}
+		if page == maxCheckRunPages {
+			return CheckStatusResult{}, &Error{
+				Op: op, Input: headSHA,
+				Err: fmt.Errorf("%w: check-runs listing exceeded %d pages", ErrRequestFailed, maxCheckRunPages),
+			}
+		}
 	}
-	if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &resp); err != nil {
-		return CheckStatusResult{}, err
-	}
-	run, ambiguous, ok := selectRequiredCheckRun(resp.CheckRuns)
+	run, ambiguous, ok := selectRequiredCheckRun(runs)
 	if !ok {
 		return CheckStatusResult{State: "queued"}, nil
 	}
