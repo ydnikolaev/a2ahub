@@ -117,6 +117,8 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		return cli.NewSkillCommand(nil, ""), true
 	case "completion":
 		return cli.NewCompletionCommand(nil, nil), true
+	case "notifications":
+		return cli.NewNotificationsCommand(nil), true
 	case "connect":
 		return cli.NewConnectCommand("", "", ""), true
 	case "disconnect":
@@ -135,6 +137,8 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		return cli.NewSubmitCommand(nil, nil, nil, "", "", "", "", cli.SubmitHostConfig{}), true
 	case "feedback":
 		return cli.NewFeedbackCommand(nil, nil, "", "", nil), true
+	case "await":
+		return cli.NewAwaitCommand(nil), true
 	case "whatsnew":
 		return cli.NewWhatsnewCommand(""), true
 	}

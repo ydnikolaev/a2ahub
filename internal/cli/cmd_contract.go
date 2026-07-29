@@ -419,6 +419,11 @@ type ContractCommand struct {
 	deps   lifecycleDeps
 }
 
+// SetPendingMarker wires lifecycle/contract writes to the shared pending store.
+func (c *ContractCommand) SetPendingMarker(pending PendingMarker) {
+	c.deps.setPendingMarker(pending)
+}
+
 // NewContractCommand constructs the contract command. newCmd is P6's own
 // `a2a new` command (reused verbatim for `contract new`'s delegation,
 // never duplicated); funnel/manifest/resolveActor must not be nil/zero
@@ -809,7 +814,7 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 		return 1
 	}
 	if verdict != fold.VerdictLegal {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %s\n", verdictRefusalMessage(id, verdict))
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %s\n", c.deps.refusalMessage(id, verdict))
 		return 1
 	}
 
@@ -888,19 +893,23 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 	// so POL-009 sees the version this commit is actually about to carry.
 	newSchemas := map[string][]byte{}
 	newFixturesValid := map[string][]byte{}
+	newFixturesInvalid := map[string][]byte{}
 	for k, v := range overlayAll {
 		switch {
 		case k == "schema" || strings.HasPrefix(k, "schema/"):
 			newSchemas[k] = v
 		case k == "fixtures/valid" || strings.HasPrefix(k, "fixtures/valid/"):
 			newFixturesValid[k] = v
+		case k == "fixtures/invalid" || strings.HasPrefix(k, "fixtures/invalid/"):
+			newFixturesInvalid[k] = v
 		}
 	}
 	if violation := validate.CheckContractPublishable(validate.PublishableInput{
-		SchemaFormat:  probe.SchemaFormat,
-		ContractID:    id,
-		Schemas:       len(newSchemas),
-		ValidFixtures: len(newFixturesValid),
+		SchemaFormat:    probe.SchemaFormat,
+		ContractID:      id,
+		Schemas:         len(newSchemas),
+		ValidFixtures:   len(newFixturesValid),
+		InvalidFixtures: len(newFixturesInvalid),
 	}); violation != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %s: refused: %s (%s)\n", id, violation.Message, violation.Code)
 		return 1
@@ -1256,7 +1265,7 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 		return 1
 	}
 	if verdict != fold.VerdictLegal {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %s\n", verdictRefusalMessage(id, verdict))
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %s\n", c.deps.refusalMessage(id, verdict))
 		return 1
 	}
 
@@ -1485,7 +1494,7 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 		return 1
 	}
 	if verdict != fold.VerdictLegal {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %s\n", verdictRefusalMessage(id, verdict))
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %s\n", c.deps.refusalMessage(id, verdict))
 		return 1
 	}
 

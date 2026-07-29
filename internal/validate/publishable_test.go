@@ -42,34 +42,45 @@ func TestCheckContractPublishable(t *testing.T) {
 		wantMention string
 	}{
 		{
-			name: "a JSON-Schema contract with a schema and a fixture publishes",
-			in:   PublishableInput{SchemaFormat: "json-schema-2020-12", ContractID: "XC-axon-ingest", Schemas: 1, ValidFixtures: 1},
+			name: "a JSON-Schema contract with a schema and both fixture classes publishes",
+			in:   PublishableInput{SchemaFormat: "json-schema-2020-12", ContractID: "XC-axon-ingest", Schemas: 1, ValidFixtures: 1, InvalidFixtures: 1},
 		},
 		{
 			name:        "no schema and no fixtures is refused, and says both are missing",
 			in:          PublishableInput{SchemaFormat: "json-schema-2020-12", ContractID: "XC-axon-ingest"},
 			wantRefusal: true,
-			wantMention: "no schema/** files and no fixtures/valid/** files",
+			wantMention: "no schema/** files and no fixtures/valid/** files and no fixtures/invalid/** files",
 		},
 		{
 			name:        "a schema with no fixture leaves nothing to compute against",
-			in:          PublishableInput{SchemaFormat: "json-schema-2020-12", ContractID: "XC-axon-ingest", Schemas: 2},
+			in:          PublishableInput{SchemaFormat: "json-schema-2020-12", ContractID: "XC-axon-ingest", Schemas: 2, InvalidFixtures: 1},
 			wantRefusal: true,
 			wantMention: "no fixtures/valid/** files",
 		},
 		{
 			name:        "fixtures with no schema are equally useless as a baseline",
-			in:          PublishableInput{SchemaFormat: "json-schema-2020-12", ContractID: "XC-axon-ingest", ValidFixtures: 3},
+			in:          PublishableInput{SchemaFormat: "json-schema-2020-12", ContractID: "XC-axon-ingest", ValidFixtures: 3, InvalidFixtures: 1},
 			wantRefusal: true,
 			wantMention: "no schema/** files",
 		},
 		{
-			name: "proto3 is NOT subject to D-D — §5.4b hands it to the owner's CI",
-			in:   PublishableInput{SchemaFormat: "proto3", ContractID: "XC-axon-ingest"},
+			name:        "a schema and valid fixture without an invalid fixture violate the plan contract",
+			in:          PublishableInput{SchemaFormat: "json-schema-2020-12", ContractID: "XC-axon-ingest", Schemas: 1, ValidFixtures: 1},
+			wantRefusal: true,
+			wantMention: "no fixtures/invalid/** files",
 		},
 		{
-			name: "openapi likewise",
-			in:   PublishableInput{SchemaFormat: "openapi-3.x", ContractID: "XC-axon-ingest"},
+			name: "proto3 still carries the format-neutral §5.3 directory baseline",
+			in: PublishableInput{
+				SchemaFormat: "proto3", ContractID: "XC-axon-ingest",
+				Schemas: 1, ValidFixtures: 1, InvalidFixtures: 1,
+			},
+		},
+		{
+			name:        "proto3 without the baseline is refused even though deep validation belongs to owner CI",
+			in:          PublishableInput{SchemaFormat: "proto3", ContractID: "XC-axon-ingest"},
+			wantRefusal: true,
+			wantMention: "no schema/** files and no fixtures/valid/** files and no fixtures/invalid/** files",
 		},
 	}
 

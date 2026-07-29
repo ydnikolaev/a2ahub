@@ -235,6 +235,11 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	// min_binary_version is checked inside the WRITER's binary, which binds a
 	// binary that honours it and does nothing at all to one that does not —
 	// before 0.9.0 that was every lifecycle and contract verb.
+	changedEventPaths := make(map[string]bool, len(events))
+	for _, relPath := range events {
+		changedEventPaths[filepath.ToSlash(relPath)] = true
+	}
+	var lifecycleCandidates []ciLifecycleCandidate
 	for _, relPath := range events {
 		rep, ok := validateCIEvent(engine, root, relPath, manifest.MinBinaryVersion)
 		if rep == nil {
@@ -243,6 +248,53 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 		report.Artifacts = append(report.Artifacts, *rep)
 		if !ok {
 			report.Valid = false
+			continue
+		}
+		if mode == "v3-pr" {
+			raw, err := readBoundedFile(filepath.Join(root, relPath), maxMirrorEventBytes)
+			if err != nil {
+				report.Artifacts[len(report.Artifacts)-1] = validateReport{Path: relPath, Error: err.Error()}
+				report.Valid = false
+				continue
+			}
+			var event lifecycleEventDoc
+			if err := yaml.Unmarshal(raw, &event); err != nil {
+				report.Artifacts[len(report.Artifacts)-1] = validateReport{Path: relPath, Error: err.Error()}
+				report.Valid = false
+				continue
+			}
+			lifecycleCandidates = append(lifecycleCandidates, ciLifecycleCandidate{
+				path: relPath, event: event, report: len(report.Artifacts) - 1,
+			})
+		}
+	}
+	if len(lifecycleCandidates) > 0 {
+		baseEvents, err := lifecycleReadBaseEvents(ctx, root, base, changedEventPaths)
+		if err != nil {
+			for _, candidate := range lifecycleCandidates {
+				report.Artifacts[candidate.report] = validateReport{Path: candidate.path, Error: err.Error()}
+			}
+			report.Valid = false
+		} else {
+			checker := ciBaseLegalityChecker{root: root, manifest: manifest, baseEvents: baseEvents}
+			for _, candidate := range lifecycleCandidates {
+				result, err := engine.ValidateLifecycleCandidates(
+					[]validate.CandidateEvent{lifecycleCandidate(candidate.event)},
+					checker,
+				)
+				if err != nil {
+					report.Artifacts[candidate.report] = validateReport{Path: candidate.path, Error: err.Error()}
+					report.Valid = false
+					continue
+				}
+				if result.Valid {
+					continue
+				}
+				rep := &report.Artifacts[candidate.report]
+				rep.Result.Violations = append(rep.Result.Violations, result.Violations...)
+				rep.Result.Valid = false
+				report.Valid = false
+			}
 		}
 	}
 
@@ -325,15 +377,10 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 // absent on disk (deleted in the PR — skipped, not a violation), else a
 // filled validateReport and whether the artifact is clean.
 //
-// LIFECYCLE SCOPE: candidate events are deliberately empty. In a PR
-// checkout the changed event file is already committed on the branch, so
-// LegalityAdapter.committedEvents (which reads <root>/<system>/events/**)
-// would fold that same event into history AND receive it again as a
-// candidate — double-counting it and reding the legal entry transition as
-// illegal. Reconstructing the base-ref state or excluding the candidate is
-// out of this slice (the adapter and engine are read-only reuse). Empty
-// events means checkLifecycle is a no-op: lifecycle is NOT exercised here
-// (not faked-pass). Schema + referential + authz + policy(secret) ARE.
+// Lifecycle candidates are validated separately from artifacts below:
+// event/v1 documents use the PR head's envelopes and the merge-base's event
+// history, excluding every changed event path. Passing events here would fold
+// the PR checkout's candidate into its own prior.
 func validateCIArtifact(engine *validate.Engine, root, relPath string, manifest space.Manifest, resolver validate.Resolver) (*validateReport, bool) {
 	raw, err := os.ReadFile(filepath.Join(root, relPath))
 	if err != nil {
@@ -650,13 +697,18 @@ func validateCIContract(ctx context.Context, root, base, id, descriptorPath stri
 	if err != nil {
 		return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read fixtures/valid/**: %v", id, err)}, false
 	}
+	fixturesInvalidNew, err := contractWorkingTreeFiles(root, relDir, "fixtures/invalid")
+	if err != nil {
+		return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read fixtures/invalid/**: %v", id, err)}, false
+	}
 
 	var violations []validate.Violation
 	if v := validate.CheckContractPublishable(validate.PublishableInput{
-		SchemaFormat:  probe.SchemaFormat,
-		ContractID:    id,
-		Schemas:       len(schemasNew),
-		ValidFixtures: len(fixturesValidNew),
+		SchemaFormat:    probe.SchemaFormat,
+		ContractID:      id,
+		Schemas:         len(schemasNew),
+		ValidFixtures:   len(fixturesValidNew),
+		InvalidFixtures: len(fixturesInvalidNew),
 	}); v != nil {
 		violations = append(violations, *v)
 	}

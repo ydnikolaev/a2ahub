@@ -22,11 +22,22 @@ const (
 	SeverityUrgent       Severity = 11
 )
 
-// StatuslineResult is `a2a statusline`'s render output: at most one
-// line, and the exit code the caller returns from Run.
+// StatuslineResult is the single computed statusline model. Line preserves the
+// published default text contract; the structured fields power --json and
+// alternate rendering without parsing that text back into facts.
 type StatuslineResult struct {
-	Line string
-	Exit int
+	Line        string `json:"-"`
+	New         int    `json:"new"`
+	Urgent      int    `json:"urgent"`
+	UrgentKind  string `json:"urgent_kind"`
+	UrgentID    string `json:"urgent_id"`
+	UrgentTitle string `json:"urgent_title"`
+	Stale       int    `json:"stale"`
+	Update      string `json:"update"`
+	Severity    int    `json:"severity"`
+	Quiet       bool   `json:"quiet"`
+	Exit        int    `json:"-"`
+	hasItems    bool
 }
 
 // Statusline computes §7.5's contract: cache-read only (no network, no
@@ -48,9 +59,9 @@ func (s *Store) Statusline(ctx context.Context) (StatuslineResult, error) {
 
 	if len(s.spaces) == 0 {
 		if n.Grade != release.GradeNone {
-			return StatuslineResult{Line: n.Segment, Exit: int(SeverityQuiet)}, nil
+			return finishStatusline(StatuslineResult{Update: n.Segment}, SeverityQuiet), nil
 		}
-		return StatuslineResult{Exit: int(SeverityQuiet)}, nil
+		return finishStatusline(StatuslineResult{}, SeverityQuiet), nil
 	}
 
 	idx, _, err := s.index(ctx)
@@ -95,9 +106,9 @@ func (s *Store) Statusline(ctx context.Context) (StatuslineResult, error) {
 
 	if len(actionable) == 0 && staleCount == 0 {
 		if n.Grade != release.GradeNone {
-			return StatuslineResult{Line: n.Segment, Exit: int(SeverityQuiet)}, nil
+			return finishStatusline(StatuslineResult{Update: n.Segment}, SeverityQuiet), nil
 		}
-		return StatuslineResult{Exit: int(SeverityQuiet)}, nil
+		return finishStatusline(StatuslineResult{}, SeverityQuiet), nil
 	}
 
 	newCount := 0
@@ -119,24 +130,63 @@ func (s *Store) Statusline(ctx context.Context) (StatuslineResult, error) {
 		}
 	}
 
-	var b strings.Builder
-	fmt.Fprintf(&b, "a2a: %d new", newCount)
+	result := StatuslineResult{
+		New: newCount, Urgent: urgentCount, Stale: staleCount,
+		Update: n.Segment, hasItems: len(actionable) > 0 || staleCount > 0,
+	}
 	if urgent != nil {
 		// With more than one, the specific label would describe only the
 		// named item, so the segment widens to the honest superset.
 		if urgentCount > 1 {
 			urgentLabel = "urgent"
 		}
-		fmt.Fprintf(&b, " · %d %s %s %q", urgentCount, urgentLabel, urgent.fa.Env.ID, urgent.fa.Env.Title)
+		result.UrgentKind = urgentLabel
+		result.UrgentID = urgent.fa.Env.ID
+		result.UrgentTitle = urgent.fa.Env.Title
 	}
-	if staleCount > 0 {
-		fmt.Fprintf(&b, " · %d stale", staleCount)
-	}
-	if n.Grade != release.GradeNone {
-		fmt.Fprintf(&b, " · %s", n.Segment)
-	}
+	return finishStatusline(result, severity), nil
+}
 
-	return StatuslineResult{Line: b.String(), Exit: int(severity)}, nil
+// RenderStatusline renders an already-computed result. prefix controls only
+// the published leading "a2a: " presentation; update-only and quiet results
+// remain byte-compatible with the original contract.
+func RenderStatusline(result StatuslineResult, prefix bool) string {
+	if !result.hasItems {
+		return result.Update
+	}
+	var b strings.Builder
+	if prefix {
+		b.WriteString("a2a: ")
+	}
+	fmt.Fprintf(&b, "%d new", result.New)
+	if result.Urgent > 0 {
+		fmt.Fprintf(&b, " · %d %s %s %q", result.Urgent, result.UrgentKind, result.UrgentID, result.UrgentTitle)
+	}
+	if result.Stale > 0 {
+		fmt.Fprintf(&b, " · %d stale", result.Stale)
+	}
+	if result.Update != "" {
+		fmt.Fprintf(&b, " · %s", result.Update)
+	}
+	return b.String()
+}
+
+func finishStatusline(result StatuslineResult, severity Severity) StatuslineResult {
+	result.Severity = int(severity)
+	result.Exit = int(severity)
+	result.Quiet = severity == SeverityQuiet
+	result.Line = RenderStatusline(result, true)
+	return result
+}
+
+// SampleStatusline returns a deterministic, dependency-free result for shell
+// prompt integration checks. It uses the same model and renderer as live data.
+func SampleStatusline() StatuslineResult {
+	return finishStatusline(StatuslineResult{
+		New: 2, Urgent: 1, UrgentKind: "p1",
+		UrgentID: "XQ-sample-20260728-a2a", UrgentTitle: "representative urgent item",
+		Stale: 1, hasItems: true,
+	}, SeverityUrgent)
 }
 
 // triggerRefreshIfStale spawns exactly ONE detached, recover-guarded
