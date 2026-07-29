@@ -25,9 +25,9 @@ permissions:
   pull-requests: read
 
 env:
-  # First release carrying the P48 hidden-content boundary. Bump alongside
-  # any later change to `a2a feedback validate --ci`.
-  A2A_INTAKE_VERSION: "0.14.0"
+  # First published release carrying the P48 hidden-content boundary. Bump
+  # alongside any later change to `a2a feedback validate --ci`.
+  A2A_INTAKE_VERSION: "0.15.0"
   REPO: ${{ github.repository }}
   PR_NUMBER: ${{ github.event.pull_request.number }}
   PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
