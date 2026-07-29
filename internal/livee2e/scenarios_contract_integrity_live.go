@@ -139,28 +139,15 @@ func ac973DraftContractExcludingPeer(ctx context.Context, h *harness, c *checkou
 // v2.0.0 covered "content that was never actually pushed". It did not: the
 // edit was gone by the time the digest was computed. Retracted here rather
 // than left to be re-derived.
-// ac973SchemaDir is this family's ONE place that names the contract's
-// space-relative schema directory, so the staging write below and the
-// on-main read at step 4 cannot drift to different paths — which is the
-// failure this row is least able to notice, since a read of the wrong path
-// looks exactly like a publish that carried nothing.
-func ac973SchemaDir(system string) (string, error) {
-	layout, err := space.NewLayout(system)
-	if err != nil {
-		return "", err
-	}
-	return layout.ProvidesSchemaDir(ac973Slug), nil
-}
-
 func ac973BreakSchema(a *checkout, id string) (fixtureCompatKey string, err error) {
-	schemaDir, err := ac973SchemaDir(a.System)
+	paths, err := contractPathsForID(id)
 	if err != nil {
 		return "", err
 	}
 	// The same path `a2a contract new` scaffolded (template.
 	// ScaffoldContractInStaging), so this OVERWRITES the author's own staged
 	// schema rather than adding a second file beside it.
-	schemaPath := filepath.Join(a.Dir, ".a2a", "staging", filepath.FromSlash(schemaDir), ac973Slug+".schema.json")
+	schemaPath := filepath.Join(a.Dir, ".a2a", "staging", filepath.FromSlash(paths.SchemaFile))
 	if _, statErr := os.Stat(schemaPath); statErr != nil {
 		// Fail loudly. A missing staged scaffold would make os.WriteFile
 		// happily create a file the publish overlay still picks up, so the
@@ -180,7 +167,7 @@ func ac973BreakSchema(a *checkout, id string) (fixtureCompatKey string, err erro
 	if err := os.WriteFile(schemaPath, broken, 0o644); err != nil {
 		return "", fmt.Errorf("livee2e: write breaking schema %s: %w", schemaPath, err)
 	}
-	return "fixtures/valid/" + ac973Slug + ".json", nil
+	return paths.ValidFixtureKey, nil
 }
 
 // ac973ContractIntegrity is AC-973.1's own row: publish -> adopt (by the
@@ -305,13 +292,13 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 	// origin/main rather than anything local. Without it the row could pass
 	// on a publish that refused the minor for the right reason and then
 	// landed a major carrying nothing.
-	landedSchemaDir, err := ac973SchemaDir(a.System)
+	contractPaths, err := contractPathsForID(sub.ID)
 	if err != nil {
 		return ac973ResultFromErr("major-publish-carries-schema", err,
-			"the contract's schema directory resolves for A's own system")
+			"the contract's run-scoped schema path resolves from its returned ID")
 	}
 	landedSchema, err := os.ReadFile(filepath.Join(a.MirrorDir(),
-		filepath.FromSlash(landedSchemaDir), ac973Slug+".schema.json"))
+		filepath.FromSlash(contractPaths.SchemaFile)))
 	if err != nil {
 		return ac973ResultFromErr("major-publish-carries-schema", err,
 			"the contract's schema is readable on main after the major publish landed")
