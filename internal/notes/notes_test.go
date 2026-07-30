@@ -37,9 +37,21 @@ func TestLoad_CorpusIntegrity(t *testing.T) {
 	// when the tag is cut — and this tripwire is what forces whoever cuts it
 	// to open the file, so the correction cannot be forgotten.
 	wantVersions := []string{"0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.6.3", "0.6.4", "0.7.0", "0.8.0", "0.9.0", "0.9.1", "0.10.0", "0.11.0", "0.12.0", "0.13.0", "0.15.0", "0.15.1", "0.15.2", "0.16.0", "0.16.1", "0.16.2", "0.16.3"}
+	standingListEra := false
 	for i, rn := range all {
 		if rn.Version != wantVersions[i] {
 			t.Errorf("entry %d: version = %q, want %q (ascending order)", i, rn.Version, wantVersions[i])
+		}
+		if rn.Version == "0.16.3" {
+			standingListEra = true
+		}
+		if standingListEra {
+			for _, change := range rn.Changes {
+				if change.Kind == KindKnownIssue {
+					t.Errorf("%s.yaml: current known issue %q must live only in %s",
+						rn.Version, change.ID, currentKnownIssuesPath)
+				}
+			}
 		}
 	}
 
@@ -82,6 +94,45 @@ func TestLoad_CorpusIntegrity(t *testing.T) {
 				t.Errorf("%s: schema violations: %+v", wantFile, violations)
 			}
 		})
+	}
+}
+
+func TestCurrentKnownIssues_CorpusIntegrity(t *testing.T) {
+	t.Parallel()
+
+	issues, err := LoadCurrentKnownIssues(releasenotes.FS)
+	if err != nil {
+		t.Fatalf("LoadCurrentKnownIssues: %v", err)
+	}
+	raw, err := releasenotes.FS.ReadFile(currentKnownIssuesPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", currentKnownIssuesPath, err)
+	}
+	var doc any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("%s: yaml.Unmarshal: %v", currentKnownIssuesPath, err)
+	}
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	violations, err := corpus.ValidateKnownIssues(doc)
+	if err != nil {
+		t.Fatalf("ValidateKnownIssues: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Fatalf("%s: schema violations: %+v", currentKnownIssuesPath, violations)
+	}
+
+	seen := make(map[string]struct{}, len(issues))
+	for _, issue := range issues {
+		if issue.Kind != KindKnownIssue {
+			t.Errorf("%s: %s has kind %q", currentKnownIssuesPath, issue.ID, issue.Kind)
+		}
+		if _, duplicate := seen[issue.ID]; duplicate {
+			t.Errorf("%s: duplicate issue id %q", currentKnownIssuesPath, issue.ID)
+		}
+		seen[issue.ID] = struct{}{}
 	}
 }
 
@@ -400,6 +451,65 @@ func TestSince(t *testing.T) {
 	got = versionsOf(Since(all, "", ""))
 	want = []string{"0.2.0", "0.3.0", "0.4.0"}
 	assertVersionsEqual(t, `Since("","")`, got, want)
+}
+
+func TestLoadCurrentKnownIssuesAndAttachIndependentlyOfSince(t *testing.T) {
+	t.Parallel()
+
+	fsys := fstest.MapFS{
+		currentKnownIssuesPath: &fstest.MapFile{Data: []byte(`
+schema: known-issues/v1
+issues:
+  - id: KI-MACOS-ADHOC-SIGNING
+    kind: known-issue
+    impact: normal
+    subject: "macOS may ask once"
+    detail: "The companion is ad-hoc signed."
+    action:
+      scope: none
+      why: "Approve only the verified release."
+`)},
+	}
+	issues, err := LoadCurrentKnownIssues(fsys)
+	if err != nil {
+		t.Fatalf("LoadCurrentKnownIssues: %v", err)
+	}
+	if len(issues) != 1 || issues[0].ID != "KI-MACOS-ADHOC-SIGNING" {
+		t.Fatalf("issues = %+v, want the standing macOS issue", issues)
+	}
+	badFS := fstest.MapFS{
+		currentKnownIssuesPath: &fstest.MapFile{Data: []byte("issues: [not: valid")},
+	}
+	if _, err := LoadCurrentKnownIssues(badFS); !errors.Is(err, ErrKnownIssuesInvalid) {
+		t.Fatalf("malformed current issues error = %v, want ErrKnownIssuesInvalid", err)
+	}
+
+	all := []ReleaseNotes{
+		{Schema: "release-notes/v1", Version: "0.8.0", Changes: []Change{
+			{ID: "RN-0800-8", Kind: KindKnownIssue, Subject: "an old issue declaration"},
+		}},
+		{Schema: "release-notes/v1", Version: "0.9.0", Changes: []Change{
+			{ID: "RN-0900-1", Kind: "fix", Subject: "the next release"},
+		}},
+	}
+
+	// The standing issue is not physically repeated in 0.9.0. It must still
+	// reach an updater crossing 0.8.0 -> 0.9.0.
+	got := AttachCurrentKnownIssues(Since(all, "0.8.0", "0.9.0"), all, issues)
+	if len(got) != 1 || got[0].Version != "0.9.0" {
+		t.Fatalf("attached range = %+v, want only the 0.9.0 release carrier", got)
+	}
+	if len(got[0].Changes) != 2 || got[0].Changes[1].ID != "KI-MACOS-ADHOC-SIGNING" {
+		t.Fatalf("0.9.0 changes = %+v, want the standing issue appended", got[0].Changes)
+	}
+
+	// Even an empty strict version range still reports current limitations:
+	// the newest release is used only as a stable carrier for the unchanged
+	// []ReleaseNotes machine contract.
+	got = AttachCurrentKnownIssues(Since(all, "0.9.0", "0.9.0"), all, issues)
+	if len(got) != 1 || len(got[0].Changes) != 1 || got[0].Changes[0].ID != "KI-MACOS-ADHOC-SIGNING" {
+		t.Fatalf("empty range with standing issue = %+v", got)
+	}
 }
 
 func TestExactly(t *testing.T) {

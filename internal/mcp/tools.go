@@ -115,7 +115,15 @@ func registerSpaceFree(r *Registry, store *cache.Store) {
 		}),
 		Handler: newReadDispatch(store),
 	})
-	r.Register(ToolSpec{Name: "a2a_whatsnew", Description: "release directives: what changed and what to do — optional since=<version>", InputSchema: rawSchema(map[string]string{"since": "string"}), Handler: newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return notes.Load(releasenotes.FS) })})
+	r.Register(ToolSpec{
+		Name:        "a2a_whatsnew",
+		Description: "release directives and current known issues — optional since=<version>",
+		InputSchema: rawSchema(map[string]string{"since": "string"}),
+		Handler: newWhatsnewHandler(
+			func() ([]notes.ReleaseNotes, error) { return notes.Load(releasenotes.FS) },
+			func() ([]notes.Change, error) { return notes.LoadCurrentKnownIssues(releasenotes.FS) },
+		),
+	})
 }
 
 // BuildRegistry assembles the P15 capability-grouped tool set. store backs

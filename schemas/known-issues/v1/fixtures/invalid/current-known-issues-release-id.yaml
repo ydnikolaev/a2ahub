@@ -1,0 +1,10 @@
+schema: known-issues/v1
+issues:
+  - id: RN-01603-3
+    kind: known-issue
+    impact: normal
+    subject: "This identifier is tied to one release"
+    detail: "Standing issues require stable KI identifiers."
+    action:
+      scope: none
+      why: "Use a stable KI identifier."

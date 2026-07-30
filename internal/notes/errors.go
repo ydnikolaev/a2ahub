@@ -9,6 +9,10 @@ var (
 	// fails structural parse.
 	ErrReleaseNotesInvalid = errors.New("notes: release notes file is not valid yaml")
 
+	// ErrKnownIssuesInvalid is returned when the standing known-issues YAML
+	// file fails structural parse.
+	ErrKnownIssuesInvalid = errors.New("notes: current known issues file is not valid yaml")
+
 	// ErrCorpusLoad is returned when Load fails to read or parse the
 	// embedded release-notes corpus (a build-time defect, never expected
 	// at runtime against the shipped binary).

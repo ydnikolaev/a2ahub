@@ -42,8 +42,9 @@ const whatsnewDetailWidth = 76
 // a thin flags-in/JSON-or-text-out wrapper over internal/notes — zero
 // business rules live here (ADR-001 "thin frontend").
 type WhatsnewCommand struct {
-	binaryVersion string
-	load          func() ([]notes.ReleaseNotes, error)
+	binaryVersion     string
+	load              func() ([]notes.ReleaseNotes, error)
+	loadCurrentIssues func() ([]notes.Change, error)
 }
 
 // NewWhatsnewCommand constructs the whatsnew command. binaryVersion is this
@@ -55,6 +56,9 @@ func NewWhatsnewCommand(binaryVersion string) *WhatsnewCommand {
 	return &WhatsnewCommand{
 		binaryVersion: binaryVersion,
 		load:          func() ([]notes.ReleaseNotes, error) { return notes.Load(releasenotes.FS) },
+		loadCurrentIssues: func() ([]notes.Change, error) {
+			return notes.LoadCurrentKnownIssues(releasenotes.FS)
+		},
 	}
 }
 
@@ -87,6 +91,11 @@ func (c *WhatsnewCommand) Run(_ context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintf(stdio.Stderr, "whatsnew: %v\n", err)
 		return 1
 	}
+	currentIssues, err := c.loadCurrentIssues()
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "whatsnew: %v\n", err)
+		return 1
+	}
 
 	// upto bounds the query at this binary's own version — a real release
 	// never embeds notes for a version newer than itself. A binary stamp
@@ -107,6 +116,7 @@ func (c *WhatsnewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	} else {
 		slice = []notes.ReleaseNotes{}
 	}
+	slice = notes.AttachCurrentKnownIssues(slice, all, currentIssues)
 
 	if *jsonFlag {
 		enc := json.NewEncoder(stdio.Stdout)

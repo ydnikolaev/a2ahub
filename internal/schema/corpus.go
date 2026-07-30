@@ -34,6 +34,7 @@ type Corpus struct {
 	manifest     *jsonschema.Schema
 	consumes     *jsonschema.Schema
 	releaseNotes *jsonschema.Schema
+	knownIssues  *jsonschema.Schema
 	baseProps    map[string]bool // envelope/v1/base.schema.json's own top-level "properties" keys
 	registry     *Registry
 }
@@ -100,6 +101,10 @@ func Load() (*Corpus, error) {
 	if err != nil {
 		return nil, &Error{Op: op, Input: "release-notes", Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
 	}
+	knownIssues, err := addSeeded(c, "known-issues", "known-issues/v1/known-issues.schema.json")
+	if err != nil {
+		return nil, &Error{Op: op, Input: "known-issues", Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
+	}
 
 	registryRaw, err := schemas.FS.ReadFile("errors/v1/registry.yaml")
 	if err != nil {
@@ -116,6 +121,7 @@ func Load() (*Corpus, error) {
 		manifest:     manifest,
 		consumes:     consumes,
 		releaseNotes: releaseNotes,
+		knownIssues:  knownIssues,
 		baseProps:    baseProps,
 		registry:     registry,
 	}, nil
@@ -250,6 +256,11 @@ func (c *Corpus) ValidateConsumes(version string, instance any) ([]FieldViolatio
 // one schema directly.
 func (c *Corpus) ValidateReleaseNotes(instance any) ([]FieldViolation, error) {
 	return extractFieldViolations(c.releaseNotes.Validate(instance), nil), nil
+}
+
+// ValidateKnownIssues validates the single current known-issues document.
+func (c *Corpus) ValidateKnownIssues(instance any) ([]FieldViolation, error) {
+	return extractFieldViolations(c.knownIssues.Validate(instance), nil), nil
 }
 
 // BaseEnvelopeFields returns the set of field names declared directly on

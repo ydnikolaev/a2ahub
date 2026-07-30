@@ -95,6 +95,16 @@ func TestDemoDataCarriesEmbeddedReleaseNotes(t *testing.T) {
 	if len(data.ReleaseNotes) == 0 {
 		t.Fatal("a2a html --demo must demonstrate the embedded release-note surface")
 	}
+	latest := data.ReleaseNotes[len(data.ReleaseNotes)-1]
+	foundCurrentIssue := false
+	for _, change := range latest.Changes {
+		if change.ID == "KI-MACOS-ADHOC-SIGNING" {
+			foundCurrentIssue = true
+		}
+	}
+	if !foundCurrentIssue {
+		t.Fatalf("latest HTML release note omits the standing known issue: %+v", latest)
+	}
 }
 
 // TestDemoCarriesARollingWindow pins that the demo fixture actually

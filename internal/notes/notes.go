@@ -29,8 +29,9 @@ type Action struct {
 // identically; a known-issue describes something that is BROKEN OR INCOMPLETE
 // right now, which is a different statement to a reader and especially to an
 // agent: it means "do not rely on this surface, use the named alternative". It
-// is expected to reappear in later versions until it is fixed, at which point
-// the fix ships as a normal entry and this one stops being carried.
+// remains valid for historical release documents. Current limitations live
+// once in releasenotes/current/known-issues.yaml and are attached after range
+// selection until the fix ships and removes them there.
 const KindKnownIssue = "known-issue"
 
 // Change is one entry in a release-notes file's changes list.

@@ -23,9 +23,9 @@ changes:
     subject: "a surface an agent should not rely on yet, and what to use instead"
     detail: >
       A known-issue entry names the limitation, says who hits it, and names the
-      working alternative. It is expected to reappear verbatim in later versions
-      until it is actually fixed — at which point the fix ships as `kind: fix`
-      and the known-issue entry stops being carried.
+      working alternative. This historical entry records what was open for this
+      version; the standing current-known-issues list carries the limitation
+      across later version ranges until a `kind: fix` ships and removes it.
     affects: [cli]
     action:
       scope: none

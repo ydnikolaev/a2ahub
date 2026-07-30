@@ -55,6 +55,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "releasebody: no authored release notes for %s\n", normalized)
 		return 1
 	}
+	currentIssues, err := notes.LoadCurrentKnownIssues(releasenotes.FS)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "releasebody: load current known issues: %v\n", err)
+		return 1
+	}
+	rn = notes.AttachCurrentKnownIssues([]notes.ReleaseNotes{rn}, all, currentIssues)[0]
 
 	body := notes.RenderMarkdown(rn, notes.MarkdownOptions{
 		RepositoryURL: "https://github.com/ydnikolaev/a2ahub",

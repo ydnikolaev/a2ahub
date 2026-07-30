@@ -21,11 +21,13 @@ type WhatsnewInput struct {
 	Since string `json:"since,omitempty"`
 }
 
-// newWhatsnewHandler builds a2a_whatsnew's handler. load is injected
-// (mirrors NewWhatsnewCommand's own load field) so tests drive a fixed
-// corpus; the real registration (tools.go) calls notes.Load(releasenotes.FS)
-// inline.
-func newWhatsnewHandler(load func() ([]notes.ReleaseNotes, error)) HandlerFunc {
+// newWhatsnewHandler builds a2a_whatsnew's handler. Both loaders are injected
+// (mirrors NewWhatsnewCommand) so tests drive fixed release history and current
+// limitations independently.
+func newWhatsnewHandler(
+	load func() ([]notes.ReleaseNotes, error),
+	loadCurrentIssues func() ([]notes.Change, error),
+) HandlerFunc {
 	return func(_ context.Context, args json.RawMessage) (any, string, error) {
 		var in WhatsnewInput
 		if len(args) > 0 {
@@ -38,13 +40,19 @@ func newWhatsnewHandler(load func() ([]notes.ReleaseNotes, error)) HandlerFunc {
 		if err != nil {
 			return nil, "", fmt.Errorf("a2a_whatsnew: %w", err)
 		}
+		currentIssues, err := loadCurrentIssues()
+		if err != nil {
+			return nil, "", fmt.Errorf("a2a_whatsnew: %w", err)
+		}
 
 		if in.Since != "" {
-			return notes.Since(all, in.Since, ""), "", nil
+			selected := notes.Since(all, in.Since, "")
+			return notes.AttachCurrentKnownIssues(selected, all, currentIssues), "", nil
 		}
 		if len(all) == 0 {
 			return []notes.ReleaseNotes{}, "", nil
 		}
-		return []notes.ReleaseNotes{all[len(all)-1]}, "", nil
+		selected := []notes.ReleaseNotes{all[len(all)-1]}
+		return notes.AttachCurrentKnownIssues(selected, all, currentIssues), "", nil
 	}
 }
