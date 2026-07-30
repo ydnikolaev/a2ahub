@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -71,9 +72,22 @@ func loadCCCoverage(t *testing.T, path string) []ccCoverageRow {
 	return f.Rows
 }
 
-// resolveTestRef splits "pkg/path.TestName" and runs `go test -list
-// ^TestName$ ./pkg/path` from root, returning an error if TestName is not
-// among the listed tests (or the list itself fails to run).
+type listedPackageTests struct {
+	names map[string]struct{}
+	out   string
+	err   error
+}
+
+var testListCache = struct {
+	sync.Mutex
+	byPackage map[string]listedPackageTests
+}{byPackage: make(map[string]listedPackageTests)}
+
+// resolveTestRef splits "pkg/path.TestName" and resolves it against one
+// canonical `go test -list ^Test ./pkg/path` result cached per package. The
+// former one-subprocess-per-reference shape rebuilt the e2e CLI through
+// TestMain for every row; batching preserves the Go runner's own definition of
+// a listable test while removing repeated setup.
 func resolveTestRef(root, testRef string) error {
 	i := strings.LastIndex(testRef, ".")
 	if i < 0 {
@@ -81,18 +95,55 @@ func resolveTestRef(root, testRef string) error {
 	}
 	pkgPath, testName := testRef[:i], testRef[i+1:]
 
-	cmd := exec.Command("go", "test", "-list", "^"+testName+"$", "./"+pkgPath)
-	cmd.Dir = root
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return &testRefError{testRef, "go test -list failed: " + err.Error() + ": " + string(out)}
+	listed := listPackageTests(root, pkgPath)
+	if listed.err != nil {
+		return &testRefError{testRef, "go test -list failed: " + listed.err.Error() + ": " + listed.out}
 	}
-	for _, line := range strings.Split(string(out), "\n") {
-		if strings.TrimSpace(line) == testName {
-			return nil
+	if _, ok := listed.names[testName]; ok {
+		return nil
+	}
+	return &testRefError{testRef, "not listed by `go test -list ^Test ./" + pkgPath + "`: " + listed.out}
+}
+
+func listPackageTests(root, pkgPath string) listedPackageTests {
+	key := root + "\x00" + pkgPath
+	testListCache.Lock()
+	defer testListCache.Unlock()
+	if cached, ok := testListCache.byPackage[key]; ok {
+		return cached
+	}
+
+	var cmd *exec.Cmd
+	if pkgPath == "internal/e2e" {
+		// We are already running the canonical Go test binary for this
+		// package. Ask that exact artifact to list its tests instead of making
+		// the go command compile/link the same package again. TestMain detects
+		// -test.list and skips unrelated CLI setup.
+		exe, err := os.Executable()
+		if err != nil {
+			result := listedPackageTests{names: make(map[string]struct{}), err: err}
+			testListCache.byPackage[key] = result
+			return result
+		}
+		cmd = exec.Command(exe, "-test.list=^Test")
+	} else {
+		// Cross-package references retain the Go runner as the authority and
+		// are still batched to one invocation per package.
+		cmd = exec.Command("go", "test", "-list", "^Test", "./"+pkgPath)
+		cmd.Dir = root
+	}
+	out, err := cmd.CombinedOutput()
+	result := listedPackageTests{names: make(map[string]struct{}), out: string(out), err: err}
+	if err == nil {
+		for _, line := range strings.Split(string(out), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "Test") {
+				result.names[line] = struct{}{}
+			}
 		}
 	}
-	return &testRefError{testRef, "not listed by `go test -list ^" + testName + "$ ./" + pkgPath + "`: " + string(out)}
+	testListCache.byPackage[key] = result
+	return result
 }
 
 type testRefError struct {

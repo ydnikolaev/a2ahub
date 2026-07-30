@@ -9,6 +9,11 @@ import (
 // makefilePath is repo-relative from this package's directory.
 const makefilePath = "../../Makefile"
 
+// verifyScriptPath is the cache-owning outer runner used by public validation
+// targets. The Makefile keeps the stable target name; this script owns the
+// actual Go invocation.
+const verifyScriptPath = "../../scripts/verify.sh"
+
 // buildTagDirective is assembled rather than written literally so this file's
 // own source can never satisfy the check that looks for it.
 const buildTagDirective = "//go:" + "build livee2e"
@@ -85,11 +90,19 @@ func TestLiveTierIsNotAMergeGate(t *testing.T) {
 		t.Fatal("no `live-e2e` target in the Makefile — the guards below would pass vacuously")
 	}
 
-	// (b) It must run the tier behind its build tag. Without the tag a
-	// plain `go test ./...` would compile (and could execute) the live
-	// scenarios, which is the separation this whole test defends.
-	if !strings.Contains(strings.Join(liveRecipe, "\n"), "-tags=livee2e") {
-		t.Errorf("`live-e2e` does not pass -tags=livee2e; recipe:\n%s", strings.Join(liveRecipe, "\n"))
+	// (b) It must enter the live mode of the outer runner, and that mode must
+	// run the tier behind its build tag. Without the tag a plain
+	// `go test ./...` would compile (and could execute) the live scenarios,
+	// which is the separation this whole test defends.
+	if !strings.Contains(strings.Join(liveRecipe, "\n"), "scripts/verify.sh live") {
+		t.Errorf("`live-e2e` does not enter verify.sh live mode; recipe:\n%s", strings.Join(liveRecipe, "\n"))
+	}
+	verifyScript, err := os.ReadFile(verifyScriptPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", verifyScriptPath, err)
+	}
+	if !strings.Contains(string(verifyScript), "go test ./internal/livee2e/... -tags=livee2e") {
+		t.Errorf("verify.sh live mode does not pass -tags=livee2e")
 	}
 
 	// (b2) …and something must actually be behind that tag. With no
