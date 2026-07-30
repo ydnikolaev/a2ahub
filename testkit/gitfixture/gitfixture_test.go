@@ -3,6 +3,7 @@ package gitfixture
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -95,8 +96,8 @@ func TestHardenEnv_ComposesOverPresetCount(t *testing.T) {
 
 	HardenEnv()
 
-	if got := os.Getenv("GIT_CONFIG_COUNT"); got != "3" {
-		t.Fatalf("GIT_CONFIG_COUNT = %q, want 3 (1 preset + 2 appended)", got)
+	if got := os.Getenv("GIT_CONFIG_COUNT"); got != "5" {
+		t.Fatalf("GIT_CONFIG_COUNT = %q, want 5 (1 preset + 4 appended)", got)
 	}
 	if os.Getenv("GIT_CONFIG_KEY_0") != "user.name" || os.Getenv("GIT_CONFIG_VALUE_0") != "someone" {
 		t.Fatalf("HardenEnv clobbered the pre-set entry at index 0: KEY_0=%q VALUE_0=%q",
@@ -109,6 +110,14 @@ func TestHardenEnv_ComposesOverPresetCount(t *testing.T) {
 	if os.Getenv("GIT_CONFIG_KEY_2") != "maintenance.auto" || os.Getenv("GIT_CONFIG_VALUE_2") != "false" {
 		t.Fatalf("GIT_CONFIG_KEY_2/VALUE_2 = %q/%q, want maintenance.auto/false",
 			os.Getenv("GIT_CONFIG_KEY_2"), os.Getenv("GIT_CONFIG_VALUE_2"))
+	}
+	if os.Getenv("GIT_CONFIG_KEY_3") != "user.name" || os.Getenv("GIT_CONFIG_VALUE_3") != "a2a-fixture" {
+		t.Fatalf("GIT_CONFIG_KEY_3/VALUE_3 = %q/%q, want user.name/a2a-fixture",
+			os.Getenv("GIT_CONFIG_KEY_3"), os.Getenv("GIT_CONFIG_VALUE_3"))
+	}
+	if os.Getenv("GIT_CONFIG_KEY_4") != "user.email" || os.Getenv("GIT_CONFIG_VALUE_4") != "fixture@a2ahub.invalid" {
+		t.Fatalf("GIT_CONFIG_KEY_4/VALUE_4 = %q/%q, want user.email/fixture@a2ahub.invalid",
+			os.Getenv("GIT_CONFIG_KEY_4"), os.Getenv("GIT_CONFIG_VALUE_4"))
 	}
 }
 
@@ -126,8 +135,8 @@ func TestHardenEnv_Idempotent(t *testing.T) {
 	if !reflect.DeepEqual(first, second) {
 		t.Fatalf("second HardenEnv call changed the env:\nbefore=%v\nafter =%v", first, second)
 	}
-	if got := os.Getenv("GIT_CONFIG_COUNT"); got != "2" {
-		t.Fatalf("GIT_CONFIG_COUNT after two HardenEnv calls = %q, want 2 (no duplicate entries)", got)
+	if got := os.Getenv("GIT_CONFIG_COUNT"); got != "4" {
+		t.Fatalf("GIT_CONFIG_COUNT after two HardenEnv calls = %q, want 4 (no duplicate entries)", got)
 	}
 }
 
@@ -152,5 +161,24 @@ func TestHardenEnv_EndToEnd_GitConfigGet(t *testing.T) {
 	got := strings.TrimSpace(string(out))
 	if got != "0" {
 		t.Fatalf("git config --get gc.auto = %q, want 0 (HardenEnv should make this true even without Args, but this routes through both)", got)
+	}
+
+	file := filepath.Join(dir, "fixture.txt")
+	if err := os.WriteFile(file, []byte("fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"-C", dir, "add", "fixture.txt"}, {"-C", dir, "commit", "-q", "-m", "fixture identity"}} {
+		cmd := exec.Command("git", args...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	show := exec.Command("git", "-C", dir, "show", "-s", "--format=%an <%ae>|%cn <%ce>")
+	identity, err := show.Output()
+	if err != nil {
+		t.Fatalf("git show identity: %v", err)
+	}
+	if got, want := strings.TrimSpace(string(identity)), "a2a-fixture <fixture@a2ahub.invalid>|a2a-fixture <fixture@a2ahub.invalid>"; got != want {
+		t.Fatalf("commit identity = %q, want %q", got, want)
 	}
 }

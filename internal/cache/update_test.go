@@ -3,7 +3,6 @@ package cache
 import (
 	"context"
 	"path/filepath"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -137,70 +136,38 @@ func TestUpdateNotice_EmptyCache_GradeNone(t *testing.T) {
 	}
 }
 
-// TestTriggerUpdateRefreshIfStale_FiresWhenStale asserts the detached
-// checker goroutine runs when the T3 cache is older than the TTL — the
-// same fire-and-forget, recover-guarded pattern as
-// triggerRefreshIfStale, observed here via an atomic counter + bounded
-// poll (race-clean: no shared state written without synchronization).
-func TestTriggerUpdateRefreshIfStale_FiresWhenStale(t *testing.T) {
+func TestStatuslineRefreshNeeded_UpdateStale(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
 	staleAt := now.Add(-2 * time.Hour)
 	cachePath := seedUpdateCache(t, dir, "0.1.0", staleAt)
 
-	var calls int32
-	checker := func(ctx context.Context) { atomic.AddInt32(&calls, 1) }
-
 	store := NewStore("axon", t.TempDir(), nil, func() time.Time { return now }, 0)
-	store.EnableUpdateNotice("0.1.0", cachePath, time.Hour, checker)
-
-	store.triggerUpdateRefreshIfStale(context.Background())
-
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if atomic.LoadInt32(&calls) > 0 {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if atomic.LoadInt32(&calls) != 1 {
-		t.Fatalf("checker calls = %d, want 1 (stale cache triggers exactly one refresh)", atomic.LoadInt32(&calls))
+	store.EnableUpdateNotice("0.1.0", cachePath, time.Hour, func(context.Context) {})
+	if !store.StatuslineRefreshNeeded() {
+		t.Fatal("stale update cache did not request refresh")
 	}
 }
 
-// TestTriggerUpdateRefreshIfStale_SkipsWhenFresh asserts the checker is
-// NOT invoked when the T3 cache is within the TTL.
-func TestTriggerUpdateRefreshIfStale_SkipsWhenFresh(t *testing.T) {
+func TestStatuslineRefreshNeeded_UpdateFresh(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
 	freshAt := now.Add(-1 * time.Minute)
 	cachePath := seedUpdateCache(t, dir, "0.1.0", freshAt)
 
-	var calls int32
-	checker := func(ctx context.Context) { atomic.AddInt32(&calls, 1) }
-
 	store := NewStore("axon", t.TempDir(), nil, func() time.Time { return now }, 0)
-	store.EnableUpdateNotice("0.1.0", cachePath, time.Hour, checker)
-
-	store.triggerUpdateRefreshIfStale(context.Background())
-
-	// No goroutine should even spawn; a short, bounded grace window
-	// confirms no LATE call either (rather than asserting instantaneously,
-	// which would be a false negative on a slow CI runner if the
-	// implementation were wrong in a delayed way).
-	time.Sleep(50 * time.Millisecond)
-	if atomic.LoadInt32(&calls) != 0 {
-		t.Fatalf("checker calls = %d, want 0 (fresh cache must not trigger a refresh)", atomic.LoadInt32(&calls))
+	store.EnableUpdateNotice("0.1.0", cachePath, time.Hour, func(context.Context) {})
+	if store.StatuslineRefreshNeeded() {
+		t.Fatal("fresh update cache requested refresh")
 	}
 }
 
-// TestTriggerUpdateRefreshIfStale_NotEnabled asserts the trigger is a
-// complete no-op (no panic, no call) when EnableUpdateNotice was never
-// called.
-func TestTriggerUpdateRefreshIfStale_NotEnabled(t *testing.T) {
+func TestStatuslineRefreshNeeded_UpdateNotEnabled(t *testing.T) {
 	t.Parallel()
 	store := NewStore("axon", t.TempDir(), nil, time.Now, 0)
-	store.triggerUpdateRefreshIfStale(context.Background())
+	if store.StatuslineRefreshNeeded() {
+		t.Fatal("disabled update notice requested refresh")
+	}
 }

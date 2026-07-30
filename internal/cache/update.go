@@ -155,33 +155,12 @@ func (s *Store) updateFloor() (floor, floorSpace string) {
 	return floor, floorSpace
 }
 
-// triggerUpdateRefreshIfStale spawns exactly ONE detached, recover-guarded
-// goroutine that runs the injected update-check refresh (updateChecker) —
-// same pattern as triggerRefreshIfStale (context.Background(), defer
-// recover): this call never waits on that goroutine, so it never affects
-// this package's own render budget. A no-op when EnableUpdateNotice was
-// never called, when no checker was wired, or when the T3 cache is still
-// fresh.
-func (s *Store) triggerUpdateRefreshIfStale(_ context.Context) {
-	if !s.updateEnabled || s.updateChecker == nil {
-		return
-	}
-	if _, fresh := release.ReadLatest(s.updateCachePath, s.now(), s.updateTTL); fresh {
-		return
-	}
-	checker := s.updateChecker
-	go func() { //nolint:gosec // reason: context.Background() here is intentional — a detached background refresh must outlive the caller's request-scoped ctx (see func doc above)
-		defer func() { _ = recover() }() // rails: the refresh goroutine must never panic into the caller's prompt
-		checker(context.Background())
-	}()
-}
-
 // refreshUpdateNoticeForNotifications performs the notification-specific
 // refresh path. Notification status/claim processes do not remain alive long
 // enough for the statusline's detached goroutine, so the canonical checker is
 // invoked in-process with a firm request deadline. The checker owns errors as
 // advisory cache state; a panic is isolated from delivery just like the
-// statusline background path.
+// statusline's detached `a2a sync` path.
 func (s *Store) refreshUpdateNoticeForNotifications(ctx context.Context) {
 	if !s.updateEnabled || s.updateChecker == nil {
 		return

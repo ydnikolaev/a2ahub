@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/host"
@@ -348,5 +349,24 @@ func runReadVerbAs(t *testing.T, mirrorDir, spaceID, ownSystem, verb string, arg
 			t.Fatalf("runReadVerbAs: exec %s %v: %v", bin, cmdArgs, err)
 		}
 	}
+	if verb == "statusline" {
+		waitForStatuslineRefresh(t, filepath.Join(projectDir, ".a2a", "cache", "statusline-refresh.lease"))
+	}
 	return out.String(), errBuf.String(), exitCode
+}
+
+func waitForStatuslineRefresh(t *testing.T, leasePath string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(leasePath); errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("detached statusline refresh did not release %s", leasePath)
+		}
+		// This is real process-completion timing: the product's observable
+		// lease is the synchronization primitive, never an arbitrary sleep.
+		time.Sleep(10 * time.Millisecond)
+	}
 }

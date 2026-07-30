@@ -56,7 +56,8 @@ func Args(args ...string) []string {
 	return out
 }
 
-// gitConfigTrio is gitCoreFlags's env-based equivalent, expressed as
+// gitConfigTrio is gitCoreFlags's env-based equivalent plus a deterministic
+// test-only author/committer identity, expressed as
 // GIT_CONFIG_KEY_<n>/GIT_CONFIG_VALUE_<n> pairs — the mechanism that
 // reaches the ONE spawn path Args cannot: production code invoking git
 // while the process it runs in is under test. See the package doc for why
@@ -65,6 +66,8 @@ func Args(args ...string) []string {
 var gitConfigTrio = [][2]string{
 	{"gc.auto", "0"},
 	{"maintenance.auto", "false"},
+	{"user.name", "a2a-fixture"},
+	{"user.email", "fixture@a2ahub.invalid"},
 }
 
 // HardenEnv sets the GIT_CONFIG_COUNT/GIT_CONFIG_KEY_<n>/GIT_CONFIG_VALUE_<n>
@@ -74,7 +77,7 @@ var gitConfigTrio = [][2]string{
 // gives fixture call sites directly.
 //
 // It COMPOSES rather than clobbers: if GIT_CONFIG_COUNT is already N, the
-// two entries are appended at indices N and N+1 and COUNT is set to N+2 —
+// four entries are appended at indices N..N+3 and COUNT is set to N+4 —
 // an already-configured GIT_CONFIG_KEY_0/VALUE_0 (say) is left untouched.
 // It is idempotent: calling it twice does not add duplicate entries, so
 // TestMain functions across packages can call it freely without needing to

@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"os"
+	"os/exec"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 )
@@ -24,13 +26,20 @@ import (
 // this file writes exactly what Store.Statusline returns and nothing
 // else (never real os.Stdout/Stderr, only the injected IO).
 type StatuslineCommand struct {
-	store *cache.Store
+	store           *cache.Store
+	refreshLauncher func() error
 }
 
-// NewStatuslineCommand constructs the statusline command. store must
-// not be nil (rails anti-pattern #10).
-func NewStatuslineCommand(store *cache.Store) *StatuslineCommand {
-	return &StatuslineCommand{store: store}
+// NewStatuslineCommand constructs the statusline command. Production wiring
+// injects StartDetachedSync; tests that do not exercise refresh pass nil.
+func NewStatuslineCommand(store *cache.Store, refreshLauncher func() error) *StatuslineCommand {
+	return &StatuslineCommand{store: store, refreshLauncher: refreshLauncher}
+}
+
+// SetRefreshLauncherForTest replaces the detached process boundary. Product
+// wiring injects StartDetachedSync at cmd/a2a.
+func (c *StatuslineCommand) SetRefreshLauncherForTest(launcher func() error) {
+	c.refreshLauncher = launcher
 }
 
 // Name implements cli.Command.
@@ -82,6 +91,7 @@ func (c *StatuslineCommand) Run(ctx context.Context, args []string, stdio IO) in
 			_, _ = fmt.Fprintf(stdio.Stderr, "statusline: %v\n", err)
 			return 1
 		}
+		c.startRefreshIfNeeded(*sample)
 		return result.Exit
 	}
 	line := result.Line
@@ -91,7 +101,53 @@ func (c *StatuslineCommand) Run(ctx context.Context, args []string, stdio IO) in
 	if line != "" {
 		_, _ = fmt.Fprintln(stdio.Stdout, line)
 	}
+	c.startRefreshIfNeeded(*sample)
 	return result.Exit
+}
+
+func (c *StatuslineCommand) startRefreshIfNeeded(sample bool) {
+	if sample || c.store == nil || c.refreshLauncher == nil || !c.store.ClaimStatuslineRefreshLease() {
+		return
+	}
+	started := func() (ok bool) {
+		defer func() {
+			if recover() != nil {
+				ok = false
+			}
+		}()
+		return c.refreshLauncher() == nil
+	}()
+	if !started {
+		c.store.ReleaseStatuslineRefreshLease()
+	}
+}
+
+// StartDetachedSync launches the current a2a executable's canonical sync
+// command without inheriting prompt-facing stdio or waiting for completion.
+func StartDetachedSync() error {
+	executable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve current executable: %w", err)
+	}
+	null, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("open null device: %w", err)
+	}
+	defer func() {
+		_ = null.Close() // reason: child owns its duplicated descriptors after Start; parent close is best-effort
+	}()
+
+	cmd := exec.Command(executable, "sync")
+	cmd.Stdin = null
+	cmd.Stdout = null
+	cmd.Stderr = null
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start detached sync: %w", err)
+	}
+	// The one-shot parent exits immediately; releasing the handle avoids
+	// retaining process resources while the child completes independently.
+	_ = cmd.Process.Release() // reason: child already started; parent exits and cannot repair a release-handle failure
+	return nil
 }
 
 var _ Command = (*StatuslineCommand)(nil)

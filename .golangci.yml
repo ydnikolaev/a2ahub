@@ -74,7 +74,7 @@ linters:
       # explicit cmd:<argv> credential feature. Exact file paths keep a new
       # execution site anywhere else red; scripts/check-gosec-scope.sh has the
       # outside-allowlist teeth.
-      - path: ^(cmd/a2a/notifications_platform\.go|internal/cache/mirror\.go|internal/cli/(cmd_contract|cmd_html|cmd_update|cmd_validate_ci|contract_git)\.go|internal/host/github\.go|internal/mcp/tools_contract\.go|internal/release/selfcheck\.go|internal/space/(credential|mirror)\.go)$
+      - path: ^(cmd/a2a/notifications_platform\.go|internal/cache/mirror\.go|internal/cli/(cmd_contract|cmd_html|cmd_statusline|cmd_update|cmd_validate_ci|contract_git)\.go|internal/host/github\.go|internal/mcp/tools_contract\.go|internal/release/selfcheck\.go|internal/space/(credential|mirror)\.go)$
         text: "G204:"
         linters: [gosec]
       # Test support binaries shell only to the fixture's own git repositories.
@@ -85,7 +85,7 @@ linters:
       # in project config, a mirror/staging checkout, a release cache, or an
       # explicitly selected local input. This is deliberately an exact-file
       # allowlist, not the former repository-global suppression.
-      - path: ^(cmd/a2a/wire\.go|internal/(artifact/digesttree|cache/(cursor|marker|mirror)|cli/(adapters|cmd_init|cmd_skill|cmd_validate_ci)|coveragepolicy/policy|e2e/coverage|feedback/(ledger|triage)|html/assemble|mcp/(adapters|wire)|notification/files|release/(cache|cohort|detail|download|verifier)|space/(config|mirror|mirrorlock)|surface/link|template/contract_scaffold)\.go)$
+      - path: ^(cmd/a2a/wire\.go|internal/(artifact/digesttree|cache/(cursor|marker|mirror|statusline_refresh)|cli/(adapters|cmd_init|cmd_skill|cmd_validate_ci)|coveragepolicy/policy|e2e/coverage|feedback/(ledger|triage)|html/assemble|mcp/(adapters|wire)|notification/files|release/(cache|cohort|detail|download|verifier)|space/(config|mirror|mirrorlock)|surface/link|template/contract_scaffold)\.go)$
         text: "G304:"
         linters: [gosec]
       # nilerr: a2ahub's validate/adapter layer returns validation FAILURES as

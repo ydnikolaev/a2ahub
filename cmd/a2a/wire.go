@@ -227,6 +227,7 @@ func buildCommands() map[string]command {
 		if err != nil {
 			return fail(stderr, err)
 		}
+		defer cache.ReleaseStatuslineRefreshLease(cacheDirOf(p))
 		return cli.NewSyncCommand(p.projectConfig, p.machineConfig, p.projectRoot, cli.NewCacheBackedPendingMarker(cacheDirOf(p))).Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["await"] = func(args []string, stdout, stderr io.Writer) int {
@@ -435,7 +436,7 @@ func readVerbs() map[string]func(*cache.Store) cli.Command {
 		"search":    func(s *cache.Store) cli.Command { return cli.NewSearchCommand(s) },
 		"contracts": func(s *cache.Store) cli.Command { return cli.NewContractsCommand(s) },
 		"statusline": func(s *cache.Store) cli.Command {
-			return cli.NewStatuslineCommand(s)
+			return cli.NewStatuslineCommand(s, cli.StartDetachedSync)
 		},
 		"html":      func(s *cache.Store) cli.Command { return cli.NewHtmlCommand(s) },
 		"dashboard": func(s *cache.Store) cli.Command { return cli.NewDashboardCommand(s) },

@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rogpeppe/go-internal/testscript"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
@@ -108,6 +110,22 @@ func TestT3Scripts(t *testing.T) {
 					env.Setenv(name, val)
 				}
 			}
+			leasePath := filepath.Join(env.WorkDir, ".a2a", "cache", "statusline-refresh.lease")
+			env.Defer(func() {
+				deadline := time.Now().Add(10 * time.Second)
+				for {
+					if _, err := os.Stat(leasePath); errors.Is(err, os.ErrNotExist) {
+						return
+					}
+					if time.Now().After(deadline) {
+						t.Errorf("detached statusline refresh did not release %s", leasePath)
+						return
+					}
+					// The lease is the child-completion signal; this wait owns
+					// fixture teardown instead of racing the child's git fetch.
+					time.Sleep(10 * time.Millisecond)
+				}
+			})
 			return nil
 		},
 	})
