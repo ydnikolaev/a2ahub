@@ -22,13 +22,16 @@ permissions:
 
 jobs:
   no-private-paths:
-    # This backstop validates the published projection. The private source
-    # repository intentionally tracks private-only dependabot configuration.
-    if: github.repository == 'ydnikolaev/a2ahub'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: record private source scope
+        if: github.repository != 'ydnikolaev/a2ahub'
+        run: echo "Private source repository intentionally carries private-only paths; public projection is checked after publication."
       - name: assert no private path is tracked
+        # This backstop validates the published projection. The private source
+        # repository intentionally tracks private-only dependabot configuration.
+        if: github.repository == 'ydnikolaev/a2ahub'
         run: |
           set -euo pipefail
           # scripts/ is matched as a DENY list, not an allow list, and it
