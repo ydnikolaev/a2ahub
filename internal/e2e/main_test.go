@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
@@ -42,10 +43,32 @@ func runTestMain(m *testing.M) int {
 	// sees it as well, though that subprocess itself never spawns git.
 	gitfixture.HardenEnv()
 
+	// A `go test -list` subprocess proves that a manifest's TestName still
+	// exists; it executes no tests and therefore needs no black-box artifact.
+	// Skipping the build here turns N reference checks from N linker runs into
+	// one cheap package listing, without weakening what `-list` proves.
+	if testListRequested(os.Args[1:]) {
+		return m.Run()
+	}
+
 	root, err := repoRoot()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "internal/e2e: TestMain: resolve repo root:", err)
 		return 1
+	}
+
+	if supplied := os.Getenv("A2A_VERIFY_BINARY"); supplied != "" {
+		info, statErr := os.Stat(supplied)
+		if statErr != nil {
+			fmt.Fprintln(os.Stderr, "internal/e2e: TestMain: shared A2A_VERIFY_BINARY:", statErr)
+			return 1
+		}
+		if !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
+			fmt.Fprintln(os.Stderr, "internal/e2e: TestMain: shared A2A_VERIFY_BINARY is not an executable regular file:", supplied)
+			return 1
+		}
+		binDir = filepath.Dir(supplied)
+		return m.Run()
 	}
 
 	dir, err := os.MkdirTemp("", "a2a-e2e-bin-*")
@@ -63,6 +86,7 @@ func runTestMain(m *testing.M) int {
 	// package's direct-construction tests already use for binaryVersion).
 	cmd := exec.Command("go", "build", "-ldflags", "-X main.version=0.1.0", "-o", bin, "./cmd/a2a")
 	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GOWORK=off")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "internal/e2e: TestMain: go build ./cmd/a2a: %v\n%s\n", err, out)
 		return 1
@@ -70,6 +94,15 @@ func runTestMain(m *testing.M) int {
 
 	binDir = dir
 	return m.Run()
+}
+
+func testListRequested(args []string) bool {
+	for _, arg := range args {
+		if arg == "-test.list" || strings.HasPrefix(arg, "-test.list=") {
+			return true
+		}
+	}
+	return false
 }
 
 // repoRoot resolves the product repo root from this source file's own

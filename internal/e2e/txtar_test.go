@@ -2,6 +2,8 @@ package e2e
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,6 +45,20 @@ func TestT3Scripts(t *testing.T) {
 	fixOriginManifest(t, origin, "fixture-space")
 	seedOriginExtras(t, origin)
 
+	// Host-backed read checks need a deterministic "credential cannot read
+	// settings" answer. A closed port used to model that as a transport
+	// outage, so production's correct 2s+4s+8s retry schedule ran once per
+	// doctor row and made this script spend ~72 seconds sleeping. A local
+	// fatal 403 exercises the same doctor advisory branch without conflating
+	// permission denial with an unknown transport outcome. Retry semantics
+	// have their own host tests; no script reaches the network.
+	deniedAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"fixture denies repository metadata"}`))
+	}))
+	t.Cleanup(deniedAPI.Close)
+
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata/t3",
 		Setup: func(env *testscript.Env) error {
@@ -73,16 +89,9 @@ func TestT3Scripts(t *testing.T) {
 			env.Setenv("HOME", home)
 			env.Setenv("FIXTURE_TOKEN", "dummy-token")
 			env.Setenv("ORIGIN", origin)
-			// Pin the GitHub API root at a closed local port so NO script can
-			// reach the real api.github.com. P45 added `a2a doctor`'s
-			// auto-merge row, which is host-backed: without this the exec'd
-			// binary dialled api.github.com with FIXTURE_TOKEN on every run of
-			// this suite and got a real 401 back. That made `make check` depend
-			// on the network (slow, and red in any sandbox without egress) and
-			// leaked a dummy token to a third party. A refused connection
-			// exercises the same code path — the read cannot be answered — and
-			// resolves in microseconds.
-			env.Setenv("A2A_GITHUB_API", "http://127.0.0.1:1")
+			// Pin the API root to the local denial fixture so NO script can
+			// reach api.github.com or leak FIXTURE_TOKEN to a third party.
+			env.Setenv("A2A_GITHUB_API", deniedAPI.URL)
 			env.Setenv("PATH", binDir+string(os.PathListSeparator)+env.Getenv("PATH"))
 			// testscript builds its own curated Env.Vars — it does NOT
 			// inherit the outer test process's os.Environ() (see HOME/PATH

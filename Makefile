@@ -2,8 +2,8 @@
 # Root Makefile — repo-level tooling (make-ABI)
 # ─────────────────────────────────────────────────────────────────────
 #
-# make check             THE CEILING — repo gates + Go gates (gofmt/vet/test),
-#                         the latter only if go.mod exists yet.
+# make check             THE CEILING — one outer runner owns cache/artifact,
+#                         repo gates, then Go gates (gofmt/vet/lint/test).
 # make check-validators  THE STATIC LANE — repo gates only, no tests. The inner
 #                         loop when the diff is docs/scripts and no Go changed.
 # make classify-guard    publish-boundary gate: no private (harness) path tracked.
@@ -34,7 +34,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check check-validators feature-lint epic-drift skill-citations release-notes-freshness readme-lint classify-guard workflow-lint gosec-scope harness-check coverage vulncheck release-preflight live-e2e install
+.PHONY: check check-validators _print-repo-gates feature-lint epic-drift skill-citations release-notes-freshness readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -47,35 +47,14 @@
 # presence-gates itself so `make check` never hard-fails on their absence.
 REPO_GATES := classify-guard workflow-lint gosec-scope readme-lint feature-lint epic-drift skill-citations release-notes-freshness
 
-check-validators: $(REPO_GATES) ## Repo gates only, no tests, no build — the static lane.
-	@echo "check-validators: repo gates green ($(REPO_GATES)). No tests ran."
+_print-repo-gates:
+	@echo "$(REPO_GATES)"
 
-check: $(REPO_GATES) ## THE CEILING — repo gates, plus Go gates once go.mod exists.
-	@if [ -f go.mod ]; then \
-	  echo "check: go.mod found — running Go gates (gofmt -l, go vet, lint, go test -race)"; \
-	  unformatted=$$(gofmt -l .); \
-	  if [ -n "$$unformatted" ]; then \
-	    echo "check: gofmt -l found unformatted file(s):"; \
-	    echo "$$unformatted"; \
-	    exit 1; \
-	  fi; \
-	  go vet ./... || exit 1; \
-	  go vet -tags=livee2e ./internal/livee2e/... || exit 1; \
-	  if [ -f .golangci.yml ]; then \
-	    if command -v golangci-lint >/dev/null 2>&1; then \
-	      golangci-lint run ./... || exit 1; \
-	    else \
-	      echo "check: FAIL — .golangci.yml exists but golangci-lint is not installed."; \
-	      echo "       A configured lint gate that silently skips is a hole, not a gate."; \
-	      exit 1; \
-	    fi; \
-	  fi; \
-	  go test ./... -race -covermode=atomic -coverprofile=coverage.out -count=1 || exit 1; \
-	  go run internal/coveragepolicy/covercheck.go coverage.out || exit 1; \
-	  echo "check: repo gates + Go gates green (coverage floor met)."; \
-	else \
-	  echo "check: no go.mod yet — repo gates only (Go gates skipped)."; \
-	fi
+check-validators: ## Repo gates only; one shared CLI build feeds binary-backed static gates.
+	@bash scripts/verify.sh validators
+
+check: ## THE CEILING — project-owned cache + one CLI artifact + static and Go gates.
+	@bash scripts/verify.sh full
 
 classify-guard: ## Publish-boundary gate: no private (harness) path is tracked, DENY↔.gitignore agree.
 	@bash scripts/classify-guard.sh
@@ -92,10 +71,8 @@ gosec-scope: ## G204/G304 stay live outside the exact reviewed path allowlist.
 readme-lint: ## README stays compact, current, and exits to the canonical docs.
 	@bash scripts/check-readme.sh
 
-coverage: ## go test -race with coverage, gated by the coveragepolicy SSOT floor (same code path as `check`).
-	@if [ ! -f go.mod ]; then echo "coverage: no go.mod — skipped."; exit 0; fi
-	go test ./... -race -covermode=atomic -coverprofile=coverage.out -count=1
-	@go run internal/coveragepolicy/covercheck.go coverage.out
+coverage: ## Same one-artifact race/coverage path as `check`, without static/vet/lint phases.
+	@bash scripts/verify.sh coverage
 
 release-preflight: ## MUST pass before cutting a release tag: version free on the release remote + every space-template reusable pin resolves to a tag that carries the workflow. Needs network — NOT in `check`. Usage: make release-preflight VERSION=v0.6.0
 	@test -n "$(VERSION)" || { echo "release-preflight: set VERSION, e.g. make release-preflight VERSION=v0.6.0"; exit 2; }
@@ -110,8 +87,7 @@ vulncheck: ## govulncheck ./... gated by .govulncheck-allow.txt (NEW called vuln
 	if [ -n "$$found" ]; then echo "vulncheck: OK — only accepted vulns present:$$(printf '%s' "$$found" | tr '\n' ' ' | sed 's/^/ /')"; else echo "vulncheck: OK — no called vulnerabilities"; fi
 
 live-e2e: ## THE LIVE TIER: the real binary against a real GitHub space (spec 36). Needs A2A_LIVE_E2E_{ORG,PROVISIONER_TOKEN,PARTICIPANT_TOKEN,CANDIDATE_SHA}; CANDIDATE_SHA is the immutable public release candidate used for workflow source and validator. NEVER in `check` or a merge gate. A narrowed A2A_LIVE_E2E_FAMILIES/A2A_LIVE_E2E_CELLS run always exits non-zero.
-	@test -f go.mod || { echo "live-e2e: no go.mod — nothing to run."; exit 2; }
-	go test ./internal/livee2e/... -tags=livee2e -count=1 -v -timeout 125m
+	@bash scripts/verify.sh live
 
 install: ## Put a dev `a2a` on your PATH that always runs THIS source tree (rebuilds when changed).
 	@sh scripts/dev-install.sh
@@ -141,6 +117,10 @@ epic-drift: ## An epic's committed docs (status.md stamp, receipts) must match i
 	fi
 
 harness-check: ## Run the gates' --teeth self-tests (harness gates are private/presence-gated; release-preflight is public).
+	@bash scripts/verify.sh harness
+
+_harness-check:
+	@bash scripts/verify.sh --teeth
 	@bash scripts/check-gosec-scope.sh --teeth
 	@bash scripts/release-preflight.sh --teeth
 	@bash scripts/check-release-notes-freshness.sh --teeth

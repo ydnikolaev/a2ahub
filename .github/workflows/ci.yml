@@ -37,6 +37,9 @@ jobs:
             | sh -s -- -b "$(go env GOPATH)/bin" v2.12.2
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      - name: Resolve module inputs
+        run: go mod download
+
       - name: make check
         run: make check
 
