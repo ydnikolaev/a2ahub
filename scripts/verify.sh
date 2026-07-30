@@ -13,6 +13,12 @@ MARKER="$VERIFY_ROOT/.a2ahub-verify-cache-v1"
 MAX_CACHE_KIB=$((2 * 1024 * 1024))
 TELEMETRY_LIMIT=2000
 MODE="${1:-full}"
+SCOPED_PACKAGES=()
+SCOPED_TEST_COUNT="${A2A_VERIFY_TEST_COUNT:-1}"
+if [ "$MODE" = "test" ]; then
+  shift
+  SCOPED_PACKAGES=("$@")
+fi
 
 now_ms() {
   perl -MTime::HiRes=time -e 'printf "%.0f\n", time() * 1000'
@@ -61,7 +67,7 @@ prepare_cache_root() {
   fi
 
   mkdir -p "$VERIFY_ROOT/go-build" "$VERIFY_ROOT/golangci-lint" "$VERIFY_ROOT/bin"
-  export GOCACHE="$VERIFY_ROOT/go-build"
+  configure_go_cache
   export GOLANGCI_LINT_CACHE="$VERIFY_ROOT/golangci-lint"
   export GOWORK=off
   # Verification consumes the already-resolved module graph and never reaches
@@ -69,6 +75,39 @@ prepare_cache_root() {
   # checkout does the same once with `go mod download`.
   export GOPROXY=off
   export A2A_VERIFY_BINARY="$VERIFY_ROOT/bin/a2a"
+}
+
+configure_go_cache() {
+  local expected workspace_root cache_root
+  if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+    export GOCACHE="$VERIFY_ROOT/go-build"
+    return 0
+  fi
+  if [ -z "${GITHUB_WORKSPACE:-}" ]; then
+    fail "GITHUB_ACTIONS=true but GITHUB_WORKSPACE is empty"
+    return 1
+  fi
+  expected="$GITHUB_WORKSPACE/.a2a/cache/ci-go-build"
+  if [ "${GOCACHE:-}" != "$expected" ]; then
+    fail "GitHub GOCACHE must equal setup-go's project path $expected (got ${GOCACHE:-<empty>})"
+    return 1
+  fi
+  if [ -L "$GITHUB_WORKSPACE" ] || [ -L "$expected" ]; then
+    fail "GitHub cache path may not be a symlink ($expected)"
+    return 1
+  fi
+  mkdir -p "$GITHUB_WORKSPACE" "$expected"
+  workspace_root="$(cd "$GITHUB_WORKSPACE" && pwd -P)"
+  cache_root="$(cd "$expected" && pwd -P)"
+  case "$cache_root" in
+    "$workspace_root"/*) ;;
+    *)
+      fail "GitHub cache resolved outside GITHUB_WORKSPACE: $cache_root"
+      return 1
+      ;;
+  esac
+  export GOCACHE="$cache_root"
+  echo "verify: GOCACHE=$GOCACHE (owned by actions/setup-go for this ephemeral runner)"
 }
 
 append_telemetry() {
@@ -185,6 +224,37 @@ run_go_tests() {
   go test ./... -race -covermode=atomic -coverprofile=coverage.out -count=1
 }
 
+run_scoped_tests() {
+  local args=(-race "-count=$SCOPED_TEST_COUNT")
+  if [ -n "${A2A_VERIFY_TEST_RUN:-}" ]; then
+    args+=(-run "$A2A_VERIFY_TEST_RUN")
+  fi
+  go test "${SCOPED_PACKAGES[@]}" "${args[@]}"
+}
+
+validate_scoped_packages() {
+  local pkg
+  case "$SCOPED_TEST_COUNT" in
+    ''|*[!0-9]*|0)
+      fail "A2A_VERIFY_TEST_COUNT must be a positive integer (got $SCOPED_TEST_COUNT)"
+      return 1
+      ;;
+  esac
+  if [ "${#SCOPED_PACKAGES[@]}" -eq 0 ]; then
+    fail "scoped test mode requires at least one ./package pattern"
+    return 1
+  fi
+  for pkg in "${SCOPED_PACKAGES[@]}"; do
+    case "$pkg" in
+      ./*) ;;
+      *)
+        fail "scoped test package must start with ./ (got $pkg)"
+        return 1
+        ;;
+    esac
+  done
+}
+
 run_live_tests() {
   if [ ! -f go.mod ]; then
     echo "live-e2e: no go.mod — nothing to run." >&2
@@ -247,6 +317,50 @@ run_teeth() {
     return 1
   fi
 
+  SCOPED_PACKAGES=()
+  if validate_scoped_packages >/dev/null 2>&1; then
+    echo "verify --teeth: FAIL — empty scoped package set was accepted." >&2
+    return 1
+  fi
+  SCOPED_PACKAGES=(-run)
+  if validate_scoped_packages >/dev/null 2>&1; then
+    echo "verify --teeth: FAIL — flag-shaped scoped package was accepted." >&2
+    return 1
+  fi
+  SCOPED_PACKAGES=(./internal/cache/...)
+  if ! validate_scoped_packages; then
+    echo "verify --teeth: FAIL — valid scoped package was refused." >&2
+    return 1
+  fi
+
+  mkdir -p "$tmp/workspace"
+  if ! out="$(
+    GITHUB_ACTIONS=true \
+      GITHUB_WORKSPACE="$tmp/workspace" \
+      GOCACHE="$tmp/workspace/.a2a/cache/ci-go-build" \
+      VERIFY_ROOT="$fixture_root/.a2a/cache/verify" \
+      configure_go_cache 2>&1
+  )"; then
+    echo "verify --teeth: FAIL — exact setup-go cache path was refused:" >&2
+    echo "$out" >&2
+    return 1
+  fi
+  set +e
+  out="$(
+    GITHUB_ACTIONS=true \
+      GITHUB_WORKSPACE="$tmp/workspace" \
+      GOCACHE="$tmp/outside" \
+      VERIFY_ROOT="$fixture_root/.a2a/cache/verify" \
+      configure_go_cache 2>&1
+  )"
+  rc=$?
+  set -e
+  if [ "$rc" -eq 0 ] || ! grep -q "must equal setup-go's project path" <<<"$out"; then
+    echo "verify --teeth: FAIL — an unrelated GitHub GOCACHE was accepted:" >&2
+    echo "$out" >&2
+    return 1
+  fi
+
   # Exit fidelity: a red command stays red and its telemetry records fail.
   VERIFY_ROOT="$tmp/phase"
   MODE=teeth
@@ -272,8 +386,9 @@ fi
 
 case "$MODE" in
   full|validators|coverage|harness|live) ;;
+  test) validate_scoped_packages ;;
   *)
-    echo "usage: $0 [full|validators|coverage|harness|live|--teeth]" >&2
+    echo "usage: $0 [full|validators|coverage|harness|live|test ./pkg...|--teeth]" >&2
     exit 2
     ;;
 esac
@@ -281,6 +396,11 @@ esac
 prepare_cache_root
 trap finish EXIT
 cd "$ROOT"
+
+if [ "$MODE" = test ]; then
+  run_phase go-test-scoped run_scoped_tests
+  exit 0
+fi
 
 if [ "$MODE" != live ]; then
   run_phase build-cli build_cli

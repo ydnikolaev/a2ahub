@@ -22,6 +22,10 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      # setup-go restores this exact build cache; verify.sh accepts an external
+      # cache only on GitHub and only at this checkout-owned CI path.
+      GOCACHE: ${{ github.workspace }}/.a2a/cache/ci-go-build
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -30,11 +34,13 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          cache-dependency-path: go.sum
 
-      - name: Install golangci-lint
+      - name: Install validation tools
         run: |
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/v2.12.2/install.sh \
             | sh -s -- -b "$(go env GOPATH)/bin" v2.12.2
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Resolve module inputs

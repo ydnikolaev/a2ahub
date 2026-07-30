@@ -180,7 +180,7 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 	// invented convention). A batch submit committing >1 response to the
 	// SAME parent in the SAME commit is a genuine ambiguity this
 	// resolves best-effort (first response ID, deterministically sorted)
-	// — see this phase's Deviations report.
+	// — see v1-min spec 07 §11.
 	responsesBySeqAndParent := map[int64]map[string][]string{}
 	for _, a := range artifacts {
 		if fold.Kind(a.Env.Type) == fold.KindResponse && a.Env.Parent != "" {
@@ -361,8 +361,8 @@ func gatherEvents(id string, parentOf map[string]string, eventsBySubject map[str
 // membershipView adapts a space.Manifest's participant list into a
 // fold.MembershipView (D-017: membership resolved against the manifest,
 // cache reads it once per space rather than per-commit — a known
-// simplification vs. "as of the event's own commit"; see this phase's
-// Deviations report).
+// simplification vs. "as of the event's own commit"; see v1-min spec 07
+// §11).
 func membershipView(manifest space.Manifest) fold.MembershipView {
 	return func(system string) fold.MembershipStatus {
 		for _, p := range manifest.Participants {

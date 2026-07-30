@@ -82,7 +82,7 @@ func actionableReasons(fa foldedArtifact, me string) []string {
 
 	// 4: {p1 or blocking, any open state} — either party (from or to);
 	// this condition carries no explicit "to me" qualifier in OP-207's
-	// text, unlike the other four (see Deviations report).
+	// text, unlike the other four (v1-min spec 07 §11).
 	if (env.Priority == "p1" || env.Blocking) && isOpen(kind, state) &&
 		(env.From == me || addressedToMe(fa, me)) {
 		reasons = append(reasons, "p1-or-blocking-open")
@@ -91,7 +91,7 @@ func actionableReasons(fa foldedArtifact, me string) []string {
 	// 5: {gate pending on me} — the only gate internal/fold models is the
 	// decision quorum gate (RequiredApprovers/Approvals); G1/G2/G4/G5 are
 	// GitHub PR-review gates this read-only mirror composition cannot see
-	// (see Deviations report).
+	// (v1-min spec 07 §11).
 	if kind == fold.KindDecision && state == fold.StateProposed &&
 		containsString(env.RequiredApprovers, me) && !fa.Result.Approvals[me] {
 		reasons = append(reasons, "gate-pending-on-me")

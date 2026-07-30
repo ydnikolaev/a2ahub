@@ -16,8 +16,8 @@ import (
 // (D2/D3/D4/D6, store.go:450-475) with a per-space, commit-sequenced
 // transcript of artifacts AND events plus an explicit "whose move is it"
 // block. Store.Thread itself is left in place unchanged — its two
-// callers (internal/cli, internal/mcp) are off limits to this wave; see
-// this phase's own Deviations report.
+// callers (internal/cli, internal/mcp) were outside that wave; see v1-min
+// spec 46 §11.
 
 const (
 	// ThreadOrderCommitted is set when the ordering rests on the space's
@@ -215,7 +215,7 @@ type ThreadResult struct {
 // categorization over fold's exported transition-name constants, never a
 // second reading of WHICH (kind,state,transition) triples are legal (that
 // remains fold.LegalNext + fold.CheckLegality's job, composed over below).
-// See this phase's Deviations report.
+// See v1-min spec 46 §11.
 var escapeHatchTransitions = map[string]bool{
 	fold.TCancel:    true,
 	fold.TWithdraw:  true,
@@ -613,8 +613,8 @@ func envelopeFrom(fa foldedArtifact) fold.Envelope {
 // information is lost by omitting it outright, and the response's OWN
 // open item already carries `dispute` with its correct `by`. See
 // legalnext.go:43-56's own doc comment ("LegalNext reports both,
-// unmodified" — a caller-side choice, not a table bug) and this phase's
-// Deviations report.
+// unmodified" — a caller-side choice, not a table bug) and v1-min spec 46
+// §11.
 //
 // D-025's transition-free broadcast-acknowledge carries NO row in
 // fold's table (legalnext.go:57-69's own doc comment: "A caller
