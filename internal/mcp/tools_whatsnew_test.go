@@ -20,9 +20,11 @@ func testWhatsnewCorpus() []notes.ReleaseNotes {
 	}
 }
 
+func noCurrentIssues() ([]notes.Change, error) { return nil, nil }
+
 func TestWhatsnewHandlerSinceFiltersUnboundedAbove(t *testing.T) {
 	t.Parallel()
-	handler := newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return testWhatsnewCorpus(), nil })
+	handler := newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return testWhatsnewCorpus(), nil }, noCurrentIssues)
 
 	args, _ := json.Marshal(WhatsnewInput{Since: "0.2.0"})
 	result, body, err := handler(context.Background(), args)
@@ -40,7 +42,7 @@ func TestWhatsnewHandlerSinceFiltersUnboundedAbove(t *testing.T) {
 
 func TestWhatsnewHandlerNoSinceReturnsNewestOnly(t *testing.T) {
 	t.Parallel()
-	handler := newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return testWhatsnewCorpus(), nil })
+	handler := newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return testWhatsnewCorpus(), nil }, noCurrentIssues)
 
 	result, _, err := handler(context.Background(), json.RawMessage(`{}`))
 	if err != nil {
@@ -52,9 +54,34 @@ func TestWhatsnewHandlerNoSinceReturnsNewestOnly(t *testing.T) {
 	}
 }
 
+func TestWhatsnewHandlerCurrentIssuesSurviveEmptySinceRange(t *testing.T) {
+	t.Parallel()
+	handler := newWhatsnewHandler(
+		func() ([]notes.ReleaseNotes, error) { return testWhatsnewCorpus(), nil },
+		func() ([]notes.Change, error) {
+			return []notes.Change{{
+				ID: "KI-MACOS-ADHOC-SIGNING", Kind: notes.KindKnownIssue,
+				Impact: "normal", Subject: "macOS may ask once", Detail: "ad-hoc signed",
+				Action: notes.Action{Scope: "none", Why: "approve only the verified release"},
+			}}, nil
+		},
+	)
+
+	args, _ := json.Marshal(WhatsnewInput{Since: "0.3.0"})
+	result, _, err := handler(context.Background(), args)
+	if err != nil {
+		t.Fatalf("handler failed: %v", err)
+	}
+	slice, ok := result.([]notes.ReleaseNotes)
+	if !ok || len(slice) != 1 || slice[0].Version != "0.3.0" ||
+		len(slice[0].Changes) != 1 || slice[0].Changes[0].ID != "KI-MACOS-ADHOC-SIGNING" {
+		t.Fatalf("standing issue disappeared from MCP empty range: %#v", result)
+	}
+}
+
 func TestWhatsnewHandlerNoArgsAtAll(t *testing.T) {
 	t.Parallel()
-	handler := newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return testWhatsnewCorpus(), nil })
+	handler := newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return testWhatsnewCorpus(), nil }, noCurrentIssues)
 
 	result, _, err := handler(context.Background(), nil)
 	if err != nil {
@@ -68,7 +95,7 @@ func TestWhatsnewHandlerNoArgsAtAll(t *testing.T) {
 
 func TestWhatsnewHandlerEmptyCorpusNoSince(t *testing.T) {
 	t.Parallel()
-	handler := newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return nil, nil })
+	handler := newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return nil, nil }, noCurrentIssues)
 
 	result, _, err := handler(context.Background(), json.RawMessage(`{}`))
 	if err != nil {
@@ -90,7 +117,7 @@ func TestWhatsnewHandlerEmptyCorpusNoSince(t *testing.T) {
 func TestWhatsnewHandlerLoadError(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("corpus load boom")
-	handler := newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return nil, wantErr })
+	handler := newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return nil, wantErr }, noCurrentIssues)
 
 	_, _, err := handler(context.Background(), json.RawMessage(`{}`))
 	if err == nil {
@@ -100,7 +127,7 @@ func TestWhatsnewHandlerLoadError(t *testing.T) {
 
 func TestWhatsnewHandlerInvalidJSONInput(t *testing.T) {
 	t.Parallel()
-	handler := newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return testWhatsnewCorpus(), nil })
+	handler := newWhatsnewHandler(func() ([]notes.ReleaseNotes, error) { return testWhatsnewCorpus(), nil }, noCurrentIssues)
 
 	_, _, err := handler(context.Background(), json.RawMessage(`{not json`))
 	if err == nil {

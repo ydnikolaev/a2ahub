@@ -27,6 +27,11 @@ func DemoData() (Data, error) {
 	if err != nil {
 		return Data{}, fmt.Errorf("html: demo release notes: %w", err)
 	}
+	currentIssues, err := notes.LoadCurrentKnownIssues(releasenotes.FS)
+	if err != nil {
+		return Data{}, fmt.Errorf("html: demo current known issues: %w", err)
+	}
+	releases = notes.AttachCurrentKnownIssues(releases, releases, currentIssues)
 	d.ReleaseNotes = toReleaseNotes(releases)
 	return d, nil
 }

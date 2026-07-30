@@ -51,20 +51,19 @@ changes:
         merge evidence.
 
   - id: RN-01603-3
-    kind: known-issue
+    kind: fix
     impact: normal
-    subject: "The macOS companion remains ad-hoc signed and may require manual approval"
+    subject: "Standing known issues no longer disappear on the next update"
     detail: >
-      The release cohort authenticates the exact macOS app and ad-hoc signing
-      protects its bundle integrity, but the app is not identified or
-      notarized through a paid Apple Developer account. A quarantined download
-      may require one explicit System Settings → Privacy & Security → Open
-      Anyway decision. Interactive Notification Center, Focus, Login Items,
-      VS Code trust/profile, and remote-window checks remain release-environment
-      evidence rather than claims inferred from hermetic tests.
-    affects: ["macOS notifications", "VS Code notifications"]
+      Current limitations now live once in a schema-validated standing list
+      instead of being copied into every version file. `a2a whatsnew`, its MCP
+      twin, the HTML release view, and the authored GitHub Release body append
+      that list independently of the selected version range, including when
+      there are no newer change entries. The existing release-array machine
+      shape remains unchanged, and a resolved issue is removed in one place.
+    affects: ["a2a whatsnew", "a2a_whatsnew", "release notes", "release workflow"]
     action:
       scope: none
       why: >
-        Keep Gatekeeper enabled and approve only the A2A Notifier version
-        obtained through the verified a2a release cohort.
+        No user action is required; current limitations now remain visible
+        until their fixes actually ship.

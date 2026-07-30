@@ -233,6 +233,11 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 	if err != nil {
 		return Data{}, fmt.Errorf("html: release notes: %w", err)
 	}
+	currentIssues, err := notes.LoadCurrentKnownIssues(releasenotes.FS)
+	if err != nil {
+		return Data{}, fmt.Errorf("html: current known issues: %w", err)
+	}
+	releases = notes.AttachCurrentKnownIssues(releases, releases, currentIssues)
 	d.ReleaseNotes = toReleaseNotes(releases)
 
 	return d, nil

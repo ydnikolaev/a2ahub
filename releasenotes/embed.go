@@ -17,9 +17,9 @@ package releasenotes
 
 import "embed"
 
-//go:embed *.yaml
+//go:embed *.yaml current/*.yaml
 
-// FS is the embedded release-notes corpus: one *.yaml file per shipped
-// a2a version, authored by hand (not generated), never edited by this
-// package.
+// FS is the embedded release-notes corpus: one root *.yaml file per shipped
+// a2a version plus current/known-issues.yaml for standing limitations.
+// Both are authored by hand (not generated), never edited by this package.
 var FS embed.FS

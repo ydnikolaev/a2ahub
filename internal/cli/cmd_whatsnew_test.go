@@ -46,6 +46,7 @@ func whatsnewFixtureCorpus() []notes.ReleaseNotes {
 func whatsnewTestCommand(binaryVersion string, load func() ([]notes.ReleaseNotes, error)) *WhatsnewCommand {
 	c := NewWhatsnewCommand(binaryVersion)
 	c.load = load
+	c.loadCurrentIssues = func() ([]notes.Change, error) { return nil, nil }
 	return c
 }
 
@@ -120,6 +121,32 @@ func TestWhatsnewSinceWorksOnDevBuildUnbounded(t *testing.T) {
 	text := out.String()
 	if !strings.Contains(text, "v0.3.0") || !strings.Contains(text, "v0.4.0") {
 		t.Fatalf("expected --since to be unbounded above on an unparseable (dev) binary version, got:\n%s", text)
+	}
+}
+
+func TestWhatsnewCurrentIssuesSurviveAnEmptySinceRange(t *testing.T) {
+	t.Parallel()
+	c := whatsnewTestCommand("0.4.0", fixedWhatsnewLoad)
+	c.loadCurrentIssues = func() ([]notes.Change, error) {
+		return []notes.Change{{
+			ID: "KI-MACOS-ADHOC-SIGNING", Kind: notes.KindKnownIssue,
+			Impact: "normal", Subject: "macOS may ask once", Detail: "ad-hoc signed",
+			Action: notes.Action{Scope: "none", Why: "approve only the verified release"},
+		}}, nil
+	}
+
+	var out, errOut bytes.Buffer
+	code := c.Run(context.Background(), []string{"--since", "0.4.0", "--json"}, IO{Stdout: &out, Stderr: &errOut})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, errOut.String())
+	}
+	var decoded []notes.ReleaseNotes
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode JSON: %v\n%s", err, out.String())
+	}
+	if len(decoded) != 1 || decoded[0].Version != "0.4.0" ||
+		len(decoded[0].Changes) != 1 || decoded[0].Changes[0].ID != "KI-MACOS-ADHOC-SIGNING" {
+		t.Fatalf("standing issue disappeared from empty range: %#v", decoded)
 	}
 }
 

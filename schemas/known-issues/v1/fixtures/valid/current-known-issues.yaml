@@ -1,0 +1,11 @@
+schema: known-issues/v1
+issues:
+  - id: KI-MACOS-ADHOC-SIGNING
+    kind: known-issue
+    impact: normal
+    subject: "macOS may ask once"
+    detail: "The companion is ad-hoc signed."
+    affects: ["macOS notifications"]
+    action:
+      scope: none
+      why: "Approve only the verified release."

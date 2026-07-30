@@ -1,0 +1,20 @@
+schema: known-issues/v1
+issues:
+  - id: KI-MACOS-ADHOC-SIGNING
+    kind: known-issue
+    impact: normal
+    subject: "The macOS companion remains ad-hoc signed and may require manual approval"
+    detail: >
+      The release cohort authenticates the exact macOS app and ad-hoc signing
+      protects its bundle integrity, but the app is not identified or
+      notarized through a paid Apple Developer account. A quarantined download
+      may require one explicit System Settings → Privacy & Security → Open
+      Anyway decision. Interactive Notification Center, Focus, Login Items,
+      VS Code trust/profile, and remote-window checks remain release-environment
+      evidence rather than claims inferred from hermetic tests.
+    affects: ["macOS notifications", "VS Code notifications"]
+    action:
+      scope: none
+      why: >
+        Keep Gatekeeper enabled and approve only the A2A Notifier version
+        obtained through the verified a2a release cohort.

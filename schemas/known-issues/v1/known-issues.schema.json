@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "known-issues/v1/known-issues.schema.json",
+  "title": "Current known issues",
+  "description": "The single current-state list of limitations appended to release directives independently of the selected version range.",
+  "type": "object",
+  "properties": {
+    "schema": { "const": "known-issues/v1" },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^KI-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
+          },
+          "kind": { "const": "known-issue" },
+          "impact": {
+            "type": "string",
+            "enum": ["high", "normal", "low"]
+          },
+          "subject": { "type": "string" },
+          "detail": { "type": "string" },
+          "affects": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "action": {
+            "type": "object",
+            "properties": {
+              "scope": {
+                "type": "string",
+                "enum": ["local", "space", "none"]
+              },
+              "why": { "type": "string" },
+              "detect": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "run": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            },
+            "required": ["scope", "why"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "kind", "impact", "subject", "detail", "action"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "issues"],
+  "additionalProperties": false
+}
