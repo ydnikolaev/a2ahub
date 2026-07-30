@@ -23,11 +23,18 @@ jobs:
       GOWORK: "off" # analyze the fresh-checkout build, never a workspace's replacements
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: record private source scope
+        if: github.repository != 'ydnikolaev/a2ahub'
+        run: echo "CodeQL upload is a public-repository gate; private source CI uses gosec, govulncheck, and gitleaks."
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: github.repository == 'ydnikolaev/a2ahub'
         with:
           go-version-file: go.mod
       - uses: github/codeql-action/init@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        if: github.repository == 'ydnikolaev/a2ahub'
         with:
           languages: go
       - uses: github/codeql-action/autobuild@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        if: github.repository == 'ydnikolaev/a2ahub'
       - uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        if: github.repository == 'ydnikolaev/a2ahub'
