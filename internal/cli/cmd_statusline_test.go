@@ -64,10 +64,8 @@ func TestStatuslineCommand_StaleRefreshLeaseStartsOnce(t *testing.T) {
 	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{
 		SpaceID: "sp1", Dir: dir, RepoURL: dir, Manifest: manifest,
 	}}, time.Now, time.Nanosecond)
-	cmd := cli.NewStatuslineCommand(store, nil)
-
 	var calls int
-	cmd.SetRefreshLauncherForTest(func() error {
+	cmd := cli.NewStatuslineCommand(store, func() error {
 		calls++
 		return nil
 	})
@@ -90,10 +88,8 @@ func TestStatuslineCommand_RefreshLaunchFailureIsSilentAndReleasesLease(t *testi
 	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{
 		SpaceID: "sp1", Dir: dir, RepoURL: dir, Manifest: manifest,
 	}}, time.Now, time.Nanosecond)
-	cmd := cli.NewStatuslineCommand(store, nil)
-
 	var calls int
-	cmd.SetRefreshLauncherForTest(func() error {
+	cmd := cli.NewStatuslineCommand(store, func() error {
 		calls++
 		return errors.New("synthetic start failure")
 	})
@@ -119,10 +115,8 @@ func TestStatuslineCommand_RefreshLauncherPanicIsSilentAndReleasesLease(t *testi
 	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{
 		SpaceID: "sp1", Dir: dir, RepoURL: dir, Manifest: manifest,
 	}}, time.Now, time.Nanosecond)
-	cmd := cli.NewStatuslineCommand(store, nil)
-
 	var calls int
-	cmd.SetRefreshLauncherForTest(func() error {
+	cmd := cli.NewStatuslineCommand(store, func() error {
 		calls++
 		panic("synthetic launcher panic")
 	})

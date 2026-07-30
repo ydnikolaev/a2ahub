@@ -1,11 +1,10 @@
-// OP-215 `a2a statusline` (spec 07 §7.5). This file's only package-level
-// symbols are StatuslineCommand + NewStatuslineCommand — no shared
-// helper, no package var, per this phase's plan Placement decision.
+// OP-215 `a2a statusline` (spec 07 §7.5). This file owns the command and the
+// detached process adapter; it has no package-level mutable state.
 //
 // NO hub client symbol is imported or referenced anywhere in this file
-// (spec 07 §8 AC row 9): the background refresh internal/cache.Store
-// spawns when stale is git-fetch only (v1-min scope cut, D-030) — this
-// file never constructs, imports, or wires anything hub-shaped.
+// (spec 07 §8 AC row 9): cache only reports local freshness, and the CLI
+// adapter reuses canonical `a2a sync` (v1-min scope cut, D-030). This file
+// never constructs, imports, or wires anything hub-shaped.
 package cli
 
 import (
@@ -34,12 +33,6 @@ type StatuslineCommand struct {
 // injects StartDetachedSync; tests that do not exercise refresh pass nil.
 func NewStatuslineCommand(store *cache.Store, refreshLauncher func() error) *StatuslineCommand {
 	return &StatuslineCommand{store: store, refreshLauncher: refreshLauncher}
-}
-
-// SetRefreshLauncherForTest replaces the detached process boundary. Product
-// wiring injects StartDetachedSync at cmd/a2a.
-func (c *StatuslineCommand) SetRefreshLauncherForTest(launcher func() error) {
-	c.refreshLauncher = launcher
 }
 
 // Name implements cli.Command.
