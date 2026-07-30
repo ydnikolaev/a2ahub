@@ -84,7 +84,10 @@ func runTestMain(m *testing.M) int {
 	// as a semver — this phase's own read-surface tests need a real
 	// min_binary_version comparison to succeed, matching the "0.1.0" this
 	// package's direct-construction tests already use for binaryVersion).
-	cmd := exec.Command("go", "build", "-ldflags", "-X main.version=0.1.0", "-o", bin, "./cmd/a2a")
+	// This is a synthetic test artifact with an explicit version; VCS stamps
+	// add no assertion and Go 1.26 resolves them through a writable module
+	// stat cache. Keep the shared GOMODCACHE a read-only input in sandboxes.
+	cmd := exec.Command("go", "build", "-buildvcs=false", "-ldflags", "-X main.version=0.1.0", "-o", bin, "./cmd/a2a")
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "GOWORK=off")
 	if out, err := cmd.CombinedOutput(); err != nil {
