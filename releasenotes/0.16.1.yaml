@@ -1,0 +1,46 @@
+schema: release-notes/v1
+version: "0.16.1"
+released: "2026-07-30"
+headline: "Contract history documentation now matches the shipped Git-backed behavior"
+changes:
+  - id: RN-01601-1
+    kind: fix
+    impact: normal
+    subject: "Contract digests and version history no longer require unstable paths or a future commit SHA"
+    detail: >
+      The normative contract now states the behavior the product already
+      implements: a contract digest is computed from contract-root-relative
+      paths plus file-byte hashes, so identical contract trees have the same
+      identity in different checkouts. An `id@version` lookup walks committed
+      descriptor history and derives the introducing commit from Git rather
+      than expecting a publish event to predict the SHA of its own future
+      commit. The optional event `commit` field remains readable for legacy
+      and reserved data, but current writers do not populate it and current
+      version resolution does not depend on it. Existing spaces and artifacts
+      require no migration.
+    affects: ["contract digest", "contract version history", "event/v1 schema metadata"]
+    action:
+      scope: none
+      why: >
+        This release corrects the public protocol description and schema
+        metadata to match existing runtime behavior; commands, stored data,
+        and compatibility are unchanged.
+
+  - id: RN-01601-2
+    kind: known-issue
+    impact: normal
+    subject: "The macOS companion remains ad-hoc signed and may require manual approval"
+    detail: >
+      The release cohort authenticates the exact macOS app and ad-hoc signing
+      protects its bundle integrity, but the app is not identified or
+      notarized through a paid Apple Developer account. A quarantined download
+      may require one explicit System Settings → Privacy & Security → Open
+      Anyway decision. Interactive Notification Center, Focus, Login Items,
+      VS Code trust/profile, and remote-window checks remain release-environment
+      evidence rather than claims inferred from hermetic tests.
+    affects: ["macOS notifications", "VS Code notifications"]
+    action:
+      scope: none
+      why: >
+        Keep Gatekeeper enabled and approve only the A2A Notifier version
+        obtained through the verified a2a release cohort.
