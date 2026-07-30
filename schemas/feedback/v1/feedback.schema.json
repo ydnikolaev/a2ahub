@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "feedback/v1/feedback.schema.json",
   "title": "Agent feedback report (v1)",
-  "description": "Field set per docs/features/v1-min-2026-07/specs/25-agent-feedback.md §T2 (first table), as amended by §11 A2/A4/A6/A7. NOT an envelope (I1): this schema is validated by its own code path (internal/feedback), never by internal/validate's actors/threads/to/from engine. Whole-file size cap is 16 KiB — enforced by `a2a feedback validate`/the intake CI job at runtime, NOT by this schema (a JSON-Schema instance has no notion of its own serialized byte size). The five `checks.*` gates and the `status`/`resolution` submit-time constraints (status MUST be `new`, resolution MUST be absent at submit) are likewise runtime/semantic gates (I5, §T1) — this schema only shapes the fields, it does not assert their submit-time values beyond type/enum.",
+  "description": "Field set per docs/features/archive/v1-min-2026-07/specs/25-agent-feedback.md §T2 (first table), as amended by §11 A2/A4/A6/A7. NOT an envelope (I1): this schema is validated by its own code path (internal/feedback), never by internal/validate's actors/threads/to/from engine. Whole-file size cap is 16 KiB — enforced by `a2a feedback validate`/the intake CI job at runtime, NOT by this schema (a JSON-Schema instance has no notion of its own serialized byte size). The five `checks.*` gates and the `status`/`resolution` submit-time constraints (status MUST be `new`, resolution MUST be absent at submit) are likewise runtime/semantic gates (I5, §T1) — this schema only shapes the fields, it does not assert their submit-time values beyond type/enum.",
   "type": "object",
   "properties": {
     "feedback": {

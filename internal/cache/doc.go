@@ -1,5 +1,5 @@
 // Package cache implements the P7 read surface (spec
-// docs/features/v1-min-2026-07/specs/07-read-surface-statusline.md): it
+// docs/features/archive/v1-min-2026-07/specs/07-read-surface-statusline.md): it
 // composes internal/fold over the committed history of every connected
 // space's local mirror clone (internal/space) into the inbox/outbox
 // query sets §4.2/§7.2 defines, plus per-system read cursors, the

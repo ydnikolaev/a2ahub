@@ -16,7 +16,7 @@ import (
 )
 
 // This file drives wave 3-2's boundary/identity family — the rows plan
-// docs/features/v1-min-2026-07/plans/36-live-e2e-matrix.plan.md's per-row
+// docs/features/archive/v1-min-2026-07/plans/36-live-e2e-matrix.plan.md's per-row
 // adjudication table names 8, 10, 11, 12 and 15:
 //
 //	protection-blocks-until-green        SystemB

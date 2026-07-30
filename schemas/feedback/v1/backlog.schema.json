@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "feedback/v1/backlog.schema.json",
   "title": "Feedback backlog (v1)",
-  "description": "Field set per docs/features/v1-min-2026-07/specs/25-agent-feedback.md §T2 (second table). This is `feedback/backlog.yaml`, the external-intake backlog (I6) — deliberately separate from docs/backlog.md and from the shared envelope schema family; feedback owns this shape end to end.",
+  "description": "Field set per docs/features/archive/v1-min-2026-07/specs/25-agent-feedback.md §T2 (second table). This is `feedback/backlog.yaml`, the external-intake backlog (I6) — deliberately separate from docs/backlog.md and from the shared envelope schema family; feedback owns this shape end to end.",
   "type": "object",
   "properties": {
     "backlog": {
