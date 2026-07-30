@@ -23,7 +23,7 @@ func TestReadSurfaceCommands_NameAndSynopsis(t *testing.T) {
 		cli.NewThreadCommand(store),
 		cli.NewSearchCommand(store),
 		cli.NewContractsCommand(store),
-		cli.NewStatuslineCommand(store),
+		cli.NewStatuslineCommand(store, nil),
 	}
 	for _, c := range cmds {
 		if c.Name() == "" {

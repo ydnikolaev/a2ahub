@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"errors"
 	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
@@ -15,5 +18,38 @@ import (
 // directory, same test binary) — Go allows exactly one TestMain per test
 // binary regardless of which of the two packages declares it.
 func TestMain(m *testing.M) {
+	if marker := os.Getenv("A2A_TEST_DETACHED_MARKER"); marker != "" && len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "__a2a_detached_parent":
+			if err := StartDetachedSync(); err != nil {
+				os.Exit(3)
+			}
+			os.Exit(0)
+		case "sync":
+			release := os.Getenv("A2A_TEST_DETACHED_RELEASE")
+			deadline := time.Now().Add(10 * time.Second)
+			for {
+				if _, err := os.Stat(release); err == nil {
+					break
+				} else if !errors.Is(err, os.ErrNotExist) {
+					os.Exit(4)
+				}
+				if time.Now().After(deadline) {
+					os.Exit(5)
+				}
+				// This explicit release file proves the child remains runnable
+				// after its one-shot parent exits; it is synchronization, not
+				// sleep-and-hope.
+				time.Sleep(5 * time.Millisecond)
+			}
+			if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
+				os.Exit(6)
+			}
+			if err := os.WriteFile(marker, []byte("child survived parent exit\n"), 0o600); err != nil {
+				os.Exit(7)
+			}
+			os.Exit(0)
+		}
+	}
 	os.Exit(gitfixture.RunTests(m))
 }

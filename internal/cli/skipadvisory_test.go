@@ -224,7 +224,7 @@ func TestSkipAdvisory_StatuslineNeverAdvises(t *testing.T) {
 	dir, manifest, base := buildSkippedFixture(t, true)
 	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}},
 		func() time.Time { return base.Add(time.Hour) }, 0)
-	cmd := cli.NewStatuslineCommand(store)
+	cmd := cli.NewStatuslineCommand(store, nil)
 
 	io, _, errOut := newIO()
 	code := cmd.Run(context.Background(), nil, io)

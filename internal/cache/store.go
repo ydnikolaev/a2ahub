@@ -129,7 +129,9 @@ func (s *Store) SpaceSyncFacts(ctx context.Context) []SpaceSyncInfo {
 // (typically release.NewChecker's return value) triggerUpdateRefreshIfStale
 // spawns detached when the cache is stale — nil disables the refresh
 // trigger while still allowing UpdateNotice to render from whatever the
-// cache already holds.
+// cache already holds. StatuslineRefreshNeeded reads checker presence and
+// cache freshness, while the CLI-owned detached `a2a sync` invokes the
+// canonical checker out of process.
 func (s *Store) EnableUpdateNotice(binaryVersion, cachePath string, ttl time.Duration, checker func(context.Context)) {
 	if ttl <= 0 {
 		ttl = DefaultUpdateCheckTTL
@@ -187,7 +189,7 @@ func (s *Store) slaFor(spaceID string) time.Duration {
 // extension field (OP-208: "space.yaml, default 7 days") straight from
 // Manifest.Raw — the schema's own additionalProperties:true permissive
 // typing (Open Q1, no normative field name exists yet for this override;
-// this package's own naming choice, see Deviations report).
+// this package's own naming choice, see v1-min spec 07 §11).
 func slaFromManifest(m space.Manifest) time.Duration {
 	if len(m.Raw) == 0 {
 		return DefaultStalenessSLA

@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -58,7 +57,7 @@ func TestStatusline_ZeroNoiseSilence(t *testing.T) {
 // real OS-scheduling contention that occasionally pushes an
 // individually-fast render past 100ms for reasons having nothing to do
 // with this package's own correctness — a known flake risk flagged in
-// this phase's Deviations report. Running serially keeps the
+// v1-min spec 07 §11. Running serially keeps the
 // measurement meaningful.
 func TestStatusline_P1Severity(t *testing.T) {
 	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
@@ -98,43 +97,24 @@ func TestStatusline_P1Severity(t *testing.T) {
 	}
 }
 
-// TestStatusline_NoHubSymbol is AC row 9, expressed as a behavioral
-// check at this package's level: the refresh path never invokes
-// anything beyond space.CloneOrFetch (git fetch) — this test asserts
-// Statusline completes and returns without needing any hub-shaped
-// dependency to be injected (Store's constructor takes none). The
-// static grep half of AC row 9 (no hub RPC symbol reachable from
-// cmd_statusline.go or this package) is verified separately (grep, see
-// this phase's report).
+// TestStatusline_NoHubSymbol is AC row 9, expressed as a behavioral check at
+// this package's level: rendering is cache-only and never calls even the
+// injected git refresh primitive. The CLI boundary owns the detached launch;
+// cache only reports/leases the need for one.
 func TestStatusline_NoHubSymbol(t *testing.T) {
 	t.Parallel()
 	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"})
-	// TTL=1ns with a just-cloned mirror still triggers the detached-
-	// refresh path (any nonzero age exceeds it) — it must not panic or
-	// block.
+	var refreshCalls int
 	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, RepoURL: fx.dir, Manifest: mustManifest(t, fx)}}, time.Now, time.Nanosecond)
+	store.SetCloneOrFetchForTest(func(context.Context, string, string) error {
+		refreshCalls++
+		return nil
+	})
 	if _, err := store.Statusline(context.Background()); err != nil {
 		t.Fatalf("Statusline: %v", err)
 	}
-
-	// The detached refresh goroutine this call triggers writes to
-	// fx.dir/.git/FETCH_HEAD in the background (fire-and-forget by
-	// design — this package never waits for it). Bounded-poll for it to
-	// land before this test function returns, so t.TempDir()'s
-	// synchronous RemoveAll cleanup does not race a still-running `git
-	// fetch` subprocess (observed flake otherwise: "unlinkat .../.git:
-	// directory not empty", plus unbounded leaked temp dirs across
-	// repeated test runs when this was instead solved by never cleaning
-	// up). Bounded, not an unconditional sleep: gives up after 2s and
-	// lets the test pass regardless — a slow-to-land background fetch is
-	// not what this test is checking.
-	deadline := time.Now().Add(2 * time.Second)
-	fetchHead := filepath.Join(fx.dir, ".git", "FETCH_HEAD")
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(fetchHead); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	if refreshCalls != 0 {
+		t.Fatalf("Statusline called cloneOrFetch %d times, want cache-only render", refreshCalls)
 	}
 }
 

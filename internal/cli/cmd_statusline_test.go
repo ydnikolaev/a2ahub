@@ -3,6 +3,7 @@ package cli_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +15,7 @@ import (
 func TestStatuslineCommand_SilentZeroNoise(t *testing.T) {
 	t.Parallel()
 	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)
-	cmd := cli.NewStatuslineCommand(store)
+	cmd := cli.NewStatuslineCommand(store, nil)
 	io, out, _ := newIO()
 	code := cmd.Run(context.Background(), nil, io)
 	if code != 0 {
@@ -34,7 +35,7 @@ func TestStatuslineCommand_P1Severity(t *testing.T) {
 	cliWriteEvent(t, dir, "seomatrix", "01HFX00000000000000000040", cliEvt("XW-seomatrix-20260701-urg", "submit", "seomatrix", base))
 
 	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}}, func() time.Time { return base.Add(time.Hour) }, time.Hour)
-	cmd := cli.NewStatuslineCommand(store)
+	cmd := cli.NewStatuslineCommand(store, nil)
 
 	io, out, _ := newIO()
 	code := cmd.Run(context.Background(), nil, io)
@@ -49,16 +50,100 @@ func TestStatuslineCommand_P1Severity(t *testing.T) {
 func TestStatuslineCommand_UsageError(t *testing.T) {
 	t.Parallel()
 	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)
-	cmd := cli.NewStatuslineCommand(store)
+	cmd := cli.NewStatuslineCommand(store, nil)
 	io, _, _ := newIO()
 	if code := cmd.Run(context.Background(), []string{"unexpected"}, io); code != 2 {
 		t.Fatalf("code = %d, want 2", code)
 	}
 }
 
+func TestStatuslineCommand_StaleRefreshLeaseStartsOnce(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	manifest := cliWriteManifest(t, dir, "axon")
+	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{
+		SpaceID: "sp1", Dir: dir, RepoURL: dir, Manifest: manifest,
+	}}, time.Now, time.Nanosecond)
+	cmd := cli.NewStatuslineCommand(store, nil)
+
+	var calls int
+	cmd.SetRefreshLauncherForTest(func() error {
+		calls++
+		return nil
+	})
+
+	for range 2 {
+		io, _, _ := newIO()
+		if code := cmd.Run(context.Background(), nil, io); code != 0 {
+			t.Fatalf("statusline code = %d, want quiet 0", code)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("refresh launcher calls = %d, want 1 while lease is live", calls)
+	}
+}
+
+func TestStatuslineCommand_RefreshLaunchFailureIsSilentAndReleasesLease(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	manifest := cliWriteManifest(t, dir, "axon")
+	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{
+		SpaceID: "sp1", Dir: dir, RepoURL: dir, Manifest: manifest,
+	}}, time.Now, time.Nanosecond)
+	cmd := cli.NewStatuslineCommand(store, nil)
+
+	var calls int
+	cmd.SetRefreshLauncherForTest(func() error {
+		calls++
+		return errors.New("synthetic start failure")
+	})
+
+	for range 2 {
+		io, out, errOut := newIO()
+		if code := cmd.Run(context.Background(), nil, io); code != 0 {
+			t.Fatalf("statusline code = %d, want quiet 0", code)
+		}
+		if out.Len() != 0 || errOut.Len() != 0 {
+			t.Fatalf("launch failure leaked output: stdout=%q stderr=%q", out.String(), errOut.String())
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("refresh launcher calls = %d, want 2 after failed starts release the lease", calls)
+	}
+}
+
+func TestStatuslineCommand_RefreshLauncherPanicIsSilentAndReleasesLease(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	manifest := cliWriteManifest(t, dir, "axon")
+	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{
+		SpaceID: "sp1", Dir: dir, RepoURL: dir, Manifest: manifest,
+	}}, time.Now, time.Nanosecond)
+	cmd := cli.NewStatuslineCommand(store, nil)
+
+	var calls int
+	cmd.SetRefreshLauncherForTest(func() error {
+		calls++
+		panic("synthetic launcher panic")
+	})
+
+	for range 2 {
+		io, out, errOut := newIO()
+		if code := cmd.Run(context.Background(), nil, io); code != 0 {
+			t.Fatalf("statusline code = %d, want quiet 0", code)
+		}
+		if out.Len() != 0 || errOut.Len() != 0 {
+			t.Fatalf("launcher panic leaked output: stdout=%q stderr=%q", out.String(), errOut.String())
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("refresh launcher calls = %d, want 2 after panics release the lease", calls)
+	}
+}
+
 func TestStatuslineCommand_SampleJSONAndPrefixModes(t *testing.T) {
 	t.Parallel()
-	cmd := cli.NewStatuslineCommand(nil)
+	cmd := cli.NewStatuslineCommand(nil, nil)
 
 	textIO, textOut, textErr := newIO()
 	if code := cmd.Run(context.Background(), []string{"--sample"}, textIO); code != 11 {
@@ -94,7 +179,7 @@ func TestStatuslineCommand_SampleJSONAndPrefixModes(t *testing.T) {
 func TestStatuslineCommand_QuietJSONAndInvalidCombination(t *testing.T) {
 	t.Parallel()
 	store := cache.NewStore("axon", t.TempDir(), nil, time.Now, 0)
-	cmd := cli.NewStatuslineCommand(store)
+	cmd := cli.NewStatuslineCommand(store, nil)
 
 	io, out, errOut := newIO()
 	if code := cmd.Run(context.Background(), []string{"--json"}, io); code != 0 {
@@ -142,7 +227,7 @@ func TestStatuslinePerf(t *testing.T) {
 	// which is "now" by construction) — the cold-cache trigger path
 	// (13.4's own carve-out) is deliberately not exercised here.
 	store := cache.NewStore("axon", t.TempDir(), []cache.SpaceMirror{{SpaceID: "sp1", Dir: dir, Manifest: manifest}}, func() time.Time { return base.Add(time.Hour) }, 24*time.Hour)
-	cmd := cli.NewStatuslineCommand(store)
+	cmd := cli.NewStatuslineCommand(store, nil)
 
 	// Measure the BEST of N warm renders: a single wall-clock sample is
 	// corrupted by scheduler/CPU contention under the parallel

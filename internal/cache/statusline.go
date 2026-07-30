@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/release"
-	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
 // Severity is `a2a statusline`'s exit-code contract (§7.5, quoted
@@ -47,15 +46,11 @@ type StatuslineResult struct {
 // spec 19 T4 amends CC-092: an available update IS actionable content, so
 // an otherwise-empty line prints the update segment alone (still exit 0 —
 // the notice never inflates severity). When any connected space's mirror
-// sync-age exceeds the Store's TTL, it ALSO spawns exactly one detached,
-// recover-guarded background refresh (git fetch, v1-min's git-fallback
-// path, D-030 — never a hub client symbol) whose result lands in the
-// mirror for the NEXT render; this call never waits on that goroutine, so
-// the <100ms render budget is unaffected by however long the refresh
-// itself takes.
+// sync-age exceeds the Store's TTL, the CLI boundary may claim
+// ClaimStatuslineRefreshLease and start the canonical `a2a sync` path. This
+// method itself stays strictly cache-only and owns no background work.
 func (s *Store) Statusline(ctx context.Context) (StatuslineResult, error) {
 	n := s.UpdateNotice()
-	s.triggerUpdateRefreshIfStale(ctx)
 
 	if len(s.spaces) == 0 {
 		if n.Grade != release.GradeNone {
@@ -101,8 +96,6 @@ func (s *Store) Statusline(ctx context.Context) (StatuslineResult, error) {
 			}
 		}
 	}
-
-	s.triggerRefreshIfStale(ctx, idx)
 
 	if len(actionable) == 0 && staleCount == 0 {
 		if n.Grade != release.GradeNone {
@@ -187,38 +180,6 @@ func SampleStatusline() StatuslineResult {
 		UrgentID: "XQ-sample-20260728-a2a", UrgentTitle: "representative urgent item",
 		Stale: 1, hasItems: true,
 	}, SeverityUrgent)
-}
-
-// triggerRefreshIfStale spawns exactly ONE detached, recover-guarded
-// goroutine that fetches every connected space whose mirror sync-age
-// exceeds the TTL — "owned goroutine + recover per rails" (this call
-// never breaks the caller's prompt, and never waits for the goroutine).
-//
-// The goroutine deliberately does NOT inherit the caller's ctx: a
-// "detached" background refresh is meant to keep running after
-// Statusline itself has already returned to a prompt that may cancel
-// its own request-scoped context immediately afterward — inheriting it
-// would silently truncate the very refresh this exists to perform.
-// context.Background() is the correct escape hatch here (recover still
-// bounds worst-case runaway behavior).
-func (s *Store) triggerRefreshIfStale(_ context.Context, idx map[string][]foldedArtifact) {
-	_ = idx
-	var stale []SpaceMirror
-	for _, sm := range s.spaces {
-		age, synced := mirrorSyncAge(s.now(), sm.Dir)
-		if !synced || age > s.ttl {
-			stale = append(stale, sm)
-		}
-	}
-	if len(stale) == 0 {
-		return
-	}
-	go func() { //nolint:gosec // reason: context.Background() here is intentional — a detached background refresh must outlive the caller's request-scoped ctx (see func doc above)
-		defer func() { _ = recover() }() // rails: the refresh goroutine must never panic into the caller's prompt
-		for _, sm := range stale {
-			_ = space.CloneOrFetch(context.Background(), sm.Dir, sm.RepoURL)
-		}
-	}()
 }
 
 // urgencyLabel names the SOURCE of an item's urgency, for the status line's
