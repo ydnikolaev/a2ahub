@@ -67,6 +67,8 @@ workflow-lint: ## Every GitHub Action `uses:` must be SHA-pinned (defeats tag-hi
 	@bad=$$(grep -rnE 'uses: +[^ ]+@' .github/workflows 2>/dev/null | grep -vE '@[0-9a-f]{40}([ "#]|$$)' | grep -v 'uses: \./' || true); \
 	if [ -n "$$bad" ]; then echo "workflow-lint: FAIL — unpinned action(s), pin to a full 40-hex SHA (# vX.Y.Z):"; echo "$$bad"; exit 1; fi; \
 	echo "workflow-lint: all actions SHA-pinned."
+	@grep -Fq "if: github.repository == 'ydnikolaev/a2ahub'" .github/workflows/classify-guard.yml || { echo "workflow-lint: FAIL — public classify backstop must skip the private source repository"; exit 1; }
+	@grep -Eq '^  actions: read$$' .github/workflows/codeql.yml || { echo "workflow-lint: FAIL — CodeQL needs actions: read with restrictive workflow permissions"; exit 1; }
 	@command -v actionlint >/dev/null 2>&1 || { echo "workflow-lint: FAIL — actionlint missing; install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"; exit 1; }
 	@actionlint
 
