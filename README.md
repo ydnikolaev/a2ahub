@@ -79,7 +79,7 @@ dashboard without connecting a real space.
 
 Release candidates are tested against a protected public GitHub space using two
 independent identities. The latest full gate, for
-[v0.16.0](https://github.com/ydnikolaev/a2ahub/releases/tag/v0.16.0), passed all
+[v0.16.3](https://github.com/ydnikolaev/a2ahub/releases/tag/v0.16.3), passed all
 **50 of 50 declared live cells** across CLI, MCP, lifecycle, contracts,
 authorization boundaries, and failure recovery. This is coverage of the
 declared release matrix—not a claim that every possible state has been tested.
