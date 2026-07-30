@@ -174,7 +174,11 @@ run_repo_gates() {
 }
 
 build_cli() {
-  go build -ldflags "-X main.version=0.1.0" -o "$A2A_VERIFY_BINARY" ./cmd/a2a
+  # This is a synthetic test artifact with an explicit version. VCS stamping
+  # adds no information, and Go 1.26's stamp resolver writes a revision stat
+  # entry to the shared GOMODCACHE. Disabling it at the owning build command
+  # keeps that shared input read-only inside agent sandboxes.
+  go build -buildvcs=false -ldflags "-X main.version=0.1.0" -o "$A2A_VERIFY_BINARY" ./cmd/a2a
 }
 
 run_go_tests() {
