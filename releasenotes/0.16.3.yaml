@@ -1,0 +1,65 @@
+schema: release-notes/v1
+version: "0.16.3"
+released: "2026-07-30"
+headline: "Statusline refresh now survives the one-shot command, while the merge gate becomes deterministic and cache-aware"
+changes:
+  - id: RN-01603-1
+    kind: fix
+    impact: normal
+    subject: "A stale statusline launches one durable refresh for the next render"
+    detail: >
+      The prompt-facing statusline still reads local cache only and keeps its
+      existing text, JSON, and exit-code contract. When that cache is stale, it
+      now atomically claims a short-lived local lease and starts the canonical
+      `a2a sync` command as a detached process. The refresh can finish after the
+      one-shot statusline process exits, concurrent prompt renders do not start
+      a herd of duplicate syncs, and the next render sees the refreshed mirror.
+      The previous in-process goroutine could be terminated by normal CLI exit
+      or race a test fixture's cleanup.
+    affects: ["statusline", "local cache", "sync"]
+    action:
+      scope: local
+      why: >
+        Update if statusline is embedded in a shell or agent prompt; no config
+        change is required.
+      detect:
+        - "a2a version"
+      run:
+        - "a2a update --yes"
+
+  - id: RN-01603-2
+    kind: fix
+    impact: low
+    subject: "The ordinary CI gate no longer depends on ambient Git identity or a cold duplicate Go cache"
+    detail: >
+      Git-backed tests now receive a process-local fixture identity, the
+      checkout-owned validation runner has a documented scoped-test entrypoint,
+      GitHub's setup-go cache feeds the exact build cache consumed by
+      `make check`, and workflow syntax validation fails closed with pinned
+      actionlint. Lifecycle wire parity retains every case while reusing one
+      immutable repository fixture.
+    affects: ["contributors", "GitHub Actions", "make check"]
+    action:
+      scope: none
+      why: >
+        No user action is required; maintainers get faster and more trustworthy
+        merge evidence.
+
+  - id: RN-01603-3
+    kind: known-issue
+    impact: normal
+    subject: "The macOS companion remains ad-hoc signed and may require manual approval"
+    detail: >
+      The release cohort authenticates the exact macOS app and ad-hoc signing
+      protects its bundle integrity, but the app is not identified or
+      notarized through a paid Apple Developer account. A quarantined download
+      may require one explicit System Settings → Privacy & Security → Open
+      Anyway decision. Interactive Notification Center, Focus, Login Items,
+      VS Code trust/profile, and remote-window checks remain release-environment
+      evidence rather than claims inferred from hermetic tests.
+    affects: ["macOS notifications", "VS Code notifications"]
+    action:
+      scope: none
+      why: >
+        Keep Gatekeeper enabled and approve only the A2A Notifier version
+        obtained through the verified a2a release cohort.
