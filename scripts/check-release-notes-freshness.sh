@@ -14,7 +14,7 @@ ROOT="${ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 latest_notes_file() {
   git -C "$ROOT" ls-files 'releasenotes/*.yaml' |
-    awk -F'[/\.]' '
+    awk -F'[/.]' '
       $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ && $5 == "yaml" {
         printf "%012d.%012d.%012d\t%s\n", $2, $3, $4, $0
       }

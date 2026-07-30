@@ -238,11 +238,10 @@ func TestWireEveryLifecycleVerbResolves(t *testing.T) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	newWireFixture(t, "axon", "beta")
 
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
-			newWireFixture(t, "axon", "beta")
-
 			var stdout, stderr strings.Builder
 			// Verbs that require a flag still parse args before touching the
 			// artifact; the id is enough to prove the chain resolved.

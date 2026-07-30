@@ -34,7 +34,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check check-validators _print-repo-gates feature-lint epic-drift skill-citations release-notes-freshness readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e install
+.PHONY: check test check-validators _print-repo-gates feature-lint epic-drift skill-citations release-notes-freshness readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -56,6 +56,10 @@ check-validators: ## Repo gates only; one shared CLI build feeds binary-backed s
 check: ## THE CEILING — project-owned cache + one CLI artifact + static and Go gates.
 	@bash scripts/verify.sh full
 
+test: ## Scoped race test through the owned environment. Optional: A2A_VERIFY_TEST_RUN=Regex A2A_VERIFY_TEST_COUNT=N.
+	@test -n "$(PKG)" || { echo "test: set PKG, e.g. make test PKG=./internal/cache/..."; exit 2; }
+	@bash scripts/verify.sh test $(PKG)
+
 classify-guard: ## Publish-boundary gate: no private (harness) path is tracked, DENY↔.gitignore agree.
 	@bash scripts/classify-guard.sh
 
@@ -63,7 +67,8 @@ workflow-lint: ## Every GitHub Action `uses:` must be SHA-pinned (defeats tag-hi
 	@bad=$$(grep -rnE 'uses: +[^ ]+@' .github/workflows 2>/dev/null | grep -vE '@[0-9a-f]{40}([ "#]|$$)' | grep -v 'uses: \./' || true); \
 	if [ -n "$$bad" ]; then echo "workflow-lint: FAIL — unpinned action(s), pin to a full 40-hex SHA (# vX.Y.Z):"; echo "$$bad"; exit 1; fi; \
 	echo "workflow-lint: all actions SHA-pinned."
-	@command -v actionlint >/dev/null 2>&1 && actionlint || echo "workflow-lint: actionlint not installed locally (CI runs it) — go install github.com/rhysd/actionlint/cmd/actionlint@latest"
+	@command -v actionlint >/dev/null 2>&1 || { echo "workflow-lint: FAIL — actionlint missing; install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"; exit 1; }
+	@actionlint
 
 gosec-scope: ## G204/G304 stay live outside the exact reviewed path allowlist.
 	@bash scripts/check-gosec-scope.sh
