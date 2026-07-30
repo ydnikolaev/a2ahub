@@ -14,6 +14,7 @@ import (
 
 const (
 	statuslineRefreshLeaseName = "statusline-refresh.lease"
+	statuslineRefreshClaimBase = "statusline-refresh-claim-"
 	statuslineRefreshLeaseTTL  = DefaultStatuslineTTL
 )
 
@@ -41,19 +42,31 @@ func (s *Store) ClaimStatuslineRefreshLease() bool {
 	if !s.StatuslineRefreshNeeded() {
 		return false
 	}
+	now := s.now()
+	claimPath := statuslineRefreshClaimPath(s.cacheDir, now)
+	if !createStatuslineRefreshLease(claimPath, now) {
+		return false
+	}
 	path := statuslineRefreshLeasePath(s.cacheDir)
-	if createStatuslineRefreshLease(path, s.now()) {
+	if createStatuslineRefreshLease(path, now) {
 		return true
 	}
-	if !statuslineRefreshLeaseExpired(path, s.now()) {
+	if !statuslineRefreshLeaseExpired(path, now) {
+		_ = os.Remove(claimPath) // reason: this contender did not acquire the live lease
 		return false
 	}
-	// Best-effort stale recovery. The following O_EXCL create remains the
-	// authority: if another process wins after this removal, this caller loses.
+	// The generation claim above elects one stale-lease remover for this TTL
+	// window. Without it, concurrent contenders could each observe the old
+	// lease, then one could remove the other's newly-created replacement.
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		_ = os.Remove(claimPath) // reason: stale takeover failed before ownership
 		return false
 	}
-	return createStatuslineRefreshLease(path, s.now())
+	if createStatuslineRefreshLease(path, now) {
+		return true
+	}
+	_ = os.Remove(claimPath) // reason: another claimant established the live lease
+	return false
 }
 
 // ReleaseStatuslineRefreshLease releases this Store's claimed lease after a
@@ -66,12 +79,23 @@ func (s *Store) ReleaseStatuslineRefreshLease() {
 // regardless of whether sync was invoked manually or by statusline.
 func ReleaseStatuslineRefreshLease(cacheDir string) {
 	// Advisory cache state: absence and cleanup failure must never turn a
-	// successful sync into a product failure.
+	// successful sync into a product failure. Claims are removed before the
+	// live lease so a new contender cannot create a claim that this release
+	// then accidentally removes.
+	claims, _ := filepath.Glob(filepath.Join(cacheDir, statuslineRefreshClaimBase+"*.lease"))
+	for _, claim := range claims {
+		_ = os.Remove(claim) // reason: best-effort disposable generation cleanup
+	}
 	_ = os.Remove(statuslineRefreshLeasePath(cacheDir)) // reason: best-effort disposable lease cleanup
 }
 
 func statuslineRefreshLeasePath(cacheDir string) string {
 	return filepath.Join(cacheDir, statuslineRefreshLeaseName)
+}
+
+func statuslineRefreshClaimPath(cacheDir string, now time.Time) string {
+	generation := now.UnixNano() / statuslineRefreshLeaseTTL.Nanoseconds()
+	return filepath.Join(cacheDir, statuslineRefreshClaimBase+strconv.FormatInt(generation, 10)+".lease")
 }
 
 func createStatuslineRefreshLease(path string, now time.Time) bool {

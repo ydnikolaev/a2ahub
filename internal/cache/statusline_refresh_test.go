@@ -93,3 +93,33 @@ func TestClaimStatuslineRefreshLease_ExpiredAndRelease(t *testing.T) {
 		t.Fatal("expired lease did not allow recovery")
 	}
 }
+
+func TestClaimStatuslineRefreshLease_ConcurrentExpiredSingleWinner(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	claimedAt := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	staleStore := NewStore("axon", dir, []SpaceMirror{{SpaceID: "sp1", Dir: t.TempDir()}}, func() time.Time { return claimedAt }, time.Hour)
+	if !staleStore.ClaimStatuslineRefreshLease() {
+		t.Fatal("seed stale claim failed")
+	}
+
+	now := claimedAt.Add(statuslineRefreshLeaseTTL + time.Second)
+	store := NewStore("axon", dir, []SpaceMirror{{SpaceID: "sp1", Dir: t.TempDir()}}, func() time.Time { return now }, time.Hour)
+	const contenders = 16
+	var winners atomic.Int32
+	var wg sync.WaitGroup
+	wg.Add(contenders)
+	for range contenders {
+		go func() {
+			defer wg.Done()
+			if store.ClaimStatuslineRefreshLease() {
+				winners.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := winners.Load(); got != 1 {
+		t.Fatalf("expired lease winners = %d, want exactly 1", got)
+	}
+}

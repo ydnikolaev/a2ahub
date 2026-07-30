@@ -13,9 +13,9 @@ changes:
       now atomically claims a short-lived local lease and starts the canonical
       `a2a sync` command as a detached process. The refresh can finish after the
       one-shot statusline process exits, concurrent prompt renders do not start
-      a herd of duplicate syncs, and the next render sees the refreshed mirror.
-      The previous in-process goroutine could be terminated by normal CLI exit
-      or race a test fixture's cleanup.
+      a herd of duplicate syncs even while recovering an expired lease, and the
+      next render sees the refreshed mirror. The previous in-process goroutine
+      could be terminated by normal CLI exit or race a test fixture's cleanup.
     affects: ["statusline", "local cache", "sync"]
     action:
       scope: local
