@@ -7,7 +7,7 @@
 // package's own directory), which is why this file lives at
 // schemas/embed.go rather than inside internal/schema — a placement
 // decision recorded in
-// docs/features/v1-min-2026-07/plans/03-validation-engine.plan.md.
+// docs/features/archive/v1-min-2026-07/plans/03-validation-engine.plan.md.
 //
 // Every fixtures/ tree is deliberately EXCLUDED from FS: fixtures are test
 // data, read straight from disk by tests (internal/schema, internal/

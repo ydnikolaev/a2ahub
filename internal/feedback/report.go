@@ -1,6 +1,6 @@
 // Package feedback is the P25 agent-feedback core: draft/validate/ledger/
 // triage/submit for the consumer-agent -> product-repo feedback channel
-// (docs/features/v1-min-2026-07/specs/25-agent-feedback.md). Feedback is
+// (docs/features/archive/v1-min-2026-07/specs/25-agent-feedback.md). Feedback is
 // NOT an envelope (I1) — this package never runs internal/validate's
 // actors/threads/to/from V2 engine; it owns its own report shape, its own
 // feedback-local FB-### code table, and its own authoring template.

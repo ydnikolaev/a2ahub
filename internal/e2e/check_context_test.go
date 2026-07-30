@@ -10,7 +10,7 @@ import (
 
 // TestHostLoopCheckStatusResolvesBothCheckNameShapes is P34's e2e tier
 // (AC-940.5, as re-scoped at intake — see
-// docs/features/v1-min-2026-07/plans/34-checkstatus-compound-context.plan.md).
+// docs/features/archive/v1-min-2026-07/plans/34-checkstatus-compound-context.plan.md).
 //
 // The PR is opened by the REAL binary through cmd/a2a/wire.go against the
 // rig's fake host — real config load, real credential resolution, real mirror

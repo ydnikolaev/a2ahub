@@ -1,5 +1,5 @@
 // Package fold implements the a2ahub lifecycle fold engine (spec
-// docs/features/v1-min-2026-07/specs/04-fold-engine.md, plan
+// docs/features/archive/v1-min-2026-07/specs/04-fold-engine.md, plan
 // docs/the-plan/plan/03-domain.md §3.4-3.5).
 //
 // It is a pure package: no I/O, no time.Now(), no logging, no goroutines.
