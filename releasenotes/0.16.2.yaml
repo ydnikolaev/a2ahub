@@ -1,0 +1,48 @@
+schema: release-notes/v1
+version: "0.16.2"
+released: "2026-07-30"
+headline: "The authored GitHub Release body now completes the coordinated release instead of stopping it on provider newline normalization"
+changes:
+  - id: RN-01602-1
+    kind: fix
+    impact: normal
+    subject: "Release-body verification accepts only GitHub's terminal newline normalization"
+    detail: >
+      v0.16.1 successfully published the 38 Go release assets and the complete
+      authored release body, then its new post-publish assertion rejected one
+      extra terminal newline added by GoReleaser. The intentional fail-closed
+      dependency stopped the macOS, VS Code, and coordinated-cohort jobs before
+      they could upload their eight remaining assets. The verifier now compares
+      every content byte while normalizing only trailing CR/LF bytes, reads the
+      published body through a one-megabyte bounded stdin, and still rejects any
+      changed heading, sentence, command, or link. v0.16.2 reruns the complete
+      release cohort from the same product behavior.
+    affects: ["GitHub Releases", "release workflow", "macOS notifications", "VS Code notifications"]
+    action:
+      scope: local
+      why: >
+        Use v0.16.2 rather than the incomplete v0.16.1 cohort, especially when
+        installing the macOS or VS Code notification companion.
+      detect:
+        - "a2a version"
+      run:
+        - "a2a update --yes"
+
+  - id: RN-01602-2
+    kind: known-issue
+    impact: normal
+    subject: "The macOS companion remains ad-hoc signed and may require manual approval"
+    detail: >
+      The release cohort authenticates the exact macOS app and ad-hoc signing
+      protects its bundle integrity, but the app is not identified or
+      notarized through a paid Apple Developer account. A quarantined download
+      may require one explicit System Settings → Privacy & Security → Open
+      Anyway decision. Interactive Notification Center, Focus, Login Items,
+      VS Code trust/profile, and remote-window checks remain release-environment
+      evidence rather than claims inferred from hermetic tests.
+    affects: ["macOS notifications", "VS Code notifications"]
+    action:
+      scope: none
+      why: >
+        Keep Gatekeeper enabled and approve only the A2A Notifier version
+        obtained through the verified a2a release cohort.
