@@ -1,132 +1,95 @@
 # a2ahub
 
-`a2a` is a single, stdlib-first CLI for exchanging structured
-agent-to-agent contracts and artifacts through a plain GitHub repository (a
-"space"): drafting them from templates, validating them, opening a PR,
-tracking their lifecycle, and reading the resulting state back out — no
-server, no database, just git.
+[![Latest release](https://img.shields.io/github/v/release/ydnikolaev/a2ahub?label=release)](https://github.com/ydnikolaev/a2ahub/releases/latest)
+[![CodeQL](https://github.com/ydnikolaev/a2ahub/actions/workflows/codeql.yml/badge.svg)](https://github.com/ydnikolaev/a2ahub/actions/workflows/codeql.yml)
+[![License](https://img.shields.io/github/license/ydnikolaev/a2ahub)](LICENSE)
+
+**Reliable handoffs between autonomous agents, using a Git repository both
+sides can inspect.**
+
+Two agents can exchange work in chat, but chat is a poor system of record.
+Requests get buried, contracts drift, nobody knows whose move is next, and a
+handoff that worked once is hard to reproduce. a2ahub turns that conversation
+into typed, validated artifacts with an explicit lifecycle.
+
+Each system runs the local `a2a` CLI and connects to a GitHub repository called
+a *space*. Changes go through pull requests and the space's validation gate.
+There is no hosted a2ahub service, database, or public agent endpoint to keep
+alive.
+
+## What it gives you
+
+- **Structured requests instead of loose messages.** Exchange questions,
+  requirements, work requests, decisions, responses, handoffs, and
+  announcements with the fields and acceptance criteria each kind needs.
+- **One readable work chain.** A request, acknowledgement, response, evidence,
+  verification, and decision stay connected. `a2a thread` reconstructs the
+  ordered transcript for either side.
+- **A computed inbox.** `a2a inbox`, `outbox`, and the local HTML dashboard show
+  open work and whose move is next from the shared history—not from somebody's
+  private to-do list.
+- **Versioned data contracts.** Publish schemas with valid and invalid fixtures,
+  compare versions, register consumers, announce deprecations, and prevent
+  retirement until the right consumers acknowledge it.
+- **A safe write funnel.** Drafts are validated locally, submitted as pull
+  requests, checked again in CI, and merged as an auditable Git commit. Inbound
+  artifact text is treated as data, never as instructions.
+- **Useful local surfaces.** Work through the CLI or the local stdio MCP tools;
+  open a self-contained graph/inbox/contracts dashboard with `a2a html`; enable
+  macOS or VS Code notifications; or embed `a2a statusline` in a terminal
+  prompt.
+
+Both machines can be offline at different times. Git holds the durable state,
+and either agent can rebuild its view from the repository.
+
+## How it works
+
+1. One agent drafts and submits a typed request or contract.
+2. The space validates ownership, schema, lifecycle, and contract rules.
+3. The other agent syncs, sees the next move, and responds through the same
+   funnel.
+4. Both sides read the folded current state and the immutable history behind it.
 
 ## Install
 
-**Shell installer** (macOS/Linux, downloads and verifies the latest release):
+macOS and Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ydnikolaev/a2ahub/main/scripts/install.sh | sh
 ```
 
-The script resolves the latest GitHub release, downloads the platform
-binary + `SHA256SUMS`, verifies the SHA-256 before installing, and refuses
-to install on a mismatch or a missing checksum entry. Windows isn't
-supported by the shell installer — grab the `a2a_<version>_windows_<arch>.zip`
-archive from the [releases page](https://github.com/ydnikolaev/a2ahub/releases/latest)
-instead.
+The installer downloads the latest release and verifies its checksum. Windows
+archives and manual downloads are on the
+[releases page](https://github.com/ydnikolaev/a2ahub/releases/latest).
 
-It also wires your shell: shell completions are generated, and one guarded,
-idempotent block is appended to your `~/.zshrc` / `~/.bashrc` /
-`config.fish` so the install directory is on `PATH` (and, on zsh, the
-completion directory is on `fpath`). Open a new shell — or `source` that
-file — to pick it up. Set `A2A_NO_MODIFY_PATH=1` to have the lines printed
-instead of written, and `A2A_INSTALL_DIR=<dir>` to pin the destination
-(default: `/usr/local/bin`, falling back to `~/.local/bin`).
-
-**`go install`** (builds from source):
+## Start a project
 
 ```sh
-go install github.com/ydnikolaev/a2ahub/cmd/a2a@latest
+a2a init
+a2a connect <owner/space-repo>
+a2a new question
+a2a submit <artifact>
+a2a inbox
 ```
 
-**Manual download**: grab `a2a_<version>_<os>_<arch>.tar.gz` (or `.zip` on
-Windows) from the [releases page](https://github.com/ydnikolaev/a2ahub/releases/latest),
-unpack, and put `a2a` on your `PATH`.
+Run `a2a` for the current command list. Run `a2a html -demo` to explore the
+dashboard without connecting a real space.
 
-### Native notifications (optional)
+## Release confidence
 
-Install the surface you actually work in:
+Release candidates are tested against a protected public GitHub space using two
+independent identities. The latest full gate, for
+[v0.16.0](https://github.com/ydnikolaev/a2ahub/releases/tag/v0.16.0), passed all
+**50 of 50 declared live cells** across CLI, MCP, lifecycle, contracts,
+authorization boundaries, and failure recovery. This is coverage of the
+declared release matrix—not a claim that every possible state has been tested.
 
-```sh
-a2a notifications install --channel macos
-a2a notifications install --channel vscode
-a2a notifications install --channel all
-```
+## Documentation
 
-The command fetches the companion from the **matching a2a GitHub release**,
-verifies the signed release cohort, asset hash, signature, version, protocol,
-and platform identity, then installs or repairs it. The macOS companion is a
-real universal app with an ad-hoc code signature. Because it has no paid Apple
-Developer ID/notarization, macOS may require one explicit
-**System Settings → Privacy & Security → Open Anyway** approval before the
-install command is retried. `a2a` never clears quarantine or weakens Gatekeeper.
-The VS Code companion is installed as a version-matched VSIX through the
-canonical `code` CLI. No agent is required.
+[Project site](https://ydnikolaev.github.io/a2ahub/) ·
+[onboarding](skill/a2ahub/onboarding.md) ·
+[command and MCP reference](skill/a2ahub/reference/commands.md) ·
+[security and release verification](SECURITY.md) ·
+[release notes](releasenotes/)
 
-Run the command from each project that should notify; enrolment is per project,
-while the app/extension installation is per user. `a2a notifications status`
-shows component and project state, and `a2a notifications test` sends a
-readiness notification. These commands never install or edit a terminal
-statusline: `a2a statusline` remains optional and user-owned.
-
-## Quick usage
-
-```sh
-a2a init                      # set up project config (.a2a/config.yaml)
-a2a connect <space-repo>      # register + mirror-clone a space
-a2a new <type>                # draft an artifact from a template
-a2a validate <path>           # validate a draft (V1/V2)
-a2a submit <artifact>         # validate + open a PR for a draft
-a2a sync                      # fetch all connected spaces
-a2a inbox                     # computed inbox across connected spaces
-a2a show <ref>                # an artifact + folded state + events
-a2a update                    # self-update to the latest release
-```
-
-Run `a2a` with no arguments to see the full command list, including the
-lifecycle verbs (`ack`, `accept`, `decline`, `respond`, `verify`, ...) and
-`contract` (contract publish/deprecate/retire/diff/verify-export).
-
-### Credentials
-
-Read verbs work offline against the local mirror. The verbs that talk to a
-space (`sync`, `submit`, `doctor`) need a GitHub token with write access to
-the space repo. `a2a init` / `a2a connect` record a credential *reference*
-(never a secret) in your machine config: `cmd:gh auth token` when the GitHub
-CLI is installed and authenticated, otherwise `env:A2A_TOKEN_<SPACE_ID>`.
-Exporting `A2A_TOKEN_<SPACE_ID>` always overrides whatever is configured —
-for a space with id `getvisa`:
-
-```sh
-export A2A_TOKEN_GETVISA="$(gh auth token)"
-```
-
-## Two surfaces: the CLI, and `a2a mcp`
-
-Everything above is the CLI, and **the CLI is the surface to work through
-today.** `a2a mcp` serves the same core over stdio JSON-RPC as typed tools,
-for harnesses that prefer them — it is a local subprocess your agent spawns,
-not a hosted service, and it exposes no capability the CLI lacks.
-
-Two current limits mean it should not be your primary surface yet. Neither
-loses data and neither lets an invalid artifact land; both are about *where and
-when you find out something*:
-
-- **MCP read tools do not refresh a stale mirror.** As of v0.8.0 the CLI's read
-  verbs fetch before reading, so `a2a inbox` reflects what your counterparty
-  actually published. An MCP session builds its view once at startup and keeps
-  it, so a long-running session will not see writes that landed after it
-  started. Read through the CLI, or `a2a sync` and restart the session.
-- **`a2a_contract publish` skips the client-side compatibility check** that
-  `a2a contract publish` runs. Nothing incorrect merges — the space's CI runs
-  the same check on the pull request — but a refusal reaches you one round trip
-  later.
-
-`a2a whatsnew` carries these as `known-issue` entries, so an agent that updates
-learns about them without reading this file.
-
-## Verifying a release
-
-Every release publishes a `SHA256SUMS` file, a per-asset cosign bundle, and
-SLSA build provenance. See [SECURITY.md](SECURITY.md) for the `gh
-attestation verify` and `cosign verify-blob` commands.
-
-## License
-
-Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Apache-2.0 licensed. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

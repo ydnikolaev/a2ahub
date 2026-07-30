@@ -27,6 +27,71 @@ changes:
         and compatibility are unchanged.
 
   - id: RN-01601-2
+    kind: fix
+    impact: normal
+    subject: "The project front door now explains the work a2ahub makes possible"
+    detail: >
+      The README no longer opens with implementation vocabulary, copies a
+      command catalogue, or carries two MCP limitations that the product
+      already fixed. It now starts from the coordination failure a2ahub
+      solves, then names the concrete capabilities: readable work chains,
+      computed next moves, versioned consumer-aware contracts, the validated
+      Git write funnel, the local dashboard, notifications, CLI, and MCP.
+      A deterministic release gate keeps the file below its compact size
+      ceiling, requires exits to the canonical documentation, and rejects the
+      known retired guidance; release review still owns the human judgement
+      about clarity and tone.
+    affects: ["README", "first-time evaluation", "release gate"]
+    action:
+      scope: none
+      why: >
+        Existing users need no action. New readers can evaluate the project
+        without learning its command surface first.
+
+  - id: RN-01601-3
+    kind: fix
+    impact: normal
+    subject: "GitHub Releases now show the authored release notes instead of commit noise"
+    detail: >
+      The release workflow now renders the same versioned YAML corpus used by
+      `a2a whatsnew` into a concise GitHub Release page with changes, known
+      issues, actions, install guidance, and verification links. GoReleaser
+      receives that file through its canonical custom-release-notes option and
+      replaces stale bodies on retry. A post-publish assertion byte-compares
+      the visible GitHub body with the rendered SSOT. This removes the generic
+      platform table, raw commit list, and unsafe quarantine-removal advice
+      that previously obscured why a release mattered.
+    affects: ["GitHub Releases", "a2a whatsnew", "release workflow"]
+    action:
+      scope: none
+      why: >
+        Release readers and updating agents now receive two projections of one
+        authored source rather than unrelated summaries.
+
+  - id: RN-01601-4
+    kind: policy
+    impact: normal
+    subject: "Release verification is selected by behavioral impact, not by the size of the version number"
+    detail: >
+      Full GitHub live verification remains mandatory when an exact public
+      candidate changes runtime, funnel, validator, lifecycle, contract
+      constraints, or space behavior. A targeted cell remains a diagnostic
+      rerun, not proof for a shared-core change. Presentation-only candidates
+      may now omit GitHub live when the exact public diff proves that no
+      executable or protocol behavior moved; they still require the full
+      hermetic gate, release preflight, immutable candidate, and a written
+      reason. v0.16.1 uses that presentation-only tier. The latest full
+      baseline, v0.16.0, passed 50 of 50 declared live cells; that is complete
+      coverage of the declared matrix, not every theoretically possible state.
+    affects: ["release runbook", "GitHub Actions usage", "release lead time"]
+    action:
+      scope: none
+      why: >
+        This patch changes public explanation, release rendering, comments,
+        schema annotations, and version pins, but no a2a runtime or space
+        policy behavior exercised by the live matrix.
+
+  - id: RN-01601-5
     kind: known-issue
     impact: normal
     subject: "The macOS companion remains ad-hoc signed and may require manual approval"

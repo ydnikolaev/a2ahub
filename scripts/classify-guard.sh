@@ -30,7 +30,7 @@ cd "$(git rev-parse --show-toplevel)"
 # never drift into a leak. PENDING entries are deliberately NOT required to be
 # gitignored (see docs/ above) until they graduate to DENY.
 ALLOW_DIRS=( .github cmd integrations internal schemas skill space-template testkit seeds feedback web releasenotes )
-ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh scripts/check-release-notes-freshness.sh scripts/check-gosec-scope.sh scripts/build-release-cohort.sh )
+ALLOW_FILES=( .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh scripts/check-release-notes-freshness.sh scripts/check-gosec-scope.sh scripts/check-readme.sh scripts/build-release-cohort.sh )
 DENY_DIRS=( .agents .claude .codex .mate .sporo )   # scripts/ handled below (install.sh + e2e-authoring-smoke.sh are the public exceptions)
 DENY_FILES=( AGENTS.md CLAUDE.md )
 PENDING_DIRS=( docs )   # deferred to P6 — tracked today, tolerated by check 1, classified by check 2, exempt from check 3.
@@ -69,12 +69,14 @@ while IFS= read -r f; do
     [ "$f" = "scripts/release-preflight.sh" ] && continue
     [ "$f" = "scripts/check-release-notes-freshness.sh" ] && continue
     [ "$f" = "scripts/check-gosec-scope.sh" ] && continue
+    [ "$f" = "scripts/check-readme.sh" ] && continue
     [ "$f" = "scripts/build-release-cohort.sh" ] && continue
     # install.sh's own regression net (P40 AC-1002.*) — public for the same
     # reason install.sh is. Matched as a prefix, not a filename: it is a Go
     # test package, so a second file in it is normal growth, not a new
     # boundary decision. Mirrored by `!scripts/installsh/` in .gitignore.
     case "$f" in scripts/installsh/*) continue ;; esac
+    case "$f" in scripts/releasebody/*) continue ;; esac
     flag "tracked but NOT public: $f  → 'git rm --cached $f' (private), or add it to ALLOW in scripts/classify-guard.sh (public)"
     continue
   fi
@@ -138,11 +140,17 @@ fi
 if git check-ignore -q --no-index -- scripts/check-gosec-scope.sh; then
   flag "scripts/check-gosec-scope.sh must stay PUBLIC (the gosec scope gate)  → add '!scripts/check-gosec-scope.sh' to .gitignore"
 fi
+if git check-ignore -q --no-index -- scripts/check-readme.sh; then
+  flag "scripts/check-readme.sh must stay PUBLIC (the README release gate)  → add '!scripts/check-readme.sh' to .gitignore"
+fi
 if git check-ignore -q --no-index -- scripts/build-release-cohort.sh; then
   flag "scripts/build-release-cohort.sh must stay PUBLIC (the signed cohort manifest builder)  → add '!scripts/build-release-cohort.sh' to .gitignore"
 fi
 if git check-ignore -q --no-index -- scripts/classify-guard.sh; then
   flag "scripts/classify-guard.sh must stay PUBLIC (it IS this gate)  → add '!scripts/classify-guard.sh' to .gitignore"
+fi
+if git check-ignore -q --no-index -- scripts/releasebody/main.go; then
+  flag "scripts/releasebody/ must stay PUBLIC (it renders GitHub Release notes from the shipped SSOT)  → add '!scripts/releasebody/' to .gitignore"
 fi
 
 if [ "$fail" -ne 0 ]; then
