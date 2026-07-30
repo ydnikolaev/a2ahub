@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "event/v1/event.schema.json",
   "title": "Lifecycle event (v1)",
-  "description": "Field set per the-plan §5.2.2 verbatim, plus `commit`/`digest` (optional, prose-only per §5.2.2's publish-event note: 'publish events also record commit (SHA) + digest of the published content' — no dedicated table row).",
+  "description": "Field set per the-plan §5.2.2. Publish events record `version` + `digest`; `commit` remains an optional legacy/reserved field but is not authored by current writers or used for version resolution, because the enclosing SHA exists only after the event is committed. `id@version` derives the Git object from the descriptor's committed history (D-023).",
   "type": "object",
   "properties": {
     "schema": {
