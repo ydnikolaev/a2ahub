@@ -830,7 +830,7 @@ func TestContractVerifyExportLocal(t *testing.T) {
 
 // contractComputeDigestForTest is this test file's own copy of §5.7's
 // exact multi-file digest algorithm ("SHA-256 over the sorted list of
-// (repo-relative-path, sha256(file-bytes)) pairs covering schema/** and
+// (contract-root-relative-path, sha256(file-bytes)) pairs covering schema/** and
 // fixtures/**") — used only to independently derive the expected digest
 // a fixture's generated_from.source_digest should carry, never to
 // validate cmd_contract.go's OWN computation against itself.

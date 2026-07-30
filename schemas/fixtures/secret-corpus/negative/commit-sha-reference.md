@@ -2,7 +2,8 @@
 
 Body content that would cross the space boundary and MUST pass the secret
 scanner (§10.4, §13.4) — a 40-char hex string superficially resembles a
-secret but is a publish event's recorded commit SHA (§5.2.2):
+secret but is a benign Git object reference in artifact prose (D-023 derives
+version commits from history; current publish events do not store this SHA):
 
 ```
 refs:

@@ -177,15 +177,12 @@ type lifecycleEventDoc struct {
 	// duplicated, since both lifecycle and contract verbs decode/encode
 	// the same event/v1 shape).
 	Version string `yaml:"version,omitempty"`
-	// Commit/Digest are the publish event's own §5.2.2 prose-only fields
-	// ("publish events also record commit (SHA) + digest of the published
-	// content"). Digest is set by cmd_contract.go's publish verb (computed
-	// pre-commit, from content); Commit is deliberately left unset — the
-	// real commit SHA is only known AFTER the write funnel returns
-	// WriteResult.CommitSHA, i.e. after the event file already had to be
-	// authored, and this phase (like P6's cmd_submit.go before it) does
-	// not attempt a second, amending commit to backfill it. See this
-	// phase's Deviations report.
+	// Digest is the publish event's D-023 content identity and is computed
+	// before the write. Commit is a legacy/reserved optional field that current
+	// writers deliberately leave unset: the enclosing SHA exists only AFTER
+	// the funnel commits the already-authored event. Version resolution derives
+	// that SHA from the descriptor's Git history instead of backfilling a
+	// second commit.
 	Commit string `yaml:"commit,omitempty"`
 	Digest string `yaml:"digest,omitempty"`
 }
