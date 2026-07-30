@@ -38,8 +38,11 @@ changes:
       `make check`, and workflow syntax validation fails closed with pinned
       actionlint. The public-only classification backstop no longer rejects the
       private source repository, and CodeQL has the read scope its analyze step
-      needs under restrictive workflow permissions. Lifecycle wire parity
-      retains every case while reusing one immutable repository fixture.
+      needs under restrictive workflow permissions. CodeQL execution is scoped
+      to the public repository where code scanning is enabled; private CI keeps
+      its gosec, govulncheck, and gitleaks gates without spending minutes on an
+      upload GitHub will refuse. Lifecycle wire parity retains every case while
+      reusing one immutable repository fixture.
     affects: ["contributors", "GitHub Actions", "make check"]
     action:
       scope: none
