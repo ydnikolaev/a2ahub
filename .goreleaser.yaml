@@ -137,36 +137,10 @@ release:
   github:
     owner: ydnikolaev
     name: a2ahub
-  # The repo is private for now: this still works because GITHUB_TOKEN in
-  # the release workflow has repo-scoped write access regardless of
-  # visibility.
-  #
-  # The header lists BOTH the human-facing archive names AND calls out that
-  # `a2a update` / the space CI fetch the raw `a2a-<os>-<arch>` assets
-  # automatically — the reader's actual question is "which file is mine?",
-  # answered before the asset list.
-  header: |
-    ### Which file do I download?
-
-    | your machine | file |
-    |---|---|
-    | **macOS on Apple Silicon** (M1/M2/M3/M4) | `a2a_{{ .Version }}_darwin_arm64.tar.gz` |
-    | **macOS on Intel** | `a2a_{{ .Version }}_darwin_amd64.tar.gz` |
-    | Linux x86-64 | `a2a_{{ .Version }}_linux_amd64.tar.gz` |
-    | Linux ARM64 | `a2a_{{ .Version }}_linux_arm64.tar.gz` |
-    | Windows x86-64 | `a2a_{{ .Version }}_windows_amd64.zip` |
-    | Windows ARM64 | `a2a_{{ .Version }}_windows_arm64.zip` |
-
-    Not sure which Mac you have?  → Apple menu → "About This Mac": a chip that
-    says "Apple M…" means `arm64`; "Intel" means `amd64`.
-
-    **macOS, one-time:** the pre-release binary is unsigned, so after
-    unpacking run `xattr -d com.apple.quarantine ./a2a`, then move it onto
-    your PATH (e.g. `mv a2a /usr/local/bin/`). Verify with `a2a version`.
-
-    `a2a update` and CI (the space validation gate) fetch the raw
-    `a2a-<os>-<arch>` binary + `SHA256SUMS` + `<asset>.cosign.bundle` assets
-    below automatically — you don't need to grab those by hand.
+  # `release.yml` supplies --release-notes=<rendered corpus file>. Replace any
+  # body left by a retried/partial job so GitHub always shows the same authored
+  # content as `a2a whatsnew`.
+  mode: replace
 
 # No `homebrew_casks` block — out of this epic's scope (see the plan's
 # "OMIT the entire homebrew_casks block" instruction). Revisit in a later

@@ -8,6 +8,7 @@
 #                         loop when the diff is docs/scripts and no Go changed.
 # make classify-guard    publish-boundary gate: no private (harness) path tracked.
 # make workflow-lint     every GitHub Action `uses:` is SHA-pinned (product gate).
+# make readme-lint       README stays compact, current, and linked to deeper docs.
 # make feature-lint      docs/features/<slug>/ conforms to the canonical template
 #                        (private harness gate — skips cleanly if absent).
 # make epic-drift        an epic's committed docs match its reality
@@ -33,7 +34,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check check-validators feature-lint epic-drift skill-citations release-notes-freshness classify-guard workflow-lint gosec-scope harness-check coverage vulncheck release-preflight live-e2e install
+.PHONY: check check-validators feature-lint epic-drift skill-citations release-notes-freshness readme-lint classify-guard workflow-lint gosec-scope harness-check coverage vulncheck release-preflight live-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -44,7 +45,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := classify-guard workflow-lint gosec-scope feature-lint epic-drift skill-citations release-notes-freshness
+REPO_GATES := classify-guard workflow-lint gosec-scope readme-lint feature-lint epic-drift skill-citations release-notes-freshness
 
 check-validators: $(REPO_GATES) ## Repo gates only, no tests, no build — the static lane.
 	@echo "check-validators: repo gates green ($(REPO_GATES)). No tests ran."
@@ -87,6 +88,9 @@ workflow-lint: ## Every GitHub Action `uses:` must be SHA-pinned (defeats tag-hi
 
 gosec-scope: ## G204/G304 stay live outside the exact reviewed path allowlist.
 	@bash scripts/check-gosec-scope.sh
+
+readme-lint: ## README stays compact, current, and exits to the canonical docs.
+	@bash scripts/check-readme.sh
 
 coverage: ## go test -race with coverage, gated by the coveragepolicy SSOT floor (same code path as `check`).
 	@if [ ! -f go.mod ]; then echo "coverage: no go.mod — skipped."; exit 0; fi
@@ -140,6 +144,7 @@ harness-check: ## Run the gates' --teeth self-tests (harness gates are private/p
 	@bash scripts/check-gosec-scope.sh --teeth
 	@bash scripts/release-preflight.sh --teeth
 	@bash scripts/check-release-notes-freshness.sh --teeth
+	@bash scripts/check-readme.sh --teeth
 	@if [ -f docs/runbooks/publish-to-public.sh ]; then \
 	  bash docs/runbooks/publish-to-public.sh --teeth; \
 	else \
