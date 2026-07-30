@@ -27,8 +27,8 @@ func TestLoad_CorpusIntegrity(t *testing.T) {
 	// Deliberately hardcoded: this is the tripwire that catches a corpus
 	// file accidentally dropped or mis-ordered. Bump it when you cut a
 	// release — that edit IS the check.
-	if len(all) != 22 {
-		t.Fatalf("Load returned %d entries, want 22: %+v", len(all), all)
+	if len(all) != 23 {
+		t.Fatalf("Load returned %d entries, want 23: %+v", len(all), all)
 	}
 
 	// 0.11.0 is present BEFORE its tag, deliberately: its entries were
@@ -36,7 +36,7 @@ func TestLoad_CorpusIntegrity(t *testing.T) {
 	// actually accurate. Its `released:` date is provisional and is corrected
 	// when the tag is cut — and this tripwire is what forces whoever cuts it
 	// to open the file, so the correction cannot be forgotten.
-	wantVersions := []string{"0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.6.3", "0.6.4", "0.7.0", "0.8.0", "0.9.0", "0.9.1", "0.10.0", "0.11.0", "0.12.0", "0.13.0", "0.15.0", "0.15.1", "0.15.2", "0.16.0", "0.16.1"}
+	wantVersions := []string{"0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.6.3", "0.6.4", "0.7.0", "0.8.0", "0.9.0", "0.9.1", "0.10.0", "0.11.0", "0.12.0", "0.13.0", "0.15.0", "0.15.1", "0.15.2", "0.16.0", "0.16.1", "0.16.2"}
 	for i, rn := range all {
 		if rn.Version != wantVersions[i] {
 			t.Errorf("entry %d: version = %q, want %q (ascending order)", i, rn.Version, wantVersions[i])

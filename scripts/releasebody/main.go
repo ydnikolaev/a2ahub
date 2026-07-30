@@ -15,14 +15,17 @@ import (
 )
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdout, stderr io.Writer) int {
+const maxPublishedBodyBytes = 1 << 20
+
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("releasebody", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	requested := flags.String("version", "", "release version without a leading v")
 	verification := flags.String("verification", "", "optional verified release-gate summary")
+	verifyStdin := flags.Bool("verify-stdin", false, "compare stdin with the rendered body")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -57,6 +60,27 @@ func run(args []string, stdout, stderr io.Writer) int {
 		RepositoryURL: "https://github.com/ydnikolaev/a2ahub",
 		Verification:  *verification,
 	})
+	if *verifyStdin {
+		published, readErr := io.ReadAll(io.LimitReader(stdin, maxPublishedBodyBytes+1))
+		if readErr != nil {
+			// reason: the exit code still carries the failure if stderr itself is unavailable.
+			_, _ = fmt.Fprintf(stderr, "releasebody: read published body: %v\n", readErr)
+			return 1
+		}
+		if len(published) > maxPublishedBodyBytes {
+			// reason: the exit code still carries the refusal if stderr itself is unavailable.
+			_, _ = fmt.Fprintf(stderr, "releasebody: published body exceeds %d bytes\n", maxPublishedBodyBytes)
+			return 1
+		}
+		// GitHub/GoReleaser may normalize one or more terminal line endings.
+		// Everything before them remains byte-exact.
+		if strings.TrimRight(body, "\r\n") != strings.TrimRight(string(published), "\r\n") {
+			// reason: the exit code still carries the mismatch if stderr itself is unavailable.
+			_, _ = fmt.Fprintln(stderr, "releasebody: published GitHub body differs from the authored corpus")
+			return 1
+		}
+		return 0
+	}
 	if _, err := fmt.Fprint(stdout, body); err != nil {
 		// reason: both output channels may be broken; the exit code remains observable.
 		_, _ = fmt.Fprintf(stderr, "releasebody: write stdout: %v\n", err)

@@ -90,8 +90,7 @@ func TestReleaseWorkflowPublishesAndVerifiesRenderedNotes(t *testing.T) {
 		`> "$RUNNER_TEMP/release-notes.md"`,
 		"--release-notes=${{ runner.temp }}/release-notes.md",
 		"--template '{{.body}}'",
-		"published-release-notes.md",
-		"diff -u",
+		"--verify-stdin",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Errorf("release workflow no longer proves %q is wired:\n%s", want, workflow)

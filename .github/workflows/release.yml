@@ -82,13 +82,15 @@ jobs:
       - name: Assert the published GitHub Release body matches the SSOT
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
         run: |
+          set -o pipefail
           gh release view "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
-            --json body --template '{{.body}}' > "$RUNNER_TEMP/published-release-notes.md"
-          diff -u \
-            "$RUNNER_TEMP/release-notes.md" \
-            "$RUNNER_TEMP/published-release-notes.md"
+            --json body --template '{{.body}}' \
+            | go run ./scripts/releasebody \
+                --version "${VERSION#v}" \
+                --verify-stdin
 
   macos-notifier:
     needs: goreleaser
