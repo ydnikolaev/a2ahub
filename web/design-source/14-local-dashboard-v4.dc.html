@@ -241,7 +241,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
           <div style="display:flex; gap:12px; flex-wrap:wrap;">
             <sc-for list="{{ ovStats }}" as="s" hint-placeholder-count="3">
               <div style="background:var(--surface); border-radius:14px; padding:16px 20px; min-width:150px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-                <div style="font-size:15px; color:var(--muted); margin-bottom:6px;">{{ s.label }}</div>
+                <div style="display:flex; align-items:center; gap:7px; font-size:15px; color:var(--muted); margin-bottom:6px;">{{ s.label }}<dc-import name="HintDot" text="{{ s.hint }}" hint-size="17px,17px"></dc-import></div>
                 <div style="display:flex; align-items:baseline; gap:8px;"><span style="{{ s.valueStyle }}">{{ s.value }}</span><span style="font-size:15px; color:var(--muted);">{{ s.note }}</span></div>
               </div>
             </sc-for>
@@ -352,7 +352,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                 <div style="background:var(--healthy-tint); border-radius:14px; padding:16px 18px; margin-bottom:16px; display:flex; align-items:flex-start; gap:12px;">
                   <span aria-hidden="true" style="flex:0 0 auto; margin-top:1px; color:var(--healthy-ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
                   <span style="min-width:0;">
-                    <span style="display:block; font-size:16px; font-weight:600; color:var(--healthy-strong);">{{ settledLabel }}</span>
+                    <span style="display:flex; align-items:center; gap:7px; font-size:16px; font-weight:600; color:var(--healthy-strong);">{{ settledLabel }}<dc-import name="HintDot" text="{{ settledHint }}" hint-size="17px,17px"></dc-import></span>
                     <span style="display:block; font-size:15px; line-height:1.5; color:var(--healthy-ink);">{{ settledText }}</span>
                   </span>
                 </div>
@@ -360,7 +360,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               <sc-if value="{{ tvPending }}" hint-placeholder-val="{{ true }}">
               <div style="background:var(--attention-tint); border-radius:14px; padding:18px 20px; margin-bottom:16px;">
                 <div style="margin-bottom:12px;">
-                  <div style="font-size:16px; font-weight:600; color:var(--attention-strong);">{{ whoseMoveLabel }}</div>
+                  <div style="display:flex; align-items:center; gap:7px; font-size:16px; font-weight:600; color:var(--attention-strong);">{{ whoseMoveLabel }}<dc-import name="HintDot" text="{{ whoseMoveHint }}" hint-size="17px,17px"></dc-import></div>
                   <div style="font-size:15px; line-height:1.5; color:var(--attention-ink);">{{ whoseMoveText }}</div>
                 </div>
                 <div style="display:flex; flex-direction:column; gap:12px;">
@@ -499,7 +499,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
             <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:20px; margin-bottom:18px;">
               <div style="min-width:0;">
-                <div style="font-size:16px; font-weight:600; margin-bottom:8px;">{{ consumerLinesLabel }}</div>
+                <div style="display:flex; align-items:center; gap:7px; font-size:16px; font-weight:600; margin-bottom:8px;">{{ consumerLinesLabel }}<dc-import name="HintDot" text="{{ consumerLinesHint }}" hint-size="17px,17px"></dc-import></div>
                 <div style="display:flex; flex-direction:column; gap:8px;">
                   <sc-for list="{{ cdLines }}" as="l" hint-placeholder-count="2">
                     <div style="{{ l.style }}">
@@ -513,7 +513,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                 </div>
               </div>
               <div style="min-width:0;">
-                <div style="font-size:16px; font-weight:600; margin-bottom:8px;">{{ versionWindowLabel }}</div>
+                <div style="display:flex; align-items:center; gap:7px; font-size:16px; font-weight:600; margin-bottom:8px;">{{ versionWindowLabel }}<dc-import name="HintDot" text="{{ versionWindowHint }}" hint-size="17px,17px"></dc-import></div>
                 <div style="display:flex; flex-direction:column; gap:8px;">
                   <sc-for list="{{ cdVersions }}" as="v" hint-placeholder-count="3">
                     <div style="background:var(--page); border-radius:11px; padding:12px 14px;">
@@ -529,7 +529,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
             </div>
 
             <div style="border-top:1px solid var(--hairline); padding-top:16px;">
-              <div style="font-size:16px; font-weight:600; margin-bottom:8px;">{{ provenanceLabel }}</div>
+              <div style="display:flex; align-items:center; gap:7px; font-size:16px; font-weight:600; margin-bottom:8px;">{{ provenanceLabel }}<dc-import name="HintDot" text="{{ provenanceHint }}" hint-size="17px,17px"></dc-import></div>
               <dc-import name="FactTable" rows="{{ cdFacts }}" hint-size="100%,200px"></dc-import>
               <div style="margin-top:12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ codeBindingPrefix }} <strong>{{ notEvaluatedLabel }}</strong>{{ codeBindingSuffix }}</div>
             </div>
@@ -562,10 +562,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
             <thead>
               <tr>
                 <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">{{ spaceLabel }}</th>
-                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">{{ freshnessLabel }}</th>
+                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);"><span style="display:inline-flex; align-items:center; gap:6px;">{{ freshnessLabel }}<dc-import name="HintDot" text="{{ freshnessHint }}" hint-size="17px,17px"></dc-import></span></th>
                 <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">{{ participantsLabel }}</th>
-                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">{{ writerFloorLabel }}</th>
-                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">{{ pinnedWorkflowLabel }}</th>
+                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);"><span style="display:inline-flex; align-items:center; gap:6px;">{{ writerFloorLabel }}<dc-import name="HintDot" text="{{ writerFloorHint }}" hint-size="17px,17px"></dc-import></span></th>
+                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);"><span style="display:inline-flex; align-items:center; gap:6px;">{{ pinnedWorkflowLabel }}<dc-import name="HintDot" text="{{ pinnedWorkflowHint }}" hint-size="17px,17px"></dc-import></span></th>
                 <th style="text-align:left; padding:16px 0 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">{{ revisionLabel }}</th>
               </tr>
             </thead>
@@ -661,7 +661,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         <div style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:20px;">
           <div style="display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start;">
             <div style="flex:1 1 320px; min-width:0;">
-              <div style="font-size:18px; font-weight:600; margin-bottom:14px;">{{ localBinaryLabel }}</div>
+              <div style="display:flex; align-items:center; gap:7px; font-size:18px; font-weight:600; margin-bottom:14px;">{{ localBinaryLabel }}<dc-import name="HintDot" text="{{ localBinaryHint }}" hint-size="17px,17px"></dc-import></div>
               <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
                 <span style="font-family:'IBM Plex Mono',monospace; font-size:34px; font-weight:600;">{{ verCurrent }}</span>
                 <span style="font-size:16px; color:var(--muted);">{{ installedLabel }}</span>
@@ -959,30 +959,30 @@ const DASHBOARD_I18N = {
   },
   ru: {
     views:["Обзор","Работа","Треды","Контракты","Карта","Спейсы","Версии","Доки","Справка"],
-    backOverview:"Вернуться к обзору", viewsLabel:"Разделы", more:"Ещё", localeGroup:"Язык интерфейса", space:"Пространство",
-    errorTitle:"Не удалось прочитать демонстрационные данные", errorPrefix:"Панель — проекция только для чтения из", errorSuffix:". Недостающие факты не додумываются.",
-    overviewQueue:"Ждёт вашего решения", overviewQueueNote:"по серьёзности последствий", openWork:"Открыть работу", snapshotReliability:"Надёжность снимка",
-    work:"Работа", threads:"Один замысел — одна цепочка", threadMissingTitle:"Для этой цепочки нет полной реконструкции", threadMissingText:"Строка построена из сводки; полный причинный журнал есть только у части демонстрационных цепочек.",
-    whoseMove:"Чей сейчас ход", whoseMoveText:"Состояние и допустимые переходы вычислены из событий ниже.", causalTimeline:"Причинная лента", newestFirst:"сначала новые", opensChain:"начало цепочки", subjectPrefix:"для", threadFlags:"Флаги этой цепочки показаны без потерь",
-    contracts:"Интерфейсы с историей", codeBacked:"привязан к коду", consumerLines:"Зарегистрированные линии потребителей", versionWindow:"Окно действующих версий", provenance:"Происхождение и схема", codeBindingPrefix:"Привязка к коду хранит генератор и контрольную сумму источника. Совпадают ли текущие байты,", notEvaluated:"не проверяется", codeBindingSuffix:" в этом статическом снимке.",
-    network:"Кто от кого зависит", networkSub:"Контрактная зависимость идёт от потребителя к поставщику; открытый обмен — незавершённая работа. Выберите одно пространство или оставьте все, чтобы увидеть связывающие их системы. Подробности открываются по нажатию на линию или карточку.", exchangeMap:"Карта обмена",
-    spaces:"Пространства", spacesSub:"Локальный бинарник, минимальная версия записи для пространства и закреплённый процесс CI — независимые оси совместимости.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимальная версия записи", pinnedWorkflow:"Закреплённый процесс CI", revision:"Ревизия",
-    limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь — чтобы пустое место не выглядело как «всё в порядке».",
-    emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"На момент снимка все подключённые спейсы читались, флагов не было. Цифры выше — это вся картина.",
+    backOverview:"Вернуться к обзору", viewsLabel:"Разделы", more:"Ещё", localeGroup:"Язык интерфейса", space:"Спейс",
+    errorTitle:"Не удалось прочитать данные", errorPrefix:"Дашборд только читает и показывает", errorSuffix:". Чего в файле нет, того он не придумывает.",
+    overviewQueue:"Ждёт вашего решения", overviewQueueNote:"сверху то, где цена ошибки выше", openWork:"Открыть работу", snapshotReliability:"Насколько свежие данные",
+    work:"Работа", threads:"Одна задача — один тред", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. Полная история — кто что сделал и в каком порядке — в снимок не попала.",
+    whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"Как всё происходило", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
+    contracts:"Интерфейсы и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас —", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
+    network:"Кто от кого зависит", networkSub:"Сплошная линия — зависимость от контракта: потребитель слева, поставщик справа. Пунктир — незакрытая работа. Выберите спейс или оставьте все, чтобы увидеть, кто их связывает. Нажмите на линию или карточку — откроются подробности.", exchangeMap:"Карта обмена",
+    spaces:"Спейсы", spacesSub:"Три вещи, которые легко перепутать: версия вашего бинарника, минимальная версия, с которой спейс принимает записи, и версия проверки в CI. Они меняются независимо.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
+    limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь — чтобы пустое место не сошло за «всё в порядке».",
+    emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"Когда собирался снимок, все подключённые спейсы читались, замечаний не было. Цифры выше — это вся картина.",
     emptySpacesTitle:"Спейсы не подключены", emptySpacesText:"Спейс — это общий репозиторий, через который две системы обмениваются документами. Подключите спейс, и таблица заполнится.",
-    integrityFlags:"Флаги протокола и чтения", integrityFlagsText:"Что зафиксировано событиями и что пошло не так при чтении локального кэша. Флаг — это улика, а не приговор.",
-    degradedReads:"Прочитано с ограничениями", degradedReadsText:"Эти спейсы ответили из старой копии зеркала или не ответили вовсе. Их цифры — это минимум, а не итог.",
-    notEvaluatedTitle:"В этом снимке не проверялось", notEvaluatedText:"Неизвестное названо прямо и не выдаётся за ноль или за норму.",
-    versions:"Версии", localBinary:"Локальный бинарник", installed:"установлена", latest:"последняя", updateCandidate:"Доступное обновление", impact:"влияние", publishedReleases:"Опубликованные выпуски в этом снимке", expandedNotes:"Развёрнутые примечания охватывают",
-    guide:"Как a2ahub работает без ручной диспетчеризации", guideSub:"Агенты получают навык, CLI и типизированные инструменты MCP, сами создают и проверяют документы, проводят их через Git и продолжают работу из входящих. Человек подключается только там, где действительно требуется решение или право.",
-    lifecycleTitle:"Жизненный цикл — это события, а не редактируемый статус", lifecycleText:"Каждый переход проверяется до записи. Обе стороны сворачивают одну историю в одно состояние.", lifecycleFoot:"Ответы, блокировки, споры, отмены и замены не теряются: это отдельные неизменяемые события с проверенным автором.",
-    artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл — один смысл. Код протокола остаётся быстрым визуальным ориентиром, а рядом всегда есть человеческое название.", readingGuide:"Как читать панель", readOnly:"только чтение",
+    integrityFlags:"Замечания", integrityFlagsText:"Что зафиксировано в событиях и что пошло не так при чтении кэша. Замечание — повод посмотреть, а не приговор.",
+    degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии или не ответили вовсе. Их цифры — это «не меньше чем», а не точное число.",
+    notEvaluatedTitle:"Этого снимок вообще не проверял", notEvaluatedText:"Неизвестное названо прямо, а не показано как ноль или как норма.",
+    versions:"Версии", localBinary:"Ваш бинарник", installed:"стоит сейчас", latest:"последняя", updateCandidate:"Есть обновление", impact:"влияние", publishedReleases:"Выпуски", expandedNotes:"Подробности по",
+    guide:"Как это работает без ручной диспетчеризации", guideSub:"У агента есть навык, CLI и типизированные инструменты MCP. Он сам пишет документы, проверяет их, проводит через Git и продолжает работу из входящих. Человек подключается там, где нужно решение или разрешение — и больше нигде.",
+    lifecycleTitle:"Статус не редактируется — он складывается из событий", lifecycleText:"Каждый переход проверяется до того, как попадёт в репозиторий. Обе стороны собирают из одной и той же истории одно и то же состояние.", lifecycleFoot:"Ответы, блокировки, споры, отмены и замены не затираются: каждое остаётся отдельным событием с проверенным автором.",
+    artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл — одна мысль. Двухбуквенный код удобен глазу, но рядом всегда стоит нормальное название.", readingGuide:"Как читать дашборд", readOnly:"только чтение",
     docs:"Документация", docsSub:"То же руководство, которое читает агент: один корпус Markdown — он ставится как навык, публикуется на сайте и целиком вшит в этот файл. Сеть не нужна.",
     docSearch:"Поиск по докам", docSearchPlaceholder:"тред, контракт, вывод версии…", docNoMatch:"Ни одно название раздела, группа или путь к файлу не совпали с запросом.",
     docEmbedded:"вшито в этот файл", emptyDocsTitle:"Документация не вшита", emptyDocsText:"Этот снимок собран без корпуса документации. Переустановите навык и соберите дашборд заново.",
     loadingDoc:"Загружается встроенный документ…",
-    projectSite:"Сайт проекта", projectSiteText:"На публичном сайте доступны та же документация, журнал изменений и шаги проверки выпуска. Сайту нужна сеть; этому файлу — нет.", documentation:"Документация", changelog:"Журнал изменений", verifyRelease:"Проверить выпуск", githubRepo:"Репозиторий GitHub", commandsBehind:"Команды за этими экранами", commandsBehindText:"Человек может запустить их для диагностики. Обычная координация не требует ручного перевода между системами.", publicHome:"Главная сайта", designSystem:"Дизайн-система v4",
-    readingRows:[["Обзор и работа","Действия человека упорядочены по последствиям и следующему ответственному. Приоритет, явная блокировка, ожидающее согласование, срок и устаревший снимок остаются пятью разными сигналами."],["Цепочки","Один замысел образует одну цепочку: по порядку коммитов, когда доступна история Git, либо по явно помеченному заявленному времени."],["Контракты и карта","Расхождение относится к закреплённой основной линии конкретного потребителя. Поставщик может быть исправен, пока у потребителя ничего не разрешается."],["Целостность и версии","Ограничения снимка и независимые оси совместимости, которые нельзя выводить друг из друга."]]
+    projectSite:"Сайт проекта", projectSiteText:"На сайте та же документация, тот же список изменений и инструкция, как проверить подлинность выпуска. Сайту нужна сеть, этому файлу — нет.", documentation:"Документация", changelog:"Что менялось", verifyRelease:"Проверить выпуск", githubRepo:"Репозиторий на GitHub", commandsBehind:"Команды за этими экранами", commandsBehindText:"Их можно запустить руками, если хочется разобраться. Для обычной работы это не нужно: агенты общаются между собой сами.", publicHome:"Главная сайта", designSystem:"Дизайн-система",
+    readingRows:[["Обзор и работа","Сверху то, где цена ошибки выше. Приоритет, блокировка, ожидание вашего согласования, срок и устаревшие данные — это пять разных сигналов, и они намеренно не слиты в один."],["Треды","Одна задача — один тред. Порядок берётся из коммитов Git; если истории нет, используется время, указанное автором, и это честно помечается."],["Контракты и карта","Расхождение считается для конкретного потребителя и той версии, которую он закрепил. У поставщика может быть всё хорошо ровно тогда, когда у потребителя не работает ничего."],["Спейсы и версии","Пределы этого снимка и три версии, которые нельзя выводить одну из другой."]]
   }
 };
 
@@ -1001,12 +1001,12 @@ const GUIDE_FEATURES_RU = [
   ["a2a", "Один CLI охватывает весь цикл", "Черновики, проверка, отправка, входящие, контракты и диагностика доступны через один бинарник с командами, удобными для вызова агентом."],
   ["MCP", "Типизированные инструменты MCP", "Те же действия доступны как типизированные инструменты MCP. Агенту не нужно разбирать текстовый вывод или изобретать второй протокол."],
   ["XQ → XS", "Агенты общаются с агентами", "Системы координируются типизированными артефактами напрямую. Человек подключается только к решениям с реальным риском."],
-  ["auto-merge", "Проверенные запросы на слияние объединяются автоматически", "Схемы и проверка пространства в CI подтверждают корректность документа. Ручное согласование остаётся только там, где его требует CODEOWNERS или политика проекта."],
+  ["auto-merge", "Проверенные запросы на слияние объединяются автоматически", "Схемы и проверка спейсы в CI подтверждают корректность документа. Ручное согласование остаётся только там, где его требует CODEOWNERS или политика проекта."],
   ["macOS · VS Code", "Нативные уведомления по желанию", "В macOS 13+ можно установить дополнение для Центра уведомлений. Расширение VS Code показывает уведомления о переходах и строку состояния. Команда a2a notifications install устанавливает или восстанавливает их для текущего пользователя; эта возможность остаётся необязательной."],
   ["a2a statusline", "Строка состояния для Claude и терминала", "Отдельная необязательная пользовательская поверхность показывает ожидающую работу в строке состояния Claude или терминала. Установка уведомлений её не редактирует."],
   ["draft → merge", "Весь цикл автоматизирован", "Черновик → проверка → отправка → CI → объединение → входящие. Обмен продолжается, пока человек занят или спит."],
   ["a2a feedback", "Агенты улучшают инструменты", "Структурированная обратная связь проверяется и разбирается как данные — случайный входящий текст не становится инструкцией."],
-  ["a2a thread", "Один замысел — одна цепочка", "Запрос, ответ, доказательства и решение остаются в одной причинной цепочке и читаются всеми системами в одинаковом порядке."],
+  ["a2a thread", "Одна задача — один тред", "Запрос, ответ, доказательства и решение лежат в одном треде и читаются всеми системами в одном и том же порядке."],
   ["1.x · 2.x", "Контракт живёт в нескольких версиях", "Старая линия может уходить, пока новая уже работает. Ничего не удаляется, а каждый потребитель явно закрепляет используемую основную версию."],
   ["deprecate → ack", "Устаревание доходит до каждого", "Объявление доставляется всем зарегистрированным участникам, а окончательное снятие версии ждёт подтверждений. Поэтому поздно подключившийся потребитель не выпадает из процесса."]
 ];
@@ -1025,7 +1025,7 @@ const GUIDE_FEATURES_EN = [
   ["deprecate → ack", "Deprecation reaches every consumer", "The announcement follows registrations and retirement waits for acknowledgements, so late consumers remain visible."]
 ];
 const GUIDE_RU = {
-  "getting-started":"Начало работы", overview:"Обзор", "work-loops":"Рабочие циклы", threads:"Треды: один замысел, одна цепочка",
+  "getting-started":"Начало работы", overview:"Обзор", "work-loops":"Рабочие циклы", threads:"Треды: одна задача — один тред",
   "contract-versions":"Версии контрактов и sunset", commands:"Команды CLI и MCP", notifications:"Нативные уведомления",
   decompose:"Пример декомпозиции", feedback:"Обратная связь", "status-announcements":"Живость feed: status announcements",
   retraction:"Отзыв опубликованных данных", bindings:"Привязки контракта к коду", troubleshooting:"Диагностика",
@@ -1342,9 +1342,9 @@ class Component extends DCLogic {
   statusOf(it) {
     const ru = this.state.locale === "ru";
     if (it.blocking) return { status: (ru ? "Блокирует" : "Blocking") + " · " + it.priority, tone: "blocking" };
-    if (it.gatePending) return { status: ru ? "Ожидает вашего согласования" : "Your approval pending", tone: "attention" };
+    if (it.gatePending) return { status: ru ? "Ждёт вашего согласования" : "Your approval pending", tone: "attention" };
     if (overdue(it)) return { status: (ru ? "Просрочено" : "Overdue") + " · " + it.priority, tone: "blocking" };
-    if (it.severity === "attention") return { status: (ru ? "Требует внимания" : "Needs a look") + " · " + it.priority, tone: "attention" };
+    if (it.severity === "attention") return { status: (ru ? "Стоит посмотреть" : "Needs a look") + " · " + it.priority, tone: "attention" };
     return { status: it.priority, tone: "neutral" };
   }
 
@@ -1404,21 +1404,21 @@ class Component extends DCLogic {
     if (e.blocking) pills.push({ text: (ru ? "Блокирует" : "Blocking") + " · " + (e.priority || ""), tone: "blocking" });
     else if (e.priority) pills.push({ text: e.priority, tone: "neutral" });
     pills.push({ text: String(a.state || "").replace("_", " "), tone: STATE_TONE[a.state] || "neutral" });
-    if (a.sync_stale) pills.push({ text: (ru ? "пространство устарело " : "space stale ") + a.sync_age, tone: "attention" });
+    if (a.sync_stale) pills.push({ text: (ru ? "спейс устарел " : "space stale ") + a.sync_age, tone: "attention" });
 
     const lists = [];
-    if (e.acceptance_criteria) lists.push({ heading: ru ? "Критерии приёмки" : "Acceptance criteria", items: e.acceptance_criteria, numbered: true });
-    if (e.options_considered) lists.push({ heading: ru ? "Рассмотренные варианты" : "Options considered", items: e.options_considered, numbered: true });
-    if (e.deliverables) lists.push({ heading: ru ? "Результаты" : "Deliverables", items: e.deliverables.map(x => typeof x === "string" ? x : (x.path || x.name || JSON.stringify(x))), numbered: false });
-    if (e.limitations) lists.push({ heading: ru ? "Зафиксированные ограничения" : "Recorded limitations", items: e.limitations, numbered: false });
+    if (e.acceptance_criteria) lists.push({ heading: ru ? "Когда считаем, что готово" : "Acceptance criteria", items: e.acceptance_criteria, numbered: true });
+    if (e.options_considered) lists.push({ heading: ru ? "Какие варианты рассматривали" : "Options considered", items: e.options_considered, numbered: true });
+    if (e.deliverables) lists.push({ heading: ru ? "Что сдаётся" : "Deliverables", items: e.deliverables.map(x => typeof x === "string" ? x : (x.path || x.name || JSON.stringify(x))), numbered: false });
+    if (e.limitations) lists.push({ heading: ru ? "Чего этот результат не покрывает" : "Recorded limitations", items: e.limitations, numbered: false });
 
     const facts = [];
-    facts.push({ label: ru ? "пространство" : "space", value: a.space, mono: true });
+    facts.push({ label: ru ? "спейс" : "space", value: a.space, mono: true });
     if (e.created) facts.push({ label: ru ? "создано" : "created", value: when(e.created) });
-    if (e.effort_estimate) facts.push({ label: ru ? "трудоёмкость" : "effort", value: e.effort_estimate });
+    if (e.effort_estimate) facts.push({ label: ru ? "оценка объёма" : "effort", value: e.effort_estimate });
     if (e.category) facts.push({ label: ru ? "категория" : "category", value: e.category + (e.classification ? " · " + e.classification : "") });
-    else if (e.classification) facts.push({ label: ru ? "классификация" : "classification", value: e.classification });
-    if (e.required_approvers) facts.push({ label: ru ? "согласующие" : "approvers", value: e.required_approvers.join(", ") });
+    else if (e.classification) facts.push({ label: ru ? "уровень доступа" : "classification", value: e.classification });
+    if (e.required_approvers) facts.push({ label: ru ? "кто согласует" : "approvers", value: e.required_approvers.join(", ") });
     if (e.actor) facts.push({ label: ru ? "автор" : "actor", value: (e.actor.name || "") + (e.actor.kind ? " · " + e.actor.kind : ""), mono: true });
     facts.push({ label: ru ? "источник" : "source", value: a.sourceClass + " · " + (ru ? "синхронизировано " : "synced ") + a.sync_age });
 
@@ -1431,32 +1431,32 @@ class Component extends DCLogic {
 
     const flagMessages = (a.flags || []).map(code => {
       const f = d.flags.find(x => x.code === code && x.artifact === a.id) || d.flags.find(x => x.code === code);
-      return { code, message: f ? f.message : (ru ? "Для этого флага в снимке нет сообщения." : "No message is recorded for this flag in the fixture.") };
+      return { code, message: f ? f.message : (ru ? "К этому замечанию не приложено пояснения." : "No message is recorded for this flag in the fixture.") };
     });
 
     let calloutTitle = "", calloutText = "", calloutTone = "attention";
     if (e.expected_response) {
       const needed = e.needed_by || (e.expected_response && e.expected_response.by);
       calloutTone = e.blocking ? "blocking" : "attention";
-      calloutTitle = needed ? (ru ? "Ожидается к " : "Expected by ") + needed + " · " + ((a.to || []).includes(d.self) ? (ru ? "ваш ход" : "your move") : (ru ? "ожидается от " : "waiting on ") + (a.to || []).join(", ")) : (ru ? "Что отправитель ожидает в ответ" : "What the sender expects back");
-      calloutText = [e.expected_response.shape.replace(/[.\s]+$/, "") + ".", e.interim_behavior ? (ru ? "До этого: " : "Until then: ") + e.interim_behavior.replace(/[.\s]+$/, "") + "." : "", e.context ? e.context.replace(/[.\s]+$/, "") + "." : ""].filter(Boolean).join(" ");
+      calloutTitle = needed ? (ru ? "Ждут к " : "Expected by ") + needed + " · " + ((a.to || []).includes(d.self) ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + (a.to || []).join(", ")) : (ru ? "Чего от вас ждут в ответ" : "What the sender expects back");
+      calloutText = [e.expected_response.shape.replace(/[.\s]+$/, "") + ".", e.interim_behavior ? (ru ? "А пока: " : "Until then: ") + e.interim_behavior.replace(/[.\s]+$/, "") + "." : "", e.context ? e.context.replace(/[.\s]+$/, "") + "." : ""].filter(Boolean).join(" ");
     } else if (e.context) {
-      calloutTitle = ru ? "Контекст, записанный с артефактом" : "Context recorded with the artifact";
+      calloutTitle = ru ? "Что автор приложил к документу" : "Context recorded with the artifact";
       calloutText = e.context;
     } else if (e.verification) {
-      calloutTitle = ru ? "Как отправитель это проверил" : "How the sender verified it";
+      calloutTitle = ru ? "Чем автор это подтвердил" : "How the sender verified it";
       calloutText = Array.isArray(e.verification) ? e.verification.join(" · ") : String(e.verification);
     }
 
     return {
       present: true, type: a.type, pills,
-      sourceLine: a.sourceClass + (ru ? " · запись · " : " record · ") + (a.sync_stale ? (ru ? "пространство устарело " : "space stale ") + a.sync_age : (ru ? "синхронизировано " : "synced ") + a.sync_age),
+      sourceLine: a.sourceClass + (ru ? " · запись · " : " record · ") + (a.sync_stale ? (ru ? "спейс устарел " : "space stale ") + a.sync_age : (ru ? "синхронизировано " : "synced ") + a.sync_age),
       title: a.title, body: a.body || "",
       calloutTitle, calloutText, calloutTone,
       lists, facts,
       refs: (a.refs || []).map(r => ({
         ref: r.ref, note: (e.refs || []).find(x => x.ref === r.ref) ? (e.refs.find(x => x.ref === r.ref).note || "") : "",
-        pillText: r.resolved === false ? (ru ? "не разрешена" : "unresolved") : (r.digest_mismatch ? (ru ? "контрольная сумма не совпадает" : "digest mismatch") : (ru ? "разрешена · сумма совпадает" : "resolved · digest matches")),
+        pillText: r.resolved === false ? (ru ? "не нашли" : "unresolved") : (r.digest_mismatch ? (ru ? "сумма не сошлась" : "digest mismatch") : (ru ? "нашли, сумма сошлась" : "resolved · digest matches")),
         pillTone: r.resolved === false || r.digest_mismatch ? "blocking" : "healthy"
       })),
       events, flags: flagMessages,
@@ -1476,7 +1476,7 @@ class Component extends DCLogic {
     const base = {
       locale:s.locale, hasError:!!s.error,
       errorText: s.error === "invalid"
-        ? (ru ? "Файл найден, но не объявляет meta.schema «a2a-design-demo/v3» и meta.synthetic: true. Несоответствие показано без попытки исправления." : "The fixture was found but does not declare meta.schema “a2a-design-demo/v3” with meta.synthetic: true. The inconsistency is reported instead of repaired.")
+        ? (ru ? "Файл нашёлся, но в нём нет meta.schema «a2a-design-demo/v3» и meta.synthetic: true. Мы показываем это как есть, а не пытаемся починить." : "The fixture was found but does not declare meta.schema “a2a-design-demo/v3” with meta.synthetic: true. The inconsistency is reported instead of repaired.")
         : (s.error ? (ru ? "Файл не удалось загрузить (" + s.error.slice(5) + "). Недоступны и demo-data.json, и встроенная копия demo-data.js." : "The fixture could not be loaded (" + s.error.slice(5) + "). Neither demo-data.json nor the embedded demo-data.js copy is reachable.") : ""),
       backOverviewLabel:c.backOverview, viewsLabel:c.viewsLabel, moreLabel:c.more, localeGroupLabel:c.localeGroup, spaceLabel:c.space,
       errorTitle:c.errorTitle, errorPrefix:c.errorPrefix, errorSuffix:c.errorSuffix,
@@ -1486,6 +1486,35 @@ class Component extends DCLogic {
       contractsTitle:c.contracts, codeBackedLabel:c.codeBacked, consumerLinesLabel:c.consumerLines, versionWindowLabel:c.versionWindow, provenanceLabel:c.provenance, codeBindingPrefix:c.codeBindingPrefix, notEvaluatedLabel:c.notEvaluated, codeBindingSuffix:c.codeBindingSuffix,
       networkTitle:c.network, networkSub:c.networkSub, networkMapHeading:c.exchangeMap,
       spacesTitle:c.spaces, spacesSub:c.spacesSub, freshnessLabel:c.freshness, participantsLabel:c.participants, writerFloorLabel:c.writerFloor, pinnedWorkflowLabel:c.pinnedWorkflow, revisionLabel:c.revision,
+      // One sentence per term a first-time reader has no way to guess. They are
+      // hints, not documentation: the full treatment lives in Docs.
+      whoseMoveHint: ru
+        ? "Кто по протоколу может сделать следующий шаг. Это не мнение и не назначение: список считается из уже записанных событий — что произошло и что после этого разрешено."
+        : "Who may take the next step under the protocol. It is neither an opinion nor an assignment: the list is folded from the events already recorded — what happened, and what that allows next.",
+      settledHint: ru
+        ? "У треда нет отдельного статуса «закрыт». Он считается закрытым, когда каждый документ внутри дошёл до конечного состояния и никто никому ничего не должен. У автора всегда остаётся право отозвать или заменить документ — но это не значит, что тред кого-то ждёт."
+        : "A thread has no separate “closed” status. It counts as finished once every document inside reached a terminal state and nobody owes anyone a move. The author can always still withdraw or supersede a document — that does not mean the thread is waiting on anyone.",
+      consumerLinesHint: ru
+        ? "Каждый потребитель закрепляет за собой мажорную версию и живёт на ней. Расхождение считается для его линии, а не для контракта в целом: у поставщика всё может быть в порядке ровно тогда, когда у потребителя не работает ничего."
+        : "Each consumer pins a major version and lives on it. Drift is judged per line, not per contract: the provider can be perfectly healthy at exactly the moment a consumer resolves nothing.",
+      versionWindowHint: ru
+        ? "Версии не удаляются. Старая может быть объявлена устаревшей и получить дату вывода, но пока на ней кто-то сидит, она остаётся видимой — окончательное снятие ждёт подтверждений от потребителей."
+        : "Versions are never erased. An old one can be deprecated and given a sunset date, but while anyone still sits on it, it stays visible — retirement waits for consumer acknowledgements.",
+      provenanceHint: ru
+        ? "Если дескриптор собран из кода, записано, чем и из какого исходника. Это метка происхождения, а не проверка: совпадает ли он с кодом прямо сейчас, статический файл не знает."
+        : "When a descriptor is generated from code, the generator and the source digest are recorded. That is provenance, not verification: a static file cannot know whether the bytes still match.",
+      freshnessHint: ru
+        ? "Когда мы последний раз синхронизировали локальную копию спейса. «Устарел» — не поломка, а предупреждение: цифры ниже могут отставать от репозитория."
+        : "When the local copy of the space was last synced. “Stale” is not a failure but a warning: the numbers below may lag behind the repository.",
+      writerFloorHint: ru
+        ? "Минимальная версия a2a, документы от которой спейс принимает. Если ваш бинарник ниже — писать в этот спейс нельзя, читать можно."
+        : "The lowest a2a version whose documents this space accepts. Below it you cannot write to the space; reading still works.",
+      pinnedWorkflowHint: ru
+        ? "Версия проверки, закреплённая в CI спейса. Меняется отдельно от вашего бинарника и от минимума для записи — совпадение цифр случайно."
+        : "The validation workflow version pinned in the space's CI. It moves independently of your binary and of the writer floor — matching numbers are a coincidence.",
+      localBinaryHint: ru
+        ? "Версия a2a на этой машине. Она не обязана совпадать ни с минимумом для записи в спейсе, ни с версией проверки в CI: это три разные оси."
+        : "The a2a version on this machine. It need not match the space's writer floor or the CI validation version: those are three independent axes.",
       limitsTitle:c.limitsTitle, limitsSub:c.limitsSub, emptyLimitsTitle:c.emptyLimitsTitle, emptyLimitsText:c.emptyLimitsText,
       emptySpacesTitle:c.emptySpacesTitle, emptySpacesText:c.emptySpacesText,
       integrityFlagsLabel:c.integrityFlags, integrityFlagsText:c.integrityFlagsText,
@@ -1532,7 +1561,7 @@ class Component extends DCLogic {
       enLocaleStyle:this.localeStyle(s.locale === "en"), ruLocaleStyle:this.localeStyle(s.locale === "ru"),
       setEN:() => this.applyLocale("en"), setRU:() => this.applyLocale("ru")
     };
-    if (!d) return Object.assign(base, { selfMono:"", selfLine:ru ? "чтение данных" : "reading data", snapshotLine:"", spaceChips:[], updateRequired:false, bannerLabel:"", bannerText:"", bannerAction:"", goBanner:() => {}, footerLine:ru ? "Чтение локального снимка" : "Reading the local snapshot", data:null, openContract:() => {} });
+    if (!d) return Object.assign(base, { selfMono:"", selfLine:ru ? "читаем данные" : "reading data", snapshotLine:"", spaceChips:[], updateRequired:false, bannerLabel:"", bannerText:"", bannerAction:"", goBanner:() => {}, footerLine:ru ? "Чтение локального снимка" : "Reading the local snapshot", data:null, openContract:() => {} });
 
     const scopedInbox = d.inbox.filter(i => this.inScope(i.space));
     const scopedOutbox = d.outbox.filter(i => this.inScope(i.space));
@@ -1573,14 +1602,14 @@ class Component extends DCLogic {
       const ordered = members.slice().sort((a, b) => (b.system === d.self ? 1 : 0) - (a.system === d.self ? 1 : 0) || a.system.localeCompare(b.system));
       const shown = ordered.slice(0, 3).map((n, i) => ({
         mono: monoCodes(d.nodes.map(x => x.system))[n.system],
-        title: n.system + " · " + n.org + (n.status === "left" ? (ru ? " · покинула пространство" : " · left the space") : ""),
+        title: n.system + " · " + n.org + (n.status === "left" ? (ru ? " · ушла из спейса" : " · left the space") : ""),
         style: faceStyle(i, n.system === d.self ? "self" : (n.status === "left" ? "left" : "active"), active)
       }));
       const rest = ordered.length - shown.length;
       if (rest > 0) shown.push({ mono: "+" + rest, title: ru ? ("Ещё " + rest + " " + (rest === 1 ? "участник" : rest < 5 ? "участника" : "участников")) : rest + (rest === 1 ? " more participant" : " more participants"), style: faceStyle(shown.length, "rest", active) });
       return shown;
     };
-    const spaceChips = [{ id: "all", label: ru ? "Все пространства" : "All spaces" }].concat(d.spaces.map(x => ({ id: x.id, label: x.id })))
+    const spaceChips = [{ id: "all", label: ru ? "Все спейсы" : "All spaces" }].concat(d.spaces.map(x => ({ id: x.id, label: x.id })))
       .map(x => {
         const active = s.space === x.id;
         const faces = x.id === "all" ? [] : facesFor(x.id, active);
@@ -1604,20 +1633,20 @@ class Component extends DCLogic {
         pillTone: sp.stale ? "attention" : "healthy",
         summary: members.length + (ru ? " участников · " : " participants · ") + d.contractEdges.filter(e => e.space === sp.id).length + (ru ? " контрактных линий · " : " contract lines · ") + lanes.length + (ru ? " открытых связей" : " open lanes"),
         members: members.map(n => ({
-          mono: codes[n.system], title: n.system + " · " + n.org + (n.status === "left" ? (ru ? " · покинула пространство" : " · left the space") : ""),
+          mono: codes[n.system], title: n.system + " · " + n.org + (n.status === "left" ? (ru ? " · ушла из спейса" : " · left the space") : ""),
           style: avatar(n.system === d.self ? true : (n.status === "left" ? "left" : false), false)
         })),
         hasRisk: spRisky.length > 0,
         risky: spRisky.slice(0, 3).map(e => ({
           route: e.from + " → " + e.to,
-          pillText: e.drift === "deprecated" && e.sunset ? (ru ? "вывод " : "sunset ") + e.sunset : (e.drift === "behind" ? (ru ? "отстаёт на основную версию" : "one major behind") : e.drift),
+          pillText: e.drift === "deprecated" && e.sunset ? (ru ? "вывод " : "sunset ") + e.sunset : (e.drift === "behind" ? (ru ? "отстал на мажорную версию" : "one major behind") : e.drift),
           pillTone: DRIFT_TONE[e.drift] || "neutral",
           detail: e.drift === "missing"
-            ? (ru ? "закреплена основная версия " : "pins major ") + e.pinnedMajor + (ru ? " · у поставщика " : " · provider has ") + (e.availableMajors || []).join(ru ? " и " : " and ") + " · " + e.contract
-            : (e.drift === "dangling" ? (ru ? "поставщик покинул пространство · " : "the provider left the space · ") + e.contract : (ru ? "закреплено " : "pinned ") + e.pinnedVersion + (ru ? " · поставщик " : " · provider ") + e.providerVersion + " · " + e.contract),
+            ? (ru ? "закреплена версия " : "pins major ") + e.pinnedMajor + (ru ? " · у поставщика " : " · provider has ") + (e.availableMajors || []).join(ru ? " и " : " and ") + " · " + e.contract
+            : (e.drift === "dangling" ? (ru ? "поставщик ушёл из спейса · " : "the provider left the space · ") + e.contract : (ru ? "закреплено " : "pinned ") + e.pinnedVersion + (ru ? " · поставщик " : " · provider ") + e.providerVersion + " · " + e.contract),
           style: "background:var(--page); border-radius:10px; padding:10px 12px;" + (e.drift === "missing" ? " box-shadow:inset 0 0 0 1.5px var(--blocking-line);" : "")
         })),
-        riskyRest: spRisky.length > 3 ? spRisky.length - 3 + (ru ? " линиям ещё нужно внимание" : " more lines need attention") : (d.contractEdges.filter(e => e.space === sp.id).length - spRisky.length) + (ru ? " линий актуальны" : " more lines are current"),
+        riskyRest: spRisky.length > 3 ? spRisky.length - 3 + (ru ? " линий ещё требуют внимания" : " more lines need attention") : (d.contractEdges.filter(e => e.space === sp.id).length - spRisky.length) + (ru ? " линий в порядке" : " more lines are current"),
         lanes: top.map(e => ({
           aMono: codes[e.from], bMono: codes[e.to],
           aStyle: avatar(e.from === d.self, true), bStyle: avatar(e.to === d.self, true),
@@ -1625,7 +1654,7 @@ class Component extends DCLogic {
           pillText: e.count + (ru ? " открыто · " : " open · ") + (e.blocking ? (ru ? "блокирует" : "blocking") : e.maxPriority),
           pillTone: e.blocking ? "blocking" : "neutral"
         })),
-        lanesRest: lanes.length > 3 ? lanes.length - 3 + (ru ? " связей ещё в этом пространстве" : " more lanes in this space") : ""
+        lanesRest: lanes.length > 3 ? lanes.length - 3 + (ru ? " связей в этом спейсе не поместились" : " more lanes in this space") : ""
       };
     });
 
@@ -1640,27 +1669,35 @@ class Component extends DCLogic {
       snapshotLine: (ru ? "Снимок " : "Snapshot ") + when(d.generatedAt) + (ru ? " · создан из локального кэша" : " · built from the local cache"),
       spaceChips,
       updateRequired: !!d.meta.synthetic || (!!tooling.updateAvailable && !!tooling.required),
-      bannerLabel: d.meta.synthetic ? (ru ? "Демонстрационная панель" : "Demo dashboard") : (ru ? "Нужно обновление" : "Update required"),
-      bannerText: d.meta.synthetic ? (ru ? "Синтетические данные покрывают все экраны и состояния; живые сервисы и репозитории не подключены." : "Synthetic data covers every screen and state; no live services or repositories are connected.") : (ru ? "Локальный бинарник " + tooling.current + " ниже минимальной версии записи " + tooling.floor + " в пространстве " + tooling.floorSpace + ". Последняя версия — " + tooling.latest + ", проверено " + tooling.cacheAge + " назад." : "Local binary " + tooling.current + " is below writer floor " + tooling.floor + " in " + tooling.floorSpace + ". Latest is " + tooling.latest + "; checked " + tooling.cacheAge + " ago."),
-      bannerAction: d.meta.synthetic ? (ru ? "О демонстрации →" : "About the demo →") : (ru ? "Версии →" : "Versions →"),
+      bannerLabel: d.meta.synthetic ? (ru ? "Демо-режим" : "Demo dashboard") : (ru ? "Нужно обновление" : "Update required"),
+      bannerText: d.meta.synthetic ? (ru ? "Данные выдуманы, чтобы показать все экраны и состояния. Живых сервисов и репозиториев здесь нет." : "Synthetic data covers every screen and state; no live services or repositories are connected.") : (ru ? "Ваш бинарник " + tooling.current + " ниже минимальной версии записи " + tooling.floor + " в спейсе " + tooling.floorSpace + ". Последняя версия — " + tooling.latest + ", проверено " + tooling.cacheAge + " назад." : "Local binary " + tooling.current + " is below writer floor " + tooling.floor + " in " + tooling.floorSpace + ". Latest is " + tooling.latest + "; checked " + tooling.cacheAge + " ago."),
+      bannerAction: d.meta.synthetic ? (ru ? "Про демо →" : "About the demo →") : (ru ? "Версии →" : "Versions →"),
       goBanner: d.meta.synthetic ? () => this.go("guide") : () => this.go("versions"),
-      footerLine: (ru ? "Проекция только для чтения · без сетевых запросов · не источник истины" : "Read-only projection · no network requests · not a source of truth") + (d.meta.synthetic ? (ru ? " · синтетические демонстрационные данные — без живых сервисов" : " · Synthetic demo data — no live services") : (d.meta.notice ? " · " + d.meta.notice : "")),
+      footerLine: (ru ? "Только чтение · без сетевых запросов · истина живёт в репозитории, а не здесь" : "Read-only projection · no network requests · not a source of truth") + (d.meta.synthetic ? (ru ? " · демо-данные, живых сервисов нет" : " · Synthetic demo data — no live services") : (d.meta.notice ? " · " + d.meta.notice : "")),
 
-      ovHeadline: needsYou.length ? (ru ? "Нужно ваше действие: " : "Your action is needed: ") + needsYou.length : (ru ? "В выбранной области от вас ничего не ждут" : "Nothing in this scope is waiting on you"),
-      ovSub: (ru ? "Для " + d.self + " открыто входящих: " + scopedInbox.length + "; ваших исходящих в других системах: " + scopedOutbox.length + ". " : "For " + d.self + ": " + scopedInbox.length + " incoming items are open and " + scopedOutbox.length + " outgoing items await other systems. ") + (needsYou.length ? (ru ? "Ниже — блокировки, согласования и просроченные действия." : "Blocks, approvals, and overdue actions appear below.") : (ru ? "Вся открытая работа продолжается между агентами." : "All open work continues between agents.")),
+      ovHeadline: needsYou.length ? (ru ? "Нужно ваше решение: " : "Your action is needed: ") + needsYou.length : (ru ? "Здесь от вас ничего не ждут" : "Nothing in this scope is waiting on you"),
+      ovSub: (ru ? "Для " + d.self + " открыто входящих: " + scopedInbox.length + "; ваших исходящих в других системах: " + scopedOutbox.length + ". " : "For " + d.self + ": " + scopedInbox.length + " incoming items are open and " + scopedOutbox.length + " outgoing items await other systems. ") + (needsYou.length ? (ru ? "Ниже то, что блокирует, ждёт согласования или просрочено." : "Blocks, approvals, and overdue actions appear below.") : (ru ? "Всё открытое агенты доводят между собой." : "All open work continues between agents.")),
       ovStats: [
-        { label:ru ? "Нужно вам" : "Need you", value:needsYou.length, note:ru ? "блокировка или согласование" : "blocking or approval", valueStyle:"font-size:40px; line-height:1; font-weight:600; color:" + (needsYou.length ? "var(--ochre)" : "var(--green)") + ";" },
-        { label:ru ? "Движется само" : "Moving itself", value:restCount, note:ru ? "входящие без блокировки" : "non-blocking incoming", valueStyle:"font-size:40px; line-height:1; font-weight:600; color:var(--green);" },
-        { label:ru ? "Вы ждёте" : "You await", value:scopedOutbox.length, note:ru ? "исходящих документов" : "outgoing documents", valueStyle:"font-size:40px; line-height:1; font-weight:600; color:var(--text);" },
-        { label:ru ? "Неактуальные линии" : "Lines off current", value:offCurrent, note:(ru ? "из " : "of ") + scopedEdges + (ru ? " зарегистрированных" : " registered"), valueStyle:"font-size:40px; line-height:1; font-weight:600; color:" + (offCurrent ? "var(--ochre)" : "var(--green)") + ";" }
+        { label:ru ? "Нужны вы" : "Need you", value:needsYou.length, note:ru ? "блокирует или ждёт согласования" : "blocking or approval",
+          hint:ru ? "Документы, где без человека дальше никак: кто-то явно заблокирован, ждёт вашего согласования или уже просрочил срок. Всё остальное агенты доводят сами." : "Documents that genuinely cannot move without a person: something is literally blocked, waiting on your approval, or already past its deadline. Everything else the agents finish on their own.",
+          valueStyle:"font-size:40px; line-height:1; font-weight:600; color:" + (needsYou.length ? "var(--ochre)" : "var(--green)") + ";" },
+        { label:ru ? "Идёт само" : "Moving itself", value:restCount, note:ru ? "входящих, никого не держат" : "non-blocking incoming",
+          hint:ru ? "Входящие документы, которые никого не держат. Агент разберётся с ними по протоколу — смотреть не обязательно." : "Incoming documents that hold nobody up. The agent handles them by protocol; you do not have to look.",
+          valueStyle:"font-size:40px; line-height:1; font-weight:600; color:var(--green);" },
+        { label:ru ? "Ждёте вы" : "You await", value:scopedOutbox.length, note:ru ? "отправлено, ответа нет" : "outgoing documents",
+          hint:ru ? "Вы отправили, ход теперь за другой системой. Пока она не ответит, здесь ничего не изменится." : "You sent these; the move is now the other system's. Nothing here changes until it answers.",
+          valueStyle:"font-size:40px; line-height:1; font-weight:600; color:var(--text);" },
+        { label:ru ? "Линии не на последней" : "Lines off current", value:offCurrent, note:(ru ? "из " : "of ") + scopedEdges + (ru ? " закреплённых" : " registered"),
+          hint:ru ? "Сколько зависимостей сидит не на последней мажорной версии контракта. Это не обязательно плохо: старая версия может жить годами. Плохо — когда её уже выводят." : "How many dependencies sit on something other than the contract's latest major. Not automatically bad — an old line can live for years. It gets bad once it is being retired.",
+          valueStyle:"font-size:40px; line-height:1; font-weight:600; color:" + (offCurrent ? "var(--ochre)" : "var(--green)") + ";" }
       ],
       ovRows: needsYou.map(it => this.rowFor(it, "ovSel", ovSel)),
-      ovRestText: (ru ? "Ещё входящих без блокировок: " : "More non-blocking incoming items: ") + restCount + (ru ? " · флагов протокола: " : " · protocol flags: ") + flags.length,
+      ovRestText: (ru ? "Ещё входящих, никого не держат: " : "More non-blocking incoming items: ") + restCount + (ru ? " · замечаний: " : " · protocol flags: ") + flags.length,
       ovSpaces: d.spaces.filter(x => this.inScope(x.id)).map(x => ({
         id: x.id,
         pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (x.stale ? (ru ? "устарел · " : "stale · ") + x.syncAge : (ru ? "свежий · " : "fresh · ") + x.syncAge),
         pillTone: !x.readable ? "blocking" : (x.stale ? "attention" : "healthy"),
-        meta: x.readable ? (ru ? "участников: " : "participants: ") + x.participantCount + (ru ? " · минимальная версия записи " : " · writer floor ") + x.minBinaryVersion : (ru ? "содержимое не додумывается" : "contents are not inferred")
+        meta: x.readable ? (ru ? "участников: " : "participants: ") + x.participantCount + (ru ? " · минимум для записи " : " · writer floor ") + x.minBinaryVersion : (ru ? "что внутри — неизвестно" : "contents are not inferred")
       })),
       hasOvRows: needsYou.length > 0, noOvRows: needsYou.length === 0,
       emptyQueueTitle: ru ? "Ваше решение сейчас не нужно" : "No decision is waiting on you",
@@ -1675,7 +1712,7 @@ class Component extends DCLogic {
           : "The moment something needs your decision, the whole document opens here — envelope, events and references included."
       },
 
-      workSub: ru ? "Входящие адресованы " + d.self + "; исходящие — то, чего вы ждёте от других. Входящих: " + scopedInbox.length + ", исходящих: " + scopedOutbox.length + "." : "Incoming items address " + d.self + "; outgoing items are what you await from others. Incoming: " + scopedInbox.length + ", outgoing: " + scopedOutbox.length + ".",
+      workSub: ru ? "Входящие — то, что адресовано " + d.self + "; исходящие — то, чего вы ждёте от других. Входящих: " + scopedInbox.length + ", исходящих: " + scopedOutbox.length + "." : "Incoming items address " + d.self + "; outgoing items are what you await from others. Incoming: " + scopedInbox.length + ", outgoing: " + scopedOutbox.length + ".",
       workTabs: [["incoming", (ru ? "Входящие · " : "Incoming · ") + scopedInbox.length], ["outgoing", (ru ? "Исходящие · " : "Outgoing · ") + scopedOutbox.length]].map(([id, label]) => ({
         label,
         style: "font-family:'Onest',sans-serif; font-size:15px; border:0; cursor:pointer; padding:7px 14px; border-radius:7px; " + (s.workTab === id ? "background:var(--surface); font-weight:600; color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.12);" : "background:transparent; color:var(--muted);"),
@@ -1691,7 +1728,7 @@ class Component extends DCLogic {
         : (ru ? "Вы ничего не ждёте от других систем: все ваши документы дошли до конечного состояния." : "You are not waiting on any other system — every document you sent has reached a terminal state."),
       workDetail: this.detailFor(workSel, workList),
 
-      threadsSub: ru ? "Запрос, подтверждение получения, ответ, доказательства, проверка и решение остаются связаны. Порядок коммитов — сильное доказательство; заявленное время всегда помечается как слабый запасной источник." : "Request, acknowledgement, response, evidence, verification, and decision remain linked. Commit order is strong evidence; declared timestamps are always labelled as a weak fallback.",
+      threadsSub: ru ? "Запрос, подтверждение, ответ, доказательства, проверка и решение лежат в одном треде и читаются в одном порядке всеми. Порядок берётся из коммитов Git — его нельзя подделать задним числом. Если истории нет, берётся время от автора, и мы это помечаем." : "Request, acknowledgement, response, evidence, verification, and decision remain linked. Commit order is strong evidence; declared timestamps are always labelled as a weak fallback.",
       noThreadRows: threads.length === 0,
       emptyThreadsTitle: ru ? "Тредов пока нет" : "No threads yet",
       emptyThreadsText: ru
@@ -1716,8 +1753,8 @@ class Component extends DCLogic {
         ? "Все документы этого треда дошли до конечного состояния. Запись остаётся целиком ниже — тред читается, но действий не ждёт."
         : "Every document in this thread reached a terminal state. The full record stays below; the thread is readable but is not waiting on anyone.",
       tvTitle: tv ? (tv.opener ? tv.opener.title : tv.thread) : "",
-      tvOrderPill: tv ? (tv.order === "committed" ? (ru ? "порядок коммитов · сильное доказательство" : "commit order · strong evidence") : (ru ? "заявленное время · слабый источник" : "declared timestamps · weak fallback")) : "",
-      tvStale: !!(tv && tv.sync_stale), tvStaleText: tv && tv.sync_stale ? (ru ? "пространство устарело" : "space stale") : "",
+      tvOrderPill: tv ? (tv.order === "committed" ? (ru ? "порядок из коммитов · надёжно" : "commit order · strong evidence") : (ru ? "время от автора · слабее" : "declared timestamps · weak fallback")) : "",
+      tvStale: !!(tv && tv.sync_stale), tvStaleText: tv && tv.sync_stale ? (ru ? "спейс устарел" : "space stale") : "",
       tvMeta: tv ? (tv.participants || []).join(", ") + " · " + tv.space : "",
       tvEntryCount: tv ? (ru ? "записей: " : "entries: ") + (tv.transcript || []).length : "",
       tvEntries: tv ? (() => {
@@ -1759,7 +1796,7 @@ class Component extends DCLogic {
           const bad = flagged.has(ev.ulid);
           return {
             isArtifact: false, isEvent: true, type: "", id: ev.ulid,
-            text: (actor.system || actor.name || "") + " " + ev.transition + (ev.claimed_state ? (ru ? " — заявлено состояние " : " — claimed ") + String(ev.claimed_state).replace("_", " ") : ""),
+            text: (actor.system || actor.name || "") + " " + ev.transition + (ev.claimed_state ? (ru ? " — автор заявил состояние " : " — claimed ") + String(ev.claimed_state).replace("_", " ") : ""),
             meta: when(en.at),
             hasSubject: !!ev.subject, subjectLabel: ev.subject ? titleOf(ev.subject) : "",
             cardStyle: "",
@@ -1787,9 +1824,9 @@ class Component extends DCLogic {
         }))
       })) : [],
       tvHasFlags: !!(tv && ((tv.flags || []).length || (tv.unresolved || []).length)),
-      tvFlags: tv ? (tv.flags || []).map(f => f.kind + (ru ? " для " : " on ") + f.subject + (f.event_ulid ? (ru ? " · событие " : " · event ") + f.event_ulid : "")).concat((tv.unresolved || []).map(u => (ru ? "неразрешённая ссылка: " : "unresolved reference: ") + (u.ref || JSON.stringify(u)))) : [],
+      tvFlags: tv ? (tv.flags || []).map(f => f.kind + (ru ? " для " : " on ") + f.subject + (f.event_ulid ? (ru ? " · событие " : " · event ") + f.event_ulid : "")).concat((tv.unresolved || []).map(u => (ru ? "ссылка в никуда: " : "unresolved reference: ") + (u.ref || JSON.stringify(u)))) : [],
 
-      conSub: ru ? "Потребители регистрируют используемую основную линию. У каждой версии своё состояние: поставщик может опубликовать v2, пока линия потребителя v1 ещё видима, проходит период вывода или не может быть окончательно закрыта. Не на текущей основной версии: " + offCurrent + " из " + scopedEdges + "." : "Consumers register the major line they use. Every version has its own state: a provider can publish v2 while a consumer's v1 line remains visible, enters sunset, or cannot yet retire. Off the current major: " + offCurrent + " of " + scopedEdges + ".",
+      conSub: ru ? "Каждый потребитель закрепляет за собой конкретную мажорную версию. У каждой версии своя судьба: поставщик уже выпустил v2, а чья-то v1 всё ещё работает, доживает свой срок или не может быть закрыта, пока на ней кто-то сидит. Сидят не на последней версии: " + offCurrent + " из " + scopedEdges + "." : "Consumers register the major line they use. Every version has its own state: a provider can publish v2 while a consumer's v1 line remains visible, enters sunset, or cannot yet retire. Off the current major: " + offCurrent + " of " + scopedEdges + ".",
       conRows: contracts.map(c => {
         const edges = d.contractEdges.filter(e => e.contract === c.id);
         const bad = edges.filter(e => e.drift !== "current");
@@ -1814,21 +1851,21 @@ class Component extends DCLogic {
       cdState: con ? con.state : "",
       cdStateTone: con ? (STATE_TONE[con.state] || "neutral") : "neutral",
       cdCodeBacked: !!(con && con.codeBacked),
-      cdSpaceLine: con ? (ru ? "пространство " + con.space + " · поставщик " : "space " + con.space + " · provider ") + con.provider : "",
+      cdSpaceLine: con ? (ru ? "спейс " + con.space + " · поставщик " : "space " + con.space + " · provider ") + con.provider : "",
       cdDescription: con ? con.description : "",
       cdHasRisk: risky.length > 0,
       cdRiskTitle: risky.length ? (risky[0].drift === "missing"
         ? risky[0].from + (ru ? " закрепляет основную версию " : " pins major ") + risky[0].pinnedMajor + (ru ? " — у поставщика такой основной версии нет" : " — the provider has no such major")
         : risky.length + (ru ? " линий потребителей не на текущей основной версии" : (risky.length === 1 ? " consumer line is" : " consumer lines are") + " not on the current major")) : "",
       cdRiskText: risky.length ? risky.map(e => e.from + " → " + e.to + ": " + (e.drift === "missing"
-        ? (ru ? "доступны основные версии " : "available majors are ") + (e.availableMajors || []).join(ru ? " и " : " and ") + (ru ? ", поэтому линия ничего не разрешает" : ", so nothing resolves for that line")
-        : (e.drift === "dangling" ? (ru ? "поставщик покинул пространство" : "the provider left the space") : (ru ? "закреплено " : "pinned ") + e.pinnedVersion + " (" + e.pinnedState + ") " + (ru ? "при версии поставщика " : "against provider ") + e.providerVersion + (e.sunset ? (ru ? ", вывод " : ", sunset ") + e.sunset : "")))).join(". ") + "." : "",
+        ? (ru ? "у поставщика есть только " : "available majors are ") + (e.availableMajors || []).join(ru ? " и " : " and ") + (ru ? " — значит, у этого потребителя не работает ничего" : ", so nothing resolves for that line")
+        : (e.drift === "dangling" ? (ru ? "поставщик ушёл из спейса" : "the provider left the space") : (ru ? "закреплено " : "pinned ") + e.pinnedVersion + " (" + e.pinnedState + ") " + (ru ? "при версии поставщика " : "against provider ") + e.providerVersion + (e.sunset ? (ru ? ", вывод " : ", sunset ") + e.sunset : "")))).join(". ") + "." : "",
       cdLines: conEdges.map(e => ({
         route: e.from + " → " + e.to,
         drift: e.drift, tone: DRIFT_TONE[e.drift] || "neutral",
         detail: e.drift === "missing"
-          ? (ru ? "закреплена основная версия " : "pinned major ") + e.pinnedMajor + (ru ? " · доступны " : " · available ") + (e.availableMajors || []).join(", ")
-          : (e.drift === "dangling" ? (ru ? "для линии не разрешается ни один дескриптор" : "no descriptor resolves for this line") : (ru ? "закреплено " : "pinned ") + e.pinnedVersion + (ru ? " · поставщик " : " · provider ") + e.providerVersion),
+          ? (ru ? "закреплена версия " : "pinned major ") + e.pinnedMajor + (ru ? " · доступны " : " · available ") + (e.availableMajors || []).join(", ")
+          : (e.drift === "dangling" ? (ru ? "для этой линии не находится ни одного дескриптора" : "no descriptor resolves for this line") : (ru ? "закреплено " : "pinned ") + e.pinnedVersion + (ru ? " · поставщик " : " · provider ") + e.providerVersion),
         style: "background:var(--page); border-radius:11px; padding:12px 14px;" + (e.drift === "missing" ? " box-shadow:inset 0 0 0 1.5px var(--blocking-line);" : "")
       })),
       cdVersions: con ? (con.versions || []).slice().reverse().map(v => ({
@@ -1840,8 +1877,8 @@ class Component extends DCLogic {
         { label:ru ? "формат схемы" : "schema format", value:con.schemaFormat, mono:true },
         { label:ru ? "совместимость" : "compatibility", value:con.compatPolicy },
         { label:ru ? "потребители" : "consumers", value:(con.consumers || []).join(", ") },
-        { label:ru ? "генератор" : "generator", value:con.generatedTool || (ru ? "не записан" : "not recorded"), mono:!!con.generatedTool, muted:!con.generatedTool },
-        { label:ru ? "контрольная сумма источника" : "source digest", value:con.sourceDigest ? con.sourceDigest.slice(0, 12) + "…" + con.sourceDigest.slice(-6) : (ru ? "не записана" : "not recorded"), mono:true, muted:!con.sourceDigest }
+        { label:ru ? "генератор" : "generator", value:con.generatedTool || (ru ? "не записано" : "not recorded"), mono:!!con.generatedTool, muted:!con.generatedTool },
+        { label:ru ? "контрольная сумма источника" : "source digest", value:con.sourceDigest ? con.sourceDigest.slice(0, 12) + "…" + con.sourceDigest.slice(-6) : (ru ? "не записано" : "not recorded"), mono:true, muted:!con.sourceDigest }
       ] : [],
 
       data: d,
@@ -1853,7 +1890,7 @@ class Component extends DCLogic {
       netSpaces,
       netUnreadable: d.spaces.filter(x => !x.readable && this.inScope(x.id)).map(x => ({
         id: x.id,
-        reason: (d.unavailable.find(u => u.scope === x.id) || {}).reason || (ru ? "Зеркало или манифест не читается. Нельзя считать количество участников или работы равным нулю." : "The mirror or manifest is unreadable. Participant and work counts must not be inferred as zero.")
+        reason: (d.unavailable.find(u => u.scope === x.id) || {}).reason || (ru ? "Копию или манифест спейса прочитать не удалось. Это не значит, что там ноль участников и ноль работы — это значит, что мы не знаем." : "The mirror or manifest is unreadable. Participant and work counts must not be inferred as zero.")
       })),
 
       spaceRows: d.spaces.filter(x => this.inScope(x.id)).map((x, i, arr) => {
@@ -1862,10 +1899,10 @@ class Component extends DCLogic {
           id: x.id,
           pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (x.stale ? (ru ? "устарел · " : "stale · ") + x.syncAge : (ru ? "свежий · " : "fresh · ") + x.syncAge),
           pillTone: !x.readable ? "blocking" : (x.stale ? "attention" : "healthy"),
-          participants: x.readable ? String(x.participantCount) : (ru ? "не проверено" : "not evaluated"),
+          participants: x.readable ? String(x.participantCount) : (ru ? "не проверялось" : "not evaluated"),
           floor: x.minBinaryVersion || "—",
           workflow: x.workflowVersion || "—",
-          revision: x.revision ? x.revision.slice(0, 10) : (ru ? "не записана" : "not recorded"),
+          revision: x.revision ? x.revision.slice(0, 10) : (ru ? "не записано" : "not recorded"),
           cell: "padding:14px 16px 14px 0; vertical-align:top; border-bottom:" + line + ";",
           cellLast: "padding:14px 0; vertical-align:top; border-bottom:" + line + ";"
         };
@@ -1876,7 +1913,7 @@ class Component extends DCLogic {
         id: x.id,
         pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (ru ? "устарел · " : "stale · ") + x.syncAge,
         pillTone: !x.readable ? "blocking" : "attention",
-        note: !x.readable ? (ru ? "манифест не удалось прочитать" : "manifest could not be read") : (ru ? "данные читаются из старой ревизии зеркала" : "reading from an older mirror revision")
+        note: !x.readable ? (ru ? "манифест не прочитался" : "manifest could not be read") : (ru ? "читаем из устаревшей копии" : "reading from an older mirror revision")
       })),
       intUnavailable: d.unavailable.map(u => ({ title: u.title, reason: u.reason })),
       // Each panel appears only with content, and the whole block collapses to
@@ -1889,14 +1926,14 @@ class Component extends DCLogic {
       hasSpaces: d.spaces.filter(x => this.inScope(x.id)).length > 0,
       noSpaces: d.spaces.filter(x => this.inScope(x.id)).length === 0,
 
-      verSub: ru ? "Три независимые оси: локальный бинарник, минимальная версия записи каждого пространства и закреплённая версия процесса CI. Одна не выводится из другой." : "Three independent axes: the local binary, each space's writer floor, and the pinned workflow version. None can be inferred from another.",
+      verSub: ru ? "Три версии, которые легко перепутать. Ваш бинарник — то, что стоит на этой машине. Минимум для записи — версия, ниже которой спейс не принимает документы. Версия проверки в CI — то, чем спейс проверяет входящее. Одна ничего не говорит о двух других." : "Three independent axes: the local binary, each space's writer floor, and the pinned workflow version. None can be inferred from another.",
       verCurrent: tooling.current, verLatest: tooling.latest,
       verFacts: [
-        { label:ru ? "проверено" : "checked", value:when(tooling.checkedAt) + (ru ? " · кэш " : " · cache ") + tooling.cacheAge },
+        { label:ru ? "проверяли" : "checked", value:when(tooling.checkedAt) + (ru ? " · кэш " : " · cache ") + tooling.cacheAge },
         { label:ru ? "источник" : "source", value:tooling.source, mono:true },
-        { label:ru ? "минимальная версия записи" : "writer floor", value:tooling.floor + (ru ? " (требует " : " (required by ") + tooling.floorSpace + ")", mono:true },
-        { label:ru ? "обновление" : "update", value:tooling.required ? (ru ? "обязательно" : "required") : (ru ? "необязательно" : "optional") },
-        { label:ru ? "выпуск" : "release", value:tooling.releaseURL ? "v" + tooling.latest + " on GitHub" : (ru ? "не записан" : "not recorded") }
+        { label:ru ? "минимум для записи" : "writer floor", value:tooling.floor + (ru ? " (требует " : " (required by ") + tooling.floorSpace + ")", mono:true },
+        { label:ru ? "нужно обновиться" : "update", value:tooling.required ? (ru ? "да" : "required") : (ru ? "нет" : "optional") },
+        { label:ru ? "выпуск" : "release", value:tooling.releaseURL ? "v" + tooling.latest + " on GitHub" : (ru ? "не записано" : "not recorded") }
       ],
       // "Update available" is a fact from the version cache, not a guess from
       // comparing strings — when it is false the whole candidate card is gone.
@@ -1909,7 +1946,7 @@ class Component extends DCLogic {
         const node = document.getElementById("release-" + String(tooling.latest || "").replace(/\./g, "-"));
         if (node) node.scrollIntoView({ behavior: "smooth", block: "start" });
       },
-      verUpdateStatus: upd.status || (ru ? "не проверено" : "not evaluated"),
+      verUpdateStatus: upd.status || (ru ? "не проверялось" : "not evaluated"),
       verHeadline: upd.headline || "",
       verChanges: (upd.changes || []).map(c => ({
         kind: c.kind, impact: c.impact, subject: c.subject,

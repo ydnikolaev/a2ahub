@@ -41,3 +41,45 @@ changes:
       scope: none
       why: >
         No configuration or data migration is required.
+
+  - id: RN-01701-3
+    kind: feat
+    impact: normal
+    subject: "The dashboard tells you when there is nothing to see, and a thread that is finished says so"
+    detail: >
+      Every list and detail pane that can legitimately be empty now renders one
+      shared empty state instead of a hollow card, a blank panel or an unrelated
+      record borrowed from elsewhere. Overview's detail pane belongs to its own
+      queue, so "nothing is waiting on you" no longer sits beside a fully
+      rendered document. Thread closure is derived rather than stored: an open
+      item whose only remaining affordance is the owner's own escape hatch owes
+      nobody a move, so a settled thread reads as settled instead of claiming to
+      wait on others forever. Integrity stops being a destination and becomes a
+      qualifier at the bottom of Spaces, hidden entirely when there is nothing
+      to qualify; the nav slot it frees goes to Docs, which gives the embedded
+      documentation corpus the same reading layout the website publishes.
+    affects: ["a2a html", "threads", "overview", "spaces", "docs"]
+    action:
+      scope: none
+      why: >
+        No configuration or data migration is required.
+
+  - id: RN-01701-4
+    kind: feat
+    impact: low
+    subject: "Versions carries the full changelog, documents open in full, and the Russian interface reads like Russian"
+    detail: >
+      The Versions view now projects the complete authored release notes from
+      the same source the website publishes, with the update-candidate card
+      hidden when no candidate exists. Any artifact can be opened as it exists
+      on disk — the whole frontmatter as a table plus the verbatim body. On the
+      exchange map, Escape and a backdrop click close full width, edge and system
+      popovers state their facts in a table rather than a paragraph, and the
+      legend holds its layout in both locales. Cyrillic font subsets are embedded,
+      so the Russian interface no longer falls back to a system font, and short
+      in-place hints explain the protocol vocabulary the screens use.
+    affects: ["a2a html", "versions", "exchange map", "ru locale"]
+    action:
+      scope: none
+      why: >
+        No configuration or data migration is required.
