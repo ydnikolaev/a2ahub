@@ -31,23 +31,34 @@ regenerate() {
 }
 
 check() {
-  local before after
+  local before after backup
   before="$(git -C "$root" hash-object "$template")"
+  # Restore the bytes that were THERE, not the committed ones. `git checkout --`
+  # looks correct and is not: when the working tree legitimately holds a fresh
+  # build that has not been committed yet, checkout throws that build away and
+  # the next commit ships a stale template. This gate observes; it must never
+  # decide what the working tree should contain.
+  backup="$(mktemp)"
+  cp "$template" "$backup"
   regenerate
   after="$(git -C "$root" hash-object "$template")"
-  # Always restore the committed bytes: the gate must not leave the tree dirty
-  # whichever way it answers.
-  git -C "$root" checkout -- internal/html/template.html 2>/dev/null || true
+  cp "$backup" "$template"
+  rm -f "$backup"
   [ "$before" = "$after" ]
 }
 
 if [ "${1:-}" = "--teeth" ]; then
-  # The gate must go red when the generated file is edited by hand.
-  trap 'git -C "$root" checkout -- internal/html/template.html 2>/dev/null || true' EXIT
+  # Two proofs: a hand edit to the generated file trips the gate, and a clean
+  # tree passes. The original bytes are saved and put back by hand — the
+  # self-test must not resort to `git checkout` either, or it would discard an
+  # uncommitted build exactly like the bug it exists to prevent.
+  teeth_backup="$(mktemp)"
+  cp "$template" "$teeth_backup"
+  trap 'cp "$teeth_backup" "$template"; rm -f "$teeth_backup"' EXIT
   printf '\n<!-- teeth: hand edit -->\n' >> "$template"
   if check; then fail 'teeth failed: a hand edit to the generated template did not trip the gate'; fi
-  git -C "$root" checkout -- internal/html/template.html
-  if ! check; then fail 'teeth failed: the committed template does not match its own regeneration'; fi
+  cp "$teeth_backup" "$template"
+  if ! check; then fail 'teeth failed: the tracked template does not match its own regeneration'; fi
   echo "dashboard-template-drift: teeth ok (hand edits trip the gate, clean tree passes)"
   exit 0
 fi
