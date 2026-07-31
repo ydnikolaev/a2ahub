@@ -67,7 +67,7 @@ const guideStyles = `.ssot-doc-body{color:var(--body);font-size:16px;line-height
 
 const runtime = read(runtimeOut).replaceAll('</script>', '<\\/script>');
 const template = `<!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>a2a html — local dashboard</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>a2a html — local dashboard</title>
 <style>${fonts}\n/*A2A_SHARED_TOKENS*/\n*{box-sizing:border-box}body{margin:0;background:var(--canvas);color:var(--text);font-family:"Onest","Segoe UI",Helvetica,Arial,sans-serif;font-size:16px;-webkit-font-smoothing:antialiased}button,input{font:inherit}button:focus-visible,a:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}${guideStyles}</style></head><body>
 ${root}
 <script type="text/x-dc" data-dc-script>${logic.replaceAll('</script>', '<\\/script>')}</script>

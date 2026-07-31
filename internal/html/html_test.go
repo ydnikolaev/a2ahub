@@ -274,13 +274,23 @@ func TestDefaultTemplate_CarriesApprovedV4ViewsWithoutRemoteLoads(t *testing.T) 
 	t.Parallel()
 	tmpl := string(DefaultTemplate())
 	for _, view := range []string{"Overview", "Work", "Threads", "Contracts", "Network", "Spaces", "Integrity", "Versions", "Guide"} {
-		if !strings.Contains(tmpl, `aria-label="`+view+`"`) {
+		if !strings.Contains(tmpl, `data-screen-label="`+view+`"`) {
 			t.Errorf("embedded v4 dashboard is missing %s view", view)
 		}
 	}
 	for _, pattern := range []string{`<script src="http`, `<link href="http`, `<img src="http`} {
 		if strings.Contains(tmpl, pattern) {
 			t.Errorf("self-contained dashboard has automatic remote load %q", pattern)
+		}
+	}
+}
+
+func TestDefaultTemplate_HasBilingualShellWithEnglishDefault(t *testing.T) {
+	t.Parallel()
+	tmpl := string(DefaultTemplate())
+	for _, want := range []string{`<html lang="en">`, `a2a-locale`, `>EN</button>`, `>RU</button>`, `Interface language`, `Язык интерфейса`} {
+		if !strings.Contains(tmpl, want) {
+			t.Errorf("embedded dashboard is missing bilingual-shell marker %q", want)
 		}
 	}
 }

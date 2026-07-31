@@ -13,7 +13,7 @@
       <span style="font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; color:var(--text); overflow-wrap:anywhere;">{{ det.title }}</span>
       <span style="font-size:12px; font-weight:600; color:var(--faint); text-transform:uppercase; letter-spacing:.07em;">{{ det.kindLabel }}</span>
     </span>
-    <button type="button" onClick="{{ det.close }}" aria-label="Close detail" style="flex:0 0 auto; font-family:'Onest',sans-serif; font-size:15px; line-height:1; color:var(--muted); background:transparent; border:0; cursor:pointer; padding:3px 4px;">✕</button>
+    <button type="button" onClick="{{ det.close }}" aria-label="{{ closeLabel }}" style="flex:0 0 auto; font-family:'Onest',sans-serif; font-size:15px; line-height:1; color:var(--muted); background:transparent; border:0; cursor:pointer; padding:3px 4px;">✕</button>
   </div>
   <div style="font-size:15px; line-height:1.6; color:var(--body); max-width:84ch;">{{ det.lead }}</div>
   <sc-if value="{{ det.hasNote }}" hint-placeholder-val="{{ false }}">
@@ -60,6 +60,10 @@
 </div>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:560,&quot;height&quot;:420},&quot;det&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;}}"></script>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:560,&quot;height&quot;:420},&quot;det&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;}}">
+class Component extends DCLogic {
+  renderVals() { return { det:this.props.det || {}, closeLabel:document.documentElement.lang === "ru" ? "Закрыть подробности" : "Close detail" }; }
+}
+</script>
 </body>
 </html>
