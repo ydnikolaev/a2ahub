@@ -4,7 +4,7 @@ released: "2026-07-31"
 headline: "The agent-first public site and human-readable dashboard now share one approved design and one documentation source"
 changes:
   - id: RN-01700-1
-    kind: feature
+    kind: feat
     impact: normal
     subject: "The public site explains an agent-operated protocol through the approved v4 design"
     detail: >
@@ -23,7 +23,7 @@ changes:
         surface for the existing protocol.
 
   - id: RN-01700-2
-    kind: feature
+    kind: feat
     impact: normal
     subject: "The local dashboard carries Russian human guidance and the complete embedded manual"
     detail: >
