@@ -83,3 +83,25 @@ changes:
       scope: none
       why: >
         No configuration or data migration is required.
+
+  - id: RN-01701-5
+    kind: feat
+    impact: low
+    subject: "Dashboard cards, the causal timeline and the Versions surface are legible at a glance"
+    detail: >
+      Each lifecycle transition on a thread's timeline now carries its own
+      colour, document markers are larger than the events between them, and
+      clicking a relation focuses the document it names while everything else
+      dims. Compact cards show the lifecycle state they were previously silent
+      about, every type badge survives both card backgrounds, and compact and
+      expanded cards share one header grammar. Work gains a filter by document
+      type; Contracts names provider and consumers outright and reads in one
+      column. Versions now projects the same surface the published changelog
+      does — kind and action filters, copyable detect/run commands, the version
+      index and a release timeline. Ages and dates are humanised and localised
+      in one place, so a raw Go duration no longer reaches a reader.
+    affects: ["a2a html", "threads", "work", "contracts", "versions"]
+    action:
+      scope: none
+      why: >
+        No configuration or data migration is required.
