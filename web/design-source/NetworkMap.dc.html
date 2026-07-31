@@ -806,7 +806,7 @@ class Component extends DCLogic {
         meta: n.org + (ru ? " · линий: " + lines + " · открыто: " + openHere : " · " + lines + (lines === 1 ? " line" : " lines") + " · " + openHere + " open"),
         hasCounts: false, counts: "",
         hasTag: n.status === "left" || rels.length === 0,
-        tag: n.status === "left" ? (ru ? "покинула спейсово" : "left the space") : (ru ? "нет связи с вами" : "no link with you"),
+        tag: n.status === "left" ? (ru ? "покинула спейс" : "left the space") : (ru ? "нет связи с вами" : "no link with you"),
         tagStyle: "position:absolute; top:10px; right:11px; display:inline-flex; align-items:center; height:20px; max-width:52%; padding:0 8px; font-size:12px; font-weight:600; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--muted); background:var(--page); border-radius:6px; box-shadow:inset 0 0 0 1px var(--border);",
         avatarStyle: this.avatar(n.status === "left" ? "left" : "active"),
         style: "position:absolute; z-index:3; box-sizing:border-box; left:" + MX + "px; top:" + (row.cy - MH / 2) + "px; width:" + MW + "px; height:" + MH + "px; display:flex; flex-direction:column; justify-content:center; text-align:left; font-family:'Onest',sans-serif; background:var(--surface); border:0; border-radius:12px; padding:9px 13px; cursor:pointer; transition:opacity .12s ease; opacity:" + (dim ? 0.4 : 1) + "; box-shadow:" +
@@ -944,7 +944,7 @@ class Component extends DCLogic {
     };
     const heading = this.props.heading || (ru ? "Карта обмена" : "Exchange map");
     const labels = {
-      spaceLabel: ru ? "Спейсово" : "Space", contractLabel: ru ? "контракт" : "contract",
+      spaceLabel: ru ? "Спейс" : "Space", contractLabel: ru ? "контракт" : "contract",
       currentLabel: ru ? "актуален" : "current", driftingLabel: ru ? "расходится" : "drifting", missingLabel: ru ? "не найден" : "missing",
       workLabel: ru ? "открытая работа" : "open work", flightLabel: ru ? "в работе" : "in flight", blockingLabel: ru ? "блокирует" : "blocking",
       directionLabel: ru ? "направление" : "direction", directionText: ru ? "стрелка смотрит на поставщика или получателя" : "arrow ends at the provider or recipient",
@@ -971,7 +971,7 @@ class Component extends DCLogic {
       const members = d.nodes.filter(n => (n.spaces || []).includes(spaceId))
         .sort((a, b) => (b.system === d.self ? 1 : 0) - (a.system === d.self ? 1 : 0) || a.system.localeCompare(b.system));
       const shown = members.slice(0, 3).map((n, i) => ({
-        mono: codes[n.system], title: n.system + " · " + n.org + (n.status === "left" ? (ru ? " · покинула спейсово" : " · left the space") : ""),
+        mono: codes[n.system], title: n.system + " · " + n.org + (n.status === "left" ? (ru ? " · покинула спейс" : " · left the space") : ""),
         style: faceStyle(i, n.system === d.self ? "self" : (n.status === "left" ? "left" : "active"), active)
       }));
       const rest = members.length - shown.length;
@@ -1032,7 +1032,7 @@ class Component extends DCLogic {
       showMatrix: scope === "all" && readable.length > 1 && this.props.showMatrix !== false,
       matrixCols: matrix.cols, matrixRows: matrix.rows,
       matrixNote: ru ? bridging + " из " + d.nodes.length + " систем сидят больше чем в одном спейсе. Контракты и обмены за границу спейса не выходят, поэтому связь между спейсами создают только общие системы, между спейсами." : bridging + " of " + d.nodes.length + " systems belong to more than one space. Because contracts and exchanges never cross a space boundary, those shared systems are the only structural link between spaces.",
-      matrixLegend: ru ? "В ячейке: контрактные линии / открытые документы этой системы в спейсе. Прочерк — система здесь не участвует; вопросительный знак — спейс не читается, и участие неизвестно, а не равно нулю. Нажмите ячейку, чтобы открыть спейсово и выбрать систему." : "Each cell reads contract lines / open items for that system in that space. — means it does not participate; ? means the space is unreadable, so participation is unknown rather than zero. Click a cell to open that space with the system selected."
+      matrixLegend: ru ? "В ячейке: контрактные линии / открытые документы этой системы в спейсе. Прочерк — система здесь не участвует; вопросительный знак — спейс не читается, и участие неизвестно, а не равно нулю. Нажмите ячейку, чтобы открыть спейс и выбрать систему." : "Each cell reads contract lines / open items for that system in that space. — means it does not participate; ? means the space is unreadable, so participation is unknown rather than zero. Click a cell to open that space with the system selected."
     }, canvas, shell, labels);
   }
 }
