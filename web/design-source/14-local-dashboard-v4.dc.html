@@ -254,6 +254,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               <h2 style="margin:0; font-size:20px; font-weight:600;">{{ overviewQueueTitle }}</h2>
               <span style="font-size:15px; color:var(--muted);">{{ overviewQueueNote }}</span>
             </div>
+            <sc-if value="{{ noOvRows }}" hint-placeholder-val="{{ false }}">
+              <dc-import name="EmptyState" title="{{ emptyQueueTitle }}" text="{{ emptyQueueText }}" size="compact" hint-size="100%,240px"></dc-import>
+            </sc-if>
             <sc-for list="{{ ovRows }}" as="r" hint-placeholder-count="3">
               <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
             </sc-for>
@@ -290,6 +293,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         </div>
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
+            <sc-if value="{{ noWorkRows }}" hint-placeholder-val="{{ false }}">
+              <dc-import name="EmptyState" title="{{ emptyWorkTitle }}" text="{{ emptyWorkText }}" size="compact" hint-size="100%,240px"></dc-import>
+            </sc-if>
             <sc-for list="{{ workRows }}" as="r" hint-placeholder-count="6">
               <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
             </sc-for>
@@ -305,6 +311,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         <p style="margin:0 0 18px; font-size:18px; line-height:1.55; color:var(--body); max-width:760px;">{{ threadsSub }}</p>
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
+            <sc-if value="{{ noThreadRows }}" hint-placeholder-val="{{ false }}">
+              <dc-import name="EmptyState" title="{{ emptyThreadsTitle }}" text="{{ emptyThreadsText }}" size="compact" hint-size="100%,240px"></dc-import>
+            </sc-if>
             <sc-for list="{{ threadRows }}" as="t" hint-placeholder-count="5">
               <button type="button" onClick="{{ t.select }}" style="{{ t.style }}">
                 <span style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:8px;">
@@ -322,8 +331,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
           <div style="min-width:0; background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
             <sc-if value="{{ tvMissing }}" hint-placeholder-val="{{ false }}">
-              <h2 style="margin:0 0 8px; font-size:22px; font-weight:600;">{{ threadMissingTitle }}</h2>
-              <p style="margin:0; font-size:16px; line-height:1.6; color:var(--body);">{{ threadMissingText }}</p>
+              <dc-import name="EmptyState" title="{{ threadMissingTitle }}" text="{{ threadMissingText }}" size="compact" hint-size="100%,240px"></dc-import>
             </sc-if>
             <sc-if value="{{ tvPresent }}" hint-placeholder-val="{{ true }}">
               <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:14px;">
@@ -337,6 +345,19 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               </div>
               <h2 style="margin:0 0 16px; font-size:26px; line-height:1.25; font-weight:600; letter-spacing:-0.015em; overflow-wrap:anywhere;">{{ tvTitle }}</h2>
 
+              <!-- A thread with nothing pending is finished. Rendering the
+                   "whose move" prompt over an empty list asked a question the
+                   record had already answered. -->
+              <sc-if value="{{ tvSettled }}" hint-placeholder-val="{{ false }}">
+                <div style="background:var(--healthy-tint); border-radius:14px; padding:16px 18px; margin-bottom:16px; display:flex; align-items:flex-start; gap:12px;">
+                  <span aria-hidden="true" style="flex:0 0 auto; margin-top:1px; color:var(--healthy-ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+                  <span style="min-width:0;">
+                    <span style="display:block; font-size:16px; font-weight:600; color:var(--healthy-strong);">{{ settledLabel }}</span>
+                    <span style="display:block; font-size:15px; line-height:1.5; color:var(--healthy-ink);">{{ settledText }}</span>
+                  </span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ tvPending }}" hint-placeholder-val="{{ true }}">
               <div style="background:var(--attention-tint); border-radius:14px; padding:18px 20px; margin-bottom:16px;">
                 <div style="margin-bottom:12px;">
                   <div style="font-size:16px; font-weight:600; color:var(--attention-strong);">{{ whoseMoveLabel }}</div>
@@ -362,7 +383,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                   </sc-for>
                 </div>
               </div>
-
+              </sc-if>
 
               <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
                 <div style="font-size:16px; font-weight:600;">{{ causalTimelineLabel }}</div>
@@ -432,6 +453,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         <p style="margin:0 0 18px; font-size:18px; line-height:1.55; color:var(--body); max-width:780px;">{{ conSub }}</p>
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
+            <sc-if value="{{ noConRows }}" hint-placeholder-val="{{ false }}">
+              <dc-import name="EmptyState" title="{{ emptyContractsTitle }}" text="{{ emptyContractsText }}" hint="a2a contract new" hint-size="100%,300px"></dc-import>
+            </sc-if>
             <sc-for list="{{ conRows }}" as="c" hint-placeholder-count="6">
               <button type="button" onClick="{{ c.select }}" style="{{ c.style }}">
                 <span style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
@@ -448,6 +472,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
             </sc-for>
           </div>
 
+          <sc-if value="{{ noConRows }}" hint-placeholder-val="{{ false }}">
+            <dc-import name="EmptyState" title="{{ emptyContractDetailTitle }}" text="{{ emptyContractDetailText }}" hint-size="100%,300px"></dc-import>
+          </sc-if>
+          <sc-if value="{{ hasConRows }}" hint-placeholder-val="{{ true }}">
           <div style="min-width:0; background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
             <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:14px;">
               <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
@@ -506,6 +534,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               <div style="margin-top:12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ codeBindingPrefix }} <strong>{{ notEvaluatedLabel }}</strong>{{ codeBindingSuffix }}</div>
             </div>
           </div>
+          </sc-if>
         </div>
       </section>
     </sc-if>
@@ -515,7 +544,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ networkTitle }}</h1>
         <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">{{ networkSub }}</p>
         <div style="margin-bottom:20px;">
-          <dc-import name="NetworkMap" data="{{ data }}" space="{{ space }}" locale="{{ locale }}" on-space-change="{{ setSpace }}" on-open-contract="{{ openContract }}" on-open-item="{{ openItem }}" show-space-tabs="{{ false }}" heading="{{ networkMapHeading }}" hint-size="100%,1000px"></dc-import>
+          <dc-import name="NetworkMap" data="{{ data }}" space="{{ space }}" locale="{{ locale }}" on-space-change="{{ setSpace }}" on-open-contract="{{ openContract }}" on-open-item="{{ openItem }}" on-open-document="{{ openDocument }}" show-space-tabs="{{ false }}" heading="{{ networkMapHeading }}" hint-size="100%,1000px"></dc-import>
         </div>
               </section>
     </sc-if>
@@ -524,6 +553,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
       <section aria-label="{{ spacesAria }}" data-screen-label="Spaces">
         <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ spacesTitle }}</h1>
         <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">{{ spacesSub }}</p>
+        <sc-if value="{{ noSpaces }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="EmptyState" title="{{ emptySpacesTitle }}" text="{{ emptySpacesText }}" hint="a2a space connect" hint-size="100%,300px"></dc-import>
+        </sc-if>
+        <sc-if value="{{ hasSpaces }}" hint-placeholder-val="{{ true }}">
         <div style="background:var(--surface); border-radius:18px; padding:8px 22px 16px; box-shadow:0 1px 2px rgba(33,30,23,.06); overflow-x:auto;">
           <table style="width:100%; border-collapse:collapse; font-size:16px; min-width:820px;">
             <thead>
@@ -550,51 +583,68 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
             </tbody>
           </table>
         </div>
-      </section>
-    </sc-if>
+        </sc-if>
 
-    <sc-if value="{{ isIntegrity }}" hint-placeholder-val="{{ false }}">
-      <section aria-label="{{ integrityAria }}" data-screen-label="Integrity">
-        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ integrityTitle }}</h1>
-        <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">{{ intSub }}</p>
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:16px; align-items:start;">
-          <div style="background:var(--surface); border-radius:18px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-            <div style="font-size:18px; font-weight:600; margin-bottom:12px;">{{ integrityFlagsLabel }}</div>
-            <div style="display:flex; flex-direction:column; gap:10px;">
-              <sc-for list="{{ intFlags }}" as="f" hint-placeholder-count="4">
-                <div style="background:var(--page); border-radius:11px; padding:13px 15px;">
-                  <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
-                    <dc-import name="StatusPill" text="{{ f.code }}" tone="attention" mono="{{ true }}" size="small" hint-size="150px,24px"></dc-import>
-                    <span style="font-size:15px; color:var(--muted);">{{ f.origin }}</span>
-                  </div>
-                  <div style="font-size:16px; line-height:1.55; color:var(--body); overflow-wrap:anywhere;">{{ f.message }}</div>
+        <!-- The former Integrity view. It is a qualifier on the freshness table
+             above, not a destination of its own: on a healthy one-space setup it
+             is empty, and an empty page reads as a broken one. -->
+        <div style="margin-top:34px; padding-top:26px; border-top:1px solid var(--border);">
+          <h2 style="margin:0 0 8px; font-size:24px; font-weight:600; letter-spacing:-0.01em;">{{ limitsTitle }}</h2>
+          <p style="margin:0 0 18px; font-size:16px; line-height:1.6; color:var(--body); max-width:820px;">{{ limitsSub }}</p>
+
+          <sc-if value="{{ noLimits }}" hint-placeholder-val="{{ false }}">
+            <dc-import name="EmptyState" title="{{ emptyLimitsTitle }}" text="{{ emptyLimitsText }}" size="compact" hint-size="100%,240px"></dc-import>
+          </sc-if>
+
+          <sc-if value="{{ hasLimits }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:16px; align-items:start;">
+            <sc-if value="{{ hasIntFlags }}" hint-placeholder-val="{{ true }}">
+              <div style="background:var(--surface); border-radius:18px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+                <div style="font-size:18px; font-weight:600; margin-bottom:4px;">{{ integrityFlagsLabel }}</div>
+                <p style="margin:0 0 12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ integrityFlagsText }}</p>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                  <sc-for list="{{ intFlags }}" as="f" hint-placeholder-count="4">
+                    <div style="background:var(--page); border-radius:11px; padding:13px 15px;">
+                      <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
+                        <dc-import name="StatusPill" text="{{ f.code }}" tone="attention" mono="{{ true }}" size="small" hint-size="150px,24px"></dc-import>
+                        <span style="font-size:15px; color:var(--muted);">{{ f.origin }}</span>
+                      </div>
+                      <div style="font-size:16px; line-height:1.55; color:var(--body); overflow-wrap:anywhere;">{{ f.message }}</div>
+                    </div>
+                  </sc-for>
                 </div>
-              </sc-for>
-            </div>
-          </div>
-          <div style="display:flex; flex-direction:column; gap:16px;">
-            <div style="background:var(--surface); border-radius:18px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-              <div style="font-size:18px; font-weight:600; margin-bottom:12px;">{{ degradedReadsLabel }}</div>
-              <div style="display:flex; flex-direction:column; gap:10px; font-size:16px;">
-                <sc-for list="{{ intDegraded }}" as="g" hint-placeholder-count="3">
-                  <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                    <span style="font-family:'IBM Plex Mono',monospace;">{{ g.id }}</span>
-                    <dc-import name="StatusPill" text="{{ g.pillText }}" tone="{{ g.pillTone }}" size="small" hint-size="100px,24px"></dc-import>
-                    <span style="color:var(--muted); font-size:15px;">{{ g.note }}</span>
+              </div>
+            </sc-if>
+            <div style="display:flex; flex-direction:column; gap:16px;">
+              <sc-if value="{{ hasIntDegraded }}" hint-placeholder-val="{{ true }}">
+                <div style="background:var(--surface); border-radius:18px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+                  <div style="font-size:18px; font-weight:600; margin-bottom:4px;">{{ degradedReadsLabel }}</div>
+                  <p style="margin:0 0 12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ degradedReadsText }}</p>
+                  <div style="display:flex; flex-direction:column; gap:10px; font-size:16px;">
+                    <sc-for list="{{ intDegraded }}" as="g" hint-placeholder-count="3">
+                      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <span style="font-family:'IBM Plex Mono',monospace;">{{ g.id }}</span>
+                        <dc-import name="StatusPill" text="{{ g.pillText }}" tone="{{ g.pillTone }}" size="small" hint-size="100px,24px"></dc-import>
+                        <span style="color:var(--muted); font-size:15px;">{{ g.note }}</span>
+                      </div>
+                    </sc-for>
                   </div>
-                </sc-for>
-              </div>
-            </div>
-            <div style="background:var(--page); border-radius:18px; padding:20px 22px; box-shadow:inset 0 0 0 1px var(--border);">
-              <div style="font-size:18px; font-weight:600; margin-bottom:6px;">{{ notEvaluatedTitle }}</div>
-              <p style="margin:0 0 12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ notEvaluatedText }}</p>
-              <div style="display:flex; flex-direction:column; gap:10px; font-size:16px; line-height:1.55; color:var(--muted);">
-                <sc-for list="{{ intUnavailable }}" as="u" hint-placeholder-count="4">
-                  <div><strong style="color:var(--body);">{{ u.title }}</strong> — {{ u.reason }}</div>
-                </sc-for>
-              </div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ hasIntUnavailable }}" hint-placeholder-val="{{ true }}">
+                <div style="background:var(--page); border-radius:18px; padding:20px 22px; box-shadow:inset 0 0 0 1px var(--border);">
+                  <div style="font-size:18px; font-weight:600; margin-bottom:6px;">{{ notEvaluatedTitle }}</div>
+                  <p style="margin:0 0 12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ notEvaluatedText }}</p>
+                  <div style="display:flex; flex-direction:column; gap:10px; font-size:16px; line-height:1.55; color:var(--muted);">
+                    <sc-for list="{{ intUnavailable }}" as="u" hint-placeholder-count="4">
+                      <div><strong style="color:var(--body);">{{ u.title }}</strong> — {{ u.reason }}</div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
             </div>
           </div>
+          </sc-if>
         </div>
       </section>
     </sc-if>
@@ -603,57 +653,166 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
       <section aria-label="{{ versionsAria }}" data-screen-label="Versions">
         <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ versionsTitle }}</h1>
         <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:760px;">{{ verSub }}</p>
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:16px; align-items:start;">
-          <div style="display:flex; flex-direction:column; gap:16px;">
-            <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+
+        <!-- The binary you have and the release notes that explain it are one
+             story, so they share one page. The changelog below is projected
+             from releasenotes/*.yaml — the same SSOT a2ahub.dev/changelog reads,
+             never a second hand-maintained copy. -->
+        <div style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:20px;">
+          <div style="display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start;">
+            <div style="flex:1 1 320px; min-width:0;">
               <div style="font-size:18px; font-weight:600; margin-bottom:14px;">{{ localBinaryLabel }}</div>
-              <div style="display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:14px;">
+              <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
                 <span style="font-family:'IBM Plex Mono',monospace; font-size:34px; font-weight:600;">{{ verCurrent }}</span>
                 <span style="font-size:16px; color:var(--muted);">{{ installedLabel }}</span>
-                <span style="color:var(--border-strong);">→</span>
-                <span style="font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600; color:var(--teal-ink);">{{ verLatest }}</span>
-                <span style="font-size:16px; color:var(--muted);">{{ latestLabel }}</span>
+                <sc-if value="{{ verBehind }}" hint-placeholder-val="{{ true }}">
+                  <span style="color:var(--border-strong);">→</span>
+                  <span style="font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600; color:var(--teal-ink);">{{ verLatest }}</span>
+                  <span style="font-size:16px; color:var(--muted);">{{ latestLabel }}</span>
+                </sc-if>
+                <sc-if value="{{ verUpToDate }}" hint-placeholder-val="{{ false }}">
+                  <dc-import name="StatusPill" text="{{ upToDateLabel }}" tone="healthy" size="small" hint-size="110px,24px"></dc-import>
+                </sc-if>
               </div>
               <dc-import name="FactTable" rows="{{ verFacts }}" hint-size="100%,200px"></dc-import>
             </div>
-            <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-              <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
-                <div style="font-size:18px; font-weight:600;">{{ updateCandidateLabel }}</div>
-                <dc-import name="StatusPill" text="{{ verUpdateStatus }}" tone="healthy" size="small" hint-size="90px,24px"></dc-import>
-              </div>
-              <div style="font-size:18px; line-height:1.4; font-weight:600; margin-bottom:14px;">{{ verHeadline }}</div>
-              <div style="display:flex; flex-direction:column; gap:10px;">
-                <sc-for list="{{ verChanges }}" as="c" hint-placeholder-count="4">
-                  <div style="background:var(--page); border-radius:11px; padding:13px 15px;">
-                    <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
-                      <dc-import name="StatusPill" text="{{ c.kind }}" tone="{{ c.tone }}" size="small" hint-size="70px,24px"></dc-import>
-                      <span style="font-size:15px; color:var(--muted);">{{ impactLabel }} {{ c.impact }}</span>
+
+            <!-- Hidden entirely when there is no candidate: an "Update candidate:
+                 none" card is a card that teaches nothing. -->
+            <sc-if value="{{ hasUpdate }}" hint-placeholder-val="{{ true }}">
+              <div style="flex:1 1 320px; min-width:0; background:var(--attention-tint); border-radius:14px; padding:18px 20px;">
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+                  <div style="font-size:17px; font-weight:600; color:var(--attention-strong);">{{ updateCandidateLabel }}</div>
+                  <dc-import name="StatusPill" text="{{ verUpdateStatus }}" tone="attention" size="small" hint-size="90px,24px"></dc-import>
+                </div>
+                <div style="font-size:17px; line-height:1.45; font-weight:600; color:var(--attention-strong); margin-bottom:12px;">{{ verHeadline }}</div>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                  <sc-for list="{{ verChanges }}" as="c" hint-placeholder-count="4">
+                    <div style="background:var(--surface); border-radius:10px; padding:11px 13px;">
+                      <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:5px;">
+                        <dc-import name="StatusPill" text="{{ c.kind }}" tone="{{ c.tone }}" size="small" hint-size="70px,24px"></dc-import>
+                        <span style="font-size:14px; color:var(--muted);">{{ impactLabel }} {{ c.impact }}</span>
+                      </div>
+                      <div style="font-size:15px; line-height:1.5; color:var(--text);">{{ c.subject }}</div>
                     </div>
-                    <div style="font-size:16px; line-height:1.5; color:var(--text);">{{ c.subject }}</div>
+                  </sc-for>
+                </div>
+                <button type="button" onClick="{{ goLatestNotes }}" style="margin-top:12px; padding:0; border:0; background:transparent; cursor:pointer; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--teal-ink);">{{ readNotesLabel }} ↓</button>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
+          <h2 style="margin:0; font-size:24px; font-weight:600; letter-spacing:-0.01em;">{{ releaseNotesLabel }}</h2>
+          <span style="font-size:15px; color:var(--muted);">{{ releaseNotesNote }}</span>
+        </div>
+
+        <sc-if value="{{ noReleases }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="EmptyState" title="{{ emptyReleasesTitle }}" text="{{ emptyReleasesText }}" size="compact" hint-size="100%,240px"></dc-import>
+        </sc-if>
+
+        <div style="display:flex; flex-direction:column; gap:16px;">
+          <sc-for list="{{ verReleases }}" as="r" hint-placeholder-count="3">
+            <article id="{{ r.anchor }}" style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06); scroll-margin-top:160px;">
+              <div style="display:flex; align-items:flex-start; gap:12px; flex-wrap:nowrap; margin-bottom:8px;">
+                <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:6px;">
+                  <span style="font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600;">{{ r.version }}</span>
+                  <span style="font-size:15px; color:var(--muted);">{{ r.date }}</span>
+                  <sc-if value="{{ r.isCurrent }}" hint-placeholder-val="{{ false }}">
+                    <dc-import name="StatusPill" text="{{ r.currentLabel }}" tone="healthy" size="small" hint-size="120px,24px"></dc-import>
+                  </sc-if>
+                </span>
+                <span style="flex:0 0 auto; font-size:15px; color:var(--muted);">{{ r.count }}</span>
+              </div>
+              <h3 style="margin:0 0 16px; font-size:22px; line-height:1.35; font-weight:600; letter-spacing:-0.01em; max-width:760px; text-wrap:balance;">{{ r.headline }}</h3>
+              <div style="display:flex; flex-direction:column; gap:12px;">
+                <sc-for list="{{ r.changes }}" as="c" hint-placeholder-count="3">
+                  <div style="background:var(--page); border-radius:14px; padding:16px 18px;">
+                    <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:8px;">
+                      <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+                        <dc-import name="StatusPill" text="{{ c.kind }}" tone="{{ c.tone }}" size="small" hint-size="90px,24px"></dc-import>
+                        <span style="font-size:15px; color:var(--muted);">{{ impactLabel }} {{ c.impact }}</span>
+                      </span>
+                      <span style="flex:0 0 auto; font-size:14px; color:var(--faint); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ c.affects }}</span>
+                    </div>
+                    <div style="font-size:18px; line-height:1.4; font-weight:600; margin-bottom:8px;">{{ c.subject }}</div>
+                    <p style="margin:0 0 12px; font-size:16px; line-height:1.6; color:var(--body); max-width:760px;">{{ c.detail }}</p>
+                    <div style="{{ c.actionStyle }}">
+                      <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap;">
+                        <dc-import name="StatusPill" text="{{ c.actionLabel }}" tone="{{ c.actionTone }}" size="small" hint-size="130px,24px"></dc-import>
+                        <span style="flex:1 1 260px; min-width:0; font-size:15px; line-height:1.55; color:var(--body);">{{ c.why }}</span>
+                      </div>
+                      <sc-if value="{{ c.hasCommands }}" hint-placeholder-val="{{ false }}">
+                        <div style="display:flex; flex-direction:column; gap:7px; margin-top:10px;">
+                          <sc-for list="{{ c.commands }}" as="cmd" hint-placeholder-count="1">
+                            <div style="background:var(--inverse); border-radius:9px; padding:10px 13px; font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--on-inverse-2); overflow-wrap:anywhere;">{{ cmd }}</div>
+                          </sc-for>
+                        </div>
+                      </sc-if>
+                    </div>
                   </div>
                 </sc-for>
               </div>
+            </article>
+          </sc-for>
+        </div>
+      </section>
+    </sc-if>
+
+    <!-- Docs: the same corpus and the same reading layout as a2ahub.dev/docs.
+         One SSOT (skill/a2ahub/**) already reaches this file as the DOCS global;
+         this view stops hiding it inside Guide behind a different layout. -->
+    <sc-if value="{{ isDocs }}" hint-placeholder-val="{{ false }}">
+      <section aria-label="{{ docsAria }}" data-screen-label="Docs">
+        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ docsTitle }}</h1>
+        <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">{{ docsSub }}</p>
+
+        <sc-if value="{{ noDocs }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="EmptyState" title="{{ emptyDocsTitle }}" text="{{ emptyDocsText }}" hint="a2a skill install" hint-size="100%,300px"></dc-import>
+        </sc-if>
+
+        <sc-if value="{{ hasDocs }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex; flex-wrap:wrap; gap:22px; align-items:flex-start;">
+          <aside style="flex:1 1 240px; min-width:240px; display:flex; flex-direction:column; gap:12px;">
+            <div style="background:var(--surface); border-radius:14px; padding:14px 16px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+              <label for="a2adocsearch" style="display:block; font-size:15px; font-weight:600; margin-bottom:8px;">{{ docSearchLabel }}</label>
+              <input id="a2adocsearch" type="search" value="{{ docQuery }}" onInput="{{ onDocQuery }}" placeholder="{{ docSearchPlaceholder }}" style="width:100%; box-sizing:border-box; font-family:'Onest',sans-serif; font-size:16px; color:var(--text); background:var(--canvas); border:0; border-radius:9px; padding:11px 13px;">
+              <div style="margin-top:8px; font-size:15px; color:var(--muted);">{{ docSearchNote }}</div>
             </div>
-          </div>
-          <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-            <div style="font-size:18px; font-weight:600; margin-bottom:6px;">{{ publishedReleasesLabel }}</div>
-            <p style="margin:0 0 14px; font-size:15px; line-height:1.55; color:var(--muted);">{{ expandedNotesPrefix }} {{ verScope }}.</p>
-            <div style="display:flex; flex-direction:column; gap:12px;">
-              <sc-for list="{{ verReleases }}" as="r" hint-placeholder-count="3">
-                <div style="background:var(--page); border-radius:12px; padding:16px 18px;">
-                  <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:8px;">
-                    <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
-                      <span style="font-family:'IBM Plex Mono',monospace; font-size:17px; font-weight:600;">{{ r.version }}</span>
-                      <span style="font-size:15px; color:var(--muted);">{{ r.date }}</span>
-                    </span>
-                    <span style="flex:0 0 auto; font-size:15px; color:var(--muted);">{{ r.count }}</span>
+            <nav aria-label="{{ docsAria }}" style="background:var(--surface); border-radius:14px; padding:8px 10px 12px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+              <sc-for list="{{ docGroups }}" as="g" hint-placeholder-count="5">
+                <div style="padding:10px 6px 4px;">
+                  <div style="font-size:15px; font-weight:600; color:var(--muted); padding:0 6px 6px;">{{ g.name }}</div>
+                  <div style="display:flex; flex-direction:column; gap:2px;">
+                    <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="4">
+                      <button type="button" onClick="{{ it.go }}" style="{{ it.style }}">{{ it.label }}</button>
+                    </sc-for>
                   </div>
-                  <div style="font-size:16px; line-height:1.5; color:var(--text);">{{ r.headline }}</div>
                 </div>
               </sc-for>
+              <sc-if value="{{ docNoMatches }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:12px 12px 8px; font-size:15px; line-height:1.55; color:var(--muted);">{{ docNoMatchText }}</div>
+              </sc-if>
+            </nav>
+          </aside>
+
+          <article style="flex:4 1 420px; min-width:0;">
+            <div style="background:var(--surface); border-radius:18px; padding:28px 32px 32px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+              <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:14px;">
+                <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
+                  <dc-import name="StatusPill" text="{{ docGroupLabel }}" tone="agent" size="small" hint-size="90px,24px"></dc-import>
+                  <dc-import name="StatusPill" text="{{ docSourceLabel }}" tone="outline" size="small" hint-size="150px,24px"></dc-import>
+                </span>
+                <span style="flex:0 0 auto; font-size:15px; color:var(--muted); text-align:right;">{{ docEmbeddedNote }}</span>
+              </div>
+              <h2 style="margin:0 0 18px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em; overflow-wrap:anywhere;">{{ docTitle }}</h2>
+              <div data-doc-toc style="margin-bottom:20px;"></div>
+              <div data-doc-body data-doc-id="{{ docId }}" class="ssot-doc-body"><div style="font-size:16px; color:var(--muted);">{{ loadingDocLabel }}</div></div>
             </div>
-          </div>
+          </article>
         </div>
+        </sc-if>
       </section>
     </sc-if>
 
@@ -711,20 +870,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               </table>
             </div>
 
-            <div style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-              <h2 style="margin:0 0 10px; font-size:24px; font-weight:600;">{{ ssotDocsTitle }}</h2>
-              <p style="margin:0 0 16px; font-size:16px; line-height:1.6; color:var(--muted); max-width:42em;">{{ ssotDocsText }}</p>
-              <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px; margin-bottom:16px;">
-                <sc-for list="{{ guideDocs }}" as="g" hint-placeholder-count="8">
-                  <button type="button" onClick="{{ g.open }}" style="text-align:left; border:0; cursor:pointer; background:var(--page); border-radius:12px; padding:14px 16px; box-shadow:{{ g.shadow }};">
-                    <div style="font-size:15px; color:var(--muted); margin-bottom:5px;">{{ g.group }}</div>
-                    <div style="font-size:17px; font-weight:600; line-height:1.35; margin-bottom:6px;">{{ g.title }}</div>
-                    <div style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); overflow-wrap:anywhere;">{{ g.src }}</div>
-                  </button>
-                </sc-for>
-              </div>
-              <div data-guide-doc-body data-guide-doc-id="{{ guideDocId }}" class="ssot-doc-body" style="background:var(--page); border-radius:12px; padding:20px 22px; box-shadow:inset 0 0 0 1px var(--border);"><div style="font-size:16px; color:var(--muted);">{{ loadingDocLabel }}</div></div>
-            </div>
           </div>
 
           <div style="flex:1 1 280px; min-width:0; display:flex; flex-direction:column; gap:14px;">
@@ -736,8 +881,8 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                 <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; overflow-wrap:anywhere;">ydnikolaev.github.io/a2ahub</span>
               </a>
               <div style="display:flex; flex-direction:column; gap:7px; margin-top:12px; font-size:15px;">
-                <a href="16-docs-v4.dc.html" style="text-decoration:none;">{{ documentationLabel }}</a>
-                <a href="15-changelog-v4.dc.html" style="text-decoration:none;">{{ changelogLabel }}</a>
+                <button type="button" onClick="{{ goDocs }}" style="text-align:left; padding:0; border:0; background:transparent; cursor:pointer; font-family:'Onest',sans-serif; font-size:15px; color:var(--teal-ink);">{{ documentationLabel }}</button>
+                <button type="button" onClick="{{ goVersions }}" style="text-align:left; padding:0; border:0; background:transparent; cursor:pointer; font-family:'Onest',sans-serif; font-size:15px; color:var(--teal-ink);">{{ changelogLabel }}</button>
                 <a href="17-security-reliability-v4.dc.html" style="text-decoration:none;">{{ verifyReleaseLabel }}</a>
                 <a href="https://github.com/ydnikolaev/a2ahub" style="text-decoration:none;">{{ githubRepoLabel }}</a>
               </div>
@@ -759,6 +904,12 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
   </main>
 
+  <!-- One modal, mounted once, reachable from every surface that names a
+       document: the detail pane, the queue rows and the map's own popovers. -->
+  <sc-if value="{{ hasOpenDoc }}" hint-placeholder-val="{{ false }}">
+    <dc-import name="DocumentModal" det="{{ openDocDetail }}" hint-size="100%,700px"></dc-import>
+  </sc-if>
+
   <footer style="background:var(--surface); padding:20px 0 30px;">
     <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0; display:flex; align-items:flex-start; gap:22px; flex-wrap:nowrap; font-size:15px; color:var(--muted);">
       <span style="flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:5px;">
@@ -767,9 +918,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
       </span>
       <span style="flex:0 0 auto; display:flex; gap:16px; flex-wrap:wrap; row-gap:8px; justify-content:flex-end;">
         <a href="https://ydnikolaev.github.io/a2ahub/" style="text-decoration:none; font-family:'IBM Plex Mono',monospace; font-size:14px;">ydnikolaev.github.io/a2ahub</a>
-        <a href="16-docs-v4.dc.html" style="text-decoration:none;">{{ documentationLabel }}</a>
-        <a href="13-public-home-v4.dc.html" style="text-decoration:none;">{{ publicHomeLabel }}</a>
-        <a href="12-design-system-v4.dc.html" style="text-decoration:none;">{{ designSystemLabel }}</a>
+        <!-- Documentation is the in-file Docs view, not a network round trip:
+             the whole corpus is already embedded in this HTML. -->
+        <button type="button" onClick="{{ goDocs }}" style="padding:0; border:0; background:transparent; cursor:pointer; font-family:'Onest',sans-serif; font-size:15px; color:var(--teal-ink);">{{ documentationLabel }}</button>
+        <a href="https://github.com/ydnikolaev/a2ahub" style="text-decoration:none;">GitHub</a>
       </span>
     </div>
   </footer>
@@ -779,7 +931,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 <script type="text/x-dc" data-dc-script>
 const DASHBOARD_I18N = {
   en: {
-    views:["Overview","Work","Threads","Contracts","Map","Spaces","Integrity","Versions","Guide"],
+    views:["Overview","Work","Threads","Contracts","Map","Spaces","Versions","Docs","Guide"],
     backOverview:"Back to Overview", viewsLabel:"Views", more:"More", localeGroup:"Interface language", space:"Space",
     errorTitle:"Could not read demo data", errorPrefix:"The dashboard is a read-only projection of", errorSuffix:". Missing facts are never inferred.",
     overviewQueue:"Waiting for your decision", overviewQueueNote:"ordered by consequence", openWork:"Open Work", snapshotReliability:"Snapshot reliability",
@@ -788,17 +940,25 @@ const DASHBOARD_I18N = {
     contracts:"Interfaces with history", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
     network:"Who depends on whom", networkSub:"A contract dependency runs from consumer to provider; an open exchange is work in flight. Select one space or keep all spaces visible to see the systems that connect them. Click any line or card for detail.", exchangeMap:"Exchange map",
     spaces:"Spaces", spacesSub:"The local binary, each space's writer floor, and its pinned CI workflow are independent compatibility axes.", freshness:"Freshness", participants:"Participants", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
-    integrity:"What this snapshot does not promise", integrityFlags:"Protocol and read flags", degradedReads:"Degraded reads", notEvaluatedTitle:"Not evaluated in this static read", notEvaluatedText:"Stated explicitly, never shown as green or zero.",
+    limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read — or deliberately did not evaluate — is named here, so an empty space never passes for a clean result.",
+    emptyLimitsTitle:"Nothing to qualify", emptyLimitsText:"Every connected space was readable when this snapshot was written, and no flag was raised. The numbers above are the whole picture.",
+    emptySpacesTitle:"No spaces connected", emptySpacesText:"A space is the shared repository two systems exchange documents through. Connect one and this table fills in.",
+    integrityFlags:"Protocol and read flags", integrityFlagsText:"Facts recorded by committed events, or problems reading the local cache index. A flag is evidence, not a verdict.",
+    degradedReads:"Degraded reads", degradedReadsText:"These spaces answered from an older mirror revision, or not at all. Their counts are floors, never totals.",
+    notEvaluatedTitle:"Not evaluated in this static read", notEvaluatedText:"Stated explicitly, never shown as green or zero.",
     versions:"Versions", localBinary:"Local binary", installed:"installed", latest:"latest", updateCandidate:"Update candidate", impact:"impact", publishedReleases:"Published releases in this snapshot", expandedNotes:"Expanded notes cover",
     guide:"How a2ahub works without human dispatch", guideSub:"Agents receive the skill, CLI, and typed MCP tools, create and validate documents, move them through Git, and continue from their inbox. A person joins only when a decision or permission is genuinely required.",
     lifecycleTitle:"Lifecycle is events, not an editable status", lifecycleText:"Every transition is validated before it is recorded. Both sides fold the same history into the same state.", lifecycleFoot:"Responses, blocks, disputes, cancellations, and supersessions remain separate immutable events with a validated actor.",
     artifactTypesTitle:"Eight document types", artifactTypesText:"One file carries one intent. The protocol code remains a quick visual anchor and a human name is always shown beside it.", readingGuide:"How to read the dashboard", readOnly:"read-only",
-    ssotDocs:"Documentation from one source", ssotDocsText:"These are the same Markdown documents installed for agents as a skill and published on the website. Choose a section; the complete original body is embedded in this HTML for offline use.", loadingDoc:"Loading the embedded SSOT document…",
+    docs:"Documentation", docsSub:"The same manual the agent reads: one Markdown corpus, installed as the skill, published on the website, and embedded whole in this file. No network needed.",
+    docSearch:"Search the docs", docSearchPlaceholder:"thread, contract, retire…", docNoMatch:"No section title, group or source path matches that search.",
+    docEmbedded:"embedded in this file", emptyDocsTitle:"No documentation embedded", emptyDocsText:"This snapshot was written without the doc corpus. Reinstall the skill and render the dashboard again.",
+    loadingDoc:"Loading the embedded document…",
     projectSite:"Project website", projectSiteText:"The public site contains the same documentation, changelog, and release-verification steps. The site needs a network connection; this file does not.", documentation:"Documentation", changelog:"Changelog", verifyRelease:"Verify a release", githubRepo:"GitHub repository", commandsBehind:"Commands behind these screens", commandsBehindText:"A person can run them for diagnosis. Routine coordination does not require manually translating between systems.", publicHome:"Public home", designSystem:"Design system v4",
     readingRows:[["Overview and Work","Human actions ordered by consequence and next owner. Priority, literal blocking, a pending approval, a deadline, and a stale snapshot remain five distinct signals."],["Threads","One intent per chain, in committed order where Git history exists and explicitly labelled declared order where it does not."],["Contracts and Map","Drift belongs to a consumer's pinned major line. A provider may be healthy while a consumer resolves nothing."],["Integrity and Versions","The limits of this snapshot and the independent compatibility axes that must not be inferred from one another."]]
   },
   ru: {
-    views:["Обзор","Работа","Цепочки","Контракты","Карта","Пространства","Целостность","Версии","Справка"],
+    views:["Обзор","Работа","Треды","Контракты","Карта","Спейсы","Версии","Доки","Справка"],
     backOverview:"Вернуться к обзору", viewsLabel:"Разделы", more:"Ещё", localeGroup:"Язык интерфейса", space:"Пространство",
     errorTitle:"Не удалось прочитать демонстрационные данные", errorPrefix:"Панель — проекция только для чтения из", errorSuffix:". Недостающие факты не додумываются.",
     overviewQueue:"Ждёт вашего решения", overviewQueueNote:"по серьёзности последствий", openWork:"Открыть работу", snapshotReliability:"Надёжность снимка",
@@ -807,12 +967,20 @@ const DASHBOARD_I18N = {
     contracts:"Интерфейсы с историей", codeBacked:"привязан к коду", consumerLines:"Зарегистрированные линии потребителей", versionWindow:"Окно действующих версий", provenance:"Происхождение и схема", codeBindingPrefix:"Привязка к коду хранит генератор и контрольную сумму источника. Совпадают ли текущие байты,", notEvaluated:"не проверяется", codeBindingSuffix:" в этом статическом снимке.",
     network:"Кто от кого зависит", networkSub:"Контрактная зависимость идёт от потребителя к поставщику; открытый обмен — незавершённая работа. Выберите одно пространство или оставьте все, чтобы увидеть связывающие их системы. Подробности открываются по нажатию на линию или карточку.", exchangeMap:"Карта обмена",
     spaces:"Пространства", spacesSub:"Локальный бинарник, минимальная версия записи для пространства и закреплённый процесс CI — независимые оси совместимости.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимальная версия записи", pinnedWorkflow:"Закреплённый процесс CI", revision:"Ревизия",
-    integrity:"Чего этот снимок не обещает", integrityFlags:"Флаги протокола и чтения", degradedReads:"Чтение с ограничениями", notEvaluatedTitle:"Не проверяется в этом статическом снимке", notEvaluatedText:"Неизвестное указано явно и не выдаётся за норму или нулевое значение.",
+    limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь — чтобы пустое место не выглядело как «всё в порядке».",
+    emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"На момент снимка все подключённые спейсы читались, флагов не было. Цифры выше — это вся картина.",
+    emptySpacesTitle:"Спейсы не подключены", emptySpacesText:"Спейс — это общий репозиторий, через который две системы обмениваются документами. Подключите спейс, и таблица заполнится.",
+    integrityFlags:"Флаги протокола и чтения", integrityFlagsText:"Что зафиксировано событиями и что пошло не так при чтении локального кэша. Флаг — это улика, а не приговор.",
+    degradedReads:"Прочитано с ограничениями", degradedReadsText:"Эти спейсы ответили из старой копии зеркала или не ответили вовсе. Их цифры — это минимум, а не итог.",
+    notEvaluatedTitle:"В этом снимке не проверялось", notEvaluatedText:"Неизвестное названо прямо и не выдаётся за ноль или за норму.",
     versions:"Версии", localBinary:"Локальный бинарник", installed:"установлена", latest:"последняя", updateCandidate:"Доступное обновление", impact:"влияние", publishedReleases:"Опубликованные выпуски в этом снимке", expandedNotes:"Развёрнутые примечания охватывают",
     guide:"Как a2ahub работает без ручной диспетчеризации", guideSub:"Агенты получают навык, CLI и типизированные инструменты MCP, сами создают и проверяют документы, проводят их через Git и продолжают работу из входящих. Человек подключается только там, где действительно требуется решение или право.",
     lifecycleTitle:"Жизненный цикл — это события, а не редактируемый статус", lifecycleText:"Каждый переход проверяется до записи. Обе стороны сворачивают одну историю в одно состояние.", lifecycleFoot:"Ответы, блокировки, споры, отмены и замены не теряются: это отдельные неизменяемые события с проверенным автором.",
     artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл — один смысл. Код протокола остаётся быстрым визуальным ориентиром, а рядом всегда есть человеческое название.", readingGuide:"Как читать панель", readOnly:"только чтение",
-    ssotDocs:"Документация из единого источника", ssotDocsText:"Это те же Markdown-документы, которые устанавливаются агенту как навык и публикуются на сайте. Выберите раздел: полное исходное тело встроено в этот HTML и доступно без сети.", loadingDoc:"Загружается встроенный документ из единого источника…",
+    docs:"Документация", docsSub:"То же руководство, которое читает агент: один корпус Markdown — он ставится как навык, публикуется на сайте и целиком вшит в этот файл. Сеть не нужна.",
+    docSearch:"Поиск по докам", docSearchPlaceholder:"тред, контракт, вывод версии…", docNoMatch:"Ни одно название раздела, группа или путь к файлу не совпали с запросом.",
+    docEmbedded:"вшито в этот файл", emptyDocsTitle:"Документация не вшита", emptyDocsText:"Этот снимок собран без корпуса документации. Переустановите навык и соберите дашборд заново.",
+    loadingDoc:"Загружается встроенный документ…",
     projectSite:"Сайт проекта", projectSiteText:"На публичном сайте доступны та же документация, журнал изменений и шаги проверки выпуска. Сайту нужна сеть; этому файлу — нет.", documentation:"Документация", changelog:"Журнал изменений", verifyRelease:"Проверить выпуск", githubRepo:"Репозиторий GitHub", commandsBehind:"Команды за этими экранами", commandsBehindText:"Человек может запустить их для диагностики. Обычная координация не требует ручного перевода между системами.", publicHome:"Главная сайта", designSystem:"Дизайн-система v4",
     readingRows:[["Обзор и работа","Действия человека упорядочены по последствиям и следующему ответственному. Приоритет, явная блокировка, ожидающее согласование, срок и устаревший снимок остаются пятью разными сигналами."],["Цепочки","Один замысел образует одну цепочку: по порядку коммитов, когда доступна история Git, либо по явно помеченному заявленному времени."],["Контракты и карта","Расхождение относится к закреплённой основной линии конкретного потребителя. Поставщик может быть исправен, пока у потребителя ничего не разрешается."],["Целостность и версии","Ограничения снимка и независимые оси совместимости, которые нельзя выводить друг из друга."]]
   }
@@ -866,7 +1034,11 @@ const GUIDE_RU = {
   "authoring-response":"Как писать Response", "authoring-announcement":"Как писать Announcement"
 };
 const GUIDE_GROUP_RU = { Start:"Начало", Concepts:"Концепции", Reference:"Справочник", Authoring:"Типы документов", Help:"Помощь" };
-const VIEW_IDS = ["overview","work","threads","contracts","network","spaces","integrity","versions","guide"];
+// Nav order. `integrity` is gone as a destination: an empty "what this snapshot
+// did not check" page reads as a broken screen, so its three panels now live at
+// the bottom of Spaces, next to the freshness they qualify. `docs` replaces it —
+// the embedded SSOT corpus deserves its own route rather than hiding inside Guide.
+const VIEW_IDS = ["overview","work","threads","contracts","network","spaces","versions","docs","guide"];
 const DRIFT_TONE = { current: "healthy", behind: "attention", deprecated: "attention", retired: "neutral", missing: "blockingStrong", dangling: "outline" };
 const STATE_TONE = { published: "healthy", retired: "neutral", deprecated: "attention", disputed: "attention", submitted: "neutral", in_progress: "neutral", accepted: "neutral", acknowledged: "neutral", proposed: "attention", closed: "healthy" };
 function mono(s) { return String(s || "?").slice(0, 2).toUpperCase(); }
@@ -914,7 +1086,7 @@ function normalizeDashboardData(input) {
 }
 
 class Component extends DCLogic {
-  state = { data: null, error: "", view: "overview", space: "all", ovSel: "", workTab: "incoming", workSel: "", threadSel: "", conSel: "", guideDoc: "overview", more: false, navW: 0, theme: "light", locale: "en" };
+  state = { data: null, error: "", view: "overview", space: "all", ovSel: "", workTab: "incoming", workSel: "", threadSel: "", conSel: "", doc: "overview", docQ: "", openDoc: null, more: false, navW: 0, theme: "light", locale: "en" };
 
   componentDidMount() {
     // the primary nav shows as many views as fit and folds the rest into More
@@ -926,6 +1098,10 @@ class Component extends DCLogic {
       if (w > 0 && Math.abs((this.state.navW || 0) - w) > 4) this.setState({ navW: w });
     };
     window.addEventListener("resize", this.measureNav);
+    // Escape closes the document modal. The map owns its own Escape for its own
+    // overlay; this one only fires while a document is open.
+    this.onEscape = (ev) => { if (ev.key === "Escape" && this.state.openDoc) this.setState({ openDoc: null }); };
+    window.addEventListener("keydown", this.onEscape);
     if (window.ResizeObserver) {
       this.navRO = new ResizeObserver(() => this.measureNav());
       setTimeout(() => { if (this.navNode && this.navNode.parentElement) this.navRO.observe(this.navNode.parentElement); }, 0);
@@ -937,7 +1113,7 @@ class Component extends DCLogic {
     let savedLocale = "en";
     try { if (window.localStorage.getItem("a2a-locale") === "ru") savedLocale = "ru"; } catch (e) {}
     this.applyLocale(savedLocale);
-    setTimeout(() => this.hydrateGuide(), 0);
+    setTimeout(() => this.hydrateDoc(), 0);
     if (window.A2A_DEMO) { this.setState({ data: normalizeDashboardData(window.A2A_DEMO) }); return; }
     fetch("demo-data.json").then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(d => {
       if (!d || !d.meta || d.meta.schema !== "a2a-design-demo/v3" || d.meta.synthetic !== true) {
@@ -976,10 +1152,10 @@ class Component extends DCLogic {
   componentDidUpdate() {
     // a fold changes the row layout, so re-measure in the same frame instead of waiting for the next resize tick
     if (this.measureNav) requestAnimationFrame(this.measureNav);
-    requestAnimationFrame(() => this.hydrateGuide());
+    requestAnimationFrame(() => this.hydrateDoc());
   }
 
-  guideCorpus() {
+  docCorpus() {
     if (Array.isArray(window.A2A_DOCS) && window.A2A_DOCS.length && !Array.isArray(window.A2A_DOCS[0])) {
       return window.A2A_DOCS.map(d => ({ id:d.id, group:d.group, title:d.title, src:d.source || "", html:d.html || "" }));
     }
@@ -992,16 +1168,135 @@ class Component extends DCLogic {
     return [];
   }
 
-  hydrateGuide() {
-    const node = document.querySelector("[data-guide-doc-body]");
+  // Flattens one artifact into the modal's shape: every frontmatter key the
+  // envelope actually carries (never a curated subset — the point of the modal
+  // is to show the file as it is), plus the verbatim body. Scalars render as
+  // text, lists as chips, nested objects as `key: value` lines. Everything goes
+  // through textContent downstream; nothing here may become markup.
+  openDocVals() {
+    const ru = this.state.locale === "ru";
+    const sel = this.state.openDoc;
+    const d = this.state.data;
+    if (!sel || !d) return null;
+    const a = d.artifactDetails.find(x => x.id === sel.id && (!sel.space || x.space === sel.space));
+    if (!a) return null;
+    const e = a.envelope || {};
+    const flat = (v) => {
+      if (v === null || v === undefined) return "";
+      if (Array.isArray(v)) return v.map(flat).join(" · ");
+      if (typeof v === "object") return Object.keys(v).map(k => k + ": " + flat(v[k])).join(" · ");
+      return String(v);
+    };
+    const keyStyle = "width:220px; padding:10px 16px 10px 0; vertical-align:top; color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere;";
+    const valStyle = "padding:10px 0; vertical-align:top; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere;";
+    const rows = Object.keys(e).sort().map(k => {
+      const raw = e[k];
+      const chips = Array.isArray(raw) && raw.every(x => typeof x !== "object");
+      return {
+        key: k, keyStyle, valStyle,
+        isChips: chips, chips: chips ? raw.map(String) : [],
+        isText: !chips, value: flat(raw),
+        textStyle: "font-size:15px; line-height:1.6; color:var(--body);"
+      };
+    });
+    const pills = [{ text: String(a.state || "").replace("_", " "), tone: STATE_TONE[a.state] || "neutral" }];
+    if (a.sync_stale) pills.push({ text: (ru ? "спейс устарел " : "space stale ") + a.sync_age, tone: "attention" });
+    return {
+      type: a.type, title: a.title, pills,
+      idLine: a.id + " · " + a.space + " · " + a.from + " → " + (a.to || []).join(", "),
+      frontmatter: rows,
+      hasBody: !!a.body, noBody: !a.body, body: a.body || "",
+      footer: (ru ? "источник: " : "source: ") + a.sourceClass + " · digest " + String(a.digest || "").slice(0, 12) + "…" + String(a.digest || "").slice(-6),
+      close: () => this.setState({ openDoc: null }),
+      dismiss: (ev) => { if (ev && ev.target === ev.currentTarget) this.setState({ openDoc: null }); }
+    };
+  }
+
+  // Docs view values: nav grouped exactly as the manifest groups them, a search
+  // that filters on title/group/source (the body text is not indexed client-side
+  // — the same limit the public rail carries), and the selected document.
+  docsVals(ru, c) {
+    const corpus = this.docCorpus().length ? this.docCorpus() : GUIDE_DOCS.map(([id, group, title, src]) => ({ id, group, title, src, html: "" }));
+    const q = String(this.state.docQ || "").trim().toLowerCase();
+    const label = (d) => ru ? (GUIDE_RU[d.id] || d.title) : d.title;
+    const groupLabel = (g) => ru ? (GUIDE_GROUP_RU[g] || g) : g;
+    const matches = (d) => !q || (label(d) + " " + d.title + " " + d.group + " " + d.src).toLowerCase().includes(q);
+    const shown = corpus.filter(matches);
+    const cur = corpus.find(d => d.id === this.state.doc) || corpus[0] || null;
+    const groups = [];
+    shown.forEach(d => {
+      let g = groups.find(x => x.raw === d.group);
+      if (!g) { g = { raw: d.group, name: groupLabel(d.group), items: [] }; groups.push(g); }
+      g.items.push({
+        label: label(d),
+        style: "font-family:'Onest',sans-serif; font-size:15px; line-height:1.4; text-align:left; border:0; cursor:pointer; padding:9px 10px; border-radius:8px; " +
+          (cur && cur.id === d.id ? "background:var(--teal-tint); color:var(--teal-ink); font-weight:600;" : "background:transparent; color:var(--body);"),
+        go: () => this.setState({ doc: d.id })
+      });
+    });
+    return {
+      docsTitle: c.docs, docsSub: c.docsSub,
+      hasDocs: corpus.length > 0, noDocs: corpus.length === 0,
+      emptyDocsTitle: c.emptyDocsTitle, emptyDocsText: c.emptyDocsText,
+      docSearchLabel: c.docSearch, docSearchPlaceholder: c.docSearchPlaceholder,
+      docQuery: this.state.docQ,
+      onDocQuery: (e) => this.setState({ docQ: e.target.value }),
+      docSearchNote: q
+        ? (ru ? "нашлось разделов: " + shown.length + " из " + corpus.length : shown.length + " of " + corpus.length + " sections match")
+        : (ru ? "разделов в корпусе: " + corpus.length : corpus.length + " sections in this corpus"),
+      docGroups: groups,
+      docNoMatches: shown.length === 0,
+      docNoMatchText: c.docNoMatch,
+      docId: cur ? cur.id : "",
+      docTitle: cur ? label(cur) : "",
+      docGroupLabel: cur ? groupLabel(cur.group) : "",
+      docSourceLabel: cur ? cur.src : "",
+      docEmbeddedNote: c.docEmbedded,
+      loadingDocLabel: c.loadingDoc
+    };
+  }
+
+  // Injects one SSOT document body and builds its "on this page" list from the
+  // headings it actually contains — the same contract the public docs route
+  // uses, so the two surfaces cannot drift into different tables of contents.
+  hydrateDoc() {
+    const node = document.querySelector("[data-doc-body]");
     if (!node) return;
-    const id = this.state.guideDoc || "overview";
-    const doc = this.guideCorpus().find(d => d.id === id);
+    const id = this.state.doc || "overview";
+    const doc = this.docCorpus().find(d => d.id === id);
     if (!doc || !doc.html || node.getAttribute("data-hydrated") === id) return;
     // A2A_DOCS is trusted project-owned Markdown rendered by Go/Astro. Artifact
     // data never enters this innerHTML path.
     node.innerHTML = doc.html;
     node.setAttribute("data-hydrated", id);
+    this.buildToc(node, id);
+  }
+
+  buildToc(body, id) {
+    const toc = document.querySelector("[data-doc-toc]");
+    if (!toc) return;
+    const ru = this.state.locale === "ru";
+    const slug = (text, i) => (String(text).toLowerCase().replace(/[^a-z0-9а-яё]+/g, "-").replace(/^-|-$/g, "") || "s") + "-" + i;
+    const heads = [...body.querySelectorAll("h2, h3")];
+    toc.textContent = "";
+    if (heads.length < 2) { toc.removeAttribute("style"); return; }
+    toc.setAttribute("style", "margin-bottom:20px; background:var(--page); border-radius:12px; padding:16px 18px; box-shadow:inset 0 0 0 1px var(--border);");
+    const head = document.createElement("div");
+    head.setAttribute("style", "font-size:15px; font-weight:600; margin-bottom:9px;");
+    head.textContent = ru ? "Содержание" : "On this page";
+    toc.appendChild(head);
+    const list = document.createElement("div");
+    list.setAttribute("style", "display:flex; flex-direction:column; gap:5px;");
+    heads.forEach((h, i) => {
+      h.id = h.id || (id + "-" + slug(h.textContent, i));
+      h.style.scrollMarginTop = "150px";
+      const a = document.createElement("a");
+      a.href = "#" + h.id;
+      a.textContent = h.textContent;
+      a.setAttribute("style", "font-size:15px; line-height:1.5; text-decoration:none; padding-left:" + (h.tagName === "H3" ? 14 : 0) + "px;");
+      list.appendChild(a);
+    });
+    toc.appendChild(list);
   }
 
   navLayout() {
@@ -1077,14 +1372,31 @@ class Component extends DCLogic {
   detailFor(id, fallbackList) {
     const ru = this.state.locale === "ru";
     const d = this.state.data;
-    const a = d.artifactDetails.find(x => x.id === id);
+    const it = (fallbackList || []).find(x => x.id === id);
+    // Artifact ids are unique per space, not globally: the same id can exist in
+    // two connected spaces, so the detail must be resolved against the row's own
+    // space or "all spaces" would show a neighbour's document.
+    const a = d.artifactDetails.find(x => x.id === id && (!it || x.space === it.space));
     if (!a) {
-      const it = (fallbackList || []).find(x => x.id === id);
+      // Two different nothings, and they must not read alike: a row exists but
+      // its full record was not written into this snapshot, versus there is no
+      // row to open at all.
+      if (it) {
+        return {
+          present: false,
+          missingTitle: ru ? "Полной записи по этому документу в снимке нет" : "This document has no full record in the snapshot",
+          missingText: ru
+            ? "Есть только сводка: тип " + it.type + ", состояние " + it.state + ", отправитель " + it.from + ". Конверт, события и ссылки не попали в снимок, и мы не восстанавливаем их догадками."
+            : "Only the summary is here: type " + it.type + ", state " + it.state + ", from " + it.from + ". The envelope, events and references were not written into this snapshot, and missing facts are never reconstructed.",
+          missingHint: it.id
+        };
+      }
       return {
         present: false,
-        missingText: it
-          ? (ru ? "В снимке есть сводка по " + it.id + " (тип " + it.type + ", состояние " + it.state + ", отправитель " + it.from + "), но нет полного конверта, событий или ссылок. Недостающие факты не восстанавливаются догадками." : "The snapshot includes a summary for " + it.id + " (type " + it.type + ", state " + it.state + ", sender " + it.from + ") but no full envelope, events, or references. Missing facts are not reconstructed.")
-          : (ru ? "Ничего не выбрано." : "Nothing selected.")
+        missingTitle: ru ? "Здесь пока пусто" : "Nothing to open here",
+        missingText: ru
+          ? "Выберите документ слева, чтобы прочитать его целиком: конверт, события, ссылки и тело."
+          : "Pick a document on the left to read the whole thing: envelope, events, references and body."
       };
     }
     const e = a.envelope || {};
@@ -1148,8 +1460,9 @@ class Component extends DCLogic {
         pillTone: r.resolved === false || r.digest_mismatch ? "blocking" : "healthy"
       })),
       events, flags: flagMessages,
-      threadLabel: a.thread ? (ru ? "Открыть цепочку" : "Open thread") : (ru ? "Цепочка не указана" : "No thread recorded"),
+      threadLabel: a.thread ? (ru ? "Открыть тред" : "Open thread") : (ru ? "Тред не указан" : "No thread recorded"),
       openThread: () => this.go("threads", { threadSel: a.thread || "" }),
+      openDocument: () => this.setState({ openDoc: { id: a.id, space: a.space } }),
       footer: a.id + " · digest " + String(a.digest || "").slice(0, 8) + "…" + String(a.digest || "").slice(-4)
     };
   }
@@ -1173,15 +1486,19 @@ class Component extends DCLogic {
       contractsTitle:c.contracts, codeBackedLabel:c.codeBacked, consumerLinesLabel:c.consumerLines, versionWindowLabel:c.versionWindow, provenanceLabel:c.provenance, codeBindingPrefix:c.codeBindingPrefix, notEvaluatedLabel:c.notEvaluated, codeBindingSuffix:c.codeBindingSuffix,
       networkTitle:c.network, networkSub:c.networkSub, networkMapHeading:c.exchangeMap,
       spacesTitle:c.spaces, spacesSub:c.spacesSub, freshnessLabel:c.freshness, participantsLabel:c.participants, writerFloorLabel:c.writerFloor, pinnedWorkflowLabel:c.pinnedWorkflow, revisionLabel:c.revision,
-      integrityTitle:c.integrity, integrityFlagsLabel:c.integrityFlags, degradedReadsLabel:c.degradedReads, notEvaluatedTitle:c.notEvaluatedTitle, notEvaluatedText:c.notEvaluatedText,
+      limitsTitle:c.limitsTitle, limitsSub:c.limitsSub, emptyLimitsTitle:c.emptyLimitsTitle, emptyLimitsText:c.emptyLimitsText,
+      emptySpacesTitle:c.emptySpacesTitle, emptySpacesText:c.emptySpacesText,
+      integrityFlagsLabel:c.integrityFlags, integrityFlagsText:c.integrityFlagsText,
+      degradedReadsLabel:c.degradedReads, degradedReadsText:c.degradedReadsText,
+      notEvaluatedTitle:c.notEvaluatedTitle, notEvaluatedText:c.notEvaluatedText,
       versionsTitle:c.versions, localBinaryLabel:c.localBinary, installedLabel:c.installed, latestLabel:c.latest, updateCandidateLabel:c.updateCandidate, impactLabel:c.impact, publishedReleasesLabel:c.publishedReleases, expandedNotesPrefix:c.expandedNotes,
       guideTitle:c.guide, guideSub:c.guideSub, lifecycleTitle:c.lifecycleTitle, lifecycleText:c.lifecycleText, lifecycleFoot:c.lifecycleFoot, artifactTypesTitle:c.artifactTypesTitle, artifactTypesText:c.artifactTypesText,
-      readingGuideTitle:c.readingGuide, readOnlyLabel:c.readOnly, ssotDocsTitle:c.ssotDocs, ssotDocsText:c.ssotDocsText, loadingDocLabel:c.loadingDoc, projectSiteLabel:c.projectSite, projectSiteText:c.projectSiteText,
+      readingGuideTitle:c.readingGuide, readOnlyLabel:c.readOnly, projectSiteLabel:c.projectSite, projectSiteText:c.projectSiteText,
       documentationLabel:c.documentation, changelogLabel:c.changelog, verifyReleaseLabel:c.verifyRelease, githubRepoLabel:c.githubRepo, commandsBehindLabel:c.commandsBehind, commandsBehindText:c.commandsBehindText, publicHomeLabel:c.publicHome, designSystemLabel:c.designSystem,
       guideReadingRows:c.readingRows.map((r,i) => ({ label:r[0], text:r[1], labelStyle:"padding:13px 20px 13px 0; width:210px; vertical-align:top; font-weight:600;" + (i < c.readingRows.length - 1 ? " border-bottom:1px solid var(--hairline);" : ""), textStyle:"padding:13px 0; line-height:1.6; color:var(--body);" + (i < c.readingRows.length - 1 ? " border-bottom:1px solid var(--hairline);" : "") })),
       isOverview: !!d && s.view === "overview", isWork: !!d && s.view === "work", isThreads: !!d && s.view === "threads",
       isContracts: !!d && s.view === "contracts", isNetwork: !!d && s.view === "network", isSpaces: !!d && s.view === "spaces",
-      isIntegrity: !!d && s.view === "integrity", isVersions: !!d && s.view === "versions", isGuide: !!d && s.view === "guide",
+      isVersions: !!d && s.view === "versions", isDocs: !!d && s.view === "docs", isGuide: !!d && s.view === "guide",
       navRef: (n) => { this.navNode = n; if (n && this.measureNav) setTimeout(this.measureNav, 0); },
       tabs: nav.vis.map(t => ({ label: t.label, current: s.view === t.id ? "page" : null, style: this.tabStyle(s.view === t.id), go: () => this.go(t.id, { more: false }) })),
       hasMoreTabs: nav.rest.length > 0,
@@ -1201,12 +1518,10 @@ class Component extends DCLogic {
       guideFeatures: (ru ? GUIDE_FEATURES_RU : GUIDE_FEATURES_EN).map(([tag, title, body]) => ({ tag, title, body })),
       lifecycleSteps: [["draft","submit"],["submitted","ack"],["acknowledged","accept"],["accepted","start"],["in_progress",""]].map(([label, action]) => ({ label, action, hasNext: !!action })),
       artifactTypes: (ru ? [["XC","Контракт"],["XR","Требование"],["XQ","Вопрос"],["XW","Запрос работы"],["XD","Решение"],["XH","Передача"],["XS","Ответ"],["XA","Объявление"]] : [["XC","Contract"],["XR","Requirement"],["XQ","Question"],["XW","Work request"],["XD","Decision"],["XH","Handoff"],["XS","Response"],["XA","Announcement"]]).map(([code,label]) => ({ code,label })),
-      guideDocs: (this.guideCorpus().length ? this.guideCorpus() : GUIDE_DOCS.map(([id, group, title, src]) => ({ id, group, title, src }))).map(g => ({
-        id:g.id, group:ru ? (GUIDE_GROUP_RU[g.group] || g.group) : g.group, title:g.title, src:g.src,
-        shadow:this.state.guideDoc === g.id ? "inset 0 0 0 2px var(--teal-solid)" : "inset 0 0 0 1px transparent",
-        open:() => this.setState({ guideDoc:g.id })
-      })),
-      guideDocId: this.state.guideDoc,
+      goDocs: () => this.go("docs"),
+      hasOpenDoc: !!this.openDocVals(),
+      openDocDetail: this.openDocVals() || {},
+      ...this.docsVals(ru, c),
       themeLight: this.state.theme !== "dark", themeDark: this.state.theme === "dark",
       themeLabel: this.state.theme === "dark" ? (ru ? "Светлая тема" : "Light theme") : (ru ? "Тёмная тема" : "Dark theme"),
       themePressed: this.state.theme === "dark" ? "true" : "false",
@@ -1221,8 +1536,14 @@ class Component extends DCLogic {
 
     const scopedInbox = d.inbox.filter(i => this.inScope(i.space));
     const scopedOutbox = d.outbox.filter(i => this.inScope(i.space));
+    // Human-attention scope is intentionally narrower than the agent/system's
+    // canonical `yourMove`: routine protocol moves continue automatically.
     const needsYou = scopedInbox.filter(i => i.blocking || i.gatePending || overdue(i));
-    const ovSel = s.ovSel || (needsYou[0] && needsYou[0].id) || (scopedInbox[0] && scopedInbox[0].id) || "";
+    // Overview's detail pane belongs to the queue on its left and to nothing
+    // else. Falling back to the first inbox item made "0 waiting on you" sit
+    // beside a fully rendered unrelated document — a screen that contradicts
+    // its own headline.
+    const ovSel = s.ovSel || (needsYou[0] && needsYou[0].id) || "";
     const restCount = scopedInbox.length - needsYou.length;
 
     const workList = s.workTab === "incoming" ? scopedInbox : scopedOutbox;
@@ -1313,7 +1634,7 @@ class Component extends DCLogic {
 
     return Object.assign(base, {
       overviewAria:c.views[0], workAria:c.views[1], threadsAria:c.views[2], contractsAria:c.views[3], networkAria:c.views[4],
-      spacesAria:c.views[5], integrityAria:c.views[6], versionsAria:c.views[7], guideAria:c.views[8],
+      spacesAria:c.views[5], versionsAria:c.views[6], docsAria:c.views[7], guideAria:c.views[8],
       selfMono: mono(d.self),
       selfLine: d.self + " · " + ((d.nodes.find(n => n.system === d.self) || {}).org || ""),
       snapshotLine: (ru ? "Снимок " : "Snapshot ") + when(d.generatedAt) + (ru ? " · создан из локального кэша" : " · built from the local cache"),
@@ -1341,7 +1662,18 @@ class Component extends DCLogic {
         pillTone: !x.readable ? "blocking" : (x.stale ? "attention" : "healthy"),
         meta: x.readable ? (ru ? "участников: " : "participants: ") + x.participantCount + (ru ? " · минимальная версия записи " : " · writer floor ") + x.minBinaryVersion : (ru ? "содержимое не додумывается" : "contents are not inferred")
       })),
-      ovDetail: this.detailFor(ovSel, scopedInbox),
+      hasOvRows: needsYou.length > 0, noOvRows: needsYou.length === 0,
+      emptyQueueTitle: ru ? "Ваше решение сейчас не нужно" : "No decision is waiting on you",
+      emptyQueueText: ru
+        ? "Здесь появляются только те документы, где нужен человек: блокировка, ожидающее согласование или просроченный срок. Остальное агенты доводят сами."
+        : "Only work that genuinely needs a person lands here: a block, a pending approval, a missed deadline. Everything else the agents carry on their own.",
+      ovDetail: ovSel ? this.detailFor(ovSel, scopedInbox) : {
+        present: false,
+        missingTitle: ru ? "Разбирать нечего" : "Nothing to review",
+        missingText: ru
+          ? "Как только что-то потребует вашего решения, документ откроется здесь целиком — с конвертом, событиями и ссылками."
+          : "The moment something needs your decision, the whole document opens here — envelope, events and references included."
+      },
 
       workSub: ru ? "Входящие адресованы " + d.self + "; исходящие — то, чего вы ждёте от других. Входящих: " + scopedInbox.length + ", исходящих: " + scopedOutbox.length + "." : "Incoming items address " + d.self + "; outgoing items are what you await from others. Incoming: " + scopedInbox.length + ", outgoing: " + scopedOutbox.length + ".",
       workTabs: [["incoming", (ru ? "Входящие · " : "Incoming · ") + scopedInbox.length], ["outgoing", (ru ? "Исходящие · " : "Outgoing · ") + scopedOutbox.length]].map(([id, label]) => ({
@@ -1350,13 +1682,27 @@ class Component extends DCLogic {
         go: () => this.setState({ workTab: id, workSel: "" })
       })),
       workRows: workList.map(it => this.rowFor(it, "workSel", workSel)),
+      noWorkRows: workList.length === 0,
+      emptyWorkTitle: s.workTab === "incoming"
+        ? (ru ? "Входящих нет" : "Nothing incoming")
+        : (ru ? "Исходящих нет" : "Nothing outgoing"),
+      emptyWorkText: s.workTab === "incoming"
+        ? (ru ? "Никто из подключённых систем сейчас ничего вам не адресовал. Как только документ придёт, он окажется здесь." : "No connected system currently has anything addressed to you. The moment a document arrives it lands here.")
+        : (ru ? "Вы ничего не ждёте от других систем: все ваши документы дошли до конечного состояния." : "You are not waiting on any other system — every document you sent has reached a terminal state."),
       workDetail: this.detailFor(workSel, workList),
 
       threadsSub: ru ? "Запрос, подтверждение получения, ответ, доказательства, проверка и решение остаются связаны. Порядок коммитов — сильное доказательство; заявленное время всегда помечается как слабый запасной источник." : "Request, acknowledgement, response, evidence, verification, and decision remain linked. Commit order is strong evidence; declared timestamps are always labelled as a weak fallback.",
+      noThreadRows: threads.length === 0,
+      emptyThreadsTitle: ru ? "Тредов пока нет" : "No threads yet",
+      emptyThreadsText: ru
+        ? "Тред появляется сам, когда первый документ отправлен: вопрос, запрос работы или объявление. Дальше ответы, доказательства и решение остаются в нём же."
+        : "A thread appears by itself the moment a first document is sent — a question, a work request, an announcement. Answers, evidence and the decision then stay attached to it.",
       threadRows: threads.map(t => ({
         title: t.opener ? t.opener.title : t.id,
-        pillText: t.yourMove ? (ru ? "ваш ход" : "your move") : (ru ? "ждём других" : "waiting on others"),
-        pillTone: t.yourMove ? "attention" : "neutral",
+        // Three states, not two: your move, someone else's move, or nobody's —
+        // a thread whose every item reached a terminal state is settled.
+        pillText: t.settled ? (ru ? "всё закрыто" : "settled") : (t.yourMove ? (ru ? "ваш ход" : "your move") : (ru ? "ход за другими" : "waiting on others")),
+        pillTone: t.settled ? "healthy" : (t.yourMove ? "attention" : "neutral"),
         participants: (t.participants || []).join(", "),
         age: (ru ? "последнее движение " : "last activity ") + t.lastActivity,
         meta: t.id + (ru ? " · документов: " : " · documents: ") + t.memberCount + " · " + t.space,
@@ -1364,6 +1710,11 @@ class Component extends DCLogic {
         select: () => this.setState({ threadSel: t.id })
       })),
       tvPresent: !!tv, tvMissing: !tv,
+      tvSettled: !!(tv && tv.settled), tvPending: !!(tv && !tv.settled),
+      settledLabel: ru ? "Ход ни за кем" : "Nobody owes a move",
+      settledText: ru
+        ? "Все документы этого треда дошли до конечного состояния. Запись остаётся целиком ниже — тред читается, но действий не ждёт."
+        : "Every document in this thread reached a terminal state. The full record stays below; the thread is readable but is not waiting on anyone.",
       tvTitle: tv ? (tv.opener ? tv.opener.title : tv.thread) : "",
       tvOrderPill: tv ? (tv.order === "committed" ? (ru ? "порядок коммитов · сильное доказательство" : "commit order · strong evidence") : (ru ? "заявленное время · слабый источник" : "declared timestamps · weak fallback")) : "",
       tvStale: !!(tv && tv.sync_stale), tvStaleText: tv && tv.sync_stale ? (ru ? "пространство устарело" : "space stale") : "",
@@ -1421,9 +1772,12 @@ class Component extends DCLogic {
             (i === rows.length - 1 ? " margin-left:2px;" : " border-left:2px solid var(--border);")
         }));
       })() : [],
-      tvOpen: tv ? (tv.open_items || []).map(o => ({
+      // Only items someone still owes a move on. The assembler marks the rest
+      // `pending:false` — those have nothing left but the owner's escape hatch,
+      // and listing them printed "waiting on" with no name after it.
+      tvOpen: tv ? (tv.open_items || []).filter(o => o.pending !== false).map(o => ({
         id: o.id, type: o.type,
-        who: o.your_move ? (ru ? "ваш ход" : "your move") : (ru ? "ждём " : "waiting on ") + (o.waiting_on || []).join(", "),
+        who: o.your_move ? (ru ? "ваш ход" : "your move") : (ru ? "ход за: " : "waiting on ") + (o.waiting_on || []).join(", "),
         whoTone: o.your_move ? "attention" : "neutral",
         needed: o.needed_by ? (ru ? "нужно к " : "needed by ") + o.needed_by : (o.blocking ? (ru ? "блокирует" : "blocking") : ""),
         actions: (o.next_actions || []).map(a => ({
@@ -1447,6 +1801,15 @@ class Component extends DCLogic {
           pills, style: this.cardButton(conSel === c.id), select: () => this.setState({ conSel: c.id })
         };
       }),
+      hasConRows: contracts.length > 0, noConRows: contracts.length === 0,
+      emptyContractsTitle: ru ? "Контрактов пока нет" : "No contracts yet",
+      emptyContractsText: ru
+        ? "Контракт — это интерфейс с историей версий: поставщик его публикует, а потребители закрепляют ту основную версию, которой пользуются. Пока в этих спейсах не опубликован ни один."
+        : "A contract is an interface with a version history: a provider publishes it, and consumers pin the major line they use. Nothing has been published in these spaces yet.",
+      emptyContractDetailTitle: ru ? "Разбирать нечего" : "Nothing to inspect",
+      emptyContractDetailText: ru
+        ? "Здесь появятся закреплённые линии потребителей, окно действующих версий и происхождение схемы — как только контракт будет опубликован."
+        : "Registered consumer lines, the live version window and the schema provenance appear here as soon as a contract is published.",
       cdId: con ? con.id : "",
       cdState: con ? con.state : "",
       cdStateTone: con ? (STATE_TONE[con.state] || "neutral") : "neutral",
@@ -1485,6 +1848,7 @@ class Component extends DCLogic {
       space: s.space,
       setSpace: (id) => this.setState({ space: id, ovSel: "", workSel: "", threadSel: "", conSel: "" }),
       openItem: (id, space, outgoing) => this.go("work", { workSel: id, workTab: outgoing ? "outgoing" : "incoming", space: this.state.space === "all" ? "all" : space }),
+      openDocument: (id, space) => this.setState({ openDoc: { id, space } }),
       openContract: (contractId, space) => this.go("contracts", { conSel: contractId, space: this.state.space === "all" ? "all" : space }),
       netSpaces,
       netUnreadable: d.spaces.filter(x => !x.readable && this.inScope(x.id)).map(x => ({
@@ -1507,7 +1871,6 @@ class Component extends DCLogic {
         };
       }),
 
-      intSub: ru ? "Флагов протокола и чтения: " + flags.length + ". Флаги свёртки — факты зафиксированных событий; флаги индекса кэша — проблемы чтения. Ничто не скрывается и не выдаётся за итоговый вывод." : "Protocol and read flags: " + flags.length + ". Fold flags are facts from committed events; cache-index flags are read problems. Nothing is hidden or presented as a final verdict.",
       intFlags: flags.map(f => ({ code: f.code, origin: f.source + " · " + f.system + (f.space ? " · " + f.space : ""), message: f.message })),
       intDegraded: d.spaces.filter(x => this.inScope(x.id) && (x.stale || !x.readable)).map(x => ({
         id: x.id,
@@ -1516,6 +1879,15 @@ class Component extends DCLogic {
         note: !x.readable ? (ru ? "манифест не удалось прочитать" : "manifest could not be read") : (ru ? "данные читаются из старой ревизии зеркала" : "reading from an older mirror revision")
       })),
       intUnavailable: d.unavailable.map(u => ({ title: u.title, reason: u.reason })),
+      // Each panel appears only with content, and the whole block collapses to
+      // one reassuring empty state when there is nothing to qualify at all.
+      hasIntFlags: flags.length > 0,
+      hasIntDegraded: d.spaces.some(x => this.inScope(x.id) && (x.stale || !x.readable)),
+      hasIntUnavailable: d.unavailable.length > 0,
+      hasLimits: flags.length > 0 || d.unavailable.length > 0 || d.spaces.some(x => this.inScope(x.id) && (x.stale || !x.readable)),
+      noLimits: !(flags.length > 0 || d.unavailable.length > 0 || d.spaces.some(x => this.inScope(x.id) && (x.stale || !x.readable))),
+      hasSpaces: d.spaces.filter(x => this.inScope(x.id)).length > 0,
+      noSpaces: d.spaces.filter(x => this.inScope(x.id)).length === 0,
 
       verSub: ru ? "Три независимые оси: локальный бинарник, минимальная версия записи каждого пространства и закреплённая версия процесса CI. Одна не выводится из другой." : "Three independent axes: the local binary, each space's writer floor, and the pinned workflow version. None can be inferred from another.",
       verCurrent: tooling.current, verLatest: tooling.latest,
@@ -1526,16 +1898,68 @@ class Component extends DCLogic {
         { label:ru ? "обновление" : "update", value:tooling.required ? (ru ? "обязательно" : "required") : (ru ? "необязательно" : "optional") },
         { label:ru ? "выпуск" : "release", value:tooling.releaseURL ? "v" + tooling.latest + " on GitHub" : (ru ? "не записан" : "not recorded") }
       ],
+      // "Update available" is a fact from the version cache, not a guess from
+      // comparing strings — when it is false the whole candidate card is gone.
+      hasUpdate: !!tooling.updateAvailable && (upd.changes || []).length > 0,
+      verBehind: !!tooling.updateAvailable,
+      verUpToDate: !tooling.updateAvailable && !!tooling.latest,
+      upToDateLabel: ru ? "последняя версия" : "up to date",
+      readNotesLabel: ru ? "Что внутри" : "Read the notes",
+      goLatestNotes: () => {
+        const node = document.getElementById("release-" + String(tooling.latest || "").replace(/\./g, "-"));
+        if (node) node.scrollIntoView({ behavior: "smooth", block: "start" });
+      },
       verUpdateStatus: upd.status || (ru ? "не проверено" : "not evaluated"),
       verHeadline: upd.headline || "",
       verChanges: (upd.changes || []).map(c => ({
         kind: c.kind, impact: c.impact, subject: c.subject,
         tone: c.kind === "fix" ? "healthy" : (c.kind === "feature" ? "agent" : "neutral")
       })),
-      verScope: d.meta.releaseNotesScope,
-      verReleases: d.releaseNotes.map(r => ({
-        version:r.version, date:r.released || (ru ? "дата не записана" : "date not recorded"),
-        count:(ru ? "изменений: " : "changes: ") + (r.changes || []).length, headline:r.headline
+
+      releaseNotesLabel: ru ? "Что менялось" : "Release notes",
+      releaseNotesNote: d.meta.releaseNotesScope || (ru
+        ? "все выпуски, вшитые в этот бинарник — тот же источник, что и на сайте"
+        : "every release embedded in this binary — the same source the website publishes"),
+      noReleases: d.releaseNotes.length === 0,
+      emptyReleasesTitle: ru ? "Примечаний к выпускам нет" : "No release notes",
+      emptyReleasesText: ru
+        ? "В этот бинарник не вшито ни одного файла примечаний. Обычно это значит сборку из исходников вне процесса выпуска."
+        : "This binary carries no embedded release-notes file, which usually means a source build outside the release process.",
+      // The full authored corpus, verbatim: kind, impact, the detail paragraph
+      // and the action block (why it matters, what to run). Release claims are
+      // never translated — only the labels around them are.
+      verReleases: d.releaseNotes.slice().sort((a, b) => {
+        // Newest first, by semver segments — never by array order, which is the
+        // embed's file order and has already been ascending and descending.
+        const seg = (v) => String(v || "").split(".").map(n => parseInt(n, 10) || 0);
+        const x = seg(b.version), y = seg(a.version);
+        return (x[0] - y[0]) || (x[1] - y[1]) || (x[2] - y[2]);
+      }).map(r => ({
+        version: r.version,
+        anchor: "release-" + String(r.version || "").replace(/\./g, "-"),
+        date: r.released || (ru ? "дата не записана" : "date not recorded"),
+        count: (ru ? "изменений: " : "changes: ") + (r.changes || []).length,
+        headline: r.headline,
+        isCurrent: r.version === tooling.current,
+        currentLabel: ru ? "стоит у вас" : "your version",
+        changes: (r.changes || []).map(c => {
+          const scope = (c.action && c.action.scope) || "none";
+          const run = (c.action && c.action.run) || [];
+          const acts = scope !== "none";
+          return {
+            kind: c.kind, impact: c.impact, subject: c.subject, detail: c.detail,
+            affects: (c.affects || []).join(" · "),
+            tone: c.kind === "fix" ? "healthy" : (c.kind === "feature" ? "agent" : "neutral"),
+            actionLabel: acts
+              ? (ru ? "нужно действие · " : "action · ") + scope
+              : (ru ? "действий не нужно" : "no action needed"),
+            actionTone: acts ? "attention" : "outline",
+            why: (c.action && c.action.why) || "",
+            hasCommands: run.length > 0,
+            commands: run,
+            actionStyle: "border-top:1px solid var(--border); padding-top:12px;"
+          };
+        })
       }))
     });
   }

@@ -335,6 +335,8 @@ func toThreadView(result cache.ThreadResult) ThreadView {
 		Participants: append([]string(nil), result.Participants...), SyncStale: result.SyncStale,
 		Artifacts: []ThreadViewArtifact{}, Transcript: []ThreadTranscriptRow{}, OpenItems: []ThreadOpenItem{},
 		Flags: []ThreadViewFlag{}, Unresolved: []ThreadUnresolvedRef{},
+		// Settled until an open item proves someone still owes a move.
+		Settled: true,
 	}
 	for _, artifact := range result.Artifacts {
 		refs := make([]map[string]any, 0, len(artifact.Refs))
@@ -365,7 +367,17 @@ func toThreadView(result cache.ThreadResult) ThreadView {
 		for _, action := range item.NextActions {
 			actions = append(actions, ThreadNextAction{Transition: action.Transition, By: append([]string(nil), action.By...)})
 		}
-		view.OpenItems = append(view.OpenItems, ThreadOpenItem{ID: item.ID, Type: item.Type, State: item.State, Blocking: item.Blocking, NeededBy: item.NeededBy, NextActions: actions, WaitingOn: append([]string(nil), item.WaitingOn...), YourMove: item.YourMove})
+		// waiting: [] not null — the page reads this list directly, and a JSON
+		// null would render as "waiting on " with nothing after it.
+		waiting := append([]string{}, item.WaitingOn...)
+		view.OpenItems = append(view.OpenItems, ThreadOpenItem{
+			ID: item.ID, Type: item.Type, State: item.State, Blocking: item.Blocking,
+			NeededBy: item.NeededBy, NextActions: actions, WaitingOn: waiting,
+			YourMove: item.YourMove, Pending: len(waiting) > 0,
+		})
+		if len(waiting) > 0 {
+			view.Settled = false
+		}
 	}
 	for _, flag := range result.Flags {
 		view.Flags = append(view.Flags, ThreadViewFlag{Kind: flag.Kind, Subject: flag.Subject, EventULID: flag.EventULID})
@@ -416,9 +428,18 @@ func toThread(result cache.ThreadResult, self string) (Thread, time.Time) {
 		}
 	}
 
-	yourMove := false
-	openCount := len(result.OpenItems)
+	// A thread carries no "closed" state of its own: closure is derived. An
+	// open item whose WaitingOn is empty has only the owner's escape hatches
+	// left (cache strips cancel/withdraw/supersede out of WaitingOn), so it
+	// owes nobody anything — counting it as pending is what made a finished
+	// exchange read "waiting on others" forever.
+	yourMove, settled, openCount := false, true, 0
 	for _, oi := range result.OpenItems {
+		if len(oi.WaitingOn) == 0 {
+			continue
+		}
+		openCount++
+		settled = false
 		if containsString(oi.WaitingOn, self) {
 			yourMove = true
 		}
@@ -432,7 +453,7 @@ func toThread(result cache.ThreadResult, self string) (Thread, time.Time) {
 		ID: result.Thread, Space: result.Space, Participants: result.Participants,
 		MemberCount: len(result.Artifacts), OpenCount: openCount,
 		Opener:   ThreadOpener{ID: result.Opener.ID, Title: result.Opener.Title},
-		YourMove: yourMove, Members: members, Links: links,
+		YourMove: yourMove, Settled: settled, Members: members, Links: links,
 	}, last
 }
 

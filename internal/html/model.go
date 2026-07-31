@@ -189,6 +189,14 @@ type Thread struct {
 	YourMove     bool           `json:"yourMove"` // true when an open member is waiting on Data.Self
 	Members      []ThreadMember `json:"members"`
 	Links        []DocLink      `json:"links"`
+
+	// Settled reports that no member of this thread still owes anyone a move.
+	// The protocol has no thread-level "closed" state — closure is DERIVED:
+	// members reach their own terminal states (close/cancel/withdraw/verify),
+	// and a thread whose every remaining open item is escape-hatch-only is
+	// finished in every sense a reader cares about. Without this the list
+	// showed "waiting on others" on threads nobody was waiting on.
+	Settled bool `json:"settled"`
 }
 
 // ThreadOpener is a thread's computed opener — the brief's own {id,title}
@@ -329,6 +337,11 @@ type ThreadView struct {
 	OpenItems    []ThreadOpenItem      `json:"open_items"`
 	Flags        []ThreadViewFlag      `json:"flags"`
 	Unresolved   []ThreadUnresolvedRef `json:"unresolved"`
+
+	// Settled mirrors Thread.Settled for the detail pane, so the "whose move"
+	// panel can be replaced with a finished state instead of rendering an
+	// empty prompt over zero open items.
+	Settled bool `json:"settled"`
 }
 
 // ThreadViewOpener identifies the artifact that began a thread.
@@ -388,6 +401,16 @@ type ThreadOpenItem struct {
 	NextActions []ThreadNextAction `json:"next_actions"`
 	WaitingOn   []string           `json:"waiting_on"`
 	YourMove    bool               `json:"your_move"`
+
+	// Pending separates "someone still owes a move" from "the item is merely
+	// not in a terminal state". cache already answers this: it drops the
+	// owner's escape hatches (cancel/withdraw/supersede) out of WaitingOn,
+	// so an item whose only remaining affordance is an escape hatch arrives
+	// with an EMPTY WaitingOn. Without this flag the renderer printed
+	// "waiting on <nobody>" for exactly that case (a fully acknowledged
+	// announcement is the common one). Derived here, never re-derived in the
+	// browser, per the "compute nothing protocol-shaped client-side" rule.
+	Pending bool `json:"pending"`
 }
 
 // ThreadNextAction identifies an available transition and its allowed actors.

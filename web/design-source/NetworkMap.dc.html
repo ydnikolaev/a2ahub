@@ -7,7 +7,7 @@
 </head>
 <body>
 <x-dc>
-<div style="{{ shellStyle }}">
+<div style="{{ shellStyle }}" onClick="{{ onShellClick }}">
 <div style="{{ cardStyle }}">
 
   <div ref="{{ sentinelRef }}" style="height:1px;"></div>
@@ -50,22 +50,33 @@
 
   <p style="margin:12px 0 14px; font-size:15px; line-height:1.6; color:var(--body); max-width:92ch;">{{ intro }}</p>
 
-  <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px 22px; padding:12px 14px; background:var(--page); border-radius:12px; margin-bottom:14px; font-size:14px; color:var(--body);">
-    <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px; min-width:0;">
-      <span style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em;">{{ contractLabel }}</span>
-      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px solid var(--teal-solid);"></span>{{ currentLabel }}</span>
-      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px solid var(--ochre);"></span>{{ driftingLabel }}</span>
-      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px solid var(--red);"></span>{{ missingLabel }}</span>
-    </span>
-    <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px; min-width:0;">
-      <span style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em;">{{ workLabel }}</span>
-      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px dashed var(--border-strong);"></span>{{ flightLabel }}</span>
-      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px dashed var(--red);"></span>{{ blockingLabel }}</span>
-    </span>
-    <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px; min-width:0;">
-      <span style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em;">{{ directionLabel }}</span>
-      <span style="display:flex; align-items:center; gap:6px;"><span style="width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:8px solid var(--muted);"></span>{{ directionText }}</span>
-    </span>
+  <!-- Legend. The group label sits on its own line ABOVE its swatches rather
+       than inline before them: RU labels are two to three times longer than the
+       EN ones, and an inline label pushed the swatches into a ragged wrap. Each
+       group is now a self-contained column that reflows as a whole. -->
+  <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px 26px; padding:14px 16px; background:var(--page); border-radius:12px; margin-bottom:14px; font-size:14px; color:var(--body);">
+    <div style="min-width:0;">
+      <div style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em; margin-bottom:7px;">{{ contractLabel }}</div>
+      <div style="display:flex; align-items:center; gap:8px 16px; flex-wrap:wrap;">
+        <span style="display:flex; align-items:center; gap:7px; white-space:nowrap;"><span style="flex:0 0 22px; width:22px; height:0; border-top:2px solid var(--teal-solid);"></span>{{ currentLabel }}</span>
+        <span style="display:flex; align-items:center; gap:7px; white-space:nowrap;"><span style="flex:0 0 22px; width:22px; height:0; border-top:2px solid var(--ochre);"></span>{{ driftingLabel }}</span>
+        <span style="display:flex; align-items:center; gap:7px; white-space:nowrap;"><span style="flex:0 0 22px; width:22px; height:0; border-top:2px solid var(--red);"></span>{{ missingLabel }}</span>
+      </div>
+    </div>
+    <div style="min-width:0;">
+      <div style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em; margin-bottom:7px;">{{ workLabel }}</div>
+      <div style="display:flex; align-items:center; gap:8px 16px; flex-wrap:wrap;">
+        <span style="display:flex; align-items:center; gap:7px; white-space:nowrap;"><span style="flex:0 0 22px; width:22px; height:0; border-top:2px dashed var(--border-strong);"></span>{{ flightLabel }}</span>
+        <span style="display:flex; align-items:center; gap:7px; white-space:nowrap;"><span style="flex:0 0 22px; width:22px; height:0; border-top:2px dashed var(--red);"></span>{{ blockingLabel }}</span>
+      </div>
+    </div>
+    <div style="min-width:0;">
+      <div style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em; margin-bottom:7px;">{{ directionLabel }}</div>
+      <div style="display:flex; align-items:flex-start; gap:7px;">
+        <span style="flex:0 0 auto; margin-top:6px; width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:8px solid var(--muted);"></span>
+        <span style="min-width:0; line-height:1.45;">{{ directionText }}</span>
+      </div>
+    </div>
   </div>
 
   <div style="{{ bleedStyle }}">
@@ -279,7 +290,14 @@ class Component extends DCLogic {
       if (stuck !== this.state.stuck) this.setState({ stuck });
     };
     window.addEventListener("scroll", this.onScrollWin, true);
-    this.onKey = (ev) => { if (ev.key === "Escape" && this.state.sel) this.setState({ sel: null }); };
+    // Escape unwinds one layer at a time — first the pinned detail, then the
+    // full-width overlay. Before this, Escape did nothing at all once the map
+    // was expanded, and the only way out was finding the toggle again.
+    this.onKey = (ev) => {
+      if (ev.key !== "Escape") return;
+      if (this.state.sel) { this.setState({ sel: null }); return; }
+      if (this.state.expanded) this.setState({ expanded: false });
+    };
     window.addEventListener("keydown", this.onKey);
     setTimeout(this.measure, 0);
     if (this.props.data) return;
@@ -434,6 +452,11 @@ class Component extends DCLogic {
       detail: it.id + " · " + it.type + " · " + it.state + " · " + it.from + " → " + (it.to || []).join(", ") + " · " + it.age + (ru ? " назад" : " old") + (it.neededBy ? (ru ? " · нужно к " : " · needed by ") + it.neededBy : ""),
       canOpen: !!open, openLabel: ru ? "Открыть в разделе «Работа» →" : "Open in Work →",
       open: open ? () => open(it.id, it.space, outgoing) : () => {},
+      // Second affordance on the same row: the map names a document, so it
+      // should also be able to show it, without a detour through Work.
+      canOpenDoc: !!this.props.onOpenDocument,
+      docLabel: ru ? "Документ целиком" : "View document",
+      openDoc: this.props.onOpenDocument ? (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.props.onOpenDocument(it.id, it.space); } : () => {},
       style: detailRowStyle(!!open)
     };
   }
@@ -458,7 +481,23 @@ class Component extends DCLogic {
       return {
         title: e.from + " → " + e.to,
         kindLabel: ru ? "контрактная зависимость" : "contract dependency",
-        lead: ru ? e.from + " использует " + e.contract + " от " + e.to + " в пространстве " + spaceId + "; зарегистрирована основная версия " + e.pinnedMajor + ". " + driftLine(e, true) + (e.description ? " " + e.description : "") : e.from + " consumes " + e.contract + " from " + e.to + " in " + spaceId + ", registered on major " + e.pinnedMajor + ". " + driftLine(e, false) + (e.description ? " " + e.description : ""),
+        lead: (ru ? driftLine(e, true) : driftLine(e, false)) + (e.description ? " " + e.description : ""),
+        hasFacts: true,
+        facts: [
+          { label: ru ? "потребитель" : "consumer", value: e.from, mono: true },
+          { label: ru ? "поставщик" : "provider", value: e.to, mono: true },
+          { label: ru ? "спейс" : "space", value: spaceId, mono: true },
+          { label: ru ? "контракт" : "contract", value: e.contract, mono: true },
+          { label: ru ? "закреплённая линия" : "pinned line", value: "v" + e.pinnedMajor + (e.pinnedVersion ? " · " + e.pinnedVersion : "") + (e.pinnedState ? " · " + e.pinnedState : ""), mono: true },
+          { label: ru ? "у поставщика" : "provider has", value: e.providerVersion || (ru ? "не разрешается" : "nothing resolves"), mono: true },
+          { label: ru ? "состояние линии" : "line state", value: e.drift }
+        ].concat(e.sunset ? [{ label: ru ? "вывод из обращения" : "sunset", value: e.sunset }] : [])
+          .concat(e.successor ? [{ label: ru ? "преемник" : "successor", value: e.successor, mono: true }] : [])
+          .concat(c ? [
+            { label: ru ? "формат схемы" : "schema format", value: c.schemaFormat, mono: true },
+            { label: ru ? "совместимость" : "compatibility", value: c.compatPolicy },
+            { label: ru ? "зарегистрировано потребителей" : "registered consumers", value: String((c.consumers || []).length) }
+          ] : []),
         hasNote: !!c,
         note: c ? (ru ? "Поставщик " + c.provider + " · опубликовано " + c.version + " · " + c.category + " · " + c.schemaFormat + " · зарегистрировано потребителей: " + c.consumers.length + " · политика совместимости: " + c.compatPolicy + (c.codeBacked ? ". Дескриптор привязан к коду генератором " + c.generatedTool + "; соответствие текущих байтов в этом статическом снимке не проверяется." : ".") : "Provider " + c.provider + " · published " + c.version + " · " + c.category + " · " + c.schemaFormat + " · " + c.consumers.length + " registered consumers · compat policy: " + c.compatPolicy + (c.codeBacked ? ". Descriptor is code-backed by " + c.generatedTool + "; whether the current bytes still match is not evaluated in this static read." : ".")) : "",
         hasRows: !!(c && c.versions && c.versions.length),
@@ -476,7 +515,18 @@ class Component extends DCLogic {
     return {
       title: e.from + " → " + e.to,
       kindLabel: ru ? "открытый обмен" : "open exchange",
-      lead: ru ? this.count(e.count, "open item", "open items", ["открытый элемент", "открытых элемента", "открытых элементов"]) + (e.count === 1 ? " создан" : (e.count >= 2 && e.count <= 4 ? " созданы" : " создано")) + " системой " + e.from + " для " + e.to + " в пространстве " + spaceId + ". Наивысший приоритет автора — " + e.maxPriority + (e.blocking ? "; как минимум один элемент явно блокирует работу" : "; блокирующих отметок нет") + (e.maxStale ? ". Самый старый элемент не менялся " + e.maxStale + "." : ".") + " Открытый обмен означает незавершённую работу, а не структурную зависимость." : plural(e.count, "open item", "open items") + " authored by " + e.from + " for " + e.to + " in " + spaceId + ". Strongest author priority " + e.maxPriority + (e.blocking ? ", and at least one is literally blocking" : ", nothing marked blocking") + (e.maxStale ? ". Oldest " + e.maxStale + " without movement." : ".") + " Open exchanges are work in flight, not a structural dependency.",
+      lead: ru
+        ? "Незавершённая работа, а не структурная зависимость: документы уже отправлены и ещё не дошли до конечного состояния."
+        : "Work in flight, not a structural dependency: documents already sent that have not yet reached a terminal state.",
+      hasFacts: true,
+      facts: [
+        { label: ru ? "автор" : "author", value: e.from, mono: true },
+        { label: ru ? "получатель" : "recipient", value: e.to, mono: true },
+        { label: ru ? "спейс" : "space", value: spaceId, mono: true },
+        { label: ru ? "открытых документов" : "open documents", value: String(e.count) },
+        { label: ru ? "наивысший приоритет" : "strongest priority", value: e.maxPriority || "—" },
+        { label: ru ? "явная блокировка" : "marked blocking", value: e.blocking ? (ru ? "да, минимум один" : "yes, at least one") : (ru ? "нет" : "no") }
+      ].concat(e.maxStale ? [{ label: ru ? "без движения дольше всех" : "longest without movement", value: e.maxStale }] : []),
       hasNote: false, note: "",
       hasRows: items.length > 0,
       rowsLabel: ru ? "Открытая работа на этой линии" : "Open items on this lane",
@@ -499,13 +549,23 @@ class Component extends DCLogic {
     return {
       title: node.system + (node.self ? (ru ? " · вы" : " · you") : ""),
       kindLabel: node.self ? (ru ? "ваша система" : "your system") : (ru ? "система" : "system"),
-      lead: ru ? "Организация: " + (node.org || "неизвестно") + " · статус: " + (node.status || "неизвестно") + " · владельцы: " + ((node.owners || []).join(", ") || "не указаны") + ". В пространстве " + spaceId + ": " +
-        this.count(lines.length, "contract line", "contract lines", ["контрактная линия", "контрактные линии", "контрактных линий"]) + ", предоставляет " + ruPlural(provides.length, "контракт", "контракта", "контрактов") + ", создала открытых элементов: " + openFrom + ", адресовано ей: " + openTo + "." +
-        (node.status === "left" ? " Система покинула пространство, поэтому всё закреплённое за ней остаётся без поставщика." : "") +
-        (others.length ? " Также участвует в " + others.join(" и ") + "; общее участие — единственная связь между этими пространствами." : " Участвует только в этом пространстве.") : "org " + (node.org || "unknown") + " · " + (node.status || "unknown") + " · owners " + ((node.owners || []).join(", ") || "not declared") + ". In " + spaceId + ": " +
-        plural(lines.length, "contract line", "contract lines") + ", " + plural(provides.length, "contract it provides", "contracts it provides") + ", " + openFrom + " open items authored by it and " + openTo + " addressed to it." +
-        (node.status === "left" ? " It has left the space, so anything pinned to it dangles." : "") +
-        (others.length ? " Also participates in " + others.join(" and ") + " — shared membership is the only thing linking those spaces." : " Participates in this space only."),
+      lead: node.status === "left"
+        ? (ru ? "Система покинула спейс, поэтому всё, что было на неё закреплено, остаётся без поставщика." : "This system has left the space, so anything pinned to it now dangles.")
+        : (others.length
+          ? (ru ? "Общее участие — единственное, что связывает эти спейсы между собой." : "Shared membership is the only thing linking those spaces to each other.")
+          : (ru ? "Участвует только в этом спейсе." : "Participates in this space only.")),
+      hasFacts: true,
+      facts: [
+        { label: ru ? "организация" : "org", value: node.org || (ru ? "неизвестна" : "unknown"), mono: true },
+        { label: ru ? "статус" : "status", value: node.status || (ru ? "неизвестен" : "unknown") },
+        { label: ru ? "владельцы" : "owners", value: (node.owners || []).join(", ") || (ru ? "не указаны" : "not declared"), mono: !!(node.owners || []).length },
+        { label: ru ? "спейс" : "space", value: spaceId, mono: true },
+        { label: ru ? "контрактных линий здесь" : "contract lines here", value: String(lines.length) },
+        { label: ru ? "предоставляет контрактов" : "contracts it provides", value: String(provides.length) },
+        { label: ru ? "открытых документов от неё" : "open documents it authored", value: String(openFrom) },
+        { label: ru ? "открытых документов ей" : "open documents addressed to it", value: String(openTo) },
+        { label: ru ? "другие общие спейсы" : "other shared spaces", value: others.join(", ") || "—", mono: !!others.length }
+      ],
       hasNote: provides.length > 0,
       note: provides.length ? (ru ? "Предоставляет " + provides.map(c => c.id + "@" + c.version + " (" + c.state + ", потребителей: " + c.consumers.length + ")").join(" · ") + "." : "Provides " + provides.map(c => c.id + "@" + c.version + " (" + c.state + ", " + plural(c.consumers.length, "consumer", "consumers") + ")").join(" · ") + ".") : "",
       hasRows: lines.length > 0,
@@ -849,6 +909,12 @@ class Component extends DCLogic {
       expandStyle: "font-family:'Onest',sans-serif; font-size:14px; line-height:1.4; font-weight:600; border:0; cursor:pointer; padding:7px 13px; border-radius:9px; white-space:nowrap; " +
         (expanded ? "background:var(--inverse); color:var(--on-dark);" : "background:var(--canvas); color:var(--teal-ink);"),
       toggleExpand: () => this.setState({ expanded: !expanded }),
+      // Backdrop click closes the overlay. The card is a child of this shell, so
+      // only a hit on the shell element ITSELF counts as "outside the card".
+      onShellClick: (ev) => {
+        if (!this.state.expanded) return;
+        if (ev && ev.target === ev.currentTarget) this.setState({ expanded: false, sel: null });
+      },
       showTabs: this.props.showSpaceTabs !== false,
       // on the public site the table + matrix sit behind a disclosure; the dashboard shows them outright
       collapsible: this.props.collapseExtras === true,

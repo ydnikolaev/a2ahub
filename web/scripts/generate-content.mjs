@@ -87,7 +87,28 @@ publicDemo.releaseNotes = releases.slice(0, 3).map((release, index) => ({
 }));
 publicDemo.meta.releaseNotesScope = `v${publicDemo.releaseNotes.map((release) => release.version).join(', v')} expanded; the complete published version index is projected below`;
 
+// The shared Design Components (PascalCase files in design-source/, as opposed
+// to the numbered pages) are the registry BOTH surfaces load. Deriving it from
+// the directory — and copying the files into public/design/ as a build output —
+// means a new component is added in exactly one place: design-source/. The
+// copies used to be committed by hand, which is a silent fork waiting to happen.
+const designComponents = readdirSync(join(webRoot, 'design-source'))
+  .filter((name) => /^[A-Z][A-Za-z0-9]*\.dc\.html$/.test(name))
+  .sort();
+mkdirSync(join(publicRoot, 'design'), { recursive: true });
+for (const name of designComponents) {
+  // Served verbatim to the browser, so the copy must already be production-shaped:
+  // the prototype's pre-custom-domain origin is rewritten here exactly as
+  // design-source.ts rewrites the pages, and check-dist.mjs enforces it.
+  const source = read(join(webRoot, 'design-source', name))
+    .replaceAll('https://ydnikolaev.github.io/a2ahub/', `${canonical}/`)
+    .replaceAll('https://ydnikolaev.github.io/a2ahub', canonical)
+    .replaceAll('ydnikolaev.github.io/a2ahub', 'a2ahub.dev');
+  writeFileSync(join(publicRoot, 'design', name), source);
+}
+
 const designProjection = {
+  components: designComponents,
   releaseIndex: releases.map(({ version, released, headline }) => [version, released, headline]),
   latestRelease: releases[0] ?? { version: 'unavailable', released: 'date unavailable' },
   docs: manifest.groups.map((group) => [group, manifest.sections.filter((entry) => entry.group === group).map((entry) => [
@@ -109,7 +130,6 @@ const reliabilityMD = `# Reliability\n\nReliability is a chain of bounded eviden
 const installMD = `# Install a2a\n\nThe installer resolves the current GitHub Releases \`latest\` channel and verifies the downloaded binary.\n\n\`\`\`sh\n${site.product.install}\n\`\`\`\n\nThen run:\n\n\`\`\`sh\na2a version\na2a init --system <system-id> --space <space-repo-url>\na2a connect <space-repo-url>\na2a doctor\n\`\`\`\n\nFor an agent-led setup, [download the Sporo seed](${canonical}/setup/a2a.md).\n`;
 const roadmapMD = `# Roadmap\n\n## Shipped\n\n${site.roadmap.shipped.map((item) => `- ${item}`).join('\n')}\n\n## Proposal — ${site.roadmap.proposal.title}\n\n${site.roadmap.proposal.body}\n\n${site.roadmap.proposal.labels.map((label) => `- ${label}`).join('\n')}\n\n## Exploring\n\n${site.roadmap.exploring.map((item) => `- ${item}`).join('\n')}\n`;
 const dashboardMD = `# Dashboard example\n\nSynthetic demo data — no live services. This public page is a read-only projection of the same canonical fixture used by \`a2a html --demo\`.\n\n[Open the interactive dashboard](${canonical}/dashboard.html).\n`;
-const designSystemMD = `# a2ahub design system v4\n\nThe approved token, typography, component, state and responsive-layout reference used by the public site and the local read-only dashboard.\n\n[Open the visual design system](${canonical}/design-system.html).\n`;
 const notFoundMD = `# Not found\n\nThe requested route does not exist. Continue with the [product overview](${canonical}/), [documentation](${canonical}/docs.html), or the [dashboard demo](${canonical}/dashboard.html).\n`;
 
 const markdownPages = {
@@ -120,7 +140,6 @@ const markdownPages = {
   'install.md': installMD,
   'roadmap.md': roadmapMD,
   'dashboard.md': dashboardMD,
-  'design-system.md': designSystemMD,
   '404.md': notFoundMD
 };
 for (const [name, body] of Object.entries(markdownPages)) writeFileSync(join(publicRoot, name), body);
@@ -143,7 +162,9 @@ const routeIndex = [
 writeFileSync(join(publicRoot, 'llms.txt'), `# a2ahub\n\n${site.product.tagline}. Agents operate the protocol; humans establish authority and inspect exceptions.\n\n${routeIndex.map(([title, href, summary]) => `- [${title}](${canonical}${href}): ${summary}`).join('\n')}\n`);
 writeFileSync(join(publicRoot, 'llms-full.txt'), `# a2ahub — complete agent documentation\n\n${homeMD}\n\n${docs.map((doc) => `# ${doc.title}\n\n${doc.source}`).join('\n\n')}\n\n${changelogMD}\n\n${securitySource}\n\n${roadmapMD}`);
 
-const htmlRoutes = ['', 'docs.html', ...docs.map((doc) => `docs/${doc.id}.html`), 'dashboard.html', 'dashboard-example.html', 'design-system.html', 'changelog.html', 'security.html', 'reliability.html', 'install.html', 'roadmap.html'];
+// The design system is an internal reference, not a public route: it is built
+// from design-source/ and read locally, never published or indexed.
+const htmlRoutes = ['', 'docs.html', ...docs.map((doc) => `docs/${doc.id}.html`), 'dashboard.html', 'dashboard-example.html', 'changelog.html', 'security.html', 'reliability.html', 'install.html', 'roadmap.html'];
 const mdRoutes = Object.keys(markdownPages).concat(docs.map((doc) => `docs/${doc.id}.md`), ['llms.txt', 'llms-full.txt', 'setup/a2a.md']);
 const sitemap = [...htmlRoutes, ...mdRoutes].map((route) => `  <url><loc>${canonical}/${route}</loc></url>`).join('\n');
 writeFileSync(join(publicRoot, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${sitemap}\n</urlset>\n`);

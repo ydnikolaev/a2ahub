@@ -3,8 +3,20 @@ import { resolve } from 'node:path';
 
 const sourceRoot = resolve(process.cwd(), 'design-source');
 
+// Exact-literal substitutions against the approved design source. A stale
+// needle makes String.replace a silent no-op — the site builds green and the
+// page behaves wrong — so every behavioural rewrite goes through `must`, which
+// fails the build instead. Pure URL normalisation stays on plain replaceAll:
+// it is idempotent and carries no behaviour.
+function must(source: string, from: string, to: string) {
+  if (!source.includes(from)) throw new Error(`design source: needle no longer present:\n${from}`);
+  return source.replaceAll(from, to);
+}
+function mustAll(source: string, pairs: [string, string][]) {
+  return pairs.reduce((acc, [from, to]) => must(acc, from, to), source);
+}
+
 const routes: Record<string, string> = {
-  '12-design-system-v4.dc.html': '/design-system.html',
   '13-public-home-v4.dc.html': '/',
   '14-local-dashboard-v4.dc.html': '/dashboard.html',
   '15-changelog-v4.dc.html': '/changelog.html',
@@ -32,10 +44,11 @@ function preserveDynamicTables(source: string) {
 
 function copyButton(source: string, key: string) {
   const command = 'curl -fsSL https://raw.githubusercontent.com/ydnikolaev/a2ahub/main/scripts/install.sh | sh';
-  return source
-    .replace(`onClick="{{ ${key}.copy }}"`, `data-copy-value="${command}"`)
-    .replace(`style="{{ ${key}.style }}"`, `style="margin-left:auto;font-family:'Onest',sans-serif;font-size:14px;font-weight:600;border:0;border-radius:8px;padding:5px 11px;cursor:pointer;white-space:nowrap;background:var(--inverse-3);color:var(--teal-on-dark);"`)
-    .replace(`{{ ${key}.label }}`, 'Copy');
+  return mustAll(source, [
+    [`onClick="{{ ${key}.copy }}"`, `data-copy-value="${command}"`],
+    [`style="{{ ${key}.style }}"`, `style="margin-left:auto;font-family:'Onest',sans-serif;font-size:14px;font-weight:600;border:0;border-radius:8px;padding:5px 11px;cursor:pointer;white-space:nowrap;background:var(--inverse-3);color:var(--teal-on-dark);"`],
+    [`{{ ${key}.label }}`, 'Copy']
+  ]);
 }
 
 export function publicHomeDesign() {
@@ -75,33 +88,35 @@ export function runtimeDesignPage(file: string) {
     .replace(/<dc-import name="SiteFooter"[\s\S]*?<\/dc-import>/, '');
   template = preserveDynamicTables(productionLinks(template));
   let logic = productionLinks(source.slice(scriptBody, scriptClose));
-  if (file === '15-changelog-v4.dc.html') logic = logic.replace('const INDEX = [', 'const INDEX = window.A2A_RELEASE_INDEX || [');
+  if (file === '15-changelog-v4.dc.html') logic = must(logic, 'const INDEX = [', 'const INDEX = window.A2A_RELEASE_INDEX || [');
   if (file === '16-docs-v4.dc.html') {
-    template = template
-      .replace('<button type="button" onClick="{{ it.go }}" style="{{ it.style }}">{{ it.label }}</button>', '<a href="{{ it.href }}" style="{{ it.style }}">{{ it.label }}</a>')
-      .replace('<sc-if value="{{ isPlaceholder }}" hint-placeholder-val="{{ false }}">', '<sc-if value="{{ hasDocBody }}" hint-placeholder-val="{{ true }}">')
-      .replace('<sc-if value="{{ isThreads }}" hint-placeholder-val="{{ true }}">', '<sc-if value="{{ renderCustomDocs }}" hint-placeholder-val="{{ false }}">')
-      .replace('<sc-if value="{{ isCommands }}" hint-placeholder-val="{{ false }}">', '<sc-if value="{{ renderCustomDocs }}" hint-placeholder-val="{{ false }}">')
-      .replace('<div style="background:var(--page); border-radius:14px; padding:20px 22px; box-shadow:inset 0 0 0 1px var(--border);">', '<div data-doc-placeholder data-doc-id="{{ docId }}" style="background:var(--page); border-radius:14px; padding:20px 22px; box-shadow:inset 0 0 0 1px var(--border);">')
-      .replace('<div style="font-size:15px; font-weight:600; margin-bottom:10px;">On this page</div>', '<div data-doc-toc><div style="font-size:15px; font-weight:600; margin-bottom:10px;">On this page</div>');
-    template = template.replace(
-      '<sc-if value="{{ noToc }}" hint-placeholder-val="{{ false }}">\n            <div style="font-size:15px; line-height:1.55; color:var(--muted);">Headings come from the injected document, so this list is built at the same time as the body.</div>\n          </sc-if>\n        </div>',
-      '<sc-if value="{{ noToc }}" hint-placeholder-val="{{ false }}">\n            <div style="font-size:15px; line-height:1.55; color:var(--muted);">Headings come from the injected document, so this list is built at the same time as the body.</div>\n          </sc-if>\n          </div>\n        </div>'
-    );
-    logic = logic
-      .replace('const DOCS = [', 'const DOCS = window.A2A_DOCS || [')
-      .replace('state = { doc: "threads", q: "", copied: "" };', 'state = { doc: ((location.pathname.match(/\\/docs\\/([^/.]+)/) || [])[1] || "threads"), q: "", copied: "" };')
-      .replace('label, style: this.itemStyle(this.state.doc === id),', 'label, href: "/docs/" + id + ".html", style: this.itemStyle(this.state.doc === id) + " text-decoration:none;",')
-      .replace('docTitle: cur.title,', 'docId: cur.id,\n      docTitle: cur.title,')
-      .replace('isThreads, isCommands, isPlaceholder,', 'isThreads, isCommands, isPlaceholder, hasDocBody: true, renderCustomDocs: false,')
-      .replace(
+    template = mustAll(template, [
+      ['<button type="button" onClick="{{ it.go }}" style="{{ it.style }}">{{ it.label }}</button>', '<a href="{{ it.href }}" style="{{ it.style }}">{{ it.label }}</a>'],
+      ['<sc-if value="{{ isPlaceholder }}" hint-placeholder-val="{{ false }}">', '<sc-if value="{{ hasDocBody }}" hint-placeholder-val="{{ true }}">'],
+      ['<sc-if value="{{ isThreads }}" hint-placeholder-val="{{ true }}">', '<sc-if value="{{ renderCustomDocs }}" hint-placeholder-val="{{ false }}">'],
+      ['<sc-if value="{{ isCommands }}" hint-placeholder-val="{{ false }}">', '<sc-if value="{{ renderCustomDocs }}" hint-placeholder-val="{{ false }}">'],
+      ['<div style="background:var(--page); border-radius:14px; padding:20px 22px; box-shadow:inset 0 0 0 1px var(--border);">', '<div data-doc-placeholder data-doc-id="{{ docId }}" style="background:var(--page); border-radius:14px; padding:20px 22px; box-shadow:inset 0 0 0 1px var(--border);">'],
+      ['<div style="font-size:15px; font-weight:600; margin-bottom:10px;">On this page</div>', '<div data-doc-toc><div style="font-size:15px; font-weight:600; margin-bottom:10px;">On this page</div>'],
+      [
+        '<sc-if value="{{ noToc }}" hint-placeholder-val="{{ false }}">\n            <div style="font-size:15px; line-height:1.55; color:var(--muted);">Headings come from the injected document, so this list is built at the same time as the body.</div>\n          </sc-if>\n        </div>',
+        '<sc-if value="{{ noToc }}" hint-placeholder-val="{{ false }}">\n            <div style="font-size:15px; line-height:1.55; color:var(--muted);">Headings come from the injected document, so this list is built at the same time as the body.</div>\n          </sc-if>\n          </div>\n        </div>'
+      ]
+    ]);
+    logic = mustAll(logic, [
+      ['const DOCS = [', 'const DOCS = window.A2A_DOCS || ['],
+      ['state = { doc: "threads", q: "", copied: "" };', 'state = { doc: ((location.pathname.match(/\\/docs\\/([^/.]+)/) || [])[1] || "threads"), q: "", copied: "" };'],
+      ['label, style: this.itemStyle(this.state.doc === id),', 'label, href: "/docs/" + id + ".html", style: this.itemStyle(this.state.doc === id) + " text-decoration:none;",'],
+      ['docTitle: cur.title,', 'docId: cur.id,\n      docTitle: cur.title,'],
+      ['isThreads, isCommands, isPlaceholder,', 'isThreads, isCommands, isPlaceholder, hasDocBody: true, renderCustomDocs: false,'],
+      [
         'docGenerated: isCommands ? "regenerated with every release · last: v0.16.3, 2026-07-30" : "projected at build time from v0.16.3",',
         'docGenerated: isCommands ? "regenerated with every release · last: v" + window.A2A_LATEST_RELEASE.version + ", " + window.A2A_LATEST_RELEASE.released : "projected at build time from v" + window.A2A_LATEST_RELEASE.version,'
-      )
-      .replace(
+      ],
+      [
         'docLead: LEAD[cur.id] || "This route is one document in the canonical corpus embedded in the binary. The prototype shows its shell, its actions and its metadata without inventing its text.",',
         'docLead: LEAD[cur.id] || "This route is one document in the canonical corpus embedded in the binary. Its body, search text and Markdown twin are projected from that same source.",'
-      );
+      ]
+    ]);
   }
   logic = logic.replaceAll('/a2ahub/', '/');
   return { template, logic };

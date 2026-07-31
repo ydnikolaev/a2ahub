@@ -7,10 +7,9 @@
 </head>
 <body>
 <x-dc>
-<div style="min-width:0; background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5); font-family:'Onest',sans-serif;">
+<div style="{{ shellStyle }}">
   <sc-if value="{{ missing }}" hint-placeholder-val="{{ false }}">
-    <h3 style="margin:0 0 8px; font-size:22px; font-weight:600;">{{ missingTitle }}</h3>
-    <p style="margin:0; font-size:16px; line-height:1.6; color:var(--body);">{{ missingText }}</p>
+    <dc-import name="EmptyState" title="{{ missingTitle }}" text="{{ missingText }}" hint="{{ missingHint }}" hint-size="100%,300px"></dc-import>
   </sc-if>
   <sc-if value="{{ present }}" hint-placeholder-val="{{ true }}">
     <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:16px;">
@@ -103,9 +102,12 @@
       </div>
     </sc-if>
 
-    <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; align-items:center;">
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:10px;">
       <button type="button" onClick="{{ openThread }}" style="flex:0 0 auto; font-family:'Onest',sans-serif; font-size:17px; font-weight:600; color:var(--on-dark); background:var(--inverse); border:0; border-radius:10px; padding:13px 22px; cursor:pointer;">{{ threadLabel }}</button>
-      <span style="flex:1 1 auto; min-width:0; text-align:right; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:15px; color:var(--muted); overflow-wrap:anywhere;">{{ footer }}</span>
+      <sc-if value="{{ canOpenDocument }}" hint-placeholder-val="{{ true }}">
+        <button type="button" onClick="{{ openDocument }}" style="flex:0 0 auto; font-family:'Onest',sans-serif; font-size:17px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border:0; border-radius:10px; padding:13px 20px; cursor:pointer;">{{ documentLabel }}</button>
+      </sc-if>
+      <span style="flex:1 1 auto; min-width:140px; text-align:right; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:15px; color:var(--muted); overflow-wrap:anywhere;">{{ footer }}</span>
     </div>
   </sc-if>
 </div>
@@ -120,8 +122,14 @@ class Component extends DCLogic {
     return {
       present: !!d.present,
       missing: d.present === false,
-      missingTitle: ru ? "Для этого артефакта нет подробной записи в снимке" : "This artifact has no detail record in the snapshot",
+      // With nothing to show, the card drops its own chrome and hands the whole
+      // box to the shared empty state — no hollow panel, no borrowed record.
+      shellStyle: d.present === false
+        ? "min-width:0; font-family:'Onest',sans-serif;"
+        : "min-width:0; background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5); font-family:'Onest',sans-serif;",
+      missingTitle: d.missingTitle || (ru ? "Ничего не выбрано" : "Nothing selected"),
       missingText: d.missingText || "",
+      missingHint: d.missingHint || "",
       factsLabel: ru ? "Факты" : "Facts",
       refsLabel: ru ? "Закреплённые ссылки" : "Pinned references",
       eventsLabel: ru ? "Что произошло" : "What happened",
@@ -159,6 +167,9 @@ class Component extends DCLogic {
       flags: d.flags || [],
       threadLabel: d.threadLabel || (ru ? "Открыть тред" : "Open thread"),
       openThread: d.openThread || (() => {}),
+      canOpenDocument: !!d.openDocument,
+      documentLabel: ru ? "Документ целиком" : "View document",
+      openDocument: d.openDocument || (() => {}),
       footer: d.footer || ""
     };
   }
