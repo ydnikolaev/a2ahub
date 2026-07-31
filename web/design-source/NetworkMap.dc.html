@@ -246,12 +246,12 @@ function ruPlural(n, one, few, many) {
 function typeWord(t) { return String(t || "").replace(/_/g, " "); }
 function driftLine(e, ru) {
   if (ru) {
-    if (e.drift === "current") return "Закреплённая основная версия " + e.pinnedMajor + " совпадает с опубликованной линией поставщика " + e.providerVersion + ".";
-    if (e.drift === "behind") return "Потребитель читает основную версию " + e.pinnedMajor + " (" + e.pinnedVersion + "), а поставщик публикует " + e.providerVersion + ".";
+    if (e.drift === "current") return "Закреплена версия " + e.pinnedMajor + " — это и есть текущая линия поставщика " + e.providerVersion + ".";
+    if (e.drift === "behind") return "Потребитель сидит на версии " + e.pinnedMajor + " (" + e.pinnedVersion + "), а поставщик уже выпустил " + e.providerVersion + ".";
     if (e.drift === "deprecated") return "Закреплённая версия " + e.pinnedVersion + " выводится" + (e.sunset ? "; дата вывода " + e.sunset : "") + (e.successor ? ". Преемник — " + e.successor + "." : ".");
     if (e.drift === "retired") return "Закреплённая версия " + e.pinnedVersion + " выведена" + (e.successor ? "; преемник — " + e.successor : "") + ", а поставщик публикует " + e.providerVersion + ".";
-    if (e.drift === "missing") return "Для зарегистрированной основной версии " + e.pinnedMajor + " нет опубликованной истории. Поставщик публикует основные версии " + (e.availableMajors || []).join(" и ") + ".";
-    if (e.drift === "dangling") return "Поставщик отсутствует в пространстве, поэтому " + e.contract + " ни во что не разрешается.";
+    if (e.drift === "missing") return "Для закреплённой версии " + e.pinnedMajor + " поставщик ничего не публиковал. У него есть только " + (e.availableMajors || []).join(" и ") + ".";
+    if (e.drift === "dangling") return "Поставщика в спейсе больше нет, поэтому " + e.contract + " не разрешается ни во что.";
     return "";
   }
   if (e.drift === "current") return "The pinned major " + e.pinnedMajor + " matches the provider's published line " + e.providerVersion + ".";
@@ -435,7 +435,7 @@ class Component extends DCLogic {
     return {
       head: e.from + " → " + e.to + " · " + driftShort(e, ru),
       pillText: driftShort(e, ru), pillTone: DRIFT_TONE[e.drift] || "neutral",
-      detail: e.contract + (ru ? " · закреплена основная версия " : " · pinned major ") + e.pinnedMajor + (e.pinnedVersion ? " (" + e.pinnedVersion + ")" : "") + " · " + spaceId,
+      detail: e.contract + (ru ? " · закреплена версия " : " · pinned major ") + e.pinnedMajor + (e.pinnedVersion ? " (" + e.pinnedVersion + ")" : "") + " · " + spaceId,
       canOpen: !!open, openLabel: (ru ? "Открыть " : "Open ") + e.contract + " →",
       open: open ? () => open(e.contract, spaceId) : () => {},
       style: detailRowStyle(!!open)
@@ -499,7 +499,7 @@ class Component extends DCLogic {
             { label: ru ? "зарегистрировано потребителей" : "registered consumers", value: String((c.consumers || []).length) }
           ] : []),
         hasNote: !!c,
-        note: c ? (ru ? "Поставщик " + c.provider + " · опубликовано " + c.version + " · " + c.category + " · " + c.schemaFormat + " · зарегистрировано потребителей: " + c.consumers.length + " · политика совместимости: " + c.compatPolicy + (c.codeBacked ? ". Дескриптор привязан к коду генератором " + c.generatedTool + "; соответствие текущих байтов в этом статическом снимке не проверяется." : ".") : "Provider " + c.provider + " · published " + c.version + " · " + c.category + " · " + c.schemaFormat + " · " + c.consumers.length + " registered consumers · compat policy: " + c.compatPolicy + (c.codeBacked ? ". Descriptor is code-backed by " + c.generatedTool + "; whether the current bytes still match is not evaluated in this static read." : ".")) : "",
+        note: c ? (ru ? "Поставщик " + c.provider + " · опубликовано " + c.version + " · " + c.category + " · " + c.schemaFormat + " · потребителей: " + c.consumers.length + " · совместимость: " + c.compatPolicy + (c.codeBacked ? ". Дескриптор собран из кода генератором " + c.generatedTool + "; совпадает ли он с кодом прямо сейчас — этот файл не знает." : ".") : "Provider " + c.provider + " · published " + c.version + " · " + c.category + " · " + c.schemaFormat + " · " + c.consumers.length + " registered consumers · compat policy: " + c.compatPolicy + (c.codeBacked ? ". Descriptor is code-backed by " + c.generatedTool + "; whether the current bytes still match is not evaluated in this static read." : ".")) : "",
         hasRows: !!(c && c.versions && c.versions.length),
         rowsLabel: ru ? "Скользящее окно версий" : "Rolling version window",
         rows: c && c.versions ? c.versions.slice().reverse().map(v => this.versionRow(c, v)) : [],
@@ -806,7 +806,7 @@ class Component extends DCLogic {
         meta: n.org + (ru ? " · линий: " + lines + " · открыто: " + openHere : " · " + lines + (lines === 1 ? " line" : " lines") + " · " + openHere + " open"),
         hasCounts: false, counts: "",
         hasTag: n.status === "left" || rels.length === 0,
-        tag: n.status === "left" ? (ru ? "покинула пространство" : "left the space") : (ru ? "нет связи с вами" : "no link with you"),
+        tag: n.status === "left" ? (ru ? "покинула спейсово" : "left the space") : (ru ? "нет связи с вами" : "no link with you"),
         tagStyle: "position:absolute; top:10px; right:11px; display:inline-flex; align-items:center; height:20px; max-width:52%; padding:0 8px; font-size:12px; font-weight:600; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--muted); background:var(--page); border-radius:6px; box-shadow:inset 0 0 0 1px var(--border);",
         avatarStyle: this.avatar(n.status === "left" ? "left" : "active"),
         style: "position:absolute; z-index:3; box-sizing:border-box; left:" + MX + "px; top:" + (row.cy - MH / 2) + "px; width:" + MW + "px; height:" + MH + "px; display:flex; flex-direction:column; justify-content:center; text-align:left; font-family:'Onest',sans-serif; background:var(--surface); border:0; border-radius:12px; padding:9px 13px; cursor:pointer; transition:opacity .12s ease; opacity:" + (dim ? 0.4 : 1) + "; box-shadow:" +
@@ -862,7 +862,7 @@ class Component extends DCLogic {
         avatarStyle: this.avatar(n.system === d.self ? "self" : (n.status === "left" ? "left" : "active"), 26),
         mono: codes[n.system],
         name: n.system + (n.system === d.self ? (ru ? " · вы" : " · you") : ""),
-        tag: (inSpaces.length > 1 ? (ru ? "связывает пространств: " : "links ") + inSpaces.length + (ru ? "" : " spaces") : (ru ? "одно пространство" : "one space")) + (n.status === "left" ? (ru ? " · вышла" : " · left") : "") + " · " + n.org,
+        tag: (inSpaces.length > 1 ? (ru ? "связывает спейсов: " : "links ") + inSpaces.length + (ru ? "" : " spaces") : (ru ? "один спейс" : "one space")) + (n.status === "left" ? (ru ? " · вышла" : " · left") : "") + " · " + n.org,
         cells: spaces.map(sp => {
           if (!sp.readable) return {
             text: "?", disabled: true, go: () => {},
@@ -879,7 +879,7 @@ class Component extends DCLogic {
           const risky = d.contractEdges.some(e => e.space === sp.id && (e.from === n.system || e.to === n.system) && (e.drift === "missing" || e.drift === "dangling"));
           return {
             text: c + " / " + x, disabled: false,
-            title: ru ? n.system + " в " + sp.id + ": " + this.count(c, "contract line", "contract lines", ["контрактная линия", "контрактные линии", "контрактных линий"]) + ", " + this.count(x, "open item", "open items", ["открытый элемент", "открытых элемента", "открытых элементов"]) + ". Открывает это пространство." : n.system + " in " + sp.id + ": " + plural(c, "contract line", "contract lines") + ", " + plural(x, "open item", "open items") + ". Opens this space.",
+            title: ru ? n.system + " в " + sp.id + ": " + this.count(c, "contract line", "contract lines", ["контрактная линия", "контрактные линии", "контрактных линий"]) + ", " + this.count(x, "open item", "open items", ["открытый элемент", "открытых элемента", "открытых элементов"]) + ". Нажмите — откроется этот спейс." : n.system + " in " + sp.id + ": " + plural(c, "contract line", "contract lines") + ", " + plural(x, "open item", "open items") + ". Opens this space.",
             go: () => {
               this.setState({ space: sp.id, sel: { kind: "node", key: n.system + "@" + sp.id, x: ((this.g && this.g.MX) || 420) + 120, y: 120 } });
               if (this.props.onSpaceChange) this.props.onSpaceChange(sp.id);
@@ -920,7 +920,7 @@ class Component extends DCLogic {
       collapsible: this.props.collapseExtras === true,
       showExtras: this.props.collapseExtras !== true || this.state.extras === true,
       extrasExpanded: this.state.extras === true ? "true" : "false",
-      extrasLabel: this.state.extras === true ? (ru ? "Скрыть таблицу связей и матрицу пространств" : "Hide the link table and the space matrix") : (ru ? "Показать таблицу связей и матрицу пространств" : "Expand the link table and the space matrix"),
+      extrasLabel: this.state.extras === true ? (ru ? "Скрыть таблицу связей и матрицу спейсов" : "Hide the link table and the space matrix") : (ru ? "Показать таблицу связей и матрицу спейсов" : "Expand the link table and the space matrix"),
       extrasCaret: this.state.extras === true ? "▴" : "▾",
       extrasBtnStyle: "margin-top:14px; width:100%; box-sizing:border-box; display:flex; align-items:center; gap:12px; font-family:'Onest',sans-serif; font-size:16px; font-weight:600; color:var(--text); background:var(--page); border:0; border-radius:12px; padding:14px 16px; cursor:pointer;",
       toggleExtras: () => this.setState(x => ({ extras: !x.extras })),
@@ -944,11 +944,11 @@ class Component extends DCLogic {
     };
     const heading = this.props.heading || (ru ? "Карта обмена" : "Exchange map");
     const labels = {
-      spaceLabel: ru ? "Пространство" : "Space", contractLabel: ru ? "контракт" : "contract",
+      spaceLabel: ru ? "Спейсово" : "Space", contractLabel: ru ? "контракт" : "contract",
       currentLabel: ru ? "актуален" : "current", driftingLabel: ru ? "расходится" : "drifting", missingLabel: ru ? "не найден" : "missing",
       workLabel: ru ? "открытая работа" : "open work", flightLabel: ru ? "в работе" : "in flight", blockingLabel: ru ? "блокирует" : "blocking",
-      directionLabel: ru ? "направление" : "direction", directionText: ru ? "стрелка указывает на поставщика или получателя" : "arrow ends at the provider or recipient",
-      linkTableTitle:ru ? "Все связи в таблице" : "Every link, as a table", linkLabel:ru ? "связь" : "link", linkReasonLabel:ru ? "почему существует" : "why it exists", matrixTitle:ru ? "Участие систем в пространствах" : "Where each system participates", systemLabel:ru ? "система" : "system"
+      directionLabel: ru ? "направление" : "direction", directionText: ru ? "стрелка смотрит на поставщика или получателя" : "arrow ends at the provider or recipient",
+      linkTableTitle:ru ? "Все связи в таблице" : "Every link, as a table", linkLabel:ru ? "связь" : "link", linkReasonLabel:ru ? "почему существует" : "why it exists", matrixTitle:ru ? "Участие систем в спейсах" : "Where each system participates", systemLabel:ru ? "система" : "system"
     };
     if (!d) return Object.assign({
       heading, summary: ru ? "чтение снимка…" : "reading the snapshot…", modes, spaceTabs: [], intro: "",
@@ -971,14 +971,14 @@ class Component extends DCLogic {
       const members = d.nodes.filter(n => (n.spaces || []).includes(spaceId))
         .sort((a, b) => (b.system === d.self ? 1 : 0) - (a.system === d.self ? 1 : 0) || a.system.localeCompare(b.system));
       const shown = members.slice(0, 3).map((n, i) => ({
-        mono: codes[n.system], title: n.system + " · " + n.org + (n.status === "left" ? (ru ? " · покинула пространство" : " · left the space") : ""),
+        mono: codes[n.system], title: n.system + " · " + n.org + (n.status === "left" ? (ru ? " · покинула спейсово" : " · left the space") : ""),
         style: faceStyle(i, n.system === d.self ? "self" : (n.status === "left" ? "left" : "active"), active)
       }));
       const rest = members.length - shown.length;
       if (rest > 0) shown.push({ mono: "+" + rest, title: ru ? "Ещё " + ruPlural(rest, "участник", "участника", "участников") : rest + (rest === 1 ? " more participant" : " more participants"), style: faceStyle(shown.length, "rest", active) });
       return shown;
     };
-    const spaceTabs = [{ id: "all", label: ru ? "все пространства" : "all spaces" }].concat(spacesInScope.map(x => ({ id: x.id, label: x.id })))
+    const spaceTabs = [{ id: "all", label: ru ? "все спейсы" : "all spaces" }].concat(spacesInScope.map(x => ({ id: x.id, label: x.id })))
       .map(x => {
         const active = scope === x.id;
         const faces = x.id === "all" ? [] : facesFor(x.id, active);
@@ -996,18 +996,18 @@ class Component extends DCLogic {
     const membersInScope = d.nodes.filter(n => (n.spaces || []).some(sp => inScope(sp)));
 
     const summary = ru
-      ? (scope === "all" ? "систем: " + membersInScope.length + " · читаемых пространств: " + readable.length : "систем в " + scope + ": " + membersInScope.length) + " · контрактных линий: " + cAll.length + ", неактуальных: " + bad + " · открытых связей: " + xAll.length
+      ? (scope === "all" ? "систем: " + membersInScope.length + " · читаемых спейсов: " + readable.length : "систем в " + scope + ": " + membersInScope.length) + " · контрактных линий: " + cAll.length + ", неактуальных: " + bad + " · открытых связей: " + xAll.length
       : (scope === "all" ? membersInScope.length + " systems across " + plural(readable.length, "readable space", "readable spaces") : membersInScope.length + " systems in " + scope) + " · " + plural(cAll.length, "contract line", "contract lines") + ", " + bad + " off current · " + plural(xAll.length, "open lane", "open lanes");
 
     const intro = ru
-      ? "Вы слева; справа — системы внутри пространств. Сплошная линия показывает контрактную зависимость от потребителя к поставщику, пунктир — незавершённую работу, стрелка — получателя. Метка показывает количество или состояние расхождения. Нажмите линию или карточку, чтобы открыть связанные контракты, версии и работу." + (scope === "all" ? " Линии не выходят за границы пространства; пространства связывают только общие участники." : "")
+      ? "Вы слева; справа — системы внутри спейсов. Сплошная линия показывает контрактную зависимость от потребителя к поставщику, пунктир — незавершённую работу, стрелка — получателя. Метка показывает количество или состояние расхождения. Нажмите линию или карточку, чтобы открыть связанные контракты, версии и работу." + (scope === "all" ? " Линии не выходят за границы спейса: спейсы связаны только общими участниками." : "")
       : "You sit on the left; every card on the right is one system inside a space. A strand runs from the system that depends to the system depended on: solid means a contract dependency (consumer → provider), dashed means open work in flight, and the arrowhead marks the receiving end. Badges carry the count or the drift word. Click a strand or a card for the contracts, versions and open items behind it." + (scope === "all" ? " Strands never leave their space — the systems that appear in several spaces are the only links between them." : "");
 
     const canvas = this.buildCanvas(d, shown, codes);
 
     const tableRows = cAll.map(e => ({
       from: e.from, to: e.to, arrow: "⟶", space: e.space,
-      why: ru ? "зависит от " + e.contract + " · закреплена основная версия " + e.pinnedMajor + (e.pinnedVersion ? " (" + e.pinnedVersion + ")" : "") + " · " + driftLine(e, true) : "depends on " + e.contract + " · pinned major " + e.pinnedMajor + (e.pinnedVersion ? " (" + e.pinnedVersion + ")" : "") + " · " + driftLine(e, false),
+      why: ru ? "зависит от " + e.contract + " · закреплена версия " + e.pinnedMajor + (e.pinnedVersion ? " (" + e.pinnedVersion + ")" : "") + " · " + driftLine(e, true) : "depends on " + e.contract + " · pinned major " + e.pinnedMajor + (e.pinnedVersion ? " (" + e.pinnedVersion + ")" : "") + " · " + driftLine(e, false),
       key: "c:" + e.contract + ":" + e.from + ">" + e.to + ":" + e.space, kind: "c"
     })).concat(xAll.map(e => ({
       from: e.from, to: e.to, arrow: "⇢", space: e.space,
@@ -1031,8 +1031,8 @@ class Component extends DCLogic {
       tableNote: ru ? tableView.length + " связей в выбранной области · те же линии показаны на карте" : plural(tableView.length, "link", "links") + " in scope · the same edges the map draws",
       showMatrix: scope === "all" && readable.length > 1 && this.props.showMatrix !== false,
       matrixCols: matrix.cols, matrixRows: matrix.rows,
-      matrixNote: ru ? bridging + " из " + d.nodes.length + " систем участвуют более чем в одном пространстве. Контракты и обмены не пересекают границы пространства, поэтому только общие системы создают структурную связь между пространствами." : bridging + " of " + d.nodes.length + " systems belong to more than one space. Because contracts and exchanges never cross a space boundary, those shared systems are the only structural link between spaces.",
-      matrixLegend: ru ? "В ячейке указаны контрактные линии / открытые элементы этой системы в пространстве. — означает отсутствие участия; ? означает, что пространство не читается и участие неизвестно, а не равно нулю. Нажмите ячейку, чтобы открыть пространство и выбрать систему." : "Each cell reads contract lines / open items for that system in that space. — means it does not participate; ? means the space is unreadable, so participation is unknown rather than zero. Click a cell to open that space with the system selected."
+      matrixNote: ru ? bridging + " из " + d.nodes.length + " систем сидят больше чем в одном спейсе. Контракты и обмены за границу спейса не выходят, поэтому связь между спейсами создают только общие системы, между спейсами." : bridging + " of " + d.nodes.length + " systems belong to more than one space. Because contracts and exchanges never cross a space boundary, those shared systems are the only structural link between spaces.",
+      matrixLegend: ru ? "В ячейке: контрактные линии / открытые документы этой системы в спейсе. Прочерк — система здесь не участвует; вопросительный знак — спейс не читается, и участие неизвестно, а не равно нулю. Нажмите ячейку, чтобы открыть спейсово и выбрать систему." : "Each cell reads contract lines / open items for that system in that space. — means it does not participate; ? means the space is unreadable, so participation is unknown rather than zero. Click a cell to open that space with the system selected."
     }, canvas, shell, labels);
   }
 }

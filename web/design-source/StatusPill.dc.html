@@ -20,11 +20,18 @@ const TONES = {
   agent: { bg: "var(--teal-tint)", fg: "var(--focus)" },
   outline: { bg: "var(--surface)", fg: "var(--muted)", ring: "inset 0 0 0 1px var(--border-strong)" }
 };
+// Status words in plain Russian. The rule the design carries — a status is
+// never colour alone, it always carries a word — only holds if the word is one
+// a person actually understands, so these are readings rather than literal
+// translations of the protocol enum.
 const STATUS_RU = {
-  current:"актуально", behind:"отстаёт", deprecated:"устаревает", retired:"выведено", missing:"не найдено", dangling:"поставщик недоступен",
-  published:"опубликовано", submitted:"отправлено", in_progress:"в работе", accepted:"принято", acknowledged:"получение подтверждено", proposed:"предложено", closed:"закрыто",
+  current:"на последней", behind:"отстаёт", deprecated:"выводится", retired:"снято", missing:"не нашли", dangling:"поставщик ушёл",
+  published:"опубликовано", submitted:"отправлено", in_progress:"в работе", accepted:"взяли в работу", acknowledged:"получили", proposed:"предложено",
+  closed:"закрыто", responded:"ответили", verified:"проверено", disputed:"спорят", blocked:"заблокировано", cancelled:"отменено", withdrawn:"отозвано", draft:"черновик",
   "in progress":"в работе",
-  blocking:"блокирует", stale:"устарел", fresh:"свежий", unreadable:"не читается", unresolved:"не разрешено"
+  blocking:"блокирует", stale:"устарел", fresh:"свежий", unreadable:"не читается", unresolved:"не нашли",
+  settled:"всё закрыто", "your move":"ваш ход", "waiting on others":"ход за другими",
+  "up to date":"последняя версия", "no action needed":"действий не нужно"
 };
 function localizedStatus(value) {
   const raw = String(value ?? "");
