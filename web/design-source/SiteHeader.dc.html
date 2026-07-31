@@ -192,16 +192,16 @@ class Component extends DCLogic {
       wideLinks: LINKS.filter(([id]) => id !== "install").map(([id, label, href]) => ({
         label, href,
         current: id === active ? "page" : null,
-        style: "font-size:16px; text-decoration:none; padding:9px 12px; border-radius:8px; white-space:nowrap; " +
-          (id === active ? "background:var(--primary); color:var(--on-primary); font-weight:600;" : "background:transparent; color:var(--body);")
+        style: "font-size:16px; font-weight:600; text-decoration:none; padding:9px 12px; border-radius:8px; white-space:nowrap; " +
+          (id === active ? "background:var(--primary); color:var(--on-primary);" : "background:transparent; color:var(--body);")
       })),
       links: LINKS.filter(([id]) => id !== "install").map(([id, label, href]) => ({
         label, href,
         current: id === active ? "page" : null,
-        style: "text-decoration:none; padding:8px 12px; border-radius:8px; white-space:nowrap; " +
-          (id === active ? "color:var(--text); font-weight:600; background:var(--surface);" : "color:var(--body);"),
+        style: "font-weight:600; text-decoration:none; padding:8px 12px; border-radius:8px; white-space:nowrap; " +
+          (id === active ? "color:var(--text); background:var(--surface);" : "color:var(--body);"),
         sheetStyle: "display:flex; align-items:center; text-decoration:none; font-size:18px; padding:15px 2px; border-bottom:1px solid var(--hairline); " +
-          (id === active ? "color:var(--text); font-weight:600;" : "color:var(--body);")
+          (id === active ? "color:var(--text);" : "color:var(--body);")
       })),
       langOpen: this.state.lang,
       langExpanded: this.state.lang ? "true" : "false",

@@ -11,15 +11,21 @@
 
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:240,&quot;height&quot;:60},&quot;type&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;work_request&quot;,&quot;question&quot;,&quot;decision&quot;,&quot;handoff&quot;,&quot;requirement&quot;,&quot;response&quot;,&quot;announcement&quot;,&quot;contract&quot;],&quot;default&quot;:&quot;work_request&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;small&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+// Every type badge must survive BOTH card backgrounds — --surface (white) and
+// --page (paper). The old tints for question/requirement/response/announcement
+// were within a few percent of the paper they sat on and simply vanished; the
+// yellow XQ was the worst of them. Each type now carries a fill dark enough to
+// read on paper plus a hairline of its own family, so the eight types stay
+// distinguishable at a glance and share one visual grammar.
 const TYPES = {
-  work_request: { word: "Work request", prefix: "XW", bg: "var(--focus)", fg: "var(--surface)" },
-  question: { word: "Question", prefix: "XQ", bg: "var(--attention-tint)", fg: "var(--attention-ink)" },
-  decision: { word: "Decision", prefix: "XD", bg: "var(--plum)", fg: "var(--surface)" },
-  handoff: { word: "Handoff", prefix: "XH", bg: "var(--green)", fg: "var(--surface)" },
-  requirement: { word: "Requirement", prefix: "XR", bg: "var(--hairline)", fg: "var(--body)" },
-  response: { word: "Response", prefix: "XS", bg: "var(--surface)", fg: "var(--focus)", ring: "inset 0 0 0 1px var(--teal-hairline)" },
-  announcement: { word: "Announcement", prefix: "XA", bg: "var(--surface)", fg: "var(--muted)", ring: "inset 0 0 0 1px var(--border-strong)" },
-  contract: { word: "Contract", prefix: "XC", bg: "var(--teal-tint)", fg: "var(--focus)" }
+  work_request: { word: "Work request", prefix: "XW", bg: "var(--teal-solid)", fg: "var(--on-solid)" },
+  question: { word: "Question", prefix: "XQ", bg: "var(--attention-line)", fg: "var(--attention-strong)", ring: "inset 0 0 0 1px var(--ochre)" },
+  decision: { word: "Decision", prefix: "XD", bg: "var(--plum)", fg: "var(--on-solid)" },
+  handoff: { word: "Handoff", prefix: "XH", bg: "var(--green)", fg: "var(--on-solid)" },
+  requirement: { word: "Requirement", prefix: "XR", bg: "var(--border-strong)", fg: "var(--text)" },
+  response: { word: "Response", prefix: "XS", bg: "var(--teal-tint)", fg: "var(--teal-ink)", ring: "inset 0 0 0 1px var(--teal-solid)" },
+  announcement: { word: "Announcement", prefix: "XA", bg: "var(--sink)", fg: "var(--body)", ring: "inset 0 0 0 1px var(--border-strong)" },
+  contract: { word: "Contract", prefix: "XC", bg: "var(--teal-tint)", fg: "var(--teal-ink)", ring: "inset 0 0 0 1px var(--teal-hairline)" }
 };
 const TYPES_RU = {
   work_request: "Запрос работы", question: "Вопрос", decision: "Решение", handoff: "Передача",

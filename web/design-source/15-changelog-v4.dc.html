@@ -372,9 +372,10 @@ class Component extends DCLogic {
     });
   }
 
+  // Weight stays constant so switching a filter never re-measures the chip row.
   chip(active) {
-    return "font-family:'Onest',sans-serif; font-size:15px; border:0; cursor:pointer; padding:6px 12px; border-radius:8px; " +
-      (active ? "background:var(--primary); color:var(--on-primary); font-weight:600;" : "background:var(--surface); color:var(--body);");
+    return "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:6px 12px; border-radius:8px; " +
+      (active ? "background:var(--primary); color:var(--on-primary);" : "background:var(--surface); color:var(--body);");
   }
 
   renderVals() {

@@ -417,7 +417,7 @@ class Component extends DCLogic {
         label: k === "ready" ? "seed ready" : "seed unavailable",
         go: () => this.setState({ seed: k }),
         style: "font-family:'Onest',sans-serif; font-size:15px; border:0; border-radius:8px; padding:6px 12px; cursor:pointer; " +
-          (this.state.seed === k ? "background:var(--primary); color:var(--on-primary); font-weight:600;" : "background:var(--canvas); color:var(--body);")
+          (this.state.seed === k ? "background:var(--primary); color:var(--on-primary);" : "background:var(--canvas); color:var(--body);")
       })),
       mdText: "# Install a2a\n\nCanonical HTML: https://ydnikolaev.github.io/a2ahub/install.html\n\n" + SHELL + "\n\n" + FIRST + "\n\nAgent-led setup seed: https://ydnikolaev.github.io/a2ahub/setup/a2a.md\n"
     };

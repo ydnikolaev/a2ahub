@@ -545,8 +545,29 @@ func toArtifactDetail(show cache.ShowResult) ArtifactDetail {
 		Title: show.Title, From: show.From, To: append([]string(nil), show.To...),
 		State: show.State, Thread: show.Thread, Envelope: envelope, Body: show.Body,
 		Digest: show.Digest, Events: events, Flags: append([]string(nil), show.Flags...),
-		Refs: refs, SyncStale: show.SyncStale, SyncAge: show.SyncAge,
+		// cache.ShowResult.SyncAge is a raw time.Duration string ("139.279177ms")
+		// because `a2a show --json` is a machine contract. A person reading a
+		// dashboard should never see nanosecond precision, so the projection
+		// re-humanises it into the same compact vocabulary every other age on
+		// this page uses.
+		Refs: refs, SyncStale: show.SyncStale, SyncAge: humanizeDuration(show.SyncAge),
 	}
+}
+
+// humanizeDuration re-formats a Go duration string into the dashboard's own
+// compact age vocabulary. An unparseable value is returned unchanged rather
+// than dropped: an age we cannot read is still a fact, and inventing "just now"
+// for it would be a lie.
+func humanizeDuration(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	dur, err := time.ParseDuration(raw)
+	if err != nil {
+		return raw
+	}
+	now := time.Now()
+	return humanizeAge(now, now.Add(-dur))
 }
 
 // severityOf reimplements the statusline predicate: blocking (p1/blocking/

@@ -266,6 +266,24 @@ function detailRowStyle(clickable) {
   return "display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; background:var(--page); border:0; border-radius:10px; padding:10px 12px; cursor:" + (clickable ? "pointer" : "default") + ";";
 }
 
+// Ages arrive from the assembler in one compact vocabulary ("just now", "5m",
+// "3d"). Localising them here rather than in the assembler keeps the Go layer
+// locale-free; the dashboard shell carries the same three lines.
+const AGE_RU = { m: " мин", h: " ч", d: " д", w: " нед" };
+function age(value) {
+  const raw = String(value == null ? "" : value);
+  if (!raw || document.documentElement.lang !== "ru") return raw;
+  if (raw === "just now") return "только что";
+  const m = raw.match(/^(\d+)([mhdw])$/);
+  return m ? m[1] + AGE_RU[m[2]] : raw;
+}
+
+function isoDay(value) {
+  const raw = String(value == null ? "" : value);
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[3] + "." + m[2] + "." + m[1] : raw;
+}
+
 class Component extends DCLogic {
   state = { data: null, mode: null, space: null, sel: null, hover: null, expanded: false, extras: false, csx: 0, csy: 0, boxW: 0 };
 
@@ -384,13 +402,15 @@ class Component extends DCLogic {
     if (kind === "left") return base + "background:var(--surface); color:var(--muted); box-shadow:inset 0 0 0 1px var(--border-strong);";
     return base + "background:var(--border); color:var(--body);";
   }
+  // Constant weight across states — see the dashboard shell's own note: bolding
+  // only the active option re-measures the control and shifts the whole row.
   segStyle(active) {
-    return "font-family:'Onest',sans-serif; font-size:14px; line-height:1.4; border:0; cursor:pointer; padding:6px 12px; border-radius:8px; white-space:nowrap; " +
-      (active ? "background:var(--surface); color:var(--text); font-weight:600; box-shadow:0 1px 2px rgba(33,30,23,.14);" : "background:transparent; color:var(--muted);");
+    return "font-family:'Onest',sans-serif; font-size:14px; line-height:1.4; font-weight:600; border:0; cursor:pointer; padding:6px 12px; border-radius:8px; white-space:nowrap; " +
+      (active ? "background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.14);" : "background:transparent; color:var(--muted);");
   }
   tabStyle(active) {
-    return "font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; line-height:1.4; border:0; cursor:pointer; padding:5px 11px 5px 7px; border-radius:8px; white-space:nowrap; display:inline-flex; align-items:center; gap:7px; " +
-      (active ? "background:var(--inverse); color:var(--on-dark); font-weight:600;" : "background:var(--canvas); color:var(--body);");
+    return "font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; line-height:1.4; font-weight:600; border:0; cursor:pointer; padding:5px 11px 5px 7px; border-radius:8px; white-space:nowrap; display:inline-flex; align-items:center; gap:7px; " +
+      (active ? "background:var(--inverse); color:var(--on-dark);" : "background:var(--canvas); color:var(--body);");
   }
 
   // ---- data helpers -------------------------------------------------------
@@ -449,14 +469,20 @@ class Component extends DCLogic {
       head: it.title,
       pillText: it.blocking ? (ru ? "блокирует" : "blocking") : it.priority,
       pillTone: it.blocking ? "blocking" : "neutral",
-      detail: it.id + " · " + it.type + " · " + it.state + " · " + it.from + " → " + (it.to || []).join(", ") + " · " + it.age + (ru ? " назад" : " old") + (it.neededBy ? (ru ? " · нужно к " : " · needed by ") + it.neededBy : ""),
+      detail: it.id + " · " + it.type + " · " + it.state + " · " + it.from + " → " + (it.to || []).join(", ") + " · " + age(it.age) + (ru ? " назад" : " old") + (it.neededBy ? (ru ? " · дедлайн " : " · due ") + isoDay(it.neededBy) : ""),
       canOpen: !!open, openLabel: ru ? "Открыть в разделе «Работа» →" : "Open in Work →",
       open: open ? () => open(it.id, it.space, outgoing) : () => {},
       // Second affordance on the same row: the map names a document, so it
       // should also be able to show it, without a detour through Work.
       canOpenDoc: !!this.props.onOpenDocument,
       docLabel: ru ? "Документ целиком" : "View document",
-      openDoc: this.props.onOpenDocument ? (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.props.onOpenDocument(it.id, it.space); } : () => {},
+      // Handing over to the document modal means letting go: the popover that
+      // launched it closes, so the two never stack on top of each other.
+      openDoc: this.props.onOpenDocument ? (ev) => {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        this.setState({ sel: null });
+        this.props.onOpenDocument(it.id, it.space);
+      } : () => {},
       style: detailRowStyle(!!open)
     };
   }
@@ -526,7 +552,7 @@ class Component extends DCLogic {
         { label: ru ? "открытых документов" : "open documents", value: String(e.count) },
         { label: ru ? "наивысший приоритет" : "strongest priority", value: e.maxPriority || "—" },
         { label: ru ? "явная блокировка" : "marked blocking", value: e.blocking ? (ru ? "да, минимум один" : "yes, at least one") : (ru ? "нет" : "no") }
-      ].concat(e.maxStale ? [{ label: ru ? "без движения дольше всех" : "longest without movement", value: e.maxStale }] : []),
+      ].concat(e.maxStale ? [{ label: ru ? "без движения дольше всех" : "longest without movement", value: age(e.maxStale) }] : []),
       hasNote: false, note: "",
       hasRows: items.length > 0,
       rowsLabel: ru ? "Открытая работа на этой линии" : "Open items on this lane",
@@ -648,7 +674,7 @@ class Component extends DCLogic {
       const h = gh + PT + Math.max(members.length, 1) * MH + Math.max(members.length - 1, 0) * MG + PAD;
       panels.push({
         id: sp.id,
-        pillText: sp.stale ? (ru ? "устарел · синхронизация " : "stale · synced ") + sp.syncAge : (ru ? "свежий · синхронизация " : "fresh · synced ") + sp.syncAge,
+        pillText: sp.stale ? (ru ? "устарел · синхронизация " : "stale · synced ") + age(sp.syncAge) : (ru ? "свежий · синхронизация " : "fresh · synced ") + age(sp.syncAge),
         pillTone: sp.stale ? "attention" : "healthy",
         meta: metaText,
         hasReason: false, reason: "",
@@ -848,7 +874,7 @@ class Component extends DCLogic {
     const ru = this.ru();
     const cols = spaces.map(sp => ({
       id: sp.id,
-      pillText: sp.readable ? (sp.stale ? (ru ? "устарел " : "stale ") + sp.syncAge : (ru ? "свежий " : "fresh ") + sp.syncAge) : (ru ? "не читается" : "unreadable"),
+      pillText: sp.readable ? (sp.stale ? (ru ? "устарел " : "stale ") + age(sp.syncAge) : (ru ? "свежий " : "fresh ") + age(sp.syncAge)) : (ru ? "не читается" : "unreadable"),
       pillTone: sp.readable ? (sp.stale ? "attention" : "healthy") : "blocking"
     }));
     const cellBase = "width:100%; box-sizing:border-box; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.4; border:0; padding:7px 4px; border-radius:8px;";

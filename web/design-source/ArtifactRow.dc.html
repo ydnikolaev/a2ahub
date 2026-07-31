@@ -10,9 +10,15 @@
 <button type="button" onClick="{{ select }}" style="{{ rowStyle }}">
   <span style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:9px;">
     <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px;">
-      <dc-import name="TypeBadge" type="{{ type }}" hint-size="140px,26px"></dc-import>
+      <dc-import name="TypeBadge" type="{{ type }}" size="small" hint-size="140px,24px"></dc-import>
+      <!-- Lifecycle state, then why it needs a human. The state was missing
+           entirely: a card said "p2" without ever saying whether the document
+           had been acknowledged, was in progress or already answered. -->
+      <sc-if value="{{ hasState }}" hint-placeholder-val="{{ true }}">
+        <dc-import name="StatusPill" text="{{ state }}" tone="{{ stateTone }}" size="small" hint-size="100px,24px"></dc-import>
+      </sc-if>
       <sc-if value="{{ hasStatus }}" hint-placeholder-val="{{ true }}">
-        <dc-import name="StatusPill" text="{{ status }}" tone="{{ tone }}" hint-size="110px,26px"></dc-import>
+        <dc-import name="StatusPill" text="{{ status }}" tone="{{ tone }}" size="small" hint-size="110px,24px"></dc-import>
       </sc-if>
     </span>
     <span style="{{ timeStyle }}">{{ time }}</span>
@@ -44,8 +50,13 @@ class Component extends DCLogic {
       status: p.status ?? "",
       tone: p.tone || "neutral",
       hasStatus: !!p.status,
+      state: p.state ?? "",
+      stateTone: p.stateTone || "neutral",
+      hasState: !!p.state,
       time: p.time ?? "",
-      timeStyle: "flex:0 0 auto; text-align:right; font-size:15px;" + (urgent ? " font-weight:600; color:var(--red);" : " color:var(--muted);"),
+      // Times and identifiers are machine facts and read in the mono face, the
+      // same as everywhere else on the page.
+      timeStyle: "flex:0 0 auto; text-align:right; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; white-space:nowrap;" + (urgent ? " font-weight:600; color:var(--red);" : " color:var(--muted);"),
       from: p.from ?? "",
       to: p.to ?? "",
       meta: p.meta ?? "",
