@@ -285,6 +285,24 @@ func TestDefaultTemplate_CarriesApprovedV4ViewsWithoutRemoteLoads(t *testing.T) 
 	}
 }
 
+func TestDefaultTemplate_HasNoUnresolvedNodeEnvironmentReference(t *testing.T) {
+	t.Parallel()
+	tmpl := string(DefaultTemplate())
+	if strings.Contains(tmpl, "process.env.NODE_ENV") {
+		t.Fatal("self-contained browser runtime contains an unresolved Node.js environment reference")
+	}
+}
+
+func TestDefaultTemplate_PrefersEmbeddedSnapshotOverSiblingFixture(t *testing.T) {
+	t.Parallel()
+	tmpl := string(DefaultTemplate())
+	embedded := strings.Index(tmpl, "normalizeDashboardData(window.A2A_DEMO)")
+	fetch := strings.Index(tmpl, `fetch("demo-data.json")`)
+	if embedded < 0 || fetch < 0 || embedded > fetch {
+		t.Fatal("self-contained dashboard must use its embedded snapshot before looking for a sibling demo fixture")
+	}
+}
+
 func TestSharedTokensMatchUIContract(t *testing.T) {
 	t.Parallel()
 	want, err := os.ReadFile("../../ui/tokens.css")

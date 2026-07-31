@@ -61,6 +61,10 @@
   --on-primary: #FAF7F0;
   --header-bg: rgba(241,238,230,.94);
   --shadow-card: 0 1px 2px rgba(33,30,23,.06);
+  /* Diagram field: deliberately distinct from both the page canvas and the
+   * white component surface, without introducing another semantic hue. */
+  --map-canvas: #EAE6DC;
+  --map-grid: rgba(111,104,83,.13);
 }
 html[data-theme="dark"] {
   --canvas: #16140F;
@@ -116,6 +120,8 @@ html[data-theme="dark"] {
   --on-primary: #16140F;
   --header-bg: rgba(22,20,15,.94);
   --shadow-card: 0 1px 2px rgba(0,0,0,.4);
+  --map-canvas: #191711;
+  --map-grid: rgba(173,164,140,.11);
 }
 
 /* Page shell — the one gutter pattern used by every surface.

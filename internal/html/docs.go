@@ -27,10 +27,11 @@ import (
 
 // DocSection is one Documentation section = the page's DOCS[] entry shape.
 type DocSection struct {
-	ID    string `json:"id"`
-	Group string `json:"group"`
-	Title string `json:"title"`
-	HTML  string `json:"html"`
+	ID     string `json:"id"`
+	Group  string `json:"group"`
+	Title  string `json:"title"`
+	Source string `json:"source"`
+	HTML   string `json:"html"`
 }
 
 // docEntry curates one skill markdown file into a section: its stable id (also
@@ -95,7 +96,7 @@ func Docs() ([]DocSection, error) {
 		if err := md.Convert(prepareMarkdown(src), &buf); err != nil {
 			return nil, fmt.Errorf("html: docs: render %s: %w", e.File, err)
 		}
-		out = append(out, DocSection{ID: e.ID, Group: e.Group, Title: e.Title, HTML: buf.String()})
+		out = append(out, DocSection{ID: e.ID, Group: e.Group, Title: e.Title, Source: "skill/" + e.File, HTML: buf.String()})
 	}
 	return out, nil
 }

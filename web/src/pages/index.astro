@@ -8,6 +8,6 @@ const { beforeMap, afterMap } = publicHomeDesign();
 ---
 <BaseLayout markdown="/index.md" current="/" title="a2a — let agents coordinate. Keep humans out of the routine loop." description={site.home.lead}>
   <Fragment set:html={beforeMap} />
-  <DesignNetworkMap heading="Exchange map" space="all" spaceFilter="checkout-core,risk-payments" collapseExtras={true} />
+  <DesignNetworkMap heading="Exchange map" space="all" spaceFilter="checkout-core,risk-payments" collapseExtras={true} wide={true} />
   <Fragment set:html={afterMap} />
 </BaseLayout>

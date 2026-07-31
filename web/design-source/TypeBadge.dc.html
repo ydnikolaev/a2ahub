@@ -21,12 +21,16 @@ const TYPES = {
   announcement: { word: "Announcement", prefix: "XA", bg: "var(--surface)", fg: "var(--muted)", ring: "inset 0 0 0 1px var(--border-strong)" },
   contract: { word: "Contract", prefix: "XC", bg: "var(--teal-tint)", fg: "var(--focus)" }
 };
+const TYPES_RU = {
+  work_request: "Запрос работы", question: "Вопрос", decision: "Решение", handoff: "Handoff",
+  requirement: "Требование", response: "Ответ", announcement: "Объявление", contract: "Контракт"
+};
 class Component extends DCLogic {
   renderVals() {
     const t = TYPES[this.props.type] || { word: this.props.type || "Unknown type", prefix: "??", bg: "var(--hairline)", fg: "var(--body)", ring: "inset 0 0 0 1px var(--border-strong)" };
     const size = this.props.size === "small" ? 13 : 14;
     return {
-      word: t.word,
+      word: document.documentElement.lang === "ru" ? (TYPES_RU[this.props.type] || t.word) : t.word,
       prefix: t.prefix,
       badgeStyle: "display:inline-flex; align-items:center; gap:6px; font-family:'Onest',sans-serif; font-size:" + size + "px; font-weight:600; line-height:1.2; border-radius:6px; padding:" + (t.ring ? "3px 10px" : "4px 11px") + "; background:" + t.bg + "; color:" + t.fg + "; box-shadow:" + (t.ring || "none") + "; white-space:nowrap;",
       prefixStyle: "font-family:'IBM Plex Mono',ui-monospace,monospace; opacity:" + (t.ring ? ".7" : ".65") + ";"
