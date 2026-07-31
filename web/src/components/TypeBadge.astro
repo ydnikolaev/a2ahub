@@ -1,0 +1,5 @@
+---
+const { type, label, prefix } = Astro.props;
+const prefixes = { contract:'XC', requirement:'XR', question:'XQ', work_request:'XW', decision:'XD', handoff:'XH', response:'XS', announcement:'XA' };
+---
+<span class="type-badge" data-type={type}>{label ?? type.replace('_',' ')} {prefix ?? prefixes[type]}</span>

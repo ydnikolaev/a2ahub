@@ -10,6 +10,11 @@ import (
 //go:embed template.html
 var placeholderTemplate []byte
 
+//go:embed tokens.css
+var sharedTokens []byte
+
+const sharedCSSMarker = "/*A2A_SHARED_TOKENS*/"
+
 // The designed template (from Claude Design) carries two injection regions, each
 // delimited by a marker pair — inline samples live between them so the file
 // previews standalone. Render replaces each whole region (markers + sample) with
@@ -93,8 +98,12 @@ func regionBounds(tmpl []byte, start, end string) (int, int, error) {
 	return si, ei + len(end), nil
 }
 
-// DefaultTemplate returns the embedded designed template.
-func DefaultTemplate() []byte { return placeholderTemplate }
+// DefaultTemplate returns the embedded designed template with the generated
+// projection of ui/tokens.css inlined. The emitted dashboard remains one
+// self-contained file while the parity test prevents token drift.
+func DefaultTemplate() []byte {
+	return bytes.Replace(placeholderTemplate, []byte(sharedCSSMarker), sharedTokens, 1)
+}
 
 // MarshalData returns the model as indented JSON (the `a2a html --json` output,
 // also reused by the Telegram summary). DOCS is a separate, static global (from

@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>a2a html — local dashboard (v4)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --canvas: #F1EEE6;
+  --page: #FAF7F0;
+  --surface: #FFFFFF;
+  --sink: #E8E3D7;
+  --border: #E4DFD2;
+  --border-strong: #CBC2AB;
+  --hairline: #F1EEE6;
+  --text: #211E17;
+  --body: #453F31;
+  --muted: #6F6853;
+  --faint: #8A8269;
+  --logo-dim: #9A927B;
+  --inverse: #211E17;
+  --inverse-2: #2A261D;
+  --inverse-3: #33302A;
+  --inverse-line: #3A342A;
+  --on-inverse: #F3EFE4;
+  --on-inverse-2: #E8E3D4;
+  --on-inverse-muted: #C4BCA6;
+  --on-inverse-faint: #A8A08A;
+  --on-dark: #FAF7F0;
+  --on-solid: #FFFFFF;
+  --teal-solid: #175E6B;
+  --teal-ink: #175E6B;
+  --teal-ink-hover: #114953;
+  --teal-tint: #EDF4F5;
+  --teal-strong-ink: #0E3F48;
+  --teal-on-dark: #8FD0DB;
+  --teal-hairline: #BFD9DD;
+  --focus: #175E6B;
+  --ochre: #9A5C08;
+  --attention-tint: #FBF4E4;
+  --attention-ink: #7A5A14;
+  --attention-strong: #5E4410;
+  --attention-line: #E8CE94;
+  --red: #AC382A;
+  --blocking-tint: #F8E9E5;
+  --blocking-ink: #8C2B1F;
+  --blocking-strong: #5E2A22;
+  --blocking-line: #E0B3AB;
+  --green: #3E7A4C;
+  --healthy-tint: #E9F1E8;
+  --healthy-ink: #2F5E3A;
+  --healthy-strong: #24492D;
+  --plum: #7A3B62;
+  --selection: #D7E8EA;
+  --attn-bg: #33291A;
+  --attn-ink: #E2A33C;
+  --code-chip: #1B2A2D;
+  --primary: #211E17;
+  --on-primary: #FAF7F0;
+  --header-bg: rgba(241,238,230,.94);
+  --shadow-card: 0 1px 2px rgba(33,30,23,.06);
+}
+html[data-theme="dark"] {
+  --canvas: #16140F;
+  --page: #1D1A14;
+  --surface: #24211A;
+  --sink: #2E2A21;
+  --border: #3B3529;
+  --border-strong: #4E4736;
+  --hairline: #302B22;
+  --text: #F4F0E4;
+  --body: #DAD3C0;
+  --muted: #ADA48C;
+  --faint: #8F8770;
+  --logo-dim: #8F8770;
+  --inverse: #0E0D09;
+  --inverse-2: #1A1812;
+  --inverse-3: #2E2A21;
+  --inverse-line: #3B3529;
+  --on-inverse: #F3EFE4;
+  --on-inverse-2: #E8E3D4;
+  --on-inverse-muted: #C4BCA6;
+  --on-inverse-faint: #A8A08A;
+  --on-dark: #FAF7F0;
+  --on-solid: #0E0D09;
+  --teal-solid: #2A8395;
+  --teal-ink: #8FD0DB;
+  --teal-ink-hover: #B4E2EA;
+  --teal-tint: #123039;
+  --teal-strong-ink: #C7E9EF;
+  --teal-on-dark: #8FD0DB;
+  --teal-hairline: #2C5A63;
+  --focus: #8FD0DB;
+  --ochre: #D9902A;
+  --attention-tint: #3A2D12;
+  --attention-ink: #E8C579;
+  --attention-strong: #F4DDAA;
+  --attention-line: #6B5320;
+  --red: #D6584A;
+  --blocking-tint: #3C1E19;
+  --blocking-ink: #F0A79A;
+  --blocking-strong: #F7C9C1;
+  --blocking-line: #6E3229;
+  --green: #5FA773;
+  --healthy-tint: #1B2E20;
+  --healthy-ink: #94CFA3;
+  --healthy-strong: #BCE3C6;
+  --plum: #B981A0;
+  --selection: #1E4A52;
+  --attn-bg: #3A2D12;
+  --attn-ink: #E2A33C;
+  --code-chip: #12262A;
+  --primary: #EDE7D8;
+  --on-primary: #16140F;
+  --header-bg: rgba(22,20,15,.94);
+  --shadow-card: 0 1px 2px rgba(0,0,0,.4);
+}
+html[data-theme="dark"] header { backdrop-filter: blur(8px); }
+body { margin: 0; background:var(--canvas); color:var(--text); font-family: "Onest", "Segoe UI", Helvetica, Arial, sans-serif; font-size: 16px; -webkit-font-smoothing: antialiased; }
+a { color:var(--teal-ink); text-underline-offset: 3px; }
+a:hover { color:var(--teal-ink-hover); }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+::selection { background:var(--selection); }
+
+</style>
+</helmet>
+
+<div data-screen-label="Local dashboard v4" style="min-height:100vh; display:flex; flex-direction:column;">
+
+  <header style="position:sticky; top:0; z-index:60; background:var(--surface);">
+    <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:14px 0; display:flex; align-items:flex-start; gap:16px; flex-wrap:nowrap; align-items:center;">
+      <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:14px; flex-wrap:nowrap;">
+      <button type="button" onClick="{{ goOverview }}" aria-label="Back to Overview" style="font-family:'IBM Plex Mono',monospace; font-size:18px; font-weight:600; color:var(--text); background:transparent; border:0; padding:0; cursor:pointer; flex:0 0 auto;">a2a<span style="color:var(--logo-dim);">hub</span></button>
+      <span style="flex:0 1 auto; min-width:0; display:flex; align-items:center; gap:8px; background:var(--canvas); border-radius:8px; padding:5px 12px 5px 6px; font-size:15px;">
+        <span style="flex:0 0 auto; width:26px; height:26px; border-radius:99px; background:var(--teal-solid); color:var(--on-solid); display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600;">{{ selfMono }}</span>
+        <span style="min-width:0; color:var(--body); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ selfLine }}</span>
+      </span>
+      <nav ref="{{ navRef }}" aria-label="Views" style="flex:1 1 0; min-width:0; display:flex; align-items:center; gap:2px; font-size:16px; flex-wrap:nowrap;">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="8">
+          <button type="button" onClick="{{ t.go }}" aria-current="{{ t.current }}" style="{{ t.style }}">{{ t.label }}</button>
+        </sc-for>
+        <sc-if value="{{ hasMoreTabs }}" hint-placeholder-val="{{ false }}">
+          <span style="position:relative; flex:0 0 auto;">
+            <button type="button" onClick="{{ toggleMore }}" aria-expanded="{{ moreExpanded }}" style="{{ moreBtnStyle }}">More {{ moreCaret }}</button>
+            <sc-if value="{{ moreOpen }}" hint-placeholder-val="{{ false }}">
+              <span style="position:absolute; top:calc(100% + 6px); left:0; z-index:95; min-width:210px; background:var(--surface); border-radius:12px; padding:8px; box-shadow:0 8px 24px rgba(0,0,0,.22); display:flex; flex-direction:column; gap:2px;">
+                <sc-for list="{{ moreTabs }}" as="m" hint-placeholder-count="3">
+                  <button type="button" onClick="{{ m.go }}" style="{{ m.style }}">{{ m.label }}</button>
+                </sc-for>
+              </span>
+            </sc-if>
+          </span>
+        </sc-if>
+      </nav>
+      </span>
+      <span style="flex:0 0 auto; display:flex; align-items:center; gap:8px;">
+        <span style="position:relative;">
+          <button type="button" onClick="{{ toggleLang }}" aria-expanded="{{ langExpanded }}" aria-label="Interface language" style="{{ langBtnStyle }}">EN {{ langCaret }}</button>
+          <sc-if value="{{ langOpen }}" hint-placeholder-val="{{ false }}">
+            <span style="position:absolute; top:calc(100% + 6px); right:0; z-index:90; min-width:250px; background:var(--surface); border-radius:12px; padding:8px; box-shadow:0 8px 24px rgba(0,0,0,.22); display:flex; flex-direction:column; gap:2px;">
+              <span style="display:flex; align-items:center; gap:9px; font-size:15px; font-weight:600; color:var(--text); padding:9px 10px; border-radius:8px; background:var(--canvas);">English<span style="margin-left:auto; color:var(--teal-ink);">✓</span></span>
+              <button type="button" onClick="{{ pickRu }}" style="{{ ruStyle }}">Русский</button>
+              <span style="font-size:14px; line-height:1.5; color:var(--muted); padding:6px 10px 4px;">{{ langNote }}</span>
+            </span>
+          </sc-if>
+        </span>
+        <button type="button" onClick="{{ toggleTheme }}" aria-pressed="{{ themePressed }}" aria-label="{{ themeLabel }}" title="{{ themeLabel }}" style="{{ themeIconStyle }}">{{ themeGlyph }}</button>
+      </span>
+    </div>
+    <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0 14px; display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap;">
+      <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:8px;">
+        <span style="font-size:15px; color:var(--muted);">Space</span>
+        <sc-for list="{{ spaceChips }}" as="s" hint-placeholder-count="5">
+          <button type="button" onClick="{{ s.go }}" style="{{ s.style }}">
+            <sc-if value="{{ s.hasFaces }}" hint-placeholder-val="{{ true }}">
+              <span style="display:flex; align-items:center; flex:0 0 auto;">
+                <sc-for list="{{ s.faces }}" as="f" hint-placeholder-count="3">
+                  <span style="{{ f.style }}" title="{{ f.title }}">{{ f.mono }}</span>
+                </sc-for>
+              </span>
+            </sc-if>
+            <span>{{ s.label }}</span>
+          </button>
+        </sc-for>
+      </span>
+    </div>
+  </header>
+
+  <sc-if value="{{ updateRequired }}" hint-placeholder-val="{{ false }}">
+    <div style="background:var(--attention-tint); padding:13px 0;">
+      <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0; display:flex; align-items:flex-start; gap:14px; flex-wrap:nowrap; font-size:16px; color:var(--attention-ink);">
+        <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:14px; flex-wrap:wrap; row-gap:8px;">
+          <span style="flex:0 0 auto; font-size:15px; font-weight:600; color:var(--on-solid); background:var(--ochre); border-radius:8px; padding:5px 12px;">Update required</span>
+          <span>{{ updateText }}</span>
+        </span>
+        <button type="button" onClick="{{ goVersions }}" style="flex:0 0 auto; font-family:'Onest',sans-serif; font-size:16px; font-weight:600; color:var(--teal-ink); background:transparent; border:0; cursor:pointer; white-space:nowrap;">Versions →</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <main style="flex:1 1 auto; min-width:0; width:min(1240px, 100% - 56px); margin:0 auto; padding:26px 0 70px; box-sizing:border-box;">
+
+    <sc-if value="{{ hasError }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:640px; background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08);">
+        <h1 style="margin:0 0 10px; font-size:24px; font-weight:600; color:var(--blocking-ink);">The demo fixture could not be read</h1>
+        <p style="margin:0 0 10px; font-size:17px; line-height:1.6; color:var(--body);">{{ errorText }}</p>
+        <p style="margin:0; font-size:16px; line-height:1.6; color:var(--muted);">This dashboard is a read projection of <span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">demo-data.json</span>. Nothing is invented to fill the gap.</p>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isOverview }}" hint-placeholder-val="{{ true }}">
+      <section aria-label="Overview" data-screen-label="Overview">
+        <div style="display:flex; align-items:flex-end; gap:18px; flex-wrap:wrap; margin-bottom:22px;">
+          <div style="flex:1 1 420px; min-width:0;">
+            <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em; max-width:640px; text-wrap:balance;">{{ ovHeadline }}</h1>
+            <p style="margin:0; font-size:18px; line-height:1.55; color:var(--body); max-width:640px;">{{ ovSub }}</p>
+          </div>
+          <div style="display:flex; gap:12px; flex-wrap:wrap;">
+            <sc-for list="{{ ovStats }}" as="s" hint-placeholder-count="3">
+              <div style="background:var(--surface); border-radius:14px; padding:16px 20px; min-width:150px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+                <div style="font-size:15px; color:var(--muted); margin-bottom:6px;">{{ s.label }}</div>
+                <div style="display:flex; align-items:baseline; gap:8px;"><span style="{{ s.valueStyle }}">{{ s.value }}</span><span style="font-size:15px; color:var(--muted);">{{ s.note }}</span></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
+          <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <h2 style="margin:0; font-size:20px; font-weight:600;">Waiting on you</h2>
+              <span style="font-size:15px; color:var(--muted);">sorted by consequence</span>
+            </div>
+            <sc-for list="{{ ovRows }}" as="r" hint-placeholder-count="3">
+              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
+            </sc-for>
+            <button type="button" onClick="{{ goWork }}" style="text-align:left; font-family:'Onest',sans-serif; background:var(--sink); border:0; border-radius:14px; padding:16px 18px; cursor:pointer; display:flex; align-items:flex-start; gap:12px; flex-wrap:nowrap; align-items:center;">
+              <span style="flex:1 1 auto; min-width:0; font-size:16px; color:var(--body);">{{ ovRestText }}</span>
+              <span style="flex:0 0 auto; font-size:16px; font-weight:600; color:var(--teal-ink);">Open Work →</span>
+            </button>
+            <div style="background:var(--surface); border-radius:14px; padding:16px 18px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+              <div style="font-size:16px; font-weight:600; margin-bottom:10px;">Snapshot confidence</div>
+              <div style="display:flex; flex-direction:column; gap:9px; font-size:15px;">
+                <sc-for list="{{ ovSpaces }}" as="s" hint-placeholder-count="4">
+                  <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;">
+                    <span style="font-family:'IBM Plex Mono',monospace;">{{ s.id }}</span>
+                    <dc-import name="StatusPill" text="{{ s.pillText }}" tone="{{ s.pillTone }}" hint-size="100px,24px"></dc-import>
+                    <span style="color:var(--muted);">{{ s.meta }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+          <dc-import name="ArtifactDetail" det="{{ ovDetail }}" hint-size="100%,600px"></dc-import>
+        </div>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ isWork }}" hint-placeholder-val="{{ false }}">
+      <section aria-label="Work" data-screen-label="Work">
+        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">Work</h1>
+        <p style="margin:0 0 18px; font-size:18px; line-height:1.55; color:var(--body); max-width:700px;">{{ workSub }}</p>
+        <div style="display:flex; align-items:center; gap:2px; background:var(--border); border-radius:9px; padding:3px; width:fit-content; margin-bottom:14px;">
+          <sc-for list="{{ workTabs }}" as="t" hint-placeholder-count="2">
+            <button type="button" onClick="{{ t.go }}" style="{{ t.style }}">{{ t.label }}</button>
+          </sc-for>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
+          <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
+            <sc-for list="{{ workRows }}" as="r" hint-placeholder-count="6">
+              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
+            </sc-for>
+          </div>
+          <dc-import name="ArtifactDetail" det="{{ workDetail }}" hint-size="100%,600px"></dc-import>
+        </div>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ isThreads }}" hint-placeholder-val="{{ false }}">
+      <section aria-label="Threads" data-screen-label="Threads">
+        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">One intent, one chain</h1>
+        <p style="margin:0 0 18px; font-size:18px; line-height:1.55; color:var(--body); max-width:760px;">{{ threadsSub }}</p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
+          <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
+            <sc-for list="{{ threadRows }}" as="t" hint-placeholder-count="5">
+              <button type="button" onClick="{{ t.select }}" style="{{ t.style }}">
+                <span style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:8px;">
+                  <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px;">
+                    <dc-import name="StatusPill" text="{{ t.pillText }}" tone="{{ t.pillTone }}" hint-size="110px,26px"></dc-import>
+                    <span style="font-size:15px; color:var(--muted);">{{ t.participants }}</span>
+                  </span>
+                  <span style="flex:0 0 auto; font-size:15px; color:var(--muted);">{{ t.age }}</span>
+                </span>
+                <span style="display:block; font-size:19px; line-height:1.35; font-weight:600; color:var(--text); margin-bottom:7px; overflow-wrap:anywhere;">{{ t.title }}</span>
+                <span style="display:block; font-size:15px; color:var(--muted); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ t.meta }}</span>
+              </button>
+            </sc-for>
+          </div>
+
+          <div style="min-width:0; background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+            <sc-if value="{{ tvMissing }}" hint-placeholder-val="{{ false }}">
+              <h2 style="margin:0 0 8px; font-size:22px; font-weight:600;">This thread has no reconstructed view in the fixture</h2>
+              <p style="margin:0; font-size:16px; line-height:1.6; color:var(--body);">The list rows above come from thread summaries; only some threads carry a full causal transcript in the demo data.</p>
+            </sc-if>
+            <sc-if value="{{ tvPresent }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:14px;">
+                <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
+                  <dc-import name="StatusPill" text="{{ tvOrderPill }}" tone="agent" hint-size="140px,26px"></dc-import>
+                  <sc-if value="{{ tvStale }}" hint-placeholder-val="{{ false }}">
+                    <dc-import name="StatusPill" text="{{ tvStaleText }}" tone="attention" hint-size="110px,26px"></dc-import>
+                  </sc-if>
+                </span>
+                <span style="flex:0 0 auto; font-size:15px; color:var(--muted); text-align:right;">{{ tvMeta }}</span>
+              </div>
+              <h2 style="margin:0 0 16px; font-size:26px; line-height:1.25; font-weight:600; letter-spacing:-0.015em; overflow-wrap:anywhere;">{{ tvTitle }}</h2>
+
+              <div style="background:var(--attention-tint); border-radius:14px; padding:18px 20px; margin-bottom:16px;">
+                <div style="margin-bottom:12px;">
+                  <div style="font-size:16px; font-weight:600; color:var(--attention-strong);">Whose move now</div>
+                  <div style="font-size:15px; line-height:1.5; color:var(--attention-ink);">Current state and legal transitions, folded from every event below.</div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                  <sc-for list="{{ tvOpen }}" as="o" hint-placeholder-count="2">
+                    <div style="background:var(--surface); border-radius:11px; padding:13px 15px;">
+                      <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:7px;">
+                        <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+                          <dc-import name="TypeBadge" type="{{ o.type }}" size="small" hint-size="130px,24px"></dc-import>
+                          <dc-import name="StatusPill" text="{{ o.who }}" tone="{{ o.whoTone }}" size="small" hint-size="120px,24px"></dc-import>
+                        </span>
+                        <span style="flex:0 0 auto; font-size:15px; color:var(--muted); text-align:right;">{{ o.needed }}</span>
+                      </div>
+                      <div style="font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--body); margin-bottom:8px; overflow-wrap:anywhere;">{{ o.id }}</div>
+                      <div style="display:flex; gap:7px; flex-wrap:wrap;">
+                        <sc-for list="{{ o.actions }}" as="a" hint-placeholder-count="3">
+                          <span style="{{ a.style }}">{{ a.text }}</span>
+                        </sc-for>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+
+
+              <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+                <div style="font-size:16px; font-weight:600;">Causal transcript</div>
+                <div style="font-size:15px; color:var(--muted);">newest first · {{ tvEntryCount }}</div>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:0; margin-bottom:20px;">
+                <sc-for list="{{ tvEntries }}" as="e" hint-placeholder-count="6">
+                  <div style="{{ e.railStyle }}">
+                    <span style="{{ e.dotStyle }}"></span>
+                    <sc-if value="{{ e.isArtifact }}" hint-placeholder-val="{{ true }}">
+                      <div style="{{ e.cardStyle }}">
+                        <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:6px;">
+                          <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+                            <dc-import name="TypeBadge" type="{{ e.type }}" hint-size="130px,26px"></dc-import>
+                            <span style="font-size:15px; color:var(--muted);">{{ e.route }}</span>
+                          </span>
+                          <sc-if value="{{ e.hasState }}" hint-placeholder-val="{{ true }}">
+                            <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ e.state }}" tone="{{ e.stateTone }}" size="small" hint-size="90px,24px"></dc-import></span>
+                          </sc-if>
+                        </div>
+                        <div style="font-size:17px; line-height:1.4; font-weight:600; overflow-wrap:anywhere; margin-bottom:8px;">{{ e.title }}</div>
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted);">
+                          <span style="overflow-wrap:anywhere;">{{ e.id }}</span>
+                          <sc-for list="{{ e.relations }}" as="r" hint-placeholder-count="1">
+                            <span style="{{ r.style }}">↳ {{ r.text }}</span>
+                          </sc-for>
+                          <sc-if value="{{ e.opensChain }}" hint-placeholder-val="{{ false }}">
+                            <span style="background:var(--canvas); border-radius:6px; padding:3px 9px;">opens the chain</span>
+                          </sc-if>
+                        </div>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ e.isEvent }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap;">
+                        <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
+                          <span style="font-size:16px; color:var(--text);">{{ e.text }}</span>
+                          <sc-if value="{{ e.hasSubject }}" hint-placeholder-val="{{ false }}">
+                            <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); background:var(--canvas); border-radius:6px; padding:3px 9px; overflow-wrap:anywhere;">on {{ e.subjectLabel }}</span>
+                          </sc-if>
+                        </span>
+                        <span style="flex:0 0 auto; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted); white-space:nowrap;">{{ e.meta }}</span>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+
+              <sc-if value="{{ tvHasFlags }}" hint-placeholder-val="{{ false }}">
+                <div style="background:var(--blocking-tint); border-radius:14px; padding:16px 18px;">
+                  <div style="font-size:16px; font-weight:600; color:var(--blocking-ink); margin-bottom:10px;">Flags on this thread — surfaced, never dropped</div>
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <sc-for list="{{ tvFlags }}" as="f" hint-placeholder-count="1">
+                      <div style="font-size:15px; line-height:1.55; color:var(--blocking-strong); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ f }}</div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+            </sc-if>
+          </div>
+        </div>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ isContracts }}" hint-placeholder-val="{{ false }}">
+      <section aria-label="Contracts" data-screen-label="Contracts">
+        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">Interfaces with a history</h1>
+        <p style="margin:0 0 18px; font-size:18px; line-height:1.55; color:var(--body); max-width:780px;">{{ conSub }}</p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
+          <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
+            <sc-for list="{{ conRows }}" as="c" hint-placeholder-count="6">
+              <button type="button" onClick="{{ c.select }}" style="{{ c.style }}">
+                <span style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
+                  <span style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; color:var(--text); overflow-wrap:anywhere;">{{ c.id }}</span>
+                  <dc-import name="StatusPill" text="{{ c.version }}" tone="agent" mono="{{ true }}" size="small" hint-size="70px,24px"></dc-import>
+                </span>
+                <span style="display:block; font-size:15px; color:var(--muted); margin-bottom:8px;">{{ c.meta }}</span>
+                <span style="display:flex; gap:7px; flex-wrap:wrap;">
+                  <sc-for list="{{ c.pills }}" as="p" hint-placeholder-count="1">
+                    <dc-import name="StatusPill" text="{{ p.text }}" tone="{{ p.tone }}" size="small" hint-size="110px,24px"></dc-import>
+                  </sc-for>
+                </span>
+              </button>
+            </sc-for>
+          </div>
+
+          <div style="min-width:0; background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+            <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:14px;">
+              <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
+                <dc-import name="TypeBadge" type="contract" hint-size="130px,26px"></dc-import>
+                <dc-import name="StatusPill" text="{{ cdState }}" tone="{{ cdStateTone }}" hint-size="100px,26px"></dc-import>
+                <sc-if value="{{ cdCodeBacked }}" hint-placeholder-val="{{ true }}">
+                  <dc-import name="StatusPill" text="code-backed" tone="outline" hint-size="110px,26px"></dc-import>
+                </sc-if>
+              </span>
+              <span style="flex:0 0 auto; font-size:15px; color:var(--muted); text-align:right;">{{ cdSpaceLine }}</span>
+            </div>
+            <h2 style="margin:0 0 8px; font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; overflow-wrap:anywhere;">{{ cdId }}</h2>
+            <p style="margin:0 0 18px; font-size:18px; line-height:1.6; color:var(--body); max-width:720px;">{{ cdDescription }}</p>
+
+            <sc-if value="{{ cdHasRisk }}" hint-placeholder-val="{{ false }}">
+              <div style="background:var(--blocking-tint); border-radius:14px; padding:16px 18px; margin-bottom:18px;">
+                <div style="font-size:16px; font-weight:600; color:var(--blocking-ink); margin-bottom:5px;">{{ cdRiskTitle }}</div>
+                <div style="font-size:16px; line-height:1.55; color:var(--blocking-strong);">{{ cdRiskText }}</div>
+              </div>
+            </sc-if>
+
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:20px; margin-bottom:18px;">
+              <div style="min-width:0;">
+                <div style="font-size:16px; font-weight:600; margin-bottom:8px;">Registered consumer lines</div>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                  <sc-for list="{{ cdLines }}" as="l" hint-placeholder-count="2">
+                    <div style="{{ l.style }}">
+                      <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:4px;">
+                        <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; overflow-wrap:anywhere;">{{ l.route }}</span>
+                        <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ l.drift }}" tone="{{ l.tone }}" size="small" hint-size="80px,24px"></dc-import></span>
+                      </div>
+                      <div style="font-size:15px; color:var(--muted);">{{ l.detail }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="min-width:0;">
+                <div style="font-size:16px; font-weight:600; margin-bottom:8px;">Rolling version window</div>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                  <sc-for list="{{ cdVersions }}" as="v" hint-placeholder-count="3">
+                    <div style="background:var(--page); border-radius:11px; padding:12px 14px;">
+                      <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:4px;">
+                        <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; color:{{ v.color }};">{{ v.version }}</span>
+                        <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ v.state }}" tone="{{ v.tone }}" size="small" hint-size="90px,24px"></dc-import></span>
+                      </div>
+                      <div style="font-size:15px; color:var(--muted);">{{ v.note }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--hairline); padding-top:16px;">
+              <div style="font-size:16px; font-weight:600; margin-bottom:8px;">Provenance and schema</div>
+              <dc-import name="FactTable" rows="{{ cdFacts }}" hint-size="100%,200px"></dc-import>
+              <div style="margin-top:12px; font-size:15px; line-height:1.55; color:var(--muted);">A code binding records generator and source digest. Whether the current bytes still match is <strong>not evaluated</strong> in this static read.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ isNetwork }}" hint-placeholder-val="{{ false }}">
+      <section aria-label="Network" data-screen-label="Network">
+        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">Who depends on whom</h1>
+        <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">A contract dependency points from consumer to provider and holds until someone republishes; an open exchange is work still in flight. Pick one space to read it alone, or stay on all spaces to see every space plus the systems that bridge them. Every line and every system explains itself when clicked.</p>
+        <div style="margin-bottom:20px;">
+          <dc-import name="NetworkMap" data="{{ data }}" space="{{ space }}" on-space-change="{{ setSpace }}" on-open-contract="{{ openContract }}" on-open-item="{{ openItem }}" show-space-tabs="{{ false }}" heading="Exchange map" hint-size="100%,1000px"></dc-import>
+        </div>
+              </section>
+    </sc-if>
+
+    <sc-if value="{{ isSpaces }}" hint-placeholder-val="{{ false }}">
+      <section aria-label="Spaces" data-screen-label="Spaces">
+        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">Spaces</h1>
+        <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">Local binary, space writer floor and pinned CI workflow are separate compatibility axes — none is inferred from another.</p>
+        <div style="background:var(--surface); border-radius:18px; padding:8px 22px 16px; box-shadow:0 1px 2px rgba(33,30,23,.06); overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:16px; min-width:820px;">
+            <thead>
+              <tr>
+                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">Space</th>
+                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">Freshness</th>
+                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">Participants</th>
+                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">Writer floor</th>
+                <th style="text-align:left; padding:16px 16px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">Pinned workflow</th>
+                <th style="text-align:left; padding:16px 0 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">Revision</th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ spaceRows }}" as="s" hint-placeholder-count="4">
+                <tr>
+                  <td style="{{ s.cell }}"><span style="font-family:'IBM Plex Mono',monospace; font-weight:600;">{{ s.id }}</span></td>
+                  <td style="{{ s.cell }}"><dc-import name="StatusPill" text="{{ s.pillText }}" tone="{{ s.pillTone }}" size="small" hint-size="100px,24px"></dc-import></td>
+                  <td style="{{ s.cell }}">{{ s.participants }}</td>
+                  <td style="{{ s.cell }}"><span style="font-family:'IBM Plex Mono',monospace;">{{ s.floor }}</span></td>
+                  <td style="{{ s.cell }}"><span style="font-family:'IBM Plex Mono',monospace;">{{ s.workflow }}</span></td>
+                  <td style="{{ s.cellLast }}"><span style="font-family:'IBM Plex Mono',monospace; color:var(--muted);">{{ s.revision }}</span></td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ isIntegrity }}" hint-placeholder-val="{{ false }}">
+      <section aria-label="Integrity" data-screen-label="Integrity">
+        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">What this snapshot cannot promise</h1>
+        <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">{{ intSub }}</p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:16px; align-items:start;">
+          <div style="background:var(--surface); border-radius:18px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+            <div style="font-size:18px; font-weight:600; margin-bottom:12px;">Protocol and read flags</div>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <sc-for list="{{ intFlags }}" as="f" hint-placeholder-count="4">
+                <div style="background:var(--page); border-radius:11px; padding:13px 15px;">
+                  <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
+                    <dc-import name="StatusPill" text="{{ f.code }}" tone="attention" mono="{{ true }}" size="small" hint-size="150px,24px"></dc-import>
+                    <span style="font-size:15px; color:var(--muted);">{{ f.origin }}</span>
+                  </div>
+                  <div style="font-size:16px; line-height:1.55; color:var(--body); overflow-wrap:anywhere;">{{ f.message }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:16px;">
+            <div style="background:var(--surface); border-radius:18px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+              <div style="font-size:18px; font-weight:600; margin-bottom:12px;">Degraded reads</div>
+              <div style="display:flex; flex-direction:column; gap:10px; font-size:16px;">
+                <sc-for list="{{ intDegraded }}" as="g" hint-placeholder-count="3">
+                  <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <span style="font-family:'IBM Plex Mono',monospace;">{{ g.id }}</span>
+                    <dc-import name="StatusPill" text="{{ g.pillText }}" tone="{{ g.pillTone }}" size="small" hint-size="100px,24px"></dc-import>
+                    <span style="color:var(--muted); font-size:15px;">{{ g.note }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <div style="background:var(--page); border-radius:18px; padding:20px 22px; box-shadow:inset 0 0 0 1px var(--border);">
+              <div style="font-size:18px; font-weight:600; margin-bottom:6px;">Not evaluated in this static read</div>
+              <p style="margin:0 0 12px; font-size:15px; line-height:1.55; color:var(--muted);">Stated, never rendered as green or zero.</p>
+              <div style="display:flex; flex-direction:column; gap:10px; font-size:16px; line-height:1.55; color:var(--muted);">
+                <sc-for list="{{ intUnavailable }}" as="u" hint-placeholder-count="4">
+                  <div><strong style="color:var(--body);">{{ u.title }}</strong> — {{ u.reason }}</div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ isVersions }}" hint-placeholder-val="{{ false }}">
+      <section aria-label="Versions" data-screen-label="Versions">
+        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">Versions</h1>
+        <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:760px;">{{ verSub }}</p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:16px; align-items:start;">
+          <div style="display:flex; flex-direction:column; gap:16px;">
+            <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+              <div style="font-size:18px; font-weight:600; margin-bottom:14px;">Local binary</div>
+              <div style="display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:14px;">
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:34px; font-weight:600;">{{ verCurrent }}</span>
+                <span style="font-size:16px; color:var(--muted);">installed</span>
+                <span style="color:var(--border-strong);">→</span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600; color:var(--teal-ink);">{{ verLatest }}</span>
+                <span style="font-size:16px; color:var(--muted);">latest</span>
+              </div>
+              <dc-import name="FactTable" rows="{{ verFacts }}" hint-size="100%,200px"></dc-import>
+            </div>
+            <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+              <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+                <div style="font-size:18px; font-weight:600;">Update candidate</div>
+                <dc-import name="StatusPill" text="{{ verUpdateStatus }}" tone="healthy" size="small" hint-size="90px,24px"></dc-import>
+              </div>
+              <div style="font-size:18px; line-height:1.4; font-weight:600; margin-bottom:14px;">{{ verHeadline }}</div>
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                <sc-for list="{{ verChanges }}" as="c" hint-placeholder-count="4">
+                  <div style="background:var(--page); border-radius:11px; padding:13px 15px;">
+                    <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
+                      <dc-import name="StatusPill" text="{{ c.kind }}" tone="{{ c.tone }}" size="small" hint-size="70px,24px"></dc-import>
+                      <span style="font-size:15px; color:var(--muted);">impact {{ c.impact }}</span>
+                    </div>
+                    <div style="font-size:16px; line-height:1.5; color:var(--text);">{{ c.subject }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+          <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+            <div style="font-size:18px; font-weight:600; margin-bottom:6px;">Published releases in this snapshot</div>
+            <p style="margin:0 0 14px; font-size:15px; line-height:1.55; color:var(--muted);">Expanded notes cover {{ verScope }}.</p>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <sc-for list="{{ verReleases }}" as="r" hint-placeholder-count="3">
+                <div style="background:var(--page); border-radius:12px; padding:16px 18px;">
+                  <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:8px;">
+                    <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
+                      <span style="font-family:'IBM Plex Mono',monospace; font-size:17px; font-weight:600;">{{ r.version }}</span>
+                      <span style="font-size:15px; color:var(--muted);">{{ r.date }}</span>
+                    </span>
+                    <span style="flex:0 0 auto; font-size:15px; color:var(--muted);">{{ r.count }}</span>
+                  </div>
+                  <div style="font-size:16px; line-height:1.5; color:var(--text);">{{ r.headline }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ isGuide }}" hint-placeholder-val="{{ false }}">
+      <section aria-label="Guide" data-screen-label="Guide">
+        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">The manual, inside the file</h1>
+        <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:760px;">This view carries the same embedded documentation the binary installs as the agent skill, in document layout. It is written into the HTML at generation time, so it still reads with no network at all.</p>
+
+        <div style="display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start;">
+          <div style="flex:3 1 420px; min-width:0; display:flex; flex-direction:column; gap:16px;">
+            <div style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+              <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+                <h2 style="margin:0; font-size:24px; font-weight:600;">How to read this dashboard</h2>
+                <dc-import name="StatusPill" text="read-only" tone="outline" size="small" hint-size="90px,24px"></dc-import>
+              </div>
+              <table style="width:100%; border-collapse:collapse; font-size:16px;">
+                <tbody>
+                  <tr><td style="padding:13px 20px 13px 0; width:210px; vertical-align:top; font-weight:600; border-bottom:1px solid var(--hairline);">Overview and Work</td><td style="padding:13px 0; line-height:1.6; color:var(--body); border-bottom:1px solid var(--hairline);">What needs a human, ordered by consequence and next owner. Priority, literal blocking, a pending decision gate, a deadline and a stale snapshot are five separate signals — they never collapse into one badge.</td></tr>
+                  <tr><td style="padding:13px 20px 13px 0; vertical-align:top; font-weight:600; border-bottom:1px solid var(--hairline);">Threads</td><td style="padding:13px 0; line-height:1.6; color:var(--body); border-bottom:1px solid var(--hairline);">One intent per chain, in committed order where Git history is available and in declared order — explicitly labelled — where it is not.</td></tr>
+                  <tr><td style="padding:13px 20px 13px 0; vertical-align:top; font-weight:600; border-bottom:1px solid var(--hairline);">Contracts and Network</td><td style="padding:13px 0; line-height:1.6; color:var(--body); border-bottom:1px solid var(--hairline);">Drift belongs to one consumer's pinned major line. A provider can be healthy while a consumer resolves nothing.</td></tr>
+                  <tr><td style="padding:13px 20px 13px 0; vertical-align:top; font-weight:600;">Integrity and Versions</td><td style="padding:13px 0; line-height:1.6; color:var(--body);">What this snapshot cannot promise, and the four compatibility axes that must never be inferred from one another.</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+              <h2 style="margin:0 0 10px; font-size:24px; font-weight:600;">Embedded documentation</h2>
+              <p style="margin:0 0 16px; font-size:16px; line-height:1.6; color:var(--muted); max-width:34em;">In a generated file the sections below carry their full Markdown body. This design fixture does not ship the corpus, so the body is declared missing rather than invented.</p>
+              <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px; margin-bottom:16px;">
+                <sc-for list="{{ guideDocs }}" as="g" hint-placeholder-count="8">
+                  <div style="background:var(--page); border-radius:12px; padding:14px 16px;">
+                    <div style="font-size:15px; color:var(--muted); margin-bottom:5px;">{{ g.group }}</div>
+                    <div style="font-size:17px; font-weight:600; line-height:1.35; margin-bottom:6px;">{{ g.title }}</div>
+                    <div style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); overflow-wrap:anywhere;">{{ g.src }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="background:var(--page); border-radius:12px; padding:16px 18px; box-shadow:inset 0 0 0 1px var(--border);">
+                <div style="font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--body); margin-bottom:8px;">[SSOT document body is injected here at build time]</div>
+                <div style="font-size:16px; line-height:1.6; color:var(--muted);">One source, three consumers: the agent skill tree, the public documentation route and this offline view. There is no second hand-maintained copy anywhere.</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="flex:1 1 280px; min-width:0; display:flex; flex-direction:column; gap:14px;">
+            <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+              <div style="font-size:17px; font-weight:600; margin-bottom:10px;">Project home</div>
+              <p style="margin:0 0 12px; font-size:15px; line-height:1.55; color:var(--muted);">The public site carries the same documentation, the changelog and the release verification steps. It needs a network; this file does not.</p>
+              <a href="https://ydnikolaev.github.io/a2ahub/" style="display:flex; align-items:center; gap:9px; text-decoration:none; background:var(--teal-tint); border-radius:10px; padding:11px 13px;">
+                <span style="width:8px; height:8px; border-radius:99px; background:var(--teal-solid); flex:0 0 8px;"></span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; overflow-wrap:anywhere;">ydnikolaev.github.io/a2ahub</span>
+              </a>
+              <div style="display:flex; flex-direction:column; gap:7px; margin-top:12px; font-size:15px;">
+                <a href="16-docs-v4.dc.html" style="text-decoration:none;">Documentation</a>
+                <a href="15-changelog-v4.dc.html" style="text-decoration:none;">Changelog</a>
+                <a href="17-security-reliability-v4.dc.html" style="text-decoration:none;">Verify a release</a>
+                <a href="https://github.com/ydnikolaev/a2ahub" style="text-decoration:none;">GitHub repository</a>
+              </div>
+            </div>
+            <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+              <div style="font-size:17px; font-weight:600; margin-bottom:10px;">Commands behind these views</div>
+              <div style="display:flex; flex-direction:column; gap:8px; font-family:'IBM Plex Mono',monospace; font-size:14px;">
+                <span style="background:var(--canvas); border-radius:8px; padding:9px 11px;">a2a inbox</span>
+                <span style="background:var(--canvas); border-radius:8px; padding:9px 11px;">a2a thread &lt;thread-id&gt;</span>
+                <span style="background:var(--canvas); border-radius:8px; padding:9px 11px;">a2a contracts</span>
+                <span style="background:var(--canvas); border-radius:8px; padding:9px 11px;">a2a html</span>
+              </div>
+              <p style="margin:12px 0 0; font-size:15px; line-height:1.55; color:var(--muted);">A human may run these for diagnosis. Routine coordination does not need a person to translate between systems.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </sc-if>
+
+  </main>
+
+  <footer style="background:var(--surface); padding:20px 0 30px;">
+    <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0; display:flex; align-items:flex-start; gap:22px; flex-wrap:nowrap; font-size:15px; color:var(--muted);">
+      <span style="flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:5px;">
+        <span style="display:flex; align-items:center; gap:8px; color:var(--body);"><span style="width:9px; height:9px; border-radius:99px; background:var(--green); flex:0 0 9px;"></span>{{ snapshotLine }}</span>
+        <span>{{ footerLine }}</span>
+      </span>
+      <span style="flex:0 0 auto; display:flex; gap:16px; flex-wrap:wrap; row-gap:8px; justify-content:flex-end;">
+        <a href="https://ydnikolaev.github.io/a2ahub/" style="text-decoration:none; font-family:'IBM Plex Mono',monospace; font-size:14px;">ydnikolaev.github.io/a2ahub</a>
+        <a href="16-docs-v4.dc.html" style="text-decoration:none;">Documentation</a>
+        <a href="13-public-home-v4.dc.html" style="text-decoration:none;">Public home</a>
+        <a href="12-design-system-v4.dc.html" style="text-decoration:none;">Design system v4</a>
+      </span>
+    </div>
+  </footer>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const GUIDE_DOCS = [
+  ["Start", "Getting started", "skill/a2ahub/getting-started.md"],
+  ["Concepts", "The work loops", "skill/a2ahub/concepts/loops.md"],
+  ["Concepts", "Threads: one intent, one chain", "skill/a2ahub/concepts/threads.md"],
+  ["Concepts", "Contract versions and sunsetting", "skill/a2ahub/concepts/contract-versions.md"],
+  ["Reference", "Command reference", "skill/a2ahub/reference/commands.md"],
+  ["Reference", "Native and editor notifications", "skill/a2ahub/reference/notifications.md"],
+  ["Authoring", "Eight artifact types", "schemas/**"],
+  ["Help", "Troubleshooting", "skill/a2ahub/troubleshooting.md"]
+];
+const VIEWS = [
+  ["overview", "Overview"], ["work", "Work"], ["threads", "Threads"], ["contracts", "Contracts"],
+  ["network", "Network"], ["spaces", "Spaces"], ["integrity", "Integrity"], ["versions", "Versions"], ["guide", "Guide"]
+];
+const DRIFT_TONE = { current: "healthy", behind: "attention", deprecated: "attention", retired: "neutral", missing: "blockingStrong", dangling: "outline" };
+const STATE_TONE = { published: "healthy", retired: "neutral", deprecated: "attention", disputed: "attention", submitted: "neutral", in_progress: "neutral", accepted: "neutral", acknowledged: "neutral", proposed: "attention", closed: "healthy" };
+function mono(s) { return String(s || "?").slice(0, 2).toUpperCase(); }
+function monoCodes(names) {
+  const out = {}, used = new Set();
+  names.slice().sort().forEach(n => {
+    const s = String(n || "?");
+    let code = (s[0] + (s[1] || "")).toUpperCase();
+    for (let i = 2; used.has(code) && i < s.length; i++) code = (s[0] + s[i]).toUpperCase();
+    used.add(code);
+    out[n] = code;
+  });
+  return out;
+}
+function overdue(it) { return (it.reasons || []).some(r => r === "overdue-on-me" || r === "needed-by-passed"); }
+function when(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const p = (n) => String(n).padStart(2, "0");
+  return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear() + " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()) + " UTC";
+}
+function day(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const p = (n) => String(n).padStart(2, "0");
+  return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear();
+}
+function avatar(isSelf, left) {
+  return "width:" + (left ? 26 : 32) + "px; height:" + (left ? 26 : 32) + "px; border-radius:99px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:" + (left ? 10 : 11) + "px; font-weight:600; flex:0 0 auto; " +
+    (isSelf === "left" ? "background:var(--surface); color:var(--muted); box-shadow:inset 0 0 0 1px var(--border-strong);" : isSelf ? "background:var(--teal-solid); color:var(--on-solid);" : "background:var(--border); color:var(--body);");
+}
+
+class Component extends DCLogic {
+  state = { data: null, error: "", view: "overview", space: "all", ovSel: "", workTab: "incoming", workSel: "", threadSel: "", conSel: "", lang: false, ru: false, more: false, navW: 0, theme: "light" };
+
+  componentDidMount() {
+    // the primary nav shows as many views as fit and folds the rest into More
+    // the nav is flex:1 1 0 in a nowrap row, so its own box IS the available width
+    this.measureNav = () => {
+      const n = this.navNode;
+      if (!n) return;
+      const w = n.clientWidth;
+      if (w > 0 && Math.abs((this.state.navW || 0) - w) > 4) this.setState({ navW: w });
+    };
+    window.addEventListener("resize", this.measureNav);
+    if (window.ResizeObserver) {
+      this.navRO = new ResizeObserver(() => this.measureNav());
+      setTimeout(() => { if (this.navNode && this.navNode.parentElement) this.navRO.observe(this.navNode.parentElement); }, 0);
+    }
+    setTimeout(this.measureNav, 0);
+    let saved = "light";
+    try { const s = window.localStorage.getItem("a2a-theme"); if (s === "dark" || s === "light") saved = s; } catch (e) {}
+    this.applyTheme(saved);
+    fetch("demo-data.json").then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(d => {
+      if (!d || !d.meta || d.meta.schema !== "a2a-design-demo/v3" || d.meta.synthetic !== true) {
+        this.setState({ error: "The fixture was found but does not declare meta.schema \"a2a-design-demo/v3\" with meta.synthetic: true. The inconsistency is reported instead of repaired." });
+        return;
+      }
+      this.setState({ data: d });
+    }).catch(e => {
+      if (window.A2A_DEMO) { this.setState({ data: window.A2A_DEMO }); return; }
+      this.setState({ error: "The fixture could not be loaded (" + e.message + "). Neither demo-data.json nor the embedded demo-data.js copy is reachable." });
+    });
+  }
+
+  go(view, extra) { this.setState(Object.assign({ view }, extra || {})); window.scrollTo(0, 0); }
+  inScope(space) { return this.state.space === "all" || space === this.state.space; }
+
+  applyTheme(theme) {
+    this.setState({ theme });
+    if (document.documentElement) document.documentElement.setAttribute("data-theme", theme);
+    try { window.localStorage.setItem("a2a-theme", theme); } catch (e) {}
+  }
+
+  chip(open) {
+    return "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--text); background:var(--canvas); border:0; border-radius:10px; padding:11px 12px; cursor:pointer; white-space:nowrap;" + (open ? " box-shadow:0 0 0 2px var(--focus);" : "");
+  }
+
+  componentDidUpdate() {
+    // a fold changes the row layout, so re-measure in the same frame instead of waiting for the next resize tick
+    if (this.measureNav) requestAnimationFrame(this.measureNav);
+  }
+
+  navLayout() {
+    // width per item is estimated from the label (Onest 16px ≈ 8.4px/char + 24px padding + 2px gap)
+    const items = VIEWS.map(([id, label]) => ({ id, label, w: Math.round(label.length * 8.4) + 26 }));
+    const avail = this.state.navW;
+    const total = items.reduce((t, i) => t + i.w, 0);
+    if (!avail || total <= avail) return { vis: items, rest: [] };
+    const budget = avail - 92;
+    const vis = [], rest = [];
+    let used = 0;
+    for (let i = 0; i < items.length; i++) {
+      if (!rest.length && used + items[i].w <= budget) { vis.push(items[i]); used += items[i].w; }
+      else rest.push(items[i]);
+    }
+    if (!vis.length) {
+      const act = items.find(t => t.id === this.state.view) || items[0];
+      vis.push(act); rest.splice(rest.indexOf(act), 1);
+    }
+    const activeIdx = rest.findIndex(t => t.id === this.state.view);
+    if (activeIdx > -1) {
+      const swapOut = vis.pop();
+      vis.push(rest[activeIdx]);
+      rest.splice(activeIdx, 1, swapOut);
+      rest.sort((a, b) => items.indexOf(a) - items.indexOf(b));
+    }
+    return { vis, rest };
+  }
+
+  tabStyle(active) {    return "font-family:'Onest',sans-serif; font-size:16px; line-height:1.4; border:0; cursor:pointer; white-space:nowrap; flex:0 0 auto; padding:9px 12px; border-radius:8px; " +
+      (active ? "background:var(--primary); color:var(--on-primary); font-weight:600;" : "background:transparent; color:var(--body);");
+  }
+  chipStyle(active) {
+    return "font-family:'Onest',sans-serif; font-size:15px; border:0; cursor:pointer; padding:5px 12px 5px 7px; border-radius:8px; display:inline-flex; align-items:center; gap:8px; " +
+      (active ? "background:var(--primary); color:var(--on-primary); font-weight:600;" : "background:var(--canvas); color:var(--body);");
+  }
+  cardButton(selected) {
+    return "display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; background:var(--surface); border:0; border-radius:14px; padding:16px 18px; cursor:pointer; box-shadow:" +
+      (selected ? "0 0 0 2px var(--focus), 0 6px 18px -10px rgba(33,30,23,.5)" : "0 1px 2px rgba(33,30,23,.06)") + ";";
+  }
+
+  statusOf(it) {
+    if (it.blocking) return { status: "Blocking · " + it.priority, tone: "blocking" };
+    if (it.gatePending) return { status: "Your approval pending", tone: "attention" };
+    if (overdue(it)) return { status: "Overdue · " + it.priority, tone: "blocking" };
+    if (it.severity === "attention") return { status: "Needs a look · " + it.priority, tone: "attention" };
+    return { status: it.priority, tone: "neutral" };
+  }
+
+  rowFor(it, selKey, selValue, onSel) {
+    const d = this.state.data;
+    const codes = monoCodes(d.nodes.map(n => n.system));
+    const st = this.statusOf(it);
+    const toSelf = (it.to || []).includes(d.self);
+    const toText = toSelf ? (it.to.length > 1 ? "you +" + (it.to.length - 1) : "you") : (it.to || []).join(", ");
+    const toCode = toSelf ? codes[d.self] : codes[(it.to || [])[0]];
+    const space = d.spaces.find(s => s.id === it.space);
+    const stale = space && space.stale ? " · stale " + space.syncAge : (space && space.readable ? " · fresh " + space.syncAge : "");
+    return {
+      id: it.id, type: it.type, title: it.title, status: st.status, tone: st.tone,
+      time: overdue(it) ? "needed by " + it.neededBy : it.age,
+      from: it.from, to: toText, meta: it.space + stale,
+      fromCode: codes[it.from] || "", toCode: toCode || "",
+      fromSelf: it.from === d.self, toSelf: toSelf,
+      selected: selValue === it.id,
+      select: () => this.setState({ [selKey]: it.id })
+    };
+  }
+
+  detailFor(id, fallbackList) {
+    const d = this.state.data;
+    const a = d.artifactDetails.find(x => x.id === id);
+    if (!a) {
+      const it = (fallbackList || []).find(x => x.id === id);
+      return {
+        present: false,
+        missingText: it
+          ? "The demo fixture carries the summary for " + it.id + " (" + it.type.replace("_", " ") + ", state " + it.state + ", from " + it.from + ") but no full envelope, events or reference record. Nothing is reconstructed to fill the gap."
+          : "Nothing is selected."
+      };
+    }
+    const e = a.envelope || {};
+    const pills = [];
+    if (e.blocking) pills.push({ text: "Blocking · " + (e.priority || ""), tone: "blocking" });
+    else if (e.priority) pills.push({ text: e.priority, tone: "neutral" });
+    pills.push({ text: String(a.state || "").replace("_", " "), tone: STATE_TONE[a.state] || "neutral" });
+    if (a.sync_stale) pills.push({ text: "space stale " + a.sync_age, tone: "attention" });
+
+    const lists = [];
+    if (e.acceptance_criteria) lists.push({ heading: "Acceptance criteria", items: e.acceptance_criteria, numbered: true });
+    if (e.options_considered) lists.push({ heading: "Options considered", items: e.options_considered, numbered: true });
+    if (e.deliverables) lists.push({ heading: "Deliverables", items: e.deliverables.map(x => typeof x === "string" ? x : (x.path || x.name || JSON.stringify(x))), numbered: false });
+    if (e.limitations) lists.push({ heading: "Stated limitations", items: e.limitations, numbered: false });
+
+    const facts = [];
+    facts.push({ label: "space", value: a.space, mono: true });
+    if (e.created) facts.push({ label: "created", value: when(e.created) });
+    if (e.effort_estimate) facts.push({ label: "effort", value: e.effort_estimate === "m" ? "medium" : e.effort_estimate });
+    if (e.category) facts.push({ label: "category", value: e.category + (e.classification ? " · " + e.classification : "") });
+    else if (e.classification) facts.push({ label: "classification", value: e.classification });
+    if (e.required_approvers) facts.push({ label: "approvers", value: e.required_approvers.join(", ") });
+    if (e.actor) facts.push({ label: "actor", value: (e.actor.name || "") + (e.actor.kind ? " · " + e.actor.kind : ""), mono: true });
+    facts.push({ label: "source", value: a.sourceClass + " · synced " + a.sync_age });
+
+    const flagged = new Set((a.flags || []).map(() => true));
+    const events = (a.events || []).map((ev, i) => ({
+      text: (ev.actor_system || ev.actor || "") + " " + ev.transition + (ev.claimed_state ? " — claimed " + ev.claimed_state.replace("_", " ") : ""),
+      meta: when(ev.at) + " · " + (ev.actor || "") + " · " + ev.ulid,
+      flagged: (a.flags || []).length > 0 && i === (a.events || []).length - 1
+    }));
+
+    const flagMessages = (a.flags || []).map(code => {
+      const f = d.flags.find(x => x.code === code && x.artifact === a.id) || d.flags.find(x => x.code === code);
+      return { code, message: f ? f.message : "No message recorded for this flag in the fixture." };
+    });
+
+    let calloutTitle = "", calloutText = "", calloutTone = "attention";
+    if (e.expected_response) {
+      const needed = e.needed_by || (e.expected_response && e.expected_response.by);
+      calloutTone = e.blocking ? "blocking" : "attention";
+      calloutTitle = needed ? "Expected by " + needed + " · " + ((a.to || []).includes(d.self) ? "your move" : "waiting on " + (a.to || []).join(", ")) : "What the sender expects back";
+      calloutText = [e.expected_response.shape.replace(/[.\s]+$/, "") + ".", e.interim_behavior ? "Until then: " + e.interim_behavior.replace(/[.\s]+$/, "") + "." : "", e.context ? e.context.replace(/[.\s]+$/, "") + "." : ""].filter(Boolean).join(" ");
+    } else if (e.context) {
+      calloutTitle = "Context recorded with the artifact";
+      calloutText = e.context;
+    } else if (e.verification) {
+      calloutTitle = "How the sender verified it";
+      calloutText = Array.isArray(e.verification) ? e.verification.join(" · ") : String(e.verification);
+    }
+
+    return {
+      present: true, type: a.type, pills,
+      sourceLine: a.sourceClass + " record · " + (a.sync_stale ? "space stale " + a.sync_age : "synced " + a.sync_age),
+      title: a.title, body: a.body || "",
+      calloutTitle, calloutText, calloutTone,
+      lists, facts,
+      refs: (a.refs || []).map(r => ({
+        ref: r.ref, note: (e.refs || []).find(x => x.ref === r.ref) ? (e.refs.find(x => x.ref === r.ref).note || "") : "",
+        pillText: r.resolved === false ? "unresolved" : (r.digest_mismatch ? "digest mismatch" : "resolved · digest matches"),
+        pillTone: r.resolved === false || r.digest_mismatch ? "blocking" : "healthy"
+      })),
+      events, flags: flagMessages,
+      threadLabel: a.thread ? "Open thread" : "No thread recorded",
+      openThread: () => this.go("threads", { threadSel: a.thread || "" }),
+      footer: a.id + " · digest " + String(a.digest || "").slice(0, 8) + "…" + String(a.digest || "").slice(-4)
+    };
+  }
+
+  renderVals() {
+    const d = this.state.data;
+    const s = this.state;
+    const nav = this.navLayout();
+    const base = {
+      hasError: !!s.error, errorText: s.error,
+      isOverview: !!d && s.view === "overview", isWork: !!d && s.view === "work", isThreads: !!d && s.view === "threads",
+      isContracts: !!d && s.view === "contracts", isNetwork: !!d && s.view === "network", isSpaces: !!d && s.view === "spaces",
+      isIntegrity: !!d && s.view === "integrity", isVersions: !!d && s.view === "versions", isGuide: !!d && s.view === "guide",
+      navRef: (n) => { this.navNode = n; if (n && this.measureNav) setTimeout(this.measureNav, 0); },
+      tabs: nav.vis.map(t => ({ label: t.label, current: s.view === t.id ? "page" : null, style: this.tabStyle(s.view === t.id), go: () => this.go(t.id, { more: false }) })),
+      hasMoreTabs: nav.rest.length > 0,
+      moreTabs: nav.rest.map(t => ({
+        label: t.label,
+        style: "font-family:'Onest',sans-serif; font-size:15px; text-align:left; border:0; cursor:pointer; padding:9px 10px; border-radius:8px; " +
+          (s.view === t.id ? "background:var(--canvas); color:var(--text); font-weight:600;" : "background:transparent; color:var(--body);"),
+        go: () => this.go(t.id, { more: false })
+      })),
+      moreOpen: s.more,
+      moreExpanded: s.more ? "true" : "false",
+      moreCaret: s.more ? "▴" : "▾",
+      moreBtnStyle: this.tabStyle(false) + (s.more ? " background:var(--canvas); font-weight:600;" : ""),
+      toggleMore: () => this.setState(x => ({ more: !x.more, lang: false })),
+      goOverview: () => this.go("overview", { more: false }),
+      goVersions: () => this.go("versions"), goWork: () => this.go("work", { workTab: "incoming" }),
+      guideDocs: GUIDE_DOCS.map(([group, title, src]) => ({ group, title, src })),
+      langOpen: this.state.lang,
+      langExpanded: this.state.lang ? "true" : "false",
+      langCaret: this.state.lang ? "▴" : "▾",
+      langBtnStyle: this.chip(this.state.lang),
+      toggleLang: () => this.setState(s => ({ lang: !s.lang })),
+      pickRu: () => this.setState({ ru: true }),
+      ruStyle: "display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; font-size:15px; border:0; border-radius:8px; padding:9px 10px; cursor:pointer; " +
+        (this.state.ru ? "background:var(--blocking-tint); color:var(--blocking-ink);" : "background:transparent; color:var(--text);"),
+      langNote: this.state.ru
+        ? "Russian labels are authored, never machine-translated — the localized build is not part of this prototype."
+        : "Components are localization-ready; the prototype language is English.",
+      themeGlyph: this.state.theme === "dark" ? "☀" : "☾",
+      themeLabel: this.state.theme === "dark" ? "Light theme" : "Dark theme",
+      themePressed: this.state.theme === "dark" ? "true" : "false",
+      themeIconStyle: "display:flex; align-items:center; justify-content:center; width:42px; height:42px; font-size:17px; border:0; border-radius:10px; cursor:pointer; " +
+        (this.state.theme === "dark" ? "background:var(--inverse-3); color:var(--on-inverse);" : "background:var(--canvas); color:var(--text);"),
+      toggleTheme: () => this.applyTheme(this.state.theme === "dark" ? "light" : "dark")
+    };
+    if (!d) return Object.assign(base, { selfMono: "", selfLine: "loading the fixture", snapshotLine: "", spaceChips: [], updateRequired: false, updateText: "", footerLine: "Reading demo-data.json from local cache", data: null, openContract: () => {} });
+
+    const scopedInbox = d.inbox.filter(i => this.inScope(i.space));
+    const scopedOutbox = d.outbox.filter(i => this.inScope(i.space));
+    const needsYou = scopedInbox.filter(i => i.blocking || i.gatePending || overdue(i));
+    const ovSel = s.ovSel || (needsYou[0] && needsYou[0].id) || (scopedInbox[0] && scopedInbox[0].id) || "";
+    const restCount = scopedInbox.length - needsYou.length;
+
+    const workList = s.workTab === "incoming" ? scopedInbox : scopedOutbox;
+    const workSel = s.workSel && workList.some(i => i.id === s.workSel) ? s.workSel : (workList[0] && workList[0].id) || "";
+
+    const threads = d.threads.filter(t => this.inScope(t.space));
+    const threadSel = s.threadSel && threads.some(t => t.id === s.threadSel) ? s.threadSel : (threads[0] && threads[0].id) || "";
+    const tv = d.threadViews.find(v => v.thread === threadSel);
+
+    const contracts = d.contracts.filter(c => this.inScope(c.space));
+    const conSel = s.conSel && contracts.some(c => c.id === s.conSel) ? s.conSel : (contracts[0] && contracts[0].id) || "";
+    const con = contracts.find(c => c.id === conSel) || contracts[0];
+    const conEdges = con ? d.contractEdges.filter(e => e.contract === con.id) : [];
+    const risky = conEdges.filter(e => e.drift !== "current");
+
+    const flags = d.flags.filter(f => this.inScope(f.space));
+    const offCurrent = d.contractEdges.filter(e => this.inScope(e.space) && e.drift !== "current").length;
+    const scopedEdges = d.contractEdges.filter(e => this.inScope(e.space)).length;
+
+    // Participant faces. In production each system's avatar comes from its GitHub identity
+    // (avatars.githubusercontent.com / the space participant record); this offline prototype
+    // renders monogram initials instead, because the dashboard makes no network requests.
+    const faceStyle = (i, kind, onDark) => "flex:0 0 22px; width:22px; height:22px; border-radius:99px; display:flex; align-items:center; justify-content:center; line-height:1; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:10px; font-weight:600; margin-left:" + (i ? "3px" : "0") + "; box-shadow:inset 0 0 0 1px " + (onDark ? "var(--primary)" : "var(--canvas)") + "; " +
+      (kind === "self" ? "background:var(--teal-solid); color:var(--on-solid);" : kind === "left" ? "background:var(--surface); color:var(--muted);" : "background:var(--border); color:var(--body);");
+    const facesFor = (spaceId, active) => {
+      const members = spaceId === "all" ? d.nodes : d.nodes.filter(n => (n.spaces || []).includes(spaceId));
+      const ordered = members.slice().sort((a, b) => (b.system === d.self ? 1 : 0) - (a.system === d.self ? 1 : 0) || a.system.localeCompare(b.system));
+      const shown = ordered.slice(0, 3).map((n, i) => ({
+        mono: monoCodes(d.nodes.map(x => x.system))[n.system],
+        title: n.system + " · " + n.org + (n.status === "left" ? " · left the space" : ""),
+        style: faceStyle(i, n.system === d.self ? "self" : (n.status === "left" ? "left" : "active"), active)
+      }));
+      const rest = ordered.length - shown.length;
+      if (rest > 0) shown.push({ mono: "+" + rest, title: rest + " more participants", style: faceStyle(shown.length, "rest", active) });
+      return shown;
+    };
+    const spaceChips = [{ id: "all", label: "All spaces" }].concat(d.spaces.map(x => ({ id: x.id, label: x.id })))
+      .map(x => {
+        const active = s.space === x.id;
+        const faces = x.id === "all" ? [] : facesFor(x.id, active);
+        return {
+          label: x.label, style: this.chipStyle(active),
+          hasFaces: faces.length > 0, faces,
+          go: () => this.setState({ space: x.id, ovSel: "", workSel: "", threadSel: "", conSel: "" })
+        };
+      });
+
+    const readable = d.spaces.filter(x => x.readable && this.inScope(x.id));
+    const codes = monoCodes(d.nodes.map(n => n.system));
+    const netSpaces = readable.map(sp => {
+      const members = d.nodes.filter(n => (n.spaces || []).includes(sp.id));
+      const spRisky = d.contractEdges.filter(e => e.space === sp.id && e.drift !== "current");
+      const lanes = d.exchangeEdges.filter(e => e.space === sp.id).slice().sort((a, b) => (b.count || 0) - (a.count || 0));
+      const top = lanes.slice(0, 3);
+      return {
+        id: sp.id,
+        pillText: sp.stale ? "stale " + sp.syncAge : "fresh " + sp.syncAge,
+        pillTone: sp.stale ? "attention" : "healthy",
+        summary: members.length + " participants · " + d.contractEdges.filter(e => e.space === sp.id).length + " contract lines · " + lanes.length + " open lanes",
+        members: members.map(n => ({
+          mono: codes[n.system], title: n.system + " · " + n.org + (n.status === "left" ? " · left the space" : ""),
+          style: avatar(n.system === d.self ? true : (n.status === "left" ? "left" : false), false)
+        })),
+        hasRisk: spRisky.length > 0,
+        risky: spRisky.slice(0, 3).map(e => ({
+          route: e.from + " → " + e.to,
+          pillText: e.drift === "deprecated" && e.sunset ? "sunset " + e.sunset : (e.drift === "behind" ? "one major behind" : e.drift),
+          pillTone: DRIFT_TONE[e.drift] || "neutral",
+          detail: e.drift === "missing"
+            ? "pins major " + e.pinnedMajor + " · provider has " + (e.availableMajors || []).join(" and ") + " · " + e.contract
+            : (e.drift === "dangling" ? "the provider left the space · " + e.contract : "pinned " + e.pinnedVersion + " · provider " + e.providerVersion + " · " + e.contract),
+          style: "background:var(--page); border-radius:10px; padding:10px 12px;" + (e.drift === "missing" ? " box-shadow:inset 0 0 0 1.5px var(--blocking-line);" : "")
+        })),
+        riskyRest: spRisky.length > 3 ? spRisky.length - 3 + " more lines need attention" : (d.contractEdges.filter(e => e.space === sp.id).length - spRisky.length) + " more lines are current",
+        lanes: top.map(e => ({
+          aMono: codes[e.from], bMono: codes[e.to],
+          aStyle: avatar(e.from === d.self, true), bStyle: avatar(e.to === d.self, true),
+          route: e.from + " → " + e.to,
+          pillText: e.count + " open · " + (e.blocking ? "blocking" : e.maxPriority),
+          pillTone: e.blocking ? "blocking" : "neutral"
+        })),
+        lanesRest: lanes.length > 3 ? lanes.length - 3 + " more lanes in this space" : ""
+      };
+    });
+
+    const tooling = d.tooling || {};
+    const upd = d.updateDetail || {};
+
+    return Object.assign(base, {
+      selfMono: mono(d.self),
+      selfLine: d.self + " · " + ((d.nodes.find(n => n.system === d.self) || {}).org || ""),
+      snapshotLine: "Snapshot " + when(d.generatedAt) + " · generated from local cache",
+      spaceChips,
+      updateRequired: !!tooling.updateAvailable && !!tooling.required,
+      updateText: "Local binary " + tooling.current + " is below the writer floor " + tooling.floor + " required by space " + tooling.floorSpace + ". Latest is " + tooling.latest + ", checked " + tooling.cacheAge + " ago.",
+      footerLine: "Read-only projection · no network requests · never the source of truth · " + d.meta.notice,
+
+      ovHeadline: needsYou.length ? needsYou.length + (needsYou.length === 1 ? " thing needs you" : " things need you") : "Nothing is waiting on you in this scope",
+      ovSub: scopedInbox.length + " items are addressed to " + d.self + " and " + scopedOutbox.length + " of your own are open with other systems. " + (needsYou.length ? "The rows below are blocking, gated or overdue." : "Everything open is progressing between agents."),
+      ovStats: [
+        { label: "Needs you", value: needsYou.length, note: "blocking or gated", valueStyle: "font-size:40px; line-height:1; font-weight:600; color:" + (needsYou.length ? "var(--ochre)" : "var(--green)") + ";" },
+        { label: "Moving on its own", value: restCount, note: "incoming, not blocked", valueStyle: "font-size:40px; line-height:1; font-weight:600; color:var(--green);" },
+        { label: "You are waiting on", value: scopedOutbox.length, note: "outgoing items", valueStyle: "font-size:40px; line-height:1; font-weight:600; color:var(--text);" },
+        { label: "Contract lines off current", value: offCurrent, note: "of " + scopedEdges + " registered", valueStyle: "font-size:40px; line-height:1; font-weight:600; color:" + (offCurrent ? "var(--ochre)" : "var(--green)") + ";" }
+      ],
+      ovRows: needsYou.map(it => this.rowFor(it, "ovSel", ovSel)),
+      ovRestText: restCount + " more incoming items, nothing blocked on them · " + flags.length + " protocol flags",
+      ovSpaces: d.spaces.filter(x => this.inScope(x.id)).map(x => ({
+        id: x.id,
+        pillText: !x.readable ? "unreadable" : (x.stale ? "stale " + x.syncAge : "fresh " + x.syncAge),
+        pillTone: !x.readable ? "blocking" : (x.stale ? "attention" : "healthy"),
+        meta: x.readable ? x.participantCount + " participants · writer floor " + x.minBinaryVersion : "contents are not inferred"
+      })),
+      ovDetail: this.detailFor(ovSel, scopedInbox),
+
+      workSub: "Incoming is addressed to " + d.self + "; outgoing is what you are waiting on. " + scopedInbox.length + " in, " + scopedOutbox.length + " out.",
+      workTabs: [["incoming", "Incoming · " + scopedInbox.length], ["outgoing", "Outgoing · " + scopedOutbox.length]].map(([id, label]) => ({
+        label,
+        style: "font-family:'Onest',sans-serif; font-size:15px; border:0; cursor:pointer; padding:7px 14px; border-radius:7px; " + (s.workTab === id ? "background:var(--surface); font-weight:600; color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.12);" : "background:transparent; color:var(--muted);"),
+        go: () => this.setState({ workTab: id, workSel: "" })
+      })),
+      workRows: workList.map(it => this.rowFor(it, "workSel", workSel)),
+      workDetail: this.detailFor(workSel, workList),
+
+      threadsSub: "A request, acknowledgement, response, evidence, verification and decision stay connected. Commit order is strong evidence; declared timestamps are only a stated fallback.",
+      threadRows: threads.map(t => ({
+        title: t.opener ? t.opener.title : t.id,
+        pillText: t.yourMove ? "your move" : "waiting on others",
+        pillTone: t.yourMove ? "attention" : "neutral",
+        participants: (t.participants || []).join(", "),
+        age: "last activity " + t.lastActivity,
+        meta: t.id + " · " + t.memberCount + " artifacts · " + t.space,
+        style: this.cardButton(threadSel === t.id),
+        select: () => this.setState({ threadSel: t.id })
+      })),
+      tvPresent: !!tv, tvMissing: !tv,
+      tvTitle: tv ? (tv.opener ? tv.opener.title : tv.thread) : "",
+      tvOrderPill: tv ? (tv.order === "committed" ? "commit order · strong evidence" : "declared timestamps · weaker fallback") : "",
+      tvStale: !!(tv && tv.sync_stale), tvStaleText: tv && tv.sync_stale ? "space stale" : "",
+      tvMeta: tv ? (tv.participants || []).join(", ") + " · " + tv.space : "",
+      tvEntryCount: tv ? (tv.transcript || []).length + " entries" : "",
+      tvEntries: tv ? (() => {
+        const arts = tv.artifacts || [];
+        const titleOf = (id) => { const a = arts.find(x => x.id === id); return a && a.title ? a.title : id; };
+        const relationsOf = (a) => {
+          const out = [];
+          if (a.parent) out.push({ verb: "answers", label: titleOf(a.parent) });
+          (a.refs || []).forEach(r => { const ref = r && r.ref ? r.ref : r; if (ref) out.push({ verb: "references", label: titleOf(ref) }); });
+          return out;
+        };
+        const flagged = new Set((tv.flags || []).map(f => f.event_ulid).filter(Boolean));
+        const rail = (last) => "position:relative; padding:0 0 " + (last ? "0" : "14px") + " 22px; " +
+          (last ? "" : "border-left:2px solid var(--border);") + (last ? " margin-left:2px;" : "");
+        const rows = (tv.transcript || []).map(en => {
+          if (en.kind === "artifact") {
+            const a = en.artifact || {};
+            const known = arts.find(x => x.id === a.id) || {};
+            const st = known.state || "";
+            const rels = relationsOf(known);
+            return {
+              isArtifact: true, isEvent: false, type: a.type, title: a.title, id: a.id,
+              route: (a.from || "") + " → " + (a.to || []).join(", ") + " · " + day(en.at),
+              hasState: !!st, state: String(st).replace("_", " "), stateTone: STATE_TONE[st] || "neutral",
+              hasParent: rels.length > 0,
+              relations: rels.map(r => ({
+                text: r.verb + " " + r.label,
+                style: "display:inline-flex; align-items:center; gap:6px; border-radius:6px; padding:3px 9px; overflow-wrap:anywhere; " +
+                  (r.verb === "answers" ? "background:var(--teal-tint); color:var(--teal-ink);" : "background:var(--canvas); color:var(--muted);")
+              })),
+              opensChain: rels.length === 0,
+              cardStyle: "background:var(--page); border-radius:12px; padding:14px 16px;",
+              dotStyle: "position:absolute; left:-8px; top:16px; width:14px; height:14px; border-radius:99px; background:var(--teal-solid); box-shadow:0 0 0 3px var(--surface);",
+              text: "", meta: "", hasSubject: false, subjectLabel: ""
+            };
+          }
+          const ev = en.event || {};
+          const actor = ev.actor || {};
+          const bad = flagged.has(ev.ulid);
+          return {
+            isArtifact: false, isEvent: true, type: "", id: ev.ulid,
+            text: (actor.system || actor.name || "") + " " + ev.transition + (ev.claimed_state ? " — claimed " + String(ev.claimed_state).replace("_", " ") : ""),
+            meta: when(en.at),
+            hasSubject: !!ev.subject, subjectLabel: ev.subject ? titleOf(ev.subject) : "",
+            cardStyle: "",
+            dotStyle: "position:absolute; left:-6px; top:11px; width:10px; height:10px; border-radius:99px; background:" + (bad ? "var(--ochre)" : "var(--border-strong)") + "; box-shadow:0 0 0 3px var(--surface);",
+            title: "", route: "", hasParent: false, relations: [], opensChain: false, hasState: false, state: "", stateTone: "neutral"
+          };
+        }).reverse();
+        return rows.map((r, i) => Object.assign(r, {
+          railStyle: (r.isEvent ? "position:relative; padding:8px 0 8px 22px;" : "position:relative; padding:0 0 14px 22px;") +
+            (i === rows.length - 1 ? " margin-left:2px;" : " border-left:2px solid var(--border);")
+        }));
+      })() : [],
+      tvOpen: tv ? (tv.open_items || []).map(o => ({
+        id: o.id, type: o.type,
+        who: o.your_move ? "your move" : "waiting on " + (o.waiting_on || []).join(", "),
+        whoTone: o.your_move ? "attention" : "neutral",
+        needed: o.needed_by ? "needed by " + o.needed_by : (o.blocking ? "blocking" : ""),
+        actions: (o.next_actions || []).map(a => ({
+          text: a.transition + " · " + (a.by || []).join(", "),
+          style: "font-family:'IBM Plex Mono',monospace; font-size:14px; border-radius:6px; padding:4px 10px; " +
+            ((a.by || []).includes(d.self) ? "background:var(--teal-tint); color:var(--teal-ink); font-weight:600;" : "background:var(--canvas); color:var(--muted);")
+        }))
+      })) : [],
+      tvHasFlags: !!(tv && ((tv.flags || []).length || (tv.unresolved || []).length)),
+      tvFlags: tv ? (tv.flags || []).map(f => f.kind + " on " + f.subject + (f.event_ulid ? " · event " + f.event_ulid : "")).concat((tv.unresolved || []).map(u => "unresolved reference: " + (u.ref || JSON.stringify(u)))) : [],
+
+      conSub: "Consumers register the major line they use. Every version keeps its own state, so a provider can publish v2 while a consumer's v1 line is still visible, sunsetting or blocked from retirement. " + offCurrent + " of " + scopedEdges + " lines are not on the current major.",
+      conRows: contracts.map(c => {
+        const edges = d.contractEdges.filter(e => e.contract === c.id);
+        const bad = edges.filter(e => e.drift !== "current");
+        const pills = bad.length
+          ? bad.slice(0, 2).map(e => ({ text: e.from + ": " + (e.drift === "deprecated" && e.sunset ? "sunset " + e.sunset : e.drift), tone: DRIFT_TONE[e.drift] || "neutral" }))
+          : [{ text: "all lines current", tone: "healthy" }];
+        return {
+          id: c.id, version: c.version, meta: "provider " + c.provider + " · " + c.category + " · " + c.space,
+          pills, style: this.cardButton(conSel === c.id), select: () => this.setState({ conSel: c.id })
+        };
+      }),
+      cdId: con ? con.id : "",
+      cdState: con ? con.state : "",
+      cdStateTone: con ? (STATE_TONE[con.state] || "neutral") : "neutral",
+      cdCodeBacked: !!(con && con.codeBacked),
+      cdSpaceLine: con ? "space " + con.space + " · provider " + con.provider : "",
+      cdDescription: con ? con.description : "",
+      cdHasRisk: risky.length > 0,
+      cdRiskTitle: risky.length ? (risky[0].drift === "missing"
+        ? risky[0].from + " pins major " + risky[0].pinnedMajor + " — the provider has no major " + risky[0].pinnedMajor
+        : risky.length + (risky.length === 1 ? " consumer line is" : " consumer lines are") + " not on the current major") : "",
+      cdRiskText: risky.length ? risky.map(e => e.from + " → " + e.to + ": " + (e.drift === "missing"
+        ? "available majors are " + (e.availableMajors || []).join(" and ") + ", so nothing resolves for that line"
+        : (e.drift === "dangling" ? "the provider left the space" : "pinned " + e.pinnedVersion + " (" + e.pinnedState + ") against provider " + e.providerVersion + (e.sunset ? ", sunset " + e.sunset : "")))).join(". ") + "." : "",
+      cdLines: conEdges.map(e => ({
+        route: e.from + " → " + e.to,
+        drift: e.drift, tone: DRIFT_TONE[e.drift] || "neutral",
+        detail: e.drift === "missing"
+          ? "pinned major " + e.pinnedMajor + " · available " + (e.availableMajors || []).join(", ")
+          : (e.drift === "dangling" ? "no descriptor resolves for this line" : "pinned " + e.pinnedVersion + " · provider " + e.providerVersion),
+        style: "background:var(--page); border-radius:11px; padding:12px 14px;" + (e.drift === "missing" ? " box-shadow:inset 0 0 0 1.5px var(--blocking-line);" : "")
+      })),
+      cdVersions: con ? (con.versions || []).slice().reverse().map(v => ({
+        version: v.version, state: v.state, tone: STATE_TONE[v.state] || "neutral",
+        color: v.state === "retired" ? "var(--muted)" : "var(--text)",
+        note: [v.sunset ? "sunset " + v.sunset : "", v.successor ? "successor " + v.successor : "", v.deprecationID ? "announced in " + v.deprecationID : ""].filter(Boolean).join(" · ")
+      })) : [],
+      cdFacts: con ? [
+        { label: "schema format", value: con.schemaFormat, mono: true },
+        { label: "compatibility", value: con.compatPolicy },
+        { label: "consumers", value: (con.consumers || []).join(", ") },
+        { label: "generated tool", value: con.generatedTool || "not recorded", mono: !!con.generatedTool, muted: !con.generatedTool },
+        { label: "source digest", value: con.sourceDigest ? con.sourceDigest.slice(0, 12) + "…" + con.sourceDigest.slice(-6) : "not recorded", mono: true, muted: !con.sourceDigest }
+      ] : [],
+
+      data: d,
+      space: s.space,
+      setSpace: (id) => this.setState({ space: id, ovSel: "", workSel: "", threadSel: "", conSel: "" }),
+      openItem: (id, space, outgoing) => this.go("work", { workSel: id, workTab: outgoing ? "outgoing" : "incoming", space: this.state.space === "all" ? "all" : space }),
+      openContract: (contractId, space) => this.go("contracts", { conSel: contractId, space: this.state.space === "all" ? "all" : space }),
+      netSpaces,
+      netUnreadable: d.spaces.filter(x => !x.readable && this.inScope(x.id)).map(x => ({
+        id: x.id,
+        reason: (d.unavailable.find(u => u.scope === x.id) || {}).reason || "The mirror or manifest is unreadable. Zero participants or work must not be inferred."
+      })),
+
+      spaceRows: d.spaces.filter(x => this.inScope(x.id)).map((x, i, arr) => {
+        const line = i === arr.length - 1 ? "none" : "1px solid var(--hairline)";
+        return {
+          id: x.id,
+          pillText: !x.readable ? "unreadable" : (x.stale ? "stale " + x.syncAge : "fresh " + x.syncAge),
+          pillTone: !x.readable ? "blocking" : (x.stale ? "attention" : "healthy"),
+          participants: x.readable ? String(x.participantCount) : "not evaluated",
+          floor: x.minBinaryVersion || "—",
+          workflow: x.workflowVersion || "—",
+          revision: x.revision ? x.revision.slice(0, 10) : "not recorded",
+          cell: "padding:14px 16px 14px 0; vertical-align:top; border-bottom:" + line + ";",
+          cellLast: "padding:14px 0; vertical-align:top; border-bottom:" + line + ";"
+        };
+      }),
+
+      intSub: flags.length + " protocol and read flags are surfaced in this scope. Fold flags are protocol facts from committed events; cache-index flags are read problems. Neither is hidden and neither is treated as a verdict.",
+      intFlags: flags.map(f => ({ code: f.code, origin: f.source + " · " + f.system + (f.space ? " · " + f.space : ""), message: f.message })),
+      intDegraded: d.spaces.filter(x => this.inScope(x.id) && (x.stale || !x.readable)).map(x => ({
+        id: x.id,
+        pillText: !x.readable ? "unreadable" : "stale " + x.syncAge,
+        pillTone: !x.readable ? "blocking" : "attention",
+        note: !x.readable ? "no manifest could be read" : "reads are served from an older mirror revision"
+      })),
+      intUnavailable: d.unavailable.map(u => ({ title: u.title, reason: u.reason })),
+
+      verSub: "Three separate axes: the local binary, the writer floor each space requires, and the workflow version a space pins. None is inferred from another.",
+      verCurrent: tooling.current, verLatest: tooling.latest,
+      verFacts: [
+        { label: "checked", value: when(tooling.checkedAt) + " · cache " + tooling.cacheAge },
+        { label: "source", value: tooling.source, mono: true },
+        { label: "writer floor", value: tooling.floor + " (required by " + tooling.floorSpace + ")", mono: true },
+        { label: "update", value: tooling.required ? "required" : "optional" },
+        { label: "release", value: tooling.releaseURL ? "v" + tooling.latest + " on GitHub" : "not recorded" }
+      ],
+      verUpdateStatus: upd.status || "not evaluated",
+      verHeadline: upd.headline || "",
+      verChanges: (upd.changes || []).map(c => ({
+        kind: c.kind, impact: c.impact, subject: c.subject,
+        tone: c.kind === "fix" ? "healthy" : (c.kind === "feature" ? "agent" : "neutral")
+      })),
+      verScope: d.meta.releaseNotesScope,
+      verReleases: d.releaseNotes.map(r => ({
+        version: r.version, date: r.released || "date not recorded",
+        count: (r.changes || []).length + " changes", headline: r.headline
+      }))
+    });
+  }
+}
+
+</script>
+</body>
+</html>

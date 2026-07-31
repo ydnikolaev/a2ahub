@@ -1,0 +1,27 @@
+{
+  "schema": "a2a-docs-manifest/v1",
+  "groups": ["Start", "Concepts", "Reference", "Authoring", "Help"],
+  "sections": [
+    {"id":"getting-started","group":"Start","title":"Getting started","file":"a2ahub/onboarding.md"},
+    {"id":"overview","group":"Concepts","title":"Overview","file":"a2ahub/SKILL.md"},
+    {"id":"work-loops","group":"Concepts","title":"The work loops","file":"a2ahub/loops.md"},
+    {"id":"threads","group":"Concepts","title":"Threads: one intent, one chain","file":"a2ahub/reference/threads.md"},
+    {"id":"contract-versions","group":"Concepts","title":"Contract versions and sunsetting","file":"a2ahub/reference/contract-versions.md"},
+    {"id":"commands","group":"Reference","title":"Command reference","file":"a2ahub/reference/commands.md"},
+    {"id":"notifications","group":"Reference","title":"Native and editor notifications","file":"a2ahub/notifications.md"},
+    {"id":"decompose","group":"Reference","title":"Decompose example","file":"a2ahub/reference/decompose-example.md"},
+    {"id":"feedback","group":"Reference","title":"Feedback","file":"a2ahub/reference/feedback.md"},
+    {"id":"status-announcements","group":"Reference","title":"Feed liveness: status announcements","file":"a2ahub/reference/status-announcements.md"},
+    {"id":"retraction","group":"Reference","title":"Retracting published data","file":"a2ahub/reference/retraction.md"},
+    {"id":"bindings","group":"Reference","title":"Contract-to-code bindings","file":"a2ahub/reference/bindings.md"},
+    {"id":"authoring-contract","group":"Authoring","title":"Authoring: Contract","file":"a2ahub/reference/authoring/contract.md"},
+    {"id":"authoring-requirement","group":"Authoring","title":"Authoring: Requirement","file":"a2ahub/reference/authoring/requirement.md"},
+    {"id":"authoring-question","group":"Authoring","title":"Authoring: Question","file":"a2ahub/reference/authoring/question.md"},
+    {"id":"authoring-work_request","group":"Authoring","title":"Authoring: Work request","file":"a2ahub/reference/authoring/work_request.md"},
+    {"id":"authoring-decision","group":"Authoring","title":"Authoring: Decision","file":"a2ahub/reference/authoring/decision.md"},
+    {"id":"authoring-handoff","group":"Authoring","title":"Authoring: Handoff","file":"a2ahub/reference/authoring/handoff.md"},
+    {"id":"authoring-response","group":"Authoring","title":"Authoring: Response","file":"a2ahub/reference/authoring/response.md"},
+    {"id":"authoring-announcement","group":"Authoring","title":"Authoring: Announcement","file":"a2ahub/reference/authoring/announcement.md"},
+    {"id":"troubleshooting","group":"Help","title":"Troubleshooting","file":"a2ahub/troubleshooting.md"}
+  ]
+}

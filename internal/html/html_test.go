@@ -2,6 +2,7 @@ package html
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -266,5 +267,31 @@ func TestDefaultTemplate_HasMarkers(t *testing.T) {
 	}
 	if _, err := Render(tmpl, Data{Self: "axon"}, docs); err != nil {
 		t.Fatalf("Render over the embedded template failed: %v", err)
+	}
+}
+
+func TestDefaultTemplate_CarriesApprovedV4ViewsWithoutRemoteLoads(t *testing.T) {
+	t.Parallel()
+	tmpl := string(DefaultTemplate())
+	for _, view := range []string{"Overview", "Work", "Threads", "Contracts", "Network", "Spaces", "Integrity", "Versions", "Guide"} {
+		if !strings.Contains(tmpl, `aria-label="`+view+`"`) {
+			t.Errorf("embedded v4 dashboard is missing %s view", view)
+		}
+	}
+	for _, pattern := range []string{`<script src="http`, `<link href="http`, `<img src="http`} {
+		if strings.Contains(tmpl, pattern) {
+			t.Errorf("self-contained dashboard has automatic remote load %q", pattern)
+		}
+	}
+}
+
+func TestSharedTokensMatchUIContract(t *testing.T) {
+	t.Parallel()
+	want, err := os.ReadFile("../../ui/tokens.css")
+	if err != nil {
+		t.Fatalf("read ui token SSOT: %v", err)
+	}
+	if !bytes.Equal(sharedTokens, want) {
+		t.Fatal("internal/html/tokens.css drifted from ui/tokens.css; regenerate the projection")
 	}
 }

@@ -1,0 +1,32 @@
+---
+const {
+  heading = 'Exchange map',
+  space = 'all',
+  spaceFilter = '',
+  collapseExtras = false,
+  wide = false,
+  showMatrix = true,
+  showSpaceTabs = true
+} = Astro.props;
+import DesignRuntimeBoot from './DesignRuntimeBoot.astro';
+---
+<div class="design-network-root">
+  <x-dc>
+    <dc-import
+      name="NetworkMap"
+      heading={heading}
+      space={space}
+      space-filter={spaceFilter}
+      collapse-extras={collapseExtras ? '{{ true }}' : '{{ false }}'}
+      wide={wide ? '{{ true }}' : '{{ false }}'}
+      show-matrix={showMatrix ? '{{ true }}' : '{{ false }}'}
+      show-space-tabs={showSpaceTabs ? '{{ true }}' : '{{ false }}'}
+      hint-size="100%,1100px">
+    </dc-import>
+  </x-dc>
+  <script is:inline type="text/x-dc" data-dc-script>
+    class Component extends DCLogic { renderVals() { return {}; } }
+  </script>
+</div>
+
+<DesignRuntimeBoot />

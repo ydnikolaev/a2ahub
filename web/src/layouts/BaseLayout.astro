@@ -1,0 +1,119 @@
+---
+import '../../../ui/tokens.css';
+import '../styles/site.css';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import content from '../generated/content.json';
+
+const {
+  title = 'a2ahub — typed coordination infrastructure for autonomous agents',
+  description = 'Let autonomous agents coordinate through typed artifacts, validation and an inspectable Git record.',
+  current = Astro.url.pathname,
+  markdown,
+  noFooter = false,
+  noHeader = false,
+  slotOwnsMain = false
+} = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site).toString();
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#f1eee6" />
+    <link rel="canonical" href={canonical} />
+    {markdown && <link rel="alternate" type="text/markdown" href={new URL(markdown, Astro.site)} />}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content="a2ahub" />
+    <meta name="twitter:card" content="summary" />
+    <title>{title}</title>
+    <script is:inline>
+      try {
+        const saved = localStorage.getItem('a2a-theme');
+        if (saved === 'dark' || saved === 'light') document.documentElement.dataset.theme = saved;
+        else if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.dataset.theme = 'dark';
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    {!noHeader && <SiteHeader current={current} markdown={markdown || '/index.md'} />}
+    {slotOwnsMain ? <div id="main"><slot /></div> : <main id="main"><slot /></main>}
+    {!noFooter && <SiteFooter markdown={markdown || '/index.md'} release={content.releases?.[0]} />}
+    <div class="sr-only" aria-live="polite" data-live-region></div>
+    <script is:inline>
+      const live = document.querySelector('[data-live-region]');
+      const announce = (message) => { if (live) live.textContent = message; };
+      document.querySelectorAll('[data-theme-toggle]').forEach((button) => button.addEventListener('click', () => {
+        const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = next;
+        try { localStorage.setItem('a2a-theme', next); } catch {}
+        document.querySelectorAll('[data-theme-toggle]').forEach((toggle) => {
+          const dark = next === 'dark';
+          toggle.setAttribute('aria-pressed', String(dark));
+          toggle.setAttribute('aria-label', dark ? 'Light theme' : 'Dark theme');
+          toggle.setAttribute('title', dark ? 'Light theme' : 'Dark theme');
+          if (toggle.classList.contains('design-theme-button')) toggle.textContent = dark ? '☀' : '☾';
+          else toggle.textContent = dark ? 'Light theme' : 'Dark theme';
+        });
+        announce(`${next} theme selected`);
+      }));
+      document.querySelectorAll('[data-copy-value]').forEach((button) => button.addEventListener('click', async () => {
+        const original = button.textContent;
+        try {
+          await navigator.clipboard.writeText(button.dataset.copyValue || '');
+          button.textContent = 'Copied'; announce('Copied to clipboard');
+        } catch {
+          button.textContent = 'Copy failed'; announce('Clipboard permission was denied');
+        }
+        setTimeout(() => { button.textContent = original; }, 1800);
+      }));
+      document.querySelectorAll('[data-agent-link]').forEach((link) => {
+        const page = `${location.href} Prefer the Markdown alternate and linked source-of-truth documents.`;
+        const prompt = encodeURIComponent(`Read ${page} Help me understand or use a2ahub.`);
+        link.href = link.dataset.agentLink === 'chatgpt' ? `https://chatgpt.com/?q=${prompt}` : `https://claude.ai/new?q=${prompt}`;
+      });
+      document.querySelectorAll('[data-copy-url]').forEach((button) => button.addEventListener('click', async () => {
+        const original = button.dataset.copyLabel || button.textContent;
+        try { await navigator.clipboard.writeText(button.dataset.copyUrl || ''); button.textContent = 'URL copied'; }
+        catch { button.textContent = 'Copy failed'; }
+        setTimeout(() => { button.textContent = original; }, 2400);
+      }));
+      document.querySelectorAll('[data-popover-toggle]').forEach((button) => button.addEventListener('click', () => {
+        const name = button.dataset.popoverToggle;
+        document.querySelectorAll('[data-popover]').forEach((popover) => {
+          const open = popover.dataset.popover === name && popover.hidden;
+          popover.hidden = !open;
+          const owner = document.querySelector(`[data-popover-toggle="${popover.dataset.popover}"]`);
+          owner?.setAttribute('aria-expanded', String(open));
+          const caret = owner?.querySelector('[data-caret]'); if (caret) caret.textContent = open ? '▴' : '▾';
+        });
+      }));
+      document.querySelectorAll('[data-russian-note]').forEach((button) => button.addEventListener('click', () => {
+        const note = document.querySelector('[data-language-note]');
+        if (note) note.textContent = 'Russian labels are authored, never machine-translated — the localized build is not shipped yet.';
+      }));
+      const mobileButton = document.querySelector('[data-mobile-menu-toggle]');
+      const mobileMenu = document.querySelector('[data-mobile-menu]');
+      mobileButton?.addEventListener('click', () => {
+        const open = mobileMenu?.hidden ?? true;
+        if (mobileMenu) mobileMenu.hidden = !open;
+        mobileButton.setAttribute('aria-expanded', String(open));
+        mobileButton.classList.toggle('open', open);
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        document.querySelectorAll('[data-popover]').forEach((popover) => { popover.hidden = true; });
+        document.querySelectorAll('[data-popover-toggle]').forEach((button) => button.setAttribute('aria-expanded', 'false'));
+        if (mobileMenu) mobileMenu.hidden = true;
+        mobileButton?.setAttribute('aria-expanded', 'false');
+      });
+    </script>
+  </body>
+</html>

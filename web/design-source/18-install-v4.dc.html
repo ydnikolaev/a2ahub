@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>a2a — install the binary, install the skill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --canvas: #F1EEE6;
+  --page: #FAF7F0;
+  --surface: #FFFFFF;
+  --sink: #E8E3D7;
+  --border: #E4DFD2;
+  --border-strong: #CBC2AB;
+  --hairline: #F1EEE6;
+  --text: #211E17;
+  --body: #453F31;
+  --muted: #6F6853;
+  --faint: #8A8269;
+  --logo-dim: #9A927B;
+  --inverse: #211E17;
+  --inverse-2: #2A261D;
+  --inverse-3: #33302A;
+  --inverse-line: #3A342A;
+  --on-inverse: #F3EFE4;
+  --on-inverse-2: #E8E3D4;
+  --on-inverse-muted: #C4BCA6;
+  --on-inverse-faint: #A8A08A;
+  --on-dark: #FAF7F0;
+  --on-solid: #FFFFFF;
+  --teal-solid: #175E6B;
+  --teal-ink: #175E6B;
+  --teal-ink-hover: #114953;
+  --teal-tint: #EDF4F5;
+  --teal-strong-ink: #0E3F48;
+  --teal-on-dark: #8FD0DB;
+  --teal-hairline: #BFD9DD;
+  --focus: #175E6B;
+  --ochre: #9A5C08;
+  --attention-tint: #FBF4E4;
+  --attention-ink: #7A5A14;
+  --attention-strong: #5E4410;
+  --attention-line: #E8CE94;
+  --red: #AC382A;
+  --blocking-tint: #F8E9E5;
+  --blocking-ink: #8C2B1F;
+  --blocking-strong: #5E2A22;
+  --blocking-line: #E0B3AB;
+  --green: #3E7A4C;
+  --healthy-tint: #E9F1E8;
+  --healthy-ink: #2F5E3A;
+  --healthy-strong: #24492D;
+  --plum: #7A3B62;
+  --selection: #D7E8EA;
+  --attn-bg: #33291A;
+  --attn-ink: #E2A33C;
+  --code-chip: #1B2A2D;
+  --primary: #211E17;
+  --on-primary: #FAF7F0;
+  --header-bg: rgba(241,238,230,.94);
+  --shadow-card: 0 1px 2px rgba(33,30,23,.06);
+}
+html[data-theme="dark"] {
+  --canvas: #16140F;
+  --page: #1D1A14;
+  --surface: #24211A;
+  --sink: #2E2A21;
+  --border: #3B3529;
+  --border-strong: #4E4736;
+  --hairline: #302B22;
+  --text: #F4F0E4;
+  --body: #DAD3C0;
+  --muted: #ADA48C;
+  --faint: #8F8770;
+  --logo-dim: #8F8770;
+  --inverse: #0E0D09;
+  --inverse-2: #1A1812;
+  --inverse-3: #2E2A21;
+  --inverse-line: #3B3529;
+  --on-inverse: #F3EFE4;
+  --on-inverse-2: #E8E3D4;
+  --on-inverse-muted: #C4BCA6;
+  --on-inverse-faint: #A8A08A;
+  --on-dark: #FAF7F0;
+  --on-solid: #0E0D09;
+  --teal-solid: #2A8395;
+  --teal-ink: #8FD0DB;
+  --teal-ink-hover: #B4E2EA;
+  --teal-tint: #123039;
+  --teal-strong-ink: #C7E9EF;
+  --teal-on-dark: #8FD0DB;
+  --teal-hairline: #2C5A63;
+  --focus: #8FD0DB;
+  --ochre: #D9902A;
+  --attention-tint: #3A2D12;
+  --attention-ink: #E8C579;
+  --attention-strong: #F4DDAA;
+  --attention-line: #6B5320;
+  --red: #D6584A;
+  --blocking-tint: #3C1E19;
+  --blocking-ink: #F0A79A;
+  --blocking-strong: #F7C9C1;
+  --blocking-line: #6E3229;
+  --green: #5FA773;
+  --healthy-tint: #1B2E20;
+  --healthy-ink: #94CFA3;
+  --healthy-strong: #BCE3C6;
+  --plum: #B981A0;
+  --selection: #1E4A52;
+  --attn-bg: #3A2D12;
+  --attn-ink: #E2A33C;
+  --code-chip: #12262A;
+  --primary: #EDE7D8;
+  --on-primary: #16140F;
+  --header-bg: rgba(22,20,15,.94);
+  --shadow-card: 0 1px 2px rgba(0,0,0,.4);
+}
+html[data-theme="dark"] header { backdrop-filter: blur(8px); }
+html { scroll-behavior: smooth; }
+body { margin: 0; background:var(--canvas); color:var(--text); font-family: "Onest", "Segoe UI", Helvetica, Arial, sans-serif; font-size: 16px; -webkit-font-smoothing: antialiased; }
+a { color:var(--teal-ink); text-underline-offset: 3px; }
+a:hover { color:var(--teal-ink-hover); }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+::selection { background:var(--selection); }
+
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</helmet>
+
+<div data-screen-label="Install v4" style="min-height:100vh;">
+  <div style="position:sticky; top:0; z-index:80;"><dc-import name="SiteHeader" active="install" md="install.md" md-text="{{ mdText }}" hint-size="100%,66px"></dc-import></div>
+
+  <main style="width:min(1240px, 100% - 56px); margin:0 auto; padding:40px 0 80px;">
+
+    <div style="display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; margin-bottom:28px;">
+      <div style="flex:1 1 540px; min-width:0;">
+        <span style="display:inline-block; font-size:15px; font-weight:600; color:var(--teal-ink); background:var(--surface); border-radius:8px; padding:7px 14px; margin-bottom:20px;">Install · macOS and Linux · amd64 and arm64</span>
+        <h1 style="margin:0 0 16px; font-size:52px; line-height:1.05; font-weight:600; letter-spacing:-0.03em; max-width:660px; text-wrap:balance;">One binary for the machine. One skill for the agent.</h1>
+        <p style="margin:0; font-size:19px; line-height:1.6; color:var(--body); max-width:680px; text-wrap:pretty;">Choose the direct shell path or hand the setup to an agent with the exported Sporo seed. Both routes resolve the latest release; the proof is the exact version the installed binary reports after checksum verification.</p>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(420px,1fr)); gap:16px; align-items:start; margin-bottom:20px;">
+
+      <section style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+          <h2 style="margin:0; font-size:26px; font-weight:600; letter-spacing:-0.02em;">Direct shell install</h2>
+          <dc-import name="StatusPill" text="POSIX shell" tone="neutral" size="small" hint-size="90px,24px"></dc-import>
+        </div>
+        <p style="margin:0 0 16px; font-size:17px; line-height:1.6; color:var(--body); max-width:34em;">One command. It resolves the latest GitHub release, downloads the platform binary with its checksums, and refuses to continue if they disagree.</p>
+        <div style="background:var(--inverse); border-radius:11px; padding:14px 16px; margin-bottom:14px;">
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:9px;">
+            <span style="font-size:14px; color:var(--on-inverse-faint); font-family:'IBM Plex Mono',monospace;">install.sh</span>
+            <button type="button" onClick="{{ shell.copy }}" style="{{ shell.style }}">{{ shell.label }}</button>
+          </div>
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:15px; line-height:1.7; color:var(--on-inverse-2); overflow-wrap:anywhere;">{{ shell.text }}</span>
+        </div>
+        <div style="font-size:16px; font-weight:600; margin-bottom:8px;">What the installer does — and refuses to do</div>
+        <table style="width:100%; border-collapse:collapse; font-size:16px;">
+          <tbody>
+            <sc-for list="{{ installerFacts }}" as="f" hint-placeholder-count="6">
+              <tr><td style="{{ f.cell }}">{{ f.text }}</td></tr>
+            </sc-for>
+          </tbody>
+        </table>
+        <div style="margin-top:14px; background:var(--attention-tint); border-radius:11px; padding:13px 15px; font-size:16px; line-height:1.6; color:var(--attention-ink);">Windows uses the release archive and the manual path, not this POSIX shell command.</div>
+      </section>
+
+      <section style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+          <h2 style="margin:0; font-size:26px; font-weight:600; letter-spacing:-0.02em;">Set up with an agent</h2>
+          <dc-import name="StatusPill" text="{{ seedPillText }}" tone="{{ seedPillTone }}" size="small" hint-size="120px,24px"></dc-import>
+        </div>
+        <p style="margin:0 0 16px; font-size:17px; line-height:1.6; color:var(--body); max-width:34em;">Give your agent a self-contained, verified install seed. It detects an existing copy, installs or updates to latest, proves the binary runs, initializes the repository and links the embedded a2a skill.</p>
+
+        <sc-if value="{{ seedReady }}" hint-placeholder-val="{{ true }}">
+          <div style="background:var(--page); border-radius:14px; padding:16px 18px; margin-bottom:14px;">
+            <div style="font-size:15px; color:var(--muted); margin-bottom:8px;">The prompt you paste into the agent</div>
+            <div style="font-size:16px; line-height:1.6; color:var(--text); background:var(--surface); border-radius:11px; padding:13px 15px; margin-bottom:12px; overflow-wrap:anywhere;">{{ promptText }}</div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+              <button type="button" onClick="{{ prompt.copy }}" style="{{ prompt.style }}">{{ prompt.label }}</button>
+              <a href="https://ydnikolaev.github.io/a2ahub/setup/a2a.md" download="a2a.md" style="font-size:16px; font-weight:600; color:var(--text); background:var(--canvas); border-radius:10px; padding:12px 18px; text-decoration:none;">Download Sporo seed (.md)</a>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ seedUnavailable }}" hint-placeholder-val="{{ false }}">
+          <div style="background:var(--blocking-tint); border-radius:14px; padding:16px 18px; margin-bottom:14px;">
+            <div style="font-size:17px; font-weight:600; color:var(--blocking-ink); margin-bottom:6px;">The seed export is not available in this build</div>
+            <p style="margin:0 0 10px; font-size:16px; line-height:1.6; color:var(--blocking-strong);">The static download is copied from the output of <span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">sporo seed export a2a</span>. When that asset is missing, the page says so instead of serving a stale or hand-written copy.</p>
+            <p style="margin:0; font-size:16px; line-height:1.6; color:var(--blocking-strong);">Use the direct shell install, or read the setup steps in <a href="16-docs-v4.dc.html">Getting started</a>.</p>
+          </div>
+        </sc-if>
+
+        <button type="button" onClick="{{ toggleDisclosure }}" aria-expanded="{{ disclosureExpanded }}" style="{{ disclosureStyle }}">{{ disclosureLabel }}</button>
+        <sc-if value="{{ disclosureOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:12px; background:var(--page); border-radius:14px; padding:16px 18px;">
+            <table style="width:100%; border-collapse:collapse; font-size:16px;">
+              <tbody>
+                <sc-for list="{{ agentChanges }}" as="c" hint-placeholder-count="5">
+                  <tr><td style="{{ c.cell }}">{{ c.text }}</td></tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </sc-if>
+
+        <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--hairline);">
+          <div style="font-size:16px; font-weight:600; margin-bottom:8px;">Seed source contract</div>
+          <dc-import name="FactTable" rows="{{ seedFacts }}" hint-size="100%,180px"></dc-import>
+        </div>
+
+        <div style="margin-top:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:15px; color:var(--muted);">
+          <span>Prototype state preview</span>
+          <sc-for list="{{ stateToggles }}" as="t" hint-placeholder-count="2">
+            <button type="button" onClick="{{ t.go }}" style="{{ t.style }}">{{ t.label }}</button>
+          </sc-for>
+        </div>
+      </section>
+    </div>
+
+    <section style="background:var(--surface); border-radius:18px; padding:28px 30px; box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:20px;">
+      <h2 style="margin:0 0 12px; font-size:30px; font-weight:600; letter-spacing:-0.02em;">Your first project</h2>
+      <p style="margin:0 0 20px; font-size:18px; line-height:1.6; color:var(--body); max-width:36em;"><span style="font-family:'IBM Plex Mono',monospace; font-size:17px;">a2a init</span> is non-interactive. It installs the embedded skill and its discovery links by default, and writes the project and machine setup it owns. The repository owner chooses system identity, space and authority — there is no cloud connection to click.</p>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px;">
+        <div style="background:var(--page); border-radius:14px; padding:18px 20px;">
+          <div style="font-size:18px; font-weight:600; margin-bottom:12px;">Three commands</div>
+          <div style="background:var(--inverse); border-radius:11px; padding:14px 16px;">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:9px;">
+              <span style="font-size:14px; color:var(--on-inverse-faint); font-family:'IBM Plex Mono',monospace;">first project</span>
+              <button type="button" onClick="{{ first.copy }}" style="{{ first.style }}">{{ first.label }}</button>
+            </div>
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:15px; line-height:1.9; color:var(--on-inverse-2); overflow-wrap:anywhere; white-space:pre-wrap;">{{ first.text }}</span>
+          </div>
+        </div>
+        <div style="background:var(--page); border-radius:14px; padding:18px 20px;">
+          <div style="font-size:18px; font-weight:600; margin-bottom:12px;">What each one settles</div>
+          <dc-import name="FactTable" rows="{{ firstFacts }}" hint-size="100%,150px"></dc-import>
+        </div>
+        <div style="background:var(--page); border-radius:14px; padding:18px 20px;">
+          <div style="font-size:18px; font-weight:600; margin-bottom:12px;">How you know it worked</div>
+          <div style="display:flex; flex-direction:column; gap:9px;">
+            <div style="display:flex; align-items:center; gap:10px; background:var(--surface); border-radius:11px; padding:12px 14px;">
+              <dc-import name="StatusPill" text="verified" tone="healthy" size="small" hint-size="80px,24px"></dc-import>
+              <span style="font-size:16px; line-height:1.5; color:var(--body);">the binary reports its exact version</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; background:var(--surface); border-radius:11px; padding:12px 14px;">
+              <dc-import name="StatusPill" text="verified" tone="healthy" size="small" hint-size="80px,24px"></dc-import>
+              <span style="font-size:16px; line-height:1.5; color:var(--body);"><span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">a2a doctor</span> agrees about identity, space, skill links and workflow scope</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; background:var(--surface); border-radius:11px; padding:12px 14px;">
+              <dc-import name="StatusPill" text="not evaluated" tone="outline" size="small" hint-size="110px,24px"></dc-import>
+              <span style="font-size:16px; line-height:1.5; color:var(--body);">whether the other side has connected yet — that is their move, not a local fact</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section style="background:var(--surface); border-radius:18px; padding:28px 30px; box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:20px;">
+      <h2 style="margin:0 0 12px; font-size:30px; font-weight:600; letter-spacing:-0.02em;">Works with any agent that can call a CLI or stdio MCP</h2>
+      <p style="margin:0 0 20px; font-size:18px; line-height:1.6; color:var(--body); max-width:38em;"><span style="font-family:'IBM Plex Mono',monospace; font-size:17px;">a2a init</span> is the one-time wiring step: the embedded skill and the generated reference are installed, then linked into the agent surfaces the repository already exposes. After that, the agent action goes straight to the shared validator.</p>
+      <div style="background:var(--page); border-radius:14px; padding:20px; margin-bottom:18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:16px;">
+        <span style="background:var(--attention-tint); color:var(--attention-ink); border-radius:10px; padding:12px 15px; font-weight:600;">embedded skill + generated reference</span>
+        <span style="color:var(--logo-dim); font-family:'IBM Plex Mono',monospace;">→</span>
+        <span style="background:var(--surface); border-radius:10px; padding:12px 15px; font-weight:600;">detected agent surface</span>
+        <span style="color:var(--logo-dim); font-family:'IBM Plex Mono',monospace;">→</span>
+        <span style="background:var(--surface); border-radius:10px; padding:12px 15px; font-weight:600;">agent action</span>
+        <span style="color:var(--logo-dim); font-family:'IBM Plex Mono',monospace;">→</span>
+        <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:10px; padding:12px 15px; font-weight:600;">shared validator</span>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px;">
+        <sc-for list="{{ surfaces }}" as="s" hint-placeholder-count="3">
+          <div style="background:var(--page); border-radius:14px; padding:16px 18px;">
+            <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:7px;">
+              <span style="font-size:18px; font-weight:600;">{{ s.name }}</span>
+              <dc-import name="StatusPill" text="{{ s.pill }}" tone="{{ s.tone }}" size="small" hint-size="100px,24px"></dc-import>
+            </div>
+            <div style="font-size:16px; line-height:1.55; color:var(--body);">{{ s.text }}</div>
+          </div>
+        </sc-for>
+      </div>
+      <p style="margin:16px 0 0; font-size:15px; line-height:1.6; color:var(--muted); max-width:38em;">Vendor names above are examples of agent surfaces the binary can detect. They are not official integrations and imply no endorsement.</p>
+    </section>
+
+    <section style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px;">
+      <div style="background:var(--inverse); color:var(--on-inverse); border-radius:18px; padding:26px 28px;">
+        <h2 style="margin:0 0 12px; font-size:24px; font-weight:600; color:var(--on-solid);">Verify before you trust the download</h2>
+        <p style="margin:0 0 16px; font-size:17px; line-height:1.6; color:var(--on-inverse-muted);">Release assets carry SHA256SUMS, per-asset keyless cosign bundles, provenance and SBOMs. The installer and updater fail closed on a mismatch or a missing checksum entry.</p>
+        <a href="17-security-reliability-v4.dc.html" style="display:inline-block; font-size:16px; font-weight:600; color:var(--text); background:var(--on-inverse); border-radius:10px; padding:12px 18px; text-decoration:none;">The three verification commands →</a>
+      </div>
+      <div style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+        <h2 style="margin:0 0 12px; font-size:24px; font-weight:600;">Then wire the agents once</h2>
+        <p style="margin:0 0 16px; font-size:17px; line-height:1.6; color:var(--body);">Routine exchange is agent-run from here. Open the dashboard when you need the explanation, the evidence or an exceptional approval.</p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <a href="20-dashboard-example-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--on-primary); background:var(--primary); border-radius:10px; padding:12px 18px; text-decoration:none;">Open the synthetic dashboard</a>
+          <a href="16-docs-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--text); background:var(--canvas); border-radius:10px; padding:12px 18px; text-decoration:none;">Read the docs</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dc-import name="SiteFooter" md="install.md" hint-size="100%,320px"></dc-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1300,&quot;height&quot;:900}}">
+const SHELL = "curl -fsSL https://raw.githubusercontent.com/ydnikolaev/a2ahub/main/scripts/install.sh | sh";
+const FIRST = "a2a init --system <system-id> --space <space-repo-url>\na2a connect <space-repo-url>\na2a doctor";
+const PROMPT = "Open the a2a setup seed at https://ydnikolaev.github.io/a2ahub/setup/a2a.md and follow it in this repository. Detect first, ask before changing repository-owned harness files, verify every step, and return its five-row report.";
+const INSTALLER = [
+  "Supports macOS and Linux on amd64 and arm64.",
+  "Resolves GitHub Releases latest unless A2A_VERSION is explicitly set.",
+  "Downloads the raw platform binary and SHA256SUMS.",
+  "Fails closed when the checksum is missing or does not match.",
+  "Chooses /usr/local/bin when writable, otherwise the user-local executable directory.",
+  "Wires PATH and shell completions on a best-effort basis."
+];
+const CHANGES = [
+  "Installs or updates the a2a binary to the latest release, after checksum verification.",
+  "Runs a2a init in this repository: system identity, space and authority boundaries you supply.",
+  "Installs the embedded skill tree and its generated command and MCP reference.",
+  "Links that skill into the agent surfaces the repository already exposes — asking first before touching repository-owned harness files.",
+  "Returns a five-row report: detection, install, proof of run, initialization, skill link."
+];
+const SURFACES = [
+  ["Claude Code", "detected", "agent", "a2a init finds the surface and links the skill tree into it."],
+  ["Codex", "detected", "agent", "Same wiring, same provider-neutral instruction tree."],
+  ["Any CLI or MCP-capable agent", "supported", "neutral", "Point your harness at the same instruction tree and call the local CLI or the seven stdio MCP tools."]
+];
+
+class Component extends DCLogic {
+  state = { copied: "", seed: "ready", disclosure: false };
+
+  copy(key, text) {
+    const done = () => { this.setState({ copied: key }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ copied: "" }), 2400); };
+    const fail = () => { this.setState({ copied: "err:" + key }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ copied: "" }), 3000); };
+    const legacy = () => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text; ta.style.cssText = "position:fixed; left:-9999px; top:0;";
+        document.body.appendChild(ta); ta.select();
+        const ok = document.execCommand("copy"); document.body.removeChild(ta);
+        ok ? done() : fail();
+      } catch (e) { fail(); }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, legacy); else legacy();
+  }
+
+  darkBtn(key) {
+    const c = this.state.copied, ok = c === key, err = c === "err:" + key;
+    return "margin-left:auto; font-family:'Onest',sans-serif; font-size:14px; font-weight:600; border:0; border-radius:8px; padding:5px 11px; cursor:pointer; white-space:nowrap; " +
+      (ok ? "background:var(--green); color:var(--on-solid);" : err ? "background:var(--red); color:var(--on-solid);" : "background:var(--inverse-3); color:var(--teal-on-dark);");
+  }
+
+  block(key, text, dark) {
+    const c = this.state.copied, ok = c === key, err = c === "err:" + key;
+    return {
+      text,
+      copy: () => this.copy(key, text),
+      label: ok ? "Copied" : err ? "Copy failed" : "Copy",
+      style: dark ? this.darkBtn(key) : ""
+    };
+  }
+
+  rows(list) {
+    return list.map((text, i) => ({
+      text,
+      cell: "padding:12px 0; line-height:1.6; color:var(--body); border-bottom:" + (i === list.length - 1 ? "none" : "1px solid var(--hairline)") + ";"
+    }));
+  }
+
+  renderVals() {
+    const c = this.state.copied;
+    const seedReady = this.state.seed === "ready";
+    return {
+      shell: this.block("shell", SHELL, true),
+      first: this.block("first", FIRST, true),
+      promptText: PROMPT,
+      prompt: {
+        copy: () => this.copy("prompt", PROMPT),
+        label: c === "prompt" ? "Prompt copied" : c === "err:prompt" ? "Copy failed — select the text above" : "Copy agent setup prompt",
+        style: "font-family:'Onest',sans-serif; font-size:16px; font-weight:600; border:0; border-radius:10px; padding:12px 18px; cursor:pointer; " +
+          (c === "prompt" ? "background:var(--healthy-tint); color:var(--healthy-ink);" : c === "err:prompt" ? "background:var(--blocking-tint); color:var(--blocking-ink);" : "background:var(--primary); color:var(--on-primary);")
+      },
+      installerFacts: this.rows(INSTALLER),
+      agentChanges: this.rows(CHANGES),
+      seedReady, seedUnavailable: !seedReady,
+      seedPillText: seedReady ? "verified on v0.16.3 · 2026-07-30" : "asset unavailable",
+      seedPillTone: seedReady ? "healthy" : "blocking",
+      seedFacts: [
+        { label: "download source", value: "output of sporo seed export a2a", mono: true },
+        { label: "authoring source", value: "seeds/a2a.md — never served directly", mono: true },
+        { label: "target channel", value: "a2a@latest, by product-owner choice" },
+        { label: "verified stamp", value: "names the exact release and date tested: v0.16.3, 2026-07-30" },
+        { label: "on this website", value: "static Markdown only — no agent run, account, callback or cloud setup", muted: true }
+      ],
+      firstFacts: [
+        { label: "init", value: "identity, space, authority, skill links" },
+        { label: "connect", value: "attaches this machine to the space repo", muted: false },
+        { label: "doctor", value: "reports what is missing before you need it" }
+      ],
+      surfaces: SURFACES.map(([name, pill, tone, text]) => ({ name, pill, tone, text })),
+      disclosureOpen: this.state.disclosure,
+      disclosureExpanded: this.state.disclosure ? "true" : "false",
+      disclosureLabel: this.state.disclosure ? "Hide what the agent will change" : "What the agent will change",
+      disclosureStyle: "font-family:'Onest',sans-serif; font-size:16px; font-weight:600; color:var(--teal-ink); background:transparent; border:0; padding:6px 0; cursor:pointer; text-align:left;",
+      toggleDisclosure: () => this.setState(s => ({ disclosure: !s.disclosure })),
+      stateToggles: ["ready", "unavailable"].map(k => ({
+        label: k === "ready" ? "seed ready" : "seed unavailable",
+        go: () => this.setState({ seed: k }),
+        style: "font-family:'Onest',sans-serif; font-size:15px; border:0; border-radius:8px; padding:6px 12px; cursor:pointer; " +
+          (this.state.seed === k ? "background:var(--primary); color:var(--on-primary); font-weight:600;" : "background:var(--canvas); color:var(--body);")
+      })),
+      mdText: "# Install a2a\n\nCanonical HTML: https://ydnikolaev.github.io/a2ahub/install.html\n\n" + SHELL + "\n\n" + FIRST + "\n\nAgent-led setup seed: https://ydnikolaev.github.io/a2ahub/setup/a2a.md\n"
+    };
+  }
+}
+
+</script>
+</body>
+</html>

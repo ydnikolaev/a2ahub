@@ -1,0 +1,52 @@
+<script>
+  import React from 'react';
+  import { createRoot } from 'react-dom/client';
+  import design from '../generated/design.json';
+
+  window.React = React;
+  window.ReactDOM = { createRoot };
+  window.A2A_RELEASE_INDEX = design.releaseIndex;
+  window.A2A_DOCS = design.docs;
+  window.A2A_DOC_BODIES = design.docBodies;
+  window.A2A_LATEST_RELEASE = design.latestRelease;
+  window.__resources = {
+    './NetworkMap.dc.html': '/design/NetworkMap.dc.html',
+    './LinkDetail.dc.html': '/design/LinkDetail.dc.html',
+    './StatusPill.dc.html': '/design/StatusPill.dc.html',
+    './TypeBadge.dc.html': '/design/TypeBadge.dc.html',
+    './FactTable.dc.html': '/design/FactTable.dc.html',
+    './ArtifactRow.dc.html': '/design/ArtifactRow.dc.html',
+    './ArtifactDetail.dc.html': '/design/ArtifactDetail.dc.html'
+  };
+  import('../design-runtime/support.js');
+</script>
+<script>
+  import design from '../generated/design.json';
+
+  const slug = (value) => String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  const hydrateDocBodies = () => {
+    document.querySelectorAll('[data-doc-placeholder]').forEach((placeholder) => {
+      const id = placeholder.dataset.docId;
+      const doc = design.docBodies[id];
+      if (!doc || placeholder.dataset.hydrated === id) return;
+      placeholder.dataset.hydrated = id;
+      placeholder.classList.add('ssot-doc-body');
+      placeholder.innerHTML = doc.html;
+
+      const headings = [...placeholder.querySelectorAll('h2, h3')].map((heading, index) => {
+        heading.id ||= slug(heading.textContent) || `section-${index + 1}`;
+        return { id: heading.id, label: heading.textContent };
+      });
+      const toc = document.querySelector('[data-doc-toc]');
+      if (toc) toc.innerHTML = `<div style="font-size:15px;font-weight:600;margin-bottom:10px">On this page</div>${headings.length ? `<div style="display:flex;flex-direction:column;gap:8px">${headings.map((heading) => `<a href="#${heading.id}" style="font-size:15px;line-height:1.45;text-decoration:none">${heading.label}</a>`).join('')}</div>` : '<div style="font-size:15px;line-height:1.55;color:var(--muted)">This page has no subsections.</div>'}`;
+    });
+  };
+
+  const docsObserver = new MutationObserver(hydrateDocBodies);
+  docsObserver.observe(document.documentElement, { childList: true, subtree: true });
+  hydrateDocBodies();
+</script>

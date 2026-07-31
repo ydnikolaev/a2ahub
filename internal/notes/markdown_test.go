@@ -33,6 +33,7 @@ func TestRenderMarkdownUsesAuthoredNotesAsReleaseBody(t *testing.T) {
 
 	got := RenderMarkdown(rn, MarkdownOptions{
 		RepositoryURL: "https://github.com/example/a2a/",
+		ProjectURL:    "https://example.dev/",
 		Verification:  "50/50 declared live cells passed.",
 	})
 	for _, want := range []string{
@@ -50,6 +51,7 @@ func TestRenderMarkdownUsesAuthoredNotesAsReleaseBody(t *testing.T) {
 		"50/50 declared live cells passed.",
 		"## Install or update",
 		"https://raw.githubusercontent.com/example/a2a/main/scripts/install.sh",
+		"[a2ahub.dev](https://example.dev/)",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("RenderMarkdown output missing %q:\n%s", want, got)

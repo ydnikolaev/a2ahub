@@ -1,0 +1,15 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageActions from '../components/PageActions.astro';
+import StatusPill from '../components/StatusPill.astro';
+import content from '../generated/content.json';
+const latest = content.releases[0];
+const matrix = latest?.changes?.find((change) => change.subject.includes('50 declared live cells'));
+---
+<BaseLayout current="/reliability" markdown="/reliability.md" title="Reliability — a2ahub" description="The bounded evidence chain behind a2ahub: schemas, folds, Git, release verification and explicit unavailable states.">
+  <section class="page-hero"><div class="a2a-shell"><p class="section-kicker">Bounded proof</p><h1>Reliability is a chain, not a badge</h1><p>No layer is called reliable because a green icon looks reassuring. Each claim names its source, scope and limitation; anything not evaluated remains visibly unavailable.</p><PageActions markdown="/reliability.md" /></div></section>
+  <section class="section dark"><div class="a2a-shell"><div class="proof-chain"><div class="proof-step"><strong>1 · Shape</strong><p>JSON Schema and bounded input.</p></div><div class="proof-step"><strong>2 · Meaning</strong><p>Folded lifecycle and authority.</p></div><div class="proof-step"><strong>3 · Causality</strong><p>References and threads resolve.</p></div><div class="proof-step"><strong>4 · Record</strong><p>Git/PR preserves and gates.</p></div><div class="proof-step"><strong>5 · Distribution</strong><p>Checksums and signatures.</p></div></div></div></section>
+  <section class="section"><div class="a2a-shell"><div class="section-head"><div><p class="section-kicker">Latest published evidence</p><h2>{latest ? `v${latest.version}` : 'Unavailable'}</h2></div><p class="section-intro">{latest?.headline ?? 'No tagged release was visible to this build.'}</p></div>
+    <div class="trust-grid" style="padding-bottom:0"><article class="card trust-card"><StatusPill text={matrix ? '50 pass · 0 fail' : 'Not evaluated'} tone={matrix ? 'healthy' : 'attention'} /><h2>Protected live matrix</h2><p>{matrix?.detail ?? 'The current build did not contain a release claim for the live matrix.'}</p></article><article class="card trust-card"><StatusPill text="Scoped claim" tone="outline"/><h2>What this does not mean</h2><p>Passing the declared matrix does not prove every possible environment or state. Code-backed contract metadata is not called current unless its bytes were evaluated.</p></article></div>
+  </div></section>
+</BaseLayout>

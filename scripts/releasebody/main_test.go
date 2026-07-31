@@ -24,6 +24,7 @@ func TestRunRendersAuthoredReleaseBody(t *testing.T) {
 		"## Release verification",
 		"50 of 50 declared live cells passed.",
 		"## Install or update",
+		"[a2ahub.dev](https://a2ahub.dev/)",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Errorf("release body missing %q:\n%s", want, stdout.String())

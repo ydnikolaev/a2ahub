@@ -1,6 +1,6 @@
-# Builds the Astro landing site (web/) and deploys it to GitHub Pages — the
-# project site at https://ydnikolaev.github.io/a2ahub (no custom domain, no
-# CNAME). Static output, zero runtime, zero third-party requests. Action SHAs
+# Builds the Astro product site and agent documentation, then deploys the
+# static output to the custom-domain GitHub Pages surface at https://a2ahub.dev.
+# Zero runtime and zero automatic third-party requests. Action SHAs
 # are pinned (workflow-lint enforces it), versions verified against their
 # releases. Repo Settings → Pages → Source must be set to "GitHub Actions" once.
 name: Pages
@@ -8,7 +8,17 @@ name: Pages
 on:
   push:
     branches: [main]
-    paths: ["web/**", ".github/workflows/pages.yml"]
+    tags: ["v*.*.*"]
+    paths:
+      - "web/**"
+      - "ui/**"
+      - "skill/a2ahub/**"
+      - "internal/html/testdata/demo.json"
+      - "releasenotes/**"
+      - "scripts/install.sh"
+      - "SECURITY.md"
+      - ".sporo/exports/a2a.md"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -28,6 +38,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Changelog generation includes only release notes backed by a tag.
+          fetch-depth: 0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -38,7 +51,7 @@ jobs:
       - run: npm ci
         working-directory: web
 
-      - run: npm run build
+      - run: npm run check
         working-directory: web
 
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0

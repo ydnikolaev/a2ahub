@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>a2a design system v4 — quiet paper, soft cards, plain words</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --canvas: #F1EEE6;
+  --page: #FAF7F0;
+  --surface: #FFFFFF;
+  --sink: #E8E3D7;
+  --border: #E4DFD2;
+  --border-strong: #CBC2AB;
+  --hairline: #F1EEE6;
+  --text: #211E17;
+  --body: #453F31;
+  --muted: #6F6853;
+  --faint: #8A8269;
+  --logo-dim: #9A927B;
+  --inverse: #211E17;
+  --inverse-2: #2A261D;
+  --inverse-3: #33302A;
+  --inverse-line: #3A342A;
+  --on-inverse: #F3EFE4;
+  --on-inverse-2: #E8E3D4;
+  --on-inverse-muted: #C4BCA6;
+  --on-inverse-faint: #A8A08A;
+  --on-dark: #FAF7F0;
+  --on-solid: #FFFFFF;
+  --teal-solid: #175E6B;
+  --teal-ink: #175E6B;
+  --teal-ink-hover: #114953;
+  --teal-tint: #EDF4F5;
+  --teal-strong-ink: #0E3F48;
+  --teal-on-dark: #8FD0DB;
+  --teal-hairline: #BFD9DD;
+  --focus: #175E6B;
+  --ochre: #9A5C08;
+  --attention-tint: #FBF4E4;
+  --attention-ink: #7A5A14;
+  --attention-strong: #5E4410;
+  --attention-line: #E8CE94;
+  --red: #AC382A;
+  --blocking-tint: #F8E9E5;
+  --blocking-ink: #8C2B1F;
+  --blocking-strong: #5E2A22;
+  --blocking-line: #E0B3AB;
+  --green: #3E7A4C;
+  --healthy-tint: #E9F1E8;
+  --healthy-ink: #2F5E3A;
+  --healthy-strong: #24492D;
+  --plum: #7A3B62;
+  --selection: #D7E8EA;
+  --attn-bg: #33291A;
+  --attn-ink: #E2A33C;
+  --code-chip: #1B2A2D;
+  --primary: #211E17;
+  --on-primary: #FAF7F0;
+  --header-bg: rgba(241,238,230,.94);
+  --shadow-card: 0 1px 2px rgba(33,30,23,.06);
+}
+html[data-theme="dark"] {
+  --canvas: #16140F;
+  --page: #1D1A14;
+  --surface: #24211A;
+  --sink: #2E2A21;
+  --border: #3B3529;
+  --border-strong: #4E4736;
+  --hairline: #302B22;
+  --text: #F4F0E4;
+  --body: #DAD3C0;
+  --muted: #ADA48C;
+  --faint: #8F8770;
+  --logo-dim: #8F8770;
+  --inverse: #0E0D09;
+  --inverse-2: #1A1812;
+  --inverse-3: #2E2A21;
+  --inverse-line: #3B3529;
+  --on-inverse: #F3EFE4;
+  --on-inverse-2: #E8E3D4;
+  --on-inverse-muted: #C4BCA6;
+  --on-inverse-faint: #A8A08A;
+  --on-dark: #FAF7F0;
+  --on-solid: #0E0D09;
+  --teal-solid: #2A8395;
+  --teal-ink: #8FD0DB;
+  --teal-ink-hover: #B4E2EA;
+  --teal-tint: #123039;
+  --teal-strong-ink: #C7E9EF;
+  --teal-on-dark: #8FD0DB;
+  --teal-hairline: #2C5A63;
+  --focus: #8FD0DB;
+  --ochre: #D9902A;
+  --attention-tint: #3A2D12;
+  --attention-ink: #E8C579;
+  --attention-strong: #F4DDAA;
+  --attention-line: #6B5320;
+  --red: #D6584A;
+  --blocking-tint: #3C1E19;
+  --blocking-ink: #F0A79A;
+  --blocking-strong: #F7C9C1;
+  --blocking-line: #6E3229;
+  --green: #5FA773;
+  --healthy-tint: #1B2E20;
+  --healthy-ink: #94CFA3;
+  --healthy-strong: #BCE3C6;
+  --plum: #B981A0;
+  --selection: #1E4A52;
+  --attn-bg: #3A2D12;
+  --attn-ink: #E2A33C;
+  --code-chip: #12262A;
+  --primary: #EDE7D8;
+  --on-primary: #16140F;
+  --header-bg: rgba(22,20,15,.94);
+  --shadow-card: 0 1px 2px rgba(0,0,0,.4);
+}
+html[data-theme="dark"] header { backdrop-filter: blur(8px); }
+html { scroll-behavior: smooth; }
+body { margin: 0; background:var(--canvas); color:var(--text); font-family: "Onest", "Segoe UI", Helvetica, Arial, sans-serif; font-size: 16px; -webkit-font-smoothing: antialiased; }
+a { color:var(--teal-ink); text-underline-offset: 3px; }
+a:hover { color:var(--teal-ink-hover); }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+::selection { background:var(--selection); }
+
+</style>
+</helmet>
+
+<div data-screen-label="Design system v4" style="min-height:100vh;">
+
+  <header style="position:sticky; top:0; z-index:50; background:var(--header-bg); backdrop-filter:blur(8px); border-bottom:1px solid var(--border);">
+    <div style="max-width:1200px; margin:0 auto; padding:0 28px; display:flex; align-items:flex-start; gap:16px; flex-wrap:nowrap; min-height:64px;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:16px; flex-wrap:wrap; row-gap:6px;">
+      <a href="13-public-home-v4.dc.html" style="font-family:'IBM Plex Mono',monospace; font-size:18px; font-weight:600; color:var(--text); text-decoration:none;">a2a<span style="color:var(--logo-dim);">hub</span></a>
+      <span style="font-size:15px; color:var(--muted); background:var(--surface); border-radius:8px; padding:5px 12px;">design system v4</span>
+      </span><nav style="flex:0 1 auto; min-width:0; display:flex; gap:2px; font-size:16px; flex-wrap:wrap;">
+        <a href="#foundation" style="text-decoration:none; color:var(--body); padding:8px 14px; border-radius:8px;" style-hover="background:var(--surface);">Foundation</a>
+        <a href="#types" style="text-decoration:none; color:var(--body); padding:8px 14px; border-radius:8px;" style-hover="background:var(--surface);">Artifact types</a>
+        <a href="#components" style="text-decoration:none; color:var(--body); padding:8px 14px; border-radius:8px;" style-hover="background:var(--surface);">Components</a>
+        <a href="#patterns" style="text-decoration:none; color:var(--body); padding:8px 14px; border-radius:8px;" style-hover="background:var(--surface);">Patterns</a>
+        <a href="#rules" style="text-decoration:none; color:var(--body); padding:8px 14px; border-radius:8px;" style-hover="background:var(--surface);">Rules</a>
+        <a href="#surfaces" style="text-decoration:none; color:var(--body); padding:8px 14px; border-radius:8px;" style-hover="background:var(--surface);">Surface parts</a>
+        <a href="#handoff" style="text-decoration:none; color:var(--body); padding:8px 14px; border-radius:8px;" style-hover="background:var(--surface);">Handoff</a>
+      </nav>
+    </div>
+  </header>
+
+  <main style="max-width:1200px; margin:0 auto; padding:48px 28px 96px;">
+
+    <h1 style="margin:0 0 16px; font-size:52px; line-height:1.05; font-weight:600; letter-spacing:-0.03em; max-width:840px; text-wrap:balance;">Quiet paper, soft white cards, plain words.</h1>
+    <p style="margin:0 0 12px; font-size:20px; line-height:1.55; color:var(--body); max-width:760px; text-wrap:pretty;">v4 keeps the warm paper canvas and the semantic colour meanings of v3, and changes the delivery: hairline boxes become white cards with a quiet shadow, small print becomes a 16px base, machine codes step behind human words, and every label survives being twice as long in Russian.</p>
+    <p style="margin:0 0 40px; font-size:16px; line-height:1.6; color:var(--muted); max-width:760px;">One token set serves the Astro public site, the self-contained Go-rendered dashboard and a future Nuxt UI. No remote icon kits. Onest and IBM Plex Mono only.</p>
+
+    <section id="foundation" style="margin-bottom:56px;">
+      <h2 style="margin:0 0 6px; font-size:30px; font-weight:600; letter-spacing:-0.02em;">1 · Foundation</h2>
+      <p style="margin:0 0 10px; font-size:17px; color:var(--muted); max-width:720px;">Colour carries meaning, never decoration. Ochre is the human authority and drift branch, teal is the agent path, red is literal blockage, green is a verified fact, plum marks a multi-party decision.</p>
+      <p style="margin:0 0 22px; font-size:17px; color:var(--muted); max-width:720px;">Every colour below is a semantic token, so the same markup serves both themes: the hex values in this section are the <strong style="color:var(--text); font-weight:600;">light</strong> values, and the dark theme only re-points the tokens. Hue is preserved across themes — teal stays teal, red stays red — while lightness flips. Light is the default; the choice is remembered per reader.</p>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; margin-bottom:24px;">
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 14px; font-size:18px; font-weight:600;">Surfaces</h3>
+          <div style="display:flex; flex-direction:column; gap:10px; font-size:15px;">
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:var(--canvas);"></span><span style="font-family:'IBM Plex Mono',monospace;">canvas</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">var(--hairline)</span></div>
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:var(--page);"></span><span style="font-family:'IBM Plex Mono',monospace;">page</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">var(--page)</span></div>
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:var(--surface); box-shadow:inset 0 0 0 1px var(--border);"></span><span style="font-family:'IBM Plex Mono',monospace;">surface</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">var(--surface)</span></div>
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:var(--sink);"></span><span style="font-family:'IBM Plex Mono',monospace;">sink</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">#E8E3D7</span></div>
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:var(--inverse);"></span><span style="font-family:'IBM Plex Mono',monospace;">inverse</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">var(--text)</span></div>
+          </div>
+        </div>
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 14px; font-size:18px; font-weight:600;">Ink</h3>
+          <div style="display:flex; flex-direction:column; gap:10px; font-size:15px;">
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:var(--inverse);"></span><span>primary text</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">var(--text)</span></div>
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:var(--body);"></span><span>body</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">#453F31</span></div>
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:#6F6853;"></span><span>muted</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">#6F6853</span></div>
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:var(--faint);"></span><span>faint — decorative only</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">#8A8269</span></div>
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:var(--canvas);"></span><span>row separator</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">var(--hairline)</span></div>
+          </div>
+        </div>
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 14px; font-size:18px; font-weight:600;">Semantics</h3>
+          <div style="display:flex; flex-direction:column; gap:10px; font-size:15px;">
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:var(--teal-solid);"></span><span>agent path</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">var(--focus)</span></div>
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:var(--ochre);"></span><span>human gate · drift · stale</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">var(--ochre)</span></div>
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:var(--red);"></span><span>blocked · failed</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">var(--red)</span></div>
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:var(--green);"></span><span>verified fact</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">#3E7A4C</span></div>
+            <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:32px; border-radius:8px; background:var(--plum);"></span><span>multi-party decision</span><span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; color:var(--muted);">#7A3B62</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px;">
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 12px; font-size:18px; font-weight:600;">Type scale</h3>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; align-items:baseline; gap:14px;"><span style="font-size:52px; line-height:1; font-weight:600; letter-spacing:-0.03em;">Hero</span><span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted);">52 / 600 / -3%</span></div>
+            <div style="display:flex; align-items:baseline; gap:14px;"><span style="font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">View title</span><span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted);">32 / 600</span></div>
+            <div style="display:flex; align-items:baseline; gap:14px;"><span style="font-size:28px; line-height:1.25; font-weight:600;">Panel title</span><span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted);">28 / 600</span></div>
+            <div style="display:flex; align-items:baseline; gap:14px;"><span style="font-size:19px; font-weight:600;">Row title</span><span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted);">19 / 600</span></div>
+            <div style="display:flex; align-items:baseline; gap:14px;"><span style="font-size:18px; color:var(--body);">Lead paragraph</span><span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted);">18 / 400</span></div>
+            <div style="display:flex; align-items:baseline; gap:14px;"><span style="font-size:16px; color:var(--body);">Body — the floor for prose</span><span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted);">16 / 400</span></div>
+            <div style="display:flex; align-items:baseline; gap:14px;"><span style="font-size:15px; color:var(--muted);">Meta and secondary</span><span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted);">15 / 400</span></div>
+            <div style="display:flex; align-items:baseline; gap:14px;"><span style="font-family:'IBM Plex Mono',monospace; font-size:14px;">XW-checkout-20260728-c3d4</span><span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted);">mono 14 — ids only</span></div>
+          </div>
+        </div>
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 12px; font-size:18px; font-weight:600;">Radius, elevation, motion</h3>
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap;">
+            <span style="background:var(--canvas); border-radius:6px; padding:6px 12px; font-size:14px; font-weight:600;">6 badge</span>
+            <span style="background:var(--canvas); border-radius:8px; padding:8px 14px; font-size:15px;">8 chip</span>
+            <span style="background:var(--primary); color:var(--on-primary); border-radius:10px; padding:10px 18px; font-size:16px; font-weight:600;">10 button</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
+            <span style="background:var(--page); border-radius:11px; padding:14px 18px; font-size:15px;">11 inner card</span>
+            <span style="background:var(--page); border-radius:14px; padding:14px 18px; font-size:15px;">14 card</span>
+            <span style="background:var(--page); border-radius:18px; padding:14px 18px; font-size:15px;">18 panel</span>
+            <span style="flex:0 0 auto; width:34px; height:34px; border-radius:99px; background:var(--teal-solid); color:var(--on-solid); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600;">AT</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap;">
+            <span style="background:var(--surface); border-radius:14px; padding:14px 18px; font-size:15px; box-shadow:0 1px 2px rgba(33,30,23,.06);">card shadow</span>
+            <span style="background:var(--surface); border-radius:18px; padding:14px 18px; font-size:15px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">panel shadow</span>
+            <span style="background:var(--surface); border-radius:14px; padding:14px 18px; font-size:15px; box-shadow:0 8px 24px rgba(33,30,23,.14);">popover shadow</span>
+          </div>
+          <div style="font-size:15px; line-height:1.6; color:var(--muted);">Themes: <span style="font-family:'IBM Plex Mono',monospace; font-size:14px;">:root</span> holds the light values, <span style="font-family:'IBM Plex Mono',monospace; font-size:14px;">html[data-theme="dark"]</span> re-points the same names. Selection is a 2px teal ring, never a colour fill. Motion: 120ms state, 200ms disclosure, none under reduced motion. Spacing steps 4 · 8 · 10 · 14 · 18 · 26 · 40.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="types" style="margin-bottom:56px;">
+      <h2 style="margin:0 0 6px; font-size:30px; font-weight:600; letter-spacing:-0.02em;">2 · Artifact types</h2>
+      <p style="margin:0 0 20px; font-size:17px; color:var(--muted); max-width:760px;">Eight document types, one grammar. The human word leads, the prefix stays visible for machine correlation. Colour plus word plus prefix — never colour alone.</p>
+      <div style="background:var(--surface); border-radius:14px; padding:8px 22px 14px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+        <table style="width:100%; border-collapse:collapse; font-size:16px;">
+          <tbody>
+            <tr><td style="padding:12px 0; border-bottom:1px solid var(--hairline); width:190px;"><span style="font-size:14px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:6px; padding:4px 11px;">Contract <span style="font-family:'IBM Plex Mono',monospace; opacity:.7;">XC</span></span></td><td style="padding:12px 0; border-bottom:1px solid var(--hairline); color:var(--body);">A versioned interface a system provides</td></tr>
+            <tr><td style="padding:12px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--body); background:var(--canvas); border-radius:6px; padding:4px 11px;">Requirement <span style="font-family:'IBM Plex Mono',monospace; opacity:.6;">XR</span></span></td><td style="padding:12px 0; border-bottom:1px solid var(--hairline); color:var(--body);">A published demand on another capability or contract</td></tr>
+            <tr><td style="padding:12px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--attention-ink); background:var(--attention-tint); border-radius:6px; padding:4px 11px;">Question <span style="font-family:'IBM Plex Mono',monospace; opacity:.7;">XQ</span></span></td><td style="padding:12px 0; border-bottom:1px solid var(--hairline); color:var(--body);">A clarification, defect report or choice</td></tr>
+            <tr><td style="padding:12px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--on-solid); background:var(--teal-solid); border-radius:6px; padding:4px 11px;">Work request <span style="font-family:'IBM Plex Mono',monospace; opacity:.65;">XW</span></span></td><td style="padding:12px 0; border-bottom:1px solid var(--hairline); color:var(--body);">A request for data, a feature, a fix, an investigation or a change</td></tr>
+            <tr><td style="padding:12px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--on-solid); background:var(--plum); border-radius:6px; padding:4px 11px;">Decision <span style="font-family:'IBM Plex Mono',monospace; opacity:.65;">XD</span></span></td><td style="padding:12px 0; border-bottom:1px solid var(--hairline); color:var(--body);">A multi-party decision with explicit approvers</td></tr>
+            <tr><td style="padding:12px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--on-solid); background:var(--green); border-radius:6px; padding:4px 11px;">Handoff <span style="font-family:'IBM Plex Mono',monospace; opacity:.65;">XH</span></span></td><td style="padding:12px 0; border-bottom:1px solid var(--hairline); color:var(--body);">Implemented and tested work transferred with evidence</td></tr>
+            <tr><td style="padding:12px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--teal-ink); background:var(--surface); border-radius:6px; padding:3px 10px; box-shadow:inset 0 0 0 1px var(--teal-hairline);">Response <span style="font-family:'IBM Plex Mono',monospace; opacity:.7;">XS</span></span></td><td style="padding:12px 0; border-bottom:1px solid var(--hairline); color:var(--body);">An answer or result attached to a parent exchange</td></tr>
+            <tr><td style="padding:12px 0;"><span style="font-size:14px; font-weight:600; color:var(--muted); background:var(--surface); border-radius:6px; padding:3px 10px; box-shadow:inset 0 0 0 1px var(--border-strong);">Announcement <span style="font-family:'IBM Plex Mono',monospace; opacity:.7;">XA</span></span></td><td style="padding:12px 0; color:var(--body);">A release, deprecation, migration, incident, notice or status broadcast</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="components" style="margin-bottom:56px;">
+      <h2 style="margin:0 0 6px; font-size:30px; font-weight:600; letter-spacing:-0.02em;">3 · Components</h2>
+      <p style="margin:0 0 20px; font-size:17px; color:var(--muted); max-width:760px;">Every part below is expressible as semantic HTML plus CSS, so the Go-rendered single file and a future Nuxt build can share it.</p>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:16px;">
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Status pills</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Tinted fill, dark text, 6px radius. Sized by content so a Russian label just gets wider.</p>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; font-size:14px; font-weight:600;">
+            <span style="color:var(--blocking-ink); background:var(--blocking-tint); border-radius:6px; padding:4px 11px;">Blocking · p1</span>
+            <span style="color:var(--attention-ink); background:var(--attention-tint); border-radius:6px; padding:4px 11px;">Your approval pending</span>
+            <span style="color:var(--green); background:var(--healthy-tint); border-radius:6px; padding:4px 11px;">resolved · digest matches</span>
+            <span style="color:var(--body); background:var(--canvas); border-radius:6px; padding:4px 11px;">in progress</span>
+            <span style="color:var(--attention-ink); background:var(--attention-tint); border-radius:6px; padding:4px 11px;">stale 18m</span>
+            <span style="color:var(--blocking-ink); background:var(--blocking-tint); border-radius:6px; padding:4px 11px;">unreadable</span>
+            <span style="color:var(--muted); background:var(--surface); border-radius:6px; padding:3px 10px; box-shadow:inset 0 0 0 1px var(--border-strong);">not evaluated</span>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">System monograms</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Two letters, one tint. Round only here and on status dots — everything else is softly rectangular.</p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <span style="flex:0 0 auto; width:34px; height:34px; border-radius:99px; background:var(--teal-solid); color:var(--on-solid); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600;">AT</span>
+            <span style="flex:0 0 auto; width:34px; height:34px; border-radius:99px; background:var(--border); color:var(--body); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600;">CH</span>
+            <span style="flex:0 0 auto; width:34px; height:34px; border-radius:99px; background:var(--border); color:var(--body); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600;">BI</span>
+            <span style="flex:0 0 auto; width:34px; height:34px; border-radius:99px; background:var(--border); color:var(--body); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600;">RI</span>
+            <span style="flex:0 0 auto; width:34px; height:34px; border-radius:99px; background:var(--surface); color:var(--muted); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; box-shadow:inset 0 0 0 1px var(--border-strong);">LE</span>
+            <span style="font-size:15px; color:var(--muted);">teal = you · outline = system that left</span>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Controls</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Buttons are 10px, tall enough for touch, sentence case.</p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
+            <span style="font-size:16px; font-weight:600; color:var(--on-primary); background:var(--primary); border-radius:10px; padding:12px 20px;">Open thread</span>
+            <span style="font-size:16px; font-weight:600; color:var(--text); background:var(--canvas); border-radius:10px; padding:12px 18px;">Copy id</span>
+            <span style="font-size:16px; font-weight:600; color:var(--teal-ink);">Show evidence →</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:2px; background:var(--canvas); border-radius:9px; padding:3px; width:fit-content;">
+            <span style="font-size:15px; font-weight:600; background:var(--surface); border-radius:7px; padding:7px 14px; box-shadow:0 1px 2px rgba(33,30,23,.12);">Needs you · 3</span>
+            <span style="font-size:15px; color:var(--muted); padding:7px 14px;">All · 11</span>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Fact table</h3>
+          <p style="margin:0 0 12px; font-size:15px; color:var(--muted);">Label–value pairs are always a table: label left, value right-aligned, hairline row separators.</p>
+          <table style="width:100%; border-collapse:collapse; font-size:15px;">
+            <tbody>
+              <tr><td style="padding:9px 14px 9px 0; color:var(--muted); white-space:nowrap; border-bottom:1px solid var(--hairline);">space</td><td style="padding:9px 0; text-align:right; font-family:'IBM Plex Mono',monospace; border-bottom:1px solid var(--hairline);">checkout-core</td></tr>
+              <tr><td style="padding:9px 14px 9px 0; color:var(--muted); white-space:nowrap; border-bottom:1px solid var(--hairline);">created</td><td style="padding:9px 0; text-align:right; border-bottom:1px solid var(--hairline);">2026-07-28 09:00 UTC</td></tr>
+              <tr><td style="padding:9px 14px 9px 0; color:var(--muted); white-space:nowrap;">effort</td><td style="padding:9px 0; text-align:right;">medium</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">List row</h3>
+          <p style="margin:0 0 12px; font-size:15px; color:var(--muted);">Type, consequence, title, route. Selected state is a teal ring.</p>
+          <div style="background:var(--page); border-radius:11px; padding:14px 16px; box-shadow:0 0 0 2px var(--focus);">
+            <div style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:8px;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px;">
+              <span style="font-size:14px; font-weight:600; color:var(--on-solid); background:var(--teal-solid); border-radius:6px; padding:4px 11px;">Work request</span>
+              <span style="font-size:14px; font-weight:600; color:var(--blocking-ink); background:var(--blocking-tint); border-radius:6px; padding:4px 11px;">Blocking · p1</span>
+              </span><span style="flex:0 0 auto; font-size:14px; font-weight:600; color:var(--red);">2 days overdue</span>
+            </div>
+            <div style="font-size:19px; line-height:1.35; font-weight:600; margin-bottom:8px;">Prevent duplicate payment capture after a worker retry</div>
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:15px; color:var(--muted);">
+              <span style="flex:0 0 auto; width:24px; height:24px; border-radius:99px; background:var(--border); color:var(--body); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;">CH</span>
+              <span>checkout</span><span style="color:var(--border-strong);">→</span>
+              <span style="flex:0 0 auto; width:24px; height:24px; border-radius:99px; background:var(--teal-solid); color:var(--on-solid); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;">AT</span>
+              <span>you</span><span style="color:var(--border-strong);">·</span><span>checkout-core</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Contract line</h3>
+          <p style="margin:0 0 12px; font-size:15px; color:var(--muted);">Drift is a property of one consumer line, never of the contract as a whole.</p>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="background:var(--page); border-radius:11px; padding:12px 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:15px;">
+              <span style="font-family:'IBM Plex Mono',monospace; font-weight:600;">checkout → risk</span>
+              <span style="font-size:14px; font-weight:600; color:var(--blocking-ink); background:var(--blocking-tint); border-radius:6px; padding:3px 10px;">missing</span>
+              <span style="color:var(--muted);">pinned major 4 · available 2, 3</span>
+            </div>
+            <div style="background:var(--page); border-radius:11px; padding:12px 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:15px;">
+              <span style="font-family:'IBM Plex Mono',monospace; font-weight:600;">atlas → risk</span>
+              <span style="font-size:14px; font-weight:600; color:var(--green); background:var(--healthy-tint); border-radius:6px; padding:3px 10px;">current</span>
+              <span style="color:var(--muted);">pinned 3.2.0 · provider 3.2.0</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Exchange lane</h3>
+          <p style="margin:0 0 12px; font-size:15px; color:var(--muted);">The network unit. Two monograms, a lane, a count. Solid lane is a contract dependency, dashed is an open exchange.</p>
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="flex:0 0 auto; width:30px; height:30px; border-radius:99px; background:var(--border); color:var(--body); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;">CH</span>
+              <span style="flex:1 1 auto; height:0; border-top:2px solid var(--red);"></span>
+              <span style="font-size:14px; font-weight:600; color:var(--blocking-ink); background:var(--blocking-tint); border-radius:6px; padding:3px 10px;">2 open · p1 blocking</span>
+              <span style="flex:1 1 auto; height:0; border-top:2px solid var(--red);"></span>
+              <span style="flex:0 0 auto; width:30px; height:30px; border-radius:99px; background:var(--teal-solid); color:var(--on-solid); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;">AT</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="flex:0 0 auto; width:30px; height:30px; border-radius:99px; background:var(--teal-solid); color:var(--on-solid); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;">AT</span>
+              <span style="flex:1 1 auto; height:0; border-top:2px dashed var(--border-strong);"></span>
+              <span style="font-size:14px; color:var(--muted); background:var(--canvas); border-radius:6px; padding:3px 10px;">2 open · p3</span>
+              <span style="flex:1 1 auto; height:0; border-top:2px dashed var(--border-strong);"></span>
+              <span style="flex:0 0 auto; width:30px; height:30px; border-radius:99px; background:var(--border); color:var(--body); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;">CO</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Unavailable block</h3>
+          <p style="margin:0 0 12px; font-size:15px; color:var(--muted);">Missing context is stated in words. Never green, never zero, never a guess.</p>
+          <div style="background:var(--page); border-radius:11px; padding:14px 16px; box-shadow:inset 0 0 0 1px var(--border);">
+            <div style="font-size:16px; font-weight:600; margin-bottom:6px;">Whole-snapshot verdict</div>
+            <div style="font-size:15px; line-height:1.55; color:var(--muted);">Not evaluated in this static read — no persisted validation run with timestamp, scope, inputs and codes is mounted here.</div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <section id="patterns" style="margin-bottom:56px;">
+      <h2 style="margin:0 0 6px; font-size:30px; font-weight:600; letter-spacing:-0.02em;">4 · Patterns</h2>
+      <p style="margin:0 0 20px; font-size:17px; color:var(--muted); max-width:760px;">Three layouts cover every dashboard view.</p>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px;">
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <div style="display:flex; gap:8px; margin-bottom:14px; height:120px;">
+            <div style="flex:0 0 38%; background:var(--canvas); border-radius:8px; display:flex; flex-direction:column; gap:6px; padding:8px;">
+              <div style="height:22px; background:var(--surface); border-radius:5px; box-shadow:0 0 0 1.5px var(--focus);"></div>
+              <div style="height:22px; background:var(--surface); border-radius:5px;"></div>
+              <div style="height:22px; background:var(--surface); border-radius:5px;"></div>
+            </div>
+            <div style="flex:1 1 auto; background:var(--surface); border-radius:8px; box-shadow:inset 0 0 0 1px var(--border);"></div>
+          </div>
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Master–detail</h3>
+          <p style="margin:0; font-size:15px; line-height:1.55; color:var(--muted);">Overview, Work, Threads, Contracts, Integrity. Narrow list, first item open by default, detail never pushes the list.</p>
+        </div>
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px; height:120px;">
+            <div style="height:30px; background:var(--canvas); border-radius:8px;"></div>
+            <div style="flex:1 1 auto; background:var(--surface); border-radius:8px; box-shadow:inset 0 0 0 1px var(--border);"></div>
+          </div>
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Map</h3>
+          <p style="margin:0; font-size:15px; line-height:1.55; color:var(--muted);">Network and Spaces. Grouped by space, lanes inside, no free-floating graph and no physics.</p>
+        </div>
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:14px; height:120px; background:var(--canvas); border-radius:8px; padding:8px;">
+            <div style="height:18px; background:var(--surface); border-radius:4px;"></div>
+            <div style="height:18px; background:var(--surface); border-radius:4px;"></div>
+            <div style="height:18px; background:var(--surface); border-radius:4px;"></div>
+            <div style="height:18px; background:var(--surface); border-radius:4px;"></div>
+          </div>
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Ledger</h3>
+          <p style="margin:0; font-size:15px; line-height:1.55; color:var(--muted);">Versions and long fact lists. One table, right-aligned values, no card per row.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="rules" style="margin-bottom:20px;">
+      <h2 style="margin:0 0 6px; font-size:30px; font-weight:600; letter-spacing:-0.02em;">5 · Rules that keep it honest</h2>
+      <p style="margin:0 0 20px; font-size:17px; color:var(--muted); max-width:760px;">Two languages, one layout; product truth over decoration.</p>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px;">
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 12px; font-size:18px; font-weight:600;">Bilingual by construction</h3>
+          <div style="display:flex; flex-direction:column; gap:9px; font-size:16px; line-height:1.55; color:var(--body);">
+            <div>No uppercase letterspaced micro-labels — Russian swells and stops being readable.</div>
+            <div>Pills and buttons size to content; nothing is a fixed width.</div>
+            <div>Label columns use <span style="font-family:'IBM Plex Mono',monospace; font-size:14px;">minmax(120px,auto)</span> and are allowed to wrap.</div>
+            <div>Ids, versions, digests and commands stay mono, LTR and untranslated.</div>
+            <div>Titles are sentence case, so both languages read the same way.</div>
+            <div>Label ink is <span style="font-family:'IBM Plex Mono',monospace; font-size:14px;">#6F6853</span> at 15px and above — <span style="font-family:'IBM Plex Mono',monospace; font-size:14px;">#8A8269</span> is decorative only, never a label or a value.</div>
+          </div>
+        </div>
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 12px; font-size:18px; font-weight:600;">Data honesty</h3>
+          <div style="display:flex; flex-direction:column; gap:9px; font-size:16px; line-height:1.55; color:var(--body);">
+            <div>Only committed facts are shown. Nothing is inferred to fill a slot.</div>
+            <div>Unknown is a stated word, not an empty cell or a zero.</div>
+            <div>Protocol flags are surfaced next to the thing they are about.</div>
+            <div>Stale is ochre with an age; red is reserved for literal blockage.</div>
+            <div>No invented percentages, savings or error-rate metrics anywhere.</div>
+          </div>
+        </div>
+        <div style="background:var(--inverse); color:var(--on-inverse); border-radius:14px; padding:20px 22px;">
+          <h3 style="margin:0 0 12px; font-size:18px; font-weight:600; color:var(--on-solid);">Dropped from v3</h3>
+          <div style="display:flex; flex-direction:column; gap:9px; font-size:16px; line-height:1.55; color:var(--on-inverse-muted);">
+            <div>Serif display type.</div>
+            <div>11–12px body text.</div>
+            <div>Coloured left borders with rounded corners.</div>
+            <div>Five equally weighted panels per screen.</div>
+            <div>Machine codes as the primary label.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <section id="surfaces" style="margin-bottom:56px;">
+      <h2 style="margin:0 0 6px; font-size:30px; font-weight:600; letter-spacing:-0.02em;">6 · Surface parts</h2>
+      <p style="margin:0 0 20px; font-size:17px; color:var(--muted); max-width:760px;">The public site adds narrative and machine-readable actions on top of the same vocabulary. Everything below is live: buttons copy, disclosures open, states switch.</p>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:16px; margin-bottom:16px;">
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Copyable command block</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Dark panel, mono 14–15px, a role label and one control with success and failure states. Never a fake terminal window with prompts and cursors.</p>
+          <div style="background:var(--inverse); border-radius:11px; padding:13px 15px; margin-bottom:10px;">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:9px;">
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--on-inverse-faint);">install.sh</span>
+              <button type="button" onClick="{{ install.copy }}" style="{{ install.style }}">{{ install.label }}</button>
+            </div>
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--on-inverse-2); overflow-wrap:anywhere;">{{ install.text }}</span>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; font-size:14px; font-weight:600;">
+            <span style="color:var(--on-solid); background:var(--inverse-3); border-radius:8px; padding:5px 11px;">Copy</span>
+            <span style="color:var(--on-solid); background:var(--green); border-radius:8px; padding:5px 11px;">Copied</span>
+            <span style="color:var(--on-solid); background:var(--red); border-radius:8px; padding:5px 11px;">Copy failed</span>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">“Ask an agent” menu</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">One control in the sticky header, on every public page. It opens on click — never on hover — and every machine-readable action lives inside it, so the page body stays free of utility buttons.</p>
+          <div style="background:var(--page); border-radius:12px; padding:10px;">
+            <div style="font-size:14px; line-height:1.5; color:var(--muted); padding:6px 10px 8px;">This page has a Markdown twin at <span style="font-family:'IBM Plex Mono',monospace; color:var(--text);">docs/threads.md</span>.</div>
+            <div style="display:flex; flex-direction:column; gap:2px; font-size:15px;">
+              <span style="padding:9px 10px; border-radius:8px; background:var(--surface);">Copy Markdown</span>
+              <span style="padding:9px 10px; border-radius:8px;">View Markdown</span>
+              <span style="padding:9px 10px; border-radius:8px;">Copy Markdown URL</span>
+              <span style="height:1px; background:var(--canvas); margin:6px 4px;"></span>
+              <span style="padding:9px 10px; border-radius:8px;">Ask ChatGPT to read it</span>
+              <span style="padding:9px 10px; border-radius:8px;">Ask Claude to read it</span>
+              <span style="padding:9px 10px; border-radius:8px;">Give an agent the whole corpus <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted);">llms-full.txt</span></span>
+            </div>
+          </div>
+          <p style="margin:12px 0 0; font-size:15px; line-height:1.55; color:var(--muted);">Header order, left to right: language (EN default, RU in the popover), theme (light default), Ask an agent, Install a2a.</p>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Evidence strip</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Earned facts only, each with its own scope. No certification marks, no uptime, no customer logos.</p>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; font-size:14px; font-weight:600;">
+            <span style="color:var(--healthy-ink); background:var(--healthy-tint); border-radius:6px; padding:4px 11px;">50 / 50 declared live cells</span>
+            <span style="color:var(--body); background:var(--canvas); border-radius:6px; padding:4px 11px;">SHA256SUMS</span>
+            <span style="color:var(--body); background:var(--canvas); border-radius:6px; padding:4px 11px;">keyless cosign bundle</span>
+            <span style="color:var(--body); background:var(--canvas); border-radius:6px; padding:4px 11px;">provenance · SBOM</span>
+            <span style="color:var(--muted); background:var(--surface); border-radius:6px; padding:3px 10px; box-shadow:inset 0 0 0 1px var(--border-strong);">Apache-2.0</span>
+          </div>
+          <p style="margin:12px 0 0; font-size:15px; line-height:1.55; color:var(--muted);">A bounded live-evidence claim always names its immutable candidate. It is never a standing badge.</p>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Plain-language disclosure</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Machine codes stay available; the human sentence leads. Click, not hover — essential information is never hover-only.</p>
+          <button type="button" onClick="{{ toggleWhy }}" aria-expanded="{{ whyExpanded }}" style="{{ whyStyle }}">{{ whyLabel }}</button>
+          <sc-if value="{{ whyOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:10px; background:var(--page); border-radius:11px; padding:14px 16px;">
+              <div style="font-size:16px; line-height:1.6; color:var(--body); margin-bottom:8px;">A committed event claimed <strong>in_progress</strong> while the fold resolved <strong>responded</strong>. The event stays in history; the claim is not accepted.</div>
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--attention-ink); background:var(--attention-tint); border-radius:6px; padding:3px 10px;">state-claim-mismatch</span>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Lifecycle marker and transition rail</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">One current state per artifact, and the transitions the fold table allows from it. Legal next moves name the systems allowed to make them.</p>
+          <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; row-gap:8px; font-size:14px; margin-bottom:12px;">
+            <span style="background:var(--canvas); border-radius:7px; padding:6px 11px; font-weight:600;">submitted</span>
+            <span style="color:var(--logo-dim); font-family:'IBM Plex Mono',monospace;">→</span>
+            <span style="background:var(--canvas); border-radius:7px; padding:6px 11px; font-weight:600;">acknowledged</span>
+            <span style="color:var(--logo-dim); font-family:'IBM Plex Mono',monospace;">→</span>
+            <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:7px; padding:6px 11px; font-weight:600;">in_progress</span>
+            <span style="color:var(--logo-dim); font-family:'IBM Plex Mono',monospace;">→</span>
+            <span style="background:var(--healthy-tint); color:var(--healthy-ink); border-radius:7px; padding:6px 11px; font-weight:600;">closed</span>
+          </div>
+          <div style="background:var(--page); border-radius:11px; padding:13px 15px; font-size:15px; line-height:1.55; color:var(--body);">
+            <div style="font-weight:600; margin-bottom:6px;">Legal now</div>
+            <div><span style="font-family:'IBM Plex Mono',monospace;">respond</span> — atlas · <span style="font-family:'IBM Plex Mono',monospace;">block</span> — atlas · <span style="font-family:'IBM Plex Mono',monospace;">dispute</span> — checkout</div>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Provenance chip</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Every fact belongs to one of three classes, and the class is visible wherever it matters.</p>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; font-size:14px; font-weight:600; margin-bottom:12px;">
+            <span style="color:var(--teal-ink); background:var(--teal-tint); border-radius:6px; padding:4px 11px;">canonical</span>
+            <span style="color:var(--body); background:var(--canvas); border-radius:6px; padding:4px 11px;">derived</span>
+            <span style="color:var(--muted); background:var(--surface); border-radius:6px; padding:3px 10px; box-shadow:inset 0 0 0 1px var(--border-strong);">unavailable</span>
+          </div>
+          <div style="font-size:15px; line-height:1.55; color:var(--muted);">Derived facts name the source fields they were joined from. Unavailable facts name the missing execution context.</div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Causal rail and event row</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Documents and events on one rail, in committed order. Not chat bubbles — nobody is speaking here.</p>
+          <div style="display:flex; flex-direction:column; gap:0;">
+            <div style="display:flex; gap:12px;">
+              <div style="flex:0 0 12px; display:flex; flex-direction:column; align-items:center;">
+                <span style="width:11px; height:11px; border-radius:99px; background:var(--teal-solid); flex:0 0 11px;"></span>
+                <span style="flex:1 1 auto; width:0; border-left:2px solid var(--border);"></span>
+              </div>
+              <div style="flex:1 1 auto; padding-bottom:12px;">
+                <div style="background:var(--page); border-radius:11px; padding:12px 14px;">
+                  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:5px;">
+                    <dc-import name="TypeBadge" type="work_request" size="small" hint-size="130px,24px"></dc-import>
+                    <span style="font-size:15px; color:var(--muted);">checkout → atlas</span>
+                  </div>
+                  <div style="font-size:16px; font-weight:600; line-height:1.4;">Prevent duplicate payment capture after a worker retry</div>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex; gap:12px;">
+              <div style="flex:0 0 12px; display:flex; flex-direction:column; align-items:center;">
+                <span style="width:11px; height:11px; border-radius:99px; background:var(--border-strong); flex:0 0 11px;"></span>
+              </div>
+              <div style="flex:1 1 auto; font-size:15px; line-height:1.5; color:var(--muted);">
+                <span style="font-family:'IBM Plex Mono',monospace; color:var(--body);">acknowledge</span> by atlas · committed 29.07.2026 08:12 UTC
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Next-owner panel</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">One panel per thread answers whose move it is and why. The reason is a sentence, not a code.</p>
+          <div style="background:var(--attention-tint); border-radius:11px; padding:14px 16px;">
+            <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:8px;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+              <span style="flex:0 0 auto; width:28px; height:28px; border-radius:99px; background:var(--teal-solid); color:var(--on-solid); display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600;">AT</span>
+              <span style="font-size:16px; font-weight:600; color:var(--attention-strong);">Your move</span>
+              </span><span style="flex:0 0 auto; font-size:15px; color:var(--attention-ink);">since 5h</span>
+            </div>
+            <div style="font-size:16px; line-height:1.6; color:var(--attention-ink);">Checkout disputed your response, so the work request is open again and waiting on atlas. Order strength: committed.</div>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Snapshot / compatibility ribbon</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Four independent axes. Never infer one from another, and never average them into one health score.</p>
+          <table style="width:100%; border-collapse:collapse; font-size:15px;">
+            <tbody>
+              <tr><td style="padding:9px 14px 9px 0; color:var(--muted); border-bottom:1px solid var(--hairline);">local binary</td><td style="padding:9px 0; text-align:right; font-family:'IBM Plex Mono',monospace; border-bottom:1px solid var(--hairline);">0.16.1</td></tr>
+              <tr><td style="padding:9px 14px 9px 0; color:var(--muted); border-bottom:1px solid var(--hairline);">writer floor</td><td style="padding:9px 0; text-align:right; font-family:'IBM Plex Mono',monospace; border-bottom:1px solid var(--hairline);">0.16.2</td></tr>
+              <tr><td style="padding:9px 14px 9px 0; color:var(--muted); border-bottom:1px solid var(--hairline);">CI workflow pin</td><td style="padding:9px 0; text-align:right; font-family:'IBM Plex Mono',monospace; border-bottom:1px solid var(--hairline);">0.16.2</td></tr>
+              <tr><td style="padding:9px 14px 9px 0; color:var(--muted);">snapshot age</td><td style="padding:9px 0; text-align:right;"><span style="font-size:14px; font-weight:600; color:var(--attention-ink); background:var(--attention-tint); border-radius:6px; padding:3px 10px;">stale 18m</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Degraded and empty states</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Five distinct shapes. None of them is a blank panel, a zero or a green tick.</p>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <sc-for list="{{ states }}" as="s" hint-placeholder-count="5">
+              <div style="{{ s.boxStyle }}">
+                <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:4px;">
+                  <dc-import name="StatusPill" text="{{ s.pill }}" tone="{{ s.tone }}" size="small" hint-size="100px,24px"></dc-import>
+                  <span style="font-size:15px; font-weight:600;">{{ s.name }}</span>
+                </div>
+                <div style="font-size:15px; line-height:1.5; color:var(--muted);">{{ s.text }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Changelog entry and impact block</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Kind, impact and affected surfaces first; then whether a human has to do anything, and exactly what to run.</p>
+          <div style="background:var(--page); border-radius:11px; padding:14px 16px;">
+            <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:8px;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+              <dc-import name="StatusPill" text="fix" tone="healthy" size="small" hint-size="60px,24px"></dc-import>
+              <span style="font-size:15px; color:var(--muted);">impact behavior</span>
+              </span><span style="flex:0 0 auto; font-size:15px; color:var(--muted);">statusline · cache</span>
+            </div>
+            <div style="font-size:16px; font-weight:600; line-height:1.4; margin-bottom:10px;">A stale statusline starts one leased, detached cache refresh for the next render</div>
+            <div style="background:var(--attention-tint); border-radius:10px; padding:12px 14px;">
+              <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:8px;">
+                <dc-import name="StatusPill" text="action: local" tone="attention" size="small" hint-size="110px,24px"></dc-import>
+                <span style="font-size:15px; line-height:1.5; color:var(--attention-ink); flex:1 1 200px;">Update the binary to pick up the refresh behaviour.</span>
+              </div>
+              <div style="background:var(--inverse); border-radius:9px; padding:10px 12px; display:flex; align-items:center; gap:10px;">
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--on-inverse-2);">{{ update.text }}</span>
+                <button type="button" onClick="{{ update.copy }}" style="{{ update.style }}">{{ update.label }}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Autonomy boundary</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">The signature gesture: ochre is the human authority branch, teal is the agent path. The human sits beside the loop, never inside every turn.</p>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; align-items:center; gap:10px; background:var(--attention-tint); border-radius:11px; padding:11px 13px;">
+              <span style="flex:0 0 auto; width:28px; height:28px; border-radius:99px; background:var(--ochre); color:var(--on-solid); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;">HU</span>
+              <span style="font-size:15px; line-height:1.5; color:var(--attention-ink);">policy, identity, irreversible choices — once, and on exception</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="width:28px; flex:0 0 28px;"></span>
+              <span style="flex:1 1 auto; height:0; border-top:2px dashed var(--attention-line);"></span>
+              <span style="font-size:14px; color:var(--attention-ink);">exception branch</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; background:var(--teal-tint); border-radius:11px; padding:11px 13px;">
+              <span style="flex:0 0 auto; width:28px; height:28px; border-radius:99px; background:var(--teal-solid); color:var(--on-solid); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;">AG</span>
+              <span style="font-size:15px; line-height:1.5; color:var(--teal-strong-ink);">draft → validate → PR → validated space → next agent</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Roadmap horizon marker</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Three visibly different commitment states, and never a progress percentage.</p>
+          <div style="display:flex; flex-direction:column; gap:9px;">
+            <div style="background:var(--surface); border-radius:11px; padding:12px 14px; box-shadow:inset 0 0 0 1px var(--border); display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+              <span style="width:9px; height:9px; border-radius:99px; background:var(--green); flex:0 0 9px;"></span>
+              <span style="font-size:15px; font-weight:600;">Shipped now</span>
+              </span><span style="flex:0 0 auto; font-size:14px; color:var(--muted);">installable today</span>
+            </div>
+            <div style="background:var(--attention-tint); border-radius:11px; padding:12px 14px; box-shadow:inset 0 0 0 1.5px var(--attention-line); display:flex; align-items:center; gap:7px; flex-wrap:wrap;">
+              <span style="font-size:15px; font-weight:600; color:var(--attention-strong);">Next proposal</span>
+              <span style="font-size:13px; font-weight:600; color:var(--attention-ink); background:var(--surface); border-radius:6px; padding:3px 9px;">Design gates open</span>
+              <span style="font-size:13px; font-weight:600; color:var(--muted); background:var(--surface); border-radius:6px; padding:3px 9px;">No release target</span>
+            </div>
+            <div style="background:var(--sink); border-radius:11px; padding:12px 14px; display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+              <span style="font-size:15px; font-weight:600; color:var(--body);">Exploring later</span>
+              </span><span style="flex:0 0 auto; font-size:14px; color:var(--muted);">no design work committed</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Docs shell parts</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Section nav, working search, local table of contents, heading anchors, and a source note. Normal page scrolling — never a nested viewport.</p>
+          <div style="background:var(--page); border-radius:11px; padding:14px 16px; margin-bottom:10px;">
+            <div style="font-size:15px; font-weight:600; margin-bottom:8px;">Search the docs</div>
+            <div style="background:var(--surface); border-radius:9px; padding:11px 13px; font-size:15px; color:var(--muted);">thread, contract, retire…</div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; font-size:14px;">
+            <span style="background:var(--primary); color:var(--on-primary); border-radius:8px; padding:6px 11px; font-weight:600;">Threads: one intent, one chain</span>
+            <span style="background:var(--canvas); color:var(--body); border-radius:8px; padding:6px 11px;">Contract versions</span>
+            <span style="background:var(--canvas); color:var(--body); border-radius:8px; padding:6px 11px;">#anchor</span>
+          </div>
+          <p style="margin:12px 0 0; font-size:15px; line-height:1.55; color:var(--muted);">Reading measure 34em ≈ 68 characters. A page whose body is not owned by the site shows an honest injection block instead of invented prose.</p>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Agent-compatibility row</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Named surfaces are examples the binary can detect — not integrations, not endorsements. The neutral row prevents a logo wall.</p>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="background:var(--page); border-radius:11px; padding:12px 14px; display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+              <span style="font-size:16px; font-weight:600;">Claude Code</span>
+              </span><span style="flex:0 0 auto; "><dc-import name="StatusPill" text="detected" tone="agent" size="small" hint-size="80px,24px"></dc-import></span>
+            </div>
+            <div style="background:var(--page); border-radius:11px; padding:12px 14px; display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+              <span style="font-size:16px; font-weight:600;">Codex</span>
+              </span><span style="flex:0 0 auto; "><dc-import name="StatusPill" text="detected" tone="agent" size="small" hint-size="80px,24px"></dc-import></span>
+            </div>
+            <div style="background:var(--page); border-radius:11px; padding:12px 14px; display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+              <span style="font-size:16px; font-weight:600;">Any CLI or MCP-capable agent</span>
+              </span><span style="flex:0 0 auto; "><dc-import name="StatusPill" text="supported" tone="neutral" size="small" hint-size="90px,24px"></dc-import></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <section id="handoff" style="margin-bottom:56px;">
+      <h2 style="margin:0 0 6px; font-size:30px; font-weight:600; letter-spacing:-0.02em;">7 · Implementation note</h2>
+      <p style="margin:0 0 20px; font-size:17px; color:var(--muted); max-width:760px;">What the three surfaces share, what belongs to one of them, and which data the Go assembler has to project so the browser never computes protocol truth.</p>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:16px; margin-bottom:16px;">
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Token names</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Three layers. Component tokens resolve to semantic tokens, semantic to primitives — never the reverse.</p>
+          <table style="width:100%; border-collapse:collapse; font-size:15px;">
+            <tbody>
+              <tr><td style="padding:9px 14px 9px 0; color:var(--muted); border-bottom:1px solid var(--hairline); vertical-align:top;">primitive</td><td style="padding:9px 0; border-bottom:1px solid var(--hairline); font-family:'IBM Plex Mono',monospace; font-size:14px; overflow-wrap:anywhere;">--paper-100 · --ink-900 · --teal-600 · --ochre-600 · --red-600 · --green-600 · --plum-600 · --size-14…52 · --space-4…40 · --radius-6…18 · --shadow-card/panel/popover · --dur-120/200</td></tr>
+              <tr><td style="padding:9px 14px 9px 0; color:var(--muted); border-bottom:1px solid var(--hairline); vertical-align:top;">semantic</td><td style="padding:9px 0; border-bottom:1px solid var(--hairline); font-family:'IBM Plex Mono',monospace; font-size:14px; overflow-wrap:anywhere;">--canvas · --page · --surface · --sink · --inverse · --text · --text-body · --text-muted · --border · --focus · --link · --selected · --agent · --attention · --blocking · --healthy · --decision · --stale · --unknown</td></tr>
+              <tr><td style="padding:9px 14px 9px 0; color:var(--muted); vertical-align:top;">component</td><td style="padding:9px 0; font-family:'IBM Plex Mono',monospace; font-size:14px; overflow-wrap:anywhere;">--pill-* · --type-badge-* · --row-* · --lane-* · --rail-* · --code-* · --callout-* · --nav-* · --ribbon-*</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Shared by all three surfaces</h3>
+          <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">Semantic HTML plus CSS plus small vanilla JS, so Astro, the Go renderer and a future Nuxt build can express the same component.</p>
+          <div style="display:flex; gap:7px; flex-wrap:wrap; font-family:'IBM Plex Mono',monospace; font-size:14px;">
+            <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:6px; padding:4px 10px;">StatusPill</span>
+            <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:6px; padding:4px 10px;">TypeBadge</span>
+            <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:6px; padding:4px 10px;">FactTable</span>
+            <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:6px; padding:4px 10px;">ArtifactRow</span>
+            <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:6px; padding:4px 10px;">ArtifactDetail</span>
+            <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:6px; padding:4px 10px;">NetworkMap</span>
+            <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:6px; padding:4px 10px;">CausalRail</span>
+            <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:6px; padding:4px 10px;">NextOwnerPanel</span>
+            <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:6px; padding:4px 10px;">ContractWindow</span>
+            <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:6px; padding:4px 10px;">DriftBadge</span>
+            <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:6px; padding:4px 10px;">SnapshotRibbon</span>
+            <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:6px; padding:4px 10px;">UnavailableBlock</span>
+            <span style="background:var(--teal-tint); color:var(--teal-ink); border-radius:6px; padding:4px 10px;">CommandBlock</span>
+          </div>
+          <p style="margin:12px 0 0; font-size:15px; line-height:1.55; color:var(--muted);">In this prototype the first six are real files; the rest are compositions of the same tokens and are named so a Vue or Astro implementation keeps the boundary.</p>
+        </div>
+        <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Surface-specific</h3>
+          <table style="width:100%; border-collapse:collapse; font-size:15px;">
+            <tbody>
+              <tr><td style="padding:9px 14px 9px 0; color:var(--muted); vertical-align:top; border-bottom:1px solid var(--hairline);">public site only</td><td style="padding:9px 0; vertical-align:top; border-bottom:1px solid var(--hairline); line-height:1.5;">SiteHeader (LanguageMenu · ThemeSwitch · AskAgentMenu) · SiteFooter · InstallBlock · SeedAction · RoadmapHorizon · ChangelogEntry · EvidenceStrip · NotFound</td></tr>
+              <tr><td style="padding:9px 14px 9px 0; color:var(--muted); vertical-align:top; border-bottom:1px solid var(--hairline);">local dashboard only</td><td style="padding:9px 0; vertical-align:top; border-bottom:1px solid var(--hairline); line-height:1.5;">ViewTabs · SpaceChips · UpdateBanner · IntegrityList · SpacesLedger · VersionsLedger — all read-only, no write control anywhere</td></tr>
+              <tr><td style="padding:9px 14px 9px 0; color:var(--muted); vertical-align:top;">future Nuxt</td><td style="padding:9px 0; vertical-align:top; line-height:1.5;">Nothing is designed for it now. It inherits the token names, the component boundaries and the data contract — and none of the two shells above.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="background:var(--surface); border-radius:14px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+        <h3 style="margin:0 0 6px; font-size:18px; font-weight:600;">Data projections this design needs from the Go assembler</h3>
+        <p style="margin:0 0 14px; font-size:15px; color:var(--muted);">The browser must never reimplement fold tables, authorization, severity, drift, deadline policy or validation. Each row below is a fact the HTML consumes already computed.</p>
+        <table style="width:100%; border-collapse:collapse; font-size:16px;">
+          <tbody>
+            <sc-for list="{{ projections }}" as="p" hint-placeholder-count="8">
+              <tr>
+                <td style="{{ p.cellA }}">{{ p.name }}</td>
+                <td style="{{ p.cellB }}">{{ p.text }}</td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div style="margin-top:40px; display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+      <a href="13-public-home-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--on-primary); background:var(--primary); border-radius:10px; padding:12px 20px; text-decoration:none;">Public home →</a>
+      <a href="14-local-dashboard-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--text); background:var(--surface); border-radius:10px; padding:12px 20px; text-decoration:none;">Local dashboard</a>
+      <a href="16-docs-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--text); background:var(--surface); border-radius:10px; padding:12px 20px; text-decoration:none;">Docs</a>
+      <a href="20-dashboard-example-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--text); background:var(--surface); border-radius:10px; padding:12px 20px; text-decoration:none;">Dashboard example</a>
+      <a href="17-security-reliability-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--text); background:var(--surface); border-radius:10px; padding:12px 20px; text-decoration:none;">Security</a>
+      <a href="18-install-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--text); background:var(--surface); border-radius:10px; padding:12px 20px; text-decoration:none;">Install</a>
+      <a href="19-roadmap-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--text); background:var(--surface); border-radius:10px; padding:12px 20px; text-decoration:none;">Roadmap</a>
+      <a href="15-changelog-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--text); background:var(--surface); border-radius:10px; padding:12px 20px; text-decoration:none;">Changelog</a>
+      <a href="21-not-found-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--text); background:var(--surface); border-radius:10px; padding:12px 20px; text-decoration:none;">404</a>
+    </div>
+
+  </main>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const INSTALL = "curl -fsSL https://raw.githubusercontent.com/ydnikolaev/a2ahub/main/scripts/install.sh | sh";
+const STATES = [
+  ["empty", "neutral", "Nothing here yet", "The query is valid and the answer is genuinely zero. The sentence says which query was asked."],
+  ["not applicable", "outline", "Loading is not a state", "A static file has no spinner. Where a value cannot exist in this read, the panel says so in words."],
+  ["stale 18m", "attention", "Stale snapshot", "Ochre with an age. The data is real, just older than the last sync attempt."],
+  ["unreadable", "blocking", "Unreadable space", "Red, because something is actually broken. Zero work must not be inferred from it."],
+  ["not evaluated", "outline", "Unavailable check", "The required execution context does not exist in a static read. Never green, never blank."]
+];
+const PROJECTIONS = [
+  ["threadViews", "Committed and declared order, opener, participants, artifact list, interleaved artifact and event transcript, open items, legal next actions with authorized system ids, waiting systems, flags and unresolved facts."],
+  ["artifactDetails", "Raw body, folded state, digest, committed events, protocol flags and reference resolution or digest facts for one artifact."],
+  ["item.neededBy · pendingMerge · syncStale", "Already in the core read models; the HTML needs them projected per item so deadline, merge and freshness never collapse into one badge."],
+  ["actionable reasons", "The named reason each item is on your list — addressed-no-ack, overdue-on-me, gate-pending — with the derived query that contributed it."],
+  ["contract drift per consumer line", "current · behind · deprecated · retired · missing · dangling, computed on the consumer's pinned major, never on the contract as a whole."],
+  ["space compatibility axes", "readable, syncAge, stale, revision, schemaVersion, minBinaryVersion, workflowVersion and workflowRef — separately, with Unavailable or Mixed where the workflow cannot be read."],
+  ["unavailable[]", "Scoped, titled checks with a reason, so the UI can render a bounded honest gap instead of a green whole-snapshot verdict."],
+  ["order strength", "Whether this thread's ordering came from Git history or from declared timestamps. The UI labels it; it does not decide it."]
+];
+
+class Component extends DCLogic {
+  state = { copied: "", why: false };
+  copy(key, text) {
+    const done = () => { this.setState({ copied: key }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ copied: "" }), 2400); };
+    const fail = () => { this.setState({ copied: "err:" + key }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ copied: "" }), 3000); };
+    const legacy = () => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text; ta.style.cssText = "position:fixed; left:-9999px; top:0;";
+        document.body.appendChild(ta); ta.select();
+        const ok = document.execCommand("copy"); document.body.removeChild(ta);
+        ok ? done() : fail();
+      } catch (e) { fail(); }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, legacy); else legacy();
+  }
+  block(key, text) {
+    const c = this.state.copied, ok = c === key, err = c === "err:" + key;
+    return {
+      text,
+      copy: () => this.copy(key, text),
+      label: ok ? "Copied" : err ? "Copy failed" : "Copy",
+      style: "margin-left:auto; font-family:'Onest',sans-serif; font-size:14px; font-weight:600; border:0; border-radius:8px; padding:5px 11px; cursor:pointer; white-space:nowrap; " +
+        (ok ? "background:var(--green); color:var(--on-solid);" : err ? "background:var(--red); color:var(--on-solid);" : "background:var(--inverse-3); color:var(--teal-on-dark);")
+    };
+  }
+  renderVals() {
+    return {
+      install: this.block("install", INSTALL),
+      update: this.block("update", "a2a update"),
+      whyOpen: this.state.why,
+      whyExpanded: this.state.why ? "true" : "false",
+      whyLabel: this.state.why ? "Hide the explanation" : "Why is this flagged?",
+      whyStyle: "font-family:'Onest',sans-serif; font-size:16px; font-weight:600; color:var(--teal-ink); background:transparent; border:0; padding:4px 0; cursor:pointer; text-align:left;",
+      toggleWhy: () => this.setState(s => ({ why: !s.why })),
+      states: STATES.map(([pill, tone, name, text]) => ({
+        pill, tone, name, text,
+        boxStyle: "background:var(--page); border-radius:11px; padding:12px 14px;" + (tone === "blocking" ? " box-shadow:inset 0 0 0 1.5px var(--blocking-line);" : "")
+      })),
+      projections: PROJECTIONS.map(([name, text], i) => {
+        const line = i === PROJECTIONS.length - 1 ? "none" : "1px solid var(--hairline)";
+        return {
+          name, text,
+          cellA: "padding:12px 20px 12px 0; width:250px; vertical-align:top; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; font-weight:600; overflow-wrap:anywhere; border-bottom:" + line + ";",
+          cellB: "padding:12px 0; vertical-align:top; line-height:1.6; color:var(--body); border-bottom:" + line + ";"
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

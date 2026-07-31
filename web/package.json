@@ -4,11 +4,24 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/generate-content.mjs",
     "dev": "astro dev",
+    "prebuild": "node scripts/generate-content.mjs",
     "build": "astro build",
+    "build:dashboard": "node scripts/build-local-dashboard.mjs",
+    "check": "npm run build && node scripts/check-dist.mjs",
     "preview": "astro preview"
   },
   "dependencies": {
-    "astro": "^7.1.1"
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/onest": "^5.3.0",
+    "astro": "^7.1.1",
+    "marked": "^18.0.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "vite": "^8.1.5"
   }
 }

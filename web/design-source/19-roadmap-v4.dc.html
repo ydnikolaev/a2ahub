@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>a2a roadmap — shipped, proposed, exploring</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --canvas: #F1EEE6;
+  --page: #FAF7F0;
+  --surface: #FFFFFF;
+  --sink: #E8E3D7;
+  --border: #E4DFD2;
+  --border-strong: #CBC2AB;
+  --hairline: #F1EEE6;
+  --text: #211E17;
+  --body: #453F31;
+  --muted: #6F6853;
+  --faint: #8A8269;
+  --logo-dim: #9A927B;
+  --inverse: #211E17;
+  --inverse-2: #2A261D;
+  --inverse-3: #33302A;
+  --inverse-line: #3A342A;
+  --on-inverse: #F3EFE4;
+  --on-inverse-2: #E8E3D4;
+  --on-inverse-muted: #C4BCA6;
+  --on-inverse-faint: #A8A08A;
+  --on-dark: #FAF7F0;
+  --on-solid: #FFFFFF;
+  --teal-solid: #175E6B;
+  --teal-ink: #175E6B;
+  --teal-ink-hover: #114953;
+  --teal-tint: #EDF4F5;
+  --teal-strong-ink: #0E3F48;
+  --teal-on-dark: #8FD0DB;
+  --teal-hairline: #BFD9DD;
+  --focus: #175E6B;
+  --ochre: #9A5C08;
+  --attention-tint: #FBF4E4;
+  --attention-ink: #7A5A14;
+  --attention-strong: #5E4410;
+  --attention-line: #E8CE94;
+  --red: #AC382A;
+  --blocking-tint: #F8E9E5;
+  --blocking-ink: #8C2B1F;
+  --blocking-strong: #5E2A22;
+  --blocking-line: #E0B3AB;
+  --green: #3E7A4C;
+  --healthy-tint: #E9F1E8;
+  --healthy-ink: #2F5E3A;
+  --healthy-strong: #24492D;
+  --plum: #7A3B62;
+  --selection: #D7E8EA;
+  --attn-bg: #33291A;
+  --attn-ink: #E2A33C;
+  --code-chip: #1B2A2D;
+  --primary: #211E17;
+  --on-primary: #FAF7F0;
+  --header-bg: rgba(241,238,230,.94);
+  --shadow-card: 0 1px 2px rgba(33,30,23,.06);
+}
+html[data-theme="dark"] {
+  --canvas: #16140F;
+  --page: #1D1A14;
+  --surface: #24211A;
+  --sink: #2E2A21;
+  --border: #3B3529;
+  --border-strong: #4E4736;
+  --hairline: #302B22;
+  --text: #F4F0E4;
+  --body: #DAD3C0;
+  --muted: #ADA48C;
+  --faint: #8F8770;
+  --logo-dim: #8F8770;
+  --inverse: #0E0D09;
+  --inverse-2: #1A1812;
+  --inverse-3: #2E2A21;
+  --inverse-line: #3B3529;
+  --on-inverse: #F3EFE4;
+  --on-inverse-2: #E8E3D4;
+  --on-inverse-muted: #C4BCA6;
+  --on-inverse-faint: #A8A08A;
+  --on-dark: #FAF7F0;
+  --on-solid: #0E0D09;
+  --teal-solid: #2A8395;
+  --teal-ink: #8FD0DB;
+  --teal-ink-hover: #B4E2EA;
+  --teal-tint: #123039;
+  --teal-strong-ink: #C7E9EF;
+  --teal-on-dark: #8FD0DB;
+  --teal-hairline: #2C5A63;
+  --focus: #8FD0DB;
+  --ochre: #D9902A;
+  --attention-tint: #3A2D12;
+  --attention-ink: #E8C579;
+  --attention-strong: #F4DDAA;
+  --attention-line: #6B5320;
+  --red: #D6584A;
+  --blocking-tint: #3C1E19;
+  --blocking-ink: #F0A79A;
+  --blocking-strong: #F7C9C1;
+  --blocking-line: #6E3229;
+  --green: #5FA773;
+  --healthy-tint: #1B2E20;
+  --healthy-ink: #94CFA3;
+  --healthy-strong: #BCE3C6;
+  --plum: #B981A0;
+  --selection: #1E4A52;
+  --attn-bg: #3A2D12;
+  --attn-ink: #E2A33C;
+  --code-chip: #12262A;
+  --primary: #EDE7D8;
+  --on-primary: #16140F;
+  --header-bg: rgba(22,20,15,.94);
+  --shadow-card: 0 1px 2px rgba(0,0,0,.4);
+}
+html[data-theme="dark"] header { backdrop-filter: blur(8px); }
+html { scroll-behavior: smooth; }
+body { margin: 0; background:var(--canvas); color:var(--text); font-family: "Onest", "Segoe UI", Helvetica, Arial, sans-serif; font-size: 16px; -webkit-font-smoothing: antialiased; }
+a { color:var(--teal-ink); text-underline-offset: 3px; }
+a:hover { color:var(--teal-ink-hover); }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+::selection { background:var(--selection); }
+
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</helmet>
+
+<div data-screen-label="Roadmap v4" style="min-height:100vh;">
+  <div style="position:sticky; top:0; z-index:80;"><dc-import name="SiteHeader" active="roadmap" md="roadmap.md" md-text="{{ mdText }}" hint-size="100%,66px"></dc-import></div>
+
+  <main style="width:min(1240px, 100% - 56px); margin:0 auto; padding:40px 0 80px;">
+
+    <div style="display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; margin-bottom:26px;">
+      <div style="flex:1 1 560px; min-width:0;">
+        <span style="display:inline-block; font-size:15px; font-weight:600; color:var(--teal-ink); background:var(--surface); border-radius:8px; padding:7px 14px; margin-bottom:20px;">Roadmap · three commitment states · no dates</span>
+        <h1 style="margin:0 0 16px; font-size:52px; line-height:1.05; font-weight:600; letter-spacing:-0.03em; max-width:700px; text-wrap:balance;">The control plane is here. Verified private delivery is next to design.</h1>
+        <p style="margin:0; font-size:19px; line-height:1.6; color:var(--body); max-width:700px; text-wrap:pretty;">This page separates what you can install today from what is only a written proposal. Nothing here carries a release date, and nothing here can be bought or reserved. A proposal with open design gates is shown as exactly that.</p>
+      </div>
+    </div>
+
+    <div style="margin-bottom:20px;">
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:8px;">
+      <span style="font-size:15px; color:var(--muted);">Horizon</span>
+      <sc-for list="{{ filters }}" as="f" hint-placeholder-count="4">
+        <button type="button" onClick="{{ f.go }}" style="{{ f.style }}">{{ f.label }}</button>
+      </sc-for>
+      </div>
+      <div style="margin-top:10px; font-size:15px; color:var(--muted);">{{ scopeNote }}</div>
+    </div>
+
+    <sc-if value="{{ showShipped }}" hint-placeholder-val="{{ true }}">
+      <section style="background:var(--surface); border-radius:18px; padding:28px 30px; box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:16px;">
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
+          <h2 style="margin:0; font-size:32px; font-weight:600; letter-spacing:-0.025em;">Shipped now</h2>
+          <dc-import name="StatusPill" text="installable today · v0.16.3" tone="healthy" hint-size="190px,26px"></dc-import>
+        </div>
+        <p style="margin:0 0 20px; font-size:18px; line-height:1.6; color:var(--body); max-width:36em;">The open-source local and Git-backed product. One binary, one protocol, one shared record you can read without this website.</p>
+        <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px;">
+          <sc-for list="{{ shipped }}" as="s" hint-placeholder-count="6">
+            <div style="min-width:0; background:var(--page); border-radius:14px; padding:16px 18px;">
+              <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:7px;">
+                <span style="width:9px; height:9px; border-radius:99px; background:var(--green); flex:0 0 9px; margin-top:8px;"></span>
+                <span style="flex:1 1 auto; min-width:0; font-size:18px; line-height:1.35; font-weight:600;">{{ s.name }}</span>
+              </div>
+              <div style="font-size:16px; line-height:1.55; color:var(--body);">{{ s.text }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ showProposal }}" hint-placeholder-val="{{ true }}">
+      <section style="border-radius:18px; padding:28px 30px; margin-bottom:16px; background:var(--attention-tint); box-shadow:inset 0 0 0 1.5px var(--attention-line);">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+          <h2 style="margin:0; font-size:32px; font-weight:600; letter-spacing:-0.025em; color:var(--attention-strong);">Next proposal — autonomous verified delivery loop</h2>
+          <dc-import name="StatusPill" text="Proposal" tone="attention" hint-size="100px,26px"></dc-import>
+          <dc-import name="StatusPill" text="Design gates open" tone="attention" hint-size="150px,26px"></dc-import>
+          <dc-import name="StatusPill" text="No release target" tone="outline" hint-size="150px,26px"></dc-import>
+        </div>
+        <p style="margin:0 0 18px; font-size:19px; line-height:1.6; color:var(--attention-strong); max-width:36em;">Two physically separate systems alternate short-lived local agent sessions, preserve the durable turn in an a2a thread, move runtime data through a private data plane outside public Git, and bind the consumer's pass or fail evidence to the exact delivered snapshot or endpoint.</p>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; margin-bottom:16px;">
+          <div style="background:var(--surface); border-radius:14px; padding:18px 20px;">
+            <div style="font-size:18px; font-weight:600; margin-bottom:10px;">What is actually decided</div>
+            <table style="width:100%; border-collapse:collapse; font-size:16px;">
+              <tbody>
+                <tr><td style="padding:11px 0; line-height:1.6; color:var(--body); border-bottom:1px solid var(--hairline);">The desired outcome is documented for exploration — not approved for implementation.</td></tr>
+                <tr><td style="padding:11px 0; line-height:1.6; color:var(--body); border-bottom:1px solid var(--hairline);">The public Git space remains the control plane.</td></tr>
+                <tr><td style="padding:11px 0; line-height:1.6; color:var(--body);">Private runtime payloads must not be committed there.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="background:var(--surface); border-radius:14px; padding:18px 20px;">
+            <div style="font-size:18px; font-weight:600; margin-bottom:10px;">What is not promised</div>
+            <p style="margin:0 0 12px; font-size:16px; line-height:1.6; color:var(--body);">No command, schema, watcher, transport, file format or provider adapter is a shipped promise. If you can name it, it does not exist yet.</p>
+            <div style="display:flex; gap:7px; flex-wrap:wrap;">
+              <sc-for list="{{ notPromised }}" as="n" hint-placeholder-count="6">
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); background:var(--canvas); border-radius:6px; padding:5px 10px; text-decoration:line-through;">{{ n }}</span>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:18px 20px; margin-bottom:16px;">
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+            <div style="font-size:18px; font-weight:600;">Open design gates</div>
+            <span style="font-size:15px; color:var(--muted);">{{ gateNote }}</span>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:9px;">
+            <sc-for list="{{ gates }}" as="g" hint-placeholder-count="6">
+              <div style="background:var(--page); border-radius:11px; padding:13px 15px; display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+                <dc-import name="StatusPill" text="open" tone="attention" size="small" hint-size="60px,24px"></dc-import>
+                <span style="flex:1 1 240px; min-width:0; font-size:16px; line-height:1.55; color:var(--body);"><strong style="font-weight:600;">{{ g.name }}</strong> — {{ g.text }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="background:var(--surface); border-radius:14px; padding:18px 20px;">
+          <div style="font-size:18px; font-weight:600; margin-bottom:8px;">Commercial direction, stated once</div>
+          <p style="margin:0 0 10px; font-size:17px; line-height:1.6; color:var(--body); max-width:36em;">Private cross-system data delivery is a likely candidate for the first Pro capability. Packaging, limits, pricing and release timing are undecided.</p>
+          <p style="margin:0; font-size:16px; line-height:1.6; color:var(--muted); max-width:36em;">There is nothing to buy, reserve or register interest in. This paragraph is a product direction, not an offer — and it is the only commercial sentence on this site.</p>
+        </div>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{ showExploring }}" hint-placeholder-val="{{ true }}">
+      <section style="background:var(--sink); border-radius:18px; padding:28px 30px; margin-bottom:16px;">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+          <h2 style="margin:0; font-size:30px; font-weight:600; letter-spacing:-0.02em; color:var(--body);">Exploring later</h2>
+          <dc-import name="StatusPill" text="no design work committed" tone="outline" hint-size="200px,26px"></dc-import>
+        </div>
+        <p style="margin:0 0 18px; font-size:18px; line-height:1.6; color:var(--body); max-width:36em;">Written down so it is not mistaken for a plan. These items have no owner, no gate and no shape yet.</p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px;">
+          <sc-for list="{{ exploring }}" as="e" hint-placeholder-count="2">
+            <div style="background:var(--canvas); border-radius:14px; padding:16px 18px;">
+              <div style="font-size:18px; font-weight:600; margin-bottom:7px; color:var(--body);">{{ e.name }}</div>
+              <div style="font-size:16px; line-height:1.55; color:var(--muted);">{{ e.text }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+    </sc-if>
+
+    <section style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px;">
+      <div style="background:var(--inverse); color:var(--on-inverse); border-radius:18px; padding:26px 28px;">
+        <h2 style="margin:0 0 12px; font-size:24px; font-weight:600; color:var(--on-solid);">Two things that are not the same</h2>
+        <p style="margin:0 0 12px; font-size:17px; line-height:1.6; color:var(--on-inverse-muted);">The architecture plan describes a single-operator Go Hub that mirrors and indexes spaces and serves read APIs and notifications. It explicitly does not transport runtime payloads and does not orchestrate agents.</p>
+        <p style="margin:0; font-size:17px; line-height:1.6; color:var(--on-inverse-muted);">That is a different thing from a future multi-tenant product surface. Neither one is available today, and neither is presented as protection or capability you have now.</p>
+      </div>
+      <div style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+        <h2 style="margin:0 0 12px; font-size:24px; font-weight:600;">What you can do today</h2>
+        <p style="margin:0 0 16px; font-size:17px; line-height:1.6; color:var(--body);">Install the binary, connect a space, and let two agents coordinate through the shared record. Everything on the Shipped list is in v0.16.3.</p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <a href="18-install-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--on-primary); background:var(--primary); border-radius:10px; padding:12px 18px; text-decoration:none;">Install a2a</a>
+          <a href="15-changelog-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--text); background:var(--canvas); border-radius:10px; padding:12px 18px; text-decoration:none;">What shipped recently</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dc-import name="SiteFooter" md="roadmap.md" hint-size="100%,320px"></dc-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1300,&quot;height&quot;:900}}">
+const SHIPPED = [
+  ["Typed artifacts and lifecycle", "Eight document types with one grammar, and a fold table that decides which transition is legal for which actor."],
+  ["Contracts and versions", "Semantic versions, schemas, fixtures, registered consumers, independent version states and non-destructive retirement."],
+  ["CLI and stdio MCP", "One core, two machine interfaces: the local CLI and seven grouped MCP tools."],
+  ["Git and PR validation", "Submission opens a pull request; the space gate checks schema, references, authorization, lifecycle and contract rules."],
+  ["The agent skill", "The binary installs a complete expert-skill tree and a generated command and MCP reference, then links it into detected agent surfaces."],
+  ["Local read model and dashboard", "Inbox, outbox, threads, search, contracts, statusline, and a self-contained read-only HTML dashboard with no network requests."]
+];
+const GATES = [
+  ["Transport choice", "how the private data plane moves bytes between two systems is undecided."],
+  ["Snapshot format", "what a delivered snapshot is, and how it is addressed, is undecided."],
+  ["Local watcher and runtime integration", "how a session is started on the other side is undecided; nothing implies a shipped general-purpose watcher."],
+  ["Lease and retry rules", "who holds a turn, for how long, and what a retry means is undecided."],
+  ["Sensitive metadata placement", "which facts may appear in the public control plane at all is undecided."],
+  ["Escalation policy", "when a stuck loop must reach a human, and how, is undecided."]
+];
+const NOT_PROMISED = ["a2a deliver", "delivery.schema.json", "a2a watch", "transport adapter", "snapshot format", "provider plugin"];
+const EXPLORING = [
+  ["Hosted and multi-tenant product surfaces", "A hosted service does not exist, is not in design, and is not sold. Token names and component boundaries are kept portable so a future UI could reuse them — that is a portability constraint, not a plan."],
+  ["Additional transport and runtime adapters", "Beyond Git, nothing is chosen. Any adapter would inherit every open gate above."]
+];
+
+class Component extends DCLogic {
+  state = { horizon: "all" };
+  chip(active) {
+    return "font-family:'Onest',sans-serif; font-size:15px; border:0; border-radius:8px; padding:7px 13px; cursor:pointer; " +
+      (active ? "background:var(--primary); color:var(--on-primary); font-weight:600;" : "background:var(--surface); color:var(--body);");
+  }
+  renderVals() {
+    const h = this.state.horizon;
+    const opts = [["all", "All three"], ["shipped", "Shipped now"], ["proposal", "Next proposal"], ["exploring", "Exploring later"]];
+    return {
+      filters: opts.map(([k, label]) => ({ label, style: this.chip(h === k), go: () => this.setState({ horizon: k }) })),
+      scopeNote: h === "all" ? "No item on this page carries a date or a commitment beyond its own label." : "Filtered view — the other horizons are still on this page.",
+      showShipped: h === "all" || h === "shipped",
+      showProposal: h === "all" || h === "proposal",
+      showExploring: h === "all" || h === "exploring",
+      shipped: SHIPPED.map(([name, text]) => ({ name, text })),
+      gates: GATES.map(([name, text]) => ({ name, text })),
+      gateNote: GATES.length + " gates, all unresolved — a proposal cannot pass into design while any of them is open",
+      notPromised: NOT_PROMISED,
+      exploring: EXPLORING.map(([name, text]) => ({ name, text })),
+      mdText: "# Roadmap\n\nCanonical HTML: https://ydnikolaev.github.io/a2ahub/roadmap.html\n\nShipped now, next proposal (autonomous verified delivery loop, proposal only, design gates open, no release target) and exploring later.\n\n[SSOT document body is projected here at build time]\n"
+    };
+  }
+}
+
+</script>
+</body>
+</html>

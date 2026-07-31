@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="min-width:0; background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5); font-family:'Onest',sans-serif;">
+  <sc-if value="{{ missing }}" hint-placeholder-val="{{ false }}">
+    <h3 style="margin:0 0 8px; font-size:22px; font-weight:600;">This artifact has no detail record in the demo fixture</h3>
+    <p style="margin:0; font-size:16px; line-height:1.6; color:var(--body);">{{ missingText }}</p>
+  </sc-if>
+  <sc-if value="{{ present }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:16px;">
+      <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
+        <dc-import name="TypeBadge" type="{{ type }}" hint-size="140px,26px"></dc-import>
+        <sc-for list="{{ pills }}" as="p" hint-placeholder-count="2">
+          <dc-import name="StatusPill" text="{{ p.text }}" tone="{{ p.tone }}" hint-size="110px,26px"></dc-import>
+        </sc-for>
+      </span>
+      <span style="flex:0 1 auto; min-width:0; text-align:right; font-size:15px; color:var(--muted); overflow-wrap:anywhere;">{{ sourceLine }}</span>
+    </div>
+
+    <h3 style="margin:0 0 10px; font-size:28px; line-height:1.25; font-weight:600; letter-spacing:-0.015em; overflow-wrap:anywhere; text-wrap:balance;">{{ title }}</h3>
+    <p style="margin:0 0 18px; font-size:18px; line-height:1.6; color:var(--body); max-width:760px; overflow-wrap:anywhere;">{{ body }}</p>
+
+    <sc-if value="{{ hasCallout }}" hint-placeholder-val="{{ true }}">
+      <div style="{{ calloutStyle }}">
+        <div style="{{ calloutTitleStyle }}">{{ calloutTitle }}</div>
+        <div style="{{ calloutTextStyle }}">{{ calloutText }}</div>
+      </div>
+    </sc-if>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px; margin-bottom:20px;">
+      <sc-for list="{{ lists }}" as="l" hint-placeholder-count="1">
+        <div style="min-width:0;">
+          <div style="font-size:16px; font-weight:600; margin-bottom:8px;">{{ l.heading }}</div>
+          <table style="width:100%; border-collapse:collapse; font-size:16px; line-height:1.5; color:var(--body);">
+            <tbody>
+              <sc-for list="{{ l.items }}" as="it" hint-placeholder-count="3">
+                <tr>
+                  <td style="{{ it.markStyle }}">{{ it.mark }}</td>
+                  <td style="{{ it.textStyle }}">{{ it.text }}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </sc-for>
+      <div style="min-width:0;">
+        <div style="font-size:16px; font-weight:600; margin-bottom:8px;">Facts</div>
+        <dc-import name="FactTable" rows="{{ facts }}" hint-size="100%,180px"></dc-import>
+      </div>
+    </div>
+
+    <sc-if value="{{ hasRefs }}" hint-placeholder-val="{{ false }}">
+      <div style="border-top:1px solid var(--hairline); padding-top:18px; margin-bottom:18px;">
+        <div style="font-size:16px; font-weight:600; margin-bottom:10px;">Pinned references</div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <sc-for list="{{ refs }}" as="r" hint-placeholder-count="2">
+            <div style="background:var(--page); border-radius:11px; padding:13px 15px; display:flex; align-items:flex-start; gap:12px; flex-wrap:nowrap;">
+              <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:6px;">
+                <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:16px; font-weight:600; overflow-wrap:anywhere;">{{ r.ref }}</span>
+                <span style="font-size:15px; color:var(--muted);">{{ r.note }}</span>
+              </span>
+              <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ r.pillText }}" tone="{{ r.pillTone }}" hint-size="120px,26px"></dc-import></span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ hasEvents }}" hint-placeholder-val="{{ false }}">
+      <div style="border-top:1px solid var(--hairline); padding-top:18px; margin-bottom:18px;">
+        <div style="font-size:16px; font-weight:600; margin-bottom:12px;">What happened</div>
+        <div style="display:flex; flex-direction:column; gap:14px;">
+          <sc-for list="{{ events }}" as="e" hint-placeholder-count="3">
+            <div style="display:flex; gap:14px; align-items:flex-start;">
+              <span style="{{ e.dotStyle }}"></span>
+              <div style="min-width:0;">
+                <div style="font-size:16px; color:var(--text);">{{ e.text }}</div>
+                <div style="font-size:15px; color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; overflow-wrap:anywhere;">{{ e.meta }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ hasFlags }}" hint-placeholder-val="{{ false }}">
+      <div style="background:var(--attention-tint); border-radius:12px; padding:12px 14px; margin-bottom:18px;">
+        <sc-for list="{{ flags }}" as="f" hint-placeholder-count="1">
+          <div style="margin-bottom:4px;">
+            <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:4px;">
+              <dc-import name="StatusPill" text="Protocol flag" tone="outline" hint-size="110px,24px"></dc-import>
+              <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:15px; color:var(--attention-ink);">{{ f.code }}</span>
+            </div>
+            <div style="font-size:15px; line-height:1.5; color:var(--attention-ink); overflow-wrap:anywhere;">{{ f.message }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; align-items:center;">
+      <button type="button" onClick="{{ openThread }}" style="flex:0 0 auto; font-family:'Onest',sans-serif; font-size:17px; font-weight:600; color:var(--on-dark); background:var(--inverse); border:0; border-radius:10px; padding:13px 22px; cursor:pointer;">{{ threadLabel }}</button>
+      <span style="flex:1 1 auto; min-width:0; text-align:right; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:15px; color:var(--muted); overflow-wrap:anywhere;">{{ footer }}</span>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:760,&quot;height&quot;:700},&quot;det&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const d = this.props.det || {};
+    const tone = d.calloutTone === "blocking" ? { bg: "var(--blocking-tint)", title: "var(--blocking-ink)", text: "var(--blocking-strong)" } : { bg: "var(--attention-tint)", title: "var(--attention-strong)", text: "var(--attention-ink)" };
+    return {
+      present: !!d.present,
+      missing: d.present === false,
+      missingText: d.missingText || "",
+      type: d.type,
+      pills: d.pills || [],
+      sourceLine: d.sourceLine || "",
+      title: d.title || "",
+      body: d.body || "",
+      hasCallout: !!d.calloutTitle,
+      calloutTitle: d.calloutTitle || "",
+      calloutText: d.calloutText || "",
+      calloutStyle: "background:" + tone.bg + "; border-radius:12px; padding:16px 18px; margin-bottom:18px;",
+      calloutTitleStyle: "font-size:16px; font-weight:600; color:" + tone.title + "; margin-bottom:5px;",
+      calloutTextStyle: "font-size:16px; line-height:1.55; color:" + tone.text + ";",
+      lists: (d.lists || []).map(l => ({
+        heading: l.heading,
+        items: (l.items || []).map((text, i) => ({
+          mark: l.numbered ? String(i + 1) : "·",
+          text,
+          markStyle: "width:22px; padding:9px 0; vertical-align:top; color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px;" + (i === l.items.length - 1 ? "" : " border-bottom:1px solid var(--hairline);"),
+          textStyle: "padding:9px 0; vertical-align:top; overflow-wrap:anywhere;" + (i === l.items.length - 1 ? "" : " border-bottom:1px solid var(--hairline);")
+        }))
+      })),
+      facts: d.facts || [],
+      hasRefs: !!(d.refs && d.refs.length),
+      refs: d.refs || [],
+      hasEvents: !!(d.events && d.events.length),
+      events: (d.events || []).map(e => ({
+        text: e.text,
+        meta: e.meta,
+        dotStyle: "width:10px; height:10px; border-radius:99px; margin-top:7px; flex:0 0 10px; background:" + (e.flagged ? "var(--ochre)" : "var(--border-strong)") + ";"
+      })),
+      hasFlags: !!(d.flags && d.flags.length),
+      flags: d.flags || [],
+      threadLabel: d.threadLabel || "Open thread",
+      openThread: d.openThread || (() => {}),
+      footer: d.footer || ""
+    };
+  }
+}
+
+</script>
+</body>
+</html>

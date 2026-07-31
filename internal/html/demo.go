@@ -1,9 +1,11 @@
 package html
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/releasenotes"
@@ -20,8 +22,13 @@ var demoJSON []byte
 // DemoData returns the embedded demo model (`a2a html --demo`).
 func DemoData() (Data, error) {
 	var d Data
-	if err := json.Unmarshal(demoJSON, &d); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(demoJSON))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&d); err != nil {
 		return Data{}, fmt.Errorf("html: demo data: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return Data{}, fmt.Errorf("html: demo data: trailing content")
 	}
 	releases, err := notes.Load(releasenotes.FS)
 	if err != nil {

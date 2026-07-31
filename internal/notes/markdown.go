@@ -9,6 +9,7 @@ import (
 // release-notes data model itself.
 type MarkdownOptions struct {
 	RepositoryURL string
+	ProjectURL    string
 	Verification  string
 }
 
@@ -21,6 +22,10 @@ func RenderMarkdown(rn ReleaseNotes, opts MarkdownOptions) string {
 		repositoryURL = "https://github.com/ydnikolaev/a2ahub"
 	}
 	rawRepositoryURL := strings.Replace(repositoryURL, "https://github.com/", "https://raw.githubusercontent.com/", 1)
+	projectURL := strings.TrimRight(opts.ProjectURL, "/")
+	if projectURL == "" {
+		projectURL = "https://a2ahub.dev"
+	}
 
 	var changed, known []Change
 	for _, change := range rn.Changes {
@@ -62,6 +67,7 @@ func RenderMarkdown(rn ReleaseNotes, opts MarkdownOptions) string {
 	b.WriteString("```\n\n")
 	b.WriteString("Already installed? Run `a2a update --yes`. Windows archives and manual downloads are in the assets below.\n\n")
 	fmt.Fprintf(&b, "Release artifacts include checksums, per-asset Sigstore bundles, SBOMs, and SLSA provenance. See [SECURITY.md](%s/blob/main/SECURITY.md) for verification commands.\n", repositoryURL)
+	fmt.Fprintf(&b, "\nRead the product overview, documentation, dashboard example, and complete changelog at [a2ahub.dev](%s/).\n", projectURL)
 
 	return b.String()
 }

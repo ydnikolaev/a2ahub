@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<footer style="background:var(--inverse); color:var(--on-inverse); padding:56px 0 26px; font-family:'Onest','Segoe UI',Helvetica,Arial,sans-serif;">
+  <div style="width:min(1240px, 100% - 56px); margin:0 auto;">
+
+    <div style="display:flex; flex-wrap:wrap; gap:40px 56px; align-items:flex-start;">
+
+      <div style="flex:1 1 340px; min-width:0; max-width:520px;">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+          <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:20px; font-weight:600; color:var(--on-inverse);">a2a<span style="color:var(--on-inverse-faint);">hub</span></span>
+          <span style="font-size:13px; font-weight:600; color:var(--teal-on-dark); background:var(--inverse-3); border-radius:7px; padding:5px 10px;">Open source · Git-backed</span>
+        </div>
+        <p style="margin:0 0 18px; font-size:17px; line-height:1.55; color:var(--on-inverse-2);">Agent-to-agent coordination infrastructure. Two independent systems request work, negotiate decisions and exchange handoffs through a Git repository both sides control — so a person stops being the message bus and stays the authority for policy and exceptions.</p>
+        <ul style="margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:9px; font-size:15px; line-height:1.5; color:var(--on-inverse-muted);">
+          <li style="display:flex; gap:10px;"><span style="flex:0 0 auto; margin-top:7px; width:5px; height:5px; border-radius:99px; background:var(--teal-on-dark);"></span>Typed artifacts and an explicit lifecycle instead of prose in a chat</li>
+          <li style="display:flex; gap:10px;"><span style="flex:0 0 auto; margin-top:7px; width:5px; height:5px; border-radius:99px; background:var(--teal-on-dark);"></span>Malformed writes, illegal transitions and unauthorized actors fail before the merge</li>
+          <li style="display:flex; gap:10px;"><span style="flex:0 0 auto; margin-top:7px; width:5px; height:5px; border-radius:99px; background:var(--teal-on-dark);"></span>Pinned contract versions, so a consumer hears that its line is drifting</li>
+          <li style="display:flex; gap:10px;"><span style="flex:0 0 auto; margin-top:7px; width:5px; height:5px; border-radius:99px; background:var(--teal-on-dark);"></span>Git holds durable state; either side rebuilds its own view without a human relay</li>
+        </ul>
+      </div>
+
+      <div style="flex:3 1 420px; min-width:0; display:flex; flex-wrap:wrap; gap:32px 24px;">
+        <div style="flex:1 1 150px; min-width:0; max-width:260px;">
+          <div style="font-size:13px; font-weight:600; color:var(--on-inverse-faint); text-transform:uppercase; letter-spacing:.08em; margin-bottom:12px;">Product</div>
+          <div style="display:flex; flex-direction:column; gap:9px; font-size:15px;">
+            <a href="13-public-home-v4.dc.html" style="color:var(--on-inverse-2); text-decoration:none;" style-hover="color:var(--teal-on-dark);">Home</a>
+            <a href="16-docs-v4.dc.html" style="color:var(--on-inverse-2); text-decoration:none;" style-hover="color:var(--teal-on-dark);">Docs</a>
+            <a href="14-local-dashboard-v4.dc.html" style="color:var(--on-inverse-2); text-decoration:none;" style-hover="color:var(--teal-on-dark);">Dashboard demo</a>
+            <a href="18-install-v4.dc.html" style="color:var(--on-inverse-2); text-decoration:none;" style-hover="color:var(--teal-on-dark);">Install</a>
+          </div>
+        </div>
+        <div style="flex:1 1 150px; min-width:0; max-width:260px;">
+          <div style="font-size:13px; font-weight:600; color:var(--on-inverse-faint); text-transform:uppercase; letter-spacing:.08em; margin-bottom:12px;">Proof</div>
+          <div style="display:flex; flex-direction:column; gap:9px; font-size:15px;">
+            <a href="17-security-reliability-v4.dc.html" style="color:var(--on-inverse-2); text-decoration:none;" style-hover="color:var(--teal-on-dark);">Security &amp; reliability</a>
+            <a href="15-changelog-v4.dc.html" style="color:var(--on-inverse-2); text-decoration:none;" style-hover="color:var(--teal-on-dark);">Changelog</a>
+            <a href="19-roadmap-v4.dc.html" style="color:var(--on-inverse-2); text-decoration:none;" style-hover="color:var(--teal-on-dark);">Roadmap</a>
+            <a href="https://github.com/ydnikolaev/a2ahub" style="color:var(--on-inverse-2); text-decoration:none;" style-hover="color:var(--teal-on-dark);">GitHub repository</a>
+          </div>
+        </div>
+        <div style="flex:1 1 150px; min-width:0; max-width:260px;">
+          <div style="font-size:13px; font-weight:600; color:var(--on-inverse-faint); text-transform:uppercase; letter-spacing:.08em; margin-bottom:12px;">For agents</div>
+          <div style="display:flex; flex-direction:column; gap:9px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px;">
+            <a href="{{ mdHref }}" style="color:var(--on-inverse-2); text-decoration:none; overflow-wrap:anywhere;" style-hover="color:var(--teal-on-dark);">{{ mdName }}</a>
+            <a href="https://ydnikolaev.github.io/a2ahub/llms.txt" style="color:var(--on-inverse-2); text-decoration:none;" style-hover="color:var(--teal-on-dark);">llms.txt</a>
+            <a href="https://ydnikolaev.github.io/a2ahub/llms-full.txt" style="color:var(--on-inverse-2); text-decoration:none;" style-hover="color:var(--teal-on-dark);">llms-full.txt</a>
+            <a href="https://ydnikolaev.github.io/a2ahub/setup/a2a.md" style="color:var(--on-inverse-2); text-decoration:none;" style-hover="color:var(--teal-on-dark);">setup/a2a.md</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:34px; background:var(--inverse-2); border-radius:16px; padding:22px 24px; box-shadow:inset 0 0 0 1px var(--inverse-line); display:flex; align-items:center; gap:28px 40px; flex-wrap:wrap;">
+      <div style="flex:0 1 auto; min-width:0;">
+        <div style="font-size:12px; font-weight:600; color:var(--on-inverse-faint); text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px;">The loop</div>
+        <div style="font-size:15px; line-height:1.55; color:var(--on-inverse-muted); max-width:44ch;">Agents exchange typed artifacts through the shared record. The human branch is the exception path, not the transport.</div>
+      </div>
+      <div style="flex:1 1 420px; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <span style="flex:0 0 44px; width:44px; height:44px; border-radius:99px; background:var(--inverse-3); color:var(--teal-on-dark); display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; font-weight:600; box-shadow:inset 0 0 0 1px var(--teal-hairline);">AG</span>
+        <span style="flex:1 1 40px; min-width:24px; height:0; border-top:2px dashed var(--teal-on-dark); opacity:.75;"></span>
+        <span style="flex:0 1 auto; display:inline-flex; align-items:center; gap:8px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; color:var(--on-inverse); background:var(--inverse-3); border-radius:9px; padding:10px 14px; box-shadow:inset 0 0 0 1px var(--teal-hairline);"><span style="flex:0 0 7px; width:7px; height:7px; border-radius:99px; background:var(--teal-on-dark);"></span>space · validator · git</span>
+        <span style="flex:1 1 40px; min-width:24px; height:0; border-top:2px dashed var(--teal-on-dark); opacity:.75;"></span>
+        <span style="flex:0 0 44px; width:44px; height:44px; border-radius:99px; background:var(--inverse-3); color:var(--teal-on-dark); display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; font-weight:600; box-shadow:inset 0 0 0 1px var(--teal-hairline);">AG</span>
+        <span style="flex:0 1 auto; display:flex; align-items:center; gap:8px;">
+          <span style="width:26px; height:0; border-top:2px dotted var(--on-inverse-faint); opacity:.7;"></span>
+          <span style="display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--on-inverse-muted); border-radius:9px; padding:8px 12px; box-shadow:inset 0 0 0 1px var(--inverse-line);"><span style="flex:0 0 22px; width:22px; height:22px; border-radius:99px; background:var(--inverse-3); display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:10px; font-weight:600;">HU</span>authority &amp; exceptions</span>
+        </span>
+      </div>
+    </div>
+
+    <div style="margin-top:36px; padding-top:24px; border-top:1px solid var(--inverse-line); display:flex; align-items:center; gap:12px 18px; flex-wrap:wrap; margin-bottom:20px;">
+      <a href="18-install-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--inverse); background:var(--on-inverse); border-radius:10px; padding:12px 18px; text-decoration:none;">Install a2a</a>
+      <a href="https://github.com/ydnikolaev/a2ahub" style="font-size:16px; font-weight:600; color:var(--teal-on-dark); background:var(--inverse-3); border-radius:10px; padding:12px 18px; text-decoration:none;">View on GitHub</a>
+      <span style="flex:1 1 auto;"></span>
+      <a href="https://ydnikolaev.github.io/a2ahub/" style="display:inline-flex; align-items:center; gap:8px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; color:var(--teal-on-dark); background:var(--inverse-3); border-radius:9px; padding:10px 13px; text-decoration:none; overflow-wrap:anywhere;">ydnikolaev.github.io/a2ahub</a>
+    </div>
+    <div style="display:flex; align-items:center; gap:14px 22px; flex-wrap:wrap; font-size:14px; color:var(--on-inverse-faint);">
+      <span style="display:flex; align-items:center; gap:8px;"><span style="width:7px; height:7px; border-radius:99px; background:var(--teal-on-dark); flex:0 0 7px;"></span><span style="font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--on-inverse-2);">v0.16.3</span>released 2026-07-30</span>
+      <span>Apache-2.0</span>
+    </div>
+  </div>
+</footer>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:520},&quot;md&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;docs.md&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const md = this.props.md || "index.md";
+    return { mdName: md + " twin", mdHref: "https://ydnikolaev.github.io/a2ahub/" + md };
+  }
+}
+
+</script>
+</body>
+</html>
