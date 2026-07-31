@@ -1,0 +1,43 @@
+schema: release-notes/v1
+version: "0.17.1"
+released: "2026-07-31"
+headline: "The local dashboard now opens complete canonical artifact records instead of summary-only placeholders"
+changes:
+  - id: RN-01701-1
+    kind: fix
+    impact: normal
+    subject: "Work cards mount their real bodies, envelopes, events and references"
+    detail: >
+      The local HTML dashboard now resolves every visible incoming and outgoing
+      row through the same canonical cache projection as `a2a show`. Selecting a
+      work card displays its original Markdown body, schema-owned envelope facts,
+      lifecycle events, references, digest and sync state instead of reporting
+      that no detail record exists. Space-qualified lookups also keep identical
+      artifact IDs in different spaces distinct and deterministic.
+    affects: ["a2a html", "artifact details", "multi-space dashboards"]
+    action:
+      scope: local
+      why: >
+        Update when 0.17.1 is released to inspect complete artifact details in
+        generated dashboards; no space or document migration is required.
+      detect:
+        - "a2a version"
+      run:
+        - "a2a update --yes"
+
+  - id: RN-01701-2
+    kind: fix
+    impact: low
+    subject: "Passive dashboard snapshots retain canonical attention and move ownership"
+    detail: >
+      Dashboard-only inbox and outbox snapshots now carry the existing canonical
+      action reasons and whose-move projection without advancing the CLI inbox
+      cursor. Approval gates, disputes and other real attention signals therefore
+      reach severity badges and overview counts, while routine agent work remains
+      outside the narrower human-attention queue. Existing inbox, outbox and show
+      JSON contracts remain unchanged.
+    affects: ["a2a html", "attention badges", "overview"]
+    action:
+      scope: none
+      why: >
+        No configuration or data migration is required.
