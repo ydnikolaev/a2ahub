@@ -20,12 +20,24 @@ const TONES = {
   agent: { bg: "var(--teal-tint)", fg: "var(--focus)" },
   outline: { bg: "var(--surface)", fg: "var(--muted)", ring: "inset 0 0 0 1px var(--border-strong)" }
 };
+const STATUS_RU = {
+  current:"актуально", behind:"отстаёт", deprecated:"устаревает", retired:"выведено", missing:"не найдено", dangling:"поставщик недоступен",
+  published:"опубликовано", submitted:"отправлено", in_progress:"в работе", accepted:"принято", acknowledged:"получение подтверждено", proposed:"предложено", closed:"закрыто",
+  "in progress":"в работе",
+  blocking:"блокирует", stale:"устарел", fresh:"свежий", unreadable:"не читается", unresolved:"не разрешено"
+};
+function localizedStatus(value) {
+  const raw = String(value ?? "");
+  if (document.documentElement.lang !== "ru") return raw;
+  if (STATUS_RU[raw]) return STATUS_RU[raw];
+  return raw.replace(/^Blocking(?=\s|·|$)/, "Блокирует").replace(/^Your approval pending$/, "Ожидает вашего согласования").replace(/^Overdue(?=\s|·|$)/, "Просрочено").replace(/^Needs a look(?=\s|·|$)/, "Требует внимания").replace(/^stale(?=\s|·|$)/, "устарел").replace(/^fresh(?=\s|·|$)/, "свежий").replace(/^unreadable$/, "не читается");
+}
 class Component extends DCLogic {
   renderVals() {
     const t = TONES[this.props.tone] || TONES.neutral;
     const mono = this.props.mono ? "font-family:'IBM Plex Mono',ui-monospace,monospace; " : "font-family:'Onest',sans-serif; ";
     return {
-      text: this.props.text ?? "",
+      text: localizedStatus(this.props.text),
       pillStyle: "display:inline-block; " + mono + "font-size:" + (this.props.size === "small" ? 13 : 14) + "px; font-weight:600; line-height:1.3; border-radius:6px; padding:" + (t.ring ? "3px 10px" : "4px 11px") + "; background:" + t.bg + "; color:" + t.fg + "; box-shadow:" + (t.ring || "none") + "; white-space:nowrap;"
     };
   }

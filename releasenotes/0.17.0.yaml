@@ -25,12 +25,14 @@ changes:
   - id: RN-01700-2
     kind: feat
     impact: normal
-    subject: "The local dashboard carries Russian human guidance and the complete embedded manual"
+    subject: "The local dashboard carries bilingual human guidance and the complete embedded manual"
     detail: >
       The read-only HTML dashboard now distinguishes synthetic demo data from a
-      real update warning, presents its navigation and explanatory controls in
-      Russian, and adds a human guide for autonomous operation, lifecycle events,
-      all eight artifact types, contract version windows, and agent tooling. Its
+      real update warning, presents its shell and explanatory controls in English
+      or Russian with English as the default, and adds a human guide for autonomous
+      operation, lifecycle events, all eight artifact types, contract version
+      windows, notifications and agent tooling. Artifact, contract, documentation
+      and release-note content remains verbatim from its source of truth. The
       documentation body is the same trusted Markdown rendered from the embedded
       skill tree; missing facts and unreadable spaces remain explicit instead of
       being filled with invented values.
