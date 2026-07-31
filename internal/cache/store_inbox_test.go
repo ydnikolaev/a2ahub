@@ -83,6 +83,21 @@ func TestInboxActionable_FiveConditionsPlusControl(t *testing.T) {
 	if len(items) != len(wantIDs) {
 		t.Errorf("len(items) = %d, want %d (got ids=%v)", len(items), len(wantIDs), itemIDs(items))
 	}
+
+	snapshot, err := store.InboxSnapshot(context.Background(), false)
+	if err != nil {
+		t.Fatalf("InboxSnapshot: %v", err)
+	}
+	var gate Item
+	for _, item := range snapshot {
+		if item.ID == "XD-axon-20260701-c5" {
+			gate = item
+			break
+		}
+	}
+	if gate.ID == "" || !gate.YourMove || !containsString(gate.Reasons, "gate-pending-on-me") {
+		t.Fatalf("passive snapshot lost canonical gate/move annotations: %+v", gate)
+	}
 }
 
 // TestInboxActionable_JSONRoundTrip is AC row 7: JSON output is stable

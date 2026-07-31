@@ -2,9 +2,60 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestShowMany_SpaceQualifiedDetailsAndEnvelope(t *testing.T) {
+	t.Parallel()
+	const id = "XW-shared-20260731-abcd"
+	base := time.Date(2026, 7, 31, 8, 0, 0, 0, time.UTC)
+	alpha := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	beta := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+
+	alphaFields := wr(id, "alpha title", "seomatrix", []string{"axon"}, "p2", false)
+	alphaFields["context"] = "alpha context"
+	alpha.commitArtifact("seomatrix/exchanges/"+id+".md", alphaFields, "alpha body")
+	alpha.commitEvent("seomatrix", fxULID(720), evt(id, "submit", "seomatrix", base))
+
+	betaFields := wr(id, "beta title", "seomatrix", []string{"axon"}, "p1", true)
+	betaFields["context"] = "beta context"
+	beta.commitArtifact("seomatrix/exchanges/"+id+".md", betaFields, "beta body")
+	beta.commitEvent("seomatrix", fxULID(721), evt(id, "submit", "seomatrix", base.Add(time.Minute)))
+
+	store := NewStore("axon", t.TempDir(), []SpaceMirror{
+		{SpaceID: "alpha", Dir: alpha.dir, Manifest: mustManifest(t, alpha)},
+		{SpaceID: "beta", Dir: beta.dir, Manifest: mustManifest(t, beta)},
+	}, func() time.Time { return base.Add(time.Hour) }, 0)
+
+	results, err := store.ShowMany(context.Background(), []string{"beta:" + id, "alpha:" + id})
+	if err != nil {
+		t.Fatalf("ShowMany: %v", err)
+	}
+	if len(results) != 2 || results[0].Space != "beta" || results[0].Body != "beta body" ||
+		results[1].Space != "alpha" || results[1].Body != "alpha body" {
+		t.Fatalf("space-qualified results lost order or space identity: %+v", results)
+	}
+	if got := results[0].Envelope["context"]; got != "beta context" {
+		t.Fatalf("Envelope[context] = %#v, want beta context", got)
+	}
+	if len(results[0].Events) != 1 || results[0].Events[0].Transition != "submit" {
+		t.Fatalf("canonical event history missing: %+v", results[0].Events)
+	}
+
+	encoded, err := json.Marshal(results[0])
+	if err != nil {
+		t.Fatalf("marshal ShowResult: %v", err)
+	}
+	if strings.Contains(string(encoded), "beta context") || strings.Contains(string(encoded), `"Envelope"`) {
+		t.Fatalf("dashboard-only envelope leaked into stable show JSON: %s", encoded)
+	}
+	if _, err := store.Show(context.Background(), "missing:"+id); err == nil {
+		t.Fatal("space-qualified Show must not fall through to another space")
+	}
+}
 
 // TestShow_DigestMismatchWarningNonBlocking is AC row 6: `a2a show`
 // surfaces a V5 digest-mismatch (or staleness) warning as a non-blocking

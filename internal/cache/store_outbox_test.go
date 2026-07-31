@@ -88,6 +88,21 @@ func TestOutboxAttention_FourConditionsPlusControl(t *testing.T) {
 	if len(items) != len(wantIDs) {
 		t.Errorf("len(items) = %d, want %d (got ids=%v)", len(items), len(wantIDs), itemIDs(items))
 	}
+
+	snapshot, err := store.OutboxSnapshot(context.Background())
+	if err != nil {
+		t.Fatalf("OutboxSnapshot: %v", err)
+	}
+	snapshotByID := map[string]Item{}
+	for _, item := range snapshot {
+		snapshotByID[item.ID] = item
+	}
+	if _, ok := snapshotByID["XW-axon-20260701-octrl"]; !ok {
+		t.Fatal("passive outbox snapshot must retain open rows with no attention reason")
+	}
+	if !containsString(snapshotByID["XW-axon-20260701-o3"].Reasons, "disputed") {
+		t.Fatalf("passive outbox snapshot lost attention annotations: %+v", snapshotByID["XW-axon-20260701-o3"])
+	}
 }
 
 // TestOutbox_NeededByBoundary exercises the exact needed_by boundary and

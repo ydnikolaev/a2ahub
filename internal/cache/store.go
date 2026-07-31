@@ -286,17 +286,17 @@ func sortItems(items []Item) {
 // advances the per-system read cursor (spec 07 "what to do" #2: "inbox
 // ... advances the read cursor on run" — unqualified by the flag).
 func (s *Store) Inbox(ctx context.Context, actionableOnly bool) ([]Item, error) {
-	return s.inbox(ctx, actionableOnly, true)
+	return s.inbox(ctx, actionableOnly, true, false)
 }
 
 // InboxSnapshot computes the same read model as Inbox without advancing the
 // human read cursor. Passive presentation surfaces such as local HTML use
 // this method; OP-207's explicit inbox read remains the only cursor writer.
 func (s *Store) InboxSnapshot(ctx context.Context, actionableOnly bool) ([]Item, error) {
-	return s.inbox(ctx, actionableOnly, false)
+	return s.inbox(ctx, actionableOnly, false, true)
 }
 
-func (s *Store) inbox(ctx context.Context, actionableOnly, advance bool) ([]Item, error) {
+func (s *Store) inbox(ctx context.Context, actionableOnly, advance, annotate bool) ([]Item, error) {
 	idx, _, err := s.index(ctx)
 	if err != nil {
 		return nil, err
@@ -311,6 +311,10 @@ func (s *Store) inbox(ctx context.Context, actionableOnly, advance bool) ([]Item
 		stale := s.spaceSyncStale(spaceID)
 		markers, _ := ReadMarkers(s.cacheDir, spaceID)
 		pending := markerSet(markers)
+		var yourMove map[string]bool
+		if annotate {
+			yourMove = yourMoveByArtifact(artifacts, s.manifestFor(spaceID), s.ownSystem)
+		}
 		for _, fa := range artifacts {
 			var reasons []string
 			if actionableOnly {
@@ -318,10 +322,18 @@ func (s *Store) inbox(ctx context.Context, actionableOnly, advance bool) ([]Item
 				if len(reasons) == 0 {
 					continue
 				}
-			} else if !addressedToMe(fa, s.ownSystem) {
-				continue
+			} else {
+				if !addressedToMe(fa, s.ownSystem) {
+					continue
+				}
+				if annotate {
+					reasons = actionableReasons(fa, s.ownSystem)
+				}
 			}
 			item := toItem(fa, stale, pending[fa.Env.ID])
+			if annotate {
+				item.YourMove = yourMove[fa.Env.ID]
+			}
 			item.Reasons = reasons
 			_, seen := prior.Items[fa.Env.ID]
 			item.New = !seen
@@ -358,6 +370,17 @@ func (s *Store) advanceCursor(idx map[string][]foldedArtifact) error {
 // (only `a2a inbox` does, per OP-207's own wording) — it reads whatever
 // cursor snapshot the last inbox run left behind.
 func (s *Store) Outbox(ctx context.Context, attentionOnly bool) ([]Item, error) {
+	return s.outbox(ctx, attentionOnly, false)
+}
+
+// OutboxSnapshot returns every own open item without consuming cursor state,
+// annotated with all current attention reasons and canonical move ownership
+// for passive presentation surfaces such as the local dashboard.
+func (s *Store) OutboxSnapshot(ctx context.Context) ([]Item, error) {
+	return s.outbox(ctx, false, true)
+}
+
+func (s *Store) outbox(ctx context.Context, attentionOnly, annotate bool) ([]Item, error) {
 	idx, _, err := s.index(ctx)
 	if err != nil {
 		return nil, err
@@ -373,20 +396,28 @@ func (s *Store) Outbox(ctx context.Context, attentionOnly bool) ([]Item, error) 
 		markers, _ := ReadMarkers(s.cacheDir, spaceID)
 		pending := markerSet(markers)
 		sla := s.slaFor(spaceID)
+		var yourMove map[string]bool
+		if annotate {
+			yourMove = yourMoveByArtifact(artifacts, s.manifestFor(spaceID), s.ownSystem)
+		}
 		for _, fa := range artifacts {
 			if !ownedByMe(fa, s.ownSystem) {
 				continue
 			}
 			var reasons []string
-			if attentionOnly {
+			if attentionOnly || annotate {
 				reasons = attentionReasons(fa, prior, s.now(), sla)
-				if len(reasons) == 0 {
+				if attentionOnly && len(reasons) == 0 {
 					continue
 				}
-			} else if !isOpen(fa.kind(), fa.Result.State) {
+			}
+			if !attentionOnly && !isOpen(fa.kind(), fa.Result.State) {
 				continue
 			}
 			item := toItem(fa, stale, pending[fa.Env.ID])
+			if annotate {
+				item.YourMove = yourMove[fa.Env.ID]
+			}
 			item.Reasons = reasons
 			out = append(out, item)
 		}
@@ -406,21 +437,54 @@ var ErrNotFound = fmt.Errorf("cache: artifact not found")
 // resolves versions through publish events, and this package's own
 // per-artifact history is already available via Result/Events).
 func (s *Store) Show(ctx context.Context, ref string) (ShowResult, error) {
-	id, _, _ := splitRef(ref)
-	if i := strings.IndexByte(id, ':'); i >= 0 {
-		id = id[i+1:] // cross-space "space:id" form — id segment only
-	}
-
 	idx, _, err := s.index(ctx)
 	if err != nil {
 		return ShowResult{}, err
 	}
-	for spaceID, artifacts := range idx {
+	return s.showFromIndex(idx, ref)
+}
+
+// ShowMany resolves several artifact detail records from one composed cache
+// index. Dashboard assembly uses this instead of calling Show in a loop, which
+// would re-walk and re-fold every connected mirror once per visible row.
+// Results preserve refs order; callers should pass space-qualified refs when
+// the source record already carries a space.
+func (s *Store) ShowMany(ctx context.Context, refs []string) ([]ShowResult, error) {
+	idx, _, err := s.index(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ShowResult, 0, len(refs))
+	for _, ref := range refs {
+		result, showErr := s.showFromIndex(idx, ref)
+		if showErr != nil {
+			return nil, showErr
+		}
+		out = append(out, result)
+	}
+	return out, nil
+}
+
+func (s *Store) showFromIndex(idx map[string][]foldedArtifact, ref string) (ShowResult, error) {
+	id, _, _ := splitRef(ref)
+	spaceID := ""
+	if i := strings.IndexByte(id, ':'); i >= 0 {
+		spaceID, id = id[:i], id[i+1:]
+	}
+
+	spaceIDs := make([]string, 0, len(idx))
+	for candidate := range idx {
+		if spaceID == "" || candidate == spaceID {
+			spaceIDs = append(spaceIDs, candidate)
+		}
+	}
+	sort.Strings(spaceIDs)
+	for _, candidate := range spaceIDs {
+		artifacts := idx[candidate]
 		for _, fa := range artifacts {
-			if fa.Env.ID != id {
-				continue
+			if fa.Env.ID == id {
+				return s.buildShowResult(fa, candidate, artifacts), nil
 			}
-			return s.buildShowResult(fa, spaceID, artifacts), nil
 		}
 	}
 	return ShowResult{}, fmt.Errorf("%w: %q", ErrNotFound, ref)
@@ -441,6 +505,8 @@ func splitRef(ref string) (id, version, digest string) {
 
 func (s *Store) buildShowResult(fa foldedArtifact, spaceID string, all []foldedArtifact) ShowResult {
 	fm, _ := artifact.ParseFrontmatter(fa.Raw)
+	envelope := map[string]any{}
+	_ = yaml.Unmarshal(fm.YAML, &envelope) // ParseFrontmatter already proved valid YAML.
 
 	events := make([]EventSummary, 0, len(fa.Events))
 	for _, e := range fa.Events {
@@ -472,8 +538,20 @@ func (s *Store) buildShowResult(fa foldedArtifact, spaceID string, all []foldedA
 		Space: spaceID, ID: fa.Env.ID, Type: fa.Env.Type, Title: fa.Env.Title,
 		From: fa.Env.From, To: normalizeTo(fa.Env.To), State: string(fa.Result.State),
 		Body: string(fm.Body), Thread: fa.Env.Thread, Digest: fa.Digest, Events: events, Flags: flags, Refs: refs,
-		SyncStale: syncStale, SyncAge: age.String(),
+		SyncStale: syncStale, SyncAge: age.String(), Envelope: envelope,
 	}
+}
+
+func yourMoveByArtifact(artifacts []foldedArtifact, manifest space.Manifest, ownSystem string) map[string]bool {
+	byID := make(map[string]foldedArtifact, len(artifacts))
+	for _, fa := range artifacts {
+		byID[fa.Env.ID] = fa
+	}
+	out := make(map[string]bool, len(artifacts))
+	for _, item := range buildOpenItems(artifacts, byID, manifest, ownSystem) {
+		out[item.ID] = item.YourMove
+	}
+	return out
 }
 
 func (s *Store) mirrorDirFor(spaceID string) string {
