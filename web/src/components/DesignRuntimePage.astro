@@ -1,0 +1,10 @@
+---
+import DesignRuntimeBoot from './DesignRuntimeBoot.astro';
+import { runtimeDesignPage } from '../lib/design-source';
+
+const { source } = Astro.props;
+const design = runtimeDesignPage(source);
+---
+<Fragment set:html={design.template} />
+<script is:inline type="text/x-dc" data-dc-script set:html={design.logic}></script>
+<DesignRuntimeBoot />

@@ -14,21 +14,35 @@ import "time"
 // Data is the full dashboard model — the `DATA` global the page renders from.
 // Everything is space-tagged so the per-space tabs filter by space id.
 type Data struct {
-	GeneratedAt   time.Time      `json:"generatedAt"` // snapshot time (STATIC view)
-	Self          string         `json:"self"`        // the viewing system (ego node)
-	Tooling       Tooling        `json:"tooling"`
-	Spaces        []SpaceHealth  `json:"spaces"`
-	Nodes         []Node         `json:"nodes"`
-	ContractEdges []ContractEdge `json:"contractEdges"`
-	ExchangeEdges []ExchangeEdge `json:"exchangeEdges"`
-	Threads       []Thread       `json:"threads"`
-	Inbox         []Item         `json:"inbox"`
-	Outbox        []Item         `json:"outbox"`
-	Contracts     []Contract     `json:"contracts"`
-	Flags         []Flag         `json:"flags"`
-	ReleaseNotes  []ReleaseNote  `json:"releaseNotes"`
-	UpdateDetail  UpdateDetail   `json:"updateDetail"`
-	Focus         *Focus         `json:"focus,omitempty"`
+	Meta            DemoMeta          `json:"meta,omitempty"`
+	GeneratedAt     time.Time         `json:"generatedAt"` // snapshot time (STATIC view)
+	Self            string            `json:"self"`        // the viewing system (ego node)
+	Tooling         Tooling           `json:"tooling"`
+	Spaces          []SpaceHealth     `json:"spaces"`
+	Nodes           []Node            `json:"nodes"`
+	ContractEdges   []ContractEdge    `json:"contractEdges"`
+	ExchangeEdges   []ExchangeEdge    `json:"exchangeEdges"`
+	Threads         []Thread          `json:"threads"`
+	Inbox           []Item            `json:"inbox"`
+	Outbox          []Item            `json:"outbox"`
+	Contracts       []Contract        `json:"contracts"`
+	Flags           []Flag            `json:"flags"`
+	ReleaseNotes    []ReleaseNote     `json:"releaseNotes"`
+	UpdateDetail    UpdateDetail      `json:"updateDetail"`
+	Focus           *Focus            `json:"focus,omitempty"`
+	ThreadViews     []ThreadView      `json:"threadViews,omitempty"`
+	ArtifactDetails []ArtifactDetail  `json:"artifactDetails,omitempty"`
+	Unavailable     []UnavailableFact `json:"unavailable,omitempty"`
+}
+
+// DemoMeta labels the canonical dense design fixture. Live data leaves this
+// empty; renderers must never infer that a live snapshot is synthetic.
+type DemoMeta struct {
+	Schema            string   `json:"schema,omitempty"`
+	Synthetic         bool     `json:"synthetic,omitempty"`
+	Notice            string   `json:"notice,omitempty"`
+	ReleaseNotesScope string   `json:"releaseNotesScope,omitempty"`
+	SourceClasses     []string `json:"sourceClasses,omitempty"`
 }
 
 // Focus is a trusted route hint supplied by the CLI after resolving a local
@@ -133,21 +147,24 @@ type ExchangeEdge struct {
 
 // Item is one open inbox/outbox row (mapped from cache.Item + derived age/severity).
 type Item struct {
-	Space       string   `json:"space"`
-	ID          string   `json:"id"`
-	Type        string   `json:"type"`
-	Title       string   `json:"title"`
-	From        string   `json:"from"`
-	To          []string `json:"to,omitempty"`
-	State       string   `json:"state"`
-	Priority    string   `json:"priority,omitempty"`
-	Blocking    bool     `json:"blocking"`
-	GatePending bool     `json:"gatePending"`
-	Thread      string   `json:"thread,omitempty"`
-	Age         string   `json:"age,omitempty"` // pre-formatted (e.g. "5d"), "" if no events
-	New         bool     `json:"new"`
-	Severity    string   `json:"severity"` // blocking | attention | normal
-	Reasons     []string `json:"reasons,omitempty"`
+	Space        string   `json:"space"`
+	ID           string   `json:"id"`
+	Type         string   `json:"type"`
+	Title        string   `json:"title"`
+	From         string   `json:"from"`
+	To           []string `json:"to,omitempty"`
+	State        string   `json:"state"`
+	Priority     string   `json:"priority,omitempty"`
+	Blocking     bool     `json:"blocking"`
+	GatePending  bool     `json:"gatePending"`
+	Thread       string   `json:"thread,omitempty"`
+	Age          string   `json:"age,omitempty"` // pre-formatted (e.g. "5d"), "" if no events
+	NeededBy     string   `json:"neededBy,omitempty"`
+	New          bool     `json:"new"`
+	Severity     string   `json:"severity"` // blocking | attention | normal
+	Reasons      []string `json:"reasons,omitempty"`
+	PendingMerge bool     `json:"pendingMerge,omitempty"`
+	SyncStale    bool     `json:"syncStale,omitempty"`
 	// Description is a short human-readable summary (from the artifact body) —
 	// UNTRUSTED, rendered via textContent (D-001). Omitted when the body is empty.
 	Description string `json:"description,omitempty"`
@@ -294,4 +311,154 @@ type ReleaseAction struct {
 	Why    string   `json:"why"`
 	Detect []string `json:"detect,omitempty"`
 	Run    []string `json:"run,omitempty"`
+}
+
+// ThreadView is the explanation-grade projection for one conversation. The
+// fold/authority engine supplies order and legal actions; browser code only
+// filters and presents these fields.
+type ThreadView struct {
+	Thread       string                `json:"thread"`
+	Space        string                `json:"space"`
+	Order        string                `json:"order"`
+	Opener       ThreadViewOpener      `json:"opener"`
+	Participants []string              `json:"participants"`
+	SyncStale    bool                  `json:"sync_stale"`
+	Artifacts    []ThreadViewArtifact  `json:"artifacts"`
+	Transcript   []ThreadTranscriptRow `json:"transcript"`
+	OpenItems    []ThreadOpenItem      `json:"open_items"`
+	Flags        []ThreadViewFlag      `json:"flags"`
+	Unresolved   []ThreadUnresolvedRef `json:"unresolved"`
+}
+
+// ThreadViewOpener identifies the artifact that began a thread.
+type ThreadViewOpener struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	From  string `json:"from"`
+}
+
+// ThreadViewArtifact is a compact artifact projection within a thread.
+type ThreadViewArtifact struct {
+	ID     string           `json:"id"`
+	Type   string           `json:"type"`
+	From   string           `json:"from"`
+	To     []string         `json:"to,omitempty"`
+	Title  string           `json:"title"`
+	State  string           `json:"state"`
+	Parent string           `json:"parent,omitempty"`
+	Refs   []map[string]any `json:"refs,omitempty"`
+}
+
+// ThreadTranscriptRow is one ordered artifact or lifecycle event in a thread.
+type ThreadTranscriptRow struct {
+	Seq      int64               `json:"seq"`
+	Kind     string              `json:"kind"`
+	At       string              `json:"at"`
+	Artifact *TranscriptArtifact `json:"artifact,omitempty"`
+	Event    *TranscriptEvent    `json:"event,omitempty"`
+}
+
+// TranscriptArtifact carries the artifact fields shown in a transcript row.
+type TranscriptArtifact struct {
+	ID    string   `json:"id"`
+	Type  string   `json:"type"`
+	From  string   `json:"from"`
+	To    []string `json:"to,omitempty"`
+	Title string   `json:"title"`
+}
+
+// TranscriptEvent carries the lifecycle fields shown in a transcript row.
+type TranscriptEvent struct {
+	ULID         string         `json:"ulid"`
+	Subject      string         `json:"subject"`
+	Transition   string         `json:"transition"`
+	ClaimedState string         `json:"claimed_state"`
+	Actor        map[string]any `json:"actor"`
+	ResponseID   string         `json:"response_id,omitempty"`
+}
+
+// ThreadOpenItem describes one unresolved item and its legal next actions.
+type ThreadOpenItem struct {
+	ID          string             `json:"id"`
+	Type        string             `json:"type"`
+	State       string             `json:"state"`
+	Blocking    bool               `json:"blocking"`
+	NeededBy    string             `json:"needed_by,omitempty"`
+	NextActions []ThreadNextAction `json:"next_actions"`
+	WaitingOn   []string           `json:"waiting_on"`
+	YourMove    bool               `json:"your_move"`
+}
+
+// ThreadNextAction identifies an available transition and its allowed actors.
+type ThreadNextAction struct {
+	Transition string   `json:"transition"`
+	By         []string `json:"by"`
+}
+
+// ThreadViewFlag identifies an integrity warning attached to a thread.
+type ThreadViewFlag struct {
+	Kind      string `json:"kind"`
+	Subject   string `json:"subject"`
+	EventULID string `json:"event_ulid,omitempty"`
+}
+
+// ThreadUnresolvedRef identifies a reference the snapshot cannot resolve.
+type ThreadUnresolvedRef struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+}
+
+// ArtifactDetail carries bounded canonical record/evidence for the dashboard
+// detail panel. Envelope remains a map because the eight artifact bodies have
+// intentionally different schema-owned fields; the renderer treats every
+// value as text/data.
+type ArtifactDetail struct {
+	SourceClass string                `json:"sourceClass"`
+	Space       string                `json:"space"`
+	ID          string                `json:"id"`
+	Type        string                `json:"type"`
+	Title       string                `json:"title"`
+	From        string                `json:"from"`
+	To          []string              `json:"to,omitempty"`
+	State       string                `json:"state"`
+	Thread      string                `json:"thread,omitempty"`
+	Envelope    map[string]any        `json:"envelope"`
+	Body        string                `json:"body"`
+	Digest      string                `json:"digest"`
+	Events      []ArtifactDetailEvent `json:"events"`
+	Flags       []string              `json:"flags"`
+	Refs        []ArtifactDetailRef   `json:"refs"`
+	SyncStale   bool                  `json:"sync_stale"`
+	SyncAge     string                `json:"sync_age"`
+}
+
+// ArtifactDetailEvent carries one lifecycle event in the artifact detail panel.
+type ArtifactDetailEvent struct {
+	ULID         string `json:"ulid"`
+	Subject      string `json:"subject"`
+	Transition   string `json:"transition"`
+	ClaimedState string `json:"claimed_state"`
+	Actor        string `json:"actor"`
+	ActorSystem  string `json:"actor_system"`
+	At           string `json:"at"`
+}
+
+// ArtifactDetailRef carries the resolution and digest evidence for one reference.
+type ArtifactDetailRef struct {
+	Ref            string `json:"ref"`
+	ID             string `json:"id,omitempty"`
+	Version        string `json:"version,omitempty"`
+	PinnedDigest   string `json:"pinned_digest,omitempty"`
+	Resolved       bool   `json:"resolved"`
+	ResolvedDigest string `json:"resolved_digest,omitempty"`
+	DigestMismatch bool   `json:"digest_mismatch,omitempty"`
+}
+
+// UnavailableFact explains a value the current snapshot cannot establish.
+type UnavailableFact struct {
+	ID          string `json:"id"`
+	Scope       string `json:"scope"`
+	Title       string `json:"title"`
+	Reason      string `json:"reason"`
+	SourceClass string `json:"sourceClass"`
 }

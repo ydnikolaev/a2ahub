@@ -1,0 +1,25 @@
+---
+const { markdown = '/index.md', release = { version: '0.16.3', released: '2026-07-30' } } = Astro.props;
+---
+<footer style="background:var(--inverse);color:var(--on-inverse);padding:56px 0 26px;font-family:'Onest','Segoe UI',Helvetica,Arial,sans-serif;">
+  <div style="width:min(1240px, 100% - 56px);margin:0 auto;">
+    <div style="display:flex;flex-wrap:wrap;gap:40px 56px;align-items:flex-start;">
+      <div style="flex:1 1 340px;min-width:0;max-width:520px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;"><span style="font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:20px;font-weight:600;color:var(--on-inverse);">a2a<span style="color:var(--on-inverse-faint);">hub</span></span><span style="font-size:13px;font-weight:600;color:var(--teal-on-dark);background:var(--inverse-3);border-radius:7px;padding:5px 10px;">Open source · Git-backed</span></div>
+        <p style="margin:0 0 18px;font-size:17px;line-height:1.55;color:var(--on-inverse-2);">Agent-to-agent coordination infrastructure. Two independent systems request work, negotiate decisions and exchange handoffs through a Git repository both sides control — so a person stops being the message bus and stays the authority for policy and exceptions.</p>
+        <ul class="design-footer-list"><li>Typed artifacts and an explicit lifecycle instead of prose in a chat</li><li>Malformed writes, illegal transitions and unauthorized actors fail before the merge</li><li>Pinned contract versions, so a consumer hears that its line is drifting</li><li>Git holds durable state; either side rebuilds its own view without a human relay</li></ul>
+      </div>
+      <div class="design-footer-columns">
+        <div><div class="design-footer-title">Product</div><div class="design-footer-links"><a href="/">Home</a><a href="/docs.html">Docs</a><a href="/dashboard.html">Dashboard demo</a><a href="/install.html">Install</a></div></div>
+        <div><div class="design-footer-title">Proof</div><div class="design-footer-links"><a href="/security.html">Security &amp; reliability</a><a href="/changelog.html">Changelog</a><a href="/roadmap.html">Roadmap</a><a href="https://github.com/ydnikolaev/a2ahub">GitHub repository</a></div></div>
+        <div><div class="design-footer-title">For agents</div><div class="design-footer-links mono" style="font-size:14px;"><a href={markdown}>{markdown.replace(/^\//,'')} twin</a><a href="/llms.txt">llms.txt</a><a href="/llms-full.txt">llms-full.txt</a><a href="/setup/a2a.md">setup/a2a.md</a></div></div>
+      </div>
+    </div>
+    <div class="design-loop-footer">
+      <div style="flex:0 1 auto;min-width:0;"><div class="design-footer-title" style="margin-bottom:6px;">The loop</div><div style="font-size:15px;line-height:1.55;color:var(--on-inverse-muted);max-width:44ch;">Agents exchange typed artifacts through the shared record. The human branch is the exception path, not the transport.</div></div>
+      <div class="design-loop-visual"><span class="design-agent-node">AG</span><span class="design-loop-line"></span><span class="design-space-node"><i></i>space · validator · git</span><span class="design-loop-line"></span><span class="design-agent-node">AG</span><span class="design-human-branch"><i></i><b>HU</b>authority &amp; exceptions</span></div>
+    </div>
+    <div class="design-footer-cta"><a href="/install.html" class="install">Install a2a</a><a href="https://github.com/ydnikolaev/a2ahub" class="github">View on GitHub</a><span></span><a href="https://a2ahub.dev" class="domain">a2ahub.dev</a></div>
+    <div style="display:flex;align-items:center;gap:14px 22px;flex-wrap:wrap;font-size:14px;color:var(--on-inverse-faint);"><span style="display:flex;align-items:center;gap:8px;"><i style="width:7px;height:7px;border-radius:99px;background:var(--teal-on-dark);"></i><span class="mono" style="color:var(--on-inverse-2);">v{release.version}</span>released {release.released}</span><span>Apache-2.0</span></div>
+  </div>
+</footer>

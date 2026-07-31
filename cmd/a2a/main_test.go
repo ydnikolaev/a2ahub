@@ -36,6 +36,9 @@ func TestRun_noSubcommand(t *testing.T) {
 	if !strings.Contains(stderr.String(), "usage:") {
 		t.Fatalf("run(nil) stderr = %q, want usage text", stderr.String())
 	}
+	if !strings.Contains(stderr.String(), "https://a2ahub.dev/") {
+		t.Fatalf("run(nil) stderr = %q, want canonical project site", stderr.String())
+	}
 }
 
 func TestRun_version(t *testing.T) {

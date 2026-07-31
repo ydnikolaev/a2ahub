@@ -1,11 +1,10 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 
-// Static output — served straight off GitHub Pages, no runtime, no third-party
-// requests. `build.format: 'file'` emits /index.html at the root. `site` is the
-// absolute origin stamped into canonical/OG URLs (GitHub Pages project site).
+// Static output — served straight off GitHub Pages at the custom apex domain,
+// no runtime and no third-party requests. A custom domain is rooted at `/`, so
+// Astro's official Pages guidance requires no project-site `base` value.
 export default defineConfig({
-  site: 'https://ydnikolaev.github.io',
-  base: '/a2ahub',
+  site: 'https://a2ahub.dev',
   build: { format: 'file' },
 });

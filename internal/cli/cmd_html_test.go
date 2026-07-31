@@ -53,7 +53,7 @@ func TestHtmlCommand_DemoNoOpen(t *testing.T) {
 		t.Fatalf("output not written: %v", err)
 	}
 	page := string(b)
-	if !strings.Contains(page, "const DATA = ") || !strings.Contains(page, "const DOCS = ") {
+	if !strings.Contains(page, "window.A2A_DEMO=") || !strings.Contains(page, "window.A2A_DOCS=") {
 		t.Error("rendered page missing DATA/DOCS globals")
 	}
 	if strings.Contains(page, "A2A_DATA_START") {

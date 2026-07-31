@@ -64,6 +64,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	body := notes.RenderMarkdown(rn, notes.MarkdownOptions{
 		RepositoryURL: "https://github.com/ydnikolaev/a2ahub",
+		ProjectURL:    "https://a2ahub.dev",
 		Verification:  *verification,
 	})
 	if *verifyStdin {

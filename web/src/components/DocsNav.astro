@@ -1,0 +1,10 @@
+---
+import content from '../generated/content.json';
+const { current = '' } = Astro.props;
+---
+<nav class="side-nav" aria-label="Documentation sections">
+  {content.manifest.groups.map((group) => <div class="side-group">
+    <p class="side-group-title">{group}</p>
+    {content.docs.filter((doc) => doc.group === group).map((doc) => <a href={`/docs/${doc.id}.html`} aria-current={doc.id === current ? 'page' : undefined}>{doc.title}</a>)}
+  </div>)}
+</nav>

@@ -12,7 +12,7 @@ import (
 // (testdata/demo.json) unmarshals exactly into the Data model — a
 // field-name typo in the fixture (or a drifted model) fails via
 // DisallowUnknownFields — and that it exercises every drift value, every
-// inbox item type, and the hostile-title corner case the dashboard must
+// artifact type across the complete demo, and the hostile-title corner case the dashboard must
 // render safely.
 func TestDemoFixtureParses(t *testing.T) {
 	t.Parallel()
@@ -31,6 +31,21 @@ func TestDemoFixtureParses(t *testing.T) {
 
 	if len(data.Nodes) < 5 {
 		t.Errorf("len(Nodes) = %d, want >= 5", len(data.Nodes))
+	}
+	if data.Meta.Schema != "a2a-design-demo/v3" || !data.Meta.Synthetic {
+		t.Fatalf("demo metadata = %+v, want admitted synthetic v3 contract", data.Meta)
+	}
+	wantCounts := map[string][2]int{
+		"spaces": {len(data.Spaces), 4}, "nodes": {len(data.Nodes), 10},
+		"contracts": {len(data.Contracts), 12}, "contractEdges": {len(data.ContractEdges), 15},
+		"exchangeEdges": {len(data.ExchangeEdges), 20}, "inbox": {len(data.Inbox), 11},
+		"outbox": {len(data.Outbox), 8}, "threadViews": {len(data.ThreadViews), 6},
+		"artifactDetails": {len(data.ArtifactDetails), 8}, "unavailable": {len(data.Unavailable), 4},
+	}
+	for name, gotWant := range wantCounts {
+		if gotWant[0] != gotWant[1] {
+			t.Errorf("demo %s count = %d, want %d", name, gotWant[0], gotWant[1])
+		}
 	}
 
 	wantDrifts := map[string]bool{
@@ -53,27 +68,31 @@ func TestDemoFixtureParses(t *testing.T) {
 		"requirement": false, "decision": false, "handoff": false,
 		"response": false, "announcement": false,
 	}
-	for _, it := range data.Inbox {
+	for _, it := range append(append([]Item{}, data.Inbox...), data.Outbox...) {
 		if _, ok := wantTypes[it.Type]; ok {
 			wantTypes[it.Type] = true
 		}
 	}
+	for _, detail := range data.ArtifactDetails {
+		if _, ok := wantTypes[detail.Type]; ok {
+			wantTypes[detail.Type] = true
+		}
+	}
 	for typ, seen := range wantTypes {
 		if !seen {
-			t.Errorf("no Inbox item with type %q in demo.json", typ)
+			t.Errorf("no demo record with type %q in demo.json", typ)
 		}
 	}
 
-	const hostileTitle = `</script><img src=x onerror=alert(1)>`
 	found := false
-	for _, it := range data.Inbox {
-		if it.Title == hostileTitle {
+	for _, it := range append(append([]Item{}, data.Inbox...), data.Outbox...) {
+		if strings.Contains(it.Title, `</script><img`) && strings.Contains(it.Title, "onerror=") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("no Inbox item has the hostile title %q verbatim", hostileTitle)
+		t.Error("no demo item carries the hostile script/image-handler title verbatim")
 	}
 
 	for _, flag := range data.Flags {
@@ -113,14 +132,13 @@ func TestDemoDataCarriesEmbeddedReleaseNotes(t *testing.T) {
 // reader see, and a demo that shows only the pre-P4 shape teaches the wrong
 // model to everyone who looks at it before they look at the code.
 //
-// Three shapes, deliberately, because each renders differently and each is a
-// thing a reader will otherwise mistake for a bug:
+// Three shapes, deliberately, because each renders differently:
 //   - a live window (several versions, at least one deprecated) — the steady
 //     state the whole phase exists to make expressible;
-//   - a contract whose every published line is deprecated, so the SUBJECT
-//     projects `deprecated` while its versions are individually not retired;
-//   - a contract with NO versions recorded at all, which must still render
-//     exactly as it did before P4.
+//   - a window that contains a retired line beside a live successor;
+//   - a fully retired legacy contract. The dense v4 fixture intentionally
+//     models every contract with a version window; version-less compatibility
+//     remains a unit concern rather than taking a design-demo slot.
 func TestDemoCarriesARollingWindow(t *testing.T) {
 	t.Parallel()
 	d, err := DemoData()
@@ -128,29 +146,30 @@ func TestDemoCarriesARollingWindow(t *testing.T) {
 		t.Fatalf("DemoData: %v", err)
 	}
 
-	var live, allDeprecated, versionless int
+	var live, retiredLine, fullyRetired int
 	for _, c := range d.Contracts {
-		if len(c.Versions) == 0 {
-			versionless++
-			continue
-		}
 		if len(c.Versions) < 2 {
+			if len(c.Versions) == 1 && c.Versions[0].State == "retired" && c.State == "retired" {
+				fullyRetired++
+			}
 			continue
 		}
-		published, deprecated := 0, 0
+		published, deprecated, retired := 0, 0, 0
 		for _, v := range c.Versions {
 			switch v.State {
 			case "published":
 				published++
 			case "deprecated":
 				deprecated++
+			case "retired":
+				retired++
 			}
 		}
 		if published > 0 && deprecated > 0 {
 			live++
 		}
-		if published == 0 && deprecated > 0 {
-			allDeprecated++
+		if published > 0 && retired > 0 {
+			retiredLine++
 		}
 	}
 
@@ -158,13 +177,11 @@ func TestDemoCarriesARollingWindow(t *testing.T) {
 		t.Error("no demo contract shows a live rolling window (>=1 published AND >=1 deprecated version) — " +
 			"the demo teaches the pre-P4 model of one version per contract")
 	}
-	if allDeprecated == 0 {
-		t.Error("no demo contract has every published line deprecated — that is the projection case a reader " +
-			"is most likely to read as a bug, so it is the one the demo must show")
+	if retiredLine == 0 {
+		t.Error("no demo contract shows a retired line beside a live successor")
 	}
-	if versionless == 0 {
-		t.Error("no demo contract is version-less — a history that predates per-version recording must render " +
-			"as it always did, and the demo is where that is visible")
+	if fullyRetired == 0 {
+		t.Error("no demo contract shows a fully retired legacy window")
 	}
 
 	// The window is rendered in TWO places, and the first revision shipped

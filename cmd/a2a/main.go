@@ -85,6 +85,7 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  completion  print a shell completion script (bash|zsh|fish)")
 	_, _ = fmt.Fprintln(w, "  notifications install and control macOS / VS Code notification surfaces")
 	_, _ = fmt.Fprintln(w, "  version     print the binary version stamp")
+	_, _ = fmt.Fprintln(w, "docs: https://a2ahub.dev/")
 }
 
 func runVersion(_ []string, stdout, _ io.Writer) int {

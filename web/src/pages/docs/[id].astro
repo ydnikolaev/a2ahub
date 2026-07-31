@@ -1,0 +1,13 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import DesignRuntimePage from '../../components/DesignRuntimePage.astro';
+import content from '../../generated/content.json';
+
+export function getStaticPaths() {
+  return content.docs.map((doc) => ({ params: { id: doc.id }, props: { doc } }));
+}
+const { doc } = Astro.props;
+---
+<BaseLayout current="/docs.html" markdown={`/docs/${doc.id}.md`} slotOwnsMain title={`${doc.title} — a2ahub docs`} description={`a2ahub agent documentation: ${doc.title}.`}>
+  <DesignRuntimePage source="16-docs-v4.dc.html" />
+</BaseLayout>

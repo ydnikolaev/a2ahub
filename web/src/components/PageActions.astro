@@ -1,0 +1,11 @@
+---
+const { markdown, canonical } = Astro.props;
+const pageURL = canonical ?? new URL(Astro.url.pathname, Astro.site).toString();
+const ask = encodeURIComponent(`Read ${pageURL} and help me understand or use a2ahub. Prefer the page's Markdown alternate and linked SSOT sources.`);
+---
+<div class="page-actions" aria-label="Page actions">
+  {markdown && <a class="page-action" href={markdown}>View Markdown</a>}
+  <button class="page-action" type="button" data-copy-value={pageURL}>Copy page URL</button>
+  <a class="page-action" href={`https://chatgpt.com/?q=${ask}`}>Ask ChatGPT</a>
+  <a class="page-action" href={`https://claude.ai/new?q=${ask}`}>Ask Claude</a>
+</div>

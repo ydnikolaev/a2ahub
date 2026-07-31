@@ -2,6 +2,7 @@ package html
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -32,45 +33,44 @@ type DocSection struct {
 	HTML  string `json:"html"`
 }
 
-// DocGroups is the section-group vocabulary, matching the template's
-// GROUP_ORDER (Start → Concepts → Reference → Authoring → Help). A section
-// whose Group is outside this set still renders (the template appends unknown
-// groups after the ordered ones), but the manifest keeps to these five.
-var DocGroups = []string{"Start", "Concepts", "Reference", "Authoring", "Help"}
-
 // docEntry curates one skill markdown file into a section: its stable id (also
 // the deep-link anchor), its group, its nav title, and its path inside
 // skill.Files. Slice order is the in-group section order.
 type docEntry struct {
-	ID, Group, Title, File string
+	ID    string `json:"id"`
+	Group string `json:"group"`
+	Title string `json:"title"`
+	File  string `json:"file"`
 }
 
-// docManifest is the ordered curation of skill/a2ahub/** into Documentation
-// sections. EVERY *.md in skill.Files must appear here (there is no skip-set) —
-// TestDocsManifestParity gates that, so a newly added skill doc can't silently
-// miss the Documentation tab (the same silent-omission guard as completion).
-var docManifest = []docEntry{
-	{"getting-started", "Start", "Getting started", "a2ahub/onboarding.md"},
-	{"overview", "Concepts", "Overview", "a2ahub/SKILL.md"},
-	{"work-loops", "Concepts", "The work loops", "a2ahub/loops.md"},
-	{"threads", "Concepts", "Threads: one intent, one chain", "a2ahub/reference/threads.md"},
-	{"contract-versions", "Concepts", "Contract versions and sunsetting", "a2ahub/reference/contract-versions.md"},
-	{"commands", "Reference", "Command reference", "a2ahub/reference/commands.md"},
-	{"notifications", "Reference", "Native and editor notifications", "a2ahub/notifications.md"},
-	{"decompose", "Reference", "Decompose example", "a2ahub/reference/decompose-example.md"},
-	{"feedback", "Reference", "Feedback", "a2ahub/reference/feedback.md"},
-	{"status-announcements", "Reference", "Feed liveness: status announcements", "a2ahub/reference/status-announcements.md"},
-	{"retraction", "Reference", "Retracting published data", "a2ahub/reference/retraction.md"},
-	{"bindings", "Reference", "Contract-to-code bindings", "a2ahub/reference/bindings.md"},
-	{"authoring-contract", "Authoring", "Authoring: Contract", "a2ahub/reference/authoring/contract.md"},
-	{"authoring-requirement", "Authoring", "Authoring: Requirement", "a2ahub/reference/authoring/requirement.md"},
-	{"authoring-question", "Authoring", "Authoring: Question", "a2ahub/reference/authoring/question.md"},
-	{"authoring-work_request", "Authoring", "Authoring: Work request", "a2ahub/reference/authoring/work_request.md"},
-	{"authoring-decision", "Authoring", "Authoring: Decision", "a2ahub/reference/authoring/decision.md"},
-	{"authoring-handoff", "Authoring", "Authoring: Handoff", "a2ahub/reference/authoring/handoff.md"},
-	{"authoring-response", "Authoring", "Authoring: Response", "a2ahub/reference/authoring/response.md"},
-	{"authoring-announcement", "Authoring", "Authoring: Announcement", "a2ahub/reference/authoring/announcement.md"},
-	{"troubleshooting", "Help", "Troubleshooting", "a2ahub/troubleshooting.md"},
+type docsManifest struct {
+	Schema   string     `json:"schema"`
+	Groups   []string   `json:"groups"`
+	Sections []docEntry `json:"sections"`
+}
+
+// docManifest and DocGroups are loaded from the embedded manifest that also
+// drives the public Astro documentation build. The JSON file is now the curation
+// SSOT; the parity test still proves every embedded Markdown document is listed.
+var embeddedDocsManifest = mustLoadDocsManifest()
+var docManifest = embeddedDocsManifest.Sections
+
+// DocGroups lists the documentation navigation groups in manifest order.
+var DocGroups = embeddedDocsManifest.Groups
+
+func mustLoadDocsManifest() docsManifest {
+	b, err := fs.ReadFile(skill.Files, "a2ahub/docs-manifest.json")
+	if err != nil {
+		panic(fmt.Sprintf("html: docs manifest: %v", err))
+	}
+	var manifest docsManifest
+	if err := json.Unmarshal(b, &manifest); err != nil {
+		panic(fmt.Sprintf("html: docs manifest decode: %v", err))
+	}
+	if manifest.Schema != "a2a-docs-manifest/v1" || len(manifest.Groups) == 0 || len(manifest.Sections) == 0 {
+		panic("html: docs manifest: invalid or empty contract")
+	}
+	return manifest
 }
 
 // Docs renders the embedded skill tree into the ordered DocSection list. Pure:

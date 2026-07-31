@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>a2a — inspect the record, verify the binary</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --canvas: #F1EEE6;
+  --page: #FAF7F0;
+  --surface: #FFFFFF;
+  --sink: #E8E3D7;
+  --border: #E4DFD2;
+  --border-strong: #CBC2AB;
+  --hairline: #F1EEE6;
+  --text: #211E17;
+  --body: #453F31;
+  --muted: #6F6853;
+  --faint: #8A8269;
+  --logo-dim: #9A927B;
+  --inverse: #211E17;
+  --inverse-2: #2A261D;
+  --inverse-3: #33302A;
+  --inverse-line: #3A342A;
+  --on-inverse: #F3EFE4;
+  --on-inverse-2: #E8E3D4;
+  --on-inverse-muted: #C4BCA6;
+  --on-inverse-faint: #A8A08A;
+  --on-dark: #FAF7F0;
+  --on-solid: #FFFFFF;
+  --teal-solid: #175E6B;
+  --teal-ink: #175E6B;
+  --teal-ink-hover: #114953;
+  --teal-tint: #EDF4F5;
+  --teal-strong-ink: #0E3F48;
+  --teal-on-dark: #8FD0DB;
+  --teal-hairline: #BFD9DD;
+  --focus: #175E6B;
+  --ochre: #9A5C08;
+  --attention-tint: #FBF4E4;
+  --attention-ink: #7A5A14;
+  --attention-strong: #5E4410;
+  --attention-line: #E8CE94;
+  --red: #AC382A;
+  --blocking-tint: #F8E9E5;
+  --blocking-ink: #8C2B1F;
+  --blocking-strong: #5E2A22;
+  --blocking-line: #E0B3AB;
+  --green: #3E7A4C;
+  --healthy-tint: #E9F1E8;
+  --healthy-ink: #2F5E3A;
+  --healthy-strong: #24492D;
+  --plum: #7A3B62;
+  --selection: #D7E8EA;
+  --attn-bg: #33291A;
+  --attn-ink: #E2A33C;
+  --code-chip: #1B2A2D;
+  --primary: #211E17;
+  --on-primary: #FAF7F0;
+  --header-bg: rgba(241,238,230,.94);
+  --shadow-card: 0 1px 2px rgba(33,30,23,.06);
+}
+html[data-theme="dark"] {
+  --canvas: #16140F;
+  --page: #1D1A14;
+  --surface: #24211A;
+  --sink: #2E2A21;
+  --border: #3B3529;
+  --border-strong: #4E4736;
+  --hairline: #302B22;
+  --text: #F4F0E4;
+  --body: #DAD3C0;
+  --muted: #ADA48C;
+  --faint: #8F8770;
+  --logo-dim: #8F8770;
+  --inverse: #0E0D09;
+  --inverse-2: #1A1812;
+  --inverse-3: #2E2A21;
+  --inverse-line: #3B3529;
+  --on-inverse: #F3EFE4;
+  --on-inverse-2: #E8E3D4;
+  --on-inverse-muted: #C4BCA6;
+  --on-inverse-faint: #A8A08A;
+  --on-dark: #FAF7F0;
+  --on-solid: #0E0D09;
+  --teal-solid: #2A8395;
+  --teal-ink: #8FD0DB;
+  --teal-ink-hover: #B4E2EA;
+  --teal-tint: #123039;
+  --teal-strong-ink: #C7E9EF;
+  --teal-on-dark: #8FD0DB;
+  --teal-hairline: #2C5A63;
+  --focus: #8FD0DB;
+  --ochre: #D9902A;
+  --attention-tint: #3A2D12;
+  --attention-ink: #E8C579;
+  --attention-strong: #F4DDAA;
+  --attention-line: #6B5320;
+  --red: #D6584A;
+  --blocking-tint: #3C1E19;
+  --blocking-ink: #F0A79A;
+  --blocking-strong: #F7C9C1;
+  --blocking-line: #6E3229;
+  --green: #5FA773;
+  --healthy-tint: #1B2E20;
+  --healthy-ink: #94CFA3;
+  --healthy-strong: #BCE3C6;
+  --plum: #B981A0;
+  --selection: #1E4A52;
+  --attn-bg: #3A2D12;
+  --attn-ink: #E2A33C;
+  --code-chip: #12262A;
+  --primary: #EDE7D8;
+  --on-primary: #16140F;
+  --header-bg: rgba(22,20,15,.94);
+  --shadow-card: 0 1px 2px rgba(0,0,0,.4);
+}
+html[data-theme="dark"] header { backdrop-filter: blur(8px); }
+html { scroll-behavior: smooth; }
+body { margin: 0; background:var(--canvas); color:var(--text); font-family: "Onest", "Segoe UI", Helvetica, Arial, sans-serif; font-size: 16px; -webkit-font-smoothing: antialiased; }
+a { color:var(--teal-ink); text-underline-offset: 3px; }
+a:hover { color:var(--teal-ink-hover); }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+::selection { background:var(--selection); }
+
+@media (min-width: 900px) {
+  [data-rail] { position: sticky; top: 84px; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</helmet>
+
+<div data-screen-label="Security and reliability v4" style="min-height:100vh;">
+  <div style="position:sticky; top:0; z-index:80;"><dc-import name="SiteHeader" active="security" md="security.md" md-text="{{ mdText }}" hint-size="100%,66px"></dc-import></div>
+
+  <main>
+    <section style="width:min(1240px, 100% - 56px); margin:0 auto; padding:40px 0 20px;">
+      <div style="display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; margin-bottom:26px;">
+        <div style="flex:1 1 540px; min-width:0;">
+          <span style="display:inline-block; font-size:15px; font-weight:600; color:var(--teal-ink); background:var(--surface); border-radius:8px; padding:7px 14px; margin-bottom:20px;">Security &amp; reliability · proof by boundary</span>
+          <h1 style="margin:0 0 16px; font-size:52px; line-height:1.05; font-weight:600; letter-spacing:-0.03em; max-width:640px; text-wrap:balance;">Inspect the record. Verify the binary.</h1>
+          <p style="margin:0 0 12px; font-size:19px; line-height:1.6; color:var(--body); max-width:660px; text-wrap:pretty;">Everything on this page is a command you can run, a workflow you can read, or a boundary the validator enforces. No certification is claimed here, and every piece of evidence names its own scope.</p>
+          <p style="margin:0; font-size:17px; line-height:1.6; color:var(--muted); max-width:660px;">Typed does not mean infallible. It means malformed artifacts, illegal lifecycle moves, stale pinned references and unauthorized actors fail visibly instead of becoming ambiguous prose.</p>
+        </div>
+      </div>
+
+      <div style="display:flex; flex-wrap:wrap; gap:20px; align-items:flex-start;">
+        <div style="flex:3 1 420px; min-width:0; display:flex; flex-direction:column; gap:12px;">
+          <sc-for list="{{ boundaries }}" as="b" hint-placeholder-count="5">
+            <section style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+              <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:6px; padding:4px 10px;">{{ b.n }}</span>
+                <h2 style="margin:0; font-size:24px; font-weight:600; letter-spacing:-0.015em;">{{ b.title }}</h2>
+              </div>
+              <p style="margin:0 0 14px; font-size:17px; line-height:1.6; color:var(--body); max-width:34em;">{{ b.lead }}</p>
+              <table style="width:100%; border-collapse:collapse; font-size:16px;">
+                <tbody>
+                  <sc-for list="{{ b.facts }}" as="f" hint-placeholder-count="3">
+                    <tr><td style="{{ f.cell }}">{{ f.text }}</td></tr>
+                  </sc-for>
+                </tbody>
+              </table>
+              <sc-if value="{{ b.hasCaveat }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:14px; background:var(--attention-tint); border-radius:11px; padding:13px 15px; font-size:16px; line-height:1.6; color:var(--attention-ink);">{{ b.caveat }}</div>
+              </sc-if>
+            </section>
+          </sc-for>
+        </div>
+
+        <aside data-rail style="flex:1 1 320px; min-width:0; display:flex; flex-direction:column; gap:12px;">
+          <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+              <h2 style="margin:0; font-size:20px; font-weight:600;">Verify a release yourself</h2>
+              <button type="button" onClick="{{ copyAll.copy }}" style="{{ copyAll.style }}">{{ copyAll.label }}</button>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <sc-for list="{{ commands }}" as="c" hint-placeholder-count="3">
+                <div style="background:var(--inverse); border-radius:11px; padding:13px 15px;">
+                  <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                    <span style="font-size:14px; color:var(--on-inverse-faint);">{{ c.role }}</span>
+                    <button type="button" onClick="{{ c.copy }}" style="{{ c.style }}">{{ c.label }}</button>
+                  </div>
+                  <pre style="margin:0; overflow-x:auto;"><code style="font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.8; color:var(--on-inverse-2); white-space:pre-wrap; overflow-wrap:anywhere;">{{ c.text }}</code></pre>
+                </div>
+              </sc-for>
+            </div>
+            <p style="margin:14px 0 0; font-size:15px; line-height:1.6; color:var(--muted);">The installer and the updater fail closed: a missing checksum entry or a mismatch stops the install, and an invalid present signature is a hard stop.</p>
+          </div>
+
+          <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+            <h2 style="margin:0 0 10px; font-size:20px; font-weight:600;">Report a vulnerability</h2>
+            <p style="margin:0 0 14px; font-size:16px; line-height:1.6; color:var(--body);">Use a private GitHub security advisory — never a public issue.</p>
+            <a href="https://github.com/ydnikolaev/a2ahub/security/advisories/new" style="display:block; font-family:'IBM Plex Mono',monospace; font-size:14px; background:var(--teal-tint); border-radius:10px; padding:12px 14px; text-decoration:none; overflow-wrap:anywhere; margin-bottom:14px;">github.com/ydnikolaev/a2ahub/security/advisories/new ↗</a>
+            <dc-import name="FactTable" rows="{{ responseRows }}" hint-size="100%,120px"></dc-import>
+          </div>
+
+          <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+              <dc-import name="StatusPill" text="known limitation" tone="attention" size="small" hint-size="130px,24px"></dc-import>
+            </div>
+            <p style="margin:0; font-size:16px; line-height:1.6; color:var(--body);">The macOS notification companion is ad-hoc signed, not identified or notarized through a paid Apple Developer account. A quarantined download may require one explicit System Settings → Privacy &amp; Security → Open Anyway decision.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="reliability" style="background:var(--inverse); color:var(--on-inverse); padding:60px 0; margin-top:40px;">
+      <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0;">
+        <h2 style="margin:0 0 14px; font-size:42px; line-height:1.1; font-weight:600; letter-spacing:-0.03em; color:var(--on-solid); max-width:700px; text-wrap:balance;">Reliability is a chain, not a badge.</h2>
+        <p style="margin:0 0 30px; font-size:18px; line-height:1.6; color:var(--on-inverse-muted); max-width:780px;">One validation engine runs at authoring, before write and in the space pull-request gate. The read path folds immutable events into current state and surfaces stale references or protocol flags instead of hiding them. In production this is a separate route from Security; here the two share a page with their section boundaries intact.</p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; margin-bottom:16px;">
+          <sc-for list="{{ layers }}" as="l" hint-placeholder-count="5">
+            <div style="{{ l.cardStyle }}">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                <span style="{{ l.tagStyle }}">{{ l.tag }}</span>
+                <sc-if value="{{ l.notShipped }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:13px; font-weight:600; color:var(--attn-ink); background:var(--attn-bg); border-radius:6px; padding:3px 9px;">not shipped</span>
+                </sc-if>
+              </div>
+              <div style="{{ l.textStyle }}">{{ l.text }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="background:var(--inverse-2); border-radius:18px; padding:22px 26px 20px;">
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
+            <h3 style="margin:0; font-size:22px; font-weight:600; color:var(--on-solid);">What the validator checks</h3>
+            <button type="button" onClick="{{ toggleCodes }}" aria-expanded="{{ codesExpanded }}" style="{{ codesBtnStyle }}">{{ codesLabel }}</button>
+          </div>
+          <table style="width:100%; border-collapse:collapse; font-size:16px;">
+            <tbody>
+              <tr><td style="padding:13px 20px 13px 0; width:230px; vertical-align:top; color:var(--on-solid); font-weight:600; border-bottom:1px solid var(--inverse-line);">Schema</td><td style="padding:13px 0; line-height:1.6; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Required fields, closed enums, type-specific constraints, ids, semantic versions, ULIDs and value types.</td></tr>
+              <tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-solid); font-weight:600; border-bottom:1px solid var(--inverse-line);">References and ownership</td><td style="padding:13px 0; line-height:1.6; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Filename, id and section agreement, target existence, pinned digest agreement, known active recipients and an unambiguous space authority map.</td></tr>
+              <tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-solid); font-weight:600; border-bottom:1px solid var(--inverse-line);">Lifecycle and authority</td><td style="padding:13px 0; line-height:1.6; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Legal transitions from the folded state, and an actor allowed to perform that exact transition.</td></tr>
+              <tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-solid); font-weight:600;">Policy and contracts</td><td style="padding:13px 0; line-height:1.6; color:var(--on-inverse-muted);">Bounded UTF-8 documents, best-effort credential patterns, supported schema overlap, no unfilled template values, executable contract fixtures, declared-versus-computed compatibility, and consumer acknowledgement before retirement.</td></tr>
+            </tbody>
+          </table>
+          <sc-if value="{{ codesOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--inverse-line);">
+              <div style="font-size:16px; color:var(--on-inverse-muted); margin-bottom:10px;">Stable machine vocabulary — for correlation, not as the human explanation:</div>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--teal-on-dark); background:var(--code-chip); border-radius:6px; padding:5px 10px;">illegal-transition</span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--teal-on-dark); background:var(--code-chip); border-radius:6px; padding:5px 10px;">unauthorized-actor</span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--teal-on-dark); background:var(--code-chip); border-radius:6px; padding:5px 10px;">state-claim-mismatch</span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--attn-ink); background:var(--attn-bg); border-radius:6px; padding:5px 10px;">read-index-skip</span>
+              </div>
+              <div style="font-size:16px; line-height:1.6; color:var(--faint);">The first three are fold flags on an artifact. <span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">read-index-skip</span> is a cache and read-health flag, not a validation code.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+    <section style="width:min(1240px, 100% - 56px); margin:0 auto; padding:56px 0 70px;">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:20px; align-items:start;">
+        <div style="background:var(--surface); border-radius:18px; padding:28px 30px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+            <h2 style="margin:0; font-size:30px; font-weight:600; letter-spacing:-0.02em;">Release confidence</h2>
+            <dc-import name="StatusPill" text="v0.16.3" tone="agent" mono="{{ true }}" hint-size="90px,26px"></dc-import>
+          </div>
+          <p style="margin:0 0 16px; font-size:19px; line-height:1.6; color:var(--body); max-width:34em;">The immutable v0.16.3 runtime candidate passed <strong>50 of 50 declared live cells</strong>, with zero failed, timed-out or not-run cells across CLI, MCP, lifecycle, contracts, authorization boundaries, failure recovery, thread reconstruction and space migration.</p>
+          <div style="background:var(--page); border-radius:12px; padding:14px 16px; margin-bottom:14px;">
+            <div style="font-size:15px; color:var(--muted); margin-bottom:5px;">candidate</div>
+            <div style="font-family:'IBM Plex Mono',monospace; font-size:15px; overflow-wrap:anywhere;">d6418b926ec5363416ef8b42a572788e7e7e009a</div>
+          </div>
+          <div style="background:var(--attention-tint); border-radius:12px; padding:14px 16px; font-size:16px; line-height:1.6; color:var(--attention-ink);">This is coverage of the declared release matrix, not a claim that every possible state has been tested. The claim belongs to this exact candidate — it is not a standing badge and not an uptime statement.</div>
+        </div>
+        <div style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h2 style="margin:0 0 12px; font-size:22px; font-weight:600;">Evidence with named scopes</h2>
+          <dc-import name="FactTable" rows="{{ evidenceRows }}" hint-size="100%,240px"></dc-import>
+          <p style="margin:16px 0 0; font-size:16px; line-height:1.6; color:var(--muted);">These are checks with declared schedules and surfaces. They are evidence, not certifications, and this page states no compliance claim of any kind.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dc-import name="SiteFooter" md="security.md" hint-size="100%,320px"></dc-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1300,&quot;height&quot;:900}}">
+const BOUNDARIES = [
+  ["1", "Shared-record boundary", "Git is the durable source of truth, and every write is confined to a section its author owns.", [
+    "Writes use explicit argv — never an interpolated shell string.",
+    "Pull-request validation checks the diff and the lifecycle before a merge is possible.",
+    "Machine credentials cannot self-approve a human CODEOWNERS gate."
+  ], ""],
+  ["2", "Untrusted-data boundary", "Inbound artifact text is data. It is never treated as instructions, by the binary or by this dashboard.", [
+    "External inputs are size-bounded; documents are bounded UTF-8.",
+    "Dashboard data is text-only and escaped; hostile-looking strings render literally.",
+    "Malicious string fixtures exist in the test corpus and are exercised."
+  ], "Credential and secret detection is best-effort. It is not proof that a payload is safe."],
+  ["3", "Release boundary", "Every release asset can be checked without trusting this website.", [
+    "Release assets ship SHA256SUMS, per-asset keyless cosign bundles, build provenance and SBOMs.",
+    "The updater verifies before an atomic swap, with a frozen Sigstore trust root and a pinned GitHub Actions identity.",
+    "An invalid present signature is a hard stop; a missing signature bundle requires an explicit --allow-unsigned."
+  ], "Only the latest release receives security fixes."],
+  ["4", "Read and recovery boundary", "State is rebuilt from Git, so a lost local cache costs time and nothing else.", [
+    "Stale or unreadable mirrors degrade visibly, with an age and a reason.",
+    "Protocol flags are surfaced next to the artifact they belong to, never dropped.",
+    "The local HTML dashboard performs no external requests at all."
+  ], ""],
+  ["5", "Evidence boundary", "Each proof names what it covers. Nothing here is a whole-system guarantee.", [
+    "v0.16.3 immutable runtime candidate: 50 of 50 declared live cells passed.",
+    "The two observed red workflow runs were explicitly expected boundary probes.",
+    "make check covers formatting, vet, lint, race-enabled tests, a coverage floor and repository gates."
+  ], "CodeQL, govulncheck and gitleaks run on their declared schedules and surfaces. They are evidence with limited scope."]
+];
+const LAYERS = [
+  ["V1 · authoring", "Schema validation for a draft.", false],
+  ["V2 · pre-write", "Schema, references, authorization and lifecycle before submission.", false],
+  ["V3 · space CI", "Full repository and diff-aware validation; the pull request is blocked on failure.", false],
+  ["V5 · read", "Pinned digest and staleness facts on show and read surfaces.", false],
+  ["V4 · hosted hub", "Belongs to the future hosted Hub. Never counted as current protection.", true]
+];
+const CMDS = [
+  ["provenance", "gh attestation verify a2a-<os>-<arch> -R ydnikolaev/a2ahub"],
+  ["signature", "cosign verify-blob \\\n  --bundle a2a-<os>-<arch>.cosign.bundle \\\n  --certificate-identity-regexp '^https://github.com/ydnikolaev/a2ahub/.github/workflows/release.yml@refs/tags/v.*$' \\\n  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\\n  a2a-<os>-<arch>"],
+  ["checksum", "grep \"  a2a-<os>-<arch>$\" SHA256SUMS | sha256sum -c -"]
+];
+
+class Component extends DCLogic {
+  state = { copied: "", codes: false };
+
+  copy(key, text) {
+    const done = () => { this.setState({ copied: key }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ copied: "" }), 2400); };
+    const fail = () => { this.setState({ copied: "err:" + key }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ copied: "" }), 3000); };
+    const legacy = () => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text; ta.style.cssText = "position:fixed; left:-9999px; top:0;";
+        document.body.appendChild(ta); ta.select();
+        const ok = document.execCommand("copy"); document.body.removeChild(ta);
+        ok ? done() : fail();
+      } catch (e) { fail(); }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, legacy); else legacy();
+  }
+
+  darkBtn(key, dim) {
+    const c = this.state.copied, ok = c === key, err = c === "err:" + key;
+    return "margin-left:auto; font-family:'Onest',sans-serif; font-size:" + (dim ? 14 : 15) + "px; font-weight:600; border:0; border-radius:8px; padding:" + (dim ? "5px 11px" : "7px 13px") + "; cursor:pointer; white-space:nowrap; " +
+      (ok ? "background:var(--green); color:var(--on-solid);" : err ? "background:var(--red); color:var(--on-solid);" : "background:var(--inverse-3); color:var(--teal-on-dark);");
+  }
+  label(key) {
+    const c = this.state.copied;
+    return c === key ? "Copied" : c === "err:" + key ? "Copy failed" : "Copy";
+  }
+
+  renderVals() {
+    const all = CMDS.map(([, t]) => t).join("\n\n");
+    return {
+      boundaries: BOUNDARIES.map(([n, title, lead, facts, caveat]) => ({
+        n, title, lead, hasCaveat: !!caveat, caveat,
+        facts: facts.map((text, i) => ({
+          text,
+          cell: "padding:12px 0; line-height:1.6; color:var(--body); border-bottom:" + (i === facts.length - 1 ? "none" : "1px solid var(--hairline)") + ";"
+        }))
+      })),
+      layers: LAYERS.map(([tag, text, notShipped]) => ({
+        tag, text, notShipped,
+        cardStyle: "border-radius:14px; padding:18px 20px; " + (notShipped ? "background:transparent; box-shadow:inset 0 0 0 1px var(--inverse-line);" : "background:var(--inverse-2);"),
+        tagStyle: "font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; " + (notShipped ? "color:var(--faint);" : "color:var(--teal-on-dark);"),
+        textStyle: "font-size:16px; line-height:1.55; " + (notShipped ? "color:var(--faint);" : "color:var(--on-inverse-2);")
+      })),
+      commands: CMDS.map(([role, text], i) => ({
+        role, text,
+        copy: () => this.copy("c" + i, text),
+        label: this.label("c" + i),
+        style: this.darkBtn("c" + i, true)
+      })),
+      copyAll: {
+        copy: () => this.copy("all", all),
+        label: this.state.copied === "all" ? "All three copied" : this.state.copied === "err:all" ? "Copy failed" : "Copy all three",
+        style: "margin-left:auto; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:9px; padding:8px 13px; cursor:pointer; white-space:nowrap; " +
+          (this.state.copied === "all" ? "background:var(--healthy-tint); color:var(--healthy-ink);" : this.state.copied === "err:all" ? "background:var(--blocking-tint); color:var(--blocking-ink);" : "background:var(--canvas); color:var(--text);")
+      },
+      responseRows: [
+        { label: "acknowledgement", value: "within 3 business days" },
+        { label: "assessment and next steps", value: "within 7 business days" },
+        { label: "fix", value: "in the next release once ready" }
+      ],
+      evidenceRows: [
+        { label: "live release matrix", value: "50 / 50 cells · v0.16.3 candidate", mono: false },
+        { label: "make check", value: "format · vet · lint · race tests · coverage floor", muted: true },
+        { label: "CodeQL", value: "declared schedule, Go analysis", muted: true },
+        { label: "govulncheck", value: "declared schedule, module surface", muted: true },
+        { label: "gitleaks", value: "best-effort secret detection", muted: true },
+        { label: "PR diff authorization", value: "confines a system to its owned sections", muted: true }
+      ],
+      codesOpen: this.state.codes,
+      codesExpanded: this.state.codes ? "true" : "false",
+      codesLabel: this.state.codes ? "Hide machine codes" : "Show machine codes",
+      codesBtnStyle: "margin-left:auto; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:9px; padding:8px 13px; cursor:pointer; background:var(--inverse-3); color:var(--teal-on-dark);",
+      toggleCodes: () => this.setState(s => ({ codes: !s.codes })),
+      mdText: "# Security and reliability\n\nCanonical HTML: https://ydnikolaev.github.io/a2ahub/security.html\nSource of truth: SECURITY.md\n\n[SSOT document body is projected here at build time]\n"
+    };
+  }
+}
+
+</script>
+</body>
+</html>

@@ -39,7 +39,7 @@ run_check() {
     "## Start a project" \
     "## Release confidence" \
     "## Documentation" \
-    "https://ydnikolaev.github.io/a2ahub/" \
+    "https://a2ahub.dev/" \
     "skill/a2ahub/reference/commands.md" \
     "SECURITY.md"
   do

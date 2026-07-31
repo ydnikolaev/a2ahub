@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<button type="button" onClick="{{ select }}" style="{{ rowStyle }}">
+  <span style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:9px;">
+    <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px;">
+      <dc-import name="TypeBadge" type="{{ type }}" hint-size="140px,26px"></dc-import>
+      <sc-if value="{{ hasStatus }}" hint-placeholder-val="{{ true }}">
+        <dc-import name="StatusPill" text="{{ status }}" tone="{{ tone }}" hint-size="110px,26px"></dc-import>
+      </sc-if>
+    </span>
+    <span style="{{ timeStyle }}">{{ time }}</span>
+  </span>
+  <span style="display:block; font-size:19px; line-height:1.35; font-weight:600; color:var(--text); margin-bottom:9px; overflow-wrap:anywhere;">{{ title }}</span>
+  <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:15px; color:var(--muted);">
+    <span style="{{ fromMonoStyle }}">{{ fromMono }}</span>
+    <span>{{ from }}</span>
+    <span style="color:var(--border-strong);">→</span>
+    <span style="{{ toMonoStyle }}">{{ toMono }}</span>
+    <span>{{ to }}</span>
+    <span style="color:var(--border-strong);">·</span>
+    <span style="overflow-wrap:anywhere;">{{ meta }}</span>
+  </span>
+</button>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:460,&quot;height&quot;:150},&quot;type&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;work_request&quot;,&quot;question&quot;,&quot;decision&quot;,&quot;handoff&quot;,&quot;requirement&quot;,&quot;response&quot;,&quot;announcement&quot;,&quot;contract&quot;],&quot;default&quot;:&quot;work_request&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;title&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Prevent duplicate payment capture after a worker retry&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;status&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Blocking · p1&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;tone&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;blocking&quot;,&quot;blockingStrong&quot;,&quot;attention&quot;,&quot;healthy&quot;,&quot;neutral&quot;,&quot;agent&quot;,&quot;outline&quot;],&quot;default&quot;:&quot;blocking&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;time&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;2 days overdue&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;from&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;checkout&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;to&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;you&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;fromCode&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;toCode&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;meta&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;checkout-core&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;fromSelf&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;toSelf&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;selected&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onSelect&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;() =&gt; void&quot;}}">
+function mono(name) { return String(name || "?").slice(0, 2).toUpperCase(); }
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const selected = !!p.selected;
+    const urgent = p.tone === "blocking" || p.tone === "blockingStrong";
+    const avatar = (isSelf) => "flex:0 0 auto; width:24px; height:24px; border-radius:99px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:11px; font-weight:600; flex:0 0 auto; " + (isSelf ? "background:var(--teal-solid); color:var(--on-solid);" : "background:var(--border); color:var(--body);");
+    return {
+      type: p.type,
+      title: p.title ?? "",
+      status: p.status ?? "",
+      tone: p.tone || "neutral",
+      hasStatus: !!p.status,
+      time: p.time ?? "",
+      timeStyle: "flex:0 0 auto; text-align:right; font-size:15px;" + (urgent ? " font-weight:600; color:var(--red);" : " color:var(--muted);"),
+      from: p.from ?? "",
+      to: p.to ?? "",
+      meta: p.meta ?? "",
+      fromMono: p.fromCode || mono(p.from),
+      toMono: p.toCode || mono(p.to),
+      fromMonoStyle: avatar(p.fromSelf),
+      toMonoStyle: avatar(p.toSelf),
+      select: p.onSelect || (() => {}),
+      rowStyle: "display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; background:var(--surface); border:0; border-radius:14px; padding:16px 18px; cursor:pointer; box-shadow:" + (selected ? "0 0 0 2px var(--focus), 0 6px 18px -10px rgba(33,30,23,.5)" : "0 1px 2px rgba(33,30,23,.06)") + ";"
+    };
+  }
+}
+
+</script>
+</body>
+</html>

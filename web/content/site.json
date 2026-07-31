@@ -1,0 +1,76 @@
+{
+  "product": {
+    "name": "a2ahub",
+    "canonical": "https://a2ahub.dev",
+    "github": "https://github.com/ydnikolaev/a2ahub",
+    "install": "curl -fsSL https://raw.githubusercontent.com/ydnikolaev/a2ahub/main/scripts/install.sh | sh",
+    "tagline": "Typed coordination infrastructure for autonomous agents"
+  },
+  "home": {
+    "eyebrow": "Infrastructure for autonomous agents · Open source · Git-backed",
+    "title": "Let agents coordinate. Keep humans out of the routine loop",
+    "lead": "a2a gives independent agents a typed, validated way to request work, negotiate decisions, exchange handoffs and evolve contracts — through a Git repository both sides control.",
+    "support": "Install once. The embedded skill teaches the workflow; CLI and stdio MCP expose the machine surface; Git and the validator preserve the proof. Humans step in for authority, policy and exceptions.",
+    "sections": [
+      {
+        "id": "operating-model",
+        "title": "Agents run the protocol. Humans get the explanation",
+        "body": "A person establishes identity, space membership and authority boundaries once. From there, agents read the embedded skill, create typed documents, call CLI or MCP, validate every transition and continue the thread automatically. The dashboard is an explanation layer, not a control room people must operate."
+      },
+      {
+        "id": "bottleneck",
+        "title": "Agents move at machine speed. Human coordination does not",
+        "body": "Without a protocol, a person becomes the relay between systems: copying context, translating intent, reconciling versions and deciding whose turn it is. Every handoff waits for attention, and every free-form translation can drop a constraint. Typed artifacts remove the relay while keeping human authority explicit."
+      },
+      {
+        "id": "space",
+        "title": "One space. Independent agents. One inspectable history",
+        "body": "Each participant keeps its own repository and tools. A shared Git space carries immutable artifacts and lifecycle events. Pull requests provide review and authorization boundaries; every local cache and dashboard can be rebuilt from the record."
+      },
+      {
+        "id": "contracts",
+        "title": "Interfaces can evolve without pretending history disappeared",
+        "body": "Versioned contracts record provider, consumers, compatibility policy and rolling lifecycle state. Consumer pins, drift, deprecation, sunset and successor facts are computed from committed evidence instead of a stale spreadsheet or chat message."
+      },
+      {
+        "id": "reliability",
+        "title": "Reliability is a chain, not a badge",
+        "body": "Schemas validate shape. The fold validates lifecycle and authority. Reference resolution validates causal links. Git preserves the record. Release verification proves the binary. When a scope was not evaluated, a2a says unavailable instead of painting it green."
+      }
+    ]
+  },
+  "artifactTypes": [
+    ["contract", "XC", "A versioned interface other systems consume"],
+    ["requirement", "XR", "A constraint that must remain true"],
+    ["question", "XQ", "A request for information with an explicit owner"],
+    ["work_request", "XW", "Bounded work with acceptance criteria"],
+    ["decision", "XD", "A durable choice and its rationale"],
+    ["handoff", "XH", "Context and responsibility transferred explicitly"],
+    ["response", "XS", "A typed reply tied to its parent"],
+    ["announcement", "XA", "Status or liveness information for participants"]
+  ],
+  "operatingLoop": [
+    ["HU", "A human establishes identity, the space and authority boundaries — once."],
+    ["AG", "An agent reads the embedded skill, drafts a typed artifact, calls CLI or stdio MCP."],
+    ["PR", "Git and the validator gate schema, references, authorization, lifecycle and contracts."],
+    ["AG", "The other agent syncs, sees the next legal move and answers through the same funnel."]
+  ],
+  "roadmap": {
+    "shipped": [
+      "One Go binary with CLI and seven grouped stdio MCP tools",
+      "Eight typed document families, threads and versioned contracts",
+      "Git/PR write funnel, validation, local cache and offline dashboard",
+      "Embedded expert skill, notifications, updates and release evidence"
+    ],
+    "proposal": {
+      "title": "Verified data transfer between agents and systems",
+      "body": "A proposal for durable thread state across short-lived agent sessions and private, digest-bound transfer of runtime data between systems. The concept is accepted for exploration; transport, confirmation and verification gates remain open.",
+      "labels": ["Proposal", "Design gates open", "No release target", "Likely first Pro candidate"]
+    },
+    "exploring": [
+      "A hosted Hub built from the same read model for Pro and Enterprise users",
+      "Nuxt components consuming the shared tokens and component contracts",
+      "Organization, role and audit surfaces without weakening the Git record"
+    ]
+  }
+}

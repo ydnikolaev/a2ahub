@@ -86,7 +86,7 @@ declared release matrix—not a claim that every possible state has been tested.
 
 ## Documentation
 
-[Project site](https://ydnikolaev.github.io/a2ahub/) ·
+[Project site](https://a2ahub.dev/) ·
 [onboarding](skill/a2ahub/onboarding.md) ·
 [command and MCP reference](skill/a2ahub/reference/commands.md) ·
 [security and release verification](SECURITY.md) ·
