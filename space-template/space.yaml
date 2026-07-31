@@ -1,6 +1,6 @@
 schema: space/v1
 space: REPLACE_WITH_SPACE_ID
-min_binary_version: 0.16.3            # write FLOOR (D-013/CC-085): a writer
+min_binary_version: 0.17.1            # write FLOOR (D-013/CC-085): a writer
                                       # older than this refuses its own write.
                                       # A SEPARATE axis from the CI validator
                                       # version, which lives in the
