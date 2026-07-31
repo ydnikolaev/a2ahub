@@ -273,7 +273,10 @@ func TestDefaultTemplate_HasMarkers(t *testing.T) {
 func TestDefaultTemplate_CarriesApprovedV4ViewsWithoutRemoteLoads(t *testing.T) {
 	t.Parallel()
 	tmpl := string(DefaultTemplate())
-	for _, view := range []string{"Overview", "Work", "Threads", "Contracts", "Network", "Spaces", "Integrity", "Versions", "Guide"} {
+	// Integrity is no longer a view: its three panels are a qualifier on the
+	// freshness table and now live at the bottom of Spaces. Docs took its slot —
+	// the embedded SSOT corpus gets its own route instead of hiding in Guide.
+	for _, view := range []string{"Overview", "Work", "Threads", "Contracts", "Network", "Spaces", "Versions", "Docs", "Guide"} {
 		if !strings.Contains(tmpl, `data-screen-label="`+view+`"`) {
 			t.Errorf("embedded v4 dashboard is missing %s view", view)
 		}

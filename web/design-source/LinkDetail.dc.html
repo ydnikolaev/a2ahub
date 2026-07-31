@@ -16,6 +16,13 @@
     <button type="button" onClick="{{ det.close }}" aria-label="{{ closeLabel }}" style="flex:0 0 auto; font-family:'Onest',sans-serif; font-size:15px; line-height:1; color:var(--muted); background:transparent; border:0; cursor:pointer; padding:3px 4px;">✕</button>
   </div>
   <div style="font-size:15px; line-height:1.6; color:var(--body); max-width:84ch;">{{ det.lead }}</div>
+  <!-- The facts the sentence above used to carry as prose. A reader scanning
+       for "which version is pinned" should not have to parse a paragraph. -->
+  <sc-if value="{{ det.hasFacts }}" hint-placeholder-val="{{ true }}">
+    <div style="margin-top:12px;">
+      <dc-import name="FactTable" rows="{{ det.facts }}" hint-size="100%,180px"></dc-import>
+    </div>
+  </sc-if>
   <sc-if value="{{ det.hasNote }}" hint-placeholder-val="{{ false }}">
     <div style="margin-top:9px; font-size:14px; line-height:1.55; color:var(--muted); background:var(--page); border-radius:10px; padding:9px 11px;">{{ det.note }}</div>
   </sc-if>
@@ -30,9 +37,14 @@
               <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ r.pillText }}" tone="{{ r.pillTone }}" size="small" hint-size="70px,22px"></dc-import></span>
             </span>
             <span style="display:block; font-family:'IBM Plex Mono',monospace; font-size:13px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere;">{{ r.detail }}</span>
-            <sc-if value="{{ r.canOpen }}" hint-placeholder-val="{{ false }}">
-              <span style="display:block; margin-top:5px; font-size:14px; font-weight:600; color:var(--teal-ink);">{{ r.openLabel }}</span>
-            </sc-if>
+            <span style="display:flex; gap:14px; flex-wrap:wrap; margin-top:5px;">
+              <sc-if value="{{ r.canOpen }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:14px; font-weight:600; color:var(--teal-ink);">{{ r.openLabel }}</span>
+              </sc-if>
+              <sc-if value="{{ r.canOpenDoc }}" hint-placeholder-val="{{ false }}">
+                <span onClick="{{ r.openDoc }}" role="button" tabindex="0" style="font-size:14px; font-weight:600; color:var(--teal-ink); text-decoration:underline; text-underline-offset:3px; cursor:pointer;">{{ r.docLabel }}</span>
+              </sc-if>
+            </span>
           </button>
         </sc-for>
       </div>
@@ -49,9 +61,14 @@
               <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ r.pillText }}" tone="{{ r.pillTone }}" size="small" hint-size="70px,22px"></dc-import></span>
             </span>
             <span style="display:block; font-family:'IBM Plex Mono',monospace; font-size:13px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere;">{{ r.detail }}</span>
-            <sc-if value="{{ r.canOpen }}" hint-placeholder-val="{{ false }}">
-              <span style="display:block; margin-top:5px; font-size:14px; font-weight:600; color:var(--teal-ink);">{{ r.openLabel }}</span>
-            </sc-if>
+            <span style="display:flex; gap:14px; flex-wrap:wrap; margin-top:5px;">
+              <sc-if value="{{ r.canOpen }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:14px; font-weight:600; color:var(--teal-ink);">{{ r.openLabel }}</span>
+              </sc-if>
+              <sc-if value="{{ r.canOpenDoc }}" hint-placeholder-val="{{ false }}">
+                <span onClick="{{ r.openDoc }}" role="button" tabindex="0" style="font-size:14px; font-weight:600; color:var(--teal-ink); text-decoration:underline; text-underline-offset:3px; cursor:pointer;">{{ r.docLabel }}</span>
+              </sc-if>
+            </span>
           </button>
         </sc-for>
       </div>

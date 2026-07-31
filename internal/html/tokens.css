@@ -138,6 +138,28 @@ a:hover { color: var(--teal-ink-hover); }
 button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 ::selection { background: var(--selection); }
 
+/* Empty state — the one "nothing here yet" illustration, shared by every list
+ * and detail pane on both surfaces. The motion is decorative: two agents idling
+ * on either end of a quiet link. The reduced-motion rule below stills it. */
+.a2a-empty-bot { animation: a2a-empty-float 4.4s ease-in-out infinite; }
+.a2a-empty-bot--b { animation-delay: -2.2s; }
+.a2a-empty-spark { animation: a2a-empty-travel 3.4s ease-in-out infinite; }
+@keyframes a2a-empty-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@keyframes a2a-empty-travel {
+  0% { transform: translateX(0); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateX(var(--a2a-empty-travel, 55px)); opacity: 0; }
+}
+.a2a-empty-bot--b { animation-name: a2a-empty-float-mirrored; }
+@keyframes a2a-empty-float-mirrored {
+  0%, 100% { transform: scaleX(-1) translateY(0); }
+  50% { transform: scaleX(-1) translateY(-3px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }

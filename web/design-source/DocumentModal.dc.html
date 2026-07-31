@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div onClick="{{ det.dismiss }}" style="position:fixed; inset:0; z-index:220; background:rgba(33,30,23,.5); padding:24px; overflow:auto; display:flex; align-items:flex-start; font-family:'Onest',sans-serif;">
+  <div role="dialog" aria-modal="true" aria-label="{{ det.title }}" style="width:min(920px, 100%); margin:auto; background:var(--surface); border-radius:18px; box-shadow:0 24px 60px -20px rgba(33,30,23,.5); overflow:hidden;">
+
+    <div style="position:sticky; top:0; z-index:2; background:var(--surface); padding:22px 26px 14px; border-bottom:1px solid var(--hairline);">
+      <div style="display:flex; align-items:flex-start; gap:12px; flex-wrap:nowrap; margin-bottom:10px;">
+        <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+          <dc-import name="TypeBadge" type="{{ det.type }}" hint-size="140px,26px"></dc-import>
+          <sc-for list="{{ det.pills }}" as="p" hint-placeholder-count="2">
+            <dc-import name="StatusPill" text="{{ p.text }}" tone="{{ p.tone }}" size="small" hint-size="100px,24px"></dc-import>
+          </sc-for>
+        </span>
+        <button type="button" onClick="{{ det.close }}" aria-label="{{ closeLabel }}" style="flex:0 0 auto; font-family:'Onest',sans-serif; font-size:18px; line-height:1; color:var(--muted); background:transparent; border:0; cursor:pointer; padding:4px 6px;">✕</button>
+      </div>
+      <h2 style="margin:0 0 6px; font-size:24px; line-height:1.25; font-weight:600; letter-spacing:-0.015em; overflow-wrap:anywhere;">{{ det.title }}</h2>
+      <div style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); overflow-wrap:anywhere;">{{ det.idLine }}</div>
+    </div>
+
+    <div style="padding:20px 26px 26px;">
+      <div style="font-size:13px; font-weight:600; color:var(--faint); text-transform:uppercase; letter-spacing:.07em; margin-bottom:9px;">{{ frontmatterLabel }}</div>
+      <div style="overflow-x:auto; margin-bottom:24px;">
+        <table style="width:100%; border-collapse:collapse; font-size:15px;">
+          <tbody>
+            <sc-for list="{{ det.frontmatter }}" as="f" hint-placeholder-count="8">
+              <tr>
+                <td style="{{ f.keyStyle }}">{{ f.key }}</td>
+                <td style="{{ f.valStyle }}">
+                  <sc-if value="{{ f.isChips }}" hint-placeholder-val="{{ false }}">
+                    <span style="display:flex; gap:6px; flex-wrap:wrap;">
+                      <sc-for list="{{ f.chips }}" as="c" hint-placeholder-count="2">
+                        <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; background:var(--canvas); border-radius:6px; padding:4px 9px; overflow-wrap:anywhere;">{{ c }}</span>
+                      </sc-for>
+                    </span>
+                  </sc-if>
+                  <sc-if value="{{ f.isText }}" hint-placeholder-val="{{ true }}">
+                    <span style="{{ f.textStyle }}">{{ f.value }}</span>
+                  </sc-if>
+                </td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="font-size:13px; font-weight:600; color:var(--faint); text-transform:uppercase; letter-spacing:.07em; margin-bottom:9px;">{{ bodyLabel }}</div>
+      <sc-if value="{{ det.hasBody }}" hint-placeholder-val="{{ true }}">
+        <div style="background:var(--page); border-radius:12px; padding:20px 22px; box-shadow:inset 0 0 0 1px var(--border); font-size:16px; line-height:1.7; color:var(--body); white-space:pre-wrap; overflow-wrap:anywhere;">{{ det.body }}</div>
+      </sc-if>
+      <sc-if value="{{ det.noBody }}" hint-placeholder-val="{{ false }}">
+        <div style="background:var(--page); border-radius:12px; padding:16px 18px; box-shadow:inset 0 0 0 1px var(--border); font-size:15px; line-height:1.6; color:var(--muted);">{{ emptyBodyLabel }}</div>
+      </sc-if>
+
+      <div style="margin-top:18px; padding-top:14px; border-top:1px solid var(--hairline); display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--muted);">
+        <span style="overflow-wrap:anywhere;">{{ det.footer }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:980,&quot;height&quot;:720},&quot;det&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;}}">
+// DocumentModal shows ONE artifact the way it exists on disk: the whole
+// frontmatter as a table (every key the envelope carries, not a curated
+// selection) and the body verbatim. The dashboard's detail pane explains a
+// document; this answers the other question — "what is actually in the file".
+//
+// Every value is inserted as text, never markup: artifact content is untrusted.
+class Component extends DCLogic {
+  renderVals() {
+    const ru = document.documentElement.lang === "ru";
+    return {
+      det: this.props.det || { frontmatter: [], pills: [] },
+      closeLabel: ru ? "Закрыть документ" : "Close document",
+      frontmatterLabel: ru ? "Заголовок документа" : "Frontmatter",
+      bodyLabel: ru ? "Тело документа" : "Document body",
+      emptyBodyLabel: ru ? "У этого документа нет тела — весь смысл в полях заголовка выше." : "This document has no body; everything it says lives in the frontmatter above."
+    };
+  }
+}
+
+</script>
+</body>
+</html>
