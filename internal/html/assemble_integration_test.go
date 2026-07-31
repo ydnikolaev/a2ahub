@@ -249,4 +249,29 @@ func TestAssemble_Threads(t *testing.T) {
 	if link.From != responseID || link.To != parentID || link.Kind != "parent" {
 		t.Fatalf("link wrong: %+v", link)
 	}
+
+	if len(data.ArtifactDetails) != 3 {
+		t.Fatalf("ArtifactDetails = %d, want the 3 visible inbox/outbox records: %+v", len(data.ArtifactDetails), data.ArtifactDetails)
+	}
+	byDetailID := map[string]ArtifactDetail{}
+	for _, detail := range data.ArtifactDetails {
+		byDetailID[detail.ID] = detail
+	}
+	responseDetail, ok := byDetailID[responseID]
+	if !ok {
+		t.Fatalf("response detail %s missing: %+v", responseID, data.ArtifactDetails)
+	}
+	if responseDetail.Space != "getvisa" || responseDetail.Body != "response body" ||
+		responseDetail.Envelope["parent"] != parentID || responseDetail.SourceClass != "canonical" {
+		t.Fatalf("response detail is not the canonical show projection: %+v", responseDetail)
+	}
+	parentDetail, ok := byDetailID[parentID]
+	if !ok || parentDetail.Title != hostileTitle || parentDetail.Envelope["title"] != hostileTitle {
+		t.Fatalf("hostile title was not preserved as untrusted detail data: %+v", parentDetail)
+	}
+	for _, fact := range data.Unavailable {
+		if fact.ID == "artifact-detail-bodies" {
+			t.Fatalf("fulfilled artifact detail capability still reported unavailable: %+v", fact)
+		}
+	}
 }

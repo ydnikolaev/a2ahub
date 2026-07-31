@@ -165,6 +165,7 @@ type Item struct {
 	Reasons      []string `json:"reasons,omitempty"`
 	PendingMerge bool     `json:"pendingMerge,omitempty"`
 	SyncStale    bool     `json:"syncStale,omitempty"`
+	YourMove     bool     `json:"yourMove"`
 	// Description is a short human-readable summary (from the artifact body) —
 	// UNTRUSTED, rendered via textContent (D-001). Omitted when the body is empty.
 	Description string `json:"description,omitempty"`

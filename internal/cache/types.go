@@ -59,6 +59,11 @@ type Item struct {
 	// json:"-" (like LatestEventAt): a dashboard-only Go field, so inbox/outbox
 	// `--json` stay byte-stable for their existing consumers.
 	Description string `json:"-"`
+	// YourMove is the canonical "whose move is it" projection for this
+	// artifact. It is dashboard-only for now: the stable inbox/outbox JSON
+	// shape remains unchanged while presentation code stops inferring action
+	// ownership from blocking/deadline labels.
+	YourMove bool `json:"-"`
 }
 
 // SpaceSyncInfo is the mirror snapshot fact the dashboard needs per connected
@@ -120,6 +125,11 @@ type ShowResult struct {
 	Refs      []RefFact      `json:"refs,omitempty"`
 	SyncStale bool           `json:"sync_stale"`
 	SyncAge   string         `json:"sync_age,omitempty"`
+	// Envelope is the heterogeneous, schema-owned frontmatter projection the
+	// HTML detail panel needs. It remains outside `a2a show --json` so that
+	// command's established output contract stays byte-compatible. Values are
+	// untrusted presentation data; renderers must treat them as text only.
+	Envelope map[string]any `json:"-"`
 }
 
 // ContractInfo is one entry in `a2a contracts`' listing (OP-221 second

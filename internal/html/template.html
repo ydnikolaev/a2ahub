@@ -932,9 +932,9 @@ class Component extends DCLogic {
   detailFor(id, fallbackList) {
     const ru = this.state.locale === "ru";
     const d = this.state.data;
-    const a = d.artifactDetails.find(x => x.id === id);
+    const it = (fallbackList || []).find(x => x.id === id);
+    const a = d.artifactDetails.find(x => x.id === id && (!it || x.space === it.space));
     if (!a) {
-      const it = (fallbackList || []).find(x => x.id === id);
       return {
         present: false,
         missingText: it
@@ -1076,6 +1076,8 @@ class Component extends DCLogic {
 
     const scopedInbox = d.inbox.filter(i => this.inScope(i.space));
     const scopedOutbox = d.outbox.filter(i => this.inScope(i.space));
+    // Human-attention scope is intentionally narrower than the agent/system's
+    // canonical `yourMove`: routine protocol moves continue automatically.
     const needsYou = scopedInbox.filter(i => i.blocking || i.gatePending || overdue(i));
     const ovSel = s.ovSel || (needsYou[0] && needsYou[0].id) || (scopedInbox[0] && scopedInbox[0].id) || "";
     const restCount = scopedInbox.length - needsYou.length;
