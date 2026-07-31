@@ -12,12 +12,13 @@ const {
   markdown,
   noFooter = false,
   noHeader = false,
-  slotOwnsMain = false
+  slotOwnsMain = false,
+  lang = 'en'
 } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site).toString();
 ---
 <!doctype html>
-<html lang="en">
+<html lang={lang}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -59,8 +60,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
           toggle.setAttribute('aria-pressed', String(dark));
           toggle.setAttribute('aria-label', dark ? 'Light theme' : 'Dark theme');
           toggle.setAttribute('title', dark ? 'Light theme' : 'Dark theme');
-          if (toggle.classList.contains('design-theme-button')) toggle.textContent = dark ? '☀' : '☾';
-          else toggle.textContent = dark ? 'Light theme' : 'Dark theme';
+          const label = toggle.querySelector('[data-theme-label]');
+          if (label) label.textContent = dark ? 'Light theme' : 'Dark theme';
         });
         announce(`${next} theme selected`);
       }));
@@ -92,12 +93,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
           popover.hidden = !open;
           const owner = document.querySelector(`[data-popover-toggle="${popover.dataset.popover}"]`);
           owner?.setAttribute('aria-expanded', String(open));
-          const caret = owner?.querySelector('[data-caret]'); if (caret) caret.textContent = open ? '▴' : '▾';
         });
-      }));
-      document.querySelectorAll('[data-russian-note]').forEach((button) => button.addEventListener('click', () => {
-        const note = document.querySelector('[data-language-note]');
-        if (note) note.textContent = 'Russian labels are authored, never machine-translated — the localized build is not shipped yet.';
       }));
       const mobileButton = document.querySelector('[data-mobile-menu-toggle]');
       const mobileMenu = document.querySelector('[data-mobile-menu]');

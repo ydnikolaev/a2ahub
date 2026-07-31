@@ -13,6 +13,9 @@ const runtimeOut = join(runtimeDir, 'design-runtime.js');
 await build({
   configFile: false,
   logLevel: 'warn',
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production')
+  },
   build: {
     emptyOutDir: false,
     lib: {
@@ -60,11 +63,12 @@ const font = (family, weight, file) => {
 };
 const fonts = [400, 500, 600, 700].map((weight) => font('Onest', weight, `@fontsource/onest/files/onest-latin-${weight}-normal.woff2`)).join('')
   + [400, 500, 600].map((weight) => font('IBM Plex Mono', weight, `@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-${weight}-normal.woff2`)).join('');
+const guideStyles = `.ssot-doc-body{color:var(--body);font-size:16px;line-height:1.7}.ssot-doc-body>:first-child{margin-top:0}.ssot-doc-body>:last-child{margin-bottom:0}.ssot-doc-body h2,.ssot-doc-body h3,.ssot-doc-body h4{color:var(--text);line-height:1.2;letter-spacing:-.02em}.ssot-doc-body h2{margin:32px 0 12px;padding-top:26px;border-top:1px solid var(--hairline);font-size:25px}.ssot-doc-body h2:first-child{margin-top:0;padding-top:0;border-top:0}.ssot-doc-body h3{margin:25px 0 9px;font-size:20px}.ssot-doc-body p{margin:0 0 15px}.ssot-doc-body ul,.ssot-doc-body ol{padding-left:22px}.ssot-doc-body pre{max-width:100%;overflow:auto;padding:14px 16px;border-radius:10px;background:var(--inverse);color:var(--on-inverse-2);font:14px/1.65 "IBM Plex Mono",monospace}.ssot-doc-body code:not(pre code){padding:2px 5px;border-radius:5px;background:var(--sink);font:.9em/1.5 "IBM Plex Mono",monospace}.ssot-doc-body table{width:100%;display:block;overflow-x:auto;margin:16px 0 22px;border:1px solid var(--border);border-radius:10px;border-collapse:separate;border-spacing:0;font-size:14px}.ssot-doc-body th,.ssot-doc-body td{min-width:120px;padding:10px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}.ssot-doc-body tr:last-child td{border-bottom:0}`;
 
 const runtime = read(runtimeOut).replaceAll('</script>', '<\\/script>');
 const template = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>a2a html — local dashboard</title>
-<style>${fonts}\n/*A2A_SHARED_TOKENS*/\n*{box-sizing:border-box}body{margin:0;background:var(--canvas);color:var(--text);font-family:"Onest","Segoe UI",Helvetica,Arial,sans-serif;font-size:16px;-webkit-font-smoothing:antialiased}button,input{font:inherit}button:focus-visible,a:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}</style></head><body>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>a2a html — local dashboard</title>
+<style>${fonts}\n/*A2A_SHARED_TOKENS*/\n*{box-sizing:border-box}body{margin:0;background:var(--canvas);color:var(--text);font-family:"Onest","Segoe UI",Helvetica,Arial,sans-serif;font-size:16px;-webkit-font-smoothing:antialiased}button,input{font:inherit}button:focus-visible,a:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}${guideStyles}</style></head><body>
 ${root}
 <script type="text/x-dc" data-dc-script>${logic.replaceAll('</script>', '<\\/script>')}</script>
 <script>window.A2A_DEMO=/*A2A_DATA_START*/{}/*A2A_DATA_END*/;window.A2A_DOCS=/*A2A_DOCS_START*/[]/*A2A_DOCS_END*/;window.__resources={};window.__resourceBlobs={};${resourceSetup}</script>

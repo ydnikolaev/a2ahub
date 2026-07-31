@@ -30,7 +30,7 @@
 
   <sc-if value="{{ showTabs }}" hint-placeholder-val="{{ true }}">
     <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin:13px 0 0;">
-      <span style="font-size:14px; color:var(--muted); margin-right:2px;">Space</span>
+      <span style="font-size:14px; color:var(--muted); margin-right:2px;">{{ spaceLabel }}</span>
       <sc-for list="{{ spaceTabs }}" as="t" hint-placeholder-count="4">
         <button type="button" onClick="{{ t.go }}" aria-pressed="{{ t.pressed }}" style="{{ t.style }}">
           <sc-if value="{{ t.hasFaces }}" hint-placeholder-val="{{ false }}">
@@ -52,24 +52,24 @@
 
   <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px 22px; padding:12px 14px; background:var(--page); border-radius:12px; margin-bottom:14px; font-size:14px; color:var(--body);">
     <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px; min-width:0;">
-      <span style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em;">contract</span>
-      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px solid var(--teal-solid);"></span>current</span>
-      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px solid var(--ochre);"></span>drifting</span>
-      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px solid var(--red);"></span>missing</span>
+      <span style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em;">{{ contractLabel }}</span>
+      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px solid var(--teal-solid);"></span>{{ currentLabel }}</span>
+      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px solid var(--ochre);"></span>{{ driftingLabel }}</span>
+      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px solid var(--red);"></span>{{ missingLabel }}</span>
     </span>
     <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px; min-width:0;">
-      <span style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em;">open work</span>
-      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px dashed var(--border-strong);"></span>in flight</span>
-      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px dashed var(--red);"></span>blocking</span>
+      <span style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em;">{{ workLabel }}</span>
+      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px dashed var(--border-strong);"></span>{{ flightLabel }}</span>
+      <span style="display:flex; align-items:center; gap:6px;"><span style="width:22px; height:0; border-top:2px dashed var(--red);"></span>{{ blockingLabel }}</span>
     </span>
     <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px; min-width:0;">
-      <span style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em;">direction</span>
-      <span style="display:flex; align-items:center; gap:6px;"><span style="width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:8px solid var(--muted);"></span>arrow ends at the provider or recipient</span>
+      <span style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em;">{{ directionLabel }}</span>
+      <span style="display:flex; align-items:center; gap:6px;"><span style="width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:8px solid var(--muted);"></span>{{ directionText }}</span>
     </span>
   </div>
 
   <div style="{{ bleedStyle }}">
-  <div ref="{{ boxRef }}" onScroll="{{ onCanvasScroll }}" style="background:var(--canvas); border-radius:20px; padding:16px; overflow-x:auto; box-shadow:0 20px 44px -30px rgba(33,30,23,.55), 0 2px 6px -4px rgba(33,30,23,.3), inset 0 0 0 1px var(--border);">
+  <div ref="{{ boxRef }}" onScroll="{{ onCanvasScroll }}" style="background-color:var(--map-canvas); background-image:radial-gradient(circle at 1px 1px,var(--map-grid) 1px,transparent 1.2px); background-size:18px 18px; border-radius:20px; padding:16px; overflow-x:auto; box-shadow:0 20px 44px -30px rgba(33,30,23,.55), 0 2px 6px -4px rgba(33,30,23,.3), inset 0 0 0 1px var(--border-strong);">
     <div style="{{ canvasStyle }}">
       <svg viewBox="{{ viewBox }}" width="{{ canvasW }}" height="{{ canvasH }}" aria-hidden="true" style="position:absolute; left:0; top:0; z-index:2; overflow:visible;">
         <defs>
@@ -808,7 +808,8 @@ class Component extends DCLogic {
     const d = this.props.data || this.state.data;
     const scope = this.scope();
     const expanded = this.state.expanded;
-    const modes = [["both", "Everything"], ["contracts", "Contract lines"], ["exchanges", "Open work"]].map(([id, label]) => ({
+    const ru = this.props.locale === "ru";
+    const modes = [["both", ru ? "Всё" : "Everything"], ["contracts", ru ? "Контрактные линии" : "Contract lines"], ["exchanges", ru ? "Открытая работа" : "Open work"]].map(([id, label]) => ({
       label, pressed: this.mode() === id, style: this.segStyle(this.mode() === id),
       go: () => this.setState({ mode: id, sel: null })
     }));
@@ -816,7 +817,7 @@ class Component extends DCLogic {
       shellStyle: expanded ? "position:fixed; inset:0; z-index:200; background:rgba(33,30,23,.42); padding:24px; overflow:auto; display:flex; align-items:flex-start;" : "",
       cardStyle: expanded ? CARD_BASE + " width:100%; margin:auto; box-shadow:0 24px 60px -20px rgba(33,30,23,.5);" : CARD_BASE,
       isExpanded: expanded,
-      expandLabel: expanded ? "Close full width" : "Full width ⤢",
+      expandLabel: expanded ? (ru ? "Закрыть" : "Close full width") : (ru ? "Во всю ширину ⤢" : "Full width ⤢"),
       expandStyle: "font-family:'Onest',sans-serif; font-size:14px; line-height:1.4; font-weight:600; border:0; cursor:pointer; padding:7px 13px; border-radius:9px; white-space:nowrap; " +
         (expanded ? "background:var(--inverse); color:var(--on-dark);" : "background:var(--canvas); color:var(--teal-ink);"),
       toggleExpand: () => this.setState({ expanded: !expanded }),
@@ -840,20 +841,26 @@ class Component extends DCLogic {
       popDismiss: () => this.setState({ sel: null }),
       popStop: (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); },
       // the map reads as a wide panel lying over the text column: wider than the body, but bounded
-      bleedStyle: expanded ? "position:relative;" : this.props.wide === false ? "position:relative; margin-left:-22px; margin-right:-22px;" : "position:relative; max-width:100vw; margin-left:min(0px, calc((100% - min(1560px, 100vw - 56px)) / 2)); margin-right:min(0px, calc((100% - min(1560px, 100vw - 56px)) / 2));",
+      bleedStyle: expanded ? "position:relative;" : this.props.wide === false ? "position:relative; margin-left:-22px; margin-right:-22px;" : "position:relative; width:min(1480px, calc(100vw - 32px)); max-width:none; left:50%; transform:translateX(-50%);",
       boxRef: (n) => { this.boxNode = n; if (n && this.measure) setTimeout(this.measure, 0); },
       onCanvasScroll: (ev) => {
         const t = ev.currentTarget;
         if (t.scrollLeft !== this.state.csx || t.scrollTop !== this.state.csy) this.setState({ csx: t.scrollLeft, csy: t.scrollTop });
       }
     };
-    const heading = this.props.heading || "Exchange map";
+    const heading = this.props.heading || (ru ? "Карта обмена" : "Exchange map");
+    const labels = {
+      spaceLabel: ru ? "Спейс" : "Space", contractLabel: ru ? "контракт" : "contract",
+      currentLabel: "current", driftingLabel: ru ? "дрейфует" : "drifting", missingLabel: ru ? "не найден" : "missing",
+      workLabel: ru ? "открытая работа" : "open work", flightLabel: ru ? "в процессе" : "in flight", blockingLabel: ru ? "блокирует" : "blocking",
+      directionLabel: ru ? "направление" : "direction", directionText: ru ? "стрелка заканчивается у provider или получателя" : "arrow ends at the provider or recipient"
+    };
     if (!d) return Object.assign({
       heading, summary: "reading the snapshot…", modes, spaceTabs: [], intro: "",
       canvasStyle: "position:relative; width:1080px; height:300px;", viewBox: "0 0 1080 300", canvasW: 1080, canvasH: 300,
       panels: [], cards: [], edges: [], badges: [], hasPop: false, pop: null, popStyle: "",
       tableRows: [], tableNote: "", showMatrix: false, matrixCols: [], matrixRows: [], matrixNote: "", matrixLegend: ""
-    }, shell);
+    }, shell, labels);
 
     const codes = monoCodes(d.nodes.map(n => n.system));
     // an embedding page can present a subset of spaces (the home page shows two, the dashboard all)
@@ -876,7 +883,7 @@ class Component extends DCLogic {
       if (rest > 0) shown.push({ mono: "+" + rest, title: rest + " more participants", style: faceStyle(shown.length, "rest", active) });
       return shown;
     };
-    const spaceTabs = [{ id: "all", label: "all spaces" }].concat(spacesInScope.map(x => ({ id: x.id, label: x.id })))
+    const spaceTabs = [{ id: "all", label: ru ? "все спейсы" : "all spaces" }].concat(spacesInScope.map(x => ({ id: x.id, label: x.id })))
       .map(x => {
         const active = scope === x.id;
         const faces = x.id === "all" ? [] : facesFor(x.id, active);
@@ -893,13 +900,13 @@ class Component extends DCLogic {
     const bad = cAll.filter(e => e.drift !== "current").length;
     const membersInScope = d.nodes.filter(n => (n.spaces || []).some(sp => inScope(sp)));
 
-    const summary = (scope === "all"
-      ? membersInScope.length + " systems across " + plural(readable.length, "readable space", "readable spaces")
-      : membersInScope.length + " systems in " + scope) +
-      " · " + plural(cAll.length, "contract line", "contract lines") + ", " + bad + " off current · " + plural(xAll.length, "open lane", "open lanes");
+    const summary = ru
+      ? (scope === "all" ? "систем: " + membersInScope.length + " · читаемых спейсов: " + readable.length : "систем в " + scope + ": " + membersInScope.length) + " · контрактных линий: " + cAll.length + ", не current: " + bad + " · открытых связей: " + xAll.length
+      : (scope === "all" ? membersInScope.length + " systems across " + plural(readable.length, "readable space", "readable spaces") : membersInScope.length + " systems in " + scope) + " · " + plural(cAll.length, "contract line", "contract lines") + ", " + bad + " off current · " + plural(xAll.length, "open lane", "open lanes");
 
-    const intro = "You sit on the left; every card on the right is one system inside a space. A strand runs from the system that depends to the system depended on: solid means a contract dependency (consumer → provider), dashed means open work in flight, and the arrowhead marks the receiving end. Badges carry the count or the drift word. Click a strand or a card for the contracts, versions and open items behind it." +
-      (scope === "all" ? " Strands never leave their space — the systems that appear in several spaces are the only links between them." : "");
+    const intro = ru
+      ? "Вы слева; справа — системы внутри спейсов. Сплошная линия показывает контрактную зависимость consumer → provider, пунктир — открытую работу, стрелка — получателя. Badge показывает количество или drift. Нажмите линию или карточку, чтобы открыть контракты, версии и работу за ней." + (scope === "all" ? " Линии не выходят за спейс; связь между спейсами создают только общие участники." : "")
+      : "You sit on the left; every card on the right is one system inside a space. A strand runs from the system that depends to the system depended on: solid means a contract dependency (consumer → provider), dashed means open work in flight, and the arrowhead marks the receiving end. Badges carry the count or the drift word. Click a strand or a card for the contracts, versions and open items behind it." + (scope === "all" ? " Strands never leave their space — the systems that appear in several spaces are the only links between them." : "");
 
     const canvas = this.buildCanvas(d, shown, codes);
 
@@ -931,7 +938,7 @@ class Component extends DCLogic {
       matrixCols: matrix.cols, matrixRows: matrix.rows,
       matrixNote: bridging + " of " + d.nodes.length + " systems belong to more than one space. Because contracts and exchanges never cross a space boundary, those shared systems are the only structural link between spaces.",
       matrixLegend: "Each cell reads contract lines / open items for that system in that space. — means it does not participate; ? means the space is unreadable, so participation is unknown rather than zero. Click a cell to open that space with the system selected."
-    }, canvas, shell);
+    }, canvas, shell, labels);
   }
 }
 

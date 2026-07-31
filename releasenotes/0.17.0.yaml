@@ -1,0 +1,59 @@
+schema: release-notes/v1
+version: "0.17.0"
+released: "2026-07-31"
+headline: "The agent-first public site and human-readable dashboard now share one approved design and one documentation source"
+changes:
+  - id: RN-01700-1
+    kind: feature
+    impact: normal
+    subject: "The public site explains an agent-operated protocol through the approved v4 design"
+    detail: >
+      The Astro site now projects the final Claude Design components for the
+      product overview, interactive exchange map, dashboard demo, documentation,
+      changelog, security and reliability, installation, and roadmap. The map,
+      contract cards, threads, states, spacing, typography and responsive shells
+      are shared with the local dashboard instead of being recreated as a
+      second visual system. Public documentation pages and their Markdown twins
+      are generated from the embedded agent skill corpus.
+    affects: ["public site", "documentation", "dashboard demo"]
+    action:
+      scope: none
+      why: >
+        No user action is required; this is a new explanatory and inspection
+        surface for the existing protocol.
+
+  - id: RN-01700-2
+    kind: feature
+    impact: normal
+    subject: "The local dashboard carries Russian human guidance and the complete embedded manual"
+    detail: >
+      The read-only HTML dashboard now distinguishes synthetic demo data from a
+      real update warning, presents its navigation and explanatory controls in
+      Russian, and adds a human guide for autonomous operation, lifecycle events,
+      all eight artifact types, contract version windows, and agent tooling. Its
+      documentation body is the same trusted Markdown rendered from the embedded
+      skill tree; missing facts and unreadable spaces remain explicit instead of
+      being filled with invented values.
+    affects: ["a2a html", "a2a html --demo", "embedded documentation"]
+    action:
+      scope: none
+      why: >
+        Existing generated dashboards remain read-only and require no migration.
+
+  - id: RN-01700-3
+    kind: fix
+    impact: low
+    subject: "Long pages keep their navigation visible and documentation links load the selected SSOT body"
+    detail: >
+      The public header now remains sticky for the full document instead of one
+      viewport, both documentation rails stay visible on long pages, and sidebar
+      links use real static routes so navigation works without relying on design
+      runtime state. The exchange-map field bleeds beyond its white information
+      card on desktop and uses a distinct warm grid surface in both public and
+      dashboard contexts. Header controls use Lucide icons, while the unfinished
+      public language selector is removed until another locale ships.
+    affects: ["public navigation", "documentation", "exchange map"]
+    action:
+      scope: none
+      why: >
+        No user action is required.

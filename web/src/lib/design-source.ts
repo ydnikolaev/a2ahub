@@ -78,6 +78,10 @@ export function runtimeDesignPage(file: string) {
   if (file === '15-changelog-v4.dc.html') logic = logic.replace('const INDEX = [', 'const INDEX = window.A2A_RELEASE_INDEX || [');
   if (file === '16-docs-v4.dc.html') {
     template = template
+      .replace('<button type="button" onClick="{{ it.go }}" style="{{ it.style }}">{{ it.label }}</button>', '<a href="{{ it.href }}" style="{{ it.style }}">{{ it.label }}</a>')
+      .replace('<sc-if value="{{ isPlaceholder }}" hint-placeholder-val="{{ false }}">', '<sc-if value="{{ hasDocBody }}" hint-placeholder-val="{{ true }}">')
+      .replace('<sc-if value="{{ isThreads }}" hint-placeholder-val="{{ true }}">', '<sc-if value="{{ renderCustomDocs }}" hint-placeholder-val="{{ false }}">')
+      .replace('<sc-if value="{{ isCommands }}" hint-placeholder-val="{{ false }}">', '<sc-if value="{{ renderCustomDocs }}" hint-placeholder-val="{{ false }}">')
       .replace('<div style="background:var(--page); border-radius:14px; padding:20px 22px; box-shadow:inset 0 0 0 1px var(--border);">', '<div data-doc-placeholder data-doc-id="{{ docId }}" style="background:var(--page); border-radius:14px; padding:20px 22px; box-shadow:inset 0 0 0 1px var(--border);">')
       .replace('<div style="font-size:15px; font-weight:600; margin-bottom:10px;">On this page</div>', '<div data-doc-toc><div style="font-size:15px; font-weight:600; margin-bottom:10px;">On this page</div>');
     template = template.replace(
@@ -87,8 +91,9 @@ export function runtimeDesignPage(file: string) {
     logic = logic
       .replace('const DOCS = [', 'const DOCS = window.A2A_DOCS || [')
       .replace('state = { doc: "threads", q: "", copied: "" };', 'state = { doc: ((location.pathname.match(/\\/docs\\/([^/.]+)/) || [])[1] || "threads"), q: "", copied: "" };')
-      .replace('go: () => this.setState({ doc: id })', 'go: () => { history.pushState({}, "", "/docs/" + id + ".html"); this.setState({ doc: id }); }')
+      .replace('label, style: this.itemStyle(this.state.doc === id),', 'label, href: "/docs/" + id + ".html", style: this.itemStyle(this.state.doc === id) + " text-decoration:none;",')
       .replace('docTitle: cur.title,', 'docId: cur.id,\n      docTitle: cur.title,')
+      .replace('isThreads, isCommands, isPlaceholder,', 'isThreads, isCommands, isPlaceholder, hasDocBody: true, renderCustomDocs: false,')
       .replace(
         'docGenerated: isCommands ? "regenerated with every release · last: v0.16.3, 2026-07-30" : "projected at build time from v0.16.3",',
         'docGenerated: isCommands ? "regenerated with every release · last: v" + window.A2A_LATEST_RELEASE.version + ", " + window.A2A_LATEST_RELEASE.released : "projected at build time from v" + window.A2A_LATEST_RELEASE.version,'

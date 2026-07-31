@@ -44,6 +44,14 @@
       const toc = document.querySelector('[data-doc-toc]');
       if (toc) toc.innerHTML = `<div style="font-size:15px;font-weight:600;margin-bottom:10px">On this page</div>${headings.length ? `<div style="display:flex;flex-direction:column;gap:8px">${headings.map((heading) => `<a href="#${heading.id}" style="font-size:15px;line-height:1.45;text-decoration:none">${heading.label}</a>`).join('')}</div>` : '<div style="font-size:15px;line-height:1.55;color:var(--muted)">This page has no subsections.</div>'}`;
     });
+    document.querySelectorAll('[data-guide-doc-body]').forEach((placeholder) => {
+      const id = placeholder.dataset.guideDocId || 'overview';
+      const doc = design.docBodies[id];
+      if (!doc || placeholder.dataset.hydrated === id) return;
+      placeholder.dataset.hydrated = id;
+      placeholder.classList.add('ssot-doc-body');
+      placeholder.innerHTML = doc.html;
+    });
   };
 
   const docsObserver = new MutationObserver(hydrateDocBodies);

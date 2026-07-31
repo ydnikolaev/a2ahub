@@ -9,7 +9,7 @@
 <x-dc>
 <div style="min-width:0; background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5); font-family:'Onest',sans-serif;">
   <sc-if value="{{ missing }}" hint-placeholder-val="{{ false }}">
-    <h3 style="margin:0 0 8px; font-size:22px; font-weight:600;">This artifact has no detail record in the demo fixture</h3>
+    <h3 style="margin:0 0 8px; font-size:22px; font-weight:600;">{{ missingTitle }}</h3>
     <p style="margin:0; font-size:16px; line-height:1.6; color:var(--body);">{{ missingText }}</p>
   </sc-if>
   <sc-if value="{{ present }}" hint-placeholder-val="{{ true }}">
@@ -50,14 +50,14 @@
         </div>
       </sc-for>
       <div style="min-width:0;">
-        <div style="font-size:16px; font-weight:600; margin-bottom:8px;">Facts</div>
+        <div style="font-size:16px; font-weight:600; margin-bottom:8px;">{{ factsLabel }}</div>
         <dc-import name="FactTable" rows="{{ facts }}" hint-size="100%,180px"></dc-import>
       </div>
     </div>
 
     <sc-if value="{{ hasRefs }}" hint-placeholder-val="{{ false }}">
       <div style="border-top:1px solid var(--hairline); padding-top:18px; margin-bottom:18px;">
-        <div style="font-size:16px; font-weight:600; margin-bottom:10px;">Pinned references</div>
+        <div style="font-size:16px; font-weight:600; margin-bottom:10px;">{{ refsLabel }}</div>
         <div style="display:flex; flex-direction:column; gap:8px;">
           <sc-for list="{{ refs }}" as="r" hint-placeholder-count="2">
             <div style="background:var(--page); border-radius:11px; padding:13px 15px; display:flex; align-items:flex-start; gap:12px; flex-wrap:nowrap;">
@@ -74,7 +74,7 @@
 
     <sc-if value="{{ hasEvents }}" hint-placeholder-val="{{ false }}">
       <div style="border-top:1px solid var(--hairline); padding-top:18px; margin-bottom:18px;">
-        <div style="font-size:16px; font-weight:600; margin-bottom:12px;">What happened</div>
+        <div style="font-size:16px; font-weight:600; margin-bottom:12px;">{{ eventsLabel }}</div>
         <div style="display:flex; flex-direction:column; gap:14px;">
           <sc-for list="{{ events }}" as="e" hint-placeholder-count="3">
             <div style="display:flex; gap:14px; align-items:flex-start;">
@@ -94,7 +94,7 @@
         <sc-for list="{{ flags }}" as="f" hint-placeholder-count="1">
           <div style="margin-bottom:4px;">
             <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:4px;">
-              <dc-import name="StatusPill" text="Protocol flag" tone="outline" hint-size="110px,24px"></dc-import>
+              <dc-import name="StatusPill" text="{{ flagLabel }}" tone="outline" hint-size="110px,24px"></dc-import>
               <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:15px; color:var(--attention-ink);">{{ f.code }}</span>
             </div>
             <div style="font-size:15px; line-height:1.5; color:var(--attention-ink); overflow-wrap:anywhere;">{{ f.message }}</div>
@@ -115,11 +115,17 @@
 class Component extends DCLogic {
   renderVals() {
     const d = this.props.det || {};
+    const ru = document.documentElement.lang === "ru";
     const tone = d.calloutTone === "blocking" ? { bg: "var(--blocking-tint)", title: "var(--blocking-ink)", text: "var(--blocking-strong)" } : { bg: "var(--attention-tint)", title: "var(--attention-strong)", text: "var(--attention-ink)" };
     return {
       present: !!d.present,
       missing: d.present === false,
+      missingTitle: ru ? "Для этого артефакта нет подробной записи в снимке" : "This artifact has no detail record in the snapshot",
       missingText: d.missingText || "",
+      factsLabel: ru ? "Факты" : "Facts",
+      refsLabel: ru ? "Закреплённые ссылки" : "Pinned references",
+      eventsLabel: ru ? "Что произошло" : "What happened",
+      flagLabel: ru ? "Флаг протокола" : "Protocol flag",
       type: d.type,
       pills: d.pills || [],
       sourceLine: d.sourceLine || "",
@@ -151,7 +157,7 @@ class Component extends DCLogic {
       })),
       hasFlags: !!(d.flags && d.flags.length),
       flags: d.flags || [],
-      threadLabel: d.threadLabel || "Open thread",
+      threadLabel: d.threadLabel || (ru ? "Открыть тред" : "Open thread"),
       openThread: d.openThread || (() => {}),
       footer: d.footer || ""
     };
