@@ -7,7 +7,7 @@
 </head>
 <body>
 <x-dc>
-<div onClick="{{ det.dismiss }}" style="position:fixed; inset:0; z-index:220; background:rgba(33,30,23,.5); padding:24px; overflow:auto; display:flex; align-items:flex-start; font-family:'Onest',sans-serif;">
+<div onClick="{{ det.dismiss }}" style="position:fixed; inset:0; z-index:400; background:rgba(33,30,23,.5); padding:24px; overflow:auto; display:flex; align-items:flex-start; font-family:'Onest',sans-serif;">
   <div role="dialog" aria-modal="true" aria-label="{{ det.title }}" style="width:min(920px, 100%); margin:auto; background:var(--surface); border-radius:18px; box-shadow:0 24px 60px -20px rgba(33,30,23,.5); overflow:hidden;">
 
     <div style="position:sticky; top:0; z-index:2; background:var(--surface); padding:22px 26px 14px; border-bottom:1px solid var(--hairline);">
@@ -25,11 +25,13 @@
     </div>
 
     <div style="padding:20px 26px 26px;">
-      <div style="font-size:13px; font-weight:600; color:var(--faint); text-transform:uppercase; letter-spacing:.07em; margin-bottom:9px;">{{ frontmatterLabel }}</div>
-      <div style="overflow-x:auto; margin-bottom:24px;">
+      <!-- The handful of fields a person actually reads first, then everything
+           else behind one disclosure. A flat dump of 15 envelope keys buries
+           the document under its own metadata. -->
+      <div style="overflow-x:auto; margin-bottom:14px;">
         <table style="width:100%; border-collapse:collapse; font-size:15px;">
           <tbody>
-            <sc-for list="{{ det.frontmatter }}" as="f" hint-placeholder-count="8">
+            <sc-for list="{{ det.primary }}" as="f" hint-placeholder-count="5">
               <tr>
                 <td style="{{ f.keyStyle }}">{{ f.key }}</td>
                 <td style="{{ f.valStyle }}">
@@ -49,6 +51,41 @@
           </tbody>
         </table>
       </div>
+
+      <sc-if value="{{ det.hasRest }}" hint-placeholder-val="{{ true }}">
+        <div style="margin-bottom:24px; background:var(--page); border-radius:12px; box-shadow:inset 0 0 0 1px var(--border); overflow:hidden;">
+          <button type="button" onClick="{{ toggleRest }}" aria-expanded="{{ restExpanded }}" style="width:100%; display:flex; align-items:center; gap:10px; text-align:left; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--body); background:transparent; border:0; cursor:pointer; padding:13px 16px;">
+            <span style="{{ caretStyle }}">▸</span>
+            <span>{{ restLabel }}</span>
+            <span style="margin-left:auto; font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--muted);">{{ det.restCount }}</span>
+          </button>
+          <sc-if value="{{ restOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:0 16px 8px; overflow-x:auto;">
+              <table style="width:100%; border-collapse:collapse; font-size:15px;">
+                <tbody>
+                  <sc-for list="{{ det.rest }}" as="f" hint-placeholder-count="8">
+                    <tr>
+                      <td style="{{ f.keyStyle }}">{{ f.key }}</td>
+                      <td style="{{ f.valStyle }}">
+                        <sc-if value="{{ f.isChips }}" hint-placeholder-val="{{ false }}">
+                          <span style="display:flex; gap:6px; flex-wrap:wrap;">
+                            <sc-for list="{{ f.chips }}" as="c" hint-placeholder-count="2">
+                              <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; background:var(--canvas); border-radius:6px; padding:4px 9px; overflow-wrap:anywhere;">{{ c }}</span>
+                            </sc-for>
+                          </span>
+                        </sc-if>
+                        <sc-if value="{{ f.isText }}" hint-placeholder-val="{{ true }}">
+                          <span style="{{ f.textStyle }}">{{ f.value }}</span>
+                        </sc-if>
+                      </td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
 
       <div style="font-size:13px; font-weight:600; color:var(--faint); text-transform:uppercase; letter-spacing:.07em; margin-bottom:9px;">{{ bodyLabel }}</div>
       <sc-if value="{{ det.hasBody }}" hint-placeholder-val="{{ true }}">
@@ -74,14 +111,21 @@
 //
 // Every value is inserted as text, never markup: artifact content is untrusted.
 class Component extends DCLogic {
+  state = { rest: false };
+
   renderVals() {
     const ru = document.documentElement.lang === "ru";
+    const det = this.props.det || { primary: [], rest: [], pills: [] };
     return {
-      det: this.props.det || { frontmatter: [], pills: [] },
+      det,
       closeLabel: ru ? "Закрыть документ" : "Close document",
-      frontmatterLabel: ru ? "Заголовок документа" : "Frontmatter",
       bodyLabel: ru ? "Тело документа" : "Document body",
-      emptyBodyLabel: ru ? "У этого документа нет тела — весь смысл в полях заголовка выше." : "This document has no body; everything it says lives in the frontmatter above."
+      emptyBodyLabel: ru ? "У этого документа нет тела — весь смысл в полях заголовка выше." : "This document has no body; everything it says lives in the frontmatter above.",
+      restLabel: ru ? "Остальные поля заголовка" : "The rest of the frontmatter",
+      restOpen: this.state.rest,
+      restExpanded: this.state.rest ? "true" : "false",
+      caretStyle: "display:inline-block; color:var(--muted); transition:transform .15s ease;" + (this.state.rest ? " transform:rotate(90deg);" : ""),
+      toggleRest: () => this.setState(s => ({ rest: !s.rest }))
     };
   }
 }

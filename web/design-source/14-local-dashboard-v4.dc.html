@@ -258,7 +258,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               <dc-import name="EmptyState" title="{{ emptyQueueTitle }}" text="{{ emptyQueueText }}" size="compact" hint-size="100%,240px"></dc-import>
             </sc-if>
             <sc-for list="{{ ovRows }}" as="r" hint-placeholder-count="3">
-              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
+              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
             </sc-for>
             <button data-overview-strip type="button" onClick="{{ goWork }}" style="text-align:left; font-family:'Onest',sans-serif; background:var(--sink); border:0; border-radius:14px; padding:16px 18px; cursor:pointer; display:flex; align-items:center; gap:12px; flex-wrap:nowrap; min-width:0; width:100%; box-sizing:border-box;">
               <span style="flex:1 1 auto; min-width:0; font-size:16px; color:var(--body);">{{ ovRestText }}</span>
@@ -286,10 +286,20 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
       <section aria-label="{{ workAria }}" data-screen-label="Work">
         <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ workTitle }}</h1>
         <p style="margin:0 0 18px; font-size:18px; line-height:1.55; color:var(--body); max-width:700px;">{{ workSub }}</p>
-        <div style="display:flex; align-items:center; gap:2px; background:var(--border); border-radius:9px; padding:3px; width:fit-content; margin-bottom:14px;">
-          <sc-for list="{{ workTabs }}" as="t" hint-placeholder-count="2">
-            <button type="button" onClick="{{ t.go }}" style="{{ t.style }}">{{ t.label }}</button>
-          </sc-for>
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
+          <div style="display:flex; align-items:center; gap:2px; background:var(--border); border-radius:9px; padding:3px; width:fit-content;">
+            <sc-for list="{{ workTabs }}" as="t" hint-placeholder-count="2">
+              <button type="button" onClick="{{ t.go }}" aria-pressed="{{ t.pressed }}" style="{{ t.style }}">{{ t.label }}</button>
+            </sc-for>
+          </div>
+          <!-- Filter by document type. An inbox of eleven mixed items is read
+               one kind at a time: "what did anyone ask me", "what needs a
+               decision". Types with nothing in this scope are not offered. -->
+          <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; row-gap:7px;">
+            <sc-for list="{{ workTypeFilters }}" as="f" hint-placeholder-count="4">
+              <button type="button" onClick="{{ f.go }}" aria-pressed="{{ f.pressed }}" style="{{ f.style }}">{{ f.label }}</button>
+            </sc-for>
+          </div>
         </div>
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
@@ -297,7 +307,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               <dc-import name="EmptyState" title="{{ emptyWorkTitle }}" text="{{ emptyWorkText }}" size="compact" hint-size="100%,240px"></dc-import>
             </sc-if>
             <sc-for list="{{ workRows }}" as="r" hint-placeholder-count="6">
-              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
+              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
             </sc-for>
           </div>
           <dc-import name="ArtifactDetail" det="{{ workDetail }}" hint-size="100%,600px"></dc-import>
@@ -394,37 +404,44 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                   <div style="{{ e.railStyle }}">
                     <span style="{{ e.dotStyle }}"></span>
                     <sc-if value="{{ e.isArtifact }}" hint-placeholder-val="{{ true }}">
-                      <div style="{{ e.cardStyle }}">
-                        <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:6px;">
-                          <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
-                            <dc-import name="TypeBadge" type="{{ e.type }}" hint-size="130px,26px"></dc-import>
-                            <span style="font-size:15px; color:var(--muted);">{{ e.route }}</span>
+                      <div id="{{ e.anchor }}" style="{{ e.cardStyle }}">
+                        <!-- Header row, same grammar as every other card: type,
+                             state, then the machine facts on their own line. -->
+                        <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:8px;">
+                          <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px;">
+                            <dc-import name="TypeBadge" type="{{ e.type }}" size="small" hint-size="130px,24px"></dc-import>
+                            <sc-if value="{{ e.hasState }}" hint-placeholder-val="{{ true }}">
+                              <dc-import name="StatusPill" text="{{ e.state }}" tone="{{ e.stateTone }}" size="small" hint-size="90px,24px"></dc-import>
+                            </sc-if>
                           </span>
-                          <sc-if value="{{ e.hasState }}" hint-placeholder-val="{{ true }}">
-                            <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ e.state }}" tone="{{ e.stateTone }}" size="small" hint-size="90px,24px"></dc-import></span>
-                          </sc-if>
+                          <span style="flex:0 0 auto; font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); text-align:right; white-space:nowrap;">{{ e.when }}</span>
                         </div>
-                        <div style="font-size:17px; line-height:1.4; font-weight:600; overflow-wrap:anywhere; margin-bottom:8px;">{{ e.title }}</div>
-                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted);">
-                          <span style="overflow-wrap:anywhere;">{{ e.id }}</span>
+                        <div style="font-size:17px; line-height:1.4; font-weight:600; overflow-wrap:anywhere; margin-bottom:7px;">{{ e.title }}</div>
+                        <div style="font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.6; color:var(--muted); overflow-wrap:anywhere; margin-bottom:9px;">{{ e.route }}<br>{{ e.id }}</div>
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:7px;">
                           <sc-for list="{{ e.relations }}" as="r" hint-placeholder-count="1">
-                            <span style="{{ r.style }}">↳ {{ r.text }}</span>
+                            <button type="button" onClick="{{ r.go }}" title="{{ r.title }}" style="{{ r.style }}">↳ {{ r.text }}</button>
                           </sc-for>
                           <sc-if value="{{ e.opensChain }}" hint-placeholder-val="{{ false }}">
-                            <span style="background:var(--canvas); border-radius:6px; padding:3px 9px;">{{ opensChainLabel }}</span>
+                            <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); background:var(--canvas); border-radius:6px; padding:4px 10px;">{{ opensChainLabel }}</span>
                           </sc-if>
+                          <button type="button" onClick="{{ e.openDoc }}" style="font-family:'Onest',sans-serif; font-size:14px; font-weight:600; color:var(--teal-ink); background:transparent; border:0; padding:4px 0; margin-left:auto; cursor:pointer; white-space:nowrap;">{{ documentLabel }} →</button>
                         </div>
                       </div>
                     </sc-if>
                     <sc-if value="{{ e.isEvent }}" hint-placeholder-val="{{ false }}">
-                      <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap;">
-                        <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
-                          <span style="font-size:16px; color:var(--text);">{{ e.text }}</span>
-                          <sc-if value="{{ e.hasSubject }}" hint-placeholder-val="{{ false }}">
-                            <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); background:var(--canvas); border-radius:6px; padding:3px 9px; overflow-wrap:anywhere;">{{ subjectPrefix }} {{ e.subjectLabel }}</span>
-                          </sc-if>
-                        </span>
-                        <span style="flex:0 0 auto; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted); white-space:nowrap;">{{ e.meta }}</span>
+                      <!-- Two rows, always: the transition on the first, its
+                           subject on the second. Letting the subject sit inline
+                           whenever it happened to fit made every row a different
+                           shape and the timestamp column ragged. -->
+                      <div>
+                        <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:nowrap;">
+                          <span style="flex:1 1 auto; min-width:0; font-size:16px; color:var(--text); overflow-wrap:anywhere;">{{ e.text }}</span>
+                          <span style="flex:0 0 auto; font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); white-space:nowrap;">{{ e.meta }}</span>
+                        </div>
+                        <sc-if value="{{ e.hasSubject }}" hint-placeholder-val="{{ false }}">
+                          <button type="button" onClick="{{ e.goSubject }}" title="{{ e.subjectTitle }}" style="{{ e.subjectStyle }}">{{ subjectPrefix }} {{ e.subjectLabel }}</button>
+                        </sc-if>
                       </div>
                     </sc-if>
                   </div>
@@ -477,15 +494,15 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
           </sc-if>
           <sc-if value="{{ hasConRows }}" hint-placeholder-val="{{ true }}">
           <div style="min-width:0; background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
-            <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:14px;">
-              <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
-                <dc-import name="TypeBadge" type="contract" hint-size="130px,26px"></dc-import>
-                <dc-import name="StatusPill" text="{{ cdState }}" tone="{{ cdStateTone }}" hint-size="100px,26px"></dc-import>
+            <div style="margin-bottom:14px;">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:7px; margin-bottom:9px;">
+                <dc-import name="TypeBadge" type="contract" size="small" hint-size="130px,24px"></dc-import>
+                <dc-import name="StatusPill" text="{{ cdState }}" tone="{{ cdStateTone }}" size="small" hint-size="100px,24px"></dc-import>
                 <sc-if value="{{ cdCodeBacked }}" hint-placeholder-val="{{ true }}">
-                  <dc-import name="StatusPill" text="{{ codeBackedLabel }}" tone="outline" hint-size="110px,26px"></dc-import>
+                  <dc-import name="StatusPill" text="{{ codeBackedLabel }}" tone="outline" size="small" hint-size="110px,24px"></dc-import>
                 </sc-if>
-              </span>
-              <span style="flex:0 0 auto; font-size:15px; color:var(--muted); text-align:right;">{{ cdSpaceLine }}</span>
+              </div>
+              <div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; line-height:1.55; color:var(--muted); overflow-wrap:anywhere;">{{ cdSpaceLine }}</div>
             </div>
             <h2 style="margin:0 0 8px; font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; overflow-wrap:anywhere;">{{ cdId }}</h2>
             <p style="margin:0 0 18px; font-size:18px; line-height:1.6; color:var(--body); max-width:720px;">{{ cdDescription }}</p>
@@ -497,34 +514,50 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               </div>
             </sc-if>
 
-            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:20px; margin-bottom:18px;">
-              <div style="min-width:0;">
-                <div style="display:flex; align-items:center; gap:7px; font-size:16px; font-weight:600; margin-bottom:8px;">{{ consumerLinesLabel }}<dc-import name="HintDot" text="{{ consumerLinesHint }}" hint-size="17px,17px"></dc-import></div>
-                <div style="display:flex; flex-direction:column; gap:8px;">
-                  <sc-for list="{{ cdLines }}" as="l" hint-placeholder-count="2">
-                    <div style="{{ l.style }}">
-                      <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:4px;">
-                        <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; overflow-wrap:anywhere;">{{ l.route }}</span>
-                        <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ l.drift }}" tone="{{ l.tone }}" size="small" hint-size="80px,24px"></dc-import></span>
-                      </div>
-                      <div style="font-size:15px; color:var(--muted);">{{ l.detail }}</div>
-                    </div>
-                  </sc-for>
-                </div>
+            <!-- Who provides and who consumes, named outright. A contract card
+                 that lists "atlas → checkout" and expects the reader to
+                 remember which end is which fails the one question it exists
+                 to answer. -->
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px;">
+              <div style="flex:1 1 220px; min-width:0; background:var(--teal-tint); border-radius:12px; padding:13px 15px;">
+                <div style="font-size:14px; color:var(--teal-ink); margin-bottom:4px;">{{ providerLabel }}</div>
+                <div style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; color:var(--teal-strong-ink); overflow-wrap:anywhere;">{{ cdProvider }}</div>
               </div>
-              <div style="min-width:0;">
-                <div style="display:flex; align-items:center; gap:7px; font-size:16px; font-weight:600; margin-bottom:8px;">{{ versionWindowLabel }}<dc-import name="HintDot" text="{{ versionWindowHint }}" hint-size="17px,17px"></dc-import></div>
-                <div style="display:flex; flex-direction:column; gap:8px;">
-                  <sc-for list="{{ cdVersions }}" as="v" hint-placeholder-count="3">
-                    <div style="background:var(--page); border-radius:11px; padding:12px 14px;">
-                      <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:4px;">
-                        <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; color:{{ v.color }};">{{ v.version }}</span>
-                        <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ v.state }}" tone="{{ v.tone }}" size="small" hint-size="90px,24px"></dc-import></span>
-                      </div>
-                      <div style="font-size:15px; color:var(--muted);">{{ v.note }}</div>
+              <div style="flex:2 1 300px; min-width:0; background:var(--page); border-radius:12px; padding:13px 15px; box-shadow:inset 0 0 0 1px var(--border);">
+                <div style="font-size:14px; color:var(--muted); margin-bottom:4px;">{{ consumersLabel }}</div>
+                <div style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; overflow-wrap:anywhere;">{{ cdConsumers }}</div>
+              </div>
+            </div>
+
+            <!-- One column, not two. These are two different readings of the
+                 same contract — who sits on which line, and what happened to
+                 each version — and side by side they compressed into unreadable
+                 260px strips. -->
+            <div style="margin-bottom:18px;">
+              <div style="display:flex; align-items:center; gap:7px; font-size:16px; font-weight:600; margin-bottom:9px;">{{ consumerLinesLabel }}<dc-import name="HintDot" text="{{ consumerLinesHint }}" hint-size="17px,17px"></dc-import></div>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <sc-for list="{{ cdLines }}" as="l" hint-placeholder-count="2">
+                  <div style="{{ l.style }}">
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px; margin-bottom:5px;">
+                      <span style="font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; overflow-wrap:anywhere;">{{ l.route }}</span>
+                      <dc-import name="StatusPill" text="{{ l.drift }}" tone="{{ l.tone }}" size="small" hint-size="110px,24px"></dc-import>
                     </div>
-                  </sc-for>
-                </div>
+                    <div style="font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.55; color:var(--muted); overflow-wrap:anywhere;">{{ l.detail }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="margin-bottom:18px;">
+              <div style="display:flex; align-items:center; gap:7px; font-size:16px; font-weight:600; margin-bottom:9px;">{{ versionWindowLabel }}<dc-import name="HintDot" text="{{ versionWindowHint }}" hint-size="17px,17px"></dc-import></div>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <sc-for list="{{ cdVersions }}" as="v" hint-placeholder-count="3">
+                  <div style="background:var(--page); border-radius:11px; padding:12px 15px; box-shadow:inset 0 0 0 1px var(--border); display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:6px;">
+                    <span style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; color:{{ v.color }};">{{ v.version }}</span>
+                    <dc-import name="StatusPill" text="{{ v.state }}" tone="{{ v.tone }}" size="small" hint-size="90px,24px"></dc-import>
+                    <span style="flex:1 1 auto; min-width:0; font-size:15px; color:var(--muted); text-align:right; overflow-wrap:anywhere;">{{ v.note }}</span>
+                  </div>
+                </sc-for>
               </div>
             </div>
 
@@ -654,11 +687,12 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ versionsTitle }}</h1>
         <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:760px;">{{ verSub }}</p>
 
-        <!-- The binary you have and the release notes that explain it are one
-             story, so they share one page. The changelog below is projected
-             from releasenotes/*.yaml — the same SSOT a2ahub.dev/changelog reads,
-             never a second hand-maintained copy. -->
-        <div style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:20px;">
+        <!-- The binary you have and the notes that explain it are one story, so
+             they share one page. Everything below is the SAME surface the public
+             changelog publishes — filters, authored change blocks with copyable
+             commands, the version index and the timeline rail — projected from
+             releasenotes/*.yaml, never a second hand-maintained copy. -->
+        <div style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:22px;">
           <div style="display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start;">
             <div style="flex:1 1 320px; min-width:0;">
               <div style="display:flex; align-items:center; gap:7px; font-size:18px; font-weight:600; margin-bottom:14px;">{{ localBinaryLabel }}<dc-import name="HintDot" text="{{ localBinaryHint }}" hint-size="17px,17px"></dc-import></div>
@@ -677,8 +711,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               <dc-import name="FactTable" rows="{{ verFacts }}" hint-size="100%,200px"></dc-import>
             </div>
 
-            <!-- Hidden entirely when there is no candidate: an "Update candidate:
-                 none" card is a card that teaches nothing. -->
             <sc-if value="{{ hasUpdate }}" hint-placeholder-val="{{ true }}">
               <div style="flex:1 1 320px; min-width:0; background:var(--attention-tint); border-radius:14px; padding:18px 20px;">
                 <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
@@ -686,76 +718,134 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                   <dc-import name="StatusPill" text="{{ verUpdateStatus }}" tone="attention" size="small" hint-size="90px,24px"></dc-import>
                 </div>
                 <div style="font-size:17px; line-height:1.45; font-weight:600; color:var(--attention-strong); margin-bottom:12px;">{{ verHeadline }}</div>
-                <div style="display:flex; flex-direction:column; gap:8px;">
-                  <sc-for list="{{ verChanges }}" as="c" hint-placeholder-count="4">
-                    <div style="background:var(--surface); border-radius:10px; padding:11px 13px;">
-                      <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:5px;">
-                        <dc-import name="StatusPill" text="{{ c.kind }}" tone="{{ c.tone }}" size="small" hint-size="70px,24px"></dc-import>
-                        <span style="font-size:14px; color:var(--muted);">{{ impactLabel }} {{ c.impact }}</span>
-                      </div>
-                      <div style="font-size:15px; line-height:1.5; color:var(--text);">{{ c.subject }}</div>
-                    </div>
-                  </sc-for>
-                </div>
-                <button type="button" onClick="{{ goLatestNotes }}" style="margin-top:12px; padding:0; border:0; background:transparent; cursor:pointer; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--teal-ink);">{{ readNotesLabel }} ↓</button>
+                <button type="button" onClick="{{ goLatestNotes }}" style="padding:0; border:0; background:transparent; cursor:pointer; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--teal-ink);">{{ readNotesLabel }} ↓</button>
               </div>
             </sc-if>
           </div>
         </div>
 
-        <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
-          <h2 style="margin:0; font-size:24px; font-weight:600; letter-spacing:-0.01em;">{{ releaseNotesLabel }}</h2>
-          <span style="font-size:15px; color:var(--muted);">{{ releaseNotesNote }}</span>
+        <div style="margin-bottom:22px;">
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px;">
+            <span style="font-size:15px; color:var(--muted);">{{ kindLabel }}</span>
+            <sc-for list="{{ kindFilters }}" as="f" hint-placeholder-count="4">
+              <button type="button" onClick="{{ f.go }}" aria-pressed="{{ f.pressed }}" style="{{ f.style }}">{{ f.label }}</button>
+            </sc-for>
+            <span style="width:1px; height:24px; background:var(--border); margin:0 4px;"></span>
+            <span style="font-size:15px; color:var(--muted);">{{ actionLabel }}</span>
+            <sc-for list="{{ actionFilters }}" as="f" hint-placeholder-count="3">
+              <button type="button" onClick="{{ f.go }}" aria-pressed="{{ f.pressed }}" style="{{ f.style }}">{{ f.label }}</button>
+            </sc-for>
+          </div>
+          <div style="margin-top:10px; font-size:15px; color:var(--muted);">{{ releaseNotesNote }}</div>
         </div>
 
-        <sc-if value="{{ noReleases }}" hint-placeholder-val="{{ false }}">
-          <dc-import name="EmptyState" title="{{ emptyReleasesTitle }}" text="{{ emptyReleasesText }}" size="compact" hint-size="100%,240px"></dc-import>
-        </sc-if>
+        <div style="display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start;">
+          <div style="flex:3 1 420px; min-width:0; display:flex; flex-direction:column; gap:16px;">
 
-        <div style="display:flex; flex-direction:column; gap:16px;">
-          <sc-for list="{{ verReleases }}" as="r" hint-placeholder-count="3">
-            <article id="{{ r.anchor }}" style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06); scroll-margin-top:160px;">
-              <div style="display:flex; align-items:flex-start; gap:12px; flex-wrap:nowrap; margin-bottom:8px;">
-                <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:6px;">
-                  <span style="font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600;">{{ r.version }}</span>
-                  <span style="font-size:15px; color:var(--muted);">{{ r.date }}</span>
-                  <sc-if value="{{ r.isCurrent }}" hint-placeholder-val="{{ false }}">
-                    <dc-import name="StatusPill" text="{{ r.currentLabel }}" tone="healthy" size="small" hint-size="120px,24px"></dc-import>
-                  </sc-if>
-                </span>
-                <span style="flex:0 0 auto; font-size:15px; color:var(--muted);">{{ r.count }}</span>
-              </div>
-              <h3 style="margin:0 0 16px; font-size:22px; line-height:1.35; font-weight:600; letter-spacing:-0.01em; max-width:760px; text-wrap:balance;">{{ r.headline }}</h3>
-              <div style="display:flex; flex-direction:column; gap:12px;">
-                <sc-for list="{{ r.changes }}" as="c" hint-placeholder-count="3">
-                  <div style="background:var(--page); border-radius:14px; padding:16px 18px;">
-                    <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:8px;">
-                      <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
-                        <dc-import name="StatusPill" text="{{ c.kind }}" tone="{{ c.tone }}" size="small" hint-size="90px,24px"></dc-import>
-                        <span style="font-size:15px; color:var(--muted);">{{ impactLabel }} {{ c.impact }}</span>
-                      </span>
-                      <span style="flex:0 0 auto; font-size:14px; color:var(--faint); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ c.affects }}</span>
-                    </div>
-                    <div style="font-size:18px; line-height:1.4; font-weight:600; margin-bottom:8px;">{{ c.subject }}</div>
-                    <p style="margin:0 0 12px; font-size:16px; line-height:1.6; color:var(--body); max-width:760px;">{{ c.detail }}</p>
-                    <div style="{{ c.actionStyle }}">
-                      <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap;">
-                        <dc-import name="StatusPill" text="{{ c.actionLabel }}" tone="{{ c.actionTone }}" size="small" hint-size="130px,24px"></dc-import>
-                        <span style="flex:1 1 260px; min-width:0; font-size:15px; line-height:1.55; color:var(--body);">{{ c.why }}</span>
+            <sc-if value="{{ noReleases }}" hint-placeholder-val="{{ false }}">
+              <dc-import name="EmptyState" title="{{ emptyReleasesTitle }}" text="{{ emptyReleasesText }}" size="compact" hint-size="100%,240px"></dc-import>
+            </sc-if>
+
+            <sc-for list="{{ verReleases }}" as="r" hint-placeholder-count="3">
+              <article id="{{ r.anchor }}" style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06); scroll-margin-top:170px;">
+                <div style="display:flex; align-items:flex-start; gap:12px; flex-wrap:nowrap; margin-bottom:8px;">
+                  <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:6px;">
+                    <span style="font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600;">{{ r.version }}</span>
+                    <span style="font-size:15px; color:var(--muted);">{{ r.date }}</span>
+                    <sc-if value="{{ r.isCurrent }}" hint-placeholder-val="{{ false }}">
+                      <dc-import name="StatusPill" text="{{ r.currentLabel }}" tone="healthy" size="small" hint-size="120px,24px"></dc-import>
+                    </sc-if>
+                  </span>
+                  <span style="flex:0 0 auto; font-size:15px; color:var(--muted); text-align:right;">{{ r.count }}</span>
+                </div>
+                <h3 style="margin:0 0 16px; font-size:22px; line-height:1.35; font-weight:600; letter-spacing:-0.01em; max-width:760px; text-wrap:balance;">{{ r.headline }}</h3>
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                  <sc-for list="{{ r.changes }}" as="c" hint-placeholder-count="3">
+                    <div style="background:var(--page); border-radius:14px; padding:16px 18px;">
+                      <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:8px;">
+                        <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+                          <dc-import name="StatusPill" text="{{ c.kind }}" tone="{{ c.tone }}" size="small" hint-size="90px,24px"></dc-import>
+                          <span style="font-size:15px; color:var(--muted);">{{ impactLabel }} {{ c.impact }}</span>
+                        </span>
+                        <span style="flex:0 0 auto; font-size:14px; color:var(--faint); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere; text-align:right;">{{ c.affects }}</span>
                       </div>
-                      <sc-if value="{{ c.hasCommands }}" hint-placeholder-val="{{ false }}">
-                        <div style="display:flex; flex-direction:column; gap:7px; margin-top:10px;">
-                          <sc-for list="{{ c.commands }}" as="cmd" hint-placeholder-count="1">
-                            <div style="background:var(--inverse); border-radius:9px; padding:10px 13px; font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--on-inverse-2); overflow-wrap:anywhere;">{{ cmd }}</div>
-                          </sc-for>
+                      <div style="font-size:18px; line-height:1.4; font-weight:600; margin-bottom:8px;">{{ c.subject }}</div>
+                      <p style="margin:0 0 12px; font-size:16px; line-height:1.6; color:var(--body); max-width:760px;">{{ c.detail }}</p>
+                      <div style="{{ c.actionStyle }}">
+                        <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap;">
+                          <dc-import name="StatusPill" text="{{ c.actionLabel }}" tone="{{ c.actionTone }}" size="small" hint-size="130px,24px"></dc-import>
+                          <span style="flex:1 1 260px; min-width:0; font-size:15px; line-height:1.55; color:var(--body);">{{ c.why }}</span>
                         </div>
-                      </sc-if>
+                        <sc-if value="{{ c.hasCommands }}" hint-placeholder-val="{{ false }}">
+                          <div style="display:flex; flex-direction:column; gap:7px; margin-top:12px;">
+                            <sc-for list="{{ c.commands }}" as="cmd" hint-placeholder-count="1">
+                              <div style="background:var(--inverse); border-radius:9px; padding:10px 13px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                                <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--on-inverse-faint);">{{ cmd.role }}</span>
+                                <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--on-inverse-2); overflow-wrap:anywhere;">{{ cmd.text }}</span>
+                                <button type="button" onClick="{{ cmd.copy }}" style="{{ cmd.style }}">{{ cmd.label }}</button>
+                              </div>
+                            </sc-for>
+                          </div>
+                        </sc-if>
+                      </div>
                     </div>
+                  </sc-for>
+                </div>
+              </article>
+            </sc-for>
+
+            <section id="version-index" style="background:var(--surface); border-radius:18px; padding:22px 26px 16px; box-shadow:0 1px 2px rgba(33,30,23,.06); scroll-margin-top:170px;">
+              <h3 style="margin:0 0 6px; font-size:20px; font-weight:600;">{{ versionIndexTitle }}</h3>
+              <p style="margin:0 0 14px; font-size:15px; line-height:1.6; color:var(--muted); max-width:700px;">{{ versionIndexText }}</p>
+              <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; font-size:15px; min-width:560px;">
+                  <thead>
+                    <tr>
+                      <th style="text-align:left; padding:10px 16px 9px 0; font-size:14px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border); white-space:nowrap;">{{ versionColLabel }}</th>
+                      <th style="text-align:left; padding:10px 16px 9px 0; font-size:14px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border); white-space:nowrap;">{{ dateColLabel }}</th>
+                      <th style="text-align:left; padding:10px 0 9px; font-size:14px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border);">{{ headlineColLabel }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <sc-for list="{{ indexRows }}" as="row" hint-placeholder-count="12">
+                      <tr>
+                        <td style="{{ row.cellVersion }}">{{ row.version }}</td>
+                        <td style="{{ row.cellDate }}">{{ row.date }}</td>
+                        <td style="{{ row.cellHeadline }}">{{ row.headline }}</td>
+                      </tr>
+                    </sc-for>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <aside style="flex:1 1 250px; min-width:0; display:flex; flex-direction:column; gap:14px;">
+            <div style="background:var(--surface); border-radius:18px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+              <div style="font-size:16px; font-weight:600; margin-bottom:12px;">{{ timelineLabel }}</div>
+              <div style="display:flex; flex-direction:column; gap:2px;">
+                <sc-for list="{{ timeline }}" as="t" hint-placeholder-count="8">
+                  <button type="button" onClick="{{ t.go }}" style="{{ t.style }}">
+                    <span style="{{ t.dotStyle }}"></span>
+                    <span style="font-family:'IBM Plex Mono',monospace; font-weight:600; color:var(--text);">{{ t.version }}</span>
+                    <span style="margin-left:auto; color:var(--muted); font-size:14px;">{{ t.date }}</span>
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+            <div style="background:var(--surface); border-radius:18px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+              <div style="font-size:16px; font-weight:600; margin-bottom:10px;">{{ checkYouRunLabel }}</div>
+              <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
+                <sc-for list="{{ sideCommands }}" as="sc" hint-placeholder-count="2">
+                  <div style="background:var(--inverse); border-radius:9px; padding:10px 13px; display:flex; align-items:center; gap:10px;">
+                    <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--on-inverse-2); overflow-wrap:anywhere;">{{ sc.text }}</span>
+                    <button type="button" onClick="{{ sc.copy }}" style="{{ sc.style }}">{{ sc.label }}</button>
                   </div>
                 </sc-for>
               </div>
-            </article>
-          </sc-for>
+              <p style="margin:0; font-size:15px; line-height:1.55; color:var(--muted);">{{ securityNoteLabel }}</p>
+            </div>
+          </aside>
         </div>
       </section>
     </sc-if>
@@ -935,7 +1025,7 @@ const DASHBOARD_I18N = {
     backOverview:"Back to Overview", viewsLabel:"Views", more:"More", localeGroup:"Interface language", space:"Space",
     errorTitle:"Could not read demo data", errorPrefix:"The dashboard is a read-only projection of", errorSuffix:". Missing facts are never inferred.",
     overviewQueue:"Waiting for your decision", overviewQueueNote:"ordered by consequence", openWork:"Open Work", snapshotReliability:"Snapshot reliability",
-    work:"Work", threads:"One intent, one thread", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
+    work:"Work", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
     whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Causal timeline", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Flags on this thread — surfaced, never dropped",
     contracts:"Interfaces with history", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
     network:"Who depends on whom", networkSub:"A contract dependency runs from consumer to provider; an open exchange is work in flight. Select one space or keep all spaces visible to see the systems that connect them. Click any line or card for detail.", exchangeMap:"Exchange map",
@@ -962,7 +1052,7 @@ const DASHBOARD_I18N = {
     backOverview:"Вернуться к обзору", viewsLabel:"Разделы", more:"Ещё", localeGroup:"Язык интерфейса", space:"Спейс",
     errorTitle:"Не удалось прочитать данные", errorPrefix:"Дашборд только читает и показывает", errorSuffix:". Чего в файле нет, того он не придумывает.",
     overviewQueue:"Ждёт вашего решения", overviewQueueNote:"сверху то, где цена ошибки выше", openWork:"Открыть работу", snapshotReliability:"Насколько свежие данные",
-    work:"Работа", threads:"Одна задача — один тред", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. Полная история — кто что сделал и в каком порядке — в снимок не попала.",
+    work:"Работа", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. Полная история — кто что сделал и в каком порядке — в снимок не попала.",
     whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"Как всё происходило", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
     contracts:"Интерфейсы и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас —", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
     network:"Кто от кого зависит", networkSub:"Сплошная линия — зависимость от контракта: потребитель слева, поставщик справа. Пунктир — незакрытая работа. Выберите спейс или оставьте все, чтобы увидеть, кто их связывает. Нажмите на линию или карточку — откроются подробности.", exchangeMap:"Карта обмена",
@@ -1039,6 +1129,51 @@ const GUIDE_GROUP_RU = { Start:"Начало", Concepts:"Концепции", Re
 // the bottom of Spaces, next to the freshness they qualify. `docs` replaces it —
 // the embedded SSOT corpus deserves its own route rather than hiding inside Guide.
 const VIEW_IDS = ["overview","work","threads","contracts","network","spaces","versions","docs","guide"];
+// Release-note vocabulary, shared with the public changelog surface.
+const KIND_TONE = { fix: "healthy", feature: "agent", feat: "agent", policy: "neutral", "known-issue": "attention", security: "blocking" };
+const KIND_RU = { fix: "исправление", feature: "новое", feat: "новое", policy: "правило", "known-issue": "известная проблема", security: "безопасность" };
+const VERSION_KINDS = ["all", "fix", "feat", "policy", "known-issue"];
+const VERSION_ACTIONS = ["all", "local", "none"];
+// One colour per lifecycle transition, so the shape of an exchange reads before
+// a word does. Teal = it opened or moved forward, plum = someone answered,
+// green = it settled, ochre = someone pushed back, red = it stopped.
+// The eight document types in words, shared by the type filters and anywhere
+// else a bare protocol type would otherwise reach a person.
+// Russian counts three ways, and "1 линий" is the tell that a UI was written in
+// English first. One helper, used wherever a number precedes a noun.
+function ruPlural(n, one, few, many) {
+  const mod10 = n % 10, mod100 = n % 100;
+  const word = (mod10 === 1 && mod100 !== 11) ? one : ((mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) ? few : many);
+  return n + " " + word;
+}
+// Version-state words. The protocol enum reaches prose in a few places where a
+// pill is not available, and "retired" inside a Russian sentence reads as a bug.
+function STATE_WORDS(ru) {
+  return ru
+    ? { published:"опубликована", deprecated:"выводится", retired:"снята", draft:"черновик" }
+    : { published:"published", deprecated:"deprecated", retired:"retired", draft:"draft" };
+}
+function TYPE_WORDS(ru) {
+  return ru
+    ? { contract:"Контракт", requirement:"Требование", question:"Вопрос", work_request:"Запрос работы", decision:"Решение", handoff:"Передача", response:"Ответ", announcement:"Объявление" }
+    : { contract:"Contract", requirement:"Requirement", question:"Question", work_request:"Work request", decision:"Decision", handoff:"Handoff", response:"Response", announcement:"Announcement" };
+}
+// Drift, in words a person can act on. "behind" and "missing" are protocol
+// enums; on a card they have to say what actually happened to that consumer.
+function DRIFT_WORDS(ru) {
+  return ru
+    ? { current:"на последней", behind:"отстал на мажорную", deprecated:"выводится", retired:"версия снята", missing:"версии нет у поставщика", dangling:"поставщик ушёл" }
+    : { current:"on the latest", behind:"one major behind", deprecated:"being retired", retired:"version retired", missing:"provider has no such major", dangling:"provider left" };
+}
+const TRANSITION_TONE = {
+  submit: "var(--teal-solid)", publish: "var(--teal-solid)", acknowledge: "var(--teal-hairline)",
+  accept: "var(--teal-solid)", start: "var(--teal-solid)", unblock: "var(--teal-solid)",
+  respond: "var(--plum)", supersede: "var(--plum)", propose: "var(--plum)",
+  verify: "var(--green)", close: "var(--green)", approve: "var(--green)", satisfy: "var(--green)",
+  dispute: "var(--ochre)", note: "var(--border-strong)",
+  block: "var(--red)", decline: "var(--red)", reject: "var(--red)",
+  cancel: "var(--blocking-line)", withdraw: "var(--blocking-line)", retire: "var(--muted)", deprecate: "var(--ochre)"
+};
 const DRIFT_TONE = { current: "healthy", behind: "attention", deprecated: "attention", retired: "neutral", missing: "blockingStrong", dangling: "outline" };
 const STATE_TONE = { published: "healthy", retired: "neutral", deprecated: "attention", disputed: "attention", submitted: "neutral", in_progress: "neutral", accepted: "neutral", acknowledged: "neutral", proposed: "attention", closed: "healthy" };
 function mono(s) { return String(s || "?").slice(0, 2).toUpperCase(); }
@@ -1054,12 +1189,35 @@ function monoCodes(names) {
   return out;
 }
 function overdue(it) { return (it.reasons || []).some(r => r === "overdue-on-me" || r === "needed-by-passed"); }
+// One date format across the whole page: DD.MM.YYYY HH:MM, no timezone suffix.
+// The dashboard is a single-timezone read (everything is UTC by construction),
+// so stamping " UTC" on every row added noise without adding information — and
+// it was the only place mixing a mono clock into proportional prose.
 function when(iso) {
   if (!iso) return "";
   const d = new Date(iso);
   if (isNaN(d)) return iso;
   const p = (n) => String(n).padStart(2, "0");
-  return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear() + " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()) + " UTC";
+  return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear() + " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
+}
+// Ages arrive from Go in one compact vocabulary ("just now", "5m", "3h", "2d",
+// "4w"). Localising them HERE keeps the assembler locale-free and stops
+// "свежий just now" — a Russian sentence ending in English.
+const AGE_RU = { m: " мин", h: " ч", d: " д", w: " нед" };
+function age(value) {
+  const raw = String(value == null ? "" : value);
+  if (!raw || document.documentElement.lang !== "ru") return raw;
+  if (raw === "just now") return "только что";
+  const m = raw.match(/^(\d+)([mhdw])$/);
+  return m ? m[1] + AGE_RU[m[2]] : raw;
+}
+// Deadlines and other authored dates are plain ISO days in the envelope. They
+// render in the same DD.MM.YYYY shape as everything else rather than leaking
+// the storage format into the interface.
+function isoDay(value) {
+  const raw = String(value == null ? "" : value);
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[3] + "." + m[2] + "." + m[1] : raw;
 }
 function day(iso) {
   if (!iso) return "";
@@ -1086,7 +1244,7 @@ function normalizeDashboardData(input) {
 }
 
 class Component extends DCLogic {
-  state = { data: null, error: "", view: "overview", space: "all", ovSel: "", workTab: "incoming", workSel: "", threadSel: "", conSel: "", doc: "overview", docQ: "", openDoc: null, more: false, navW: 0, theme: "light", locale: "en" };
+  state = { data: null, error: "", view: "overview", space: "all", ovSel: "", workTab: "incoming", workSel: "", threadSel: "", conSel: "", doc: "overview", docQ: "", openDoc: null, tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en" };
 
   componentDidMount() {
     // the primary nav shows as many views as fit and folds the rest into More
@@ -1145,6 +1303,41 @@ class Component extends DCLogic {
       (active ? "background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.14);" : "background:transparent; color:var(--muted);");
   }
 
+  // Copy-to-clipboard for the release-note commands. Same two-tier approach the
+  // public changelog uses: the async Clipboard API where it exists, a hidden
+  // textarea where it does not — and a visible failure state either way, because
+  // a copy button that silently does nothing is worse than no button.
+  copy(text) {
+    const done = () => { this.setState({ copied: text }); clearTimeout(this._copyT); this._copyT = setTimeout(() => this.setState({ copied: "" }), 2400); };
+    const fail = () => { this.setState({ copied: "err:" + text }); clearTimeout(this._copyT); this._copyT = setTimeout(() => this.setState({ copied: "" }), 3000); };
+    const legacy = () => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text; ta.style.cssText = "position:fixed; left:-9999px; top:0;";
+        document.body.appendChild(ta); ta.select();
+        const ok = document.execCommand("copy"); document.body.removeChild(ta);
+        ok ? done() : fail();
+      } catch (e) { fail(); }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, legacy); else legacy();
+  }
+
+  cmdBlock(text, ru) {
+    const c = this.state.copied, ok = c === text, err = c === "err:" + text;
+    return {
+      text,
+      copy: () => this.copy(text),
+      label: ok ? (ru ? "Скопировано" : "Copied") : err ? (ru ? "Не вышло" : "Copy failed") : (ru ? "Копировать" : "Copy"),
+      style: "flex:0 0 auto; font-family:'Onest',sans-serif; font-size:14px; font-weight:600; border:0; border-radius:8px; padding:5px 11px; cursor:pointer; white-space:nowrap; " +
+        (ok ? "background:var(--green); color:var(--on-solid);" : err ? "background:var(--red); color:var(--on-solid);" : "background:var(--inverse-3); color:var(--teal-on-dark);")
+    };
+  }
+
+  filterChip(active) {
+    return "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:6px 12px; border-radius:8px; " +
+      (active ? "background:var(--primary); color:var(--on-primary);" : "background:var(--surface); color:var(--body);");
+  }
+
   chip(open) {
     return "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--text); background:var(--canvas); border:0; border-radius:10px; padding:11px 12px; cursor:pointer; white-space:nowrap;" + (open ? " box-shadow:0 0 0 2px var(--focus);" : "");
   }
@@ -1173,6 +1366,15 @@ class Component extends DCLogic {
   // is to show the file as it is), plus the verbatim body. Scalars render as
   // text, lists as chips, nested objects as `key: value` lines. Everything goes
   // through textContent downstream; nothing here may become markup.
+  // The few frontmatter fields a reader actually opens a document for, in the
+  // order they answer questions: when, how urgent, is it blocking, by when, who
+  // wrote it. Everything else the envelope carries is true and kept — it just
+  // sits behind one disclosure instead of burying the body.
+  PRIMARY_KEYS() { return ["created", "priority", "blocking", "needed_by", "actor", "classification"]; }
+
+  // Flattens one artifact into the modal's shape. Scalars render as text, lists
+  // as chips, nested objects as `key: value` lines. Everything goes through
+  // textContent downstream; nothing here may become markup.
   openDocVals() {
     const ru = this.state.locale === "ru";
     const sel = this.state.openDoc;
@@ -1187,24 +1389,47 @@ class Component extends DCLogic {
       if (typeof v === "object") return Object.keys(v).map(k => k + ": " + flat(v[k])).join(" · ");
       return String(v);
     };
-    const keyStyle = "width:220px; padding:10px 16px 10px 0; vertical-align:top; color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere;";
+    const LABELS_RU = {
+      created: "создано", priority: "приоритет", blocking: "блокирует", needed_by: "дедлайн",
+      actor: "автор", classification: "уровень доступа", category: "категория", from: "от",
+      to: "кому", id: "идентификатор", thread: "тред", type: "тип", title: "заголовок",
+      schema: "схема", space: "спейс", parent: "отвечает на", result: "результат", refs: "ссылки"
+    };
+    const LABELS_EN = {
+      created: "created", priority: "priority", blocking: "blocking", needed_by: "due",
+      actor: "author", classification: "classification"
+    };
+    const humanKey = (k) => ru ? (LABELS_RU[k] || k) : (LABELS_EN[k] || k);
+    const humanValue = (k, raw) => {
+      if (k === "created") return when(raw);
+      if (k === "needed_by") return isoDay(raw);
+      if (typeof raw === "boolean") return raw ? (ru ? "да" : "yes") : (ru ? "нет" : "no");
+      return flat(raw);
+    };
+    const keyStyle = "width:230px; padding:10px 16px 10px 0; vertical-align:top; color:var(--muted); font-size:15px; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere;";
+    const rawKeyStyle = "width:230px; padding:10px 16px 10px 0; vertical-align:top; color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere;";
     const valStyle = "padding:10px 0; vertical-align:top; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere;";
-    const rows = Object.keys(e).sort().map(k => {
+    const row = (k, mono) => {
       const raw = e[k];
       const chips = Array.isArray(raw) && raw.every(x => typeof x !== "object");
       return {
-        key: k, keyStyle, valStyle,
+        key: mono ? k : humanKey(k), keyStyle: mono ? rawKeyStyle : keyStyle, valStyle,
         isChips: chips, chips: chips ? raw.map(String) : [],
-        isText: !chips, value: flat(raw),
+        isText: !chips, value: humanValue(k, raw),
         textStyle: "font-size:15px; line-height:1.6; color:var(--body);"
       };
-    });
+    };
+    const primaryKeys = this.PRIMARY_KEYS().filter(k => e[k] !== undefined && e[k] !== null && e[k] !== "");
+    const restKeys = Object.keys(e).sort().filter(k => primaryKeys.indexOf(k) === -1);
     const pills = [{ text: String(a.state || "").replace("_", " "), tone: STATE_TONE[a.state] || "neutral" }];
-    if (a.sync_stale) pills.push({ text: (ru ? "спейс устарел " : "space stale ") + a.sync_age, tone: "attention" });
+    if (a.sync_stale) pills.push({ text: (ru ? "спейс устарел " : "space stale ") + age(a.sync_age), tone: "attention" });
     return {
       type: a.type, title: a.title, pills,
       idLine: a.id + " · " + a.space + " · " + a.from + " → " + (a.to || []).join(", "),
-      frontmatter: rows,
+      primary: primaryKeys.map(k => row(k, false)),
+      rest: restKeys.map(k => row(k, true)),
+      hasRest: restKeys.length > 0,
+      restCount: String(restKeys.length),
       hasBody: !!a.body, noBody: !a.body, body: a.body || "",
       footer: (ru ? "источник: " : "source: ") + a.sourceClass + " · digest " + String(a.digest || "").slice(0, 12) + "…" + String(a.digest || "").slice(-6),
       close: () => this.setState({ openDoc: null }),
@@ -1229,8 +1454,8 @@ class Component extends DCLogic {
       if (!g) { g = { raw: d.group, name: groupLabel(d.group), items: [] }; groups.push(g); }
       g.items.push({
         label: label(d),
-        style: "font-family:'Onest',sans-serif; font-size:15px; line-height:1.4; text-align:left; border:0; cursor:pointer; padding:9px 10px; border-radius:8px; " +
-          (cur && cur.id === d.id ? "background:var(--teal-tint); color:var(--teal-ink); font-weight:600;" : "background:transparent; color:var(--body);"),
+        style: "font-family:'Onest',sans-serif; font-size:15px; line-height:1.4; font-weight:600; text-align:left; border:0; cursor:pointer; padding:9px 10px; border-radius:8px; " +
+          (cur && cur.id === d.id ? "background:var(--teal-tint); color:var(--teal-ink);" : "background:transparent; color:var(--body);"),
         go: () => this.setState({ doc: d.id })
       });
     });
@@ -1327,12 +1552,18 @@ class Component extends DCLogic {
     return { vis, rest };
   }
 
-  tabStyle(active) {    return "font-family:'Onest',sans-serif; font-size:16px; line-height:1.4; border:0; cursor:pointer; white-space:nowrap; flex:0 0 auto; padding:9px 12px; border-radius:8px; " +
-      (active ? "background:var(--primary); color:var(--on-primary); font-weight:600;" : "background:transparent; color:var(--body);");
+  // Weight is CONSTANT across states on every selector in this file. Bolding
+  // only the active option re-measures the text and changes the control's
+  // width, which shifts the row and pushes the column beside it down — a
+  // layout shift on every click. Selection is carried by background and colour,
+  // which cost no space.
+  tabStyle(active) {
+    return "font-family:'Onest',sans-serif; font-size:16px; line-height:1.4; font-weight:600; border:0; cursor:pointer; white-space:nowrap; flex:0 0 auto; padding:9px 12px; border-radius:8px; " +
+      (active ? "background:var(--primary); color:var(--on-primary);" : "background:transparent; color:var(--body);");
   }
   chipStyle(active) {
-    return "font-family:'Onest',sans-serif; font-size:15px; border:0; cursor:pointer; padding:5px 12px 5px 7px; border-radius:8px; display:inline-flex; align-items:center; gap:8px; " +
-      (active ? "background:var(--primary); color:var(--on-primary); font-weight:600;" : "background:var(--canvas); color:var(--body);");
+    return "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:5px 12px 5px 7px; border-radius:8px; display:inline-flex; align-items:center; gap:8px; " +
+      (active ? "background:var(--primary); color:var(--on-primary);" : "background:var(--canvas); color:var(--body);");
   }
   cardButton(selected) {
     return "display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; background:var(--surface); border:0; border-radius:14px; padding:16px 18px; cursor:pointer; box-shadow:" +
@@ -1357,10 +1588,11 @@ class Component extends DCLogic {
     const toText = toSelf ? (it.to.length > 1 ? (ru ? "вы +" : "you +") + (it.to.length - 1) : (ru ? "вы" : "you")) : (it.to || []).join(", ");
     const toCode = toSelf ? codes[d.self] : codes[(it.to || [])[0]];
     const space = d.spaces.find(s => s.id === it.space);
-    const stale = space && space.stale ? " · " + (ru ? "устарел " : "stale ") + space.syncAge : (space && space.readable ? " · " + (ru ? "свежий " : "fresh ") + space.syncAge : "");
+    const stale = space && space.stale ? " · " + (ru ? "устарел " : "stale ") + age(space.syncAge) : (space && space.readable ? " · " + (ru ? "свежий " : "fresh ") + age(space.syncAge) : "");
     return {
       id: it.id, type: it.type, title: it.title, status: st.status, tone: st.tone,
-      time: overdue(it) ? (ru ? "нужно к " : "needed by ") + it.neededBy : it.age,
+      state: String(it.state || "").replace("_", " "), stateTone: STATE_TONE[it.state] || "neutral",
+      time: overdue(it) ? (ru ? "дедлайн " : "due ") + isoDay(it.neededBy) : age(it.age),
       from: it.from, to: toText, meta: it.space + stale,
       fromCode: codes[it.from] || "", toCode: toCode || "",
       fromSelf: it.from === d.self, toSelf: toSelf,
@@ -1404,7 +1636,7 @@ class Component extends DCLogic {
     if (e.blocking) pills.push({ text: (ru ? "Блокирует" : "Blocking") + " · " + (e.priority || ""), tone: "blocking" });
     else if (e.priority) pills.push({ text: e.priority, tone: "neutral" });
     pills.push({ text: String(a.state || "").replace("_", " "), tone: STATE_TONE[a.state] || "neutral" });
-    if (a.sync_stale) pills.push({ text: (ru ? "спейс устарел " : "space stale ") + a.sync_age, tone: "attention" });
+    if (a.sync_stale) pills.push({ text: (ru ? "спейс устарел " : "space stale ") + age(a.sync_age), tone: "attention" });
 
     const lists = [];
     if (e.acceptance_criteria) lists.push({ heading: ru ? "Когда считаем, что готово" : "Acceptance criteria", items: e.acceptance_criteria, numbered: true });
@@ -1420,7 +1652,7 @@ class Component extends DCLogic {
     else if (e.classification) facts.push({ label: ru ? "уровень доступа" : "classification", value: e.classification });
     if (e.required_approvers) facts.push({ label: ru ? "кто согласует" : "approvers", value: e.required_approvers.join(", ") });
     if (e.actor) facts.push({ label: ru ? "автор" : "actor", value: (e.actor.name || "") + (e.actor.kind ? " · " + e.actor.kind : ""), mono: true });
-    facts.push({ label: ru ? "источник" : "source", value: a.sourceClass + " · " + (ru ? "синхронизировано " : "synced ") + a.sync_age });
+    facts.push({ label: ru ? "источник" : "source", value: a.sourceClass + " · " + (ru ? "синхронизировано " : "synced ") + age(a.sync_age) });
 
     const flagged = new Set((a.flags || []).map(() => true));
     const events = (a.events || []).map((ev, i) => ({
@@ -1438,7 +1670,7 @@ class Component extends DCLogic {
     if (e.expected_response) {
       const needed = e.needed_by || (e.expected_response && e.expected_response.by);
       calloutTone = e.blocking ? "blocking" : "attention";
-      calloutTitle = needed ? (ru ? "Ждут к " : "Expected by ") + needed + " · " + ((a.to || []).includes(d.self) ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + (a.to || []).join(", ")) : (ru ? "Чего от вас ждут в ответ" : "What the sender expects back");
+      calloutTitle = needed ? (ru ? "Дедлайн " : "Due ") + isoDay(needed) + " · " + ((a.to || []).includes(d.self) ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + (a.to || []).join(", ")) : (ru ? "Чего от вас ждут в ответ" : "What the sender expects back");
       calloutText = [e.expected_response.shape.replace(/[.\s]+$/, "") + ".", e.interim_behavior ? (ru ? "А пока: " : "Until then: ") + e.interim_behavior.replace(/[.\s]+$/, "") + "." : "", e.context ? e.context.replace(/[.\s]+$/, "") + "." : ""].filter(Boolean).join(" ");
     } else if (e.context) {
       calloutTitle = ru ? "Что автор приложил к документу" : "Context recorded with the artifact";
@@ -1450,7 +1682,7 @@ class Component extends DCLogic {
 
     return {
       present: true, type: a.type, pills,
-      sourceLine: a.sourceClass + (ru ? " · запись · " : " record · ") + (a.sync_stale ? (ru ? "спейс устарел " : "space stale ") + a.sync_age : (ru ? "синхронизировано " : "synced ") + a.sync_age),
+      sourceLine: a.sourceClass + (ru ? " · запись · " : " record · ") + (a.sync_stale ? (ru ? "спейс устарел " : "space stale ") + age(a.sync_age) : (ru ? "синхронизировано " : "synced ") + age(a.sync_age)),
       title: a.title, body: a.body || "",
       calloutTitle, calloutText, calloutTone,
       lists, facts,
@@ -1533,14 +1765,14 @@ class Component extends DCLogic {
       hasMoreTabs: nav.rest.length > 0,
       moreTabs: nav.rest.map(t => ({
         label: t.label,
-        style: "font-family:'Onest',sans-serif; font-size:15px; text-align:left; border:0; cursor:pointer; padding:9px 10px; border-radius:8px; " +
-          (s.view === t.id ? "background:var(--canvas); color:var(--text); font-weight:600;" : "background:transparent; color:var(--body);"),
+        style: "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; text-align:left; border:0; cursor:pointer; padding:9px 10px; border-radius:8px; " +
+          (s.view === t.id ? "background:var(--canvas); color:var(--text);" : "background:transparent; color:var(--body);"),
         go: () => this.go(t.id, { more: false })
       })),
       moreOpen: s.more,
       moreExpanded: s.more ? "true" : "false",
       moreCaret: s.more ? "▴" : "▾",
-      moreBtnStyle: this.tabStyle(false) + (s.more ? " background:var(--canvas); font-weight:600;" : ""),
+      moreBtnStyle: this.tabStyle(false) + (s.more ? " background:var(--canvas);" : ""),
       toggleMore: () => this.setState(x => ({ more: !x.more, lang: false })),
       goOverview: () => this.go("overview", { more: false }),
       goVersions: () => this.go("versions"), goWork: () => this.go("work", { workTab: "incoming" }),
@@ -1575,7 +1807,12 @@ class Component extends DCLogic {
     const ovSel = s.ovSel || (needsYou[0] && needsYou[0].id) || "";
     const restCount = scopedInbox.length - needsYou.length;
 
-    const workList = s.workTab === "incoming" ? scopedInbox : scopedOutbox;
+    const workAll = s.workTab === "incoming" ? scopedInbox : scopedOutbox;
+    // Offer only the types that exist in this scope: a filter for a kind with
+    // nothing behind it is a dead control that teaches the wrong thing.
+    const workTypes = workAll.map(i => i.type).filter((t, i, arr) => t && arr.indexOf(t) === i).sort();
+    const workType = workTypes.indexOf(s.workType) > -1 ? s.workType : "all";
+    const workList = workType === "all" ? workAll : workAll.filter(i => i.type === workType);
     const workSel = s.workSel && workList.some(i => i.id === s.workSel) ? s.workSel : (workList[0] && workList[0].id) || "";
 
     const threads = d.threads.filter(t => this.inScope(t.space));
@@ -1629,7 +1866,7 @@ class Component extends DCLogic {
       const top = lanes.slice(0, 3);
       return {
         id: sp.id,
-        pillText: sp.stale ? (ru ? "устарел " : "stale ") + sp.syncAge : (ru ? "свежий " : "fresh ") + sp.syncAge,
+        pillText: sp.stale ? (ru ? "устарел " : "stale ") + age(sp.syncAge) : (ru ? "свежий " : "fresh ") + age(sp.syncAge),
         pillTone: sp.stale ? "attention" : "healthy",
         summary: members.length + (ru ? " участников · " : " participants · ") + d.contractEdges.filter(e => e.space === sp.id).length + (ru ? " контрактных линий · " : " contract lines · ") + lanes.length + (ru ? " открытых связей" : " open lanes"),
         members: members.map(n => ({
@@ -1660,6 +1897,30 @@ class Component extends DCLogic {
 
     const tooling = d.tooling || {};
     const upd = d.updateDetail || {};
+
+    // Release notes, newest first by semver — never by array order, which is the
+    // embed's file order and has been both ascending and descending.
+    const releasesAll = d.releaseNotes.slice().sort((a, b) => {
+      const seg = (v) => String(v || "").split(".").map(n => parseInt(n, 10) || 0);
+      const x = seg(b.version), y = seg(a.version);
+      return (x[0] - y[0]) || (x[1] - y[1]) || (x[2] - y[2]);
+    });
+    const filtered = s.verKind !== "all" || s.verAction !== "all";
+    const kindOk = (c) => s.verKind === "all" || c.kind === s.verKind;
+    // "none" means the authored scope is literally none; "local" means any
+    // scope that asks for something — the reader's question is "do I have to do
+    // anything", not "which of the four scope words is it".
+    const actionOk = (c) => {
+      const scope = (c.action && c.action.scope) || "none";
+      return s.verAction === "all" || (s.verAction === "none" ? scope === "none" : scope !== "none");
+    };
+    let totalChanges = 0, shownChanges = 0;
+    const releasesShown = releasesAll.map(r => {
+      const all = r.changes || [];
+      const shown = all.filter(c => kindOk(c) && actionOk(c));
+      totalChanges += all.length; shownChanges += shown.length;
+      return Object.assign({}, r, { shown });
+    }).filter(r => r.shown.length > 0);
 
     return Object.assign(base, {
       overviewAria:c.views[0], workAria:c.views[1], threadsAria:c.views[2], contractsAria:c.views[3], networkAria:c.views[4],
@@ -1695,7 +1956,7 @@ class Component extends DCLogic {
       ovRestText: (ru ? "Ещё входящих, никого не держат: " : "More non-blocking incoming items: ") + restCount + (ru ? " · замечаний: " : " · protocol flags: ") + flags.length,
       ovSpaces: d.spaces.filter(x => this.inScope(x.id)).map(x => ({
         id: x.id,
-        pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (x.stale ? (ru ? "устарел · " : "stale · ") + x.syncAge : (ru ? "свежий · " : "fresh · ") + x.syncAge),
+        pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (x.stale ? (ru ? "устарел · " : "stale · ") + age(x.syncAge) : (ru ? "свежий · " : "fresh · ") + age(x.syncAge)),
         pillTone: !x.readable ? "blocking" : (x.stale ? "attention" : "healthy"),
         meta: x.readable ? (ru ? "участников: " : "participants: ") + x.participantCount + (ru ? " · минимум для записи " : " · writer floor ") + x.minBinaryVersion : (ru ? "что внутри — неизвестно" : "contents are not inferred")
       })),
@@ -1713,19 +1974,29 @@ class Component extends DCLogic {
       },
 
       workSub: ru ? "Входящие — то, что адресовано " + d.self + "; исходящие — то, чего вы ждёте от других. Входящих: " + scopedInbox.length + ", исходящих: " + scopedOutbox.length + "." : "Incoming items address " + d.self + "; outgoing items are what you await from others. Incoming: " + scopedInbox.length + ", outgoing: " + scopedOutbox.length + ".",
+      workTypeFilters: [{ id: "all", label: ru ? "Все типы" : "All types" }].concat(workTypes.map(t => ({ id: t, label: TYPE_WORDS(ru)[t] || t }))).map(f => ({
+        label: f.label,
+        pressed: workType === f.id ? "true" : "false",
+        style: this.filterChip(workType === f.id),
+        go: () => this.setState({ workType: f.id, workSel: "" })
+      })),
       workTabs: [["incoming", (ru ? "Входящие · " : "Incoming · ") + scopedInbox.length], ["outgoing", (ru ? "Исходящие · " : "Outgoing · ") + scopedOutbox.length]].map(([id, label]) => ({
         label,
-        style: "font-family:'Onest',sans-serif; font-size:15px; border:0; cursor:pointer; padding:7px 14px; border-radius:7px; " + (s.workTab === id ? "background:var(--surface); font-weight:600; color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.12);" : "background:transparent; color:var(--muted);"),
-        go: () => this.setState({ workTab: id, workSel: "" })
+        pressed: s.workTab === id ? "true" : "false",
+        style: "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:7px 14px; border-radius:7px; " + (s.workTab === id ? "background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.12);" : "background:transparent; color:var(--muted);"),
+        go: () => this.setState({ workTab: id, workSel: "", workType: "all" })
       })),
       workRows: workList.map(it => this.rowFor(it, "workSel", workSel)),
       noWorkRows: workList.length === 0,
-      emptyWorkTitle: s.workTab === "incoming"
-        ? (ru ? "Входящих нет" : "Nothing incoming")
-        : (ru ? "Исходящих нет" : "Nothing outgoing"),
-      emptyWorkText: s.workTab === "incoming"
-        ? (ru ? "Никто из подключённых систем сейчас ничего вам не адресовал. Как только документ придёт, он окажется здесь." : "No connected system currently has anything addressed to you. The moment a document arrives it lands here.")
-        : (ru ? "Вы ничего не ждёте от других систем: все ваши документы дошли до конечного состояния." : "You are not waiting on any other system — every document you sent has reached a terminal state."),
+      workFiltered: workType !== "all",
+      emptyWorkTitle: workType !== "all"
+        ? (ru ? "Ничего такого типа" : "Nothing of that type")
+        : (s.workTab === "incoming" ? (ru ? "Входящих нет" : "Nothing incoming") : (ru ? "Исходящих нет" : "Nothing outgoing")),
+      emptyWorkText: workType !== "all"
+        ? (ru ? "Под этот тип в текущей области ничего не подошло. Снимите фильтр, чтобы увидеть остальное." : "Nothing of that type in this scope. Clear the filter to see the rest.")
+        : (s.workTab === "incoming"
+          ? (ru ? "Никто из подключённых систем сейчас ничего вам не адресовал. Как только документ придёт, он окажется здесь." : "No connected system currently has anything addressed to you. The moment a document arrives it lands here.")
+          : (ru ? "Вы ничего не ждёте от других систем: все ваши документы дошли до конечного состояния." : "You are not waiting on any other system — every document you sent has reached a terminal state.")),
       workDetail: this.detailFor(workSel, workList),
 
       threadsSub: ru ? "Запрос, подтверждение, ответ, доказательства, проверка и решение лежат в одном треде и читаются в одном порядке всеми. Порядок берётся из коммитов Git — его нельзя подделать задним числом. Если истории нет, берётся время от автора, и мы это помечаем." : "Request, acknowledgement, response, evidence, verification, and decision remain linked. Commit order is strong evidence; declared timestamps are always labelled as a weak fallback.",
@@ -1741,13 +2012,14 @@ class Component extends DCLogic {
         pillText: t.settled ? (ru ? "всё закрыто" : "settled") : (t.yourMove ? (ru ? "ваш ход" : "your move") : (ru ? "ход за другими" : "waiting on others")),
         pillTone: t.settled ? "healthy" : (t.yourMove ? "attention" : "neutral"),
         participants: (t.participants || []).join(", "),
-        age: (ru ? "последнее движение " : "last activity ") + t.lastActivity,
+        age: (ru ? "последнее движение " : "last activity ") + age(t.lastActivity),
         meta: t.id + (ru ? " · документов: " : " · documents: ") + t.memberCount + " · " + t.space,
         style: this.cardButton(threadSel === t.id),
-        select: () => this.setState({ threadSel: t.id })
+        select: () => this.setState({ threadSel: t.id, tvFocus: "" })
       })),
       tvPresent: !!tv, tvMissing: !tv,
       tvSettled: !!(tv && tv.settled), tvPending: !!(tv && !tv.settled),
+      documentLabel: ru ? "Документ целиком" : "View document",
       settledLabel: ru ? "Ход ни за кем" : "Nobody owes a move",
       settledText: ru
         ? "Все документы этого треда дошли до конечного состояния. Запись остаётся целиком ниже — тред читается, но действий не ждёт."
@@ -1760,52 +2032,84 @@ class Component extends DCLogic {
       tvEntries: tv ? (() => {
         const arts = tv.artifacts || [];
         const titleOf = (id) => { const a = arts.find(x => x.id === id); return a && a.title ? a.title : id; };
+        const anchorOf = (id) => "tv-" + String(id || "").replace(/[^A-Za-z0-9_-]/g, "_");
         const relationsOf = (a) => {
           const out = [];
-          if (a.parent) out.push({ verb: ru ? "отвечает на" : "answers", label: titleOf(a.parent), answer:true });
-          (a.refs || []).forEach(r => { const ref = r && r.ref ? r.ref : r; if (ref) out.push({ verb: ru ? "ссылается на" : "references", label: titleOf(ref), answer:false }); });
+          if (a.parent) out.push({ verb: ru ? "отвечает на" : "answers", target: a.parent, label: titleOf(a.parent), answer: true });
+          (a.refs || []).forEach(r => { const ref = r && r.ref ? r.ref : r; if (ref) out.push({ verb: ru ? "ссылается на" : "references", target: ref, label: titleOf(ref), answer: false }); });
           return out;
         };
+        // Clicking a relation or a subject focuses the document it names: the
+        // rest of the transcript dims, the target scrolls into view. Reading a
+        // causal chain means following one link at a time, and hunting for the
+        // referenced card by eye in a 40-row transcript is the slow way.
+        const focus = s.tvFocus;
+        const known = (id) => arts.some(x => x.id === id);
+        const linkStyle = (answer, dimmed) => "font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.5; border:0; cursor:pointer; text-align:left; display:inline-flex; align-items:center; gap:6px; border-radius:6px; padding:4px 10px; overflow-wrap:anywhere; " +
+          (answer ? "background:var(--teal-tint); color:var(--teal-ink);" : "background:var(--canvas); color:var(--muted);") +
+          (dimmed ? " opacity:.45;" : "");
+        const goTo = (id) => () => {
+          this.setState({ tvFocus: this.state.tvFocus === id ? "" : id });
+          requestAnimationFrame(() => {
+            const node = document.getElementById(anchorOf(id));
+            if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
+          });
+        };
         const flagged = new Set((tv.flags || []).map(f => f.event_ulid).filter(Boolean));
-        const rail = (last) => "position:relative; padding:0 0 " + (last ? "0" : "14px") + " 22px; " +
-          (last ? "" : "border-left:2px solid var(--border);") + (last ? " margin-left:2px;" : "");
         const rows = (tv.transcript || []).map(en => {
           if (en.kind === "artifact") {
             const a = en.artifact || {};
-            const known = arts.find(x => x.id === a.id) || {};
-            const st = known.state || "";
-            const rels = relationsOf(known);
+            const meta = arts.find(x => x.id === a.id) || {};
+            const st = meta.state || "";
+            const rels = relationsOf(meta);
+            const dim = !!focus && focus !== a.id;
             return {
               isArtifact: true, isEvent: false, type: a.type, title: a.title, id: a.id,
-              route: (a.from || "") + " → " + (a.to || []).join(", ") + " · " + day(en.at),
+              anchor: anchorOf(a.id),
+              route: (a.from || "") + " → " + (a.to || []).join(", "),
+              when: when(en.at),
               hasState: !!st, state: String(st).replace("_", " "), stateTone: STATE_TONE[st] || "neutral",
               hasParent: rels.length > 0,
               relations: rels.map(r => ({
                 text: r.verb + " " + r.label,
-                style: "display:inline-flex; align-items:center; gap:6px; border-radius:6px; padding:3px 9px; overflow-wrap:anywhere; " +
-                  (r.answer ? "background:var(--teal-tint); color:var(--teal-ink);" : "background:var(--canvas); color:var(--muted);")
+                title: known(r.target) ? (ru ? "Показать этот документ в ленте" : "Focus that document in the transcript") : r.target,
+                go: known(r.target) ? goTo(r.target) : () => {},
+                style: linkStyle(r.answer, dim) + (known(r.target) ? "" : " cursor:default;")
               })),
               opensChain: rels.length === 0,
-              cardStyle: "background:var(--page); border-radius:12px; padding:14px 16px;",
-              dotStyle: "position:absolute; left:-8px; top:16px; width:14px; height:14px; border-radius:99px; background:var(--teal-solid); box-shadow:0 0 0 3px var(--surface);",
-              text: "", meta: "", hasSubject: false, subjectLabel: ""
+              openDoc: () => this.setState({ openDoc: { id: a.id, space: tv.space } }),
+              // Artifact dots are one colour and deliberately larger than event
+              // dots: documents are the landmarks of a transcript, events are
+              // the steps between them.
+              cardStyle: "background:var(--page); border-radius:12px; padding:15px 17px; box-shadow:inset 0 0 0 1px var(--border); transition:opacity .18s ease;" +
+                (focus === a.id ? " box-shadow:inset 0 0 0 2px var(--focus);" : "") + (dim ? " opacity:.32;" : ""),
+              dotStyle: "position:absolute; left:-9px; top:18px; width:17px; height:17px; border-radius:99px; background:var(--teal-solid); box-shadow:0 0 0 3px var(--surface);" + (dim ? " opacity:.32;" : ""),
+              text: "", meta: "", hasSubject: false, subjectLabel: "", subjectStyle: "", subjectTitle: "", goSubject: () => {}
             };
           }
           const ev = en.event || {};
           const actor = ev.actor || {};
           const bad = flagged.has(ev.ulid);
+          const dim = !!focus && focus !== ev.subject;
           return {
-            isArtifact: false, isEvent: true, type: "", id: ev.ulid,
+            isArtifact: false, isEvent: true, type: "", id: ev.ulid, anchor: "",
             text: (actor.system || actor.name || "") + " " + ev.transition + (ev.claimed_state ? (ru ? " — автор заявил состояние " : " — claimed ") + String(ev.claimed_state).replace("_", " ") : ""),
             meta: when(en.at),
             hasSubject: !!ev.subject, subjectLabel: ev.subject ? titleOf(ev.subject) : "",
+            subjectTitle: ev.subject && known(ev.subject) ? (ru ? "Показать этот документ в ленте" : "Focus that document in the transcript") : (ev.subject || ""),
+            goSubject: ev.subject && known(ev.subject) ? goTo(ev.subject) : () => {},
+            subjectStyle: "margin-top:5px; font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.5; color:var(--muted); background:var(--canvas); border:0; border-radius:6px; padding:4px 10px; overflow-wrap:anywhere; text-align:left; " +
+              (ev.subject && known(ev.subject) ? "cursor:pointer;" : "cursor:default;") + (dim ? " opacity:.4;" : ""),
             cardStyle: "",
-            dotStyle: "position:absolute; left:-6px; top:11px; width:10px; height:10px; border-radius:99px; background:" + (bad ? "var(--ochre)" : "var(--border-strong)") + "; box-shadow:0 0 0 3px var(--surface);",
-            title: "", route: "", hasParent: false, relations: [], opensChain: false, hasState: false, state: "", stateTone: "neutral"
+            // Each transition gets its own colour, so the shape of an exchange
+            // is legible before a word is read: teal opens and moves it, plum
+            // answers, green settles, ochre disputes, red blocks or cancels.
+            dotStyle: "position:absolute; left:-6px; top:12px; width:11px; height:11px; border-radius:99px; background:" + (bad ? "var(--ochre)" : (TRANSITION_TONE[ev.transition] || "var(--border-strong)")) + "; box-shadow:0 0 0 3px var(--surface);" + (dim ? " opacity:.35;" : ""),
+            title: "", route: "", when: "", hasParent: false, relations: [], opensChain: false, hasState: false, state: "", stateTone: "neutral", openDoc: () => {}
           };
         }).reverse();
         return rows.map((r, i) => Object.assign(r, {
-          railStyle: (r.isEvent ? "position:relative; padding:8px 0 8px 22px;" : "position:relative; padding:0 0 14px 22px;") +
+          railStyle: (r.isEvent ? "position:relative; padding:9px 0 9px 24px;" : "position:relative; padding:0 0 16px 24px;") +
             (i === rows.length - 1 ? " margin-left:2px;" : " border-left:2px solid var(--border);")
         }));
       })() : [],
@@ -1816,7 +2120,7 @@ class Component extends DCLogic {
         id: o.id, type: o.type,
         who: o.your_move ? (ru ? "ваш ход" : "your move") : (ru ? "ход за: " : "waiting on ") + (o.waiting_on || []).join(", "),
         whoTone: o.your_move ? "attention" : "neutral",
-        needed: o.needed_by ? (ru ? "нужно к " : "needed by ") + o.needed_by : (o.blocking ? (ru ? "блокирует" : "blocking") : ""),
+        needed: o.needed_by ? (ru ? "дедлайн " : "due ") + isoDay(o.needed_by) : (o.blocking ? (ru ? "блокирует" : "blocking") : ""),
         actions: (o.next_actions || []).map(a => ({
           text: a.transition + " · " + (a.by || []).join(", "),
           style: "font-family:'IBM Plex Mono',monospace; font-size:14px; border-radius:6px; padding:4px 10px; " +
@@ -1830,8 +2134,13 @@ class Component extends DCLogic {
       conRows: contracts.map(c => {
         const edges = d.contractEdges.filter(e => e.contract === c.id);
         const bad = edges.filter(e => e.drift !== "current");
+        // Drift words are protocol enums; a person reads the consumer's name and
+        // then what happened to its line, in their own language.
+        const driftWord = (e) => e.drift === "deprecated" && e.sunset
+          ? (ru ? "выводится до " : "sunset ") + isoDay(e.sunset)
+          : DRIFT_WORDS(ru)[e.drift] || e.drift;
         const pills = bad.length
-          ? bad.slice(0, 2).map(e => ({ text: e.from + ": " + (e.drift === "deprecated" && e.sunset ? "sunset " + e.sunset : e.drift), tone: DRIFT_TONE[e.drift] || "neutral" }))
+          ? bad.slice(0, 2).map(e => ({ text: e.from + ": " + driftWord(e), tone: DRIFT_TONE[e.drift] || "neutral" }))
           : [{ text: ru ? "все линии актуальны" : "all lines current", tone: "healthy" }];
         return {
           id: c.id, version: c.version, meta: (ru ? "поставщик: " : "provider: ") + c.provider + " · " + c.category + " · " + c.space,
@@ -1847,6 +2156,10 @@ class Component extends DCLogic {
       emptyContractDetailText: ru
         ? "Здесь появятся закреплённые линии потребителей, окно действующих версий и происхождение схемы — как только контракт будет опубликован."
         : "Registered consumer lines, the live version window and the schema provenance appear here as soon as a contract is published.",
+      providerLabel: ru ? "Поставщик — он публикует версии" : "Provider — publishes the versions",
+      consumersLabel: ru ? "Потребители — они закрепляют версию" : "Consumers — pin a version each",
+      cdProvider: con ? con.provider : "",
+      cdConsumers: con ? ((con.consumers || []).join(", ") || (ru ? "пока никто" : "nobody yet")) : "",
       cdId: con ? con.id : "",
       cdState: con ? con.state : "",
       cdStateTone: con ? (STATE_TONE[con.state] || "neutral") : "neutral",
@@ -1855,14 +2168,16 @@ class Component extends DCLogic {
       cdDescription: con ? con.description : "",
       cdHasRisk: risky.length > 0,
       cdRiskTitle: risky.length ? (risky[0].drift === "missing"
-        ? risky[0].from + (ru ? " закрепляет основную версию " : " pins major ") + risky[0].pinnedMajor + (ru ? " — у поставщика такой основной версии нет" : " — the provider has no such major")
-        : risky.length + (ru ? " линий потребителей не на текущей основной версии" : (risky.length === 1 ? " consumer line is" : " consumer lines are") + " not on the current major")) : "",
+        ? risky[0].from + (ru ? " закрепил мажорную версию " : " pins major ") + risky[0].pinnedMajor + (ru ? ", а у поставщика такой нет" : " — the provider has no such major")
+        : (ru
+          ? ruPlural(risky.length, "линия потребителя не на последней мажорной", "линии потребителей не на последней мажорной", "линий потребителей не на последней мажорной")
+          : risky.length + (risky.length === 1 ? " consumer line is" : " consumer lines are") + " not on the current major")) : "",
       cdRiskText: risky.length ? risky.map(e => e.from + " → " + e.to + ": " + (e.drift === "missing"
         ? (ru ? "у поставщика есть только " : "available majors are ") + (e.availableMajors || []).join(ru ? " и " : " and ") + (ru ? " — значит, у этого потребителя не работает ничего" : ", so nothing resolves for that line")
-        : (e.drift === "dangling" ? (ru ? "поставщик ушёл из спейса" : "the provider left the space") : (ru ? "закреплено " : "pinned ") + e.pinnedVersion + " (" + e.pinnedState + ") " + (ru ? "при версии поставщика " : "against provider ") + e.providerVersion + (e.sunset ? (ru ? ", вывод " : ", sunset ") + e.sunset : "")))).join(". ") + "." : "",
+        : (e.drift === "dangling" ? (ru ? "поставщик ушёл из спейса" : "the provider left the space") : (ru ? "закреплено " : "pinned ") + e.pinnedVersion + " (" + (STATE_WORDS(ru)[e.pinnedState] || e.pinnedState) + ") " + (ru ? "при версии поставщика " : "against provider ") + e.providerVersion + (e.sunset ? (ru ? ", вывод " : ", sunset ") + e.sunset : "")))).join(". ") + "." : "",
       cdLines: conEdges.map(e => ({
         route: e.from + " → " + e.to,
-        drift: e.drift, tone: DRIFT_TONE[e.drift] || "neutral",
+        drift: DRIFT_WORDS(ru)[e.drift] || e.drift, tone: DRIFT_TONE[e.drift] || "neutral",
         detail: e.drift === "missing"
           ? (ru ? "закреплена версия " : "pinned major ") + e.pinnedMajor + (ru ? " · доступны " : " · available ") + (e.availableMajors || []).join(", ")
           : (e.drift === "dangling" ? (ru ? "для этой линии не находится ни одного дескриптора" : "no descriptor resolves for this line") : (ru ? "закреплено " : "pinned ") + e.pinnedVersion + (ru ? " · поставщик " : " · provider ") + e.providerVersion),
@@ -1897,7 +2212,7 @@ class Component extends DCLogic {
         const line = i === arr.length - 1 ? "none" : "1px solid var(--hairline)";
         return {
           id: x.id,
-          pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (x.stale ? (ru ? "устарел · " : "stale · ") + x.syncAge : (ru ? "свежий · " : "fresh · ") + x.syncAge),
+          pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (x.stale ? (ru ? "устарел · " : "stale · ") + age(x.syncAge) : (ru ? "свежий · " : "fresh · ") + age(x.syncAge)),
           pillTone: !x.readable ? "blocking" : (x.stale ? "attention" : "healthy"),
           participants: x.readable ? String(x.participantCount) : (ru ? "не проверялось" : "not evaluated"),
           floor: x.minBinaryVersion || "—",
@@ -1911,7 +2226,7 @@ class Component extends DCLogic {
       intFlags: flags.map(f => ({ code: f.code, origin: f.source + " · " + f.system + (f.space ? " · " + f.space : ""), message: f.message })),
       intDegraded: d.spaces.filter(x => this.inScope(x.id) && (x.stale || !x.readable)).map(x => ({
         id: x.id,
-        pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (ru ? "устарел · " : "stale · ") + x.syncAge,
+        pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (ru ? "устарел · " : "stale · ") + age(x.syncAge),
         pillTone: !x.readable ? "blocking" : "attention",
         note: !x.readable ? (ru ? "манифест не прочитался" : "manifest could not be read") : (ru ? "читаем из устаревшей копии" : "reading from an older mirror revision")
       })),
@@ -1929,7 +2244,7 @@ class Component extends DCLogic {
       verSub: ru ? "Три версии, которые легко перепутать. Ваш бинарник — то, что стоит на этой машине. Минимум для записи — версия, ниже которой спейс не принимает документы. Версия проверки в CI — то, чем спейс проверяет входящее. Одна ничего не говорит о двух других." : "Three independent axes: the local binary, each space's writer floor, and the pinned workflow version. None can be inferred from another.",
       verCurrent: tooling.current, verLatest: tooling.latest,
       verFacts: [
-        { label:ru ? "проверяли" : "checked", value:when(tooling.checkedAt) + (ru ? " · кэш " : " · cache ") + tooling.cacheAge },
+        { label:ru ? "проверяли" : "checked", value:when(tooling.checkedAt) + (ru ? " · кэш " : " · cache ") + age(tooling.cacheAge) },
         { label:ru ? "источник" : "source", value:tooling.source, mono:true },
         { label:ru ? "минимум для записи" : "writer floor", value:tooling.floor + (ru ? " (требует " : " (required by ") + tooling.floorSpace + ")", mono:true },
         { label:ru ? "нужно обновиться" : "update", value:tooling.required ? (ru ? "да" : "required") : (ru ? "нет" : "optional") },
@@ -1953,47 +2268,91 @@ class Component extends DCLogic {
         tone: c.kind === "fix" ? "healthy" : (c.kind === "feature" ? "agent" : "neutral")
       })),
 
-      releaseNotesLabel: ru ? "Что менялось" : "Release notes",
-      releaseNotesNote: d.meta.releaseNotesScope || (ru
-        ? "все выпуски, вшитые в этот бинарник — тот же источник, что и на сайте"
-        : "every release embedded in this binary — the same source the website publishes"),
-      noReleases: d.releaseNotes.length === 0,
-      emptyReleasesTitle: ru ? "Примечаний к выпускам нет" : "No release notes",
-      emptyReleasesText: ru
-        ? "В этот бинарник не вшито ни одного файла примечаний. Обычно это значит сборку из исходников вне процесса выпуска."
-        : "This binary carries no embedded release-notes file, which usually means a source build outside the release process.",
+      // Filters, the authored change blocks with copyable commands, the version
+      // index and the timeline rail — the SAME surface a2ahub.dev/changelog
+      // publishes, projected from the same releasenotes/*.yaml corpus.
+      kindLabel: ru ? "Тип" : "Kind", actionLabel: ru ? "Действие" : "Action",
+      kindFilters: VERSION_KINDS.map(k => ({
+        label: k === "all" ? (ru ? "Все" : "All") : (ru ? (KIND_RU[k] || k) : k),
+        pressed: s.verKind === k ? "true" : "false",
+        style: this.filterChip(s.verKind === k),
+        go: () => this.setState({ verKind: k })
+      })),
+      actionFilters: VERSION_ACTIONS.map(a => ({
+        label: a === "all" ? (ru ? "Любое" : "Any") : (a === "none" ? (ru ? "ничего не нужно" : "no action") : (ru ? "нужно действие" : "action needed")),
+        pressed: s.verAction === a ? "true" : "false",
+        style: this.filterChip(s.verAction === a),
+        go: () => this.setState({ verAction: a })
+      })),
+      releaseNotesNote: filtered
+        ? (ru ? "показано изменений: " + shownChanges + " из " + totalChanges : shownChanges + " of " + totalChanges + " changes shown")
+        : (ru ? "все выпуски, вшитые в этот бинарник — тот же источник, что и на сайте" : "every release embedded in this binary — the same source the website publishes"),
+      noReleases: releasesShown.length === 0,
+      emptyReleasesTitle: filtered
+        ? (ru ? "Под этот фильтр ничего не подошло" : "Nothing matches this filter")
+        : (ru ? "Примечаний к выпускам нет" : "No release notes"),
+      emptyReleasesText: filtered
+        ? (ru ? "Снимите фильтр или выберите другой тип — полный список версий всё равно ниже." : "Clear the filter or pick another kind; the complete version index is below either way.")
+        : (ru ? "В этот бинарник не вшито ни одного файла примечаний. Обычно это значит сборку из исходников вне процесса выпуска." : "This binary carries no embedded release-notes file, which usually means a source build outside the release process."),
+
+      versionIndexTitle: ru ? "Все выпуски" : "Published version index",
+      versionIndexText: ru
+        ? "Каждый опубликованный выпуск с его заголовком. Развёрнутые примечания — выше."
+        : "Every published version with its authored headline. The expanded notes are above.",
+      versionColLabel: ru ? "Версия" : "Version", dateColLabel: ru ? "Дата" : "Date", headlineColLabel: ru ? "Заголовок" : "Headline",
+      indexRows: releasesAll.map((r, i) => {
+        const line = i === releasesAll.length - 1 ? "none" : "1px solid var(--hairline)";
+        return {
+          version: r.version, date: isoDay(r.released), headline: r.headline,
+          cellVersion: "padding:10px 16px 10px 0; font-family:'IBM Plex Mono',ui-monospace,monospace; font-weight:600; vertical-align:top; white-space:nowrap; border-bottom:" + line + ";",
+          cellDate: "padding:10px 16px 10px 0; color:var(--muted); vertical-align:top; white-space:nowrap; border-bottom:" + line + ";",
+          cellHeadline: "padding:10px 0; line-height:1.5; vertical-align:top; border-bottom:" + line + ";"
+        };
+      }),
+      timelineLabel: ru ? "Все версии" : "Timeline",
+      timeline: releasesAll.slice(0, 12).map((r, i) => ({
+        version: r.version, date: isoDay(r.released),
+        dotStyle: "width:9px; height:9px; border-radius:99px; flex:0 0 9px; background:" + (r.version === tooling.current ? "var(--green)" : (i === 0 ? "var(--teal-solid)" : "var(--border-strong)")) + ";",
+        style: "display:flex; align-items:center; gap:10px; width:100%; text-align:left; font-family:'Onest',sans-serif; font-size:15px; border:0; background:transparent; cursor:pointer; padding:7px 8px; border-radius:8px;",
+        go: () => {
+          const node = document.getElementById("release-" + String(r.version || "").replace(/\./g, "-")) || document.getElementById("version-index");
+          if (node) node.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      })),
+      checkYouRunLabel: ru ? "Что у вас стоит" : "Check what you run",
+      sideCommands: ["a2a version", "a2a whatsnew"].map(x => this.cmdBlock(x, ru)),
+      securityNoteLabel: ru ? "Исправления безопасности выходят только для последней версии." : "Only the latest release receives security fixes.",
+
       // The full authored corpus, verbatim: kind, impact, the detail paragraph
       // and the action block (why it matters, what to run). Release claims are
       // never translated — only the labels around them are.
-      verReleases: d.releaseNotes.slice().sort((a, b) => {
-        // Newest first, by semver segments — never by array order, which is the
-        // embed's file order and has already been ascending and descending.
-        const seg = (v) => String(v || "").split(".").map(n => parseInt(n, 10) || 0);
-        const x = seg(b.version), y = seg(a.version);
-        return (x[0] - y[0]) || (x[1] - y[1]) || (x[2] - y[2]);
-      }).map(r => ({
+      verReleases: releasesShown.map(r => ({
         version: r.version,
         anchor: "release-" + String(r.version || "").replace(/\./g, "-"),
-        date: r.released || (ru ? "дата не записана" : "date not recorded"),
-        count: (ru ? "изменений: " : "changes: ") + (r.changes || []).length,
+        date: isoDay(r.released) || (ru ? "дата не записана" : "date not recorded"),
+        count: (ru ? "показано: " : "showing ") + r.shown.length + (ru ? " из " : " of ") + (r.changes || []).length,
         headline: r.headline,
         isCurrent: r.version === tooling.current,
         currentLabel: ru ? "стоит у вас" : "your version",
-        changes: (r.changes || []).map(c => {
+        changes: r.shown.map(c => {
           const scope = (c.action && c.action.scope) || "none";
+          const detect = (c.action && c.action.detect) || [];
           const run = (c.action && c.action.run) || [];
           const acts = scope !== "none";
           return {
             kind: c.kind, impact: c.impact, subject: c.subject, detail: c.detail,
             affects: (c.affects || []).join(" · "),
-            tone: c.kind === "fix" ? "healthy" : (c.kind === "feature" ? "agent" : "neutral"),
+            tone: KIND_TONE[c.kind] || "neutral",
             actionLabel: acts
               ? (ru ? "нужно действие · " : "action · ") + scope
               : (ru ? "действий не нужно" : "no action needed"),
             actionTone: acts ? "attention" : "outline",
             why: (c.action && c.action.why) || "",
-            hasCommands: run.length > 0,
-            commands: run,
+            hasCommands: detect.length + run.length > 0,
+            commands: [].concat(
+              detect.map(t => Object.assign({ role: ru ? "проверить" : "detect" }, this.cmdBlock(t, ru))),
+              run.map(t => Object.assign({ role: ru ? "запустить" : "run" }, this.cmdBlock(t, ru)))
+            ),
             actionStyle: "border-top:1px solid var(--border); padding-top:12px;"
           };
         })

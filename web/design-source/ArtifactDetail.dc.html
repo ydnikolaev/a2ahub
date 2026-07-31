@@ -12,14 +12,18 @@
     <dc-import name="EmptyState" title="{{ missingTitle }}" text="{{ missingText }}" hint="{{ missingHint }}" hint-size="100%,300px"></dc-import>
   </sc-if>
   <sc-if value="{{ present }}" hint-placeholder-val="{{ true }}">
-    <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:16px;">
-      <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
-        <dc-import name="TypeBadge" type="{{ type }}" hint-size="140px,26px"></dc-import>
+    <!-- One header grammar, the same one the compact rows use: the tags own the
+         first line and wrap among themselves, the provenance line sits under
+         them in mono. Before this the source string competed with the tags for
+         the same row and pushed them into ragged two-line stacks. -->
+    <div style="margin-bottom:16px;">
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:7px; margin-bottom:9px;">
+        <dc-import name="TypeBadge" type="{{ type }}" size="small" hint-size="140px,24px"></dc-import>
         <sc-for list="{{ pills }}" as="p" hint-placeholder-count="2">
-          <dc-import name="StatusPill" text="{{ p.text }}" tone="{{ p.tone }}" hint-size="110px,26px"></dc-import>
+          <dc-import name="StatusPill" text="{{ p.text }}" tone="{{ p.tone }}" size="small" hint-size="110px,24px"></dc-import>
         </sc-for>
-      </span>
-      <span style="flex:0 1 auto; min-width:0; text-align:right; font-size:15px; color:var(--muted); overflow-wrap:anywhere;">{{ sourceLine }}</span>
+      </div>
+      <div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; line-height:1.55; color:var(--muted); overflow-wrap:anywhere;">{{ sourceLine }}</div>
     </div>
 
     <h3 style="margin:0 0 10px; font-size:28px; line-height:1.25; font-weight:600; letter-spacing:-0.015em; overflow-wrap:anywhere; text-wrap:balance;">{{ title }}</h3>
