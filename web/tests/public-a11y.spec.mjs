@@ -61,3 +61,23 @@ for (const route of routes) {
     expect(overflow.documentWidth, JSON.stringify(overflow)).toBeLessThanOrEqual(overflow.viewportWidth + 1);
   });
 }
+
+test('/changelog.html does not shift when the design runtime arrives late', async ({ page }) => {
+  await page.addInitScript(() => {
+    globalThis.__a2aLayoutShifts = [];
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (!entry.hadRecentInput) globalThis.__a2aLayoutShifts.push(entry.value);
+      }
+    }).observe({ type: 'layout-shift', buffered: true });
+  });
+  await page.route('**/DesignRuntimeBoot*.js', async (request) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await request.continue();
+  });
+  await page.goto('/changelog.html', { waitUntil: 'networkidle' });
+  await expect(page.locator('#dc-root')).toBeVisible();
+
+  const cls = await page.evaluate(() => globalThis.__a2aLayoutShifts.reduce((total, value) => total + value, 0));
+  expect(cls).toBeLessThanOrEqual(0.1);
+});

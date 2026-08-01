@@ -290,6 +290,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 </x-dc>
 <script type="text/x-dc" data-dc-script>
 const KIND_TONE = { fix: "healthy", feature: "agent", policy: "neutral", "known-issue": "attention", security: "blocking" };
+// Production rewrites this declaration through runtimeDesignPage so INDEX
+// reads the exact published-tag projection. The literal list remains the
+// standalone design-canvas fallback.
 const INDEX = [
   ["0.16.3", "2026-07-30", "Statusline refresh now survives the one-shot command, while the merge gate becomes deterministic and cache-aware"],
   ["0.16.2", "2026-07-30", "The authored GitHub Release body now completes the coordinated release instead of stopping it on provider newline normalization"],
@@ -318,7 +321,7 @@ const INDEX = [
 ];
 
 class Component extends DCLogic {
-  state = { data: null, error: "", kind: "all", action: "all", copied: "" };
+  state = { data: globalThis.A2A_DEMO || null, error: "", kind: "all", action: "all", copied: "" };
 
   copy(key, text) {
     const done = () => { this.setState({ copied: key }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ copied: "" }), 2400); };
@@ -347,6 +350,11 @@ class Component extends DCLogic {
   }
 
   componentDidMount() {
+    // The public page embeds its release slice at build time. Rendering that
+    // payload on the first React pass avoids a second fetch-driven update and
+    // keeps the page fully static/offline; the shared shell hides the raw
+    // pre-runtime template until this complete projection is mounted.
+    if (this.state.data) return;
     fetch("demo-data.json").then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(d => {
       if (!d || !d.meta || d.meta.schema !== "a2a-design-demo/v3") {
         this.setState({ error: "The fixture does not declare meta.schema \"a2a-design-demo/v3\". The inconsistency is reported instead of repaired." });
@@ -406,7 +414,7 @@ class Component extends DCLogic {
       return {
         version: r.version,
         date: r.released || "date not recorded in the fixture",
-        isLatest: r.version === (d.tooling || {}).latest,
+        isLatest: INDEX.length > 0 && r.version === INDEX[0][0],
         countLine: changes.length + " of " + (r.changes || []).length + " changes shown",
         headline: r.headline,
         changes: changes.map(c => {
