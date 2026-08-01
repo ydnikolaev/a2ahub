@@ -165,7 +165,7 @@ func TestT3LifecycleVerbs(t *testing.T) {
 			seed: func(t *testing.T, dir string) (string, []string) {
 				id := "XQ-axon-20260721-a006"
 				writeQuestionArtifact(t, dir, id, "beta")
-				return "gamma", []string{"--note", "reminder: please respond", id}
+				return "beta", []string{"--note", "reminder: please respond", id}
 			},
 			build: func(f *space.WriteFunnel, dir, sys string, hc cli.SubmitHostConfig) cli.Command {
 				return cli.NewNoteCommand(f, dir, "fixture-space", sys, e2eManifest(), hc, e2eActorResolver("agent", "bot"))

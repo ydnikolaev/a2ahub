@@ -642,6 +642,14 @@ func newNoteHandler(deps WriteDeps) HandlerFunc {
 
 		var files []space.FileWrite
 		for _, id := range in.IDs {
+			verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, id, fold.TNote, "", actor)
+			if err != nil {
+				return nil, "", fmt.Errorf("note: %s: %w", id, err)
+			}
+			if verdict != fold.VerdictLegal {
+				return nil, "", fmt.Errorf("note: %w", verdictError(id, verdict))
+			}
+
 			_, probe, err := loadEnvelope(deps.MirrorDir, id)
 			if err != nil {
 				return nil, "", fmt.Errorf("note: %s: %w", id, err)

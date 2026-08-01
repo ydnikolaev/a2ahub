@@ -133,6 +133,31 @@ func TestCheckLegality(t *testing.T) {
 	})
 }
 
+// TestCheckLegalityNote pins D-025 at the pre-write seam used by both local
+// validation and the space's V3 required check. A note is transition-free, so
+// its legality never depends on the artifact's current state; authorization is
+// still the same either-party + active-membership rule Apply enforces.
+func TestCheckLegalityNote(t *testing.T) {
+	t.Parallel()
+	env := rowEnv(KindQuestion)
+
+	for _, state := range []State{StateDraft, StateInProgress, StateClosed} {
+		state := state
+		t.Run(string(state), func(t *testing.T) {
+			t.Parallel()
+			for _, actor := range []string{env.From, env.To0()} {
+				if got := CheckLegality(KindQuestion, state, TNote, env, Actor{System: actor}, MembershipMember); got != VerdictLegal {
+					t.Fatalf("CheckLegality(note, state=%q, actor=%q) = %q, want legal", state, actor, got)
+				}
+			}
+		})
+	}
+
+	if got := CheckLegality(KindQuestion, StateInProgress, TNote, env, Actor{System: "outsider"}, MembershipMember); got != VerdictUnauthorizedActor {
+		t.Fatalf("CheckLegality(note, outsider) = %q, want unauthorized-actor", got)
+	}
+}
+
 // TestCheckLegalityBroadcastAck is live run 5's (2026-07-25) regression.
 //
 // D-025 makes a broadcast acknowledge transition-free and "exempt from

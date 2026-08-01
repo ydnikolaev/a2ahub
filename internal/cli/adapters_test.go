@@ -160,6 +160,37 @@ func TestLegalityAdapterAlreadySubmittedIsIllegal(t *testing.T) {
 	}
 }
 
+// TestLegalityAdapterNoteOnSubmittedResponseIsLegal reproduces
+// fb-20260801-457629 at the V2 legality seam used by space CI. A response has
+// no independent submit event in the mirror; regardless of how its state is
+// projected at a caller, a note is transition-free and must not become
+// LFC-001 at this shared candidate check.
+func TestLegalityAdapterNoteOnSubmittedResponseIsLegal(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	id := "XS-beta-20260801-n0t3"
+
+	manifest := space.Manifest{Participants: []space.Participant{
+		{System: "axon", Status: "active"},
+		{System: "beta", Status: "active"},
+	}}
+	a := cli.NewLegalityAdapter(mirrorDir, "axon", manifest)
+	a.RegisterEnvelope(id, fold.Envelope{
+		ID: id, Kind: fold.KindResponse, From: "beta", To: []string{"axon"},
+	})
+
+	verdict, err := a.CheckLegality(validate.CandidateEvent{
+		Subject: id, Transition: fold.TNote,
+		Actor: validate.Actor{Kind: "agent", Name: "axon-agent", System: "axon"},
+	})
+	if err != nil {
+		t.Fatalf("CheckLegality(note on submitted response): %v", err)
+	}
+	if verdict != validate.VerdictLegal {
+		t.Fatalf("verdict = %v, want VerdictLegal (note is transition-free and actor is the response target)", verdict)
+	}
+}
+
 func TestLegalityAdapterUnauthorizedActor(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()

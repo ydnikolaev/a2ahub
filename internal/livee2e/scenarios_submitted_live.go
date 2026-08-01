@@ -523,6 +523,30 @@ func subfamResponseLifecycle(ctx context.Context, h *harness) Result {
 			"before verify, `a2a show` on the response reads `submitted` off the parent's own overlay (spec 38 §6-Q3/D-H)", preVerifyState)
 	}
 
+	// --- A records its verification rationale before verifying. This is the
+	// exact live shape from fb-20260801-457629: a note on a submitted response
+	// must pass the space's V2/V3 check, merge, and leave the response state
+	// unchanged. Before the regression fix the client opened this PR and the
+	// required check rejected it with LFC-001 forever. ---
+	if _, stderr, err := a.Run(ctx, "note", "--note", "verification rationale recorded before verify", responseID); err != nil {
+		return subfamResultFromErr(scenario, "owner-note", fmt.Errorf("%w: %s", err, stderr), "A's a2a note on the submitted response succeeds and opens its own PR")
+	}
+	notePR, err := h.pullForBranch(ctx, space.BranchName(a.System, "note", responseID))
+	if err != nil {
+		return subfamResultFromErr(scenario, "owner-note", err, "the note's own branch has an open PR")
+	}
+	if err := happyLandAndSync(ctx, h, a, notePR.Number); err != nil {
+		return subfamResultFromErr(scenario, "note-land-sync", err, "the transition-free note passes the required check, lands, and reaches A's mirror")
+	}
+	postNoteState, err := subfamShowState(ctx, a, responseID)
+	if err != nil {
+		return subfamResultFromErr(scenario, "post-note-state-read", err, "a2a show reads the noted response back")
+	}
+	if postNoteState != "submitted" {
+		return subfamFail(scenario, "post-note-state-read", postNoteState,
+			"after note and before verify, the response remains `submitted` because note is transition-free", postNoteState)
+	}
+
 	// --- A verifies: submitted -> verified. Single-response exchange, so
 	// D-024's convenience also closes the parent in the SAME PR — this
 	// branch is ALSO composite. ---
@@ -557,7 +581,7 @@ func subfamResponseLifecycle(ctx context.Context, h *harness) Result {
 
 	return Result{
 		Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("%s (parent %s): ack PR #%d, respond PR #%d, verify PR #%d — response state %q, parent state %q (D-024 bonus, unasserted)",
-			responseID, parent.ID, ackPR.Number, respondPR.Number, verifyPR.Number, responseState, parentState),
+		Detail: fmt.Sprintf("%s (parent %s): ack PR #%d, respond PR #%d, note PR #%d, verify PR #%d — response state %q, parent state %q (D-024 bonus, unasserted)",
+			responseID, parent.ID, ackPR.Number, respondPR.Number, notePR.Number, verifyPR.Number, responseState, parentState),
 	}
 }

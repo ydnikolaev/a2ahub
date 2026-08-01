@@ -460,26 +460,22 @@ func TestT3LifecycleTransitionCoverage(t *testing.T) {
 
 	t.Run("note", func(t *testing.T) {
 		t.Parallel()
-		// note is transition-free (D-025): it authors an annotation event
-		// but never touches fold state and carries NO legality check
-		// (internal/cli's own TestNoteSkipsLegalityCheck, cmd_lifecycle.go's
-		// NoteCommand.Run — no fold.CheckLegality call at all). There is
-		// consequently no illegal-transition half to assert here: forcing
-		// one would encode behavior the product does not have (DEFECT
-		// POLICY's "never encode broken behavior" cuts both ways — it also
-		// forbids fabricating a refusal that doesn't exist). This subtest's
-		// own positive proof IS that folded state stays UNCHANGED across a
-		// note, on a bystander system's own actor (any party, per this
-		// spec's own Open Q1).
-		mirrorDir, remote, fakeHost, funnel := newVerbFixture(t, "gamma", true)
+		// note is transition-free (D-025): it authors an annotation event and
+		// never touches fold state, regardless of the current state. It is not
+		// authorization-free: only an active party named by the envelope may
+		// author it. Prove both halves through the real funnel boundary.
+		mirrorDir, remote, fakeHost, funnel := newVerbFixture(t, "beta", true)
 		id := "XQ-axon-20260721-b601"
 		writeQuestionArtifact(t, mirrorDir, id, "beta")
 		writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
 
-		cmd := cli.NewNoteCommand(funnel, mirrorDir, "fixture-space", "gamma", e2eManifest(), e2eHostConfig("gamma", remote), e2eActorResolver("agent", "bot"))
+		cmd := cli.NewNoteCommand(funnel, mirrorDir, "fixture-space", "beta", e2eManifest(), e2eHostConfig("beta", remote), e2eActorResolver("agent", "bot"))
 		mustRunLegal(t, "note", cmd, []string{"--note", "reminder: please respond", id})
 		mergeBranchToMain(t, mirrorDir, lastOpenedBranch(fakeHost))
 		assertShow(t, mirrorDir, "fixture-space", id, "submitted")
+
+		outsider := cli.NewNoteCommand(funnel, mirrorDir, "fixture-space", "gamma", e2eManifest(), e2eHostConfig("gamma", remote), e2eActorResolver("agent", "bot"))
+		assertIllegalRetry(t, "note-outsider", outsider, []string{"--note", "not my exchange", id}, "LFC-002", fakeHost)
 	})
 }
 
