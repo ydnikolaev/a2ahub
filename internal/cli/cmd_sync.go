@@ -48,6 +48,10 @@ type SyncCommand struct {
 	// NewSyncCommand defaults it to a real release.NewChecker built against
 	// release.NewGitHubSource; tests override it with a call-counting fake.
 	refreshUpdate func(ctx context.Context)
+	// refreshAvatars is the consented-network companion seam. Production
+	// injects the project-local avatar cache from cmd/a2a after mirrors have
+	// refreshed; errors are advisory because initials remain a complete UI.
+	refreshAvatars func(ctx context.Context) error
 }
 
 // NewSyncCommand constructs the sync command. pending must not be nil
@@ -65,6 +69,7 @@ func NewSyncCommand(projectConfigPath, machineConfigPath, projectRoot string, pe
 		resolveMirror:     space.ResolveMirrorLocation,
 		cloneOrFetch:      space.CloneOrFetch,
 		refreshUpdate:     defaultRefreshUpdate(machineConfigPath),
+		refreshAvatars:    func(context.Context) error { return nil },
 	}
 }
 
@@ -100,6 +105,15 @@ func (c *SyncCommand) SetRefreshUpdateForTest(refreshUpdate func(ctx context.Con
 	c.refreshUpdate = refreshUpdate
 }
 
+// SetAvatarRefresher injects the project-local participant-avatar refresh.
+// The CLI package owns only the invocation point; GitHub I/O and the cache
+// format remain behind their core-package seams.
+func (c *SyncCommand) SetAvatarRefresher(refresh func(ctx context.Context) error) {
+	if refresh != nil {
+		c.refreshAvatars = refresh
+	}
+}
+
 // Name implements cli.Command.
 func (c *SyncCommand) Name() string { return "sync" }
 
@@ -133,7 +147,7 @@ func (c *SyncCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	if len(cfg.Spaces) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stdout, "sync: no connected spaces")
-		c.refreshUpdate(ctx)
+		c.refreshAuxiliaryCaches(ctx, stdio)
 		return 0
 	}
 
@@ -159,12 +173,19 @@ func (c *SyncCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// spec 19 T3(b): sync is already the consented network verb, so it
 	// refreshes the T3 update-check cache synchronously, once, regardless of
 	// the mirror-refresh outcome above (best-effort — never fails sync).
-	c.refreshUpdate(ctx)
+	c.refreshAuxiliaryCaches(ctx, stdio)
 
 	if !allOK {
 		return 1
 	}
 	return 0
+}
+
+func (c *SyncCommand) refreshAuxiliaryCaches(ctx context.Context, stdio IO) {
+	if err := c.refreshAvatars(ctx); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "sync: avatars: %v — keeping cached avatars and monogram fallbacks\n", err)
+	}
+	c.refreshUpdate(ctx)
 }
 
 var _ Command = (*SyncCommand)(nil)

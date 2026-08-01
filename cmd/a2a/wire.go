@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/avatar"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/feedback"
@@ -228,7 +229,13 @@ func buildCommands() map[string]command {
 			return fail(stderr, err)
 		}
 		defer cache.ReleaseStatuslineRefreshLease(cacheDirOf(p))
-		return cli.NewSyncCommand(p.projectConfig, p.machineConfig, p.projectRoot, cli.NewCacheBackedPendingMarker(cacheDirOf(p))).Run(context.Background(), args, stdio(stdout, stderr))
+		cmd := cli.NewSyncCommand(p.projectConfig, p.machineConfig, p.projectRoot, cli.NewCacheBackedPendingMarker(cacheDirOf(p)))
+		refreshAvatars, avatarErr := newProjectAvatarRefresher(p)
+		if avatarErr != nil {
+			return fail(stderr, avatarErr)
+		}
+		cmd.SetAvatarRefresher(refreshAvatars)
+		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["await"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
@@ -484,6 +491,33 @@ func buildStore(p paths) (*cache.Store, error) {
 	// inbox / outbox render it; statusline's stale-trigger fires the checker).
 	cache.ConfigureUpdateNotice(store, version, machine.Defaults)
 	return store, nil
+}
+
+// newProjectAvatarRefresher composes the consented `a2a sync` network step.
+// The closure rebuilds the store after mirror refresh so it sees the newest
+// manifests, extracts active human owners, and hands only GitHub logins to the
+// host-backed disposable cache. No read verb or HTML render reaches network.
+func newProjectAvatarRefresher(p paths) (func(context.Context) error, error) {
+	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
+	avatars, err := avatar.NewCache(cacheDirOf(p), h.FetchAvatar, time.Now)
+	if err != nil {
+		return nil, fmt.Errorf("configure avatar cache: %w", err)
+	}
+	return func(ctx context.Context) error {
+		store, err := buildStore(p)
+		if err != nil {
+			return fmt.Errorf("read refreshed space manifests: %w", err)
+		}
+		var owners []string
+		for _, mirror := range store.SpaceMirrors() {
+			for _, participant := range mirror.Manifest.Participants {
+				if participant.Status == "active" {
+					owners = append(owners, participant.Owners...)
+				}
+			}
+		}
+		return avatars.Refresh(ctx, owners)
+	}, nil
 }
 
 // lifecycleDeps is the per-space dependency set every P8 lifecycle/contract

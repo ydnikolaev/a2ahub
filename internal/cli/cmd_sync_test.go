@@ -2,7 +2,9 @@ package cli_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
@@ -116,6 +118,29 @@ func TestSyncRefreshesUpdateCacheEvenWithNoConnectedSpaces(t *testing.T) {
 	}
 	if refreshCalls != 1 {
 		t.Fatalf("refreshUpdate calls = %d, want exactly 1", refreshCalls)
+	}
+}
+
+func TestSyncRefreshesAvatarsBestEffort(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	sync := cli.NewSyncCommand(filepath.Join(dir, "config.yaml"), filepath.Join(dir, "machine.yaml"), dir, cli.NewNoopPendingMarker())
+	sync.SetRefreshUpdateForTest(func(context.Context) {})
+	var calls int
+	sync.SetAvatarRefresher(func(context.Context) error {
+		calls++
+		return errors.New("github unavailable")
+	})
+
+	io, _, stderr := newIO()
+	if code := sync.Run(context.Background(), nil, io); code != 0 {
+		t.Fatalf("code = %d, avatar cache is an advisory surface", code)
+	}
+	if calls != 1 {
+		t.Fatalf("avatar refresh calls = %d, want one", calls)
+	}
+	if !strings.Contains(stderr.String(), "keeping cached avatars and monogram fallbacks") {
+		t.Fatalf("stderr = %q, want explicit fallback", stderr.String())
 	}
 }
 

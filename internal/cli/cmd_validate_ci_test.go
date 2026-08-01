@@ -1722,6 +1722,20 @@ func TestValidateCI_EventLifecycleCandidates(t *testing.T) {
 		}
 	})
 
+	t.Run("transition-free note is green", func(t *testing.T) {
+		t.Parallel()
+		const path = "seomatrix/events/2026/01J40A7M9P1S3V5W7Y9A1C3E56.yaml"
+		root, base := ciLifecycleCandidateRepo(t, map[string]string{
+			questionPath: validQuestion(questionID, "axon", "seomatrix"),
+			submitPath:   submit,
+		}, path, ciLifecycleEvent("01J40A7M9P1S3V5W7Y9A1C3E56", questionID, "note", "seomatrix", "")+"note: still working\n")
+
+		code, rep, errOut := runCI(t, engine, root, fakeGit(path), "v3-pr", base, "misha-gh")
+		if code != 0 || !rep.Valid {
+			t.Fatalf("transition-free note refused: code=%d report=%+v stderr=%s", code, rep, errOut)
+		}
+	})
+
 	t.Run("illegal transition is LFC-001", func(t *testing.T) {
 		t.Parallel()
 		const path = "axon/events/2026/01J40A7M9P1S3V5W7Y9A1C3E52.yaml"
