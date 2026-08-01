@@ -1,0 +1,90 @@
+schema: release-notes/v1
+version: "0.18.2"
+released: "2026-08-01"
+headline: "Notes land cleanly, release versions stay current, and the public product surface matches the dashboard"
+changes:
+  - id: RN-01802-1
+    kind: fix
+    impact: high
+    subject: "A note is validated before its pull request opens and remains legal in every artifact state"
+    detail: >
+      `a2a note` and its MCP twin now ask the shared fold legality engine before
+      writing. A note remains transition-free and does not change the artifact
+      state, but only either party named by the artifact may add one. This is
+      the same rule the space validator applies, so an authorized note on a
+      submitted response passes the required check instead of opening a pull
+      request that can never merge, while an outsider is refused locally before
+      any branch or pull request is created.
+    affects: ["a2a note", "MCP lifecycle tools", "fold legality", "space validation"]
+    action:
+      scope: local
+      why: >
+        Update the a2a binary before adding notes to active exchange artifacts;
+        no document or space migration is required.
+      detect:
+        - "a2a version"
+      run:
+        - "a2a update --yes"
+
+  - id: RN-01802-2
+    kind: fix
+    impact: normal
+    subject: "The website and local release tooling no longer report the release before the one actually published"
+    detail: >
+      Public releases are now derived only from exact immutable tag refs, and
+      the Pages build fetches complete tag history. After a proven candidate is
+      promoted, the publisher imports the exact verified public tag back into
+      the private source checkout before it returns. This closes the filtered
+      history gap that left the website, roadmap and release-aware agents on
+      0.18.0 even though GitHub, the installed binary and operated spaces were
+      already on 0.18.1. Authored notes without a matching tag remain hidden as
+      release candidates rather than being mistaken for shipped software.
+    affects: ["release publisher", "changelog", "roadmap", "GitHub Pages"]
+    action:
+      scope: none
+      why: >
+        The corrected release pipeline keeps future cuts current automatically.
+
+  - id: RN-01802-3
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: "The public product site and local dashboard now share the same real component vocabulary and design system."
+    impact: normal
+    subject: "The public site demonstrates the real dashboard instead of describing it with a second interface"
+    detail: >
+      The product homepage now embeds the same exchange map, artifact proof,
+      status badges, filters, disclosures and visual tokens as the local
+      dashboard. Features is generated from the dashboard Guide source, public
+      page headers follow one component grammar, and compact cards, popovers,
+      modals, mobile layouts and dark mode share the same interaction and
+      spacing rules. Human owners can carry locally cached GitHub avatars after
+      an explicit sync while every offline render keeps a monogram fallback and
+      performs no network request.
+    affects: ["a2ahub.dev", "a2a html", "design tokens", "dashboard map", "avatar cache"]
+    action:
+      scope: none
+      why: >
+        No configuration or data migration is required; a normal `a2a sync`
+        refreshes disposable participant avatars when network access is available.
+
+  - id: RN-01802-4
+    kind: feat
+    roadmap:
+      visibility: omit
+      why: "Search, agent discovery, accessibility and performance are delivery quality for the public surface, not a separate roadmap promise."
+    impact: low
+    subject: "Search engines and agents get canonical, complete and provenance-labelled product evidence"
+    detail: >
+      The static site now publishes canonical route metadata, a sitemap, Atom
+      release feed, permissive crawler policy, structured data, security.txt,
+      a compact llms.txt and a complete llms-full.txt assembled from the current
+      embedded documentation and tagged releases. The synthetic dashboard is
+      excluded from indexing, Google Analytics loads only on the public site,
+      and the quality gate checks accessibility, links, metadata, bundle shape
+      and Lighthouse budgets before Pages deploys.
+    affects: ["SEO", "agent discovery", "llms.txt", "accessibility", "performance", "analytics"]
+    action:
+      scope: none
+      why: >
+        No configuration or data migration is required.

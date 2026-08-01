@@ -35,6 +35,7 @@ scripts/*
 !scripts/classify-guard.sh
 !scripts/release-preflight.sh
 !scripts/check-release-notes-freshness.sh
+!scripts/check-roadmap-release-decisions.sh
 !scripts/check-gosec-scope.sh
 !scripts/check-readme.sh
 !scripts/dashboard-template-drift.sh

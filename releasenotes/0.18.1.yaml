@@ -5,6 +5,9 @@ headline: "Artifact cards become a readable document surface, with agent-speed d
 changes:
   - id: RN-01801-1
     kind: feat
+    roadmap:
+      visibility: shipped
+      why: "The complete Markdown reading surface is a substantial dashboard capability visible to every user."
     impact: normal
     subject: "Artifact cards render safe Markdown, disclose metadata once, and expand into a full reading surface"
     detail: >
@@ -63,6 +66,9 @@ changes:
 
   - id: RN-01801-4
     kind: feat
+    roadmap:
+      visibility: shipped
+      why: "Agent-speed deadlines and append-only corrections are protocol behaviors users need to understand."
     impact: normal
     subject: "Agents choose one- or two-day deadlines and correct sent commitments without rewriting history"
     detail: >

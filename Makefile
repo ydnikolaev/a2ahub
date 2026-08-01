@@ -34,7 +34,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators _print-repo-gates dashboard-template-drift feature-lint epic-drift skill-citations release-notes-freshness readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e install
+.PHONY: check test check-validators _print-repo-gates dashboard-template-drift feature-lint epic-drift skill-citations release-notes-freshness roadmap-release-decisions readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -45,7 +45,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift skill-citations release-notes-freshness
+REPO_GATES := classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift skill-citations release-notes-freshness roadmap-release-decisions
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -87,6 +87,7 @@ coverage: ## Same one-artifact race/coverage path as `check`, without static/vet
 
 release-preflight: ## MUST pass before cutting a release tag: version free on the release remote + every space-template reusable pin resolves to a tag that carries the workflow. Needs network — NOT in `check`. Usage: make release-preflight VERSION=v0.6.0
 	@test -n "$(VERSION)" || { echo "release-preflight: set VERSION, e.g. make release-preflight VERSION=v0.6.0"; exit 2; }
+	@bash scripts/check-roadmap-release-decisions.sh "$(VERSION)"
 	@bash scripts/release-preflight.sh "$(VERSION)"
 
 vulncheck: ## govulncheck ./... gated by .govulncheck-allow.txt (NEW called vuln reds; accepted stays green). Needs network — NOT in `check`.
@@ -120,6 +121,9 @@ skill-citations: ## Every `a2a <verb>` and error code the shipped skill PROSE ci
 release-notes-freshness: ## User-visible product commits cannot outrun the newest authored release notes.
 	@bash scripts/check-release-notes-freshness.sh
 
+roadmap-release-decisions: ## Every feature in the newest release notes is explicitly included in or omitted from Shipped now.
+	@bash scripts/check-roadmap-release-decisions.sh
+
 epic-drift: ## An epic's committed docs (status.md stamp, receipts) must match its tracker (private harness gate, presence-gated).
 	@if [ -f .agents/scripts/epic_docs_drift.sh ]; then \
 	  bash .agents/scripts/epic_docs_drift.sh; \
@@ -135,6 +139,7 @@ _harness-check:
 	@bash scripts/check-gosec-scope.sh --teeth
 	@bash scripts/release-preflight.sh --teeth
 	@bash scripts/check-release-notes-freshness.sh --teeth
+	@bash scripts/check-roadmap-release-decisions.sh --teeth
 	@bash scripts/check-readme.sh --teeth
 	@bash scripts/dashboard-template-drift.sh --teeth
 	@if [ -f docs/runbooks/publish-to-public.sh ]; then \

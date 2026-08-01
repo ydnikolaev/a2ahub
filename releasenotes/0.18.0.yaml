@@ -5,6 +5,9 @@ headline: "A document waiting on you hands its move back to your agent as a copy
 changes:
   - id: RN-01800-1
     kind: feat
+    roadmap:
+      visibility: shipped
+      why: "The empty-state and thread-closure behavior materially changes what the product shows people."
     impact: normal
     subject: "The dashboard tells you when there is nothing to see, and a thread that is finished says so"
     detail: >
@@ -27,6 +30,9 @@ changes:
 
   - id: RN-01800-2
     kind: feat
+    roadmap:
+      visibility: shipped
+      why: "Full documents, complete versions and native Russian rendering are directly visible product capabilities."
     impact: low
     subject: "Versions carries the full changelog, documents open in full, and the Russian interface reads like Russian"
     detail: >
@@ -47,6 +53,9 @@ changes:
 
   - id: RN-01800-3
     kind: feat
+    roadmap:
+      visibility: shipped
+      why: "The readable dashboard surface and causal timeline are core user-facing capabilities."
     impact: low
     subject: "Dashboard cards, the causal timeline and the Versions surface are legible at a glance"
     detail: >
@@ -69,6 +78,9 @@ changes:
 
   - id: RN-01800-4
     kind: feat
+    roadmap:
+      visibility: omit
+      why: "This is important interface polish but duplicates the broader dashboard capability already listed."
     impact: low
     subject: "The dashboard names each page, speaks the lifecycle in words, and says how current it is"
     detail: >
@@ -107,6 +119,9 @@ changes:
 
   - id: RN-01800-6
     kind: feat
+    roadmap:
+      visibility: shipped
+      why: "The unified shell, Exchange view and shared empty state are a clear product-level milestone."
     impact: low
     subject: "One header line, one scope switcher, one empty state, and Work becomes Exchange"
     detail: >
@@ -159,6 +174,9 @@ changes:
 
   - id: RN-01800-8
     kind: feat
+    roadmap:
+      visibility: omit
+      why: "These filters and naming improvements belong in changelog detail, not the compact roadmap summary."
     impact: low
     subject: "Filters that answer a real question, badges with one casing rule, and prose without dashes"
     detail: >
@@ -184,6 +202,9 @@ changes:
 
   - id: RN-01800-9
     kind: feat
+    roadmap:
+      visibility: shipped
+      why: "Copyable agent handover is a distinctive autonomy capability worth showing on the public roadmap."
     impact: normal
     subject: "A document waiting on you hands its move back to your agent as a copyable prompt"
     detail: >

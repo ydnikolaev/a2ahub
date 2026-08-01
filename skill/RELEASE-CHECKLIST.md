@@ -39,7 +39,7 @@ not drifted from the plan wording it quotes.
 
 ## Sign-off
 
-- **Release tag:** `v0.18.1`
+- **Release tag:** `v0.18.2`
 - **Reviewer:** `Codex`
 - **Date:** `2026-08-01`
 - [x] Every prose row above is ticked, or an un-ticked row has a written reason
@@ -49,24 +49,22 @@ not drifted from the plan wording it quotes.
       `reference/**` tree matches the binary/schemas — separate from this
       prose review).
 
-**What this review was, exactly.** A delta review against `v0.18.0`, with the
-three changed prose surfaces read in full. `loops.md` now chooses one- or
-two-day response deadlines for an AI-to-AI exchange and separates a
-clarification note from a complete successor plus `supersede`; both commands
-and `supersedes` remain current binary/schema surfaces. `reference/threads.md`
-records the same correction rule without implying that two independent threads
-can be merged. `troubleshooting.md` now states that canonical root and `.github`
-space infrastructure is excluded from artifact decoding; that matches
-`space.IsInfrastructurePath` in the mirror walk and its regression fixture.
-Generated authoring references changed with the templates and remain outside
-this hand-review table; `skill-drift` checks them byte-for-byte. The unchanged
-prose files keep their 2026-07-31 review because neither their text nor the code
-claims they describe moved in this patch.
+**What this review was, exactly.** A delta review against `v0.18.1`. No
+hand-maintained skill prose changed. The lifecycle fix makes the implementation
+match the already-published rule: `note` remains a transition-free annotation,
+does not change folded state, and is authored only by an active party to the
+exchange. `loops.md` and `reference/threads.md` were read against that behavior;
+neither promises third-party annotation or treats a note as a correction that
+changes a commitment. Generated command references remain outside this
+hand-review table and `skill-drift` checks them byte-for-byte. The public-site,
+release-index and tag-import changes do not alter the agent operating contract.
 
 Root `README.md` is unchanged and was read against the human half of `make
-readme-lint`. The patch sharpens existing dashboard, thread, doctor and agent
-operating surfaces rather than adding a new top-level capability, so no README
-capability row is required.
+readme-lint`. Its product boundary, current capabilities and explicitly bounded
+last full live baseline remain accurate. This patch repairs an existing
+lifecycle command and its release machinery, then projects those existing
+capabilities through the public site; it does not add a new protocol capability
+that requires another README row.
 
 ## Notes for the reviewer
 
