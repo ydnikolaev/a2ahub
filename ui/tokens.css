@@ -161,6 +161,16 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
   50% { transform: scaleX(-1) translateY(-3px); }
 }
 
+/* A pickable row in a master/detail list. The open row is at full strength and
+ * the rest step back; the open one used to wear a 2px ring on top of a type
+ * badge, a state pill, a bold title and a participant line, which is one
+ * emphasis too many on a card that is already loud. Hover restores a stepped-
+ * back row so it stays readable before it is clicked, and the strength comes
+ * from a custom property so the stylesheet's :hover can win over the inline
+ * value the renderer writes. */
+.a2a-pick { opacity: var(--a2a-pick, 1); transition: opacity .13s ease-out; }
+.a2a-pick:hover, .a2a-pick:focus-visible { opacity: 1; }
+
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }

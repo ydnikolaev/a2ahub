@@ -258,6 +258,19 @@ changes:
       the open items a thread folds to are a strictly larger set than the
       exchange rows, and a requirement this system published or a response it
       already gave appears in neither inbox nor outbox.
+      "Blocking" is gone as a word, because it never said who was blocking
+      whom and the two readings are opposites. `blocking: true` means the
+      AUTHOR has stopped and cannot continue until the document is answered, so
+      every label now names the party who has to move for the work to resume:
+      the recipient. An incoming one reads "blocked on you", an outgoing one
+      names the system being waited on, and the detail pane's badge carries a
+      hint that says who stopped, who can start them again, by when and at what
+      priority. The exchange map says how many are stopped on a lane and names
+      the party in the lane's own popover. An open row in a master/detail list
+      is now simply the one at full strength, with the rest stepped back and
+      hover bringing them forward; the ring it used to wear sat on top of a type
+      badge, a state pill, a bold title and a participant line and competed with
+      all four.
     affects: ["a2a html", "exchange", "threads", "contracts", "agent handover"]
     action:
       scope: none
