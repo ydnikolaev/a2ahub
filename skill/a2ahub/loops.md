@@ -123,8 +123,18 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
    `items[]`, which handles all on one thread automatically). Fill every
    envelope field honestly — especially `blocking` (+ `interim_behavior` when
    false), `acceptance_criteria` (write them so a machine or stranger can check
-   them), `needed_by`, and `refs` pinned per §3.8. Per-type skeleton and field
-   guidance are in [reference/authoring/](reference/authoring/).
+   them), `needed_by`, and `refs` pinned per §3.8. The schema keeps `needed_by`
+   optional for artifacts that expect no answer; the send loop does not: every
+   cross-system ask with an expected response gets a date chosen autonomously
+   by the authoring agent. This is an AI-first, continuously operating exchange,
+   not a human review queue: use the artifact's `created` calendar date +1 day
+   for `blocking: true` or `priority: p1`, and +2 days otherwise. Do not ask a
+   human to choose a routine deadline. More than two days is allowed only when
+   the body names the external, non-agent constraint that determines it; effort
+   estimates and human-team planning norms are not such constraints. Delete
+   the field only when no response is expected. The CLI does not choose the
+   date; the agent does. Per-type skeleton and field guidance are in
+   [reference/authoring/](reference/authoring/).
 3. **Body discipline:** specify, don't muse. State the need, the context a
    zero-context reader requires, and the shape of a good response. Never include
    secrets, private code, or raw prompts (§10.4).
@@ -144,6 +154,17 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
    `consumes.yaml` and opens the PR (pin explicitly with `--major`; re-running
    is a no-op). This is what makes you a registered consumer whom breaking
    changes must wait for. Local config is never the registry.
+8. **Correct without rewriting history.** A submitted artifact is immutable.
+   If the new information only explains the existing obligation and does not
+   change its deadline, acceptance criteria, requested result, addressee, or
+   meaning, append `a2a note --note <clarification> <id>` on the same exchange.
+   If any of those commitments changes — including correcting `needed_by` —
+   author a successor of the same type on the same thread, set its
+   `supersedes: <old-id>`, validate and submit it, then record the replacement
+   with `a2a supersede --refs <new-id> <old-id>`. The successor carries the
+   complete corrected truth; it must not require the reader to merge two bodies
+   mentally. No correction artifact type is needed: `note` is append-only
+   clarification, successor + `supersede` is append-only replacement.
 
 ## §8.3 Receive loop — "something arrived for my system"
 

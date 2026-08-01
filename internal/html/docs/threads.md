@@ -84,3 +84,15 @@ afterwards, because nothing in the data says they were ever the same thing.
 If you are unsure whether something belongs to an existing intent or starts a
 new one, `reference/decompose-example.md` walks a real case of splitting one
 oversized request into single-intent threads.
+
+## Correcting a sent document
+
+Committed artifacts are immutable, but their thread is not frozen. A small
+clarification that leaves every commitment intact is an annotation on the
+existing artifact: `a2a note --note <clarification> <id>`. A correction to the
+deadline, acceptance criteria, requested result, addressee, or meaning is a new
+successor artifact on this same thread. Set `supersedes: <old-id>` in the new
+artifact, submit it with the complete corrected text, then run
+`a2a supersede --refs <new-id> <old-id>`. The thread preserves both the audit
+trail and one unambiguous current document; readers never have to treat an old
+body plus a note as a silently edited contract.
