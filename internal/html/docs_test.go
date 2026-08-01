@@ -105,6 +105,50 @@ func TestDocs_GFMTablesRender(t *testing.T) {
 	}
 }
 
+// TestSkillDeadlinePolicy keeps the agent-operating rule concrete. The schema
+// cannot require needed_by on every artifact because one-way artifacts expect
+// no response; the authoring skill is what makes response-bearing exchanges
+// autonomous and AI-speed rather than silently borrowing human review SLAs.
+func TestSkillDeadlinePolicy(t *testing.T) {
+	t.Parallel()
+	source, err := fs.ReadFile(skill.Files, "a2ahub/loops.md")
+	if err != nil {
+		t.Fatalf("read loops.md: %v", err)
+	}
+	policy := string(source)
+	for _, required := range []string{
+		"`created` calendar date +1 day",
+		"`priority: p1`",
+		"+2 days otherwise",
+		"human to choose a routine deadline",
+		"external, non-agent constraint",
+	} {
+		if !strings.Contains(policy, required) {
+			t.Errorf("deadline policy is missing %q", required)
+		}
+	}
+}
+
+func TestSkillCorrectionPolicy(t *testing.T) {
+	t.Parallel()
+	source, err := fs.ReadFile(skill.Files, "a2ahub/loops.md")
+	if err != nil {
+		t.Fatalf("read loops.md: %v", err)
+	}
+	policy := string(source)
+	for _, required := range []string{
+		"A submitted artifact is immutable",
+		"a2a note --note <clarification> <id>",
+		"including correcting `needed_by`",
+		"`supersedes: <old-id>`",
+		"a2a supersede --refs <new-id> <old-id>",
+	} {
+		if !strings.Contains(policy, required) {
+			t.Errorf("correction policy is missing %q", required)
+		}
+	}
+}
+
 func TestDocs_Deterministic(t *testing.T) {
 	t.Parallel()
 	a, err := Docs()

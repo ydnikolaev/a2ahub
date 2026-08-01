@@ -12,7 +12,7 @@ category: <data|feature|fix|investigation|contract-change|process-change|other> 
 priority: p3
 blocking: false
 interim_behavior: "<what you do until this is resolved>"   # required when blocking: false
-needed_by: <YYYY-MM-DD>
+needed_by: <YYYY-MM-DD>               # response-bearing ask: created +1d if blocking/p1, else +2d; >2d must cite an external non-agent constraint
 acceptance_criteria:                  # required
   - "<measurable AC 1>"
 # proposed_change: "<structured summary>"   # REQUIRED when category is contract-change or process-change
