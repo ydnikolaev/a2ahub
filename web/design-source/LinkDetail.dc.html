@@ -34,7 +34,7 @@
           <button type="button" onClick="{{ r.open }}" style="{{ r.style }}">
             <span style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:3px;">
               <span style="flex:1 1 auto; min-width:0; font-size:14px; font-weight:600; color:var(--text); overflow-wrap:anywhere;">{{ r.head }}</span>
-              <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ r.pillText }}" tone="{{ r.pillTone }}" size="small" hint-size="70px,22px"></dc-import></span>
+              <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ r.pillText }}" tone="{{ r.pillTone }}" why="{{ r.pillWhy }}" size="small" hint-size="70px,22px"></dc-import></span>
             </span>
             <span style="display:block; font-family:'IBM Plex Mono',monospace; font-size:13px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere;">{{ r.detail }}</span>
             <span style="display:flex; gap:14px; flex-wrap:wrap; margin-top:5px;">
@@ -58,7 +58,7 @@
           <button type="button" onClick="{{ r.open }}" style="{{ r.style }}">
             <span style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:3px;">
               <span style="flex:1 1 auto; min-width:0; font-size:14px; font-weight:600; color:var(--text); overflow-wrap:anywhere;">{{ r.head }}</span>
-              <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ r.pillText }}" tone="{{ r.pillTone }}" size="small" hint-size="70px,22px"></dc-import></span>
+              <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ r.pillText }}" tone="{{ r.pillTone }}" why="{{ r.pillWhy }}" size="small" hint-size="70px,22px"></dc-import></span>
             </span>
             <span style="display:block; font-family:'IBM Plex Mono',monospace; font-size:13px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere;">{{ r.detail }}</span>
             <span style="display:flex; gap:14px; flex-wrap:wrap; margin-top:5px;">

@@ -271,7 +271,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-for list="{{ ovRows }}" as="r" hint-placeholder-count="3">
-              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
+              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" status-why="{{ r.statusWhy }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
             </sc-for>
           </div>
           <dc-import name="ArtifactDetail" det="{{ ovDetail }}" hint-size="100%,600px"></dc-import>
@@ -346,7 +346,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               <dc-import name="EmptyState" title="{{ emptyWorkTitle }}" text="{{ emptyWorkText }}" size="panel" hint-size="100%,240px"></dc-import>
             </sc-if>
             <sc-for list="{{ workRows }}" as="r" hint-placeholder-count="6">
-              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
+              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" status-why="{{ r.statusWhy }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
             </sc-for>
           </div>
           <dc-import name="ArtifactDetail" det="{{ workDetail }}" hint-size="100%,600px"></dc-import>
@@ -1960,9 +1960,9 @@ class Component extends DCLogic {
     const ru = this.state.locale === "ru";
     const d = this.state.data;
     const holders = (to || []).filter(Boolean);
-    if (holders.indexOf(d.self) > -1) return ru ? "держите вы" : "blocked on you";
-    if (holders.length === 1) return (ru ? "держит " : "blocked on ") + holders[0];
-    if (holders.length > 1) return ru ? "держат получатели" : "blocked on the recipients";
+    if (holders.indexOf(d.self) > -1) return ru ? "тормозите вы" : "blocked on you";
+    if (holders.length === 1) return (ru ? "тормозит " : "blocked on ") + holders[0];
+    if (holders.length > 1) return ru ? "тормозят получатели" : "blocked on the recipients";
     return ru ? "работа стоит" : "work is stopped";
   }
 
@@ -1989,7 +1989,10 @@ class Component extends DCLogic {
 
   statusOf(it) {
     const ru = this.state.locale === "ru";
-    if (it.blocking) return { status: this.blockedOn(it.from, it.to) + " · " + it.priority, tone: "blocking" };
+    if (it.blocking) return {
+      status: this.blockedOn(it.from, it.to) + " · " + it.priority, tone: "blocking",
+      why: this.blockedWhy({ from: it.from, to: it.to, neededBy: it.neededBy, priority: it.priority })
+    };
     if (it.gatePending) return { status: ru ? "ждёт вашего согласования" : "your approval pending", tone: "attention" };
     if (overdue(it)) return { status: (ru ? "просрочено" : "overdue") + " · " + it.priority, tone: "blocking" };
     if (it.severity === "attention") return { status: (ru ? "стоит посмотреть" : "needs a look") + " · " + it.priority, tone: "attention" };
@@ -2008,6 +2011,9 @@ class Component extends DCLogic {
     const stale = space && space.stale ? " · " + (ru ? "устарел " : "stale ") + age(space.syncAge) : (space && space.readable ? " · " + (ru ? "свежий " : "fresh ") + age(space.syncAge) : "");
     return {
       id: it.id, type: it.type, title: it.title, status: st.status, tone: st.tone,
+      // A label that raises a question carries its answer on itself, so the
+      // reader hovers the badge rather than hunting for a separate mark.
+      statusWhy: st.why || "",
       state: String(it.state || "").replace("_", " "), stateTone: STATE_TONE[it.state] || "neutral",
       // A deadline outranks an age wherever there is one. "5 ч" says when the
       // document last moved; the date says when it stops being optional, and a
@@ -2365,7 +2371,7 @@ class Component extends DCLogic {
       : (ru ? " Промпт ниже собирает их все: скопируйте и отдайте ход агенту." : " The prompt below covers all of them: copy it and hand the move to your agent.");
     const moveText = tvYours === 0
       ? (tvOthers.length
-        ? (ru ? "Вы никого не держите, ждут другую сторону." : "You are holding nobody up; the other side owes the move.")
+        ? (ru ? "Вы никого не тормозите, ждут другую сторону." : "You are holding nobody up; the other side owes the move.")
         : (ru ? "Открытые документы есть, но кто должен сделать следующий шаг, из событий не выводится." : "Open documents remain, but the events do not resolve who owes the next move."))
       : tvYours < tvPend.length
         ? (ru ? "На вас " + ruPlural(tvYours, "документ", "документа", "документов") + " из " + tvPend.length + ", остальные ждут ответа от других." + handOver : tvYours + " of " + tvPend.length + " open documents are on you; the rest await somebody else." + handOver)
@@ -2514,8 +2520,8 @@ class Component extends DCLogic {
         { label:ru ? "Нужны вы" : "Need you", value:needsYou.length, note:ru ? "кто-то стоит или ждёт согласования" : "somebody stopped or awaiting approval",
           hint:ru ? "Документы, где без человека дальше никак: кто-то остановил из-за них свою работу, ждёт вашего согласования или уже просрочил срок. Всё остальное агенты доводят сами." : "Documents that genuinely cannot move without a person: something is literally blocked, waiting on your approval, or already past its deadline. Everything else the agents finish on their own.",
           valueStyle:"font-size:40px; line-height:1; font-weight:600; color:" + (needsYou.length ? "var(--ochre)" : "var(--green)") + ";" },
-        { label:ru ? "Идёт само" : "Moving itself", value:restCount, note:ru ? "входящих, никого не держат" : "non-blocking incoming",
-          hint:ru ? "Входящие документы, которые никого не держат. Агент разберётся с ними по протоколу, смотреть не обязательно." : "Incoming documents that hold nobody up. The agent handles them by protocol; you do not have to look.",
+        { label:ru ? "Идёт само" : "Moving itself", value:restCount, note:ru ? "входящих, никого не тормозят" : "non-blocking incoming",
+          hint:ru ? "Входящие документы, которые никого не тормозят. Агент разберётся с ними по протоколу, смотреть не обязательно." : "Incoming documents that hold nobody up. The agent handles them by protocol; you do not have to look.",
           valueStyle:"font-size:40px; line-height:1; font-weight:600; color:var(--green);" },
         { label:ru ? "Ждёте вы" : "You await", value:scopedOutbox.length, note:ru ? "отправлено, ответа нет" : "outgoing documents",
           hint:ru ? "Вы отправили, ход теперь за другой системой. Пока она не ответит, здесь ничего не изменится." : "You sent these; the move is now the other system's. Nothing here changes until it answers.",
@@ -2526,7 +2532,7 @@ class Component extends DCLogic {
       ],
       ovRows: needsYou.map(it => this.rowFor(it, "ovSel", ovSel)),
       ovRestText: restCount
-        ? (ru ? c.openWork + ": ещё " + ruPlural(restCount, "входящий документ", "входящих документа", "входящих документов") + ", никого не держат" : c.openWork + ": " + restCount + " more incoming, holding nobody up")
+        ? (ru ? c.openWork + ": ещё " + ruPlural(restCount, "входящий документ", "входящих документа", "входящих документов") + ", никого не тормозят" : c.openWork + ": " + restCount + " more incoming, holding nobody up")
         : c.openWork,
       hasOvRows: needsYou.length > 0, noOvRows: needsYou.length === 0,
       emptyQueueTitle: ru ? "Ваше решение сейчас не нужно" : "No decision is waiting on you",

@@ -270,7 +270,9 @@ changes:
       is now simply the one at full strength, with the rest stepped back and
       hover bringing them forward; the ring it used to wear sat on top of a type
       badge, a state pill, a bold title and a participant line and competed with
-      all four.
+      all four. The explanation hangs off the badge itself and opens on hover or
+      on a tap, rather than off a separate mark beside it: a reader who wonders
+      what two words mean looks at those two words.
     affects: ["a2a html", "exchange", "threads", "contracts", "agent handover"]
     action:
       scope: none

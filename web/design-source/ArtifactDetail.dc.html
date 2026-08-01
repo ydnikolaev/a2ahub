@@ -20,16 +20,10 @@
       <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:7px; margin-bottom:9px;">
         <dc-import name="TypeBadge" type="{{ type }}" size="small" hint-size="140px,24px"></dc-import>
         <sc-for list="{{ pills }}" as="p" hint-placeholder-count="2">
-          <!-- A pill can carry its own explanation. "blocked on you" states a
-               fact and raises a question the badge has no room for: who
-               stopped, and what unblocks them. The hint answers it in place
-               rather than sending the reader looking. -->
-          <span style="display:inline-flex; align-items:center; gap:6px;">
-            <dc-import name="StatusPill" text="{{ p.text }}" tone="{{ p.tone }}" size="small" hint-size="110px,24px"></dc-import>
-            <sc-if value="{{ p.hasHint }}" hint-placeholder-val="{{ false }}">
-              <dc-import name="HintDot" text="{{ p.hint }}" hint-size="17px,17px"></dc-import>
-            </sc-if>
-          </span>
+          <!-- The explanation hangs off the pill itself, not off a separate "?"
+               beside it: a reader who wonders what "blocked on you" means looks
+               at those two words, and that is where the answer should be. -->
+          <dc-import name="StatusPill" text="{{ p.text }}" tone="{{ p.tone }}" why="{{ p.hint }}" size="small" hint-size="110px,24px"></dc-import>
         </sc-for>
       </div>
       <div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; line-height:1.55; color:var(--muted); overflow-wrap:anywhere;">{{ sourceLine }}</div>
@@ -168,7 +162,7 @@ class Component extends DCLogic {
       newestFirstLabel: ru ? "новое сверху" : "newest first",
       flagLabel: ru ? "флаг протокола" : "protocol flag",
       type: d.type,
-      pills: (d.pills || []).map(p => ({ text: p.text, tone: p.tone, hasHint: !!p.hint, hint: p.hint || "" })),
+      pills: (d.pills || []).map(p => ({ text: p.text, tone: p.tone, hint: p.hint || "" })),
       sourceLine: d.sourceLine || "",
       title: d.title || "",
       body: d.body || "",
