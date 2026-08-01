@@ -39,10 +39,10 @@ func TestTroubleshootingEnumeratesEveryDoctorCheck(t *testing.T) {
 			t.Errorf("troubleshooting omits doctor check %q", name)
 		}
 	}
-	if len(names) != 15 {
-		t.Fatalf("doctor emitted %d checks (%v), want 15; update the documented count and this tripwire together", len(names), names)
+	if len(names) != 16 {
+		t.Fatalf("doctor emitted %d checks (%v), want 16; update the documented count and this tripwire together", len(names), names)
 	}
-	if !strings.Contains(doc, "## The fifteen checks") {
+	if !strings.Contains(doc, "## The sixteen checks") {
 		t.Fatal("troubleshooting doctor-count heading does not match the executable list")
 	}
 }

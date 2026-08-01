@@ -40,6 +40,9 @@ func TestCacheRefreshIsIdempotentAndConditional(t *testing.T) {
 	if !ok {
 		t.Fatal("DataURL did not read the cached image")
 	}
+	if !Cached(filepath.Dir(c.dir), "YDNIKOLAEV") {
+		t.Fatal("Cached did not recognize the validated record case-insensitively")
+	}
 	want := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("png-bytes"))
 	if got != want {
 		t.Fatalf("DataURL = %q, want %q", got, want)
@@ -107,5 +110,8 @@ func TestCacheIgnoresInvalidLoginAndDataURLTraversal(t *testing.T) {
 	}
 	if _, ok := DataURL(t.TempDir(), "../../secret"); ok {
 		t.Fatal("DataURL accepted traversal login")
+	}
+	if Cached(t.TempDir(), "../../secret") {
+		t.Fatal("Cached accepted traversal login")
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/avatar"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/notification"
@@ -123,7 +124,7 @@ func (c *DoctorCommand) Name() string { return "doctor" }
 // stays green forever. A summary cannot go stale that way; the enumeration lives
 // where it can be checked against `checks` — troubleshooting.md's table.
 func (c *DoctorCommand) Synopsis() string {
-	return "run local health checks over every connected space (credentials, mirror access, identity, versions, CI, space scaffolding, auto-merge, CODEOWNERS, notifications, statusline, skill) — see troubleshooting.md for what each FAIL means"
+	return "run local health checks over every connected space (credentials, mirror access, identity, participant avatars, versions, CI, space scaffolding, auto-merge, CODEOWNERS, notifications, statusline, skill) — see troubleshooting.md for what each FAIL means"
 }
 
 // Run implements cli.Command. Exit codes: 2 = usage error (including the
@@ -163,6 +164,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"credentials", func() (bool, string) { return c.doctorCheckCredentials(ctx, cfg, machine) }},
 		{"space access", func() (bool, string) { return c.doctorCheckSpaceAccess(ctx, cfg, machine) }},
 		{"space identity", func() (bool, string) { return c.doctorCheckSpaceIdentity(cfg, machine) }},
+		{"participant avatars", func() (bool, string) { return c.doctorCheckParticipantAvatars(cfg, machine) }},
 		{"versions", func() (bool, string) { return c.doctorCheckVersions(cfg, machine) }},
 		{"CI presence", func() (bool, string) { return c.doctorCheckCIPresence(cfg, machine) }},
 		{"space scaffolding current", func() (bool, string) { return c.doctorCheckScaffoldingCurrent(ctx, cfg, machine) }},
@@ -197,6 +199,67 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 1
 	}
 	return 0
+}
+
+// doctorCheckParticipantAvatars is deliberately local-only and advisory.
+// Foreground `a2a sync` owns network refresh and cache mutation; doctor only
+// names active owners whose validated local image is absent. The dashboard
+// therefore remains fully useful with monograms while an agent gets one
+// concrete repair command and the human never has to manage cache files.
+func (c *DoctorCommand) doctorCheckParticipantAvatars(cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+	cacheDir := filepath.Join(c.projectRoot, ".a2a", "cache")
+	missing := make(map[string][]string)
+	for _, ref := range cfg.Spaces {
+		dir := c.resolveMirror(c.projectRoot, ref, machine)
+		raw, err := c.readFile(filepath.Join(dir, "space.yaml"))
+		if err != nil {
+			continue // space access and versions own unreadable-mirror failures
+		}
+		manifest, err := space.ParseManifest(raw)
+		if err != nil {
+			continue // versions owns malformed-manifest failures
+		}
+		owners := make(map[string]string)
+		for _, participant := range manifest.Participants {
+			if participant.Status != "active" {
+				continue
+			}
+			for _, rawOwner := range participant.Owners {
+				owner := strings.TrimSpace(rawOwner)
+				if owner == "" || avatar.Cached(cacheDir, owner) {
+					continue
+				}
+				key := strings.ToLower(owner)
+				if _, exists := owners[key]; !exists {
+					owners[key] = owner
+				}
+			}
+		}
+		if len(owners) == 0 {
+			continue
+		}
+		keys := make([]string, 0, len(owners))
+		for key := range owners {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			missing[ref.ID] = append(missing[ref.ID], owners[key])
+		}
+	}
+	if len(missing) == 0 {
+		return true, ""
+	}
+	spaceIDs := make([]string, 0, len(missing))
+	for spaceID := range missing {
+		spaceIDs = append(spaceIDs, spaceID)
+	}
+	sort.Strings(spaceIDs)
+	parts := make([]string, 0, len(spaceIDs))
+	for _, spaceID := range spaceIDs {
+		parts = append(parts, fmt.Sprintf("%s: %s", spaceID, strings.Join(missing[spaceID], ", ")))
+	}
+	return true, " · local participant avatars are missing (" + strings.Join(parts, "; ") + ") — run `a2a sync`; initials remain available meanwhile"
 }
 
 func (c *DoctorCommand) doctorCheckNotificationComponents(ctx context.Context) (bool, string) {

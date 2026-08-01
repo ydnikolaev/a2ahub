@@ -13,6 +13,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/avatar"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/notification"
 	"github.com/ydnikolaev/a2ahub/internal/release"
@@ -142,9 +143,71 @@ func TestDoctorRunAllPassOnZeroConnectedSpaces(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 	}
-	for _, name := range []string{"credentials", "space access", "space identity", "versions", "CI presence", "auto-merge enabled", "stuck green PRs", "statusline wiring"} {
+	for _, name := range []string{"credentials", "space access", "space identity", "participant avatars", "versions", "CI presence", "auto-merge enabled", "stuck green PRs", "statusline wiring"} {
 		if !strings.Contains(stdout.String(), name+": PASS") {
 			t.Errorf("stdout missing %q PASS line; got %q", name, stdout.String())
+		}
+	}
+}
+
+func TestDoctorParticipantAvatarsAdvisesOnlyForMissingActiveOwners(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	mirror := filepath.Join(root, "mirror")
+	if err := os.MkdirAll(mirror, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `schema: manifest/v1
+space: getvisa
+min_binary_version: 0.18.1
+participants:
+  - system: axon
+    org: r22d222
+    section: axon
+    owners: [ydnikolaev]
+    status: active
+    joined: 2026-08-01
+  - system: seomatrix
+    org: r22d222
+    section: seomatrix
+    owners: [xpressmike, YDNIKOLAEV]
+    status: active
+    joined: 2026-08-01
+  - system: legacy
+    org: r22d222
+    section: legacy
+    owners: [left-owner]
+    status: left
+    joined: 2026-07-01
+`
+	if err := os.WriteFile(filepath.Join(mirror, "space.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := avatar.NewCache(filepath.Join(root, ".a2a", "cache"), func(context.Context, string, string, string) ([]byte, string, string, string, bool, error) {
+		return []byte("png"), "image/png", "https://avatars.githubusercontent.com/u/1?s=64", "", false, nil
+	}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.Refresh(context.Background(), []string{"ydnikolaev"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := newTestDoctorCommand()
+	cmd.projectRoot = root
+	cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return mirror }
+	ok, detail := cmd.doctorCheckParticipantAvatars(space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa"}}}, space.MachineConfig{})
+	if !ok {
+		t.Fatalf("missing avatars are advisory, got FAIL: %s", detail)
+	}
+	for _, want := range []string{"getvisa: xpressmike", "a2a sync", "initials remain available"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("detail=%q, want %q", detail, want)
+		}
+	}
+	for _, unwanted := range []string{"ydnikolaev", "left-owner"} {
+		if strings.Contains(detail, unwanted) {
+			t.Errorf("detail=%q unexpectedly contains %q", detail, unwanted)
 		}
 	}
 }

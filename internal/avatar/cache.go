@@ -142,15 +142,32 @@ func (c *Cache) refreshOne(ctx context.Context, login string) error {
 // DataURL reads one validated record without network access. Invalid, missing
 // or oversized records degrade to ok=false so the UI keeps its monogram.
 func DataURL(cacheDir, login string) (value string, ok bool) {
-	if cacheDir == "" || !loginPattern.MatchString(login) {
+	r, ok := cachedRecord(cacheDir, login)
+	if !ok {
 		return "", false
+	}
+	return "data:" + r.ContentType + ";base64," + base64.StdEncoding.EncodeToString(r.Data), true
+}
+
+// Cached reports whether a validated local record exists for login without
+// decoding it into a data URI or making a network request. Diagnostics use
+// this to recommend a foreground sync while offline readers keep their
+// monogram fallback.
+func Cached(cacheDir, login string) bool {
+	_, ok := cachedRecord(cacheDir, login)
+	return ok
+}
+
+func cachedRecord(cacheDir, login string) (record, bool) {
+	if cacheDir == "" || !loginPattern.MatchString(login) {
+		return record{}, false
 	}
 	path := filepath.Join(cacheDir, "avatars", strings.ToLower(login)+".json")
 	r, err := readRecord(path)
 	if err != nil || validateRecord(r, login) != nil {
-		return "", false
+		return record{}, false
 	}
-	return "data:" + r.ContentType + ";base64," + base64.StdEncoding.EncodeToString(r.Data), true
+	return r, true
 }
 
 func (c *Cache) path(login string) (string, error) {

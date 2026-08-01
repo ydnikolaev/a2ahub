@@ -75,8 +75,10 @@ changes:
       modals, mobile layouts and dark mode share the same interaction and
       spacing rules. Human owners can carry locally cached GitHub avatars after
       an explicit sync while every offline render keeps a monogram fallback and
-      performs no network request.
-    affects: ["a2ahub.dev", "a2a html", "design tokens", "dashboard map", "avatar cache"]
+      performs no network request. Doctor reports missing active-owner images as
+      a non-blocking advisory with the exact `a2a sync` repair, so people never
+      need to inspect or manage the cache themselves.
+    affects: ["a2ahub.dev", "a2a html", "a2a doctor", "design tokens", "dashboard map", "avatar cache"]
     action:
       scope: none
       why: >
