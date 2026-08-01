@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
-	"github.com/ydnikolaev/a2ahub/internal/avatar"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/notification"
@@ -79,6 +78,12 @@ type DoctorCommand struct {
 	// NotificationStatus is wired by cmd/a2a to the same controller as
 	// `a2a notifications status`; doctor never grows a second platform probe.
 	NotificationStatus func(context.Context, string) (notification.Status, error)
+
+	// ParticipantAvatarStatus is wired by cmd/a2a from the avatar cache owner.
+	// The CLI receives policy, not the cache path or on-disk format. The first
+	// result says a validated local image exists; the second says foreground
+	// sync supports this owner identifier at all.
+	ParticipantAvatarStatus func(login string) (cached, supported bool)
 }
 
 // NewDoctorCommand constructs the basic doctor command. h is the host
@@ -207,8 +212,14 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 // therefore remains fully useful with monograms while an agent gets one
 // concrete repair command and the human never has to manage cache files.
 func (c *DoctorCommand) doctorCheckParticipantAvatars(cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
-	cacheDir := filepath.Join(c.projectRoot, ".a2a", "cache")
+	if len(cfg.Spaces) == 0 {
+		return true, ""
+	}
+	if c.ParticipantAvatarStatus == nil {
+		return true, " · local participant avatar probe not wired"
+	}
 	missing := make(map[string][]string)
+	unsupported := make(map[string]map[string]string)
 	for _, ref := range cfg.Spaces {
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
 		raw, err := c.readFile(filepath.Join(dir, "space.yaml"))
@@ -226,10 +237,23 @@ func (c *DoctorCommand) doctorCheckParticipantAvatars(cfg space.ProjectConfig, m
 			}
 			for _, rawOwner := range participant.Owners {
 				owner := strings.TrimSpace(rawOwner)
-				if owner == "" || avatar.Cached(cacheDir, owner) {
+				if owner == "" {
 					continue
 				}
 				key := strings.ToLower(owner)
+				cached, supported := c.ParticipantAvatarStatus(owner)
+				if cached {
+					continue
+				}
+				if !supported {
+					if unsupported[ref.ID] == nil {
+						unsupported[ref.ID] = make(map[string]string)
+					}
+					if _, exists := unsupported[ref.ID][key]; !exists {
+						unsupported[ref.ID][key] = owner
+					}
+					continue
+				}
 				if _, exists := owners[key]; !exists {
 					owners[key] = owner
 				}
@@ -247,19 +271,40 @@ func (c *DoctorCommand) doctorCheckParticipantAvatars(cfg space.ProjectConfig, m
 			missing[ref.ID] = append(missing[ref.ID], owners[key])
 		}
 	}
-	if len(missing) == 0 {
+	if len(missing) == 0 && len(unsupported) == 0 {
 		return true, ""
 	}
-	spaceIDs := make([]string, 0, len(missing))
-	for spaceID := range missing {
-		spaceIDs = append(spaceIDs, spaceID)
+	formatOwners := func(bySpace map[string][]string) string {
+		spaceIDs := make([]string, 0, len(bySpace))
+		for spaceID := range bySpace {
+			spaceIDs = append(spaceIDs, spaceID)
+		}
+		sort.Strings(spaceIDs)
+		parts := make([]string, 0, len(spaceIDs))
+		for _, spaceID := range spaceIDs {
+			owners := bySpace[spaceID]
+			sort.Slice(owners, func(i, j int) bool { return strings.ToLower(owners[i]) < strings.ToLower(owners[j]) })
+			parts = append(parts, fmt.Sprintf("%s: %s", spaceID, strings.Join(owners, ", ")))
+		}
+		return strings.Join(parts, "; ")
 	}
-	sort.Strings(spaceIDs)
-	parts := make([]string, 0, len(spaceIDs))
-	for _, spaceID := range spaceIDs {
-		parts = append(parts, fmt.Sprintf("%s: %s", spaceID, strings.Join(missing[spaceID], ", ")))
+	formatUnsupported := func(bySpace map[string]map[string]string) string {
+		flat := make(map[string][]string, len(bySpace))
+		for spaceID, owners := range bySpace {
+			for _, owner := range owners {
+				flat[spaceID] = append(flat[spaceID], owner)
+			}
+		}
+		return formatOwners(flat)
 	}
-	return true, " · local participant avatars are missing (" + strings.Join(parts, "; ") + ") — run `a2a sync`; initials remain available meanwhile"
+	var notes []string
+	if len(missing) > 0 {
+		notes = append(notes, "local participant avatars are missing ("+formatOwners(missing)+") — run `a2a sync`")
+	}
+	if len(unsupported) > 0 {
+		notes = append(notes, "owner identifiers cannot be fetched from GitHub ("+formatUnsupported(unsupported)+") — correct them in space.yaml")
+	}
+	return true, " · " + strings.Join(notes, "; ") + "; initials remain available meanwhile"
 }
 
 func (c *DoctorCommand) doctorCheckNotificationComponents(ctx context.Context) (bool, string) {
