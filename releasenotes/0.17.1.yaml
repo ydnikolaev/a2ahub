@@ -181,7 +181,8 @@ changes:
       list below — the one thing the heading existed to save them. It now states
       it: waiting on you, on a named system, or on both, with the count of
       documents behind it. Page descriptions say what is on the page rather
-      than how the protocol underneath it behaves. The thread list names
+      than how the protocol underneath it behaves, and name every control the
+      page actually has. The thread list names
       the system too, instead of "waiting on others". Underneath that sat a
       second defect: the demo fixture predates the field that separates "someone
       still owes a move" from "not yet terminal", so decoding it marked every

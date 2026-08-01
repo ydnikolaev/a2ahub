@@ -1108,7 +1108,7 @@ const DASHBOARD_I18N = {
     work:"Exchange", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
     whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Causal timeline", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Flags on this thread — surfaced, never dropped",
     contracts:"Contracts and their versions", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
-    network:"Who depends on whom", networkSub:"A solid line means one system depends on a contract another one publishes. A dashed line means an exchange between two systems is still open. Click any line or system to see what is behind it.", exchangeMap:"Exchange map",
+    network:"Who depends on whom", networkSub:"A solid line means one system depends on a contract another one publishes. A dashed line means an exchange between two systems is still open. Click any line or system to see what is behind it — versions, pinned lines, open documents.", exchangeMap:"Exchange map",
     spaces:"Spaces", spacesSub:"A space is the shared repository systems exchange documents through. This is how fresh your copy of each one is, and which a2a version it wants before it accepts what you write.", freshness:"Freshness", participants:"Participants", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
     limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read — or deliberately did not evaluate — is named here, so an empty space never passes for a clean result.",
     emptyLimitsTitle:"Nothing to qualify", emptyLimitsText:"Every connected space was readable when this snapshot was written, and no flag was raised. The numbers above are the whole picture.",
@@ -1140,7 +1140,7 @@ const DASHBOARD_I18N = {
     work:"Обмен", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. Полная история — кто что сделал и в каком порядке — в снимок не попала.",
     whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"Как всё происходило", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
     contracts:"Контракты и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас —", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
-    network:"Кто от кого зависит", networkSub:"Сплошная линия — одна система зависит от контракта, который публикует другая. Пунктир — между двумя системами есть незакрытый обмен. Нажмите на линию или на систему, чтобы увидеть подробности.", exchangeMap:"Карта обмена",
+    network:"Кто от кого зависит", networkSub:"Сплошная линия — одна система зависит от контракта, который публикует другая. Пунктир — между двумя системами есть незакрытый обмен. Нажмите на линию или на систему, чтобы увидеть, что за ней стоит: версии, закреплённые линии, открытые документы.", exchangeMap:"Карта обмена",
     spaces:"Спейсы", spacesSub:"Спейс — общий репозиторий, через который системы обмениваются документами. Здесь видно, насколько свежая у вас копия каждого и какую версию a2a он ждёт, чтобы принять вашу запись.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
     limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь — чтобы пустое место не сошло за «всё в порядке».",
     emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"Когда собирался снимок, все подключённые спейсы читались, замечаний не было. Цифры выше — это вся картина.",
@@ -2208,7 +2208,7 @@ class Component extends DCLogic {
           ? (ru ? "В обороте сейчас ничего нет." : "Nothing is in flight right now.")
           : (ru
             ? "Всего в обороте " + ruPlural(scopedInbox.length, "входящий", "входящих", "входящих") + " и " + ruPlural(scopedOutbox.length, "исходящий", "исходящих", "исходящих") + " — остальное " + (d.self ? d.self + " и другие агенты доводят" : "агенты доводят") + " между собой."
-            : scopedInbox.length + " incoming and " + scopedOutbox.length + " outgoing are in flight in all — " + (d.self ? d.self + " and the other agents carry" : "the agents carry") + " the rest between them.")),
+            : scopedInbox.length + " incoming and " + scopedOutbox.length + " outgoing are in flight — " + (d.self ? d.self + " and the other agents carry" : "the agents carry") + " the rest between them.")),
       ovStats: [
         { label:ru ? "Нужны вы" : "Need you", value:needsYou.length, note:ru ? "блокирует или ждёт согласования" : "blocking or approval",
           hint:ru ? "Документы, где без человека дальше никак: кто-то явно заблокирован, ждёт вашего согласования или уже просрочил срок. Всё остальное агенты доводят сами." : "Documents that genuinely cannot move without a person: something is literally blocked, waiting on your approval, or already past its deadline. Everything else the agents finish on their own.",
@@ -2293,8 +2293,8 @@ class Component extends DCLogic {
       workDetail: this.detailFor(workSel, workList),
 
       threadsSub: ru
-        ? "Один вопрос — один тред: запрос, ответы, доказательства и решение лежат вместе, и все стороны видят их в одном порядке. Слева — список тредов и чей сейчас ход, справа — вся история сверху вниз."
-        : "One question, one thread: the request, the replies, the evidence and the decision stay together and read the same way for every side. The list on the left says whose move it is; the record on the right shows how it got there.",
+        ? "Одна задача — один тред: запрос, ответы, доказательства и решение лежат вместе, и все стороны видят их в одном порядке. Слева — список тредов и чей сейчас ход, справа — вся история, новое сверху."
+        : "One task, one thread: the request, the replies, the evidence and the decision stay together and read the same way for every side. The list on the left says whose move it is; the record on the right shows how it got there, newest first.",
       noThreadRows: threads.length === 0, hasThreadRows: threads.length > 0,
       emptyThreadsTitle: ru ? "Тредов пока нет" : "No threads yet",
       emptyThreadsText: ru
@@ -2444,7 +2444,7 @@ class Component extends DCLogic {
 
       conSub: ru
         ? "Контракт — обещание одной системы остальным: что она отдаёт и в каком виде. У него есть версии, и каждый потребитель сидит на своей. Сейчас не на последней " + offCurrent + " линий из " + scopedEdges + " — с них и стоит начать."
-        : "A contract is one system's promise to the others: what it hands over and in what shape. It has versions, and every consumer sits on one of them. " + offCurrent + " of " + scopedEdges + " are off the latest — start there.",
+        : "A contract is one system's promise to the others: what it hands over and in what shape. It has versions, and every consumer sits on one of them. " + offCurrent + " of the " + scopedEdges + " registered lines are off the latest — start there.",
       conRows: contracts.map(c => {
         const edges = d.contractEdges.filter(e => e.contract === c.id);
         const bad = edges.filter(e => e.drift !== "current");
@@ -2614,8 +2614,8 @@ class Component extends DCLogic {
       noSpaces: d.spaces.filter(x => this.inScope(x.id)).length === 0,
 
       verSub: ru
-        ? "Какая версия a2a стоит у вас и что менялось в каждом выпуске. Фильтры сверху отделяют записи, которые чего-то от вас требуют, от тех, что можно просто прочитать."
-        : "Which a2a version you run, and what changed in every release. The filters up top separate the entries that ask something of you from the ones you can just read.",
+        ? "Какая версия a2a стоит у вас сейчас и что менялось в каждом выпуске. Фильтры сверху сужают список по типу изменения и отделяют записи, которые чего-то от вас требуют, от тех, что можно просто прочитать."
+        : "Which a2a version you run right now, and what changed in every release. The filters up top narrow the list by kind of change, and separate the entries that ask something of you from the ones you can simply read.",
       verCurrent: tooling.current, verLatest: tooling.latest,
       verFacts: [
         { label:ru ? "проверяли" : "checked", value:when(tooling.checkedAt) + (ru ? " · кэш " : " · cache ") + age(tooling.cacheAge) },
