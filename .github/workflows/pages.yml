@@ -51,10 +51,11 @@ jobs:
       - run: npm ci
         working-directory: web
 
-      - run: npx playwright install --with-deps chromium
-        working-directory: web
-
-      - run: npm run check:quality
+      # Pages proves a clean checkout can generate and validate the exact
+      # static artifact it publishes. Browser quality audits are the local
+      # release gate; repeating 27 Lighthouse runs here only delays deploys
+      # and burns hosted-runner minutes without changing the output.
+      - run: npm run check
         working-directory: web
 
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
