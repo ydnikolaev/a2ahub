@@ -171,6 +171,7 @@ func TestPushForbiddenClassification(t *testing.T) {
 		"! [rejected]        main -> main (non-fast-forward)",
 		"remote: error: GH006: Protected branch update failed.",
 		"fatal: repository 'https://example.invalid/o/r.git/' not found",
+		"fatal: '/tmp/fixture403/not-a-repo' does not appear to be a git repository",
 	}
 	for _, stderr := range notForbidden {
 		if pushForbidden(stderr) {

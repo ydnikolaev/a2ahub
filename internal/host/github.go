@@ -163,7 +163,7 @@ var pushForbiddenMarkers = []string{
 	"denied to",                              // "remote: Permission to o/r.git denied to <login>"
 	"permission denied",                      // ssh remotes
 	"write access to repository not granted", // fine-grained PAT without contents:write
-	"403",                                    // "The requested URL returned error: 403"
+	"returned error: 403",                    // HTTPS push rejected by GitHub
 }
 
 // pushForbidden reports whether stderr describes an ACCESS refusal.
