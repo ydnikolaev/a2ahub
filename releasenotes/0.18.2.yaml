@@ -99,7 +99,10 @@ changes:
       embedded documentation and tagged releases. The synthetic dashboard is
       excluded from indexing, Google Analytics loads only on the public site,
       and the quality gate checks accessibility, links, metadata, bundle shape
-      and Lighthouse budgets before Pages deploys.
+      and Lighthouse budgets before Pages deploys. The shared runtime also
+      keeps unbooted design markup out of the first visible frame, eliminating
+      a timing-dependent changelog layout shift; a deliberately delayed-runtime
+      browser check now guards that first-paint contract.
     affects: ["SEO", "agent discovery", "llms.txt", "accessibility", "performance", "analytics"]
     action:
       scope: none

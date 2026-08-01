@@ -12,7 +12,11 @@
 html, body { height: auto !important; min-height: 100%; }
 html { background: var(--canvas); scroll-behavior: smooth; }
 body { margin: 0; min-width: 320px; line-height: normal; -webkit-font-smoothing: antialiased; }
-x-dc { display: block; }
+/* Design Components are interpreted in the browser. Keep the unbooted source
+ * layout-bearing but invisible so a slow module cannot paint the one-item raw
+ * loop and then shift the page when React mounts the complete projection. */
+x-dc { display: block; min-height: 100vh; visibility: hidden; }
+#dc-root:empty { min-height: 100vh; }
 body:has(x-dc) > footer,
 body:has(#dc-root:empty) > footer {
   position: absolute;
