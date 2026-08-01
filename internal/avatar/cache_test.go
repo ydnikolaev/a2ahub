@@ -102,7 +102,7 @@ func TestCacheIgnoresInvalidLoginAndDataURLTraversal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Refresh(context.Background(), []string{"../../secret", ""}); err != nil {
+	if err := c.Refresh(context.Background(), []string{"../../secret", "", "foo-", "foo--bar"}); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 0 {
@@ -113,5 +113,8 @@ func TestCacheIgnoresInvalidLoginAndDataURLTraversal(t *testing.T) {
 	}
 	if Cached(t.TempDir(), "../../secret") {
 		t.Fatal("Cached accepted traversal login")
+	}
+	if Supports("foo_bar") || Supports("foo-") || Supports("foo--bar") || !Supports("ydnikolaev") || !Supports("a") {
+		t.Fatal("Supports disagrees with the GitHub login grammar")
 	}
 }

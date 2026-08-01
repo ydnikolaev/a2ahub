@@ -267,6 +267,9 @@ func buildCommands() map[string]command {
 		// advisory nobody set up is indistinguishable from one that has nothing
 		// to report.
 		cmd.TemplateFiles = spacetemplate.Files
+		cmd.ParticipantAvatarStatus = func(login string) (bool, bool) {
+			return avatar.Cached(cacheDirOf(p), login), avatar.Supports(login)
+		}
 		if notifications, notificationsErr := newNotificationController(p); notificationsErr == nil {
 			cmd.NotificationStatus = func(ctx context.Context, root string) (notification.Status, error) {
 				return notifications.Status(ctx, notification.StatusRequest{Root: root, Probe: true})

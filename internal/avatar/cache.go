@@ -27,7 +27,7 @@ const (
 )
 
 var (
-	loginPattern        = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
+	loginPattern        = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$`)
 	errInvalidLogin     = errors.New("avatar: invalid GitHub login")
 	errInvalidRecord    = errors.New("avatar: invalid cache record")
 	errTooLarge         = errors.New("avatar: image exceeds size limit")
@@ -78,7 +78,7 @@ func (c *Cache) Refresh(ctx context.Context, logins []string) error {
 	uniq := make(map[string]string, len(logins))
 	for _, raw := range logins {
 		login := strings.TrimSpace(raw)
-		if !loginPattern.MatchString(login) {
+		if !validLogin(login) {
 			continue
 		}
 		key := strings.ToLower(login)
@@ -158,8 +158,15 @@ func Cached(cacheDir, login string) bool {
 	return ok
 }
 
+// Supports reports whether login can ever be refreshed by this GitHub-backed
+// cache. It lets diagnostics distinguish a missing image that sync can repair
+// from an owner identifier that the fetcher must ignore safely.
+func Supports(login string) bool {
+	return validLogin(strings.TrimSpace(login))
+}
+
 func cachedRecord(cacheDir, login string) (record, bool) {
-	if cacheDir == "" || !loginPattern.MatchString(login) {
+	if cacheDir == "" || !validLogin(login) {
 		return record{}, false
 	}
 	path := filepath.Join(cacheDir, "avatars", strings.ToLower(login)+".json")
@@ -171,10 +178,14 @@ func cachedRecord(cacheDir, login string) (record, bool) {
 }
 
 func (c *Cache) path(login string) (string, error) {
-	if !loginPattern.MatchString(login) {
+	if !validLogin(login) {
 		return "", errInvalidLogin
 	}
 	return filepath.Join(c.dir, strings.ToLower(login)+".json"), nil
+}
+
+func validLogin(login string) bool {
+	return loginPattern.MatchString(login) && !strings.Contains(login, "--")
 }
 
 func validateRecord(r record, login string) error {
@@ -194,7 +205,7 @@ func validateRecord(r record, login string) error {
 
 func readRecord(path string) (record, error) {
 	// #nosec G304 -- path is constructed only from the configured cache root
-	// and a GitHub login that passed loginPattern; callers never pass artifact data.
+	// and a GitHub login that passed validLogin; callers never pass artifact data.
 	f, err := os.Open(path)
 	if err != nil {
 		return record{}, err

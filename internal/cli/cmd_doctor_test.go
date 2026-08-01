@@ -13,7 +13,6 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/ydnikolaev/a2ahub/internal/avatar"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/notification"
 	"github.com/ydnikolaev/a2ahub/internal/release"
@@ -183,19 +182,12 @@ participants:
 	if err := os.WriteFile(filepath.Join(mirror, "space.yaml"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cache, err := avatar.NewCache(filepath.Join(root, ".a2a", "cache"), func(context.Context, string, string, string) ([]byte, string, string, string, bool, error) {
-		return []byte("png"), "image/png", "https://avatars.githubusercontent.com/u/1?s=64", "", false, nil
-	}, time.Now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cache.Refresh(context.Background(), []string{"ydnikolaev"}); err != nil {
-		t.Fatal(err)
-	}
-
 	cmd := newTestDoctorCommand()
 	cmd.projectRoot = root
 	cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return mirror }
+	cmd.ParticipantAvatarStatus = func(login string) (bool, bool) {
+		return strings.EqualFold(login, "ydnikolaev"), true
+	}
 	ok, detail := cmd.doctorCheckParticipantAvatars(space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa"}}}, space.MachineConfig{})
 	if !ok {
 		t.Fatalf("missing avatars are advisory, got FAIL: %s", detail)
@@ -209,6 +201,22 @@ participants:
 		if strings.Contains(detail, unwanted) {
 			t.Errorf("detail=%q unexpectedly contains %q", detail, unwanted)
 		}
+	}
+}
+
+func TestDoctorParticipantAvatarsDoesNotPrescribeSyncForUnsupportedOwner(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	manifest := "schema: manifest/v1\nspace: demo\nparticipants:\n  - system: app\n    owners: [foo_bar]\n    status: active\n"
+	if err := os.WriteFile(filepath.Join(dir, "space.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := newTestDoctorCommand()
+	cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return dir }
+	cmd.ParticipantAvatarStatus = func(string) (bool, bool) { return false, false }
+	ok, detail := cmd.doctorCheckParticipantAvatars(space.ProjectConfig{Spaces: []space.Ref{{ID: "demo"}}}, space.MachineConfig{})
+	if !ok || !strings.Contains(detail, "correct them in space.yaml") || strings.Contains(detail, "a2a sync") {
+		t.Fatalf("unsupported owner advisory = ok:%t detail:%q", ok, detail)
 	}
 }
 
