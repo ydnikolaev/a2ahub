@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<style>
+@keyframes a2a-agent-relay-stretch { from { left:0; } to { left:calc(100% - 7px); } }
+</style>
+<div aria-hidden="true" style="{{ wrapStyle }}">
+  <span class="a2a-empty-bot" style="display:flex;">
+    <svg class="a2a-agent-relay-icon" width="{{ botSize }}" height="{{ botSize }}" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
+  </span>
+  <span style="{{ wireStyle }}">
+    <span style="{{ wireLineStyle }}"></span>
+    <span class="a2a-empty-spark" style="{{ sparkStyle }}"></span>
+  </span>
+  <span class="a2a-empty-bot a2a-empty-bot--b" style="display:flex; transform:scaleX(-1);">
+    <svg class="a2a-agent-relay-icon" width="{{ botSize }}" height="{{ botSize }}" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
+  </span>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:420,&quot;height&quot;:140},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;compact&quot;,&quot;panel&quot;,&quot;hero&quot;],&quot;default&quot;:&quot;panel&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;tone&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;muted&quot;,&quot;teal&quot;],&quot;default&quot;:&quot;muted&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;stretch&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+// The agent-to-agent illustration is its own primitive. EmptyState composes it,
+// but the public product story can also use the same visual without pretending
+// that a non-empty marketing surface is an empty state.
+const SIZES = {
+  compact: { bot: 28, wire: 64 },
+  panel: { bot: 38, wire: 92 },
+  hero: { bot: 54, wire: 132 }
+};
+class Component extends DCLogic {
+  renderVals() {
+    const s = SIZES[this.props.size] || SIZES.panel;
+    const colour = this.props.tone === "teal" ? "var(--teal-ink)" : "var(--logo-dim)";
+    const stretch = !!this.props.stretch;
+    return {
+      botSize: s.bot,
+      wrapStyle: "display:flex; align-items:center; justify-content:center; color:" + colour + "; min-width:0;" + (stretch ? "width:100%;" : ""),
+      wireStyle: "position:relative; flex:" + (stretch ? "1 1 auto" : "0 1 " + s.wire + "px") + "; width:" + (stretch ? "auto" : s.wire + "px") + "; height:" + s.bot + "px; display:flex; align-items:center; margin:0 8px; min-width:40px;",
+      wireLineStyle: "width:100%; height:0; border-top:2px dashed var(--border-strong);",
+      sparkStyle: "position:absolute; left:0; top:50%; width:7px; height:7px; margin-top:-3.5px; border-radius:99px; background:var(--teal-solid); --a2a-empty-travel:" + (s.wire - 7) + "px;" + (stretch ? "animation:a2a-agent-relay-stretch 2.8s ease-in-out infinite alternate;" : "")
+    };
+  }
+}
+
+</script>
+</body>
+</html>

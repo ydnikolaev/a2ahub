@@ -17,7 +17,7 @@
       </span>
     </sc-if>
     <span style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ currentLabel }}</span>
-    <span aria-hidden="true" style="flex:0 0 auto; color:var(--muted); font-size:11px;">{{ caret }}</span>
+    <span style="flex:0 0 auto; color:var(--muted);"><dc-import name="DisclosureIcon" expanded="{{ expanded }}" hint-size="18px,18px"></dc-import></span>
   </button>
 
   <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
@@ -92,7 +92,6 @@ class Component extends DCLogic {
       open: this.state.open,
       expanded: this.state.open ? "true" : "false",
       ariaLabel: ru ? "Выбрать спейс" : "Choose a space",
-      caret: this.state.open ? "▴" : "▾",
       currentLabel: cur.label || "",
       hasFaces: !!(cur.faces && cur.faces.length),
       faces: cur.faces || [],

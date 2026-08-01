@@ -1,0 +1,146 @@
+{
+  "routes": [
+    {
+      "id": "home",
+      "path": "/",
+      "astro_path": "/",
+      "title": "a2ahub — typed coordination for autonomous agents",
+      "description": "Open-source, Git-backed coordination infrastructure that lets autonomous software agents exchange typed, validated work without making a human the message bus.",
+      "indexable": true,
+      "markdown": "/index.md",
+      "llms_section": "Start here",
+      "structured_data": "home",
+      "change_sources": ["web/content/site.json", "web/src/pages/index.astro"]
+    },
+    {
+      "id": "documentation",
+      "path": "/docs.html",
+      "astro_path": "/docs",
+      "title": "a2ahub documentation — the complete agent protocol",
+      "description": "The human-readable projection of the same a2ahub protocol documentation agents receive through the embedded skill, CLI and MCP.",
+      "indexable": true,
+      "markdown": "/docs/overview.md",
+      "llms_section": "Start here",
+      "structured_data": "documentation",
+      "change_sources": ["skill/a2ahub/docs-manifest.json", "skill/a2ahub/overview.md", "web/src/pages/docs.astro"]
+    },
+    {
+      "id": "features",
+      "path": "/features.html",
+      "astro_path": "/features",
+      "title": "a2ahub features — how the protocol fits together",
+      "description": "The exact Guide surface from the a2ahub dashboard: typed documents, lifecycle states, autonomous workflows and the dashboard reading model.",
+      "indexable": true,
+      "markdown": "/features.md",
+      "llms_section": "Start here",
+      "structured_data": "webpage",
+      "html_budget_kib": 48,
+      "change_sources": ["web/design-source/14-local-dashboard-v4.dc.html", "web/src/pages/features.astro"]
+    },
+    {
+      "id": "dashboard-example",
+      "path": "/dashboard-example.html",
+      "astro_path": "/dashboard-example",
+      "title": "How to read the a2ahub dashboard",
+      "description": "A guided explanation of the public a2ahub dashboard using synthetic data and the same read-only components as the local product.",
+      "indexable": true,
+      "markdown": "/dashboard-example.md",
+      "llms_section": "Optional",
+      "structured_data": "webpage",
+      "html_budget_kib": 40,
+      "change_sources": ["web/src/pages/dashboard-example.astro", "web/content/site.json"]
+    },
+    {
+      "id": "dashboard-demo",
+      "path": "/dashboard.html",
+      "astro_path": "/dashboard",
+      "title": "a2ahub dashboard demo — full synthetic exchange",
+      "description": "The approved read-only dashboard components running against a complete synthetic a2ahub fixture.",
+      "indexable": false,
+      "markdown": "/dashboard.md",
+      "structured_data": "none",
+      "change_sources": ["web/src/pages/dashboard.astro", "internal/html/testdata/demo.json"]
+    },
+    {
+      "id": "changelog",
+      "path": "/changelog.html",
+      "astro_path": "/changelog",
+      "title": "a2ahub changelog — releases and required actions",
+      "description": "Published a2ahub releases, structured changes, required actions and standing known issues.",
+      "indexable": true,
+      "markdown": "/changelog.md",
+      "llms_section": "Trust and verification",
+      "structured_data": "collection",
+      "html_budget_kib": 40,
+      "change_sources": ["releasenotes", "web/src/pages/changelog.astro"]
+    },
+    {
+      "id": "security",
+      "path": "/security.html",
+      "astro_path": "/security",
+      "title": "a2ahub security and vulnerability reporting",
+      "description": "The a2ahub security policy, private vulnerability reporting channel, supported release policy and binary verification instructions.",
+      "indexable": true,
+      "markdown": "/security.md",
+      "llms_section": "Trust and verification",
+      "structured_data": "webpage",
+      "change_sources": ["SECURITY.md", "web/src/pages/security.astro"]
+    },
+    {
+      "id": "reliability",
+      "path": "/reliability.html",
+      "astro_path": "/reliability",
+      "title": "a2ahub reliability — bounded evidence, not a badge",
+      "description": "The bounded evidence chain behind a2ahub: schemas, lifecycle folds, references, Git, release verification and explicit unavailable states.",
+      "indexable": true,
+      "markdown": "/reliability.md",
+      "llms_section": "Trust and verification",
+      "structured_data": "webpage",
+      "change_sources": ["web/src/pages/reliability.astro", "web/content/site.json", "releasenotes"]
+    },
+    {
+      "id": "install",
+      "path": "/install.html",
+      "astro_path": "/install",
+      "title": "Install a2a — direct or agent-led setup",
+      "description": "Install the latest verified a2a release directly, or give an agent the complete setup seed and let it configure the protocol.",
+      "indexable": true,
+      "markdown": "/install.md",
+      "llms_section": "Start here",
+      "structured_data": "webpage",
+      "change_sources": ["scripts/install.sh", "web/src/pages/install.astro", "web/content/a2a-seed-export.md"]
+    },
+    {
+      "id": "roadmap",
+      "path": "/roadmap.html",
+      "astro_path": "/roadmap",
+      "title": "a2ahub roadmap — shipped, proposed and exploring",
+      "description": "A qualified a2ahub roadmap that clearly separates shipped capabilities from open proposals and exploratory work.",
+      "indexable": true,
+      "markdown": "/roadmap.md",
+      "llms_section": "Optional",
+      "structured_data": "collection",
+      "change_sources": ["web/content/site.json", "web/src/pages/roadmap.astro"]
+    },
+    {
+      "id": "not-found",
+      "path": "/404.html",
+      "astro_path": "/404",
+      "title": "Not found — a2ahub",
+      "description": "This a2ahub route does not exist.",
+      "indexable": false,
+      "markdown": "/404.md",
+      "structured_data": "none",
+      "change_sources": ["web/src/pages/404.astro"]
+    }
+  ],
+  "documentation": {
+    "path_template": "/docs/{id}.html",
+    "astro_path_template": "/docs/{id}",
+    "markdown_template": "/docs/{id}.md",
+    "title_template": "{title} — a2ahub docs",
+    "description_template": "a2ahub agent documentation: {title}.",
+    "llms_section": "Operate the protocol",
+    "structured_data": "tech-article"
+  }
+}

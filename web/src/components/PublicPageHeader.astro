@@ -1,0 +1,88 @@
+---
+import { BookMarked, Compass, GitCompareArrows, ScanEye, Telescope } from '@lucide/astro';
+
+const {
+  title,
+  description,
+  icon = 'compass',
+} = Astro.props;
+
+const icons = {
+  compass: Compass,
+  docs: BookMarked,
+  changelog: GitCompareArrows,
+  security: ScanEye,
+  roadmap: Telescope,
+};
+const PageIcon = icons[icon] ?? Compass;
+---
+
+<section class="public-page-header" aria-labelledby="public-page-title">
+  <div class="public-page-header__copy">
+    <h1 class="public-page-header__title" id="public-page-title">
+      <span class="public-page-header__icon" aria-hidden="true">
+        <PageIcon size={22} strokeWidth={2} />
+      </span>
+      <span>{title}</span>
+    </h1>
+    <p class="public-page-header__description">{description}</p>
+  </div>
+</section>
+
+<style>
+  .public-page-header {
+    width: min(1240px, calc(100% - 56px));
+    margin: 0 auto;
+    padding: 32px 0 34px;
+  }
+
+  .public-page-header__copy {
+    max-width: 780px;
+    min-width: 0;
+  }
+
+  .public-page-header__title {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    margin: 0 0 12px;
+    font-size: 32px;
+    line-height: 1.15;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  .public-page-header__icon {
+    flex: 0 0 42px;
+    width: 42px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    color: var(--teal-ink);
+    background: var(--teal-tint);
+  }
+
+  .public-page-header__description {
+    max-width: 760px;
+    margin: 0;
+    color: var(--body);
+    font-size: 18px;
+    line-height: 1.6;
+    text-wrap: pretty;
+  }
+
+  @media (max-width: 640px) {
+    .public-page-header {
+      width: min(100% - 32px, 1240px);
+      padding: 26px 0 28px;
+    }
+
+    .public-page-header__title {
+      align-items: flex-start;
+      font-size: 28px;
+    }
+  }
+</style>

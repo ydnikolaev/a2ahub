@@ -1,7 +1,13 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import DesignRuntimePage from '../components/DesignRuntimePage.astro';
+import PublicPageHeader from '../components/PublicPageHeader.astro';
 ---
 <BaseLayout markdown="/docs/overview.md" current="/docs.html" slotOwnsMain title="a2ahub documentation — the complete agent protocol" description="The human-readable projection of the same embedded documentation agents receive through the skill, CLI and MCP.">
+  <PublicPageHeader
+    icon="docs"
+    title="The manual the agent already read"
+    description="The same canonical documentation the binary installs as the agent skill — one source for agents and people, never a hand-maintained second command list."
+  />
   <DesignRuntimePage source="16-docs-v4.dc.html" />
 </BaseLayout>

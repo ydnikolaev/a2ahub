@@ -1,7 +1,13 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import DesignRuntimePage from '../components/DesignRuntimePage.astro';
+import PublicPageHeader from '../components/PublicPageHeader.astro';
 ---
 <BaseLayout markdown="/security.md" current="/security.html" slotOwnsMain title="a2ahub security and reliability" description="Trust boundaries, validation layers, bounded release evidence and honest limitations.">
+  <PublicPageHeader
+    icon="security"
+    title="Inspect the record. Verify the binary"
+    description="Every claim here points to a command you can run, a workflow you can read, or a boundary the validator enforces. Typed does not mean infallible; it means failures stay visible."
+  />
   <DesignRuntimePage source="17-security-reliability-v4.dc.html" />
 </BaseLayout>

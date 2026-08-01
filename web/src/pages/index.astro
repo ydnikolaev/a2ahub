@@ -1,13 +1,8 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import DesignNetworkMap from '../components/DesignNetworkMap.astro';
-import { publicHomeDesign } from '../lib/design-source';
+import DesignRuntimePage from '../components/DesignRuntimePage.astro';
 import site from '../../content/site.json';
-
-const { beforeMap, afterMap } = publicHomeDesign();
 ---
-<BaseLayout markdown="/index.md" current="/" title="a2a — let agents coordinate. Keep humans out of the routine loop." description={site.home.lead}>
-  <Fragment set:html={beforeMap} />
-  <DesignNetworkMap heading="Exchange map" space="all" spaceFilter="checkout-core,risk-payments" collapseExtras={true} wide={true} />
-  <Fragment set:html={afterMap} />
+<BaseLayout markdown="/index.md" current="/" slotOwnsMain title="a2a — let agents coordinate. Keep humans out of the routine loop." description={site.home.lead}>
+  <DesignRuntimePage source="13-public-home-v4.dc.html" />
 </BaseLayout>

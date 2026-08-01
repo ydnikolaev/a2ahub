@@ -3,19 +3,115 @@ import '../../../ui/tokens.css';
 import '../styles/site.css';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
+import AnalyticsRuntime from '../components/AnalyticsRuntime.astro';
 import content from '../generated/content.json';
+import routeManifest from '../generated/route-manifest.json';
 
-const {
-  title = 'a2ahub — typed coordination infrastructure for autonomous agents',
-  description = 'Let autonomous agents coordinate through typed artifacts, validation and an inspectable Git record.',
-  current = Astro.url.pathname,
-  markdown,
-  noFooter = false,
-  noHeader = false,
-  slotOwnsMain = false,
-  lang = 'en'
-} = Astro.props;
-const canonical = new URL(Astro.url.pathname, Astro.site).toString();
+const props = Astro.props;
+const normalizePath = (pathname) => {
+  if (pathname === '/index.html') return '/';
+  if (pathname.length > 1 && pathname.endsWith('/')) return pathname.slice(0, -1);
+  return pathname;
+};
+const requestPath = normalizePath(Astro.url.pathname);
+const route = routeManifest.routes.find((candidate) => (
+  candidate.path === requestPath
+  || candidate.astro_path === requestPath
+  || (requestPath !== '/' && !requestPath.includes('.') && candidate.path === `${requestPath}.html`)
+));
+const title = route?.title ?? props.title ?? 'a2ahub — typed coordination infrastructure for autonomous agents';
+const description = route?.description ?? props.description ?? 'Let autonomous agents coordinate through typed artifacts, validation and an inspectable Git record.';
+const current = props.current ?? route?.canonical_path ?? requestPath;
+const markdown = route?.markdown ?? props.markdown;
+const noFooter = props.noFooter ?? false;
+const noHeader = props.noHeader ?? false;
+const slotOwnsMain = props.slotOwnsMain ?? false;
+const lang = props.lang ?? 'en';
+const robots = props.robots ?? (route?.indexable === false
+  ? 'noindex, follow'
+  : 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1');
+const analytics = props.analytics ?? (route?.indexable !== false);
+const canonicalPath = route?.canonical_path ?? (requestPath === '/' ? '/' : requestPath);
+const canonical = new URL(canonicalPath, Astro.site).toString();
+const socialImage = new URL(content.site.product.socialImage, Astro.site).toString();
+const organizationId = new URL('/#organization', Astro.site).toString();
+const websiteId = new URL('/#website', Astro.site).toString();
+const webPageId = `${canonical}#webpage`;
+const structuredData = route?.structured_data ?? 'webpage';
+const webPageType = structuredData === 'collection' || structuredData === 'documentation' ? 'CollectionPage' : 'WebPage';
+const organizationNode = {
+  '@type': 'Organization',
+  '@id': organizationId,
+  name: content.site.organization.name,
+  url: content.site.organization.url,
+  logo: new URL(content.site.product.icon, Astro.site).toString(),
+  sameAs: content.site.organization.sameAs
+};
+const websiteNode = {
+  '@type': 'WebSite',
+  '@id': websiteId,
+  url: new URL('/', Astro.site).toString(),
+  name: content.site.product.name,
+  description: content.site.product.definition,
+  publisher: { '@id': organizationId },
+  inLanguage: lang
+};
+const graph = route?.indexable === false || structuredData === 'none' ? [] : [
+  organizationNode,
+  websiteNode,
+  {
+    '@type': webPageType,
+    '@id': webPageId,
+    url: canonical,
+    name: title,
+    description,
+    isPartOf: { '@id': websiteId },
+    inLanguage: lang,
+    ...(route?.lastmod ? { dateModified: route.lastmod } : {})
+  }
+];
+
+if (route?.id === 'home') {
+  graph.push(
+    {
+      '@type': 'SoftwareApplication',
+      '@id': new URL('/#software', Astro.site).toString(),
+      name: 'a2a',
+      alternateName: content.site.product.name,
+      description: content.site.product.definition,
+      applicationCategory: content.site.product.applicationCategory,
+      operatingSystem: content.site.product.supportedOperatingSystems.join(', '),
+      softwareVersion: content.releases?.[0]?.version,
+      downloadUrl: `${content.site.product.github}/releases`,
+      sameAs: [content.site.product.github],
+      license: `${content.site.product.github}/blob/main/LICENSE`,
+      publisher: { '@id': organizationId },
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' }
+    }
+  );
+} else if (structuredData === 'tech-article') {
+  graph.push({
+    '@type': 'TechArticle',
+    '@id': `${canonical}#article`,
+    headline: title,
+    description,
+    mainEntityOfPage: { '@id': webPageId },
+    author: { '@type': 'Organization', name: content.site.organization.name, url: content.site.organization.url },
+    publisher: { '@type': 'Organization', name: content.site.organization.name, url: content.site.organization.url },
+    inLanguage: lang,
+    ...(route?.lastmod ? { dateModified: route.lastmod } : {})
+  });
+}
+
+if (structuredData === 'documentation' || structuredData === 'tech-article') {
+  const items = [
+    { '@type': 'ListItem', position: 1, name: 'a2ahub', item: new URL('/', Astro.site).toString() },
+    { '@type': 'ListItem', position: 2, name: 'Documentation', item: new URL('/docs.html', Astro.site).toString() }
+  ];
+  if (structuredData === 'tech-article') items.push({ '@type': 'ListItem', position: 3, name: title, item: canonical });
+  graph.push({ '@type': 'BreadcrumbList', '@id': `${canonical}#breadcrumbs`, itemListElement: items });
+}
+const jsonLd = JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replaceAll('<', '\\u003c');
 ---
 <!doctype html>
 <html lang={lang}>
@@ -23,17 +119,41 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
+    <meta name="robots" content={robots} />
     <meta name="theme-color" content="#f1eee6" />
     <link rel="canonical" href={canonical} />
     {markdown && <link rel="alternate" type="text/markdown" href={new URL(markdown, Astro.site)} />}
+    <link rel="alternate" type="application/atom+xml" title="a2ahub releases" href="/feed.xml" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <meta property="og:type" content="website" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta property="og:type" content={structuredData === 'tech-article' ? 'article' : 'website'} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:site_name" content="a2ahub" />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:image" content={socialImage} />
+    <meta property="og:image:secure_url" content={socialImage} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="a2ahub: two autonomous agents exchanging a typed artifact through an inspectable Git-backed protocol" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={socialImage} />
+    <meta name="twitter:image:alt" content="a2ahub: two autonomous agents exchanging a typed artifact through an inspectable Git-backed protocol" />
+    {graph.length > 0 && <script type="application/ld+json" set:html={jsonLd} />}
     <title>{title}</title>
+    {analytics && <script async is:inline src="https://www.googletagmanager.com/gtag/js?id=G-P4VH0QW93R"></script>}
+    {analytics && <script is:inline>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-P4VH0QW93R');
+    </script>}
+    {analytics && <AnalyticsRuntime />}
     <script is:inline>
       try {
         const saved = localStorage.getItem('a2a-theme');
@@ -51,30 +171,43 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
     <script is:inline>
       const live = document.querySelector('[data-live-region]');
       const announce = (message) => { if (live) live.textContent = message; };
-      document.querySelectorAll('[data-theme-toggle]').forEach((button) => button.addEventListener('click', () => {
-        const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-        document.documentElement.dataset.theme = next;
-        try { localStorage.setItem('a2a-theme', next); } catch {}
+      const syncThemeToggles = () => {
+        const dark = document.documentElement.dataset.theme === 'dark';
         document.querySelectorAll('[data-theme-toggle]').forEach((toggle) => {
-          const dark = next === 'dark';
           toggle.setAttribute('aria-pressed', String(dark));
           toggle.setAttribute('aria-label', dark ? 'Light theme' : 'Dark theme');
           toggle.setAttribute('title', dark ? 'Light theme' : 'Dark theme');
           const label = toggle.querySelector('[data-theme-label]');
           if (label) label.textContent = dark ? 'Light theme' : 'Dark theme';
         });
+      };
+      syncThemeToggles();
+      document.querySelectorAll('[data-theme-toggle]').forEach((button) => button.addEventListener('click', () => {
+        const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = next;
+        try { localStorage.setItem('a2a-theme', next); } catch {}
+        syncThemeToggles();
         announce(`${next} theme selected`);
       }));
-      document.querySelectorAll('[data-copy-value]').forEach((button) => button.addEventListener('click', async () => {
-        const original = button.textContent;
+      document.addEventListener('click', async (event) => {
+        const button = event.target instanceof Element ? event.target.closest('[data-copy-value]') : null;
+        if (!(button instanceof HTMLElement)) return;
+        const copyId = button.dataset.copyId;
+        const liveButton = () => {
+          if (button.isConnected || !copyId) return button;
+          return [...document.querySelectorAll('[data-copy-id]')].find((candidate) => candidate instanceof HTMLElement && candidate.dataset.copyId === copyId) || button;
+        };
+        const liveTarget = () => liveButton().querySelector('[data-copy-feedback]') || liveButton();
+        const original = button.dataset.copyLabel || liveTarget().textContent;
         try {
           await navigator.clipboard.writeText(button.dataset.copyValue || '');
-          button.textContent = 'Copied'; announce('Copied to clipboard');
+          liveTarget().textContent = button.dataset.copySuccess || 'Copied';
+          announce(button.dataset.copyAnnouncement || 'Copied to clipboard');
         } catch {
-          button.textContent = 'Copy failed'; announce('Clipboard permission was denied');
+          liveTarget().textContent = 'Copy failed'; announce('Clipboard permission was denied');
         }
-        setTimeout(() => { button.textContent = original; }, 1800);
-      }));
+        setTimeout(() => { liveTarget().textContent = original; }, 1800);
+      }, true);
       document.querySelectorAll('[data-agent-link]').forEach((link) => {
         const page = `${location.href} Prefer the Markdown alternate and linked source-of-truth documents.`;
         const prompt = encodeURIComponent(`Read ${page} Help me understand or use a2ahub.`);
@@ -95,6 +228,11 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
           owner?.setAttribute('aria-expanded', String(open));
         });
       }));
+      document.addEventListener('click', (event) => {
+        if (!(event.target instanceof Element) || event.target.closest('[data-popover-toggle], [data-popover]')) return;
+        document.querySelectorAll('[data-popover]').forEach((popover) => { popover.hidden = true; });
+        document.querySelectorAll('[data-popover-toggle]').forEach((button) => button.setAttribute('aria-expanded', 'false'));
+      });
       const mobileButton = document.querySelector('[data-mobile-menu-toggle]');
       const mobileMenu = document.querySelector('[data-mobile-menu]');
       mobileButton?.addEventListener('click', () => {

@@ -141,26 +141,13 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
   <div style="position:sticky; top:0; z-index:80;"><dc-import name="SiteHeader" active="changelog" md="changelog.md" hint-size="100%,66px"></dc-import></div>
 
-  <main style="width:min(1240px, 100% - 56px); margin:0 auto; padding:36px 0 90px;">
-
-    <p style="margin:0 0 24px; font-size:15px; color:var(--muted);">Projected from <span style="font-family:'IBM Plex Mono',monospace; font-size:14px;">releasenotes/*.yaml</span> — never hand-maintained twice.</p>
-
-    <h1 style="margin:0 0 16px; font-size:52px; line-height:1.05; font-weight:600; letter-spacing:-0.03em; max-width:820px; text-wrap:balance;">What changed, why it matters, and whether you have to do anything.</h1>
-    <p style="margin:0 0 30px; font-size:20px; line-height:1.55; color:var(--body); max-width:730px; text-wrap:pretty;">An authored surface, not a commit dump. Each change names the surfaces it affects, whether action is needed locally or in a space, how to detect the situation and what to run. Standing known issues stay visible until their fix ships.</p>
+  <main style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0 90px;">
 
     <div style="margin-bottom:24px;">
-      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px;">
-      <span style="font-size:15px; color:var(--muted);">Kind</span>
-      <sc-for list="{{ kindFilters }}" as="f" hint-placeholder-count="4">
-        <button type="button" onClick="{{ f.go }}" style="{{ f.style }}">{{ f.label }}</button>
-      </sc-for>
-      <span style="width:1px; height:24px; background:var(--border); margin:0 4px;"></span>
-      <span style="font-size:15px; color:var(--muted);">Action</span>
-      <sc-for list="{{ actionFilters }}" as="f" hint-placeholder-count="3">
-        <button type="button" onClick="{{ f.go }}" style="{{ f.style }}">{{ f.label }}</button>
-      </sc-for>
+      <div class="a2a-fade-scroll" tabindex="0" aria-label="Release filters" style="display:flex; align-items:center; gap:12px; flex-wrap:nowrap; row-gap:10px; max-width:100%;">
+        <dc-import name="SegmentedFilter" items="{{ kindFilters }}" hint-size="620px,38px"></dc-import>
+        <dc-import name="SegmentedFilter" items="{{ actionFilters }}" hint-size="450px,38px"></dc-import>
       </div>
-      <div style="margin-top:10px; font-size:15px; color:var(--muted);">{{ scopeNote }}</div>
     </div>
 
     <sc-if value="{{ hasError }}" hint-placeholder-val="{{ false }}">
@@ -196,7 +183,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                   <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:8px;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
                     <dc-import name="StatusPill" text="{{ c.kind }}" tone="{{ c.kindTone }}" size="small" hint-size="90px,24px"></dc-import>
                     <span style="font-size:15px; color:var(--muted);">impact {{ c.impact }}</span>
-                    </span><span style="flex:0 0 auto; font-size:15px; color:var(--muted); overflow-wrap:anywhere;">{{ c.affects }}</span>
+                    </span><span class="a2a-fade-scroll" tabindex="0" aria-label="Affected surfaces" style="flex:0 1 46%; min-width:0; max-width:46%; padding-inline:10px; font-size:15px; color:var(--muted); white-space:nowrap;">{{ c.affects }}</span>
                   </div>
                   <div style="font-size:19px; line-height:1.4; font-weight:600; margin-bottom:8px;">{{ c.subject }}</div>
                   <p style="margin:0 0 14px; font-size:16px; line-height:1.6; color:var(--body); max-width:700px;">{{ c.detail }}</p>
@@ -372,22 +359,29 @@ class Component extends DCLogic {
     });
   }
 
-  // Weight stays constant so switching a filter never re-measures the chip row.
-  chip(active) {
-    return "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:6px 12px; border-radius:8px; " +
-      (active ? "background:var(--primary); color:var(--on-primary);" : "background:var(--surface); color:var(--body);");
-  }
-
   renderVals() {
     const d = this.state.data;
     const s = this.state;
-    const kinds = ["all", "fix", "policy", "known-issue"];
+    const kinds = ["all", "fix", "feat", "policy", "known-issue"];
     const actions = ["all", "local", "none"];
+    const releaseChanges = d ? d.releaseNotes.reduce((all, r) => all.concat(r.changes || []), []) : [];
+    const kindOkFor = (c, kind) => kind === "all" || c.kind === kind;
+    const actionOkFor = (c, action) => action === "all" || ((c.action && c.action.scope) || "none") === action;
     const base = {
       hasError: !!s.error, errorText: s.error,
       sideCommands: ["a2a version", "a2a whatsnew"].map(x => this.cmdBlock(x)),
-      kindFilters: kinds.map(k => ({ label: k === "all" ? "All" : k, style: this.chip(s.kind === k), go: () => this.setState({ kind: k }) })),
-      actionFilters: actions.map(a => ({ label: a === "all" ? "Any" : (a === "local" ? "action needed" : "no action"), style: this.chip(s.action === a), go: () => this.setState({ action: a }) })),
+      kindFilters: kinds.map(k => ({
+        label: ({ all:"All", fix:"Fix", feat:"Feature", policy:"Policy", "known-issue":"Known issue" })[k] || k,
+        count: releaseChanges.filter(c => kindOkFor(c, k) && actionOkFor(c, s.action)).length,
+        pressed: s.kind === k ? "true" : "false",
+        go: () => this.setState({ kind: k })
+      })),
+      actionFilters: actions.map(a => ({
+        label: a === "all" ? "Any" : (a === "local" ? "Action needed" : "No action"),
+        count: releaseChanges.filter(c => kindOkFor(c, s.kind) && actionOkFor(c, a)).length,
+        pressed: s.action === a ? "true" : "false",
+        go: () => this.setState({ action: a })
+      })),
       indexRows: INDEX.map(([version, date, headline], i) => {
         const line = i === INDEX.length - 1 ? "none" : "1px solid var(--hairline)";
         return {
@@ -402,10 +396,10 @@ class Component extends DCLogic {
         dotStyle: "width:10px; height:10px; border-radius:99px; flex:0 0 10px; background:" + (i === 0 ? "#3E7A4C" : "var(--border-strong)") + ";"
       }))
     };
-    if (!d) return Object.assign(base, { releases: [], known: [], hasKnown: false, knownCount: "", scopeNote: "reading release notes…", footerLine: "", noReleases: false, emptyNote: "" });
+    if (!d) return Object.assign(base, { releases: [], known: [], hasKnown: false, knownCount: "", footerLine: "", noReleases: false, emptyNote: "" });
 
-    const kindOk = (c) => s.kind === "all" || c.kind === s.kind;
-    const actionOk = (c) => s.action === "all" || ((c.action && c.action.scope) || "none") === s.action;
+    const kindOk = (c) => kindOkFor(c, s.kind);
+    const actionOk = (c) => actionOkFor(c, s.action);
 
     const releases = d.releaseNotes.map(r => {
       const changes = (r.changes || []).filter(c => c.kind !== "known-issue").filter(c => kindOk(c) && actionOk(c));
@@ -426,8 +420,8 @@ class Component extends DCLogic {
             actionLabel: needs ? "action: " + act.scope : "no action needed",
             actionTone: needs ? "attention" : "healthy",
             why: act.why || "",
-            whyStyle: "font-size:16px; line-height:1.55; color:" + (needs ? "#7A5A14" : "#453F31") + "; flex:1 1 260px; min-width:0;",
-            actionStyle: "border-radius:11px; padding:14px 16px; background:" + (needs ? "#FBF4E4" : "var(--surface)") + ";",
+            whyStyle: "font-size:16px; line-height:1.55; color:" + (needs ? "var(--attention-ink)" : "var(--body)") + "; flex:1 1 260px; min-width:0;",
+            actionStyle: "border-radius:11px; padding:14px 16px; background:" + (needs ? "var(--attention-tint)" : "var(--surface)") + ";",
             hasCommands: cmds.length > 0, commands: cmds
           };
         })
@@ -453,7 +447,6 @@ class Component extends DCLogic {
       emptyNote: s.kind === "known-issue"
         ? "Known issues are not release changes — they are listed as standing issues below and stay visible until their fix ships."
         : "No change in the three expanded releases matches this filter. The full version index is further down.",
-      scopeNote: d.meta.releaseNotesScope,
       footerLine: "Release data read from demo-data.json · " + d.meta.notice
     });
   }

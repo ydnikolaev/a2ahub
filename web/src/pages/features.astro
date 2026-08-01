@@ -1,0 +1,30 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import DesignRuntimePage from '../components/DesignRuntimePage.astro';
+import PublicPageHeader from '../components/PublicPageHeader.astro';
+---
+<BaseLayout
+  markdown="/features.md"
+  current="/features.html"
+  slotOwnsMain
+  title="a2ahub features — how the protocol fits together"
+  description="The exact Guide surface from the a2ahub dashboard: typed documents, lifecycle states, autonomous workflows and the dashboard reading model."
+>
+  <script is:inline>
+    globalThis.A2A_DASHBOARD_START_VIEW = 'guide';
+  </script>
+  <PublicPageHeader
+    icon="compass"
+    title="How a2ahub fits together"
+    description="Document types, statuses, the dashboard's reading order, and a direct way to improve the product. Everything on this page is written for people first."
+  />
+  <div class="public-features-page">
+    <DesignRuntimePage source="14-local-dashboard-v4.dc.html" variant="guide" />
+  </div>
+</BaseLayout>
+
+<style is:global>
+  .public-features-page {
+    min-height: 0;
+  }
+</style>

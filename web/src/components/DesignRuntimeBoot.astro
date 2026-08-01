@@ -1,54 +1,127 @@
+---
+// Keep the browser runtime route-scoped. Importing these generated sources in
+// frontmatter makes them build-time data: Astro serializes only the slices the
+// current page declares below instead of shipping the whole content corpus to
+// every visitor.
+import design from '../generated/design.json';
+import demo from '../generated/demo.json';
+
+const {
+  needsDemo = false,
+  needsDocs = false,
+  needsReleases = false,
+  needsLatest = false,
+  allDocs = false,
+  compactDemo = false
+} = Astro.props;
+
+const routeDoc = Astro.url.pathname.match(/\/docs\/([^/.]+)(?:\.html)?$/)?.[1]
+  || (Astro.url.pathname.endsWith('/docs.html') ? 'threads' : null);
+
+// Navigation search needs a useful vocabulary for every document, not twenty
+// full Markdown bodies. Bound the de-duplicated index per document so a long
+// protocol reference cannot silently become the largest initial page asset;
+// titles and source paths remain present in full and the route still receives
+// its complete rendered article.
+const compactDocs = design.docs.map(([group, items]) => [group, items.map(([id, title, source, body]) => [
+  id,
+  title,
+  source,
+  [...new Set(String(body).toLowerCase().match(/[a-z0-9][a-z0-9_.:-]{2,}/g) || [])].slice(0, 96).join(' ')
+])]);
+const routeDocBodies = routeDoc && design.docBodies[routeDoc]
+  ? { [routeDoc]: design.docBodies[routeDoc] }
+  : {};
+
+const compactHomepageDemo = compactDemo ? {
+  meta: demo.meta,
+  generatedAt: demo.generatedAt,
+  self: demo.self,
+  tooling: demo.tooling,
+  spaces: demo.spaces,
+  nodes: demo.nodes,
+  contractEdges: demo.contractEdges,
+  exchangeEdges: demo.exchangeEdges,
+  inbox: demo.inbox,
+  outbox: demo.outbox,
+  contracts: demo.contracts
+} : demo;
+
+const payload = {
+  components: design.components,
+  demo: needsDemo ? compactHomepageDemo : null,
+  docs: needsDocs ? (allDocs ? design.docs : compactDocs) : null,
+  docBodies: needsDocs ? (allDocs ? design.docBodies : routeDocBodies) : null,
+  latestRelease: needsLatest ? {
+    version: design.latestRelease.version,
+    released: design.latestRelease.released,
+    headline: design.latestRelease.headline,
+    changes: design.latestRelease.changes
+  } : null,
+  releaseIndex: needsReleases ? design.releaseIndex : null
+};
+
+// JSON lives in an inert script node. Escaping '<' prevents an embedded value
+// from terminating the element even though every current source is trusted.
+const serialized = JSON.stringify(payload).replaceAll('<', '\\u003c');
+---
+<script type="application/json" data-design-runtime-payload set:html={serialized}></script>
+
 <script>
   import React from 'react';
   import { createRoot } from 'react-dom/client';
-  import design from '../generated/design.json';
+
+  const payloadNode = document.querySelector('[data-design-runtime-payload]');
+  const payload = payloadNode ? JSON.parse(payloadNode.textContent || '{}') : {};
 
   window.React = React;
   window.ReactDOM = { createRoot };
-  window.A2A_RELEASE_INDEX = design.releaseIndex;
-  window.A2A_DOCS = design.docs;
-  window.A2A_DOC_BODIES = design.docBodies;
-  window.A2A_LATEST_RELEASE = design.latestRelease;
+  window.A2A_RELEASE_INDEX = payload.releaseIndex;
+  window.A2A_DEMO = payload.demo;
+  window.A2A_DOCS = payload.docs;
+  window.A2A_DOC_BODIES = payload.docBodies;
+  window.A2A_LATEST_RELEASE = payload.latestRelease;
   // Registry comes from design.json (derived from design-source/), so adding a
   // component never means editing this list.
-  window.__resources = Object.fromEntries(design.components.map((name) => [`./${name}`, `/design/${name}`]));
+  window.__resources = Object.fromEntries((payload.components || []).map((name) => [`./${name}`, `/design/${name}`]));
   import('../design-runtime/support.js');
 </script>
-<script>
-  import design from '../generated/design.json';
 
-  const slug = (value) => String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
+{needsDocs && (
+  <script>
+    const slug = (value) => String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
 
-  const hydrateDocBodies = () => {
-    document.querySelectorAll('[data-doc-placeholder]').forEach((placeholder) => {
-      const id = placeholder.dataset.docId;
-      const doc = design.docBodies[id];
-      if (!doc || placeholder.dataset.hydrated === id) return;
-      placeholder.dataset.hydrated = id;
-      placeholder.classList.add('ssot-doc-body');
-      placeholder.innerHTML = doc.html;
+    const hydrateDocBodies = () => {
+      document.querySelectorAll('[data-doc-placeholder]').forEach((placeholder) => {
+        const id = placeholder.dataset.docId;
+        const doc = window.A2A_DOC_BODIES?.[id];
+        if (!doc || placeholder.dataset.hydrated === id) return;
+        placeholder.dataset.hydrated = id;
+        placeholder.classList.add('ssot-doc-body');
+        placeholder.innerHTML = doc.html;
 
-      const headings = [...placeholder.querySelectorAll('h2, h3')].map((heading, index) => {
-        heading.id ||= slug(heading.textContent) || `section-${index + 1}`;
-        return { id: heading.id, label: heading.textContent };
+        const headings = [...placeholder.querySelectorAll('h2, h3')].map((heading, index) => {
+          heading.id ||= slug(heading.textContent) || `section-${index + 1}`;
+          return { id: heading.id, label: heading.textContent };
+        });
+        const toc = document.querySelector('[data-doc-toc]');
+        if (toc) toc.innerHTML = `<div style="font-size:15px;font-weight:600;margin-bottom:10px">On this page</div>${headings.length ? `<div style="display:flex;flex-direction:column;gap:8px">${headings.map((heading) => `<a href="#${heading.id}" style="font-size:15px;line-height:1.45;text-decoration:none">${heading.label}</a>`).join('')}</div>` : '<div style="font-size:15px;line-height:1.55;color:var(--muted)">This page has no subsections.</div>'}`;
       });
-      const toc = document.querySelector('[data-doc-toc]');
-      if (toc) toc.innerHTML = `<div style="font-size:15px;font-weight:600;margin-bottom:10px">On this page</div>${headings.length ? `<div style="display:flex;flex-direction:column;gap:8px">${headings.map((heading) => `<a href="#${heading.id}" style="font-size:15px;line-height:1.45;text-decoration:none">${heading.label}</a>`).join('')}</div>` : '<div style="font-size:15px;line-height:1.55;color:var(--muted)">This page has no subsections.</div>'}`;
-    });
-    document.querySelectorAll('[data-guide-doc-body]').forEach((placeholder) => {
-      const id = placeholder.dataset.guideDocId || 'overview';
-      const doc = design.docBodies[id];
-      if (!doc || placeholder.dataset.hydrated === id) return;
-      placeholder.dataset.hydrated = id;
-      placeholder.classList.add('ssot-doc-body');
-      placeholder.innerHTML = doc.html;
-    });
-  };
+      document.querySelectorAll('[data-guide-doc-body]').forEach((placeholder) => {
+        const id = placeholder.dataset.guideDocId || 'overview';
+        const doc = window.A2A_DOC_BODIES?.[id];
+        if (!doc || placeholder.dataset.hydrated === id) return;
+        placeholder.dataset.hydrated = id;
+        placeholder.classList.add('ssot-doc-body');
+        placeholder.innerHTML = doc.html;
+      });
+    };
 
-  const docsObserver = new MutationObserver(hydrateDocBodies);
-  docsObserver.observe(document.documentElement, { childList: true, subtree: true });
-  hydrateDocBodies();
-</script>
+    const docsObserver = new MutationObserver(hydrateDocBodies);
+    docsObserver.observe(document.documentElement, { childList: true, subtree: true });
+    hydrateDocBodies();
+  </script>
+)}

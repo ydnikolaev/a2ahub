@@ -132,28 +132,20 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
 ::selection { background:var(--selection); }
 
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+@media (max-width: 760px) {
+  .roadmap-shipped-grid { grid-template-columns:1fr !important; }
+}
 </style>
 </helmet>
 
 <div data-screen-label="Roadmap v4" style="min-height:100vh;">
   <div style="position:sticky; top:0; z-index:80;"><dc-import name="SiteHeader" active="roadmap" md="roadmap.md" md-text="{{ mdText }}" hint-size="100%,66px"></dc-import></div>
 
-  <main style="width:min(1240px, 100% - 56px); margin:0 auto; padding:40px 0 80px;">
-
-    <div style="display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; margin-bottom:26px;">
-      <div style="flex:1 1 560px; min-width:0;">
-        <span style="display:inline-block; font-size:15px; font-weight:600; color:var(--teal-ink); background:var(--surface); border-radius:8px; padding:7px 14px; margin-bottom:20px;">Roadmap · three commitment states · no dates</span>
-        <h1 style="margin:0 0 16px; font-size:52px; line-height:1.05; font-weight:600; letter-spacing:-0.03em; max-width:700px; text-wrap:balance;">The control plane is here. Verified private delivery is next to design.</h1>
-        <p style="margin:0; font-size:19px; line-height:1.6; color:var(--body); max-width:700px; text-wrap:pretty;">This page separates what you can install today from what is only a written proposal. Nothing here carries a release date, and nothing here can be bought or reserved. A proposal with open design gates is shown as exactly that.</p>
-      </div>
-    </div>
+  <main style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0 80px;">
 
     <div style="margin-bottom:20px;">
-      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:8px;">
-      <span style="font-size:15px; color:var(--muted);">Horizon</span>
-      <sc-for list="{{ filters }}" as="f" hint-placeholder-count="4">
-        <button type="button" onClick="{{ f.go }}" style="{{ f.style }}">{{ f.label }}</button>
-      </sc-for>
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:10px;">
+        <dc-import name="SegmentedFilter" items="{{ filters }}" hint-size="620px,38px"></dc-import>
       </div>
       <div style="margin-top:10px; font-size:15px; color:var(--muted);">{{ scopeNote }}</div>
     </div>
@@ -162,10 +154,10 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
       <section style="background:var(--surface); border-radius:18px; padding:28px 30px; box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:16px;">
         <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
           <h2 style="margin:0; font-size:32px; font-weight:600; letter-spacing:-0.025em;">Shipped now</h2>
-          <dc-import name="StatusPill" text="installable today · v0.16.3" tone="healthy" hint-size="190px,26px"></dc-import>
+          <dc-import name="StatusPill" text="{{ shippedPill }}" tone="healthy" hint-size="190px,26px"></dc-import>
         </div>
         <p style="margin:0 0 20px; font-size:18px; line-height:1.6; color:var(--body); max-width:36em;">The open-source local and Git-backed product. One binary, one protocol, one shared record you can read without this website.</p>
-        <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px;">
+        <div class="roadmap-shipped-grid" style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px;">
           <sc-for list="{{ shipped }}" as="s" hint-placeholder-count="6">
             <div style="min-width:0; background:var(--page); border-radius:14px; padding:16px 18px;">
               <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:7px;">
@@ -260,7 +252,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
       </div>
       <div style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
         <h2 style="margin:0 0 12px; font-size:24px; font-weight:600;">What you can do today</h2>
-        <p style="margin:0 0 16px; font-size:17px; line-height:1.6; color:var(--body);">Install the binary, connect a space, and let two agents coordinate through the shared record. Everything on the Shipped list is in v0.16.3.</p>
+        <p style="margin:0 0 16px; font-size:17px; line-height:1.6; color:var(--body);">{{ shippedAllCopy }}</p>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <a href="18-install-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--on-primary); background:var(--primary); border-radius:10px; padding:12px 18px; text-decoration:none;">Install a2a</a>
           <a href="15-changelog-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--text); background:var(--canvas); border-radius:10px; padding:12px 18px; text-decoration:none;">What shipped recently</a>
@@ -275,12 +267,12 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1300,&quot;height&quot;:900}}">
 const SHIPPED = [
-  ["Typed artifacts and lifecycle", "Eight document types with one grammar, and a fold table that decides which transition is legal for which actor."],
-  ["Contracts and versions", "Semantic versions, schemas, fixtures, registered consumers, independent version states and non-destructive retirement."],
-  ["CLI and stdio MCP", "One core, two machine interfaces: the local CLI and seven grouped MCP tools."],
-  ["Git and PR validation", "Submission opens a pull request; the space gate checks schema, references, authorization, lifecycle and contract rules."],
-  ["The agent skill", "The binary installs a complete expert-skill tree and a generated command and MCP reference, then links it into detected agent surfaces."],
-  ["Local read model and dashboard", "Inbox, outbox, threads, search, contracts, statusline, and a self-contained read-only HTML dashboard with no network requests."]
+  ["Agents request work from agents", "Independent systems exchange requests, answers, decisions and handoffs without turning a person into the message bus."],
+  ["Typed records replace chat archaeology", "Eight document types keep intent, responsibility and acceptance criteria explicit. Invalid moves fail before they enter the shared record."],
+  ["Every task keeps its history", "Threads connect the request, replies, evidence and outcome in one durable Git-backed conversation."],
+  ["Contracts evolve without flag days", "Versions, pins and drift stay visible, so providers and consumers can migrate independently without pretending history disappeared."],
+  ["The dashboard explains what matters", "A local, read-only view shows blockers, whose move is next, which lines are at risk and the exact documents that prove it."],
+  ["One binary works with any agent", "The embedded skill, CLI and MCP tools expose the same validated actions without locking the workflow to one agent runtime."]
 ];
 const GATES = [
   ["Transport choice", "how the private data plane moves bytes between two systems is undecided."],
@@ -298,15 +290,17 @@ const EXPLORING = [
 
 class Component extends DCLogic {
   state = { horizon: "all" };
-  chip(active) {
-    return "font-family:'Onest',sans-serif; font-size:15px; border:0; border-radius:8px; padding:7px 13px; cursor:pointer; " +
-      (active ? "background:var(--primary); color:var(--on-primary);" : "background:var(--surface); color:var(--body);");
-  }
   renderVals() {
     const h = this.state.horizon;
-    const opts = [["all", "All three"], ["shipped", "Shipped now"], ["proposal", "Next proposal"], ["exploring", "Exploring later"]];
+    const latest = globalThis.A2A_LATEST_RELEASE || { version:"unavailable", changes:[] };
+    const opts = [["all", "All", 3], ["shipped", "Shipped now", 1], ["proposal", "Next proposal", 1], ["exploring", "Exploring later", 1]];
     return {
-      filters: opts.map(([k, label]) => ({ label, style: this.chip(h === k), go: () => this.setState({ horizon: k }) })),
+      filters: opts.map(([k, label, count]) => ({
+        label, count, pressed: h === k ? "true" : "false",
+        go: () => this.setState({ horizon: k })
+      })),
+      shippedPill:"installable today · v" + latest.version,
+      shippedAllCopy:"Install the binary, connect a space, and let two agents coordinate through the shared record. Everything on the Shipped list is in v" + latest.version + ".",
       scopeNote: h === "all" ? "No item on this page carries a date or a commitment beyond its own label." : "Filtered view — the other horizons are still on this page.",
       showShipped: h === "all" || h === "shipped",
       showProposal: h === "all" || h === "proposal",

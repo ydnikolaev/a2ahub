@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<article style="background:var(--surface-card); border-radius:18px; padding:20px 22px; box-shadow:var(--shadow-card);">
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
+    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+      <dc-import name="TypeBadge" type="{{ type }}" hint-size="130px,28px"></dc-import>
+      <dc-import name="StatusPill" text="{{ status }}" tone="{{ tone }}" why="{{ statusWhy }}" hint-size="120px,28px"></dc-import>
+    </div>
+    <span style="font-size:14px; color:var(--muted);">{{ meta }}</span>
+  </div>
+  <h2 class="a2a-detail-title" style="margin:0 0 12px; font-size:clamp(23px,3vw,var(--font-detail-title));">{{ title }}</h2>
+  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:14px; color:var(--muted); margin-bottom:14px;">
+    <span style="width:25px; height:25px; border-radius:99px; background:var(--border); color:var(--body); display:inline-flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:10px; font-weight:600;">{{ fromCode }}</span>
+    <span>{{ from }}</span><span aria-hidden="true" style="color:var(--border-strong);">→</span>
+    <span style="width:25px; height:25px; border-radius:99px; background:var(--teal-solid); color:var(--on-solid); display:inline-flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:10px; font-weight:600;">{{ toCode }}</span>
+    <span>{{ to }}</span><span aria-hidden="true" style="color:var(--border-strong);">·</span><span>{{ space }}</span>
+  </div>
+  <button type="button" onClick="{{ toggle }}" aria-expanded="{{ expanded }}" style="width:100%; min-height:40px; display:flex; align-items:center; justify-content:space-between; gap:12px; border:0; border-top:1px solid var(--hairline); padding:12px 0 0; background:transparent; color:var(--teal-ink); font-size:14px; font-weight:600; cursor:pointer;">
+    <span>{{ proofLabel }}</span><dc-import name="DisclosureIcon" expanded="{{ expanded }}" hint-size="18px,18px"></dc-import>
+  </button>
+  <sc-if value="{{ expanded }}" hint-placeholder-val="{{ false }}">
+    <div style="margin-top:10px; background:var(--surface-section); border-radius:12px; padding:2px 14px; box-shadow:inset 0 0 0 1px var(--hairline);">
+      <dc-import name="FactTable" rows="{{ rows }}" hint-size="100%,150px"></dc-import>
+    </div>
+  </sc-if>
+</article>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:560,&quot;height&quot;:360},&quot;det&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;}}">
+class Component extends DCLogic {
+  state = { expanded:false };
+  renderVals() {
+    const d = this.props.det || {};
+    return {
+      type: d.type || "work_request",
+      status: d.status || "Blocking · p1",
+      tone: d.tone || "blocking",
+      statusWhy: d.statusWhy || "The recipient cannot continue until this request is resolved.",
+      meta: d.meta || "synthetic snapshot",
+      title: d.title || "Prevent duplicate payment capture after a worker retry",
+      from: d.from || "checkout",
+      fromCode: d.fromCode || "CH",
+      to: d.to || "atlas",
+      toCode: d.toCode || "AT",
+      space: d.space || "checkout-core",
+      expanded:this.state.expanded,
+      proofLabel:this.state.expanded ? "Hide protocol proof" : "Show protocol proof",
+      toggle:() => this.setState(s => ({ expanded:!s.expanded })),
+      rows: Array.isArray(d.rows) ? d.rows : [
+        { label: "next move", value: "atlas", mono: true },
+        { label: "pinned contract", value: "XC-billing-payment-events@2.4.0", mono: true },
+        { label: "digest", value: "resolved · matches" },
+        { label: "protocol flag", value: "state-claim-mismatch", mono: true }
+      ]
+    };
+  }
+}
+
+</script>
+</body>
+</html>

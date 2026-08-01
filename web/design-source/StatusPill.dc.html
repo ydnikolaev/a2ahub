@@ -7,7 +7,7 @@
 </head>
 <body>
 <x-dc>
-<span style="{{ wrapStyle }}" onMouseEnter="{{ enter }}" onMouseLeave="{{ leave }}" onClick="{{ tap }}">
+<span data-status-key="{{ statusKey }}" style="{{ wrapStyle }}" onMouseEnter="{{ enter }}" onMouseLeave="{{ leave }}" onClick="{{ tap }}">
   <span style="{{ pillStyle }}">{{ text }}</span>
   <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
     <span role="tooltip" style="{{ bubbleStyle }}">{{ why }}</span>
@@ -25,25 +25,6 @@ const TONES = {
   agent: { bg: "var(--teal-tint)", fg: "var(--focus)" },
   outline: { bg: "var(--surface)", fg: "var(--muted)", ring: "inset 0 0 0 1px var(--border-strong)" }
 };
-// Status words in plain Russian. The rule the design carries — a status is
-// never colour alone, it always carries a word — only holds if the word is one
-// a person actually understands, so these are readings rather than literal
-// translations of the protocol enum.
-const STATUS_RU = {
-  current:"на последней", behind:"отстаёт", deprecated:"выводится", retired:"снято", missing:"не нашли", dangling:"поставщик ушёл",
-  published:"опубликовано", submitted:"отправлено", in_progress:"в работе", accepted:"взяли в работу", acknowledged:"получили", proposed:"предложено",
-  closed:"закрыто", responded:"ответили", verified:"проверено", disputed:"спорят", blocked:"заблокировано", cancelled:"отменено", withdrawn:"отозвано", draft:"черновик",
-  "in progress":"в работе",
-  blocking:"блокирует", stale:"устарел", fresh:"свежий", unreadable:"не читается", unresolved:"не нашли",
-  settled:"всё закрыто", "your move":"ваш ход", "waiting on others":"ход за другими",
-  "up to date":"последняя версия", "no action needed":"действий не нужно"
-};
-function localizedStatus(value) {
-  const raw = String(value ?? "");
-  if (document.documentElement.lang !== "ru") return raw;
-  if (STATUS_RU[raw]) return STATUS_RU[raw];
-  return raw.replace(/^blocking(?=\s|·|$)/, "блокирует").replace(/^your approval pending$/, "ждёт вашего согласования").replace(/^overdue(?=\s|·|$)/, "просрочено").replace(/^needs a look(?=\s|·|$)/, "стоит посмотреть").replace(/^stale(?=\s|·|$)/, "устарел").replace(/^fresh(?=\s|·|$)/, "свежий").replace(/^unreadable$/, "не читается");
-}
 // A pill can carry `why`: the sentence behind the label, shown on hover over
 // the pill itself. "тормозите вы" states a fact and immediately raises the
 // question the label has no room for — who stopped, and what starts them
@@ -93,15 +74,36 @@ class Component extends DCLogic {
   renderVals() {
     const t = TONES[this.props.tone] || TONES.neutral;
     const mono = this.props.mono ? "font-family:'IBM Plex Mono',ui-monospace,monospace; " : "font-family:'Onest',sans-serif; ";
-    const why = this.props.why || "";
+    const lang = document.documentElement.lang === "ru" ? "ru" : "en";
+    const glossary = globalThis.A2A_GLOSSARY;
+    const entry = glossary && glossary.entry ? glossary.entry("statuses", this.props.text, lang) : null;
+    const raw = String(this.props.text == null ? "" : this.props.text);
+    let translated = raw;
+    if (entry && lang === "ru") {
+      const enGlossary = globalThis.A2A_GLOSSARY && globalThis.A2A_GLOSSARY.entry
+        ? globalThis.A2A_GLOSSARY.entry("statuses", entry.key, "en")
+        : null;
+      const candidates = [entry.key, enGlossary && enGlossary.label].filter(Boolean).sort((a, b) => b.length - a.length);
+      const low = raw.toLowerCase();
+      for (const candidate of candidates) {
+        const c = String(candidate).toLowerCase();
+        if (low === c) { translated = entry.label; break; }
+        if (low.indexOf(c + " ") === 0 || low.indexOf(c + " ·") === 0) {
+          translated = entry.label + raw.slice(c.length);
+          break;
+        }
+      }
+    }
+    const why = this.props.why || (entry ? entry.description : "");
     return {
-      text: localizedStatus(this.props.text),
+      statusKey: raw,
+      text: translated,
       why,
       open: !!why && this.state.open,
       wrapStyle: "display:inline-flex; position:relative;" + (why ? " cursor:help;" : ""),
       pillStyle: "display:inline-block; " + mono + "font-size:" + (this.props.size === "small" ? 13 : 14) + "px; font-weight:600; line-height:1.3; border-radius:6px; padding:" + (t.ring ? "3px 10px" : "4px 11px") + "; background:" + t.bg + "; color:" + t.fg + "; box-shadow:" + (t.ring || "none") + "; white-space:nowrap;" +
         (why ? " text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px; text-decoration-color:currentColor;" : ""),
-      bubbleStyle: "position:fixed; z-index:400; " + this.state.pos + " width:min(320px, 76vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:12px; padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
+      bubbleStyle: "position:fixed; z-index:950; " + this.state.pos + " width:min(320px, 76vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:12px; padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
       enter: why ? (ev) => this.show(ev && ev.currentTarget) : (() => {}),
       leave: why ? () => this.setState({ open: false }) : (() => {}),
       // The pill sits inside the row button on most screens, so a tap must not
@@ -109,8 +111,7 @@ class Component extends DCLogic {
       tap: why ? (ev) => {
         if (ev && ev.stopPropagation) ev.stopPropagation();
         if (ev && ev.preventDefault) ev.preventDefault();
-        if (this.state.open) this.setState({ open: false });
-        else this.show(ev && ev.currentTarget);
+        this.show(ev && ev.currentTarget);
       } : (() => {})
     };
   }

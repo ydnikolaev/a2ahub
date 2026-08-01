@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<span aria-hidden="true" style="display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; transition:transform .18s ease; transform:{{ transform }};">
+  <svg class="a2a-lucide-stroke-225" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m6 9 6 6 6-6"></path></svg>
+</span>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:32,&quot;height&quot;:32},&quot;expanded&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+// Lucide ChevronDown is the disclosure grammar everywhere in the dashboard.
+class Component extends DCLogic {
+  renderVals() {
+    const expanded = this.props.expanded === true || this.props.expanded === "true";
+    return { transform: expanded ? "rotate(180deg)" : "none" };
+  }
+}
+</script>
+</body>
+</html>

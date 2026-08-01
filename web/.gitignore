@@ -2,6 +2,9 @@
 node_modules/
 dist/
 .astro/
+playwright-report/
+test-results/
+.lighthouse/
 .env
 .env.production
 src/generated/
@@ -14,10 +17,14 @@ public/reliability.md
 public/install.md
 public/roadmap.md
 public/dashboard.md
+public/dashboard-example.md
 public/docs/
 public/setup/
 public/llms.txt
 public/llms-full.txt
 public/sitemap.xml
 public/robots.txt
+public/feed.xml
+public/site.webmanifest
+public/.well-known/
 public/design/

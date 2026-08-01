@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<span aria-hidden="true" style="display:flex; align-items:center; justify-content:center; width:20px; height:20px; line-height:0; vertical-align:middle;">
+  <sc-if value="{{ expanded }}" hint-placeholder-val="{{ false }}">
+    <svg class="a2a-lucide-stroke-2" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="display:block;"><path d="M8 3v5H3"></path><path d="M16 3v5h5"></path><path d="M8 21v-5H3"></path><path d="M16 21v-5h5"></path></svg>
+  </sc-if>
+  <sc-if value="{{ compact }}" hint-placeholder-val="{{ true }}">
+    <svg class="a2a-lucide-stroke-2" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="display:block;"><path d="M8 3H3v5"></path><path d="M16 3h5v5"></path><path d="M8 21H3v-5"></path><path d="M16 21h5v-5"></path></svg>
+  </sc-if>
+</span>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:40,&quot;height&quot;:40},&quot;expanded&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+// Lucide Maximize2 / Minimize2, held behind one component so every reading
+// surface uses the same geometry instead of inventing another expansion glyph.
+class Component extends DCLogic {
+  renderVals() {
+    const expanded = this.props.expanded === true || this.props.expanded === "true";
+    return { expanded, compact: !expanded };
+  }
+}
+</script>
+</body>
+</html>

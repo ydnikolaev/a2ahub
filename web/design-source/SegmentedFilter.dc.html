@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="a2a-fade-scroll" style="display:block; min-width:0; width:fit-content; max-width:calc(100vw - 56px); overflow-x:auto; overflow-y:hidden; overscroll-behavior-inline:contain; scrollbar-width:none; -ms-overflow-style:none; -webkit-mask-image:none; mask-image:none;">
+  <div data-segmented-filter="true" style="display:flex; align-items:center; gap:3px; min-width:100%; width:max-content; min-height:38px; background:var(--border); border-radius:var(--radius-control,10px); padding:3px;">
+    <sc-for list="{{ items }}" as="item" hint-placeholder-count="3">
+      <button type="button" onClick="{{ item.go }}" aria-pressed="{{ item.pressed }}" style="{{ item.style }}">
+        <span>{{ item.label }}</span>
+        <span style="{{ item.countStyle }}">{{ item.count }}</span>
+      </button>
+    </sc-for>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:560,&quot;height&quot;:60},&quot;items&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;Array&lt;{label: string; count: string|number; pressed: string; go: () =&gt; void}&gt;&quot;}}">
+// One segmented-filter grammar for every dashboard view: a 38px control,
+// stable type weight and a count at the right edge of each option. Callers own
+// the filtering math; this component owns only the visual and interaction
+// shape, so Exchange and Versions cannot drift apart again.
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      items: (this.props.items || []).map(item => {
+        const active = item.pressed === true || item.pressed === "true";
+        return {
+          label: item.label || "",
+          count: String(item.count ?? 0),
+          pressed: active ? "true" : "false",
+          go: item.go || (() => {}),
+          style: "display:inline-flex; flex:0 0 auto; align-items:center; justify-content:space-between; gap:8px; min-height:32px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:0 12px; border-radius:8px; white-space:nowrap; " +
+            (active ? "background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.12);" : "background:transparent; color:var(--muted);"),
+          countStyle: "min-width:1.25em; text-align:right; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; line-height:1; font-weight:500; color:var(--body);"
+        };
+      })
+    };
+  }
+}
+
+</script>
+</body>
+</html>

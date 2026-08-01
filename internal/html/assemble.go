@@ -88,6 +88,9 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 		}
 	}
 	for _, n := range nodeIdx {
+		if len(n.Owners) > 0 {
+			n.Avatar, _ = store.AvatarDataURL(n.Owners[0])
+		}
 		d.Nodes = append(d.Nodes, *n)
 	}
 	sort.Slice(d.Nodes, func(i, j int) bool { return d.Nodes[i].System < d.Nodes[j].System })

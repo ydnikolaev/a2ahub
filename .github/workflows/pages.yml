@@ -51,7 +51,10 @@ jobs:
       - run: npm ci
         working-directory: web
 
-      - run: npm run check
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+
+      - run: npm run check:quality
         working-directory: web
 
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0

@@ -67,6 +67,19 @@
   --on-primary: #FAF7F0;
   --header-bg: rgba(241,238,230,.94);
   --shadow-card: 0 1px 2px rgba(33,30,23,.06);
+  --radius-control: 10px;
+  --radius-chip: 12px;
+  --radius-inner: 8px;
+  --map-canvas: #EAE6DC;
+  --map-grid: rgba(111,104,83,.13);
+  --surface-card: var(--surface);
+  --surface-section: var(--page);
+  --surface-workbench: var(--map-canvas);
+  --space-section: 24px;
+  --space-section-strong: 30px;
+  --font-detail-title: 28px;
+  --line-detail-title: 1.25;
+  --tracking-detail-title: -0.015em;
 }
 html[data-theme="dark"] {
   --canvas: #16140F;
@@ -122,9 +135,12 @@ html[data-theme="dark"] {
   --on-primary: #16140F;
   --header-bg: rgba(22,20,15,.94);
   --shadow-card: 0 1px 2px rgba(0,0,0,.4);
+  --map-canvas: #191711;
+  --map-grid: rgba(173,164,140,.11);
 }
 html[data-theme="dark"] header { backdrop-filter: blur(8px); }
 body { margin: 0; background:var(--canvas); color:var(--text); font-family: "Onest", "Segoe UI", Helvetica, Arial, sans-serif; font-size: 16px; -webkit-font-smoothing: antialiased; }
+.a2a-detail-title { font-size:var(--font-detail-title); line-height:var(--line-detail-title); font-weight:600; letter-spacing:var(--tracking-detail-title); overflow-wrap:anywhere; text-wrap:balance; }
 a { color:var(--teal-ink); text-underline-offset: 3px; }
 a:hover { color:var(--teal-ink-hover); }
 button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
@@ -139,10 +155,15 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 .ssot-doc-body p { margin:0 0 15px; }
 .ssot-doc-body ul,.ssot-doc-body ol { padding-left:22px; }
 .ssot-doc-body pre { max-width:100%; overflow:auto; padding:14px 16px; border-radius:10px; background:var(--inverse); color:var(--on-inverse-2); font:14px/1.65 'IBM Plex Mono',monospace; }
+.ssot-doc-body > pre[data-doc-frontmatter] { margin:0 0 24px; padding:18px 20px; white-space:pre-wrap; border-left:3px solid var(--teal-solid); box-shadow:0 10px 28px -22px rgba(33,30,23,.7); }
+.ssot-doc-body blockquote { margin:20px 0; padding:14px 18px; border-left:3px solid var(--teal-solid); border-radius:0 10px 10px 0; background:var(--teal-tint); color:var(--body); }
 .ssot-doc-body code:not(pre code) { padding:2px 5px; border-radius:5px; background:var(--sink); font:0.9em/1.5 'IBM Plex Mono',monospace; }
 .ssot-doc-body table { width:100%; display:block; overflow-x:auto; margin:16px 0 22px; border:1px solid var(--border); border-radius:10px; border-collapse:separate; border-spacing:0; font-size:14px; }
 .ssot-doc-body th,.ssot-doc-body td { min-width:120px; padding:10px 12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
 .ssot-doc-body tr:last-child td { border-bottom:0; }
+.a2a-fade-scroll { display:block; min-width:0; max-width:100%; box-sizing:border-box; overflow-x:auto; overscroll-behavior-inline:contain; scrollbar-width:none; -ms-overflow-style:none; -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 18px,#000 calc(100% - 18px),transparent 100%); mask-image:linear-gradient(90deg,transparent 0,#000 18px,#000 calc(100% - 18px),transparent 100%); }
+.a2a-fade-scroll::-webkit-scrollbar,.a2a-sticky-rail::-webkit-scrollbar { display:none; }
+.a2a-sticky-rail { scrollbar-width:none; -ms-overflow-style:none; }
 @media (max-width:700px) {
   .a2a-topbar { width:calc(100% - 32px) !important; gap:8px !important; flex-wrap:wrap !important; padding:10px 0 8px !important; }
   .a2a-topbar-main { display:contents !important; }
@@ -150,6 +171,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
   .a2a-self-chip { display:none !important; }
   .a2a-topbar-actions { order:2; margin-left:auto; }
   .a2a-topnav { order:3; flex:1 0 100% !important; }
+  .a2a-release-meta-row { grid-template-columns:minmax(0,1fr) !important; }
+  .a2a-release-affects { text-align:left !important; }
+  .a2a-sticky-rail { position:static !important; max-height:none !important; overflow:visible !important; }
 }
 
 </style>
@@ -157,11 +181,11 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
 <div data-screen-label="Local dashboard v4" style="min-height:100vh; display:flex; flex-direction:column;">
 
-  <header style="position:sticky; top:0; z-index:60; background:var(--surface);">
+  <header class="a2a-dashboard-shell-header" style="position:sticky; top:0; z-index:60; background:var(--surface);">
     <div class="a2a-topbar" style="width:min(1240px, 100% - 56px); margin:0 auto; padding:14px 0; display:flex; align-items:flex-start; gap:16px; flex-wrap:nowrap; align-items:center;">
       <span class="a2a-topbar-main" style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:14px; flex-wrap:nowrap;">
       <button type="button" onClick="{{ goOverview }}" aria-label="{{ backOverviewLabel }}" style="font-family:'IBM Plex Mono',monospace; font-size:18px; font-weight:600; color:var(--text); background:transparent; border:0; padding:0; cursor:pointer; flex:0 0 auto;">a2a<span style="color:var(--logo-dim);">hub</span></button>
-      <span class="a2a-self-chip" style="flex:0 1 auto; min-width:0; display:flex; align-items:center; gap:8px; background:var(--canvas); border-radius:8px; padding:5px 12px 5px 6px; font-size:15px;">
+      <span class="a2a-self-chip" style="flex:0 1 auto; min-width:0; display:flex; align-items:center; gap:8px; background:var(--canvas); border-radius:var(--radius-chip); padding:5px 12px 5px 6px; font-size:15px;">
         <span style="flex:0 0 auto; width:26px; height:26px; border-radius:99px; background:var(--teal-solid); color:var(--on-solid); display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600;">{{ selfMono }}</span>
         <span style="min-width:0; color:var(--body); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ selfLine }}</span>
       </span>
@@ -171,7 +195,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         </sc-for>
         <sc-if value="{{ hasMoreTabs }}" hint-placeholder-val="{{ false }}">
           <span style="position:relative; flex:0 0 auto;">
-            <button type="button" onClick="{{ toggleMore }}" aria-expanded="{{ moreExpanded }}" style="{{ moreBtnStyle }}">{{ moreLabel }} {{ moreCaret }}</button>
+            <button type="button" onClick="{{ toggleMore }}" aria-expanded="{{ moreExpanded }}" style="{{ moreBtnStyle }}"><span>{{ moreLabel }}</span><dc-import name="DisclosureIcon" expanded="{{ moreOpen }}" hint-size="18px,18px"></dc-import></button>
             <sc-if value="{{ moreOpen }}" hint-placeholder-val="{{ false }}">
               <span style="position:absolute; top:calc(100% + 6px); left:0; z-index:95; min-width:210px; background:var(--surface); border-radius:12px; padding:8px; box-shadow:0 8px 24px rgba(0,0,0,.22); display:flex; flex-direction:column; gap:2px;">
                 <sc-for list="{{ moreTabs }}" as="m" hint-placeholder-count="3">
@@ -184,7 +208,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
       </nav>
       </span>
       <span class="a2a-topbar-actions" style="flex:0 0 auto; display:flex; align-items:center; gap:8px;">
-        <span role="group" aria-label="{{ localeGroupLabel }}" style="display:flex; gap:2px; background:var(--canvas); border-radius:10px; padding:3px;">
+        <span role="group" aria-label="{{ localeGroupLabel }}" style="display:flex; align-items:center; gap:2px; min-height:38px; box-sizing:border-box; background:var(--canvas); border-radius:var(--radius-control); padding:3px;">
           <button type="button" onClick="{{ setEN }}" aria-pressed="{{ enPressed }}" style="{{ enLocaleStyle }}">EN</button>
           <button type="button" onClick="{{ setRU }}" aria-pressed="{{ ruPressed }}" style="{{ ruLocaleStyle }}">RU</button>
         </span>
@@ -197,7 +221,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
   </header>
 
   <sc-if value="{{ updateRequired }}" hint-placeholder-val="{{ false }}">
-    <div style="background:var(--attention-tint); padding:13px 0;">
+    <div class="a2a-dashboard-update-banner" style="background:var(--attention-tint); padding:13px 0;">
       <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0; display:flex; align-items:flex-start; gap:14px; flex-wrap:nowrap; font-size:16px; color:var(--attention-ink);">
         <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:14px; flex-wrap:wrap; row-gap:8px;">
           <span style="flex:0 0 auto; font-size:15px; font-weight:600; color:var(--on-solid); background:var(--ochre); border-radius:8px; padding:5px 12px;">{{ bannerLabel }}</span>
@@ -223,7 +247,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
          repeated inside each section, which is how nine screens ended up with
          four different amounts of air above and below their own titles. -->
     <sc-if value="{{ hasPageHeader }}" hint-placeholder-val="{{ true }}">
-      <header style="display:flex; align-items:flex-start; gap:20px; flex-wrap:wrap; row-gap:14px; padding:6px 0 34px;">
+      <header class="a2a-dashboard-page-header" style="display:flex; align-items:flex-start; gap:20px; flex-wrap:wrap; row-gap:14px; padding:6px 0 34px;">
         <div style="flex:1 1 460px; min-width:0;">
           <h1 style="display:flex; align-items:center; gap:13px; margin:0 0 12px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
             <span aria-hidden="true" style="{{ pageIconStyle }}">
@@ -279,7 +303,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-for list="{{ ovRows }}" as="r" hint-placeholder-count="3">
-              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" status-why="{{ r.statusWhy }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
+              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" status-why="{{ r.statusWhy }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" sync-age="{{ r.syncAge }}" sync-stale="{{ r.syncStale }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
             </sc-for>
           </div>
           <dc-import name="ArtifactDetail" det="{{ ovDetail }}" hint-size="100%,600px"></dc-import>
@@ -296,15 +320,11 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
              use it moves the list underneath it. -->
         <sc-if value="{{ showWorkFilters }}" hint-placeholder-val="{{ true }}">
         <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:10px; margin-bottom:18px;">
-          <div style="display:flex; align-items:center; gap:3px; background:var(--border); border-radius:10px; padding:3px; width:fit-content;">
-            <sc-for list="{{ workTabs }}" as="t" hint-placeholder-count="3">
-              <button type="button" onClick="{{ t.go }}" aria-pressed="{{ t.pressed }}" style="{{ t.style }}">{{ t.label }}</button>
-            </sc-for>
-          </div>
+          <dc-import name="SegmentedFilter" items="{{ workTabs }}" hint-size="420px,38px"></dc-import>
           <span data-type-menu style="position:relative; display:inline-flex;">
             <button type="button" onClick="{{ toggleTypeMenu }}" aria-expanded="{{ typeMenuExpanded }}" style="{{ typeButtonStyle }}">
               <span>{{ workTypeCurrent }}</span>
-              <span aria-hidden="true" style="color:var(--muted); font-size:11px;">{{ typeCaret }}</span>
+              <span style="color:var(--muted);"><dc-import name="DisclosureIcon" expanded="{{ typeMenuOpen }}" hint-size="18px,18px"></dc-import></span>
             </button>
             <sc-if value="{{ typeMenuOpen }}" hint-placeholder-val="{{ false }}">
               <span style="position:absolute; z-index:120; top:calc(100% + 8px); left:0; min-width:250px; background:var(--surface); border-radius:14px; padding:8px; box-shadow:0 16px 40px -12px rgba(33,30,23,.42), 0 0 0 1px var(--border); display:flex; flex-direction:column; gap:2px;">
@@ -354,7 +374,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               <dc-import name="EmptyState" title="{{ emptyWorkTitle }}" text="{{ emptyWorkText }}" size="panel" hint-size="100%,240px"></dc-import>
             </sc-if>
             <sc-for list="{{ workRows }}" as="r" hint-placeholder-count="6">
-              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" status-why="{{ r.statusWhy }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
+              <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" status-why="{{ r.statusWhy }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" sync-age="{{ r.syncAge }}" sync-stale="{{ r.syncStale }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
             </sc-for>
           </div>
           <dc-import name="ArtifactDetail" det="{{ workDetail }}" hint-size="100%,600px"></dc-import>
@@ -391,16 +411,16 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               <dc-import name="EmptyState" title="{{ threadMissingTitle }}" text="{{ threadMissingText }}" size="panel" hint-size="100%,240px"></dc-import>
             </sc-if>
             <sc-if value="{{ tvPresent }}" hint-placeholder-val="{{ true }}">
-              <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:14px;">
+              <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:11px;">
                 <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
-                  <dc-import name="StatusPill" text="{{ tvOrderPill }}" tone="agent" hint-size="140px,26px"></dc-import>
+                  <dc-import name="StatusPill" text="{{ tvOrderPill }}" tone="agent" why="{{ tvOrderHint }}" hint-size="180px,26px"></dc-import>
                   <sc-if value="{{ tvStale }}" hint-placeholder-val="{{ false }}">
                     <dc-import name="StatusPill" text="{{ tvStaleText }}" tone="attention" hint-size="110px,26px"></dc-import>
                   </sc-if>
                 </span>
-                <span style="flex:0 0 auto; font-size:15px; color:var(--muted); text-align:right;">{{ tvMeta }}</span>
               </div>
-              <h2 style="margin:0 0 16px; font-size:26px; line-height:1.25; font-weight:600; letter-spacing:-0.015em; overflow-wrap:anywhere;">{{ tvTitle }}</h2>
+              <div style="margin-bottom:9px; font-size:15px; line-height:1.4; color:var(--muted); overflow-wrap:anywhere;">{{ tvMeta }}</div>
+              <h2 class="a2a-detail-title" style="margin:0 0 16px;">{{ tvTitle }}</h2>
 
               <!-- A thread with nothing pending is finished. Rendering the
                    "whose move" prompt over an empty list asked a question the
@@ -551,11 +571,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
              already points at. Category and schema format make handsome
              filters and answer nothing. -->
         <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:10px; margin-bottom:18px;">
-          <div style="display:flex; align-items:center; gap:3px; background:var(--border); border-radius:10px; padding:3px; width:fit-content;">
-            <sc-for list="{{ conRoleTabs }}" as="t" hint-placeholder-count="3">
-              <button type="button" onClick="{{ t.go }}" aria-pressed="{{ t.pressed }}" style="{{ t.style }}">{{ t.label }}</button>
-            </sc-for>
-          </div>
+          <dc-import name="SegmentedFilter" items="{{ conRoleTabs }}" hint-size="440px,38px"></dc-import>
           <sc-if value="{{ hasConRisk }}" hint-placeholder-val="{{ true }}">
             <button type="button" onClick="{{ toggleConRisk }}" aria-pressed="{{ conRiskPressed }}" style="{{ conRiskStyle }}">{{ conRiskLabel }}</button>
           </sc-if>
@@ -594,7 +610,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               </div>
               <div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; line-height:1.55; color:var(--muted); overflow-wrap:anywhere;">{{ cdSpaceLine }}</div>
             </div>
-            <h2 style="margin:0 0 8px; font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; overflow-wrap:anywhere;">{{ cdId }}</h2>
+            <h2 class="a2a-detail-title" style="margin:0 0 8px; font-family:'IBM Plex Mono',monospace;">{{ cdId }}</h2>
             <p style="margin:0 0 18px; font-size:18px; line-height:1.6; color:var(--body); max-width:720px;">{{ cdDescription }}</p>
 
             <sc-if value="{{ cdHasRisk }}" hint-placeholder-val="{{ false }}">
@@ -803,7 +819,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               <div style="display:flex; align-items:center; gap:7px; font-size:18px; font-weight:600; margin-bottom:14px;">{{ localBinaryLabel }}<dc-import name="HintDot" text="{{ localBinaryHint }}" hint-size="17px,17px"></dc-import></div>
               <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
                 <span style="font-family:'IBM Plex Mono',monospace; font-size:34px; font-weight:600;">{{ verCurrent }}</span>
-                <span style="font-size:16px; color:var(--muted);">{{ installedLabel }}</span>
+                <sc-if value="{{ showInstalledLabel }}" hint-placeholder-val="{{ true }}"><span style="font-size:16px; color:var(--muted);">{{ installedLabel }}</span></sc-if>
                 <sc-if value="{{ verBehind }}" hint-placeholder-val="{{ true }}">
                   <span style="color:var(--border-strong);">→</span>
                   <span style="font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600; color:var(--teal-ink);">{{ verLatest }}</span>
@@ -830,18 +846,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         </div>
 
         <div style="margin-bottom:22px;">
-          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px;">
-            <span style="font-size:15px; color:var(--muted);">{{ kindLabel }}</span>
-            <sc-for list="{{ kindFilters }}" as="f" hint-placeholder-count="4">
-              <button type="button" onClick="{{ f.go }}" aria-pressed="{{ f.pressed }}" style="{{ f.style }}">{{ f.label }}</button>
-            </sc-for>
-            <span style="width:1px; height:24px; background:var(--border); margin:0 4px;"></span>
-            <span style="font-size:15px; color:var(--muted);">{{ actionLabel }}</span>
-            <sc-for list="{{ actionFilters }}" as="f" hint-placeholder-count="3">
-              <button type="button" onClick="{{ f.go }}" aria-pressed="{{ f.pressed }}" style="{{ f.style }}">{{ f.label }}</button>
-            </sc-for>
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:10px;">
+            <dc-import name="SegmentedFilter" items="{{ kindFilters }}" hint-size="620px,38px"></dc-import>
+            <dc-import name="SegmentedFilter" items="{{ actionFilters }}" hint-size="450px,38px"></dc-import>
           </div>
-          <div style="margin-top:10px; font-size:15px; color:var(--muted);">{{ releaseNotesNote }}</div>
         </div>
 
         <div style="display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start;">
@@ -867,26 +875,28 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                 <div style="display:flex; flex-direction:column; gap:12px;">
                   <sc-for list="{{ r.changes }}" as="c" hint-placeholder-count="3">
                     <div style="background:var(--page); border-radius:14px; padding:16px 18px;">
-                      <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:8px;">
+                      <div class="a2a-release-meta-row" style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,54%); align-items:center; gap:9px; margin-bottom:10px; min-height:28px; overflow:hidden;">
                         <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
-                          <dc-import name="StatusPill" text="{{ c.kind }}" tone="{{ c.tone }}" size="small" hint-size="90px,24px"></dc-import>
+                          <dc-import name="StatusPill" text="{{ c.kind }}" tone="{{ c.tone }}" hint-size="100px,28px"></dc-import>
                           <span style="font-size:15px; color:var(--muted);">{{ impactLabel }} {{ c.impact }}</span>
                         </span>
-                        <span style="flex:0 0 auto; font-size:14px; color:var(--faint); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere; text-align:right;">{{ c.affects }}</span>
+                        <span style="display:block; width:100%; min-width:0; max-width:100%; overflow:hidden; box-sizing:border-box;">
+                          <span class="{{ c.affectsClass }}" style="{{ c.affectsStyle }}">{{ c.affects }}</span>
+                        </span>
                       </div>
                       <div style="font-size:18px; line-height:1.4; font-weight:600; margin-bottom:8px;">{{ c.subject }}</div>
-                      <p style="margin:0 0 12px; font-size:16px; line-height:1.6; color:var(--body); max-width:760px;">{{ c.detail }}</p>
+                      <dc-import name="ProseDisclosure" text="{{ c.detail }}" hint-size="100%,190px"></dc-import>
                       <div style="{{ c.actionStyle }}">
-                        <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap;">
+                        <div style="display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
                           <dc-import name="StatusPill" text="{{ c.actionLabel }}" tone="{{ c.actionTone }}" size="small" hint-size="130px,24px"></dc-import>
-                          <span style="flex:1 1 260px; min-width:0; font-size:15px; line-height:1.55; color:var(--body);">{{ c.why }}</span>
+                          <span style="width:100%; min-width:0; font-size:15px; line-height:1.55; color:var(--body); text-wrap:pretty;">{{ c.why }}</span>
                         </div>
                         <sc-if value="{{ c.hasCommands }}" hint-placeholder-val="{{ false }}">
                           <div style="display:flex; flex-direction:column; gap:7px; margin-top:12px;">
                             <sc-for list="{{ c.commands }}" as="cmd" hint-placeholder-count="1">
-                              <div style="background:var(--inverse); border-radius:9px; padding:10px 13px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                              <div style="background:var(--inverse); border-radius:9px; padding:10px 13px; display:flex; align-items:center; gap:12px; flex-wrap:nowrap; overflow:hidden;">
                                 <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--on-inverse-faint);">{{ cmd.role }}</span>
-                                <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--on-inverse-2); overflow-wrap:anywhere;">{{ cmd.text }}</span>
+                                <span class="a2a-fade-scroll" style="flex:1 1 auto; min-width:0; padding:0 18px; font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--on-inverse-2); white-space:nowrap;">{{ cmd.text }}</span>
                                 <button type="button" onClick="{{ cmd.copy }}" style="{{ cmd.style }}">{{ cmd.label }}</button>
                               </div>
                             </sc-for>
@@ -925,7 +935,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
             </section>
           </div>
 
-          <aside style="flex:1 1 250px; min-width:0; display:flex; flex-direction:column; gap:14px;">
+          <aside class="a2a-sticky-rail" style="position:sticky; top:88px; max-height:calc(100vh - 104px); overflow:auto; flex:1 1 250px; min-width:0; display:flex; flex-direction:column; gap:14px;">
             <div style="background:var(--surface); border-radius:18px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
               <div style="font-size:16px; font-weight:600; margin-bottom:12px;">{{ timelineLabel }}</div>
               <div style="display:flex; flex-direction:column; gap:2px;">
@@ -948,7 +958,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                   </div>
                 </sc-for>
               </div>
-              <p style="margin:0; font-size:15px; line-height:1.55; color:var(--muted);">{{ securityNoteLabel }}</p>
             </div>
           </aside>
         </div>
@@ -967,7 +976,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
         <sc-if value="{{ hasDocs }}" hint-placeholder-val="{{ true }}">
         <div style="display:flex; flex-wrap:wrap; gap:22px; align-items:flex-start;">
-          <aside style="flex:1 1 240px; min-width:240px; display:flex; flex-direction:column; gap:12px;">
+          <aside class="a2a-sticky-rail" style="position:sticky; top:88px; max-height:calc(100vh - 104px); overflow:auto; flex:1 1 240px; min-width:240px; display:flex; flex-direction:column; gap:12px;">
             <div style="background:var(--surface); border-radius:14px; padding:14px 16px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
               <label for="a2adocsearch" style="display:block; font-size:15px; font-weight:600; margin-bottom:8px;">{{ docSearchLabel }}</label>
               <input id="a2adocsearch" type="search" value="{{ docQuery }}" onInput="{{ onDocQuery }}" placeholder="{{ docSearchPlaceholder }}" style="width:100%; box-sizing:border-box; font-family:'Onest',sans-serif; font-size:16px; color:var(--text); background:var(--canvas); border:0; border-radius:9px; padding:11px 13px;">
@@ -1012,6 +1021,47 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
     <sc-if value="{{ isGuide }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ guideAria }}" data-screen-label="Guide">
 
+        <!-- The first section answers the two questions a newcomer arrives
+             with: what can travel through a2a, and how to tell us when the
+             product itself should change. -->
+        <div data-guide-primary style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(350px,100%),1fr)); gap:18px; margin-bottom:18px; align-items:stretch;">
+          <section style="min-width:0; background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+            <h2 style="margin:0 0 8px; font-size:24px; font-weight:600;">{{ artifactTypesTitle }}</h2>
+            <p style="margin:0 0 16px; font-size:16px; line-height:1.6; color:var(--muted);">{{ artifactTypesText }}</p>
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px;">
+              <sc-for list="{{ artifactTypes }}" as="t" hint-placeholder-count="8">
+                <div style="min-width:0; display:flex; flex-direction:column; align-items:flex-start; gap:8px; background:var(--page); border-radius:10px; padding:11px 12px;">
+                  <dc-import name="TypeBadge" type="{{ t.key }}" size="small" hint-size="130px,24px"></dc-import>
+                  <span style="font-size:14px; line-height:1.45; color:var(--muted);">{{ t.description }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+          <section data-guide-feedback style="position:relative; isolation:isolate; overflow:hidden; min-width:0; background:var(--surface); border-radius:18px; padding:18px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+            <!-- Decorative Lucide Bot. It deliberately slips beyond the card
+                 edge: the quiet cropped silhouette fills the collapsed state,
+                 while the opaque prompt surface can grow over it unchanged. -->
+            <svg data-guide-feedback-robot aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" style="position:absolute; z-index:0; right:-64px; bottom:-82px; width:min(380px,68%); height:auto; color:var(--teal-solid); opacity:.18; pointer-events:none;">
+              <path d="M12 8V4H8"></path>
+              <rect width="16" height="12" x="4" y="8" rx="2"></rect>
+              <path d="M2 14h2"></path>
+              <path d="M20 14h2"></path>
+              <path d="M15 13v2"></path>
+              <path d="M9 13v2"></path>
+            </svg>
+            <div style="position:relative; z-index:1; min-height:100%; display:flex; flex-direction:column;">
+              <dc-import name="EmptyState" title="{{ feedbackTitle }}" text="{{ feedbackText }}" size="panel" hint-size="100%,230px"></dc-import>
+              <div style="padding:16px 4px 4px;">
+                <dc-import name="AgentPrompt" det="{{ feedbackPrompt }}" hint-size="100%,44px"></dc-import>
+                <div style="display:flex; align-items:center; gap:9px 14px; flex-wrap:wrap; margin-top:15px; padding-top:14px; border-top:1px solid var(--hairline); font-size:14px;">
+                  <a href="https://ydnikolaev.github.io/a2ahub/" style="text-decoration:none;">a2ahub.dev</a>
+                  <a href="https://github.com/ydnikolaev/a2ahub" style="text-decoration:none;">{{ githubRepoLabel }}</a>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:12px; margin-bottom:18px;">
           <sc-for list="{{ guideFeatures }}" as="f" hint-placeholder-count="10">
             <article style="background:var(--surface); border-radius:16px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
@@ -1022,32 +1072,23 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
           </sc-for>
         </div>
 
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; margin-bottom:18px; align-items:start;">
-          <section style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+        <!-- Status reference and reading guide are peers: the left column
+             names the vocabulary, the right explains where it appears. -->
+        <div data-guide-reference style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; align-items:start;">
+          <section style="min-width:0; background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
             <h2 style="margin:0 0 8px; font-size:24px; font-weight:600;">{{ lifecycleTitle }}</h2>
             <p style="margin:0 0 16px; font-size:16px; line-height:1.6; color:var(--muted);">{{ lifecycleText }}</p>
-            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:10px;">
-              <sc-for list="{{ lifecycleSteps }}" as="s" hint-placeholder-count="5">
-                <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:600; background:var(--page); border-radius:8px; padding:8px 11px;">{{ s.label }}</span>
-                <sc-if value="{{ s.hasNext }}" hint-placeholder-val="{{ true }}"><span style="font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--logo-dim);">{{ s.action }} →</span></sc-if>
+            <div style="display:grid; gap:8px;">
+              <sc-for list="{{ statusGuide }}" as="s" hint-placeholder-count="14">
+                <div style="display:flex; align-items:flex-start; gap:11px; background:var(--page); border-radius:10px; padding:10px 12px;">
+                  <dc-import name="StatusPill" text="{{ s.key }}" tone="{{ s.tone }}" size="small" hint-size="118px,24px"></dc-import>
+                  <span style="min-width:0; font-size:14px; line-height:1.5; color:var(--muted);">{{ s.description }}</span>
+                </div>
               </sc-for>
             </div>
             <p style="margin:16px 0 0; padding-top:14px; border-top:1px solid var(--hairline); font-size:15px; line-height:1.6; color:var(--muted);">{{ lifecycleFoot }}</p>
           </section>
-          <section style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-            <h2 style="margin:0 0 8px; font-size:24px; font-weight:600;">{{ artifactTypesTitle }}</h2>
-            <p style="margin:0 0 16px; font-size:16px; line-height:1.6; color:var(--muted);">{{ artifactTypesText }}</p>
-            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px;">
-              <sc-for list="{{ artifactTypes }}" as="t" hint-placeholder-count="8">
-                <div style="display:flex; align-items:center; gap:10px; background:var(--page); border-radius:10px; padding:10px 12px;"><span style="font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600; color:var(--on-solid); background:var(--teal-solid); border-radius:6px; padding:5px 7px;">{{ t.code }}</span><span style="font-size:15px; font-weight:600;">{{ t.label }}</span></div>
-              </sc-for>
-            </div>
-          </section>
-        </div>
-
-        <div style="display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start;">
-          <div style="flex:3 1 420px; min-width:0; display:flex; flex-direction:column; gap:16px;">
-            <div style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+          <section style="min-width:0; background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
               <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
                 <h2 style="margin:0; font-size:24px; font-weight:600;">{{ readingGuideTitle }}</h2>
                 <dc-import name="StatusPill" text="{{ readOnlyLabel }}" tone="outline" size="small" hint-size="110px,24px"></dc-import>
@@ -1059,41 +1100,19 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                   </sc-for>
                 </tbody>
               </table>
-            </div>
-
-          </div>
-
-          <div style="flex:1 1 280px; min-width:0; display:flex; flex-direction:column; gap:14px;">
-            <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-              <div style="font-size:17px; font-weight:600; margin-bottom:10px;">{{ projectSiteLabel }}</div>
-              <p style="margin:0 0 12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ projectSiteText }}</p>
-              <a href="https://ydnikolaev.github.io/a2ahub/" style="display:flex; align-items:center; gap:9px; text-decoration:none; background:var(--teal-tint); border-radius:10px; padding:11px 13px;">
-                <span style="width:8px; height:8px; border-radius:99px; background:var(--teal-solid); flex:0 0 8px;"></span>
-                <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; overflow-wrap:anywhere;">ydnikolaev.github.io/a2ahub</span>
-              </a>
-              <div style="display:flex; flex-direction:column; gap:7px; margin-top:12px; font-size:15px;">
-                <button type="button" onClick="{{ goDocs }}" style="text-align:left; padding:0; border:0; background:transparent; cursor:pointer; font-family:'Onest',sans-serif; font-size:15px; color:var(--teal-ink);">{{ documentationLabel }}</button>
-                <button type="button" onClick="{{ goVersions }}" style="text-align:left; padding:0; border:0; background:transparent; cursor:pointer; font-family:'Onest',sans-serif; font-size:15px; color:var(--teal-ink);">{{ changelogLabel }}</button>
-                <a href="17-security-reliability-v4.dc.html" style="text-decoration:none;">{{ verifyReleaseLabel }}</a>
-                <a href="https://github.com/ydnikolaev/a2ahub" style="text-decoration:none;">{{ githubRepoLabel }}</a>
-              </div>
-            </div>
-            <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-              <div style="font-size:17px; font-weight:600; margin-bottom:10px;">{{ commandsBehindLabel }}</div>
-              <div style="display:flex; flex-direction:column; gap:8px; font-family:'IBM Plex Mono',monospace; font-size:14px;">
-                <span style="background:var(--canvas); border-radius:8px; padding:9px 11px;">a2a inbox</span>
-                <span style="background:var(--canvas); border-radius:8px; padding:9px 11px;">a2a thread &lt;thread-id&gt;</span>
-                <span style="background:var(--canvas); border-radius:8px; padding:9px 11px;">a2a contracts</span>
-                <span style="background:var(--canvas); border-radius:8px; padding:9px 11px;">a2a html</span>
-              </div>
-              <p style="margin:12px 0 0; font-size:15px; line-height:1.55; color:var(--muted);">{{ commandsBehindText }}</p>
-            </div>
-          </div>
+          </section>
         </div>
       </section>
     </sc-if>
 
   </main>
+
+  <!-- The map's system popover is contextual navigation. Opening one of its
+       documents adds the same ArtifactDetail reading surface used by Exchange
+       above it; closing this layer reveals the untouched system context. -->
+  <sc-if value="{{ mapDocumentOpen }}" hint-placeholder-val="{{ false }}">
+    <dc-import name="ArtifactDetail" det="{{ mapDocumentDetail }}" modal="{{ true }}" on-close="{{ closeMapDocument }}" hint-size="100%,900px"></dc-import>
+  </sc-if>
 
   <!-- How much this page can be trusted, on demand. It answers one question —
        "is what I am reading current" — which qualifies every number on every
@@ -1150,10 +1169,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
     </div>
   </sc-if>
 
-  <footer style="background:var(--surface); padding:20px 0 30px;">
+  <footer class="a2a-dashboard-footer" style="background:var(--surface); padding:20px 0 30px;">
     <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0; display:flex; align-items:flex-start; gap:22px; flex-wrap:nowrap; font-size:15px; color:var(--muted);">
       <span style="flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:5px;">
-        <span style="display:flex; align-items:center; gap:8px; color:var(--body);"><span style="width:9px; height:9px; border-radius:99px; background:var(--green); flex:0 0 9px;"></span>{{ snapshotLine }}</span>
+        <span style="display:flex; align-items:center; gap:8px; color:var(--body);"><dc-import name="FreshnessDot" stale="{{ footerStale }}" age="{{ footerAge }}" hint="{{ footerFreshnessHint }}" compact="{{ true }}" hint-size="9px,9px"></dc-import>{{ snapshotLine }}</span>
         <span>{{ footerLine }}</span>
       </span>
       <span style="flex:0 0 auto; display:flex; gap:16px; flex-wrap:wrap; row-gap:8px; justify-content:flex-end;">
@@ -1192,14 +1211,14 @@ const DASHBOARD_I18N = {
     degradedReads:"Degraded reads", degradedReadsText:"These spaces answered from an older mirror revision, or not at all. Their counts are floors, never totals.",
     notEvaluatedTitle:"What this read deliberately did not check", notEvaluatedText:"Not failures. Questions a static file honestly cannot answer, said out loud instead of shown as a zero or a green tick.",
     versions:"Versions", localBinary:"Local binary", installed:"installed", latest:"latest", updateCandidate:"Update candidate", impact:"impact", publishedReleases:"Published releases in this snapshot", expandedNotes:"Expanded notes cover",
-    guide:"How a2ahub works without human dispatch", guideSub:"What the eight document types are, how each one moves through its lifecycle, and how to read the rest of the dashboard. Come here when a word on another page did not explain itself.",
+    guide:"How a2ahub fits together", guideSub:"Document types, statuses, the dashboard's reading order, and a direct way to improve the product. Everything on this page is written for people first.",
     lifecycleTitle:"Lifecycle is events, not an editable status", lifecycleText:"Every transition is validated before it is recorded. Both sides fold the same history into the same state.", lifecycleFoot:"Responses, blocks, disputes, cancellations, and supersessions remain separate immutable events with a validated actor.",
     artifactTypesTitle:"Eight document types", artifactTypesText:"One file carries one intent. The protocol code remains a quick visual anchor and a human name is always shown beside it.", readingGuide:"How to read the dashboard", readOnly:"read-only",
-    docs:"Documentation", docsSub:"The same manual the agent reads, embedded whole in this file, so no network is needed. Sections and search on the left, the text itself on the right.",
+    docs:"Documentation", docsSub:"The same manual the agent reads is available here without a network connection. Sections and search are on the left; the exact source text is on the right.",
     docSearch:"Search the docs", docSearchPlaceholder:"thread, contract, retire…", docNoMatch:"No section title, group or source path matches that search.",
-    docEmbedded:"embedded in this file", emptyDocsTitle:"No documentation embedded", emptyDocsText:"This snapshot was written without the doc corpus. Reinstall the skill and render the dashboard again.",
+    docEmbedded:"available offline", emptyDocsTitle:"No documentation embedded", emptyDocsText:"This snapshot was written without the doc corpus. Reinstall the skill and render the dashboard again.",
     loadingDoc:"Loading the embedded document…",
-    projectSite:"Project website", projectSiteText:"The public site contains the same documentation, changelog, and release-verification steps. The site needs a network connection; this file does not.", documentation:"Documentation", changelog:"Changelog", verifyRelease:"Verify a release", githubRepo:"GitHub repository", commandsBehind:"Commands behind these screens", commandsBehindText:"A person can run them for diagnosis. Routine coordination does not require manually translating between systems.", publicHome:"Public home", designSystem:"Design system v4",
+    feedbackTitle:"Have an idea? Let’s make a2ahub better", feedbackText:"Bugs, rough edges and feature ideas are welcome. Give the context to your agent: it knows the feedback format, checks for duplicates and files a safe, actionable report.", githubRepo:"GitHub repository", publicHome:"Public home", designSystem:"Design system v4",
     readingRows:[["Overview and Work","Human actions ordered by consequence and next owner. Priority, literal blocking, a pending approval, a deadline, and a stale snapshot remain five distinct signals."],["Threads","One intent per chain, in committed order where Git history exists and explicitly labelled declared order where it does not."],["Contracts and Map","Drift belongs to a consumer's pinned major line. A provider may be healthy while a consumer resolves nothing."],["Integrity and Versions","The limits of this snapshot and the independent compatibility axes that must not be inferred from one another."]]
   },
   ru: {
@@ -1224,16 +1243,145 @@ const DASHBOARD_I18N = {
     degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии или не ответили вовсе. Их цифры значат «не меньше чем», а не точное число.",
     notEvaluatedTitle:"Что мы намеренно не проверяли", notEvaluatedText:"Это не сбои. Это вопросы, на которые статический файл честно не отвечает и говорит об этом прямо, вместо того чтобы показать ноль или зелёную галочку.",
     versions:"Версии", localBinary:"Ваш бинарник", installed:"стоит сейчас", latest:"последняя", updateCandidate:"Есть обновление", impact:"влияние", publishedReleases:"Выпуски", expandedNotes:"Подробности по",
-    guide:"Как это работает без ручной диспетчеризации", guideSub:"Что за восемь типов документов, как каждый проходит свой жизненный цикл и как читать остальные вкладки. Сюда стоит зайти, если где-то попалось непонятное слово.",
+    guide:"Как устроен a2ahub", guideSub:"Типы документов, статусы, порядок чтения дашборда и прямой способ сделать продукт лучше. Эта страница сначала говорит с человеком, а уже потом — о протоколе.",
     lifecycleTitle:"Статус не редактируется, он складывается из событий", lifecycleText:"Каждый переход проверяется до того, как попадёт в репозиторий. Обе стороны собирают из одной и той же истории одно и то же состояние.", lifecycleFoot:"Ответы, блокировки, споры, отмены и замены не затираются: каждое остаётся отдельным событием с проверенным автором.",
     artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл, одна мысль. Двухбуквенный код удобен глазу, но рядом всегда стоит нормальное название.", readingGuide:"Как читать дашборд", readOnly:"только чтение",
-    docs:"Документация", docsSub:"То же руководство, что читает агент, целиком вшито в этот файл, так что сеть не нужна. Слева разделы и поиск, справа сам текст.",
+    docs:"Документация", docsSub:"То же руководство, что читает агент, доступно здесь без подключения к сети. Слева разделы и поиск, справа исходный текст.",
     docSearch:"Поиск по докам", docSearchPlaceholder:"тред, контракт, вывод версии…", docNoMatch:"Ни одно название раздела, группа или путь к файлу не совпали с запросом.",
-    docEmbedded:"вшито в этот файл", emptyDocsTitle:"Документация не вшита", emptyDocsText:"Этот снимок собран без корпуса документации. Переустановите навык и соберите дашборд заново.",
+    docEmbedded:"доступно без интернета", emptyDocsTitle:"Документация не вшита", emptyDocsText:"Этот снимок собран без корпуса документации. Переустановите навык и соберите дашборд заново.",
     loadingDoc:"Загружается встроенный документ…",
-    projectSite:"Сайт проекта", projectSiteText:"На сайте та же документация, тот же список изменений и инструкция, как проверить подлинность выпуска. Сайту нужна сеть, а этому файлу нет.", documentation:"Документация", changelog:"Что менялось", verifyRelease:"Проверить выпуск", githubRepo:"Репозиторий на GitHub", commandsBehind:"Команды за этими экранами", commandsBehindText:"Их можно запустить руками, если хочется разобраться. Для обычной работы это не нужно: агенты общаются между собой сами.", publicHome:"Главная сайта", designSystem:"Дизайн-система",
+    feedbackTitle:"Есть идея? Давайте сделаем a2ahub лучше", feedbackText:"Баги, шероховатости и фичер-реквесты здесь действительно ждут. Передайте контекст своему агенту: он знает формат, проверит дубликаты и отправит безопасный, полезный отчёт.", githubRepo:"Репозиторий на GitHub", publicHome:"Главная сайта", designSystem:"Дизайн-система",
     readingRows:[["Обзор и работа","Сверху то, где цена ошибки выше. Приоритет, блокировка, ожидание вашего согласования, срок и устаревшие данные остаются пятью разными сигналами, и они намеренно не слиты в один."],["Треды","Одна задача, один тред. Порядок берётся из коммитов Git; если истории нет, используется время, указанное автором, и это честно помечается."],["Контракты и карта","Расхождение считается для конкретного потребителя и той версии, которую он закрепил. У поставщика может быть всё хорошо ровно тогда, когда у потребителя не работает ничего."],["Спейсы и версии","Пределы этого снимка и три версии, которые нельзя выводить одну из другой."]]
   }
+};
+
+// Human explanations for every protocol type and every state the dashboard
+// presents as a status. This is the one vocabulary surface for the whole
+// document: TypeBadge and StatusPill read it for their hover bubbles, while
+// Guide renders the same entries as the durable reference. New user-facing
+// protocol vocabulary belongs here, never in one screen's markup.
+const A2A_GLOSSARY = {
+  en: {
+    types: {
+      contract:{ code:"XC", label:"Contract", description:"A versioned interface one system publishes and another can depend on." },
+      requirement:{ code:"XR", label:"Requirement", description:"A durable condition the result must satisfy, without prescribing the implementation." },
+      question:{ code:"XQ", label:"Question", description:"A focused request for information that expects a typed response." },
+      work_request:{ code:"XW", label:"Work request", description:"A request for another system to deliver a concrete result, with acceptance criteria and an owner." },
+      decision:{ code:"XD", label:"Decision", description:"A recorded choice and its rationale, so other systems can act without reopening the discussion." },
+      handoff:{ code:"XH", label:"Handoff", description:"A transfer of responsibility or a ready result to the next system." },
+      response:{ code:"XS", label:"Response", description:"A direct answer to another document, linked back to the request it resolves." },
+      announcement:{ code:"XA", label:"Announcement", description:"Information others should know that does not ask them to perform work." }
+    },
+    statuses: {
+      draft:{ label:"draft", description:"The document is still local and has not entered the shared exchange." },
+      submitted:{ label:"submitted", description:"The document was sent to the space and is waiting for the receiving side to take it from there." },
+      acknowledged:{ label:"received", description:"The receiving side confirmed it has the document; this is not yet acceptance of the work." },
+      accepted:{ label:"accepted", description:"The receiving side committed to the request and can now start the work." },
+      in_progress:{ label:"in progress", description:"Work has started and the request has not reached a final state yet." },
+      published:{ label:"published", description:"The document is part of the shared record and visible to its participants." },
+      proposed:{ label:"proposed", description:"A change or choice was offered and still awaits the next protocol move." },
+      responded:{ label:"responded", description:"A linked response was recorded; the conversation may still need verification or closure." },
+      verified:{ label:"verified", description:"The artifact recipient checked the response or delivered result and confirmed it. This is a document lifecycle state, not a release stamp." },
+      closed:{ label:"closed", description:"The exchange reached a final state and no further move is expected." },
+      blocked:{ label:"blocked", description:"Progress cannot continue until the named blocker is removed." },
+      blocking:{ label:"blocking", description:"This item is actively stopping somebody else's work and deserves prompt attention." },
+      disputed:{ label:"disputed", description:"A participant challenged the result or interpretation; the disagreement remains open." },
+      cancelled:{ label:"cancelled", description:"The requester ended the work before completion; the history stays visible." },
+      withdrawn:{ label:"withdrawn", description:"The author retracted the document from active consideration; the record is preserved." },
+      current:{ label:"on latest", description:"This consumer is pinned to the latest live contract major." },
+      behind:{ label:"behind", description:"This consumer is still pinned to an older live contract major." },
+      deprecated:{ label:"being retired", description:"This version still works, but consumers are expected to move away before its sunset." },
+      retired:{ label:"retired", description:"This version is no longer live for new use; its history remains visible." },
+      missing:{ label:"not found", description:"The pinned version is absent at the provider, so this dependency cannot resolve." },
+      dangling:{ label:"provider left", description:"The dependency points to a provider that is no longer present in this space." },
+      stale:{ label:"stale", description:"The local evidence is older than the freshness window, so the repository may already differ." },
+      fresh:{ label:"fresh", description:"The local evidence was refreshed within the expected freshness window." },
+      unreadable:{ label:"unreadable", description:"The local copy could not be read. Unknown values must not be treated as zero." },
+      unresolved:{ label:"unresolved", description:"The dashboard cannot connect this reference to a readable record." },
+      "space stale":{ label:"space stale", description:"The local space copy is older than usual. Data remains available, but the repository may have changed. Run a2a sync; the warning disappears after a successful refresh." },
+      settled:{ label:"settled", description:"Every document in this thread is final and nobody owes another move." },
+      "your move":{ label:"your move", description:"The next allowed protocol action belongs to your system." },
+      "waiting on others":{ label:"waiting on others", description:"Your system is not holding this up; another participant owns the next move." },
+      "your approval pending":{ label:"awaiting your approval", description:"The next protocol move requires an explicit approval from your side." },
+      "up to date":{ label:"latest version", description:"Your installed binary matches the newest release known to this snapshot." },
+      "no action needed":{ label:"no action needed", description:"This change does not require local configuration, migration, or manual follow-up." },
+      overdue:{ label:"overdue", description:"The recorded deadline has passed while the exchange is still open." },
+      "needs a look":{ label:"needs a look", description:"Nothing is necessarily broken, but this item carries a signal worth reviewing." },
+      resolved:{ label:"resolved · digest matches", description:"The reference was found and its recorded content digest matches." },
+      "digest mismatch":{ label:"digest mismatch", description:"The reference exists, but its content no longer matches the digest recorded by this document." }
+    }
+  },
+  ru: {
+    types: {
+      contract:{ code:"XC", label:"Контракт", description:"Версионируемый интерфейс, который одна система публикует, а другая может использовать как зависимость." },
+      requirement:{ code:"XR", label:"Требование", description:"Устойчивое условие, которому должен соответствовать результат, без навязывания способа реализации." },
+      question:{ code:"XQ", label:"Вопрос", description:"Точный запрос информации, на который ожидается связанный типизированный ответ." },
+      work_request:{ code:"XW", label:"Запрос работы", description:"Просьба другой системе выдать конкретный результат с критериями готовности и ответственным." },
+      decision:{ code:"XD", label:"Решение", description:"Зафиксированный выбор и его причины, чтобы другие системы могли действовать, не открывая обсуждение заново." },
+      handoff:{ code:"XH", label:"Передача", description:"Передача ответственности или готового результата следующей системе." },
+      response:{ code:"XS", label:"Ответ", description:"Прямой ответ на другой документ со ссылкой на запрос, который он закрывает." },
+      announcement:{ code:"XA", label:"Объявление", description:"Информация, которую участникам важно знать, но которая не просит их выполнить работу." }
+    },
+    statuses: {
+      draft:{ label:"черновик", description:"Документ пока локальный и ещё не вошёл в общий обмен." },
+      submitted:{ label:"отправлено", description:"Документ отправлен в спейс; теперь принимающая сторона должна забрать его в работу или ответить." },
+      acknowledged:{ label:"получили", description:"Принимающая сторона подтвердила получение. Это ещё не означает, что работу приняли." },
+      accepted:{ label:"взяли в работу", description:"Принимающая сторона обязалась выполнить запрос и может начинать работу." },
+      in_progress:{ label:"в работе", description:"Работа началась, но запрос ещё не дошёл до финального состояния." },
+      published:{ label:"опубликовано", description:"Документ вошёл в общий журнал и виден участникам обмена." },
+      proposed:{ label:"предложено", description:"Изменение или выбор предложены и ждут следующего допустимого шага." },
+      responded:{ label:"ответили", description:"Связанный ответ записан, но треду ещё могут понадобиться проверка или закрытие." },
+      verified:{ label:"проверено", description:"Получатель документа проверил ответ или переданный результат и подтвердил его. Это статус документа, а не отметка о релизе." },
+      closed:{ label:"закрыто", description:"Обмен дошёл до финального состояния; следующих шагов не ждут." },
+      blocked:{ label:"заблокировано", description:"Движение невозможно, пока не будет снята указанная блокировка." },
+      blocking:{ label:"блокирует", description:"Этот документ прямо сейчас останавливает чужую работу и требует быстрого внимания." },
+      disputed:{ label:"спорят", description:"Участник оспорил результат или трактовку; разногласие ещё не закрыто." },
+      cancelled:{ label:"отменено", description:"Заказчик остановил работу до завершения; история при этом сохраняется." },
+      withdrawn:{ label:"отозвано", description:"Автор снял документ с активного рассмотрения; запись остаётся в истории." },
+      current:{ label:"на последней", description:"Потребитель закреплён на последней живой мажорной версии контракта." },
+      behind:{ label:"отстаёт", description:"Потребитель всё ещё закреплён на более старой живой мажорной версии." },
+      deprecated:{ label:"выводится", description:"Версия пока работает, но до даты вывода потребителям нужно с неё уйти." },
+      retired:{ label:"снято", description:"Версия больше не доступна для нового использования; её история остаётся видимой." },
+      missing:{ label:"не нашли", description:"Закреплённой версии нет у поставщика, поэтому зависимость не разрешается." },
+      dangling:{ label:"поставщик ушёл", description:"Зависимость указывает на поставщика, которого больше нет в этом спейсе." },
+      stale:{ label:"устарел", description:"Локальные данные старше допустимого окна и уже могут отличаться от репозитория." },
+      fresh:{ label:"свежий", description:"Локальные данные обновлены в пределах ожидаемого окна свежести." },
+      unreadable:{ label:"не читается", description:"Локальную копию не удалось прочитать. Неизвестные значения нельзя считать нулём." },
+      unresolved:{ label:"не нашли", description:"Ссылку не удалось связать с доступной для чтения записью." },
+      "space stale":{ label:"спейс устарел", description:"Локальная копия спейса старше обычного. Данные доступны, но в репозитории уже могли появиться изменения. Запустите a2a sync: после успешного обновления предупреждение исчезнет." },
+      settled:{ label:"всё закрыто", description:"Все документы треда финальны, следующий ход не должен никто." },
+      "your move":{ label:"ваш ход", description:"Следующее допустимое действие протокола должна выполнить ваша система." },
+      "waiting on others":{ label:"ход за другими", description:"Вы никого не тормозите: следующий шаг принадлежит другому участнику." },
+      "your approval pending":{ label:"ждёт вашего согласования", description:"Следующий шаг протокола требует явного согласования с вашей стороны." },
+      "up to date":{ label:"последняя версия", description:"Установленный бинарник совпадает с последним выпуском, известным этому снимку." },
+      "no action needed":{ label:"действий не нужно", description:"Это изменение не требует настройки, миграции или ручного шага у вас." },
+      overdue:{ label:"просрочено", description:"Указанный дедлайн прошёл, а обмен всё ещё не завершён." },
+      "needs a look":{ label:"стоит посмотреть", description:"Поломка не доказана, но у документа есть сигнал, который стоит проверить." },
+      resolved:{ label:"нашли, сумма сошлась", description:"Ссылку нашли, и записанная контрольная сумма содержимого совпала." },
+      "digest mismatch":{ label:"сумма не сошлась", description:"Ссылка существует, но её содержимое уже не совпадает с контрольной суммой в документе." }
+    }
+  }
+};
+const A2A_TYPE_GUIDE = ["contract","requirement","question","work_request","decision","handoff","response","announcement"];
+const A2A_STATUS_GUIDE = ["draft","submitted","acknowledged","accepted","in_progress","published","proposed","responded","verified","closed","blocked","blocking","your approval pending","overdue","disputed","cancelled","withdrawn","space stale"];
+function a2aGlossaryEntry(kind, value, lang) {
+  const group = ((A2A_GLOSSARY[lang] || A2A_GLOSSARY.en)[kind] || {});
+  const raw = String(value == null ? "" : value).trim();
+  if (group[raw]) return Object.assign({ key:raw }, group[raw]);
+  const low = raw.toLowerCase();
+  if (group[low]) return Object.assign({ key:low }, group[low]);
+  const underscored = low.replace(/\s+/g, "_");
+  if (group[underscored]) return Object.assign({ key:underscored }, group[underscored]);
+  const keys = Object.keys(group);
+  for (const key of keys) {
+    if (low.indexOf(key + " ") === 0 || low.indexOf(key + " ·") === 0) return Object.assign({ key }, group[key]);
+    const label = String(group[key].label || "").toLowerCase();
+    if (label && (low === label || low.indexOf(label + " ") === 0 || low.indexOf(label + " ·") === 0)) return Object.assign({ key }, group[key]);
+  }
+  return null;
+}
+globalThis.A2A_GLOSSARY = {
+  entry: (kind, value, lang) => a2aGlossaryEntry(kind, value, lang || document.documentElement.lang || "en")
 };
 
 const GUIDE_DOCS = [
@@ -1352,9 +1500,8 @@ const UNAVAILABLE_RU = {
   ]
 };
 function TYPE_WORDS(ru) {
-  return ru
-    ? { contract:"Контракт", requirement:"Требование", question:"Вопрос", work_request:"Запрос работы", decision:"Решение", handoff:"Передача", response:"Ответ", announcement:"Объявление" }
-    : { contract:"Contract", requirement:"Requirement", question:"Question", work_request:"Work request", decision:"Decision", handoff:"Handoff", response:"Response", announcement:"Announcement" };
+  const group = A2A_GLOSSARY[ru ? "ru" : "en"].types;
+  return Object.keys(group).reduce((out, key) => { out[key] = group[key].label; return out; }, {});
 }
 // Drift, in words a person can act on. "behind" and "missing" are protocol
 // enums; on a card they have to say what actually happened to that consumer.
@@ -1551,15 +1698,13 @@ function agentThreadPromptText(ctx) {
   return out.concat(promptTail(ctx, docs)).filter(l => l !== null).join("\n") + "\n";
 }
 
-// Every control in a filter row is FILTER_H tall. The segmented control sits
-// inside a 3px track, so its buttons take SEGMENT_H and the track adds the
-// rest; a standalone chip and the type menu take the full height directly.
+// Every control in a filter row is FILTER_H tall. SegmentedFilter owns the
+// matching 38px track; standalone chips and menus use this shared height.
 // Stated as a height rather than reached by adding up paddings, because padding
 // arithmetic that happens to line up at one font size stops lining up at the
 // next, which is how the deadline toggle ended up shorter than the tabs beside
 // it.
 const FILTER_H = 38;
-const SEGMENT_H = FILTER_H - 6;
 
 function avatar(isSelf, left) {
   return "width:" + (left ? 26 : 32) + "px; height:" + (left ? 26 : 32) + "px; border-radius:99px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:" + (left ? 10 : 11) + "px; font-weight:600; flex:0 0 auto; " +
@@ -1579,7 +1724,7 @@ function normalizeDashboardData(input) {
 }
 
 class Component extends DCLogic {
-  state = { data: null, error: "", view: "overview", space: "all", ovSel: "", workTab: "all", typeMenu: false, workDue: false, conRole: "all", conRisk: false, workSel: "", threadSel: "", conSel: "", doc: "overview", docQ: "", spaceModal: false, tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en" };
+  state = { data: null, error: "", view: globalThis.A2A_DASHBOARD_START_VIEW || "overview", space: "all", ovSel: "", workTab: "all", typeMenu: false, workDue: false, conRole: "all", conRisk: false, workSel: "", threadSel: "", conSel: "", mapDocument: null, doc: "overview", docQ: "", spaceModal: false, tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en" };
 
   componentDidMount() {
     // the primary nav shows as many views as fit and folds the rest into More
@@ -1591,9 +1736,8 @@ class Component extends DCLogic {
       if (w > 0 && Math.abs((this.state.navW || 0) - w) > 4) this.setState({ navW: w });
     };
     window.addEventListener("resize", this.measureNav);
-    // Escape unwinds one layer at a time: the spaces modal, then a focused
-    // thread document. ArtifactDetail owns its full-width overlay itself. The map owns its
-    // own Escape for its own overlay.
+    // Escape unwinds one layer at a time. ArtifactDetail owns its document
+    // overlay; this listener owns only dashboard-level layers.
     this.onEscape = (ev) => {
       if (ev.key !== "Escape") return;
       if (this.state.spaceModal) { this.setState({ spaceModal: false }); return; }
@@ -1666,7 +1810,7 @@ class Component extends DCLogic {
   }
 
   localeStyle(active) {
-    return "font-family:'Onest',sans-serif; font-size:13px; font-weight:600; border:0; border-radius:8px; padding:7px 8px; cursor:pointer; " +
+    return "display:flex; align-items:center; justify-content:center; height:32px; box-sizing:border-box; font-family:'Onest',sans-serif; font-size:13px; font-weight:600; border:0; border-radius:var(--radius-inner); padding:0 8px; cursor:pointer; " +
       (active ? "background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.14);" : "background:transparent; color:var(--muted);");
   }
 
@@ -1698,13 +1842,6 @@ class Component extends DCLogic {
       style: "flex:0 0 auto; font-family:'Onest',sans-serif; font-size:14px; font-weight:600; border:0; border-radius:8px; padding:5px 11px; cursor:pointer; white-space:nowrap; " +
         (ok ? "background:var(--green); color:var(--on-solid);" : err ? "background:var(--red); color:var(--on-solid);" : "background:var(--inverse-3); color:var(--teal-on-dark);")
     };
-  }
-
-  // The segmented control: one recessed track, the active option raised out of
-  // it. Weight is constant across states — see tabStyle.
-  segmentStyle(active) {
-    return "display:inline-flex; align-items:center; min-height:" + SEGMENT_H + "px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:0 14px; border-radius:8px; white-space:nowrap; " +
-      (active ? "background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.12);" : "background:transparent; color:var(--muted);");
   }
 
   filterChip(active) {
@@ -1792,6 +1929,59 @@ class Component extends DCLogic {
     // Markdown has a separate safe Goldmark projection and never enters here.
     node.innerHTML = doc.html;
     node.setAttribute("data-hydrated", id);
+    // Relative Markdown links were previously handed to the browser unchanged,
+    // so `loops.md` became `/loops.md` beside the generated HTML and failed in
+    // both the temporary review server and the standalone file. Resolve them
+    // against the source document and keep embedded targets inside this reader.
+    const cleanPath = (value) => {
+      const out = [];
+      String(value || "").replace(/\\/g, "/").split("/").forEach(part => {
+        if (!part || part === ".") return;
+        if (part === "..") out.pop(); else out.push(part);
+      });
+      return out.join("/");
+    };
+    const base = cleanPath(doc.src).split("/").slice(0, -1);
+    const corpus = this.docCorpus();
+    const openEmbeddedDoc = (a, linked) => {
+      a.href = "#doc-" + linked.id;
+      a.addEventListener("click", ev => {
+        ev.preventDefault();
+        this.setState({ doc: linked.id });
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    };
+    node.querySelectorAll("a[href]").forEach(a => {
+      const raw = a.getAttribute("href") || "";
+      if (!raw) return;
+      // The Go Markdown renderer already shortens links to another embedded
+      // document to `#<document-id>`. Distinguish those from same-document
+      // heading anchors before leaving ordinary fragments untouched.
+      if (raw[0] === "#") {
+        const linked = corpus.find(d => d.id === raw.slice(1));
+        if (linked && linked.id !== id) openEmbeddedDoc(a, linked);
+        return;
+      }
+      if (/^(?:[a-z]+:|\/)/i.test(raw)) return;
+      const parts = raw.split("#");
+      const target = cleanPath(base.concat(parts[0].split("/")).join("/"));
+      const linked = corpus.find(d => cleanPath(d.src) === target);
+      if (!linked) {
+        a.href = "https://github.com/ydnikolaev/a2ahub/blob/main/" + target + (parts[1] ? "#" + parts[1] : "");
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        return;
+      }
+      openEmbeddedDoc(a, linked);
+    });
+    const frontmatter = node.firstElementChild;
+    if (frontmatter && frontmatter.tagName === "PRE") {
+      frontmatter.setAttribute("data-doc-frontmatter", "true");
+      const label = document.createElement("div");
+      label.textContent = this.state.locale === "ru" ? "Метаданные файла" : "File metadata";
+      label.setAttribute("style", "margin:0 0 7px; font-size:12px; line-height:1.3; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--faint);");
+      frontmatter.before(label);
+    }
     this.buildToc(node, id);
   }
 
@@ -1938,10 +2128,9 @@ class Component extends DCLogic {
     const codes = monoCodes(d.nodes.map(n => n.system));
     const st = this.statusOf(it);
     const toSelf = (it.to || []).includes(d.self);
-    const toText = toSelf ? (it.to.length > 1 ? (ru ? "вы +" : "you +") + (it.to.length - 1) : (ru ? "вы" : "you")) : (it.to || []).join(", ");
+    const toText = (it.to || []).join(", ");
     const toCode = toSelf ? codes[d.self] : codes[(it.to || [])[0]];
     const space = d.spaces.find(s => s.id === it.space);
-    const stale = space && space.stale ? " · " + (ru ? "устарел " : "stale ") + age(space.syncAge) : (space && space.readable ? " · " + (ru ? "свежий " : "fresh ") + age(space.syncAge) : "");
     return {
       id: it.id, type: it.type, title: it.title, status: st.status, tone: st.tone,
       // A label that raises a question carries its answer on itself, so the
@@ -1953,7 +2142,9 @@ class Component extends DCLogic {
       // reader who just filtered by deadline should not have to open a card to
       // see it. Overdue ones keep the red treatment on top.
       time: it.neededBy ? (ru ? "дедлайн " : "due ") + isoDay(it.neededBy) : age(it.age),
-      from: it.from, to: toText, meta: it.space + stale,
+      from: it.from, to: toText, meta: it.space,
+      syncAge: space && space.readable ? age(space.syncAge) : "",
+      syncStale: !!(space && space.stale),
       fromCode: codes[it.from] || "", toCode: toCode || "",
       fromSelf: it.from === d.self, toSelf: toSelf,
       selected: selValue === it.id,
@@ -2019,7 +2210,11 @@ class Component extends DCLogic {
       return flat(raw);
     };
     const present = (key) => e[key] !== undefined && e[key] !== null && e[key] !== "";
-    const preferred = ["created", "priority", "blocking", "category", "actor", "classification", "effort_estimate", "required_approvers", "space"];
+    // Priority is already a pill, the author now leads the document, and
+    // blocking is either a loud top-level state or an uninteresting false.
+    // Keep all three in the complete frontmatter disclosure without repeating
+    // them in the human essentials grid.
+    const preferred = ["created", "space", "category"];
     const primaryKeys = preferred.filter(present).slice(0, 5);
     const primary = primaryKeys.map(key => ({
       label: (ru ? labelsRU : labelsEN)[key] || key,
@@ -2066,6 +2261,12 @@ class Component extends DCLogic {
       };
     }
     const e = a.envelope || {};
+    const actor = e.actor && typeof e.actor === "object" ? e.actor : {};
+    const authorNode = (d.nodes || []).find(n => n.system === a.from);
+    const owner = authorNode && authorNode.owners && authorNode.owners.length ? String(authorNode.owners[0]) : "";
+    const authorName = owner || String(actor.name || a.from || "");
+    const authorLogin = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(owner) ? owner : "";
+    const authorMono = (authorName[0] + (authorName[1] || "")).toUpperCase();
     const pills = [];
     // The blocking pill carries its own explanation here, because this is the
     // one place with room for it: the list rows say who has to move and open
@@ -2077,7 +2278,7 @@ class Component extends DCLogic {
     });
     else if (e.priority) pills.push({ text: e.priority, tone: "neutral" });
     pills.push({ text: String(a.state || "").replace("_", " "), tone: STATE_TONE[a.state] || "neutral" });
-    if (a.sync_stale) pills.push({ text: (ru ? "спейс устарел " : "space stale ") + age(a.sync_age), tone: "attention" });
+    if (a.sync_stale) pills.push({ text: "space stale", tone: "attention" });
 
     const lists = [];
     if (e.acceptance_criteria) lists.push({ heading: ru ? "Когда считаем, что готово" : "Acceptance criteria", items: e.acceptance_criteria, numbered: true });
@@ -2141,12 +2342,10 @@ class Component extends DCLogic {
       present: true, type: a.type, pills,
       sourceClass: a.sourceClass,
       syncStale: !!a.sync_stale,
-      freshnessText: a.sync_stale ? (ru ? "спейс устарел " : "space stale ") + age(a.sync_age) : "",
-      freshnessHint: a.sync_age
-        ? (a.sync_stale
-          ? (ru ? "Локальная копия спейса может отставать от репозитория. Последняя синхронизация: " + age(a.sync_age) + "." : "The local space copy may lag behind the repository. Last synced: " + age(a.sync_age) + ".")
-          : (ru ? "Локальная копия спейса актуальна. Последняя синхронизация: " + age(a.sync_age) + "." : "The local space copy is current. Last synced: " + age(a.sync_age) + "."))
-        : "",
+      syncAge: age(a.sync_age),
+      authorName, authorMono, authorAvatar:authorNode && authorNode.avatar ? authorNode.avatar : "", authorFrom:a.from, authorTo:(a.to || []).join(", "),
+      authorProfileURL: authorLogin ? "https://github.com/" + authorLogin : "",
+      authorProfileTitle: authorLogin ? "GitHub · " + authorLogin : "",
       title: a.title, body: a.body || "", bodyHTML: a.bodyHTML || "",
       calloutTitle, calloutText, calloutTone, calloutParts,
       lists, metadataPrimary: metadata.primary, metadataRest: metadata.rest,
@@ -2169,12 +2368,29 @@ class Component extends DCLogic {
           priority: e.priority, prompt: it.prompt
         })) : ""
       },
-      threadLabel: a.thread ? (ru ? "Открыть тред" : "Open thread") : (ru ? "Тред не указан" : "No thread recorded"),
+      threadLabel: a.thread ? (ru ? "Тред" : "Thread") : (ru ? "Тред не указан" : "No thread recorded"),
       hasThread: !!a.thread,
       openThread: () => this.go("threads", { threadSel: a.thread || "" }),
       sourceURL: this.artifactSourceURL(a),
       footer: a.id
     };
+  }
+
+  mapDetailFor(selection) {
+    const d = this.state.data;
+    const item = d.exchangeEdges.find(x => x.id === selection.id && (!selection.space || x.space === selection.space));
+    const detail = this.detailFor(selection.id, item ? [item] : []);
+    if (!detail.hasThread || !detail.openThread) return detail;
+    const openThread = detail.openThread;
+    return Object.assign({}, detail, {
+      // The full reading surface behaves the same no matter where it was
+      // launched: following its Thread action navigates, rather than leaving
+      // an unrelated document overlay pinned above the new page.
+      openThread: () => {
+        this.setState({ mapDocument: null });
+        openThread();
+      }
+    });
   }
 
   renderVals() {
@@ -2254,8 +2470,10 @@ class Component extends DCLogic {
       notEvaluatedTitle:c.notEvaluatedTitle, notEvaluatedText:c.notEvaluatedText,
       versionsTitle:c.versions, localBinaryLabel:c.localBinary, installedLabel:c.installed, latestLabel:c.latest, updateCandidateLabel:c.updateCandidate, impactLabel:c.impact, publishedReleasesLabel:c.publishedReleases, expandedNotesPrefix:c.expandedNotes,
       guideTitle:c.guide, guideSub:c.guideSub, lifecycleTitle:c.lifecycleTitle, lifecycleText:c.lifecycleText, lifecycleFoot:c.lifecycleFoot, artifactTypesTitle:c.artifactTypesTitle, artifactTypesText:c.artifactTypesText,
-      readingGuideTitle:c.readingGuide, readOnlyLabel:c.readOnly, projectSiteLabel:c.projectSite, projectSiteText:c.projectSiteText,
-      documentationLabel:c.documentation, changelogLabel:c.changelog, verifyReleaseLabel:c.verifyRelease, githubRepoLabel:c.githubRepo, commandsBehindLabel:c.commandsBehind, commandsBehindText:c.commandsBehindText, publicHomeLabel:c.publicHome, designSystemLabel:c.designSystem,
+      readingGuideTitle:c.readingGuide, readOnlyLabel:c.readOnly, feedbackTitle:c.feedbackTitle, feedbackText:c.feedbackText,
+      documentationLabel:c.docs,
+      feedbackPrompt:{ text:"Use the a2ahub skill to file grounded feedback about a2ahub itself. Decide whether this is a bug, feature, docs, friction, or protocol report; inspect the current screen and reproduce or ground the request in real work; check `a2a feedback status` and the hub inbox/backlog for duplicates; create the draft with `a2a feedback new <kind> --title <clear title>`; complete its evidence and safety checks; run `a2a feedback validate <file>`; then submit it with `a2a feedback submit <file>`. Never include secrets or space-private data. If essential context is missing, ask me one focused question first." },
+      githubRepoLabel:c.githubRepo, publicHomeLabel:c.publicHome, designSystemLabel:c.designSystem,
       guideReadingRows:c.readingRows.map((r,i) => ({ label:r[0], text:r[1], labelStyle:"padding:13px 20px 13px 0; width:210px; vertical-align:top; font-weight:600;" + (i < c.readingRows.length - 1 ? " border-bottom:1px solid var(--hairline);" : ""), textStyle:"padding:13px 0; line-height:1.6; color:var(--body);" + (i < c.readingRows.length - 1 ? " border-bottom:1px solid var(--hairline);" : "") })),
       isOverview: !!d && s.view === "overview", isWork: !!d && s.view === "work", isThreads: !!d && s.view === "threads",
       isContracts: !!d && s.view === "contracts", isNetwork: !!d && s.view === "network", isSpaces: !!d && s.view === "spaces",
@@ -2271,20 +2489,19 @@ class Component extends DCLogic {
       })),
       moreOpen: s.more,
       moreExpanded: s.more ? "true" : "false",
-      moreCaret: s.more ? "▴" : "▾",
-      moreBtnStyle: this.tabStyle(false) + (s.more ? " background:var(--canvas);" : ""),
+      moreBtnStyle: this.tabStyle(false) + " display:inline-flex; align-items:center; gap:5px;" + (s.more ? " background:var(--canvas);" : ""),
       toggleMore: () => this.setState(x => ({ more: !x.more, lang: false })),
       goOverview: () => this.go("overview", { more: false }),
       goVersions: () => this.go("versions"), goWork: () => this.go("work", { workTab: "incoming", workType: "all", workDue: false }),
       guideFeatures: (ru ? GUIDE_FEATURES_RU : GUIDE_FEATURES_EN).map(([tag, title, body]) => ({ tag, title, body })),
-      lifecycleSteps: [["draft","submit"],["submitted","ack"],["acknowledged","accept"],["accepted","start"],["in_progress",""]].map(([label, action]) => ({ label, action, hasNext: !!action })),
-      artifactTypes: (ru ? [["XC","Контракт"],["XR","Требование"],["XQ","Вопрос"],["XW","Запрос работы"],["XD","Решение"],["XH","Передача"],["XS","Ответ"],["XA","Объявление"]] : [["XC","Contract"],["XR","Requirement"],["XQ","Question"],["XW","Work request"],["XD","Decision"],["XH","Handoff"],["XS","Response"],["XA","Announcement"]]).map(([code,label]) => ({ code,label })),
+      statusGuide: A2A_STATUS_GUIDE.map(key => ({ key, description:A2A_GLOSSARY[ru ? "ru" : "en"].statuses[key].description, tone:key === "blocking" ? "blocking" : (["blocked","your approval pending","overdue","disputed","cancelled","withdrawn","space stale"].indexOf(key) > -1 ? "attention" : (["verified","closed"].indexOf(key) > -1 ? "healthy" : "neutral")) })),
+      artifactTypes: A2A_TYPE_GUIDE.map(key => ({ key, description:A2A_GLOSSARY[ru ? "ru" : "en"].types[key].description })),
       goDocs: () => this.go("docs"),
       ...this.docsVals(ru, c),
       themeLight: this.state.theme !== "dark", themeDark: this.state.theme === "dark",
       themeLabel: this.state.theme === "dark" ? (ru ? "Светлая тема" : "Light theme") : (ru ? "Тёмная тема" : "Dark theme"),
       themePressed: this.state.theme === "dark" ? "true" : "false",
-      themeIconStyle: "display:flex; align-items:center; justify-content:center; width:42px; height:42px; font-size:17px; border:0; border-radius:10px; cursor:pointer; " +
+      themeIconStyle: "display:flex; align-items:center; justify-content:center; width:38px; height:38px; box-sizing:border-box; font-size:17px; border:0; border-radius:var(--radius-control); cursor:pointer; " +
         (this.state.theme === "dark" ? "background:var(--inverse-3); color:var(--on-inverse);" : "background:var(--canvas); color:var(--text);"),
       toggleTheme: () => this.applyTheme(this.state.theme === "dark" ? "light" : "dark"),
       enPressed:s.locale === "en" ? "true" : "false", ruPressed:s.locale === "ru" ? "true" : "false",
@@ -2293,6 +2510,11 @@ class Component extends DCLogic {
     };
     if (!d) return Object.assign(base, { selfMono:"", selfLine:ru ? "читаем данные" : "reading data", snapshotLine:"", pageSub:"", spaceSwitcher:{}, updateRequired:false, bannerLabel:"", bannerText:"", bannerAction:"", goBanner:() => {}, footerLine:ru ? "Чтение локального снимка" : "Reading the local snapshot", data:null, openContract:() => {} });
 
+    const scopedSpaces = d.spaces.filter(x => this.inScope(x.id));
+    const footerStale = scopedSpaces.some(x => x.stale || !x.readable);
+    const footerFreshnessHint = footerStale
+      ? (ru ? "В снимке есть устаревшая или нечитаемая локальная копия спейса. Данные доступны, но уже могли измениться в репозитории. Запустите a2a sync и соберите дашборд заново." : "This snapshot includes a stale or unreadable local space copy. Data remains available, but the repository may already differ. Run a2a sync and rebuild the dashboard.")
+      : (ru ? "Все выбранные спейсы прочитаны из актуальных локальных копий. Точка станет жёлтой, если хотя бы одна копия устареет или перестанет читаться." : "Every selected space was read from a current local copy. The dot turns amber if any copy becomes stale or unreadable.");
     const scopedInbox = d.inbox.filter(i => this.inScope(i.space));
     const scopedOutbox = d.outbox.filter(i => this.inScope(i.space));
     // Human-attention scope is intentionally narrower than the agent/system's
@@ -2434,7 +2656,7 @@ class Component extends DCLogic {
       const top = lanes.slice(0, 3);
       return {
         id: sp.id,
-        pillText: sp.stale ? (ru ? "устарел " : "stale ") + age(sp.syncAge) : (ru ? "свежий " : "fresh ") + age(sp.syncAge),
+        pillText: sp.stale ? "space stale" : (ru ? "свежий " : "fresh ") + age(sp.syncAge),
         pillTone: sp.stale ? "attention" : "healthy",
         summary: members.length + (ru ? " участников · " : " participants · ") + d.contractEdges.filter(e => e.space === sp.id).length + (ru ? " контрактных линий · " : " contract lines · ") + lanes.length + (ru ? " открытых связей" : " open lanes"),
         members: members.map(n => ({
@@ -2476,19 +2698,17 @@ class Component extends DCLogic {
       return (x[0] - y[0]) || (x[1] - y[1]) || (x[2] - y[2]);
     });
     const filtered = s.verKind !== "all" || s.verAction !== "all";
-    const kindOk = (c) => s.verKind === "all" || c.kind === s.verKind;
+    const kindMatches = (c, kind) => kind === "all" || c.kind === kind;
     // "none" means the authored scope is literally none; "local" means any
     // scope that asks for something — the reader's question is "do I have to do
     // anything", not "which of the four scope words is it".
-    const actionOk = (c) => {
+    const actionMatches = (c, action) => {
       const scope = (c.action && c.action.scope) || "none";
-      return s.verAction === "all" || (s.verAction === "none" ? scope === "none" : scope !== "none");
+      return action === "all" || (action === "none" ? scope === "none" : scope !== "none");
     };
-    let totalChanges = 0, shownChanges = 0;
     const releasesShown = releasesAll.map(r => {
       const all = r.changes || [];
-      const shown = all.filter(c => kindOk(c) && actionOk(c));
-      totalChanges += all.length; shownChanges += shown.length;
+      const shown = all.filter(c => kindMatches(c, s.verKind) && actionMatches(c, s.verAction));
       return Object.assign({}, r, { shown });
     }).filter(r => r.shown.length > 0);
 
@@ -2498,6 +2718,9 @@ class Component extends DCLogic {
       selfMono: mono(d.self),
       selfLine: d.self + " · " + ((d.nodes.find(n => n.system === d.self) || {}).org || ""),
       snapshotLine: (ru ? "Снимок " : "Snapshot ") + when(d.generatedAt) + (ru ? " · создан из локального кэша" : " · built from the local cache"),
+      footerStale,
+      footerAge: when(d.generatedAt),
+      footerFreshnessHint,
       updateRequired: !!d.meta.synthetic || (!!tooling.updateAvailable && !!tooling.required),
       bannerLabel: d.meta.synthetic ? (ru ? "Демо-режим" : "Demo dashboard") : (ru ? "Нужно обновление" : "Update required"),
       bannerText: d.meta.synthetic ? (ru ? "Данные выдуманы, чтобы показать все экраны и состояния. Живых сервисов и репозиториев здесь нет." : "Synthetic data covers every screen and state; no live services or repositories are connected.") : (ru ? "Ваш бинарник " + tooling.current + " ниже минимальной версии записи " + tooling.floor + " в спейсе " + tooling.floorSpace + ". Последняя версия " + tooling.latest + ", проверено " + tooling.cacheAge + " назад." : "Local binary " + tooling.current + " is below writer floor " + tooling.floor + " in " + tooling.floorSpace + ". Latest is " + tooling.latest + "; checked " + tooling.cacheAge + " ago."),
@@ -2561,7 +2784,6 @@ class Component extends DCLogic {
       // filtering to this" before the click rather than after it.
       typeMenuOpen: s.typeMenu,
       typeMenuExpanded: s.typeMenu ? "true" : "false",
-      typeCaret: s.typeMenu ? "▴" : "▾",
       toggleTypeMenu: (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState(x => ({ typeMenu: !x.typeMenu })); },
       typeButtonStyle: "display:inline-flex; align-items:center; gap:8px; min-height:" + FILTER_H + "px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:10px; padding:0 13px; cursor:pointer; white-space:nowrap; " +
         (workType === "all" ? "background:var(--surface); color:var(--body); box-shadow:0 1px 2px rgba(33,30,23,.06);" : "background:var(--primary); color:var(--on-primary);") +
@@ -2577,10 +2799,10 @@ class Component extends DCLogic {
           (workType === f.id ? "background:var(--teal-tint); color:var(--teal-ink);" : "background:transparent; color:var(--body);"),
         go: () => this.setState({ workType: f.id, workSel: "", typeMenu: false })
       })),
-      workTabs: [["all", (ru ? "Все · " : "All · ") + (scopedInbox.length + scopedOutbox.length)], ["incoming", (ru ? "Входящие · " : "Incoming · ") + scopedInbox.length], ["outgoing", (ru ? "Исходящие · " : "Outgoing · ") + scopedOutbox.length]].map(([id, label]) => ({
+      workTabs: [["all", ru ? "Все" : "All", scopedInbox.length + scopedOutbox.length], ["incoming", ru ? "Входящие" : "Incoming", scopedInbox.length], ["outgoing", ru ? "Исходящие" : "Outgoing", scopedOutbox.length]].map(([id, label, count]) => ({
         label,
+        count,
         pressed: s.workTab === id ? "true" : "false",
-        style: this.segmentStyle(s.workTab === id),
         go: () => this.setState({ workTab: id, workSel: "", workType: "all", workDue: false, typeMenu: false })
       })),
       hasDueFilter: dueCount > 0 || !!s.workDue,
@@ -2646,8 +2868,11 @@ class Component extends DCLogic {
         ? "Все документы этого треда дошли до конечного состояния. Запись остаётся целиком ниже, тред читается, но действий не ждёт."
         : "Every document in this thread reached a terminal state. The full record stays below; the thread is readable but is not waiting on anyone.",
       tvTitle: tv ? (tv.opener ? tv.opener.title : tv.thread) : "",
-      tvOrderPill: tv ? (tv.order === "committed" ? (ru ? "порядок из коммитов · надёжно" : "commit order · strong evidence") : (ru ? "время от автора · слабее" : "declared timestamps · weak fallback")) : "",
-      tvStale: !!(tv && tv.sync_stale), tvStaleText: tv && tv.sync_stale ? (ru ? "спейс устарел" : "space stale") : "",
+      tvOrderPill: tv ? (tv.order === "committed" ? (ru ? "порядок событий: по коммитам" : "event order: commits") : (ru ? "порядок событий: по времени авторов" : "event order: author timestamps")) : "",
+      tvOrderHint: tv ? (tv.order === "committed"
+        ? (ru ? "События показаны в том порядке, в котором попали в git. Если время авторов расходится, источником истины остаётся порядок коммитов." : "Events follow their committed git order. If author timestamps disagree, commit order remains the source of truth.")
+        : (ru ? "Порядок восстановлен по времени, которое указали авторы документов: надёжного порядка коммитов для этого треда нет." : "Order is reconstructed from author-declared timestamps because committed ordering is unavailable for this thread.")) : "",
+      tvStale: !!(tv && tv.sync_stale), tvStaleText: tv && tv.sync_stale ? "space stale" : "",
       tvMeta: tv ? (tv.participants || []).join(", ") + " · " + tv.space : "",
       tvEntryCount: tv ? (ru ? "записей: " : "entries: ") + (tv.transcript || []).length : "",
       tvEntries: tv ? (() => {
@@ -2800,9 +3025,9 @@ class Component extends DCLogic {
       conRoleTabs: [["all", ru ? "Все" : "All", contractsAll.length],
                     ["provider", ru ? "Публикую я" : "I publish", contractsAll.filter(c => conRoleOf(c) === "provider").length],
                     ["consumer", ru ? "Пользуюсь я" : "I depend on", contractsAll.filter(c => conRoleOf(c) === "consumer").length]].map(([id, label, n]) => ({
-        label: label + " · " + n,
+        label,
+        count: n,
         pressed: conRole === id ? "true" : "false",
-        style: this.segmentStyle(conRole === id),
         go: () => this.setState({ conRole: id, conSel: "", conRisk: false })
       })),
       hasConRisk: conRiskCount > 0 || !!s.conRisk,
@@ -2894,7 +3119,10 @@ class Component extends DCLogic {
       space: s.space,
       setSpace: (id) => this.setState({ space: id, ovSel: "", workSel: "", threadSel: "", conSel: "" }),
       openItem: (id, space, outgoing) => this.go("work", { workSel: id, workTab: outgoing ? "outgoing" : "incoming", space: this.state.space === "all" ? "all" : space }),
-      openDocument: (id, space) => this.go("work", { workSel:id, workTab:"all", space:space || "all" }),
+      openDocument: (id, space) => this.setState({ mapDocument: { id, space:space || "" } }),
+      mapDocumentOpen: !!s.mapDocument,
+      mapDocumentDetail: s.mapDocument ? this.mapDetailFor(s.mapDocument) : { present:false },
+      closeMapDocument: () => this.setState({ mapDocument: null }),
       // Arriving from the map must not land on a filter that hides the contract
       // it was asked for.
       openContract: (contractId, space) => this.go("contracts", { conSel: contractId, conRole: "all", conRisk: false, space: this.state.space === "all" ? "all" : space }),
@@ -2933,7 +3161,7 @@ class Component extends DCLogic {
         }
         return {
           id: x.id,
-          pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (x.stale ? (ru ? "устарел · " : "stale · ") + age(x.syncAge) : (ru ? "свежий · " : "fresh · ") + age(x.syncAge)),
+          pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (x.stale ? "space stale" : (ru ? "свежий · " : "fresh · ") + age(x.syncAge)),
           pillTone: !x.readable ? "blocking" : (x.stale ? "attention" : "healthy"),
           lines
         };
@@ -2961,7 +3189,7 @@ class Component extends DCLogic {
         const line = i === arr.length - 1 ? "none" : "1px solid var(--hairline)";
         return {
           id: x.id,
-          pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (x.stale ? (ru ? "устарел · " : "stale · ") + age(x.syncAge) : (ru ? "свежий · " : "fresh · ") + age(x.syncAge)),
+          pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (x.stale ? "space stale" : (ru ? "свежий · " : "fresh · ") + age(x.syncAge)),
           pillTone: !x.readable ? "blocking" : (x.stale ? "attention" : "healthy"),
           participants: x.readable ? String(x.participantCount) : (ru ? "не проверялось" : "not evaluated"),
           floor: x.minBinaryVersion || (ru ? "не записано" : "not recorded"),
@@ -2975,7 +3203,7 @@ class Component extends DCLogic {
       intFlags: flags.map(f => ({ code: f.code, origin: f.source + " · " + f.system + (f.space ? " · " + f.space : ""), message: f.message })),
       intDegraded: d.spaces.filter(x => this.inScope(x.id) && (x.stale || !x.readable)).map(x => ({
         id: x.id,
-        pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (ru ? "устарел · " : "stale · ") + age(x.syncAge),
+        pillText: !x.readable ? (ru ? "не читается" : "unreadable") : "space stale",
         pillTone: !x.readable ? "blocking" : "attention",
         note: !x.readable ? (ru ? "манифест не прочитался" : "manifest could not be read") : (ru ? "читаем из устаревшей копии" : "reading from an older mirror revision")
       })),
@@ -3003,12 +3231,13 @@ class Component extends DCLogic {
         ? "Какая версия a2a стоит у вас сейчас и что менялось в каждом выпуске. Фильтры сверху сужают список по типу изменения и отделяют записи, которые чего-то от вас требуют, от тех, что можно просто прочитать."
         : "Which a2a version you run right now, and what changed in every release. The filters up top narrow the list by kind of change, and separate the entries that ask something of you from the ones you can simply read.",
       verCurrent: tooling.current, verLatest: tooling.latest,
+      showInstalledLabel: !!tooling.updateAvailable,
       verFacts: [
-        { label:ru ? "проверяли" : "checked", value:when(tooling.checkedAt) + (ru ? " · кэш " : " · cache ") + age(tooling.cacheAge) },
-        { label:ru ? "источник" : "source", value:tooling.source, mono:true },
-        { label:ru ? "минимум для записи" : "writer floor", value:tooling.floor + (ru ? " (требует " : " (required by ") + tooling.floorSpace + ")", mono:true },
+        { label:ru ? "последняя проверка" : "last checked", value:when(tooling.checkedAt) + (ru ? " · кэш " : " · cache ") + age(tooling.cacheAge) },
+        { label:ru ? "источник" : "source", value:tooling.source, mono:true, href:tooling.source === "github" ? (tooling.releaseURL ? tooling.releaseURL.replace(/\/releases\/tag\/.*$/, "") : "https://github.com/ydnikolaev/a2ahub") : "" },
+        { label:ru ? "минимальная версия для записи" : "minimum writer version", value:tooling.floor + (ru ? " (требует " : " (required by ") + tooling.floorSpace + ")", mono:true },
         { label:ru ? "нужно обновиться" : "update", value:tooling.required ? (ru ? "да" : "required") : (ru ? "нет" : "optional") },
-        { label:ru ? "выпуск" : "release", value:tooling.releaseURL ? "v" + tooling.latest + " on GitHub" : (ru ? "не записано" : "not recorded") }
+        { label:ru ? "последний релиз" : "latest release", value:tooling.releaseURL ? "v" + tooling.latest + (ru ? " на GitHub" : " on GitHub") : (ru ? "не записано" : "not recorded"), href:tooling.releaseURL || "" }
       ],
       // "Update available" is a fact from the version cache, not a guess from
       // comparing strings — when it is false the whole candidate card is gone.
@@ -3031,22 +3260,18 @@ class Component extends DCLogic {
       // Filters, the authored change blocks with copyable commands, the version
       // index and the timeline rail — the SAME surface a2ahub.dev/changelog
       // publishes, projected from the same releasenotes/*.yaml corpus.
-      kindLabel: ru ? "Тип" : "Kind", actionLabel: ru ? "Действие" : "Action",
       kindFilters: VERSION_KINDS.map(k => ({
-        label: k === "all" ? (ru ? "Все" : "All") : (ru ? (KIND_RU[k] || k) : k),
+        label: k === "all" ? (ru ? "Все" : "All") : (ru ? ({ fix:"Исправление", feat:"Новое", policy:"Правило", "known-issue":"Известная проблема" }[k] || k) : ({ fix:"Fix", feat:"Feature", policy:"Policy", "known-issue":"Known issue" }[k] || k)),
+        count: releasesAll.reduce((n, r) => n + (r.changes || []).filter(c => (k === "all" || c.kind === k) && actionMatches(c, s.verAction)).length, 0),
         pressed: s.verKind === k ? "true" : "false",
-        style: this.filterChip(s.verKind === k),
         go: () => this.setState({ verKind: k })
       })),
       actionFilters: VERSION_ACTIONS.map(a => ({
-        label: a === "all" ? (ru ? "Любое" : "Any") : (a === "none" ? (ru ? "ничего не нужно" : "no action") : (ru ? "нужно действие" : "action needed")),
+        label: a === "all" ? (ru ? "Любое" : "Any") : (a === "none" ? (ru ? "Ничего не нужно" : "No action") : (ru ? "Нужно действие" : "Action needed")),
+        count: releasesAll.reduce((n, r) => n + (r.changes || []).filter(c => kindMatches(c, s.verKind) && actionMatches(c, a)).length, 0),
         pressed: s.verAction === a ? "true" : "false",
-        style: this.filterChip(s.verAction === a),
         go: () => this.setState({ verAction: a })
       })),
-      releaseNotesNote: filtered
-        ? (ru ? "показано изменений: " + shownChanges + " из " + totalChanges : shownChanges + " of " + totalChanges + " changes shown")
-        : (ru ? "все выпуски, вшитые в этот бинарник, тот же источник, что и на сайте" : "every release embedded in this binary, the same source the website publishes"),
       noReleases: releasesShown.length === 0,
       emptyReleasesTitle: filtered
         ? (ru ? "Под этот фильтр ничего не подошло" : "Nothing matches this filter")
@@ -3079,9 +3304,8 @@ class Component extends DCLogic {
           if (node) node.scrollIntoView({ behavior: "smooth", block: "start" });
         }
       })),
-      checkYouRunLabel: ru ? "Что у вас стоит" : "Check what you run",
+      checkYouRunLabel: ru ? "Узнать свою версию" : "Check your version",
       sideCommands: ["a2a version", "a2a whatsnew"].map(x => this.cmdBlock(x, ru)),
-      securityNoteLabel: ru ? "Исправления безопасности выходят только для последней версии." : "Only the latest release receives security fixes.",
 
       // The full authored corpus, verbatim: kind, impact, the detail paragraph
       // and the action block (why it matters, what to run). Release claims are
@@ -3099,9 +3323,12 @@ class Component extends DCLogic {
           const detect = (c.action && c.action.detect) || [];
           const run = (c.action && c.action.run) || [];
           const acts = scope !== "none";
+          const affects = (c.affects || []).join(" · ");
           return {
             kind: c.kind, impact: c.impact, subject: c.subject, detail: c.detail,
-            affects: (c.affects || []).join(" · "),
+            affects,
+            affectsClass: "a2a-release-affects" + (affects.length > 64 ? " a2a-fade-scroll" : ""),
+            affectsStyle: "display:block; width:100%; min-width:0; max-width:100%; box-sizing:border-box; padding:" + (affects.length > 64 ? "0 18px" : "0") + "; font-size:14px; line-height:1.5; color:var(--faint); font-family:'IBM Plex Mono',monospace; white-space:nowrap; text-align:right;",
             tone: KIND_TONE[c.kind] || "neutral",
             actionLabel: acts
               ? (ru ? "нужно действие · " : "action · ") + scope

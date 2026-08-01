@@ -9,7 +9,11 @@
     "prebuild": "node scripts/generate-content.mjs",
     "build": "astro build",
     "build:dashboard": "node scripts/build-local-dashboard.mjs",
-    "check": "npm run build && node scripts/check-dist.mjs",
+    "check": "npm run check:unit && npm run build && node scripts/check-dist.mjs",
+    "check:unit": "node --test tests/*.test.mjs",
+    "check:a11y": "playwright test",
+    "check:lighthouse": "node scripts/audit-lighthouse.mjs",
+    "check:quality": "npm run check && npm run check:a11y && npm run check:lighthouse",
     "preview": "astro preview"
   },
   "dependencies": {
@@ -20,9 +24,13 @@
     "marked": "^18.0.7",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "web-vitals": "^6.0.1",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.62.1",
+    "lighthouse": "^13.4.1",
     "vite": "^8.1.5"
   }
 }

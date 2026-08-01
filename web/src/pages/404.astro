@@ -2,6 +2,6 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import DesignRuntimePage from '../components/DesignRuntimePage.astro';
 ---
-<BaseLayout markdown="/404.md" current="/404.html" slotOwnsMain title="Not found — a2ahub" description="This a2ahub route does not exist.">
+<BaseLayout markdown="/404.md" current="/404.html" slotOwnsMain analytics={false} robots="noindex, follow" title="Not found — a2ahub" description="This a2ahub route does not exist.">
   <DesignRuntimePage source="21-not-found-v4.dc.html" />
 </BaseLayout>

@@ -1,0 +1,49 @@
+<script>
+  import { onCLS, onINP, onLCP } from 'web-vitals';
+
+  const send = (name, parameters = {}) => {
+    if (typeof window.gtag !== 'function') return;
+    window.gtag('event', name, parameters);
+  };
+
+  const sourcePage = location.pathname;
+  document.addEventListener('click', (event) => {
+    const link = event.target instanceof Element ? event.target.closest('a, button') : null;
+    if (!link) return;
+
+    const declared = link.getAttribute('data-analytics-event');
+    if (declared) {
+      send(declared, { source_page: sourcePage });
+      return;
+    }
+
+    const href = link instanceof HTMLAnchorElement ? link.href : '';
+    const path = link instanceof HTMLAnchorElement ? link.pathname : '';
+    if (link.hasAttribute('data-agent-link')) {
+      send('agent_handoff', { provider: link.getAttribute('data-agent-link'), source_page: sourcePage });
+    } else if (path === '/install.html' || link.hasAttribute('data-copy-value') && /install/i.test(link.getAttribute('data-copy-value') || '')) {
+      send('install_start', { method: link.hasAttribute('data-agent-link') ? 'agent' : 'direct', source_page: sourcePage });
+    } else if (path === '/dashboard.html' || path === '/dashboard-example.html') {
+      send('demo_open', { source_page: sourcePage });
+    } else if (path === '/docs.html' || path.startsWith('/docs/')) {
+      send('docs_open', { source_page: sourcePage });
+    } else if (href.startsWith('https://github.com/')) {
+      send('outbound_source', { source_page: sourcePage });
+    }
+  });
+
+  // Field data complements Lighthouse's lab signal. Sampling keeps the
+  // telemetry and network cost bounded; values are rounded and contain no DOM
+  // selectors, document ids or other user-controlled content.
+  if (Math.random() < 0.1) {
+    const report = ({ name, delta, rating }) => send('web_vital', {
+      metric_name: name,
+      metric_value: Math.round(name === 'CLS' ? delta * 1000 : delta),
+      metric_rating: rating,
+      source_page: sourcePage,
+    });
+    onCLS(report);
+    onINP(report);
+    onLCP(report);
+  }
+</script>

@@ -42,38 +42,7 @@ function preserveDynamicTables(source: string) {
   return source.replace(/<(\/?)(table|thead|tbody|tfoot|tr|th|td)(\b[^>]*)>/gi, '<$1sc-raw-$2$3>');
 }
 
-function copyButton(source: string, key: string) {
-  const command = 'curl -fsSL https://raw.githubusercontent.com/ydnikolaev/a2ahub/main/scripts/install.sh | sh';
-  return mustAll(source, [
-    [`onClick="{{ ${key}.copy }}"`, `data-copy-value="${command}"`],
-    [`style="{{ ${key}.style }}"`, `style="margin-left:auto;font-family:'Onest',sans-serif;font-size:14px;font-weight:600;border:0;border-radius:8px;padding:5px 11px;cursor:pointer;white-space:nowrap;background:var(--inverse-3);color:var(--teal-on-dark);"`],
-    [`{{ ${key}.label }}`, 'Copy']
-  ]);
-}
-
-export function publicHomeDesign() {
-  const source = readFileSync(resolve(sourceRoot, '13-public-home-v4.dc.html'), 'utf8');
-  const start = source.indexOf('<main>');
-  const end = source.indexOf('</main>', start);
-  if (start < 0 || end < 0) throw new Error('approved home design has no main element');
-  let main = source.slice(start + '<main>'.length, end);
-  main = copyButton(copyButton(productionLinks(main), 'install'), 'install2');
-
-  // The standalone delivery is the rendered authority: it contains this title
-  // once. One prototype source revision accidentally duplicated the adjacent h2.
-  const title = '<h2 style="margin:0 0 12px; font-size:42px; line-height:1.1; font-weight:600; letter-spacing:-0.03em; max-width:760px; text-wrap:balance;">Agents run the protocol. Humans get the explanation</h2>';
-  main = main.replace(`${title}\n          ${title}`, title);
-
-  const map = /<dc-import name="NetworkMap"[^>]*><\/dc-import>/;
-  const match = main.match(map);
-  if (!match || match.index === undefined) throw new Error('approved home design has no NetworkMap mount');
-  return {
-    beforeMap: main.slice(0, match.index),
-    afterMap: main.slice(match.index + match[0].length)
-  };
-}
-
-export function runtimeDesignPage(file: string) {
+export function runtimeDesignPage(file: string, variant?: 'guide') {
   const source = readFileSync(resolve(sourceRoot, file), 'utf8');
   const open = source.indexOf('<x-dc>');
   const close = source.lastIndexOf('</x-dc>');
@@ -88,6 +57,81 @@ export function runtimeDesignPage(file: string) {
     .replace(/<dc-import name="SiteFooter"[\s\S]*?<\/dc-import>/, '');
   template = preserveDynamicTables(productionLinks(template));
   let logic = productionLinks(source.slice(scriptBody, scriptClose));
+  if (file === '14-local-dashboard-v4.dc.html') {
+    template = must(
+      template,
+      '<button type="button" onClick="{{ goBanner }}" style="flex:0 0 auto; font-family:\'Onest\',sans-serif; font-size:16px; font-weight:600; color:var(--teal-ink); background:transparent; border:0; cursor:pointer; white-space:nowrap;">{{ bannerAction }}</button>',
+      '<a href="/" data-public-home-link style="flex:0 0 auto; font-family:\'Onest\',sans-serif; font-size:16px; font-weight:600; color:var(--teal-ink); white-space:nowrap; text-decoration:none;">{{ bannerAction }}</a>'
+    );
+    logic = must(
+      logic,
+      'bannerAction: d.meta.synthetic ? (ru ? "Про демо →" : "About the demo →") : (ru ? "Версии →" : "Versions →"),',
+      'bannerAction: d.meta.synthetic ? (ru ? "На главную →" : "Back to home →") : (ru ? "Версии →" : "Versions →"),'
+    );
+    if (variant === 'guide') {
+      const guideOpen = '<sc-if value="{{ isGuide }}" hint-placeholder-val="{{ false }}">';
+      // `isGuide` also controls the compass in the dashboard navigation. The
+      // public Features page needs the Guide screen itself, not every screen
+      // between that icon and the Guide's closing tag. Anchor the extraction
+      // on the screen's unique marker, then walk back to its owning condition.
+      const guideScreen = '<section aria-label="{{ guideAria }}" data-screen-label="Guide">';
+      const guideScreenStart = template.indexOf(guideScreen);
+      const guideStart = template.lastIndexOf(guideOpen, guideScreenStart);
+      const guideEndMarker = '\n    </sc-if>\n\n  </main>';
+      const guideEnd = template.indexOf(guideEndMarker, guideStart);
+      if (guideScreenStart < 0 || guideStart < 0 || guideEnd < 0) throw new Error('approved dashboard Guide surface is incomplete');
+      const guide = template
+        .slice(guideStart, guideEnd + '\n    </sc-if>'.length)
+        // The public page header already names this region with the same
+        // visible title. Keep the shared section and screen marker, but avoid
+        // exposing two identically named region landmarks to assistive tech.
+        .replace(guideScreen, '<section data-screen-label="Guide">');
+      template = `<x-dc><main style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0 80px;">${guide}</main></x-dc>`;
+
+      // The public Features route reuses the exact Guide template, but it
+      // must not ship the dashboard's other eight screens and their complete
+      // controller. Keep the shared Guide vocabulary/data declarations and a
+      // purpose-built projection whose values match the dashboard render.
+      const sharedStart = logic.indexOf('const DASHBOARD_I18N = {');
+      const sharedEnd = logic.indexOf('const VIEW_IDS = ', sharedStart);
+      if (sharedStart < 0 || sharedEnd < 0) throw new Error('approved dashboard Guide logic is incomplete');
+      logic = `${logic.slice(sharedStart, sharedEnd)}
+class Component extends DCLogic {
+  renderVals() {
+    const c = DASHBOARD_I18N.en;
+    return {
+      isGuide: true,
+      guideAria: c.guide,
+      artifactTypesTitle: c.artifactTypesTitle,
+      artifactTypesText: c.artifactTypesText,
+      artifactTypes: A2A_TYPE_GUIDE.map((key) => ({ key, description: A2A_GLOSSARY.en.types[key].description })),
+      feedbackTitle: c.feedbackTitle,
+      feedbackText: c.feedbackText,
+      feedbackPrompt: { text: "Use the a2ahub skill to file grounded feedback about a2ahub itself. Decide whether this is a bug, feature, docs, friction, or protocol report; inspect the current screen and reproduce or ground the request in real work; check a2a feedback status and the hub inbox/backlog for duplicates; create the draft with a2a feedback new <kind> --title <clear title>; complete its evidence and safety checks; run a2a feedback validate <file>; then submit it with a2a feedback submit <file>. Never include secrets or space-private data. If essential context is missing, ask me one focused question first." },
+      githubRepoLabel: c.githubRepo,
+      guideFeatures: GUIDE_FEATURES_EN.map(([tag, title, body]) => ({ tag, title, body })),
+      lifecycleTitle: c.lifecycleTitle,
+      lifecycleText: c.lifecycleText,
+      lifecycleFoot: c.lifecycleFoot,
+      statusGuide: A2A_STATUS_GUIDE.map((key) => ({
+        key,
+        description: A2A_GLOSSARY.en.statuses[key].description,
+        tone: key === "blocking" ? "blocking" : (["blocked", "your approval pending", "overdue", "disputed", "cancelled", "withdrawn", "space stale"].includes(key) ? "attention" : (["verified", "closed"].includes(key) ? "healthy" : "neutral"))
+      })),
+      readingGuideTitle: c.readingGuide,
+      readOnlyLabel: c.readOnly,
+      guideReadingRows: c.readingRows.map((row, index) => ({
+        label: row[0],
+        text: row[1],
+        labelStyle: "padding:13px 20px 13px 0; width:210px; vertical-align:top; font-weight:600;" + (index < c.readingRows.length - 1 ? " border-bottom:1px solid var(--hairline);" : ""),
+        textStyle: "padding:13px 0; line-height:1.6; color:var(--body);" + (index < c.readingRows.length - 1 ? " border-bottom:1px solid var(--hairline);" : "")
+      }))
+    };
+  }
+}
+`;
+    }
+  }
   if (file === '15-changelog-v4.dc.html') logic = must(logic, 'const INDEX = [', 'const INDEX = window.A2A_RELEASE_INDEX || [');
   if (file === '16-docs-v4.dc.html') {
     template = mustAll(template, [
@@ -108,10 +152,6 @@ export function runtimeDesignPage(file: string) {
       ['label, style: this.itemStyle(this.state.doc === id),', 'label, href: "/docs/" + id + ".html", style: this.itemStyle(this.state.doc === id) + " text-decoration:none;",'],
       ['docTitle: cur.title,', 'docId: cur.id,\n      docTitle: cur.title,'],
       ['isThreads, isCommands, isPlaceholder,', 'isThreads, isCommands, isPlaceholder, hasDocBody: true, renderCustomDocs: false,'],
-      [
-        'docGenerated: isCommands ? "regenerated with every release · last: v0.16.3, 2026-07-30" : "projected at build time from v0.16.3",',
-        'docGenerated: isCommands ? "regenerated with every release · last: v" + window.A2A_LATEST_RELEASE.version + ", " + window.A2A_LATEST_RELEASE.released : "projected at build time from v" + window.A2A_LATEST_RELEASE.version,'
-      ],
       [
         'docLead: LEAD[cur.id] || "This route is one document in the canonical corpus embedded in the binary. The prototype shows its shell, its actions and its metadata without inventing its text.",',
         'docLead: LEAD[cur.id] || "This route is one document in the canonical corpus embedded in the binary. Its body, search text and Markdown twin are projected from that same source.",'

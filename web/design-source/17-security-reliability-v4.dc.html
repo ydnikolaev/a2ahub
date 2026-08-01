@@ -131,9 +131,6 @@ a:hover { color:var(--teal-ink-hover); }
 a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 ::selection { background:var(--selection); }
 
-@media (min-width: 900px) {
-  [data-rail] { position: sticky; top: 84px; }
-}
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 </style>
 </helmet>
@@ -142,15 +139,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
   <div style="position:sticky; top:0; z-index:80;"><dc-import name="SiteHeader" active="security" md="security.md" md-text="{{ mdText }}" hint-size="100%,66px"></dc-import></div>
 
   <main>
-    <section style="width:min(1240px, 100% - 56px); margin:0 auto; padding:40px 0 20px;">
-      <div style="display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; margin-bottom:26px;">
-        <div style="flex:1 1 540px; min-width:0;">
-          <span style="display:inline-block; font-size:15px; font-weight:600; color:var(--teal-ink); background:var(--surface); border-radius:8px; padding:7px 14px; margin-bottom:20px;">Security &amp; reliability · proof by boundary</span>
-          <h1 style="margin:0 0 16px; font-size:52px; line-height:1.05; font-weight:600; letter-spacing:-0.03em; max-width:640px; text-wrap:balance;">Inspect the record. Verify the binary.</h1>
-          <p style="margin:0 0 12px; font-size:19px; line-height:1.6; color:var(--body); max-width:660px; text-wrap:pretty;">Everything on this page is a command you can run, a workflow you can read, or a boundary the validator enforces. No certification is claimed here, and every piece of evidence names its own scope.</p>
-          <p style="margin:0; font-size:17px; line-height:1.6; color:var(--muted); max-width:660px;">Typed does not mean infallible. It means malformed artifacts, illegal lifecycle moves, stale pinned references and unauthorized actors fail visibly instead of becoming ambiguous prose.</p>
-        </div>
-      </div>
+    <section style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0 20px;">
 
       <div style="display:flex; flex-wrap:wrap; gap:20px; align-items:flex-start;">
         <div style="flex:3 1 420px; min-width:0; display:flex; flex-direction:column; gap:12px;">
@@ -175,7 +164,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
           </sc-for>
         </div>
 
-        <aside data-rail style="flex:1 1 320px; min-width:0; display:flex; flex-direction:column; gap:12px;">
+        <aside style="flex:1 1 320px; min-width:0; display:flex; flex-direction:column; gap:12px;">
           <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
             <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
               <h2 style="margin:0; font-size:20px; font-weight:600;">Verify a release yourself</h2>
@@ -232,15 +221,15 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
 
         <div style="background:var(--inverse-2); border-radius:18px; padding:22px 26px 20px;">
           <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
-            <h3 style="margin:0; font-size:22px; font-weight:600; color:var(--on-solid);">What the validator checks</h3>
+            <h3 style="margin:0; font-size:22px; font-weight:600; color:var(--on-inverse);">What the validator checks</h3>
             <button type="button" onClick="{{ toggleCodes }}" aria-expanded="{{ codesExpanded }}" style="{{ codesBtnStyle }}">{{ codesLabel }}</button>
           </div>
           <table style="width:100%; border-collapse:collapse; font-size:16px;">
             <tbody>
-              <tr><td style="padding:13px 20px 13px 0; width:230px; vertical-align:top; color:var(--on-solid); font-weight:600; border-bottom:1px solid var(--inverse-line);">Schema</td><td style="padding:13px 0; line-height:1.6; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Required fields, closed enums, type-specific constraints, ids, semantic versions, ULIDs and value types.</td></tr>
-              <tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-solid); font-weight:600; border-bottom:1px solid var(--inverse-line);">References and ownership</td><td style="padding:13px 0; line-height:1.6; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Filename, id and section agreement, target existence, pinned digest agreement, known active recipients and an unambiguous space authority map.</td></tr>
-              <tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-solid); font-weight:600; border-bottom:1px solid var(--inverse-line);">Lifecycle and authority</td><td style="padding:13px 0; line-height:1.6; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Legal transitions from the folded state, and an actor allowed to perform that exact transition.</td></tr>
-              <tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-solid); font-weight:600;">Policy and contracts</td><td style="padding:13px 0; line-height:1.6; color:var(--on-inverse-muted);">Bounded UTF-8 documents, best-effort credential patterns, supported schema overlap, no unfilled template values, executable contract fixtures, declared-versus-computed compatibility, and consumer acknowledgement before retirement.</td></tr>
+              <tr><td style="padding:13px 20px 13px 0; width:230px; vertical-align:top; color:var(--on-inverse); font-weight:600; border-bottom:1px solid var(--inverse-line);">Schema</td><td style="padding:13px 0; line-height:1.6; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Required fields, closed enums, type-specific constraints, ids, semantic versions, ULIDs and value types.</td></tr>
+              <tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-inverse); font-weight:600; border-bottom:1px solid var(--inverse-line);">References and ownership</td><td style="padding:13px 0; line-height:1.6; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Filename, id and section agreement, target existence, pinned digest agreement, known active recipients and an unambiguous space authority map.</td></tr>
+              <tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-inverse); font-weight:600; border-bottom:1px solid var(--inverse-line);">Lifecycle and authority</td><td style="padding:13px 0; line-height:1.6; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Legal transitions from the folded state, and an actor allowed to perform that exact transition.</td></tr>
+              <tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-inverse); font-weight:600;">Policy and contracts</td><td style="padding:13px 0; line-height:1.6; color:var(--on-inverse-muted);">Bounded UTF-8 documents, best-effort credential patterns, supported schema overlap, no unfilled template values, executable contract fixtures, declared-versus-computed compatibility, and consumer acknowledgement before retirement.</td></tr>
             </tbody>
           </table>
           <sc-if value="{{ codesOpen }}" hint-placeholder-val="{{ false }}">
@@ -264,12 +253,12 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
         <div style="background:var(--surface); border-radius:18px; padding:28px 30px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
           <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
             <h2 style="margin:0; font-size:30px; font-weight:600; letter-spacing:-0.02em;">Release confidence</h2>
-            <dc-import name="StatusPill" text="v0.16.3" tone="agent" mono="{{ true }}" hint-size="90px,26px"></dc-import>
+            <dc-import name="StatusPill" text="{{ releaseVersion }}" tone="agent" mono="{{ true }}" hint-size="90px,26px"></dc-import>
           </div>
-          <p style="margin:0 0 16px; font-size:19px; line-height:1.6; color:var(--body); max-width:34em;">The immutable v0.16.3 runtime candidate passed <strong>50 of 50 declared live cells</strong>, with zero failed, timed-out or not-run cells across CLI, MCP, lifecycle, contracts, authorization boundaries, failure recovery, thread reconstruction and space migration.</p>
+          <p style="margin:0 0 16px; font-size:19px; line-height:1.6; color:var(--body); max-width:34em;">{{ releaseConfidence }}</p>
           <div style="background:var(--page); border-radius:12px; padding:14px 16px; margin-bottom:14px;">
-            <div style="font-size:15px; color:var(--muted); margin-bottom:5px;">candidate</div>
-            <div style="font-family:'IBM Plex Mono',monospace; font-size:15px; overflow-wrap:anywhere;">d6418b926ec5363416ef8b42a572788e7e7e009a</div>
+            <div style="font-size:15px; color:var(--muted); margin-bottom:5px;">published release</div>
+            <div style="font-family:'IBM Plex Mono',monospace; font-size:15px; overflow-wrap:anywhere;">{{ releaseVersion }} · {{ releaseDate }}</div>
           </div>
           <div style="background:var(--attention-tint); border-radius:12px; padding:14px 16px; font-size:16px; line-height:1.6; color:var(--attention-ink);">This is coverage of the declared release matrix, not a claim that every possible state has been tested. The claim belongs to this exact candidate — it is not a standing badge and not an uptime statement.</div>
         </div>
@@ -357,19 +346,21 @@ class Component extends DCLogic {
 
   renderVals() {
     const all = CMDS.map(([, t]) => t).join("\n\n");
+    const latest = globalThis.A2A_LATEST_RELEASE || { version:"unavailable", released:"date unavailable" };
+    const version = "v" + latest.version;
     return {
       boundaries: BOUNDARIES.map(([n, title, lead, facts, caveat]) => ({
         n, title, lead, hasCaveat: !!caveat, caveat,
         facts: facts.map((text, i) => ({
-          text,
+          text:String(text).replaceAll("v0.16.3", version),
           cell: "padding:12px 0; line-height:1.6; color:var(--body); border-bottom:" + (i === facts.length - 1 ? "none" : "1px solid var(--hairline)") + ";"
         }))
       })),
       layers: LAYERS.map(([tag, text, notShipped]) => ({
         tag, text, notShipped,
         cardStyle: "border-radius:14px; padding:18px 20px; " + (notShipped ? "background:transparent; box-shadow:inset 0 0 0 1px var(--inverse-line);" : "background:var(--inverse-2);"),
-        tagStyle: "font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; " + (notShipped ? "color:var(--faint);" : "color:var(--teal-on-dark);"),
-        textStyle: "font-size:16px; line-height:1.55; " + (notShipped ? "color:var(--faint);" : "color:var(--on-inverse-2);")
+        tagStyle: "font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; " + (notShipped ? "color:var(--on-inverse-faint);" : "color:var(--teal-on-dark);"),
+        textStyle: "font-size:16px; line-height:1.55; " + (notShipped ? "color:var(--on-inverse-faint);" : "color:var(--on-inverse-2);")
       })),
       commands: CMDS.map(([role, text], i) => ({
         role, text,
@@ -388,8 +379,11 @@ class Component extends DCLogic {
         { label: "assessment and next steps", value: "within 7 business days" },
         { label: "fix", value: "in the next release once ready" }
       ],
+      releaseVersion:version,
+      releaseDate:latest.released,
+      releaseConfidence:"The immutable " + version + " release candidate passed 50 of 50 declared live cells, with zero failed, timed-out or not-run cells across CLI, MCP, lifecycle, contracts, authorization boundaries, failure recovery, thread reconstruction and space migration.",
       evidenceRows: [
-        { label: "live release matrix", value: "50 / 50 cells · v0.16.3 candidate", mono: false },
+        { label: "live release matrix", value: "50 / 50 cells · " + version + " candidate", mono: false },
         { label: "make check", value: "format · vet · lint · race tests · coverage floor", muted: true },
         { label: "CodeQL", value: "declared schedule, Go analysis", muted: true },
         { label: "govulncheck", value: "declared schedule, module surface", muted: true },

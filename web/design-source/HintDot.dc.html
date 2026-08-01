@@ -8,7 +8,7 @@
 <body>
 <x-dc>
 <span style="position:relative; display:inline-flex; vertical-align:middle;">
-  <button type="button" onClick="{{ toggle }}" aria-expanded="{{ expanded }}" aria-label="{{ ariaLabel }}" style="{{ dotStyle }}">?</button>
+  <button type="button" onMouseEnter="{{ enter }}" onMouseLeave="{{ leave }}" onFocus="{{ enter }}" onBlur="{{ leave }}" onClick="{{ toggle }}" aria-expanded="{{ expanded }}" aria-label="{{ ariaLabel }}" style="{{ dotStyle }}">?</button>
   <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
     <span role="tooltip" style="{{ bubbleStyle }}">{{ text }}</span>
   </sc-if>
@@ -21,8 +21,9 @@
 // (writer floor, drift, pinned major, escape hatch) and the alternative to a
 // hint is either a wall of prose nobody reads or a term nobody understands.
 //
-// Click, not hover: the design rules forbid hover-only information, and a
-// tap-sized target works the same on a phone. Escape and an outside click
+// Hover is the one visual interaction everywhere on the dashboard. Focus and
+// tap expose the same sentence on keyboards and touch screens, so hover is the
+// common path without becoming the only path. Escape and an outside click
 // close it.
 class Component extends DCLogic {
   state = { open: false, pos: "left:0; top:0;" };
@@ -48,6 +49,19 @@ class Component extends DCLogic {
     window.removeEventListener("resize", this.scrolled);
   }
 
+  show(btn) {
+    if (!btn) return;
+    this.host = btn.parentElement;
+    const r = btn.getBoundingClientRect();
+    const width = Math.min(300, window.innerWidth * 0.74);
+    const left = Math.max(12, Math.min(r.left, window.innerWidth - width - 12));
+    const below = window.innerHeight - r.bottom > 190;
+    const pos = below
+      ? "left:" + Math.round(left) + "px; top:" + Math.round(r.bottom + 8) + "px;"
+      : "left:" + Math.round(left) + "px; bottom:" + Math.round(window.innerHeight - r.top + 8) + "px;";
+    this.setState({ open: true, pos });
+  }
+
   renderVals() {
     const ru = document.documentElement.lang === "ru";
     return {
@@ -64,20 +78,13 @@ class Component extends DCLogic {
       // wrapper and adds a scrollbar instead of appearing. Fixed positioning at
       // the measured dot escapes every scroll container there is; the flip keeps
       // it on screen near a viewport edge.
-      bubbleStyle: "position:fixed; z-index:400; " + this.state.pos + " width:min(300px, 74vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:12px; padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal;",
+      bubbleStyle: "position:fixed; z-index:500; " + this.state.pos + " width:min(300px, 74vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:12px; padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
+      enter: (ev) => this.show(ev && ev.currentTarget),
+      leave: () => this.setState({ open: false }),
       toggle: (ev) => {
         if (ev && ev.stopPropagation) ev.stopPropagation();
         const btn = ev && ev.currentTarget;
-        if (btn) this.host = btn.parentElement;
-        if (this.state.open || !btn) { this.setState({ open: false }); return; }
-        const r = btn.getBoundingClientRect();
-        const width = Math.min(300, window.innerWidth * 0.74);
-        const left = Math.max(12, Math.min(r.left, window.innerWidth - width - 12));
-        const below = window.innerHeight - r.bottom > 190;
-        const pos = below
-          ? "left:" + Math.round(left) + "px; top:" + Math.round(r.bottom + 8) + "px;"
-          : "left:" + Math.round(left) + "px; bottom:" + Math.round(window.innerHeight - r.top + 8) + "px;";
-        this.setState({ open: true, pos });
+        if (btn) this.show(btn);
       }
     };
   }
