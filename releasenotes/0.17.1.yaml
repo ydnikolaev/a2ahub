@@ -127,3 +127,19 @@ changes:
       scope: none
       why: >
         No configuration or data migration is required.
+
+  - id: RN-01701-7
+    kind: fix
+    impact: low
+    subject: "An install with no space connected no longer reads as healthy"
+    detail: >
+      The dashboard's space-health indicator treated green as its default, so a
+      setup with no space connected at all showed the same signal as one where
+      every space is current — over a dialog with nothing in it. An unconnected
+      scope now takes a neutral indicator and states why it is empty: there is
+      nowhere to read from, which is not the same as having nothing to report.
+    affects: ["a2a html", "overview"]
+    action:
+      scope: none
+      why: >
+        No configuration or data migration is required.
