@@ -39,15 +39,36 @@ not drifted from the plan wording it quotes.
 
 ## Sign-off
 
-- **Release tag:** `v0.17.1`
-- **Reviewer:** `Codex`
-- **Date:** `2026-07-31`
+- **Release tag:** `v0.18.0`
+- **Reviewer:** `Claude`
+- **Date:** `2026-08-01`
 - [x] Every prose row above is ticked, or an un-ticked row has a written reason
       and a follow-up filed.
 - [x] The `skill-drift` CI job is green on the exact release candidate tree
       under `make check` (confirms the generated
       `reference/**` tree matches the binary/schemas — separate from this
       prose review).
+
+**What this review was, exactly.** A delta review, not a re-read of all
+thirteen files. `git diff --name-only <v0.17.1 tree>..HEAD -- skill/` is empty:
+every prose file above is byte-identical to the one fully reviewed on
+2026-07-31, one day earlier. What a delta review still has to do is re-check the
+rows whose claim is about the CODE rather than about the file, because the code
+did move. This release touches `internal/html` only, so one row was at risk and
+was re-verified against the diff: `reference/threads.md` claims thread order and
+open-item/next-move semantics match the read/fold implementation and that
+`a2a html` renders the same data. The dashboard now folds every thread rather
+than only multi-member ones and carries an extra derived field on each open
+item; neither changes what `a2a thread` computes or reports, and the page still
+renders the same open items. The claim holds. No command, schema, validator or
+lifecycle surface changed, so no other row's subject moved.
+
+`README.md` is unchanged and was read against the human half of `make
+readme-lint`. The release's headline capability — handing a move back to an
+agent as a copyable prompt — is deliberately not added to the capability list:
+it is a detail of one surface, not something a reader needs in order to decide,
+install, start or trust the project, and the existing "A computed inbox" bullet
+already names the outcome it serves.
 
 ## Notes for the reviewer
 
