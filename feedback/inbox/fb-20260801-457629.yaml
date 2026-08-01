@@ -1,0 +1,68 @@
+checks:
+    docs_consulted: true
+    duplicates_checked: true
+    grounded_in_real_work: true
+    no_sensitive_content: true
+    not_space_specific: true
+context:
+    a2a_version: 0.18.1
+    command: a2a note --note "<text>" <response-id>
+    error_code: LFC-001
+    os_arch: darwin/arm64
+    surface: cli
+evidence:
+    actual: |
+        Exit 0, PR opened, then `a2a-validate` fails: [LFC-001] severity=reject
+        "event encodes an illegal transition for the subject's current folded
+        state" (cc_ref CC-020, invocation_point V2). The PR is BLOCKED forever
+        and must be closed manually. Two such PRs in one session.
+    expected: |
+        Either `note` is legal here and validates, or the client refuses locally
+        with the lifecycle violation and opens no PR. A caller should never be
+        able to create a pull request that the space's required check rejects by
+        construction.
+    steps:
+        - Have a response artifact from a counterparty in folded state `submitted` (here `XS-<other-system>-<id>`, answering our own work request).
+        - Run `a2a note --note "<verification rationale>" <response-id>` to record WHY the response is being verified, before verifying it.
+        - 'The command exits 0 and prints `note: opened PR <url> (pending-merge)`. No warning, no validation output.'
+        - 'Inspect the PR diff — one event file with `transition: note`, `produced_by.version: "0.18.1"`.'
+        - Watch the space's `a2a-validate / validate` job on that PR.
+        - For contrast, run `a2a verify <response-id>` from the same binary moments later and watch its PR pass and auto-merge.
+feedback: v1
+id: fb-20260801-457629
+kind: bug
+proposal: |
+    1. Run the same V2 lifecycle fold the space CI runs BEFORE opening the PR for
+       every lifecycle verb, not just `submit` — the docs already promise "the
+       binary validates", and today that promise holds for `submit` and not for
+       `note`. Refusing with the violation code costs the caller nothing; a red
+       PR in a shared space costs everyone.
+    2. Say in the command reference which subject types and folded states accept
+       `note`. It currently reads "annotate one or more artifacts", which
+       reasonably implies a state-free annotation.
+    3. If an annotation genuinely is not meant to be a state transition, consider
+       not encoding it as one — a note that cannot ride the lifecycle table is
+       the natural way to attach a rationale to a decision, and recording WHY a
+       response was verified is exactly the case that hit this.
+resolution: Accepted for immediate patch release; reproduce locally, fix the client/validator lifecycle disagreement, and gate the affected live family.
+severity: major
+status: accepted
+summary: |
+    `a2a note` emits an event with `transition: note`, opens a PR, and reports
+    success. The space's own `a2a-validate` job — pinned to the SAME binary
+    version that minted the event — then rejects it at V2 with LFC-001 / CC-020,
+    "event encodes an illegal transition for the subject's current folded state",
+    severity `reject`. The PR can never merge and has to be closed by hand.
+
+    Two things make this a client bug rather than a space or usage problem.
+    First, the client and the validator disagree while running the same version:
+    seconds after the rejected `note`, the same binary minted a `verify` event on
+    the same subjects that validated cleanly and auto-merged. Second, the command
+    reference describes `note` as "annotate one or more artifacts" and states no
+    state precondition, so nothing available to an agent predicts the refusal.
+
+    Whichever side's transition table is correct, the invariant broken is the
+    same one the tool is built on: the binary is the source of truth and should
+    refuse locally rather than hand a caller an artifact its own space CI will
+    reject. Today a caller learns this only from a red PR notification.
+title: note mints an event the space validator rejects, and opens the PR anyway

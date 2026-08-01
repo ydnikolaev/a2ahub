@@ -13,3 +13,7 @@
 - fb-20260728-b10a10 (bug -> shipped): thread next= names verbs the CLI does not have
 - fb-20260728-d33e33 (bug -> shipped): feedback intake can never label, so no item can auto-merge
 - fb-20260728-df74bb (friction -> shipped): no supported way to wait for a pending-merge transition
+
+## 2026-08-01 Triage
+
+- fb-20260801-457629 (bug -> accepted): note mints an event the space validator rejects, and opens the PR anyway
