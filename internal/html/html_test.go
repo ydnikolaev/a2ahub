@@ -359,7 +359,7 @@ func TestDefaultTemplate_MapTooltipsEscapeTheSVGAndPanelsContainText(t *testing.
 	}
 	for _, want := range []string{
 		`role="tooltip"`,
-		`position:fixed; z-index:520`,
+		`position:fixed; z-index:1200`,
 		`pointer-events:none;`,
 		`pointer-events:stroke;`,
 		`this.relTip(r)`,
