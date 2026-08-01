@@ -304,6 +304,7 @@ func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 	for _, required := range []string{
 		`data-artifact-markdown`,
 		`data-artifact-metadata`,
+		`data-artifact-footer`,
 		`hydrateMarkdown`,
 		`this.onOutside`,
 		`bodyFadeStyle`,
@@ -315,6 +316,7 @@ func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 		`Все поля frontmatter`,
 		`История событий`,
 		`Открыть тред`,
+		`freshnessDotStyle`,
 		`calloutParts`,
 		`Начало документа`,
 	} {
@@ -325,13 +327,16 @@ func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 	if !strings.Contains(tmpl, "Что до ответа делаем мы") {
 		t.Error("dashboard does not separate the sender's interim work under its own label")
 	}
+	if !strings.Contains(tmpl, "Локальная копия спейса актуальна. Последняя синхронизация:") {
+		t.Error("dashboard does not explain the compact current-snapshot indicator")
+	}
 	if strings.Contains(tmpl, "А пока:") {
 		t.Error("ArtifactDetail still joins the sender's interim work with the requested response under 'А пока'")
 	}
 	if strings.Contains(detail, `>{{ body }}</`) {
 		t.Error("ArtifactDetail still renders authored Markdown as one raw text block")
 	}
-	for _, removed := range []string{`Документ целиком`, `DocumentModal`, `factsLabel`} {
+	for _, removed := range []string{`Документ целиком`, `DocumentModal`, `factsLabel`, ` · запись · `, ` record · `, `sourceLine`} {
 		if strings.Contains(detail, removed) {
 			t.Errorf("ArtifactDetail still carries removed legacy UI %q", removed)
 		}
