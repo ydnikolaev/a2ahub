@@ -50,14 +50,19 @@ not drifted from the plan wording it quotes.
       prose review).
 
 **What this review was, exactly.** A delta review against `v0.18.1`. No
-hand-maintained skill prose changed. The lifecycle fix makes the implementation
-match the already-published rule: `note` remains a transition-free annotation,
-does not change folded state, and is authored only by an active party to the
-exchange. `loops.md` and `reference/threads.md` were read against that behavior;
-neither promises third-party annotation or treats a note as a correction that
-changes a commitment. Generated command references remain outside this
-hand-review table and `skill-drift` checks them byte-for-byte. The public-site,
-release-index and tag-import changes do not alter the agent operating contract.
+hand-maintained lifecycle rule changed. The lifecycle fix makes the
+implementation match the already-published rule: `note` remains a
+transition-free annotation, does not change folded state, and is authored only
+by an active party to the exchange. `loops.md` and `reference/threads.md` were
+read against that behavior; neither promises third-party annotation or treats a
+note as a correction that changes a commitment. `SKILL.md` and
+`troubleshooting.md` now enumerate the executable participant-avatar advisory:
+doctor reads only the local cache, never fails on a missing image, and hands the
+invoking agent the idempotent `a2a sync` repair while initials remain available.
+The generated command catalogue carries the matching synopsis and remains
+outside this hand-review table; `skill-drift` checks it byte-for-byte. The
+public-site, release-index and tag-import changes do not alter the agent
+operating contract.
 
 Root `README.md` is unchanged and was read against the human half of `make
 readme-lint`. Its product boundary, current capabilities and explicitly bounded
