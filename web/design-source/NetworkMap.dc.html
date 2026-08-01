@@ -250,10 +250,28 @@ function typeWord(t) { return String(t || "").replace(/_/g, " "); }
 // which reads equally well as "I am held up" and "I am holding somebody up".
 function blockedOn(to, self, ru) {
   const holders = (Array.isArray(to) ? to : [to]).filter(Boolean);
-  if (holders.indexOf(self) > -1) return ru ? "держите вы" : "blocked on you";
-  if (holders.length === 1) return (ru ? "держит " : "blocked on ") + holders[0];
-  if (holders.length > 1) return ru ? "держат получатели" : "blocked on the recipients";
+  if (holders.indexOf(self) > -1) return ru ? "тормозите вы" : "blocked on you";
+  if (holders.length === 1) return (ru ? "тормозит " : "blocked on ") + holders[0];
+  if (holders.length > 1) return ru ? "тормозят получатели" : "blocked on the recipients";
   return ru ? "работа стоит" : "work is stopped";
+}
+// The sentence behind the label, so the map does not teach a second reading of
+// the same fact. Mirrors the dashboard's own blockedWhy.
+function blockedWhy(it, self, ru) {
+  const holders = (it.to || []).filter(Boolean);
+  const yours = holders.indexOf(self) > -1;
+  const who = it.from === self ? (ru ? "Вы" : "You") : it.from;
+  const stopped = it.from === self
+    ? (ru ? "Вы остановились на этом документе" : "You are stopped on this document")
+    : (ru ? who + " остановился на этом документе" : who + " is stopped on this document");
+  const unblock = yours
+    ? (ru ? "и не двинется, пока не ответите вы." : "and cannot continue until you answer.")
+    : (holders.length
+      ? (ru ? "и не двинется, пока не ответит " + holders.join(", ") + "." : "and cannot continue until " + holders.join(", ") + " answers.")
+      : (ru ? "и ждёт ответа." : "and is waiting for an answer."));
+  const when = it.neededBy ? (ru ? " Срок " : " Due ") + isoDay(it.neededBy) + "." : "";
+  const pri = it.priority ? (ru ? " Приоритет " + it.priority + "." : " Priority " + it.priority + ".") : "";
+  return stopped + " " + unblock + when + pri;
 }
 // On the map itself the label sits on a drawn edge with an arrowhead, so it
 // only has to say how many are stopped; the edge popover names the party.
@@ -485,6 +503,7 @@ class Component extends DCLogic {
       head: it.title,
       pillText: it.blocking ? blockedOn(it.to, d.self, ru) : it.priority,
       pillTone: it.blocking ? "blocking" : "neutral",
+      pillWhy: it.blocking ? blockedWhy(it, d.self, ru) : "",
       detail: it.id + " · " + it.type + " · " + it.state + " · " + it.from + " → " + (it.to || []).join(", ") + " · " + age(it.age) + (ru ? " назад" : " old") + (it.neededBy ? (ru ? " · дедлайн " : " · due ") + isoDay(it.neededBy) : ""),
       canOpen: !!open, openLabel: ru ? "Открыть в разделе «Работа» →" : "Open in Work →",
       open: open ? () => open(it.id, it.space, outgoing) : () => {},
@@ -760,7 +779,7 @@ class Component extends DCLogic {
         });
         if (badgeText) badges.push({
           text: badgeText,
-          title: r.kind === "c" ? r.e.from + " → " + r.e.to + " · " + r.e.contract + " · " + driftShort(r.e, ru) : r.e.from + " → " + r.e.to + " · " + (ru ? this.count(r.e.count, "open item", "open items", ["открытый элемент", "открытых элемента", "открытых элементов"]) : plural(r.e.count, "open item", "open items")),
+          title: r.kind === "c" ? r.e.from + " → " + r.e.to + " · " + r.e.contract + " · " + driftShort(r.e, ru) : r.e.from + " → " + r.e.to + " · " + (ru ? this.count(r.e.count, "open item", "open items", ["открытый элемент", "открытых элемента", "открытых элементов"]) : plural(r.e.count, "open item", "open items")) + (r.e.blocking ? " · " + blockedOn([r.e.to], d.self, ru) : ""),
           go: () => this.pick("edge", key, bx, by),
           enter: this.hoverOn(key), leave: this.hoverOff(key),
           style: this.badgeStyle(bx, by, p.tone, related ? 1 : 0.2)
@@ -801,7 +820,7 @@ class Component extends DCLogic {
             const at = this.place(taken, cands, box);
             badges.push({
               text: badgeText,
-              title: r.e.from + " → " + r.e.to,
+              title: r.e.from + " → " + r.e.to + (r.kind !== "c" && r.e.blocking ? " · " + blockedOn([r.e.to], d.self, ru) : ""),
               go: () => this.pick("edge", key, at.x, at.y),
               enter: this.hoverOn(key), leave: this.hoverOff(key),
               style: this.badgeStyle(at.x, at.y, p.tone, related ? 1 : 0.2)

@@ -7,10 +7,15 @@
 </head>
 <body>
 <x-dc>
-<span style="{{ pillStyle }}">{{ text }}</span>
+<span style="{{ wrapStyle }}" onMouseEnter="{{ enter }}" onMouseLeave="{{ leave }}" onClick="{{ tap }}">
+  <span style="{{ pillStyle }}">{{ text }}</span>
+  <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
+    <span role="tooltip" style="{{ bubbleStyle }}">{{ why }}</span>
+  </sc-if>
+</span>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:260,&quot;height&quot;:60},&quot;text&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Blocking · p1&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;tone&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;blocking&quot;,&quot;blockingStrong&quot;,&quot;attention&quot;,&quot;healthy&quot;,&quot;neutral&quot;,&quot;agent&quot;,&quot;outline&quot;],&quot;default&quot;:&quot;blocking&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;mono&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;small&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:260,&quot;height&quot;:60},&quot;text&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Blocking · p1&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;tone&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;blocking&quot;,&quot;blockingStrong&quot;,&quot;attention&quot;,&quot;healthy&quot;,&quot;neutral&quot;,&quot;agent&quot;,&quot;outline&quot;],&quot;default&quot;:&quot;blocking&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;mono&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;small&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;why&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
 const TONES = {
   blocking: { bg: "var(--blocking-tint)", fg: "var(--blocking-ink)" },
   blockingStrong: { bg: "var(--red)", fg: "var(--surface)" },
@@ -39,13 +44,74 @@ function localizedStatus(value) {
   if (STATUS_RU[raw]) return STATUS_RU[raw];
   return raw.replace(/^blocking(?=\s|·|$)/, "блокирует").replace(/^your approval pending$/, "ждёт вашего согласования").replace(/^overdue(?=\s|·|$)/, "просрочено").replace(/^needs a look(?=\s|·|$)/, "стоит посмотреть").replace(/^stale(?=\s|·|$)/, "устарел").replace(/^fresh(?=\s|·|$)/, "свежий").replace(/^unreadable$/, "не читается");
 }
+// A pill can carry `why`: the sentence behind the label, shown on hover over
+// the pill itself. "тормозите вы" states a fact and immediately raises the
+// question the label has no room for — who stopped, and what starts them
+// again — and a reader should not have to hunt for a separate "?" to ask it.
+//
+// Hover AND tap, never hover alone: the design rules forbid hover-only
+// information, and half the pills live inside a row button where a focusable
+// element would be invalid markup. A tap on the pill opens the same bubble and
+// does not select the row underneath it.
 class Component extends DCLogic {
+  state = { open: false, pos: "" };
+
+  componentDidMount() {
+    // A bubble positioned against the viewport has to go the moment the page
+    // moves under it. Cheap to keep: every handler returns immediately unless
+    // this particular pill is the open one.
+    this.gone = () => { if (this.state.open) this.setState({ open: false }); };
+    this.esc = (ev) => { if (ev.key === "Escape" && this.state.open) this.setState({ open: false }); };
+    window.addEventListener("scroll", this.gone, true);
+    window.addEventListener("resize", this.gone);
+    window.addEventListener("keydown", this.esc);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener("scroll", this.gone, true);
+    window.removeEventListener("resize", this.gone);
+    window.removeEventListener("keydown", this.esc);
+  }
+
+  // FIXED, not absolute: pills sit inside cards with their own overflow and
+  // inside a horizontally scrolling map, where an absolutely positioned bubble
+  // is clipped instead of shown. The flip keeps it on screen near an edge.
+  show(el) {
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const width = Math.min(320, window.innerWidth * 0.76);
+    const left = Math.max(12, Math.min(r.left, window.innerWidth - width - 12));
+    const below = window.innerHeight - r.bottom > 170;
+    this.setState({
+      open: true,
+      pos: below
+        ? "left:" + Math.round(left) + "px; top:" + Math.round(r.bottom + 7) + "px;"
+        : "left:" + Math.round(left) + "px; bottom:" + Math.round(window.innerHeight - r.top + 7) + "px;"
+    });
+  }
+
   renderVals() {
     const t = TONES[this.props.tone] || TONES.neutral;
     const mono = this.props.mono ? "font-family:'IBM Plex Mono',ui-monospace,monospace; " : "font-family:'Onest',sans-serif; ";
+    const why = this.props.why || "";
     return {
       text: localizedStatus(this.props.text),
-      pillStyle: "display:inline-block; " + mono + "font-size:" + (this.props.size === "small" ? 13 : 14) + "px; font-weight:600; line-height:1.3; border-radius:6px; padding:" + (t.ring ? "3px 10px" : "4px 11px") + "; background:" + t.bg + "; color:" + t.fg + "; box-shadow:" + (t.ring || "none") + "; white-space:nowrap;"
+      why,
+      open: !!why && this.state.open,
+      wrapStyle: "display:inline-flex; position:relative;" + (why ? " cursor:help;" : ""),
+      pillStyle: "display:inline-block; " + mono + "font-size:" + (this.props.size === "small" ? 13 : 14) + "px; font-weight:600; line-height:1.3; border-radius:6px; padding:" + (t.ring ? "3px 10px" : "4px 11px") + "; background:" + t.bg + "; color:" + t.fg + "; box-shadow:" + (t.ring || "none") + "; white-space:nowrap;" +
+        (why ? " text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px; text-decoration-color:currentColor;" : ""),
+      bubbleStyle: "position:fixed; z-index:400; " + this.state.pos + " width:min(320px, 76vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:12px; padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
+      enter: why ? (ev) => this.show(ev && ev.currentTarget) : (() => {}),
+      leave: why ? () => this.setState({ open: false }) : (() => {}),
+      // The pill sits inside the row button on most screens, so a tap must not
+      // also pick the row: the reader asked about the badge, not the document.
+      tap: why ? (ev) => {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        if (ev && ev.preventDefault) ev.preventDefault();
+        if (this.state.open) this.setState({ open: false });
+        else this.show(ev && ev.currentTarget);
+      } : (() => {})
     };
   }
 }
