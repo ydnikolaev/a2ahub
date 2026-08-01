@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -324,6 +325,40 @@ func TestStore_SkippedFiles_SpaceScopedAndAll(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("sp-clean's own good artifact missing from index: %+v", idx["sp-clean"])
+	}
+}
+
+// TestWalkArtifacts_InfrastructureIsNotASkippedArtifact is the regression for
+// the live doctor report that named BRANCH-PROTECTION.md in every scaffolded
+// space. Root infrastructure is deliberately withheld; participant prose is
+// still reported because it may be an artifact whose frontmatter was lost.
+func TestWalkArtifacts_InfrastructureIsNotASkippedArtifact(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	write := func(rel, body string) {
+		t.Helper()
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("BRANCH-PROTECTION.md", "# Space setup\n")
+	write(".github/README.md", "# Workflow notes\n")
+	write("axon/README.md", "# Participant prose\n")
+
+	artifacts, skips, err := walkArtifacts(dir)
+	if err != nil {
+		t.Fatalf("walkArtifacts: %v", err)
+	}
+	if len(artifacts) != 0 {
+		t.Fatalf("artifacts = %+v, want none", artifacts)
+	}
+	if len(skips) != 1 || skips[0].Path != "axon/README.md" || skips[0].Reason != SkipReasonNotFrontmatterShaped {
+		t.Fatalf("skips = %+v, want only participant prose reported", skips)
 	}
 }
 

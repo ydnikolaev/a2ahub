@@ -377,8 +377,9 @@ func membershipView(manifest space.Manifest) fold.MembershipView {
 	}
 }
 
-// walkArtifacts walks dir for every *.md file (excluding .git and
-// vendored/), best-effort decoding each as an envelope/v1 document — a
+// walkArtifacts walks dir for every artifact-candidate *.md file (excluding
+// .git, vendored/, and the space infrastructure paths the write funnel owns),
+// best-effort decoding each as an envelope/v1 document — a
 // file that fails to parse is silently skipped from the returned
 // []rawArtifact, never fails the whole walk (mirrors internal/cli's
 // MirrorResolver.ensureIndex convention), but is reported (never dropped
@@ -399,6 +400,14 @@ func walkArtifacts(dir string) ([]rawArtifact, []SkippedFile, error) {
 			return nil
 		}
 		if !strings.HasSuffix(path, ".md") {
+			return nil
+		}
+		// Space infrastructure is not an artifact and must not poison the
+		// diagnostic whose whole job is to distinguish a genuinely malformed
+		// artifact from a missing one. Use the write funnel's exported predicate
+		// rather than teaching the read walk a second infrastructure list.
+		rel, relErr := filepath.Rel(dir, path)
+		if relErr == nil && space.IsInfrastructurePath(filepath.ToSlash(rel)) {
 			return nil
 		}
 		a, skip := decodeArtifactFile(dir, path)
