@@ -179,16 +179,22 @@ type Item struct {
 // day one and the section would be pure noise. Sorted by LastActivity,
 // most-recent-first (the conversation-list convention).
 type Thread struct {
-	ID           string         `json:"id"`
-	Space        string         `json:"space"`
-	Participants []string       `json:"participants"`
-	MemberCount  int            `json:"memberCount"`
-	OpenCount    int            `json:"openCount"`
-	LastActivity string         `json:"lastActivity"` // pre-formatted age (e.g. "5d"), "" if no timestamped member
-	Opener       ThreadOpener   `json:"opener"`
-	YourMove     bool           `json:"yourMove"` // true when an open member is waiting on Data.Self
-	Members      []ThreadMember `json:"members"`
-	Links        []DocLink      `json:"links"`
+	ID           string       `json:"id"`
+	Space        string       `json:"space"`
+	Participants []string     `json:"participants"`
+	MemberCount  int          `json:"memberCount"`
+	OpenCount    int          `json:"openCount"`
+	LastActivity string       `json:"lastActivity"` // pre-formatted age (e.g. "5d"), "" if no timestamped member
+	Opener       ThreadOpener `json:"opener"`
+	YourMove     bool         `json:"yourMove"` // true when an open member is waiting on Data.Self
+
+	// WaitingOthers names every system OTHER than Data.Self that still owes a
+	// move on this thread, sorted. A reader asking "whose move is it" needs the
+	// name; "someone else" is not an answer they can act on.
+	WaitingOthers []string `json:"waitingOthers"`
+
+	Members []ThreadMember `json:"members"`
+	Links   []DocLink      `json:"links"`
 
 	// Settled reports that no member of this thread still owes anyone a move.
 	// The protocol has no thread-level "closed" state — closure is DERIVED:

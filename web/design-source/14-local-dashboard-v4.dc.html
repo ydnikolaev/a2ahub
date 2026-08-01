@@ -1108,8 +1108,8 @@ const DASHBOARD_I18N = {
     work:"Exchange", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
     whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Causal timeline", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Flags on this thread — surfaced, never dropped",
     contracts:"Contracts and their versions", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
-    network:"Who depends on whom", networkSub:"A contract dependency runs from consumer to provider; an open exchange is work in flight. Select one space or keep all spaces visible to see the systems that connect them. Click any line or card for detail.", exchangeMap:"Exchange map",
-    spaces:"Spaces", spacesSub:"The local binary, each space's writer floor, and its pinned CI workflow are independent compatibility axes.", freshness:"Freshness", participants:"Participants", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
+    network:"Who depends on whom", networkSub:"A solid line is a contract one system depends on. A dashed one is an exchange still open between them. Click any line or system card to see what is behind it.", exchangeMap:"Exchange map",
+    spaces:"Spaces", spacesSub:"A space is the shared repository systems exchange documents through. This is how fresh your copy of each one is, and which a2a version it wants before it accepts what you write.", freshness:"Freshness", participants:"Participants", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
     limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read — or deliberately did not evaluate — is named here, so an empty space never passes for a clean result.",
     emptyLimitsTitle:"Nothing to qualify", emptyLimitsText:"Every connected space was readable when this snapshot was written, and no flag was raised. The numbers above are the whole picture.",
     emptySpacesTitle:"No spaces connected", emptySpacesText:"A space is the shared repository two systems exchange documents through. Connect one and this table fills in.",
@@ -1117,10 +1117,10 @@ const DASHBOARD_I18N = {
     degradedReads:"Degraded reads", degradedReadsText:"These spaces answered from an older mirror revision, or not at all. Their counts are floors, never totals.",
     notEvaluatedTitle:"What this read deliberately did not check", notEvaluatedText:"Not failures. Questions a static file honestly cannot answer — said out loud instead of shown as a zero or a green tick.",
     versions:"Versions", localBinary:"Local binary", installed:"installed", latest:"latest", updateCandidate:"Update candidate", impact:"impact", publishedReleases:"Published releases in this snapshot", expandedNotes:"Expanded notes cover",
-    guide:"How a2ahub works without human dispatch", guideSub:"Agents receive the skill, CLI, and typed MCP tools, create and validate documents, move them through Git, and continue from their inbox. A person joins only when a decision or permission is genuinely required.",
+    guide:"How a2ahub works without human dispatch", guideSub:"Agents write the documents, validate them and move them through Git themselves, then pick the next thing up from their inbox. A person joins where a decision or a permission is genuinely needed — and nowhere else.",
     lifecycleTitle:"Lifecycle is events, not an editable status", lifecycleText:"Every transition is validated before it is recorded. Both sides fold the same history into the same state.", lifecycleFoot:"Responses, blocks, disputes, cancellations, and supersessions remain separate immutable events with a validated actor.",
     artifactTypesTitle:"Eight document types", artifactTypesText:"One file carries one intent. The protocol code remains a quick visual anchor and a human name is always shown beside it.", readingGuide:"How to read the dashboard", readOnly:"read-only",
-    docs:"Documentation", docsSub:"The same manual the agent reads: one Markdown corpus, installed as the skill, published on the website, and embedded whole in this file. No network needed.",
+    docs:"Documentation", docsSub:"The same manual the agent reads, embedded whole in this file — no network needed. Sections and search on the left, the text itself on the right.",
     docSearch:"Search the docs", docSearchPlaceholder:"thread, contract, retire…", docNoMatch:"No section title, group or source path matches that search.",
     docEmbedded:"embedded in this file", emptyDocsTitle:"No documentation embedded", emptyDocsText:"This snapshot was written without the doc corpus. Reinstall the skill and render the dashboard again.",
     loadingDoc:"Loading the embedded document…",
@@ -1140,8 +1140,8 @@ const DASHBOARD_I18N = {
     work:"Обмен", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. Полная история — кто что сделал и в каком порядке — в снимок не попала.",
     whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"Как всё происходило", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
     contracts:"Контракты и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас —", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
-    network:"Кто от кого зависит", networkSub:"Сплошная линия — зависимость от контракта: потребитель слева, поставщик справа. Пунктир — незакрытая работа. Выберите спейс или оставьте все, чтобы увидеть, кто их связывает. Нажмите на линию или карточку — откроются подробности.", exchangeMap:"Карта обмена",
-    spaces:"Спейсы", spacesSub:"Три вещи, которые легко перепутать: версия вашего бинарника, минимальная версия, с которой спейс принимает записи, и версия проверки в CI. Они меняются независимо.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
+    network:"Кто от кого зависит", networkSub:"Сплошная линия — контракт, от которого зависит одна система. Пунктир — незакрытый обмен между ними. Нажмите на линию или на карточку системы, чтобы увидеть, что за ней стоит.", exchangeMap:"Карта обмена",
+    spaces:"Спейсы", spacesSub:"Спейс — общий репозиторий, через который системы обмениваются документами. Здесь видно, насколько свежая у вас копия каждого и какую версию a2a он ждёт, чтобы принять вашу запись.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
     limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь — чтобы пустое место не сошло за «всё в порядке».",
     emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"Когда собирался снимок, все подключённые спейсы читались, замечаний не было. Цифры выше — это вся картина.",
     emptySpacesTitle:"Спейсы не подключены", emptySpacesText:"Спейс — это общий репозиторий, через который две системы обмениваются документами. Подключите спейс, и таблица заполнится.",
@@ -1149,10 +1149,10 @@ const DASHBOARD_I18N = {
     degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии или не ответили вовсе. Их цифры — это «не меньше чем», а не точное число.",
     notEvaluatedTitle:"Что мы намеренно не проверяли", notEvaluatedText:"Это не сбои. Это вопросы, на которые статический файл честно не отвечает — и говорит об этом прямо, вместо того чтобы показать ноль или зелёную галочку.",
     versions:"Версии", localBinary:"Ваш бинарник", installed:"стоит сейчас", latest:"последняя", updateCandidate:"Есть обновление", impact:"влияние", publishedReleases:"Выпуски", expandedNotes:"Подробности по",
-    guide:"Как это работает без ручной диспетчеризации", guideSub:"У агента есть навык, CLI и типизированные инструменты MCP. Он сам пишет документы, проверяет их, проводит через Git и продолжает работу из входящих. Человек подключается там, где нужно решение или разрешение — и больше нигде.",
+    guide:"Как это работает без ручной диспетчеризации", guideSub:"Агенты сами пишут документы, проверяют их и проводят через Git, а потом берут из входящих следующее. Человек подключается там, где нужно решение или разрешение, — и больше нигде.",
     lifecycleTitle:"Статус не редактируется — он складывается из событий", lifecycleText:"Каждый переход проверяется до того, как попадёт в репозиторий. Обе стороны собирают из одной и той же истории одно и то же состояние.", lifecycleFoot:"Ответы, блокировки, споры, отмены и замены не затираются: каждое остаётся отдельным событием с проверенным автором.",
     artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл — одна мысль. Двухбуквенный код удобен глазу, но рядом всегда стоит нормальное название.", readingGuide:"Как читать дашборд", readOnly:"только чтение",
-    docs:"Документация", docsSub:"То же руководство, которое читает агент: один корпус Markdown — он ставится как навык, публикуется на сайте и целиком вшит в этот файл. Сеть не нужна.",
+    docs:"Документация", docsSub:"То же руководство, что читает агент, целиком вшито в этот файл — сеть не нужна. Слева разделы и поиск, справа сам текст.",
     docSearch:"Поиск по докам", docSearchPlaceholder:"тред, контракт, вывод версии…", docNoMatch:"Ни одно название раздела, группа или путь к файлу не совпали с запросом.",
     docEmbedded:"вшито в этот файл", emptyDocsTitle:"Документация не вшита", emptyDocsText:"Этот снимок собран без корпуса документации. Переустановите навык и соберите дашборд заново.",
     loadingDoc:"Загружается встроенный документ…",
@@ -1236,6 +1236,15 @@ function cmpVer(a, b) {
     if (p !== q) return p < q ? -1 : 1;
   }
   return 0;
+}
+// "a", "a and b", "a, b and c". A comma-joined list reads as data; a sentence
+// needs the conjunction, and the whole point of naming who owes a move is that
+// the answer arrives as a sentence a person can act on.
+function listNames(names, ru) {
+  const xs = (names || []).filter(Boolean);
+  if (!xs.length) return "";
+  if (xs.length === 1) return xs[0];
+  return xs.slice(0, -1).join(", ") + (ru ? " и " : " and ") + xs[xs.length - 1];
 }
 function ruPlural(n, one, few, many) {
   const mod10 = n % 10, mod100 = n % 100;
@@ -2039,6 +2048,31 @@ class Component extends DCLogic {
     const threadSel = s.threadSel && threads.some(t => t.id === s.threadSel) ? s.threadSel : (threads[0] && threads[0].id) || "";
     const tv = d.threadViews.find(v => v.thread === threadSel);
 
+    // Whose move it is, answered as a sentence rather than as a question. The
+    // panel used to be headed "Whose move" over prose about how the answer is
+    // derived — a reader had to work out the answer from the list below it,
+    // which is the one thing the heading existed to save them.
+    const tvPend = tv ? (tv.open_items || []).filter(o => o.pending !== false) : [];
+    const tvYours = tvPend.filter(o => o.your_move).length;
+    const tvOthers = [];
+    tvPend.forEach(o => (o.waiting_on || []).forEach(w => { if (w !== d.self && tvOthers.indexOf(w) === -1) tvOthers.push(w); }));
+    tvOthers.sort();
+    const othersList = listNames(tvOthers, ru);
+    const moveTitle = tvYours
+      ? (tvOthers.length
+        ? (ru ? "Ход за вами — и за " + othersList : "Your move — and " + othersList + "'s")
+        : (ru ? "Ход за вами" : "Your move"))
+      : (tvOthers.length
+        ? (ru ? "Ход за " + othersList : "Waiting on " + othersList)
+        : (ru ? "Ход за другой стороной" : "Waiting on the other side"));
+    const moveText = tvYours
+      ? (tvOthers.length
+        ? (ru ? "На вас " + ruPlural(tvYours, "документ", "документа", "документов") + " из " + tvPend.length + ", остальные ждут ответа от других. Ниже — что именно от вас ждут." : tvYours + " of " + tvPend.length + " open documents are on you, the rest await the others. What each one needs is below.")
+        : (ru ? (tvPend.length === 1 ? "Один документ ждёт вашего шага. Ниже — что именно можно сделать." : ruPlural(tvPend.length, "документ ждёт", "документа ждут", "документов ждут") + " вашего шага. Ниже — что именно можно сделать.") : (tvPend.length === 1 ? "One document is waiting on you. What it needs is below." : tvPend.length + " documents are waiting on you. What each one needs is below.")))
+      : (tvOthers.length
+        ? (ru ? "Вы никого не держите. Ниже видно, чего именно ждут от них." : "You are holding nobody up. What is expected of them is below.")
+        : (ru ? "Открытые документы есть, но кто должен сделать следующий шаг, из событий не выводится." : "Open documents remain, but the events do not resolve who owes the next move."));
+
     const contracts = d.contracts.filter(c => this.inScope(c.space));
     const conSel = s.conSel && contracts.some(c => c.id === s.conSel) ? s.conSel : (contracts[0] && contracts[0].id) || "";
     const con = contracts.find(c => c.id === conSel) || contracts[0];
@@ -2197,9 +2231,12 @@ class Component extends DCLogic {
       // `d.self` is empty until a system is configured, and pasting it into the
       // sentence produced "адресовано ;". The name is an improvement to the
       // sentence, not a part of it.
+      // The counts left the sentence: the segmented control right below it
+      // already carries them, and a number stated twice is a number a reader
+      // starts checking against itself.
       workSub: ru
-        ? "Входящие — то, что адресовано " + (d.self ? d.self : "вам") + "; исходящие — то, чего вы ждёте от других. Входящих: " + scopedInbox.length + ", исходящих: " + scopedOutbox.length + "."
-        : "Incoming items are addressed to " + (d.self ? d.self : "you") + "; outgoing items are what you await from others. Incoming: " + scopedInbox.length + ", outgoing: " + scopedOutbox.length + ".",
+        ? "Все документы, по которым обмен ещё не закончен. Входящие адресованы " + (d.self ? d.self : "вам") + ", исходящие ждут ответа от других. Фильтры ниже сужают список по направлению и типу."
+        : "Every document whose exchange is still open. Incoming ones are addressed to " + (d.self ? d.self : "you") + "; outgoing ones are waiting on somebody else. The filters below narrow the list by direction and type.",
       // A menu, not a chip row: eight types plus "all" wrapped to a second line
       // at every width, and the count beside each one answers "is it worth
       // filtering to this" before the click rather than after it.
@@ -2243,7 +2280,9 @@ class Component extends DCLogic {
           : (ru ? "Никто из подключённых систем сейчас ничего вам не адресовал, и вы никого не ждёте. Как только документ придёт или уйдёт, он окажется здесь." : "No connected system has anything addressed to you, and you are waiting on nobody. The moment a document arrives or leaves, it lands here.")),
       workDetail: this.detailFor(workSel, workList),
 
-      threadsSub: ru ? "Запрос, подтверждение, ответ, доказательства, проверка и решение лежат в одном треде и читаются в одном порядке всеми. Порядок берётся из коммитов Git — его нельзя подделать задним числом. Если истории нет, берётся время от автора, и мы это помечаем." : "Request, acknowledgement, response, evidence, verification, and decision remain linked. Commit order is strong evidence; declared timestamps are always labelled as a weak fallback.",
+      threadsSub: ru
+        ? "Один вопрос — один тред: запрос, ответы, доказательства и решение лежат вместе и читаются одинаково у всех сторон. Слева список тредов и чей сейчас ход, справа — вся история сверху вниз."
+        : "One question, one thread: the request, the replies, the evidence and the decision stay together and read the same way for every side. The list on the left says whose move it is; the record on the right shows how it got there.",
       noThreadRows: threads.length === 0, hasThreadRows: threads.length > 0,
       emptyThreadsTitle: ru ? "Тредов пока нет" : "No threads yet",
       emptyThreadsText: ru
@@ -2252,8 +2291,16 @@ class Component extends DCLogic {
       threadRows: threads.map(t => ({
         title: t.opener ? t.opener.title : t.id,
         // Three states, not two: your move, someone else's move, or nobody's —
-        // a thread whose every item reached a terminal state is settled.
-        pillText: t.settled ? (ru ? "всё закрыто" : "settled") : (t.yourMove ? (ru ? "ваш ход" : "your move") : (ru ? "ход за другими" : "waiting on others")),
+        // a thread whose every item reached a terminal state is settled. When
+        // it is somebody else's, the pill names them: "waiting on others" is
+        // an answer a reader cannot do anything with.
+        pillText: t.settled
+          ? (ru ? "всё закрыто" : "settled")
+          : (t.yourMove
+            ? (ru ? "ваш ход" : "your move")
+            : ((t.waitingOthers || []).length
+              ? (ru ? "ход за " : "waiting on ") + (t.waitingOthers[0] + (t.waitingOthers.length > 1 ? " +" + (t.waitingOthers.length - 1) : ""))
+              : (ru ? "ход за другими" : "waiting on others"))),
         pillTone: t.settled ? "healthy" : (t.yourMove ? "attention" : "neutral"),
         participants: (t.participants || []).join(", "),
         age: (ru ? "последнее движение " : "last activity ") + age(t.lastActivity),
@@ -2261,6 +2308,7 @@ class Component extends DCLogic {
         style: this.cardButton(threadSel === t.id),
         select: () => this.setState({ threadSel: t.id, tvFocus: "" })
       })),
+      whoseMoveLabel: moveTitle, whoseMoveText: moveText,
       tvPresent: !!tv, tvMissing: !tv,
       tvSettled: !!(tv && tv.settled), tvPending: !!(tv && !tv.settled),
       documentLabel: ru ? "Документ целиком" : "View document",
@@ -2370,7 +2418,7 @@ class Component extends DCLogic {
       // and listing them printed "waiting on" with no name after it.
       tvOpen: tv ? (tv.open_items || []).filter(o => o.pending !== false).map(o => ({
         id: o.id, type: o.type,
-        who: o.your_move ? (ru ? "ваш ход" : "your move") : (ru ? "ход за: " : "waiting on ") + (o.waiting_on || []).join(", "),
+        who: o.your_move ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + listNames((o.waiting_on || []).filter(w => w !== d.self), ru),
         whoTone: o.your_move ? "attention" : "neutral",
         needed: o.needed_by ? (ru ? "дедлайн " : "due ") + isoDay(o.needed_by) : (o.blocking ? (ru ? "блокирует" : "blocking") : ""),
         actions: (o.next_actions || []).map(a => ({
@@ -2382,7 +2430,9 @@ class Component extends DCLogic {
       tvHasFlags: !!(tv && ((tv.flags || []).length || (tv.unresolved || []).length)),
       tvFlags: tv ? (tv.flags || []).map(f => f.kind + (ru ? " для " : " on ") + f.subject + (f.event_ulid ? (ru ? " · событие " : " · event ") + f.event_ulid : "")).concat((tv.unresolved || []).map(u => (ru ? "ссылка в никуда: " : "unresolved reference: ") + (u.ref || JSON.stringify(u)))) : [],
 
-      conSub: ru ? "Каждый потребитель закрепляет за собой конкретную мажорную версию. У каждой версии своя судьба: поставщик уже выпустил v2, а чья-то v1 всё ещё работает, доживает свой срок или не может быть закрыта, пока на ней кто-то сидит. Сидят не на последней версии: " + offCurrent + " из " + scopedEdges + "." : "Consumers register the major line they use. Every version has its own state: a provider can publish v2 while a consumer's v1 line remains visible, enters sunset, or cannot yet retire. Off the current major: " + offCurrent + " of " + scopedEdges + ".",
+      conSub: ru
+        ? "Контракт — обещание одной системы остальным: что она отдаёт и в каком виде. У него есть версии, и каждый потребитель сидит на своей. Не на последней сейчас " + offCurrent + " из " + scopedEdges + " — их и стоит посмотреть первыми."
+        : "A contract is one system's promise to the others: what it hands over and in what shape. It has versions, and every consumer sits on one of them. " + offCurrent + " of " + scopedEdges + " are off the latest — start there.",
       conRows: contracts.map(c => {
         const edges = d.contractEdges.filter(e => e.contract === c.id);
         const bad = edges.filter(e => e.drift !== "current");
@@ -2551,7 +2601,9 @@ class Component extends DCLogic {
       hasSpaces: d.spaces.filter(x => this.inScope(x.id)).length > 0,
       noSpaces: d.spaces.filter(x => this.inScope(x.id)).length === 0,
 
-      verSub: ru ? "Три версии, которые легко перепутать. Ваш бинарник — то, что стоит на этой машине. Минимум для записи — версия, ниже которой спейс не принимает документы. Версия проверки в CI — то, чем спейс проверяет входящее. Одна ничего не говорит о двух других." : "Three independent axes: the local binary, each space's writer floor, and the pinned workflow version. None can be inferred from another.",
+      verSub: ru
+        ? "Что за версия a2a стоит у вас и что менялось в каждом выпуске. Фильтры сверху отделяют записи, которые чего-то от вас требуют, от тех, что можно просто прочитать."
+        : "Which a2a version you run, and what changed in every release. The filters up top separate the entries that ask something of you from the ones you can just read.",
       verCurrent: tooling.current, verLatest: tooling.latest,
       verFacts: [
         { label:ru ? "проверяли" : "checked", value:when(tooling.checkedAt) + (ru ? " · кэш " : " · cache ") + age(tooling.cacheAge) },

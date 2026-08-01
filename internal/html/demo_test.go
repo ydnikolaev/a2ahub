@@ -215,3 +215,51 @@ func TestDemoCarriesARollingWindow(t *testing.T) {
 			"their own pinned one", d.Self)
 	}
 }
+
+// TestDemoOwnershipIsDerivedNotAuthored guards the rule that put a whose-move
+// panel over an empty list: the fixture states WaitingOn, and Pending /
+// WaitingOthers are computed from it. Decoding a fixture that predates a
+// derived field yields its zero value, which reads as "nothing is pending" —
+// silently, and only on the demo surface.
+func TestDemoOwnershipIsDerivedNotAuthored(t *testing.T) {
+	t.Parallel()
+	d, err := DemoData()
+	if err != nil {
+		t.Fatalf("DemoData: %v", err)
+	}
+
+	pending := 0
+	waitingByThread := map[string][]string{}
+	for _, tv := range d.ThreadViews {
+		for _, oi := range tv.OpenItems {
+			if oi.Pending != (len(oi.WaitingOn) > 0) {
+				t.Fatalf("%s: Pending=%v with WaitingOn=%v — Pending must be derived from WaitingOn", oi.ID, oi.Pending, oi.WaitingOn)
+			}
+			if !oi.Pending {
+				continue
+			}
+			pending++
+			waitingByThread[tv.Thread] = append(waitingByThread[tv.Thread], oi.WaitingOn...)
+		}
+	}
+	if pending == 0 {
+		t.Fatal("no open item in the demo fixture is pending; the whose-move panel would render empty on every thread")
+	}
+
+	for _, th := range d.Threads {
+		for i, who := range th.WaitingOthers {
+			if who == d.Self {
+				t.Fatalf("%s: WaitingOthers contains self %q — YourMove already carries that", th.ID, d.Self)
+			}
+			if i > 0 && th.WaitingOthers[i-1] >= who {
+				t.Fatalf("%s: WaitingOthers is not sorted and deduped: %v", th.ID, th.WaitingOthers)
+			}
+			if !containsString(waitingByThread[th.ID], who) {
+				t.Fatalf("%s: WaitingOthers names %q, which owes no pending move on that thread", th.ID, who)
+			}
+		}
+		if th.Settled && len(th.WaitingOthers) > 0 {
+			t.Fatalf("%s: settled thread still names %v as owing a move", th.ID, th.WaitingOthers)
+		}
+	}
+}

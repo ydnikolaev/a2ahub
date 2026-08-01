@@ -170,3 +170,25 @@ changes:
       scope: none
       why: >
         No configuration or data migration is required.
+
+  - id: RN-01701-9
+    kind: fix
+    impact: low
+    subject: "A thread now says whose move it is, by name"
+    detail: >
+      The thread panel was headed "Whose move" over a sentence explaining how
+      the answer is derived, leaving the reader to work the answer out from the
+      list below — the one thing the heading existed to save them. It now states
+      it: your move, waiting on a named system, or both. The thread list names
+      the system too, instead of "waiting on others". Underneath that sat a
+      second defect: the demo fixture predates the field that separates "someone
+      still owes a move" from "not yet terminal", so decoding it marked every
+      open item as owing nothing and the panel rendered with an empty list. Both
+      that field and the new list of who is owed are now derived from the facts
+      the fixture states rather than trusted to be restated in it. Page
+      descriptions were rewritten in each language on its own terms.
+    affects: ["a2a html", "threads", "ru locale"]
+    action:
+      scope: none
+      why: >
+        No configuration or data migration is required.

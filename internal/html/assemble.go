@@ -433,17 +433,30 @@ func toThread(result cache.ThreadResult, self string) (Thread, time.Time) {
 	// left (cache strips cancel/withdraw/supersede out of WaitingOn), so it
 	// owes nobody anything — counting it as pending is what made a finished
 	// exchange read "waiting on others" forever.
+	//
+	// The names are carried too, not just the boolean. "Waiting on others" is
+	// an answer nobody can act on; "waiting on seomatrix" is. Self is excluded
+	// from the list because YourMove already says it, and repeating it turns
+	// "you and seomatrix" into "you, you and seomatrix" on multi-item threads.
 	yourMove, settled, openCount := false, true, 0
+	waitingOthers := []string{}
 	for _, oi := range result.OpenItems {
 		if len(oi.WaitingOn) == 0 {
 			continue
 		}
 		openCount++
 		settled = false
-		if containsString(oi.WaitingOn, self) {
-			yourMove = true
+		for _, who := range oi.WaitingOn {
+			if who == self {
+				yourMove = true
+				continue
+			}
+			if !containsString(waitingOthers, who) {
+				waitingOthers = append(waitingOthers, who)
+			}
 		}
 	}
+	sort.Strings(waitingOthers)
 
 	if links == nil {
 		links = []DocLink{}
@@ -453,7 +466,7 @@ func toThread(result cache.ThreadResult, self string) (Thread, time.Time) {
 		ID: result.Thread, Space: result.Space, Participants: result.Participants,
 		MemberCount: len(result.Artifacts), OpenCount: openCount,
 		Opener:   ThreadOpener{ID: result.Opener.ID, Title: result.Opener.Title},
-		YourMove: yourMove, Settled: settled, Members: members, Links: links,
+		YourMove: yourMove, WaitingOthers: waitingOthers, Settled: settled, Members: members, Links: links,
 	}, last
 }
 
