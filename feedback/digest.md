@@ -17,3 +17,7 @@
 ## 2026-08-01 Triage
 
 - fb-20260801-457629 (bug -> accepted): note mints an event the space validator rejects, and opens the PR anyway
+
+## 2026-08-02 Shipped
+
+- fb-20260801-457629 (bug -> shipped in v0.18.2): notes are state-free audit events; the submitted lifecycle family passed the targeted live gate

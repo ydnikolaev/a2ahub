@@ -1,13 +1,3 @@
 backlog: v1
 wip_limit: 16
-items:
-    - id: fb-20260801-457629
-      kind: bug
-      severity: major
-      title: note mints an event the space validator rejects, and opens the PR anyway
-      verdict: accepted
-      route: quick-fix
-      refs:
-        - LFC-001
-        - CC-020
-      date: "2026-08-01"
+items: []

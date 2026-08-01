@@ -44,9 +44,14 @@ proposal: |
        not encoding it as one — a note that cannot ride the lifecycle table is
        the natural way to attach a rationale to a decision, and recording WHY a
        response was verified is exactly the case that hit this.
-resolution: Accepted for immediate patch release; reproduce locally, fix the client/validator lifecycle disagreement, and gate the affected live family.
+resolution: >-
+    Shipped in v0.18.2. Notes are now state-free audit events rather than
+    lifecycle transitions, so a submitted response can be annotated before
+    verification without opening a PR that its own validator rejects. The
+    submitted lifecycle family passed the targeted live gate; evidence is in
+    docs/features/archive/agent-first-surfaces-2026-07/audits/live-e2e-2026-08-02-v0.18.2-submitted-family.txt.
 severity: major
-status: accepted
+status: shipped
 summary: |
     `a2a note` emits an event with `transition: note`, opens a PR, and reports
     success. The space's own `a2a-validate` job — pinned to the SAME binary
