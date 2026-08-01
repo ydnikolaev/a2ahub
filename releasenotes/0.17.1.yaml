@@ -143,3 +143,29 @@ changes:
       scope: none
       why: >
         No configuration or data migration is required.
+
+  - id: RN-01701-8
+    kind: feat
+    impact: low
+    subject: "One header line, one scope switcher, one empty state, and Work becomes Exchange"
+    detail: >
+      The dashboard header listed every connected space as a chip on a second
+      row that grew with the number of spaces; scope is now one control that
+      stands beside the page it scopes, on the six views where changing it
+      changes what is shown, with space freshness at the foot of its own list.
+      The Work view is named Exchange, since incoming and outgoing documents in
+      flight are an exchange and not a to-do list, and its filters are one
+      segmented control (all, incoming, outgoing) plus a type menu that names
+      the count behind each type instead of a chip row that wrapped at every
+      width. The empty state is one component with two container-decided sizes
+      rather than four picked per call site, its spark now travels back and
+      forth, and a screen with nothing on it shows exactly one of them. Page
+      headings are a single block for all nine views, so the air above and
+      below a title is the same everywhere. Event lists dropped the event ULIDs
+      and artifact digests a reader cannot act on, and the three facts a static
+      read deliberately does not check now say so in the reader's own language.
+    affects: ["a2a html", "header", "exchange", "empty states", "ru locale"]
+    action:
+      scope: none
+      why: >
+        No configuration or data migration is required.

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<span style="position:relative; flex:0 0 auto; display:inline-flex;">
+  <button type="button" onClick="{{ toggle }}" aria-expanded="{{ expanded }}" aria-label="{{ ariaLabel }}" style="{{ buttonStyle }}">
+    <sc-if value="{{ hasFaces }}" hint-placeholder-val="{{ true }}">
+      <span style="display:flex; align-items:center; flex:0 0 auto;">
+        <sc-for list="{{ faces }}" as="f" hint-placeholder-count="3">
+          <span style="{{ f.style }}" title="{{ f.title }}">{{ f.mono }}</span>
+        </sc-for>
+      </span>
+    </sc-if>
+    <span style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ currentLabel }}</span>
+    <span aria-hidden="true" style="flex:0 0 auto; color:var(--muted); font-size:11px;">{{ caret }}</span>
+  </button>
+
+  <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
+    <span style="position:absolute; z-index:120; top:calc(100% + 8px); right:0; min-width:260px; max-width:min(340px, 90vw); background:var(--surface); border-radius:14px; padding:8px; box-shadow:0 16px 40px -12px rgba(33,30,23,.42), 0 0 0 1px var(--border); display:flex; flex-direction:column; gap:2px;">
+      <sc-for list="{{ options }}" as="o" hint-placeholder-count="4">
+        <button type="button" onClick="{{ o.go }}" aria-current="{{ o.current }}" style="{{ o.style }}">
+          <sc-if value="{{ o.hasFaces }}" hint-placeholder-val="{{ true }}">
+            <span style="display:flex; align-items:center; flex:0 0 auto;">
+              <sc-for list="{{ o.faces }}" as="f" hint-placeholder-count="3">
+                <span style="{{ f.style }}" title="{{ f.title }}">{{ f.mono }}</span>
+              </sc-for>
+            </span>
+          </sc-if>
+          <span style="flex:1 1 auto; min-width:0; overflow-wrap:anywhere;">{{ o.label }}</span>
+          <sc-if value="{{ o.selected }}" hint-placeholder-val="{{ false }}">
+            <span aria-hidden="true" style="flex:0 0 auto; color:var(--teal-ink);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+          </sc-if>
+        </button>
+      </sc-for>
+
+      <!-- Freshness is a property of the spaces listed above it, so the way in
+           sits at the foot of the list that names them rather than as a second
+           button competing with the switcher. -->
+      <span style="height:1px; background:var(--hairline); margin:6px 4px;"></span>
+      <button type="button" onClick="{{ openHealth }}" style="display:flex; align-items:center; gap:9px; width:100%; text-align:left; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--body); background:transparent; border:0; border-radius:9px; padding:9px 10px; cursor:pointer;">
+        <span style="{{ healthDotStyle }}"></span>
+        <span style="flex:1 1 auto; min-width:0;">{{ healthLabel }}</span>
+        <span aria-hidden="true" style="color:var(--muted);">→</span>
+      </button>
+    </span>
+  </sc-if>
+</span>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:420,&quot;height&quot;:360},&quot;det&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;}}">
+// One control for "which spaces am I looking at", on every page where that
+// question changes what is shown.
+//
+// It replaces a second header row that listed every connected space as a chip:
+// that row grew with the number of spaces, wrapped to two lines on a wide
+// screen with four of them, and spent the full width of the page restating a
+// choice that is one value. The header is one line again, and the switcher
+// stands where the scope it controls is read.
+class Component extends DCLogic {
+  state = { open: false };
+
+  componentDidMount() {
+    this.away = (ev) => {
+      if (!this.state.open) return;
+      if (this.host && this.host.contains && this.host.contains(ev.target)) return;
+      this.setState({ open: false });
+    };
+    this.esc = (ev) => { if (ev.key === "Escape" && this.state.open) this.setState({ open: false }); };
+    document.addEventListener("click", this.away, true);
+    window.addEventListener("keydown", this.esc);
+  }
+
+  componentWillUnmount() {
+    document.removeEventListener("click", this.away, true);
+    window.removeEventListener("keydown", this.esc);
+  }
+
+  renderVals() {
+    const ru = document.documentElement.lang === "ru";
+    const d = this.props.det || {};
+    const options = d.options || [];
+    const cur = options.find(o => o.selected) || options[0] || {};
+    return {
+      open: this.state.open,
+      expanded: this.state.open ? "true" : "false",
+      ariaLabel: ru ? "Выбрать спейс" : "Choose a space",
+      caret: this.state.open ? "▴" : "▾",
+      currentLabel: cur.label || "",
+      hasFaces: !!(cur.faces && cur.faces.length),
+      faces: cur.faces || [],
+      // Weight is constant across states here as everywhere else: an open
+      // control that bolds itself re-measures its own text and nudges the row.
+      buttonStyle: "display:inline-flex; align-items:center; gap:9px; max-width:280px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--text); background:var(--surface); border:0; border-radius:10px; padding:9px 13px 9px 10px; cursor:pointer; box-shadow:0 1px 2px rgba(33,30,23,.06);" +
+        (this.state.open ? " box-shadow:0 1px 2px rgba(33,30,23,.06), inset 0 0 0 1.5px var(--border-strong);" : ""),
+      options: options.map(o => ({
+        label: o.label,
+        selected: !!o.selected,
+        current: o.selected ? "true" : null,
+        hasFaces: !!(o.faces && o.faces.length),
+        faces: o.faces || [],
+        style: "display:flex; align-items:center; gap:9px; width:100%; text-align:left; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:9px; padding:9px 10px; cursor:pointer; " +
+          (o.selected ? "background:var(--teal-tint); color:var(--teal-ink);" : "background:transparent; color:var(--body);"),
+        go: () => { this.setState({ open: false }); if (o.go) o.go(); }
+      })),
+      healthLabel: d.healthLabel || "",
+      healthDotStyle: d.healthDotStyle || "",
+      openHealth: () => { this.setState({ open: false }); if (d.openHealth) d.openHealth(); },
+      toggle: (ev) => {
+        if (ev && ev.currentTarget) this.host = ev.currentTarget.parentElement;
+        this.setState(s => ({ open: !s.open }));
+      }
+    };
+  }
+}
+
+</script>
+</body>
+</html>

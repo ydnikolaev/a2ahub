@@ -143,16 +143,17 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
  * on either end of a quiet link. The reduced-motion rule below stills it. */
 .a2a-empty-bot { animation: a2a-empty-float 4.4s ease-in-out infinite; }
 .a2a-empty-bot--b { animation-delay: -2.2s; }
-.a2a-empty-spark { animation: a2a-empty-travel 3.4s ease-in-out infinite; }
+/* The spark plays table tennis: `alternate` sends it back along the same wire
+ * instead of teleporting to the left end every cycle. It also stops fading —
+ * a ball that vanishes at each end reads as a loading state, not an exchange. */
+.a2a-empty-spark { animation: a2a-empty-travel 2.6s ease-in-out infinite alternate; }
 @keyframes a2a-empty-float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-3px); }
 }
 @keyframes a2a-empty-travel {
-  0% { transform: translateX(0); opacity: 0; }
-  15% { opacity: 1; }
-  85% { opacity: 1; }
-  100% { transform: translateX(var(--a2a-empty-travel, 55px)); opacity: 0; }
+  0% { transform: translateX(0); }
+  100% { transform: translateX(var(--a2a-empty-travel, 55px)); }
 }
 .a2a-empty-bot--b { animation-name: a2a-empty-float-mirrored; }
 @keyframes a2a-empty-float-mirrored {

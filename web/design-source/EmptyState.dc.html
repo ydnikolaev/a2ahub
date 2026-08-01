@@ -30,7 +30,7 @@
 </div>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:520,&quot;height&quot;:320},&quot;title&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;No contracts yet&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;text&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Nothing has been registered in this scope.&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;hint&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;wide&quot;,&quot;default&quot;,&quot;compact&quot;,&quot;inline&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:520,&quot;height&quot;:320},&quot;title&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;No contracts yet&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;text&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Nothing has been registered in this scope.&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;hint&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;page&quot;,&quot;panel&quot;],&quot;default&quot;:&quot;panel&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
 // EmptyState is the ONE "there is nothing here" surface. Every list, detail
 // pane and panel that can legitimately be empty renders it instead of inventing
 // a zero, a blank card or a stray unrelated record — the same honesty rule the
@@ -40,19 +40,23 @@
 // moves between agents, and an empty screen means nothing is in flight, not
 // that something failed. Motion is decorative; ui/tokens.css stills it under
 // prefers-reduced-motion.
-// `wide` is for the case where the empty state IS the page: nothing at all in
-// scope, so it takes the full width alone instead of being echoed by a second
-// empty panel beside it. At that size the artwork carries the screen and grows
-// to match.
+// TWO sizes, and the choice is decided by the container, never by taste:
+//
+//   page  — the empty state IS the screen. Nothing in scope at all, so it takes
+//           the full width alone and the artwork carries the page.
+//   panel — it sits inside one column of a two-column layout, beside a list
+//           that does have content.
+//
+// There were four before, picked ad hoc per call site, and the same "nothing
+// here" arrived at three different scales on three different screens. If a new
+// context seems to need a third size, the container is wrong, not this list.
 const SIZES = {
-  wide: { pad: "72px 32px", bot: 48, wire: 104, title: 22, gap: 20 },
-  default: { pad: "44px 32px", bot: 30, wire: 62, title: 19, gap: 14 },
-  compact: { pad: "30px 24px", bot: 24, wire: 48, title: 17, gap: 11 },
-  inline: { pad: "20px 18px", bot: 20, wire: 38, title: 16, gap: 9 }
+  page: { pad: "76px 32px", bot: 52, wire: 116, title: 23, text: 17, gap: 22 },
+  panel: { pad: "34px 24px", bot: 26, wire: 54, title: 17, text: 15, gap: 13 }
 };
 class Component extends DCLogic {
   renderVals() {
-    const s = SIZES[this.props.size] || SIZES.default;
+    const s = SIZES[this.props.size] || SIZES.panel;
     return {
       title: this.props.title || "",
       text: this.props.text || "",
@@ -65,7 +69,7 @@ class Component extends DCLogic {
       wireLineStyle: "width:100%; height:0; border-top:2px dashed var(--border-strong);",
       sparkStyle: "position:absolute; left:0; top:50%; width:7px; height:7px; margin-top:-3.5px; border-radius:99px; background:var(--teal-solid); --a2a-empty-travel:" + (s.wire - 7) + "px;",
       titleStyle: "font-size:" + s.title + "px; line-height:1.35; font-weight:600; color:var(--text); max-width:46ch; text-wrap:balance;",
-      textStyle: "margin:0; font-size:15px; line-height:1.6; color:var(--muted); max-width:52ch;",
+      textStyle: "margin:0; font-size:" + s.text + "px; line-height:1.6; color:var(--muted); max-width:52ch;",
       hintStyle: "font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; color:var(--faint); background:var(--canvas); border-radius:7px; padding:6px 10px; overflow-wrap:anywhere; max-width:100%;"
     };
   }
