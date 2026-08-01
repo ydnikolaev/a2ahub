@@ -1928,13 +1928,19 @@ class Component extends DCLogic {
       : (tvOthers.length
         ? (ru ? "Ход за " + othersList : "Waiting on " + othersList)
         : (ru ? "Ход за другой стороной" : "Waiting on the other side"));
-    const moveText = tvYours
+    // Split on the COUNT, not on whether other names exist. One document can be
+    // open to several parties at once, so "2 of 2 are on you" and "others are
+    // also owed" are both true — and the sentence that mentions "the rest"
+    // when there is no rest contradicts the number in front of it.
+    const moveText = tvYours === 0
       ? (tvOthers.length
-        ? (ru ? "На вас " + ruPlural(tvYours, "документ", "документа", "документов") + " из " + tvPend.length + ", остальные ждут ответа от других. Ниже — что именно от вас ждут." : tvYours + " of " + tvPend.length + " open documents are on you, the rest await the others. What each one needs is below.")
-        : (ru ? (tvPend.length === 1 ? "Один документ ждёт вашего шага. Ниже — что именно можно сделать." : ruPlural(tvPend.length, "документ ждёт", "документа ждут", "документов ждут") + " вашего шага. Ниже — что именно можно сделать.") : (tvPend.length === 1 ? "One document is waiting on you. What it needs is below." : tvPend.length + " documents are waiting on you. What each one needs is below.")))
-      : (tvOthers.length
         ? (ru ? "Вы никого не держите. Ниже видно, чего именно ждут от них." : "You are holding nobody up. What is expected of them is below.")
-        : (ru ? "Открытые документы есть, но кто должен сделать следующий шаг, из событий не выводится." : "Open documents remain, but the events do not resolve who owes the next move."));
+        : (ru ? "Открытые документы есть, но кто должен сделать следующий шаг, из событий не выводится." : "Open documents remain, but the events do not resolve who owes the next move."))
+      : tvYours < tvPend.length
+        ? (ru ? "На вас " + ruPlural(tvYours, "документ", "документа", "документов") + " из " + tvPend.length + ", остальные ждут ответа от других. Ниже — что именно от вас ждут." : tvYours + " of " + tvPend.length + " open documents are on you; the rest await somebody else. What each one needs is below.")
+        : (ru
+          ? (tvPend.length === 1 ? "Один документ ждёт вашего шага." : "Все " + ruPlural(tvPend.length, "документ ждёт", "документа ждут", "документов ждут") + " вашего шага.") + (tvOthers.length ? " По некоторым сходить может и другая сторона." : "") + " Ниже — что именно можно сделать."
+          : (tvPend.length === 1 ? "One document is waiting on you." : "All " + tvPend.length + " open documents are waiting on you.") + (tvOthers.length ? " On some of them the other side can move too." : "") + " What each one needs is below.");
 
     const contracts = d.contracts.filter(c => this.inScope(c.space));
     const conSel = s.conSel && contracts.some(c => c.id === s.conSel) ? s.conSel : (contracts[0] && contracts[0].id) || "";
