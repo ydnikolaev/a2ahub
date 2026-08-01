@@ -14,6 +14,8 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
+const statuslineRefreshBudget = 5 * time.Second
+
 // defaultUpdateRepo (spec 19 T3 compiled-in update-repo default,
 // overridable per machine via MachineConfig.Defaults["update_repo"]) is
 // already declared package-level by cmd_update.go — reused verbatim here,
@@ -128,9 +130,17 @@ func (c *SyncCommand) Synopsis() string {
 // inherently idempotent, §7.2 tail: "refresh has no 'already done' state
 // to detect").
 func (c *SyncCommand) Run(ctx context.Context, args []string, stdio IO) int {
-	if len(args) != 0 {
+	statuslineRefresh := false
+	if len(args) == 1 && args[0] == "--statusline-refresh" {
+		statuslineRefresh = true
+	} else if len(args) != 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a sync")
 		return 2
+	}
+	if statuslineRefresh {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, statuslineRefreshBudget)
+		defer cancel()
 	}
 
 	// An absent project config (never ran `a2a init`/`a2a connect` yet) is
@@ -147,7 +157,7 @@ func (c *SyncCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	if len(cfg.Spaces) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stdout, "sync: no connected spaces")
-		c.refreshAuxiliaryCaches(ctx, stdio)
+		c.refreshAuxiliaryCaches(ctx, stdio, !statuslineRefresh)
 		return 0
 	}
 
@@ -173,7 +183,7 @@ func (c *SyncCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// spec 19 T3(b): sync is already the consented network verb, so it
 	// refreshes the T3 update-check cache synchronously, once, regardless of
 	// the mirror-refresh outcome above (best-effort — never fails sync).
-	c.refreshAuxiliaryCaches(ctx, stdio)
+	c.refreshAuxiliaryCaches(ctx, stdio, !statuslineRefresh)
 
 	if !allOK {
 		return 1
@@ -181,9 +191,11 @@ func (c *SyncCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	return 0
 }
 
-func (c *SyncCommand) refreshAuxiliaryCaches(ctx context.Context, stdio IO) {
-	if err := c.refreshAvatars(ctx); err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "sync: avatars: %v — keeping cached avatars and monogram fallbacks\n", err)
+func (c *SyncCommand) refreshAuxiliaryCaches(ctx context.Context, stdio IO, refreshAvatars bool) {
+	if refreshAvatars {
+		if err := c.refreshAvatars(ctx); err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "sync: avatars: %v — keeping cached avatars and monogram fallbacks\n", err)
+		}
 	}
 	c.refreshUpdate(ctx)
 }
