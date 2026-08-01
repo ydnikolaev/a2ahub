@@ -328,7 +328,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                "what has a clock on it", which has one answer. Offered only when
                something in scope actually carries one. -->
           <sc-if value="{{ hasDueFilter }}" hint-placeholder-val="{{ true }}">
-            <button type="button" onClick="{{ toggleDue }}" aria-pressed="{{ duePressed }}" style="{{ dueStyle }}">{{ dueLabel }} · {{ dueCount }}</button>
+            <!-- One binding, not "{{ label }} · {{ count }}": the button is a
+                 flex container so it can centre its own height, and flex drops
+                 a whitespace-only text node between two elements. -->
+            <button type="button" onClick="{{ toggleDue }}" aria-pressed="{{ duePressed }}" style="{{ dueStyle }}">{{ dueLabel }}</button>
           </sc-if>
         </div>
         </sc-if>
@@ -420,11 +423,15 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                         <span style="flex:0 0 auto; font-size:15px; color:var(--muted); text-align:right;">{{ o.needed }}</span>
                       </div>
                       <div style="font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--body); margin-bottom:8px; overflow-wrap:anywhere;">{{ o.id }}</div>
-                      <div style="display:flex; gap:7px; flex-wrap:wrap;">
-                        <sc-for list="{{ o.actions }}" as="a" hint-placeholder-count="3">
-                          <span style="{{ a.style }}">{{ a.text }}</span>
-                        </sc-for>
-                      </div>
+                      <!-- The list of legal transitions used to sit here as
+                           chips. Nobody in an agent-to-agent system takes a
+                           transition by hand, so it was a vocabulary lesson in
+                           the middle of a card. The moves still matter, but to
+                           the agent: they go into the prompt below, which is
+                           the thing a person actually does with them. -->
+                      <sc-if value="{{ o.hasPrompt }}" hint-placeholder-val="{{ true }}">
+                        <dc-import name="AgentPrompt" det="{{ o.prompt }}" hint-size="100%,44px"></dc-import>
+                      </sc-if>
                     </div>
                   </sc-for>
                 </div>
@@ -537,7 +544,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
             </sc-for>
           </div>
           <sc-if value="{{ hasConRisk }}" hint-placeholder-val="{{ true }}">
-            <button type="button" onClick="{{ toggleConRisk }}" aria-pressed="{{ conRiskPressed }}" style="{{ conRiskStyle }}">{{ conRiskLabel }} · {{ conRiskCount }}</button>
+            <button type="button" onClick="{{ toggleConRisk }}" aria-pressed="{{ conRiskPressed }}" style="{{ conRiskStyle }}">{{ conRiskLabel }}</button>
           </sc-if>
         </div>
 
@@ -1379,17 +1386,6 @@ function TRANSITION_PAST(ru) {
     deprecate: "объявил устаревшей", retire: "снял версию"
   };
 }
-function TRANSITION_NEXT(ru) {
-  if (!ru) return {};
-  return {
-    create: "создать", submit: "отправить", publish: "опубликовать", acknowledge: "подтвердить получение",
-    accept: "принять", start: "начать работу", respond: "ответить", verify: "проверить", close: "закрыть",
-    approve: "согласовать", satisfy: "закрыть требование", dispute: "оспорить", note: "добавить заметку",
-    block: "заблокировать", unblock: "разблокировать", decline: "отказаться", reject: "отклонить",
-    cancel: "отменить", withdraw: "отозвать", supersede: "заменить", propose: "предложить",
-    deprecate: "объявить устаревшей", retire: "снять версию"
-  };
-}
 const DRIFT_TONE = { current: "healthy", behind: "attention", deprecated: "attention", retired: "neutral", missing: "blockingStrong", dangling: "outline" };
 const STATE_TONE = { published: "healthy", retired: "neutral", deprecated: "attention", disputed: "attention", submitted: "neutral", in_progress: "neutral", accepted: "neutral", acknowledged: "neutral", proposed: "attention", closed: "healthy" };
 function mono(s) { return String(s || "?").slice(0, 2).toUpperCase(); }
@@ -1442,6 +1438,77 @@ function day(iso) {
   const p = (n) => String(n).padStart(2, "0");
   return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear();
 }
+// The prompt a person hands back to their agent when they got to a document
+// first. Assembled here from facts the Go model composed: which moves are
+// legally ours right now is the fold engine's answer, and this file never
+// restates it.
+//
+// Always English, whatever the interface locale. It quotes command names,
+// artifact ids and paths inside the installed skill, and it is read by an agent
+// working an English protocol surface, not by the person copying it.
+//
+// The shape is deliberate. Facts first, so an agent can act without parsing
+// prose; then the one instruction that matters more than the facts, which is
+// to go and re-read the document, because everything above it came out of a
+// snapshot that stopped being current the moment it was written.
+function agentPromptText(ctx) {
+  const p = ctx.prompt || {};
+  // null drops the line; "" is a deliberate blank between blocks.
+  const line = (label, value) => value ? label + String(value) : null;
+  const moves = (p.moves || []).join(", ");
+  const ask = (p.askFirst || []).join(", ");
+  // Prose paragraphs are single lines. Hand-wrapping them at some column looks
+  // tidy in a wide editor and ragged everywhere else, including the panel that
+  // shows this text back before it is copied; the reader wraps it, we do not.
+  // Only the fact lines and the indented command/file lines carry real breaks.
+  const out = [
+    "You are acting for `" + ctx.self + "` in the a2a exchange. Someone read this document on the local dashboard before you did and is handing the move back.",
+    "",
+    "Document: " + ctx.id,
+    line("Title: ", ctx.title),
+    // The protocol's own spelling of the state, not the interface's. An agent
+    // matches this against the fold table; "in progress" is not a state there.
+    "Type: " + ctx.type + ", state " + ctx.state,
+    line("Space: ", ctx.space + (ctx.thread ? ", thread " + ctx.thread : "")),
+    line("From: ", ctx.from + (ctx.to && ctx.to.length ? ", to " + ctx.to.join(", ") : "")),
+    line("Deadline: ", ctx.neededBy ? ctx.neededBy + (ctx.overdue ? " (already passed)" : "") : ""),
+    ctx.blocking ? "Blocking: yes" + (ctx.priority ? ", priority " + ctx.priority : "") : line("Priority: ", ctx.priority),
+    "",
+    "Moves " + ctx.self + " may legally make on it right now: " + moves + ".",
+    ask
+      ? "Put these to the person before taking one: " + ask + ". Each commits this system or closes an option that does not reopen."
+      : "None of these commit the system, so take the right one without waiting to be asked.",
+    "",
+    "Everything above came from a static dashboard snapshot" + (ctx.generatedAt ? " taken " + ctx.generatedAt : "") + " and may already be out of date. Start by reading the document as it stands now:",
+    "",
+    "  a2a show " + ctx.id + (ctx.space ? " --space " + ctx.space : ""),
+    "",
+    "Then work it through the a2ahub skill rather than from this text:",
+    p.loop ? "  " + p.loop + " for the loop this move belongs to" : null,
+    p.doc ? "  " + p.doc + " for the shape of the document above" : null,
+    // What you draft is not what you are reading: answering a work request
+    // produces a response, and its shape is documented in its own file.
+    (p.drafts || []).length ? "  " + p.drafts.join(", ") + " for the shape of what taking one of these moves creates" : null,
+    "  reference/commands.md for the exact verb, and `a2a validate` before you submit.",
+    "",
+    // Deliberately does not name a file or a convention. This page has no idea
+    // which repository it was pasted into, and a prompt that says "write a spec
+    // under docs/features" is only correct inside the one it was written in.
+    "If answering this turns into work in this repository, do not start writing code from this prompt. Find how this repository takes work, from its own agent instructions and docs, propose the change in that form, and confirm it with the person before you begin."
+  ];
+  return out.filter(l => l !== null).join("\n") + "\n";
+}
+
+// Every control in a filter row is FILTER_H tall. The segmented control sits
+// inside a 3px track, so its buttons take SEGMENT_H and the track adds the
+// rest; a standalone chip and the type menu take the full height directly.
+// Stated as a height rather than reached by adding up paddings, because padding
+// arithmetic that happens to line up at one font size stops lining up at the
+// next, which is how the deadline toggle ended up shorter than the tabs beside
+// it.
+const FILTER_H = 38;
+const SEGMENT_H = FILTER_H - 6;
+
 function avatar(isSelf, left) {
   return "width:" + (left ? 26 : 32) + "px; height:" + (left ? 26 : 32) + "px; border-radius:99px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:" + (left ? 10 : 11) + "px; font-weight:600; flex:0 0 auto; " +
     (isSelf === "left" ? "background:var(--surface); color:var(--muted); box-shadow:inset 0 0 0 1px var(--border-strong);" : isSelf ? "background:var(--teal-solid); color:var(--on-solid);" : "background:var(--border); color:var(--body);");
@@ -1585,12 +1652,12 @@ class Component extends DCLogic {
   // The segmented control: one recessed track, the active option raised out of
   // it. Weight is constant across states — see tabStyle.
   segmentStyle(active) {
-    return "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:7px 14px; border-radius:8px; white-space:nowrap; " +
+    return "display:inline-flex; align-items:center; min-height:" + SEGMENT_H + "px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:0 14px; border-radius:8px; white-space:nowrap; " +
       (active ? "background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.12);" : "background:transparent; color:var(--muted);");
   }
 
   filterChip(active) {
-    return "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:6px 12px; border-radius:8px; " +
+    return "display:inline-flex; align-items:center; min-height:" + FILTER_H + "px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:0 12px; border-radius:8px; white-space:nowrap; " +
       (active ? "background:var(--primary); color:var(--on-primary);" : "background:var(--surface); color:var(--body);");
   }
 
@@ -1861,6 +1928,24 @@ class Component extends DCLogic {
     };
   }
 
+  // Fills in the two facts every prompt carries and none of its callers should
+  // have to remember: who we are, and how old the snapshot the rest of it came
+  // out of is. A deadline in the past is judged against the snapshot too, not
+  // against the clock of whoever opens the file later.
+  promptContext(fields) {
+    const d = this.state.data;
+    const due = fields.neededBy ? new Date(fields.neededBy) : null;
+    const at = d.generatedAt ? new Date(d.generatedAt) : null;
+    return Object.assign({
+      self: d.self,
+      // The instant as it is stored. DD.MM.YYYY is this interface's format for
+      // a person reading a screen; inside an English machine-facing payload it
+      // is one more thing to misparse.
+      generatedAt: d.generatedAt,
+      overdue: !!(due && at && !isNaN(due) && !isNaN(at) && due < at)
+    }, fields);
+  }
+
   detailFor(id, fallbackList) {
     const ru = this.state.locale === "ru";
     const d = this.state.data;
@@ -1963,6 +2048,19 @@ class Component extends DCLogic {
         pillTone: r.resolved === false || r.digest_mismatch ? "blocking" : "healthy"
       })),
       events, flags: flagMessages,
+      // The handover, on our own move only. The gate is the canonical whose-move
+      // projection rather than the narrower human-attention queue: a routine
+      // move an agent would normally have taken unprompted is exactly the case
+      // where a person got here first.
+      hasPrompt: !!(it && it.yourMove && it.prompt),
+      prompt: {
+        text: it && it.prompt ? agentPromptText(this.promptContext({
+          id: a.id, type: a.type, state: a.state, title: a.title,
+          space: a.space, thread: a.thread, from: a.from, to: a.to,
+          neededBy: it.neededBy || e.needed_by, blocking: !!e.blocking,
+          priority: e.priority, prompt: it.prompt
+        })) : ""
+      },
       threadLabel: a.thread ? (ru ? "Открыть тред" : "Open thread") : (ru ? "Тред не указан" : "No thread recorded"),
       openThread: () => this.go("threads", { threadSel: a.thread || "" }),
       openDocument: () => this.setState({ openDoc: { id: a.id, space: a.space } }),
@@ -2102,7 +2200,19 @@ class Component extends DCLogic {
 
     // Three directions, not two. "Everything in flight" is the question people
     // arrive with; incoming and outgoing are how they narrow it afterwards.
-    const workAll = s.workTab === "incoming" ? scopedInbox : (s.workTab === "outgoing" ? scopedOutbox : scopedInbox.concat(scopedOutbox));
+    // One rule: whatever moved last is on top. Exchange is a record of documents
+    // in flight, not a to-do list — ordering it by urgency would re-import the
+    // triage semantics Overview already owns, and the two views would answer
+    // the same question twice with different answers. Rows with no event yet
+    // sort last rather than at whatever position concatenation left them in,
+    // and the id breaks any remaining tie so the list never reshuffles between
+    // renders.
+    const byNewest = (list) => list.slice().sort((a, b) => {
+      const at = a.movedAt || "", bt = b.movedAt || "";
+      if (at !== bt) return at && bt ? (at < bt ? 1 : -1) : (at ? -1 : 1);
+      return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+    });
+    const workAll = byNewest(s.workTab === "incoming" ? scopedInbox : (s.workTab === "outgoing" ? scopedOutbox : scopedInbox.concat(scopedOutbox)));
     // Offer only the types that exist in this scope: a filter for a kind with
     // nothing behind it is a dead control that teaches the wrong thing.
     const workTypes = workAll.map(i => i.type).filter((t, i, arr) => t && arr.indexOf(t) === i).sort();
@@ -2144,15 +2254,20 @@ class Component extends DCLogic {
     // open to several parties at once, so "2 of 2 are on you" and "others are
     // also owed" are both true — and the sentence that mentions "the rest"
     // when there is no rest contradicts the number in front of it.
+    // The closing sentence points at what is actually under it. It used to say
+    // "what each one needs is below" over a row of transition chips; the chips
+    // are gone and a prompt for the agent took their place, so the sentence
+    // names that instead.
+    const handOver = ru ? " У каждого кнопка с промптом: скопируйте и отдайте ход агенту." : " Each carries a prompt: copy it and hand the move to your agent.";
     const moveText = tvYours === 0
       ? (tvOthers.length
-        ? (ru ? "Вы никого не держите. Ниже видно, чего именно ждут от них." : "You are holding nobody up. What is expected of them is below.")
+        ? (ru ? "Вы никого не держите, ждут другую сторону." : "You are holding nobody up; the other side owes the move.")
         : (ru ? "Открытые документы есть, но кто должен сделать следующий шаг, из событий не выводится." : "Open documents remain, but the events do not resolve who owes the next move."))
       : tvYours < tvPend.length
-        ? (ru ? "На вас " + ruPlural(tvYours, "документ", "документа", "документов") + " из " + tvPend.length + ", остальные ждут ответа от других. Ниже видно, что именно от вас ждут." : tvYours + " of " + tvPend.length + " open documents are on you; the rest await somebody else. What each one needs is below.")
+        ? (ru ? "На вас " + ruPlural(tvYours, "документ", "документа", "документов") + " из " + tvPend.length + ", остальные ждут ответа от других. Там, где ход за вами, есть промпт для агента." : tvYours + " of " + tvPend.length + " open documents are on you; the rest await somebody else. The ones that are yours carry a prompt for your agent.")
         : (ru
-          ? (tvPend.length === 1 ? "Один документ ждёт вашего шага." : "Все " + ruPlural(tvPend.length, "документ ждёт", "документа ждут", "документов ждут") + " вашего шага.") + (tvOthers.length ? " По некоторым сходить может и другая сторона." : "") + " Ниже видно, что именно можно сделать."
-          : (tvPend.length === 1 ? "One document is waiting on you." : "All " + tvPend.length + " open documents are waiting on you.") + (tvOthers.length ? " On some of them the other side can move too." : "") + " What each one needs is below.");
+          ? (tvPend.length === 1 ? "Один документ ждёт вашего шага." : "Все " + ruPlural(tvPend.length, "документ ждёт", "документа ждут", "документов ждут") + " вашего шага.") + (tvOthers.length ? " По некоторым сходить может и другая сторона." : "") + handOver
+          : (tvPend.length === 1 ? "One document is waiting on you." : "All " + tvPend.length + " open documents are waiting on you.") + (tvOthers.length ? " On some of them the other side can move too." : "") + handOver);
 
     const contractsAll = d.contracts.filter(c => this.inScope(c.space));
     // Two axes a contract list is read along: whose it is, and whether anything
@@ -2336,7 +2451,7 @@ class Component extends DCLogic {
       typeMenuExpanded: s.typeMenu ? "true" : "false",
       typeCaret: s.typeMenu ? "▴" : "▾",
       toggleTypeMenu: (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState(x => ({ typeMenu: !x.typeMenu })); },
-      typeButtonStyle: "display:inline-flex; align-items:center; gap:8px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:10px; padding:9px 13px; cursor:pointer; white-space:nowrap; " +
+      typeButtonStyle: "display:inline-flex; align-items:center; gap:8px; min-height:" + FILTER_H + "px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:10px; padding:0 13px; cursor:pointer; white-space:nowrap; " +
         (workType === "all" ? "background:var(--surface); color:var(--body); box-shadow:0 1px 2px rgba(33,30,23,.06);" : "background:var(--primary); color:var(--on-primary);") +
         (s.typeMenu ? " box-shadow:0 1px 2px rgba(33,30,23,.06), inset 0 0 0 1.5px var(--border-strong);" : ""),
       workTypeCurrent: workType === "all" ? (ru ? "Все типы" : "All types") : (TYPE_WORDS(ru)[workType] || workType),
@@ -2357,8 +2472,7 @@ class Component extends DCLogic {
         go: () => this.setState({ workTab: id, workSel: "", workType: "all", workDue: false, typeMenu: false })
       })),
       hasDueFilter: dueCount > 0 || !!s.workDue,
-      dueLabel: ru ? "С дедлайном" : "With a deadline",
-      dueCount: String(dueCount),
+      dueLabel: (ru ? "С дедлайном · " : "With a deadline · ") + dueCount,
       duePressed: s.workDue ? "true" : "false",
       dueStyle: this.filterChip(!!s.workDue) + (s.workDue ? "" : " box-shadow:inset 0 0 0 1px var(--border);"),
       toggleDue: () => this.setState(x => ({ workDue: !x.workDue, workSel: "" })),
@@ -2519,17 +2633,26 @@ class Component extends DCLogic {
       // Only items someone still owes a move on. The assembler marks the rest
       // `pending:false` — those have nothing left but the owner's escape hatch,
       // and listing them printed "waiting on" with no name after it.
-      tvOpen: tv ? (tv.open_items || []).filter(o => o.pending !== false).map(o => ({
-        id: o.id, type: o.type,
-        who: o.your_move ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + listNames((o.waiting_on || []).filter(w => w !== d.self), ru),
-        whoTone: o.your_move ? "attention" : "neutral",
-        needed: o.needed_by ? (ru ? "дедлайн " : "due ") + isoDay(o.needed_by) : (o.blocking ? (ru ? "блокирует" : "blocking") : ""),
-        actions: (o.next_actions || []).map(a => ({
-          text: (TRANSITION_NEXT(ru)[a.transition] || a.transition) + " · " + (a.by || []).join(", "),
-          style: "font-family:'IBM Plex Mono',monospace; font-size:14px; border-radius:6px; padding:4px 10px; " +
-            ((a.by || []).includes(d.self) ? "background:var(--teal-tint); color:var(--teal-ink); font-weight:600;" : "background:var(--canvas); color:var(--muted);")
-        }))
-      })) : [],
+      tvOpen: tv ? (tv.open_items || []).filter(o => o.pending !== false).map(o => {
+        const art = (tv.artifacts || []).find(a => a.id === o.id) || {};
+        return {
+          id: o.id, type: o.type,
+          who: o.your_move ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + listNames((o.waiting_on || []).filter(w => w !== d.self), ru),
+          whoTone: o.your_move ? "attention" : "neutral",
+          needed: o.needed_by ? (ru ? "дедлайн " : "due ") + isoDay(o.needed_by) : (o.blocking ? (ru ? "блокирует" : "blocking") : ""),
+          // Offered on our own move only. Handing an agent a prompt about a
+          // document another system owes an answer on invites it to act out of
+          // turn.
+          hasPrompt: !!(o.your_move && o.prompt),
+          prompt: {
+            text: agentPromptText(this.promptContext({
+              id: o.id, type: o.type, state: o.state, title: art.title,
+              space: tv.space, thread: tv.thread, from: art.from, to: art.to,
+              neededBy: o.needed_by, blocking: o.blocking, prompt: o.prompt
+            }))
+          }
+        };
+      }) : [],
       tvHasFlags: !!(tv && ((tv.flags || []).length || (tv.unresolved || []).length)),
       tvFlags: tv ? (tv.flags || []).map(f => f.kind + (ru ? " для " : " on ") + f.subject + (f.event_ulid ? (ru ? " · событие " : " · event ") + f.event_ulid : "")).concat((tv.unresolved || []).map(u => (ru ? "ссылка в никуда: " : "unresolved reference: ") + (u.ref || JSON.stringify(u)))) : [],
 
@@ -2563,8 +2686,7 @@ class Component extends DCLogic {
         go: () => this.setState({ conRole: id, conSel: "", conRisk: false })
       })),
       hasConRisk: conRiskCount > 0 || !!s.conRisk,
-      conRiskLabel: ru ? "Не на последней" : "Off the latest",
-      conRiskCount: String(conRiskCount),
+      conRiskLabel: (ru ? "Не на последней · " : "Off the latest · ") + conRiskCount,
       conRiskPressed: s.conRisk ? "true" : "false",
       conRiskStyle: this.filterChip(!!s.conRisk) + (s.conRisk ? "" : " box-shadow:inset 0 0 0 1px var(--border);"),
       toggleConRisk: () => this.setState(x => ({ conRisk: !x.conRisk, conSel: "" })),
@@ -2580,15 +2702,21 @@ class Component extends DCLogic {
       emptyContractsText: ru
         ? "Контракт работает как интерфейс с историей версий: поставщик его публикует, а потребители закрепляют ту основную версию, которой пользуются. Пока в этих спейсах не опубликован ни один."
         : "A contract is an interface with a version history: a provider publishes it, and consumers pin the major line they use. Nothing has been published in these spaces yet.",
-      providerLabel: ru ? "Поставщик публикует версии" : "Provider publishes the versions",
-      consumersLabel: ru ? "Потребители закрепляют версию" : "Consumers pin a version each",
+      // Short, parallel, and each says the relationship in words. The long
+      // labels wrapped in the narrower box and not in the wider one, so the two
+      // halves of one fact sat at different heights; and naming the direction
+      // here is what lets the rows below drop the arrow that read backwards.
+      providerLabel: ru ? "Кто публикует" : "Who publishes it",
+      consumersLabel: ru ? "Кто им пользуется" : "Who depends on it",
       cdProvider: con ? con.provider : "",
       cdConsumers: con ? ((con.consumers || []).join(", ") || (ru ? "пока никто" : "nobody yet")) : "",
       cdId: con ? con.id : "",
       cdState: con ? con.state : "",
       cdStateTone: con ? (STATE_TONE[con.state] || "neutral") : "neutral",
       cdCodeBacked: !!(con && con.codeBacked),
-      cdSpaceLine: con ? (ru ? "спейс " + con.space + " · поставщик " : "space " + con.space + " · provider ") + con.provider : "",
+      // The space, and nothing else. The provider used to be repeated here and
+      // again in its own box eight lines further down.
+      cdSpaceLine: con ? (ru ? "спейс " : "space ") + con.space : "",
       cdDescription: con ? con.description : "",
       cdHasRisk: risky.length > 0,
       cdRiskTitle: risky.length ? (risky[0].drift === "missing"
@@ -2596,11 +2724,17 @@ class Component extends DCLogic {
         : (ru
           ? ruPlural(risky.length, "линия потребителя не на последней мажорной", "линии потребителей не на последней мажорной", "линий потребителей не на последней мажорной")
           : risky.length + (risky.length === 1 ? " consumer line is" : " consumer lines are") + " not on the current major")) : "",
-      cdRiskText: risky.length ? risky.map(e => e.from + " → " + e.to + ": " + (e.drift === "missing"
+      cdRiskText: risky.length ? risky.map(e => e.from + ": " + (e.drift === "missing"
         ? (ru ? "у поставщика есть только " : "available majors are ") + (e.availableMajors || []).join(ru ? " и " : " and ") + (ru ? ", значит, у этого потребителя не работает ничего" : ", so nothing resolves for that line")
         : (e.drift === "dangling" ? (ru ? "поставщик ушёл из спейса" : "the provider left the space") : (ru ? "закреплено " : "pinned ") + e.pinnedVersion + " (" + (STATE_WORDS(ru)[e.pinnedState] || e.pinnedState) + ") " + (ru ? "при версии поставщика " : "against provider ") + e.providerVersion + (e.sunset ? (ru ? ", вывод " : ", sunset ") + e.sunset : "")))).join(". ") + "." : "",
       cdLines: conEdges.map(e => ({
-        route: e.from + " → " + e.to,
+        // The consumer, named on its own. The row used to open with
+        // "checkout → atlas", and that arrow points at the PROVIDER: it is a
+        // dependency edge, the same direction the exchange map draws and
+        // explains in its legend. On a card with no legend it reads as data
+        // flow, which runs the other way. The provider is named once in the
+        // box above, so the arrow has nothing left to say here.
+        route: e.from,
         drift: DRIFT_WORDS(ru)[e.drift] || e.drift, tone: DRIFT_TONE[e.drift] || "neutral",
         detail: e.drift === "missing"
           ? (ru ? "закреплена версия " : "pinned major ") + e.pinnedMajor + (ru ? " · доступны " : " · available ") + (e.availableMajors || []).join(", ")

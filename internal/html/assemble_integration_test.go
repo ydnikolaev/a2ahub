@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -279,6 +280,42 @@ func TestAssemble_Threads(t *testing.T) {
 	for _, fact := range data.Unavailable {
 		if fact.ID == "artifact-detail-bodies" {
 			t.Fatalf("fulfilled artifact detail capability still reported unavailable: %+v", fact)
+		}
+	}
+
+	// The agent prompt's facts must reach a row whose thread never becomes a
+	// rendered conversation. "Conversation" means two or more members, and a
+	// lone document nobody has replied to yet is exactly the case a human
+	// beats their agent to — the one the button exists for.
+	byRowID := map[string]Item{}
+	for _, row := range append(append([]Item{}, data.Inbox...), data.Outbox...) {
+		byRowID[row.ID] = row
+	}
+	solo, ok := byRowID[soloID]
+	if !ok {
+		t.Fatalf("the solo work request is on no exchange row: %+v", data.Outbox)
+	}
+	if solo.Prompt == nil || len(solo.Prompt.Moves) == 0 {
+		t.Fatalf("%s carries no prompt facts, so its thread's open items were never folded: %+v", soloID, solo)
+	}
+	if solo.Prompt.Doc != "reference/authoring/work_request.md" {
+		t.Fatalf("%s points at %q, not at the work-request authoring doc", soloID, solo.Prompt.Doc)
+	}
+	if !strings.Contains(solo.Prompt.Loop, "§8.2") {
+		t.Fatalf("%s is ours to send, so it belongs to the send loop; got %q", soloID, solo.Prompt.Loop)
+	}
+	for _, move := range solo.Prompt.Moves {
+		if !containsString([]string{"cancel", "withdraw", "supersede", "close", "note"}, move) {
+			t.Fatalf("%s is submitted and unanswered; %q is not a move its own sender holds", soloID, move)
+		}
+	}
+	// The label and the sort key are two formattings of one instant, so a row
+	// can never carry an age the exchange list cannot order it by. (These
+	// artifacts are written without git history, so both are legitimately
+	// empty here; what must not happen is one without the other.)
+	for id, row := range byRowID {
+		if (row.Age == "") != (row.MovedAt == "") {
+			t.Fatalf("%s: age=%q but MovedAt=%q — the label and the sort key come from one instant", id, row.Age, row.MovedAt)
 		}
 	}
 }

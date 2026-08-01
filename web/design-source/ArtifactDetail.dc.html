@@ -36,6 +36,17 @@
       </div>
     </sc-if>
 
+    <!-- Directly under what the sender expects back, because that is the
+         sentence a person reads immediately before deciding to hand this over.
+         Shown only when the move is ours. -->
+    <sc-if value="{{ hasPrompt }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-bottom:20px;">
+        <div style="font-size:16px; font-weight:600; margin-bottom:4px;">{{ promptTitle }}</div>
+        <div style="font-size:15px; line-height:1.5; color:var(--muted); margin-bottom:10px; max-width:640px;">{{ promptText }}</div>
+        <dc-import name="AgentPrompt" det="{{ prompt }}" hint-size="100%,44px"></dc-import>
+      </div>
+    </sc-if>
+
     <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px; margin-bottom:20px;">
       <sc-for list="{{ lists }}" as="l" hint-placeholder-count="1">
         <div style="min-width:0;">
@@ -158,6 +169,12 @@ class Component extends DCLogic {
       calloutStyle: "background:" + tone.bg + "; border-radius:12px; padding:16px 18px; margin-bottom:18px;",
       calloutTitleStyle: "font-size:16px; font-weight:600; color:" + tone.title + "; margin-bottom:5px;",
       calloutTextStyle: "font-size:16px; line-height:1.55; color:" + tone.text + ";",
+      hasPrompt: !!d.hasPrompt,
+      prompt: d.prompt || {},
+      promptTitle: ru ? "Ход за вами" : "The move is yours",
+      promptText: ru
+        ? "Если вы дошли сюда раньше своего агента, скопируйте промпт и отдайте ход обратно ему."
+        : "If you got here before your agent did, copy the prompt and hand the move back.",
       lists: (d.lists || []).map(l => ({
         heading: l.heading,
         items: (l.items || []).map((text, i) => ({

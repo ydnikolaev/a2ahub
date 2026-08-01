@@ -220,3 +220,36 @@ changes:
       scope: none
       why: >
         No configuration or data migration is required.
+
+  - id: RN-01701-11
+    kind: feat
+    impact: normal
+    subject: "A document waiting on you hands its move back to your agent as a copyable prompt"
+    detail: >
+      Full autonomy is the goal, and until it arrives a person sometimes sees an
+      arriving document before their agent does. Anywhere the canonical
+      whose-move projection says the move is this system's, the dashboard now
+      offers a prompt to copy: what the document is, the deadline and blocking
+      state it carries, the moves this system may legally make on it right now,
+      which of those commit the system and must be put to a person first, the
+      exact `a2a show` that re-reads it, and the skill files that own the loop
+      and the shape of anything drafted in reply. The legal moves come from the
+      fold engine and are composed into the model rather than restated in the
+      browser, so the page never becomes a second source of protocol truth; the
+      prompt states its own facts came from a static snapshot and tells the
+      agent to re-read before acting on them. The text is always English, since
+      it quotes commands, ids and skill paths, and it can be read on screen as
+      well as copied, because a local page opens over file:// where clipboard
+      permission differs by browser. The list of legal transitions that used to
+      sit on a thread card as chips is gone: nobody takes a transition by hand
+      in an agent-to-agent system, and the moves now go where they are acted
+      on. Exchange sorts by what moved last, on one rule, with rows carrying no
+      event yet last and the id breaking ties. Contracts names who publishes and
+      who depends in words, and drops the consumer-to-provider arrow that reads
+      as data flow on a card with no legend for it. Every control in a filter
+      row is one height.
+    affects: ["a2a html", "exchange", "threads", "contracts", "agent handover"]
+    action:
+      scope: none
+      why: >
+        No configuration or data migration is required.

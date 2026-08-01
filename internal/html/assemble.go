@@ -172,11 +172,22 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 	if err != nil {
 		return Data{}, fmt.Errorf("html: outbox: %w", err)
 	}
+	// Conversations: multi-member threads, with their members and the
+	// document-to-document links inside them (spec 46 §T6.1). Built before the
+	// rows because it also returns every artifact's open item, and an inbox row
+	// carries the legal-move facts its agent prompt is assembled from.
+	threads, threadViews, openItems, err := buildThreads(ctx, store, self, now)
+	if err != nil {
+		return Data{}, fmt.Errorf("html: threads: %w", err)
+	}
+	d.Threads = threads
+	d.ThreadViews = threadViews
+
 	for _, it := range inItems {
-		d.Inbox = append(d.Inbox, toItem(it, now))
+		d.Inbox = append(d.Inbox, toItem(it, now, self, openItems))
 	}
 	for _, it := range outItems {
-		d.Outbox = append(d.Outbox, toItem(it, now))
+		d.Outbox = append(d.Outbox, toItem(it, now, self, openItems))
 	}
 
 	// Full detail records for every visible Work row. Resolve the union in one
@@ -195,15 +206,6 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 
 	// Exchange overlay: aggregate open items (inbox ∪ outbox) per from→to→space.
 	d.ExchangeEdges = exchangeEdges(append(append([]cache.Item{}, inItems...), outItems...), now)
-
-	// Conversations: multi-member threads, with their members and the
-	// document-to-document links inside them (spec 46 §T6.1).
-	threads, threadViews, err := buildThreads(ctx, store, self, now)
-	if err != nil {
-		return Data{}, fmt.Errorf("html: threads: %w", err)
-	}
-	d.Threads = threads
-	d.ThreadViews = threadViews
 
 	// Read-health facts: committed fold violations plus any mirror files the
 	// best-effort index could not decode. Both already exist in cache; the old
@@ -276,10 +278,10 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 // Thread.Space). A ThreadView error for one group degrades that group away
 // (skip, continue) rather than failing the whole dashboard — same "degrade,
 // never fail the view" convention as this file's own consumes.yaml read.
-func buildThreads(ctx context.Context, store *cache.Store, self string, now time.Time) ([]Thread, []ThreadView, error) {
+func buildThreads(ctx context.Context, store *cache.Store, self string, now time.Time) ([]Thread, []ThreadView, openItemIndex, error) {
 	items, err := store.Search(ctx, "", cache.SearchFilters{})
 	if err != nil {
-		return nil, nil, fmt.Errorf("search: %w", err)
+		return nil, nil, nil, fmt.Errorf("search: %w", err)
 	}
 
 	type groupKey struct{ space, thread string }
@@ -302,19 +304,30 @@ func buildThreads(ctx context.Context, store *cache.Store, self string, now time
 		at time.Time
 	}
 	var rows []row
+	// Every thread is traversed, not only the conversations. "Conversation"
+	// (two or more members) is a Threads-view choice; the open items a single
+	// arriving document folds to are what the prompt button on Exchange and
+	// Overview is built from, and skipping them would leave the button off the
+	// exact case it exists for — a lone question nobody has answered yet.
+	//
+	// This costs a ThreadView traversal per single-document thread, which the
+	// `counts[k] < 2` pre-filter used to skip. On a space where most artifacts
+	// sit alone that is close to one traversal per artifact. It is paid
+	// deliberately: ThreadView reuses the same folded index ShowMany does, and
+	// the alternative is a second way to compute legal moves, which is the one
+	// thing this file must not grow.
+	openItems := openItemIndex{}
 	for _, k := range order {
-		if counts[k] < 2 {
-			continue // cheap pre-filter before the full ThreadView traversal
-		}
 		result, tErr := store.ThreadView(ctx, k.thread, k.space)
 		if tErr != nil {
 			continue
 		}
+		openItems.put(k.space, result.OpenItems)
 		if len(result.Artifacts) < 2 {
 			continue // ThreadView's own rendered member set is authoritative
 		}
 		th, at := toThread(result, self)
-		rows = append(rows, row{t: th, v: toThreadView(result), at: at})
+		rows = append(rows, row{t: th, v: toThreadView(result, self), at: at})
 	}
 
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].at.After(rows[j].at) })
@@ -325,10 +338,10 @@ func buildThreads(ctx context.Context, store *cache.Store, self string, now time
 		out = append(out, r.t)
 		views = append(views, r.v)
 	}
-	return out, views, nil
+	return out, views, openItems, nil
 }
 
-func toThreadView(result cache.ThreadResult) ThreadView {
+func toThreadView(result cache.ThreadResult, self string) ThreadView {
 	view := ThreadView{
 		Thread: result.Thread, Space: result.Space, Order: result.Order,
 		Opener:       ThreadViewOpener{ID: result.Opener.ID, Title: result.Opener.Title, From: result.Opener.From},
@@ -370,10 +383,21 @@ func toThreadView(result cache.ThreadResult) ThreadView {
 		// waiting: [] not null — the page reads this list directly, and a JSON
 		// null would render as "waiting on " with nothing after it.
 		waiting := append([]string{}, item.WaitingOn...)
+		// The document's own author is the outgoing end of it. A thread member
+		// carries From, so the loop this move belongs to is known here without
+		// asking the artifact store a second time.
+		outgoing := false
+		for _, a := range result.Artifacts {
+			if a.ID == item.ID {
+				outgoing = a.From == self
+				break
+			}
+		}
 		view.OpenItems = append(view.OpenItems, ThreadOpenItem{
 			ID: item.ID, Type: item.Type, State: item.State, Blocking: item.Blocking,
 			NeededBy: item.NeededBy, NextActions: actions, WaitingOn: waiting,
 			YourMove: item.YourMove, Pending: len(waiting) > 0,
+			Prompt: agentPromptOf(actions, item.Type, self, outgoing),
 		})
 		if len(waiting) > 0 {
 			view.Settled = false
@@ -500,14 +524,24 @@ func containsString(in []string, want string) bool {
 }
 
 // toItem maps a cache.Item to the model Item with derived age + severity.
-func toItem(it cache.Item, now time.Time) Item {
+func toItem(it cache.Item, now time.Time, self string, open openItemIndex) Item {
 	gate := hasReason(it.Reasons, "gate-pending-on-me")
+	moved := ""
+	if !it.LatestEventAt.IsZero() {
+		moved = it.LatestEventAt.UTC().Format(time.RFC3339)
+	}
+	var prompt *AgentPrompt
+	if openItem, ok := open.get(it.Space, it.ID); ok {
+		prompt = agentPrompt(openItem, self, it.From == self)
+	}
 	return Item{
 		Space: it.Space, ID: it.ID, Type: it.Type, Title: it.Title, From: it.From, To: it.To,
 		State: it.State, Priority: it.Priority, Blocking: it.Blocking, GatePending: gate,
-		Thread: it.Thread, Age: humanizeAge(now, it.LatestEventAt), NeededBy: it.NeededBy, New: it.New,
+		Thread: it.Thread, Age: humanizeAge(now, it.LatestEventAt), NeededBy: it.NeededBy,
+		MovedAt: moved, New: it.New,
 		Severity: severityOf(it, gate), Reasons: it.Reasons, PendingMerge: it.PendingMerge,
 		SyncStale: it.SyncStale, YourMove: it.YourMove, Description: it.Description,
+		Prompt: prompt,
 	}
 }
 

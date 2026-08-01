@@ -3702,6 +3702,66 @@
       ],
       "sync_stale": false,
       "sync_age": "2m"
+    },
+    {
+      "sourceClass": "canonical",
+      "space": "checkout-core",
+      "id": "XA-atlas-20260730-d9e2",
+      "type": "announcement",
+      "title": "Order envelope v2 rollout enters the observation window",
+      "from": "atlas",
+      "to": [
+        "catalog",
+        "checkout",
+        "comms",
+        "fulfillment"
+      ],
+      "state": "published",
+      "thread": "thread:atlas-20260730-d9e2",
+      "envelope": {
+        "schema": "envelope/v1",
+        "id": "XA-atlas-20260730-d9e2",
+        "type": "announcement",
+        "title": "Order envelope v2 rollout enters the observation window",
+        "space": "checkout-core",
+        "from": "atlas",
+        "to": [
+          "catalog",
+          "checkout",
+          "comms",
+          "fulfillment"
+        ],
+        "actor": {
+          "kind": "agent",
+          "name": "atlas-agent",
+          "model": "demo-agent-model"
+        },
+        "created": "2026-07-30T13:00:00Z",
+        "priority": "p3",
+        "blocking": false,
+        "thread": "thread:atlas-20260730-d9e2",
+        "classification": "internal",
+        "category": "rollout",
+        "ack_requested": false,
+        "context": "Two weeks of observation before atlas stops writing the v1 payload alongside v2."
+      },
+      "body": "The v2 payload is now the default on every order atlas emits. v1 is still written beside it for two weeks. Report a regression in this thread rather than opening a new one.",
+      "digest": "d9e2f0a1b2c3d4e5f60718293a4b5c6d7e8f9012a3b4c5d6e7f8091a2b3c4d5e",
+      "events": [
+        {
+          "ulid": "01K9D9E2F0A1B2C3D4E5F60718",
+          "subject": "XA-atlas-20260730-d9e2",
+          "transition": "publish",
+          "claimed_state": "published",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "at": "2026-07-30T13:05:00Z"
+        }
+      ],
+      "flags": [],
+      "refs": [],
+      "sync_stale": false,
+      "sync_age": "2m"
     }
   ],
   "unavailable": [

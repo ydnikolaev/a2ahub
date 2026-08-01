@@ -147,19 +147,23 @@ type ExchangeEdge struct {
 
 // Item is one open inbox/outbox row (mapped from cache.Item + derived age/severity).
 type Item struct {
-	Space        string   `json:"space"`
-	ID           string   `json:"id"`
-	Type         string   `json:"type"`
-	Title        string   `json:"title"`
-	From         string   `json:"from"`
-	To           []string `json:"to,omitempty"`
-	State        string   `json:"state"`
-	Priority     string   `json:"priority,omitempty"`
-	Blocking     bool     `json:"blocking"`
-	GatePending  bool     `json:"gatePending"`
-	Thread       string   `json:"thread,omitempty"`
-	Age          string   `json:"age,omitempty"` // pre-formatted (e.g. "5d"), "" if no events
-	NeededBy     string   `json:"neededBy,omitempty"`
+	Space       string   `json:"space"`
+	ID          string   `json:"id"`
+	Type        string   `json:"type"`
+	Title       string   `json:"title"`
+	From        string   `json:"from"`
+	To          []string `json:"to,omitempty"`
+	State       string   `json:"state"`
+	Priority    string   `json:"priority,omitempty"`
+	Blocking    bool     `json:"blocking"`
+	GatePending bool     `json:"gatePending"`
+	Thread      string   `json:"thread,omitempty"`
+	Age         string   `json:"age,omitempty"` // pre-formatted (e.g. "5d"), "" if no events
+	NeededBy    string   `json:"neededBy,omitempty"`
+	// MovedAt is the same instant Age is formatted from, as RFC3339 — the sort
+	// key the exchange list orders on. Age is lossy ("1d" covers 24 hours), so
+	// it cannot order the rows it labels. Empty when the artifact has no events.
+	MovedAt      string   `json:"movedAt,omitempty"`
 	New          bool     `json:"new"`
 	Severity     string   `json:"severity"` // blocking | attention | normal
 	Reasons      []string `json:"reasons,omitempty"`
@@ -169,6 +173,36 @@ type Item struct {
 	// Description is a short human-readable summary (from the artifact body) —
 	// UNTRUSTED, rendered via textContent (D-001). Omitted when the body is empty.
 	Description string `json:"description,omitempty"`
+	// Prompt carries the facts behind the "prompt for the agent" button. Nil
+	// when this system has no legal move on the artifact, or when the artifact
+	// belongs to no thread and there is therefore nothing to fold it against.
+	Prompt *AgentPrompt `json:"prompt,omitempty"`
+}
+
+// AgentPrompt is the fact set a copied agent prompt is assembled from. The
+// facts are composed here and the sentences in the browser, for one reason:
+// which moves this system may legally make next is the fold engine's answer,
+// and restating it client-side would make the page a second source of protocol
+// truth — the rule SKILL.md puts above every other rule it carries.
+type AgentPrompt struct {
+	// Moves are the transitions Data.Self may take on this artifact right now,
+	// in the fold table's own order.
+	Moves []string `json:"moves"`
+	// AskFirst is the subset of Moves an agent must put to its human before
+	// taking, because they commit the system's resources or foreclose an option
+	// that cannot be reopened. The discriminator is the transition, never the
+	// document type.
+	AskFirst []string `json:"askFirst,omitempty"`
+	// Doc and Loop are paths inside the installed a2ahub skill: the file that
+	// owns this artifact type's shape, and the loop this move belongs to. Empty
+	// rather than guessed when the type is one the skill does not document.
+	Doc  string `json:"doc,omitempty"`
+	Loop string `json:"loop,omitempty"`
+	// Drafts are the authoring files for what TAKING one of these moves
+	// produces, which is a different document from the one being read:
+	// responding to a work request drafts a response. Empty when every move
+	// available here only records an event against the document already there.
+	Drafts []string `json:"drafts,omitempty"`
 }
 
 // Thread is one multi-member conversation on the dashboard (spec 46 §T6.1) —
@@ -407,6 +441,9 @@ type ThreadOpenItem struct {
 	NextActions []ThreadNextAction `json:"next_actions"`
 	WaitingOn   []string           `json:"waiting_on"`
 	YourMove    bool               `json:"your_move"`
+	// Prompt is the same fact set Item.Prompt carries, for the copy button on
+	// the thread panel. Nil when this system has no legal move here.
+	Prompt *AgentPrompt `json:"prompt,omitempty"`
 
 	// Pending separates "someone still owes a move" from "the item is merely
 	// not in a terminal state". cache already answers this: it drops the

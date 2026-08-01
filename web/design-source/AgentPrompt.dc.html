@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<span style="display:block;">
+  <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+    <button type="button" onClick="{{ copy }}" style="{{ copyStyle }}">
+      <span aria-hidden="true" style="flex:0 0 auto; display:inline-flex;">
+        <sc-if value="{{ copied }}" hint-placeholder-val="{{ false }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+        </sc-if>
+        <sc-if value="{{ idle }}" hint-placeholder-val="{{ true }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        </sc-if>
+      </span>
+      <span>{{ copyLabel }}</span>
+    </button>
+    <button type="button" onClick="{{ toggle }}" aria-expanded="{{ expanded }}" style="{{ revealStyle }}">{{ revealLabel }}</button>
+  </span>
+
+  <!-- The text is always reachable, not only when the clipboard refuses. A
+       local dashboard opens over file://, where clipboard permission differs
+       between browsers, and the person reading this wants to see what they are
+       about to hand their agent anyway. -->
+  <sc-if value="{{ shown }}" hint-placeholder-val="{{ false }}">
+    <span style="display:block; margin-top:10px;">
+      <sc-if value="{{ hasHint }}" hint-placeholder-val="{{ true }}">
+        <span style="display:block; font-size:14px; color:var(--muted); margin-bottom:6px;">{{ hint }}</span>
+      </sc-if>
+      <pre style="margin:0; max-height:340px; overflow:auto; background:var(--canvas); border-radius:10px; padding:13px 15px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.6; color:var(--body); white-space:pre-wrap; overflow-wrap:anywhere; user-select:text;">{{ text }}</pre>
+    </span>
+  </sc-if>
+</span>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:560,&quot;height&quot;:220},&quot;det&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;}}">
+// The handover control: this system owes a move, a person saw it before their
+// agent did, and this puts the move back where it belongs.
+//
+// The button copies a prompt; the text of it is assembled by the caller from
+// facts the Go model composed, because which moves are legal is the fold
+// engine's answer and the page never becomes a second source of that.
+//
+// Chrome around the payload follows the interface locale, the payload itself
+// is always English: it quotes command names, artifact ids and skill file
+// paths, and it is read by an agent working an English protocol surface.
+class Component extends DCLogic {
+  state = { copied: false, shown: false };
+
+  componentWillUnmount() {
+    if (this.timer) clearTimeout(this.timer);
+  }
+
+  // Three ways out, in order of how well they work, and the last one always
+  // works: the async clipboard API, the legacy synchronous one, and showing
+  // the text so a person can select it themselves.
+  copyText(text) {
+    const done = () => {
+      this.setState({ copied: true });
+      if (this.timer) clearTimeout(this.timer);
+      this.timer = setTimeout(() => this.setState({ copied: false }), 2200);
+    };
+    const fallback = () => {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.cssText = "position:fixed; top:-1000px; opacity:0;";
+      document.body.appendChild(area);
+      area.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      document.body.removeChild(area);
+      if (ok) done();
+      else this.setState({ shown: true });
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+      return;
+    }
+    fallback();
+  }
+
+  renderVals() {
+    const ru = document.documentElement.lang === "ru";
+    const d = this.props.det || {};
+    const text = d.text || "";
+    return {
+      text,
+      copied: this.state.copied,
+      idle: !this.state.copied,
+      shown: this.state.shown,
+      expanded: this.state.shown ? "true" : "false",
+      copyLabel: this.state.copied
+        ? (ru ? "Скопировано" : "Copied")
+        : (ru ? "Промпт для агента" : "Prompt for the agent"),
+      revealLabel: this.state.shown
+        ? (ru ? "Свернуть" : "Hide")
+        : (ru ? "Посмотреть" : "Read it"),
+      // Only worth saying where the interface is not already English: there it
+      // explains why the block below is, here it states the obvious.
+      hasHint: ru,
+      hint: "Текст на английском: агент читает его вместе с английской документацией скилла.",
+      copyStyle: "display:inline-flex; align-items:center; gap:8px; min-height:36px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:9px; padding:0 14px; cursor:pointer; " +
+        (this.state.copied
+          ? "background:var(--healthy-tint); color:var(--healthy-strong);"
+          : "background:var(--primary); color:var(--on-primary);"),
+      revealStyle: "display:inline-flex; align-items:center; min-height:36px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--body); background:transparent; border:0; border-radius:9px; padding:0 10px; cursor:pointer; box-shadow:inset 0 0 0 1px var(--border);",
+      copy: () => this.copyText(text),
+      toggle: () => this.setState(s => ({ shown: !s.shown }))
+    };
+  }
+}
+
+</script>
+</body>
+</html>
