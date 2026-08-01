@@ -186,24 +186,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         </button>
       </span>
     </div>
-    <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0 14px; display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap;">
-      <!-- No "Space" caption: the first chip says "All spaces", which names the
-           row better than a label in front of it ever did. -->
-      <span role="group" aria-label="{{ spaceLabel }}" style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:8px;">
-        <sc-for list="{{ spaceChips }}" as="s" hint-placeholder-count="5">
-          <button type="button" onClick="{{ s.go }}" style="{{ s.style }}">
-            <sc-if value="{{ s.hasFaces }}" hint-placeholder-val="{{ true }}">
-              <span style="display:flex; align-items:center; flex:0 0 auto;">
-                <sc-for list="{{ s.faces }}" as="f" hint-placeholder-count="3">
-                  <span style="{{ f.style }}" title="{{ f.title }}">{{ f.mono }}</span>
-                </sc-for>
-              </span>
-            </sc-if>
-            <span>{{ s.label }}</span>
-          </button>
-        </sc-for>
-      </span>
-    </div>
   </header>
 
   <sc-if value="{{ updateRequired }}" hint-placeholder-val="{{ false }}">
@@ -228,32 +210,53 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
       </div>
     </sc-if>
 
+    <!-- ONE page header for every view: the icon, the name, the description and
+         — where the scope is switchable — the space switcher. It used to be
+         repeated inside each section, which is how nine screens ended up with
+         four different amounts of air above and below their own titles. -->
+    <sc-if value="{{ hasPageHeader }}" hint-placeholder-val="{{ true }}">
+      <header style="display:flex; align-items:flex-start; gap:20px; flex-wrap:wrap; row-gap:14px; padding:6px 0 34px;">
+        <div style="flex:1 1 460px; min-width:0;">
+          <h1 style="display:flex; align-items:center; gap:13px; margin:0 0 12px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
+            <span aria-hidden="true" style="{{ pageIconStyle }}">
+              <sc-if value="{{ isOverview }}" hint-placeholder-val="{{ true }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"></path><path d="M4 6h.01"></path><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"></path><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"></path><path d="M12 18h.01"></path><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"></path><circle cx="12" cy="12" r="2"></circle><path d="m13.41 10.59 5.66-5.66"></path></svg></sc-if>
+              <sc-if value="{{ isWork }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.5C2 7 4 5 6.5 5H18c2.2 0 4 1.8 4 4v8Z"></path><polyline points="15,9 18,9 18,11"></polyline><path d="M6.5 5C9 5 11 7 11 9.5V17a2 2 0 0 1-2 2"></path><line x1="6" x2="7" y1="10" y2="10"></line></svg></sc-if>
+              <sc-if value="{{ isThreads }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10.586 5.414-5.172 5.172"></path><path d="m18.586 13.414-5.172 5.172"></path><path d="M6 12h12"></path><circle cx="12" cy="20" r="2"></circle><circle cx="12" cy="4" r="2"></circle><circle cx="20" cy="12" r="2"></circle><circle cx="4" cy="12" r="2"></circle></svg></sc-if>
+              <sc-if value="{{ isContracts }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17 2 2a1 1 0 1 0 3-3"></path><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"></path><path d="m21 3 1 11h-2"></path><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"></path><path d="M3 4h8"></path></svg></sc-if>
+              <sc-if value="{{ isNetwork }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"></rect><rect x="2" y="16" width="6" height="6" rx="1"></rect><rect x="9" y="2" width="6" height="6" rx="1"></rect><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"></path><path d="M12 12V8"></path></svg></sc-if>
+              <sc-if value="{{ isSpaces }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.341 6.484A10 10 0 0 1 10.266 21.85"></path><path d="M3.659 17.516A10 10 0 0 1 13.74 2.152"></path><circle cx="12" cy="12" r="3"></circle><circle cx="19" cy="5" r="2"></circle><circle cx="5" cy="19" r="2"></circle></svg></sc-if>
+              <sc-if value="{{ isVersions }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13v8"></path><path d="M12 3v3"></path><path d="M18.172 6a2 2 0 0 1 1.414.586l2.06 2.06a1.207 1.207 0 0 1 0 1.708l-2.06 2.06a2 2 0 0 1-1.414.586H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z"></path></svg></sc-if>
+              <sc-if value="{{ isDocs }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v16"></path><path d="M16 13h2"></path><path d="M16 9h2"></path><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"></path><path d="M6 13h2"></path><path d="M6 9h2"></path></svg></sc-if>
+              <sc-if value="{{ isGuide }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"></path></svg></sc-if>
+            </span>
+            <span>{{ pageTitle }}</span>
+          </h1>
+          <p style="margin:0; font-size:18px; line-height:1.6; color:var(--body); max-width:760px;">{{ pageSub }}</p>
+          <sc-if value="{{ hasPageLink }}" hint-placeholder-val="{{ false }}">
+            <!-- The Overview queue holds only what needs a person. The rest of
+                 the inbox is one link away, named by its own count. -->
+            <button type="button" onClick="{{ goWork }}" style="margin-top:12px; padding:0; border:0; background:transparent; cursor:pointer; text-align:left; font-family:'Onest',sans-serif; font-size:16px; font-weight:600; color:var(--teal-ink);">{{ ovRestText }} →</button>
+          </sc-if>
+        </div>
+        <sc-if value="{{ hasSpaceSwitcher }}" hint-placeholder-val="{{ true }}">
+          <dc-import name="SpaceSwitcher" det="{{ spaceSwitcher }}" hint-size="220px,42px"></dc-import>
+        </sc-if>
+      </header>
+    </sc-if>
+
     <sc-if value="{{ isOverview }}" hint-placeholder-val="{{ true }}">
       <section aria-label="{{ overviewAria }}" data-screen-label="Overview">
-        <div style="display:flex; align-items:flex-start; gap:18px; flex-wrap:wrap; margin-bottom:20px;">
-          <div style="flex:1 1 460px; min-width:0;">
-            <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
-              <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"></path><path d="M4 6h.01"></path><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"></path><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"></path><path d="M12 18h.01"></path><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"></path><circle cx="12" cy="12" r="2"></circle><path d="m13.41 10.59 5.66-5.66"></path></svg></span>
-              <span>{{ overviewTitle }}</span>
-            </h1>
-            <p style="margin:0 0 10px; font-size:18px; line-height:1.55; color:var(--body); max-width:720px;">{{ ovSub }}</p>
-            <!-- The queue below holds only what needs a person. The rest of the
-                 inbox is one link away, named by its own count. -->
-            <button type="button" onClick="{{ goWork }}" style="padding:0; border:0; background:transparent; cursor:pointer; text-align:left; font-family:'Onest',sans-serif; font-size:16px; font-weight:600; color:var(--teal-ink);">{{ ovRestText }} →</button>
-          </div>
-          <!-- Freshness is a qualifier on everything on this page, not an item
-               in the queue. It sits in the corner and opens on demand. -->
-          <button type="button" onClick="{{ openSpaceModal }}" style="flex:0 0 auto; display:flex; align-items:center; gap:9px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--body); background:var(--surface); border:0; border-radius:10px; padding:10px 14px; cursor:pointer; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-            <span style="{{ spaceHealthDotStyle }}"></span>
-            <span>{{ spaceHealthLabel }}</span>
-          </button>
-        </div>
-
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-bottom:22px;">
+        <!-- Three fixed rows, one grid: label, number, note. Letting the note
+             sit beside the number meant a short one stayed inline and a long
+             one wrapped underneath, so no two cards agreed on where anything
+             was. `align-content:start` inside `align-items:stretch` keeps the
+             rows locked across the row of cards whatever the text does. -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-bottom:26px; align-items:stretch;">
           <sc-for list="{{ ovStats }}" as="s" hint-placeholder-count="4">
-            <div style="min-width:0; background:var(--surface); border-radius:14px; padding:16px 20px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-              <div style="display:flex; align-items:center; gap:7px; font-size:15px; color:var(--muted); margin-bottom:6px;">{{ s.label }}<dc-import name="HintDot" text="{{ s.hint }}" hint-size="17px,17px"></dc-import></div>
-              <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;"><span style="{{ s.valueStyle }}">{{ s.value }}</span><span style="font-size:15px; color:var(--muted);">{{ s.note }}</span></div>
+            <div style="min-width:0; display:grid; grid-template-rows:auto auto 1fr; row-gap:4px; align-content:start; background:var(--surface); border-radius:14px; padding:16px 20px 18px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+              <div style="display:flex; align-items:center; gap:7px; font-size:15px; line-height:1.35; color:var(--muted);">{{ s.label }}<dc-import name="HintDot" text="{{ s.hint }}" hint-size="17px,17px"></dc-import></div>
+              <div style="{{ s.valueStyle }}">{{ s.value }}</div>
+              <div style="font-size:15px; line-height:1.45; color:var(--muted);">{{ s.note }}</div>
             </div>
           </sc-for>
         </div>
@@ -262,7 +265,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
              columns of "there is nothing here" say the same thing twice and
              make an empty screen look like a broken one. -->
         <sc-if value="{{ noOvRows }}" hint-placeholder-val="{{ false }}">
-          <dc-import name="EmptyState" title="{{ emptyQueueTitle }}" text="{{ emptyQueueText }}" size="wide" hint-size="100%,360px"></dc-import>
+          <dc-import name="EmptyState" title="{{ emptyQueueTitle }}" text="{{ emptyQueueText }}" size="page" hint-size="100%,380px"></dc-import>
         </sc-if>
         <sc-if value="{{ hasOvRows }}" hint-placeholder-val="{{ true }}">
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
@@ -279,32 +282,47 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
     <sc-if value="{{ isWork }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ workAria }}" data-screen-label="Work">
-        <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
-          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.5C2 7 4 5 6.5 5H18c2.2 0 4 1.8 4 4v8Z"></path><polyline points="15,9 18,9 18,11"></polyline><path d="M6.5 5C9 5 11 7 11 9.5V17a2 2 0 0 1-2 2"></path><line x1="6" x2="7" y1="10" y2="10"></line></svg></span>
-          <span>{{ workTitle }}</span>
-        </h1>
-        <p style="margin:0 0 18px; font-size:18px; line-height:1.55; color:var(--body); max-width:700px;">{{ workSub }}</p>
-        <!-- Two filter groups, one chip vocabulary. The direction used to be a
-             segmented control and the type a chip row, so two controls doing
-             the same job looked like two different kinds of thing. A muted
-             group label and a rule between them keep the two dark active chips
-             from reading as one selection. Filter by document type offers only
-             the kinds actually present in this scope. -->
-        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; margin-bottom:14px;">
-          <span style="font-size:15px; color:var(--muted);">{{ directionLabel }}</span>
-          <sc-for list="{{ workTabs }}" as="t" hint-placeholder-count="2">
-            <button type="button" onClick="{{ t.go }}" aria-pressed="{{ t.pressed }}" style="{{ t.style }}">{{ t.label }}</button>
-          </sc-for>
-          <span style="width:1px; height:24px; background:var(--border); margin:0 4px;"></span>
-          <span style="font-size:15px; color:var(--muted);">{{ typeLabel }}</span>
-          <sc-for list="{{ workTypeFilters }}" as="f" hint-placeholder-count="4">
-            <button type="button" onClick="{{ f.go }}" aria-pressed="{{ f.pressed }}" style="{{ f.style }}">{{ f.label }}</button>
-          </sc-for>
+        <!-- One segmented control for direction and one dropdown for type. The
+             types are eight plus "all": as a chip row they wrapped to a second
+             line at every width, and a filter bar that changes height as you
+             use it moves the list underneath it. -->
+        <sc-if value="{{ showWorkFilters }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:10px; margin-bottom:18px;">
+          <div style="display:flex; align-items:center; gap:3px; background:var(--border); border-radius:10px; padding:3px; width:fit-content;">
+            <sc-for list="{{ workTabs }}" as="t" hint-placeholder-count="3">
+              <button type="button" onClick="{{ t.go }}" aria-pressed="{{ t.pressed }}" style="{{ t.style }}">{{ t.label }}</button>
+            </sc-for>
+          </div>
+          <span style="position:relative; display:inline-flex;">
+            <button type="button" onClick="{{ toggleTypeMenu }}" aria-expanded="{{ typeMenuExpanded }}" style="{{ typeButtonStyle }}">
+              <span>{{ workTypeCurrent }}</span>
+              <span aria-hidden="true" style="color:var(--muted); font-size:11px;">{{ typeCaret }}</span>
+            </button>
+            <sc-if value="{{ typeMenuOpen }}" hint-placeholder-val="{{ false }}">
+              <span style="position:absolute; z-index:120; top:calc(100% + 8px); left:0; min-width:250px; background:var(--surface); border-radius:14px; padding:8px; box-shadow:0 16px 40px -12px rgba(33,30,23,.42), 0 0 0 1px var(--border); display:flex; flex-direction:column; gap:2px;">
+                <sc-for list="{{ workTypeFilters }}" as="f" hint-placeholder-count="5">
+                  <button type="button" onClick="{{ f.go }}" aria-current="{{ f.current }}" style="{{ f.style }}">
+                    <span style="flex:1 1 auto; min-width:0; text-align:left;">{{ f.label }}</span>
+                    <span style="flex:0 0 auto; font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--muted);">{{ f.count }}</span>
+                    <sc-if value="{{ f.selected }}" hint-placeholder-val="{{ false }}">
+                      <span aria-hidden="true" style="flex:0 0 auto; color:var(--teal-ink);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+                    </sc-if>
+                  </button>
+                </sc-for>
+              </span>
+            </sc-if>
+          </span>
         </div>
+        </sc-if>
+
+        <sc-if value="{{ workWholeEmpty }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="EmptyState" title="{{ emptyWorkTitle }}" text="{{ emptyWorkText }}" size="page" hint-size="100%,380px"></dc-import>
+        </sc-if>
+        <sc-if value="{{ workHasColumns }}" hint-placeholder-val="{{ true }}">
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-if value="{{ noWorkRows }}" hint-placeholder-val="{{ false }}">
-              <dc-import name="EmptyState" title="{{ emptyWorkTitle }}" text="{{ emptyWorkText }}" size="compact" hint-size="100%,240px"></dc-import>
+              <dc-import name="EmptyState" title="{{ emptyWorkTitle }}" text="{{ emptyWorkText }}" size="panel" hint-size="100%,240px"></dc-import>
             </sc-if>
             <sc-for list="{{ workRows }}" as="r" hint-placeholder-count="6">
               <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
@@ -312,21 +330,18 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
           </div>
           <dc-import name="ArtifactDetail" det="{{ workDetail }}" hint-size="100%,600px"></dc-import>
         </div>
+        </sc-if>
       </section>
     </sc-if>
 
     <sc-if value="{{ isThreads }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ threadsAria }}" data-screen-label="Threads">
-        <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
-          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10.586 5.414-5.172 5.172"></path><path d="m18.586 13.414-5.172 5.172"></path><path d="M6 12h12"></path><circle cx="12" cy="20" r="2"></circle><circle cx="12" cy="4" r="2"></circle><circle cx="20" cy="12" r="2"></circle><circle cx="4" cy="12" r="2"></circle></svg></span>
-          <span>{{ threadsTitle }}</span>
-        </h1>
-        <p style="margin:0 0 18px; font-size:18px; line-height:1.55; color:var(--body); max-width:760px;">{{ threadsSub }}</p>
+        <sc-if value="{{ noThreadRows }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="EmptyState" title="{{ emptyThreadsTitle }}" text="{{ emptyThreadsText }}" size="page" hint-size="100%,380px"></dc-import>
+        </sc-if>
+        <sc-if value="{{ hasThreadRows }}" hint-placeholder-val="{{ true }}">
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
-            <sc-if value="{{ noThreadRows }}" hint-placeholder-val="{{ false }}">
-              <dc-import name="EmptyState" title="{{ emptyThreadsTitle }}" text="{{ emptyThreadsText }}" size="compact" hint-size="100%,240px"></dc-import>
-            </sc-if>
             <sc-for list="{{ threadRows }}" as="t" hint-placeholder-count="5">
               <button type="button" onClick="{{ t.select }}" style="{{ t.style }}">
                 <span style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:8px;">
@@ -344,7 +359,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
           <div style="min-width:0; background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
             <sc-if value="{{ tvMissing }}" hint-placeholder-val="{{ false }}">
-              <dc-import name="EmptyState" title="{{ threadMissingTitle }}" text="{{ threadMissingText }}" size="compact" hint-size="100%,240px"></dc-import>
+              <dc-import name="EmptyState" title="{{ threadMissingTitle }}" text="{{ threadMissingText }}" size="panel" hint-size="100%,240px"></dc-import>
             </sc-if>
             <sc-if value="{{ tvPresent }}" hint-placeholder-val="{{ true }}">
               <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:14px;">
@@ -476,22 +491,17 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
             </sc-if>
           </div>
         </div>
+        </sc-if>
       </section>
     </sc-if>
 
     <sc-if value="{{ isContracts }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ contractsAria }}" data-screen-label="Contracts">
-        <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
-          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17 2 2a1 1 0 1 0 3-3"></path><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"></path><path d="m21 3 1 11h-2"></path><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"></path><path d="M3 4h8"></path></svg></span>
-          <span>{{ contractsTitle }}</span>
-        </h1>
-        <p style="margin:0 0 18px; font-size:18px; line-height:1.55; color:var(--body); max-width:780px;">{{ conSub }}</p>
-
         <!-- No contracts at all: one empty state across the full width. The
              second panel exists only to say "pick something on the left", and
              with nothing on the left it was answering a question nobody asked. -->
         <sc-if value="{{ noConRows }}" hint-placeholder-val="{{ false }}">
-          <dc-import name="EmptyState" title="{{ emptyContractsTitle }}" text="{{ emptyContractsText }}" hint="a2a contract new" size="wide" hint-size="100%,380px"></dc-import>
+          <dc-import name="EmptyState" title="{{ emptyContractsTitle }}" text="{{ emptyContractsText }}" hint="a2a contract new" size="page" hint-size="100%,380px"></dc-import>
         </sc-if>
 
         <sc-if value="{{ hasConRows }}" hint-placeholder-val="{{ true }}">
@@ -594,11 +604,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
     <sc-if value="{{ isNetwork }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ networkAria }}" data-screen-label="Network">
-        <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
-          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"></rect><rect x="2" y="16" width="6" height="6" rx="1"></rect><rect x="9" y="2" width="6" height="6" rx="1"></rect><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"></path><path d="M12 12V8"></path></svg></span>
-          <span>{{ networkTitle }}</span>
-        </h1>
-        <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">{{ networkSub }}</p>
         <div style="margin-bottom:20px;">
           <dc-import name="NetworkMap" data="{{ data }}" space="{{ space }}" locale="{{ locale }}" on-space-change="{{ setSpace }}" on-open-contract="{{ openContract }}" on-open-item="{{ openItem }}" on-open-document="{{ openDocument }}" show-space-tabs="{{ false }}" heading="{{ networkMapHeading }}" hint-size="100%,1000px"></dc-import>
         </div>
@@ -607,13 +612,8 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
     <sc-if value="{{ isSpaces }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ spacesAria }}" data-screen-label="Spaces">
-        <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
-          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.341 6.484A10 10 0 0 1 10.266 21.85"></path><path d="M3.659 17.516A10 10 0 0 1 13.74 2.152"></path><circle cx="12" cy="12" r="3"></circle><circle cx="19" cy="5" r="2"></circle><circle cx="5" cy="19" r="2"></circle></svg></span>
-          <span>{{ spacesTitle }}</span>
-        </h1>
-        <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">{{ spacesSub }}</p>
         <sc-if value="{{ noSpaces }}" hint-placeholder-val="{{ false }}">
-          <dc-import name="EmptyState" title="{{ emptySpacesTitle }}" text="{{ emptySpacesText }}" hint="a2a space connect" hint-size="100%,300px"></dc-import>
+          <dc-import name="EmptyState" title="{{ emptySpacesTitle }}" text="{{ emptySpacesText }}" hint="a2a space connect" size="page" hint-size="100%,380px"></dc-import>
         </sc-if>
         <sc-if value="{{ hasSpaces }}" hint-placeholder-val="{{ true }}">
         <div style="background:var(--surface); border-radius:18px; padding:8px 22px 16px; box-shadow:0 1px 2px rgba(33,30,23,.06); overflow-x:auto;">
@@ -652,7 +652,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
           <p style="margin:0 0 18px; font-size:16px; line-height:1.6; color:var(--body); max-width:820px;">{{ limitsSub }}</p>
 
           <sc-if value="{{ noLimits }}" hint-placeholder-val="{{ false }}">
-            <dc-import name="EmptyState" title="{{ emptyLimitsTitle }}" text="{{ emptyLimitsText }}" size="compact" hint-size="100%,240px"></dc-import>
+            <dc-import name="EmptyState" title="{{ emptyLimitsTitle }}" text="{{ emptyLimitsText }}" size="panel" hint-size="100%,240px"></dc-import>
           </sc-if>
 
           <sc-if value="{{ hasLimits }}" hint-placeholder-val="{{ true }}">
@@ -710,11 +710,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
     <sc-if value="{{ isVersions }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ versionsAria }}" data-screen-label="Versions">
-        <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
-          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13v8"></path><path d="M12 3v3"></path><path d="M18.172 6a2 2 0 0 1 1.414.586l2.06 2.06a1.207 1.207 0 0 1 0 1.708l-2.06 2.06a2 2 0 0 1-1.414.586H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z"></path></svg></span>
-          <span>{{ versionsTitle }}</span>
-        </h1>
-        <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:760px;">{{ verSub }}</p>
 
         <!-- The binary you have and the notes that explain it are one story, so
              they share one page. Everything below is the SAME surface the public
@@ -772,7 +767,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
           <div style="flex:3 1 420px; min-width:0; display:flex; flex-direction:column; gap:16px;">
 
             <sc-if value="{{ noReleases }}" hint-placeholder-val="{{ false }}">
-              <dc-import name="EmptyState" title="{{ emptyReleasesTitle }}" text="{{ emptyReleasesText }}" size="compact" hint-size="100%,240px"></dc-import>
+              <dc-import name="EmptyState" title="{{ emptyReleasesTitle }}" text="{{ emptyReleasesText }}" size="panel" hint-size="100%,240px"></dc-import>
             </sc-if>
 
             <sc-for list="{{ verReleases }}" as="r" hint-placeholder-count="3">
@@ -884,14 +879,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
          this view stops hiding it inside Guide behind a different layout. -->
     <sc-if value="{{ isDocs }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ docsAria }}" data-screen-label="Docs">
-        <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
-          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v16"></path><path d="M16 13h2"></path><path d="M16 9h2"></path><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"></path><path d="M6 13h2"></path><path d="M6 9h2"></path></svg></span>
-          <span>{{ docsTitle }}</span>
-        </h1>
-        <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">{{ docsSub }}</p>
 
         <sc-if value="{{ noDocs }}" hint-placeholder-val="{{ false }}">
-          <dc-import name="EmptyState" title="{{ emptyDocsTitle }}" text="{{ emptyDocsText }}" hint="a2a skill install" hint-size="100%,300px"></dc-import>
+          <dc-import name="EmptyState" title="{{ emptyDocsTitle }}" text="{{ emptyDocsText }}" hint="a2a skill install" size="page" hint-size="100%,380px"></dc-import>
         </sc-if>
 
         <sc-if value="{{ hasDocs }}" hint-placeholder-val="{{ true }}">
@@ -940,11 +930,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
     <sc-if value="{{ isGuide }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ guideAria }}" data-screen-label="Guide">
-        <h1 style="display:flex; align-items:flex-start; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
-          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"></path></svg></span>
-          <span>{{ guideTitle }}</span>
-        </h1>
-        <p style="margin:0 0 24px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">{{ guideSub }}</p>
 
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:12px; margin-bottom:18px;">
           <sc-for list="{{ guideFeatures }}" as="f" hint-placeholder-count="10">
@@ -1111,16 +1096,16 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 <script type="text/x-dc" data-dc-script>
 const DASHBOARD_I18N = {
   en: {
-    views:["Overview","Work","Threads","Contracts","Map","Spaces","Versions","Docs","Guide"],
+    views:["Overview","Exchange","Threads","Contracts","Map","Spaces","Versions","Docs","Guide"],
     backOverview:"Back to Overview", viewsLabel:"Views", more:"More", localeGroup:"Interface language", space:"Space",
     errorTitle:"Could not read demo data", errorPrefix:"The dashboard is a read-only projection of", errorSuffix:". Missing facts are never inferred.",
-    openWork:"Open Work", direction:"Show", typeFilter:"Type",
+    openWork:"Open Exchange", direction:"Show", typeFilter:"Type",
     spaceHealth:"Space health", spaceHealthTitle:"How current this page is",
     spaceHealthSub:"Everything on these screens is read from a local copy of each space, taken once when this file was written. This is when that copy was last refreshed, and what each space expects of your binary.",
     spaceHealthFlagsTitle:"Worth a look", spaceHealthFlagsText:"Recorded by committed events, or a problem reading the local copy. A flag is a reason to look, not a verdict.",
     spaceHealthFooter:"Nothing here is inferred: an unreadable space is reported as unreadable, never as empty.",
     spaceHealthMore:"Open Spaces", spaceHealthClose:"Close",
-    work:"Work", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
+    work:"Exchange", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
     whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Causal timeline", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Flags on this thread — surfaced, never dropped",
     contracts:"Contracts and their versions", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
     network:"Who depends on whom", networkSub:"A contract dependency runs from consumer to provider; an open exchange is work in flight. Select one space or keep all spaces visible to see the systems that connect them. Click any line or card for detail.", exchangeMap:"Exchange map",
@@ -1130,7 +1115,7 @@ const DASHBOARD_I18N = {
     emptySpacesTitle:"No spaces connected", emptySpacesText:"A space is the shared repository two systems exchange documents through. Connect one and this table fills in.",
     integrityFlags:"Protocol and read flags", integrityFlagsText:"Facts recorded by committed events, or problems reading the local cache index. A flag is evidence, not a verdict.",
     degradedReads:"Degraded reads", degradedReadsText:"These spaces answered from an older mirror revision, or not at all. Their counts are floors, never totals.",
-    notEvaluatedTitle:"Not evaluated in this static read", notEvaluatedText:"Stated explicitly, never shown as green or zero.",
+    notEvaluatedTitle:"What this read deliberately did not check", notEvaluatedText:"Not failures. Questions a static file honestly cannot answer — said out loud instead of shown as a zero or a green tick.",
     versions:"Versions", localBinary:"Local binary", installed:"installed", latest:"latest", updateCandidate:"Update candidate", impact:"impact", publishedReleases:"Published releases in this snapshot", expandedNotes:"Expanded notes cover",
     guide:"How a2ahub works without human dispatch", guideSub:"Agents receive the skill, CLI, and typed MCP tools, create and validate documents, move them through Git, and continue from their inbox. A person joins only when a decision or permission is genuinely required.",
     lifecycleTitle:"Lifecycle is events, not an editable status", lifecycleText:"Every transition is validated before it is recorded. Both sides fold the same history into the same state.", lifecycleFoot:"Responses, blocks, disputes, cancellations, and supersessions remain separate immutable events with a validated actor.",
@@ -1143,16 +1128,16 @@ const DASHBOARD_I18N = {
     readingRows:[["Overview and Work","Human actions ordered by consequence and next owner. Priority, literal blocking, a pending approval, a deadline, and a stale snapshot remain five distinct signals."],["Threads","One intent per chain, in committed order where Git history exists and explicitly labelled declared order where it does not."],["Contracts and Map","Drift belongs to a consumer's pinned major line. A provider may be healthy while a consumer resolves nothing."],["Integrity and Versions","The limits of this snapshot and the independent compatibility axes that must not be inferred from one another."]]
   },
   ru: {
-    views:["Обзор","Работа","Треды","Контракты","Карта","Спейсы","Версии","Доки","Справка"],
+    views:["Обзор","Обмен","Треды","Контракты","Карта","Спейсы","Версии","Доки","Справка"],
     backOverview:"Вернуться к обзору", viewsLabel:"Разделы", more:"Ещё", localeGroup:"Язык интерфейса", space:"Спейс",
     errorTitle:"Не удалось прочитать данные", errorPrefix:"Дашборд только читает и показывает", errorSuffix:". Чего в файле нет, того он не придумывает.",
-    openWork:"Открыть работу", direction:"Показать", typeFilter:"Тип",
+    openWork:"Открыть обмен", direction:"Показать", typeFilter:"Тип",
     spaceHealth:"Состояние спейсов", spaceHealthTitle:"Насколько свежее то, что вы читаете",
     spaceHealthSub:"Всё на этих экранах взято из локальной копии спейса — она снималась один раз, когда собирался этот файл. Здесь видно, когда копию последний раз обновляли и чего каждый спейс ждёт от вашего бинарника.",
     spaceHealthFlagsTitle:"На что стоит посмотреть", spaceHealthFlagsText:"Что зафиксировано в событиях и что пошло не так при чтении локальной копии. Это повод посмотреть, а не приговор.",
     spaceHealthFooter:"Ничего не додумывается: если спейс не прочитался, так и написано — а не «ноль».",
     spaceHealthMore:"Открыть спейсы", spaceHealthClose:"Закрыть",
-    work:"Работа", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. Полная история — кто что сделал и в каком порядке — в снимок не попала.",
+    work:"Обмен", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. Полная история — кто что сделал и в каком порядке — в снимок не попала.",
     whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"Как всё происходило", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
     contracts:"Контракты и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас —", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
     network:"Кто от кого зависит", networkSub:"Сплошная линия — зависимость от контракта: потребитель слева, поставщик справа. Пунктир — незакрытая работа. Выберите спейс или оставьте все, чтобы увидеть, кто их связывает. Нажмите на линию или карточку — откроются подробности.", exchangeMap:"Карта обмена",
@@ -1162,7 +1147,7 @@ const DASHBOARD_I18N = {
     emptySpacesTitle:"Спейсы не подключены", emptySpacesText:"Спейс — это общий репозиторий, через который две системы обмениваются документами. Подключите спейс, и таблица заполнится.",
     integrityFlags:"Замечания", integrityFlagsText:"Что зафиксировано в событиях и что пошло не так при чтении кэша. Замечание — повод посмотреть, а не приговор.",
     degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии или не ответили вовсе. Их цифры — это «не меньше чем», а не точное число.",
-    notEvaluatedTitle:"Этого снимок вообще не проверял", notEvaluatedText:"Неизвестное названо прямо, а не показано как ноль или как норма.",
+    notEvaluatedTitle:"Что мы намеренно не проверяли", notEvaluatedText:"Это не сбои. Это вопросы, на которые статический файл честно не отвечает — и говорит об этом прямо, вместо того чтобы показать ноль или зелёную галочку.",
     versions:"Версии", localBinary:"Ваш бинарник", installed:"стоит сейчас", latest:"последняя", updateCandidate:"Есть обновление", impact:"влияние", publishedReleases:"Выпуски", expandedNotes:"Подробности по",
     guide:"Как это работает без ручной диспетчеризации", guideSub:"У агента есть навык, CLI и типизированные инструменты MCP. Он сам пишет документы, проверяет их, проводит через Git и продолжает работу из входящих. Человек подключается там, где нужно решение или разрешение — и больше нигде.",
     lifecycleTitle:"Статус не редактируется — он складывается из событий", lifecycleText:"Каждый переход проверяется до того, как попадёт в репозиторий. Обе стороны собирают из одной и той же истории одно и то же состояние.", lifecycleFoot:"Ответы, блокировки, споры, отмены и замены не затираются: каждое остаётся отдельным событием с проверенным автором.",
@@ -1264,6 +1249,24 @@ function STATE_WORDS(ru) {
     ? { published:"опубликована", deprecated:"выводится", retired:"снята", draft:"черновик" }
     : { published:"published", deprecated:"deprecated", retired:"retired", draft:"draft" };
 }
+// The "this snapshot did not check that" facts, in Russian and in terms of what
+// the reader loses by it. Keyed by the stable id the assembler stamps
+// (internal/html/assemble.go), never by the English title, so rewording either
+// side cannot silently un-translate a row.
+const UNAVAILABLE_RU = {
+  "snapshot-v3-verdict": [
+    "Проверка всего снимка не запускалась",
+    "Никто не прогонял валидацию именно перед сборкой этого файла, так что «всё сходится» здесь никто не подтверждал. Запустите a2a verify, если нужен свежий вердикт."
+  ],
+  "binding-byte-match": [
+    "Совпадает ли контракт с кодом прямо сейчас — неизвестно",
+    "У контракта записано, чем и из какого исходника он собран. Это отметка о происхождении: сверить её с текущим кодом можно только запустив генератор, а статический файл этого не делает."
+  ],
+  "hosted-hub-state": [
+    "Состояния общего Hub здесь нет",
+    "Hub — это будущая архитектура, а не работающая сегодня поверхность. Всё на этих экранах прочитано из вашей локальной копии."
+  ]
+};
 function TYPE_WORDS(ru) {
   return ru
     ? { contract:"Контракт", requirement:"Требование", question:"Вопрос", work_request:"Запрос работы", decision:"Решение", handoff:"Передача", response:"Ответ", announcement:"Объявление" }
@@ -1387,7 +1390,7 @@ function normalizeDashboardData(input) {
 }
 
 class Component extends DCLogic {
-  state = { data: null, error: "", view: "overview", space: "all", ovSel: "", workTab: "incoming", workSel: "", threadSel: "", conSel: "", doc: "overview", docQ: "", openDoc: null, spaceModal: false, tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en" };
+  state = { data: null, error: "", view: "overview", space: "all", ovSel: "", workTab: "all", typeMenu: false, workSel: "", threadSel: "", conSel: "", doc: "overview", docQ: "", openDoc: null, spaceModal: false, tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en" };
 
   componentDidMount() {
     // the primary nav shows as many views as fit and folds the rest into More
@@ -1502,6 +1505,13 @@ class Component extends DCLogic {
       style: "flex:0 0 auto; font-family:'Onest',sans-serif; font-size:14px; font-weight:600; border:0; border-radius:8px; padding:5px 11px; cursor:pointer; white-space:nowrap; " +
         (ok ? "background:var(--green); color:var(--on-solid);" : err ? "background:var(--red); color:var(--on-solid);" : "background:var(--inverse-3); color:var(--teal-on-dark);")
     };
+  }
+
+  // The segmented control: one recessed track, the active option raised out of
+  // it. Weight is constant across states — see tabStyle.
+  segmentStyle(active) {
+    return "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:7px 14px; border-radius:8px; white-space:nowrap; " +
+      (active ? "background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.12);" : "background:transparent; color:var(--muted);");
   }
 
   filterChip(active) {
@@ -1832,7 +1842,12 @@ class Component extends DCLogic {
       // state vocabulary is read from one place instead of being retyped here.
       hasClaim: !!ev.claimed_state, claim: String(ev.claimed_state || "").replace("_", " "),
       claimLabel: ru ? "автор заявил:" : "claimed:",
-      meta: when(ev.at) + " · " + (ev.actor || "") + " · " + ev.ulid,
+      // No ULID. It is a sort key for the fold engine, not something a reader
+      // can act on, and printing it after every event turned a short list of
+      // "who did what, when" into three lines of machine noise per entry. The
+      // same goes for the digest that used to close this card: a person
+      // verifying bytes uses `a2a verify`, not a truncated hash on a screen.
+      meta: when(ev.at) + " · " + (ev.actor || ""),
       flagged: (a.flags || []).length > 0 && i === (a.events || []).length - 1
     }));
 
@@ -1870,7 +1885,7 @@ class Component extends DCLogic {
       threadLabel: a.thread ? (ru ? "Открыть тред" : "Open thread") : (ru ? "Тред не указан" : "No thread recorded"),
       openThread: () => this.go("threads", { threadSel: a.thread || "" }),
       openDocument: () => this.setState({ openDoc: { id: a.id, space: a.space } }),
-      footer: a.id + " · digest " + String(a.digest || "").slice(0, 8) + "…" + String(a.digest || "").slice(-4)
+      footer: a.id
     };
   }
 
@@ -1887,7 +1902,16 @@ class Component extends DCLogic {
         : (s.error ? (ru ? "Файл не удалось загрузить (" + s.error.slice(5) + "). Недоступны и demo-data.json, и встроенная копия demo-data.js." : "The fixture could not be loaded (" + s.error.slice(5) + "). Neither demo-data.json nor the embedded demo-data.js copy is reachable.") : ""),
       backOverviewLabel:c.backOverview, viewsLabel:c.viewsLabel, moreLabel:c.more, localeGroupLabel:c.localeGroup, spaceLabel:c.space,
       errorTitle:c.errorTitle, errorPrefix:c.errorPrefix, errorSuffix:c.errorSuffix,
-      openWorkLabel:c.openWork, directionLabel:c.direction, typeLabel:c.typeFilter,
+      openWorkLabel:c.openWork,
+      // The page header is one block for all nine views, so its title and
+      // description are values, not markup repeated nine times.
+      hasPageHeader: !!d && !s.error,
+      pageTitle: { overview:c.views[0], work:c.work, threads:c.threads, contracts:c.contracts, network:c.network, spaces:c.spaces, versions:c.versions, docs:c.docs, guide:c.guide }[s.view] || "",
+      hasPageLink: !!d && s.view === "overview",
+      // The scope switcher appears exactly where changing the scope changes
+      // what is shown. Versions, Docs and Guide read the same whatever space
+      // you are in, so offering the control there would be a lie.
+      hasSpaceSwitcher: !!d && ["overview","work","threads","contracts","network","spaces"].indexOf(s.view) > -1,
       // One chip for every page heading. The icon is decorative — the heading
       // beside it is the accessible name — so each SVG is aria-hidden and the
       // colour comes from currentColor, which makes dark mode free.
@@ -1963,7 +1987,7 @@ class Component extends DCLogic {
       moreBtnStyle: this.tabStyle(false) + (s.more ? " background:var(--canvas);" : ""),
       toggleMore: () => this.setState(x => ({ more: !x.more, lang: false })),
       goOverview: () => this.go("overview", { more: false }),
-      goVersions: () => this.go("versions"), goWork: () => this.go("work", { workTab: "incoming" }),
+      goVersions: () => this.go("versions"), goWork: () => this.go("work", { workTab: "incoming", workType: "all" }),
       guideFeatures: (ru ? GUIDE_FEATURES_RU : GUIDE_FEATURES_EN).map(([tag, title, body]) => ({ tag, title, body })),
       lifecycleSteps: [["draft","submit"],["submitted","ack"],["acknowledged","accept"],["accepted","start"],["in_progress",""]].map(([label, action]) => ({ label, action, hasNext: !!action })),
       artifactTypes: (ru ? [["XC","Контракт"],["XR","Требование"],["XQ","Вопрос"],["XW","Запрос работы"],["XD","Решение"],["XH","Передача"],["XS","Ответ"],["XA","Объявление"]] : [["XC","Contract"],["XR","Requirement"],["XQ","Question"],["XW","Work request"],["XD","Decision"],["XH","Handoff"],["XS","Response"],["XA","Announcement"]]).map(([code,label]) => ({ code,label })),
@@ -1981,7 +2005,7 @@ class Component extends DCLogic {
       enLocaleStyle:this.localeStyle(s.locale === "en"), ruLocaleStyle:this.localeStyle(s.locale === "ru"),
       setEN:() => this.applyLocale("en"), setRU:() => this.applyLocale("ru")
     };
-    if (!d) return Object.assign(base, { selfMono:"", selfLine:ru ? "читаем данные" : "reading data", snapshotLine:"", spaceChips:[], updateRequired:false, bannerLabel:"", bannerText:"", bannerAction:"", goBanner:() => {}, footerLine:ru ? "Чтение локального снимка" : "Reading the local snapshot", data:null, openContract:() => {} });
+    if (!d) return Object.assign(base, { selfMono:"", selfLine:ru ? "читаем данные" : "reading data", snapshotLine:"", pageSub:"", spaceSwitcher:{}, updateRequired:false, bannerLabel:"", bannerText:"", bannerAction:"", goBanner:() => {}, footerLine:ru ? "Чтение локального снимка" : "Reading the local snapshot", data:null, openContract:() => {} });
 
     const scopedInbox = d.inbox.filter(i => this.inScope(i.space));
     const scopedOutbox = d.outbox.filter(i => this.inScope(i.space));
@@ -1995,12 +2019,15 @@ class Component extends DCLogic {
     const ovSel = s.ovSel || (needsYou[0] && needsYou[0].id) || "";
     const restCount = scopedInbox.length - needsYou.length;
 
-    const workAll = s.workTab === "incoming" ? scopedInbox : scopedOutbox;
+    // Three directions, not two. "Everything in flight" is the question people
+    // arrive with; incoming and outgoing are how they narrow it afterwards.
+    const workAll = s.workTab === "incoming" ? scopedInbox : (s.workTab === "outgoing" ? scopedOutbox : scopedInbox.concat(scopedOutbox));
     // Offer only the types that exist in this scope: a filter for a kind with
     // nothing behind it is a dead control that teaches the wrong thing.
     const workTypes = workAll.map(i => i.type).filter((t, i, arr) => t && arr.indexOf(t) === i).sort();
     const workType = workTypes.indexOf(s.workType) > -1 ? s.workType : "all";
     const workList = workType === "all" ? workAll : workAll.filter(i => i.type === workType);
+    const workTypeCount = (t) => t === "all" ? workAll.length : workAll.filter(i => i.type === t).length;
     const workSel = s.workSel && workList.some(i => i.id === s.workSel) ? s.workSel : (workList[0] && workList[0].id) || "";
 
     const threads = d.threads.filter(t => this.inScope(t.space));
@@ -2034,13 +2061,12 @@ class Component extends DCLogic {
       if (rest > 0) shown.push({ mono: "+" + rest, title: ru ? ("Ещё " + rest + " " + (rest === 1 ? "участник" : rest < 5 ? "участника" : "участников")) : rest + (rest === 1 ? " more participant" : " more participants"), style: faceStyle(shown.length, "rest", active) });
       return shown;
     };
-    const spaceChips = [{ id: "all", label: ru ? "Все спейсы" : "All spaces" }].concat(d.spaces.map(x => ({ id: x.id, label: x.id })))
+    const spaceOptions = [{ id: "all", label: ru ? "Все спейсы" : "All spaces" }].concat(d.spaces.map(x => ({ id: x.id, label: x.id })))
       .map(x => {
-        const active = s.space === x.id;
-        const faces = x.id === "all" ? [] : facesFor(x.id, active);
+        const selected = s.space === x.id;
         return {
-          label: x.label, style: this.chipStyle(active),
-          hasFaces: faces.length > 0, faces,
+          label: x.label, selected,
+          faces: x.id === "all" ? [] : facesFor(x.id, false),
           go: () => this.setState({ space: x.id, ovSel: "", workSel: "", threadSel: "", conSel: "" })
         };
       });
@@ -2110,13 +2136,12 @@ class Component extends DCLogic {
       return Object.assign({}, r, { shown });
     }).filter(r => r.shown.length > 0);
 
-    return Object.assign(base, {
+    const vals = Object.assign(base, {
       overviewAria:c.views[0], workAria:c.views[1], threadsAria:c.views[2], contractsAria:c.views[3], networkAria:c.views[4],
       spacesAria:c.views[5], versionsAria:c.views[6], docsAria:c.views[7], guideAria:c.views[8],
       selfMono: mono(d.self),
       selfLine: d.self + " · " + ((d.nodes.find(n => n.system === d.self) || {}).org || ""),
       snapshotLine: (ru ? "Снимок " : "Snapshot ") + when(d.generatedAt) + (ru ? " · создан из локального кэша" : " · built from the local cache"),
-      spaceChips,
       updateRequired: !!d.meta.synthetic || (!!tooling.updateAvailable && !!tooling.required),
       bannerLabel: d.meta.synthetic ? (ru ? "Демо-режим" : "Demo dashboard") : (ru ? "Нужно обновление" : "Update required"),
       bannerText: d.meta.synthetic ? (ru ? "Данные выдуманы, чтобы показать все экраны и состояния. Живых сервисов и репозиториев здесь нет." : "Synthetic data covers every screen and state; no live services or repositories are connected.") : (ru ? "Ваш бинарник " + tooling.current + " ниже минимальной версии записи " + tooling.floor + " в спейсе " + tooling.floorSpace + ". Последняя версия — " + tooling.latest + ", проверено " + tooling.cacheAge + " назад." : "Local binary " + tooling.current + " is below writer floor " + tooling.floor + " in " + tooling.floorSpace + ". Latest is " + tooling.latest + "; checked " + tooling.cacheAge + " ago."),
@@ -2131,8 +2156,8 @@ class Component extends DCLogic {
         ? (ru ? "Ваше решение нужно по " + ruPlural(needsYou.length, "документу", "документам", "документам") + ": ниже то, что кого-то блокирует, ждёт вашего согласования или просрочено. " : "Your decision is needed on " + needsYou.length + (needsYou.length === 1 ? " document" : " documents") + ": what is blocking someone, waiting on your approval, or overdue appears below. ")
         : (ru ? "Сейчас от вас ничего не ждут. " : "Nothing is waiting on you right now. ")) +
         (ru
-          ? "Остальное " + d.self + " и другие агенты доводят между собой: у вас " + ruPlural(scopedInbox.length, "входящий документ", "входящих документа", "входящих документов") + " и " + ruPlural(scopedOutbox.length, "исходящий", "исходящих", "исходящих") + ", по которым ход за другой стороной."
-          : d.self + " and the other agents carry the rest between them: " + scopedInbox.length + " incoming and " + scopedOutbox.length + " outgoing, where the move belongs to someone else."),
+          ? "Остальное " + (d.self ? d.self + " и другие агенты доводят" : "агенты доводят") + " между собой: у вас " + ruPlural(scopedInbox.length, "входящий документ", "входящих документа", "входящих документов") + " и " + ruPlural(scopedOutbox.length, "исходящий", "исходящих", "исходящих") + ", по которым ход за другой стороной."
+          : (d.self ? d.self + " and the other agents carry" : "The agents carry") + " the rest between them: " + scopedInbox.length + " incoming and " + scopedOutbox.length + " outgoing, where the move belongs to someone else."),
       ovStats: [
         { label:ru ? "Нужны вы" : "Need you", value:needsYou.length, note:ru ? "блокирует или ждёт согласования" : "blocking or approval",
           hint:ru ? "Документы, где без человека дальше никак: кто-то явно заблокирован, ждёт вашего согласования или уже просрочил срок. Всё остальное агенты доводят сами." : "Documents that genuinely cannot move without a person: something is literally blocked, waiting on your approval, or already past its deadline. Everything else the agents finish on their own.",
@@ -2149,7 +2174,7 @@ class Component extends DCLogic {
       ],
       ovRows: needsYou.map(it => this.rowFor(it, "ovSel", ovSel)),
       ovRestText: restCount
-        ? (ru ? "Открыть работу: ещё " + ruPlural(restCount, "входящий документ", "входящих документа", "входящих документов") + ", никого не держат" : c.openWork + ": " + restCount + " more incoming, holding nobody up")
+        ? (ru ? c.openWork + ": ещё " + ruPlural(restCount, "входящий документ", "входящих документа", "входящих документов") + ", никого не держат" : c.openWork + ": " + restCount + " more incoming, holding nobody up")
         : c.openWork,
       hasOvRows: needsYou.length > 0, noOvRows: needsYou.length === 0,
       emptyQueueTitle: ru ? "Ваше решение сейчас не нужно" : "No decision is waiting on you",
@@ -2164,34 +2189,57 @@ class Component extends DCLogic {
           : "The moment something needs your decision, the whole document opens here — envelope, events and references included."
       },
 
-      workSub: ru ? "Входящие — то, что адресовано " + d.self + "; исходящие — то, чего вы ждёте от других. Входящих: " + scopedInbox.length + ", исходящих: " + scopedOutbox.length + "." : "Incoming items address " + d.self + "; outgoing items are what you await from others. Incoming: " + scopedInbox.length + ", outgoing: " + scopedOutbox.length + ".",
+      // `d.self` is empty until a system is configured, and pasting it into the
+      // sentence produced "адресовано ;". The name is an improvement to the
+      // sentence, not a part of it.
+      workSub: ru
+        ? "Входящие — то, что адресовано " + (d.self ? d.self : "вам") + "; исходящие — то, чего вы ждёте от других. Входящих: " + scopedInbox.length + ", исходящих: " + scopedOutbox.length + "."
+        : "Incoming items are addressed to " + (d.self ? d.self : "you") + "; outgoing items are what you await from others. Incoming: " + scopedInbox.length + ", outgoing: " + scopedOutbox.length + ".",
+      // A menu, not a chip row: eight types plus "all" wrapped to a second line
+      // at every width, and the count beside each one answers "is it worth
+      // filtering to this" before the click rather than after it.
+      typeMenuOpen: s.typeMenu,
+      typeMenuExpanded: s.typeMenu ? "true" : "false",
+      typeCaret: s.typeMenu ? "▴" : "▾",
+      toggleTypeMenu: (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState(x => ({ typeMenu: !x.typeMenu })); },
+      typeButtonStyle: "display:inline-flex; align-items:center; gap:8px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:10px; padding:9px 13px; cursor:pointer; white-space:nowrap; " +
+        (workType === "all" ? "background:var(--surface); color:var(--body); box-shadow:0 1px 2px rgba(33,30,23,.06);" : "background:var(--primary); color:var(--on-primary);") +
+        (s.typeMenu ? " box-shadow:0 1px 2px rgba(33,30,23,.06), inset 0 0 0 1.5px var(--border-strong);" : ""),
+      workTypeCurrent: workType === "all" ? (ru ? "Все типы" : "All types") : (TYPE_WORDS(ru)[workType] || workType),
       workTypeFilters: [{ id: "all", label: ru ? "Все типы" : "All types" }].concat(workTypes.map(t => ({ id: t, label: TYPE_WORDS(ru)[t] || t }))).map(f => ({
         label: f.label,
-        pressed: workType === f.id ? "true" : "false",
-        style: this.filterChip(workType === f.id),
-        go: () => this.setState({ workType: f.id, workSel: "" })
+        count: String(workTypeCount(f.id)),
+        selected: workType === f.id,
+        current: workType === f.id ? "true" : null,
+        style: "display:flex; align-items:center; gap:9px; width:100%; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:9px; padding:9px 10px; cursor:pointer; " +
+          (workType === f.id ? "background:var(--teal-tint); color:var(--teal-ink);" : "background:transparent; color:var(--body);"),
+        go: () => this.setState({ workType: f.id, workSel: "", typeMenu: false })
       })),
-      workTabs: [["incoming", (ru ? "Входящие · " : "Incoming · ") + scopedInbox.length], ["outgoing", (ru ? "Исходящие · " : "Outgoing · ") + scopedOutbox.length]].map(([id, label]) => ({
+      workTabs: [["all", (ru ? "Все · " : "All · ") + (scopedInbox.length + scopedOutbox.length)], ["incoming", (ru ? "Входящие · " : "Incoming · ") + scopedInbox.length], ["outgoing", (ru ? "Исходящие · " : "Outgoing · ") + scopedOutbox.length]].map(([id, label]) => ({
         label,
         pressed: s.workTab === id ? "true" : "false",
-        style: this.filterChip(s.workTab === id),
-        go: () => this.setState({ workTab: id, workSel: "", workType: "all" })
+        style: this.segmentStyle(s.workTab === id),
+        go: () => this.setState({ workTab: id, workSel: "", workType: "all", typeMenu: false })
       })),
       workRows: workList.map(it => this.rowFor(it, "workSel", workSel)),
       noWorkRows: workList.length === 0,
-      workFiltered: workType !== "all",
+      // Nothing in scope at all: one empty state across the page, and no filter
+      // bar above it — offering to narrow an empty list is offering nothing.
+      workWholeEmpty: scopedInbox.length + scopedOutbox.length === 0,
+      workHasColumns: scopedInbox.length + scopedOutbox.length > 0,
+      showWorkFilters: scopedInbox.length + scopedOutbox.length > 0,
       emptyWorkTitle: workType !== "all"
         ? (ru ? "Ничего такого типа" : "Nothing of that type")
-        : (s.workTab === "incoming" ? (ru ? "Входящих нет" : "Nothing incoming") : (ru ? "Исходящих нет" : "Nothing outgoing")),
+        : (s.workTab === "incoming" ? (ru ? "Входящих нет" : "Nothing incoming") : (s.workTab === "outgoing" ? (ru ? "Исходящих нет" : "Nothing outgoing") : (ru ? "В обороте пусто" : "Nothing in flight"))),
       emptyWorkText: workType !== "all"
         ? (ru ? "Под этот тип в текущей области ничего не подошло. Снимите фильтр, чтобы увидеть остальное." : "Nothing of that type in this scope. Clear the filter to see the rest.")
-        : (s.workTab === "incoming"
-          ? (ru ? "Никто из подключённых систем сейчас ничего вам не адресовал. Как только документ придёт, он окажется здесь." : "No connected system currently has anything addressed to you. The moment a document arrives it lands here.")
-          : (ru ? "Вы ничего не ждёте от других систем: все ваши документы дошли до конечного состояния." : "You are not waiting on any other system — every document you sent has reached a terminal state.")),
+        : (s.workTab === "outgoing"
+          ? (ru ? "Вы ничего не ждёте от других систем: все ваши документы дошли до конечного состояния." : "You are not waiting on any other system — every document you sent has reached a terminal state.")
+          : (ru ? "Никто из подключённых систем сейчас ничего вам не адресовал, и вы никого не ждёте. Как только документ придёт или уйдёт, он окажется здесь." : "No connected system has anything addressed to you, and you are waiting on nobody. The moment a document arrives or leaves, it lands here.")),
       workDetail: this.detailFor(workSel, workList),
 
       threadsSub: ru ? "Запрос, подтверждение, ответ, доказательства, проверка и решение лежат в одном треде и читаются в одном порядке всеми. Порядок берётся из коммитов Git — его нельзя подделать задним числом. Если истории нет, берётся время от автора, и мы это помечаем." : "Request, acknowledgement, response, evidence, verification, and decision remain linked. Commit order is strong evidence; declared timestamps are always labelled as a weak fallback.",
-      noThreadRows: threads.length === 0,
+      noThreadRows: threads.length === 0, hasThreadRows: threads.length > 0,
       emptyThreadsTitle: ru ? "Тредов пока нет" : "No threads yet",
       emptyThreadsText: ru
         ? "Тред появляется сам, когда первый документ отправлен: вопрос, запрос работы или объявление. Дальше ответы, доказательства и решение остаются в нём же."
@@ -2478,7 +2526,16 @@ class Component extends DCLogic {
         pillTone: !x.readable ? "blocking" : "attention",
         note: !x.readable ? (ru ? "манифест не прочитался" : "manifest could not be read") : (ru ? "читаем из устаревшей копии" : "reading from an older mirror revision")
       })),
-      intUnavailable: d.unavailable.map(u => ({ title: u.title, reason: u.reason })),
+      // These three facts are authored in Go and reach the page in English,
+      // keyed by a stable id. They are shell text, not document content, so the
+      // interface says them in the reader's language — and says them in terms
+      // of what it means for the reader, not in terms of the field names the
+      // assembler happens to use ("generatedTool and sourceDigest are binding
+      // metadata" answers a question nobody outside this codebase asked).
+      intUnavailable: d.unavailable.map(u => {
+        const say = ru ? UNAVAILABLE_RU[u.id] : null;
+        return { title: say ? say[0] : u.title, reason: say ? say[1] : u.reason };
+      }),
       // Each panel appears only with content, and the whole block collapses to
       // one reassuring empty state when there is nothing to qualify at all.
       hasIntFlags: flags.length > 0,
@@ -2606,6 +2663,19 @@ class Component extends DCLogic {
         })
       }))
     });
+
+    // The page description is picked AFTER the object is built, because every
+    // view already computes its own from its own numbers; the header just asks
+    // for the one belonging to the view on screen.
+    vals.pageSub = { overview: vals.ovSub, work: vals.workSub, threads: vals.threadsSub, contracts: vals.conSub,
+      network: vals.networkSub, spaces: vals.spacesSub, versions: vals.verSub, docs: vals.docsSub, guide: vals.guideSub }[s.view] || "";
+    vals.spaceSwitcher = {
+      options: spaceOptions,
+      healthLabel: c.spaceHealth,
+      healthDotStyle: vals.spaceHealthDotStyle,
+      openHealth: () => this.setState({ spaceModal: true })
+    };
+    return vals;
   }
 }
 

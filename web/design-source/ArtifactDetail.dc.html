@@ -9,7 +9,7 @@
 <x-dc>
 <div style="{{ shellStyle }}">
   <sc-if value="{{ missing }}" hint-placeholder-val="{{ false }}">
-    <dc-import name="EmptyState" title="{{ missingTitle }}" text="{{ missingText }}" hint="{{ missingHint }}" hint-size="100%,300px"></dc-import>
+    <dc-import name="EmptyState" title="{{ missingTitle }}" text="{{ missingText }}" hint="{{ missingHint }}" size="panel" hint-size="100%,300px"></dc-import>
   </sc-if>
   <sc-if value="{{ present }}" hint-placeholder-val="{{ true }}">
     <!-- One header grammar, the same one the compact rows use: the tags own the
