@@ -28,10 +28,10 @@ const (
 
 var (
 	loginPattern        = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
-	ErrInvalidLogin     = errors.New("avatar: invalid GitHub login")
-	ErrInvalidRecord    = errors.New("avatar: invalid cache record")
-	ErrTooLarge         = errors.New("avatar: image exceeds size limit")
-	ErrUnsupportedMedia = errors.New("avatar: unsupported image media type")
+	errInvalidLogin     = errors.New("avatar: invalid GitHub login")
+	errInvalidRecord    = errors.New("avatar: invalid cache record")
+	errTooLarge         = errors.New("avatar: image exceeds size limit")
+	errUnsupportedMedia = errors.New("avatar: unsupported image media type")
 )
 
 // Fetcher is the host-owned network seam. sourceURL is empty on the first
@@ -130,7 +130,7 @@ func (c *Cache) refreshOne(ctx context.Context, login string) error {
 		return writeRecord(path, old)
 	}
 	if len(data) > maxAvatarBytes {
-		return ErrTooLarge
+		return errTooLarge
 	}
 	next := record{Schema: recordSchema, Login: login, SourceURL: sourceURL, ETag: etag, ContentType: media, CheckedAt: now, Data: data}
 	if err := validateRecord(next, login); err != nil {
@@ -155,27 +155,29 @@ func DataURL(cacheDir, login string) (value string, ok bool) {
 
 func (c *Cache) path(login string) (string, error) {
 	if !loginPattern.MatchString(login) {
-		return "", ErrInvalidLogin
+		return "", errInvalidLogin
 	}
 	return filepath.Join(c.dir, strings.ToLower(login)+".json"), nil
 }
 
 func validateRecord(r record, login string) error {
 	if r.Schema != recordSchema || !strings.EqualFold(r.Login, login) || r.SourceURL == "" || len(r.Data) == 0 {
-		return ErrInvalidRecord
+		return errInvalidRecord
 	}
 	if len(r.Data) > maxAvatarBytes {
-		return ErrTooLarge
+		return errTooLarge
 	}
 	switch r.ContentType {
 	case "image/png", "image/jpeg", "image/webp":
 		return nil
 	default:
-		return ErrUnsupportedMedia
+		return errUnsupportedMedia
 	}
 }
 
 func readRecord(path string) (record, error) {
+	// #nosec G304 -- path is constructed only from the configured cache root
+	// and a GitHub login that passed loginPattern; callers never pass artifact data.
 	f, err := os.Open(path)
 	if err != nil {
 		return record{}, err
@@ -186,11 +188,11 @@ func readRecord(path string) (record, error) {
 		return record{}, err
 	}
 	if len(raw) > maxAvatarRecord {
-		return record{}, ErrTooLarge
+		return record{}, errTooLarge
 	}
 	var r record
 	if err := json.Unmarshal(raw, &r); err != nil {
-		return record{}, fmt.Errorf("%w: %v", ErrInvalidRecord, err)
+		return record{}, fmt.Errorf("%w: %w", errInvalidRecord, err)
 	}
 	return r, nil
 }
@@ -201,7 +203,7 @@ func writeRecord(path string, r record) error {
 		return fmt.Errorf("avatar: encode cache record: %w", err)
 	}
 	if len(raw) > maxAvatarRecord {
-		return ErrTooLarge
+		return errTooLarge
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("avatar: create cache directory: %w", err)
