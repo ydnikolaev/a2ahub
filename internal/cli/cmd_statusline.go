@@ -130,7 +130,12 @@ func StartDetachedSync() error {
 		_ = null.Close() // reason: child owns its duplicated descriptors after Start; parent close is best-effort
 	}()
 
-	cmd := exec.Command(executable, "sync")
+	// The prompt-facing refresh stays on sync's canonical mirror/update path,
+	// but skips optional avatar downloads. A first avatar fetch has its own
+	// network budget and must never keep the statusline lease alive behind a
+	// shell prompt; an explicit `a2a sync` still refreshes that cache.
+	cmd := exec.Command(executable, "sync", "--statusline-refresh")
+	configureDetachedProcess(cmd)
 	cmd.Stdin = null
 	cmd.Stdout = null
 	cmd.Stderr = null

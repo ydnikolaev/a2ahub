@@ -74,6 +74,18 @@ prepare_cache_root() {
   # the network. CI downloads modules in an explicit setup step; a fresh local
   # checkout does the same once with `go mod download`.
   export GOPROXY=off
+  configure_verify_binary
+}
+
+configure_verify_binary() {
+  if [ "$MODE" = test ]; then
+    # Scoped tests do not run build_cli first. Leaving this variable pointed
+    # at a prior full gate lets internal/e2e/TestMain execute stale product
+    # code while reporting the current source green. Unset it so TestMain's
+    # existing fallback builds exactly the tree being tested.
+    unset A2A_VERIFY_BINARY
+    return 0
+  fi
   export A2A_VERIFY_BINARY="$VERIFY_ROOT/bin/a2a"
 }
 
@@ -333,6 +345,20 @@ run_teeth() {
     return 1
   fi
 
+  MODE=test
+  A2A_VERIFY_BINARY="$tmp/stale-a2a"
+  configure_verify_binary
+  if [ -n "${A2A_VERIFY_BINARY+x}" ]; then
+    echo "verify --teeth: FAIL — scoped test mode retained a potentially stale shared binary." >&2
+    return 1
+  fi
+  MODE=teeth
+  configure_verify_binary
+  if [ "${A2A_VERIFY_BINARY:-}" != "$VERIFY_ROOT/bin/a2a" ]; then
+    echo "verify --teeth: FAIL — full verification lost its owned shared binary path." >&2
+    return 1
+  fi
+
   mkdir -p "$tmp/workspace"
   if ! out="$(
     GITHUB_ACTIONS=true \
@@ -374,7 +400,7 @@ run_teeth() {
     return 1
   fi
 
-  echo "verify --teeth: owned root accepted by construction; symlink and foreign residue refused; target preserved; red status recorded and returned."
+  echo "verify --teeth: owned root accepted by construction; symlink and foreign residue refused; scoped tests reject stale binaries; target preserved; red status recorded and returned."
 }
 
 if [ "$MODE" = "--teeth" ]; then

@@ -144,6 +144,36 @@ func TestSyncRefreshesAvatarsBestEffort(t *testing.T) {
 	}
 }
 
+func TestStatuslineSyncSkipsAvatarRefreshButKeepsUpdateRefresh(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	sync := cli.NewSyncCommand(filepath.Join(dir, "config.yaml"), filepath.Join(dir, "machine.yaml"), dir, cli.NewNoopPendingMarker())
+	var updateCalls, avatarCalls int
+	var updateHadDeadline bool
+	sync.SetRefreshUpdateForTest(func(ctx context.Context) {
+		updateCalls++
+		_, updateHadDeadline = ctx.Deadline()
+	})
+	sync.SetAvatarRefresher(func(context.Context) error {
+		avatarCalls++
+		return nil
+	})
+
+	io, _, stderr := newIO()
+	if code := sync.Run(context.Background(), []string{"--statusline-refresh"}, io); code != 0 {
+		t.Fatalf("code = %d; stderr=%s", code, stderr.String())
+	}
+	if avatarCalls != 0 {
+		t.Fatalf("avatar refresh calls = %d, want zero for prompt-facing refresh", avatarCalls)
+	}
+	if updateCalls != 1 {
+		t.Fatalf("update refresh calls = %d, want one", updateCalls)
+	}
+	if !updateHadDeadline {
+		t.Fatal("prompt-facing update refresh has no bounded deadline")
+	}
+}
+
 func TestSyncRejectsUnexpectedArgs(t *testing.T) {
 	t.Parallel()
 	sync := cli.NewSyncCommand("cfg.yaml", "machine.yaml", t.TempDir(), cli.NewNoopPendingMarker())

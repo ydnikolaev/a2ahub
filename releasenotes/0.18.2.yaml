@@ -103,3 +103,20 @@ changes:
       scope: none
       why: >
         No configuration or data migration is required.
+
+  - id: RN-01802-5
+    kind: fix
+    impact: normal
+    subject: "Prompt refreshes finish independently without turning optional avatar downloads into shell latency"
+    detail: >
+      The detached statusline refresh now owns a real operating-system session,
+      carries a five-second end-to-end budget and skips optional avatar
+      downloads while retaining mirror and update-notice refreshes. Explicit
+      `a2a sync` still refreshes avatars normally. Scoped e2e verification also
+      refuses a cached CLI from an earlier run, so a stale binary can no longer
+      hide a regression in the source currently under test.
+    affects: ["a2a statusline", "background sync", "avatar cache", "scoped verification"]
+    action:
+      scope: none
+      why: >
+        The prompt refresh and verification safeguards apply automatically.

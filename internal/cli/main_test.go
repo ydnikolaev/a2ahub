@@ -26,6 +26,9 @@ func TestMain(m *testing.M) {
 			}
 			os.Exit(0)
 		case "sync":
+			if len(os.Args) < 3 || os.Args[2] != "--statusline-refresh" {
+				os.Exit(8)
+			}
 			release := os.Getenv("A2A_TEST_DETACHED_RELEASE")
 			deadline := time.Now().Add(10 * time.Second)
 			for {
