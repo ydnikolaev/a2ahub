@@ -412,26 +412,31 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                   <div style="display:flex; align-items:center; gap:7px; font-size:16px; font-weight:600; color:var(--attention-strong);">{{ whoseMoveLabel }}<dc-import name="HintDot" text="{{ whoseMoveHint }}" hint-size="17px,17px"></dc-import></div>
                   <div style="font-size:15px; line-height:1.5; color:var(--attention-ink);">{{ whoseMoveText }}</div>
                 </div>
-                <div style="display:flex; flex-direction:column; gap:12px;">
+                <!-- One handover for the thread, not one per document. Three
+                     documents in one conversation are one job: an agent handed
+                     all of them at once has the whole situation, and three
+                     primary buttons in a row announce three main actions,
+                     which means none. The documents below stay a list of
+                     facts. -->
+                <sc-if value="{{ tvHasPrompt }}" hint-placeholder-val="{{ true }}">
+                  <div style="margin-bottom:14px;">
+                    <dc-import name="AgentPrompt" det="{{ tvPrompt }}" hint-size="100%,44px"></dc-import>
+                  </div>
+                </sc-if>
+                <div style="display:flex; flex-direction:column; gap:8px;">
                   <sc-for list="{{ tvOpen }}" as="o" hint-placeholder-count="2">
-                    <div style="background:var(--surface); border-radius:11px; padding:13px 15px;">
-                      <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:7px;">
-                        <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
-                          <dc-import name="TypeBadge" type="{{ o.type }}" size="small" hint-size="130px,24px"></dc-import>
-                          <dc-import name="StatusPill" text="{{ o.who }}" tone="{{ o.whoTone }}" size="small" hint-size="120px,24px"></dc-import>
-                        </span>
-                        <span style="flex:0 0 auto; font-size:15px; color:var(--muted); text-align:right;">{{ o.needed }}</span>
+                    <!-- Two fixed lines, the same two for every row: what it is
+                         and when it is due, then which document. Putting the id
+                         on the badge line instead let one long id push the
+                         deadline down and left the list ragged, with some rows
+                         one line tall and some two. -->
+                    <div style="background:var(--surface); border-radius:11px; padding:11px 14px;">
+                      <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px; margin-bottom:5px;">
+                        <dc-import name="TypeBadge" type="{{ o.type }}" size="small" hint-size="130px,24px"></dc-import>
+                        <dc-import name="StatusPill" text="{{ o.who }}" tone="{{ o.whoTone }}" size="small" hint-size="120px,24px"></dc-import>
+                        <span style="flex:1 1 auto; min-width:0; text-align:right; font-size:15px; color:var(--muted);">{{ o.needed }}</span>
                       </div>
-                      <div style="font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--body); margin-bottom:8px; overflow-wrap:anywhere;">{{ o.id }}</div>
-                      <!-- The list of legal transitions used to sit here as
-                           chips. Nobody in an agent-to-agent system takes a
-                           transition by hand, so it was a vocabulary lesson in
-                           the middle of a card. The moves still matter, but to
-                           the agent: they go into the prompt below, which is
-                           the thing a person actually does with them. -->
-                      <sc-if value="{{ o.hasPrompt }}" hint-placeholder-val="{{ true }}">
-                        <dc-import name="AgentPrompt" det="{{ o.prompt }}" hint-size="100%,44px"></dc-import>
-                      </sc-if>
+                      <div style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); overflow-wrap:anywhere;">{{ o.id }}</div>
                     </div>
                   </sc-for>
                 </div>
@@ -1451,12 +1456,61 @@ function day(iso) {
 // prose; then the one instruction that matters more than the facts, which is
 // to go and re-read the document, because everything above it came out of a
 // snapshot that stopped being current the moment it was written.
-function agentPromptText(ctx) {
-  const p = ctx.prompt || {};
-  // null drops the line; "" is a deliberate blank between blocks.
-  const line = (label, value) => value ? label + String(value) : null;
+// null drops the line; "" is a deliberate blank between blocks.
+function promptLine(label, value) { return value ? label + String(value) : null; }
+
+// The facts about one document, optionally numbered and indented so several of
+// them can sit in one thread-level prompt without running together.
+function promptDocLines(doc, indent) {
+  const p = doc.prompt || {};
+  const pad = indent || "";
   const moves = (p.moves || []).join(", ");
   const ask = (p.askFirst || []).join(", ");
+  return [
+    // The protocol's own spelling of the state, not the interface's. An agent
+    // matches this against the fold table; "in progress" is not a state there.
+    pad + "Type: " + doc.type + ", state " + doc.state,
+    promptLine(pad + "Title: ", doc.title),
+    promptLine(pad + "From: ", doc.from + (doc.to && doc.to.length ? ", to " + doc.to.join(", ") : "")),
+    promptLine(pad + "Deadline: ", doc.neededBy ? doc.neededBy + (doc.overdue ? " (already passed)" : "") : ""),
+    doc.blocking ? pad + "Blocking: yes" + (doc.priority ? ", priority " + doc.priority : "") : promptLine(pad + "Priority: ", doc.priority),
+    pad + "Moves: " + moves + (ask ? " — ask the person before " + ask : "")
+  ];
+}
+
+// The blocks every prompt ends with: the snapshot warning and the re-read, the
+// skill files behind the moves, and the rule about work that lands in whatever
+// repository this was pasted into. Shared so the single-document and the
+// whole-thread prompt cannot drift apart.
+function promptTail(ctx, docs) {
+  const shows = docs.map(d => "  a2a show " + d.id + (ctx.space ? " --space " + ctx.space : ""));
+  const uniq = (values) => values.filter((v, i) => v && values.indexOf(v) === i);
+  const loops = uniq(docs.map(d => (d.prompt || {}).loop));
+  const shapes = uniq(docs.map(d => (d.prompt || {}).doc));
+  // What you draft is not what you are reading: answering a work request
+  // produces a response, and its shape is documented in its own file.
+  const drafts = uniq(docs.reduce((all, d) => all.concat((d.prompt || {}).drafts || []), []));
+  const plural = docs.length > 1;
+  return [
+    "",
+    "Everything above came from a static dashboard snapshot" + (ctx.generatedAt ? " taken " + ctx.generatedAt : "") + " and may already be out of date. Start by reading " + (plural ? "them" : "the document") + " as " + (plural ? "they stand" : "it stands") + " now:",
+    ""
+  ].concat(shows).concat([
+    "",
+    "Then work " + (plural ? "them" : "it") + " through the a2ahub skill rather than from this text:",
+    loops.length ? "  " + loops.join(", ") + " for the " + (loops.length > 1 ? "loops these moves belong" : "loop this move belongs") + " to" : null,
+    shapes.length ? "  " + shapes.join(", ") + " for the shape of the " + (plural ? "documents" : "document") + " above" : null,
+    drafts.length ? "  " + drafts.join(", ") + " for the shape of what taking one of these moves creates" : null,
+    "  reference/commands.md for the exact verb, and `a2a validate` before you submit.",
+    "",
+    // Deliberately does not name a file or a convention. This page has no idea
+    // which repository it was pasted into, and a prompt that says "write a spec
+    // under docs/features" is only correct inside the one it was written in.
+    "If answering this turns into work in this repository, do not start writing code from this prompt. Find how this repository takes work, from its own agent instructions and docs, propose the change in that form, and confirm it with the person before you begin."
+  ]);
+}
+
+function agentPromptText(ctx) {
   // Prose paragraphs are single lines. Hand-wrapping them at some column looks
   // tidy in a wide editor and ragged everywhere else, including the panel that
   // shows this text back before it is copied; the reader wraps it, we do not.
@@ -1465,38 +1519,34 @@ function agentPromptText(ctx) {
     "You are acting for `" + ctx.self + "` in the a2a exchange. Someone read this document on the local dashboard before you did and is handing the move back.",
     "",
     "Document: " + ctx.id,
-    line("Title: ", ctx.title),
-    // The protocol's own spelling of the state, not the interface's. An agent
-    // matches this against the fold table; "in progress" is not a state there.
-    "Type: " + ctx.type + ", state " + ctx.state,
-    line("Space: ", ctx.space + (ctx.thread ? ", thread " + ctx.thread : "")),
-    line("From: ", ctx.from + (ctx.to && ctx.to.length ? ", to " + ctx.to.join(", ") : "")),
-    line("Deadline: ", ctx.neededBy ? ctx.neededBy + (ctx.overdue ? " (already passed)" : "") : ""),
-    ctx.blocking ? "Blocking: yes" + (ctx.priority ? ", priority " + ctx.priority : "") : line("Priority: ", ctx.priority),
-    "",
-    "Moves " + ctx.self + " may legally make on it right now: " + moves + ".",
-    ask
-      ? "Put these to the person before taking one: " + ask + ". Each commits this system or closes an option that does not reopen."
-      : "None of these commit the system, so take the right one without waiting to be asked.",
-    "",
-    "Everything above came from a static dashboard snapshot" + (ctx.generatedAt ? " taken " + ctx.generatedAt : "") + " and may already be out of date. Start by reading the document as it stands now:",
-    "",
-    "  a2a show " + ctx.id + (ctx.space ? " --space " + ctx.space : ""),
-    "",
-    "Then work it through the a2ahub skill rather than from this text:",
-    p.loop ? "  " + p.loop + " for the loop this move belongs to" : null,
-    p.doc ? "  " + p.doc + " for the shape of the document above" : null,
-    // What you draft is not what you are reading: answering a work request
-    // produces a response, and its shape is documented in its own file.
-    (p.drafts || []).length ? "  " + p.drafts.join(", ") + " for the shape of what taking one of these moves creates" : null,
-    "  reference/commands.md for the exact verb, and `a2a validate` before you submit.",
-    "",
-    // Deliberately does not name a file or a convention. This page has no idea
-    // which repository it was pasted into, and a prompt that says "write a spec
-    // under docs/features" is only correct inside the one it was written in.
-    "If answering this turns into work in this repository, do not start writing code from this prompt. Find how this repository takes work, from its own agent instructions and docs, propose the change in that form, and confirm it with the person before you begin."
-  ];
+    promptLine("Space: ", ctx.space + (ctx.thread ? ", thread " + ctx.thread : ""))
+  ].concat(promptDocLines(ctx, "")).concat(promptTail(ctx, [ctx]));
   return out.filter(l => l !== null).join("\n") + "\n";
+}
+
+// The whole conversation at once. A thread is one job, so an agent handed every
+// document in it that is ours can act coherently instead of three times from
+// three disconnected copies of the same instructions. It also gets told what
+// the other side still owes, which is context no single-document prompt has.
+function agentThreadPromptText(ctx) {
+  const docs = ctx.documents || [];
+  const out = [
+    "You are acting for `" + ctx.self + "` in the a2a exchange. Someone read this thread on the local dashboard before you did and is handing the move back. " +
+      (docs.length > 1 ? docs.length + " documents in it are waiting on you." : "One document in it is waiting on you."),
+    "",
+    "Thread: " + ctx.thread,
+    promptLine("Subject: ", ctx.title),
+    promptLine("Space: ", ctx.space),
+    promptLine("Participants: ", (ctx.participants || []).join(", "))
+  ];
+  docs.forEach((doc, i) => {
+    out.push("", (docs.length > 1 ? (i + 1) + ". " : "") + doc.id);
+    promptDocLines(doc, "   ").forEach(l => out.push(l));
+  });
+  if ((ctx.waiting || []).length) {
+    out.push("", "Still waiting on somebody else, so not yours to move on: " + ctx.waiting.join(", ") + ".");
+  }
+  return out.concat(promptTail(ctx, docs)).filter(l => l !== null).join("\n") + "\n";
 }
 
 // Every control in a filter row is FILTER_H tall. The segmented control sits
@@ -2234,6 +2284,10 @@ class Component extends DCLogic {
     // derived — a reader had to work out the answer from the list below it,
     // which is the one thing the heading existed to save them.
     const tvPend = tv ? (tv.open_items || []).filter(o => o.pending !== false) : [];
+    // Ours to move on AND carrying the facts a prompt is built from. Both
+    // conditions, because a move we hold with no legal transition behind it
+    // would produce a prompt telling an agent to go and do nothing.
+    const tvMine = tvPend.filter(o => o.your_move && o.prompt);
     const tvYours = tvPend.filter(o => o.your_move).length;
     const tvOthers = [];
     tvPend.forEach(o => (o.waiting_on || []).forEach(w => { if (w !== d.self && tvOthers.indexOf(w) === -1) tvOthers.push(w); }));
@@ -2254,17 +2308,16 @@ class Component extends DCLogic {
     // open to several parties at once, so "2 of 2 are on you" and "others are
     // also owed" are both true — and the sentence that mentions "the rest"
     // when there is no rest contradicts the number in front of it.
-    // The closing sentence points at what is actually under it. It used to say
-    // "what each one needs is below" over a row of transition chips; the chips
-    // are gone and a prompt for the agent took their place, so the sentence
-    // names that instead.
-    const handOver = ru ? " У каждого кнопка с промптом: скопируйте и отдайте ход агенту." : " Each carries a prompt: copy it and hand the move to your agent.";
+    // The closing sentence points at what is actually under it: one prompt
+    // covering the whole thread, then the documents it covers.
+    const handOver = !tvMine.length ? ""
+      : (ru ? " Промпт ниже собирает их все: скопируйте и отдайте ход агенту." : " The prompt below covers all of them: copy it and hand the move to your agent.");
     const moveText = tvYours === 0
       ? (tvOthers.length
         ? (ru ? "Вы никого не держите, ждут другую сторону." : "You are holding nobody up; the other side owes the move.")
         : (ru ? "Открытые документы есть, но кто должен сделать следующий шаг, из событий не выводится." : "Open documents remain, but the events do not resolve who owes the next move."))
       : tvYours < tvPend.length
-        ? (ru ? "На вас " + ruPlural(tvYours, "документ", "документа", "документов") + " из " + tvPend.length + ", остальные ждут ответа от других. Там, где ход за вами, есть промпт для агента." : tvYours + " of " + tvPend.length + " open documents are on you; the rest await somebody else. The ones that are yours carry a prompt for your agent.")
+        ? (ru ? "На вас " + ruPlural(tvYours, "документ", "документа", "документов") + " из " + tvPend.length + ", остальные ждут ответа от других." + handOver : tvYours + " of " + tvPend.length + " open documents are on you; the rest await somebody else." + handOver)
         : (ru
           ? (tvPend.length === 1 ? "Один документ ждёт вашего шага." : "Все " + ruPlural(tvPend.length, "документ ждёт", "документа ждут", "документов ждут") + " вашего шага.") + (tvOthers.length ? " По некоторым сходить может и другая сторона." : "") + handOver
           : (tvPend.length === 1 ? "One document is waiting on you." : "All " + tvPend.length + " open documents are waiting on you.") + (tvOthers.length ? " On some of them the other side can move too." : "") + handOver);
@@ -2633,26 +2686,34 @@ class Component extends DCLogic {
       // Only items someone still owes a move on. The assembler marks the rest
       // `pending:false` — those have nothing left but the owner's escape hatch,
       // and listing them printed "waiting on" with no name after it.
-      tvOpen: tv ? (tv.open_items || []).filter(o => o.pending !== false).map(o => {
-        const art = (tv.artifacts || []).find(a => a.id === o.id) || {};
-        return {
-          id: o.id, type: o.type,
-          who: o.your_move ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + listNames((o.waiting_on || []).filter(w => w !== d.self), ru),
-          whoTone: o.your_move ? "attention" : "neutral",
-          needed: o.needed_by ? (ru ? "дедлайн " : "due ") + isoDay(o.needed_by) : (o.blocking ? (ru ? "блокирует" : "blocking") : ""),
-          // Offered on our own move only. Handing an agent a prompt about a
-          // document another system owes an answer on invites it to act out of
-          // turn.
-          hasPrompt: !!(o.your_move && o.prompt),
-          prompt: {
-            text: agentPromptText(this.promptContext({
+      tvOpen: tvPend.map(o => ({
+        id: o.id, type: o.type,
+        who: o.your_move ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + listNames((o.waiting_on || []).filter(w => w !== d.self), ru),
+        whoTone: o.your_move ? "attention" : "neutral",
+        needed: o.needed_by ? (ru ? "дедлайн " : "due ") + isoDay(o.needed_by) : (o.blocking ? (ru ? "блокирует" : "blocking") : "")
+      })),
+      // One prompt for the thread rather than one per row. Every document in it
+      // that is ours goes in, and what the other side still owes goes in as
+      // context: a conversation is one job, and an agent that sees all of it
+      // acts once instead of three times from three copies of the same
+      // instructions.
+      tvHasPrompt: tvMine.length > 0,
+      tvPrompt: {
+        text: tv && tvMine.length ? agentThreadPromptText(this.promptContext({
+          thread: tv.thread, space: tv.space,
+          title: tv.opener ? tv.opener.title : "",
+          participants: tv.participants || [],
+          documents: tvMine.map(o => {
+            const art = (tv.artifacts || []).find(a => a.id === o.id) || {};
+            return this.promptContext({
               id: o.id, type: o.type, state: o.state, title: art.title,
-              space: tv.space, thread: tv.thread, from: art.from, to: art.to,
-              neededBy: o.needed_by, blocking: o.blocking, prompt: o.prompt
-            }))
-          }
-        };
-      }) : [],
+              from: art.from, to: art.to, neededBy: o.needed_by,
+              blocking: o.blocking, prompt: o.prompt
+            });
+          }),
+          waiting: tvPend.filter(o => !o.your_move).map(o => o.id)
+        })) : ""
+      },
       tvHasFlags: !!(tv && ((tv.flags || []).length || (tv.unresolved || []).length)),
       tvFlags: tv ? (tv.flags || []).map(f => f.kind + (ru ? " для " : " on ") + f.subject + (f.event_ulid ? (ru ? " · событие " : " · event ") + f.event_ulid : "")).concat((tv.unresolved || []).map(u => (ru ? "ссылка в никуда: " : "unresolved reference: ") + (u.ref || JSON.stringify(u)))) : [],
 
