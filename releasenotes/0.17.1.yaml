@@ -105,3 +105,25 @@ changes:
       scope: none
       why: >
         No configuration or data migration is required.
+
+  - id: RN-01701-6
+    kind: feat
+    impact: low
+    subject: "The dashboard names each page, speaks the lifecycle in words, and says how current it is"
+    detail: >
+      Every page heading now carries an icon, Overview is titled Overview and
+      states in its description what it used to state in its headline, and its
+      counters span the width. Lifecycle transitions reach a Russian reader as
+      Russian verbs rather than protocol enums, and the state an author claimed
+      is shown as a pill from the one status vocabulary instead of an English
+      word in the middle of a sentence. Focusing a document in a thread is
+      released by a click on any empty space. A scope with nothing in it shows
+      one empty state across the full width instead of two saying the same
+      thing. Snapshot freshness moved out of the Overview column into a Space
+      health dialog that states the writer floor as the comparison it is —
+      what the space requires against the binary you run.
+    affects: ["a2a html", "overview", "threads", "contracts", "ru locale"]
+    action:
+      scope: none
+      why: >
+        No configuration or data migration is required.

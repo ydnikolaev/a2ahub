@@ -83,7 +83,12 @@
             <div style="display:flex; gap:14px; align-items:flex-start;">
               <span style="{{ e.dotStyle }}"></span>
               <div style="min-width:0;">
-                <div style="font-size:16px; color:var(--text);">{{ e.text }}</div>
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px; font-size:16px; color:var(--text);">
+                  <span>{{ e.text }}</span>
+                  <sc-if value="{{ e.hasClaim }}" hint-placeholder-val="{{ false }}">
+                    <span style="display:inline-flex; align-items:center; gap:6px; font-size:14px; color:var(--muted);">{{ e.claimLabel }}<dc-import name="StatusPill" text="{{ e.claim }}" tone="outline" size="small" hint-size="90px,24px"></dc-import></span>
+                  </sc-if>
+                </div>
                 <div style="font-size:15px; color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; overflow-wrap:anywhere;">{{ e.meta }}</div>
               </div>
             </div>
@@ -165,6 +170,7 @@ class Component extends DCLogic {
       events: (d.events || []).map(e => ({
         text: e.text,
         meta: e.meta,
+        hasClaim: !!e.hasClaim, claim: e.claim || "", claimLabel: e.claimLabel || "",
         dotStyle: "width:10px; height:10px; border-radius:99px; margin-top:7px; flex:0 0 10px; background:" + (e.flagged ? "var(--ochre)" : "var(--border-strong)") + ";"
       })),
       hasFlags: !!(d.flags && d.flags.length),

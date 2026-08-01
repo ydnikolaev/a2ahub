@@ -143,10 +143,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 .ssot-doc-body table { width:100%; display:block; overflow-x:auto; margin:16px 0 22px; border:1px solid var(--border); border-radius:10px; border-collapse:separate; border-spacing:0; font-size:14px; }
 .ssot-doc-body th,.ssot-doc-body td { min-width:120px; padding:10px 12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
 .ssot-doc-body tr:last-child td { border-bottom:0; }
-@media (max-width: 720px) {
-  [data-overview-strip] { align-items:flex-start !important; flex-wrap:wrap !important; }
-  [data-overview-strip] [data-overview-cta] { flex:1 1 100%; white-space:normal !important; overflow-wrap:anywhere; }
-}
 
 </style>
 </helmet>
@@ -191,8 +187,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
       </span>
     </div>
     <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0 14px; display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap;">
-      <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:8px;">
-          <span style="font-size:15px; color:var(--muted);">{{ spaceLabel }}</span>
+      <!-- No "Space" caption: the first chip says "All spaces", which names the
+           row better than a label in front of it ever did. -->
+      <span role="group" aria-label="{{ spaceLabel }}" style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:8px;">
         <sc-for list="{{ spaceChips }}" as="s" hint-placeholder-count="5">
           <button type="button" onClick="{{ s.go }}" style="{{ s.style }}">
             <sc-if value="{{ s.hasFaces }}" hint-placeholder-val="{{ true }}">
@@ -233,73 +230,76 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
     <sc-if value="{{ isOverview }}" hint-placeholder-val="{{ true }}">
       <section aria-label="{{ overviewAria }}" data-screen-label="Overview">
-        <div style="display:flex; align-items:flex-end; gap:18px; flex-wrap:wrap; margin-bottom:22px;">
-          <div style="flex:1 1 420px; min-width:0;">
-            <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em; max-width:640px; text-wrap:balance;">{{ ovHeadline }}</h1>
-            <p style="margin:0; font-size:18px; line-height:1.55; color:var(--body); max-width:640px;">{{ ovSub }}</p>
+        <div style="display:flex; align-items:flex-start; gap:18px; flex-wrap:wrap; margin-bottom:20px;">
+          <div style="flex:1 1 460px; min-width:0;">
+            <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
+              <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"></path><path d="M4 6h.01"></path><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"></path><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"></path><path d="M12 18h.01"></path><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"></path><circle cx="12" cy="12" r="2"></circle><path d="m13.41 10.59 5.66-5.66"></path></svg></span>
+              <span>{{ overviewTitle }}</span>
+            </h1>
+            <p style="margin:0 0 10px; font-size:18px; line-height:1.55; color:var(--body); max-width:720px;">{{ ovSub }}</p>
+            <!-- The queue below holds only what needs a person. The rest of the
+                 inbox is one link away, named by its own count. -->
+            <button type="button" onClick="{{ goWork }}" style="padding:0; border:0; background:transparent; cursor:pointer; text-align:left; font-family:'Onest',sans-serif; font-size:16px; font-weight:600; color:var(--teal-ink);">{{ ovRestText }} →</button>
           </div>
-          <div style="display:flex; gap:12px; flex-wrap:wrap;">
-            <sc-for list="{{ ovStats }}" as="s" hint-placeholder-count="3">
-              <div style="background:var(--surface); border-radius:14px; padding:16px 20px; min-width:150px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-                <div style="display:flex; align-items:center; gap:7px; font-size:15px; color:var(--muted); margin-bottom:6px;">{{ s.label }}<dc-import name="HintDot" text="{{ s.hint }}" hint-size="17px,17px"></dc-import></div>
-                <div style="display:flex; align-items:baseline; gap:8px;"><span style="{{ s.valueStyle }}">{{ s.value }}</span><span style="font-size:15px; color:var(--muted);">{{ s.note }}</span></div>
-              </div>
-            </sc-for>
-          </div>
+          <!-- Freshness is a qualifier on everything on this page, not an item
+               in the queue. It sits in the corner and opens on demand. -->
+          <button type="button" onClick="{{ openSpaceModal }}" style="flex:0 0 auto; display:flex; align-items:center; gap:9px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--body); background:var(--surface); border:0; border-radius:10px; padding:10px 14px; cursor:pointer; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+            <span style="{{ spaceHealthDotStyle }}"></span>
+            <span>{{ spaceHealthLabel }}</span>
+          </button>
         </div>
 
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-bottom:22px;">
+          <sc-for list="{{ ovStats }}" as="s" hint-placeholder-count="4">
+            <div style="min-width:0; background:var(--surface); border-radius:14px; padding:16px 20px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+              <div style="display:flex; align-items:center; gap:7px; font-size:15px; color:var(--muted); margin-bottom:6px;">{{ s.label }}<dc-import name="HintDot" text="{{ s.hint }}" hint-size="17px,17px"></dc-import></div>
+              <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;"><span style="{{ s.valueStyle }}">{{ s.value }}</span><span style="font-size:15px; color:var(--muted);">{{ s.note }}</span></div>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- Nothing waiting means ONE empty state across the full width. Two
+             columns of "there is nothing here" say the same thing twice and
+             make an empty screen look like a broken one. -->
+        <sc-if value="{{ noOvRows }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="EmptyState" title="{{ emptyQueueTitle }}" text="{{ emptyQueueText }}" size="wide" hint-size="100%,360px"></dc-import>
+        </sc-if>
+        <sc-if value="{{ hasOvRows }}" hint-placeholder-val="{{ true }}">
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
-            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-              <h2 style="margin:0; font-size:20px; font-weight:600;">{{ overviewQueueTitle }}</h2>
-              <span style="font-size:15px; color:var(--muted);">{{ overviewQueueNote }}</span>
-            </div>
-            <sc-if value="{{ noOvRows }}" hint-placeholder-val="{{ false }}">
-              <dc-import name="EmptyState" title="{{ emptyQueueTitle }}" text="{{ emptyQueueText }}" size="compact" hint-size="100%,240px"></dc-import>
-            </sc-if>
             <sc-for list="{{ ovRows }}" as="r" hint-placeholder-count="3">
               <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
             </sc-for>
-            <button data-overview-strip type="button" onClick="{{ goWork }}" style="text-align:left; font-family:'Onest',sans-serif; background:var(--sink); border:0; border-radius:14px; padding:16px 18px; cursor:pointer; display:flex; align-items:center; gap:12px; flex-wrap:nowrap; min-width:0; width:100%; box-sizing:border-box;">
-              <span style="flex:1 1 auto; min-width:0; font-size:16px; color:var(--body);">{{ ovRestText }}</span>
-              <span data-overview-cta style="flex:0 1 auto; min-width:0; font-size:16px; font-weight:600; color:var(--teal-ink); white-space:nowrap;">{{ openWorkLabel }} →</span>
-            </button>
-            <div style="background:var(--surface); border-radius:14px; padding:16px 18px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-              <div style="font-size:16px; font-weight:600; margin-bottom:10px;">{{ snapshotReliabilityLabel }}</div>
-              <div style="display:flex; flex-direction:column; gap:9px; font-size:15px;">
-                <sc-for list="{{ ovSpaces }}" as="s" hint-placeholder-count="4">
-                  <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;">
-                    <span style="font-family:'IBM Plex Mono',monospace;">{{ s.id }}</span>
-                    <dc-import name="StatusPill" text="{{ s.pillText }}" tone="{{ s.pillTone }}" hint-size="100px,24px"></dc-import>
-                    <span style="color:var(--muted);">{{ s.meta }}</span>
-                  </div>
-                </sc-for>
-              </div>
-            </div>
           </div>
           <dc-import name="ArtifactDetail" det="{{ ovDetail }}" hint-size="100%,600px"></dc-import>
         </div>
+        </sc-if>
       </section>
     </sc-if>
 
     <sc-if value="{{ isWork }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ workAria }}" data-screen-label="Work">
-        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ workTitle }}</h1>
+        <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
+          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.5C2 7 4 5 6.5 5H18c2.2 0 4 1.8 4 4v8Z"></path><polyline points="15,9 18,9 18,11"></polyline><path d="M6.5 5C9 5 11 7 11 9.5V17a2 2 0 0 1-2 2"></path><line x1="6" x2="7" y1="10" y2="10"></line></svg></span>
+          <span>{{ workTitle }}</span>
+        </h1>
         <p style="margin:0 0 18px; font-size:18px; line-height:1.55; color:var(--body); max-width:700px;">{{ workSub }}</p>
-        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
-          <div style="display:flex; align-items:center; gap:2px; background:var(--border); border-radius:9px; padding:3px; width:fit-content;">
-            <sc-for list="{{ workTabs }}" as="t" hint-placeholder-count="2">
-              <button type="button" onClick="{{ t.go }}" aria-pressed="{{ t.pressed }}" style="{{ t.style }}">{{ t.label }}</button>
-            </sc-for>
-          </div>
-          <!-- Filter by document type. An inbox of eleven mixed items is read
-               one kind at a time: "what did anyone ask me", "what needs a
-               decision". Types with nothing in this scope are not offered. -->
-          <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; row-gap:7px;">
-            <sc-for list="{{ workTypeFilters }}" as="f" hint-placeholder-count="4">
-              <button type="button" onClick="{{ f.go }}" aria-pressed="{{ f.pressed }}" style="{{ f.style }}">{{ f.label }}</button>
-            </sc-for>
-          </div>
+        <!-- Two filter groups, one chip vocabulary. The direction used to be a
+             segmented control and the type a chip row, so two controls doing
+             the same job looked like two different kinds of thing. A muted
+             group label and a rule between them keep the two dark active chips
+             from reading as one selection. Filter by document type offers only
+             the kinds actually present in this scope. -->
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; margin-bottom:14px;">
+          <span style="font-size:15px; color:var(--muted);">{{ directionLabel }}</span>
+          <sc-for list="{{ workTabs }}" as="t" hint-placeholder-count="2">
+            <button type="button" onClick="{{ t.go }}" aria-pressed="{{ t.pressed }}" style="{{ t.style }}">{{ t.label }}</button>
+          </sc-for>
+          <span style="width:1px; height:24px; background:var(--border); margin:0 4px;"></span>
+          <span style="font-size:15px; color:var(--muted);">{{ typeLabel }}</span>
+          <sc-for list="{{ workTypeFilters }}" as="f" hint-placeholder-count="4">
+            <button type="button" onClick="{{ f.go }}" aria-pressed="{{ f.pressed }}" style="{{ f.style }}">{{ f.label }}</button>
+          </sc-for>
         </div>
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
@@ -317,7 +317,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
     <sc-if value="{{ isThreads }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ threadsAria }}" data-screen-label="Threads">
-        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ threadsTitle }}</h1>
+        <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
+          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10.586 5.414-5.172 5.172"></path><path d="m18.586 13.414-5.172 5.172"></path><path d="M6 12h12"></path><circle cx="12" cy="20" r="2"></circle><circle cx="12" cy="4" r="2"></circle><circle cx="20" cy="12" r="2"></circle><circle cx="4" cy="12" r="2"></circle></svg></span>
+          <span>{{ threadsTitle }}</span>
+        </h1>
         <p style="margin:0 0 18px; font-size:18px; line-height:1.55; color:var(--body); max-width:760px;">{{ threadsSub }}</p>
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
@@ -420,7 +423,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                         <div style="font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.6; color:var(--muted); overflow-wrap:anywhere; margin-bottom:9px;">{{ e.route }}<br>{{ e.id }}</div>
                         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:7px;">
                           <sc-for list="{{ e.relations }}" as="r" hint-placeholder-count="1">
-                            <button type="button" onClick="{{ r.go }}" title="{{ r.title }}" style="{{ r.style }}">↳ {{ r.text }}</button>
+                            <button data-tv-focus type="button" onClick="{{ r.go }}" title="{{ r.title }}" style="{{ r.style }}">↳ {{ r.text }}</button>
                           </sc-for>
                           <sc-if value="{{ e.opensChain }}" hint-placeholder-val="{{ false }}">
                             <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); background:var(--canvas); border-radius:6px; padding:4px 10px;">{{ opensChainLabel }}</span>
@@ -439,8 +442,20 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                           <span style="flex:1 1 auto; min-width:0; font-size:16px; color:var(--text); overflow-wrap:anywhere;">{{ e.text }}</span>
                           <span style="flex:0 0 auto; font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); white-space:nowrap;">{{ e.meta }}</span>
                         </div>
-                        <sc-if value="{{ e.hasSubject }}" hint-placeholder-val="{{ false }}">
-                          <button type="button" onClick="{{ e.goSubject }}" title="{{ e.subjectTitle }}" style="{{ e.subjectStyle }}">{{ subjectPrefix }} {{ e.subjectLabel }}</button>
+                        <!-- The claimed state is a pill, not a clause. As prose
+                             it appeared on every single row, wrapped the first
+                             line and pushed the timestamp column ragged — and a
+                             pill reads the state vocabulary from one place
+                             instead of a second copy of it living here. -->
+                        <sc-if value="{{ e.hasSecondLine }}" hint-placeholder-val="{{ false }}">
+                          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px; margin-top:5px;">
+                            <sc-if value="{{ e.hasClaim }}" hint-placeholder-val="{{ false }}">
+                              <span style="{{ e.claimStyle }}">{{ claimedLabel }}<dc-import name="StatusPill" text="{{ e.claim }}" tone="{{ e.claimTone }}" size="small" hint-size="90px,24px"></dc-import></span>
+                            </sc-if>
+                            <sc-if value="{{ e.hasSubject }}" hint-placeholder-val="{{ false }}">
+                              <button data-tv-focus type="button" onClick="{{ e.goSubject }}" title="{{ e.subjectTitle }}" style="{{ e.subjectStyle }}">{{ subjectPrefix }} {{ e.subjectLabel }}</button>
+                            </sc-if>
+                          </div>
                         </sc-if>
                       </div>
                     </sc-if>
@@ -466,13 +481,22 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
     <sc-if value="{{ isContracts }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ contractsAria }}" data-screen-label="Contracts">
-        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ contractsTitle }}</h1>
+        <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
+          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17 2 2a1 1 0 1 0 3-3"></path><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"></path><path d="m21 3 1 11h-2"></path><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"></path><path d="M3 4h8"></path></svg></span>
+          <span>{{ contractsTitle }}</span>
+        </h1>
         <p style="margin:0 0 18px; font-size:18px; line-height:1.55; color:var(--body); max-width:780px;">{{ conSub }}</p>
+
+        <!-- No contracts at all: one empty state across the full width. The
+             second panel exists only to say "pick something on the left", and
+             with nothing on the left it was answering a question nobody asked. -->
+        <sc-if value="{{ noConRows }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="EmptyState" title="{{ emptyContractsTitle }}" text="{{ emptyContractsText }}" hint="a2a contract new" size="wide" hint-size="100%,380px"></dc-import>
+        </sc-if>
+
+        <sc-if value="{{ hasConRows }}" hint-placeholder-val="{{ true }}">
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
-            <sc-if value="{{ noConRows }}" hint-placeholder-val="{{ false }}">
-              <dc-import name="EmptyState" title="{{ emptyContractsTitle }}" text="{{ emptyContractsText }}" hint="a2a contract new" hint-size="100%,300px"></dc-import>
-            </sc-if>
             <sc-for list="{{ conRows }}" as="c" hint-placeholder-count="6">
               <button type="button" onClick="{{ c.select }}" style="{{ c.style }}">
                 <span style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
@@ -489,10 +513,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
             </sc-for>
           </div>
 
-          <sc-if value="{{ noConRows }}" hint-placeholder-val="{{ false }}">
-            <dc-import name="EmptyState" title="{{ emptyContractDetailTitle }}" text="{{ emptyContractDetailText }}" hint-size="100%,300px"></dc-import>
-          </sc-if>
-          <sc-if value="{{ hasConRows }}" hint-placeholder-val="{{ true }}">
           <div style="min-width:0; background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
             <div style="margin-bottom:14px;">
               <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:7px; margin-bottom:9px;">
@@ -567,14 +587,17 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               <div style="margin-top:12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ codeBindingPrefix }} <strong>{{ notEvaluatedLabel }}</strong>{{ codeBindingSuffix }}</div>
             </div>
           </div>
-          </sc-if>
         </div>
+        </sc-if>
       </section>
     </sc-if>
 
     <sc-if value="{{ isNetwork }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ networkAria }}" data-screen-label="Network">
-        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ networkTitle }}</h1>
+        <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
+          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"></rect><rect x="2" y="16" width="6" height="6" rx="1"></rect><rect x="9" y="2" width="6" height="6" rx="1"></rect><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"></path><path d="M12 12V8"></path></svg></span>
+          <span>{{ networkTitle }}</span>
+        </h1>
         <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">{{ networkSub }}</p>
         <div style="margin-bottom:20px;">
           <dc-import name="NetworkMap" data="{{ data }}" space="{{ space }}" locale="{{ locale }}" on-space-change="{{ setSpace }}" on-open-contract="{{ openContract }}" on-open-item="{{ openItem }}" on-open-document="{{ openDocument }}" show-space-tabs="{{ false }}" heading="{{ networkMapHeading }}" hint-size="100%,1000px"></dc-import>
@@ -584,7 +607,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
     <sc-if value="{{ isSpaces }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ spacesAria }}" data-screen-label="Spaces">
-        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ spacesTitle }}</h1>
+        <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
+          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.341 6.484A10 10 0 0 1 10.266 21.85"></path><path d="M3.659 17.516A10 10 0 0 1 13.74 2.152"></path><circle cx="12" cy="12" r="3"></circle><circle cx="19" cy="5" r="2"></circle><circle cx="5" cy="19" r="2"></circle></svg></span>
+          <span>{{ spacesTitle }}</span>
+        </h1>
         <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">{{ spacesSub }}</p>
         <sc-if value="{{ noSpaces }}" hint-placeholder-val="{{ false }}">
           <dc-import name="EmptyState" title="{{ emptySpacesTitle }}" text="{{ emptySpacesText }}" hint="a2a space connect" hint-size="100%,300px"></dc-import>
@@ -684,7 +710,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
     <sc-if value="{{ isVersions }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ versionsAria }}" data-screen-label="Versions">
-        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ versionsTitle }}</h1>
+        <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
+          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13v8"></path><path d="M12 3v3"></path><path d="M18.172 6a2 2 0 0 1 1.414.586l2.06 2.06a1.207 1.207 0 0 1 0 1.708l-2.06 2.06a2 2 0 0 1-1.414.586H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z"></path></svg></span>
+          <span>{{ versionsTitle }}</span>
+        </h1>
         <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:760px;">{{ verSub }}</p>
 
         <!-- The binary you have and the notes that explain it are one story, so
@@ -855,7 +884,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
          this view stops hiding it inside Guide behind a different layout. -->
     <sc-if value="{{ isDocs }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ docsAria }}" data-screen-label="Docs">
-        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ docsTitle }}</h1>
+        <h1 style="display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
+          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v16"></path><path d="M16 13h2"></path><path d="M16 9h2"></path><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"></path><path d="M6 13h2"></path><path d="M6 9h2"></path></svg></span>
+          <span>{{ docsTitle }}</span>
+        </h1>
         <p style="margin:0 0 20px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">{{ docsSub }}</p>
 
         <sc-if value="{{ noDocs }}" hint-placeholder-val="{{ false }}">
@@ -908,7 +940,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
     <sc-if value="{{ isGuide }}" hint-placeholder-val="{{ false }}">
       <section aria-label="{{ guideAria }}" data-screen-label="Guide">
-        <h1 style="margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">{{ guideTitle }}</h1>
+        <h1 style="display:flex; align-items:flex-start; gap:12px; margin:0 0 8px; font-size:32px; line-height:1.15; font-weight:600; letter-spacing:-0.02em;">
+          <span aria-hidden="true" style="{{ pageIconStyle }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"></path></svg></span>
+          <span>{{ guideTitle }}</span>
+        </h1>
         <p style="margin:0 0 24px; font-size:18px; line-height:1.55; color:var(--body); max-width:820px;">{{ guideSub }}</p>
 
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:12px; margin-bottom:18px;">
@@ -1000,6 +1035,58 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
     <dc-import name="DocumentModal" det="{{ openDocDetail }}" hint-size="100%,700px"></dc-import>
   </sc-if>
 
+  <!-- How much this page can be trusted, on demand. It answers one question —
+       "is what I am reading current" — which qualifies every number on every
+       screen and therefore belongs beside none of them. Same modal grammar as
+       DocumentModal: backdrop dismiss, sticky header, one ✕. -->
+  <sc-if value="{{ spaceModalOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ dismissSpaceModal }}" style="position:fixed; inset:0; z-index:400; background:rgba(33,30,23,.5); padding:24px; overflow:auto; display:flex; align-items:flex-start; font-family:'Onest',sans-serif;">
+      <div role="dialog" aria-modal="true" aria-label="{{ spaceHealthTitle }}" style="width:min(760px, 100%); margin:auto; background:var(--surface); border-radius:18px; box-shadow:0 24px 60px -20px rgba(33,30,23,.5); overflow:hidden;">
+        <div style="position:sticky; top:0; z-index:2; background:var(--surface); padding:22px 26px 14px; border-bottom:1px solid var(--hairline);">
+          <div style="display:flex; align-items:flex-start; gap:12px; flex-wrap:nowrap;">
+            <h2 style="flex:1 1 auto; min-width:0; margin:0; font-size:24px; line-height:1.25; font-weight:600; letter-spacing:-0.015em;">{{ spaceHealthTitle }}</h2>
+            <button type="button" onClick="{{ closeSpaceModal }}" aria-label="{{ spaceHealthClose }}" style="flex:0 0 auto; font-family:'Onest',sans-serif; font-size:18px; line-height:1; color:var(--muted); background:transparent; border:0; cursor:pointer; padding:4px 6px;">✕</button>
+          </div>
+          <p style="margin:6px 0 0; font-size:15px; line-height:1.6; color:var(--body);">{{ spaceHealthSub }}</p>
+        </div>
+
+        <div style="padding:18px 26px 26px; display:flex; flex-direction:column; gap:12px;">
+          <sc-for list="{{ spaceHealthRows }}" as="r" hint-placeholder-count="2">
+            <div style="background:var(--page); border-radius:14px; padding:16px 18px; box-shadow:inset 0 0 0 1px var(--border);">
+              <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:7px; margin-bottom:10px;">
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:17px; font-weight:600;">{{ r.id }}</span>
+                <dc-import name="StatusPill" text="{{ r.pillText }}" tone="{{ r.pillTone }}" size="small" hint-size="120px,24px"></dc-import>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:7px; font-size:15px; line-height:1.55; color:var(--body);">
+                <sc-for list="{{ r.lines }}" as="l" hint-placeholder-count="4">
+                  <div style="display:flex; align-items:flex-start; gap:9px;">
+                    <span style="{{ l.markStyle }}"></span>
+                    <span style="min-width:0; overflow-wrap:anywhere;">{{ l.text }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+
+          <sc-if value="{{ spaceHealthHasFlags }}" hint-placeholder-val="{{ false }}">
+            <div style="background:var(--attention-tint); border-radius:14px; padding:16px 18px;">
+              <div style="font-size:16px; font-weight:600; color:var(--attention-strong); margin-bottom:4px;">{{ spaceHealthFlagsTitle }}</div>
+              <p style="margin:0 0 10px; font-size:15px; line-height:1.55; color:var(--attention-ink);">{{ spaceHealthFlagsText }}</p>
+              <div style="display:flex; flex-direction:column; gap:9px;">
+                <sc-for list="{{ spaceHealthFlags }}" as="f" hint-placeholder-count="2">
+                  <div style="font-size:15px; line-height:1.55; color:var(--attention-ink); overflow-wrap:anywhere;"><strong style="font-family:'IBM Plex Mono',monospace; font-size:14px;">{{ f.code }}</strong> — {{ f.message }}</div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <div style="font-size:15px; line-height:1.6; color:var(--muted);">{{ spaceHealthFooter }}</div>
+          <button type="button" onClick="{{ goSpacesFromModal }}" style="align-self:flex-start; font-family:'Onest',sans-serif; font-size:16px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border:0; border-radius:10px; padding:11px 18px; cursor:pointer;">{{ spaceHealthMore }} →</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
   <footer style="background:var(--surface); padding:20px 0 30px;">
     <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0; display:flex; align-items:flex-start; gap:22px; flex-wrap:nowrap; font-size:15px; color:var(--muted);">
       <span style="flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:5px;">
@@ -1024,10 +1111,15 @@ const DASHBOARD_I18N = {
     views:["Overview","Work","Threads","Contracts","Map","Spaces","Versions","Docs","Guide"],
     backOverview:"Back to Overview", viewsLabel:"Views", more:"More", localeGroup:"Interface language", space:"Space",
     errorTitle:"Could not read demo data", errorPrefix:"The dashboard is a read-only projection of", errorSuffix:". Missing facts are never inferred.",
-    overviewQueue:"Waiting for your decision", overviewQueueNote:"ordered by consequence", openWork:"Open Work", snapshotReliability:"Snapshot reliability",
+    openWork:"Open Work", direction:"Show", typeFilter:"Type",
+    spaceHealth:"Space health", spaceHealthTitle:"How current this page is",
+    spaceHealthSub:"Everything on these screens is read from a local copy of each space, taken once when this file was written. This is when that copy was last refreshed, and what each space expects of your binary.",
+    spaceHealthFlagsTitle:"Worth a look", spaceHealthFlagsText:"Recorded by committed events, or a problem reading the local copy. A flag is a reason to look, not a verdict.",
+    spaceHealthFooter:"Nothing here is inferred: an unreadable space is reported as unreadable, never as empty.",
+    spaceHealthMore:"Open Spaces", spaceHealthClose:"Close",
     work:"Work", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
     whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Causal timeline", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Flags on this thread — surfaced, never dropped",
-    contracts:"Interfaces with history", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
+    contracts:"Contracts and their versions", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
     network:"Who depends on whom", networkSub:"A contract dependency runs from consumer to provider; an open exchange is work in flight. Select one space or keep all spaces visible to see the systems that connect them. Click any line or card for detail.", exchangeMap:"Exchange map",
     spaces:"Spaces", spacesSub:"The local binary, each space's writer floor, and its pinned CI workflow are independent compatibility axes.", freshness:"Freshness", participants:"Participants", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
     limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read — or deliberately did not evaluate — is named here, so an empty space never passes for a clean result.",
@@ -1051,10 +1143,15 @@ const DASHBOARD_I18N = {
     views:["Обзор","Работа","Треды","Контракты","Карта","Спейсы","Версии","Доки","Справка"],
     backOverview:"Вернуться к обзору", viewsLabel:"Разделы", more:"Ещё", localeGroup:"Язык интерфейса", space:"Спейс",
     errorTitle:"Не удалось прочитать данные", errorPrefix:"Дашборд только читает и показывает", errorSuffix:". Чего в файле нет, того он не придумывает.",
-    overviewQueue:"Ждёт вашего решения", overviewQueueNote:"сверху то, где цена ошибки выше", openWork:"Открыть работу", snapshotReliability:"Насколько свежие данные",
+    openWork:"Открыть работу", direction:"Показать", typeFilter:"Тип",
+    spaceHealth:"Состояние спейсов", spaceHealthTitle:"Насколько свежее то, что вы читаете",
+    spaceHealthSub:"Всё на этих экранах взято из локальной копии спейса — она снималась один раз, когда собирался этот файл. Здесь видно, когда копию последний раз обновляли и чего каждый спейс ждёт от вашего бинарника.",
+    spaceHealthFlagsTitle:"На что стоит посмотреть", spaceHealthFlagsText:"Что зафиксировано в событиях и что пошло не так при чтении локальной копии. Это повод посмотреть, а не приговор.",
+    spaceHealthFooter:"Ничего не додумывается: если спейс не прочитался, так и написано — а не «ноль».",
+    spaceHealthMore:"Открыть спейсы", spaceHealthClose:"Закрыть",
     work:"Работа", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. Полная история — кто что сделал и в каком порядке — в снимок не попала.",
     whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"Как всё происходило", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
-    contracts:"Интерфейсы и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас —", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
+    contracts:"Контракты и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас —", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
     network:"Кто от кого зависит", networkSub:"Сплошная линия — зависимость от контракта: потребитель слева, поставщик справа. Пунктир — незакрытая работа. Выберите спейс или оставьте все, чтобы увидеть, кто их связывает. Нажмите на линию или карточку — откроются подробности.", exchangeMap:"Карта обмена",
     spaces:"Спейсы", spacesSub:"Три вещи, которые легко перепутать: версия вашего бинарника, минимальная версия, с которой спейс принимает записи, и версия проверки в CI. Они меняются независимо.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
     limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь — чтобы пустое место не сошло за «всё в порядке».",
@@ -1141,6 +1238,17 @@ const VERSION_ACTIONS = ["all", "local", "none"];
 // else a bare protocol type would otherwise reach a person.
 // Russian counts three ways, and "1 линий" is the tell that a UI was written in
 // English first. One helper, used wherever a number precedes a noun.
+// Numeric semver compare. A writer floor next to a binary version is two
+// strings until something actually compares them — and "0.16.3" vs "0.17.1"
+// sorts wrong as text exactly where it matters.
+function cmpVer(a, b) {
+  const x = String(a || "").split("."), y = String(b || "").split(".");
+  for (let i = 0; i < 3; i++) {
+    const p = parseInt(x[i], 10) || 0, q = parseInt(y[i], 10) || 0;
+    if (p !== q) return p < q ? -1 : 1;
+  }
+  return 0;
+}
 function ruPlural(n, one, few, many) {
   const mod10 = n % 10, mod100 = n % 100;
   const word = (mod10 === 1 && mod100 !== 11) ? one : ((mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) ? few : many);
@@ -1166,7 +1274,7 @@ function DRIFT_WORDS(ru) {
     : { current:"on the latest", behind:"one major behind", deprecated:"being retired", retired:"version retired", missing:"provider has no such major", dangling:"provider left" };
 }
 const TRANSITION_TONE = {
-  submit: "var(--teal-solid)", publish: "var(--teal-solid)", acknowledge: "var(--teal-hairline)",
+  create: "var(--teal-hairline)", submit: "var(--teal-solid)", publish: "var(--teal-solid)", acknowledge: "var(--teal-hairline)",
   accept: "var(--teal-solid)", start: "var(--teal-solid)", unblock: "var(--teal-solid)",
   respond: "var(--plum)", supersede: "var(--plum)", propose: "var(--plum)",
   verify: "var(--green)", close: "var(--green)", approve: "var(--green)", satisfy: "var(--green)",
@@ -1174,6 +1282,38 @@ const TRANSITION_TONE = {
   block: "var(--red)", decline: "var(--red)", reject: "var(--red)",
   cancel: "var(--blocking-line)", withdraw: "var(--blocking-line)", retire: "var(--muted)", deprecate: "var(--ochre)"
 };
+// The transition vocabulary in words. A timeline row reads "axon verify" — the
+// protocol enum, verbatim, in the middle of a Russian sentence. Two forms are
+// needed because the two surfaces ask different questions: the transcript says
+// what someone DID (past tense), the open-items panel offers what MAY BE DONE
+// next (infinitive). Both maps carry every key the fold engine can emit
+// (internal/fold/table.go) and fall back to the raw enum, because a coloured
+// dot with a blank label beside it is worse than an English word.
+//
+// Verbs stay at two words at most: the event row is one nowrap line with the
+// timestamp right-aligned, and a longer phrase re-ragged the column.
+function TRANSITION_PAST(ru) {
+  if (!ru) return {};
+  return {
+    create: "создал", submit: "отправил", publish: "опубликовал", acknowledge: "подтвердил получение",
+    accept: "принял", start: "начал работу", respond: "ответил", verify: "проверил", close: "закрыл",
+    approve: "согласовал", satisfy: "закрыл требование", dispute: "оспорил", note: "добавил заметку",
+    block: "заблокировал", unblock: "разблокировал", decline: "отказался", reject: "отклонил",
+    cancel: "отменил", withdraw: "отозвал", supersede: "заменил", propose: "предложил",
+    deprecate: "объявил устаревшей", retire: "снял версию"
+  };
+}
+function TRANSITION_NEXT(ru) {
+  if (!ru) return {};
+  return {
+    create: "создать", submit: "отправить", publish: "опубликовать", acknowledge: "подтвердить получение",
+    accept: "принять", start: "начать работу", respond: "ответить", verify: "проверить", close: "закрыть",
+    approve: "согласовать", satisfy: "закрыть требование", dispute: "оспорить", note: "добавить заметку",
+    block: "заблокировать", unblock: "разблокировать", decline: "отказаться", reject: "отклонить",
+    cancel: "отменить", withdraw: "отозвать", supersede: "заменить", propose: "предложить",
+    deprecate: "объявить устаревшей", retire: "снять версию"
+  };
+}
 const DRIFT_TONE = { current: "healthy", behind: "attention", deprecated: "attention", retired: "neutral", missing: "blockingStrong", dangling: "outline" };
 const STATE_TONE = { published: "healthy", retired: "neutral", deprecated: "attention", disputed: "attention", submitted: "neutral", in_progress: "neutral", accepted: "neutral", acknowledged: "neutral", proposed: "attention", closed: "healthy" };
 function mono(s) { return String(s || "?").slice(0, 2).toUpperCase(); }
@@ -1244,7 +1384,7 @@ function normalizeDashboardData(input) {
 }
 
 class Component extends DCLogic {
-  state = { data: null, error: "", view: "overview", space: "all", ovSel: "", workTab: "incoming", workSel: "", threadSel: "", conSel: "", doc: "overview", docQ: "", openDoc: null, tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en" };
+  state = { data: null, error: "", view: "overview", space: "all", ovSel: "", workTab: "incoming", workSel: "", threadSel: "", conSel: "", doc: "overview", docQ: "", openDoc: null, spaceModal: false, tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en" };
 
   componentDidMount() {
     // the primary nav shows as many views as fit and folds the rest into More
@@ -1256,10 +1396,38 @@ class Component extends DCLogic {
       if (w > 0 && Math.abs((this.state.navW || 0) - w) > 4) this.setState({ navW: w });
     };
     window.addEventListener("resize", this.measureNav);
-    // Escape closes the document modal. The map owns its own Escape for its own
-    // overlay; this one only fires while a document is open.
-    this.onEscape = (ev) => { if (ev.key === "Escape" && this.state.openDoc) this.setState({ openDoc: null }); };
+    // Escape unwinds one layer at a time, outermost first: the document modal,
+    // then the spaces modal, then a focused thread document. The map owns its
+    // own Escape for its own overlay.
+    this.onEscape = (ev) => {
+      if (ev.key !== "Escape") return;
+      if (this.state.openDoc) { this.setState({ openDoc: null }); return; }
+      if (this.state.spaceModal) { this.setState({ spaceModal: false }); return; }
+      if (this.state.tvFocus) this.setState({ tvFocus: "" });
+    };
     window.addEventListener("keydown", this.onEscape);
+    // Focusing one document dims the whole transcript around it, so there has
+    // to be a way out that is not "find the same badge again". A click on any
+    // empty space releases it; the focus controls themselves carry
+    // data-tv-focus so the click that SETS the focus does not clear it in the
+    // same tick.
+    //
+    // Two listeners, and the split is the whole point: by the time a click
+    // bubbles to the document the focus button has already re-rendered, so its
+    // node is detached and `closest` finds nothing — every click, including the
+    // one that just set the focus, looked like a click on empty space. The
+    // capture pass runs before any of that and records where the click really
+    // started.
+    this.onCapture = (ev) => {
+      const t = ev.target;
+      this.fromFocusControl = !!(t && t.closest && t.closest("[data-tv-focus]"));
+    };
+    this.onBodyClick = () => {
+      if (!this.state.tvFocus || this.fromFocusControl) return;
+      this.setState({ tvFocus: "" });
+    };
+    document.addEventListener("click", this.onCapture, true);
+    document.addEventListener("click", this.onBodyClick);
     if (window.ResizeObserver) {
       this.navRO = new ResizeObserver(() => this.measureNav());
       setTimeout(() => { if (this.navNode && this.navNode.parentElement) this.navRO.observe(this.navNode.parentElement); }, 0);
@@ -1656,7 +1824,11 @@ class Component extends DCLogic {
 
     const flagged = new Set((a.flags || []).map(() => true));
     const events = (a.events || []).map((ev, i) => ({
-      text: (ev.actor_system || ev.actor || "") + " " + ev.transition + (ev.claimed_state ? " — claimed " + ev.claimed_state.replace("_", " ") : ""),
+      text: (ev.actor_system || ev.actor || "") + " " + (TRANSITION_PAST(ru)[ev.transition] || ev.transition),
+      // Same rule as the thread timeline: the claimed state is a pill, so the
+      // state vocabulary is read from one place instead of being retyped here.
+      hasClaim: !!ev.claimed_state, claim: String(ev.claimed_state || "").replace("_", " "),
+      claimLabel: ru ? "автор заявил:" : "claimed:",
       meta: when(ev.at) + " · " + (ev.actor || "") + " · " + ev.ulid,
       flagged: (a.flags || []).length > 0 && i === (a.events || []).length - 1
     }));
@@ -1712,8 +1884,21 @@ class Component extends DCLogic {
         : (s.error ? (ru ? "Файл не удалось загрузить (" + s.error.slice(5) + "). Недоступны и demo-data.json, и встроенная копия demo-data.js." : "The fixture could not be loaded (" + s.error.slice(5) + "). Neither demo-data.json nor the embedded demo-data.js copy is reachable.") : ""),
       backOverviewLabel:c.backOverview, viewsLabel:c.viewsLabel, moreLabel:c.more, localeGroupLabel:c.localeGroup, spaceLabel:c.space,
       errorTitle:c.errorTitle, errorPrefix:c.errorPrefix, errorSuffix:c.errorSuffix,
-      overviewQueueTitle:c.overviewQueue, overviewQueueNote:c.overviewQueueNote, openWorkLabel:c.openWork, snapshotReliabilityLabel:c.snapshotReliability,
-      workTitle:c.work, threadsTitle:c.threads, threadMissingTitle:c.threadMissingTitle, threadMissingText:c.threadMissingText,
+      openWorkLabel:c.openWork, directionLabel:c.direction, typeLabel:c.typeFilter,
+      // One chip for every page heading. The icon is decorative — the heading
+      // beside it is the accessible name — so each SVG is aria-hidden and the
+      // colour comes from currentColor, which makes dark mode free.
+      pageIconStyle: "flex:0 0 auto; display:flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:12px; background:var(--teal-tint); color:var(--teal-ink);",
+      spaceHealthLabel:c.spaceHealth, spaceHealthTitle:c.spaceHealthTitle, spaceHealthSub:c.spaceHealthSub,
+      spaceHealthFlagsTitle:c.spaceHealthFlagsTitle, spaceHealthFlagsText:c.spaceHealthFlagsText,
+      spaceHealthFooter:c.spaceHealthFooter, spaceHealthMore:c.spaceHealthMore, spaceHealthClose:c.spaceHealthClose,
+      spaceModalOpen: !!s.spaceModal,
+      openSpaceModal: () => this.setState({ spaceModal: true }),
+      closeSpaceModal: () => this.setState({ spaceModal: false }),
+      dismissSpaceModal: (ev) => { if (ev && ev.target === ev.currentTarget) this.setState({ spaceModal: false }); },
+      goSpacesFromModal: () => this.go("spaces", { spaceModal: false }),
+      workTitle:c.work, threadsTitle:c.threads, overviewTitle:c.views[0], threadMissingTitle:c.threadMissingTitle, threadMissingText:c.threadMissingText,
+      claimedLabel: ru ? "автор заявил:" : "claimed:",
       whoseMoveLabel:c.whoseMove, whoseMoveText:c.whoseMoveText, causalTimelineLabel:c.causalTimeline, newestFirstLabel:c.newestFirst, opensChainLabel:c.opensChain, subjectPrefix:c.subjectPrefix, threadFlagsLabel:c.threadFlags,
       contractsTitle:c.contracts, codeBackedLabel:c.codeBacked, consumerLinesLabel:c.consumerLines, versionWindowLabel:c.versionWindow, provenanceLabel:c.provenance, codeBindingPrefix:c.codeBindingPrefix, notEvaluatedLabel:c.notEvaluated, codeBindingSuffix:c.codeBindingSuffix,
       networkTitle:c.network, networkSub:c.networkSub, networkMapHeading:c.exchangeMap,
@@ -1936,8 +2121,15 @@ class Component extends DCLogic {
       goBanner: d.meta.synthetic ? () => this.go("guide") : () => this.go("versions"),
       footerLine: (ru ? "Только чтение · без сетевых запросов · истина живёт в репозитории, а не здесь" : "Read-only projection · no network requests · not a source of truth") + (d.meta.synthetic ? (ru ? " · демо-данные, живых сервисов нет" : " · Synthetic demo data — no live services") : (d.meta.notice ? " · " + d.meta.notice : "")),
 
-      ovHeadline: needsYou.length ? (ru ? "Нужно ваше решение: " : "Your action is needed: ") + needsYou.length : (ru ? "Здесь от вас ничего не ждут" : "Nothing in this scope is waiting on you"),
-      ovSub: (ru ? "Для " + d.self + " открыто входящих: " + scopedInbox.length + "; ваших исходящих в других системах: " + scopedOutbox.length + ". " : "For " + d.self + ": " + scopedInbox.length + " incoming items are open and " + scopedOutbox.length + " outgoing items await other systems. ") + (needsYou.length ? (ru ? "Ниже то, что блокирует, ждёт согласования или просрочено." : "Blocks, approvals, and overdue actions appear below.") : (ru ? "Всё открытое агенты доводят между собой." : "All open work continues between agents.")),
+      // The headline used to carry the state ("nothing is waiting on you") and
+      // the page had no name. The name is now the name, and the state is the
+      // first thing the description says — in one sentence, before the numbers.
+      ovSub: (needsYou.length
+        ? (ru ? "Ваше решение нужно по " + ruPlural(needsYou.length, "документу", "документам", "документам") + ": ниже то, что кого-то блокирует, ждёт вашего согласования или просрочено. " : "Your decision is needed on " + needsYou.length + (needsYou.length === 1 ? " document" : " documents") + ": what is blocking someone, waiting on your approval, or overdue appears below. ")
+        : (ru ? "Сейчас от вас ничего не ждут. " : "Nothing is waiting on you right now. ")) +
+        (ru
+          ? "Остальное " + d.self + " и другие агенты доводят между собой: у вас " + ruPlural(scopedInbox.length, "входящий документ", "входящих документа", "входящих документов") + " и " + ruPlural(scopedOutbox.length, "исходящий", "исходящих", "исходящих") + ", по которым ход за другой стороной."
+          : d.self + " and the other agents carry the rest between them: " + scopedInbox.length + " incoming and " + scopedOutbox.length + " outgoing, where the move belongs to someone else."),
       ovStats: [
         { label:ru ? "Нужны вы" : "Need you", value:needsYou.length, note:ru ? "блокирует или ждёт согласования" : "blocking or approval",
           hint:ru ? "Документы, где без человека дальше никак: кто-то явно заблокирован, ждёт вашего согласования или уже просрочил срок. Всё остальное агенты доводят сами." : "Documents that genuinely cannot move without a person: something is literally blocked, waiting on your approval, or already past its deadline. Everything else the agents finish on their own.",
@@ -1953,13 +2145,9 @@ class Component extends DCLogic {
           valueStyle:"font-size:40px; line-height:1; font-weight:600; color:" + (offCurrent ? "var(--ochre)" : "var(--green)") + ";" }
       ],
       ovRows: needsYou.map(it => this.rowFor(it, "ovSel", ovSel)),
-      ovRestText: (ru ? "Ещё входящих, никого не держат: " : "More non-blocking incoming items: ") + restCount + (ru ? " · замечаний: " : " · protocol flags: ") + flags.length,
-      ovSpaces: d.spaces.filter(x => this.inScope(x.id)).map(x => ({
-        id: x.id,
-        pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (x.stale ? (ru ? "устарел · " : "stale · ") + age(x.syncAge) : (ru ? "свежий · " : "fresh · ") + age(x.syncAge)),
-        pillTone: !x.readable ? "blocking" : (x.stale ? "attention" : "healthy"),
-        meta: x.readable ? (ru ? "участников: " : "participants: ") + x.participantCount + (ru ? " · минимум для записи " : " · writer floor ") + x.minBinaryVersion : (ru ? "что внутри — неизвестно" : "contents are not inferred")
-      })),
+      ovRestText: restCount
+        ? (ru ? "Открыть работу: ещё " + ruPlural(restCount, "входящий документ", "входящих документа", "входящих документов") + ", никого не держат" : c.openWork + ": " + restCount + " more incoming, holding nobody up")
+        : c.openWork,
       hasOvRows: needsYou.length > 0, noOvRows: needsYou.length === 0,
       emptyQueueTitle: ru ? "Ваше решение сейчас не нужно" : "No decision is waiting on you",
       emptyQueueText: ru
@@ -1983,7 +2171,7 @@ class Component extends DCLogic {
       workTabs: [["incoming", (ru ? "Входящие · " : "Incoming · ") + scopedInbox.length], ["outgoing", (ru ? "Исходящие · " : "Outgoing · ") + scopedOutbox.length]].map(([id, label]) => ({
         label,
         pressed: s.workTab === id ? "true" : "false",
-        style: "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:7px 14px; border-radius:7px; " + (s.workTab === id ? "background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.12);" : "background:transparent; color:var(--muted);"),
+        style: this.filterChip(s.workTab === id),
         go: () => this.setState({ workTab: id, workSel: "", workType: "all" })
       })),
       workRows: workList.map(it => this.rowFor(it, "workSel", workSel)),
@@ -2084,7 +2272,8 @@ class Component extends DCLogic {
               cardStyle: "background:var(--page); border-radius:12px; padding:15px 17px; box-shadow:inset 0 0 0 1px var(--border); transition:opacity .18s ease;" +
                 (focus === a.id ? " box-shadow:inset 0 0 0 2px var(--focus);" : "") + (dim ? " opacity:.32;" : ""),
               dotStyle: "position:absolute; left:-9px; top:18px; width:17px; height:17px; border-radius:99px; background:var(--teal-solid); box-shadow:0 0 0 3px var(--surface);" + (dim ? " opacity:.32;" : ""),
-              text: "", meta: "", hasSubject: false, subjectLabel: "", subjectStyle: "", subjectTitle: "", goSubject: () => {}
+              text: "", meta: "", hasSubject: false, subjectLabel: "", subjectStyle: "", subjectTitle: "", goSubject: () => {},
+              hasClaim: false, claim: "", claimTone: "outline", claimStyle: "", hasSecondLine: false
             };
           }
           const ev = en.event || {};
@@ -2093,12 +2282,19 @@ class Component extends DCLogic {
           const dim = !!focus && focus !== ev.subject;
           return {
             isArtifact: false, isEvent: true, type: "", id: ev.ulid, anchor: "",
-            text: (actor.system || actor.name || "") + " " + ev.transition + (ev.claimed_state ? (ru ? " — автор заявил состояние " : " — claimed ") + String(ev.claimed_state).replace("_", " ") : ""),
+            // The actor and the transition are shell vocabulary and get
+            // translated; `ev.subject` below is a document title and stays
+            // exactly as its author wrote it.
+            text: (actor.system || actor.name || "") + " " + (TRANSITION_PAST(ru)[ev.transition] || ev.transition),
             meta: when(en.at),
+            hasClaim: !!ev.claimed_state, claim: String(ev.claimed_state || "").replace("_", " "),
+            claimTone: bad ? "attention" : "outline",
+            claimStyle: "display:inline-flex; align-items:center; gap:6px; font-size:14px; color:var(--muted);",
+            hasSecondLine: !!ev.subject || !!ev.claimed_state,
             hasSubject: !!ev.subject, subjectLabel: ev.subject ? titleOf(ev.subject) : "",
             subjectTitle: ev.subject && known(ev.subject) ? (ru ? "Показать этот документ в ленте" : "Focus that document in the transcript") : (ev.subject || ""),
             goSubject: ev.subject && known(ev.subject) ? goTo(ev.subject) : () => {},
-            subjectStyle: "margin-top:5px; font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.5; color:var(--muted); background:var(--canvas); border:0; border-radius:6px; padding:4px 10px; overflow-wrap:anywhere; text-align:left; " +
+            subjectStyle: "font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.5; color:var(--muted); background:var(--canvas); border:0; border-radius:6px; padding:4px 10px; overflow-wrap:anywhere; text-align:left; " +
               (ev.subject && known(ev.subject) ? "cursor:pointer;" : "cursor:default;") + (dim ? " opacity:.4;" : ""),
             cardStyle: "",
             // Each transition gets its own colour, so the shape of an exchange
@@ -2122,7 +2318,7 @@ class Component extends DCLogic {
         whoTone: o.your_move ? "attention" : "neutral",
         needed: o.needed_by ? (ru ? "дедлайн " : "due ") + isoDay(o.needed_by) : (o.blocking ? (ru ? "блокирует" : "blocking") : ""),
         actions: (o.next_actions || []).map(a => ({
-          text: a.transition + " · " + (a.by || []).join(", "),
+          text: (TRANSITION_NEXT(ru)[a.transition] || a.transition) + " · " + (a.by || []).join(", "),
           style: "font-family:'IBM Plex Mono',monospace; font-size:14px; border-radius:6px; padding:4px 10px; " +
             ((a.by || []).includes(d.self) ? "background:var(--teal-tint); color:var(--teal-ink); font-weight:600;" : "background:var(--canvas); color:var(--muted);")
         }))
@@ -2152,10 +2348,6 @@ class Component extends DCLogic {
       emptyContractsText: ru
         ? "Контракт — это интерфейс с историей версий: поставщик его публикует, а потребители закрепляют ту основную версию, которой пользуются. Пока в этих спейсах не опубликован ни один."
         : "A contract is an interface with a version history: a provider publishes it, and consumers pin the major line they use. Nothing has been published in these spaces yet.",
-      emptyContractDetailTitle: ru ? "Разбирать нечего" : "Nothing to inspect",
-      emptyContractDetailText: ru
-        ? "Здесь появятся закреплённые линии потребителей, окно действующих версий и происхождение схемы — как только контракт будет опубликован."
-        : "Registered consumer lines, the live version window and the schema provenance appear here as soon as a contract is published.",
       providerLabel: ru ? "Поставщик — он публикует версии" : "Provider — publishes the versions",
       consumersLabel: ru ? "Потребители — они закрепляют версию" : "Consumers — pin a version each",
       cdProvider: con ? con.provider : "",
@@ -2207,6 +2399,50 @@ class Component extends DCLogic {
         id: x.id,
         reason: (d.unavailable.find(u => u.scope === x.id) || {}).reason || (ru ? "Копию или манифест спейса прочитать не удалось. Это не значит, что там ноль участников и ноль работы — это значит, что мы не знаем." : "The mirror or manifest is unreadable. Participant and work counts must not be inferred as zero.")
       })),
+
+      // The freshness card used to sit in the Overview column reading
+      // "участников: 2 · минимум для записи 0.16.3" — two facts with no verb
+      // between them and a bare version number that means nothing on its own.
+      // Each line is now a sentence, and the writer floor is stated as the
+      // comparison it actually is: the space's requirement against YOUR binary.
+      spaceHealthRows: d.spaces.filter(x => this.inScope(x.id)).map(x => {
+        const members = d.nodes.filter(n => (x.id ? (n.spaces || []).includes(x.id) : false)).map(n => n.system);
+        const line = (text, tone) => ({ text, markStyle: "flex:0 0 7px; width:7px; height:7px; margin-top:8px; border-radius:99px; background:" + (tone === "warn" ? "var(--ochre)" : tone === "bad" ? "var(--red)" : "var(--green)") + ";" });
+        const lines = [];
+        if (!x.readable) {
+          lines.push(line(ru ? "Локальную копию прочитать не удалось. Что внутри — участники, документы, контракты — мы не знаем и не додумываем." : "The local copy could not be read. What is inside — participants, documents, contracts — is unknown and is not guessed at.", "bad"));
+        } else {
+          lines.push(line(x.stale
+            ? (ru ? "Копию последний раз обновляли " + age(x.syncAge) + " назад — цифры на страницах могут отставать от репозитория." : "The copy was last refreshed " + age(x.syncAge) + " ago, so the numbers on these pages may lag behind the repository.")
+            : (ru ? "Копия свежая: обновлена " + age(x.syncAge) + " назад." : "The copy is current: refreshed " + age(x.syncAge) + " ago."), x.stale ? "warn" : "ok"));
+          lines.push(line(members.length
+            ? (ru ? "Участников: " + members.length + " — " + members.join(", ") + "." : members.length + (members.length === 1 ? " participant" : " participants") + ": " + members.join(", ") + ".")
+            : (ru ? "Участников: " + x.participantCount + "." : "Participants: " + x.participantCount + "."), "ok"));
+          if (x.minBinaryVersion) {
+            const below = tooling.current && cmpVer(tooling.current, x.minBinaryVersion) < 0;
+            lines.push(line(ru
+              ? "Спейс принимает документы от a2a " + x.minBinaryVersion + " и новее" + (tooling.current ? (below ? ", а у вас " + tooling.current + " — записать сюда не получится, только читать." : "; у вас " + tooling.current + ", записывать можно.") : ".")
+              : "The space accepts documents from a2a " + x.minBinaryVersion + " and newer" + (tooling.current ? (below ? ", and you run " + tooling.current + " — you can read but not write here." : "; you run " + tooling.current + ", so writing works.") : "."), below ? "bad" : "ok"));
+          }
+          if (x.workflowVersion) lines.push(line(ru ? "Входящие документы спейс проверяет своим CI версии " + x.workflowVersion + " — это отдельная от вашего бинарника цифра." : "The space validates incoming documents with its CI at version " + x.workflowVersion + " — a number independent of your binary.", "ok"));
+          if (x.revision) lines.push(line(ru ? "Читаем ревизию " + x.revision.slice(0, 10) + "." : "Reading revision " + x.revision.slice(0, 10) + ".", "ok"));
+        }
+        return {
+          id: x.id,
+          pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (x.stale ? (ru ? "устарел · " : "stale · ") + age(x.syncAge) : (ru ? "свежий · " : "fresh · ") + age(x.syncAge)),
+          pillTone: !x.readable ? "blocking" : (x.stale ? "attention" : "healthy"),
+          lines
+        };
+      }),
+      spaceHealthHasFlags: flags.length > 0,
+      spaceHealthFlags: flags.map(f => ({ code: f.code, message: f.message })),
+      // The dot on the corner button is the whole modal in one pixel: red if a
+      // space could not be read at all, ochre if one is stale or carrying a
+      // flag, green when the page can be taken at face value.
+      spaceHealthDotStyle: "flex:0 0 9px; width:9px; height:9px; border-radius:99px; background:" +
+        (d.spaces.some(x => this.inScope(x.id) && !x.readable)
+          ? "var(--red)"
+          : (flags.length || d.spaces.some(x => this.inScope(x.id) && x.stale) ? "var(--ochre)" : "var(--green)")) + ";",
 
       spaceRows: d.spaces.filter(x => this.inScope(x.id)).map((x, i, arr) => {
         const line = i === arr.length - 1 ? "none" : "1px solid var(--hairline)";
