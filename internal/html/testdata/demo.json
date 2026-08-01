@@ -370,7 +370,7 @@
       "space": "risk-payments",
       "count": 1,
       "maxPriority": "p2",
-      "blocking": false,
+      "blocking": true,
       "maxStale": "4d"
     },
     {
@@ -1173,7 +1173,7 @@
       "to": ["billing"],
       "state": "accepted",
       "priority": "p2",
-      "blocking": false,
+      "blocking": true,
       "gatePending": false,
       "thread": "thread:atlas-20260726-b7c8",
       "age": "4d",

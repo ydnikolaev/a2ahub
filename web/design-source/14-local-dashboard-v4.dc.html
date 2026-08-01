@@ -364,7 +364,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-for list="{{ threadRows }}" as="t" hint-placeholder-count="5">
-              <button type="button" onClick="{{ t.select }}" style="{{ t.style }}">
+              <button type="button" class="a2a-pick" onClick="{{ t.select }}" style="{{ t.style }}">
                 <span style="display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; margin-bottom:8px;">
                   <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px;">
                     <dc-import name="StatusPill" text="{{ t.pillText }}" tone="{{ t.pillTone }}" hint-size="110px,26px"></dc-import>
@@ -560,7 +560,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-for list="{{ conRows }}" as="c" hint-placeholder-count="6">
-              <button type="button" onClick="{{ c.select }}" style="{{ c.style }}">
+              <button type="button" class="a2a-pick" onClick="{{ c.select }}" style="{{ c.style }}">
                 <span style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
                   <span style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; color:var(--text); overflow-wrap:anywhere;">{{ c.id }}</span>
                   <dc-import name="StatusPill" text="{{ c.version }}" tone="agent" mono="{{ true }}" size="small" hint-size="70px,24px"></dc-import>
@@ -1763,13 +1763,13 @@ class Component extends DCLogic {
       return String(v);
     };
     const LABELS_RU = {
-      created: "создано", priority: "приоритет", blocking: "блокирует", needed_by: "дедлайн",
+      created: "создано", priority: "приоритет", blocking: "автор остановился", needed_by: "дедлайн",
       actor: "автор", classification: "уровень доступа", category: "категория", from: "от",
       to: "кому", id: "идентификатор", thread: "тред", type: "тип", title: "заголовок",
       schema: "схема", space: "спейс", parent: "отвечает на", result: "результат", refs: "ссылки"
     };
     const LABELS_EN = {
-      created: "created", priority: "priority", blocking: "blocking", needed_by: "due",
+      created: "created", priority: "priority", blocking: "author is stopped", needed_by: "due",
       actor: "author", classification: "classification"
     };
     const humanKey = (k) => ru ? (LABELS_RU[k] || k) : (LABELS_EN[k] || k);
@@ -1938,14 +1938,58 @@ class Component extends DCLogic {
     return "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; cursor:pointer; padding:5px 12px 5px 7px; border-radius:8px; display:inline-flex; align-items:center; gap:8px; " +
       (active ? "background:var(--primary); color:var(--on-primary);" : "background:var(--canvas); color:var(--body);");
   }
+  // Same rule as ArtifactRow: the open card is the one at full strength, the
+  // rest step back, and nothing wears a ring. Pair it with class="a2a-pick" on
+  // the element so hover can restore a stepped-back card.
   cardButton(selected) {
     return "display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; background:var(--surface); border:0; border-radius:14px; padding:16px 18px; cursor:pointer; box-shadow:" +
-      (selected ? "0 0 0 2px var(--focus), 0 6px 18px -10px rgba(33,30,23,.5)" : "0 1px 2px rgba(33,30,23,.06)") + ";";
+      (selected ? "0 2px 10px -4px rgba(33,30,23,.22)" : "0 1px 2px rgba(33,30,23,.06)") + ";" +
+      (selected ? "" : " --a2a-pick:.5;");
+  }
+
+  // `blocking: true` on an envelope means the AUTHOR has stopped and cannot
+  // continue until the document is answered. The old badge said "blocking",
+  // which left the reader to work out who was blocking whom — and the two
+  // readings ("I am held up" and "I am holding somebody up") are opposites.
+  //
+  // One rule, everywhere on the page: the badge names whoever has to move for
+  // the work to start again. That is the recipient, always: the author is the
+  // one who is stopped. So an incoming blocking document reads "you", and an
+  // outgoing one reads the system we are waiting on.
+  blockedOn(from, to) {
+    const ru = this.state.locale === "ru";
+    const d = this.state.data;
+    const holders = (to || []).filter(Boolean);
+    if (holders.indexOf(d.self) > -1) return ru ? "держите вы" : "blocked on you";
+    if (holders.length === 1) return (ru ? "держит " : "blocked on ") + holders[0];
+    if (holders.length > 1) return ru ? "держат получатели" : "blocked on the recipients";
+    return ru ? "работа стоит" : "work is stopped";
+  }
+
+  // The same fact as a sentence, for the hint beside the badge. Who stopped,
+  // who can start them again, and what they are waiting for.
+  blockedWhy(a) {
+    const ru = this.state.locale === "ru";
+    const d = this.state.data;
+    const holders = (a.to || []).filter(Boolean);
+    const yours = holders.indexOf(d.self) > -1;
+    const who = a.from === d.self ? (ru ? "Вы" : "You") : a.from;
+    const stopped = a.from === d.self
+      ? (ru ? "Вы остановились на этом документе" : "You are stopped on this document")
+      : (ru ? who + " остановился на этом документе" : who + " is stopped on this document");
+    const unblock = yours
+      ? (ru ? "и не двинется, пока не ответите вы." : "and cannot continue until you answer.")
+      : (holders.length
+        ? (ru ? "и не двинется, пока не ответит " + listNames(holders, ru) + "." : "and cannot continue until " + listNames(holders, ru) + " answers.")
+        : (ru ? "и ждёт ответа." : "and is waiting for an answer."));
+    const when = a.neededBy ? (ru ? " Срок " : " Due ") + isoDay(a.neededBy) + "." : "";
+    const pri = a.priority ? (ru ? " Приоритет " + a.priority + "." : " Priority " + a.priority + ".") : "";
+    return stopped + " " + unblock + when + pri;
   }
 
   statusOf(it) {
     const ru = this.state.locale === "ru";
-    if (it.blocking) return { status: (ru ? "блокирует" : "blocking") + " · " + it.priority, tone: "blocking" };
+    if (it.blocking) return { status: this.blockedOn(it.from, it.to) + " · " + it.priority, tone: "blocking" };
     if (it.gatePending) return { status: ru ? "ждёт вашего согласования" : "your approval pending", tone: "attention" };
     if (overdue(it)) return { status: (ru ? "просрочено" : "overdue") + " · " + it.priority, tone: "blocking" };
     if (it.severity === "attention") return { status: (ru ? "стоит посмотреть" : "needs a look") + " · " + it.priority, tone: "attention" };
@@ -2028,7 +2072,14 @@ class Component extends DCLogic {
     }
     const e = a.envelope || {};
     const pills = [];
-    if (e.blocking) pills.push({ text: (ru ? "блокирует" : "blocking") + " · " + (e.priority || ""), tone: "blocking" });
+    // The blocking pill carries its own explanation here, because this is the
+    // one place with room for it: the list rows say who has to move and open
+    // this pane, and this pane says who stopped, who can start them again and
+    // by when.
+    if (e.blocking) pills.push({
+      text: this.blockedOn(a.from, a.to) + " · " + (e.priority || ""), tone: "blocking",
+      hint: this.blockedWhy({ from: a.from, to: a.to, neededBy: it ? it.neededBy || e.needed_by : e.needed_by, priority: e.priority })
+    });
     else if (e.priority) pills.push({ text: e.priority, tone: "neutral" });
     pills.push({ text: String(a.state || "").replace("_", " "), tone: STATE_TONE[a.state] || "neutral" });
     if (a.sync_stale) pills.push({ text: (ru ? "спейс устарел " : "space stale ") + age(a.sync_age), tone: "attention" });
@@ -2399,7 +2450,9 @@ class Component extends DCLogic {
           aMono: codes[e.from], bMono: codes[e.to],
           aStyle: avatar(e.from === d.self, true), bStyle: avatar(e.to === d.self, true),
           route: e.from + " → " + e.to,
-          pillText: e.count + (ru ? " открыто · " : " open · ") + (e.blocking ? (ru ? "блокирует" : "blocking") : e.maxPriority),
+          // A lane is aggregated from→to, so whoever is on the receiving end is
+          // whoever has to move. Same rule as every other blocking label.
+          pillText: e.count + (ru ? " открыто · " : " open · ") + (e.blocking ? this.blockedOn(e.from, [e.to]) : e.maxPriority),
           pillTone: e.blocking ? "blocking" : "neutral"
         })),
         lanesRest: lanes.length > 3 ? lanes.length - 3 + (ru ? " связей в этом спейсе не поместились" : " more lanes in this space") : ""
@@ -2450,7 +2503,7 @@ class Component extends DCLogic {
       // the page had no name. The name is now the name, and the state is the
       // first thing the description says — in one sentence, before the numbers.
       ovSub: (needsYou.length
-        ? (ru ? "Ваше решение нужно по " + ruPlural(needsYou.length, "документу", "документам", "документам") + ": ниже то, что кого-то блокирует, ждёт вашего согласования или просрочено. " : "Your decision is needed on " + needsYou.length + (needsYou.length === 1 ? " document" : " documents") + ": what is blocking someone, waiting on your approval, or overdue appears below. ")
+        ? (ru ? "Ваше решение нужно по " + ruPlural(needsYou.length, "документу", "документам", "документам") + ": ниже то, из-за чего кто-то стоит, что ждёт вашего согласования или уже просрочено. " : "Your decision is needed on " + needsYou.length + (needsYou.length === 1 ? " document" : " documents") + ": what has somebody stopped, what waits on your approval, and what is overdue appears below. ")
         : (ru ? "Сейчас от вас ничего не ждут. " : "Nothing is waiting on you right now. ")) +
         (scopedInbox.length + scopedOutbox.length === 0
           ? (ru ? "В обороте сейчас ничего нет." : "Nothing is in flight right now.")
@@ -2458,8 +2511,8 @@ class Component extends DCLogic {
             ? "Всего в обороте " + ruPlural(scopedInbox.length, "входящий", "входящих", "входящих") + " и " + ruPlural(scopedOutbox.length, "исходящий", "исходящих", "исходящих") + ", остальное " + (d.self ? d.self + " и другие агенты доводят" : "агенты доводят") + " между собой."
             : scopedInbox.length + " incoming and " + scopedOutbox.length + " outgoing are in flight. " + (d.self ? d.self + " and the other agents carry" : "The agents carry") + " the rest between them.")),
       ovStats: [
-        { label:ru ? "Нужны вы" : "Need you", value:needsYou.length, note:ru ? "блокирует или ждёт согласования" : "blocking or approval",
-          hint:ru ? "Документы, где без человека дальше никак: кто-то явно заблокирован, ждёт вашего согласования или уже просрочил срок. Всё остальное агенты доводят сами." : "Documents that genuinely cannot move without a person: something is literally blocked, waiting on your approval, or already past its deadline. Everything else the agents finish on their own.",
+        { label:ru ? "Нужны вы" : "Need you", value:needsYou.length, note:ru ? "кто-то стоит или ждёт согласования" : "somebody stopped or awaiting approval",
+          hint:ru ? "Документы, где без человека дальше никак: кто-то остановил из-за них свою работу, ждёт вашего согласования или уже просрочил срок. Всё остальное агенты доводят сами." : "Documents that genuinely cannot move without a person: something is literally blocked, waiting on your approval, or already past its deadline. Everything else the agents finish on their own.",
           valueStyle:"font-size:40px; line-height:1; font-weight:600; color:" + (needsYou.length ? "var(--ochre)" : "var(--green)") + ";" },
         { label:ru ? "Идёт само" : "Moving itself", value:restCount, note:ru ? "входящих, никого не держат" : "non-blocking incoming",
           hint:ru ? "Входящие документы, которые никого не держат. Агент разберётся с ними по протоколу, смотреть не обязательно." : "Incoming documents that hold nobody up. The agent handles them by protocol; you do not have to look.",
@@ -2690,7 +2743,7 @@ class Component extends DCLogic {
         id: o.id, type: o.type,
         who: o.your_move ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + listNames((o.waiting_on || []).filter(w => w !== d.self), ru),
         whoTone: o.your_move ? "attention" : "neutral",
-        needed: o.needed_by ? (ru ? "дедлайн " : "due ") + isoDay(o.needed_by) : (o.blocking ? (ru ? "блокирует" : "blocking") : "")
+        needed: o.needed_by ? (ru ? "дедлайн " : "due ") + isoDay(o.needed_by) : (o.blocking ? (ru ? "работа стоит" : "work is stopped") : "")
       })),
       // One prompt for the thread rather than one per row. Every document in it
       // that is ours goes in, and what the other side still owes goes in as

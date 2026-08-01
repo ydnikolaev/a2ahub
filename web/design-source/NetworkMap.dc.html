@@ -244,6 +244,22 @@ function ruPlural(n, one, few, many) {
   return n + " " + (n10 === 1 && n100 !== 11 ? one : (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14) ? few : many));
 }
 function typeWord(t) { return String(t || "").replace(/_/g, " "); }
+// `blocking: true` means the AUTHOR is stopped until the document is answered,
+// so whoever it was addressed to is whoever has to move. One rule across the
+// whole dashboard: the label names that party, never the bare word "blocking",
+// which reads equally well as "I am held up" and "I am holding somebody up".
+function blockedOn(to, self, ru) {
+  const holders = (Array.isArray(to) ? to : [to]).filter(Boolean);
+  if (holders.indexOf(self) > -1) return ru ? "держите вы" : "blocked on you";
+  if (holders.length === 1) return (ru ? "держит " : "blocked on ") + holders[0];
+  if (holders.length > 1) return ru ? "держат получатели" : "blocked on the recipients";
+  return ru ? "работа стоит" : "work is stopped";
+}
+// On the map itself the label sits on a drawn edge with an arrowhead, so it
+// only has to say how many are stopped; the edge popover names the party.
+function stoppedBadge(n, ru) {
+  return ru ? ruPlural(n, "стоит", "стоят", "стоят") : n + " stopped";
+}
 function driftLine(e, ru) {
   if (ru) {
     if (e.drift === "current") return "Закреплена версия " + e.pinnedMajor + ", она же текущая линия поставщика " + e.providerVersion + ".";
@@ -467,7 +483,7 @@ class Component extends DCLogic {
     const ru = this.ru();
     return {
       head: it.title,
-      pillText: it.blocking ? (ru ? "блокирует" : "blocking") : it.priority,
+      pillText: it.blocking ? blockedOn(it.to, d.self, ru) : it.priority,
       pillTone: it.blocking ? "blocking" : "neutral",
       detail: it.id + " · " + it.type + " · " + it.state + " · " + it.from + " → " + (it.to || []).join(", ") + " · " + age(it.age) + (ru ? " назад" : " old") + (it.neededBy ? (ru ? " · дедлайн " : " · due ") + isoDay(it.neededBy) : ""),
       canOpen: !!open, openLabel: ru ? "Открыть в разделе «Работа» →" : "Open in Work →",
@@ -551,7 +567,7 @@ class Component extends DCLogic {
         { label: ru ? "спейс" : "space", value: spaceId, mono: true },
         { label: ru ? "открытых документов" : "open documents", value: String(e.count) },
         { label: ru ? "наивысший приоритет" : "strongest priority", value: e.maxPriority || (ru ? "не записан" : "not recorded") },
-        { label: ru ? "явная блокировка" : "marked blocking", value: e.blocking ? (ru ? "да, минимум один" : "yes, at least one") : (ru ? "нет" : "no") }
+        { label: ru ? "кого ждут" : "blocked on", value: e.blocking ? blockedOn([e.to], d.self, ru) : (ru ? "никого, всё движется" : "nobody, nothing is stopped") }
       ].concat(e.maxStale ? [{ label: ru ? "без движения дольше всех" : "longest without movement", value: age(e.maxStale) }] : []),
       hasNote: false, note: "",
       hasRows: items.length > 0,
@@ -720,7 +736,7 @@ class Component extends DCLogic {
         const related = this.edgeLive(key, r.e.space, d.self, s.row.node.system);
         const badgeText = r.kind === "c"
           ? (r.e.drift === "current" ? "" : driftShort(r.e, ru))
-          : (r.e.blocking ? r.e.count + (ru ? " блокирует" : " blocking") : String(r.e.count));
+          : (r.e.blocking ? stoppedBadge(r.e.count, ru) : String(r.e.count));
         let bx = Math.round((SEX + MX) / 2), by = Math.round((y0 + y1) / 2);
         if (badgeText) {
           const box = this.badgeBox(badgeText);
@@ -776,7 +792,7 @@ class Component extends DCLogic {
             enter: this.hoverOn(key), leave: this.hoverOff(key),
             label: r.e.from + " → " + r.e.to
           });
-          const badgeText = r.kind === "c" ? (r.e.drift === "current" ? "" : driftShort(r.e, ru)) : (r.e.blocking ? r.e.count + (ru ? " блокирует" : " blocking") : String(r.e.count));
+          const badgeText = r.kind === "c" ? (r.e.drift === "current" ? "" : driftShort(r.e, ru)) : (r.e.blocking ? stoppedBadge(r.e.count, ru) : String(r.e.count));
           if (badgeText) {
             const box = this.badgeBox(badgeText);
             const mid = (ya + yb) / 2;
@@ -972,7 +988,7 @@ class Component extends DCLogic {
     const labels = {
       spaceLabel: ru ? "Спейс" : "Space", contractLabel: ru ? "контракт" : "contract",
       currentLabel: ru ? "актуален" : "current", driftingLabel: ru ? "расходится" : "drifting", missingLabel: ru ? "не найден" : "missing",
-      workLabel: ru ? "открытая работа" : "open work", flightLabel: ru ? "в работе" : "in flight", blockingLabel: ru ? "блокирует" : "blocking",
+      workLabel: ru ? "открытая работа" : "open work", flightLabel: ru ? "в работе" : "in flight", blockingLabel: ru ? "кто-то стоит" : "somebody stopped",
       directionLabel: ru ? "направление" : "direction", directionText: ru ? "стрелка смотрит на поставщика или получателя" : "arrow ends at the provider or recipient",
       linkTableTitle:ru ? "Все связи в таблице" : "Every link, as a table", linkLabel:ru ? "связь" : "link", linkReasonLabel:ru ? "почему существует" : "why it exists", matrixTitle:ru ? "Участие систем в спейсах" : "Where each system participates", systemLabel:ru ? "система" : "system"
     };
@@ -1037,7 +1053,7 @@ class Component extends DCLogic {
       key: "c:" + e.contract + ":" + e.from + ">" + e.to + ":" + e.space, kind: "c"
     })).concat(xAll.map(e => ({
       from: e.from, to: e.to, arrow: "⇢", space: e.space,
-      why: ru ? ruPlural(e.count, "открытый элемент", "открытых элемента", "открытых элементов") + " от " + e.from + " · наивысший приоритет " + e.maxPriority + (e.blocking ? " · один явно блокирует" : "") + (e.maxStale ? " · самый старый " + e.maxStale : "") : plural(e.count, "open item", "open items") + " authored by " + e.from + " · strongest " + e.maxPriority + (e.blocking ? " · one is literally blocking" : "") + (e.maxStale ? " · oldest " + e.maxStale : ""),
+      why: ru ? ruPlural(e.count, "открытый элемент", "открытых элемента", "открытых элементов") + " от " + e.from + " · наивысший приоритет " + e.maxPriority + (e.blocking ? " · из-за одного " + e.from + " стоит" : "") + (e.maxStale ? " · самый старый " + e.maxStale : "") : plural(e.count, "open item", "open items") + " authored by " + e.from + " · strongest " + e.maxPriority + (e.blocking ? " · one of them has " + e.from + " stopped" : "") + (e.maxStale ? " · oldest " + e.maxStale : ""),
       key: "x:" + e.from + ">" + e.to + ":" + e.space, kind: "x"
     })));
     const selKey = this.state.sel && this.state.sel.kind === "edge" ? this.state.sel.key : "";
