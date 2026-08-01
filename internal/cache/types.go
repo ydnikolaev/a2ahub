@@ -106,7 +106,11 @@ type EventSummary struct {
 // ShowResult is `a2a show <ref>`'s full output shape (OP-209): artifact
 // body + folded state + event list + facts a V5 code lookup needs.
 type ShowResult struct {
-	Space string   `json:"space"`
+	Space string `json:"space"`
+	// Path is the space-relative canonical artifact path. It is dashboard-only:
+	// the stable CLI JSON contract does not need a repository layout detail,
+	// while a human-facing source link must point at the exact committed file.
+	Path  string   `json:"-"`
 	ID    string   `json:"id"`
 	Type  string   `json:"type"`
 	Title string   `json:"title"`

@@ -174,8 +174,9 @@ func writeArtifact(t *testing.T, dir, relPath string, fields map[string]any, bod
 // TestAssemble_Threads is spec 46 §T6.1's own acceptance shape: a
 // two-member thread (a work_request + its response, linked by the
 // response's own `parent` field) appears in Data.Threads with both members
-// and the `parent` DocLink between them, in transcript order; a
-// one-member thread does NOT appear at all (§T3's presentation rule).
+// and the `parent` DocLink between them, in transcript order; a newly opened
+// one-member thread appears too, so the Threads page does not hide work until
+// the first response arrives.
 func TestAssemble_Threads(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -220,12 +221,23 @@ func TestAssemble_Threads(t *testing.T) {
 		t.Fatalf("Assemble: %v", err)
 	}
 
-	if len(data.Threads) != 1 {
-		t.Fatalf("Threads = %d, want 1 (the solo thread must not be listed): %+v", len(data.Threads), data.Threads)
+	if len(data.Threads) != 2 {
+		t.Fatalf("Threads = %d, want 2 (including the newly opened solo thread): %+v", len(data.Threads), data.Threads)
 	}
-	th := data.Threads[0]
+	var th, soloThread Thread
+	for _, candidate := range data.Threads {
+		switch candidate.ID {
+		case threadA:
+			th = candidate
+		case threadB:
+			soloThread = candidate
+		}
+	}
 	if th.ID != threadA || th.Space != "getvisa" || th.MemberCount != 2 {
 		t.Fatalf("thread wrong: %+v", th)
+	}
+	if soloThread.ID != threadB || soloThread.MemberCount != 1 || soloThread.Opener.ID != soloID {
+		t.Fatalf("solo thread wrong: %+v", soloThread)
 	}
 	if th.Opener.ID != parentID {
 		t.Fatalf("opener = %+v, want the earlier-created work_request %s", th.Opener, parentID)
@@ -269,7 +281,7 @@ func TestAssemble_Threads(t *testing.T) {
 	if !ok {
 		t.Fatalf("response detail %s missing: %+v", responseID, data.ArtifactDetails)
 	}
-	if responseDetail.Space != "getvisa" || responseDetail.Body != "response body" ||
+	if responseDetail.Space != "getvisa" || responseDetail.Path != "seomatrix/exchanges/"+responseID+".md" || responseDetail.Body != "response body" || responseDetail.BodyHTML != "<p>response body</p>\n" ||
 		responseDetail.Envelope["parent"] != parentID || responseDetail.SourceClass != "canonical" {
 		t.Fatalf("response detail is not the canonical show projection: %+v", responseDetail)
 	}
@@ -283,10 +295,8 @@ func TestAssemble_Threads(t *testing.T) {
 		}
 	}
 
-	// The agent prompt's facts must reach a row whose thread never becomes a
-	// rendered conversation. "Conversation" means two or more members, and a
-	// lone document nobody has replied to yet is exactly the case a human
-	// beats their agent to — the one the button exists for.
+	// The agent prompt's facts must reach the row for a lone document nobody has
+	// replied to yet — exactly the case where a human beats their agent to it.
 	byRowID := map[string]Item{}
 	for _, row := range append(append([]Item{}, data.Inbox...), data.Outbox...) {
 		byRowID[row.ID] = row

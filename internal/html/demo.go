@@ -45,6 +45,13 @@ func DemoData() (Data, error) {
 	d.ReleaseNotes = toReleaseNotes(releases)
 	deriveDemoOwnership(&d)
 	deriveDemoRowFacts(&d)
+	for i := range d.ArtifactDetails {
+		rendered, renderErr := renderArtifactMarkdown(d.ArtifactDetails[i].Body)
+		if renderErr != nil {
+			return Data{}, fmt.Errorf("html: demo artifact detail %s Markdown: %w", d.ArtifactDetails[i].ID, renderErr)
+		}
+		d.ArtifactDetails[i].BodyHTML = rendered
+	}
 	return d, nil
 }
 

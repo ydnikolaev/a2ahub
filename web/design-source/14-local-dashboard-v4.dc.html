@@ -143,6 +143,14 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 .ssot-doc-body table { width:100%; display:block; overflow-x:auto; margin:16px 0 22px; border:1px solid var(--border); border-radius:10px; border-collapse:separate; border-spacing:0; font-size:14px; }
 .ssot-doc-body th,.ssot-doc-body td { min-width:120px; padding:10px 12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
 .ssot-doc-body tr:last-child td { border-bottom:0; }
+@media (max-width:700px) {
+  .a2a-topbar { width:calc(100% - 32px) !important; gap:8px !important; flex-wrap:wrap !important; padding:10px 0 8px !important; }
+  .a2a-topbar-main { display:contents !important; }
+  .a2a-topbar-main > button { order:1; }
+  .a2a-self-chip { display:none !important; }
+  .a2a-topbar-actions { order:2; margin-left:auto; }
+  .a2a-topnav { order:3; flex:1 0 100% !important; }
+}
 
 </style>
 </helmet>
@@ -150,14 +158,14 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 <div data-screen-label="Local dashboard v4" style="min-height:100vh; display:flex; flex-direction:column;">
 
   <header style="position:sticky; top:0; z-index:60; background:var(--surface);">
-    <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:14px 0; display:flex; align-items:flex-start; gap:16px; flex-wrap:nowrap; align-items:center;">
-      <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:14px; flex-wrap:nowrap;">
+    <div class="a2a-topbar" style="width:min(1240px, 100% - 56px); margin:0 auto; padding:14px 0; display:flex; align-items:flex-start; gap:16px; flex-wrap:nowrap; align-items:center;">
+      <span class="a2a-topbar-main" style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:14px; flex-wrap:nowrap;">
       <button type="button" onClick="{{ goOverview }}" aria-label="{{ backOverviewLabel }}" style="font-family:'IBM Plex Mono',monospace; font-size:18px; font-weight:600; color:var(--text); background:transparent; border:0; padding:0; cursor:pointer; flex:0 0 auto;">a2a<span style="color:var(--logo-dim);">hub</span></button>
-      <span style="flex:0 1 auto; min-width:0; display:flex; align-items:center; gap:8px; background:var(--canvas); border-radius:8px; padding:5px 12px 5px 6px; font-size:15px;">
+      <span class="a2a-self-chip" style="flex:0 1 auto; min-width:0; display:flex; align-items:center; gap:8px; background:var(--canvas); border-radius:8px; padding:5px 12px 5px 6px; font-size:15px;">
         <span style="flex:0 0 auto; width:26px; height:26px; border-radius:99px; background:var(--teal-solid); color:var(--on-solid); display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600;">{{ selfMono }}</span>
         <span style="min-width:0; color:var(--body); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ selfLine }}</span>
       </span>
-      <nav ref="{{ navRef }}" aria-label="{{ viewsLabel }}" style="flex:1 1 0; min-width:0; display:flex; align-items:center; gap:2px; font-size:16px; flex-wrap:nowrap;">
+      <nav class="a2a-topnav" ref="{{ navRef }}" aria-label="{{ viewsLabel }}" style="flex:1 1 0; min-width:0; display:flex; align-items:center; gap:2px; font-size:16px; flex-wrap:nowrap;">
         <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="8">
           <button type="button" onClick="{{ t.go }}" aria-current="{{ t.current }}" style="{{ t.style }}">{{ t.label }}</button>
         </sc-for>
@@ -175,7 +183,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         </sc-if>
       </nav>
       </span>
-      <span style="flex:0 0 auto; display:flex; align-items:center; gap:8px;">
+      <span class="a2a-topbar-actions" style="flex:0 0 auto; display:flex; align-items:center; gap:8px;">
         <span role="group" aria-label="{{ localeGroupLabel }}" style="display:flex; gap:2px; background:var(--canvas); border-radius:10px; padding:3px;">
           <button type="button" onClick="{{ setEN }}" aria-pressed="{{ enPressed }}" style="{{ enLocaleStyle }}">EN</button>
           <button type="button" onClick="{{ setRU }}" aria-pressed="{{ ruPressed }}" style="{{ ruLocaleStyle }}">RU</button>
@@ -268,7 +276,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
           <dc-import name="EmptyState" title="{{ emptyQueueTitle }}" text="{{ emptyQueueText }}" size="page" hint-size="100%,380px"></dc-import>
         </sc-if>
         <sc-if value="{{ hasOvRows }}" hint-placeholder-val="{{ true }}">
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-for list="{{ ovRows }}" as="r" hint-placeholder-count="3">
               <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" status-why="{{ r.statusWhy }}" state="{{ r.state }}" state-tone="{{ r.stateTone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" meta="{{ r.meta }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,150px"></dc-import>
@@ -340,7 +348,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
           <dc-import name="EmptyState" title="{{ emptyWorkTitle }}" text="{{ emptyWorkText }}" size="page" hint-size="100%,380px"></dc-import>
         </sc-if>
         <sc-if value="{{ workHasColumns }}" hint-placeholder-val="{{ true }}">
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-if value="{{ noWorkRows }}" hint-placeholder-val="{{ false }}">
               <dc-import name="EmptyState" title="{{ emptyWorkTitle }}" text="{{ emptyWorkText }}" size="panel" hint-size="100%,240px"></dc-import>
@@ -361,7 +369,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
           <dc-import name="EmptyState" title="{{ emptyThreadsTitle }}" text="{{ emptyThreadsText }}" size="page" hint-size="100%,380px"></dc-import>
         </sc-if>
         <sc-if value="{{ hasThreadRows }}" hint-placeholder-val="{{ true }}">
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-for list="{{ threadRows }}" as="t" hint-placeholder-count="5">
               <button type="button" class="a2a-pick" onClick="{{ t.select }}" style="{{ t.style }}">
@@ -557,7 +565,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
           <dc-import name="EmptyState" title="{{ emptyConFilterTitle }}" text="{{ emptyConFilterText }}" size="page" hint-size="100%,340px"></dc-import>
         </sc-if>
         <sc-if value="{{ hasConFiltered }}" hint-placeholder-val="{{ true }}">
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-for list="{{ conRows }}" as="c" hint-placeholder-count="6">
               <button type="button" class="a2a-pick" onClick="{{ c.select }}" style="{{ c.style }}">
@@ -1014,7 +1022,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
           </sc-for>
         </div>
 
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; margin-bottom:18px; align-items:start;">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr)); gap:18px; margin-bottom:18px; align-items:start;">
           <section style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
             <h2 style="margin:0 0 8px; font-size:24px; font-weight:600;">{{ lifecycleTitle }}</h2>
             <p style="margin:0 0 16px; font-size:16px; line-height:1.6; color:var(--muted);">{{ lifecycleText }}</p>
@@ -1087,16 +1095,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
 
   </main>
 
-  <!-- One modal, mounted once, reachable from every surface that names a
-       document: the detail pane, the queue rows and the map's own popovers. -->
-  <sc-if value="{{ hasOpenDoc }}" hint-placeholder-val="{{ false }}">
-    <dc-import name="DocumentModal" det="{{ openDocDetail }}" hint-size="100%,700px"></dc-import>
-  </sc-if>
-
   <!-- How much this page can be trusted, on demand. It answers one question —
        "is what I am reading current" — which qualifies every number on every
-       screen and therefore belongs beside none of them. Same modal grammar as
-       DocumentModal: backdrop dismiss, sticky header, one ✕. -->
+       screen and therefore belongs beside none of them. Backdrop dismiss,
+       sticky header, one ✕. -->
   <sc-if value="{{ spaceModalOpen }}" hint-placeholder-val="{{ false }}">
     <div onClick="{{ dismissSpaceModal }}" style="position:fixed; inset:0; z-index:400; background:rgba(33,30,23,.5); padding:24px; overflow:auto; display:flex; align-items:flex-start; font-family:'Onest',sans-serif;">
       <div role="dialog" aria-modal="true" aria-label="{{ spaceHealthTitle }}" style="width:min(760px, 100%); margin:auto; background:var(--surface); border-radius:18px; box-shadow:0 24px 60px -20px rgba(33,30,23,.5); overflow:hidden;">
@@ -1577,7 +1579,7 @@ function normalizeDashboardData(input) {
 }
 
 class Component extends DCLogic {
-  state = { data: null, error: "", view: "overview", space: "all", ovSel: "", workTab: "all", typeMenu: false, workDue: false, conRole: "all", conRisk: false, workSel: "", threadSel: "", conSel: "", doc: "overview", docQ: "", openDoc: null, spaceModal: false, tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en" };
+  state = { data: null, error: "", view: "overview", space: "all", ovSel: "", workTab: "all", typeMenu: false, workDue: false, conRole: "all", conRisk: false, workSel: "", threadSel: "", conSel: "", doc: "overview", docQ: "", spaceModal: false, tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en" };
 
   componentDidMount() {
     // the primary nav shows as many views as fit and folds the rest into More
@@ -1589,12 +1591,11 @@ class Component extends DCLogic {
       if (w > 0 && Math.abs((this.state.navW || 0) - w) > 4) this.setState({ navW: w });
     };
     window.addEventListener("resize", this.measureNav);
-    // Escape unwinds one layer at a time, outermost first: the document modal,
-    // then the spaces modal, then a focused thread document. The map owns its
+    // Escape unwinds one layer at a time: the spaces modal, then a focused
+    // thread document. ArtifactDetail owns its full-width overlay itself. The map owns its
     // own Escape for its own overlay.
     this.onEscape = (ev) => {
       if (ev.key !== "Escape") return;
-      if (this.state.openDoc) { this.setState({ openDoc: null }); return; }
       if (this.state.spaceModal) { this.setState({ spaceModal: false }); return; }
       if (this.state.typeMenu) { this.setState({ typeMenu: false }); return; }
       if (this.state.tvFocus) this.setState({ tvFocus: "" });
@@ -1734,82 +1735,6 @@ class Component extends DCLogic {
     return [];
   }
 
-  // Flattens one artifact into the modal's shape: every frontmatter key the
-  // envelope actually carries (never a curated subset — the point of the modal
-  // is to show the file as it is), plus the verbatim body. Scalars render as
-  // text, lists as chips, nested objects as `key: value` lines. Everything goes
-  // through textContent downstream; nothing here may become markup.
-  // The few frontmatter fields a reader actually opens a document for, in the
-  // order they answer questions: when, how urgent, is it blocking, by when, who
-  // wrote it. Everything else the envelope carries is true and kept — it just
-  // sits behind one disclosure instead of burying the body.
-  PRIMARY_KEYS() { return ["created", "priority", "blocking", "needed_by", "actor", "classification"]; }
-
-  // Flattens one artifact into the modal's shape. Scalars render as text, lists
-  // as chips, nested objects as `key: value` lines. Everything goes through
-  // textContent downstream; nothing here may become markup.
-  openDocVals() {
-    const ru = this.state.locale === "ru";
-    const sel = this.state.openDoc;
-    const d = this.state.data;
-    if (!sel || !d) return null;
-    const a = d.artifactDetails.find(x => x.id === sel.id && (!sel.space || x.space === sel.space));
-    if (!a) return null;
-    const e = a.envelope || {};
-    const flat = (v) => {
-      if (v === null || v === undefined) return "";
-      if (Array.isArray(v)) return v.map(flat).join(" · ");
-      if (typeof v === "object") return Object.keys(v).map(k => k + ": " + flat(v[k])).join(" · ");
-      return String(v);
-    };
-    const LABELS_RU = {
-      created: "создано", priority: "приоритет", blocking: "автор остановился", needed_by: "дедлайн",
-      actor: "автор", classification: "уровень доступа", category: "категория", from: "от",
-      to: "кому", id: "идентификатор", thread: "тред", type: "тип", title: "заголовок",
-      schema: "схема", space: "спейс", parent: "отвечает на", result: "результат", refs: "ссылки"
-    };
-    const LABELS_EN = {
-      created: "created", priority: "priority", blocking: "author is stopped", needed_by: "due",
-      actor: "author", classification: "classification"
-    };
-    const humanKey = (k) => ru ? (LABELS_RU[k] || k) : (LABELS_EN[k] || k);
-    const humanValue = (k, raw) => {
-      if (k === "created") return when(raw);
-      if (k === "needed_by") return isoDay(raw);
-      if (typeof raw === "boolean") return raw ? (ru ? "да" : "yes") : (ru ? "нет" : "no");
-      return flat(raw);
-    };
-    const keyStyle = "width:230px; padding:10px 16px 10px 0; vertical-align:top; color:var(--muted); font-size:15px; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere;";
-    const rawKeyStyle = "width:230px; padding:10px 16px 10px 0; vertical-align:top; color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere;";
-    const valStyle = "padding:10px 0; vertical-align:top; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere;";
-    const row = (k, mono) => {
-      const raw = e[k];
-      const chips = Array.isArray(raw) && raw.every(x => typeof x !== "object");
-      return {
-        key: mono ? k : humanKey(k), keyStyle: mono ? rawKeyStyle : keyStyle, valStyle,
-        isChips: chips, chips: chips ? raw.map(String) : [],
-        isText: !chips, value: humanValue(k, raw),
-        textStyle: "font-size:15px; line-height:1.6; color:var(--body);"
-      };
-    };
-    const primaryKeys = this.PRIMARY_KEYS().filter(k => e[k] !== undefined && e[k] !== null && e[k] !== "");
-    const restKeys = Object.keys(e).sort().filter(k => primaryKeys.indexOf(k) === -1);
-    const pills = [{ text: String(a.state || "").replace("_", " "), tone: STATE_TONE[a.state] || "neutral" }];
-    if (a.sync_stale) pills.push({ text: (ru ? "спейс устарел " : "space stale ") + age(a.sync_age), tone: "attention" });
-    return {
-      type: a.type, title: a.title, pills,
-      idLine: a.id + " · " + a.space + " · " + a.from + " → " + (a.to || []).join(", "),
-      primary: primaryKeys.map(k => row(k, false)),
-      rest: restKeys.map(k => row(k, true)),
-      hasRest: restKeys.length > 0,
-      restCount: String(restKeys.length),
-      hasBody: !!a.body, noBody: !a.body, body: a.body || "",
-      footer: (ru ? "источник: " : "source: ") + a.sourceClass + " · digest " + String(a.digest || "").slice(0, 12) + "…" + String(a.digest || "").slice(-6),
-      close: () => this.setState({ openDoc: null }),
-      dismiss: (ev) => { if (ev && ev.target === ev.currentTarget) this.setState({ openDoc: null }); }
-    };
-  }
-
   // Docs view values: nav grouped exactly as the manifest groups them, a search
   // that filters on title/group/source (the body text is not indexed client-side
   // — the same limit the public rail carries), and the selected document.
@@ -1864,7 +1789,7 @@ class Component extends DCLogic {
     const doc = this.docCorpus().find(d => d.id === id);
     if (!doc || !doc.html || node.getAttribute("data-hydrated") === id) return;
     // A2A_DOCS is trusted project-owned Markdown rendered by Go/Astro. Artifact
-    // data never enters this innerHTML path.
+    // Markdown has a separate safe Goldmark projection and never enters here.
     node.innerHTML = doc.html;
     node.setAttribute("data-hydrated", id);
     this.buildToc(node, id);
@@ -1901,9 +1826,17 @@ class Component extends DCLogic {
     // width per item is estimated from the label (Onest 16px ≈ 8.4px/char + 24px padding + 2px gap)
     const labels = DASHBOARD_I18N[this.state.locale].views;
     const items = VIEW_IDS.map((id, i) => ({ id, label: labels[i], w: Math.round(labels[i].length * 8.4) + 26 }));
+    if (window.innerWidth <= 700) {
+      const active = items.find(t => t.id === this.state.view) || items[0];
+      return { vis:[active], rest:items.filter(t => t !== active) };
+    }
     const avail = this.state.navW;
     const total = items.reduce((t, i) => t + i.w, 0);
-    if (!avail || total <= avail) return { vis: items, rest: [] };
+    if (!avail) {
+      const active = items.find(t => t.id === this.state.view) || items[0];
+      return { vis:[active], rest:items.filter(t => t !== active) };
+    }
+    if (total <= avail) return { vis: items, rest: [] };
     const budget = avail - 92;
     const vis = [], rest = [];
     let used = 0;
@@ -2046,6 +1979,62 @@ class Component extends DCLogic {
     }, fields);
   }
 
+  artifactSourceURL(artifact) {
+    const d = this.state.data;
+    const sp = d && (d.spaces || []).find(x => x.id === artifact.space);
+    let repo = String(sp && sp.repoURL || "").trim();
+    const path = String(artifact.path || "").replace(/^\/+/, "");
+    if (!repo || !path) return "";
+    if (repo.startsWith("git@github.com:")) repo = "https://github.com/" + repo.slice("git@github.com:".length);
+    if (repo.startsWith("ssh://git@github.com/")) repo = "https://github.com/" + repo.slice("ssh://git@github.com/".length);
+    if (!/^https:\/\/github\.com\//i.test(repo)) return "";
+    repo = repo.replace(/\.git\/?$/, "").replace(/\/$/, "");
+    const revision = encodeURIComponent(String(sp.revision || "HEAD"));
+    const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+    return repo + "/blob/" + revision + "/" + encodedPath;
+  }
+
+  metadataFor(artifact, ru) {
+    const e = artifact.envelope || {};
+    const flat = (value) => {
+      if (value === null || value === undefined) return "";
+      if (Array.isArray(value)) return value.map(flat).join(" · ");
+      if (typeof value === "object") return Object.keys(value).map(k => k + ": " + flat(value[k])).join(" · ");
+      return String(value);
+    };
+    const labelsRU = {
+      created:"создано", priority:"приоритет", blocking:"автор остановился", category:"категория",
+      actor:"автор", classification:"уровень доступа", effort_estimate:"оценка объёма",
+      required_approvers:"согласуют", space:"спейс"
+    };
+    const labelsEN = {
+      created:"created", priority:"priority", blocking:"author is stopped", category:"category",
+      actor:"author", classification:"classification", effort_estimate:"effort",
+      required_approvers:"approvers", space:"space"
+    };
+    const valueFor = (key, raw) => {
+      if (key === "created") return when(raw);
+      if (key === "needed_by") return isoDay(raw);
+      if (typeof raw === "boolean") return raw ? (ru ? "да" : "yes") : (ru ? "нет" : "no");
+      return flat(raw);
+    };
+    const present = (key) => e[key] !== undefined && e[key] !== null && e[key] !== "";
+    const preferred = ["created", "priority", "blocking", "category", "actor", "classification", "effort_estimate", "required_approvers", "space"];
+    const primaryKeys = preferred.filter(present).slice(0, 5);
+    const primary = primaryKeys.map(key => ({
+      label: (ru ? labelsRU : labelsEN)[key] || key,
+      value: valueFor(key, e[key]),
+      mono: key === "actor" || key === "space"
+    }));
+    const rest = Object.keys(e).sort().filter(key => primaryKeys.indexOf(key) === -1).map(key => ({ label:key, value:valueFor(key, e[key]) }));
+    // These were the only useful facts in the old lower table that are not
+    // frontmatter. Keep them beside the metadata instead of preserving a
+    // second, duplicating facts section below the document.
+    if (artifact.path) rest.push({ label:"repository_path", value:artifact.path });
+    rest.push({ label:"snapshot_source", value:artifact.sourceClass + " · " + (ru ? "синхронизировано " : "synced ") + age(artifact.sync_age) });
+    return { primary, rest };
+  }
+
   detailFor(id, fallbackList) {
     const ru = this.state.locale === "ru";
     const d = this.state.data;
@@ -2096,15 +2085,7 @@ class Component extends DCLogic {
     if (e.deliverables) lists.push({ heading: ru ? "Что сдаётся" : "Deliverables", items: e.deliverables.map(x => typeof x === "string" ? x : (x.path || x.name || JSON.stringify(x))), numbered: false });
     if (e.limitations) lists.push({ heading: ru ? "Чего этот результат не покрывает" : "Recorded limitations", items: e.limitations, numbered: false });
 
-    const facts = [];
-    facts.push({ label: ru ? "спейс" : "space", value: a.space, mono: true });
-    if (e.created) facts.push({ label: ru ? "создано" : "created", value: when(e.created) });
-    if (e.effort_estimate) facts.push({ label: ru ? "оценка объёма" : "effort", value: e.effort_estimate });
-    if (e.category) facts.push({ label: ru ? "категория" : "category", value: e.category + (e.classification ? " · " + e.classification : "") });
-    else if (e.classification) facts.push({ label: ru ? "уровень доступа" : "classification", value: e.classification });
-    if (e.required_approvers) facts.push({ label: ru ? "кто согласует" : "approvers", value: e.required_approvers.join(", ") });
-    if (e.actor) facts.push({ label: ru ? "автор" : "actor", value: (e.actor.name || "") + (e.actor.kind ? " · " + e.actor.kind : ""), mono: true });
-    facts.push({ label: ru ? "источник" : "source", value: a.sourceClass + " · " + (ru ? "синхронизировано " : "synced ") + age(a.sync_age) });
+    const metadata = this.metadataFor(a, ru);
 
     const flagged = new Set((a.flags || []).map(() => true));
     const events = (a.events || []).map((ev, i) => ({
@@ -2129,26 +2110,39 @@ class Component extends DCLogic {
       return { code, message: f ? f.message : (ru ? "К этому замечанию не приложено пояснения." : "No message is recorded for this flag in the fixture.") };
     });
 
-    let calloutTitle = "", calloutText = "", calloutTone = "attention";
-    if (e.expected_response) {
-      const needed = e.needed_by || (e.expected_response && e.expected_response.by);
+    let calloutTitle = "", calloutText = "", calloutTone = "attention", calloutParts = [];
+    const needed = e.needed_by || (e.expected_response && e.expected_response.by);
+    if (e.expected_response || needed) {
       calloutTone = e.blocking ? "blocking" : "attention";
-      calloutTitle = needed ? (ru ? "Дедлайн " : "Due ") + isoDay(needed) + " · " + ((a.to || []).includes(d.self) ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + (a.to || []).join(", ")) : (ru ? "Чего от вас ждут в ответ" : "What the sender expects back");
-      calloutText = [e.expected_response.shape.replace(/[.\s]+$/, "") + ".", e.interim_behavior ? (ru ? "А пока: " : "Until then: ") + e.interim_behavior.replace(/[.\s]+$/, "") + "." : "", e.context ? e.context.replace(/[.\s]+$/, "") + "." : ""].filter(Boolean).join(" ");
+      calloutTitle = needed
+        ? (ru ? "Дедлайн " : "Due ") + isoDay(needed) + " · " + ((a.to || []).includes(d.self) ? (ru ? "ваш ход" : "your move") : (ru ? "ход за " : "waiting on ") + (a.to || []).join(", "))
+        : ((a.to || []).includes(d.self) ? (ru ? "Что от нас ждут в ответ" : "What is expected from us") : (ru ? "Что ждём в ответ" : "What we expect back"));
+      const targetLabel = (a.to || []).includes(d.self)
+        ? (ru ? "Что ждут от нас" : "What is expected from us")
+        : (ru ? "Что ждём от " : "What we expect from ") + (a.to || []).join(", ");
+      const interimLabel = a.from === d.self
+        ? (ru ? "Что до ответа делаем мы" : "What we do until the answer arrives")
+        : (ru ? "Что до ответа делает " : "What is continuing meanwhile at ") + a.from;
+      const responseShape = typeof e.expected_response === "string" ? e.expected_response : (e.expected_response && e.expected_response.shape);
+      if (responseShape) calloutParts.push({ label: targetLabel, text: responseShape.replace(/[.\s]+$/, "") + "." });
+      if (e.interim_behavior) calloutParts.push({ label: interimLabel, text: e.interim_behavior.replace(/[.\s]+$/, "") + "." });
+      if (e.context) calloutParts.push({ label: ru ? "Контекст автора" : "Author context", text: e.context.replace(/[.\s]+$/, "") + "." });
     } else if (e.context) {
       calloutTitle = ru ? "Что автор приложил к документу" : "Context recorded with the artifact";
       calloutText = e.context;
+      calloutParts = [{ label: ru ? "Контекст автора" : "Author context", text: e.context }];
     } else if (e.verification) {
       calloutTitle = ru ? "Чем автор это подтвердил" : "How the sender verified it";
       calloutText = Array.isArray(e.verification) ? e.verification.join(" · ") : String(e.verification);
+      calloutParts = [{ label: ru ? "Проверка" : "Verification", text: calloutText }];
     }
 
     return {
       present: true, type: a.type, pills,
       sourceLine: a.sourceClass + (ru ? " · запись · " : " record · ") + (a.sync_stale ? (ru ? "спейс устарел " : "space stale ") + age(a.sync_age) : (ru ? "синхронизировано " : "synced ") + age(a.sync_age)),
-      title: a.title, body: a.body || "",
-      calloutTitle, calloutText, calloutTone,
-      lists, facts,
+      title: a.title, body: a.body || "", bodyHTML: a.bodyHTML || "",
+      calloutTitle, calloutText, calloutTone, calloutParts,
+      lists, metadataPrimary: metadata.primary, metadataRest: metadata.rest,
       refs: (a.refs || []).map(r => ({
         ref: r.ref, note: (e.refs || []).find(x => x.ref === r.ref) ? (e.refs.find(x => x.ref === r.ref).note || "") : "",
         pillText: r.resolved === false ? (ru ? "не нашли" : "unresolved") : (r.digest_mismatch ? (ru ? "сумма не сошлась" : "digest mismatch") : (ru ? "нашли, сумма сошлась" : "resolved · digest matches")),
@@ -2169,8 +2163,9 @@ class Component extends DCLogic {
         })) : ""
       },
       threadLabel: a.thread ? (ru ? "Открыть тред" : "Open thread") : (ru ? "Тред не указан" : "No thread recorded"),
+      hasThread: !!a.thread,
       openThread: () => this.go("threads", { threadSel: a.thread || "" }),
-      openDocument: () => this.setState({ openDoc: { id: a.id, space: a.space } }),
+      sourceURL: this.artifactSourceURL(a),
       footer: a.id
     };
   }
@@ -2278,8 +2273,6 @@ class Component extends DCLogic {
       lifecycleSteps: [["draft","submit"],["submitted","ack"],["acknowledged","accept"],["accepted","start"],["in_progress",""]].map(([label, action]) => ({ label, action, hasNext: !!action })),
       artifactTypes: (ru ? [["XC","Контракт"],["XR","Требование"],["XQ","Вопрос"],["XW","Запрос работы"],["XD","Решение"],["XH","Передача"],["XS","Ответ"],["XA","Объявление"]] : [["XC","Contract"],["XR","Requirement"],["XQ","Question"],["XW","Work request"],["XD","Decision"],["XH","Handoff"],["XS","Response"],["XA","Announcement"]]).map(([code,label]) => ({ code,label })),
       goDocs: () => this.go("docs"),
-      hasOpenDoc: !!this.openDocVals(),
-      openDocDetail: this.openDocVals() || {},
       ...this.docsVals(ru, c),
       themeLight: this.state.theme !== "dark", themeDark: this.state.theme === "dark",
       themeLabel: this.state.theme === "dark" ? (ru ? "Светлая тема" : "Light theme") : (ru ? "Тёмная тема" : "Dark theme"),
@@ -2640,7 +2633,7 @@ class Component extends DCLogic {
       whoseMoveLabel: moveTitle, whoseMoveText: moveText,
       tvPresent: !!tv, tvMissing: !tv,
       tvSettled: !!(tv && tv.settled), tvPending: !!(tv && !tv.settled),
-      documentLabel: ru ? "Документ целиком" : "View document",
+      documentLabel: ru ? "Открыть документ" : "Open document",
       settledLabel: ru ? "Ход ни за кем" : "Nobody owes a move",
       settledText: ru
         ? "Все документы этого треда дошли до конечного состояния. Запись остаётся целиком ниже, тред читается, но действий не ждёт."
@@ -2698,7 +2691,7 @@ class Component extends DCLogic {
                 style: linkStyle(r.answer, dim) + (known(r.target) ? "" : " cursor:default;")
               })),
               opensChain: rels.length === 0,
-              openDoc: () => this.setState({ openDoc: { id: a.id, space: tv.space } }),
+              openDoc: () => this.go("work", { workSel:a.id, workTab:"all", space:tv.space }),
               // Artifact dots are one colour and deliberately larger than event
               // dots: documents are the landmarks of a transcript, events are
               // the steps between them.
@@ -2879,7 +2872,7 @@ class Component extends DCLogic {
           notes,
           hasAnnounce: !!v.deprecationID,
           announceLabel: (ru ? "Объявлено в " : "Announced in ") + (v.deprecationID || "") + " →",
-          openAnnounce: () => this.setState({ openDoc: { id: v.deprecationID, space: con.space } })
+          openAnnounce: () => this.go("work", { workSel:v.deprecationID, workTab:"all", space:con.space })
         };
       }) : [],
       cdFacts: con ? [
@@ -2894,7 +2887,7 @@ class Component extends DCLogic {
       space: s.space,
       setSpace: (id) => this.setState({ space: id, ovSel: "", workSel: "", threadSel: "", conSel: "" }),
       openItem: (id, space, outgoing) => this.go("work", { workSel: id, workTab: outgoing ? "outgoing" : "incoming", space: this.state.space === "all" ? "all" : space }),
-      openDocument: (id, space) => this.setState({ openDoc: { id, space } }),
+      openDocument: (id, space) => this.go("work", { workSel:id, workTab:"all", space:space || "all" }),
       // Arriving from the map must not land on a filter that hides the contract
       // it was asked for.
       openContract: (contractId, space) => this.go("contracts", { conSel: contractId, conRole: "all", conRisk: false, space: this.state.space === "all" ? "all" : space }),
