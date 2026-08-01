@@ -248,6 +248,16 @@ changes:
       who depends in words, and drops the consumer-to-provider arrow that reads
       as data flow on a card with no legend for it. Every control in a filter
       row is one height.
+      A thread hands over once, not once per document. Three primary buttons in
+      a row announce three main actions, which means none, and a conversation
+      is one job anyway: the thread's prompt carries every document in it that
+      is this system's to move on, plus what the other side still owes as
+      context, so an agent acts from the whole situation instead of three times
+      from three copies of the same instructions. The documents under it are a
+      list of facts. Sending a reader to Exchange instead was not an option:
+      the open items a thread folds to are a strictly larger set than the
+      exchange rows, and a requirement this system published or a response it
+      already gave appears in neither inbox nor outbox.
     affects: ["a2a html", "exchange", "threads", "contracts", "agent handover"]
     action:
       scope: none
