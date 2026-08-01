@@ -142,7 +142,6 @@ func TestCheckLegalityNote(t *testing.T) {
 	env := rowEnv(KindQuestion)
 
 	for _, state := range []State{StateDraft, StateInProgress, StateClosed} {
-		state := state
 		t.Run(string(state), func(t *testing.T) {
 			t.Parallel()
 			for _, actor := range []string{env.From, env.To0()} {

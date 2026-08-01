@@ -69,11 +69,10 @@ func TestCacheRejectsOversizedAndUnsupportedImages(t *testing.T) {
 		media string
 		want  error
 	}{
-		{name: "oversized", data: make([]byte, maxAvatarBytes+1), media: "image/png", want: ErrTooLarge},
-		{name: "svg", data: []byte("<svg/>"), media: "image/svg+xml", want: ErrUnsupportedMedia},
+		{name: "oversized", data: make([]byte, maxAvatarBytes+1), media: "image/png", want: errTooLarge},
+		{name: "svg", data: []byte("<svg/>"), media: "image/svg+xml", want: errUnsupportedMedia},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			fetch := func(context.Context, string, string, string) ([]byte, string, string, string, bool, error) {
