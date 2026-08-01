@@ -510,7 +510,7 @@ class Component extends DCLogic {
       // Second affordance on the same row: the map names a document, so it
       // should also be able to show it, without a detour through Work.
       canOpenDoc: !!this.props.onOpenDocument,
-      docLabel: ru ? "Документ целиком" : "View document",
+      docLabel: ru ? "Открыть документ" : "Open document",
       // Handing over to the document modal means letting go: the popover that
       // launched it closes, so the two never stack on top of each other.
       openDoc: this.props.onOpenDocument ? (ev) => {

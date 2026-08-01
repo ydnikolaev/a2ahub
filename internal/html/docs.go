@@ -20,10 +20,10 @@ import (
 // docs.go assembles the Documentation tab's content: the committed skill tree
 // (skill/a2ahub/**, the same SSOT `a2a skill install` ships and the drift gate
 // guards) rendered to HTML and injected as the page's DOCS global. Distinct
-// from DATA: DOCS[].html is OUR content, so the template sets it via innerHTML;
-// DATA is artifact-controlled and stays textContent-only. Rendering is
-// server-side (goldmark) — no client markdown lib, keeping the page
-// self-contained.
+// from DATA: DOCS[].html is OUR content, so the template sets it via innerHTML.
+// Artifact Markdown has its own stricter safe Goldmark projection in
+// artifact_markdown.go; neither path ships a client Markdown library, keeping
+// the page self-contained.
 
 // DocSection is one Documentation section = the page's DOCS[] entry shape.
 type DocSection struct {

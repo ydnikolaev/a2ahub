@@ -51,8 +51,11 @@ badge placement, hover and selection rules) in `buildCanvas()`.
   Fonts are self-hosted in production (the prototype links Google Fonts only for convenience —
   do not carry that over).
 * Icons and diagrams are inline SVG or CSS shapes; no vendor artwork.
-* Every artifact title, description, release line and ID is untrusted data: insert with
-  `textContent`, never `innerHTML`.
+* Every artifact title, description, release line and ID is untrusted data:
+  insert it with `textContent`. The sole rich-text exception is artifact
+  Markdown rendered server-side through safe GFM; raw HTML is escaped,
+  dangerous URLs are rejected and remote images are removed before the
+  renderer-owned projection reaches the dashboard.
 * The local dashboard stays fully useful opened as one file with no network.
 * No write actions on the dashboard. "Copy command" and "open source record" are allowed;
   approve / merge / retire buttons are not.

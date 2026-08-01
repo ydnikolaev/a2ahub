@@ -38,6 +38,9 @@ func TestShowMany_SpaceQualifiedDetailsAndEnvelope(t *testing.T) {
 		results[1].Space != "alpha" || results[1].Body != "alpha body" {
 		t.Fatalf("space-qualified results lost order or space identity: %+v", results)
 	}
+	if results[0].Path != "seomatrix/exchanges/"+id+".md" {
+		t.Fatalf("Path = %q, want canonical space-relative artifact path", results[0].Path)
+	}
 	if got := results[0].Envelope["context"]; got != "beta context" {
 		t.Fatalf("Envelope[context] = %#v, want beta context", got)
 	}
@@ -49,8 +52,8 @@ func TestShowMany_SpaceQualifiedDetailsAndEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal ShowResult: %v", err)
 	}
-	if strings.Contains(string(encoded), "beta context") || strings.Contains(string(encoded), `"Envelope"`) {
-		t.Fatalf("dashboard-only envelope leaked into stable show JSON: %s", encoded)
+	if strings.Contains(string(encoded), "beta context") || strings.Contains(string(encoded), `"Envelope"`) || strings.Contains(string(encoded), `"path"`) {
+		t.Fatalf("dashboard-only fields leaked into stable show JSON: %s", encoded)
 	}
 	if _, err := store.Show(context.Background(), "missing:"+id); err == nil {
 		t.Fatal("space-qualified Show must not fall through to another space")

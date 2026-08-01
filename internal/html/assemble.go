@@ -172,7 +172,7 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 	if err != nil {
 		return Data{}, fmt.Errorf("html: outbox: %w", err)
 	}
-	// Conversations: multi-member threads, with their members and the
+	// Conversations, including their first turn, with their members and the
 	// document-to-document links inside them (spec 46 §T6.1). Built before the
 	// rows because it also returns every artifact's open item, and an inbox row
 	// carries the legal-move facts its agent prompt is assembled from.
@@ -200,7 +200,11 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 			return Data{}, fmt.Errorf("html: artifact details: %w", detailErr)
 		}
 		for _, detail := range details {
-			d.ArtifactDetails = append(d.ArtifactDetails, toArtifactDetail(detail))
+			projected, projectErr := toArtifactDetail(detail)
+			if projectErr != nil {
+				return Data{}, fmt.Errorf("html: artifact detail %s Markdown: %w", detail.ID, projectErr)
+			}
+			d.ArtifactDetails = append(d.ArtifactDetails, projected)
 		}
 	}
 
@@ -266,8 +270,7 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 	return d, nil
 }
 
-// buildThreads discovers every thread with 2+ members (§T3's own
-// presentation rule — see Thread's own doc comment) by grouping
+// buildThreads discovers every non-empty thread by grouping
 // Store.Search's full (open + closed) item listing per (space, thread), then
 // renders each qualifying group through Store.ThreadView — the SAME reader
 // `a2a thread` itself uses, never a second traversal of the fold. spaceID is
@@ -304,18 +307,11 @@ func buildThreads(ctx context.Context, store *cache.Store, self string, now time
 		at time.Time
 	}
 	var rows []row
-	// Every thread is traversed, not only the conversations. "Conversation"
-	// (two or more members) is a Threads-view choice; the open items a single
-	// arriving document folds to are what the prompt button on Exchange and
-	// Overview is built from, and skipping them would leave the button off the
-	// exact case it exists for — a lone question nobody has answered yet.
-	//
-	// This costs a ThreadView traversal per single-document thread, which the
-	// `counts[k] < 2` pre-filter used to skip. On a space where most artifacts
-	// sit alone that is close to one traversal per artifact. It is paid
-	// deliberately: ThreadView reuses the same folded index ShowMany does, and
-	// the alternative is a second way to compute legal moves, which is the one
-	// thing this file must not grow.
+	// Every thread is traversed, including a newly submitted document that has
+	// not received a reply yet. Those one-member threads are real conversations
+	// in flight: hiding them made the Threads page omit exactly the newest work.
+	// ThreadView remains the one computation for both the list and open-item
+	// prompts; the browser does not grow a second grouping rule.
 	openItems := openItemIndex{}
 	for _, k := range order {
 		result, tErr := store.ThreadView(ctx, k.thread, k.space)
@@ -323,7 +319,7 @@ func buildThreads(ctx context.Context, store *cache.Store, self string, now time
 			continue
 		}
 		openItems.put(k.space, result.OpenItems)
-		if len(result.Artifacts) < 2 {
+		if len(result.Artifacts) == 0 {
 			continue // ThreadView's own rendered member set is authoritative
 		}
 		th, at := toThread(result, self)
@@ -562,7 +558,7 @@ func visibleArtifactRefs(groups ...[]cache.Item) []string {
 	return refs
 }
 
-func toArtifactDetail(show cache.ShowResult) ArtifactDetail {
+func toArtifactDetail(show cache.ShowResult) (ArtifactDetail, error) {
 	events := make([]ArtifactDetailEvent, 0, len(show.Events))
 	for _, event := range show.Events {
 		at := ""
@@ -587,10 +583,14 @@ func toArtifactDetail(show cache.ShowResult) ArtifactDetail {
 	if envelope == nil {
 		envelope = map[string]any{}
 	}
+	bodyHTML, err := renderArtifactMarkdown(show.Body)
+	if err != nil {
+		return ArtifactDetail{}, err
+	}
 	return ArtifactDetail{
-		SourceClass: "canonical", Space: show.Space, ID: show.ID, Type: show.Type,
+		SourceClass: "canonical", Space: show.Space, Path: show.Path, ID: show.ID, Type: show.Type,
 		Title: show.Title, From: show.From, To: append([]string(nil), show.To...),
-		State: show.State, Thread: show.Thread, Envelope: envelope, Body: show.Body,
+		State: show.State, Thread: show.Thread, Envelope: envelope, Body: show.Body, BodyHTML: bodyHTML,
 		Digest: show.Digest, Events: events, Flags: append([]string(nil), show.Flags...),
 		// cache.ShowResult.SyncAge is a raw time.Duration string ("139.279177ms")
 		// because `a2a show --json` is a machine contract. A person reading a
@@ -598,7 +598,7 @@ func toArtifactDetail(show cache.ShowResult) ArtifactDetail {
 		// re-humanises it into the same compact vocabulary every other age on
 		// this page uses.
 		Refs: refs, SyncStale: show.SyncStale, SyncAge: humanizeDuration(show.SyncAge),
-	}
+	}, nil
 }
 
 // humanizeDuration re-formats a Go duration string into the dashboard's own

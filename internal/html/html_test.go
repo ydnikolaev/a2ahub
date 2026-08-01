@@ -288,6 +288,64 @@ func TestDefaultTemplate_CarriesApprovedV4ViewsWithoutRemoteLoads(t *testing.T) 
 	}
 }
 
+func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
+	t.Parallel()
+	tmpl := string(DefaultTemplate())
+	start := strings.Index(tmpl, `window.__resourceBlobs["./ArtifactDetail.dc.html"]`)
+	if start < 0 {
+		t.Fatal("embedded dashboard has no ArtifactDetail component")
+	}
+	stop := strings.Index(tmpl[start+1:], `window.__resourceBlobs["./`)
+	if stop < 0 {
+		t.Fatal("ArtifactDetail component has no following resource boundary")
+	}
+	detail := tmpl[start : start+1+stop]
+
+	for _, required := range []string{
+		`data-artifact-markdown`,
+		`data-artifact-metadata`,
+		`hydrateMarkdown`,
+		`this.onOutside`,
+		`bodyFadeStyle`,
+		`bodyExpanded`,
+		`metadataExpanded`,
+		`position:fixed; inset:0; z-index:220`,
+		`Развернуть карточку на всю ширину`,
+		`Главное о документе`,
+		`Все поля frontmatter`,
+		`История событий`,
+		`Открыть тред`,
+		`calloutParts`,
+		`Начало документа`,
+	} {
+		if !strings.Contains(detail, required) {
+			t.Errorf("ArtifactDetail is missing %q", required)
+		}
+	}
+	if !strings.Contains(tmpl, "Что до ответа делаем мы") {
+		t.Error("dashboard does not separate the sender's interim work under its own label")
+	}
+	if strings.Contains(tmpl, "А пока:") {
+		t.Error("ArtifactDetail still joins the sender's interim work with the requested response under 'А пока'")
+	}
+	if strings.Contains(detail, `>{{ body }}</`) {
+		t.Error("ArtifactDetail still renders authored Markdown as one raw text block")
+	}
+	for _, removed := range []string{`Документ целиком`, `DocumentModal`, `factsLabel`} {
+		if strings.Contains(detail, removed) {
+			t.Errorf("ArtifactDetail still carries removed legacy UI %q", removed)
+		}
+	}
+	if strings.Contains(tmpl, `window.__resourceBlobs["./DocumentModal.dc.html"]`) {
+		t.Error("removed DocumentModal is still embedded in the generated dashboard")
+	}
+	deadline := strings.Index(detail, "A declared date is the first consequence under the title")
+	preview := strings.Index(detail, "Artifact Markdown is untrusted data")
+	if deadline < 0 || preview < 0 || deadline > preview {
+		t.Fatalf("deadline callout must precede the document preview: deadline=%d preview=%d", deadline, preview)
+	}
+}
+
 func TestDefaultTemplate_HasBilingualShellWithEnglishDefault(t *testing.T) {
 	t.Parallel()
 	tmpl := string(DefaultTemplate())

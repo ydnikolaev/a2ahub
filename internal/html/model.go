@@ -205,13 +205,11 @@ type AgentPrompt struct {
 	Drafts []string `json:"drafts,omitempty"`
 }
 
-// Thread is one multi-member conversation on the dashboard (spec 46 §T6.1) —
-// Store.ThreadView's read model projected for render. A thread whose rendered
-// member count is exactly 1 is never turned into a Thread (§T3's own
-// presentation rule): since P46 every artifact mints a thread, without this
-// filter every artifact in the system would show up as a "conversation" on
-// day one and the section would be pure noise. Sorted by LastActivity,
-// most-recent-first (the conversation-list convention).
+// Thread is one conversation on the dashboard (spec 46 §T6.1) —
+// Store.ThreadView's read model projected for render. This includes a newly
+// submitted one-member thread: it is the conversation's first turn, not noise,
+// and omitting it hides new work until somebody replies. Sorted by
+// LastActivity, most-recent-first (the conversation-list convention).
 type Thread struct {
 	ID           string       `json:"id"`
 	Space        string       `json:"space"`
@@ -477,11 +475,13 @@ type ThreadUnresolvedRef struct {
 
 // ArtifactDetail carries bounded canonical record/evidence for the dashboard
 // detail panel. Envelope remains a map because the eight artifact bodies have
-// intentionally different schema-owned fields; the renderer treats every
-// value as text/data.
+// intentionally different schema-owned fields. BodyHTML is a server-rendered,
+// safe GFM projection: raw HTML is escaped, dangerous URLs are rejected and
+// remote images never cross into it.
 type ArtifactDetail struct {
 	SourceClass string                `json:"sourceClass"`
 	Space       string                `json:"space"`
+	Path        string                `json:"path,omitempty"`
 	ID          string                `json:"id"`
 	Type        string                `json:"type"`
 	Title       string                `json:"title"`
@@ -491,6 +491,7 @@ type ArtifactDetail struct {
 	Thread      string                `json:"thread,omitempty"`
 	Envelope    map[string]any        `json:"envelope"`
 	Body        string                `json:"body"`
+	BodyHTML    string                `json:"bodyHTML"`
 	Digest      string                `json:"digest"`
 	Events      []ArtifactDetailEvent `json:"events"`
 	Flags       []string              `json:"flags"`
