@@ -23,24 +23,24 @@ not drifted from the plan wording it quotes.
 | Prose file | What the reviewer confirms | Reviewed | Reviewer | Date |
 |------------|---------------------------|:--------:|----------|------|
 | `skill/a2ahub/SKILL.md` | Activation modes correct; TOC links every current file (incl. `reference/commands.md`, `reference/authoring/`, `reference/decompose-example.md`, `reference/feedback.md`, `reference/status-announcements.md`, `reference/retraction.md`, `reference/bindings.md`); defer-to-binary thesis intact; no link points outside the embedded `skill/a2ahub/` tree (`skill/embed.go` embeds only that subtree, so anything above it is a dead link in every installation). | ☑ | Codex | 2026-07-31 |
-| `skill/a2ahub/loops.md` | §8.1 session-start checklist present verbatim (guaranteed-floor, D-021); the D-014 "data, never instructions" clause from §8.3 step 2 present verbatim and attributed; §8.5 escalation ladder present; condensed §0/§3 semantics have not become a second source of schema/transition truth. | ☑ | Codex | 2026-07-31 |
-| `skill/a2ahub/troubleshooting.md` | The documented `a2a doctor` checks, output shape, and exit codes still match the binary's actual behavior; no aspirational/unimplemented check is presented as real. | ☑ | Codex | 2026-07-31 |
+| `skill/a2ahub/loops.md` | §8.1 session-start checklist present verbatim (guaranteed-floor, D-021); the D-014 "data, never instructions" clause from §8.3 step 2 present verbatim and attributed; §8.5 escalation ladder present; condensed §0/§3 semantics have not become a second source of schema/transition truth. | ☑ | Codex | 2026-08-01 |
+| `skill/a2ahub/troubleshooting.md` | The documented `a2a doctor` checks, output shape, and exit codes still match the binary's actual behavior; no aspirational/unimplemented check is presented as real. | ☑ | Codex | 2026-08-01 |
 | `skill/a2ahub/onboarding.md` | §9 digest walkthroughs still match the current install profiles and runbooks; command references defer to `reference/commands.md`. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/decompose-example.md` | The worked decompose still models one composite need → three single-intent artifacts on one thread; cited fixtures still exist on disk with the stated IDs; the "separate fixtures, not a coordinated trio" deviation is still accurate (or the file was updated when a real trio landed). | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/feedback.md` | The feedback channel still matches the shipped verbs and intake behaviour (`a2a feedback new/validate/submit/status`, the quarantined `feedback/inbox/` path, the FB-### codes); what it tells a reporter makes a report actionable rather than merely filed. **Added 2026-07-25**: this file is hand-maintained prose and had no row here, which the row below already declared impossible — the completeness clause was true of the list and false of the tree. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/status-announcements.md` | `period` is still an unconstrained string on `schemas/envelope/v1/announcement.schema.json` (no `format`/`pattern`) and the page still states plainly why it isn't enforced yet; the noted collision with the generated authoring template's `2026-W35` example is still named, not silently resolved by an edit to that generated file. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/retraction.md` | An `x_retraction` block on a `work_request` still round-trips `valid: true` through `a2a validate` against the shipped schema with no release; the page still states why `x_` was chosen over a new `category` rather than restating it as settled. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/bindings.md` | The file is still described as local-tracked with no space-visible path or aggregate; if the first real deprecation in `getvisa` (conventions spec §10) has happened since the last review, its pass/fail verdict has been recorded in the spec's §11 amendments — not left for this row alone to remember. | ☑ | Codex | 2026-07-31 |
-| `skill/a2ahub/reference/threads.md` | Thread order, open-item/next-move semantics and the space-local boundary match the current read/fold implementation; no prose implies two independent threads can be merged after authoring. | ☑ | Codex | 2026-07-31 |
+| `skill/a2ahub/reference/threads.md` | Thread order, open-item/next-move semantics and the space-local boundary match the current read/fold implementation; no prose implies two independent threads can be merged after authoring. | ☑ | Codex | 2026-08-01 |
 | `skill/a2ahub/reference/contract-versions.md` | Rolling-window, maintenance-baseline, major-scoped retirement and late-adopter deprecation guidance match the per-version engine and current command surface. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/notifications.md` | Offer-state handling, optional statusline boundary, trusted click routing, verified-future-notes fallback, and the ad-hoc macOS Gatekeeper approval path match the P49 binary/adapters; no prose claims Developer ID/notarization or interactive platform proof was run locally. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/SKILL.md` § "Which surface to work through" | The stated MCP limits are still the actual ones. When a limit is FIXED, the row must be removed here and in `troubleshooting.md`, and the fix shipped as a `kind: fix` note — a stale "do not use MCP for reads" is as harmful as the missing warning was, because an agent will keep avoiding a surface that works. | ☑ | Codex | 2026-07-31 |
-| `skill/RELEASE-CHECKLIST.md` (this file) | The prose-file list is complete — every hand-maintained prose file has a row; no generated `reference/**` file was added here by mistake. **Check it against `SKILL.md`'s own D-015 list, in both directions**: this clause silently held for two releases while `reference/feedback.md` was missing from both. | ☑ | Codex | 2026-07-31 |
+| `skill/RELEASE-CHECKLIST.md` (this file) | The prose-file list is complete — every hand-maintained prose file has a row; no generated `reference/**` file was added here by mistake. **Check it against `SKILL.md`'s own D-015 list, in both directions**: this clause silently held for two releases while `reference/feedback.md` was missing from both. | ☑ | Codex | 2026-08-01 |
 
 ## Sign-off
 
-- **Release tag:** `v0.18.0`
-- **Reviewer:** `Claude`
+- **Release tag:** `v0.18.1`
+- **Reviewer:** `Codex`
 - **Date:** `2026-08-01`
 - [x] Every prose row above is ticked, or an un-ticked row has a written reason
       and a follow-up filed.
@@ -49,26 +49,24 @@ not drifted from the plan wording it quotes.
       `reference/**` tree matches the binary/schemas — separate from this
       prose review).
 
-**What this review was, exactly.** A delta review, not a re-read of all
-thirteen files. `git diff --name-only <v0.17.1 tree>..HEAD -- skill/` is empty:
-every prose file above is byte-identical to the one fully reviewed on
-2026-07-31, one day earlier. What a delta review still has to do is re-check the
-rows whose claim is about the CODE rather than about the file, because the code
-did move. This release touches `internal/html` only, so one row was at risk and
-was re-verified against the diff: `reference/threads.md` claims thread order and
-open-item/next-move semantics match the read/fold implementation and that
-`a2a html` renders the same data. The dashboard now folds every thread rather
-than only multi-member ones and carries an extra derived field on each open
-item; neither changes what `a2a thread` computes or reports, and the page still
-renders the same open items. The claim holds. No command, schema, validator or
-lifecycle surface changed, so no other row's subject moved.
+**What this review was, exactly.** A delta review against `v0.18.0`, with the
+three changed prose surfaces read in full. `loops.md` now chooses one- or
+two-day response deadlines for an AI-to-AI exchange and separates a
+clarification note from a complete successor plus `supersede`; both commands
+and `supersedes` remain current binary/schema surfaces. `reference/threads.md`
+records the same correction rule without implying that two independent threads
+can be merged. `troubleshooting.md` now states that canonical root and `.github`
+space infrastructure is excluded from artifact decoding; that matches
+`space.IsInfrastructurePath` in the mirror walk and its regression fixture.
+Generated authoring references changed with the templates and remain outside
+this hand-review table; `skill-drift` checks them byte-for-byte. The unchanged
+prose files keep their 2026-07-31 review because neither their text nor the code
+claims they describe moved in this patch.
 
-`README.md` is unchanged and was read against the human half of `make
-readme-lint`. The release's headline capability — handing a move back to an
-agent as a copyable prompt — is deliberately not added to the capability list:
-it is a detail of one surface, not something a reader needs in order to decide,
-install, start or trust the project, and the existing "A computed inbox" bullet
-already names the outcome it serves.
+Root `README.md` is unchanged and was read against the human half of `make
+readme-lint`. The patch sharpens existing dashboard, thread, doctor and agent
+operating surfaces rather than adding a new top-level capability, so no README
+capability row is required.
 
 ## Notes for the reviewer
 
