@@ -136,7 +136,7 @@ const bothRegionsTmpl = "<script>const DATA = /*A2A_DATA_START*/{}/*A2A_DATA_END
 // renders. The mapper is otherwise field-copy, so one assertion suffices.
 func TestToItem_CarriesDescription(t *testing.T) {
 	t.Parallel()
-	m := toItem(cache.Item{ID: "XQ-x", Description: "why this matters"}, time.Now())
+	m := toItem(cache.Item{ID: "XQ-x", Description: "why this matters"}, time.Now(), "checkout", openItemIndex{})
 	if m.Description != "why this matters" {
 		t.Fatalf("Description = %q, want it carried through", m.Description)
 	}

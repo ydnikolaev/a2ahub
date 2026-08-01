@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestDemoFixtureParses verifies the design demo fixture
@@ -40,7 +41,7 @@ func TestDemoFixtureParses(t *testing.T) {
 		"contracts": {len(data.Contracts), 12}, "contractEdges": {len(data.ContractEdges), 15},
 		"exchangeEdges": {len(data.ExchangeEdges), 20}, "inbox": {len(data.Inbox), 11},
 		"outbox": {len(data.Outbox), 8}, "threadViews": {len(data.ThreadViews), 6},
-		"artifactDetails": {len(data.ArtifactDetails), 8}, "unavailable": {len(data.Unavailable), 4},
+		"artifactDetails": {len(data.ArtifactDetails), 9}, "unavailable": {len(data.Unavailable), 4},
 	}
 	for name, gotWant := range wantCounts {
 		if gotWant[0] != gotWant[1] {
@@ -261,5 +262,76 @@ func TestDemoOwnershipIsDerivedNotAuthored(t *testing.T) {
 		if th.Settled && len(th.WaitingOthers) > 0 {
 			t.Fatalf("%s: settled thread still names %v as owing a move", th.ID, th.WaitingOthers)
 		}
+	}
+}
+
+// TestDemoRowFactsAreDerivedNotAuthored is the same guard one field further on.
+// The exchange list sorts on MovedAt and the prompt button appears on YourMove;
+// both decode to their zero value from a fixture that predates them, and a
+// zeroed sort key looks like an order rather than like a bug.
+func TestDemoRowFactsAreDerivedNotAuthored(t *testing.T) {
+	t.Parallel()
+	d, err := DemoData()
+	if err != nil {
+		t.Fatalf("DemoData: %v", err)
+	}
+
+	open := map[string]ThreadOpenItem{}
+	for _, tv := range d.ThreadViews {
+		for _, oi := range tv.OpenItems {
+			open[tv.Space+"/"+oi.ID] = oi
+		}
+	}
+
+	rows, dated, ours := 0, 0, 0
+	for _, list := range [][]Item{d.Inbox, d.Outbox} {
+		for _, it := range list {
+			rows++
+			if it.Age == "" {
+				if it.MovedAt != "" {
+					t.Errorf("%s: no age but MovedAt=%q", it.ID, it.MovedAt)
+				}
+				continue
+			}
+			if it.MovedAt == "" {
+				t.Errorf("%s: age %q with no MovedAt — the exchange list would sort it at random", it.ID, it.Age)
+				continue
+			}
+			moved, parseErr := time.Parse(time.RFC3339, it.MovedAt)
+			if parseErr != nil {
+				t.Errorf("%s: MovedAt %q does not parse: %v", it.ID, it.MovedAt, parseErr)
+				continue
+			}
+			if got := humanizeAge(d.GeneratedAt, moved); got != it.Age {
+				t.Errorf("%s: MovedAt reformats to %q, but the row is labelled %q", it.ID, got, it.Age)
+			}
+			dated++
+
+			oi, hasOpen := open[it.Space+"/"+it.ID]
+			if want := hasOpen && containsString(oi.WaitingOn, d.Self); it.YourMove != want {
+				t.Errorf("%s: YourMove=%v, but the folded item waits on %v", it.ID, it.YourMove, oi.WaitingOn)
+			}
+			if it.YourMove {
+				ours++
+				if it.Prompt == nil {
+					t.Errorf("%s: the move is ours and the button would have nothing to copy", it.ID)
+					continue
+				}
+				if len(it.Prompt.Moves) == 0 || it.Prompt.Loop == "" {
+					t.Errorf("%s: prompt facts are incomplete: %+v", it.ID, *it.Prompt)
+				}
+				for _, ask := range it.Prompt.AskFirst {
+					if !containsString(it.Prompt.Moves, ask) {
+						t.Errorf("%s: askFirst %q is not one of the offered moves %v", it.ID, ask, it.Prompt.Moves)
+					}
+				}
+			}
+		}
+	}
+	if dated != rows {
+		t.Fatalf("only %d of %d exchange rows carry a sort key", dated, rows)
+	}
+	if ours == 0 {
+		t.Fatal("no exchange row in the demo is ours to move on; the prompt button would never appear")
 	}
 }
