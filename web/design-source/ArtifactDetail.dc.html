@@ -77,7 +77,10 @@
 
     <sc-if value="{{ hasEvents }}" hint-placeholder-val="{{ false }}">
       <div style="border-top:1px solid var(--hairline); padding-top:18px; margin-bottom:18px;">
-        <div style="font-size:16px; font-weight:600; margin-bottom:12px;">{{ eventsLabel }}</div>
+        <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+          <span style="font-size:16px; font-weight:600;">{{ eventsLabel }}</span>
+          <span style="font-size:15px; color:var(--muted);">{{ newestFirstLabel }}</span>
+        </div>
         <div style="display:flex; flex-direction:column; gap:14px;">
           <sc-for list="{{ events }}" as="e" hint-placeholder-count="3">
             <div style="display:flex; gap:14px; align-items:flex-start;">
@@ -142,7 +145,8 @@ class Component extends DCLogic {
       factsLabel: ru ? "Факты" : "Facts",
       refsLabel: ru ? "Закреплённые ссылки" : "Pinned references",
       eventsLabel: ru ? "Что произошло" : "What happened",
-      flagLabel: ru ? "Флаг протокола" : "Protocol flag",
+      newestFirstLabel: ru ? "новое сверху" : "newest first",
+      flagLabel: ru ? "флаг протокола" : "protocol flag",
       type: d.type,
       pills: d.pills || [],
       sourceLine: d.sourceLine || "",

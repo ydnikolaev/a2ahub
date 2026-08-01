@@ -11,6 +11,11 @@
 
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:240,&quot;height&quot;:60},&quot;type&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;work_request&quot;,&quot;question&quot;,&quot;decision&quot;,&quot;handoff&quot;,&quot;requirement&quot;,&quot;response&quot;,&quot;announcement&quot;,&quot;contract&quot;],&quot;default&quot;:&quot;work_request&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;small&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+// Casing is a system decision, not a per-badge one: every badge in this design
+// is lowercase, and the only uppercase inside one is an identifier the protocol
+// owns (XC, XQ, p1). Pills sit inside cards beside prose, and lowercase keeps
+// them reading as annotations rather than as headings competing with the title.
+//
 // Every type badge must survive BOTH card backgrounds — --surface (white) and
 // --page (paper). The old tints for question/requirement/response/announcement
 // were within a few percent of the paper they sat on and simply vanished; the
@@ -18,22 +23,22 @@
 // read on paper plus a hairline of its own family, so the eight types stay
 // distinguishable at a glance and share one visual grammar.
 const TYPES = {
-  work_request: { word: "Work request", prefix: "XW", bg: "var(--teal-solid)", fg: "var(--on-solid)" },
-  question: { word: "Question", prefix: "XQ", bg: "var(--attention-line)", fg: "var(--attention-strong)", ring: "inset 0 0 0 1px var(--ochre)" },
-  decision: { word: "Decision", prefix: "XD", bg: "var(--plum)", fg: "var(--on-solid)" },
-  handoff: { word: "Handoff", prefix: "XH", bg: "var(--green)", fg: "var(--on-solid)" },
-  requirement: { word: "Requirement", prefix: "XR", bg: "var(--border-strong)", fg: "var(--text)" },
-  response: { word: "Response", prefix: "XS", bg: "var(--teal-tint)", fg: "var(--teal-ink)", ring: "inset 0 0 0 1px var(--teal-solid)" },
-  announcement: { word: "Announcement", prefix: "XA", bg: "var(--sink)", fg: "var(--body)", ring: "inset 0 0 0 1px var(--border-strong)" },
-  contract: { word: "Contract", prefix: "XC", bg: "var(--teal-tint)", fg: "var(--teal-ink)", ring: "inset 0 0 0 1px var(--teal-hairline)" }
+  work_request: { word: "work request", prefix: "XW", bg: "var(--teal-solid)", fg: "var(--on-solid)" },
+  question: { word: "question", prefix: "XQ", bg: "var(--attention-line)", fg: "var(--attention-strong)", ring: "inset 0 0 0 1px var(--ochre)" },
+  decision: { word: "decision", prefix: "XD", bg: "var(--plum)", fg: "var(--on-solid)" },
+  handoff: { word: "handoff", prefix: "XH", bg: "var(--green)", fg: "var(--on-solid)" },
+  requirement: { word: "requirement", prefix: "XR", bg: "var(--border-strong)", fg: "var(--text)" },
+  response: { word: "response", prefix: "XS", bg: "var(--teal-tint)", fg: "var(--teal-ink)", ring: "inset 0 0 0 1px var(--teal-solid)" },
+  announcement: { word: "announcement", prefix: "XA", bg: "var(--sink)", fg: "var(--body)", ring: "inset 0 0 0 1px var(--border-strong)" },
+  contract: { word: "contract", prefix: "XC", bg: "var(--teal-tint)", fg: "var(--teal-ink)", ring: "inset 0 0 0 1px var(--teal-hairline)" }
 };
 const TYPES_RU = {
-  work_request: "Запрос работы", question: "Вопрос", decision: "Решение", handoff: "Передача",
-  requirement: "Требование", response: "Ответ", announcement: "Объявление", contract: "Контракт"
+  work_request: "запрос работы", question: "вопрос", decision: "решение", handoff: "передача",
+  requirement: "требование", response: "ответ", announcement: "объявление", contract: "контракт"
 };
 class Component extends DCLogic {
   renderVals() {
-    const t = TYPES[this.props.type] || { word: this.props.type || "Unknown type", prefix: "??", bg: "var(--hairline)", fg: "var(--body)", ring: "inset 0 0 0 1px var(--border-strong)" };
+    const t = TYPES[this.props.type] || { word: this.props.type || "unknown type", prefix: "??", bg: "var(--hairline)", fg: "var(--body)", ring: "inset 0 0 0 1px var(--border-strong)" };
     const size = this.props.size === "small" ? 13 : 14;
     return {
       word: document.documentElement.lang === "ru" ? (TYPES_RU[this.props.type] || t.word) : t.word,

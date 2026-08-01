@@ -302,7 +302,18 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               <span style="position:absolute; z-index:120; top:calc(100% + 8px); left:0; min-width:250px; background:var(--surface); border-radius:14px; padding:8px; box-shadow:0 16px 40px -12px rgba(33,30,23,.42), 0 0 0 1px var(--border); display:flex; flex-direction:column; gap:2px;">
                 <sc-for list="{{ workTypeFilters }}" as="f" hint-placeholder-count="5">
                   <button type="button" onClick="{{ f.go }}" aria-current="{{ f.current }}" style="{{ f.style }}">
-                    <span style="flex:1 1 auto; min-width:0; text-align:left;">{{ f.label }}</span>
+                    <!-- The badge IS the label for a type: it already carries
+                         the human word, the protocol code and the colour the
+                         cards use, so a plain-text row here would teach a
+                         second vocabulary for the same eight things. -->
+                    <span style="flex:1 1 auto; min-width:0; text-align:left; display:flex;">
+                      <sc-if value="{{ f.isType }}" hint-placeholder-val="{{ true }}">
+                        <dc-import name="TypeBadge" type="{{ f.type }}" size="small" hint-size="130px,24px"></dc-import>
+                      </sc-if>
+                      <sc-if value="{{ f.isAll }}" hint-placeholder-val="{{ false }}">
+                        <span>{{ f.label }}</span>
+                      </sc-if>
+                    </span>
                     <span style="flex:0 0 auto; font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--muted);">{{ f.count }}</span>
                     <sc-if value="{{ f.selected }}" hint-placeholder-val="{{ false }}">
                       <span aria-hidden="true" style="flex:0 0 auto; color:var(--teal-ink);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
@@ -312,6 +323,13 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               </span>
             </sc-if>
           </span>
+          <!-- One toggle, not a third dropdown: a deadline is a property a
+               document either has or does not, and the question behind it is
+               "what has a clock on it", which has one answer. Offered only when
+               something in scope actually carries one. -->
+          <sc-if value="{{ hasDueFilter }}" hint-placeholder-val="{{ true }}">
+            <button type="button" onClick="{{ toggleDue }}" aria-pressed="{{ duePressed }}" style="{{ dueStyle }}">{{ dueLabel }} · {{ dueCount }}</button>
+          </sc-if>
         </div>
         </sc-if>
 
@@ -505,6 +523,28 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
         </sc-if>
 
         <sc-if value="{{ hasConRows }}" hint-placeholder-val="{{ true }}">
+        <!-- Two questions a contract list is actually opened with. "Whose is
+             this" — the ones I publish are mine to change, the ones I consume
+             are mine to keep up with, and they are read in completely
+             different moods. And "what is wrong" — every consumer line off the
+             provider's latest major, which is what the description above
+             already points at. Category and schema format make handsome
+             filters and answer nothing. -->
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:10px; margin-bottom:18px;">
+          <div style="display:flex; align-items:center; gap:3px; background:var(--border); border-radius:10px; padding:3px; width:fit-content;">
+            <sc-for list="{{ conRoleTabs }}" as="t" hint-placeholder-count="3">
+              <button type="button" onClick="{{ t.go }}" aria-pressed="{{ t.pressed }}" style="{{ t.style }}">{{ t.label }}</button>
+            </sc-for>
+          </div>
+          <sc-if value="{{ hasConRisk }}" hint-placeholder-val="{{ true }}">
+            <button type="button" onClick="{{ toggleConRisk }}" aria-pressed="{{ conRiskPressed }}" style="{{ conRiskStyle }}">{{ conRiskLabel }} · {{ conRiskCount }}</button>
+          </sc-if>
+        </div>
+
+        <sc-if value="{{ noConFiltered }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="EmptyState" title="{{ emptyConFilterTitle }}" text="{{ emptyConFilterText }}" size="page" hint-size="100%,340px"></dc-import>
+        </sc-if>
+        <sc-if value="{{ hasConFiltered }}" hint-placeholder-val="{{ true }}">
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; align-items:start;">
           <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
             <sc-for list="{{ conRows }}" as="c" hint-placeholder-count="6">
@@ -581,11 +621,31 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
             <div style="margin-bottom:18px;">
               <div style="display:flex; align-items:center; gap:7px; font-size:16px; font-weight:600; margin-bottom:9px;">{{ versionWindowLabel }}<dc-import name="HintDot" text="{{ versionWindowHint }}" hint-size="17px,17px"></dc-import></div>
               <div style="display:flex; flex-direction:column; gap:8px;">
+                <!-- Version, state, then whole sentences on their own lines.
+                     The note used to be right-aligned in the same row and wrap
+                     under the pill, so "преемник XC-…@2.0.0 · объявлено в
+                     XA-…-a1b2" arrived as a right-ragged block of two ids and
+                     a separator. The announcement is a real document, so it
+                     opens. And the fact that actually decides whether a
+                     version can be switched off — who is still sitting on it —
+                     was not on the card at all. -->
                 <sc-for list="{{ cdVersions }}" as="v" hint-placeholder-count="3">
-                  <div style="background:var(--page); border-radius:11px; padding:12px 15px; box-shadow:inset 0 0 0 1px var(--border); display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:6px;">
-                    <span style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; color:{{ v.color }};">{{ v.version }}</span>
-                    <dc-import name="StatusPill" text="{{ v.state }}" tone="{{ v.tone }}" size="small" hint-size="90px,24px"></dc-import>
-                    <span style="flex:1 1 auto; min-width:0; font-size:15px; color:var(--muted); text-align:right; overflow-wrap:anywhere;">{{ v.note }}</span>
+                  <div style="background:var(--page); border-radius:11px; padding:13px 15px; box-shadow:inset 0 0 0 1px var(--border);">
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
+                      <span style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; color:{{ v.color }};">{{ v.version }}</span>
+                      <dc-import name="StatusPill" text="{{ v.state }}" tone="{{ v.tone }}" size="small" hint-size="90px,24px"></dc-import>
+                      <span style="{{ v.seatStyle }}">{{ v.seats }}</span>
+                    </div>
+                    <sc-if value="{{ v.hasNotes }}" hint-placeholder-val="{{ true }}">
+                      <div style="margin-top:7px; display:flex; flex-direction:column; gap:4px; font-size:15px; line-height:1.5; color:var(--muted);">
+                        <sc-for list="{{ v.notes }}" as="n" hint-placeholder-count="2">
+                          <span style="overflow-wrap:anywhere;">{{ n }}</span>
+                        </sc-for>
+                        <sc-if value="{{ v.hasAnnounce }}" hint-placeholder-val="{{ false }}">
+                          <button type="button" onClick="{{ v.openAnnounce }}" style="align-self:flex-start; padding:0; border:0; background:transparent; cursor:pointer; font-family:'Onest',sans-serif; font-size:15px; color:var(--teal-ink); text-align:left;">{{ v.announceLabel }}</button>
+                        </sc-if>
+                      </div>
+                    </sc-if>
                   </div>
                 </sc-for>
               </div>
@@ -598,6 +658,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
             </div>
           </div>
         </div>
+        </sc-if>
         </sc-if>
       </section>
     </sc-if>
@@ -696,7 +757,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                   <p style="margin:0 0 12px; font-size:15px; line-height:1.55; color:var(--muted);">{{ notEvaluatedText }}</p>
                   <div style="display:flex; flex-direction:column; gap:10px; font-size:16px; line-height:1.55; color:var(--muted);">
                     <sc-for list="{{ intUnavailable }}" as="u" hint-placeholder-count="4">
-                      <div><strong style="color:var(--body);">{{ u.title }}</strong> — {{ u.reason }}</div>
+                      <div><strong style="color:var(--body);">{{ u.title }}</strong>: {{ u.reason }}</div>
                     </sc-for>
                   </div>
                 </div>
@@ -1062,7 +1123,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               <p style="margin:0 0 10px; font-size:15px; line-height:1.55; color:var(--attention-ink);">{{ spaceHealthFlagsText }}</p>
               <div style="display:flex; flex-direction:column; gap:9px;">
                 <sc-for list="{{ spaceHealthFlags }}" as="f" hint-placeholder-count="2">
-                  <div style="font-size:15px; line-height:1.55; color:var(--attention-ink); overflow-wrap:anywhere;"><strong style="font-family:'IBM Plex Mono',monospace; font-size:14px;">{{ f.code }}</strong> — {{ f.message }}</div>
+                  <div style="font-size:15px; line-height:1.55; color:var(--attention-ink); overflow-wrap:anywhere;"><strong style="font-family:'IBM Plex Mono',monospace; font-size:14px;">{{ f.code }}</strong>: {{ f.message }}</div>
                 </sc-for>
               </div>
             </div>
@@ -1106,21 +1167,21 @@ const DASHBOARD_I18N = {
     spaceHealthFooter:"Nothing here is inferred: an unreadable space is reported as unreadable, never as empty.",
     spaceHealthMore:"Open Spaces", spaceHealthClose:"Close",
     work:"Exchange", threads:"Threads", threadMissingTitle:"No full reconstruction is available for this thread", threadMissingText:"This row comes from the summary; only some demo threads include a complete causal transcript.",
-    whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Causal timeline", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Flags on this thread — surfaced, never dropped",
+    whoseMove:"Whose move", whoseMoveText:"State and allowed transitions are derived from the events below.", causalTimeline:"Causal timeline", newestFirst:"newest first", opensChain:"opens the chain", subjectPrefix:"on", threadFlags:"Flags on this thread, surfaced and never dropped",
     contracts:"Contracts and their versions", codeBacked:"code-backed", consumerLines:"Registered consumer lines", versionWindow:"Live version window", provenance:"Provenance and schema", codeBindingPrefix:"A code binding records the generator and source digest. Whether the current bytes still match is", notEvaluated:"not evaluated", codeBindingSuffix:" in this static read.",
-    network:"Who depends on whom", networkSub:"A solid line means one system depends on a contract another one publishes. A dashed line means an exchange between two systems is still open. Click any line or system to see what is behind it — versions, pinned lines, open documents.", exchangeMap:"Exchange map",
+    network:"Who depends on whom", networkSub:"A solid line means one system depends on a contract another one publishes. A dashed line means an exchange between two systems is still open. Click any line or system to see the versions, the pinned lines and the open documents behind it.", exchangeMap:"Exchange map",
     spaces:"Spaces", spacesSub:"A space is the shared repository systems exchange documents through. This is how fresh your copy of each one is, and which a2a version it wants before it accepts what you write.", freshness:"Freshness", participants:"Participants", writerFloor:"Writer floor", pinnedWorkflow:"Pinned workflow", revision:"Revision",
-    limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read — or deliberately did not evaluate — is named here, so an empty space never passes for a clean result.",
+    limitsTitle:"What this snapshot did not check", limitsSub:"This file was written once, from the local cache. Anything it could not read, or deliberately did not evaluate, is named here, so an empty space never passes for a clean result.",
     emptyLimitsTitle:"Nothing to qualify", emptyLimitsText:"Every connected space was readable when this snapshot was written, and no flag was raised. The numbers above are the whole picture.",
     emptySpacesTitle:"No spaces connected", emptySpacesText:"A space is the shared repository two systems exchange documents through. Connect one and this table fills in.",
     integrityFlags:"Protocol and read flags", integrityFlagsText:"Facts recorded by committed events, or problems reading the local cache index. A flag is evidence, not a verdict.",
     degradedReads:"Degraded reads", degradedReadsText:"These spaces answered from an older mirror revision, or not at all. Their counts are floors, never totals.",
-    notEvaluatedTitle:"What this read deliberately did not check", notEvaluatedText:"Not failures. Questions a static file honestly cannot answer — said out loud instead of shown as a zero or a green tick.",
+    notEvaluatedTitle:"What this read deliberately did not check", notEvaluatedText:"Not failures. Questions a static file honestly cannot answer, said out loud instead of shown as a zero or a green tick.",
     versions:"Versions", localBinary:"Local binary", installed:"installed", latest:"latest", updateCandidate:"Update candidate", impact:"impact", publishedReleases:"Published releases in this snapshot", expandedNotes:"Expanded notes cover",
     guide:"How a2ahub works without human dispatch", guideSub:"What the eight document types are, how each one moves through its lifecycle, and how to read the rest of the dashboard. Come here when a word on another page did not explain itself.",
     lifecycleTitle:"Lifecycle is events, not an editable status", lifecycleText:"Every transition is validated before it is recorded. Both sides fold the same history into the same state.", lifecycleFoot:"Responses, blocks, disputes, cancellations, and supersessions remain separate immutable events with a validated actor.",
     artifactTypesTitle:"Eight document types", artifactTypesText:"One file carries one intent. The protocol code remains a quick visual anchor and a human name is always shown beside it.", readingGuide:"How to read the dashboard", readOnly:"read-only",
-    docs:"Documentation", docsSub:"The same manual the agent reads, embedded whole in this file — no network needed. Sections and search on the left, the text itself on the right.",
+    docs:"Documentation", docsSub:"The same manual the agent reads, embedded whole in this file, so no network is needed. Sections and search on the left, the text itself on the right.",
     docSearch:"Search the docs", docSearchPlaceholder:"thread, contract, retire…", docNoMatch:"No section title, group or source path matches that search.",
     docEmbedded:"embedded in this file", emptyDocsTitle:"No documentation embedded", emptyDocsText:"This snapshot was written without the doc corpus. Reinstall the skill and render the dashboard again.",
     loadingDoc:"Loading the embedded document…",
@@ -1133,31 +1194,31 @@ const DASHBOARD_I18N = {
     errorTitle:"Не удалось прочитать данные", errorPrefix:"Дашборд только читает и показывает", errorSuffix:". Чего в файле нет, того он не придумывает.",
     openWork:"Открыть обмен", direction:"Показать", typeFilter:"Тип",
     spaceHealth:"Состояние спейсов", spaceHealthTitle:"Насколько свежее то, что вы читаете",
-    spaceHealthSub:"Всё на этих экранах взято из локальной копии спейса — она снималась один раз, когда собирался этот файл. Здесь видно, когда копию последний раз обновляли и чего каждый спейс ждёт от вашего бинарника.",
+    spaceHealthSub:"Всё на этих экранах взято из локальной копии спейса, снятой один раз, когда собирался этот файл. Здесь видно, когда копию последний раз обновляли и чего каждый спейс ждёт от вашего бинарника.",
     spaceHealthFlagsTitle:"На что стоит посмотреть", spaceHealthFlagsText:"Что зафиксировано в событиях и что пошло не так при чтении локальной копии. Это повод посмотреть, а не приговор.",
-    spaceHealthFooter:"Ничего не додумывается: если спейс не прочитался, так и написано — а не «ноль».",
+    spaceHealthFooter:"Ничего не додумывается: если спейс не прочитался, так и написано, а не «ноль».",
     spaceHealthMore:"Открыть спейсы", spaceHealthClose:"Закрыть",
-    work:"Обмен", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. Полная история — кто что сделал и в каком порядке — в снимок не попала.",
+    work:"Обмен", threads:"Треды", threadMissingTitle:"Этот тред не удалось восстановить целиком", threadMissingText:"Есть только краткая сводка. В снимок не попала полная история: кто что сделал и в каком порядке.",
     whoseMove:"Чей сейчас ход", whoseMoveText:"Посчитано по событиям ниже: что уже произошло и что после этого разрешено сделать.", causalTimeline:"Как всё происходило", newestFirst:"новое сверху", opensChain:"с этого всё началось", subjectPrefix:"для", threadFlags:"Что пошло не так в этом треде",
-    contracts:"Контракты и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас —", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
-    network:"Кто от кого зависит", networkSub:"Сплошная линия — одна система зависит от контракта, который публикует другая. Пунктир — между двумя системами есть незакрытый обмен. Нажмите на линию или на систему, чтобы увидеть, что за ней стоит: версии, закреплённые линии, открытые документы.", exchangeMap:"Карта обмена",
-    spaces:"Спейсы", spacesSub:"Спейс — общий репозиторий, через который системы обмениваются документами. Здесь видно, насколько свежая у вас копия каждого и какую версию a2a он ждёт, чтобы принять вашу запись.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
-    limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь — чтобы пустое место не сошло за «всё в порядке».",
-    emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"Когда собирался снимок, все подключённые спейсы читались, замечаний не было. Цифры выше — это вся картина.",
-    emptySpacesTitle:"Спейсы не подключены", emptySpacesText:"Спейс — это общий репозиторий, через который две системы обмениваются документами. Подключите спейс, и таблица заполнится.",
-    integrityFlags:"Замечания", integrityFlagsText:"Что зафиксировано в событиях и что пошло не так при чтении кэша. Замечание — повод посмотреть, а не приговор.",
-    degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии или не ответили вовсе. Их цифры — это «не меньше чем», а не точное число.",
-    notEvaluatedTitle:"Что мы намеренно не проверяли", notEvaluatedText:"Это не сбои. Это вопросы, на которые статический файл честно не отвечает — и говорит об этом прямо, вместо того чтобы показать ноль или зелёную галочку.",
+    contracts:"Контракты и их версии", codeBacked:"собран из кода", consumerLines:"Кто на нём сидит", versionWindow:"Какие версии живы", provenance:"Откуда взялась схема", codeBindingPrefix:"Записано, чем и из какого исходника собран дескриптор. А вот совпадает ли он с кодом прямо сейчас,", notEvaluated:"не проверялось", codeBindingSuffix:": этот файл собран один раз и в код не заглядывает.",
+    network:"Кто от кого зависит", networkSub:"Сплошная линия значит, что одна система зависит от контракта, который публикует другая. Пунктир значит, что между двумя системами есть незакрытый обмен. Нажмите на линию или на систему, чтобы увидеть версии, закреплённые линии и открытые документы.", exchangeMap:"Карта обмена",
+    spaces:"Спейсы", spacesSub:"Системы обмениваются документами через общий репозиторий, он и называется спейсом. Здесь видно, насколько свежая у вас копия каждого и какую версию a2a он ждёт, чтобы принять вашу запись.", freshness:"Свежесть", participants:"Участники", writerFloor:"Минимум для записи", pinnedWorkflow:"Версия проверки в CI", revision:"Ревизия",
+    limitsTitle:"Что этот снимок не проверял", limitsSub:"Файл собран один раз из локального кэша. Всё, что не удалось прочитать или что мы намеренно не проверяли, названо здесь, чтобы пустое место не сошло за «всё в порядке».",
+    emptyLimitsTitle:"Уточнять нечего", emptyLimitsText:"Когда собирался снимок, все подключённые спейсы читались, замечаний не было. Цифры выше и есть вся картина.",
+    emptySpacesTitle:"Спейсы не подключены", emptySpacesText:"Спейс работает как общий репозиторий, через который две системы обмениваются документами. Подключите спейс, и таблица заполнится.",
+    integrityFlags:"Замечания", integrityFlagsText:"Что зафиксировано в событиях и что пошло не так при чтении кэша. Замечание даёт повод посмотреть, а не выносит приговор.",
+    degradedReads:"Прочитано не полностью", degradedReadsText:"Эти спейсы ответили из устаревшей копии или не ответили вовсе. Их цифры значат «не меньше чем», а не точное число.",
+    notEvaluatedTitle:"Что мы намеренно не проверяли", notEvaluatedText:"Это не сбои. Это вопросы, на которые статический файл честно не отвечает и говорит об этом прямо, вместо того чтобы показать ноль или зелёную галочку.",
     versions:"Версии", localBinary:"Ваш бинарник", installed:"стоит сейчас", latest:"последняя", updateCandidate:"Есть обновление", impact:"влияние", publishedReleases:"Выпуски", expandedNotes:"Подробности по",
     guide:"Как это работает без ручной диспетчеризации", guideSub:"Что за восемь типов документов, как каждый проходит свой жизненный цикл и как читать остальные вкладки. Сюда стоит зайти, если где-то попалось непонятное слово.",
-    lifecycleTitle:"Статус не редактируется — он складывается из событий", lifecycleText:"Каждый переход проверяется до того, как попадёт в репозиторий. Обе стороны собирают из одной и той же истории одно и то же состояние.", lifecycleFoot:"Ответы, блокировки, споры, отмены и замены не затираются: каждое остаётся отдельным событием с проверенным автором.",
-    artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл — одна мысль. Двухбуквенный код удобен глазу, но рядом всегда стоит нормальное название.", readingGuide:"Как читать дашборд", readOnly:"только чтение",
-    docs:"Документация", docsSub:"То же руководство, что читает агент, целиком вшито в этот файл — сеть не нужна. Слева разделы и поиск, справа сам текст.",
+    lifecycleTitle:"Статус не редактируется, он складывается из событий", lifecycleText:"Каждый переход проверяется до того, как попадёт в репозиторий. Обе стороны собирают из одной и той же истории одно и то же состояние.", lifecycleFoot:"Ответы, блокировки, споры, отмены и замены не затираются: каждое остаётся отдельным событием с проверенным автором.",
+    artifactTypesTitle:"Восемь типов документов", artifactTypesText:"Один файл, одна мысль. Двухбуквенный код удобен глазу, но рядом всегда стоит нормальное название.", readingGuide:"Как читать дашборд", readOnly:"только чтение",
+    docs:"Документация", docsSub:"То же руководство, что читает агент, целиком вшито в этот файл, так что сеть не нужна. Слева разделы и поиск, справа сам текст.",
     docSearch:"Поиск по докам", docSearchPlaceholder:"тред, контракт, вывод версии…", docNoMatch:"Ни одно название раздела, группа или путь к файлу не совпали с запросом.",
     docEmbedded:"вшито в этот файл", emptyDocsTitle:"Документация не вшита", emptyDocsText:"Этот снимок собран без корпуса документации. Переустановите навык и соберите дашборд заново.",
     loadingDoc:"Загружается встроенный документ…",
-    projectSite:"Сайт проекта", projectSiteText:"На сайте та же документация, тот же список изменений и инструкция, как проверить подлинность выпуска. Сайту нужна сеть, этому файлу — нет.", documentation:"Документация", changelog:"Что менялось", verifyRelease:"Проверить выпуск", githubRepo:"Репозиторий на GitHub", commandsBehind:"Команды за этими экранами", commandsBehindText:"Их можно запустить руками, если хочется разобраться. Для обычной работы это не нужно: агенты общаются между собой сами.", publicHome:"Главная сайта", designSystem:"Дизайн-система",
-    readingRows:[["Обзор и работа","Сверху то, где цена ошибки выше. Приоритет, блокировка, ожидание вашего согласования, срок и устаревшие данные — это пять разных сигналов, и они намеренно не слиты в один."],["Треды","Одна задача — один тред. Порядок берётся из коммитов Git; если истории нет, используется время, указанное автором, и это честно помечается."],["Контракты и карта","Расхождение считается для конкретного потребителя и той версии, которую он закрепил. У поставщика может быть всё хорошо ровно тогда, когда у потребителя не работает ничего."],["Спейсы и версии","Пределы этого снимка и три версии, которые нельзя выводить одну из другой."]]
+    projectSite:"Сайт проекта", projectSiteText:"На сайте та же документация, тот же список изменений и инструкция, как проверить подлинность выпуска. Сайту нужна сеть, а этому файлу нет.", documentation:"Документация", changelog:"Что менялось", verifyRelease:"Проверить выпуск", githubRepo:"Репозиторий на GitHub", commandsBehind:"Команды за этими экранами", commandsBehindText:"Их можно запустить руками, если хочется разобраться. Для обычной работы это не нужно: агенты общаются между собой сами.", publicHome:"Главная сайта", designSystem:"Дизайн-система",
+    readingRows:[["Обзор и работа","Сверху то, где цена ошибки выше. Приоритет, блокировка, ожидание вашего согласования, срок и устаревшие данные остаются пятью разными сигналами, и они намеренно не слиты в один."],["Треды","Одна задача, один тред. Порядок берётся из коммитов Git; если истории нет, используется время, указанное автором, и это честно помечается."],["Контракты и карта","Расхождение считается для конкретного потребителя и той версии, которую он закрепил. У поставщика может быть всё хорошо ровно тогда, когда у потребителя не работает ничего."],["Спейсы и версии","Пределы этого снимка и три версии, которые нельзя выводить одну из другой."]]
   }
 };
 
@@ -1172,7 +1233,7 @@ const GUIDE_DOCS = [
   ["troubleshooting", "Help", "Troubleshooting", "skill/a2ahub/troubleshooting.md"]
 ];
 const GUIDE_FEATURES_RU = [
-  ["a2a skill", "Навык обучает агента", "Команда a2a skill install добавляет навык в репозиторий. Агент сразу знает протокол, типы документов, жизненные циклы и команды — человеку не приходится конструировать для него отдельные подсказки."],
+  ["a2a skill", "Навык обучает агента", "Команда a2a skill install добавляет навык в репозиторий. Агент сразу знает протокол, типы документов, жизненные циклы и команды, и человеку не приходится конструировать для него отдельные подсказки."],
   ["a2a", "Один CLI охватывает весь цикл", "Черновики, проверка, отправка, входящие, контракты и диагностика доступны через один бинарник с командами, удобными для вызова агентом."],
   ["MCP", "Типизированные инструменты MCP", "Те же действия доступны как типизированные инструменты MCP. Агенту не нужно разбирать текстовый вывод или изобретать второй протокол."],
   ["XQ → XS", "Агенты общаются с агентами", "Системы координируются типизированными артефактами напрямую. Человек подключается только к решениям с реальным риском."],
@@ -1180,8 +1241,8 @@ const GUIDE_FEATURES_RU = [
   ["macOS · VS Code", "Нативные уведомления по желанию", "В macOS 13+ можно установить дополнение для Центра уведомлений. Расширение VS Code показывает уведомления о переходах и строку состояния. Команда a2a notifications install устанавливает или восстанавливает их для текущего пользователя; эта возможность остаётся необязательной."],
   ["a2a statusline", "Строка состояния для Claude и терминала", "Отдельная необязательная пользовательская поверхность показывает ожидающую работу в строке состояния Claude или терминала. Установка уведомлений её не редактирует."],
   ["draft → merge", "Весь цикл автоматизирован", "Черновик → проверка → отправка → CI → объединение → входящие. Обмен продолжается, пока человек занят или спит."],
-  ["a2a feedback", "Агенты улучшают инструменты", "Структурированная обратная связь проверяется и разбирается как данные — случайный входящий текст не становится инструкцией."],
-  ["a2a thread", "Одна задача — один тред", "Запрос, ответ, доказательства и решение лежат в одном треде и читаются всеми системами в одном и том же порядке."],
+  ["a2a feedback", "Агенты улучшают инструменты", "Структурированная обратная связь проверяется и разбирается как данные, поэтому случайный входящий текст не становится инструкцией."],
+  ["a2a thread", "Одна задача, один тред", "Запрос, ответ, доказательства и решение лежат в одном треде и читаются всеми системами в одном и том же порядке."],
   ["1.x · 2.x", "Контракт живёт в нескольких версиях", "Старая линия может уходить, пока новая уже работает. Ничего не удаляется, а каждый потребитель явно закрепляет используемую основную версию."],
   ["deprecate → ack", "Устаревание доходит до каждого", "Объявление доставляется всем зарегистрированным участникам, а окончательное снятие версии ждёт подтверждений. Поэтому поздно подключившийся потребитель не выпадает из процесса."]
 ];
@@ -1200,7 +1261,7 @@ const GUIDE_FEATURES_EN = [
   ["deprecate → ack", "Deprecation reaches every consumer", "The announcement follows registrations and retirement waits for acknowledgements, so late consumers remain visible."]
 ];
 const GUIDE_RU = {
-  "getting-started":"Начало работы", overview:"Обзор", "work-loops":"Рабочие циклы", threads:"Треды: одна задача — один тред",
+  "getting-started":"Начало работы", overview:"Обзор", "work-loops":"Рабочие циклы", threads:"Треды: одна задача, один тред",
   "contract-versions":"Версии контрактов и sunset", commands:"Команды CLI и MCP", notifications:"Нативные уведомления",
   decompose:"Пример декомпозиции", feedback:"Обратная связь", "status-announcements":"Живость feed: status announcements",
   retraction:"Отзыв опубликованных данных", bindings:"Привязки контракта к коду", troubleshooting:"Диагностика",
@@ -1268,12 +1329,12 @@ const UNAVAILABLE_RU = {
     "Никто не прогонял валидацию именно перед сборкой этого файла, так что «всё сходится» здесь никто не подтверждал. Запустите a2a verify, если нужен свежий вердикт."
   ],
   "binding-byte-match": [
-    "Совпадает ли контракт с кодом прямо сейчас — неизвестно",
+    "Совпадает ли контракт с кодом прямо сейчас, неизвестно",
     "У контракта записано, чем и из какого исходника он собран. Это отметка о происхождении: сверить её с текущим кодом можно только запустив генератор, а статический файл этого не делает."
   ],
   "hosted-hub-state": [
     "Состояния общего Hub здесь нет",
-    "Hub — это будущая архитектура, а не работающая сегодня поверхность. Всё на этих экранах прочитано из вашей локальной копии."
+    "Hub остаётся будущей архитектурой, а не работающей сегодня поверхностью. Всё на этих экранах прочитано из вашей локальной копии."
   ]
 };
 function TYPE_WORDS(ru) {
@@ -1399,7 +1460,7 @@ function normalizeDashboardData(input) {
 }
 
 class Component extends DCLogic {
-  state = { data: null, error: "", view: "overview", space: "all", ovSel: "", workTab: "all", typeMenu: false, workSel: "", threadSel: "", conSel: "", doc: "overview", docQ: "", openDoc: null, spaceModal: false, tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en" };
+  state = { data: null, error: "", view: "overview", space: "all", ovSel: "", workTab: "all", typeMenu: false, workDue: false, conRole: "all", conRisk: false, workSel: "", threadSel: "", conSel: "", doc: "overview", docQ: "", openDoc: null, spaceModal: false, tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en" };
 
   componentDidMount() {
     // the primary nav shows as many views as fit and folds the rest into More
@@ -1767,10 +1828,10 @@ class Component extends DCLogic {
 
   statusOf(it) {
     const ru = this.state.locale === "ru";
-    if (it.blocking) return { status: (ru ? "Блокирует" : "Blocking") + " · " + it.priority, tone: "blocking" };
-    if (it.gatePending) return { status: ru ? "Ждёт вашего согласования" : "Your approval pending", tone: "attention" };
-    if (overdue(it)) return { status: (ru ? "Просрочено" : "Overdue") + " · " + it.priority, tone: "blocking" };
-    if (it.severity === "attention") return { status: (ru ? "Стоит посмотреть" : "Needs a look") + " · " + it.priority, tone: "attention" };
+    if (it.blocking) return { status: (ru ? "блокирует" : "blocking") + " · " + it.priority, tone: "blocking" };
+    if (it.gatePending) return { status: ru ? "ждёт вашего согласования" : "your approval pending", tone: "attention" };
+    if (overdue(it)) return { status: (ru ? "просрочено" : "overdue") + " · " + it.priority, tone: "blocking" };
+    if (it.severity === "attention") return { status: (ru ? "стоит посмотреть" : "needs a look") + " · " + it.priority, tone: "attention" };
     return { status: it.priority, tone: "neutral" };
   }
 
@@ -1787,7 +1848,11 @@ class Component extends DCLogic {
     return {
       id: it.id, type: it.type, title: it.title, status: st.status, tone: st.tone,
       state: String(it.state || "").replace("_", " "), stateTone: STATE_TONE[it.state] || "neutral",
-      time: overdue(it) ? (ru ? "дедлайн " : "due ") + isoDay(it.neededBy) : age(it.age),
+      // A deadline outranks an age wherever there is one. "5 ч" says when the
+      // document last moved; the date says when it stops being optional, and a
+      // reader who just filtered by deadline should not have to open a card to
+      // see it. Overdue ones keep the red treatment on top.
+      time: it.neededBy ? (ru ? "дедлайн " : "due ") + isoDay(it.neededBy) : age(it.age),
       from: it.from, to: toText, meta: it.space + stale,
       fromCode: codes[it.from] || "", toCode: toCode || "",
       fromSelf: it.from === d.self, toSelf: toSelf,
@@ -1828,7 +1893,7 @@ class Component extends DCLogic {
     }
     const e = a.envelope || {};
     const pills = [];
-    if (e.blocking) pills.push({ text: (ru ? "Блокирует" : "Blocking") + " · " + (e.priority || ""), tone: "blocking" });
+    if (e.blocking) pills.push({ text: (ru ? "блокирует" : "blocking") + " · " + (e.priority || ""), tone: "blocking" });
     else if (e.priority) pills.push({ text: e.priority, tone: "neutral" });
     pills.push({ text: String(a.state || "").replace("_", " "), tone: STATE_TONE[a.state] || "neutral" });
     if (a.sync_stale) pills.push({ text: (ru ? "спейс устарел " : "space stale ") + age(a.sync_age), tone: "attention" });
@@ -1863,7 +1928,9 @@ class Component extends DCLogic {
       // verifying bytes uses `a2a verify`, not a truncated hash on a screen.
       meta: when(ev.at) + " · " + (ev.actor || ""),
       flagged: (a.flags || []).length > 0 && i === (a.events || []).length - 1
-    }));
+      // Newest first, like the thread transcript. The card is read to answer
+      // "what just happened to this", and the answer sat at the bottom.
+    })).reverse();
 
     const flagMessages = (a.flags || []).map(code => {
       const f = d.flags.find(x => x.code === code && x.artifact === a.id) || d.flags.find(x => x.code === code);
@@ -1947,29 +2014,29 @@ class Component extends DCLogic {
       // One sentence per term a first-time reader has no way to guess. They are
       // hints, not documentation: the full treatment lives in Docs.
       whoseMoveHint: ru
-        ? "Кто по протоколу может сделать следующий шаг. Это не мнение и не назначение: список считается из уже записанных событий — что произошло и что после этого разрешено."
-        : "Who may take the next step under the protocol. It is neither an opinion nor an assignment: the list is folded from the events already recorded — what happened, and what that allows next.",
+        ? "Кто по протоколу может сделать следующий шаг. Это не мнение и не назначение: список считается из уже записанных событий: что произошло и что после этого разрешено."
+        : "Who may take the next step under the protocol. It is neither an opinion nor an assignment: the list is folded from the events already recorded: what happened, and what that allows next.",
       settledHint: ru
-        ? "У треда нет отдельного статуса «закрыт». Он считается закрытым, когда каждый документ внутри дошёл до конечного состояния и никто никому ничего не должен. У автора всегда остаётся право отозвать или заменить документ — но это не значит, что тред кого-то ждёт."
-        : "A thread has no separate “closed” status. It counts as finished once every document inside reached a terminal state and nobody owes anyone a move. The author can always still withdraw or supersede a document — that does not mean the thread is waiting on anyone.",
+        ? "У треда нет отдельного статуса «закрыт». Он считается закрытым, когда каждый документ внутри дошёл до конечного состояния и никто никому ничего не должен. У автора всегда остаётся право отозвать или заменить документ, но тред от этого никого не ждёт."
+        : "A thread has no separate “closed” status. It counts as finished once every document inside reached a terminal state and nobody owes anyone a move. The author can always still withdraw or supersede a document, which does not mean the thread is waiting on anyone.",
       consumerLinesHint: ru
         ? "Каждый потребитель закрепляет за собой мажорную версию и живёт на ней. Расхождение считается для его линии, а не для контракта в целом: у поставщика всё может быть в порядке ровно тогда, когда у потребителя не работает ничего."
         : "Each consumer pins a major version and lives on it. Drift is judged per line, not per contract: the provider can be perfectly healthy at exactly the moment a consumer resolves nothing.",
       versionWindowHint: ru
-        ? "Версии не удаляются. Старая может быть объявлена устаревшей и получить дату вывода, но пока на ней кто-то сидит, она остаётся видимой — окончательное снятие ждёт подтверждений от потребителей."
-        : "Versions are never erased. An old one can be deprecated and given a sunset date, but while anyone still sits on it, it stays visible — retirement waits for consumer acknowledgements.",
+        ? "Версии не удаляются. Старая может быть объявлена устаревшей и получить дату вывода, но пока на ней кто-то сидит, она остаётся видимой, а окончательное снятие ждёт подтверждений от потребителей."
+        : "Versions are never erased. An old one can be deprecated and given a sunset date, but while anyone still sits on it, it stays visible, and retirement waits for consumer acknowledgements.",
       provenanceHint: ru
         ? "Если дескриптор собран из кода, записано, чем и из какого исходника. Это метка происхождения, а не проверка: совпадает ли он с кодом прямо сейчас, статический файл не знает."
         : "When a descriptor is generated from code, the generator and the source digest are recorded. That is provenance, not verification: a static file cannot know whether the bytes still match.",
       freshnessHint: ru
-        ? "Когда мы последний раз синхронизировали локальную копию спейса. «Устарел» — не поломка, а предупреждение: цифры ниже могут отставать от репозитория."
+        ? "Когда мы последний раз синхронизировали локальную копию спейса. «Устарел» значит не поломку, а предупреждение: цифры ниже могут отставать от репозитория."
         : "When the local copy of the space was last synced. “Stale” is not a failure but a warning: the numbers below may lag behind the repository.",
       writerFloorHint: ru
-        ? "Минимальная версия a2a, документы от которой спейс принимает. Если ваш бинарник ниже — писать в этот спейс нельзя, читать можно."
+        ? "Минимальная версия a2a, документы от которой спейс принимает. Если ваш бинарник ниже, писать в этот спейс нельзя, читать можно."
         : "The lowest a2a version whose documents this space accepts. Below it you cannot write to the space; reading still works.",
       pinnedWorkflowHint: ru
-        ? "Версия проверки, закреплённая в CI спейса. Меняется отдельно от вашего бинарника и от минимума для записи — совпадение цифр случайно."
-        : "The validation workflow version pinned in the space's CI. It moves independently of your binary and of the writer floor — matching numbers are a coincidence.",
+        ? "Версия проверки, закреплённая в CI спейса. Меняется отдельно от вашего бинарника и от минимума для записи, поэтому совпадение цифр случайно."
+        : "The validation workflow version pinned in the space's CI. It moves independently of your binary and of the writer floor, so matching numbers are a coincidence.",
       localBinaryHint: ru
         ? "Версия a2a на этой машине. Она не обязана совпадать ни с минимумом для записи в спейсе, ни с версией проверки в CI: это три разные оси."
         : "The a2a version on this machine. It need not match the space's writer floor or the CI validation version: those are three independent axes.",
@@ -2001,7 +2068,7 @@ class Component extends DCLogic {
       moreBtnStyle: this.tabStyle(false) + (s.more ? " background:var(--canvas);" : ""),
       toggleMore: () => this.setState(x => ({ more: !x.more, lang: false })),
       goOverview: () => this.go("overview", { more: false }),
-      goVersions: () => this.go("versions"), goWork: () => this.go("work", { workTab: "incoming", workType: "all" }),
+      goVersions: () => this.go("versions"), goWork: () => this.go("work", { workTab: "incoming", workType: "all", workDue: false }),
       guideFeatures: (ru ? GUIDE_FEATURES_RU : GUIDE_FEATURES_EN).map(([tag, title, body]) => ({ tag, title, body })),
       lifecycleSteps: [["draft","submit"],["submitted","ack"],["acknowledged","accept"],["accepted","start"],["in_progress",""]].map(([label, action]) => ({ label, action, hasNext: !!action })),
       artifactTypes: (ru ? [["XC","Контракт"],["XR","Требование"],["XQ","Вопрос"],["XW","Запрос работы"],["XD","Решение"],["XH","Передача"],["XS","Ответ"],["XA","Объявление"]] : [["XC","Contract"],["XR","Requirement"],["XQ","Question"],["XW","Work request"],["XD","Decision"],["XH","Handoff"],["XS","Response"],["XA","Announcement"]]).map(([code,label]) => ({ code,label })),
@@ -2040,7 +2107,11 @@ class Component extends DCLogic {
     // nothing behind it is a dead control that teaches the wrong thing.
     const workTypes = workAll.map(i => i.type).filter((t, i, arr) => t && arr.indexOf(t) === i).sort();
     const workType = workTypes.indexOf(s.workType) > -1 ? s.workType : "all";
-    const workList = workType === "all" ? workAll : workAll.filter(i => i.type === workType);
+    const byType = workType === "all" ? workAll : workAll.filter(i => i.type === workType);
+    // "Has a clock on it" is the question; overdue items qualify too, since a
+    // passed deadline is the sharpest kind of deadline there is.
+    const dueCount = byType.filter(i => i.neededBy).length;
+    const workList = s.workDue ? byType.filter(i => i.neededBy) : byType;
     const workTypeCount = (t) => t === "all" ? workAll.length : workAll.filter(i => i.type === t).length;
     const workSel = s.workSel && workList.some(i => i.id === s.workSel) ? s.workSel : (workList[0] && workList[0].id) || "";
 
@@ -2078,12 +2149,21 @@ class Component extends DCLogic {
         ? (ru ? "Вы никого не держите. Ниже видно, чего именно ждут от них." : "You are holding nobody up. What is expected of them is below.")
         : (ru ? "Открытые документы есть, но кто должен сделать следующий шаг, из событий не выводится." : "Open documents remain, but the events do not resolve who owes the next move."))
       : tvYours < tvPend.length
-        ? (ru ? "На вас " + ruPlural(tvYours, "документ", "документа", "документов") + " из " + tvPend.length + ", остальные ждут ответа от других. Ниже — что именно от вас ждут." : tvYours + " of " + tvPend.length + " open documents are on you; the rest await somebody else. What each one needs is below.")
+        ? (ru ? "На вас " + ruPlural(tvYours, "документ", "документа", "документов") + " из " + tvPend.length + ", остальные ждут ответа от других. Ниже видно, что именно от вас ждут." : tvYours + " of " + tvPend.length + " open documents are on you; the rest await somebody else. What each one needs is below.")
         : (ru
-          ? (tvPend.length === 1 ? "Один документ ждёт вашего шага." : "Все " + ruPlural(tvPend.length, "документ ждёт", "документа ждут", "документов ждут") + " вашего шага.") + (tvOthers.length ? " По некоторым сходить может и другая сторона." : "") + " Ниже — что именно можно сделать."
+          ? (tvPend.length === 1 ? "Один документ ждёт вашего шага." : "Все " + ruPlural(tvPend.length, "документ ждёт", "документа ждут", "документов ждут") + " вашего шага.") + (tvOthers.length ? " По некоторым сходить может и другая сторона." : "") + " Ниже видно, что именно можно сделать."
           : (tvPend.length === 1 ? "One document is waiting on you." : "All " + tvPend.length + " open documents are waiting on you.") + (tvOthers.length ? " On some of them the other side can move too." : "") + " What each one needs is below.");
 
-    const contracts = d.contracts.filter(c => this.inScope(c.space));
+    const contractsAll = d.contracts.filter(c => this.inScope(c.space));
+    // Two axes a contract list is read along: whose it is, and whether anything
+    // is wrong with it. Role first, because publishing a contract and depending
+    // on one are two different jobs.
+    const conRoleOf = (c) => c.provider === d.self ? "provider" : ((c.consumers || []).indexOf(d.self) > -1 ? "consumer" : "other");
+    const conRisky = (c) => d.contractEdges.some(e => e.contract === c.id && e.drift !== "current");
+    const conRole = ["all", "provider", "consumer"].indexOf(s.conRole) > -1 ? s.conRole : "all";
+    const byRole = conRole === "all" ? contractsAll : contractsAll.filter(c => conRoleOf(c) === conRole);
+    const conRiskCount = byRole.filter(conRisky).length;
+    const contracts = s.conRisk ? byRole.filter(conRisky) : byRole;
     const conSel = s.conSel && contracts.some(c => c.id === s.conSel) ? s.conSel : (contracts[0] && contracts[0].id) || "";
     const con = contracts.find(c => c.id === conSel) || contracts[0];
     const conEdges = con ? d.contractEdges.filter(e => e.contract === con.id) : [];
@@ -2193,10 +2273,10 @@ class Component extends DCLogic {
       snapshotLine: (ru ? "Снимок " : "Snapshot ") + when(d.generatedAt) + (ru ? " · создан из локального кэша" : " · built from the local cache"),
       updateRequired: !!d.meta.synthetic || (!!tooling.updateAvailable && !!tooling.required),
       bannerLabel: d.meta.synthetic ? (ru ? "Демо-режим" : "Demo dashboard") : (ru ? "Нужно обновление" : "Update required"),
-      bannerText: d.meta.synthetic ? (ru ? "Данные выдуманы, чтобы показать все экраны и состояния. Живых сервисов и репозиториев здесь нет." : "Synthetic data covers every screen and state; no live services or repositories are connected.") : (ru ? "Ваш бинарник " + tooling.current + " ниже минимальной версии записи " + tooling.floor + " в спейсе " + tooling.floorSpace + ". Последняя версия — " + tooling.latest + ", проверено " + tooling.cacheAge + " назад." : "Local binary " + tooling.current + " is below writer floor " + tooling.floor + " in " + tooling.floorSpace + ". Latest is " + tooling.latest + "; checked " + tooling.cacheAge + " ago."),
+      bannerText: d.meta.synthetic ? (ru ? "Данные выдуманы, чтобы показать все экраны и состояния. Живых сервисов и репозиториев здесь нет." : "Synthetic data covers every screen and state; no live services or repositories are connected.") : (ru ? "Ваш бинарник " + tooling.current + " ниже минимальной версии записи " + tooling.floor + " в спейсе " + tooling.floorSpace + ". Последняя версия " + tooling.latest + ", проверено " + tooling.cacheAge + " назад." : "Local binary " + tooling.current + " is below writer floor " + tooling.floor + " in " + tooling.floorSpace + ". Latest is " + tooling.latest + "; checked " + tooling.cacheAge + " ago."),
       bannerAction: d.meta.synthetic ? (ru ? "Про демо →" : "About the demo →") : (ru ? "Версии →" : "Versions →"),
       goBanner: d.meta.synthetic ? () => this.go("guide") : () => this.go("versions"),
-      footerLine: (ru ? "Только чтение · без сетевых запросов · истина живёт в репозитории, а не здесь" : "Read-only projection · no network requests · not a source of truth") + (d.meta.synthetic ? (ru ? " · демо-данные, живых сервисов нет" : " · Synthetic demo data — no live services") : (d.meta.notice ? " · " + d.meta.notice : "")),
+      footerLine: (ru ? "Только чтение · без сетевых запросов · истина живёт в репозитории, а не здесь" : "Read-only projection · no network requests · not a source of truth") + (d.meta.synthetic ? (ru ? " · демо-данные, живых сервисов нет" : " · Synthetic demo data, no live services") : (d.meta.notice ? " · " + d.meta.notice : "")),
 
       // The headline used to carry the state ("nothing is waiting on you") and
       // the page had no name. The name is now the name, and the state is the
@@ -2207,20 +2287,20 @@ class Component extends DCLogic {
         (scopedInbox.length + scopedOutbox.length === 0
           ? (ru ? "В обороте сейчас ничего нет." : "Nothing is in flight right now.")
           : (ru
-            ? "Всего в обороте " + ruPlural(scopedInbox.length, "входящий", "входящих", "входящих") + " и " + ruPlural(scopedOutbox.length, "исходящий", "исходящих", "исходящих") + " — остальное " + (d.self ? d.self + " и другие агенты доводят" : "агенты доводят") + " между собой."
-            : scopedInbox.length + " incoming and " + scopedOutbox.length + " outgoing are in flight — " + (d.self ? d.self + " and the other agents carry" : "the agents carry") + " the rest between them.")),
+            ? "Всего в обороте " + ruPlural(scopedInbox.length, "входящий", "входящих", "входящих") + " и " + ruPlural(scopedOutbox.length, "исходящий", "исходящих", "исходящих") + ", остальное " + (d.self ? d.self + " и другие агенты доводят" : "агенты доводят") + " между собой."
+            : scopedInbox.length + " incoming and " + scopedOutbox.length + " outgoing are in flight. " + (d.self ? d.self + " and the other agents carry" : "The agents carry") + " the rest between them.")),
       ovStats: [
         { label:ru ? "Нужны вы" : "Need you", value:needsYou.length, note:ru ? "блокирует или ждёт согласования" : "blocking or approval",
           hint:ru ? "Документы, где без человека дальше никак: кто-то явно заблокирован, ждёт вашего согласования или уже просрочил срок. Всё остальное агенты доводят сами." : "Documents that genuinely cannot move without a person: something is literally blocked, waiting on your approval, or already past its deadline. Everything else the agents finish on their own.",
           valueStyle:"font-size:40px; line-height:1; font-weight:600; color:" + (needsYou.length ? "var(--ochre)" : "var(--green)") + ";" },
         { label:ru ? "Идёт само" : "Moving itself", value:restCount, note:ru ? "входящих, никого не держат" : "non-blocking incoming",
-          hint:ru ? "Входящие документы, которые никого не держат. Агент разберётся с ними по протоколу — смотреть не обязательно." : "Incoming documents that hold nobody up. The agent handles them by protocol; you do not have to look.",
+          hint:ru ? "Входящие документы, которые никого не держат. Агент разберётся с ними по протоколу, смотреть не обязательно." : "Incoming documents that hold nobody up. The agent handles them by protocol; you do not have to look.",
           valueStyle:"font-size:40px; line-height:1; font-weight:600; color:var(--green);" },
         { label:ru ? "Ждёте вы" : "You await", value:scopedOutbox.length, note:ru ? "отправлено, ответа нет" : "outgoing documents",
           hint:ru ? "Вы отправили, ход теперь за другой системой. Пока она не ответит, здесь ничего не изменится." : "You sent these; the move is now the other system's. Nothing here changes until it answers.",
           valueStyle:"font-size:40px; line-height:1; font-weight:600; color:var(--text);" },
         { label:ru ? "Линии не на последней" : "Lines off current", value:offCurrent, note:(ru ? "из " : "of ") + scopedEdges + (ru ? " закреплённых" : " registered"),
-          hint:ru ? "Сколько зависимостей сидит не на последней мажорной версии контракта. Это не обязательно плохо: старая версия может жить годами. Плохо — когда её уже выводят." : "How many dependencies sit on something other than the contract's latest major. Not automatically bad — an old line can live for years. It gets bad once it is being retired.",
+          hint:ru ? "Сколько зависимостей сидит не на последней мажорной версии контракта. Это не обязательно плохо: старая версия может жить годами. Плохо становится тогда, когда её уже выводят." : "How many dependencies sit on something other than the contract's latest major. Not automatically bad: an old line can live for years. It gets bad once it is being retired.",
           valueStyle:"font-size:40px; line-height:1; font-weight:600; color:" + (offCurrent ? "var(--ochre)" : "var(--green)") + ";" }
       ],
       ovRows: needsYou.map(it => this.rowFor(it, "ovSel", ovSel)),
@@ -2236,8 +2316,8 @@ class Component extends DCLogic {
         present: false,
         missingTitle: ru ? "Разбирать нечего" : "Nothing to review",
         missingText: ru
-          ? "Как только что-то потребует вашего решения, документ откроется здесь целиком — с конвертом, событиями и ссылками."
-          : "The moment something needs your decision, the whole document opens here — envelope, events and references included."
+          ? "Как только что-то потребует вашего решения, документ откроется здесь целиком, с конвертом, событиями и ссылками."
+          : "The moment something needs your decision, the whole document opens here, envelope, events and references included."
       },
 
       // `d.self` is empty until a system is configured, and pasting it into the
@@ -2262,6 +2342,7 @@ class Component extends DCLogic {
       workTypeCurrent: workType === "all" ? (ru ? "Все типы" : "All types") : (TYPE_WORDS(ru)[workType] || workType),
       workTypeFilters: [{ id: "all", label: ru ? "Все типы" : "All types" }].concat(workTypes.map(t => ({ id: t, label: TYPE_WORDS(ru)[t] || t }))).map(f => ({
         label: f.label,
+        isAll: f.id === "all", isType: f.id !== "all", type: f.id,
         count: String(workTypeCount(f.id)),
         selected: workType === f.id,
         current: workType === f.id ? "true" : null,
@@ -2273,8 +2354,14 @@ class Component extends DCLogic {
         label,
         pressed: s.workTab === id ? "true" : "false",
         style: this.segmentStyle(s.workTab === id),
-        go: () => this.setState({ workTab: id, workSel: "", workType: "all", typeMenu: false })
+        go: () => this.setState({ workTab: id, workSel: "", workType: "all", workDue: false, typeMenu: false })
       })),
+      hasDueFilter: dueCount > 0 || !!s.workDue,
+      dueLabel: ru ? "С дедлайном" : "With a deadline",
+      dueCount: String(dueCount),
+      duePressed: s.workDue ? "true" : "false",
+      dueStyle: this.filterChip(!!s.workDue) + (s.workDue ? "" : " box-shadow:inset 0 0 0 1px var(--border);"),
+      toggleDue: () => this.setState(x => ({ workDue: !x.workDue, workSel: "" })),
       workRows: workList.map(it => this.rowFor(it, "workSel", workSel)),
       noWorkRows: workList.length === 0,
       // Nothing in scope at all: one empty state across the page, and no filter
@@ -2282,24 +2369,28 @@ class Component extends DCLogic {
       workWholeEmpty: scopedInbox.length + scopedOutbox.length === 0,
       workHasColumns: scopedInbox.length + scopedOutbox.length > 0,
       showWorkFilters: scopedInbox.length + scopedOutbox.length > 0,
-      emptyWorkTitle: workType !== "all"
+      emptyWorkTitle: s.workDue && !byType.filter(i => i.neededBy).length
+        ? (ru ? "Ни у чего нет дедлайна" : "Nothing here has a deadline")
+        : workType !== "all"
         ? (ru ? "Ничего такого типа" : "Nothing of that type")
         : (s.workTab === "incoming" ? (ru ? "Входящих нет" : "Nothing incoming") : (s.workTab === "outgoing" ? (ru ? "Исходящих нет" : "Nothing outgoing") : (ru ? "В обороте пусто" : "Nothing in flight"))),
-      emptyWorkText: workType !== "all"
+      emptyWorkText: s.workDue && !byType.filter(i => i.neededBy).length
+        ? (ru ? "Ни на одном документе в этой области не стоит срок. Снимите фильтр, чтобы увидеть остальное." : "Nothing in this scope carries a deadline. Clear the filter to see the rest.")
+        : workType !== "all"
         ? (ru ? "Под этот тип в текущей области ничего не подошло. Снимите фильтр, чтобы увидеть остальное." : "Nothing of that type in this scope. Clear the filter to see the rest.")
         : (s.workTab === "outgoing"
-          ? (ru ? "Вы ничего не ждёте от других систем: все ваши документы дошли до конечного состояния." : "You are not waiting on any other system — every document you sent has reached a terminal state.")
+          ? (ru ? "Вы ничего не ждёте от других систем: все ваши документы дошли до конечного состояния." : "You are not waiting on any other system: every document you sent has reached a terminal state.")
           : (ru ? "Никто из подключённых систем сейчас ничего вам не адресовал, и вы никого не ждёте. Как только документ придёт или уйдёт, он окажется здесь." : "No connected system has anything addressed to you, and you are waiting on nobody. The moment a document arrives or leaves, it lands here.")),
       workDetail: this.detailFor(workSel, workList),
 
       threadsSub: ru
-        ? "Одна задача — один тред: запрос, ответы, доказательства и решение лежат вместе, и все стороны видят их в одном порядке. Слева — список тредов и чей сейчас ход, справа — вся история, новое сверху."
+        ? "Одна задача, один тред: запрос, ответы, доказательства и решение лежат вместе, и все стороны видят их в одном порядке. Слева список тредов и чей сейчас ход, справа вся история, новое сверху."
         : "One task, one thread: the request, the replies, the evidence and the decision stay together and read the same way for every side. The list on the left says whose move it is; the record on the right shows how it got there, newest first.",
       noThreadRows: threads.length === 0, hasThreadRows: threads.length > 0,
       emptyThreadsTitle: ru ? "Тредов пока нет" : "No threads yet",
       emptyThreadsText: ru
         ? "Тред появляется сам, когда первый документ отправлен: вопрос, запрос работы или объявление. Дальше ответы, доказательства и решение остаются в нём же."
-        : "A thread appears by itself the moment a first document is sent — a question, a work request, an announcement. Answers, evidence and the decision then stay attached to it.",
+        : "A thread appears by itself the moment a first document is sent: a question, a work request, an announcement. Answers, evidence and the decision then stay attached to it.",
       threadRows: threads.map(t => ({
         title: t.opener ? t.opener.title : t.id,
         // Three states, not two: your move, someone else's move, or nobody's —
@@ -2326,7 +2417,7 @@ class Component extends DCLogic {
       documentLabel: ru ? "Документ целиком" : "View document",
       settledLabel: ru ? "Ход ни за кем" : "Nobody owes a move",
       settledText: ru
-        ? "Все документы этого треда дошли до конечного состояния. Запись остаётся целиком ниже — тред читается, но действий не ждёт."
+        ? "Все документы этого треда дошли до конечного состояния. Запись остаётся целиком ниже, тред читается, но действий не ждёт."
         : "Every document in this thread reached a terminal state. The full record stays below; the thread is readable but is not waiting on anyone.",
       tvTitle: tv ? (tv.opener ? tv.opener.title : tv.thread) : "",
       tvOrderPill: tv ? (tv.order === "committed" ? (ru ? "порядок из коммитов · надёжно" : "commit order · strong evidence") : (ru ? "время от автора · слабее" : "declared timestamps · weak fallback")) : "",
@@ -2443,8 +2534,8 @@ class Component extends DCLogic {
       tvFlags: tv ? (tv.flags || []).map(f => f.kind + (ru ? " для " : " on ") + f.subject + (f.event_ulid ? (ru ? " · событие " : " · event ") + f.event_ulid : "")).concat((tv.unresolved || []).map(u => (ru ? "ссылка в никуда: " : "unresolved reference: ") + (u.ref || JSON.stringify(u)))) : [],
 
       conSub: ru
-        ? "Контракт — обещание одной системы остальным: что она отдаёт и в каком виде. У него есть версии, и каждый потребитель сидит на своей. Сейчас не на последней " + offCurrent + " линий из " + scopedEdges + " — с них и стоит начать."
-        : "A contract is one system's promise to the others: what it hands over and in what shape. It has versions, and every consumer sits on one of them. " + offCurrent + " of the " + scopedEdges + " registered lines are off the latest — start there.",
+        ? "Каждый контракт обещает остальным системам, что именно он отдаёт и в каком виде. У контракта есть версии, и каждый потребитель сидит на своей. Сейчас не на последней " + offCurrent + " линий из " + scopedEdges + ", с них и стоит начать."
+        : "A contract is one system's promise to the others: what it hands over and in what shape. It has versions, and every consumer sits on one of them. " + offCurrent + " of the " + scopedEdges + " registered lines are off the latest, so start there.",
       conRows: contracts.map(c => {
         const edges = d.contractEdges.filter(e => e.contract === c.id);
         const bad = edges.filter(e => e.drift !== "current");
@@ -2461,13 +2552,36 @@ class Component extends DCLogic {
           pills, style: this.cardButton(conSel === c.id), select: () => this.setState({ conSel: c.id })
         };
       }),
-      hasConRows: contracts.length > 0, noConRows: contracts.length === 0,
+      hasConRows: contractsAll.length > 0, noConRows: contractsAll.length === 0,
+      hasConFiltered: contracts.length > 0, noConFiltered: contractsAll.length > 0 && contracts.length === 0,
+      conRoleTabs: [["all", ru ? "Все" : "All", contractsAll.length],
+                    ["provider", ru ? "Публикую я" : "I publish", contractsAll.filter(c => conRoleOf(c) === "provider").length],
+                    ["consumer", ru ? "Пользуюсь я" : "I depend on", contractsAll.filter(c => conRoleOf(c) === "consumer").length]].map(([id, label, n]) => ({
+        label: label + " · " + n,
+        pressed: conRole === id ? "true" : "false",
+        style: this.segmentStyle(conRole === id),
+        go: () => this.setState({ conRole: id, conSel: "", conRisk: false })
+      })),
+      hasConRisk: conRiskCount > 0 || !!s.conRisk,
+      conRiskLabel: ru ? "Не на последней" : "Off the latest",
+      conRiskCount: String(conRiskCount),
+      conRiskPressed: s.conRisk ? "true" : "false",
+      conRiskStyle: this.filterChip(!!s.conRisk) + (s.conRisk ? "" : " box-shadow:inset 0 0 0 1px var(--border);"),
+      toggleConRisk: () => this.setState(x => ({ conRisk: !x.conRisk, conSel: "" })),
+      emptyConFilterTitle: s.conRisk
+        ? (ru ? "Здесь всё на последней версии" : "Everything here is on the latest")
+        : (conRole === "provider" ? (ru ? "Вы ничего не публикуете" : "You publish nothing here") : (ru ? "Вы ни от чего не зависите" : "You depend on nothing here")),
+      emptyConFilterText: s.conRisk
+        ? (ru ? "Ни один потребитель в этой выборке не отстал от поставщика. Снимите фильтр, чтобы увидеть остальные контракты." : "No consumer in this selection has fallen behind its provider. Clear the filter to see the other contracts.")
+        : (conRole === "provider"
+          ? (ru ? "В этих спейсах нет контрактов, где поставщик это вы. Переключитесь на «Все», чтобы увидеть чужие." : "No contract in these spaces has you as its provider. Switch to All to see the others.")
+          : (ru ? "В этих спейсах вы не закрепили ни одной версии чужого контракта. Переключитесь на «Все», чтобы увидеть остальные." : "You have not pinned a version of anyone else's contract in these spaces. Switch to All to see the rest.")),
       emptyContractsTitle: ru ? "Контрактов пока нет" : "No contracts yet",
       emptyContractsText: ru
-        ? "Контракт — это интерфейс с историей версий: поставщик его публикует, а потребители закрепляют ту основную версию, которой пользуются. Пока в этих спейсах не опубликован ни один."
+        ? "Контракт работает как интерфейс с историей версий: поставщик его публикует, а потребители закрепляют ту основную версию, которой пользуются. Пока в этих спейсах не опубликован ни один."
         : "A contract is an interface with a version history: a provider publishes it, and consumers pin the major line they use. Nothing has been published in these spaces yet.",
-      providerLabel: ru ? "Поставщик — он публикует версии" : "Provider — publishes the versions",
-      consumersLabel: ru ? "Потребители — они закрепляют версию" : "Consumers — pin a version each",
+      providerLabel: ru ? "Поставщик публикует версии" : "Provider publishes the versions",
+      consumersLabel: ru ? "Потребители закрепляют версию" : "Consumers pin a version each",
       cdProvider: con ? con.provider : "",
       cdConsumers: con ? ((con.consumers || []).join(", ") || (ru ? "пока никто" : "nobody yet")) : "",
       cdId: con ? con.id : "",
@@ -2478,12 +2592,12 @@ class Component extends DCLogic {
       cdDescription: con ? con.description : "",
       cdHasRisk: risky.length > 0,
       cdRiskTitle: risky.length ? (risky[0].drift === "missing"
-        ? risky[0].from + (ru ? " закрепил мажорную версию " : " pins major ") + risky[0].pinnedMajor + (ru ? ", а у поставщика такой нет" : " — the provider has no such major")
+        ? risky[0].from + (ru ? " закрепил мажорную версию " : " pins major ") + risky[0].pinnedMajor + (ru ? ", а у поставщика такой нет" : ", and the provider has no such major")
         : (ru
           ? ruPlural(risky.length, "линия потребителя не на последней мажорной", "линии потребителей не на последней мажорной", "линий потребителей не на последней мажорной")
           : risky.length + (risky.length === 1 ? " consumer line is" : " consumer lines are") + " not on the current major")) : "",
       cdRiskText: risky.length ? risky.map(e => e.from + " → " + e.to + ": " + (e.drift === "missing"
-        ? (ru ? "у поставщика есть только " : "available majors are ") + (e.availableMajors || []).join(ru ? " и " : " and ") + (ru ? " — значит, у этого потребителя не работает ничего" : ", so nothing resolves for that line")
+        ? (ru ? "у поставщика есть только " : "available majors are ") + (e.availableMajors || []).join(ru ? " и " : " and ") + (ru ? ", значит, у этого потребителя не работает ничего" : ", so nothing resolves for that line")
         : (e.drift === "dangling" ? (ru ? "поставщик ушёл из спейса" : "the provider left the space") : (ru ? "закреплено " : "pinned ") + e.pinnedVersion + " (" + (STATE_WORDS(ru)[e.pinnedState] || e.pinnedState) + ") " + (ru ? "при версии поставщика " : "against provider ") + e.providerVersion + (e.sunset ? (ru ? ", вывод " : ", sunset ") + e.sunset : "")))).join(". ") + "." : "",
       cdLines: conEdges.map(e => ({
         route: e.from + " → " + e.to,
@@ -2493,11 +2607,27 @@ class Component extends DCLogic {
           : (e.drift === "dangling" ? (ru ? "для этой линии не находится ни одного дескриптора" : "no descriptor resolves for this line") : (ru ? "закреплено " : "pinned ") + e.pinnedVersion + (ru ? " · поставщик " : " · provider ") + e.providerVersion),
         style: "background:var(--page); border-radius:11px; padding:12px 14px;" + (e.drift === "missing" ? " box-shadow:inset 0 0 0 1.5px var(--blocking-line);" : "")
       })),
-      cdVersions: con ? (con.versions || []).slice().reverse().map(v => ({
-        version: v.version, state: v.state, tone: STATE_TONE[v.state] || "neutral",
-        color: v.state === "retired" ? "var(--muted)" : "var(--text)",
-        note: [v.sunset ? (ru ? "вывод " : "sunset ") + v.sunset : "", v.successor ? (ru ? "преемник " : "successor ") + v.successor : "", v.deprecationID ? (ru ? "объявлено в " : "announced in ") + v.deprecationID : ""].filter(Boolean).join(" · ")
-      })) : [],
+      cdVersions: con ? (con.versions || []).slice().reverse().map(v => {
+        // Who is still sitting on this version decides whether it can ever be
+        // switched off, which is the question the whole panel exists to answer.
+        const seated = conEdges.filter(e => e.pinnedVersion === v.version).map(e => e.from);
+        const notes = [];
+        if (v.sunset) notes.push(ru ? "Выключают " + isoDay(v.sunset) + "." : "Switched off on " + isoDay(v.sunset) + ".");
+        if (v.successor) notes.push(ru ? "На смену пришла " + v.successor + "." : "Replaced by " + v.successor + ".");
+        return {
+          version: v.version, state: v.state, tone: STATE_TONE[v.state] || "neutral",
+          color: v.state === "retired" ? "var(--muted)" : "var(--text)",
+          seats: seated.length
+            ? (ru ? "на ней " + listNames(seated, ru) : listNames(seated, ru) + (seated.length === 1 ? " sits here" : " sit here"))
+            : (ru ? "на ней никого" : "nobody here"),
+          seatStyle: "margin-left:auto; font-size:15px; color:" + (seated.length ? "var(--body)" : "var(--faint)") + "; overflow-wrap:anywhere;",
+          hasNotes: notes.length > 0 || !!v.deprecationID,
+          notes,
+          hasAnnounce: !!v.deprecationID,
+          announceLabel: (ru ? "Объявлено в " : "Announced in ") + (v.deprecationID || "") + " →",
+          openAnnounce: () => this.setState({ openDoc: { id: v.deprecationID, space: con.space } })
+        };
+      }) : [],
       cdFacts: con ? [
         { label:ru ? "формат схемы" : "schema format", value:con.schemaFormat, mono:true },
         { label:ru ? "совместимость" : "compatibility", value:con.compatPolicy },
@@ -2511,11 +2641,13 @@ class Component extends DCLogic {
       setSpace: (id) => this.setState({ space: id, ovSel: "", workSel: "", threadSel: "", conSel: "" }),
       openItem: (id, space, outgoing) => this.go("work", { workSel: id, workTab: outgoing ? "outgoing" : "incoming", space: this.state.space === "all" ? "all" : space }),
       openDocument: (id, space) => this.setState({ openDoc: { id, space } }),
-      openContract: (contractId, space) => this.go("contracts", { conSel: contractId, space: this.state.space === "all" ? "all" : space }),
+      // Arriving from the map must not land on a filter that hides the contract
+      // it was asked for.
+      openContract: (contractId, space) => this.go("contracts", { conSel: contractId, conRole: "all", conRisk: false, space: this.state.space === "all" ? "all" : space }),
       netSpaces,
       netUnreadable: d.spaces.filter(x => !x.readable && this.inScope(x.id)).map(x => ({
         id: x.id,
-        reason: (d.unavailable.find(u => u.scope === x.id) || {}).reason || (ru ? "Копию или манифест спейса прочитать не удалось. Это не значит, что там ноль участников и ноль работы — это значит, что мы не знаем." : "The mirror or manifest is unreadable. Participant and work counts must not be inferred as zero.")
+        reason: (d.unavailable.find(u => u.scope === x.id) || {}).reason || (ru ? "Копию или манифест спейса прочитать не удалось. Это не значит, что там ноль участников и ноль работы. Это значит, что мы не знаем." : "The mirror or manifest is unreadable. Participant and work counts must not be inferred as zero.")
       })),
 
       // The freshness card used to sit in the Overview column reading
@@ -2528,21 +2660,21 @@ class Component extends DCLogic {
         const line = (text, tone) => ({ text, markStyle: "flex:0 0 7px; width:7px; height:7px; margin-top:8px; border-radius:99px; background:" + (tone === "warn" ? "var(--ochre)" : tone === "bad" ? "var(--red)" : "var(--green)") + ";" });
         const lines = [];
         if (!x.readable) {
-          lines.push(line(ru ? "Локальную копию прочитать не удалось. Что внутри — участники, документы, контракты — мы не знаем и не додумываем." : "The local copy could not be read. What is inside — participants, documents, contracts — is unknown and is not guessed at.", "bad"));
+          lines.push(line(ru ? "Локальную копию прочитать не удалось. Ни участников, ни документов, ни контрактов мы там не видим и не додумываем." : "The local copy could not be read. The participants, documents and contracts inside it are unknown and are not guessed at.", "bad"));
         } else {
           lines.push(line(x.stale
-            ? (ru ? "Копию последний раз обновляли " + age(x.syncAge) + " назад — цифры на страницах могут отставать от репозитория." : "The copy was last refreshed " + age(x.syncAge) + " ago, so the numbers on these pages may lag behind the repository.")
+            ? (ru ? "Копию последний раз обновляли " + age(x.syncAge) + " назад, и цифры на страницах могут отставать от репозитория." : "The copy was last refreshed " + age(x.syncAge) + " ago, so the numbers on these pages may lag behind the repository.")
             : (ru ? "Копия свежая: обновлена " + age(x.syncAge) + " назад." : "The copy is current: refreshed " + age(x.syncAge) + " ago."), x.stale ? "warn" : "ok"));
           lines.push(line(members.length
-            ? (ru ? "Участников: " + members.length + " — " + members.join(", ") + "." : members.length + (members.length === 1 ? " participant" : " participants") + ": " + members.join(", ") + ".")
+            ? (ru ? "Участников: " + members.length + ". Это " + members.join(", ") + "." : members.length + (members.length === 1 ? " participant" : " participants") + ": " + members.join(", ") + ".")
             : (ru ? "Участников: " + x.participantCount + "." : "Participants: " + x.participantCount + "."), "ok"));
           if (x.minBinaryVersion) {
             const below = tooling.current && cmpVer(tooling.current, x.minBinaryVersion) < 0;
             lines.push(line(ru
-              ? "Спейс принимает документы от a2a " + x.minBinaryVersion + " и новее" + (tooling.current ? (below ? ", а у вас " + tooling.current + " — записать сюда не получится, только читать." : "; у вас " + tooling.current + ", записывать можно.") : ".")
-              : "The space accepts documents from a2a " + x.minBinaryVersion + " and newer" + (tooling.current ? (below ? ", and you run " + tooling.current + " — you can read but not write here." : "; you run " + tooling.current + ", so writing works.") : "."), below ? "bad" : "ok"));
+              ? "Спейс принимает документы от a2a " + x.minBinaryVersion + " и новее" + (tooling.current ? (below ? ", а у вас " + tooling.current + ", так что записать сюда не получится, только читать." : "; у вас " + tooling.current + ", записывать можно.") : ".")
+              : "The space accepts documents from a2a " + x.minBinaryVersion + " and newer" + (tooling.current ? (below ? ", and you run " + tooling.current + ", so you can read but not write here." : "; you run " + tooling.current + ", so writing works.") : "."), below ? "bad" : "ok"));
           }
-          if (x.workflowVersion) lines.push(line(ru ? "Входящие документы спейс проверяет своим CI версии " + x.workflowVersion + " — это отдельная от вашего бинарника цифра." : "The space validates incoming documents with its CI at version " + x.workflowVersion + " — a number independent of your binary.", "ok"));
+          if (x.workflowVersion) lines.push(line(ru ? "Входящие документы спейс проверяет своим CI версии " + x.workflowVersion + ", и это отдельная от вашего бинарника цифра." : "The space validates incoming documents with its CI at version " + x.workflowVersion + ", a number independent of your binary.", "ok"));
           if (x.revision) lines.push(line(ru ? "Читаем ревизию " + x.revision.slice(0, 10) + "." : "Reading revision " + x.revision.slice(0, 10) + ".", "ok"));
         }
         return {
@@ -2568,8 +2700,8 @@ class Component extends DCLogic {
             : (flags.length || d.spaces.some(x => this.inScope(x.id) && x.stale) ? "var(--ochre)" : "var(--green)"))) + ";",
       spaceHealthEmpty: !d.spaces.filter(x => this.inScope(x.id)).length,
       spaceHealthEmptyText: ru
-        ? "Ни один спейс не подключён, поэтому обновлять нечего — и судить о свежести тоже не о чем. Спейс это общий репозиторий, через который две системы обмениваются документами; пока его нет, все экраны пустые не потому, что всё спокойно, а потому что читать неоткуда."
-        : "No space is connected, so there is nothing to refresh and nothing whose freshness could be judged. A space is the shared repository two systems exchange documents through; until one exists, the screens are empty because there is nowhere to read from — not because all is quiet.",
+        ? "Ни один спейс не подключён, поэтому обновлять нечего и судить о свежести не о чем. Спейс это общий репозиторий, через который две системы обмениваются документами; пока его нет, все экраны пустые не потому, что всё спокойно, а потому что читать неоткуда."
+        : "No space is connected, so there is nothing to refresh and nothing whose freshness could be judged. A space is the shared repository two systems exchange documents through; until one exists, the screens are empty because there is nowhere to read from, not because all is quiet.",
 
       spaceRows: d.spaces.filter(x => this.inScope(x.id)).map((x, i, arr) => {
         const line = i === arr.length - 1 ? "none" : "1px solid var(--hairline)";
@@ -2578,8 +2710,8 @@ class Component extends DCLogic {
           pillText: !x.readable ? (ru ? "не читается" : "unreadable") : (x.stale ? (ru ? "устарел · " : "stale · ") + age(x.syncAge) : (ru ? "свежий · " : "fresh · ") + age(x.syncAge)),
           pillTone: !x.readable ? "blocking" : (x.stale ? "attention" : "healthy"),
           participants: x.readable ? String(x.participantCount) : (ru ? "не проверялось" : "not evaluated"),
-          floor: x.minBinaryVersion || "—",
-          workflow: x.workflowVersion || "—",
+          floor: x.minBinaryVersion || (ru ? "не записано" : "not recorded"),
+          workflow: x.workflowVersion || (ru ? "не записано" : "not recorded"),
           revision: x.revision ? x.revision.slice(0, 10) : (ru ? "не записано" : "not recorded"),
           cell: "padding:14px 16px 14px 0; vertical-align:top; border-bottom:" + line + ";",
           cellLast: "padding:14px 0; vertical-align:top; border-bottom:" + line + ";"
@@ -2660,18 +2792,18 @@ class Component extends DCLogic {
       })),
       releaseNotesNote: filtered
         ? (ru ? "показано изменений: " + shownChanges + " из " + totalChanges : shownChanges + " of " + totalChanges + " changes shown")
-        : (ru ? "все выпуски, вшитые в этот бинарник — тот же источник, что и на сайте" : "every release embedded in this binary — the same source the website publishes"),
+        : (ru ? "все выпуски, вшитые в этот бинарник, тот же источник, что и на сайте" : "every release embedded in this binary, the same source the website publishes"),
       noReleases: releasesShown.length === 0,
       emptyReleasesTitle: filtered
         ? (ru ? "Под этот фильтр ничего не подошло" : "Nothing matches this filter")
         : (ru ? "Примечаний к выпускам нет" : "No release notes"),
       emptyReleasesText: filtered
-        ? (ru ? "Снимите фильтр или выберите другой тип — полный список версий всё равно ниже." : "Clear the filter or pick another kind; the complete version index is below either way.")
+        ? (ru ? "Снимите фильтр или выберите другой тип, полный список версий всё равно ниже." : "Clear the filter or pick another kind; the complete version index is below either way.")
         : (ru ? "В этот бинарник не вшито ни одного файла примечаний. Обычно это значит сборку из исходников вне процесса выпуска." : "This binary carries no embedded release-notes file, which usually means a source build outside the release process."),
 
       versionIndexTitle: ru ? "Все выпуски" : "Published version index",
       versionIndexText: ru
-        ? "Каждый опубликованный выпуск с его заголовком. Развёрнутые примечания — выше."
+        ? "Каждый опубликованный выпуск с его заголовком. Развёрнутые примечания выше."
         : "Every published version with its authored headline. The expanded notes are above.",
       versionColLabel: ru ? "Версия" : "Version", dateColLabel: ru ? "Дата" : "Date", headlineColLabel: ru ? "Заголовок" : "Headline",
       indexRows: releasesAll.map((r, i) => {
