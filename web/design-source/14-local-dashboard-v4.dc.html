@@ -2139,7 +2139,14 @@ class Component extends DCLogic {
 
     return {
       present: true, type: a.type, pills,
-      sourceLine: a.sourceClass + (ru ? " · запись · " : " record · ") + (a.sync_stale ? (ru ? "спейс устарел " : "space stale ") + age(a.sync_age) : (ru ? "синхронизировано " : "synced ") + age(a.sync_age)),
+      sourceClass: a.sourceClass,
+      syncStale: !!a.sync_stale,
+      freshnessText: a.sync_stale ? (ru ? "спейс устарел " : "space stale ") + age(a.sync_age) : "",
+      freshnessHint: a.sync_age
+        ? (a.sync_stale
+          ? (ru ? "Локальная копия спейса может отставать от репозитория. Последняя синхронизация: " + age(a.sync_age) + "." : "The local space copy may lag behind the repository. Last synced: " + age(a.sync_age) + ".")
+          : (ru ? "Локальная копия спейса актуальна. Последняя синхронизация: " + age(a.sync_age) + "." : "The local space copy is current. Last synced: " + age(a.sync_age) + "."))
+        : "",
       title: a.title, body: a.body || "", bodyHTML: a.bodyHTML || "",
       calloutTitle, calloutText, calloutTone, calloutParts,
       lists, metadataPrimary: metadata.primary, metadataRest: metadata.rest,

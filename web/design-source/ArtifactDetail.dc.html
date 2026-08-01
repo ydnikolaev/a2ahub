@@ -13,10 +13,9 @@
     <dc-import name="EmptyState" title="{{ missingTitle }}" text="{{ missingText }}" hint="{{ missingHint }}" size="panel" hint-size="100%,300px"></dc-import>
   </sc-if>
   <sc-if value="{{ present }}" hint-placeholder-val="{{ true }}">
-    <!-- One header grammar, the same one the compact rows use: the tags own the
-         first line and wrap among themselves, the provenance line sits under
-         them in mono. Before this the source string competed with the tags for
-         the same row and pushed them into ragged two-line stacks. -->
+    <!-- The header is for decisions and actions. Repository provenance lives
+         in the footer, where it remains available without competing with the
+         document title or the controls a reader is here to use. -->
     <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:16px;">
       <div style="min-width:0; flex:1 1 auto;">
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:7px; margin-bottom:9px;">
@@ -24,13 +23,6 @@
           <sc-for list="{{ pills }}" as="p" hint-placeholder-count="2">
             <dc-import name="StatusPill" text="{{ p.text }}" tone="{{ p.tone }}" why="{{ p.hint }}" size="small" hint-size="110px,24px"></dc-import>
           </sc-for>
-        </div>
-        <div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; line-height:1.55; color:var(--muted); overflow-wrap:anywhere;">
-          <sc-if value="{{ hasSourceURL }}" hint-placeholder-val="{{ true }}">
-            <a href="{{ sourceURL }}" target="_blank" rel="noopener noreferrer" style="color:var(--teal-ink); font-weight:600; text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:3px;">{{ documentID }}</a><span> · </span>
-          </sc-if>
-          <sc-if value="{{ lacksSourceURL }}" hint-placeholder-val="{{ false }}"><span style="font-weight:600; color:var(--body);">{{ documentID }}</span><span> · </span></sc-if>
-          <span>{{ sourceLine }}</span>
         </div>
       </div>
       <div style="display:flex; align-items:center; justify-content:flex-end; gap:8px; flex:0 0 auto; flex-wrap:wrap;">
@@ -211,6 +203,25 @@
       </div>
     </sc-if>
 
+    <footer data-artifact-footer="{{ bodyKey }}" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-top:1px solid var(--hairline); margin-top:28px; padding-top:15px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.5; color:var(--muted);">
+      <span style="min-width:0; display:inline-flex; align-items:center; gap:7px; flex-wrap:wrap; overflow-wrap:anywhere;">
+        <sc-if value="{{ hasSourceURL }}" hint-placeholder-val="{{ true }}">
+          <a href="{{ sourceURL }}" target="_blank" rel="noopener noreferrer" style="color:var(--teal-ink); font-weight:600; text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:3px;">{{ documentID }}</a>
+        </sc-if>
+        <sc-if value="{{ lacksSourceURL }}" hint-placeholder-val="{{ false }}"><span style="font-weight:600; color:var(--body);">{{ documentID }}</span></sc-if>
+        <span aria-hidden="true">·</span><span>{{ sourceClass }}</span>
+      </span>
+      <sc-if value="{{ hasFreshness }}" hint-placeholder-val="{{ true }}">
+        <span style="position:relative; display:inline-flex; align-items:center; gap:7px; flex:0 0 auto;">
+          <button type="button" onMouseEnter="{{ openFreshness }}" onMouseLeave="{{ closeFreshness }}" onFocus="{{ openFreshness }}" onBlur="{{ closeFreshness }}" onClick="{{ toggleFreshness }}" aria-label="{{ freshnessHint }}" aria-expanded="{{ freshnessExpanded }}" title="{{ freshnessHint }}" style="{{ freshnessDotStyle }}"></button>
+          <sc-if value="{{ freshnessVerbose }}" hint-placeholder-val="{{ false }}"><span style="color:var(--attention-ink);">{{ freshnessText }}</span></sc-if>
+          <sc-if value="{{ freshnessOpen }}" hint-placeholder-val="{{ false }}">
+            <span role="tooltip" style="position:absolute; z-index:400; right:0; bottom:calc(100% + 8px); width:min(300px,74vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:12px; padding:11px 13px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.5; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal;">{{ freshnessHint }}</span>
+          </sc-if>
+        </span>
+      </sc-if>
+    </footer>
+
   </sc-if>
 </div>
 </div>
@@ -218,12 +229,14 @@
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:760,&quot;height&quot;:700},&quot;det&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;}}">
 class Component extends DCLogic {
-  state = { bodyExpanded: false, metadataExpanded: false, wide: false };
+  state = { bodyExpanded: false, metadataExpanded: false, freshnessOpen: false, wide: false };
 
   componentDidMount() {
     this.onOutside = (ev) => {
-      if (!this.state.bodyExpanded) return;
       const target = ev && ev.target;
+      const freshness = target && target.closest ? target.closest("[data-artifact-footer]") : null;
+      if (this.state.freshnessOpen && !freshness) this.setState({ freshnessOpen: false });
+      if (!this.state.bodyExpanded) return;
       const body = target && target.closest ? target.closest("[data-artifact-body]") : null;
       const key = this.props.det ? this.props.det.footer : "";
       if (body && body.getAttribute("data-artifact-body") === key) return;
@@ -231,8 +244,9 @@ class Component extends DCLogic {
     };
     this.onEscape = (ev) => {
       if (ev.key !== "Escape") return;
-      if (this.state.wide) { this.setState({ wide: false, bodyExpanded: false, metadataExpanded: false }); return; }
+      if (this.state.wide) { this.setState({ wide: false, bodyExpanded: false, metadataExpanded: false, freshnessOpen: false }); return; }
       if (this.state.bodyExpanded) this.setState({ bodyExpanded: false });
+      if (this.state.freshnessOpen) this.setState({ freshnessOpen: false });
     };
     document.addEventListener("click", this.onOutside);
     window.addEventListener("keydown", this.onEscape);
@@ -242,7 +256,7 @@ class Component extends DCLogic {
   componentDidUpdate(prevProps) {
     const before = prevProps && prevProps.det ? prevProps.det.footer : "";
     const now = this.props.det ? this.props.det.footer : "";
-    if (before !== now && (this.state.bodyExpanded || this.state.metadataExpanded || this.state.wide)) this.setState({ bodyExpanded: false, metadataExpanded: false, wide: false });
+    if (before !== now && (this.state.bodyExpanded || this.state.metadataExpanded || this.state.freshnessOpen || this.state.wide)) this.setState({ bodyExpanded: false, metadataExpanded: false, freshnessOpen: false, wide: false });
     requestAnimationFrame(() => this.hydrateMarkdown());
   }
 
@@ -292,9 +306,9 @@ class Component extends DCLogic {
       widePressed: this.state.wide ? "true" : "false",
       wideLabel: this.state.wide ? (ru ? "Свернуть карточку" : "Exit full width") : (ru ? "Развернуть карточку на всю ширину" : "Expand card to full width"),
       wideButtonStyle: "width:38px; height:38px; flex:0 0 38px; display:flex; align-items:center; justify-content:center; border:0; border-radius:10px; cursor:pointer; color:var(--teal-ink); background:var(--page); box-shadow:inset 0 0 0 1px var(--border);",
-      toggleWide: () => this.setState(s => ({ wide: !s.wide, bodyExpanded: false, metadataExpanded: false })),
+      toggleWide: () => this.setState(s => ({ wide: !s.wide, bodyExpanded: false, metadataExpanded: false, freshnessOpen: false })),
       dismissWide: (ev) => {
-        if (this.state.wide && ev && ev.target === ev.currentTarget) this.setState({ wide: false, bodyExpanded: false, metadataExpanded: false });
+        if (this.state.wide && ev && ev.target === ev.currentTarget) this.setState({ wide: false, bodyExpanded: false, metadataExpanded: false, freshnessOpen: false });
       },
       missingTitle: d.missingTitle || (ru ? "Ничего не выбрано" : "Nothing selected"),
       missingText: d.missingText || "",
@@ -305,11 +319,27 @@ class Component extends DCLogic {
       flagLabel: ru ? "флаг протокола" : "protocol flag",
       type: d.type,
       pills: (d.pills || []).map(p => ({ text: p.text, tone: p.tone, hint: p.hint || "" })),
-      sourceLine: d.sourceLine || "",
+      sourceClass: d.sourceClass || "canonical",
       documentID: d.footer || "",
       sourceURL: d.sourceURL || "",
       hasSourceURL: !!d.sourceURL,
       lacksSourceURL: !d.sourceURL,
+      hasFreshness: !!d.freshnessHint,
+      freshnessVerbose: !!d.syncStale,
+      freshnessText: d.freshnessText || "",
+      freshnessHint: d.freshnessHint || "",
+      freshnessOpen: this.state.freshnessOpen,
+      freshnessExpanded: this.state.freshnessOpen ? "true" : "false",
+      freshnessDotStyle: "width:9px; height:9px; flex:0 0 9px; display:inline-block; border:0; border-radius:99px; padding:0; cursor:help; background:" + (d.syncStale ? "var(--ochre)" : "var(--healthy-ink)") + "; box-shadow:0 0 0 3px " + (d.syncStale ? "var(--attention-tint)" : "var(--healthy-tint)") + ";",
+      openFreshness: () => this.setState({ freshnessOpen: true }),
+      closeFreshness: () => this.setState({ freshnessOpen: false }),
+      toggleFreshness: (ev) => {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        // Mouse hover may already have opened it before the click arrives.
+        // Keep click/tap deterministic for touch and keyboard users; outside
+        // click, blur, mouseleave and Escape remain the close paths.
+        this.setState({ freshnessOpen: true });
+      },
       title: d.title || "",
       hasCallout: !!d.calloutTitle,
       calloutTitle: d.calloutTitle || "",
