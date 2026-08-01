@@ -18,10 +18,12 @@ check passes.
 credentials: PASS
 space access: PASS
 space identity: PASS
+participant avatars: PASS · local participant avatars are missing (getvisa: ydnikolaev) — run `a2a sync`; initials remain available meanwhile
 versions: FAIL: <detail>
 CI presence: PASS
 space scaffolding current: PASS · the space is behind this binary's template (workflow ref, write floor): ask the space admin to run `a2a space update`
 auto-merge enabled: PASS · auto-merge unverified for <space>: the credential cannot read this repo's settings (a fine-grained token needs "Repository metadata: read")
+stuck green PRs: PASS
 codeowners resolvable: PASS
 threads intact: PASS
 skipped mirror files: PASS
@@ -31,28 +33,31 @@ skill discoverable: PASS · no a2ahub skill installed
 skill manual current: PASS · no skill installed
 ```
 
-All fourteen lines, in the order the binary prints them. **A `PASS` carrying a
+All sixteen lines, in the order the binary prints them. **A `PASS` carrying a
 note is a pass** — do not report it as a problem.
 
-NINE rows can print `PASS · <note>`:
+Twelve rows can print `PASS · <note>`:
 
 | Row | When it carries a note |
 |---|---|
 | `credentials` | the token resolves but advertises no `workflow` scope |
 | `versions` | a newer release is available (never a failure — the floor is a separate check) |
+| `participant avatars` | one or more active participant owners have no validated image in the disposable local cache |
 | `space scaffolding current` | the space is behind this binary's template, or the answer could not be determined. An **in-sync** space gets a bare `PASS` with no note |
 | `auto-merge enabled` | the setting could not be read (no host reader wired, or the API refused) |
+| `stuck green PRs` | open-PR state could not be read, so the result is unknown rather than healthy |
+| `codeowners resolvable` | GitHub's CODEOWNERS diagnostics could not be read, so the result is unknown rather than healthy |
 | `skill discoverable` | no skill installed, or installed but no agent surface links it |
 | `skill manual current` | the installed manual is older than the binary |
 | `threads intact` | the space holds artifacts written before threads existed, so they carry no `thread:` |
 | `skipped mirror files` | a file in the mirror could not be decoded, so it is missing from every read verb's output |
 | `notification components` | notifications are not enabled, or this build has no notification probe wired |
 
-Five of those rows — `space scaffolding current`, both `skill` rows,
-`threads intact` and `skipped mirror files` — can **never** FAIL. The other
-eight can.
+Six of those rows — `participant avatars`, `space scaffolding current`, both
+`skill` rows, `threads intact` and `skipped mirror files` — can **never** FAIL.
+The other ten can.
 
-The last two never FAIL for the same reason and it is worth understanding,
+`threads intact` and `skipped mirror files` never FAIL for the same reason and it is worth understanding,
 because it changes what you do about the note: **neither condition is
 necessarily yours to fix.** A pre-thread artifact cannot be repaired in place
 at all (git history is the archive — artifacts never move or get deleted), and
@@ -74,7 +79,7 @@ violated).
 | `1` | One or more checks failed, OR the local project/machine config could not be loaded (in which case doctor prints a `doctor: cannot load … config` line to stderr before exiting). |
 | `2` | Usage error — including the `--space` flag, which is the v2 admin host-drift diff and is explicitly rejected in v1-min (doctor prints `doctor: --space: v1-min: not available`). |
 
-## The fifteen checks
+## The sixteen checks
 
 Each check runs once per connected space (a project with no connected spaces
 passes every check trivially). They print in this order — if you are reading
@@ -85,6 +90,7 @@ passes every check trivially). They print in this order — if you are reading
 | **credentials** | A write credential resolves for every connected space, exactly the way a WRITE resolves it: the explicit `A2A_TOKEN_<SPACE_ID>` override first, the machine-config reference (`~/.config/a2a/config.yaml`) second. | The space resolves a credential through NEITHER path. Export the documented variable, or fix the machine config's credential entry for that space. |
 | **space access** | Every connected space's mirror clone is fetchable (clones on first use, fetches thereafter). | The mirror could not be cloned or fetched — a bad repo URL, a network/auth failure, or a missing local mirror path. |
 | **space identity** | The space id in your project config matches the id the space's own `space.yaml` declares. | Your config names a space id no space has — usually because `a2a init --space <url>` had to guess the id from the URL. Run `a2a connect <url>`, which reads the manifest and repairs the entry. |
+| **participant avatars** | Every active owner in each readable `space.yaml` has a validated image in the project-local disposable cache. The check makes no network request. | Advisory only — this row never FAILs. A note names the missing owners and tells the agent to run `a2a sync`, which refreshes the cache idempotently. Until then every UI keeps the owner's initials, so work and offline rendering remain fully available. |
 | **versions** | This build is not older than each space's `min_binary_version` pin in `space.yaml`. The literal local build stamp `dev` reports an unreleased-build advisory and skips the comparison; any other malformed version still fails. | Your released `a2a` binary is older than the space requires (or the space's `space.yaml` could not be read/parsed). Upgrade the binary; the write funnel will otherwise refuse your writes. |
 | **CI presence** | The space's mirror carries `.github/workflows/a2a-validate.yml`. | The validation workflow file is missing from the space's mirror. |
 | **space scaffolding current** | Whether the SPACE is behind what THIS binary's embedded template would write — the pinned reusable-workflow ref, `min_binary_version`, and the template-managed files. This is the REVERSE of `versions`, which only asks whether your binary is too old for the space. | **Advisory only — this row never FAILs**, because a behind space still accepts writes; what it costs is a weaker gate. A note means the space's CI may be running an older validator than you think, so a rule your binary enforces locally might not be enforced at merge. The note names who can act: if your credential has push/admin on the space repo it tells you to run `a2a space update` (which opens a PR — a2a changes no repo setting); if it does not, it gives you one sentence to hand the space admin. A note saying it could not be checked means no mirror, an unreadable manifest, or a dev build with no release version to compare against. |
@@ -128,6 +134,7 @@ covers it.
 | `cannot load project/machine config` (exit 1, stderr) | Run `a2a init` / `a2a connect` first — the config does not exist or is malformed. See [onboarding.md](onboarding.md). |
 | `credentials: FAIL` | Add or fix the space's credential reference in the machine config; confirm the token is valid. |
 | `space access: FAIL` | Check the repo URL and your network/auth; a first `a2a sync` clones the mirror. |
+| `participant avatars: PASS · …` | No human action is required. The agent runs `a2a sync`; the next dashboard build uses the local images and initials remain available until then. |
 | `versions: FAIL: … older than min_binary_version` | Upgrade the `a2a` binary to at least the pinned version. |
 | `CI presence: FAIL` | The space repo is missing the validate workflow — a space-admin fix (see [onboarding.md](onboarding.md), space-admin profile). |
 | `notification components: FAIL` | Inspect `a2a notifications status --probe --json`; repair the named channel with `a2a notifications install --channel <channel>`. |

@@ -81,7 +81,7 @@ the requested work.
 |------|-----------------|
 | [loops.md](loops.md) | The canonical one editable home: condensed §0/§3 semantics + the 8.1–8.6 agent loops (session-start checklist, send/receive/contract-owner loops, escalation ladder, watch loop). Start here. |
 | [onboarding.md](onboarding.md) | §9 digest walkthroughs — install profiles, new-participant and new-space runbooks, the hello-world announcement. |
-| [troubleshooting.md](troubleshooting.md) | How to read `a2a doctor` output — the ten checks, what a FAIL means, what to do next. Defers to the binary's actual checks. |
+| [troubleshooting.md](troubleshooting.md) | How to read `a2a doctor` output — the sixteen checks, what a FAIL means, what to do next. Defers to the binary's actual checks. |
 | [notifications.md](notifications.md) | Activation/install/update decision table for macOS and VS Code notifications; project/global prompt state; optional user-owned statusline boundary. |
 | [reference/commands.md](reference/commands.md) | **Generated from the binary.** Full `a2a` command catalog + MCP tool catalog. The source of truth for invocation syntax — never duplicated in prose. |
 | [reference/authoring/](reference/authoring/) | **Generated from schemas.** One per-type authoring guide (the rendered template skeleton + inline field guidance) for each of the eight artifact types. |
