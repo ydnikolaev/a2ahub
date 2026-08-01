@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/avatar"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -99,6 +100,13 @@ func (s *Store) OwnSystem() string { return s.ownSystem }
 // rather than replicating wire.go's buildStore wiring. The slice is the Store's
 // own (callers must not mutate it).
 func (s *Store) SpaceMirrors() []SpaceMirror { return s.spaces }
+
+// AvatarDataURL reads one validated, project-local avatar cache record. It is
+// intentionally a Store capability so HTML does not learn the cache layout;
+// the false result is a normal monogram fallback, never a render failure.
+func (s *Store) AvatarDataURL(login string) (string, bool) {
+	return avatar.DataURL(s.cacheDir, login)
+}
 
 // SpaceSyncFacts returns one cache-owned mirror snapshot fact per connected
 // space, in the same order as SpaceMirrors. It keeps exact HEAD revision,
