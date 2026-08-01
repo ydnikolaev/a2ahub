@@ -145,18 +145,11 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
 <div data-screen-label="Docs v4" style="min-height:100vh;">
   <div style="position:sticky; top:0; z-index:80;"><dc-import name="SiteHeader" active="docs" md="{{ mdName }}" md-text="{{ mdText }}" hint-size="100%,66px"></dc-import></div>
 
-  <main style="width:min(1240px, 100% - 56px); margin:0 auto; padding:34px 0 90px;">
-
-    <div style="display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; margin-bottom:24px;">
-      <div style="flex:1 1 520px; min-width:0;">
-        <h1 style="margin:0 0 12px; font-size:44px; line-height:1.06; font-weight:600; letter-spacing:-0.03em; max-width:720px; text-wrap:balance;">The manual the agent already read.</h1>
-        <p style="margin:0; font-size:18px; line-height:1.6; color:var(--body); max-width:680px; text-wrap:pretty;">Every page here is the same Markdown the binary installs as the agent skill — one source, two projections. Nothing on this site is a second, hand-maintained copy of a command list, a lifecycle table or an artifact field.</p>
-      </div>
-    </div>
+  <main style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0 90px;">
 
     <div style="display:flex; flex-wrap:wrap; gap:26px; align-items:flex-start;">
 
-      <aside data-rail style="flex:1 1 240px; min-width:240px; display:flex; flex-direction:column; gap:12px;">
+      <aside aria-label="Documentation navigation" data-rail style="flex:1 1 240px; min-width:240px; display:flex; flex-direction:column; gap:12px;">
         <div style="background:var(--surface); border-radius:14px; padding:14px 16px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
           <label for="docsearch" style="display:block; font-size:15px; font-weight:600; margin-bottom:8px;">Search the docs</label>
           <input id="docsearch" type="search" value="{{ query }}" onInput="{{ onQuery }}" placeholder="thread, contract, retire…" style="width:100%; box-sizing:border-box; font-family:'Onest',sans-serif; font-size:16px; color:var(--text); background:var(--canvas); border:0; border-radius:9px; padding:11px 13px;">
@@ -315,7 +308,7 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
         </div>
       </article>
 
-      <aside data-rail data-rail-toc style="flex:1 1 200px; min-width:200px; display:flex; flex-direction:column; gap:12px;">
+      <aside aria-label="On this page" data-rail data-rail-toc style="flex:1 1 200px; min-width:200px; display:flex; flex-direction:column; gap:12px;">
         <div style="background:var(--surface); border-radius:14px; padding:16px 18px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
           <div style="font-size:15px; font-weight:600; margin-bottom:10px;">On this page</div>
           <sc-if value="{{ hasToc }}" hint-placeholder-val="{{ true }}">
@@ -475,7 +468,7 @@ class Component extends DCLogic {
       docGroup: cur.group,
       docSource: cur.src,
       docSourcePill: isCommands ? "generated from the binary" : cur.src.startsWith("schemas/") ? "generated from schemas" : "embedded skill Markdown",
-      docGenerated: isCommands ? "regenerated with every release · last: v0.16.3, 2026-07-30" : "projected at build time from v0.16.3",
+      docGenerated: isCommands ? "regenerated with every release · last: v" + (globalThis.A2A_LATEST_RELEASE || { version:"unavailable", released:"date unavailable" }).version + ", " + (globalThis.A2A_LATEST_RELEASE || { version:"unavailable", released:"date unavailable" }).released : "projected at build time from v" + (globalThis.A2A_LATEST_RELEASE || { version:"unavailable" }).version,
       docLead: LEAD[cur.id] || "This route is one document in the canonical corpus embedded in the binary. The prototype shows its shell, its actions and its metadata without inventing its text.",
       isThreads, isCommands, isPlaceholder,
       docFacts: [

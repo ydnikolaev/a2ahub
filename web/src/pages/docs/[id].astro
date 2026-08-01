@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import DesignRuntimePage from '../../components/DesignRuntimePage.astro';
+import PublicPageHeader from '../../components/PublicPageHeader.astro';
 import content from '../../generated/content.json';
 
 export function getStaticPaths() {
@@ -9,5 +10,10 @@ export function getStaticPaths() {
 const { doc } = Astro.props;
 ---
 <BaseLayout current="/docs.html" markdown={`/docs/${doc.id}.md`} slotOwnsMain title={`${doc.title} — a2ahub docs`} description={`a2ahub agent documentation: ${doc.title}.`}>
+  <PublicPageHeader
+    icon="docs"
+    title={doc.title}
+    description="Canonical agent documentation projected from the same corpus embedded in the a2a binary."
+  />
   <DesignRuntimePage source="16-docs-v4.dc.html" />
 </BaseLayout>

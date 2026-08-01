@@ -1,7 +1,6 @@
 @import "@fontsource/onest/400.css";
 @import "@fontsource/onest/500.css";
 @import "@fontsource/onest/600.css";
-@import "@fontsource/onest/700.css";
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
 @import "@fontsource/ibm-plex-mono/600.css";
@@ -13,11 +12,22 @@
 html, body { height: auto !important; min-height: 100%; }
 html { background: var(--canvas); scroll-behavior: smooth; }
 body { margin: 0; min-width: 320px; line-height: normal; -webkit-font-smoothing: antialiased; }
+x-dc { display: block; }
+body:has(x-dc) > footer,
+body:has(#dc-root:empty) > footer {
+  position: absolute;
+  inset-block-start: 100vh;
+  inline-size: 100%;
+  visibility: hidden;
+  pointer-events: none;
+}
 img, svg { max-width: 100%; }
 button, input, select { font: inherit; }
 button { color: inherit; }
 .mono, code, pre { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, monospace; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.a2a-fade-scroll { display:block; min-width:0; max-width:100%; box-sizing:border-box; overflow-x:auto; overflow-y:hidden; overscroll-behavior-inline:contain; scrollbar-width:none; -ms-overflow-style:none; -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 12px,#000 calc(100% - 12px),transparent 100%); mask-image:linear-gradient(90deg,transparent 0,#000 12px,#000 calc(100% - 12px),transparent 100%); }
+.a2a-fade-scroll::-webkit-scrollbar { display:none; }
 .skip-link { position: fixed; z-index: 1000; top: 8px; left: 8px; transform: translateY(-140%); background: var(--inverse); color: var(--on-inverse); padding: 10px 14px; border-radius: 8px; }
 .skip-link:focus { transform: translateY(0); }
 
@@ -341,6 +351,16 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
   .install-grid, .trust-grid, .compare-grid, .dashboard-columns { grid-template-columns: minmax(0, 1fr); }
   .proof-chain { grid-template-columns: 1fr 1fr; }
   .dashboard-stats { grid-template-columns: 1fr 1fr; }
+}
+
+/* Design Component <helmet> styles are intentionally not mounted by the
+ * runtime. Keep the public hero breakpoint in the site stylesheet so the
+ * inline desktop grid cannot collapse its copy into a zero-width first
+ * column on phones. */
+@media (max-width: 920px) {
+  .public-hero-grid { grid-template-columns: minmax(0, 1fr) !important; gap: 32px !important; }
+  .public-hero-grid > * { min-width: 0; }
+  .public-hero { padding-top: 44px !important; padding-bottom: 64px !important; }
 }
 
 @media (max-width: 520px) {

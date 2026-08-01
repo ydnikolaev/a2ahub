@@ -2,9 +2,26 @@
 import DesignRuntimeBoot from './DesignRuntimeBoot.astro';
 import { runtimeDesignPage } from '../lib/design-source';
 
-const { source } = Astro.props;
-const design = runtimeDesignPage(source);
+const { source, variant } = Astro.props;
+const design = runtimeDesignPage(source, variant);
+const isGuide = source === '14-local-dashboard-v4.dc.html' && variant === 'guide';
+const needsDemo = source === '13-public-home-v4.dc.html'
+  || source === '14-local-dashboard-v4.dc.html'
+  || source === '15-changelog-v4.dc.html'
+  || source === '20-dashboard-example-v4.dc.html';
+const needsDocs = source === '14-local-dashboard-v4.dc.html'
+  || source === '16-docs-v4.dc.html';
+const needsReleases = source === '14-local-dashboard-v4.dc.html'
+  || source === '15-changelog-v4.dc.html';
+const needsLatest = true;
 ---
 <Fragment set:html={design.template} />
 <script is:inline type="text/x-dc" data-dc-script set:html={design.logic}></script>
-<DesignRuntimeBoot />
+<DesignRuntimeBoot
+  needsDemo={needsDemo}
+  needsDocs={needsDocs}
+  needsReleases={needsReleases}
+  needsLatest={needsLatest}
+  allDocs={source === '14-local-dashboard-v4.dc.html' && !isGuide}
+  compactDemo={source === '13-public-home-v4.dc.html' || isGuide}
+/>

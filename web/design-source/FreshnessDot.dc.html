@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<span data-freshness-dot style="position:relative; display:inline-flex; align-items:center; gap:7px; flex:0 0 auto;">
+  <button type="button" onMouseEnter="{{ openHint }}" onMouseLeave="{{ closeHint }}" onFocus="{{ openHint }}" onBlur="{{ closeHint }}" onClick="{{ clickHint }}" aria-label="{{ hint }}" aria-expanded="{{ expanded }}" title="{{ hint }}" style="{{ dotStyle }}"></button>
+  <sc-if value="{{ verbose }}" hint-placeholder-val="{{ false }}"><span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.5; color:var(--attention-ink);">{{ verboseText }}</span></sc-if>
+  <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
+    <span role="tooltip" style="{{ bubbleStyle }}">{{ hint }}</span>
+  </sc-if>
+</span>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:340,&quot;height&quot;:150},&quot;stale&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;age&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;только что&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;hint&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;compact&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+// One freshness grammar everywhere an exchange is shown. Current snapshots
+// stay quiet until asked; stale snapshots name the warning in text. Hover is a
+// convenience, while click/focus keep the same fact reachable on touch and by
+// keyboard.
+class Component extends DCLogic {
+  state = { open: false, pos: "" };
+
+  componentDidMount() {
+    this.away = (ev) => {
+      if (!this.state.open) return;
+      if (this.host && this.host.contains && this.host.contains(ev.target)) return;
+      this.setState({ open: false });
+    };
+    this.esc = (ev) => { if (ev.key === "Escape" && this.state.open) this.setState({ open: false }); };
+    document.addEventListener("click", this.away, true);
+    window.addEventListener("keydown", this.esc);
+  }
+
+  componentWillUnmount() {
+    document.removeEventListener("click", this.away, true);
+    window.removeEventListener("keydown", this.esc);
+  }
+
+  show(btn) {
+    if (!btn) return;
+    this.host = btn.parentElement;
+    const r = btn.getBoundingClientRect();
+    const width = Math.min(300, window.innerWidth * 0.74);
+    const left = Math.max(12, Math.min(r.left, window.innerWidth - width - 12));
+    const below = window.innerHeight - r.bottom > 170;
+    this.setState({
+      open: true,
+      pos: below
+        ? "left:" + Math.round(left) + "px; top:" + Math.round(r.bottom + 7) + "px;"
+        : "left:" + Math.round(left) + "px; bottom:" + Math.round(window.innerHeight - r.top + 7) + "px;"
+    });
+  }
+
+  renderVals() {
+    const ru = document.documentElement.lang === "ru";
+    const stale = !!this.props.stale;
+    const age = this.props.age || (ru ? "неизвестно" : "unknown");
+    const defaultHint = stale
+      ? (ru ? "Локальная копия спейса может отставать от репозитория. Последняя синхронизация: " + age + "." : "The local space copy may lag behind the repository. Last synced: " + age + ".")
+      : (ru ? "Локальная копия спейса актуальна. Последняя синхронизация: " + age + "." : "The local space copy is current. Last synced: " + age + ".");
+    const hint = this.props.hint || defaultHint;
+    return {
+      hint,
+      verbose: stale && !this.props.compact,
+      verboseText: (ru ? "устаревшая копия · " : "stale copy · ") + age,
+      open: this.state.open,
+      expanded: this.state.open ? "true" : "false",
+      dotStyle: "width:9px; height:9px; flex:0 0 9px; display:inline-block; border:0; border-radius:99px; padding:0; cursor:help; background:" + (stale ? "var(--ochre)" : "var(--healthy-ink)") + "; box-shadow:0 0 0 3px " + (stale ? "var(--attention-tint)" : "var(--healthy-tint)") + ";",
+      bubbleStyle: "position:fixed; z-index:950; " + this.state.pos + " width:min(300px,74vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:12px; padding:11px 13px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.5; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
+      openHint: (ev) => {
+        const btn = ev && ev.currentTarget;
+        this.show(btn);
+      },
+      closeHint: () => this.setState({ open: false }),
+      clickHint: (ev) => {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        const btn = ev && ev.currentTarget;
+        this.show(btn);
+      }
+    };
+  }
+}
+
+</script>
+</body>
+</html>

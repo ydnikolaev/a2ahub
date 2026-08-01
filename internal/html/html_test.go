@@ -288,6 +288,91 @@ func TestDefaultTemplate_CarriesApprovedV4ViewsWithoutRemoteLoads(t *testing.T) 
 	}
 }
 
+func TestDefaultTemplate_ExplanatoryPopoversShareHoverBehavior(t *testing.T) {
+	t.Parallel()
+	tmpl := string(DefaultTemplate())
+
+	for _, name := range []string{"HintDot", "StatusPill", "TypeBadge", "FreshnessDot"} {
+		marker := `window.__resourceBlobs["./` + name + `.dc.html"]`
+		start := strings.Index(tmpl, marker)
+		if start < 0 {
+			t.Errorf("dashboard has no %s resource", name)
+			continue
+		}
+		stop := strings.Index(tmpl[start+1:], `window.__resourceBlobs["./`)
+		if stop < 0 {
+			stop = len(tmpl) - start - 1
+		}
+		resource := tmpl[start : start+1+stop]
+		if !strings.Contains(resource, `onMouseEnter`) || !strings.Contains(resource, `role=\"tooltip\"`) {
+			t.Errorf("%s does not expose its explanation on hover through the shared tooltip grammar", name)
+		}
+	}
+}
+
+func TestDefaultTemplate_DetailHierarchyAndGuideStayConsistent(t *testing.T) {
+	t.Parallel()
+	tmpl := string(DefaultTemplate())
+
+	for _, want := range []string{
+		`--font-detail-title: 28px`,
+		`class="a2a-detail-title"`,
+		`data-guide-primary`,
+		`data-guide-feedback`,
+		`data-guide-feedback-robot`,
+		`right:-64px; bottom:-82px`,
+		`data-guide-reference`,
+		`Как устроен a2ahub`,
+		`Есть идея? Давайте сделаем a2ahub лучше`,
+		`a2a feedback validate`,
+		`Это статус документа, а не отметка о релизе.`,
+	} {
+		if !strings.Contains(tmpl, want) {
+			t.Errorf("dashboard is missing shared detail/guide contract %q", want)
+		}
+	}
+	for _, removed := range []string{
+		`Команды за этими экранами`,
+		`Commands behind these screens`,
+		`Как это работает без ручной диспетчеризации`,
+		`How this works without manual dispatch`,
+	} {
+		if strings.Contains(tmpl, removed) {
+			t.Errorf("dashboard still carries removed guide copy %q", removed)
+		}
+	}
+
+	badge, err := os.ReadFile("../../web/design-source/TypeBadge.dc.html")
+	if err != nil {
+		t.Fatalf("read generated TypeBadge: %v", err)
+	}
+	if !bytes.Contains(badge, []byte(`{{ prefix }}</span> {{ word }}`)) {
+		t.Error("type badges do not put the protocol code before the human label")
+	}
+}
+
+func TestDefaultTemplate_MapTooltipsEscapeTheSVGAndPanelsContainText(t *testing.T) {
+	t.Parallel()
+	mapSource, err := os.ReadFile("../../web/design-source/NetworkMap.dc.html")
+	if err != nil {
+		t.Fatalf("read generated NetworkMap: %v", err)
+	}
+	for _, want := range []string{
+		`role="tooltip"`,
+		`position:fixed; z-index:520`,
+		`pointer-events:none;`,
+		`pointer-events:stroke;`,
+		`this.relTip(r)`,
+		`this.spaceTip(sp, panelReason)`,
+		`overflow-wrap:anywhere`,
+		`word-break:break-word`,
+	} {
+		if !bytes.Contains(mapSource, []byte(want)) {
+			t.Errorf("map is missing tooltip/overflow contract %q", want)
+		}
+	}
+}
+
 func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 	t.Parallel()
 	tmpl := string(DefaultTemplate())
@@ -305,20 +390,27 @@ func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 		`data-artifact-markdown`,
 		`data-artifact-metadata`,
 		`data-artifact-footer`,
+		`data-artifact-author`,
 		`hydrateMarkdown`,
 		`this.onOutside`,
 		`bodyFadeStyle`,
 		`bodyExpanded`,
 		`metadataExpanded`,
-		`position:fixed; inset:0; z-index:220`,
+		`position:fixed; inset:0; z-index:`,
+		`modal ? \"420\" : \"220\"`,
+		`this.props.onClose`,
 		`Развернуть карточку на всю ширину`,
 		`Главное о документе`,
 		`Все поля frontmatter`,
 		`История событий`,
-		`Открыть тред`,
-		`freshnessDotStyle`,
+		`FreshnessDot`,
+		`authorProfileURL`,
+		`authorAvatar`,
+		`\u003cimg src=\"{{ authorAvatar }}\"`,
 		`calloutParts`,
-		`Начало документа`,
+		`Тело документа`,
+		`SectionHeading`,
+		`data-artifact-section`,
 	} {
 		if !strings.Contains(detail, required) {
 			t.Errorf("ArtifactDetail is missing %q", required)
@@ -330,13 +422,19 @@ func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 	if !strings.Contains(tmpl, "Локальная копия спейса актуальна. Последняя синхронизация:") {
 		t.Error("dashboard does not explain the compact current-snapshot indicator")
 	}
+	if !strings.Contains(tmpl, `const preferred = ["created", "space", "category"]`) {
+		t.Error("dashboard essentials still duplicate author, priority, or blocking from the header")
+	}
 	if strings.Contains(tmpl, "А пока:") {
 		t.Error("ArtifactDetail still joins the sender's interim work with the requested response under 'А пока'")
 	}
 	if strings.Contains(detail, `>{{ body }}</`) {
 		t.Error("ArtifactDetail still renders authored Markdown as one raw text block")
 	}
-	for _, removed := range []string{`Документ целиком`, `DocumentModal`, `factsLabel`, ` · запись · `, ` record · `, `sourceLine`} {
+	if !strings.Contains(detail, `bodyOpen || !bodyHasMore`) {
+		t.Error("short document preview has no bottom padding when the accordion is absent")
+	}
+	for _, removed := range []string{`Документ целиком`, `DocumentModal`, `factsLabel`, ` · запись · `, ` record · `, `sourceLine`, `Открыть тред`, `Начало документа`} {
 		if strings.Contains(detail, removed) {
 			t.Errorf("ArtifactDetail still carries removed legacy UI %q", removed)
 		}
@@ -344,10 +442,110 @@ func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 	if strings.Contains(tmpl, `window.__resourceBlobs["./DocumentModal.dc.html"]`) {
 		t.Error("removed DocumentModal is still embedded in the generated dashboard")
 	}
+	for _, required := range []string{
+		`Открыть в разделе «Обмен»`,
+		`mapDocumentOpen`,
+		`mapDocumentDetail`,
+		`modal="{{ true }}"`,
+		`on-close="{{ closeMapDocument }}"`,
+	} {
+		if !strings.Contains(tmpl, required) {
+			t.Errorf("map document overlay is missing %q", required)
+		}
+	}
+	if strings.Contains(tmpl, `Открыть в разделе «Работа»`) {
+		t.Error("map document navigation still names the removed Work section")
+	}
+	if strings.Contains(tmpl, `this.setState({ sel: null });\n        this.props.onOpenDocument`) {
+		t.Error("opening a map document still discards the underlying system popover")
+	}
 	deadline := strings.Index(detail, "A declared date is the first consequence under the title")
 	preview := strings.Index(detail, "Artifact Markdown is untrusted data")
 	if deadline < 0 || preview < 0 || deadline > preview {
 		t.Fatalf("deadline callout must precede the document preview: deadline=%d preview=%d", deadline, preview)
+	}
+}
+
+func TestDefaultTemplate_HumanFacingDashboardLabelsStayActionable(t *testing.T) {
+	t.Parallel()
+	tmpl := string(DefaultTemplate())
+
+	for _, want := range []string{
+		`порядок событий: по коммитам`,
+		`События показаны в том порядке, в котором попали в git`,
+		`последняя проверка`,
+		`минимальная версия для записи`,
+		`последний релиз`,
+		`showInstalledLabel: !!tooling.updateAvailable`,
+		`const toText = (it.to || []).join`,
+		`href:tooling.releaseURL || ""`,
+		`SegmentedFilter`,
+		`data-segmented-filter=\"true\"`,
+		`contractCount + exchangeCount`,
+		`summaryRows`,
+		`ExpandIcon`,
+		`DisclosureIcon`,
+		`ProseDisclosure`,
+		`LinkDetailRow`,
+		`data-link-detail`,
+		`data-section-heading`,
+		`a2a-fade-scroll`,
+		`a2a-release-meta-row`,
+		`border-radius:var(--radius-chip)`,
+		`minmax(0,54%)`,
+		`a2a-sticky-rail`,
+		`Условные обозначения`,
+		`Как пользоваться`,
+		`участники спейса «`,
+		`const A2A_GLOSSARY`,
+		`globalThis.A2A_GLOSSARY`,
+		`data-status-key`,
+		`data-type-badge`,
+		`onMouseEnter`,
+		`statusGuide: A2A_STATUS_GUIDE`,
+		`artifactTypes: A2A_TYPE_GUIDE`,
+		`footerFreshnessHint`,
+		`FreshnessDot" stale="{{ footerStale }}`,
+		`Просьба другой системе выдать конкретный результат`,
+		`Run a2a sync`,
+		`cleanPath(doc.src)`,
+		`d.id === raw.slice(1)`,
+		`https://github.com/ydnikolaev/a2ahub/blob/main/`,
+		`Узнать свою версию`,
+		`доступно без интернета`,
+		`count: releasesAll.reduce`,
+		`actionMatches(c, s.verAction)`,
+		`kindMatches(c, s.verKind)`,
+		`fix:"Исправление"`,
+		`ru ? "Нужно действие"`,
+		`position:absolute; right:18px; bottom:18px`,
+		`freshnessOpen`,
+	} {
+		if !strings.Contains(tmpl, want) {
+			t.Errorf("dashboard is missing human-facing copy/behavior %q", want)
+		}
+	}
+	for _, removed := range []string{
+		`порядок из коммитов · надёжно`,
+		`все выпуски, вшитые в этот бинарник, тот же источник, что и на сайте`,
+		`показано изменений:`,
+		`kindLabel: ru ? "Тип"`,
+		`actionLabel: ru ? "Действие"`,
+		`Во всю ширину ⤢`,
+		`Что у вас стоит`,
+		`Исправления безопасности выходят только для последней версии.`,
+		`вшито в этот файл`,
+		`⌄`,
+		`background:var(--green); flex:0 0 9px;`,
+	} {
+		if strings.Contains(tmpl, removed) {
+			t.Errorf("dashboard still carries noisy or ambiguous copy %q", removed)
+		}
+	}
+	threadMeta := strings.Index(tmpl, `>{{ tvMeta }}</div>`)
+	threadTitle := strings.Index(tmpl, `>{{ tvTitle }}</h2>`)
+	if threadMeta < 0 || threadTitle < 0 || threadMeta > threadTitle {
+		t.Error("thread participants and space are not rendered above the thread title")
 	}
 }
 

@@ -142,13 +142,13 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
 
     <div style="display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; margin-bottom:28px;">
       <div style="flex:1 1 540px; min-width:0;">
-        <span style="display:inline-block; font-size:15px; font-weight:600; color:var(--teal-ink); background:var(--surface); border-radius:8px; padding:7px 14px; margin-bottom:20px;">Install · macOS and Linux · amd64 and arm64</span>
+        <span style="display:inline-block; font-size:15px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:8px; padding:7px 14px; margin-bottom:20px;">Install · macOS and Linux · amd64 and arm64</span>
         <h1 style="margin:0 0 16px; font-size:52px; line-height:1.05; font-weight:600; letter-spacing:-0.03em; max-width:660px; text-wrap:balance;">One binary for the machine. One skill for the agent.</h1>
         <p style="margin:0; font-size:19px; line-height:1.6; color:var(--body); max-width:680px; text-wrap:pretty;">Choose the direct shell path or hand the setup to an agent with the exported Sporo seed. Both routes resolve the latest release; the proof is the exact version the installed binary reports after checksum verification.</p>
       </div>
     </div>
 
-    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(420px,1fr)); gap:16px; align-items:start; margin-bottom:20px;">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr)); gap:16px; align-items:start; margin-bottom:20px;">
 
       <section style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
@@ -181,23 +181,14 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
         </div>
         <p style="margin:0 0 16px; font-size:17px; line-height:1.6; color:var(--body); max-width:34em;">Give your agent a self-contained, verified install seed. It detects an existing copy, installs or updates to latest, proves the binary runs, initializes the repository and links the embedded a2a skill.</p>
 
-        <sc-if value="{{ seedReady }}" hint-placeholder-val="{{ true }}">
-          <div style="background:var(--page); border-radius:14px; padding:16px 18px; margin-bottom:14px;">
-            <div style="font-size:15px; color:var(--muted); margin-bottom:8px;">The prompt you paste into the agent</div>
-            <div style="font-size:16px; line-height:1.6; color:var(--text); background:var(--surface); border-radius:11px; padding:13px 15px; margin-bottom:12px; overflow-wrap:anywhere;">{{ promptText }}</div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-              <button type="button" onClick="{{ prompt.copy }}" style="{{ prompt.style }}">{{ prompt.label }}</button>
-              <a href="https://ydnikolaev.github.io/a2ahub/setup/a2a.md" download="a2a.md" style="font-size:16px; font-weight:600; color:var(--text); background:var(--canvas); border-radius:10px; padding:12px 18px; text-decoration:none;">Download Sporo seed (.md)</a>
-            </div>
+        <div style="background:var(--page); border-radius:14px; padding:16px 18px; margin-bottom:14px;">
+          <div style="font-size:15px; color:var(--muted); margin-bottom:8px;">The prompt you paste into the agent</div>
+          <div style="font-size:16px; line-height:1.6; color:var(--text); background:var(--surface); border-radius:11px; padding:13px 15px; margin-bottom:12px; overflow-wrap:anywhere;">{{ promptText }}</div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <button type="button" onClick="{{ prompt.copy }}" style="{{ prompt.style }}">{{ prompt.label }}</button>
+            <a href="https://ydnikolaev.github.io/a2ahub/setup/a2a.md" download="a2a.md" style="font-size:16px; font-weight:600; color:var(--text); background:var(--canvas); border-radius:10px; padding:12px 18px; text-decoration:none;">Download Sporo seed (.md)</a>
           </div>
-        </sc-if>
-        <sc-if value="{{ seedUnavailable }}" hint-placeholder-val="{{ false }}">
-          <div style="background:var(--blocking-tint); border-radius:14px; padding:16px 18px; margin-bottom:14px;">
-            <div style="font-size:17px; font-weight:600; color:var(--blocking-ink); margin-bottom:6px;">The seed export is not available in this build</div>
-            <p style="margin:0 0 10px; font-size:16px; line-height:1.6; color:var(--blocking-strong);">The static download is copied from the output of <span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">sporo seed export a2a</span>. When that asset is missing, the page says so instead of serving a stale or hand-written copy.</p>
-            <p style="margin:0; font-size:16px; line-height:1.6; color:var(--blocking-strong);">Use the direct shell install, or read the setup steps in <a href="16-docs-v4.dc.html">Getting started</a>.</p>
-          </div>
-        </sc-if>
+        </div>
 
         <button type="button" onClick="{{ toggleDisclosure }}" aria-expanded="{{ disclosureExpanded }}" style="{{ disclosureStyle }}">{{ disclosureLabel }}</button>
         <sc-if value="{{ disclosureOpen }}" hint-placeholder-val="{{ false }}">
@@ -217,52 +208,8 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
           <dc-import name="FactTable" rows="{{ seedFacts }}" hint-size="100%,180px"></dc-import>
         </div>
 
-        <div style="margin-top:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:15px; color:var(--muted);">
-          <span>Prototype state preview</span>
-          <sc-for list="{{ stateToggles }}" as="t" hint-placeholder-count="2">
-            <button type="button" onClick="{{ t.go }}" style="{{ t.style }}">{{ t.label }}</button>
-          </sc-for>
-        </div>
       </section>
     </div>
-
-    <section style="background:var(--surface); border-radius:18px; padding:28px 30px; box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:20px;">
-      <h2 style="margin:0 0 12px; font-size:30px; font-weight:600; letter-spacing:-0.02em;">Your first project</h2>
-      <p style="margin:0 0 20px; font-size:18px; line-height:1.6; color:var(--body); max-width:36em;"><span style="font-family:'IBM Plex Mono',monospace; font-size:17px;">a2a init</span> is non-interactive. It installs the embedded skill and its discovery links by default, and writes the project and machine setup it owns. The repository owner chooses system identity, space and authority — there is no cloud connection to click.</p>
-      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px;">
-        <div style="background:var(--page); border-radius:14px; padding:18px 20px;">
-          <div style="font-size:18px; font-weight:600; margin-bottom:12px;">Three commands</div>
-          <div style="background:var(--inverse); border-radius:11px; padding:14px 16px;">
-            <div style="display:flex; align-items:center; gap:12px; margin-bottom:9px;">
-              <span style="font-size:14px; color:var(--on-inverse-faint); font-family:'IBM Plex Mono',monospace;">first project</span>
-              <button type="button" onClick="{{ first.copy }}" style="{{ first.style }}">{{ first.label }}</button>
-            </div>
-            <span style="font-family:'IBM Plex Mono',monospace; font-size:15px; line-height:1.9; color:var(--on-inverse-2); overflow-wrap:anywhere; white-space:pre-wrap;">{{ first.text }}</span>
-          </div>
-        </div>
-        <div style="background:var(--page); border-radius:14px; padding:18px 20px;">
-          <div style="font-size:18px; font-weight:600; margin-bottom:12px;">What each one settles</div>
-          <dc-import name="FactTable" rows="{{ firstFacts }}" hint-size="100%,150px"></dc-import>
-        </div>
-        <div style="background:var(--page); border-radius:14px; padding:18px 20px;">
-          <div style="font-size:18px; font-weight:600; margin-bottom:12px;">How you know it worked</div>
-          <div style="display:flex; flex-direction:column; gap:9px;">
-            <div style="display:flex; align-items:center; gap:10px; background:var(--surface); border-radius:11px; padding:12px 14px;">
-              <dc-import name="StatusPill" text="verified" tone="healthy" size="small" hint-size="80px,24px"></dc-import>
-              <span style="font-size:16px; line-height:1.5; color:var(--body);">the binary reports its exact version</span>
-            </div>
-            <div style="display:flex; align-items:center; gap:10px; background:var(--surface); border-radius:11px; padding:12px 14px;">
-              <dc-import name="StatusPill" text="verified" tone="healthy" size="small" hint-size="80px,24px"></dc-import>
-              <span style="font-size:16px; line-height:1.5; color:var(--body);"><span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">a2a doctor</span> agrees about identity, space, skill links and workflow scope</span>
-            </div>
-            <div style="display:flex; align-items:center; gap:10px; background:var(--surface); border-radius:11px; padding:12px 14px;">
-              <dc-import name="StatusPill" text="not evaluated" tone="outline" size="small" hint-size="110px,24px"></dc-import>
-              <span style="font-size:16px; line-height:1.5; color:var(--body);">whether the other side has connected yet — that is their move, not a local fact</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
 
     <section style="background:var(--surface); border-radius:18px; padding:28px 30px; box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:20px;">
       <h2 style="margin:0 0 12px; font-size:30px; font-weight:600; letter-spacing:-0.02em;">Works with any agent that can call a CLI or stdio MCP</h2>
@@ -313,7 +260,6 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1300,&quot;height&quot;:900}}">
 const SHELL = "curl -fsSL https://raw.githubusercontent.com/ydnikolaev/a2ahub/main/scripts/install.sh | sh";
-const FIRST = "a2a init --system <system-id> --space <space-repo-url>\na2a connect <space-repo-url>\na2a doctor";
 const PROMPT = "Open the a2a setup seed at https://ydnikolaev.github.io/a2ahub/setup/a2a.md and follow it in this repository. Detect first, ask before changing repository-owned harness files, verify every step, and return its five-row report.";
 const INSTALLER = [
   "Supports macOS and Linux on amd64 and arm64.",
@@ -337,7 +283,7 @@ const SURFACES = [
 ];
 
 class Component extends DCLogic {
-  state = { copied: "", seed: "ready", disclosure: false };
+  state = { copied: "", disclosure: false };
 
   copy(key, text) {
     const done = () => { this.setState({ copied: key }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ copied: "" }), 2400); };
@@ -379,10 +325,8 @@ class Component extends DCLogic {
 
   renderVals() {
     const c = this.state.copied;
-    const seedReady = this.state.seed === "ready";
     return {
       shell: this.block("shell", SHELL, true),
-      first: this.block("first", FIRST, true),
       promptText: PROMPT,
       prompt: {
         copy: () => this.copy("prompt", PROMPT),
@@ -392,20 +336,14 @@ class Component extends DCLogic {
       },
       installerFacts: this.rows(INSTALLER),
       agentChanges: this.rows(CHANGES),
-      seedReady, seedUnavailable: !seedReady,
-      seedPillText: seedReady ? "verified on v0.16.3 · 2026-07-30" : "asset unavailable",
-      seedPillTone: seedReady ? "healthy" : "blocking",
+      seedPillText: "verified on v" + ((globalThis.A2A_LATEST_RELEASE || {}).version || "unavailable") + " · " + ((globalThis.A2A_LATEST_RELEASE || {}).released || "date unavailable"),
+      seedPillTone: "healthy",
       seedFacts: [
         { label: "download source", value: "output of sporo seed export a2a", mono: true },
         { label: "authoring source", value: "seeds/a2a.md — never served directly", mono: true },
         { label: "target channel", value: "a2a@latest, by product-owner choice" },
-        { label: "verified stamp", value: "names the exact release and date tested: v0.16.3, 2026-07-30" },
+        { label: "verified stamp", value: "names the exact release and date tested: v" + ((globalThis.A2A_LATEST_RELEASE || {}).version || "unavailable") + ", " + ((globalThis.A2A_LATEST_RELEASE || {}).released || "date unavailable") },
         { label: "on this website", value: "static Markdown only — no agent run, account, callback or cloud setup", muted: true }
-      ],
-      firstFacts: [
-        { label: "init", value: "identity, space, authority, skill links" },
-        { label: "connect", value: "attaches this machine to the space repo", muted: false },
-        { label: "doctor", value: "reports what is missing before you need it" }
       ],
       surfaces: SURFACES.map(([name, pill, tone, text]) => ({ name, pill, tone, text })),
       disclosureOpen: this.state.disclosure,
@@ -413,13 +351,7 @@ class Component extends DCLogic {
       disclosureLabel: this.state.disclosure ? "Hide what the agent will change" : "What the agent will change",
       disclosureStyle: "font-family:'Onest',sans-serif; font-size:16px; font-weight:600; color:var(--teal-ink); background:transparent; border:0; padding:6px 0; cursor:pointer; text-align:left;",
       toggleDisclosure: () => this.setState(s => ({ disclosure: !s.disclosure })),
-      stateToggles: ["ready", "unavailable"].map(k => ({
-        label: k === "ready" ? "seed ready" : "seed unavailable",
-        go: () => this.setState({ seed: k }),
-        style: "font-family:'Onest',sans-serif; font-size:15px; border:0; border-radius:8px; padding:6px 12px; cursor:pointer; " +
-          (this.state.seed === k ? "background:var(--primary); color:var(--on-primary);" : "background:var(--canvas); color:var(--body);")
-      })),
-      mdText: "# Install a2a\n\nCanonical HTML: https://ydnikolaev.github.io/a2ahub/install.html\n\n" + SHELL + "\n\n" + FIRST + "\n\nAgent-led setup seed: https://ydnikolaev.github.io/a2ahub/setup/a2a.md\n"
+      mdText: "# Install a2a\n\nCanonical HTML: https://ydnikolaev.github.io/a2ahub/install.html\n\n" + SHELL + "\n\nAgent-led setup seed: https://ydnikolaev.github.io/a2ahub/setup/a2a.md\n"
     };
   }
 }

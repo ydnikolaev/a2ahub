@@ -7,7 +7,12 @@
 </head>
 <body>
 <x-dc>
-<span style="{{ badgeStyle }}">{{ word }}<span style="{{ prefixStyle }}">{{ prefix }}</span></span>
+<span data-type-badge="{{ typeKey }}" style="{{ wrapStyle }}" onMouseEnter="{{ enter }}" onMouseLeave="{{ leave }}" onClick="{{ tap }}">
+  <span style="{{ badgeStyle }}"><span style="{{ prefixStyle }}">{{ prefix }}</span> {{ word }}</span>
+  <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
+    <span role="tooltip" style="{{ bubbleStyle }}">{{ why }}</span>
+  </sc-if>
+</span>
 
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:240,&quot;height&quot;:60},&quot;type&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;work_request&quot;,&quot;question&quot;,&quot;decision&quot;,&quot;handoff&quot;,&quot;requirement&quot;,&quot;response&quot;,&quot;announcement&quot;,&quot;contract&quot;],&quot;default&quot;:&quot;work_request&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;small&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
@@ -32,19 +37,61 @@ const TYPES = {
   announcement: { word: "announcement", prefix: "XA", bg: "var(--sink)", fg: "var(--body)", ring: "inset 0 0 0 1px var(--border-strong)" },
   contract: { word: "contract", prefix: "XC", bg: "var(--teal-tint)", fg: "var(--teal-ink)", ring: "inset 0 0 0 1px var(--teal-hairline)" }
 };
-const TYPES_RU = {
-  work_request: "запрос работы", question: "вопрос", decision: "решение", handoff: "передача",
-  requirement: "требование", response: "ответ", announcement: "объявление", contract: "контракт"
-};
 class Component extends DCLogic {
+  state = { open: false, pos: "" };
+
+  componentDidMount() {
+    this.gone = () => { if (this.state.open) this.setState({ open: false }); };
+    this.esc = (ev) => { if (ev.key === "Escape" && this.state.open) this.setState({ open: false }); };
+    window.addEventListener("scroll", this.gone, true);
+    window.addEventListener("resize", this.gone);
+    window.addEventListener("keydown", this.esc);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener("scroll", this.gone, true);
+    window.removeEventListener("resize", this.gone);
+    window.removeEventListener("keydown", this.esc);
+  }
+
+  show(el) {
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const width = Math.min(320, window.innerWidth * 0.76);
+    const left = Math.max(12, Math.min(r.left, window.innerWidth - width - 12));
+    const below = window.innerHeight - r.bottom > 170;
+    this.setState({
+      open: true,
+      pos: below
+        ? "left:" + Math.round(left) + "px; top:" + Math.round(r.bottom + 7) + "px;"
+        : "left:" + Math.round(left) + "px; bottom:" + Math.round(window.innerHeight - r.top + 7) + "px;"
+    });
+  }
+
   renderVals() {
     const t = TYPES[this.props.type] || { word: this.props.type || "unknown type", prefix: "??", bg: "var(--hairline)", fg: "var(--body)", ring: "inset 0 0 0 1px var(--border-strong)" };
     const size = this.props.size === "small" ? 13 : 14;
+    const lang = document.documentElement.lang === "ru" ? "ru" : "en";
+    const glossary = globalThis.A2A_GLOSSARY;
+    const entry = glossary && glossary.entry ? glossary.entry("types", this.props.type, lang) : null;
+    const why = entry ? entry.description : "";
     return {
-      word: document.documentElement.lang === "ru" ? (TYPES_RU[this.props.type] || t.word) : t.word,
+      typeKey: this.props.type || "unknown",
+      word: entry ? entry.label.toLowerCase() : t.word,
       prefix: t.prefix,
+      why,
+      open: !!why && this.state.open,
+      wrapStyle: "display:inline-flex; position:relative;" + (why ? " cursor:help;" : ""),
       badgeStyle: "display:inline-flex; align-items:center; gap:6px; font-family:'Onest',sans-serif; font-size:" + size + "px; font-weight:600; line-height:1.2; border-radius:6px; padding:" + (t.ring ? "3px 10px" : "4px 11px") + "; background:" + t.bg + "; color:" + t.fg + "; box-shadow:" + (t.ring || "none") + "; white-space:nowrap;",
-      prefixStyle: "font-family:'IBM Plex Mono',ui-monospace,monospace; opacity:" + (t.ring ? ".7" : ".65") + ";"
+      prefixStyle: "font-family:'IBM Plex Mono',ui-monospace,monospace; opacity:1;",
+      bubbleStyle: "position:fixed; z-index:500; " + this.state.pos + " width:min(320px,76vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:12px; padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
+      enter: why ? (ev) => this.show(ev && ev.currentTarget) : (() => {}),
+      leave: why ? () => this.setState({ open: false }) : (() => {}),
+      tap: why ? (ev) => {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        if (ev && ev.preventDefault) ev.preventDefault();
+        this.show(ev && ev.currentTarget);
+      } : (() => {})
     };
   }
 }

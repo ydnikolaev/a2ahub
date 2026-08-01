@@ -18,12 +18,6 @@
           <span style="font-size:13px; font-weight:600; color:var(--teal-on-dark); background:var(--inverse-3); border-radius:7px; padding:5px 10px;">Open source · Git-backed</span>
         </div>
         <p style="margin:0 0 18px; font-size:17px; line-height:1.55; color:var(--on-inverse-2);">Agent-to-agent coordination infrastructure. Two independent systems request work, negotiate decisions and exchange handoffs through a Git repository both sides control — so a person stops being the message bus and stays the authority for policy and exceptions.</p>
-        <ul style="margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:9px; font-size:15px; line-height:1.5; color:var(--on-inverse-muted);">
-          <li style="display:flex; gap:10px;"><span style="flex:0 0 auto; margin-top:7px; width:5px; height:5px; border-radius:99px; background:var(--teal-on-dark);"></span>Typed artifacts and an explicit lifecycle instead of prose in a chat</li>
-          <li style="display:flex; gap:10px;"><span style="flex:0 0 auto; margin-top:7px; width:5px; height:5px; border-radius:99px; background:var(--teal-on-dark);"></span>Malformed writes, illegal transitions and unauthorized actors fail before the merge</li>
-          <li style="display:flex; gap:10px;"><span style="flex:0 0 auto; margin-top:7px; width:5px; height:5px; border-radius:99px; background:var(--teal-on-dark);"></span>Pinned contract versions, so a consumer hears that its line is drifting</li>
-          <li style="display:flex; gap:10px;"><span style="flex:0 0 auto; margin-top:7px; width:5px; height:5px; border-radius:99px; background:var(--teal-on-dark);"></span>Git holds durable state; either side rebuilds its own view without a human relay</li>
-        </ul>
       </div>
 
       <div style="flex:3 1 420px; min-width:0; display:flex; flex-wrap:wrap; gap:32px 24px;">
@@ -82,7 +76,7 @@
       <a href="https://ydnikolaev.github.io/a2ahub/" style="display:inline-flex; align-items:center; gap:8px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; color:var(--teal-on-dark); background:var(--inverse-3); border-radius:9px; padding:10px 13px; text-decoration:none; overflow-wrap:anywhere;">ydnikolaev.github.io/a2ahub</a>
     </div>
     <div style="display:flex; align-items:center; gap:14px 22px; flex-wrap:wrap; font-size:14px; color:var(--on-inverse-faint);">
-      <span style="display:flex; align-items:center; gap:8px;"><span style="width:7px; height:7px; border-radius:99px; background:var(--teal-on-dark); flex:0 0 7px;"></span><span style="font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--on-inverse-2);">v0.16.3</span>released 2026-07-30</span>
+      <span style="display:flex; align-items:center; gap:8px;"><span style="width:7px; height:7px; border-radius:99px; background:var(--teal-on-dark); flex:0 0 7px;"></span><span style="font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--on-inverse-2);">{{ releaseVersion }}</span>released {{ releaseDate }}</span>
       <span>Apache-2.0</span>
     </div>
   </div>
@@ -93,7 +87,8 @@
 class Component extends DCLogic {
   renderVals() {
     const md = this.props.md || "index.md";
-    return { mdName: md + " twin", mdHref: "https://ydnikolaev.github.io/a2ahub/" + md };
+    const release = globalThis.A2A_LATEST_RELEASE || { version:"unavailable", released:"date unavailable" };
+    return { mdName: md + " twin", mdHref: "https://ydnikolaev.github.io/a2ahub/" + md, releaseVersion:"v" + release.version, releaseDate:release.released };
   }
 }
 

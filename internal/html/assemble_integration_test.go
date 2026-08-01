@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/avatar"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"gopkg.in/yaml.v3"
@@ -41,7 +42,17 @@ func TestAssemble_NodesAndContractEdges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workflowDir, "a2a-validate.yml"), []byte(workflow), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	store := cache.NewStore("axon", t.TempDir(),
+	cacheDir := t.TempDir()
+	avatarCache, err := avatar.NewCache(cacheDir, func(context.Context, string, string, string) ([]byte, string, string, string, bool, error) {
+		return []byte("png-avatar"), "image/png", "https://avatars.githubusercontent.com/u/1?s=64", `"v1"`, false, nil
+	}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := avatarCache.Refresh(context.Background(), []string{"ydnikolaev"}); err != nil {
+		t.Fatal(err)
+	}
+	store := cache.NewStore("axon", cacheDir,
 		[]cache.SpaceMirror{{SpaceID: "getvisa", Dir: dir, RepoURL: "https://github.com/r22d222/a2a", Manifest: manifest}},
 		time.Now, 0)
 
@@ -61,6 +72,9 @@ func TestAssemble_NodesAndContractEdges(t *testing.T) {
 	}
 	if axon == nil || !axon.Self || axon.Org != "r22d222" {
 		t.Fatalf("axon self node wrong: %+v", axon)
+	}
+	if !strings.HasPrefix(axon.Avatar, "data:image/png;base64,") {
+		t.Fatalf("axon avatar = %q, want validated local data URI", axon.Avatar)
 	}
 
 	if len(data.Spaces) != 1 || data.Spaces[0].ParticipantCount != 2 || !data.Spaces[0].Readable {

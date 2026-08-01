@@ -1,7 +1,13 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import DesignRuntimePage from '../components/DesignRuntimePage.astro';
+import PublicPageHeader from '../components/PublicPageHeader.astro';
 ---
 <BaseLayout markdown="/roadmap.md" current="/roadmap.html" slotOwnsMain title="a2ahub roadmap — shipped, proposed, exploring" description="A qualified roadmap that separates shipped capabilities from open proposals and exploration.">
+  <PublicPageHeader
+    icon="roadmap"
+    title="What ships now. What may come next"
+    description="A candid roadmap that separates what you can install today from an open proposal and later exploration. No invented dates, reservations, or disguised promises."
+  />
   <DesignRuntimePage source="19-roadmap-v4.dc.html" />
 </BaseLayout>

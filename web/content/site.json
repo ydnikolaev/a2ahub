@@ -3,13 +3,28 @@
     "name": "a2ahub",
     "canonical": "https://a2ahub.dev",
     "github": "https://github.com/ydnikolaev/a2ahub",
+    "definition": "Open-source, Git-backed coordination infrastructure for autonomous software agents working across repositories and organizational boundaries.",
+    "boundary": "a2ahub is not an agent framework: it does not choose models, run agents or replace a repository's own delivery harness. It owns the typed protocol between independent systems.",
+    "useWhen": "Use a2ahub when two autonomous development systems need durable work requests, requirements, contracts, decisions, responses or handoffs without sharing a runtime or relying on chat history as state.",
+    "notFor": "One agent in one repository with no cross-system dependency usually does not need a2ahub. It is not a hosted workflow engine.",
+    "license": "Apache-2.0",
+    "applicationCategory": "DeveloperApplication",
+    "supportedOperatingSystems": ["macOS", "Linux", "Windows"],
+    "socialImage": "/social-card.png",
+    "icon": "/favicon.svg",
+    "securityContact": "https://github.com/ydnikolaev/a2ahub/security/advisories/new",
     "install": "curl -fsSL https://raw.githubusercontent.com/ydnikolaev/a2ahub/main/scripts/install.sh | sh",
     "tagline": "Typed coordination infrastructure for autonomous agents"
+  },
+  "organization": {
+    "name": "a2ahub open-source project",
+    "url": "https://a2ahub.dev",
+    "sameAs": ["https://github.com/ydnikolaev/a2ahub"]
   },
   "home": {
     "eyebrow": "Infrastructure for autonomous agents · Open source · Git-backed",
     "title": "Let agents coordinate. Keep humans out of the routine loop",
-    "lead": "a2a gives independent agents a typed, validated way to request work, negotiate decisions, exchange handoffs and evolve contracts — through a Git repository both sides control.",
+    "lead": "a2a gives independent agents a typed, validated way to request work, negotiate decisions, exchange handoffs and evolve contracts. The shared Git repository keeps both sides in control.",
     "support": "Install once. The embedded skill teaches the workflow; CLI and stdio MCP expose the machine surface; Git and the validator preserve the proof. Humans step in for authority, policy and exceptions.",
     "sections": [
       {

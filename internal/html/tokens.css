@@ -61,6 +61,24 @@
   --on-primary: #FAF7F0;
   --header-bg: rgba(241,238,230,.94);
   --shadow-card: 0 1px 2px rgba(33,30,23,.06);
+  /* Shared shape scale: nested controls step inward while identity chips get
+   * the softer silhouette needed around circular avatars. */
+  --radius-control: 10px;
+  --radius-chip: 12px;
+  --radius-inner: 8px;
+  /* Semantic surface and rhythm roles. Components use these aliases instead
+   * of inventing nearby beige/white shades or one-off section gaps. */
+  --surface-card: var(--surface);
+  --surface-section: var(--page);
+  --surface-workbench: var(--map-canvas);
+  --space-section: 24px;
+  --space-section-strong: 30px;
+  /* One display scale for the title of the selected thing in every
+   * master/detail surface. A thread, document, contract or map detail is the
+   * same level in the reading hierarchy even when its container differs. */
+  --font-detail-title: 28px;
+  --line-detail-title: 1.25;
+  --tracking-detail-title: -0.015em;
   /* Diagram field: deliberately distinct from both the page canvas and the
    * white component surface, without introducing another semantic hue. */
   --map-canvas: #EAE6DC;
@@ -133,6 +151,7 @@ html[data-theme="dark"] {
  * commands, digests and anything a machine wrote. Body floor is 16px;
  * dashboard meta may drop to 14px, never below. */
 body { font-family: "Onest", "Segoe UI", Helvetica, Arial, sans-serif; font-size: 16px; background: var(--canvas); color: var(--text); }
+.a2a-detail-title { font-size:var(--font-detail-title); line-height:var(--line-detail-title); font-weight:600; letter-spacing:var(--tracking-detail-title); overflow-wrap:anywhere; text-wrap:balance; }
 a { color: var(--teal-ink); text-underline-offset: 3px; }
 a:hover { color: var(--teal-ink-hover); }
 button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
@@ -143,6 +162,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
  * on either end of a quiet link. The reduced-motion rule below stills it. */
 .a2a-empty-bot { animation: a2a-empty-float 4.4s ease-in-out infinite; }
 .a2a-empty-bot--b { animation-delay: -2.2s; }
+.a2a-agent-relay-icon { stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.a2a-lucide-stroke-2 { stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.a2a-lucide-stroke-225 { stroke-width:2.25; stroke-linecap:round; stroke-linejoin:round; }
 /* The spark plays table tennis: `alternate` sends it back along the same wire
  * instead of teleporting to the left end every cycle. It also stops fading —
  * a ball that vanishes at each end reads as a loading state, not an exchange. */

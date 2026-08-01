@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div ref="{{ rootRef }}" data-prose-disclosure style="position:relative; overflow:hidden; margin:0 0 12px;">
+  <div style="{{ clipStyle }}">
+    <p style="margin:0; font-size:16px; line-height:1.62; color:var(--body); max-width:760px; text-wrap:pretty;">{{ text }}</p>
+  </div>
+  <sc-if value="{{ faded }}" hint-placeholder-val="{{ true }}"><div aria-hidden="true" style="position:absolute; left:0; right:0; bottom:42px; height:72px; pointer-events:none; background:linear-gradient(180deg,color-mix(in srgb,var(--page) 0%,transparent),var(--page));"></div></sc-if>
+  <sc-if value="{{ hasMore }}" hint-placeholder-val="{{ true }}">
+    <button type="button" onClick="{{ toggle }}" aria-expanded="{{ expanded }}" style="position:relative; z-index:1; width:100%; min-height:42px; margin-top:8px; display:flex; align-items:center; justify-content:center; gap:7px; border:0; border-top:1px solid var(--hairline); color:var(--teal-ink); background:var(--page); font-family:'Onest',sans-serif; font-size:15px; font-weight:600; cursor:pointer;">
+      <dc-import name="DisclosureIcon" expanded="{{ expanded }}" hint-size="18px,18px"></dc-import><span>{{ label }}</span>
+    </button>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:720,&quot;height&quot;:190},&quot;text&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;A long authored release-note paragraph is shown here.&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = { open: false };
+  componentDidMount() {
+    this.outside = (ev) => { if (this.state.open && this.root && !this.root.contains(ev.target)) this.setState({ open: false }); };
+    this.escape = (ev) => { if (ev.key === "Escape" && this.state.open) this.setState({ open: false }); };
+    document.addEventListener("click", this.outside);
+    window.addEventListener("keydown", this.escape);
+  }
+  componentWillUnmount() {
+    document.removeEventListener("click", this.outside);
+    window.removeEventListener("keydown", this.escape);
+  }
+  renderVals() {
+    const ru = document.documentElement.lang === "ru";
+    const text = String(this.props.text || "");
+    const hasMore = text.length > 420;
+    const open = hasMore && this.state.open;
+    return {
+      text,
+      rootRef: (node) => { this.root = node; },
+      hasMore,
+      faded: hasMore && !open,
+      expanded: open ? "true" : "false",
+      clipStyle: open || !hasMore ? "" : "max-height:9.72em; overflow:hidden;",
+      label: open ? (ru ? "Свернуть" : "Show less") : (ru ? "Показать ещё" : "Show more"),
+      toggle: () => this.setState(s => ({ open: !s.open }))
+    };
+  }
+}
+</script>
+</body>
+</html>

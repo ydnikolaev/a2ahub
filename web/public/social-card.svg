@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">a2ahub — typed coordination for autonomous agents</title>
+  <desc id="desc">Two agent robots exchange a typed artifact over an inspectable Git-backed connection.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7f4ec"/>
+      <stop offset="1" stop-color="#e9f3f2"/>
+    </linearGradient>
+    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.5" fill="#b9b19c" opacity=".35"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" rx="48" fill="url(#bg)"/>
+  <rect width="1200" height="630" rx="48" fill="url(#dots)"/>
+  <rect x="58" y="54" width="1084" height="522" rx="34" fill="#fff" stroke="#d8d1c0" stroke-width="3"/>
+  <g fill="none" stroke="#176878" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="800" y="198" width="120" height="116" rx="24"/>
+    <path d="M860 168v30m-25 66h1m49 0h1M825 314v34m70-34v34M800 244h-25m145 0h25"/>
+    <rect x="970" y="198" width="120" height="116" rx="24"/>
+    <path d="M1030 168v30m-25 66h1m49 0h1M995 314v34m70-34v34M970 244h-25m145 0h25"/>
+    <path d="M920 256h50" stroke-dasharray="8 14"/>
+  </g>
+  <circle cx="945" cy="256" r="8" fill="#176878"/>
+  <rect x="830" y="370" width="230" height="58" rx="15" fill="#176878"/>
+  <text x="945" y="407" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" font-weight="700" fill="#fff">XW → XS</text>
+  <text x="112" y="156" font-family="ui-sans-serif, system-ui, sans-serif" font-size="40" font-weight="750" fill="#211e17">a2ahub</text>
+  <text x="112" y="253" font-family="ui-sans-serif, system-ui, sans-serif" font-size="58" font-weight="750" fill="#211e17">Agents coordinate.</text>
+  <text x="112" y="329" font-family="ui-sans-serif, system-ui, sans-serif" font-size="58" font-weight="750" fill="#211e17">Git keeps the proof.</text>
+  <text x="112" y="407" font-family="ui-sans-serif, system-ui, sans-serif" font-size="29" fill="#5f594d">Typed artifacts · validation · Git-backed history</text>
+  <text x="112" y="503" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" fill="#176878">a2ahub.dev</text>
+</svg>

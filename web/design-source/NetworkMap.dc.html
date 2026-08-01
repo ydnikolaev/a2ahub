@@ -13,18 +13,15 @@
   <div ref="{{ sentinelRef }}" style="height:1px;"></div>
   <div style="{{ stickyStyle }}">
   <div style="{{ stickyInnerStyle }}">
-  <div style="display:flex; align-items:flex-start; gap:12px 16px; flex-wrap:wrap;">
-    <span style="flex:1 1 260px; min-width:0;">
-      <h3 style="margin:0 0 5px; font-size:22px; font-weight:600; letter-spacing:-0.01em;">{{ heading }}</h3>
-      <span style="display:block; font-size:15px; line-height:1.5; color:var(--muted);">{{ summary }}</span>
-    </span>
-    <span style="flex:0 1 auto; max-width:100%; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-      <span style="display:flex; gap:3px; flex-wrap:wrap; background:var(--canvas); border-radius:10px; padding:3px;">
-        <sc-for list="{{ modes }}" as="m" hint-placeholder-count="3">
-          <button type="button" onClick="{{ m.go }}" aria-pressed="{{ m.pressed }}" style="{{ m.style }}">{{ m.label }}</button>
-        </sc-for>
+  <div style="display:flex; align-items:center; gap:12px 16px; flex-wrap:wrap; min-height:38px;">
+    <h3 style="flex:1 1 260px; min-width:0; margin:0; font-size:22px; line-height:1.25; font-weight:600; letter-spacing:-0.01em;">{{ heading }}</h3>
+    <span style="flex:1 1 320px; min-width:0; max-width:100%; display:flex; align-items:center; justify-content:flex-end; gap:8px;">
+      <span ref="{{ modeScrollRef }}" class="{{ modeScrollClass }}" style="flex:1 1 auto; min-width:0; max-width:100%; overflow-x:auto; overflow-y:hidden; white-space:nowrap; scrollbar-width:none;">
+        <span style="display:flex; justify-content:flex-end; width:max-content; min-width:100%;">
+          <dc-import name="SegmentedFilter" items="{{ modes }}" hint-size="470px,38px"></dc-import>
+        </span>
       </span>
-      <button type="button" onClick="{{ toggleExpand }}" aria-pressed="{{ isExpanded }}" style="{{ expandStyle }}">{{ expandLabel }}</button>
+      <button type="button" onClick="{{ toggleExpand }}" aria-label="{{ expandLabel }}" title="{{ expandLabel }}" aria-pressed="{{ isExpanded }}" style="{{ expandStyle }}"><dc-import name="ExpandIcon" expanded="{{ isExpanded }}" hint-size="20px,20px"></dc-import></button>
     </span>
   </div>
 
@@ -48,41 +45,51 @@
   </div>
   </div>
 
-  <p style="margin:12px 0 14px; font-size:15px; line-height:1.6; color:var(--body); max-width:92ch;">{{ intro }}</p>
+  <!-- Three equal cards answer three different questions: what is in scope,
+       how to read the marks, and what can be done here. Keeping them as peers
+       prevents a long dynamic explanation from swallowing the whole header. -->
+  <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr)); gap:14px; align-items:stretch; margin:12px 0 var(--space-section);">
+    <div style="min-width:0; min-height:210px; box-sizing:border-box; display:flex; flex-direction:column; background:var(--surface-section); border-radius:12px; padding:15px 16px 7px; box-shadow:inset 0 0 0 1px var(--hairline);">
+      <div style="font-weight:600; color:var(--text); font-size:15px; margin-bottom:4px;">{{ overviewLabel }}</div>
+      <dc-import name="FactTable" rows="{{ summaryRows }}" hint-size="100%,175px"></dc-import>
+    </div>
 
-  <!-- Legend. The group label sits on its own line ABOVE its swatches rather
-       than inline before them: RU labels are two to three times longer than the
-       EN ones, and an inline label pushed the swatches into a ragged wrap. Each
-       group is now a self-contained column that reflows as a whole. -->
-  <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px 26px; padding:14px 16px; background:var(--page); border-radius:12px; margin-bottom:14px; font-size:14px; color:var(--body);">
-    <div style="min-width:0;">
+    <div style="min-width:0; min-height:210px; box-sizing:border-box; display:flex; flex-direction:column; gap:12px; padding:15px 16px; background:var(--surface-section); border-radius:12px; font-size:14px; color:var(--body); box-shadow:inset 0 0 0 1px var(--hairline);">
+      <div style="font-weight:600; color:var(--text); font-size:15px;">{{ legendLabel }}</div>
+      <div style="min-width:0; margin-top:4px;">
       <div style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em; margin-bottom:7px;">{{ contractLabel }}</div>
       <div style="display:flex; align-items:center; gap:8px 16px; flex-wrap:wrap;">
         <span style="display:flex; align-items:center; gap:7px; white-space:nowrap;"><span style="flex:0 0 22px; width:22px; height:0; border-top:2px solid var(--teal-solid);"></span>{{ currentLabel }}</span>
         <span style="display:flex; align-items:center; gap:7px; white-space:nowrap;"><span style="flex:0 0 22px; width:22px; height:0; border-top:2px solid var(--ochre);"></span>{{ driftingLabel }}</span>
         <span style="display:flex; align-items:center; gap:7px; white-space:nowrap;"><span style="flex:0 0 22px; width:22px; height:0; border-top:2px solid var(--red);"></span>{{ missingLabel }}</span>
       </div>
-    </div>
-    <div style="min-width:0;">
+      </div>
+      <div style="min-width:0; margin-top:4px;">
       <div style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em; margin-bottom:7px;">{{ workLabel }}</div>
       <div style="display:flex; align-items:center; gap:8px 16px; flex-wrap:wrap;">
         <span style="display:flex; align-items:center; gap:7px; white-space:nowrap;"><span style="flex:0 0 22px; width:22px; height:0; border-top:2px dashed var(--border-strong);"></span>{{ flightLabel }}</span>
         <span style="display:flex; align-items:center; gap:7px; white-space:nowrap;"><span style="flex:0 0 22px; width:22px; height:0; border-top:2px dashed var(--red);"></span>{{ blockingLabel }}</span>
       </div>
-    </div>
-    <div style="min-width:0;">
+      </div>
+      <div style="min-width:0; margin-top:4px;">
       <div style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em; margin-bottom:7px;">{{ directionLabel }}</div>
       <div style="display:flex; align-items:flex-start; gap:7px;">
         <span style="flex:0 0 auto; margin-top:6px; width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:8px solid var(--muted);"></span>
         <span style="min-width:0; line-height:1.45;">{{ directionText }}</span>
       </div>
+      </div>
+    </div>
+
+    <div style="min-width:0; min-height:210px; box-sizing:border-box; display:flex; flex-direction:column; padding:15px 16px; background:var(--surface-section); border-radius:12px; box-shadow:inset 0 0 0 1px var(--hairline);">
+      <div style="font-weight:600; color:var(--text); font-size:15px; margin-bottom:10px;">{{ introLabel }}</div>
+      <p style="margin:0; font-size:15px; line-height:1.58; color:var(--body); text-wrap:pretty;">{{ intro }}</p>
     </div>
   </div>
 
   <div style="{{ bleedStyle }}">
-  <div ref="{{ boxRef }}" onScroll="{{ onCanvasScroll }}" style="background-color:var(--map-canvas); background-image:radial-gradient(circle at 1px 1px,var(--map-grid) 1px,transparent 1.2px); background-size:18px 18px; border-radius:20px; padding:16px; overflow-x:auto; box-shadow:0 20px 44px -30px rgba(33,30,23,.55), 0 2px 6px -4px rgba(33,30,23,.3), inset 0 0 0 1px var(--border-strong);">
+  <div ref="{{ boxRef }}" onScroll="{{ onCanvasScroll }}" style="background-color:var(--surface-workbench); background-image:radial-gradient(circle at 1px 1px,var(--map-grid) 1px,transparent 1.2px); background-size:18px 18px; border-radius:20px; padding:16px; overflow-x:auto; box-shadow:0 20px 44px -30px rgba(33,30,23,.55), 0 2px 6px -4px rgba(33,30,23,.3), inset 0 0 0 1px var(--border-strong);">
     <div style="{{ canvasStyle }}">
-      <svg viewBox="{{ viewBox }}" width="{{ canvasW }}" height="{{ canvasH }}" aria-hidden="true" style="position:absolute; left:0; top:0; z-index:2; overflow:visible;">
+      <svg viewBox="{{ viewBox }}" width="{{ canvasW }}" height="{{ canvasH }}" aria-hidden="true" style="position:absolute; left:0; top:0; z-index:2; overflow:visible; pointer-events:none;">
         <defs>
           <marker id="nmTeal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--teal-solid)"></path></marker>
           <marker id="nmOchre" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ochre)"></path></marker>
@@ -91,29 +98,39 @@
         </defs>
         <sc-for list="{{ edges }}" as="e" hint-placeholder-count="8">
           <g>
-            <path d="{{ e.d }}" fill="none" stroke="{{ e.color }}" stroke-width="{{ e.width }}" stroke-dasharray="{{ e.dash }}" marker-end="{{ e.marker }}" opacity="{{ e.opacity }}"></path>
+            <path d="{{ e.d }}" fill="none" stroke="{{ e.color }}" strokeWidth="{{ e.width }}" strokeDasharray="{{ e.dash }}" markerEnd="{{ e.marker }}" opacity="{{ e.opacity }}"></path>
             <circle cx="{{ e.sx }}" cy="{{ e.sy }}" r="3.6" fill="{{ e.color }}" opacity="{{ e.opacity }}"></circle>
-            <path d="{{ e.d }}" fill="none" stroke="transparent" stroke-width="18" style="cursor:pointer;" onClick="{{ e.go }}" onMouseEnter="{{ e.enter }}" onMouseLeave="{{ e.leave }}"><title>{{ e.label }}</title></path>
+            <path d="{{ e.d }}" fill="none" stroke="transparent" strokeWidth="18" style="cursor:pointer; pointer-events:stroke;" onClick="{{ e.go }}" onMouseEnter="{{ e.enter }}" onMouseLeave="{{ e.leave }}"><title>{{ e.label }}</title></path>
           </g>
         </sc-for>
       </svg>
 
       <sc-for list="{{ panels }}" as="p" hint-placeholder-count="2">
         <div style="{{ p.style }}">
-          <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
-            <span style="flex:0 0 auto; font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; background:var(--surface); border-radius:8px; padding:4px 10px;">{{ p.id }}</span>
-            <dc-import name="StatusPill" text="{{ p.pillText }}" tone="{{ p.pillTone }}" size="small" hint-size="100px,24px"></dc-import>
+          <div style="position:relative; z-index:5; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
+            <span style="flex:0 1 auto; min-width:0; max-width:100%; font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; background:var(--surface-card); border-radius:8px; padding:4px 10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ p.id }}</span>
+            <!-- StatusPill owns both the visual token and the hover/tap
+                 explanation. The header is raised above the SVG so its
+                 hit-area remains real even where an edge passes underneath. -->
+            <span onMouseEnter="{{ p.enter }}" onMouseLeave="{{ p.leave }}" onClick="{{ p.tap }}" style="display:inline-flex; cursor:help;">
+              <dc-import name="StatusPill" text="{{ p.pillText }}" tone="{{ p.pillTone }}" why="" size="small" hint-size="100px,24px"></dc-import>
+            </span>
           </div>
-          <div style="margin-top:7px; font-size:14px; line-height:1.4; color:var(--muted);">{{ p.meta }}</div>
+          <div style="min-width:0; max-width:100%; margin-top:7px; font-size:14px; line-height:1.4; color:var(--muted); overflow:hidden; overflow-wrap:anywhere; word-break:break-word;">{{ p.meta }}</div>
           <sc-if value="{{ p.hasReason }}" hint-placeholder-val="{{ false }}">
-            <div style="margin-top:10px; font-size:14px; line-height:1.55; color:var(--muted);">{{ p.reason }}</div>
+            <div style="min-width:0; max-width:100%; margin-top:10px; font-size:14px; line-height:1.55; color:var(--muted); overflow:hidden; overflow-wrap:anywhere; word-break:break-word;">{{ p.reason }}</div>
           </sc-if>
         </div>
       </sc-for>
 
       <sc-for list="{{ cards }}" as="c" hint-placeholder-count="5">
         <button type="button" onClick="{{ c.go }}" onMouseEnter="{{ c.enter }}" onMouseLeave="{{ c.leave }}" style="{{ c.style }}">
-          <span style="display:flex; align-items:center; gap:10px; width:100%;">
+          <sc-if value="{{ c.hasRobot }}" hint-placeholder-val="{{ false }}">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="position:absolute; z-index:0; right:-28px; bottom:-32px; width:132px; height:132px; color:var(--teal-solid); opacity:.13; pointer-events:none;">
+              <path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path>
+            </svg>
+          </sc-if>
+          <span style="position:relative; z-index:1; display:flex; align-items:center; gap:10px; width:100%;">
             <span style="{{ c.avatarStyle }}">{{ c.mono }}</span>
             <span style="min-width:0; flex:1 1 auto; display:flex; flex-direction:column; align-items:flex-start;">
               <span style="max-width:100%; font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ c.name }}</span>
@@ -124,7 +141,7 @@
             <span style="{{ c.tagStyle }}">{{ c.tag }}</span>
           </sc-if>
           <sc-if value="{{ c.hasCounts }}" hint-placeholder-val="{{ false }}">
-            <span style="display:block; margin-top:8px; font-size:13px; color:var(--faint); text-align:left;">{{ c.counts }}</span>
+            <span style="position:relative; z-index:1; display:block; margin-top:8px; font-size:13px; color:var(--faint); text-align:left;">{{ c.counts }}</span>
           </sc-if>
         </button>
       </sc-for>
@@ -136,8 +153,11 @@
     </div>
   </div>
   </div>
+  <sc-if value="{{ tipOpen }}" hint-placeholder-val="{{ false }}">
+    <div role="tooltip" style="{{ tipStyle }}">{{ tipText }}</div>
+  </sc-if>
   <sc-if value="{{ hasPop }}" hint-placeholder-val="{{ false }}">
-    <div onClick="{{ popDismiss }}" style="position:fixed; inset:0; z-index:300; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(33,30,23,.46); overflow:auto;">
+    <div onClick="{{ popDismiss }}" style="position:fixed; inset:0; z-index:700; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(33,30,23,.46); overflow:auto;">
       <div onClick="{{ popStop }}" style="width:min(760px,100%); max-height:calc(100vh - 48px); overflow:auto; border-radius:16px;">
         <dc-import name="LinkDetail" det="{{ pop }}" hint-size="100%,260px"></dc-import>
       </div>
@@ -147,7 +167,7 @@
   <sc-if value="{{ collapsible }}" hint-placeholder-val="{{ false }}">
     <button type="button" onClick="{{ toggleExtras }}" aria-expanded="{{ extrasExpanded }}" style="{{ extrasBtnStyle }}">
       <span style="flex:1 1 auto; min-width:0; text-align:left;">{{ extrasLabel }}</span>
-      <span style="flex:0 0 auto; color:var(--muted);">{{ extrasCaret }}</span>
+      <span style="flex:0 0 auto; color:var(--muted);"><dc-import name="DisclosureIcon" expanded="{{ extrasExpanded }}" hint-size="18px,18px"></dc-import></span>
     </button>
   </sc-if>
 
@@ -178,7 +198,7 @@
   </div>
 
   <sc-if value="{{ showMatrix }}" hint-placeholder-val="{{ false }}">
-    <div style="background:var(--page); border-radius:16px; padding:16px 18px 18px; margin-top:18px;">
+  <div style="background:var(--surface-section); border-radius:16px; padding:16px 18px 18px; margin-top:18px;">
       <div style="margin-bottom:12px;">
         <span style="display:block; font-size:17px; font-weight:600; margin-bottom:3px;">{{ matrixTitle }}</span>
         <span style="display:block; font-size:15px; line-height:1.55; color:var(--muted); max-width:88ch;">{{ matrixNote }}</span>
@@ -220,7 +240,7 @@
 const DRIFT_TONE = { current: "healthy", behind: "attention", deprecated: "attention", retired: "neutral", missing: "blockingStrong", dangling: "outline" };
 const STATE_TONE = { published: "healthy", deprecated: "attention", retired: "neutral", draft: "outline" };
 const RISK = { missing: 5, dangling: 5, retired: 4, deprecated: 3, behind: 2, current: 0 };
-const CARD_BASE = "background:var(--surface); border-radius:18px; padding:20px 22px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06); font-family:'Onest',sans-serif;";
+const CARD_BASE = "background:var(--surface-card); border-radius:18px; padding:20px 22px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06); font-family:'Onest',sans-serif;";
 // canvas geometry
 const SX = 16, SW = 244, SH = 122, SEX = SX + SW;
 const MH = 62, MG = 14, GH = 78, PT = 8, PB = 16, PGAP = 28, UNH = 124;
@@ -297,7 +317,7 @@ function driftLine(e, ru) {
   return "";
 }
 function detailRowStyle(clickable) {
-  return "display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; background:var(--page); border:0; border-radius:10px; padding:10px 12px; cursor:" + (clickable ? "pointer" : "default") + ";";
+  return "display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; background:var(--surface-section); border:0; border-radius:10px; padding:10px 12px; cursor:" + (clickable ? "pointer" : "default") + ";";
 }
 
 // Ages arrive from the assembler in one compact vocabulary ("just now", "5m",
@@ -319,18 +339,20 @@ function isoDay(value) {
 }
 
 class Component extends DCLogic {
-  state = { data: null, mode: null, space: null, sel: null, hover: null, expanded: false, extras: false, csx: 0, csy: 0, boxW: 0 };
+  state = { data: null, mode: null, space: null, sel: null, hover: null, tipText: "", tipPos: "", expanded: false, extras: false, csx: 0, csy: 0, boxW: 0, modeOverflow: false };
 
   componentDidMount() {
     this.measure = () => {
       const n = this.boxNode;
-      if (!n) return;
-      const w = n.clientWidth - 32;
+      const w = n ? n.clientWidth - 32 : 0;
       // the sticky controls must clear whatever sticky app header the host page has
       const host = document.querySelector("header");
       const hh = host && getComputedStyle(host).position === "sticky" ? Math.round(host.getBoundingClientRect().height) : 0;
       const patch = {};
       if (w > 0 && Math.abs((this.state.boxW || 0) - w) > 4) patch.boxW = w;
+      const modes = this.modeScrollNode;
+      const modeOverflow = !!modes && modes.scrollWidth > modes.clientWidth + 2;
+      if (modeOverflow !== this.state.modeOverflow) patch.modeOverflow = modeOverflow;
       if (hh !== this.state.hdrH) patch.hdrH = hh;
       if (Object.keys(patch).length) this.setState(patch);
     };
@@ -342,6 +364,10 @@ class Component extends DCLogic {
       if (stuck !== this.state.stuck) this.setState({ stuck });
     };
     window.addEventListener("scroll", this.onScrollWin, true);
+    this.clearTip = () => {
+      if (this.state.tipText) this.setState({ tipText: "", tipPos: "" });
+    };
+    window.addEventListener("resize", this.clearTip);
     // Escape unwinds one layer at a time — first the pinned detail, then the
     // full-width overlay. Before this, Escape did nothing at all once the map
     // was expanded, and the only way out was finding the toggle again.
@@ -353,19 +379,39 @@ class Component extends DCLogic {
     window.addEventListener("keydown", this.onKey);
     setTimeout(this.measure, 0);
     if (this.props.data) return;
+    if (window.A2A_DEMO) {
+      this.setState({ data: window.A2A_DEMO });
+      return;
+    }
     fetch("demo-data.json").then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
-      .then(d => this.setState({ data: d })).catch(() => this.setState({ data: window.A2A_DEMO || null }));
+      .then(d => this.setState({ data: d })).catch(() => this.setState({ data: null }));
   }
   componentDidUpdate(prev) {
     if (prev.space !== this.props.space && this.props.space && this.props.space !== this.state.space)
       this.setState({ space: this.props.space, sel: null });
     // the host header may mount after this component, so keep the sticky offset in sync
     if (this.measure) requestAnimationFrame(this.measure);
+    this.syncBodyLock();
   }
   componentWillUnmount() {
     if (this.measure) window.removeEventListener("resize", this.measure);
+    if (this.clearTip) window.removeEventListener("resize", this.clearTip);
     if (this.onKey) window.removeEventListener("keydown", this.onKey);
     if (this.onScrollWin) window.removeEventListener("scroll", this.onScrollWin, true);
+    this.releaseBodyLock();
+  }
+  syncBodyLock() {
+    const shouldLock = !!(this.state.sel || this.state.expanded);
+    if (shouldLock && !this.bodyLocked) {
+      this.bodyLocked = true;
+      this.previousBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+    } else if (!shouldLock) this.releaseBodyLock();
+  }
+  releaseBodyLock() {
+    if (!this.bodyLocked) return;
+    document.body.style.overflow = this.previousBodyOverflow || "";
+    this.bodyLocked = false;
   }
   keyEnds(key) {
     const p = String(key || "").split(":");
@@ -411,8 +457,52 @@ class Component extends DCLogic {
     return true;
   }
   focused() { return !!(this.state.sel || this.state.hover); }
-  hoverOn(key) { return () => { if (this.state.hover !== key) this.setState({ hover: key }); }; }
-  hoverOff(key) { return () => { if (this.state.hover === key) this.setState({ hover: null }); }; }
+  showTip(key, text, ev) {
+    const el = ev && ev.currentTarget;
+    const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    const width = Math.min(340, window.innerWidth * 0.78);
+    const left = r ? Math.max(12, Math.min(r.left + Math.min(r.width, 180) / 2 - width / 2, window.innerWidth - width - 12)) : 12;
+    const below = !r || window.innerHeight - r.bottom > 150;
+    const pos = r
+      ? (below
+          ? "left:" + Math.round(left) + "px; top:" + Math.round(r.bottom + 8) + "px;"
+          : "left:" + Math.round(left) + "px; bottom:" + Math.round(window.innerHeight - r.top + 8) + "px;")
+      : "left:12px; top:12px;";
+    this.setState({ hover: key, tipText: text || "", tipPos: pos });
+  }
+  hideTip(key) {
+    if (this.state.hover === key || this.state.tipText) this.setState({ hover: this.state.hover === key ? null : this.state.hover, tipText: "", tipPos: "" });
+  }
+  hoverOn(key, text) { return (ev) => this.showTip(key, text || "", ev); }
+  hoverOff(key) { return () => this.hideTip(key); }
+  tapTip(key, text) { return (ev) => {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    if (this.state.tipText && this.state.hover === key) this.hideTip(key);
+    else this.showTip(key, text, ev);
+  }; }
+
+  statusTip(key) {
+    const lang = this.ru() ? "ru" : "en";
+    const glossary = globalThis.A2A_GLOSSARY;
+    const entry = glossary && glossary.entry ? glossary.entry("statuses", key, lang) : null;
+    return entry ? entry.description : (this.ru() ? "Статус этой области карты." : "Status of this area of the map.");
+  }
+  relTip(r) {
+    const e = r.e, ru = this.ru();
+    if (r.kind === "c") return ru
+      ? e.from + " зависит от контракта " + e.contract + ", который предоставляет " + e.to + ". " + driftLine(e, true)
+      : e.from + " depends on " + e.contract + " provided by " + e.to + ". " + driftLine(e, false);
+    return ru
+      ? ruPlural(e.count, "открытый документ", "открытых документа", "открытых документов") + " от " + e.from + " к " + e.to + (e.blocking ? ". Один из них остановил автора до ответа получателя." : ". Работа продолжается, явной блокировки нет.")
+      : plural(e.count, "open document", "open documents") + " from " + e.from + " to " + e.to + (e.blocking ? ". One has stopped its author until the recipient answers." : ". Work is still moving; none is explicitly blocking.");
+  }
+  spaceTip(sp, fallback) {
+    if (!sp || !sp.readable) return fallback || (this.ru() ? "Локальная копия спейса не читается; числа внутри неизвестны, а не равны нулю." : "The local space copy is unreadable; its numbers are unknown rather than zero.");
+    if (sp.stale) return this.statusTip("space stale");
+    return this.ru()
+      ? "Локальная копия спейса свежая: дашборд показывает данные последней успешной синхронизации."
+      : "The local space copy is fresh: the dashboard is showing the latest successful sync.";
+  }
 
   mode() { return this.state.mode || this.props.mode || "both"; }
   scope() { return this.state.space || this.props.space || "all"; }
@@ -435,12 +525,6 @@ class Component extends DCLogic {
     if (kind === "self") return base + "background:var(--teal-solid); color:var(--on-solid);";
     if (kind === "left") return base + "background:var(--surface); color:var(--muted); box-shadow:inset 0 0 0 1px var(--border-strong);";
     return base + "background:var(--border); color:var(--body);";
-  }
-  // Constant weight across states — see the dashboard shell's own note: bolding
-  // only the active option re-measures the control and shifts the whole row.
-  segStyle(active) {
-    return "font-family:'Onest',sans-serif; font-size:14px; line-height:1.4; font-weight:600; border:0; cursor:pointer; padding:6px 12px; border-radius:8px; white-space:nowrap; " +
-      (active ? "background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(33,30,23,.14);" : "background:transparent; color:var(--muted);");
   }
   tabStyle(active) {
     return "font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; line-height:1.4; font-weight:600; border:0; cursor:pointer; padding:5px 11px 5px 7px; border-radius:8px; white-space:nowrap; display:inline-flex; align-items:center; gap:7px; " +
@@ -488,9 +572,10 @@ class Component extends DCLogic {
     const ru = this.ru();
     return {
       head: e.from + " → " + e.to + " · " + driftShort(e, ru),
+      hasType: false, type: "", hasStateTag: false, stateText: "", stateTone: "neutral",
       pillText: driftShort(e, ru), pillTone: DRIFT_TONE[e.drift] || "neutral",
       detail: e.contract + (ru ? " · закреплена версия " : " · pinned major ") + e.pinnedMajor + (e.pinnedVersion ? " (" + e.pinnedVersion + ")" : "") + " · " + spaceId,
-      canOpen: !!open, openLabel: (ru ? "Открыть " : "Open ") + e.contract + " →",
+      canOpen: !!open, openLabel: (ru ? "Открыть " : "Open ") + e.contract,
       open: open ? () => open(e.contract, spaceId) : () => {},
       style: detailRowStyle(!!open)
     };
@@ -501,21 +586,23 @@ class Component extends DCLogic {
     const ru = this.ru();
     return {
       head: it.title,
+      hasType: true, type: it.type,
+      hasStateTag: true, stateText: it.state, stateTone: STATE_TONE[it.state] || "neutral",
       pillText: it.blocking ? blockedOn(it.to, d.self, ru) : it.priority,
       pillTone: it.blocking ? "blocking" : "neutral",
       pillWhy: it.blocking ? blockedWhy(it, d.self, ru) : "",
-      detail: it.id + " · " + it.type + " · " + it.state + " · " + it.from + " → " + (it.to || []).join(", ") + " · " + age(it.age) + (ru ? " назад" : " old") + (it.neededBy ? (ru ? " · дедлайн " : " · due ") + isoDay(it.neededBy) : ""),
-      canOpen: !!open, openLabel: ru ? "Открыть в разделе «Работа» →" : "Open in Work →",
+      detail: it.id + " · " + it.from + " → " + (it.to || []).join(", ") + " · " + age(it.age) + (ru ? " назад" : " old") + (it.neededBy ? (ru ? " · дедлайн " : " · due ") + isoDay(it.neededBy) : ""),
+      canOpen: !!open, openLabel: ru ? "Открыть в разделе «Обмен»" : "Open in Exchange",
       open: open ? () => open(it.id, it.space, outgoing) : () => {},
       // Second affordance on the same row: the map names a document, so it
-      // should also be able to show it, without a detour through Work.
+      // should also be able to show it, without a detour through Exchange.
       canOpenDoc: !!this.props.onOpenDocument,
       docLabel: ru ? "Открыть документ" : "Open document",
-      // Handing over to the document modal means letting go: the popover that
-      // launched it closes, so the two never stack on top of each other.
+      // The document is a second layer, not a replacement for the system
+      // detail. Keep this selection mounted underneath so closing the document
+      // returns the reader to the same system and the same scroll position.
       openDoc: this.props.onOpenDocument ? (ev) => {
         if (ev && ev.stopPropagation) ev.stopPropagation();
-        this.setState({ sel: null });
         this.props.onOpenDocument(it.id, it.space);
       } : () => {},
       style: detailRowStyle(!!open)
@@ -525,6 +612,7 @@ class Component extends DCLogic {
     const ru = this.ru();
     return {
       head: c.id + "@" + v.version,
+      hasType: false, type: "", hasStateTag: false, stateText: "", stateTone: "neutral",
       pillText: v.state, pillTone: STATE_TONE[v.state] || "neutral",
       detail: (v.successor ? (ru ? "преемник " : "successor ") + v.successor : (ru ? "преемник не записан" : "no successor recorded")) + (v.deprecationID ? (ru ? " · объявлено в " : " · announced in ") + v.deprecationID : ""),
       canOpen: false, openLabel: "", open: () => {},
@@ -542,6 +630,12 @@ class Component extends DCLogic {
       return {
         title: e.from + " → " + e.to,
         kindLabel: ru ? "контрактная зависимость" : "contract dependency",
+        tags: [
+          { text: ru ? "контрактная зависимость" : "contract dependency", tone: "outline" },
+          { text: spaceId, tone: "neutral" },
+          { text: driftShort(e, ru), tone: DRIFT_TONE[e.drift] || "neutral" }
+        ],
+        factsLabel: ru ? "О контрактной линии" : "About this contract line",
         lead: (ru ? driftLine(e, true) : driftLine(e, false)) + (e.description ? " " + e.description : ""),
         hasFacts: true,
         facts: [
@@ -576,6 +670,12 @@ class Component extends DCLogic {
     return {
       title: e.from + " → " + e.to,
       kindLabel: ru ? "открытый обмен" : "open exchange",
+      tags: [
+        { text: ru ? "открытый обмен" : "open exchange", tone: "outline" },
+        { text: spaceId, tone: "neutral" },
+        { text: e.blocking ? (ru ? "кто-то стоит" : "somebody stopped") : (ru ? "в работе" : "in flight"), tone: e.blocking ? "blocking" : "neutral" }
+      ],
+      factsLabel: ru ? "Об открытом обмене" : "About this open exchange",
       lead: ru
         ? "Незавершённая работа, а не структурная зависимость: документы уже отправлены и ещё не дошли до конечного состояния."
         : "Work in flight, not a structural dependency: documents already sent that have not yet reached a terminal state.",
@@ -607,9 +707,22 @@ class Component extends DCLogic {
     const items = this.itemsOf(d, spaceId, sys);
     const openFrom = d.exchangeEdges.filter(e => e.space === spaceId && e.from === sys).reduce((t, e) => t + (e.count || 0), 0);
     const openTo = d.exchangeEdges.filter(e => e.space === spaceId && e.to === sys).reduce((t, e) => t + (e.count || 0), 0);
+    const statusText = node.status === "left"
+      ? (ru ? "покинула спейс" : "left the space")
+      : node.status === "active"
+        ? (ru ? "активна" : "active")
+        : (node.status || (ru ? "статус неизвестен" : "status unknown"));
+    const nodeTags = [
+      { text: node.self ? (ru ? "ваша система" : "your system") : (ru ? "система" : "system"), tone: "outline" }
+    ];
+    if (node.self) nodeTags.push({ text: ru ? "вы" : "you", tone: "agent" });
+    nodeTags.push({ text: statusText, tone: node.status === "active" ? "healthy" : node.status === "left" ? "attention" : "neutral" });
+    nodeTags.push({ text: spaceId, tone: "neutral" });
     return {
-      title: node.system + (node.self ? (ru ? " · вы" : " · you") : ""),
+      title: node.system,
       kindLabel: node.self ? (ru ? "ваша система" : "your system") : (ru ? "система" : "system"),
+      tags: nodeTags,
+      factsLabel: ru ? "О системе" : "About this system",
       lead: node.status === "left"
         ? (ru ? "Система покинула спейс, поэтому всё, что было на неё закреплено, остаётся без поставщика." : "This system has left the space, so anything pinned to it now dangles.")
         : (others.length
@@ -618,7 +731,7 @@ class Component extends DCLogic {
       hasFacts: true,
       facts: [
         { label: ru ? "организация" : "org", value: node.org || (ru ? "неизвестна" : "unknown"), mono: true },
-        { label: ru ? "статус" : "status", value: node.status || (ru ? "неизвестен" : "unknown") },
+        { label: ru ? "статус" : "status", value: statusText },
         { label: ru ? "владельцы" : "owners", value: (node.owners || []).join(", ") || (ru ? "не указаны" : "not declared"), mono: !!(node.owners || []).length },
         { label: ru ? "спейс" : "space", value: spaceId, mono: true },
         { label: ru ? "контрактных линий здесь" : "contract lines here", value: String(lines.length) },
@@ -681,11 +794,17 @@ class Component extends DCLogic {
     const groups = [];
     spaces.forEach(sp => {
       if (!sp.readable) {
+        const panelReason = (d.unavailable.find(u => u.scope === sp.id) || {}).reason || (ru ? "Зеркало или манифест не читается. Нельзя делать вывод о числе участников или объёме работы." : "The mirror or manifest is unreadable. Participants or work must not be inferred from that.");
+        const panelTip = this.spaceTip(sp, panelReason);
         panels.push({
           id: sp.id, pillText: ru ? "не читается" : "unreadable", pillTone: "blocking", meta: ru ? "участие неизвестно" : "participation unknown",
-          hasReason: true,
-          reason: (d.unavailable.find(u => u.scope === sp.id) || {}).reason || (ru ? "Зеркало или манифест не читается. Нельзя делать вывод о числе участников или объёме работы." : "The mirror or manifest is unreadable. Participants or work must not be inferred from that."),
-          style: "position:absolute; z-index:1; box-sizing:border-box; left:" + GX + "px; top:" + y + "px; width:" + GW + "px; height:" + UNH + "px; border-radius:18px; padding:24px; border:1px dashed var(--border-strong); background:transparent;"
+        hasReason: true,
+        reason: panelReason,
+        pillWhy: panelTip,
+        enter: this.hoverOn("space:" + sp.id, panelTip),
+        leave: this.hoverOff("space:" + sp.id),
+        tap: this.tapTip("space:" + sp.id, panelTip),
+        style: "position:absolute; z-index:1; box-sizing:border-box; left:" + GX + "px; top:" + y + "px; width:" + GW + "px; height:" + UNH + "px; border-radius:18px; padding:24px; border:1px dashed var(--border-strong); background:transparent; overflow:hidden;"
         });
         y += UNH + PGAP;
         return;
@@ -707,13 +826,18 @@ class Component extends DCLogic {
       const metaLines = Math.max(1, Math.ceil((metaText.length * 7.1) / Math.max(120, GW - SX * 2)));
       const gh = PAD + 28 + 8 + metaLines * 20 + 10;
       const h = gh + PT + Math.max(members.length, 1) * MH + Math.max(members.length - 1, 0) * MG + PAD;
+      const panelTip = this.spaceTip(sp, "");
       panels.push({
         id: sp.id,
-        pillText: sp.stale ? (ru ? "устарел · синхронизация " : "stale · synced ") + age(sp.syncAge) : (ru ? "свежий · синхронизация " : "fresh · synced ") + age(sp.syncAge),
+        pillText: sp.stale ? "space stale" : (ru ? "свежий · синхронизация " : "fresh · synced ") + age(sp.syncAge),
         pillTone: sp.stale ? "attention" : "healthy",
         meta: metaText,
         hasReason: false, reason: "",
-        style: "position:absolute; z-index:1; box-sizing:border-box; left:" + GX + "px; top:" + top + "px; width:" + GW + "px; height:" + h + "px; border-radius:18px; padding:24px; background:var(--page); box-shadow:inset 0 0 0 1px var(--border);"
+        pillWhy: panelTip,
+        enter: this.hoverOn("space:" + sp.id, panelTip),
+        leave: this.hoverOff("space:" + sp.id),
+        tap: this.tapTip("space:" + sp.id, panelTip),
+        style: "position:absolute; z-index:1; box-sizing:border-box; left:" + GX + "px; top:" + top + "px; width:" + GW + "px; height:" + h + "px; border-radius:18px; padding:24px; background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--border); overflow:hidden;"
       });
       const rows = members.map((m, i) => ({ node: m, cy: top + gh + PT + i * (MH + MG) + MH / 2 }));
       groups.push({ sp, rows, top, h, hasSelf });
@@ -751,6 +875,7 @@ class Component extends DCLogic {
           ? "M " + SEX + " " + y0 + " C " + (SEX + 120) + " " + y0 + ", " + (MX - 120) + " " + y1 + ", " + MX + " " + y1
           : "M " + MX + " " + y1 + " C " + (MX - 120) + " " + y1 + ", " + (SEX + 120) + " " + y0 + ", " + SEX + " " + y0;
         const key = this.relKey(r);
+        const tip = this.relTip(r);
         const isSel = (!!sel && sel.kind === "edge" && sel.key === key) || this.state.hover === key;
         const related = this.edgeLive(key, r.e.space, d.self, s.row.node.system);
         const badgeText = r.kind === "c"
@@ -774,14 +899,14 @@ class Component extends DCLogic {
           opacity: related ? 1 : 0.12,
           sx: fromSelf ? SEX : MX, sy: fromSelf ? y0 : y1,
           go: () => this.pick("edge", key, bx, by),
-          enter: this.hoverOn(key), leave: this.hoverOff(key),
+          enter: this.hoverOn(key, tip), leave: this.hoverOff(key),
           label: r.e.from + " → " + r.e.to
         });
         if (badgeText) badges.push({
           text: badgeText,
           title: r.kind === "c" ? r.e.from + " → " + r.e.to + " · " + r.e.contract + " · " + driftShort(r.e, ru) : r.e.from + " → " + r.e.to + " · " + (ru ? this.count(r.e.count, "open item", "open items", ["открытый элемент", "открытых элемента", "открытых элементов"]) : plural(r.e.count, "open item", "open items")) + (r.e.blocking ? " · " + blockedOn([r.e.to], d.self, ru) : ""),
           go: () => this.pick("edge", key, bx, by),
-          enter: this.hoverOn(key), leave: this.hoverOff(key),
+          enter: this.hoverOn(key, tip), leave: this.hoverOff(key),
           style: this.badgeStyle(bx, by, p.tone, related ? 1 : 0.2)
         });
       });
@@ -800,6 +925,7 @@ class Component extends DCLogic {
           const fwd = r.e.from === A.node.system;
           const ya = fwd ? A.cy : B.cy, yb = fwd ? B.cy : A.cy;
           const key = this.relKey(r);
+          const tip = this.relTip(r);
           const isSel = (!!sel && sel.kind === "edge" && sel.key === key) || this.state.hover === key;
           const related = this.edgeLive(key, g.sp.id, A.node.system, B.node.system);
           edges.push({
@@ -808,7 +934,7 @@ class Component extends DCLogic {
             width: isSel ? 3.2 : 1.8, opacity: related ? 1 : 0.12,
             sx: MEX, sy: ya,
             go: () => this.pick("edge", key, gx, Math.round((ya + yb) / 2)),
-            enter: this.hoverOn(key), leave: this.hoverOff(key),
+            enter: this.hoverOn(key, tip), leave: this.hoverOff(key),
             label: r.e.from + " → " + r.e.to
           });
           const badgeText = r.kind === "c" ? (r.e.drift === "current" ? "" : driftShort(r.e, ru)) : (r.e.blocking ? stoppedBadge(r.e.count, ru) : String(r.e.count));
@@ -822,7 +948,7 @@ class Component extends DCLogic {
               text: badgeText,
               title: r.e.from + " → " + r.e.to + (r.kind !== "c" && r.e.blocking ? " · " + blockedOn([r.e.to], d.self, ru) : ""),
               go: () => this.pick("edge", key, at.x, at.y),
-              enter: this.hoverOn(key), leave: this.hoverOff(key),
+              enter: this.hoverOn(key, tip), leave: this.hoverOff(key),
               style: this.badgeStyle(at.x, at.y, p.tone, related ? 1 : 0.2)
             });
           }
@@ -841,13 +967,13 @@ class Component extends DCLogic {
     const selfOpen = d.exchangeEdges.filter(e => (e.from === d.self || e.to === d.self) && groups.some(g => g.sp.id === e.space)).reduce((t, e) => t + (e.count || 0), 0);
     cards.push({
       go: () => this.pick("node", selfKey, SX + SW / 2, selfCY + SH / 2 - 10),
-      mono: codes[d.self], name: d.self, meta: selfNode.org || "",
+      mono: codes[d.self], name: d.self, meta: selfNode.org || "", hasRobot: true,
       counts: ru ? this.count(selfLines, "contract line", "contract lines", ["контрактная линия", "контрактные линии", "контрактных линий"]) + " · " + this.count(selfOpen, "open item", "open items", ["открытый элемент", "открытых элемента", "открытых элементов"]) + " · каждая линия ниже начинается или заканчивается здесь" : plural(selfLines, "contract line", "contract lines") + " · " + plural(selfOpen, "open item", "open items") + " · every strand below starts or ends here",
       hasCounts: true, hasTag: true, tag: ru ? "вы" : "you",
-      tagStyle: "position:absolute; top:11px; right:12px; display:inline-flex; align-items:center; height:20px; max-width:45%; padding:0 8px; font-size:12px; font-weight:600; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--on-solid); background:var(--teal-solid); border-radius:6px;",
+      tagStyle: "position:absolute; z-index:2; top:11px; right:12px; display:inline-flex; align-items:center; height:20px; max-width:45%; padding:0 8px; font-size:12px; font-weight:600; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--on-solid); background:var(--teal-solid); border-radius:6px;",
       avatarStyle: this.avatar("self", 34),
       enter: this.hoverOn("node:" + selfKey), leave: this.hoverOff("node:" + selfKey),
-      style: "position:absolute; z-index:3; box-sizing:border-box; left:" + SX + "px; top:" + Math.round(selfCY - SHv / 2) + "px; width:" + SW + "px; min-height:" + Math.round(SHv) + "px; display:flex; flex-direction:column; align-items:flex-start; text-align:left; font-family:'Onest',sans-serif; background:var(--surface); border:0; border-radius:14px; padding:14px 15px; cursor:pointer; transition:opacity .12s ease; opacity:" + (selfDim ? 0.4 : 1) + "; box-shadow:" +
+      style: "position:absolute; z-index:3; box-sizing:border-box; overflow:hidden; left:" + SX + "px; top:" + Math.round(selfCY - SHv / 2) + "px; width:" + SW + "px; min-height:" + Math.round(SHv) + "px; display:flex; flex-direction:column; align-items:flex-start; text-align:left; font-family:'Onest',sans-serif; background:var(--surface-card); border:0; border-radius:14px; padding:14px 15px; cursor:pointer; transition:opacity .12s ease; opacity:" + (selfDim ? 0.4 : 1) + "; box-shadow:" +
         (selfRing ? "0 0 0 2px var(--focus), 0 10px 26px -14px rgba(33,30,23,.7)" : "inset 0 0 0 1px var(--teal-hairline), 0 1px 2px rgba(33,30,23,.08)") + ";"
     });
     groups.forEach(g => g.rows.forEach(row => {
@@ -863,14 +989,14 @@ class Component extends DCLogic {
       cards.push({
         go: () => this.pick("node", key, MX + 120, row.cy + MH / 2 - 8),
         enter: this.hoverOn("node:" + key), leave: this.hoverOff("node:" + key),
-        mono: codes[n.system], name: n.system,
+        mono: codes[n.system], name: n.system, hasRobot: false,
         meta: n.org + (ru ? " · линий: " + lines + " · открыто: " + openHere : " · " + lines + (lines === 1 ? " line" : " lines") + " · " + openHere + " open"),
         hasCounts: false, counts: "",
         hasTag: n.status === "left" || rels.length === 0,
         tag: n.status === "left" ? (ru ? "покинула спейс" : "left the space") : (ru ? "нет связи с вами" : "no link with you"),
         tagStyle: "position:absolute; top:10px; right:11px; display:inline-flex; align-items:center; height:20px; max-width:52%; padding:0 8px; font-size:12px; font-weight:600; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--muted); background:var(--page); border-radius:6px; box-shadow:inset 0 0 0 1px var(--border);",
         avatarStyle: this.avatar(n.status === "left" ? "left" : "active"),
-        style: "position:absolute; z-index:3; box-sizing:border-box; left:" + MX + "px; top:" + (row.cy - MH / 2) + "px; width:" + MW + "px; height:" + MH + "px; display:flex; flex-direction:column; justify-content:center; text-align:left; font-family:'Onest',sans-serif; background:var(--surface); border:0; border-radius:12px; padding:9px 13px; cursor:pointer; transition:opacity .12s ease; opacity:" + (dim ? 0.4 : 1) + "; box-shadow:" +
+        style: "position:absolute; z-index:3; box-sizing:border-box; left:" + MX + "px; top:" + (row.cy - MH / 2) + "px; width:" + MW + "px; height:" + MH + "px; display:flex; flex-direction:column; justify-content:center; text-align:left; font-family:'Onest',sans-serif; background:var(--surface-card); border:0; border-radius:12px; padding:9px 13px; cursor:pointer; transition:opacity .12s ease; opacity:" + (dim ? 0.4 : 1) + "; box-shadow:" +
           (ring ? "0 0 0 2px var(--focus), 0 10px 24px -16px rgba(33,30,23,.7)" : "0 1px 2px rgba(33,30,23,.1)") + ";"
       });
     }));
@@ -909,7 +1035,7 @@ class Component extends DCLogic {
     const ru = this.ru();
     const cols = spaces.map(sp => ({
       id: sp.id,
-      pillText: sp.readable ? (sp.stale ? (ru ? "устарел " : "stale ") + age(sp.syncAge) : (ru ? "свежий " : "fresh ") + age(sp.syncAge)) : (ru ? "не читается" : "unreadable"),
+      pillText: sp.readable ? (sp.stale ? "space stale" : (ru ? "свежий " : "fresh ") + age(sp.syncAge)) : (ru ? "не читается" : "unreadable"),
       pillTone: sp.readable ? (sp.stale ? "attention" : "healthy") : "blocking"
     }));
     const cellBase = "width:100%; box-sizing:border-box; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.4; border:0; padding:7px 4px; border-radius:8px;";
@@ -958,17 +1084,16 @@ class Component extends DCLogic {
     const scope = this.scope();
     const expanded = this.state.expanded;
     const ru = this.props.locale === "ru";
-    const modes = [["both", ru ? "Всё" : "Everything"], ["contracts", ru ? "Контрактные линии" : "Contract lines"], ["exchanges", ru ? "Открытая работа" : "Open work"]].map(([id, label]) => ({
-      label, pressed: this.mode() === id, style: this.segStyle(this.mode() === id),
+    const emptyModes = [["both", ru ? "Всё" : "Everything"], ["contracts", ru ? "Контрактные линии" : "Contract lines"], ["exchanges", ru ? "Открытая работа" : "Open work"]].map(([id, label]) => ({
+      label, count: 0, pressed: this.mode() === id,
       go: () => this.setState({ mode: id, sel: null })
     }));
     const shell = {
       shellStyle: expanded ? "position:fixed; inset:0; z-index:200; background:rgba(33,30,23,.42); padding:24px; overflow:auto; display:flex; align-items:flex-start;" : "",
       cardStyle: expanded ? CARD_BASE + " width:100%; margin:auto; box-shadow:0 24px 60px -20px rgba(33,30,23,.5);" : CARD_BASE,
       isExpanded: expanded,
-      expandLabel: expanded ? (ru ? "Закрыть" : "Close full width") : (ru ? "Во всю ширину ⤢" : "Full width ⤢"),
-      expandStyle: "font-family:'Onest',sans-serif; font-size:14px; line-height:1.4; font-weight:600; border:0; cursor:pointer; padding:7px 13px; border-radius:9px; white-space:nowrap; " +
-        (expanded ? "background:var(--inverse); color:var(--on-dark);" : "background:var(--canvas); color:var(--teal-ink);"),
+      expandLabel: expanded ? (ru ? "Свернуть карту" : "Exit full width") : (ru ? "Развернуть карту на всю ширину" : "Expand map to full width"),
+      expandStyle: "width:38px; height:38px; flex:0 0 38px; display:flex; align-items:center; justify-content:center; padding:0; border:0; border-radius:var(--radius-control); cursor:pointer; color:var(--teal-ink); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--border); line-height:0;",
       toggleExpand: () => this.setState({ expanded: !expanded }),
       // Backdrop click closes the overlay. The card is a child of this shell, so
       // only a hit on the shell element ITSELF counts as "outside the card".
@@ -982,8 +1107,7 @@ class Component extends DCLogic {
       showExtras: this.props.collapseExtras !== true || this.state.extras === true,
       extrasExpanded: this.state.extras === true ? "true" : "false",
       extrasLabel: this.state.extras === true ? (ru ? "Скрыть таблицу связей и матрицу спейсов" : "Hide the link table and the space matrix") : (ru ? "Показать таблицу связей и матрицу спейсов" : "Expand the link table and the space matrix"),
-      extrasCaret: this.state.extras === true ? "▴" : "▾",
-      extrasBtnStyle: "margin-top:14px; width:100%; box-sizing:border-box; display:flex; align-items:center; gap:12px; font-family:'Onest',sans-serif; font-size:16px; font-weight:600; color:var(--text); background:var(--page); border:0; border-radius:12px; padding:14px 16px; cursor:pointer;",
+      extrasBtnStyle: "margin-top:14px; width:100%; box-sizing:border-box; display:flex; align-items:center; gap:12px; font-family:'Onest',sans-serif; font-size:16px; font-weight:600; color:var(--text); background:var(--surface-section); border:0; border-radius:12px; padding:14px 16px; cursor:pointer;",
       toggleExtras: () => this.setState(x => ({ extras: !x.extras })),
       // the full-width strip only exists while the bar is actually pinned
       stickyStyle: expanded
@@ -992,15 +1116,25 @@ class Component extends DCLogic {
           ? "position:sticky; top:" + (this.state.hdrH || 0) + "px; z-index:80; background:var(--surface); box-shadow:0 1px 0 var(--hairline); margin-left:calc(50% - 50vw); margin-right:calc(50% - 50vw); padding:12px 0; margin-bottom:6px;"
           : "position:sticky; top:" + (this.state.hdrH || 0) + "px; z-index:80; padding:0 0 12px; margin-bottom:6px;",
       stickyInnerStyle: !expanded && this.state.stuck ? "width:min(1240px, 100% - 56px); margin:0 auto;" : "width:100%;",
+      tipOpen: !!this.state.tipText,
+      tipText: this.state.tipText,
+      tipStyle: "position:fixed; z-index:1200; " + this.state.tipPos + " width:min(340px,78vw); box-sizing:border-box; background:var(--inverse); color:var(--on-inverse-2); border-radius:12px; padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:0 16px 38px rgba(33,30,23,.36); white-space:normal; overflow-wrap:anywhere; pointer-events:none;",
       sentinelRef: (n) => { this.sentinelNode = n; },
+      modeScrollRef: (n) => { this.modeScrollNode = n; if (n && this.measure) setTimeout(this.measure, 0); },
+      modeScrollClass: this.state.modeOverflow ? "a2a-fade-scroll" : "",
       popDismiss: () => this.setState({ sel: null }),
       popStop: (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); },
       // the map reads as a wide panel lying over the text column: wider than the body, but bounded
-      bleedStyle: expanded ? "position:relative;" : this.props.wide === false ? "position:relative; margin-left:-22px; margin-right:-22px;" : "position:relative; width:min(1480px, calc(100vw - 32px)); max-width:none; left:50%; transform:translateX(-50%);",
+      // Do not center this full-bleed surface with a transform. A transformed
+      // ancestor captures position:fixed descendants, which meant StatusPill's
+      // viewport tooltip was clipped by the horizontally scrolling map. The
+      // equivalent negative margin keeps the map centred without creating a
+      // containing block for any hover bubble inside it.
+      bleedStyle: expanded ? "position:relative;" : this.props.wide === false ? "position:relative; margin-left:-22px; margin-right:-22px;" : "position:relative; width:min(1480px, calc(100vw - 32px)); max-width:none; margin-left:calc((100% - min(1480px, calc(100vw - 32px))) / 2);",
       boxRef: (n) => { this.boxNode = n; if (n && this.measure) setTimeout(this.measure, 0); },
       onCanvasScroll: (ev) => {
         const t = ev.currentTarget;
-        if (t.scrollLeft !== this.state.csx || t.scrollTop !== this.state.csy) this.setState({ csx: t.scrollLeft, csy: t.scrollTop });
+        if (t.scrollLeft !== this.state.csx || t.scrollTop !== this.state.csy) this.setState({ csx: t.scrollLeft, csy: t.scrollTop, tipText: "", tipPos: "" });
       }
     };
     const heading = this.props.heading || (ru ? "Карта обмена" : "Exchange map");
@@ -1012,7 +1146,8 @@ class Component extends DCLogic {
       linkTableTitle:ru ? "Все связи в таблице" : "Every link, as a table", linkLabel:ru ? "связь" : "link", linkReasonLabel:ru ? "почему существует" : "why it exists", matrixTitle:ru ? "Участие систем в спейсах" : "Where each system participates", systemLabel:ru ? "система" : "system"
     };
     if (!d) return Object.assign({
-      heading, summary: ru ? "чтение снимка…" : "reading the snapshot…", modes, spaceTabs: [], intro: "",
+      heading, summaryRows: [], modes: emptyModes, spaceTabs: [], intro: "",
+      overviewLabel: ru ? "Обзор" : "Overview", legendLabel: ru ? "Условные обозначения" : "Legend", introLabel: ru ? "Как пользоваться" : "How to use it",
       canvasStyle: "position:relative; width:1080px; height:300px;", viewBox: "0 0 1080 300", canvasW: 1080, canvasH: 300,
       panels: [], cards: [], edges: [], badges: [], hasPop: false, pop: null, popStyle: "",
       tableRows: [], tableNote: "", showMatrix: false, matrixCols: [], matrixRows: [], matrixNote: "", matrixLegend: ""
@@ -1025,6 +1160,12 @@ class Component extends DCLogic {
     const readable = spacesInScope.filter(x => x.readable);
     const inScope = (id) => (!allow || allow.indexOf(id) > -1) && (scope === "all" || scope === id);
     const shown = spacesInScope.filter(x => inScope(x.id));
+    const contractCount = d.contractEdges.filter(e => inScope(e.space)).length;
+    const exchangeCount = d.exchangeEdges.filter(e => inScope(e.space)).length;
+    const modes = [["both", ru ? "Всё" : "Everything", contractCount + exchangeCount], ["contracts", ru ? "Контрактные линии" : "Contract lines", contractCount], ["exchanges", ru ? "Открытая работа" : "Open work", exchangeCount]].map(([id, label, count]) => ({
+      label, count, pressed: this.mode() === id,
+      go: () => this.setState({ mode: id, sel: null })
+    }));
     // participant faces on each space tab; production swaps the monogram for the system's GitHub avatar
     const faceStyle = (i, kind, active) => "flex:0 0 20px; width:20px; height:20px; border-radius:99px; display:flex; align-items:center; justify-content:center; line-height:1; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:9px; font-weight:600; margin-left:" + (i ? "3px" : "0") + "; box-shadow:inset 0 0 0 1px " + (active ? "var(--inverse)" : "var(--canvas)") + "; " +
       (kind === "self" ? "background:var(--teal-solid); color:var(--on-solid);" : kind === "left" ? "background:var(--surface); color:var(--muted);" : "background:var(--border); color:var(--body);");
@@ -1056,13 +1197,24 @@ class Component extends DCLogic {
     const bad = cAll.filter(e => e.drift !== "current").length;
     const membersInScope = d.nodes.filter(n => (n.spaces || []).some(sp => inScope(sp)));
 
-    const summary = ru
-      ? (scope === "all" ? "систем: " + membersInScope.length + " · читаемых спейсов: " + readable.length : "систем в " + scope + ": " + membersInScope.length) + " · контрактных линий: " + cAll.length + ", неактуальных: " + bad + " · открытых связей: " + xAll.length
-      : (scope === "all" ? membersInScope.length + " systems across " + plural(readable.length, "readable space", "readable spaces") : membersInScope.length + " systems in " + scope) + " · " + plural(cAll.length, "contract line", "contract lines") + ", " + bad + " off current · " + plural(xAll.length, "open lane", "open lanes");
+    const summaryRows = [
+      { label: scope === "all" ? (ru ? "Системы" : "Systems") : (ru ? "Системы в " + scope : "Systems in " + scope), value: membersInScope.length, mono: true },
+      { label: ru ? "Читаемые спейсы" : "Readable spaces", value: readable.length, mono: true },
+      { label: ru ? "Контрактные линии" : "Contract lines", value: cAll.length, mono: true },
+      { label: ru ? "Неактуальные" : "Off current", value: bad, mono: true },
+      { label: ru ? "Открытые связи" : "Open lanes", value: xAll.length, mono: true }
+    ];
 
+    const overviewLabel = ru ? "Обзор" : "Overview";
+    const legendLabel = ru ? "Условные обозначения" : "Legend";
+    const introLabel = ru ? "Как пользоваться" : "How to use it";
     const intro = ru
-      ? "Вы слева, справа системы внутри спейсов. Сплошная линия показывает контрактную зависимость от потребителя к поставщику, пунктир незавершённую работу, стрелка показывает получателя. Метка показывает количество или состояние расхождения. Нажмите линию или карточку, чтобы открыть связанные контракты, версии и работу." + (scope === "all" ? " Линии не выходят за границы спейса: спейсы связаны только общими участниками." : "")
-      : "You sit on the left; every card on the right is one system inside a space. A strand runs from the system that depends to the system depended on: solid means a contract dependency (consumer → provider), dashed means open work in flight, and the arrowhead marks the receiving end. Badges carry the count or the drift word. Click a strand or a card for the contracts, versions and open items behind it." + (scope === "all" ? " Strands never leave their space, so the systems that appear in several spaces are the only links between them." : "");
+      ? (scope === "all"
+          ? "Слева — ваша система, справа — участники спейсов. Нажмите линию или карточку, чтобы открыть контракты, версии и текущую работу. Линии не переходят между спейсами: их связывают только общие участники."
+          : "Слева — ваша система, справа — участники спейса «" + scope + "». Нажмите линию или карточку, чтобы открыть связанные контракты, версии и текущую работу.")
+      : (scope === "all"
+          ? "Your system is on the left and space participants are on the right. Select a line or card to open its contracts, versions and current work. Lines never cross between spaces; shared participants are the only bridge."
+          : "Your system is on the left and participants of “" + scope + "” are on the right. Select a line or card to open its contracts, versions and current work.");
 
     const canvas = this.buildCanvas(d, shown, codes);
 
@@ -1087,7 +1239,7 @@ class Component extends DCLogic {
     const bridging = d.nodes.filter(n => (n.spaces || []).filter(sp => spacesInScope.some(x => x.id === sp)).length > 1).length;
 
     return Object.assign({
-      heading, summary, modes, spaceTabs, intro,
+      heading, summaryRows, modes, spaceTabs, intro, overviewLabel, legendLabel, introLabel,
       tableRows: tableView,
       tableNote: ru ? tableView.length + " связей в выбранной области · те же линии показаны на карте" : plural(tableView.length, "link", "links") + " in scope · the same edges the map draws",
       showMatrix: scope === "all" && readable.length > 1 && this.props.showMatrix !== false,

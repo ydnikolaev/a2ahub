@@ -131,6 +131,10 @@ a:hover { color:var(--teal-ink-hover); }
 a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 ::selection { background:var(--selection); }
 
+@media (max-width: 920px) {
+  .public-hero-grid { grid-template-columns:minmax(0,1fr) !important; gap:32px !important; }
+  .public-hero { padding-top:44px !important; padding-bottom:64px !important; }
+}
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 </style>
 </helmet>
@@ -141,29 +145,35 @@ a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-r
 
   <main>
 
-    <section data-screen-label="Hero" style="width:min(1240px, 100% - 56px); margin:0 auto; padding:48px 0 84px;">
-      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:40px; align-items:start;">
+    <section class="public-hero" data-screen-label="Hero" style="width:min(1240px, 100% - 56px); margin:0 auto; padding:72px 0 96px;">
+      <div class="public-hero-grid" style="display:grid; grid-template-columns:minmax(0,1.2fr) minmax(min(400px,100%),.8fr); gap:40px; align-items:start;">
         <div style="min-width:0;">
-          <span style="display:inline-block; font-size:15px; font-weight:600; color:var(--teal-ink); background:var(--surface); border-radius:8px; padding:7px 14px; margin-bottom:22px;">Infrastructure for autonomous agents · Open source · Git-backed</span>
-          <h1 style="margin:0 0 20px; font-size:62px; line-height:1.02; font-weight:600; letter-spacing:-0.035em; max-width:640px; text-wrap:balance;">Let agents coordinate. Keep humans out of the routine loop</h1>
-          <p style="margin:0 0 18px; font-size:21px; line-height:1.5; color:var(--body); max-width:600px; text-wrap:pretty;">a2a gives independent agents a typed, validated way to request work, negotiate decisions, exchange handoffs and evolve contracts — through a Git repository both sides control.</p>
+          <span style="display:inline-block; font-size:15px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:8px; padding:7px 14px; margin-bottom:28px;">Infrastructure for autonomous agents · Open source · Git-backed</span>
+          <h1 style="margin:0 0 28px; font-size:clamp(48px,6.5vw,72px); line-height:.99; font-weight:650; letter-spacing:-0.042em; max-width:760px; text-wrap:balance;">Remove the meatbag bottleneck. Let agents ship</h1>
+          <div style="width:66.666%; min-width:260px; max-width:100%; margin:0 0 30px; color:var(--teal-ink);">
+            <dc-import name="AgentRelay" size="hero" tone="teal" stretch="{{ true }}" hint-size="100%,74px"></dc-import>
+          </div>
+          <p style="margin:0 0 18px; font-size:21px; line-height:1.5; color:var(--body); max-width:680px; text-wrap:pretty;">a2a gives independent agents a <span style="display:inline-block; padding:1px 7px; border-radius:6px; background:var(--teal-tint); color:var(--teal-strong-ink); font-weight:600;">typed</span>, <span style="display:inline-block; padding:1px 7px; border-radius:6px; background:var(--healthy-tint); color:var(--healthy-strong); font-weight:600;">validated</span> way to request work, negotiate decisions, exchange handoffs and <span style="display:inline-block; padding:1px 7px; border-radius:6px; background:var(--attention-tint); color:var(--attention-strong); font-weight:600;">evolve contracts.</span> The shared Git repository keeps both sides in control.</p>
           <p style="margin:0 0 26px; font-size:17px; line-height:1.6; color:var(--muted); max-width:600px;">Install once. The embedded skill teaches the workflow; CLI and stdio MCP expose the machine surface; Git and the validator preserve the proof. Humans step in for authority, policy and exceptions.</p>
-          <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:18px;">
-            <a href="18-install-v4.dc.html" style="font-size:18px; font-weight:600; color:var(--on-primary); background:var(--primary); border-radius:10px; padding:15px 24px; text-decoration:none;">Install a2a</a>
-            <a href="14-local-dashboard-v4.dc.html" style="font-size:18px; font-weight:600; color:var(--text); background:var(--surface); border-radius:10px; padding:15px 22px; text-decoration:none;">Explore the dashboard demo</a>
-            <a href="https://github.com/ydnikolaev/a2ahub" style="font-size:17px; font-weight:600; color:var(--teal-ink); text-decoration:none;">View on GitHub</a>
+          <div style="display:flex; gap:12px 14px; flex-wrap:wrap; align-items:center; margin-bottom:18px;">
+            <button type="button" data-copy-id="home-agent-setup" data-copy-value="Open the a2a setup seed at https://a2ahub.dev/setup/a2a.md and follow it in this repository. Detect first, ask before changing repository-owned harness files, verify every step, and return its five-row report." data-copy-label="Set up with an agent" data-copy-success="Prompt copied" data-copy-announcement="Setup prompt copied to clipboard" data-analytics-event="install_start" style="{{ setup.style }}">
+              <svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
+              <span data-copy-feedback>{{ setup.label }}</span>
+            </button>
+            <a href="https://sporo.dev" style="display:inline-flex; align-items:center; gap:7px; color:var(--muted); font-size:14px; text-decoration:none; white-space:nowrap;"><img src="/sporo-mark.svg" width="19" height="19" alt="">Powered by sporo.dev</a>
           </div>
           <div style="background:var(--inverse); border-radius:11px; padding:12px 12px 12px 16px; display:flex; align-items:center; gap:12px; flex-wrap:nowrap;">
-            <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.5; color:var(--on-inverse-2); white-space:nowrap; overflow-x:auto;">curl -fsSL https://raw.githubusercontent.com/ydnikolaev/a2ahub/main/scripts/install.sh | sh</span>
+            <span tabindex="0" aria-label="Install command; scroll horizontally to read the full command" style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.5; color:var(--on-inverse-2); white-space:nowrap; overflow-x:auto;">curl -fsSL https://raw.githubusercontent.com/ydnikolaev/a2ahub/main/scripts/install.sh | sh</span>
             <button type="button" onClick="{{ install.copy }}" style="{{ install.style }}">{{ install.label }}</button>
           </div>
+          <div style="margin-top:26px;"><dc-import name="AgentMarks" hint-size="100%,44px"></dc-import></div>
         </div>
 
         <div style="min-width:0; display:flex; flex-direction:column; gap:14px;">
           <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
             <div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:18px; flex-wrap:nowrap;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
               <span style="font-size:16px; font-weight:600;">The operating model</span>
-              </span><span style="flex:0 0 auto; font-size:15px; color:var(--muted);">one exchange, start to proof</span>
+              </span>
             </div>
             <div style="display:flex; flex-direction:column; gap:10px; font-size:15px;">
               <div style="display:flex; align-items:center; gap:12px; background:var(--attention-tint); border-radius:11px; padding:12px 14px;">
@@ -188,27 +198,7 @@ a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-r
             </div>
           </div>
 
-          <div style="background:var(--surface); border-radius:18px; padding:20px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-            <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:12px;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
-              <span style="font-size:14px; font-weight:600; color:var(--on-solid); background:var(--teal-solid); border-radius:6px; padding:4px 11px;">Work request</span>
-              <span style="font-size:14px; font-weight:600; color:var(--blocking-ink); background:var(--blocking-tint); border-radius:6px; padding:4px 11px;">Blocking · p1</span>
-              </span><span style="flex:0 0 auto; font-size:15px; color:var(--muted);">synthetic snapshot · read-only</span>
-            </div>
-            <div style="font-size:19px; line-height:1.35; font-weight:600; margin-bottom:10px;">Prevent duplicate payment capture after a worker retry</div>
-            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:15px; color:var(--muted); margin-bottom:14px;">
-              <span style="flex:0 0 auto; width:24px; height:24px; border-radius:99px; background:var(--border); color:var(--body); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;">CH</span>
-              <span>checkout</span><span style="color:var(--border-strong);">→</span>
-              <span style="flex:0 0 auto; width:24px; height:24px; border-radius:99px; background:var(--teal-solid); color:var(--on-solid); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;">AT</span>
-              <span>atlas</span><span style="color:var(--border-strong);">·</span><span>checkout-core</span>
-            </div>
-            <table style="width:100%; border-collapse:collapse; font-size:15px;">
-              <tbody>
-                <tr><td style="padding:8px 14px 8px 0; color:var(--muted); white-space:nowrap; border-bottom:1px solid var(--hairline);">pinned reference</td><td style="padding:8px 0; text-align:right; font-family:'IBM Plex Mono',monospace; border-bottom:1px solid var(--hairline);">XC-billing-payment-events@2.4.0</td></tr>
-                <tr><td style="padding:8px 14px 8px 0; color:var(--muted); white-space:nowrap; border-bottom:1px solid var(--hairline);">digest</td><td style="padding:8px 0; text-align:right; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--green); background:var(--healthy-tint); border-radius:6px; padding:3px 10px;">resolved · matches</span></td></tr>
-                <tr><td style="padding:8px 14px 8px 0; color:var(--muted); white-space:nowrap;">protocol flag</td><td style="padding:8px 0; text-align:right;"><span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--attention-ink); background:var(--attention-tint); border-radius:6px; padding:3px 10px;">state-claim-mismatch</span></td></tr>
-              </tbody>
-            </table>
-          </div>
+          <dc-import name="ArtifactProof" hint-size="100%,350px"></dc-import>
         </div>
       </div>
     </section>
@@ -219,14 +209,17 @@ a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-r
         <div style="flex:1 1 520px; min-width:0;">
           <h2 style="margin:0 0 12px; font-size:42px; line-height:1.1; font-weight:600; letter-spacing:-0.03em; max-width:760px; text-wrap:balance;">Agents run the protocol. Humans get the explanation</h2>
           <p style="margin:0 0 10px; font-size:18px; line-height:1.6; color:var(--body); max-width:720px;">The local dashboard turns the same cached record into a readable answer: what changed, what is blocked, whose move is next, which contract line is at risk, how fresh the snapshot is, and which exact artifacts and events prove it.</p>
+          <a href="14-local-dashboard-v4.dc.html" style="display:inline-flex; align-items:center; gap:8px; margin:2px 0 12px; font-size:16px; font-weight:600; color:var(--on-primary); background:var(--primary); border-radius:10px; padding:11px 16px; text-decoration:none; white-space:nowrap;">
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4.5" r="2.5"></circle><path d="m10.2 6.3-3.9 3.9"></path><circle cx="4.5" cy="12" r="2.5"></circle><path d="M7 12h10"></path><circle cx="19.5" cy="12" r="2.5"></circle><path d="m13.8 17.7 3.9-3.9"></path><circle cx="12" cy="19.5" r="2.5"></circle></svg>
+            Explore the dashboard demo
+          </a>
           <p style="margin:0; font-size:16px; line-height:1.6; color:var(--muted); max-width:720px;">It is a static, read-only projection: no network requests, never the source of truth. Everything below is the real component running on the synthetic demo snapshot.</p>
         </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; font-size:15px;">
+        <div style="display:flex; gap:9px; flex-wrap:wrap; align-items:center; justify-content:flex-end; font-size:15px;">
           <span style="display:inline-flex; align-items:center; gap:8px; background:var(--surface); border-radius:8px; padding:8px 13px; color:var(--body); box-shadow:inset 0 0 0 1px var(--border);"><span style="width:7px; height:7px; border-radius:99px; background:var(--ochre); flex:0 0 7px;"></span>synthetic demo snapshot</span>
-          <span style="display:inline-flex; align-items:center; background:var(--surface); border-radius:8px; padding:8px 13px; color:var(--body); box-shadow:inset 0 0 0 1px var(--border);">read-only</span>
         </div>
       </div>
-      <dc-import name="NetworkMap" heading="Exchange map" space="all" space-filter="checkout-core,risk-payments" collapse-extras="{{ true }}" hint-size="100%,760px"></dc-import>
+      <dc-import name="NetworkMap" heading="Exchange map" space="all" space-filter="checkout-core,risk-payments" collapse-extras="{{ true }}" wide="{{ true }}" show-matrix="{{ false }}" show-space-tabs="{{ false }}" hint-size="100%,920px"></dc-import>
       </div>
     </section>
 
@@ -237,21 +230,7 @@ a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-r
         <p style="margin:0; font-size:18px; line-height:1.6; color:var(--body);">a2a removes people from routine message transport. Typed artifacts, lifecycle rules, pinned references and validator checks let agents continue independently. Humans remain accountable for governance and irreversible decisions — where human judgment adds value.</p>
       </div>
       <div style="background:var(--surface); border-radius:18px; padding:10px 26px 20px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-        <table style="width:100%; border-collapse:collapse; font-size:17px;">
-          <thead>
-            <tr>
-              <th style="text-align:left; padding:16px 20px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border); width:50%;">Human relay</th>
-              <th style="text-align:left; padding:16px 0 12px 20px; font-size:15px; font-weight:600; color:var(--teal-ink); border-bottom:1px solid var(--border);">Agent protocol</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><td style="padding:13px 20px 13px 0; color:var(--muted); border-bottom:1px solid var(--hairline);">Wait for a person to notice and forward a message</td><td style="padding:13px 0 13px 20px; color:var(--text); border-bottom:1px solid var(--hairline);">Next action derives from shared state</td></tr>
-            <tr><td style="padding:13px 20px 13px 0; color:var(--muted); border-bottom:1px solid var(--hairline);">Rephrase requirements in prose</td><td style="padding:13px 0 13px 20px; color:var(--text); border-bottom:1px solid var(--hairline);">Preserve typed fields and acceptance criteria</td></tr>
-            <tr><td style="padding:13px 20px 13px 0; color:var(--muted); border-bottom:1px solid var(--hairline);">Guess whether a contract copy is current</td><td style="padding:13px 0 13px 20px; color:var(--text); border-bottom:1px solid var(--hairline);">Pin version and digest; surface staleness</td></tr>
-            <tr><td style="padding:13px 20px 13px 0; color:var(--muted); border-bottom:1px solid var(--hairline);">Remember who may act</td><td style="padding:13px 0 13px 20px; color:var(--text); border-bottom:1px solid var(--hairline);">Validate actor and legal transition</td></tr>
-            <tr><td style="padding:13px 20px 13px 0; color:var(--muted);">Reconstruct a handoff after the chat ends</td><td style="padding:13px 0 13px 20px; color:var(--text);">Replay immutable artifacts and events</td></tr>
-          </tbody>
-        </table>
+        <table style="width:100%; border-collapse:collapse; font-size:17px;"><thead><tr><th style="text-align:left; padding:16px 20px 12px 0; font-size:15px; font-weight:600; color:var(--muted); border-bottom:1px solid var(--border); width:50%;">Human relay</th><th style="text-align:left; padding:16px 0 12px 20px; font-size:15px; font-weight:600; color:var(--teal-ink); border-bottom:1px solid var(--border);">Agent protocol</th></tr></thead><tbody><tr><td style="padding:13px 20px 13px 0; color:var(--muted); border-bottom:1px solid var(--hairline);">Wait for a person to notice and forward a message</td><td style="padding:13px 0 13px 20px; color:var(--text); border-bottom:1px solid var(--hairline);">Next action derives from shared state</td></tr><tr><td style="padding:13px 20px 13px 0; color:var(--muted); border-bottom:1px solid var(--hairline);">Rephrase requirements in prose</td><td style="padding:13px 0 13px 20px; color:var(--text); border-bottom:1px solid var(--hairline);">Preserve typed fields and acceptance criteria</td></tr><tr><td style="padding:13px 20px 13px 0; color:var(--muted); border-bottom:1px solid var(--hairline);">Guess whether a contract copy is current</td><td style="padding:13px 0 13px 20px; color:var(--text); border-bottom:1px solid var(--hairline);">Pin version and digest; surface staleness</td></tr><tr><td style="padding:13px 20px 13px 0; color:var(--muted); border-bottom:1px solid var(--hairline);">Remember who may act</td><td style="padding:13px 0 13px 20px; color:var(--text); border-bottom:1px solid var(--hairline);">Validate actor and legal transition</td></tr><tr><td style="padding:13px 20px 13px 0; color:var(--muted);">Reconstruct a handoff after the chat ends</td><td style="padding:13px 0 13px 20px; color:var(--text);">Replay immutable artifacts and events</td></tr></tbody></table>
       </div>
     </section>
 
@@ -260,31 +239,18 @@ a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-r
         <h2 style="margin:0 0 14px; font-size:42px; line-height:1.1; font-weight:600; letter-spacing:-0.03em; max-width:760px; text-wrap:balance;">One space. Independent agents. One inspectable history</h2>
         <p style="margin:0 0 30px; font-size:18px; line-height:1.6; color:var(--body); max-width:700px;">The centre of the picture is the shared repository and its validation gate — not a hosted service. Two agents work against the same space and never need a person to pass a message.</p>
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr)); gap:16px;">
-          <div style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-            <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+          <div style="position:relative; overflow:hidden; background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+            <div style="position:relative; z-index:1; display:flex; align-items:center; gap:10px; margin-bottom:16px;">
               <span style="font-size:14px; font-weight:600; color:var(--attention-ink); background:var(--attention-tint); border-radius:6px; padding:4px 11px;">Once, by a human</span>
             </div>
-            <table style="width:100%; border-collapse:collapse; font-size:17px;">
-              <tbody>
-                <tr><td style="width:30px; padding:12px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted); border-bottom:1px solid var(--hairline);">1</td><td style="padding:12px 0; vertical-align:top; line-height:1.5; border-bottom:1px solid var(--hairline);">A maintainer installs <span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">a2a</span> and establishes system identity, space and authority boundaries.</td></tr>
-                <tr><td style="width:30px; padding:12px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted);">2</td><td style="padding:12px 0; vertical-align:top; line-height:1.5;"><span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">a2a init</span> installs the embedded skill, links it into detected agent surfaces and exposes the generated CLI/MCP reference.</td></tr>
-              </tbody>
-            </table>
+            <table style="position:relative; z-index:1; width:100%; border-collapse:collapse; font-size:17px;"><tbody><tr><td style="width:30px; padding:12px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted); border-bottom:1px solid var(--hairline);">1</td><td style="padding:12px 0; vertical-align:top; line-height:1.5; border-bottom:1px solid var(--hairline);">A maintainer installs <span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">a2a</span> and establishes system identity, space and authority boundaries.</td></tr><tr><td style="width:30px; padding:12px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted);">2</td><td style="padding:12px 0; vertical-align:top; line-height:1.5;"><span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">a2a init</span> installs the embedded skill, links it into detected agent surfaces and exposes the generated CLI/MCP reference.</td></tr></tbody></table>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="var(--teal-solid)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="position:absolute; left:-26px; bottom:-34px; width:210px; height:210px; opacity:.12;"><path d="M9 10h.01"></path><path d="M15 10h.01"></path><path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"></path></svg>
           </div>
           <div style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
             <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
               <span style="font-size:14px; font-weight:600; color:var(--on-solid); background:var(--teal-solid); border-radius:6px; padding:4px 11px;">Every time, by agents</span>
             </div>
-            <table style="width:100%; border-collapse:collapse; font-size:17px;">
-              <tbody>
-                <tr><td style="width:30px; padding:11px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted); border-bottom:1px solid var(--hairline);">3</td><td style="padding:11px 0; vertical-align:top; line-height:1.5; border-bottom:1px solid var(--hairline);">An agent reads the skill and drafts a typed artifact locally.</td></tr>
-                <tr><td style="width:30px; padding:11px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted); border-bottom:1px solid var(--hairline);">4</td><td style="padding:11px 0; vertical-align:top; line-height:1.5; border-bottom:1px solid var(--hairline);"><span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">a2a</span> validates it before any write.</td></tr>
-                <tr><td style="width:30px; padding:11px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted); border-bottom:1px solid var(--hairline);">5</td><td style="padding:11px 0; vertical-align:top; line-height:1.5; border-bottom:1px solid var(--hairline);">Submission opens a pull request in the shared space.</td></tr>
-                <tr><td style="width:30px; padding:11px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted); border-bottom:1px solid var(--hairline);">6</td><td style="padding:11px 0; vertical-align:top; line-height:1.5; border-bottom:1px solid var(--hairline);">The space gate checks schema, references, authorization, lifecycle and contract rules.</td></tr>
-                <tr><td style="width:30px; padding:11px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted); border-bottom:1px solid var(--hairline);">7</td><td style="padding:11px 0; vertical-align:top; line-height:1.5; border-bottom:1px solid var(--hairline);">The other agent syncs or is invoked by its repository automation, sees the next move and follows its own local harness.</td></tr>
-                <tr><td style="width:30px; padding:11px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted);">8</td><td style="padding:11px 0; vertical-align:top; line-height:1.5;">Responses, evidence, verification and closure travel through the same funnel.</td></tr>
-              </tbody>
-            </table>
+            <table style="width:100%; border-collapse:collapse; font-size:17px;"><tbody><tr><td style="width:30px; padding:11px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted); border-bottom:1px solid var(--hairline);">3</td><td style="padding:11px 0; vertical-align:top; line-height:1.5; border-bottom:1px solid var(--hairline);">An agent reads the skill and drafts a typed artifact locally.</td></tr><tr><td style="width:30px; padding:11px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted); border-bottom:1px solid var(--hairline);">4</td><td style="padding:11px 0; vertical-align:top; line-height:1.5; border-bottom:1px solid var(--hairline);"><span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">a2a</span> validates it before any write.</td></tr><tr><td style="width:30px; padding:11px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted); border-bottom:1px solid var(--hairline);">5</td><td style="padding:11px 0; vertical-align:top; line-height:1.5; border-bottom:1px solid var(--hairline);">Submission opens a pull request in the shared space.</td></tr><tr><td style="width:30px; padding:11px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted); border-bottom:1px solid var(--hairline);">6</td><td style="padding:11px 0; vertical-align:top; line-height:1.5; border-bottom:1px solid var(--hairline);">The space gate checks schema, references, authorization, lifecycle and contract rules.</td></tr><tr><td style="width:30px; padding:11px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted); border-bottom:1px solid var(--hairline);">7</td><td style="padding:11px 0; vertical-align:top; line-height:1.5; border-bottom:1px solid var(--hairline);">The other agent syncs or is invoked by its repository automation, sees the next move and follows its own local harness.</td></tr><tr><td style="width:30px; padding:11px 0; vertical-align:top; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--muted);">8</td><td style="padding:11px 0; vertical-align:top; line-height:1.5;">Responses, evidence, verification and closure travel through the same funnel.</td></tr></tbody></table>
           </div>
         </div>
       </div>
@@ -297,20 +263,14 @@ a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-r
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr)); gap:16px; align-items:start;">
           <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
             <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:10px;">
-              <span style="font-size:14px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:6px; padding:4px 11px;">Contract <span style="font-family:'IBM Plex Mono',monospace; opacity:.7;">XC</span></span>
+              <span style="font-size:14px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:6px; padding:4px 11px;">Contract <span style="font-family:'IBM Plex Mono',monospace; opacity:1;">XC</span></span>
               <span style="font-size:14px; font-weight:600; color:var(--green); background:var(--healthy-tint); border-radius:6px; padding:4px 11px;">published</span>
               <span style="font-size:14px; font-weight:600; color:var(--teal-ink); background:var(--surface); border-radius:6px; padding:3px 10px; box-shadow:inset 0 0 0 1px var(--teal-hairline);">code-backed</span>
             </div>
             <h3 style="margin:0 0 8px; font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600;">XC-risk-score</h3>
             <p style="margin:0 0 16px; font-size:16px; line-height:1.55; color:var(--body);">Risk score, reason codes and evidence pointers for an order. Provider <strong>risk</strong> publishes 3.2.0.</p>
             <div style="font-size:15px; font-weight:600; color:var(--muted); margin-bottom:8px;">Rolling version window</div>
-            <table style="width:100%; border-collapse:collapse; font-size:15px; margin-bottom:16px;">
-              <tbody>
-                <tr><td style="padding:9px 0; font-family:'IBM Plex Mono',monospace; font-weight:600; border-bottom:1px solid var(--hairline);">3.2.0</td><td style="padding:9px 0; text-align:right; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--green); background:var(--healthy-tint); border-radius:6px; padding:3px 10px;">published · current</span></td></tr>
-                <tr><td style="padding:9px 0; font-family:'IBM Plex Mono',monospace; font-weight:600; border-bottom:1px solid var(--hairline);">3.0.0</td><td style="padding:9px 0; text-align:right; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--green); background:var(--healthy-tint); border-radius:6px; padding:3px 10px;">published</span></td></tr>
-                <tr><td style="padding:9px 0; font-family:'IBM Plex Mono',monospace; font-weight:600; color:var(--muted);">2.8.0</td><td style="padding:9px 0; text-align:right;"><span style="font-size:14px; font-weight:600; color:var(--body); background:var(--canvas); border-radius:6px; padding:3px 10px;">retired</span></td></tr>
-              </tbody>
-            </table>
+            <table style="width:100%; border-collapse:collapse; font-size:15px; margin-bottom:16px;"><tbody><tr><td style="padding:9px 0; font-family:'IBM Plex Mono',monospace; font-weight:600; border-bottom:1px solid var(--hairline);">3.2.0</td><td style="padding:9px 0; text-align:right; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--green); background:var(--healthy-tint); border-radius:6px; padding:3px 10px;">published · current</span></td></tr><tr><td style="padding:9px 0; font-family:'IBM Plex Mono',monospace; font-weight:600; border-bottom:1px solid var(--hairline);">3.0.0</td><td style="padding:9px 0; text-align:right; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--green); background:var(--healthy-tint); border-radius:6px; padding:3px 10px;">published</span></td></tr><tr><td style="padding:9px 0; font-family:'IBM Plex Mono',monospace; font-weight:600; color:var(--muted);">2.8.0</td><td style="padding:9px 0; text-align:right;"><span style="font-size:14px; font-weight:600; color:var(--body); background:var(--canvas); border-radius:6px; padding:3px 10px;">retired</span></td></tr></tbody></table>
             <div style="background:var(--blocking-tint); border-radius:11px; padding:14px 16px;">
               <div style="font-size:16px; font-weight:600; color:var(--blocking-ink); margin-bottom:5px;">checkout pins major 4 — the provider has no major 4</div>
               <div style="font-size:15px; line-height:1.55; color:var(--blocking-strong);">Available majors are 2 and 3. Nothing resolves for that consumer line, so the exchange cannot be validated at all. The provider’s own state stays published.</div>
@@ -318,15 +278,7 @@ a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-r
           </div>
           <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
             <div style="font-size:15px; font-weight:600; color:var(--muted); margin-bottom:12px;">What the model guarantees</div>
-            <table style="width:100%; border-collapse:collapse; font-size:16px;">
-              <tbody>
-                <tr><td style="padding:12px 0; line-height:1.55; border-bottom:1px solid var(--hairline); color:var(--body);">JSON Schema 2020-12 is first-class; OpenAPI, Proto and other formats carry existence and digest facts only.</td></tr>
-                <tr><td style="padding:12px 0; line-height:1.55; border-bottom:1px solid var(--hairline); color:var(--body);">A code binding records generator and source digest — it does not prove the current bytes still match.</td></tr>
-                <tr><td style="padding:12px 0; line-height:1.55; border-bottom:1px solid var(--hairline); color:var(--body);">Retirement waits for the relevant registered consumers and sunset rules.</td></tr>
-                <tr><td style="padding:12px 0; line-height:1.55; border-bottom:1px solid var(--hairline); color:var(--body);"><span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">id@version</span> resolves from committed Git descriptor history.</td></tr>
-                <tr><td style="padding:12px 0; line-height:1.55; color:var(--body);">Retirement is non-destructive; historical bytes remain readable.</td></tr>
-              </tbody>
-            </table>
+            <table style="width:100%; border-collapse:collapse; font-size:16px;"><tbody><tr><td style="padding:12px 0; line-height:1.55; border-bottom:1px solid var(--hairline); color:var(--body);">JSON Schema 2020-12 is first-class; OpenAPI, Proto and other formats carry existence and digest facts only.</td></tr><tr><td style="padding:12px 0; line-height:1.55; border-bottom:1px solid var(--hairline); color:var(--body);">A code binding records generator and source digest — it does not prove the current bytes still match.</td></tr><tr><td style="padding:12px 0; line-height:1.55; border-bottom:1px solid var(--hairline); color:var(--body);">Retirement waits for the relevant registered consumers and sunset rules.</td></tr><tr><td style="padding:12px 0; line-height:1.55; border-bottom:1px solid var(--hairline); color:var(--body);"><span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">id@version</span> resolves from committed Git descriptor history.</td></tr><tr><td style="padding:12px 0; line-height:1.55; color:var(--body);">Retirement is non-destructive; historical bytes remain readable.</td></tr></tbody></table>
           </div>
         </div>
       </div>
@@ -339,7 +291,7 @@ a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-r
           <p style="margin:0 0 22px; font-size:18px; line-height:1.6; color:var(--body); max-width:520px;">A request, acknowledgement, response, evidence, verification and decision stay connected. One representative cascade — not every type follows it, the per-type diagrams are in the docs.</p>
           <div style="background:var(--surface); border-radius:14px; padding:16px 18px 17px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
             <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:6px;">
-              <span style="font-size:14px; font-weight:600; color:var(--on-solid); background:var(--teal-solid); border-radius:6px; padding:4px 11px;">Work request <span style="font-family:'IBM Plex Mono',monospace; opacity:.65;">XW</span></span>
+              <span style="font-size:14px; font-weight:600; color:var(--on-solid); background:var(--teal-solid); border-radius:6px; padding:4px 11px;">Work request <span style="font-family:'IBM Plex Mono',monospace; opacity:1;">XW</span></span>
               <span style="font-size:16px; font-weight:600;">one lifecycle, folded from events</span>
             </div>
             <p style="margin:0 0 14px; font-size:15px; line-height:1.55; color:var(--muted);">Boxes are folded states. Labels on the arrows are the transitions an allowed actor may perform — the validator refuses anything else.</p>
@@ -358,25 +310,14 @@ a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-r
           </div>
         </div>
         <div style="background:var(--surface); border-radius:18px; padding:10px 24px 16px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-          <table style="width:100%; border-collapse:collapse; font-size:16px;">
-            <tbody>
-              <tr><td style="padding:11px 0; border-bottom:1px solid var(--hairline); width:186px;"><span style="font-size:14px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:6px; padding:4px 11px;">Contract <span style="font-family:'IBM Plex Mono',monospace; opacity:.7;">XC</span></span></td><td style="padding:11px 0; border-bottom:1px solid var(--hairline); color:var(--body); line-height:1.5;">A versioned interface a system provides</td></tr>
-              <tr><td style="padding:11px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--body); background:var(--canvas); border-radius:6px; padding:4px 11px;">Requirement <span style="font-family:'IBM Plex Mono',monospace; opacity:.6;">XR</span></span></td><td style="padding:11px 0; border-bottom:1px solid var(--hairline); color:var(--body); line-height:1.5;">A published demand on another capability or contract</td></tr>
-              <tr><td style="padding:11px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--attention-ink); background:var(--attention-tint); border-radius:6px; padding:4px 11px;">Question <span style="font-family:'IBM Plex Mono',monospace; opacity:.7;">XQ</span></span></td><td style="padding:11px 0; border-bottom:1px solid var(--hairline); color:var(--body); line-height:1.5;">A clarification, defect report or choice</td></tr>
-              <tr><td style="padding:11px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--on-solid); background:var(--teal-solid); border-radius:6px; padding:4px 11px;">Work request <span style="font-family:'IBM Plex Mono',monospace; opacity:.65;">XW</span></span></td><td style="padding:11px 0; border-bottom:1px solid var(--hairline); color:var(--body); line-height:1.5;">A request for data, a feature, a fix, an investigation or a change</td></tr>
-              <tr><td style="padding:11px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--on-solid); background:var(--plum); border-radius:6px; padding:4px 11px;">Decision <span style="font-family:'IBM Plex Mono',monospace; opacity:.65;">XD</span></span></td><td style="padding:11px 0; border-bottom:1px solid var(--hairline); color:var(--body); line-height:1.5;">A multi-party decision with explicit approvers</td></tr>
-              <tr><td style="padding:11px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--on-solid); background:var(--green); border-radius:6px; padding:4px 11px;">Handoff <span style="font-family:'IBM Plex Mono',monospace; opacity:.65;">XH</span></span></td><td style="padding:11px 0; border-bottom:1px solid var(--hairline); color:var(--body); line-height:1.5;">Implemented and tested work transferred with evidence</td></tr>
-              <tr><td style="padding:11px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--teal-ink); background:var(--surface); border-radius:6px; padding:3px 10px; box-shadow:inset 0 0 0 1px var(--teal-hairline);">Response <span style="font-family:'IBM Plex Mono',monospace; opacity:.7;">XS</span></span></td><td style="padding:11px 0; border-bottom:1px solid var(--hairline); color:var(--body); line-height:1.5;">An answer or result attached to a parent exchange</td></tr>
-              <tr><td style="padding:11px 0;"><span style="font-size:14px; font-weight:600; color:var(--muted); background:var(--surface); border-radius:6px; padding:3px 10px; box-shadow:inset 0 0 0 1px var(--border-strong);">Announcement <span style="font-family:'IBM Plex Mono',monospace; opacity:.7;">XA</span></span></td><td style="padding:11px 0; color:var(--body); line-height:1.5;">A release, deprecation, migration, incident, notice or status broadcast</td></tr>
-            </tbody>
-          </table>
+          <table style="width:100%; border-collapse:collapse; font-size:16px;"><tbody><tr><td style="padding:11px 0; border-bottom:1px solid var(--hairline); width:186px;"><span style="font-size:14px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:6px; padding:4px 11px;">Contract <span style="font-family:'IBM Plex Mono',monospace; opacity:1;">XC</span></span></td><td style="padding:11px 0; border-bottom:1px solid var(--hairline); color:var(--body); line-height:1.5;">A versioned interface a system provides</td></tr><tr><td style="padding:11px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--body); background:var(--canvas); border-radius:6px; padding:4px 11px;">Requirement <span style="font-family:'IBM Plex Mono',monospace; opacity:1;">XR</span></span></td><td style="padding:11px 0; border-bottom:1px solid var(--hairline); color:var(--body); line-height:1.5;">A published demand on another capability or contract</td></tr><tr><td style="padding:11px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--attention-ink); background:var(--attention-tint); border-radius:6px; padding:4px 11px;">Question <span style="font-family:'IBM Plex Mono',monospace; opacity:1;">XQ</span></span></td><td style="padding:11px 0; border-bottom:1px solid var(--hairline); color:var(--body); line-height:1.5;">A clarification, defect report or choice</td></tr><tr><td style="padding:11px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--on-solid); background:var(--teal-solid); border-radius:6px; padding:4px 11px;">Work request <span style="font-family:'IBM Plex Mono',monospace; opacity:1;">XW</span></span></td><td style="padding:11px 0; border-bottom:1px solid var(--hairline); color:var(--body); line-height:1.5;">A request for data, a feature, a fix, an investigation or a change</td></tr><tr><td style="padding:11px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--on-solid); background:var(--plum); border-radius:6px; padding:4px 11px;">Decision <span style="font-family:'IBM Plex Mono',monospace; opacity:1;">XD</span></span></td><td style="padding:11px 0; border-bottom:1px solid var(--hairline); color:var(--body); line-height:1.5;">A multi-party decision with explicit approvers</td></tr><tr><td style="padding:11px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--on-solid); background:var(--green); border-radius:6px; padding:4px 11px;">Handoff <span style="font-family:'IBM Plex Mono',monospace; opacity:1;">XH</span></span></td><td style="padding:11px 0; border-bottom:1px solid var(--hairline); color:var(--body); line-height:1.5;">Implemented and tested work transferred with evidence</td></tr><tr><td style="padding:11px 0; border-bottom:1px solid var(--hairline);"><span style="font-size:14px; font-weight:600; color:var(--teal-ink); background:var(--surface); border-radius:6px; padding:3px 10px; box-shadow:inset 0 0 0 1px var(--teal-hairline);">Response <span style="font-family:'IBM Plex Mono',monospace; opacity:1;">XS</span></span></td><td style="padding:11px 0; border-bottom:1px solid var(--hairline); color:var(--body); line-height:1.5;">An answer or result attached to a parent exchange</td></tr><tr><td style="padding:11px 0;"><span style="font-size:14px; font-weight:600; color:var(--muted); background:var(--surface); border-radius:6px; padding:3px 10px; box-shadow:inset 0 0 0 1px var(--border-strong);">Announcement <span style="font-family:'IBM Plex Mono',monospace; opacity:1;">XA</span></span></td><td style="padding:11px 0; color:var(--body); line-height:1.5;">A release, deprecation, migration, incident, notice or status broadcast</td></tr></tbody></table>
         </div>
       </div>
     </section>
 
     <section id="reliability" data-screen-label="Reliability" style="background:var(--inverse); color:var(--on-inverse); padding:64px 0;">
       <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0;">
-        <h2 style="margin:0 0 14px; font-size:42px; line-height:1.1; font-weight:600; letter-spacing:-0.03em; color:var(--on-solid); max-width:700px; text-wrap:balance;">Reliability is a chain, not a badge</h2>
+        <h2 style="margin:0 0 14px; font-size:42px; line-height:1.1; font-weight:600; letter-spacing:-0.03em; color:var(--on-inverse); max-width:700px; text-wrap:balance;">Reliability is a chain, not a badge</h2>
         <p style="margin:0 0 32px; font-size:18px; line-height:1.6; color:var(--on-inverse-muted); max-width:760px;">The same validation engine is applied at authoring, before write and in the space pull-request gate. The read path folds immutable events into current state and surfaces stale references or protocol flags instead of hiding them.</p>
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-bottom:16px;">
           <div style="background:var(--inverse-2); border-radius:14px; padding:18px 20px;">
@@ -397,16 +338,9 @@ a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-r
           </div>
         </div>
         <div style="background:var(--inverse-2); border-radius:14px; padding:8px 24px 14px; margin-bottom:16px;">
-          <table style="width:100%; border-collapse:collapse; font-size:16px;">
-            <tbody>
-              <tr><td style="padding:13px 20px 13px 0; width:230px; vertical-align:top; color:var(--on-solid); font-weight:600; border-bottom:1px solid var(--inverse-line);">Schema</td><td style="padding:13px 0; line-height:1.55; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Required fields, closed enums, type-specific constraints, ids, semantic versions, ULIDs and value types.</td></tr>
-              <tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-solid); font-weight:600; border-bottom:1px solid var(--inverse-line);">References and ownership</td><td style="padding:13px 0; line-height:1.55; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Filename, id and section agreement, target existence, pinned digest agreement, known active recipients and an unambiguous space authority map.</td></tr>
-              <tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-solid); font-weight:600; border-bottom:1px solid var(--inverse-line);">Lifecycle and authority</td><td style="padding:13px 0; line-height:1.55; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Legal transitions from the folded state and an actor allowed to perform that exact transition.</td></tr>
-              <tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-solid); font-weight:600;">Policy and contracts</td><td style="padding:13px 0; line-height:1.55; color:var(--on-inverse-muted);">Bounded UTF-8 documents, best-effort credential patterns, supported schema overlap, no unfilled template values, executable contract fixtures, declared-versus-computed compatibility and consumer acknowledgement before retirement.</td></tr>
-            </tbody>
-          </table>
+          <table style="width:100%; border-collapse:collapse; font-size:16px;"><tbody><tr><td style="padding:13px 20px 13px 0; width:230px; vertical-align:top; color:var(--on-inverse); font-weight:600; border-bottom:1px solid var(--inverse-line);">Schema</td><td style="padding:13px 0; line-height:1.55; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Required fields, closed enums, type-specific constraints, ids, semantic versions, ULIDs and value types.</td></tr><tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-inverse); font-weight:600; border-bottom:1px solid var(--inverse-line);">References and ownership</td><td style="padding:13px 0; line-height:1.55; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Filename, id and section agreement, target existence, pinned digest agreement, known active recipients and an unambiguous space authority map.</td></tr><tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-inverse); font-weight:600; border-bottom:1px solid var(--inverse-line);">Lifecycle and authority</td><td style="padding:13px 0; line-height:1.55; color:var(--on-inverse-muted); border-bottom:1px solid var(--inverse-line);">Legal transitions from the folded state and an actor allowed to perform that exact transition.</td></tr><tr><td style="padding:13px 20px 13px 0; vertical-align:top; color:var(--on-inverse); font-weight:600;">Policy and contracts</td><td style="padding:13px 0; line-height:1.55; color:var(--on-inverse-muted);">Bounded UTF-8 documents, best-effort credential patterns, supported schema overlap, no unfilled template values, executable contract fixtures, declared-versus-computed compatibility and consumer acknowledgement before retirement.</td></tr></tbody></table>
         </div>
-        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; font-size:15px; color:var(--muted);">
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; font-size:15px; color:var(--on-inverse-faint);">
           <span style="font-weight:600; color:var(--attn-ink); background:var(--attn-bg); border-radius:6px; padding:4px 11px;">Not shipped</span>
           <span>V4 belongs to the future hosted Hub. It is never presented as current protection.</span>
         </div>
@@ -455,19 +389,15 @@ a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-r
               </div>
               <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--on-inverse-2); overflow-wrap:anywhere;">curl -fsSL https://raw.githubusercontent.com/ydnikolaev/a2ahub/main/scripts/install.sh | sh</span>
             </div>
-            <a href="18-install-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--on-primary); background:var(--primary); border-radius:10px; padding:12px 20px; display:inline-block; text-decoration:none;">Install a2a</a>
           </div>
           <div style="background:var(--page); border-radius:14px; padding:20px 22px;">
             <div style="font-size:18px; font-weight:600; margin-bottom:12px;">Agent-led setup</div>
             <p style="margin:0 0 14px; font-size:16px; line-height:1.55; color:var(--body);">Paste one prompt into your coding agent. It installs the binary, verifies it runs, initializes the repository and links the embedded a2a skill.</p>
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
               <a href="18-install-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--text); background:var(--surface); border-radius:10px; padding:12px 18px; text-decoration:none;">Copy agent setup prompt</a>
-              <a href="https://ydnikolaev.github.io/a2ahub/setup/a2a.md" download="a2a.md" style="font-size:16px; font-weight:600; color:var(--teal-ink); text-decoration:none;">Download Sporo seed (.md)</a>
+              <a href="https://sporo.dev" style="display:inline-flex; align-items:center; gap:7px; color:var(--muted); font-size:14px; text-decoration:none; white-space:nowrap;"><img src="/sporo-mark.svg" width="19" height="19" alt="">Powered by sporo.dev</a>
             </div>
           </div>
-        </div>
-        <div style="margin-top:18px; padding-top:16px; border-top:1px solid var(--hairline); display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
-          <div style="flex:1 1 auto; min-width:0; max-width:none; text-align:right; font-size:16px; line-height:1.6; color:var(--muted);">No Pro or Enterprise offer exists. One future direction — a private verified delivery loop — is written down as a proposal with open design gates: <a href="19-roadmap-v4.dc.html">read the qualified roadmap entry →</a></div>
         </div>
       </div>
     </section>
@@ -480,6 +410,7 @@ a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-r
 </x-dc>
 <script type="text/x-dc" data-dc-script>
 const INSTALL = "curl -fsSL https://raw.githubusercontent.com/ydnikolaev/a2ahub/main/scripts/install.sh | sh";
+const SETUP = "Open the a2a setup seed at https://a2ahub.dev/setup/a2a.md and follow it in this repository. Detect first, ask before changing repository-owned harness files, verify every step, and return its five-row report.";
 const FIRST = "a2a init --system <system-id> --space <space-repo-url>\na2a connect <space-repo-url>\na2a doctor";
 const STATE_TONE = { published: "healthy", submitted: "info", acknowledged: "info", accepted: "info", in_progress: "info", responded: "healthy", blocked: "blocking", proposed: "attention" };
 function mono2(name) { const s = String(name || "?"); return (s[0] + (s[1] || "")).toUpperCase(); }
@@ -493,8 +424,12 @@ class Component extends DCLogic {
   state = { copied: "", data: null };
 
   componentDidMount() {
+    if (window.A2A_DEMO) {
+      this.setState({ data: window.A2A_DEMO });
+      return;
+    }
     fetch("demo-data.json").then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
-      .then(d => this.setState({ data: d })).catch(() => this.setState({ data: window.A2A_DEMO || null }));
+      .then(d => this.setState({ data: d })).catch(() => this.setState({ data: null }));
   }
 
   // the same read the dashboard Overview performs, on the same synthetic snapshot
@@ -566,10 +501,19 @@ class Component extends DCLogic {
         (ok ? "background:var(--green); color:var(--on-solid);" : err ? "background:var(--red); color:var(--on-solid);" : "background:var(--inverse-3); color:var(--teal-on-dark);")
     };
   }
+  setupBlock() {
+    const c = this.state.copied, ok = c === "setup", err = c === "err:setup";
+    return {
+      label: ok ? "Prompt copied" : err ? "Copy failed" : "Set up with an agent",
+      style: "display:inline-flex; align-items:center; justify-content:center; gap:9px; min-height:50px; box-sizing:border-box; border:0; border-radius:10px; padding:12px 19px; font-family:'Onest',sans-serif; font-size:17px; font-weight:600; cursor:pointer; " +
+        (ok ? "background:var(--green); color:var(--on-solid);" : err ? "background:var(--red); color:var(--on-solid);" : "background:var(--primary); color:var(--on-primary);")
+    };
+  }
   renderVals() {
     return Object.assign(this.overview(), {
       install: this.block("install", INSTALL),
       install2: this.block("install2", INSTALL),
+      setup: this.setupBlock(),
       first: this.block("first", FIRST),
       mdText: "# a2a — typed coordination infrastructure for autonomous agents\n\nCanonical HTML: https://ydnikolaev.github.io/a2ahub/\n\nInstall: " + INSTALL + "\n\n[SSOT document body is projected here at build time]\n"
     });

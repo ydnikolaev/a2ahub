@@ -109,7 +109,8 @@ type Node struct {
 	Org    string   `json:"org"`
 	Status string   `json:"status"` // active | left
 	Owners []string `json:"owners,omitempty"`
-	Spaces []string `json:"spaces"` // which of your spaces it participates in
+	Avatar string   `json:"avatar,omitempty"` // validated local data URI for Owners[0]
+	Spaces []string `json:"spaces"`           // which of your spaces it participates in
 }
 
 // ContractEdge is a STRUCTURAL edge: `from` consumes `to`'s contract.

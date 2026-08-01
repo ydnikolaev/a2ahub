@@ -1,7 +1,13 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import DesignRuntimePage from '../components/DesignRuntimePage.astro';
+import PublicPageHeader from '../components/PublicPageHeader.astro';
 ---
 <BaseLayout markdown="/changelog.md" current="/changelog.html" slotOwnsMain title="a2ahub changelog — releases and required actions" description="Structured a2ahub release notes, required actions and standing known issues.">
+  <PublicPageHeader
+    icon="changelog"
+    title="What changed — and whether you need to act"
+    description="Authored release notes, not a commit dump. Every change names the affected surfaces, what it means, and whether anything is required from you."
+  />
   <DesignRuntimePage source="15-changelog-v4.dc.html" />
 </BaseLayout>
