@@ -1,6 +1,13 @@
-# External-intake feedback backlog (I6, spec 25-agent-feedback.md §1/§T2).
-# Deliberately separate from docs/backlog.md; `a2a feedback triage` appends
-# accepted rows here. Schema: schemas/feedback/v1/backlog.schema.json.
 backlog: v1
 wip_limit: 16
-items: []
+items:
+    - id: fb-20260801-457629
+      kind: bug
+      severity: major
+      title: note mints an event the space validator rejects, and opens the PR anyway
+      verdict: accepted
+      route: quick-fix
+      refs:
+        - LFC-001
+        - CC-020
+      date: "2026-08-01"
