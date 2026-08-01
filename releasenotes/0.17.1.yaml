@@ -157,7 +157,8 @@ changes:
       flight are an exchange and not a to-do list, and its filters are one
       segmented control (all, incoming, outgoing) plus a type menu that names
       the count behind each type instead of a chip row that wrapped at every
-      width. The empty state is one component with two container-decided sizes
+      width; both dropdowns close on Escape or a click outside them. The empty
+      state is one component with two container-decided sizes
       rather than four picked per call site, its spark now travels back and
       forth, and a screen with nothing on it shows exactly one of them. Page
       headings are a single block for all nine views, so the air above and

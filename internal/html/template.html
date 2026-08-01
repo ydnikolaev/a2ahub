@@ -152,7 +152,7 @@
               <button type="button" onClick="{{ t.go }}" aria-pressed="{{ t.pressed }}" style="{{ t.style }}">{{ t.label }}</button>
             </sc-for>
           </div>
-          <span style="position:relative; display:inline-flex;">
+          <span data-type-menu style="position:relative; display:inline-flex;">
             <button type="button" onClick="{{ toggleTypeMenu }}" aria-expanded="{{ typeMenuExpanded }}" style="{{ typeButtonStyle }}">
               <span>{{ workTypeCurrent }}</span>
               <span aria-hidden="true" style="color:var(--muted); font-size:11px;">{{ typeCaret }}</span>
@@ -1268,6 +1268,7 @@ class Component extends DCLogic {
       if (ev.key !== "Escape") return;
       if (this.state.openDoc) { this.setState({ openDoc: null }); return; }
       if (this.state.spaceModal) { this.setState({ spaceModal: false }); return; }
+      if (this.state.typeMenu) { this.setState({ typeMenu: false }); return; }
       if (this.state.tvFocus) this.setState({ tvFocus: "" });
     };
     window.addEventListener("keydown", this.onEscape);
@@ -1286,8 +1287,12 @@ class Component extends DCLogic {
     this.onCapture = (ev) => {
       const t = ev.target;
       this.fromFocusControl = !!(t && t.closest && t.closest("[data-tv-focus]"));
+      this.fromTypeMenu = !!(t && t.closest && t.closest("[data-type-menu]"));
     };
     this.onBodyClick = () => {
+      // Same capture-recorded target for both: a dropdown that only closes by
+      // re-clicking its own button is a dropdown with no way out.
+      if (this.state.typeMenu && !this.fromTypeMenu) this.setState({ typeMenu: false });
       if (!this.state.tvFocus || this.fromFocusControl) return;
       this.setState({ tvFocus: "" });
     };
