@@ -17,9 +17,12 @@
   --hairline: #F1EEE6;
   --text: #211E17;
   --body: #453F31;
-  --muted: #6F6853;
-  --faint: #8A8269;
-  --logo-dim: #9A927B;
+  /* Secondary copy still carries meaning. Keep every text token at AA
+   * contrast on the darkest light-theme surface it can legitimately sit on
+   * (--border); decorative strokes use opacity instead of a weak text ink. */
+  --muted: #655E4A;
+  --faint: #655E4A;
+  --logo-dim: #6F6853;
   --inverse: #211E17;
   --inverse-2: #2A261D;
   --inverse-3: #33302A;
@@ -48,7 +51,7 @@
   --blocking-ink: #8C2B1F;
   --blocking-strong: #5E2A22;
   --blocking-line: #E0B3AB;
-  --green: #3E7A4C;
+  --green: #3B7548;
   --healthy-tint: #E9F1E8;
   --healthy-ink: #2F5E3A;
   --healthy-strong: #24492D;
@@ -95,7 +98,7 @@ html[data-theme="dark"] {
   --text: #F4F0E4;
   --body: #DAD3C0;
   --muted: #ADA48C;
-  --faint: #8F8770;
+  --faint: #918973;
   --logo-dim: #8F8770;
   --inverse: #0E0D09;
   --inverse-2: #1A1812;
@@ -107,7 +110,7 @@ html[data-theme="dark"] {
   --on-inverse-faint: #A8A08A;
   --on-dark: #FAF7F0;
   --on-solid: #0E0D09;
-  --teal-solid: #2A8395;
+  --teal-solid: #2C8598;
   --teal-ink: #8FD0DB;
   --teal-ink-hover: #B4E2EA;
   --teal-tint: #123039;
