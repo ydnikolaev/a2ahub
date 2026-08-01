@@ -391,7 +391,7 @@ func TestDisputeHandlerMissingReason(t *testing.T) {
 	}
 }
 
-func TestNoteHandlerSkipsLegalityCheck(t *testing.T) {
+func TestNoteHandlerChecksAuthorizationWithoutStatePrecondition(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
 	id := "XQ-axon-20260721-h001"
@@ -400,6 +400,7 @@ func TestNoteHandlerSkipsLegalityCheck(t *testing.T) {
 
 	fake := &fakeFunnel{}
 	deps := testWriteDeps(mirrorDir, fake)
+	deps.OwnSystem = "beta"
 	handler := newNoteHandler(deps)
 
 	in := NoteInput{IDs: []string{id}, Note: "fyi"}
@@ -413,6 +414,17 @@ func TestNoteHandlerSkipsLegalityCheck(t *testing.T) {
 	}
 	if !strings.Contains(string(fake.calls[0].Files[0].Content), "note: fyi") {
 		t.Fatalf("expected the note text in the event, got:\n%s", fake.calls[0].Files[0].Content)
+	}
+
+	outsiderFake := &fakeFunnel{}
+	outsiderDeps := testWriteDeps(mirrorDir, outsiderFake)
+	outsiderDeps.OwnSystem = "gamma"
+	_, _, err = newNoteHandler(outsiderDeps)(context.Background(), args)
+	if err == nil || !strings.Contains(err.Error(), "LFC-002") {
+		t.Fatalf("outsider note error = %v, want LFC-002", err)
+	}
+	if len(outsiderFake.calls) != 0 {
+		t.Fatalf("unauthorized note reached funnel: %d call(s)", len(outsiderFake.calls))
 	}
 }
 

@@ -75,6 +75,16 @@ func CheckCandidate(kind Kind, prior Result, transition, version string, env Env
 		}
 		return VerdictLegal
 	}
+	// D-025's transition-free note is legal regardless of current state. It
+	// still has an authorization rule: the active actor must be either party
+	// named by the artifact envelope. Use the SAME predicate applyNote uses
+	// post-write so the local writer, V3 required check and fold agree.
+	if transition == TNote {
+		if !notePermitted(env, actor.System, membership) {
+			return VerdictUnauthorizedActor
+		}
+		return VerdictLegal
+	}
 	// D-025's transition-free broadcast-acknowledge, checked pre-write by
 	// the SAME predicate applyBroadcastAck applies post-write
 	// (broadcastAckPermitted, fold.go) — never a second reading of the rule.

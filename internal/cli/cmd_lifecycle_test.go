@@ -482,29 +482,42 @@ func TestDisputeAuthorsExactlyOneEvent(t *testing.T) {
 	}
 }
 
-// TestNoteSkipsLegalityCheck is D-025: `note` is transition-free and
-// carries no fold-legality check — an actor who would be refused by every
-// other verb still succeeds.
-func TestNoteSkipsLegalityCheck(t *testing.T) {
+// TestNoteChecksAuthorizationWithoutStatePrecondition is D-025 at the CLI
+// authoring seam: `note` is transition-free, so draft/closed state never
+// refuses it, but the command still rejects an actor outside either party
+// before it opens a PR.
+func TestNoteChecksAuthorizationWithoutStatePrecondition(t *testing.T) {
 	t.Parallel()
 	mirrorDir := t.TempDir()
 	id := "XQ-axon-20260721-k001"
 	writeQuestionArtifact(t, mirrorDir, id, "beta")
-	// No committed history at all (still `draft`) and an actor (gamma)
-	// who is neither `from` nor `to` — every OTHER verb would refuse this
-	// locally (LFC-002/LFC-001); note must not.
+	// No committed history at all: the subject is still draft, but a note has
+	// no state precondition.
 	fake := &fakeLifecycleFunnel{}
-	cmd := cli.NewNoteCommand(fake, mirrorDir, "fixture-space", "gamma", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	cmd := cli.NewNoteCommand(fake, mirrorDir, "fixture-space", "beta", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
 	io, _, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{"--note", "reminder: please respond", id}, io)
 	if code != 0 {
-		t.Fatalf("code = %d, want 0 (note has no fold-legality check); stderr=%s", code, errOut.String())
+		t.Fatalf("code = %d, want 0 (note has no state precondition); stderr=%s", code, errOut.String())
 	}
 	if len(fake.calls) != 1 {
 		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
 	}
 	if !strings.Contains(string(fake.calls[0].Files[0].Content), "transition: note") {
 		t.Fatalf("expected a note event, got:\n%s", fake.calls[0].Files[0].Content)
+	}
+
+	outsiderFake := &fakeLifecycleFunnel{}
+	outsider := cli.NewNoteCommand(outsiderFake, mirrorDir, "fixture-space", "gamma", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	outsiderIO, _, outsiderErr := newIO()
+	if code := outsider.Run(context.Background(), []string{"--note", "not my thread", id}, outsiderIO); code != 1 {
+		t.Fatalf("outsider code = %d, want 1; stderr=%s", code, outsiderErr.String())
+	}
+	if !strings.Contains(outsiderErr.String(), "LFC-002") {
+		t.Fatalf("outsider refusal = %q, want LFC-002", outsiderErr.String())
+	}
+	if len(outsiderFake.calls) != 0 {
+		t.Fatalf("unauthorized note reached funnel: %d call(s)", len(outsiderFake.calls))
 	}
 }
 

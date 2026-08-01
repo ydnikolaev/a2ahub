@@ -1424,9 +1424,9 @@ var _ Command = (*DisputeCommand)(nil)
 // --- note (transition-free, D-025) ---------------------------------------
 
 // NoteCommand implements `a2a note <id...> --note <text>`: a transition-
-// free annotation (D-025) — no fold-legality check (spec 08 Open Q1: legal
-// on any open artifact with a thread, X/S/B), authorized for either party
-// at fold-apply time (non-fatal flag only, never a local refusal).
+// free annotation (D-025), legal regardless of folded state. The shared
+// fold predicate still checks authorization for either party before the
+// funnel, matching the space's V3 required check.
 type NoteCommand struct {
 	deps lifecycleDeps
 }
@@ -1482,6 +1482,16 @@ func (c *NoteCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	var files []space.FileWrite
 	for _, id := range ids {
+		verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TNote, "", actor)
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "note: %s: %v\n", id, err)
+			return 1
+		}
+		if verdict != fold.VerdictLegal {
+			_, _ = fmt.Fprintf(stdio.Stderr, "note: %s\n", c.deps.refusalMessage(id, verdict))
+			return 1
+		}
+
 		_, probe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, id)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "note: %s: %v\n", id, err)

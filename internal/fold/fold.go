@@ -104,10 +104,17 @@ func Apply(kind Kind, env Envelope, prior Result, event Event, membership Member
 // applyNote handles D-025's transition-free `note` kind: exempt from the
 // transition table entirely (never illegal-transition, never a state
 // change), for either party (sender or target) of the current artifact.
+// notePermitted is shared with CheckCandidate so post-write folding and the
+// pre-write/V3 gate cannot disagree about the one rule that remains:
+// authorization.
 func applyNote(env Envelope, result *Result, event Event, membership MembershipView) {
-	if !authorized(RoleEitherParty, env, event.Actor.System, membership) {
+	if membership == nil || !notePermitted(env, event.Actor.System, membership(event.Actor.System)) {
 		result.Flags = append(result.Flags, Flag{Kind: FlagUnauthorizedActor, EventULID: event.ULID, Subject: event.Subject})
 	}
+}
+
+func notePermitted(env Envelope, actorSystem string, status MembershipStatus) bool {
+	return legalRole(RoleEitherParty, env, actorSystem, status)
 }
 
 // applyBroadcastAck handles D-025's transition-free broadcast-acknowledge:
