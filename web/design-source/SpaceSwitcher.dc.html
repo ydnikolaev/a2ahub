@@ -21,7 +21,10 @@
   </button>
 
   <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
-    <span style="position:absolute; z-index:120; top:calc(100% + 8px); right:0; min-width:260px; max-width:min(340px, 90vw); background:var(--surface); border-radius:14px; padding:8px; box-shadow:0 16px 40px -12px rgba(33,30,23,.42), 0 0 0 1px var(--border); display:flex; flex-direction:column; gap:2px;">
+    <!-- The list sizes itself to the longest space id (`max-content`) so a name
+         never breaks across two lines: "checkout-" / "core" reads as two
+         different spaces for the half-second it takes to notice it is not. -->
+    <span style="position:absolute; z-index:120; top:calc(100% + 8px); right:0; width:max-content; min-width:260px; max-width:min(420px, 90vw); background:var(--surface); border-radius:14px; padding:8px; box-shadow:0 16px 40px -12px rgba(33,30,23,.42), 0 0 0 1px var(--border); display:flex; flex-direction:column; gap:2px;">
       <sc-for list="{{ options }}" as="o" hint-placeholder-count="4">
         <button type="button" onClick="{{ o.go }}" aria-current="{{ o.current }}" style="{{ o.style }}">
           <sc-if value="{{ o.hasFaces }}" hint-placeholder-val="{{ true }}">
@@ -31,7 +34,7 @@
               </sc-for>
             </span>
           </sc-if>
-          <span style="flex:1 1 auto; min-width:0; overflow-wrap:anywhere;">{{ o.label }}</span>
+          <span style="flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ o.label }}</span>
           <sc-if value="{{ o.selected }}" hint-placeholder-val="{{ false }}">
             <span aria-hidden="true" style="flex:0 0 auto; color:var(--teal-ink);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
           </sc-if>

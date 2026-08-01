@@ -242,6 +242,13 @@ func TestAssemble_Threads(t *testing.T) {
 	if th.Members[0].ID != parentID || th.Members[1].ID != responseID {
 		t.Fatalf("members not in transcript order: %+v", th.Members)
 	}
+	// Whose move it is must never name self: YourMove already says that, and
+	// repeating it turns "you and seomatrix" into "you, you and seomatrix".
+	for _, who := range th.WaitingOthers {
+		if who == "axon" {
+			t.Fatalf("WaitingOthers names self: %v", th.WaitingOthers)
+		}
+	}
 	if len(th.Links) != 1 {
 		t.Fatalf("links = %d, want 1 (the response's own parent link): %+v", len(th.Links), th.Links)
 	}
