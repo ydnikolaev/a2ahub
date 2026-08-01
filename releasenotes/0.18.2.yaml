@@ -3,6 +3,21 @@ version: "0.18.2"
 released: "2026-08-01"
 headline: "Notes land cleanly, release versions stay current, and the public product surface matches the dashboard"
 changes:
+  - id: RN-01802-0
+    kind: fix
+    impact: low
+    subject: "A failed Git push is no longer mistaken for denied access just because its path contains 403"
+    detail: >
+      The fork fallback now recognizes GitHub's complete HTTP 403 failure
+      phrase instead of matching the three digits anywhere in stderr. A local
+      path or generated fixture name containing 403 therefore remains the
+      original push error and cannot trigger an unrelated fork attempt.
+    affects: ["Git push classification", "fork fallback"]
+    action:
+      scope: none
+      why: >
+        The classifier correction is automatic and needs no configuration.
+
   - id: RN-01802-1
     kind: fix
     impact: high
