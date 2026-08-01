@@ -195,3 +195,28 @@ changes:
       scope: none
       why: >
         No configuration or data migration is required.
+
+  - id: RN-01701-10
+    kind: feat
+    impact: low
+    subject: "Filters that answer a real question, badges with one casing rule, and prose without dashes"
+    detail: >
+      Exchange gains a deadline toggle, because "what has a clock on it" is a
+      question with one answer, and its rows now show the deadline itself rather
+      than how long ago the document last moved. Contracts gains the two filters
+      a contract list is actually opened with: whose it is, since publishing one
+      and depending on one are different jobs, and which consumer lines have
+      fallen off the provider's latest major. The type menu shows each type as
+      its own badge instead of teaching a second, colourless vocabulary for the
+      same eight things. Every badge is lowercase now, with uppercase reserved
+      for identifiers the protocol owns. A document card lists its events newest
+      first, the way a thread does. The version panel names who still sits on
+      each version, which is what decides whether it can ever be switched off,
+      states the sunset and the successor as sentences on their own lines, and
+      makes the deprecation announcement open as the document it is. Em dashes
+      are gone from the dashboard's own prose.
+    affects: ["a2a html", "exchange", "contracts", "badges", "ru locale"]
+    action:
+      scope: none
+      why: >
+        No configuration or data migration is required.

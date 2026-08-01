@@ -37,7 +37,7 @@ function localizedStatus(value) {
   const raw = String(value ?? "");
   if (document.documentElement.lang !== "ru") return raw;
   if (STATUS_RU[raw]) return STATUS_RU[raw];
-  return raw.replace(/^Blocking(?=\s|·|$)/, "Блокирует").replace(/^Your approval pending$/, "Ожидает вашего согласования").replace(/^Overdue(?=\s|·|$)/, "Просрочено").replace(/^Needs a look(?=\s|·|$)/, "Требует внимания").replace(/^stale(?=\s|·|$)/, "устарел").replace(/^fresh(?=\s|·|$)/, "свежий").replace(/^unreadable$/, "не читается");
+  return raw.replace(/^blocking(?=\s|·|$)/, "блокирует").replace(/^your approval pending$/, "ждёт вашего согласования").replace(/^overdue(?=\s|·|$)/, "просрочено").replace(/^needs a look(?=\s|·|$)/, "стоит посмотреть").replace(/^stale(?=\s|·|$)/, "устарел").replace(/^fresh(?=\s|·|$)/, "свежий").replace(/^unreadable$/, "не читается");
 }
 class Component extends DCLogic {
   renderVals() {
