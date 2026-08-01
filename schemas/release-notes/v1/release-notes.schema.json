@@ -35,6 +35,16 @@
             "type": "array",
             "items": { "type": "string" }
           },
+          "roadmap": {
+            "type": "object",
+            "description": "An explicit public-roadmap decision for a feature entry. The release gate requires this on every feat in the version being cut; historical readers may omit it.",
+            "properties": {
+              "visibility": { "type": "string", "enum": ["shipped", "omit"] },
+              "why": { "type": "string", "minLength": 1 }
+            },
+            "required": ["visibility", "why"],
+            "additionalProperties": false
+          },
           "action": {
             "type": "object",
             "properties": {
