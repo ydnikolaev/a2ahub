@@ -1,0 +1,50 @@
+feedback: v1
+id: fb-20260802-10d983
+kind: friction
+severity: minor
+title: export bytes can only be verified after the irreversible publish
+summary: |-
+  contract verify-export --local <path> <id> answers "do my locally generated
+  bytes match the contract" by reading the published contract from the space
+  mirror. Before a first publish there is nothing to read, so it fails with a
+  file-not-found on an internal mirror path rather than a statement about the
+  situation.
+
+  publish has no dry-run either. Its flags cover actor identity, version and
+  bump, and a source digest to record.
+
+  So a producer whose contract is generated from code — exactly the case
+  generated_from exists for — cannot answer "is what I am about to publish what
+  my build produced" at the only moment when the answer could still change
+  anything. The question becomes answerable one command too late.
+
+  This bites hardest in two situations that are not rare: the first version of
+  any contract, where there is no predecessor to compare against and the
+  compatibility check has nothing to say either; and any space whose repository
+  is world-readable, where publication cannot be taken back at all.
+context:
+    a2a_version: 0.18.2
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a contract verify-export --local <path> <id>
+proposal: |-
+  Let the same comparison run against the staged tree instead of the mirror,
+  and add a dry-run to publish that reports what would be written, which
+  version it would land as, and how the compatibility check would rule, without
+  opening anything.
+
+  Neither needs a new concept. The comparison already exists and is simply
+  pointed at the wrong side of the act; everything a dry-run would report is
+  already computed on the way to publishing.
+
+  A smaller companion fix, independent of the above: when verify-export is run
+  against a contract that has never been published, say that, rather than
+  surfacing a missing path inside the local cache. The current error describes
+  a filesystem, not the state the caller is in.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
