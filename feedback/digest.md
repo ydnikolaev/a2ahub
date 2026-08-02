@@ -21,3 +21,12 @@
 ## 2026-08-02 Shipped
 
 - fb-20260801-457629 (bug -> shipped in v0.18.2): notes are state-free audit events; the submitted lifecycle family passed the targeted live gate
+
+## 2026-08-02 Triage
+
+- fb-20260802-10d983 (friction -> accepted): export bytes can only be verified after the irreversible publish
+- fb-20260802-191c66 (protocol -> accepted): a consumer has no supported way to materialize a pinned contract version
+- fb-20260802-d64d19 (bug -> accepted): submit reports failure on squash-only repos after the PR already exists
+- fb-20260802-e2d28b (feature -> accepted): classification is a label the space transport never honours
+- fb-20260802-e6d436 (feature -> accepted): schema_format admits OpenAPI and proto but only a schema dir can travel
+- fb-20260802-f04608 (feature -> accepted): a contract ships an executable fixture suite that nothing can execute

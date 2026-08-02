@@ -1,3 +1,57 @@
 backlog: v1
 wip_limit: 16
-items: []
+items:
+    - id: fb-20260802-10d983
+      kind: friction
+      severity: minor
+      title: export bytes can only be verified after the irreversible publish
+      verdict: accepted
+      route: spec
+      refs:
+        - docs/features/active/contract-confidence-loop-2026-08/README.md
+      date: "2026-08-02"
+    - id: fb-20260802-191c66
+      kind: protocol
+      severity: minor
+      title: a consumer has no supported way to materialize a pinned contract version
+      verdict: accepted
+      route: spec
+      refs:
+        - docs/features/active/contract-confidence-loop-2026-08/README.md
+      date: "2026-08-02"
+    - id: fb-20260802-d64d19
+      kind: bug
+      severity: major
+      title: submit reports failure on squash-only repos after the PR already exists
+      verdict: accepted
+      route: spec
+      refs:
+        - docs/features/active/contract-confidence-loop-2026-08/README.md
+      date: "2026-08-02"
+    - id: fb-20260802-e2d28b
+      kind: feature
+      severity: minor
+      title: classification is a label the space transport never honours
+      verdict: accepted
+      route: spec
+      refs:
+        - docs/features/active/contract-confidence-loop-2026-08/README.md
+      date: "2026-08-02"
+    - id: fb-20260802-e6d436
+      kind: feature
+      severity: major
+      title: schema_format admits OpenAPI and proto but only a schema dir can travel
+      verdict: accepted
+      route: spec
+      refs:
+        - docs/features/active/contract-confidence-loop-2026-08/README.md
+      date: "2026-08-02"
+    - id: fb-20260802-f04608
+      kind: feature
+      severity: major
+      title: a contract ships an executable fixture suite that nothing can execute
+      verdict: accepted
+      route: spec
+      refs:
+        - docs/features/active/contract-confidence-loop-2026-08/README.md
+      date: "2026-08-02"
