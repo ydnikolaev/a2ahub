@@ -1,0 +1,50 @@
+feedback: v1
+id: fb-20260802-e6d436
+kind: feature
+severity: major
+title: schema_format admits OpenAPI and proto but only a schema dir can travel
+summary: |-
+  The envelope's schema_format field admits json-schema-2020-12, openapi-3.x,
+  proto3 and other. What a space carries under provides/<slug>/ is schema/**
+  plus fixtures/**, and nothing else. So a2a lets a producer declare that its
+  contract IS an OpenAPI document while giving that document nowhere to live.
+
+  The same gap hits contracts that are JSON Schema but not ONLY JSON Schema. A
+  real interface usually also has a normative error catalogue, an enum or
+  vocabulary manifest, declared limits, a changelog, and worked examples beyond
+  the compatibility fixtures. A producer holding such material has two bad
+  choices: put it under fixtures/, where it is not a fixture and no reader
+  expects it, or reference it from outside the space, which breaks the property
+  the contract family exists for: that a consumer reading the contract in six
+  months has only these files.
+
+  Authoring guidance already tells a producer that everything the schema cannot
+  express belongs with the contract. The transport does not yet agree.
+context:
+    a2a_version: 0.18.2
+    os_arch: darwin/arm64
+    surface: protocol
+proposal: |-
+  Give a contract a declared artifact set instead of a fixed pair of
+  directories: a manifest beside the schema listing each carried file with a
+  role (schema, api, errors, vocabulary, limits, changelog, example, other), a
+  digest, and whether it is normative.
+
+  That keeps the integrity story rather than degrading to "any files may
+  appear". publish records the digest set, so a consumer can verify what it
+  received is what was published; verify-export compares the whole set instead
+  of one schema; the compatibility check keeps operating on exactly the entries
+  whose role and schema_format make it meaningful, unchanged for everyone else;
+  and a dashboard can finally say what a contract carries.
+
+  Two things worth deciding in the open rather than by accident: a size ceiling
+  for the set, and whether non-text entries are allowed at all. A contract that
+  quietly becomes a binary distribution channel is a different product; a
+  contract that cannot carry its own error catalogue is the present problem.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
