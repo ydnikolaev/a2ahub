@@ -1,0 +1,54 @@
+checks:
+    docs_consulted: true
+    duplicates_checked: true
+    grounded_in_real_work: true
+    no_sensitive_content: true
+    not_space_specific: true
+context:
+    a2a_version: 0.18.2
+    os_arch: darwin/arm64
+    surface: cli
+feedback: v1
+id: fb-20260802-f04608
+kind: feature
+proposal: |-
+    Two runs over an already-published version, available from either side of the
+    relationship:
+
+    - check a payload: given a contract id@version and a file, report pass or
+      fail against the carried schema, in the same pointer-and-code shape
+      violations already use.
+    - check the contract against itself: run every carried valid fixture
+      (expect pass) and every invalid one (expect fail), and report the matrix.
+
+    Machine-readable output matters more than the human rendering. A stable
+    result document is what lets a producer gate its own CI on someone else's
+    contract, and what gives the dashboard the axis it is missing: every contract
+    view today shows what EXISTS — versions, states, consumers — and nothing
+    about whether anything actually conforms right now.
+
+    Scope note: deliberately not a live endpoint prober. It runs against bytes,
+    offline, which is what makes it usable before any integration exists.
+resolution: Verified absence of an offline contract conformance surface; accepted into the contract confidence loop draft spec.
+severity: major
+status: accepted
+summary: |-
+    Publishing a JSON-Schema contract requires schema/** and at least one valid
+    fixture; invalid fixtures are the natural companion. That combination is an
+    executable conformance suite. No command runs it, on either side.
+
+    validate validates a2a's own artifacts, not payloads described by a contract,
+    and the word conformance does not appear anywhere in the corpus. So the two
+    questions every integration actually turns on have no answer in the tool:
+
+    - producer: does the data I emit satisfy the contract I published or adopted?
+    - consumer: does this contract's own fixture set still pass its own schema?
+
+    Both parties end up hand-rolling a validator from the published schema and
+    fixtures. We watched exactly that happen: one side built its own offline
+    fixture replay to answer a question the contract's fixtures already encode.
+
+    The cost is not the code, it is that every conformance question round-trips
+    through a human on the other side. An agent cannot close the loop locally,
+    which is precisely where a machine-readable contract was supposed to help.
+title: a contract ships an executable fixture suite that nothing can execute

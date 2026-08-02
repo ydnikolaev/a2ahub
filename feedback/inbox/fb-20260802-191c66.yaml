@@ -1,0 +1,53 @@
+checks:
+    docs_consulted: true
+    duplicates_checked: true
+    grounded_in_real_work: true
+    no_sensitive_content: true
+    not_space_specific: true
+context:
+    a2a_version: 0.18.2
+    os_arch: darwin/arm64
+    surface: cli
+feedback: v1
+id: fb-20260802-191c66
+kind: protocol
+proposal: |-
+    A read verb that writes a pinned version's carried artifacts into a
+    caller-chosen path in the consumer's own repository, resolved through the
+    publish event so that a retired or superseded line still materializes exactly
+    what was agreed at the time.
+
+    That makes the consumer half symmetrical with the producer's. A producer can
+    already prove its published export matches its code; a consumer cannot yet
+    obtain the bytes it is supposed to build against without reaching into a
+    cache it is told to leave alone.
+
+    It also composes with two other gaps worth considering together rather than
+    in isolation: whatever a contract is permitted to carry is what this verb
+    should materialize, and any offline conformance run needs those artifacts
+    present locally to execute at all. Deciding the three separately risks a
+    materialize verb that predates the artifact set it is supposed to write.
+resolution: Structurally verified consumer materialization gap; accepted as design input without claiming a reproduced runtime failure.
+severity: minor
+status: accepted
+summary: |-
+    Filed knowingly ahead of first-hand experience. The adopt step has not been
+    run yet in our use, so this is a verified structural gap rather than a
+    failure we hit, and severity is set conservatively for that reason — we
+    expect it to be higher once exercised. Raising it now because the evidence is
+    cheap today and the decision sits upstream of a lot of consumer work.
+
+    After adopt, a consumer needs the contract's bytes inside its own repository:
+    to generate code, to pin in CI, to diff on upgrade. The contract lifecycle
+    offers new, publish, deprecate, retire, diff, verify-export and adopt.
+    Nothing materializes a version.
+
+    The local mirror does hold the files, but the corpus is explicit that it is a
+    cache and not a workspace: every command refreshes it and resets it to the
+    space's main first. So a consumer pinned to an older major would be reading a
+    directory the tool is documented to overwrite, and the only available path is
+    the one the documentation tells it not to take.
+
+    The vendored mechanism does not cover this. It mirrors a non-participant's
+    material INTO a space, which is the opposite direction.
+title: a consumer has no supported way to materialize a pinned contract version
