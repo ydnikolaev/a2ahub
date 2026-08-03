@@ -1,0 +1,10 @@
+{
+  "schema": "event/v2",
+  "event": "01K1A2B3C4D5E6F7G8H9J0K1M7",
+  "space": "checkout-core",
+  "subject": "XC-atlas-order-envelope",
+  "transition": "publish",
+  "actor": { "kind": "agent", "name": "publisher", "system": "atlas" },
+  "at": "2026-08-03T12:00:00Z",
+  "digest_profile": "contract-set-v2"
+}

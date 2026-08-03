@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "envelope/v2/contract.schema.json",
+  "title": "Envelope: contract (v2)",
+  "description": "A versioned contract descriptor whose explicit artifacts array defines the bounded contract-set-v2 carried set.",
+  "allOf": [{ "$ref": "base.schema.json" }],
+  "type": "object",
+  "properties": {
+    "type": { "const": "contract" },
+    "id": { "pattern": "^XC-" },
+    "category": {
+      "type": "string",
+      "enum": ["api", "data-feed", "vocabulary", "event-feed", "other"]
+    },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "compat_policy": { "type": "string" },
+    "generated_from": { "$ref": "#/$defs/generatedFrom" },
+    "schema_format": {
+      "type": "string",
+      "enum": ["json-schema-2020-12", "openapi-3.x", "proto3", "other"]
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/artifactEntry" }
+    }
+  },
+  "required": ["category", "version", "compat_policy", "schema_format", "artifacts"],
+  "patternProperties": { "^x_": true },
+  "if": {
+    "properties": { "schema_format": { "const": "json-schema-2020-12" } },
+    "required": ["schema_format"]
+  },
+  "then": {
+    "properties": {
+      "artifacts": {
+        "items": {
+          "allOf": [
+            {
+              "if": {
+                "properties": { "role": { "const": "schema" } },
+                "required": ["role"]
+              },
+              "then": {
+                "properties": {
+                  "media_type": { "enum": ["application/schema+json", "application/json"] }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "role": { "enum": ["valid-fixture", "invalid-fixture"] } },
+                "required": ["role"]
+              },
+              "then": {
+                "properties": { "media_type": { "const": "application/json" } }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "generatedFrom": {
+      "type": "object",
+      "properties": {
+        "tool": { "type": "string" },
+        "source_digest": { "type": "string" }
+      },
+      "required": ["tool", "source_digest"],
+      "additionalProperties": false
+    },
+    "artifactEntry": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string" },
+        "role": {
+          "type": "string",
+          "enum": [
+            "schema",
+            "valid-fixture",
+            "invalid-fixture",
+            "errors",
+            "vocabulary",
+            "limits",
+            "changelog",
+            "example",
+            "other"
+          ]
+        },
+        "normative": { "type": "boolean" },
+        "media_type": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9!#$&^_.+*-]*/[a-z0-9][a-z0-9!#$&^_.+*-]*$"
+        },
+        "conforms_to": { "type": "string" }
+      },
+      "required": ["path", "role", "normative", "media_type"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "role": { "const": "schema" } },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "path": { "pattern": "^schema/(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,})(?:/(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,}))*$" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "role": { "const": "valid-fixture" } },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "path": { "pattern": "^fixtures/valid/(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,})(?:/(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,}))*$" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "role": { "const": "invalid-fixture" } },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "path": { "pattern": "^fixtures/invalid/(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,})(?:/(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,}))*$" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": { "enum": ["errors", "vocabulary", "limits", "changelog", "example", "other"] }
+            },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "path": { "pattern": "^artifacts/(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,})(?:/(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,}))*$" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "role": { "enum": ["valid-fixture", "invalid-fixture"] } },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "conforms_to": { "pattern": "^schema/(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,})(?:/(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,}))*$" }
+            },
+            "required": ["conforms_to"]
+          },
+          "else": {
+            "properties": { "conforms_to": false }
+          }
+        }
+      ]
+    }
+  },
+  "unevaluatedProperties": false
+}

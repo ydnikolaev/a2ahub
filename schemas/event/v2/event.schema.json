@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "event/v2/event.schema.json",
+  "title": "Lifecycle event (v2)",
+  "description": "A distinct event/v2 corpus object. First-party contract publish events carry an immutable digest profile and durable publication identity; event/v1 remains unchanged for historical replay and ordinary lifecycle writers.",
+  "type": "object",
+  "properties": {
+    "schema": { "const": "event/v2" },
+    "event": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "space": { "type": "string" },
+    "subject": { "type": "string" },
+    "transition": {
+      "type": "string",
+      "enum": [
+        "create", "publish", "deprecate", "retire", "acknowledge",
+        "satisfy", "decline", "withdraw", "supersede", "submit",
+        "accept", "start", "block", "unblock", "respond", "close",
+        "dispute", "cancel", "propose", "approve", "reject",
+        "verify-pass", "verify-fail", "verify", "note"
+      ]
+    },
+    "state": { "type": "string" },
+    "actor": {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["human", "agent"] },
+        "name": { "type": "string", "minLength": 1 },
+        "system": { "type": "string" },
+        "model": { "type": "string" },
+        "session": { "type": "string" }
+      },
+      "required": ["kind", "name", "system"],
+      "additionalProperties": false
+    },
+    "at": { "type": "string", "format": "date-time" },
+    "note": { "type": "string" },
+    "refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ref": { "type": "string" },
+          "note": { "type": "string" }
+        },
+        "required": ["ref"],
+        "additionalProperties": false
+      }
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "reason_code": {
+      "type": "string",
+      "enum": ["split-required", "security-concern", "out-of-scope", "duplicate", "other"]
+    },
+    "commit": { "type": "string" },
+    "digest": { "type": "string" },
+    "digest_profile": {
+      "type": "string",
+      "enum": ["contract-tree-v1", "contract-set-v2"]
+    },
+    "publication": {
+      "type": "object",
+      "properties": {
+        "intent_key": {
+          "type": "string",
+          "pattern": "^op-v1-[a-f0-9]{64}$"
+        },
+        "candidate_intent_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "version_selector": {
+          "type": "string",
+          "pattern": "^(auto:(patch|minor|major)|explicit:(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*))$"
+        },
+        "operation_key": {
+          "type": "string",
+          "pattern": "^op-v1-[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "intent_key",
+        "candidate_intent_digest",
+        "version_selector",
+        "operation_key"
+      ],
+      "additionalProperties": false
+    },
+    "produced_by": {
+      "type": "object",
+      "properties": {
+        "tool": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      },
+      "required": ["tool", "version"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["schema", "event", "space", "subject", "transition", "actor", "at"],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "subject": { "pattern": "^XC-" },
+          "transition": { "const": "publish" }
+        },
+        "required": ["subject", "transition"]
+      },
+      "then": {
+        "required": ["digest_profile", "publication"]
+      }
+    }
+  ],
+  "additionalProperties": false
+}
