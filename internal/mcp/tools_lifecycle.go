@@ -109,12 +109,14 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 
 		var files []space.FileWrite
 		for _, id := range in.IDs {
-			verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, id, spec.Transition, "", actor)
+			evaluation, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, id, fold.Event{
+				Transition: spec.Transition, Actor: actor,
+			})
 			if err != nil {
 				return nil, "", fmt.Errorf("%s: %s: %w", spec.Verb, id, err)
 			}
-			if verdict != fold.VerdictLegal {
-				return nil, "", fmt.Errorf("%s: %w", spec.Verb, verdictError(id, verdict))
+			if evaluation.Verdict != fold.VerdictLegal {
+				return nil, "", fmt.Errorf("%s: %w", spec.Verb, verdictError(id, evaluation.Verdict))
 			}
 			_, probe, err := loadEnvelope(deps.MirrorDir, id)
 			if err != nil {
@@ -127,7 +129,7 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 			}
 			ev := eventDoc{
 				Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
-				Subject: id, Transition: spec.Transition,
+				Subject: id, Transition: spec.Transition, State: eventReceiptState(evaluation),
 				Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 				At:    now.UTC().Format(time.RFC3339),
 			}
@@ -227,14 +229,7 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 		var files []space.FileWrite
 		var ids []string
 		for _, parentID := range in.ParentIDs {
-			verdict, parentEnv, err := checkLegality(deps.MirrorDir, deps.Manifest, parentID, fold.TRespond, "", actor)
-			if err != nil {
-				return nil, "", fmt.Errorf("respond: %s: %w", parentID, err)
-			}
-			if verdict != fold.VerdictLegal {
-				return nil, "", fmt.Errorf("respond: %w", verdictError(parentID, verdict))
-			}
-			_, parentProbe, err := loadEnvelope(deps.MirrorDir, parentID)
+			parentEnv, parentProbe, err := loadEnvelope(deps.MirrorDir, parentID)
 			if err != nil {
 				return nil, "", fmt.Errorf("respond: %s: %w", parentID, err)
 			}
@@ -316,6 +311,15 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 			if err != nil {
 				return nil, "", fmt.Errorf("respond: cannot mint response id: %w", err)
 			}
+			evaluation, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, parentID, fold.Event{
+				Transition: fold.TRespond, ResponseID: responseID, Actor: actor,
+			})
+			if err != nil {
+				return nil, "", fmt.Errorf("respond: %s: %w", parentID, err)
+			}
+			if evaluation.Verdict != fold.VerdictLegal {
+				return nil, "", fmt.Errorf("respond: %w", verdictError(parentID, evaluation.Verdict))
+			}
 			draft, err := template.Render(template.Input{
 				Type: "response", ID: responseID, Actor: resolved, Created: now,
 				Fields: respFields, Body: bodyOverride,
@@ -353,7 +357,7 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 			}
 			respondEvent := eventDoc{
 				Schema: "event/v1", Event: respondEventID.String(), Space: parentProbe.Space,
-				Subject: parentID, Transition: fold.TRespond,
+				Subject: parentID, Transition: fold.TRespond, State: eventReceiptState(evaluation),
 				Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 				At:    now.UTC().Format(time.RFC3339),
 				Refs:  []refEntry{{Ref: responseID}},
@@ -475,12 +479,14 @@ func newVerifyHandler(deps WriteDeps) HandlerFunc {
 				return nil, "", fmt.Errorf("verify: %s: %w", target, err)
 			}
 
-			verdict, _, parentID, result, err := checkResponseLegality(deps.MirrorDir, deps.Manifest, responseID, fold.TVerify, actor)
+			evaluation, parentEnv, parentID, result, err := evaluateResponseCandidate(deps.MirrorDir, deps.Manifest, responseID, fold.Event{
+				Transition: fold.TVerify, Actor: actor,
+			})
 			if err != nil {
 				return nil, "", fmt.Errorf("verify: %s: %w", responseID, err)
 			}
-			if verdict != fold.VerdictLegal {
-				return nil, "", fmt.Errorf("verify: %w", verdictError(responseID, verdict))
+			if evaluation.Verdict != fold.VerdictLegal {
+				return nil, "", fmt.Errorf("verify: %w", verdictError(responseID, evaluation.Verdict))
 			}
 			_, parentProbe, err := loadEnvelope(deps.MirrorDir, parentID)
 			if err != nil {
@@ -493,7 +499,7 @@ func newVerifyHandler(deps WriteDeps) HandlerFunc {
 			}
 			verifyEvent := eventDoc{
 				Schema: "event/v1", Event: verifyEventID.String(), Space: parentProbe.Space,
-				Subject: responseID, Transition: fold.TVerify,
+				Subject: responseID, Transition: fold.TVerify, State: eventReceiptState(evaluation),
 				Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 				At:    now.UTC().Format(time.RFC3339),
 			}
@@ -507,11 +513,10 @@ func newVerifyHandler(deps WriteDeps) HandlerFunc {
 			// D-024 convenience: single-response exchange also closes the
 			// parent in the SAME PR.
 			if len(result.Responses) == 1 {
-				closeVerdict, _, cerr := checkLegality(deps.MirrorDir, deps.Manifest, parentID, fold.TClose, "", actor)
-				if cerr != nil {
-					return nil, "", fmt.Errorf("verify: %s: %w", parentID, cerr)
-				}
-				if closeVerdict != fold.VerdictLegal {
+				closeEvaluation := fold.EvaluateCandidate(parentEnv.Kind, evaluation.Result, fold.Event{
+					Subject: parentID, Transition: fold.TClose, Actor: actor,
+				}, parentEnv, membership(deps.Manifest))
+				if closeEvaluation.Verdict != fold.VerdictLegal {
 					continue
 				}
 				closeEventID, err := artifact.MintULIDAt(now, deps.Entropy)
@@ -520,7 +525,7 @@ func newVerifyHandler(deps WriteDeps) HandlerFunc {
 				}
 				closeEvent := eventDoc{
 					Schema: "event/v1", Event: closeEventID.String(), Space: parentProbe.Space,
-					Subject: parentID, Transition: fold.TClose,
+					Subject: parentID, Transition: fold.TClose, State: eventReceiptState(closeEvaluation),
 					Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 					At:    now.UTC().Format(time.RFC3339),
 				}
@@ -573,12 +578,14 @@ func newDisputeHandler(deps WriteDeps) HandlerFunc {
 
 		var files []space.FileWrite
 		for _, responseID := range in.IDs {
-			verdict, _, parentID, _, err := checkResponseLegality(deps.MirrorDir, deps.Manifest, responseID, fold.TDispute, actor)
+			evaluation, _, parentID, _, err := evaluateResponseCandidate(deps.MirrorDir, deps.Manifest, responseID, fold.Event{
+				Transition: fold.TDispute, Actor: actor,
+			})
 			if err != nil {
 				return nil, "", fmt.Errorf("dispute: %s: %w", responseID, err)
 			}
-			if verdict != fold.VerdictLegal {
-				return nil, "", fmt.Errorf("dispute: %w", verdictError(responseID, verdict))
+			if evaluation.Verdict != fold.VerdictLegal {
+				return nil, "", fmt.Errorf("dispute: %w", verdictError(responseID, evaluation.Verdict))
 			}
 			_, parentProbe, err := loadEnvelope(deps.MirrorDir, parentID)
 			if err != nil {
@@ -591,7 +598,7 @@ func newDisputeHandler(deps WriteDeps) HandlerFunc {
 			}
 			ev := eventDoc{
 				Schema: "event/v1", Event: eventID.String(), Space: parentProbe.Space,
-				Subject: responseID, Transition: fold.TDispute,
+				Subject: responseID, Transition: fold.TDispute, State: eventReceiptState(evaluation),
 				Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 				At:    now.UTC().Format(time.RFC3339),
 				Note:  in.Reason, ReasonCode: in.ReasonCode,
@@ -642,12 +649,14 @@ func newNoteHandler(deps WriteDeps) HandlerFunc {
 
 		var files []space.FileWrite
 		for _, id := range in.IDs {
-			verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, id, fold.TNote, "", actor)
+			evaluation, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, id, fold.Event{
+				Transition: fold.TNote, Actor: actor,
+			})
 			if err != nil {
 				return nil, "", fmt.Errorf("note: %s: %w", id, err)
 			}
-			if verdict != fold.VerdictLegal {
-				return nil, "", fmt.Errorf("note: %w", verdictError(id, verdict))
+			if evaluation.Verdict != fold.VerdictLegal {
+				return nil, "", fmt.Errorf("note: %w", verdictError(id, evaluation.Verdict))
 			}
 
 			_, probe, err := loadEnvelope(deps.MirrorDir, id)
@@ -660,7 +669,7 @@ func newNoteHandler(deps WriteDeps) HandlerFunc {
 			}
 			ev := eventDoc{
 				Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
-				Subject: id, Transition: fold.TNote,
+				Subject: id, Transition: fold.TNote, State: eventReceiptState(evaluation),
 				Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 				At:    now.UTC().Format(time.RFC3339),
 				Note:  in.Note,

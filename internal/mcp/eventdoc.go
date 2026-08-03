@@ -211,22 +211,22 @@ func membership(manifest space.Manifest) fold.MembershipView {
 	}
 }
 
-// checkLegality is the generic (non-response-scoped) pre-write legality
-// check every write tool except verify/dispute uses.
+// evaluateCandidate is the generic (non-response-scoped) pre-write evaluator
+// every write tool except verify/dispute uses. It is the package's one bridge
+// from committed envelope/history/membership inputs to fold.EvaluateCandidate;
+// callers serialize only the returned receipt, never derive state themselves.
 //
-// version is "" for every non-contract-version transition; a contract
-// publish/deprecate/retire caller supplies the version the candidate
-// event itself names (P4, 04-per-version-lifecycle.plan.md) — resolved
-// BEFORE calling this, same requirement as internal/cli's own
-// lifecycleCheckLegality.
-func checkLegality(mirrorDir string, manifest space.Manifest, id, transition, version string, actor fold.Actor) (fold.Verdict, fold.Envelope, error) {
+// candidate.Version is "" for every non-contract-version transition; a
+// contract publish/deprecate/retire caller supplies the version the candidate
+// event itself names, resolved before calling this.
+func evaluateCandidate(mirrorDir string, manifest space.Manifest, id string, candidate fold.Event) (fold.CandidateEvaluation, fold.Envelope, error) {
 	env, _, err := loadEnvelope(mirrorDir, id)
 	if err != nil {
-		return "", fold.Envelope{}, err
+		return fold.CandidateEvaluation{}, fold.Envelope{}, err
 	}
 	all, err := readAllEvents(mirrorDir)
 	if err != nil {
-		return "", env, err
+		return fold.CandidateEvaluation{}, env, err
 	}
 	events := foldEvents(all, id)
 	memb := membership(manifest)
@@ -235,39 +235,46 @@ func checkLegality(mirrorDir string, manifest space.Manifest, id, transition, ve
 	if len(events) > 0 {
 		prior = fold.Fold(env.Kind, env, events, memb)
 	}
-	actorStatus := memb(actor.System)
-	return fold.CheckCandidate(env.Kind, prior, transition, version, env, actor, actorStatus), env, nil
+	candidate.Subject = id
+	return fold.EvaluateCandidate(env.Kind, prior, candidate, env, memb), env, nil
 }
 
-// checkResponseLegality is the verify/dispute pre-write legality check.
-func checkResponseLegality(mirrorDir string, manifest space.Manifest, responseID, transition string, actor fold.Actor) (fold.Verdict, fold.Envelope, string, fold.Result, error) {
+// evaluateResponseCandidate is the verify/dispute pre-write evaluator. The
+// parent fold is the authority for response substates, so the response id is
+// installed as the candidate subject before the sole evaluator call.
+func evaluateResponseCandidate(mirrorDir string, manifest space.Manifest, responseID string, candidate fold.Event) (fold.CandidateEvaluation, fold.Envelope, string, fold.Result, error) {
 	_, responseProbe, err := loadEnvelope(mirrorDir, responseID)
 	if err != nil {
-		return "", fold.Envelope{}, "", fold.Result{}, err
+		return fold.CandidateEvaluation{}, fold.Envelope{}, "", fold.Result{}, err
 	}
 	parentID := responseProbe.Parent
 	if parentID == "" {
-		return "", fold.Envelope{}, "", fold.Result{}, fmt.Errorf("mcp: response %s carries no `parent` link", responseID)
+		return fold.CandidateEvaluation{}, fold.Envelope{}, "", fold.Result{}, fmt.Errorf("mcp: response %s carries no `parent` link", responseID)
 	}
 	parentEnv, _, err := loadEnvelope(mirrorDir, parentID)
 	if err != nil {
-		return "", fold.Envelope{}, "", fold.Result{}, err
+		return fold.CandidateEvaluation{}, fold.Envelope{}, "", fold.Result{}, err
 	}
 	all, err := readAllEvents(mirrorDir)
 	if err != nil {
-		return "", parentEnv, parentID, fold.Result{}, err
+		return fold.CandidateEvaluation{}, parentEnv, parentID, fold.Result{}, err
 	}
 	events := foldEvents(all, parentID)
 	memb := membership(manifest)
 	result := fold.Fold(parentEnv.Kind, parentEnv, events, memb)
+	candidate.Subject = responseID
+	evaluation := fold.EvaluateCandidate(parentEnv.Kind, result, candidate, parentEnv, memb)
+	return evaluation, parentEnv, parentID, result, nil
+}
 
-	substate := fold.State("")
-	if result.Responses != nil {
-		substate = result.Responses[responseID]
+// eventReceiptState projects an applicable evaluator outcome onto event/v1.
+// The empty string is intentional for receipt-N/A events and combines with
+// yaml's omitempty tag to omit the field entirely.
+func eventReceiptState(evaluation fold.CandidateEvaluation) string {
+	if !evaluation.Applicable {
+		return ""
 	}
-	actorStatus := memb(actor.System)
-	verdict := fold.CheckLegality(fold.KindResponse, substate, transition, parentEnv, actor, actorStatus)
-	return verdict, parentEnv, parentID, result, nil
+	return string(evaluation.Outcome)
 }
 
 // resolveResponseID resolves verify's own `<response-id|parent-id>`

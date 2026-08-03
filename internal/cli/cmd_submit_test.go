@@ -270,6 +270,16 @@ func TestSubmitOwnSystemForeignToIsNotRefused(t *testing.T) {
 	if fake.calls[0].RemoteURL == "" || fake.calls[0].BaseBranch == "" || fake.calls[0].CommitAuthorName == "" {
 		t.Fatalf("expected the SubmitRequest to carry the host config through: %+v", fake.calls[0])
 	}
+	var sawReceipt bool
+	for _, file := range fake.calls[0].Files {
+		content := string(file.Content)
+		if strings.Contains(content, "transition: submit") && strings.Contains(content, "state: submitted") {
+			sawReceipt = true
+		}
+	}
+	if !sawReceipt {
+		t.Fatalf("entry event omitted its evaluator receipt: %+v", fake.calls[0].Files)
+	}
 }
 
 // writeMinimalSpaceYAML writes a bare space.yaml with only the

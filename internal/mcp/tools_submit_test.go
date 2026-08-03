@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"gopkg.in/yaml.v3"
 )
 
 // writeStagedDraft writes a minimal staged draft under stagingDir/<id>.md.
@@ -66,6 +67,9 @@ func TestSubmitHandlerFreshArtifact(t *testing.T) {
 	if !strings.Contains(string(fake.calls[0].Files[1].Content), "transition: submit") {
 		t.Fatalf("expected a submit-transition entry event, got:\n%s", fake.calls[0].Files[1].Content)
 	}
+	if !strings.Contains(string(fake.calls[0].Files[1].Content), "state: submitted") {
+		t.Fatalf("expected an evaluator-authored submitted receipt, got:\n%s", fake.calls[0].Files[1].Content)
+	}
 }
 
 func TestSubmitHandlerContractCarriesTheNewScaffold(t *testing.T) {
@@ -122,6 +126,68 @@ func TestSubmitHandlerContractCarriesTheNewScaffold(t *testing.T) {
 	}
 	if len(fake.calls[0].Files) != 5 {
 		t.Fatalf("submit carried %d files, want descriptor + 3 sidecars + publish event", len(fake.calls[0].Files))
+	}
+}
+
+// TestSubmitWriterReceiptMatrix covers every entry-event constructor branch.
+// The expected values are outcomes returned by fold.EvaluateCandidate; the
+// writer merely projects them into event/v1 and never accepts a caller state.
+func TestSubmitWriterReceiptMatrix(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		envType string
+		id      string
+		state   string
+	}{
+		{envType: "contract", id: "XC-beta-widget", state: "published"},
+		{envType: "requirement", id: "XR-beta-req1", state: "published"},
+		{envType: "question", id: "XQ-beta-20260721-a001", state: "submitted"},
+		{envType: "work_request", id: "XW-beta-20260721-a002", state: "submitted"},
+		{envType: "decision", id: "XD-beta-20260721-a003", state: "proposed"},
+		{envType: "handoff", id: "XH-beta-20260721-a004", state: "submitted"},
+		{envType: "response", id: "XS-beta-20260721-a005", state: "submitted"},
+		{envType: "announcement", id: "XA-beta-20260721-a006", state: "published"},
+	}
+
+	mirrorDir := t.TempDir()
+	writeMirrorFile(t, mirrorDir, "space.yaml", "min_binary_version: 0.0.0\n")
+	deps := SubmitDeps{WriteDeps: testWriteDeps(mirrorDir, &fakeFunnel{}), StagingDir: t.TempDir()}
+	items := make([]submitItem, 0, len(cases))
+	want := make(map[string]string, len(cases))
+	for _, tc := range cases {
+		var env submitEnvelopeInfo
+		env.ID = tc.id
+		env.Type = tc.envType
+		env.From = "beta"
+		env.To = []string{"axon"}
+		env.Space = "fixture-space"
+		env.Actor.Kind = "agent"
+		env.Actor.Name = "bot"
+		items = append(items, submitItem{path: tc.id + ".md", raw: []byte("draft"), env: env})
+		want[tc.id] = tc.state
+	}
+
+	req, _, err := buildSubmitRequest(deps, items)
+	if err != nil {
+		t.Fatalf("buildSubmitRequest: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, file := range req.Files {
+		if !strings.Contains(file.Path, "/events/") {
+			continue
+		}
+		var event eventDoc
+		if err := yaml.Unmarshal(file.Content, &event); err != nil {
+			t.Fatalf("decode %s: %v", file.Path, err)
+		}
+		if event.State != want[event.Subject] {
+			t.Errorf("%s entry receipt = %q, want %q", event.Subject, event.State, want[event.Subject])
+		}
+		seen[event.Subject] = true
+	}
+	if len(seen) != len(cases) {
+		t.Fatalf("saw receipts for %d subjects, want %d: %v", len(seen), len(cases), seen)
 	}
 }
 

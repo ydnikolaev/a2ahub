@@ -116,11 +116,13 @@ func newSubmitHandler(deps SubmitDeps) HandlerFunc {
 }
 
 type submitEnvelopeInfo struct {
-	ID    string `yaml:"id"`
-	Type  string `yaml:"type"`
-	From  string `yaml:"from"`
-	Space string `yaml:"space"`
-	Actor struct {
+	ID                string   `yaml:"id"`
+	Type              string   `yaml:"type"`
+	From              string   `yaml:"from"`
+	To                any      `yaml:"to"`
+	RequiredApprovers []string `yaml:"required_approvers"`
+	Space             string   `yaml:"space"`
+	Actor             struct {
 		Kind string `yaml:"kind"`
 		Name string `yaml:"name"`
 	} `yaml:"actor"`
@@ -200,6 +202,25 @@ func buildSubmitRequest(deps SubmitDeps, fresh []submitItem) (space.SubmitReques
 		if !ok {
 			return space.SubmitRequest{}, nil, fmt.Errorf("%s: unknown envelope type %q", it.path, it.env.Type)
 		}
+		parsedID, err := artifact.ParseID(it.env.ID)
+		if err != nil {
+			return space.SubmitRequest{}, nil, fmt.Errorf("%s: %w", it.path, err)
+		}
+		kind, ok := prefixInfo[parsedID.Prefix]
+		if !ok {
+			return space.SubmitRequest{}, nil, fmt.Errorf("%s: unknown artifact id %q", it.path, it.env.ID)
+		}
+		actor := fold.Actor{Kind: it.env.Actor.Kind, Name: it.env.Actor.Name, System: deps.OwnSystem}
+		env := fold.Envelope{
+			ID: it.env.ID, Kind: kind, From: it.env.From,
+			To: toStringSlice(it.env.To), RequiredApprovers: it.env.RequiredApprovers,
+		}
+		evaluation := fold.EvaluateCandidate(kind, fold.NewResult(kind), fold.Event{
+			Subject: it.env.ID, Transition: transition, Actor: actor,
+		}, env, membership(deps.Manifest))
+		if evaluation.Verdict != fold.VerdictLegal {
+			return space.SubmitRequest{}, nil, verdictError(it.env.ID, evaluation.Verdict)
+		}
 		eventID, err := artifact.MintULIDAt(now, deps.Entropy)
 		if err != nil {
 			return space.SubmitRequest{}, nil, fmt.Errorf("cannot mint event id: %w", err)
@@ -209,7 +230,8 @@ func buildSubmitRequest(deps SubmitDeps, fresh []submitItem) (space.SubmitReques
 			Space:      it.env.Space,
 			Subject:    it.env.ID,
 			Transition: transition,
-			Actor:      eventActor{Kind: it.env.Actor.Kind, Name: it.env.Actor.Name, System: deps.OwnSystem},
+			State:      eventReceiptState(evaluation),
+			Actor:      eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 			At:         now.UTC().Format(time.RFC3339),
 		}
 		eventRaw, err := yaml.Marshal(evDoc)
