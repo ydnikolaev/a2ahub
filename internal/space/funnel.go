@@ -761,7 +761,7 @@ func checkStatusExplicitlyGreen(s host.CheckStatusResult) bool {
 // validateBranchSegments and TestBranchNameGrammarIsProtocol before changing
 // the format string.
 func BranchName(system, verb, artifactID string) string {
-	return fmt.Sprintf("a2a/%s/%s/%s", system, verb, artifactID)
+	return operation.BranchName(system, verb, artifactID)
 }
 
 const (
