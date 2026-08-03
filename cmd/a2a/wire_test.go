@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,86 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
+
+func TestResolveFeedbackCredentialPrecedence(t *testing.T) {
+	clear := func(t *testing.T) {
+		t.Helper()
+		for _, name := range []string{"A2A_FEEDBACK_TOKEN", "A2A_CONFIGURED_FEEDBACK", "GITHUB_TOKEN", "GH_TOKEN"} {
+			t.Setenv(name, "")
+		}
+	}
+
+	t.Run("explicit override wins", func(t *testing.T) {
+		clear(t)
+		t.Setenv("A2A_FEEDBACK_TOKEN", "explicit-secret")
+		t.Setenv("A2A_CONFIGURED_FEEDBACK", "configured-secret")
+		t.Setenv("GITHUB_TOKEN", "fallback-secret")
+		got, err := resolveFeedbackCredential(context.Background(), space.MachineConfig{
+			Credentials: map[string]string{"feedback": "env:A2A_CONFIGURED_FEEDBACK"},
+		})
+		if err != nil || got.Token != "explicit-secret" {
+			t.Fatalf("credential = %#v, err=%v; want explicit override", got, err)
+		}
+	})
+
+	t.Run("configured reference wins over compatibility fallback", func(t *testing.T) {
+		clear(t)
+		t.Setenv("A2A_CONFIGURED_FEEDBACK", "configured-secret")
+		t.Setenv("GITHUB_TOKEN", "fallback-secret")
+		got, err := resolveFeedbackCredential(context.Background(), space.MachineConfig{
+			Credentials: map[string]string{"feedback": "env:A2A_CONFIGURED_FEEDBACK"},
+		})
+		if err != nil || got.Token != "configured-secret" {
+			t.Fatalf("credential = %#v, err=%v; want configured reference", got, err)
+		}
+	})
+
+	t.Run("canonical compatibility fallback remains", func(t *testing.T) {
+		clear(t)
+		t.Setenv("GH_TOKEN", "gh-secret")
+		got, err := resolveFeedbackCredential(context.Background(), space.MachineConfig{})
+		if err != nil || got.Token != "gh-secret" {
+			t.Fatalf("credential = %#v, err=%v; want GH_TOKEN fallback", got, err)
+		}
+	})
+
+	t.Run("missing result names every checked seam", func(t *testing.T) {
+		clear(t)
+		_, err := resolveFeedbackCredential(context.Background(), space.MachineConfig{
+			Credentials: map[string]string{"feedback": "env:A2A_CONFIGURED_FEEDBACK"},
+		})
+		if err == nil {
+			t.Fatal("missing feedback credential succeeded")
+		}
+		for _, name := range []string{"A2A_FEEDBACK_TOKEN", "A2A_CONFIGURED_FEEDBACK", "GITHUB_TOKEN", "GH_TOKEN"} {
+			if !strings.Contains(err.Error(), name) {
+				t.Errorf("error %q does not name %s", err, name)
+			}
+		}
+	})
+}
+
+func TestFeedbackCredentialBoundary(t *testing.T) {
+	t.Parallel()
+
+	for _, remote := range []string{
+		"https://github.com/ydnikolaev/a2ahub",
+		"git@github.com:ydnikolaev/a2ahub.git",
+	} {
+		if !feedbackGitHubRemote(remote) {
+			t.Errorf("feedbackGitHubRemote(%q) = false, want true", remote)
+		}
+	}
+	for _, remote := range []string{
+		"/tmp/a2ahub-feedback.git",
+		"file:///tmp/a2ahub-feedback.git",
+		"https://git.example.test/acme/a2ahub",
+	} {
+		if feedbackGitHubRemote(remote) {
+			t.Errorf("feedbackGitHubRemote(%q) = true, want false", remote)
+		}
+	}
+}
 
 // TestFunnelBinaryVersionIsBare guards the wiring-regression class the P11
 // smoke test surfaced (docs/backlog.md): the value handed to
