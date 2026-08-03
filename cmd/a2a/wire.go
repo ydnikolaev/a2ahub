@@ -1052,7 +1052,7 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 	}
 
 	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
-	funnel := space.NewWriteFunnel(h, nil, funnelBinaryVersion())
+	funnel := space.NewWriteFunnel(h, feedback.FinalSubmitValidator{}, funnelBinaryVersion())
 	submitCfg := feedback.SubmitConfig{
 		RemoteURL:         repoURL,
 		Repo:              host.Repo{Owner: owner, Name: name},
