@@ -3,6 +3,7 @@ package operational
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -15,6 +16,43 @@ import (
 type fixedClock struct{ now time.Time }
 
 func (c fixedClock) Now() time.Time { return c.now }
+
+func TestIT02TwoActorsRemainVisibleWhenOneLocalLeaseExpires(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	input := baseInput(now)
+	wantProtocol := input.Threads[0].Protocol
+	input.CommittedWork = []CommittedWorkEvidence{checkpoint(
+		"work:01ARZ3NDEKTSV4RRFFQ69G5FAV", "bob", "session-b", workreport.ModeTesting,
+		now.Add(-2*time.Minute), now.Add(time.Hour), 1,
+	)}
+	expired := validLease("work:01ARZ3NDEKTSV4RRFFQ69G5FAW", "alice", "session-a", now.Add(-30*time.Minute))
+	input.LocalLeases = []LocalLeaseEvidence{{Lease: expired, ObservedAt: now}}
+
+	snapshot, err := Build(input, fixedClock{now}, DefaultLimits())
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if len(snapshot.Timeline) != 1 || len(snapshot.Timeline[0].Work) != 2 {
+		t.Fatalf("timeline/work count = %d/%d, want 1/2: %#v", len(snapshot.Timeline), len(snapshot.Timeline[0].Work), snapshot.Timeline)
+	}
+	byActor := make(map[string]Work, len(snapshot.Timeline[0].Work))
+	for _, item := range snapshot.Timeline[0].Work {
+		byActor[item.Actor.Name] = item
+	}
+	if got := byActor["bob"]; got.Freshness != FreshnessCommittedCurrent || !got.Current {
+		t.Fatalf("current committed actor = %#v", got)
+	}
+	if got := byActor["alice"]; got.Freshness != FreshnessStale || got.Current {
+		t.Fatalf("expired local actor = %#v, want stale and not current", got)
+	}
+	if !containsConsistency(snapshot.Timeline[0], "expired-local-lease") {
+		t.Fatalf("expired lease did not surface unknown-status evidence: %#v", snapshot.Timeline[0].Consistency)
+	}
+	if got := snapshot.Timeline[0].Protocol; !reflect.DeepEqual(got, wantProtocol) {
+		t.Fatalf("work projection changed protocol queue\ngot:  %#v\nwant: %#v", got, wantProtocol)
+	}
+}
 
 func TestBuildMergesCommittedAndLocalEvidenceWithoutCollapsingActors(t *testing.T) {
 	t.Parallel()
