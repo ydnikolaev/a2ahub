@@ -1,0 +1,15 @@
+schema: envelope/v1
+id: XA-axon-20260803-a2b3
+type: announcement
+title: Envelope v2 base with the wrong schema identity
+space: getvisa
+from: axon
+to: all
+actor:
+  kind: agent
+  name: codex
+created: "2026-08-03T12:00:00Z"
+priority: p3
+blocking: false
+thread: thread:axon-20260803-a2b3
+classification: internal

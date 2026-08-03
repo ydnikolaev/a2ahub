@@ -1,7 +1,8 @@
-// Package schema loads and compiles the embedded product schema corpus
-// (schemas.FS: envelope/v1 base + 8 type extensions, event/v1, manifest/v1,
-// consumes/v1) with santhosh-tekuri/jsonschema/v6, and loads the
-// error-code registry (schemas/errors/v1/registry.yaml).
+// Package schema loads and compiles the embedded, version-keyed product
+// schema corpus (schemas.FS: envelope bases and registered type extensions,
+// event, manifest, consumes, release notes, and known issues) with
+// santhosh-tekuri/jsonschema/v6, and loads the error-code registry
+// (schemas/errors/v1/registry.yaml).
 //
 // It is the home for jsonschema/v6 (go-conventions.md "Stack" table), and
 // the one place a schema OUTSIDE the embedded corpus may be compiled —
@@ -34,11 +35,10 @@ var (
 	// artifact type outside the 8 §3.1 types.
 	ErrUnknownType = errors.New("schema: unknown envelope type")
 
-	// ErrUnsupportedVersion is returned when a requested envelope/event
-	// schema version falls outside the one-cycle overlap window (§5.4
-	// last bullet, CC-005): older than N-1, or newer than the binary
-	// knows. Per CC-005 this is refuse-and-warn, never a silent
-	// downgrade.
+	// ErrUnsupportedVersion is returned when no decoder is registered for a
+	// requested family/version. The N/N-1 authoring decision is made by the
+	// Accepts*Version seams; Corpus retains older registered decoders for
+	// historical replay instead of coupling lookup to that moving window.
 	ErrUnsupportedVersion = errors.New("schema: unsupported schema version")
 
 	// ErrRegistryLoad is returned when schemas/errors/v1/registry.yaml

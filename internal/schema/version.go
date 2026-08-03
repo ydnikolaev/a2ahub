@@ -7,16 +7,16 @@ import (
 
 // currentEnvelopeVersion is N in "envelope/v<N>" — the newest envelope
 // schema version this build of the corpus ships (§5.4). Bumping it is a
-// schemas/** + registry change (P2-owned); this constant mirrors what the
-// embedded corpus actually contains — it is NOT itself the SSOT (the
-// SSOT is the set of files under schemas/envelope/v<N>/).
-const currentEnvelopeVersion = 1
+// schemas/** + registry change; this constant mirrors what the embedded
+// corpus actually contains — it is NOT itself the SSOT (the SSOT is the set
+// of files under schemas/envelope/v<N>/). A version can initially contain
+// only a base: concrete type registration is explicit and fails closed.
+const currentEnvelopeVersion = 2
 
 // currentEventVersion / currentManifestVersion / currentConsumesVersion:
-// each family versions independently in principle (§5.1), but v1-min only
-// ships v1 of each. Documented separately from currentEnvelopeVersion so a
-// future per-family version bump doesn't require touching unrelated
-// families' seam logic.
+// each family versions independently in principle (§5.1). Documented
+// separately from currentEnvelopeVersion so a future per-family version bump
+// doesn't require touching unrelated families' seam logic.
 const (
 	currentEventVersion    = 1
 	currentManifestVersion = 1
@@ -45,9 +45,10 @@ func ParseVersion(schemaField string) (n int, ok bool) {
 	return parsed, true
 }
 
-// acceptedWindow returns [min, current] — the one-cycle overlap window
-// (§5.4 last bullet: "the binary understands envelope version N and
-// N-1") for a family whose newest shipped version is current. When
+// acceptedWindow returns [min, current] — the one-cycle authoring overlap
+// window (§5.4: authoring accepts N and N-1) for a family whose newest
+// shipped version is current. Historical decoding does not use this helper;
+// it resolves every explicit corpus registration. When
 // current == 1 (v1-min: no prior version ever existed), the window
 // collapses to just 1 — there is no "v0" to accept.
 func acceptedWindow(current int) (min, max int) {
@@ -59,20 +60,19 @@ func acceptedWindow(current int) (min, max int) {
 }
 
 // AcceptsEnvelopeVersion reports whether v (parsed from an artifact's
-// `schema: envelope/v<N>` field) is inside the one-cycle overlap window
-// this build of the binary understands. CC-005: a version OUTSIDE this
-// window (in practice, only "newer than known" is reachable in the wild —
-// an older-than-N-1 binary would have already been retired) must be
-// refused: read-only + loud warning, never a silent write (§5.4, §7.3).
-// This function only answers the pure yes/no question; surfacing the
-// CC-005 refusal + warning is internal/validate's job.
+// `schema: envelope/v<N>` field) is inside the one-cycle authoring overlap
+// window. CC-005 authoring outside this window is refused: read-only + loud
+// warning, never a silent write (§5.4, §7.3). Historical replay instead uses
+// Corpus's explicit registrations, so a shipped decoder remains available
+// after it leaves this authoring window. This function only answers the pure
+// authoring yes/no question; surfacing the refusal is internal/validate's job.
 func AcceptsEnvelopeVersion(v int) bool {
 	min, max := acceptedWindow(currentEnvelopeVersion)
 	return v >= min && v <= max
 }
 
 // AcceptsEventVersion / AcceptsManifestVersion / AcceptsConsumesVersion:
-// the same one-cycle-overlap seam for the other three product-schema
+// the same one-cycle authoring-overlap seam for the other three product-schema
 // families (§5.1 lists each independently; only envelope currently has a
 // documented AC/CC hook, but the seam is designed for all four so a
 // future per-family bump doesn't require new plumbing).

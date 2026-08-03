@@ -17,26 +17,76 @@ var envelopeTypes = []string{
 	"decision", "response", "handoff", "announcement",
 }
 
+const (
+	familyConsumes     = "consumes"
+	familyEnvelope     = "envelope"
+	familyEvent        = "event"
+	familyKnownIssues  = "known-issues"
+	familyManifest     = "manifest"
+	familyReleaseNotes = "release-notes"
+
+	typeBase         = "base"
+	typeConsumes     = "consumes"
+	typeEvent        = "event"
+	typeKnownIssues  = "known-issues"
+	typeReleaseNotes = "release-notes"
+	typeSpace        = "space"
+)
+
+// corpusKey is the complete identity of one shipped product schema. Family
+// versions evolve independently, and concrete envelope types do not silently
+// inherit a newer base: every supported (family, version, type) tuple must have
+// its own explicit definition below.
+type corpusKey struct {
+	family  string
+	version int
+	typ     string
+}
+
+type corpusDefinition struct {
+	key       corpusKey
+	path      string
+	refTarget bool
+}
+
+// corpusDefinitions is the explicit shipped-decoder registry. Historical
+// entries remain here even after they leave the N/N-1 authoring window. A
+// refTarget is registered at its exact $id-derived resource URL so concrete
+// schemas in that same family/version can resolve a bare filename $ref to it.
+var corpusDefinitions = []corpusDefinition{
+	{key: corpusKey{family: familyEnvelope, version: 1, typ: typeBase}, path: "envelope/v1/base.schema.json", refTarget: true},
+	{key: corpusKey{family: familyEnvelope, version: 1, typ: "contract"}, path: "envelope/v1/contract.schema.json"},
+	{key: corpusKey{family: familyEnvelope, version: 1, typ: "requirement"}, path: "envelope/v1/requirement.schema.json"},
+	{key: corpusKey{family: familyEnvelope, version: 1, typ: "question"}, path: "envelope/v1/question.schema.json"},
+	{key: corpusKey{family: familyEnvelope, version: 1, typ: "work_request"}, path: "envelope/v1/work_request.schema.json"},
+	{key: corpusKey{family: familyEnvelope, version: 1, typ: "decision"}, path: "envelope/v1/decision.schema.json"},
+	{key: corpusKey{family: familyEnvelope, version: 1, typ: "response"}, path: "envelope/v1/response.schema.json"},
+	{key: corpusKey{family: familyEnvelope, version: 1, typ: "handoff"}, path: "envelope/v1/handoff.schema.json"},
+	{key: corpusKey{family: familyEnvelope, version: 1, typ: "announcement"}, path: "envelope/v1/announcement.schema.json"},
+	{key: corpusKey{family: familyEnvelope, version: 2, typ: typeBase}, path: "envelope/v2/base.schema.json", refTarget: true},
+	{key: corpusKey{family: familyEvent, version: 1, typ: typeEvent}, path: "event/v1/event.schema.json"},
+	{key: corpusKey{family: familyManifest, version: 1, typ: typeSpace}, path: "manifest/v1/space.schema.json"},
+	{key: corpusKey{family: familyConsumes, version: 1, typ: typeConsumes}, path: "consumes/v1/consumes.schema.json"},
+	{key: corpusKey{family: familyReleaseNotes, version: 1, typ: typeReleaseNotes}, path: "release-notes/v1/release-notes.schema.json"},
+	{key: corpusKey{family: familyKnownIssues, version: 1, typ: typeKnownIssues}, path: "known-issues/v1/known-issues.schema.json"},
+}
+
 // resourceURLPrefix is a synthetic, non-dereferenced URI namespace used
 // only as the jsonschema/v6 resource-identity space for this corpus (see
-// the "seed key" doc comment on addFamily below). It is never fetched
+// the "seed key" doc comment on addSeeded below). It is never fetched
 // over the network — every resource is added via Compiler.AddResource
 // from the embedded FS; UseLoader is never called, so an unresolved $ref
 // fails compilation instead of reaching out.
 const resourceURLPrefix = "https://schemas.a2ahub.internal/"
 
 // Corpus is the compiled, embedded product schema corpus plus the parsed
-// error-code registry. Build one with Load(); it is safe for concurrent
+// error-code registry. Every compiled schema has an explicit (family,
+// version, type) identity. Build one with Load(); it is safe for concurrent
 // read-only use (jsonschema.Schema.Validate does not mutate the schema).
 type Corpus struct {
-	envelope     map[string]*jsonschema.Schema // by type name
-	event        *jsonschema.Schema
-	manifest     *jsonschema.Schema
-	consumes     *jsonschema.Schema
-	releaseNotes *jsonschema.Schema
-	knownIssues  *jsonschema.Schema
-	baseProps    map[string]bool // envelope/v1/base.schema.json's own top-level "properties" keys
-	registry     *Registry
+	schemas   map[corpusKey]*jsonschema.Schema
+	baseProps map[int]map[string]bool // envelope/vN/base.schema.json top-level "properties" keys, by N
+	registry  *Registry
 }
 
 // Load compiles the embedded schema corpus (schemas.FS) and loads the
@@ -62,48 +112,40 @@ func Load() (*Corpus, error) {
 	// SCH- row first; until then this corpus stays consistent with what
 	// the registry actually catalogues.
 
-	baseDoc, err := readJSON("envelope/v1/base.schema.json")
-	if err != nil {
-		return nil, &Error{Op: op, Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
-	}
-	// base.schema.json is $ref'd BY the 8 type extensions but never
-	// itself has a $ref — safe to register directly under its own full
-	// $id-derived key (see addFamily's doc comment for why that
-	// distinction matters).
-	baseKey := resourceURLPrefix + "envelope/v1/base.schema.json"
-	if err := c.AddResource(baseKey, baseDoc); err != nil {
-		return nil, &Error{Op: op, Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
-	}
-	baseProps := topLevelProperties(baseDoc)
-
-	envelope := make(map[string]*jsonschema.Schema, len(envelopeTypes))
-	for i, typ := range envelopeTypes {
-		sch, err := addSeeded(c, fmt.Sprintf("envelope-%d", i), "envelope/v1/"+typ+".schema.json")
-		if err != nil {
-			return nil, &Error{Op: op, Input: typ, Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
+	baseProps := make(map[int]map[string]bool)
+	for _, definition := range corpusDefinitions {
+		if !definition.refTarget {
+			continue
 		}
-		envelope[typ] = sch
+		doc, err := readJSON(definition.path)
+		if err != nil {
+			return nil, &Error{Op: op, Input: definition.path, Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
+		}
+		if err := c.AddResource(resourceURLPrefix+definition.path, doc); err != nil {
+			return nil, &Error{Op: op, Input: definition.path, Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
+		}
+		if definition.key.family == familyEnvelope && definition.key.typ == typeBase {
+			baseProps[definition.key.version] = topLevelProperties(doc)
+		}
 	}
 
-	event, err := addSeeded(c, "event", "event/v1/event.schema.json")
-	if err != nil {
-		return nil, &Error{Op: op, Input: "event", Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
-	}
-	manifest, err := addSeeded(c, "manifest", "manifest/v1/space.schema.json")
-	if err != nil {
-		return nil, &Error{Op: op, Input: "manifest", Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
-	}
-	consumes, err := addSeeded(c, "consumes", "consumes/v1/consumes.schema.json")
-	if err != nil {
-		return nil, &Error{Op: op, Input: "consumes", Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
-	}
-	releaseNotes, err := addSeeded(c, "release-notes", "release-notes/v1/release-notes.schema.json")
-	if err != nil {
-		return nil, &Error{Op: op, Input: "release-notes", Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
-	}
-	knownIssues, err := addSeeded(c, "known-issues", "known-issues/v1/known-issues.schema.json")
-	if err != nil {
-		return nil, &Error{Op: op, Input: "known-issues", Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
+	compiled := make(map[corpusKey]*jsonschema.Schema, len(corpusDefinitions))
+	for i, definition := range corpusDefinitions {
+		if _, duplicate := compiled[definition.key]; duplicate {
+			return nil, &Error{Op: op, Input: definition.path, Err: fmt.Errorf("%w: duplicate corpus key %+v", ErrCorpusLoad, definition.key)}
+		}
+
+		var sch *jsonschema.Schema
+		var err error
+		if definition.refTarget {
+			sch, err = c.Compile(resourceURLPrefix + definition.path)
+		} else {
+			sch, err = addSeeded(c, fmt.Sprintf("corpus-%d", i), definition.path)
+		}
+		if err != nil {
+			return nil, &Error{Op: op, Input: definition.path, Err: fmt.Errorf("%w: %w", ErrCorpusLoad, err)}
+		}
+		compiled[definition.key] = sch
 	}
 
 	registryRaw, err := schemas.FS.ReadFile("errors/v1/registry.yaml")
@@ -116,14 +158,9 @@ func Load() (*Corpus, error) {
 	}
 
 	return &Corpus{
-		envelope:     envelope,
-		event:        event,
-		manifest:     manifest,
-		consumes:     consumes,
-		releaseNotes: releaseNotes,
-		knownIssues:  knownIssues,
-		baseProps:    baseProps,
-		registry:     registry,
+		schemas:   compiled,
+		baseProps: baseProps,
+		registry:  registry,
 	}, nil
 }
 
@@ -144,7 +181,7 @@ func Load() (*Corpus, error) {
 // single-occurrence rewrite: retrievalURL.join($id) == resourceURLPrefix +
 // $id, exactly. That clean, deduped value is what OTHER documents' bare-
 // filename $refs (e.g. "base.schema.json") resolve against — which is why
-// base.schema.json itself (a $ref TARGET, never a $ref SOURCE) is
+// each version's base.schema.json (a $ref TARGET, never a $ref SOURCE) is
 // registered directly under resourceURLPrefix + its own $id instead: nothing
 // ever joins against a "seeded" alias for it, so it must live at the exact
 // key other documents' clean joins compute.
@@ -190,25 +227,42 @@ func topLevelProperties(doc any) map[string]bool {
 	return out
 }
 
+func (c *Corpus) schemaFor(key corpusKey) (*jsonschema.Schema, bool) {
+	sch, ok := c.schemas[key]
+	return sch, ok
+}
+
+func (c *Corpus) hasFamilyVersion(family string, version int) bool {
+	for key := range c.schemas {
+		if key.family == family && key.version == version {
+			return true
+		}
+	}
+	return false
+}
+
 // ValidateEnvelope validates instance (a decoded frontmatter map — JSON-
 // or YAML-sourced, either way passed in as plain Go maps/slices/scalars)
-// against typ's compiled schema at the given version. A schema-structural
-// failure is reported via the returned []FieldViolation (nil + nil on a
-// valid instance); err is non-nil only for an operational failure (bad
-// type name, unsupported version per CC-005) — log-or-return, this
-// package never decides what "invalid" means for a caller, it only
-// reports facts.
+// against typ's explicitly registered decoder at the given version. A
+// schema-structural failure is reported via the returned []FieldViolation
+// (nil + nil on a valid instance); err is non-nil only for an operational
+// failure (bad type name, or no registered decoder for that version) —
+// log-or-return, this package never decides what "invalid" means for a caller,
+// it only reports facts.
 func (c *Corpus) ValidateEnvelope(typ, version string, instance any) ([]FieldViolation, error) {
 	const op = "ValidateEnvelope"
 	n, ok := ParseVersion(version)
-	if !ok || !AcceptsEnvelopeVersion(n) {
+	if !ok {
 		return nil, &Error{Op: op, Input: version, Err: ErrUnsupportedVersion}
 	}
-	sch, ok := c.envelope[typ]
+	sch, ok := c.schemaFor(corpusKey{family: familyEnvelope, version: n, typ: typ})
 	if !ok {
+		if !c.hasFamilyVersion(familyEnvelope, n) {
+			return nil, &Error{Op: op, Input: version, Err: ErrUnsupportedVersion}
+		}
 		return nil, &Error{Op: op, Input: typ, Err: ErrUnknownType}
 	}
-	return extractFieldViolations(sch.Validate(instance), c.baseProps), nil
+	return extractFieldViolations(sch.Validate(instance), c.baseProps[n]), nil
 }
 
 // ValidateEvent / ValidateManifest / ValidateConsumes: same contract as
@@ -220,30 +274,42 @@ func (c *Corpus) ValidateEnvelope(typ, version string, instance any) ([]FieldVio
 func (c *Corpus) ValidateEvent(version string, instance any) ([]FieldViolation, error) {
 	const op = "ValidateEvent"
 	n, ok := ParseVersion(version)
-	if !ok || !AcceptsEventVersion(n) {
+	if !ok {
 		return nil, &Error{Op: op, Input: version, Err: ErrUnsupportedVersion}
 	}
-	return extractFieldViolations(c.event.Validate(instance), nil), nil
+	sch, ok := c.schemaFor(corpusKey{family: familyEvent, version: n, typ: typeEvent})
+	if !ok {
+		return nil, &Error{Op: op, Input: version, Err: ErrUnsupportedVersion}
+	}
+	return extractFieldViolations(sch.Validate(instance), nil), nil
 }
 
 // ValidateManifest validates an instance against the manifest schema for the given version.
 func (c *Corpus) ValidateManifest(version string, instance any) ([]FieldViolation, error) {
 	const op = "ValidateManifest"
 	n, ok := ParseVersion(version)
-	if !ok || !AcceptsManifestVersion(n) {
+	if !ok {
 		return nil, &Error{Op: op, Input: version, Err: ErrUnsupportedVersion}
 	}
-	return extractFieldViolations(c.manifest.Validate(instance), nil), nil
+	sch, ok := c.schemaFor(corpusKey{family: familyManifest, version: n, typ: typeSpace})
+	if !ok {
+		return nil, &Error{Op: op, Input: version, Err: ErrUnsupportedVersion}
+	}
+	return extractFieldViolations(sch.Validate(instance), nil), nil
 }
 
 // ValidateConsumes validates an instance against the consumes schema for the given version.
 func (c *Corpus) ValidateConsumes(version string, instance any) ([]FieldViolation, error) {
 	const op = "ValidateConsumes"
 	n, ok := ParseVersion(version)
-	if !ok || !AcceptsConsumesVersion(n) {
+	if !ok {
 		return nil, &Error{Op: op, Input: version, Err: ErrUnsupportedVersion}
 	}
-	return extractFieldViolations(c.consumes.Validate(instance), nil), nil
+	sch, ok := c.schemaFor(corpusKey{family: familyConsumes, version: n, typ: typeConsumes})
+	if !ok {
+		return nil, &Error{Op: op, Input: version, Err: ErrUnsupportedVersion}
+	}
+	return extractFieldViolations(sch.Validate(instance), nil), nil
 }
 
 // ValidateReleaseNotes validates instance against the release-notes/v1
@@ -255,12 +321,14 @@ func (c *Corpus) ValidateConsumes(version string, instance any) ([]FieldViolatio
 // internal/notes' gate test validates every embedded file against this
 // one schema directly.
 func (c *Corpus) ValidateReleaseNotes(instance any) ([]FieldViolation, error) {
-	return extractFieldViolations(c.releaseNotes.Validate(instance), nil), nil
+	sch, _ := c.schemaFor(corpusKey{family: familyReleaseNotes, version: 1, typ: typeReleaseNotes})
+	return extractFieldViolations(sch.Validate(instance), nil), nil
 }
 
 // ValidateKnownIssues validates the single current known-issues document.
 func (c *Corpus) ValidateKnownIssues(instance any) ([]FieldViolation, error) {
-	return extractFieldViolations(c.knownIssues.Validate(instance), nil), nil
+	sch, _ := c.schemaFor(corpusKey{family: familyKnownIssues, version: 1, typ: typeKnownIssues})
+	return extractFieldViolations(sch.Validate(instance), nil), nil
 }
 
 // BaseEnvelopeFields returns the set of field names declared directly on
@@ -278,7 +346,7 @@ func (c *Corpus) ValidateKnownIssues(instance any) ([]FieldViolation, error) {
 // 2020-12: exactly one violation, the base branch's own pattern failure)
 // does not cascade this way. See the Deviations note in this phase's
 // report for the empirical confirmation and blast-radius scope.
-func (c *Corpus) BaseEnvelopeFields() map[string]bool { return c.baseProps }
+func (c *Corpus) BaseEnvelopeFields() map[string]bool { return c.baseProps[1] }
 
 // Registry returns the parsed schemas/errors/v1/registry.yaml.
 func (c *Corpus) Registry() *Registry { return c.registry }
