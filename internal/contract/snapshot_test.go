@@ -4,16 +4,16 @@ import (
 	"maps"
 	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"gopkg.in/yaml.v3"
 )
 
 func TestValidateCarriedSetDelegatesToCanonicalBuilder(t *testing.T) {
 	t.Parallel()
 
 	descriptor := validDescriptor()
-	snapshot := CandidateSnapshot{
-		Descriptor: CandidateFile{Path: DescriptorPath, Kind: CandidateRegular, Raw: []byte("final descriptor bytes\n")},
-		Files:      validCandidates(),
-	}
+	snapshot := validSnapshot(t, descriptor)
 	want, wantIssues := BuildCarriedSet(ProfileContractSetV2, snapshot.Descriptor.Raw, descriptor, snapshot.Files)
 	assertNoIssues(t, wantIssues)
 
@@ -39,10 +39,10 @@ func TestValidateCarriedSetRefusesUnsafeDescriptorLeaf(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			set, issues := ValidateCarriedSet(ProfileContractSetV2, validDescriptor(), CandidateSnapshot{
-				Descriptor: CandidateFile{Path: DescriptorPath, Kind: tc.kind, Raw: []byte("descriptor")},
-				Files:      validCandidates(),
-			})
+			descriptor := validDescriptor()
+			snapshot := validSnapshot(t, descriptor)
+			snapshot.Descriptor.Kind = tc.kind
+			set, issues := ValidateCarriedSet(ProfileContractSetV2, descriptor, snapshot)
 			if set.AggregateDigest != "" || len(set.Bytes) != 0 {
 				t.Fatal("unsafe descriptor leaf produced a carried set")
 			}
@@ -67,10 +67,10 @@ func TestValidateCarriedSetRequiresExactSafeDescriptorPath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			set, issues := ValidateCarriedSet(ProfileContractSetV2, validDescriptor(), CandidateSnapshot{
-				Descriptor: CandidateFile{Path: tc.path, Kind: CandidateRegular, Raw: []byte("descriptor")},
-				Files:      validCandidates(),
-			})
+			descriptor := validDescriptor()
+			snapshot := validSnapshot(t, descriptor)
+			snapshot.Descriptor.Path = tc.path
+			set, issues := ValidateCarriedSet(ProfileContractSetV2, descriptor, snapshot)
 			if set.AggregateDigest != "" {
 				t.Fatal("wrong descriptor path produced a digest")
 			}
@@ -124,18 +124,47 @@ func TestValidateCarriedSetPreservesExactnessAndTextRules(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			snapshot := CandidateSnapshot{
-				Descriptor: CandidateFile{Path: DescriptorPath, Kind: CandidateRegular, Raw: []byte("descriptor")},
-				Files:      validCandidates(),
-			}
+			descriptor := validDescriptor()
+			snapshot := validSnapshot(t, descriptor)
 			tc.mutate(&snapshot)
-			set, issues := ValidateCarriedSet(ProfileContractSetV2, validDescriptor(), snapshot)
+			set, issues := ValidateCarriedSet(ProfileContractSetV2, descriptor, snapshot)
 			if set.AggregateDigest != "" {
 				t.Fatal("invalid snapshot produced a digest")
 			}
 			assertIssue(t, issues, tc.wantKind)
 		})
 	}
+}
+
+func TestValidateCarriedSetBindsRawDescriptorToTypedProjection(t *testing.T) {
+	t.Parallel()
+
+	t.Run("caller projection disagrees", func(t *testing.T) {
+		t.Parallel()
+		rawDescriptor := validDescriptor()
+		snapshot := validSnapshot(t, rawDescriptor)
+		callerDescriptor := cloneDescriptor(rawDescriptor)
+		callerDescriptor.Artifacts[0].Path = "schema/different.schema.json"
+
+		set, issues := ValidateCarriedSet(ProfileContractSetV2, callerDescriptor, snapshot)
+		if set.AggregateDigest != "" {
+			t.Fatal("descriptor projection mismatch produced a digest")
+		}
+		assertIssue(t, issues, IssueDescriptorMismatch)
+	})
+
+	t.Run("raw descriptor is not parseable", func(t *testing.T) {
+		t.Parallel()
+		descriptor := validDescriptor()
+		snapshot := validSnapshot(t, descriptor)
+		snapshot.Descriptor.Raw = []byte("not frontmatter")
+
+		set, issues := ValidateCarriedSet(ProfileContractSetV2, descriptor, snapshot)
+		if set.AggregateDigest != "" {
+			t.Fatal("unparseable descriptor produced a digest")
+		}
+		assertIssue(t, issues, IssueDescriptorMismatch)
+	})
 }
 
 func TestValidateCarriedSetLegacyIgnoresExcludedDescriptor(t *testing.T) {
@@ -155,5 +184,21 @@ func TestValidateCarriedSetLegacyIgnoresExcludedDescriptor(t *testing.T) {
 	assertNoIssues(t, issues)
 	if got.AggregateDigest != want.AggregateDigest {
 		t.Fatalf("legacy digest = %s, want %s", got.AggregateDigest, want.AggregateDigest)
+	}
+}
+
+func validSnapshot(t *testing.T, descriptor Descriptor) CandidateSnapshot {
+	t.Helper()
+	raw, err := yaml.Marshal(descriptor)
+	if err != nil {
+		t.Fatalf("marshal descriptor projection: %v", err)
+	}
+	return CandidateSnapshot{
+		Descriptor: CandidateFile{
+			Path: DescriptorPath,
+			Kind: CandidateRegular,
+			Raw:  artifact.SerializeFrontmatter(artifact.Frontmatter{YAML: raw, Body: []byte("# Contract\n")}),
+		},
+		Files: validCandidates(),
 	}
 }

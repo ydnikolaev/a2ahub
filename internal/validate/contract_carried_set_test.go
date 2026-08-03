@@ -6,8 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/version"
+	"gopkg.in/yaml.v3"
 )
 
 func TestValidateContractCarriedSetAuthoritativeFloorMatrix(t *testing.T) {
@@ -32,6 +34,11 @@ func TestValidateContractCarriedSetAuthoritativeFloorMatrix(t *testing.T) {
 		{
 			name:     "active floor refuses legacy downgrade",
 			input:    legacyContractInput(V2, ContractCandidateProposed, version.OperationalConfidenceFloor),
+			wantCode: "POL-013",
+		},
+		{
+			name:     "active floor refuses legacy downgrade at V3",
+			input:    legacyContractInput(V3, ContractCandidateProposed, version.OperationalConfidenceFloor),
 			wantCode: "POL-013",
 		},
 		{
@@ -90,6 +97,7 @@ func TestValidateContractCarriedSetV2V3Parity(t *testing.T) {
 				in.Descriptor.Artifacts = append(in.Descriptor.Artifacts, contract.Entry{
 					Path: path, Role: contract.RoleOther, Normative: false, MediaType: "text/plain",
 				})
+				syncDescriptorSnapshot(in)
 				in.Snapshot.Files = append(in.Snapshot.Files, contract.CandidateFile{
 					Path: path, Kind: contract.CandidateRegular, Raw: []byte("token ghp_" + strings.Repeat("a", 36)),
 				})
@@ -129,6 +137,31 @@ func TestValidateContractCarriedSetV2V3Parity(t *testing.T) {
 				in.ExpectedDigest = "sha256:" + strings.Repeat("0", 64)
 			},
 			code: "REF-014",
+			path: "event.digest",
+		},
+		{
+			name: "empty expected digest is referential",
+			mutate: func(in *ContractCarriedSetInput) {
+				in.ExpectedDigest = ""
+			},
+			code: "REF-014",
+			path: "event.digest",
+		},
+		{
+			name: "malformed expected digest is referential",
+			mutate: func(in *ContractCarriedSetInput) {
+				in.ExpectedDigest = "sha256:short"
+			},
+			code: "REF-014",
+			path: "event.digest",
+		},
+		{
+			name: "raw descriptor mismatch is referential",
+			mutate: func(in *ContractCarriedSetInput) {
+				in.Descriptor.Artifacts[0].Path = "schema/different.schema.json"
+			},
+			code: "REF-014",
+			path: contract.DescriptorPath,
 		},
 	}
 	for _, tc := range tests {
@@ -231,6 +264,7 @@ func TestValidateContractCarriedSetRequiredBaselineUsesPOL009(t *testing.T) {
 
 	in := validContractInput(V2)
 	in.Descriptor.Artifacts = in.Descriptor.Artifacts[:1]
+	syncDescriptorSnapshot(&in)
 	in.Snapshot.Files = in.Snapshot.Files[:1]
 	_, result, err := ValidateContractCarriedSet(in)
 	if err != nil {
@@ -245,15 +279,31 @@ func TestValidateContractCarriedSetRequiredBaselineUsesPOL009(t *testing.T) {
 }
 
 func validContractInput(point InvocationPoint) ContractCarriedSetInput {
-	descriptor := contract.Descriptor{
-		SchemaFormat: "json-schema-2020-12",
-		Artifacts: []contract.Entry{
-			{Path: "schema/contract.schema.json", Role: contract.RoleSchema, Normative: true, MediaType: "application/schema+json"},
-			{Path: "fixtures/valid/example.json", Role: contract.RoleValidFixture, Normative: true, MediaType: "application/json", ConformsTo: "schema/contract.schema.json"},
-			{Path: "fixtures/invalid/example.json", Role: contract.RoleInvalidFixture, Normative: true, MediaType: "application/json", ConformsTo: "schema/contract.schema.json"},
-		},
+	descriptorRaw := []byte(`---
+schema_format: json-schema-2020-12
+artifacts:
+  - path: schema/contract.schema.json
+    role: schema
+    normative: true
+    media_type: application/schema+json
+  - path: fixtures/valid/example.json
+    role: valid-fixture
+    normative: true
+    media_type: application/json
+    conforms_to: schema/contract.schema.json
+  - path: fixtures/invalid/example.json
+    role: invalid-fixture
+    normative: true
+    media_type: application/json
+    conforms_to: schema/contract.schema.json
+---
+# Contract
+`)
+	descriptor, err := contract.ParseDescriptor(descriptorRaw)
+	if err != nil {
+		panic(err)
 	}
-	return ContractCarriedSetInput{
+	in := ContractCarriedSetInput{
 		InvocationPoint:       point,
 		Mode:                  ContractCandidateProposed,
 		SpaceMinBinaryVersion: version.OperationalConfidenceFloor,
@@ -263,7 +313,7 @@ func validContractInput(point InvocationPoint) ContractCarriedSetInput {
 		DigestProfile:         string(contract.ProfileContractSetV2),
 		Descriptor:            descriptor,
 		Snapshot: contract.CandidateSnapshot{
-			Descriptor: contract.CandidateFile{Path: contract.DescriptorPath, Kind: contract.CandidateRegular, Raw: []byte("---\nschema: envelope/v2\n---\n")},
+			Descriptor: contract.CandidateFile{Path: contract.DescriptorPath, Kind: contract.CandidateRegular, Raw: descriptorRaw},
 			Files: []contract.CandidateFile{
 				{Path: "schema/contract.schema.json", Kind: contract.CandidateRegular, Raw: []byte(`{"type":"object"}`)},
 				{Path: "fixtures/valid/example.json", Kind: contract.CandidateRegular, Raw: []byte(`{}`)},
@@ -271,10 +321,16 @@ func validContractInput(point InvocationPoint) ContractCarriedSetInput {
 			},
 		},
 	}
+	set, issues := contract.ValidateCarriedSet(contract.ProfileContractSetV2, in.Descriptor, in.Snapshot)
+	if len(issues) != 0 {
+		panic(issues)
+	}
+	in.ExpectedDigest = set.AggregateDigest
+	return in
 }
 
 func legacyContractInput(point InvocationPoint, mode ContractCandidateMode, floor string) ContractCarriedSetInput {
-	return ContractCarriedSetInput{
+	in := ContractCarriedSetInput{
 		InvocationPoint:       point,
 		Mode:                  mode,
 		SpaceMinBinaryVersion: floor,
@@ -287,6 +343,12 @@ func legacyContractInput(point InvocationPoint, mode ContractCandidateMode, floo
 			{Path: "fixtures/invalid/example.json", Kind: contract.CandidateRegular, Raw: []byte(`null`)},
 		}},
 	}
+	set, issues := contract.ValidateCarriedSet(contract.ProfileContractTreeV1, contract.Descriptor{}, in.Snapshot)
+	if len(issues) != 0 {
+		panic(issues)
+	}
+	in.ExpectedDigest = set.AggregateDigest
+	return in
 }
 
 func containsViolation(violations []Violation, code, path string) bool {
@@ -296,4 +358,15 @@ func containsViolation(violations []Violation, code, path string) bool {
 		}
 	}
 	return false
+}
+
+func syncDescriptorSnapshot(in *ContractCarriedSetInput) {
+	raw, err := yaml.Marshal(in.Descriptor)
+	if err != nil {
+		panic(err)
+	}
+	in.Snapshot.Descriptor.Raw = artifact.SerializeFrontmatter(artifact.Frontmatter{
+		YAML: raw,
+		Body: []byte("# Contract\n"),
+	})
 }

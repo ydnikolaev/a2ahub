@@ -81,6 +81,33 @@ func TestContractV2GoldenFixtures(t *testing.T) {
 	}
 }
 
+func TestContractV2FixtureIsRejectedByDistinctV1Decoder(t *testing.T) {
+	t.Parallel()
+	c := mustLoad(t)
+	v1 := c.schemas[corpusKey{family: familyEnvelope, version: 1, typ: "contract"}]
+	v2 := c.schemas[corpusKey{family: familyEnvelope, version: 2, typ: "contract"}]
+	if v1 == nil || v2 == nil || v1 == v2 {
+		t.Fatalf("contract decoder identity v1=%p v2=%p; want two concrete objects", v1, v2)
+	}
+
+	paths, err := filepath.Glob(filepath.Join(corpusRoot, "envelope/v2/fixtures/valid/XC-*.md"))
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("glob valid contract/v2 fixture: paths=%v err=%v", paths, err)
+	}
+	instance := readEnvelopeFixture(t, paths[0])
+	violations, err := c.ValidateEnvelope("contract", "v2", instance)
+	if err != nil || len(violations) != 0 {
+		t.Fatalf("contract/v2 decoder rejected its fixture: violations=%+v err=%v", violations, err)
+	}
+	violations, err = c.ValidateEnvelope("contract", "v1", instance)
+	if err != nil {
+		t.Fatalf("contract/v1 decoder: %v", err)
+	}
+	if len(violations) == 0 {
+		t.Fatal("contract/v1 decoder accepted a concrete contract/v2 fixture")
+	}
+}
+
 func TestAnnouncementV2GoldenFixtures(t *testing.T) {
 	t.Parallel()
 	c := mustLoad(t)
@@ -159,23 +186,56 @@ func TestEventV2CorpusFixtures(t *testing.T) {
 		})
 	}
 
+	type expectation struct {
+		path    string
+		keyword string
+	}
+	want := map[string]expectation{
+		"additional-publication-field.json":      {path: "publication.extra", keyword: keywordFalseSchema},
+		"malformed-candidate-intent-digest.json": {path: "publication.candidate_intent_digest", keyword: "pattern"},
+		"malformed-digest.json":                  {path: "digest", keyword: "pattern"},
+		"malformed-intent-key.json":              {path: "publication.intent_key", keyword: "pattern"},
+		"malformed-operation-key.json":           {path: "publication.operation_key", keyword: "pattern"},
+		"malformed-version-selector.json":        {path: "publication.version_selector", keyword: "pattern"},
+		"malformed-version.json":                 {path: "version", keyword: "pattern"},
+		"missing-candidate-intent-digest.json":   {path: "publication", keyword: "required"},
+		"missing-digest.json":                    {keyword: "required"},
+		"missing-intent-key.json":                {path: "publication", keyword: "required"},
+		"missing-operation-key.json":             {path: "publication", keyword: "required"},
+		"missing-profile.json":                   {keyword: "required"},
+		"missing-publication.json":               {keyword: "required"},
+		"missing-version-selector.json":          {path: "publication", keyword: "required"},
+		"missing-version.json":                   {keyword: "required"},
+		"unknown-profile.json":                   {path: "digest_profile", keyword: "enum"},
+	}
 	invalidPaths, err := filepath.Glob(filepath.Join(root, "invalid/*.json"))
 	if err != nil {
 		t.Fatalf("glob invalid event/v2 fixtures: %v", err)
 	}
-	if len(invalidPaths) == 0 {
-		t.Fatal("expected at least one invalid event/v2 fixture")
+	if len(invalidPaths) != len(want) {
+		t.Fatalf("invalid event/v2 fixture count = %d, want %d", len(invalidPaths), len(want))
 	}
 	for _, path := range invalidPaths {
 		path := path
-		t.Run("invalid/"+filepath.Base(path), func(t *testing.T) {
+		name := filepath.Base(path)
+		expected, ok := want[name]
+		if !ok {
+			t.Fatalf("invalid event/v2 fixture %q has no isolated expectation", name)
+		}
+		if _, err := os.Stat(path + ".expect.yaml"); err != nil {
+			t.Fatalf("invalid event/v2 fixture %q has no sidecar: %v", name, err)
+		}
+		t.Run("invalid/"+name, func(t *testing.T) {
 			t.Parallel()
 			violations, err := c.ValidateEvent("v2", readJSONFixture(t, path))
 			if err != nil {
 				t.Fatalf("ValidateEvent: %v", err)
 			}
-			if len(violations) == 0 {
-				t.Fatal("expected event/v2 fixture rejection")
+			if len(violations) != 1 {
+				t.Fatalf("expected exactly one isolated violation, got %+v", violations)
+			}
+			if violations[0].Path != expected.path || violations[0].Keyword != expected.keyword {
+				t.Fatalf("violation = %+v, want path=%q keyword=%q", violations[0], expected.path, expected.keyword)
 			}
 		})
 	}

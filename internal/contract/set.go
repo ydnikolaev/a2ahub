@@ -318,11 +318,19 @@ func (set CarriedSet) CompatibilityEntries() []Entry {
 // interpretation. Historical callers must build with the event's resolved
 // profile first.
 func (set CarriedSet) VerifyDigest(expected string) []Issue {
+	if !sha256DigestPattern.MatchString(expected) {
+		return []Issue{{
+			Kind:   IssueDigestMismatch,
+			Path:   "event.digest",
+			Detail: "expected publication digest must be a full lowercase sha256 digest",
+		}}
+	}
 	if expected == set.AggregateDigest {
 		return nil
 	}
 	return []Issue{{
 		Kind:   IssueDigestMismatch,
+		Path:   "event.digest",
 		Detail: fmt.Sprintf("expected %s, computed %s", expected, set.AggregateDigest),
 	}}
 }

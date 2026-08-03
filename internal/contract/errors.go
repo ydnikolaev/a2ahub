@@ -11,6 +11,7 @@ type IssueKind string
 
 const (
 	IssueUnsupportedProfile IssueKind = "unsupported-profile"
+	IssueDescriptorMismatch IssueKind = "descriptor-mismatch"
 	IssueInvalidPath        IssueKind = "invalid-path"
 	IssueDescriptorAlias    IssueKind = "descriptor-alias"
 	IssueDuplicatePath      IssueKind = "duplicate-path"

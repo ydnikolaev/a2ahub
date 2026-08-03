@@ -1,5 +1,7 @@
 package contract
 
+import "reflect"
+
 // CandidateSnapshot is the pure collector-to-core boundary for one contract
 // candidate. Descriptor carries the exact contract.md bytes and resolved leaf
 // kind; Files carries every discovered entry below the carried roots. A
@@ -30,14 +32,31 @@ func ValidateCarriedSet(profile DigestProfile, descriptor Descriptor, snapshot C
 	}
 
 	metadataIssues := validateDescriptorCandidate(snapshot.Descriptor)
-	set, issues := BuildCarriedSet(profile, snapshot.Descriptor.Raw, descriptor, snapshot.Files)
-	if len(metadataIssues) == 0 {
-		return set, issues
+	validateText(DescriptorPath, snapshot.Descriptor.Raw, &metadataIssues)
+	parsed, err := ParseDescriptor(snapshot.Descriptor.Raw)
+	if err != nil {
+		metadataIssues = append(metadataIssues, Issue{
+			Kind:   IssueDescriptorMismatch,
+			Path:   DescriptorPath,
+			Detail: "descriptor snapshot cannot be parsed into the canonical carried-set projection",
+		})
+	} else if !reflect.DeepEqual(parsed, descriptor) {
+		metadataIssues = append(metadataIssues, Issue{
+			Kind:   IssueDescriptorMismatch,
+			Path:   DescriptorPath,
+			Detail: "descriptor snapshot bytes disagree with the supplied typed projection",
+		})
+	}
+	if len(metadataIssues) != 0 {
+		sortIssues(metadataIssues)
+		return CarriedSet{}, metadataIssues
 	}
 
-	issues = append(issues, metadataIssues...)
-	sortIssues(issues)
-	return CarriedSet{}, issues
+	// The parsed projection, rather than the caller's detached copy, is the
+	// canonical typed value used for exactness and digest construction. The
+	// equality check above makes the caller copy an assertion, never a second
+	// source of descriptor truth.
+	return BuildCarriedSet(profile, snapshot.Descriptor.Raw, parsed, snapshot.Files)
 }
 
 func validateDescriptorCandidate(candidate CandidateFile) []Issue {

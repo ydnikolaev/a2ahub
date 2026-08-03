@@ -3,6 +3,7 @@ package contract
 import (
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
@@ -253,6 +254,28 @@ func TestBuildClonesCandidateAndDescriptorInputs(t *testing.T) {
 	descriptor.Artifacts[0].Path = "schema/mutated.json"
 	if set.AggregateDigest != wantDigest || string(set.Bytes["schema/order.schema.json"]) != wantSchema || set.Descriptor.Artifacts[0].Path == descriptor.Artifacts[0].Path {
 		t.Fatal("carried set retained mutable caller storage")
+	}
+}
+
+func TestVerifyDigestRequiresFullLowercaseSHA256(t *testing.T) {
+	t.Parallel()
+
+	set, issues := BuildCarriedSet(ProfileContractSetV2, []byte("descriptor"), validDescriptor(), validCandidates())
+	assertNoIssues(t, issues)
+	assertNoIssues(t, set.VerifyDigest(set.AggregateDigest))
+
+	for _, invalid := range []string{
+		"",
+		"sha256:",
+		"sha256:ABCDEF",
+		"md5:" + strings.Repeat("0", 64),
+		"sha256:" + strings.Repeat("0", 63),
+	} {
+		invalid := invalid
+		t.Run(invalid, func(t *testing.T) {
+			t.Parallel()
+			assertIssue(t, set.VerifyDigest(invalid), IssueDigestMismatch)
+		})
 	}
 }
 
