@@ -62,6 +62,16 @@ entries:
     title: String value is shorter than the schema's minimum length
     applies_to: any schemas/** schema with minLength (including durable actor names)
 
+  - code: SCH-010
+    class: schema
+    title: Value is outside its declared numeric or string length bound
+    applies_to: any schemas/** schema with minimum, maximum, or maxLength (including announcement/v2 durable work fields)
+
+  - code: SCH-011
+    class: schema
+    title: Array declared unique contains a duplicate entry
+    applies_to: any schemas/** schema with uniqueItems (including announcement/v2 work.waiting_on)
+
   # --- P3 (internal/schema + internal/validate) additions below ---
   # referential/lifecycle/policy rows this phase adds per spec 02 Open Q2
   # resolution and spec 03 §5/§8 row 5 (single registry, no Go-side
@@ -138,6 +148,11 @@ entries:
     title: Space manifest authority map is ambiguous or cannot safely grant write authority
     applies_to: space/v1 participants — unique non-empty systems and top-level sections, active participants with owners, one active system per owner login, and left participants granting no authority
 
+  - code: REF-014
+    class: referential
+    title: Declared contract sidecar cannot be resolved as the exact expected regular file
+    applies_to: envelope/v2 contract carried-set V2/V3 validation for missing, unsafe-mode, or digest-mismatched descriptor and sidecar bytes
+
   - code: LFC-001
     class: lifecycle
     title: Event encodes an illegal transition for the subject's current folded state
@@ -207,6 +222,11 @@ entries:
     class: policy
     title: Required first-party producer stamp is absent or invalid
     applies_to: committed event validation after the authoritative space floor activates ProducerStampFloor, plus malformed a2a produced_by.version claims
+
+  - code: POL-013
+    class: policy
+    title: Declared contract carried set is invalid
+    applies_to: envelope/v2 contract carried-set V2/V3 validation for profile, role, path, media, bounds, exactness and authoritative-floor failures
 
   - code: POL-016
     class: policy

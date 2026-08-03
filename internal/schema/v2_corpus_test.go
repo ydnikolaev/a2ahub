@@ -81,6 +81,58 @@ func TestContractV2GoldenFixtures(t *testing.T) {
 	}
 }
 
+func TestAnnouncementV2GoldenFixtures(t *testing.T) {
+	t.Parallel()
+	c := mustLoad(t)
+	root := filepath.Join(corpusRoot, "envelope/v2/fixtures")
+
+	validPaths, err := filepath.Glob(filepath.Join(root, "valid/XA-*.md"))
+	if err != nil {
+		t.Fatalf("glob valid announcement/v2 fixtures: %v", err)
+	}
+	if len(validPaths) == 0 {
+		t.Fatal("expected at least one valid announcement/v2 fixture")
+	}
+	for _, path := range validPaths {
+		path := path
+		t.Run("valid/"+filepath.Base(path), func(t *testing.T) {
+			t.Parallel()
+			violations, err := c.ValidateEnvelope("announcement", "v2", readEnvelopeFixture(t, path))
+			if err != nil {
+				t.Fatalf("ValidateEnvelope: %v", err)
+			}
+			if len(violations) != 0 {
+				t.Fatalf("expected valid announcement/v2 fixture, got %+v", violations)
+			}
+		})
+	}
+
+	invalidPaths, err := filepath.Glob(filepath.Join(root, "invalid/XA-*.md"))
+	if err != nil {
+		t.Fatalf("glob invalid announcement/v2 fixtures: %v", err)
+	}
+	if len(invalidPaths) == 0 {
+		t.Fatal("expected at least one invalid announcement/v2 fixture")
+	}
+	for _, path := range invalidPaths {
+		path := path
+		name := filepath.Base(path)
+		if _, err := os.Stat(path + ".expect.yaml"); err != nil {
+			t.Fatalf("invalid announcement/v2 fixture %q has no sidecar: %v", name, err)
+		}
+		t.Run("invalid/"+name, func(t *testing.T) {
+			t.Parallel()
+			violations, err := c.ValidateEnvelope("announcement", "v2", readEnvelopeFixture(t, path))
+			if err != nil {
+				t.Fatalf("ValidateEnvelope: %v", err)
+			}
+			if len(violations) == 0 {
+				t.Fatal("expected announcement/v2 fixture rejection")
+			}
+		})
+	}
+}
+
 func TestEventV2CorpusFixtures(t *testing.T) {
 	t.Parallel()
 	c := mustLoad(t)

@@ -1,0 +1,2 @@
+code: SCH-011
+note: "`waiting_on` rejects structurally duplicate dependency entries."

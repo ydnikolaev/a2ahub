@@ -1,0 +1,2 @@
+code: SCH-005
+note: "work conditionally requires explicit `ack_requested: false`."

@@ -1,0 +1,2 @@
+code: SCH-005
+note: "work conditionally requires non-omitted `actor.session`; bounded safe-identifier semantics remain contextual."

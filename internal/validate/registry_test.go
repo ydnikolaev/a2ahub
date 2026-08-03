@@ -134,6 +134,15 @@ func TestRegistryClosure(t *testing.T) {
 		{System: "axon", Section: "axon/", Owners: []string{"alice"}, Status: "active"},
 		{System: "matrix", Section: "matrix/", Owners: []string{"alice"}, Status: "active"},
 	}}))
+	// REF-014: one declared carried file resolves as a symlink rather than
+	// the exact regular bytes promised by the descriptor.
+	ref014Input := validContractInput(V2)
+	ref014Input.Snapshot.Files[0].Kind = "symlink"
+	_, ref014, err := ValidateContractCarriedSet(ref014Input)
+	if err != nil {
+		t.Fatalf("ValidateContractCarriedSet REF-014 probe: %v", err)
+	}
+	record(ref014.Violations)
 
 	// LFC-001 / LFC-002.
 	lfc1, err := checkLifecycle([]CandidateEvent{{Subject: "XW-axon-20260731-p9d3", Transition: "respond"}}, &fakeLegality{verdict: VerdictIllegalTransition})
@@ -199,6 +208,13 @@ func TestRegistryClosure(t *testing.T) {
 		probe.Actor.Model = &emptyModel
 		record(checkFirstPartyActor(probe))
 	}
+	// POL-013: after the authoritative rollout floor, a proposed contract
+	// cannot select the legacy descriptor/event/digest profile.
+	_, pol013, err := ValidateContractCarriedSet(legacyContractInput(V2, ContractCandidateProposed, "0.19.0"))
+	if err != nil {
+		t.Fatalf("ValidateContractCarriedSet POL-013 probe: %v", err)
+	}
+	record(pol013.Violations)
 
 	// POL-006: retire refused because a registered consumer hasn't acked.
 	if v, _ := CheckRetirePrecondition(RetirePrecondition{

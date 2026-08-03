@@ -1,9 +1,8 @@
 // Package validate is THE one validation engine (D-011): schema,
-// referential, lifecycle, and policy classes, exposed through two
-// invocation points — ValidateDraft (V1, authoring) and ValidateForSubmit
-// (V2, pre-write). Both return the same §7 result shape so P6's `a2a new`/
-// `a2a validate`/`a2a submit` (and later V3/V4 mounts of this same
-// library, D-011) get identical results for identical content
+// referential, lifecycle, and policy classes, exposed through authoring (V1),
+// pre-write (V2) and merge-gate (V3) entry points. They return the same §7
+// result shape so P6's `a2a new`/`a2a validate`/`a2a submit` (and later V4
+// mounts of this same library, D-011) get identical results for identical content
 // (AC-201.2).
 //
 // This package is pure core (go-conventions.md "Architecture": no I/O,

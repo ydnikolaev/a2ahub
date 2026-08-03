@@ -1,0 +1,2 @@
+code: SCH-007
+note: "durable `work.id` must match `work:<ULID>`."
