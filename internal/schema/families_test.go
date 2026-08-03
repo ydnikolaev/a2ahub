@@ -149,7 +149,7 @@ func TestRegistryAccessors(t *testing.T) {
 
 func TestVersionSeam_OtherFamilies(t *testing.T) {
 	t.Parallel()
-	if !AcceptsEventVersion(1) || AcceptsEventVersion(2) {
+	if !AcceptsEventVersion(1) || !AcceptsEventVersion(2) || AcceptsEventVersion(3) {
 		t.Errorf("AcceptsEventVersion window is wrong")
 	}
 	if !AcceptsManifestVersion(1) || AcceptsManifestVersion(2) {

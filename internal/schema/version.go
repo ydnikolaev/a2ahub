@@ -18,7 +18,7 @@ const currentEnvelopeVersion = 2
 // separately from currentEnvelopeVersion so a future per-family version bump
 // doesn't require touching unrelated families' seam logic.
 const (
-	currentEventVersion    = 1
+	currentEventVersion    = 2
 	currentManifestVersion = 1
 	currentConsumesVersion = 1
 )

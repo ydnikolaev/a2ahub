@@ -1,0 +1,28 @@
+{
+  "schema": "event/v2",
+  "event": "01K1A2B3C4D5E6F7G8H9J0K1M7",
+  "space": "checkout-core",
+  "subject": "XC-atlas-order-envelope",
+  "transition": "publish",
+  "actor": {
+    "kind": "agent",
+    "name": "contract-publisher",
+    "system": "atlas",
+    "model": "codex",
+    "session": "session-1"
+  },
+  "at": "2026-08-03T12:00:00Z",
+  "version": "2.3.0",
+  "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "digest_profile": "contract-set-v2",
+  "publication": {
+    "intent_key": "op-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "candidate_intent_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "version_selector": "auto:minor",
+    "operation_key": "op-v1-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "produced_by": {
+    "tool": "a2a",
+    "version": "0.19.0"
+  }
+}
