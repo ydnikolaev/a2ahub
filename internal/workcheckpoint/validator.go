@@ -11,18 +11,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// FactResolver is part of the public package API.
 type FactResolver interface {
 	ResolveWorkCheckpointFacts(context.Context, space.WorkCheckpointFactQuery) (space.WorkCheckpointFacts, error)
 }
 
+// GenericValidator is part of the public package API.
 type GenericValidator interface {
 	ValidateGenericWorkCheckpoint(context.Context, space.WorkCheckpointValidation) error
 }
 
+// SubmitValidatorProvider is part of the public package API.
 type SubmitValidatorProvider func(context.Context) (space.SubmitValidator, error)
 
+// GenericSubmit is part of the public package API.
 type GenericSubmit struct{ provider SubmitValidatorProvider }
 
+// NewGenericSubmit is part of the public package API.
 func NewGenericSubmit(provider SubmitValidatorProvider) (*GenericSubmit, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("workcheckpoint: generic submit validator provider is required")
@@ -30,6 +35,7 @@ func NewGenericSubmit(provider SubmitValidatorProvider) (*GenericSubmit, error) 
 	return &GenericSubmit{provider: provider}, nil
 }
 
+// ValidateGenericWorkCheckpoint is part of the public package API.
 func (v *GenericSubmit) ValidateGenericWorkCheckpoint(ctx context.Context, candidate space.WorkCheckpointValidation) error {
 	if strings.TrimSpace(candidate.ArtifactPath) == "" || strings.TrimSpace(candidate.EventPath) == "" {
 		return fmt.Errorf("workcheckpoint: canonical artifact and event paths are required")
@@ -47,6 +53,7 @@ func (v *GenericSubmit) ValidateGenericWorkCheckpoint(ctx context.Context, candi
 	})
 }
 
+// Validator is part of the public package API.
 type Validator struct {
 	engine    *validate.Engine
 	facts     FactResolver
@@ -54,6 +61,7 @@ type Validator struct {
 	ownSystem string
 }
 
+// New is part of the public package API.
 func New(engine *validate.Engine, facts FactResolver, generic GenericValidator, ownSystem string) (*Validator, error) {
 	if engine == nil || facts == nil || generic == nil || strings.TrimSpace(ownSystem) == "" {
 		return nil, fmt.Errorf("workcheckpoint: engine, facts, generic validator and own system are required")
@@ -61,6 +69,7 @@ func New(engine *validate.Engine, facts FactResolver, generic GenericValidator, 
 	return &Validator{engine: engine, facts: facts, generic: generic, ownSystem: ownSystem}, nil
 }
 
+// NewContextual is part of the public package API.
 func NewContextual(engine *validate.Engine, facts FactResolver, ownSystem string) (*Validator, error) {
 	if engine == nil || facts == nil || strings.TrimSpace(ownSystem) == "" {
 		return nil, fmt.Errorf("workcheckpoint: engine, facts and own system are required")
@@ -109,8 +118,10 @@ type event struct {
 	Subject string `yaml:"subject"`
 }
 
+// ViolationError is part of the public package API.
 type ViolationError struct{ Violations []validate.Violation }
 
+// Error is part of the public package API.
 func (e *ViolationError) Error() string {
 	parts := make([]string, 0, len(e.Violations))
 	for _, violation := range e.Violations {
@@ -119,6 +130,7 @@ func (e *ViolationError) Error() string {
 	return "workcheckpoint: validation rejected: " + strings.Join(parts, ",")
 }
 
+// ValidateWorkCheckpoint is part of the public package API.
 func (v *Validator) ValidateWorkCheckpoint(ctx context.Context, candidate space.WorkCheckpointValidation) error {
 	point := validate.V2
 	if candidate.InvocationPoint != "" {
@@ -127,7 +139,8 @@ func (v *Validator) ValidateWorkCheckpoint(ctx context.Context, candidate space.
 	if point != validate.V2 && point != validate.V3 {
 		return fmt.Errorf("workcheckpoint: invocation point must be V2 or V3")
 	}
-	if point == validate.V2 {
+	producerStampPending := point == validate.V2 && candidate.ProducerStampPending && producerStampAbsent(candidate.Event)
+	if point == validate.V2 && !producerStampPending {
 		if v.generic == nil {
 			return fmt.Errorf("workcheckpoint: V2 generic validator is unavailable")
 		}
@@ -162,6 +175,9 @@ func (v *Validator) ValidateWorkCheckpoint(ctx context.Context, candidate space.
 	if err != nil {
 		return fmt.Errorf("workcheckpoint: validate event schema: %w", err)
 	}
+	if producerStampPending {
+		eventResult = withoutPendingProducerStampViolation(eventResult)
+	}
 	if err := resultError(eventResult); err != nil {
 		return err
 	}
@@ -194,6 +210,38 @@ func (v *Validator) ValidateWorkCheckpoint(ctx context.Context, candidate space.
 		Work:     validate.WorkCheckpoint{ID: envelope.Work.ID, SemanticSequence: envelope.Work.SemanticSequence, Mode: validate.WorkMode(envelope.Work.Mode), SubjectRef: envelope.Work.SubjectRef, ReportedAt: envelope.Work.ReportedAt, ValidUntil: envelope.Work.ValidUntil, WaitingOn: waits},
 		Previous: previous, ResolvedSubjects: subjects, ManifestSystems: current, HistoricalManifestSystems: facts.HistoricalSystems,
 	}))
+}
+
+// producerStampAbsent distinguishes the funnel-owned pre-stamp candidate from
+// a malformed or forged stamp. Presence of any produced_by value receives the
+// unchanged full policy even when a caller marks the candidate phase.
+func producerStampAbsent(raw []byte) bool {
+	var event map[string]any
+	if err := yaml.Unmarshal(raw, &event); err != nil {
+		return false
+	}
+	_, present := event["produced_by"]
+	return !present
+}
+
+// withoutPendingProducerStampViolation removes only the one violation that
+// cannot be satisfied before P4 injects the producer stamp. All other schema,
+// lifecycle and policy failures keep their original validity and codes.
+func withoutPendingProducerStampViolation(result validate.Result) validate.Result {
+	violations := make([]validate.Violation, 0, len(result.Violations))
+	valid := true
+	for _, violation := range result.Violations {
+		if violation.Code == "POL-012" {
+			continue
+		}
+		violations = append(violations, violation)
+		if violation.Severity != validate.SeverityWarning {
+			valid = false
+		}
+	}
+	result.Valid = valid
+	result.Violations = violations
+	return result
 }
 
 func envelopeRecipients(value any) []string {

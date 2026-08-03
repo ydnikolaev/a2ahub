@@ -19,17 +19,24 @@ import (
 )
 
 var (
+	// ErrWorkPreparationScopeMismatch is part of the public package API.
 	ErrWorkPreparationScopeMismatch = errors.New("space: work preparation scope does not match resolved runtime")
-	ErrWorkPreparationBaseInvalid   = errors.New("space: work preparation base commit is not a canonical Git object ID")
+	// ErrWorkPreparationBaseInvalid is part of the public package API.
+	ErrWorkPreparationBaseInvalid = errors.New("space: work preparation base commit is not a canonical Git object ID")
+	// ErrWorkPreparationTargetInvalid is part of the public package API.
 	ErrWorkPreparationTargetInvalid = errors.New("space: work preparation remote target cannot be bound")
-	ErrWorkEvaluationRefused        = errors.New("space: work announcement publish evaluation refused")
-	ErrWorkPreparedShapeInvalid     = errors.New("space: prepared work submission changed its bounded two-file shape")
-	ErrWorkOperationKeyLeak         = errors.New("space: work operation key entered durable protocol bytes")
+	// ErrWorkEvaluationRefused is part of the public package API.
+	ErrWorkEvaluationRefused = errors.New("space: work announcement publish evaluation refused")
+	// ErrWorkPreparedShapeInvalid is part of the public package API.
+	ErrWorkPreparedShapeInvalid = errors.New("space: prepared work submission changed its bounded two-file shape")
+	// ErrWorkOperationKeyLeak is part of the public package API.
+	ErrWorkOperationKeyLeak = errors.New("space: work operation key entered durable protocol bytes")
 )
 
 // WorkPreparationRuntime contains the non-secret, authoritative facts needed
 // to freeze a P4 submission. It deliberately has no project root, mirror path,
 // credential, provider response or raw provider session.
+// WorkPreparationRuntime is part of the public package API.
 type WorkPreparationRuntime struct {
 	ProjectID            string
 	Space                string
@@ -46,6 +53,7 @@ type WorkPreparationRuntime struct {
 // WorkPreparationRuntimeProvider resolves one current, authoritative runtime
 // snapshot. The preparer binds its project/space exactly before consuming ID
 // entropy or presenting bytes to validation.
+// WorkPreparationRuntimeProvider is part of the public package API.
 type WorkPreparationRuntimeProvider interface {
 	ResolveWorkPreparation(context.Context) (WorkPreparationRuntime, error)
 }
@@ -54,18 +62,25 @@ type WorkPreparationRuntimeProvider interface {
 // The injected adapter owns repository/manifest lookup and translation to the
 // canonical validation engine; space supplies exact candidate documents and
 // does not duplicate contextual rules.
+// WorkCheckpointValidation is part of the public package API.
 type WorkCheckpointValidation struct {
 	InvocationPoint string
-	ProjectID       string
-	Space           string
-	ArtifactID      string
-	EventID         string
-	ArtifactPath    string
-	EventPath       string
-	Artifact        []byte
-	Event           []byte
+	// ProducerStampPending marks the internal P4 candidate phase before the
+	// write funnel has injected its producer stamp. Validators may exempt only
+	// the exact absent-stamp finding at this phase; final frozen bytes never set
+	// this flag and receive the full producer policy.
+	ProducerStampPending bool
+	ProjectID            string
+	Space                string
+	ArtifactID           string
+	EventID              string
+	ArtifactPath         string
+	EventPath            string
+	Artifact             []byte
+	Event                []byte
 }
 
+// WorkCheckpointValidator is part of the public package API.
 type WorkCheckpointValidator interface {
 	ValidateWorkCheckpoint(context.Context, WorkCheckpointValidation) error
 }
@@ -74,6 +89,7 @@ type WorkCheckpointValidator interface {
 // WorkPreparer. The cmd/a2a adapter routes it to internal/template.Render;
 // keeping that one-method seam here avoids a space -> template -> space import
 // cycle without giving rendering semantics a second production implementation.
+// WorkAnnouncementRenderInput is part of the public package API.
 type WorkAnnouncementRenderInput struct {
 	Type           string
 	EnvelopeSchema string
@@ -84,18 +100,21 @@ type WorkAnnouncementRenderInput struct {
 	Body           []byte
 }
 
+// WorkAnnouncementActor is part of the public package API.
 type WorkAnnouncementActor struct {
 	Kind  string
 	Name  string
 	Model string
 }
 
+// WorkAnnouncementRenderer is part of the public package API.
 type WorkAnnouncementRenderer interface {
 	RenderWorkAnnouncement(WorkAnnouncementRenderInput) ([]byte, error)
 }
 
 // WorkSubmissionPreparer is the one-method P4 side-effect-free funnel seam.
 // *WriteFunnel satisfies it.
+// WorkSubmissionPreparer is part of the public package API.
 type WorkSubmissionPreparer interface {
 	PrepareSubmission(context.Context, SubmitRequest, PreparationContext) (PreparedSubmission, error)
 }
@@ -104,6 +123,7 @@ type WorkSubmissionPreparer interface {
 // one immutable status announcement plus its publish event, delegates all
 // contextual policy to the injected canonical validator, and freezes the exact
 // final producer-stamped bytes through P4. It never submits prepared work.
+// WorkPreparer is part of the public package API.
 type WorkPreparer struct {
 	mu        sync.Mutex
 	entropy   io.Reader
@@ -113,6 +133,7 @@ type WorkPreparer struct {
 	funnel    WorkSubmissionPreparer
 }
 
+// NewWorkPreparer is part of the public package API.
 func NewWorkPreparer(
 	entropy io.Reader,
 	runtime WorkPreparationRuntimeProvider,
@@ -129,6 +150,7 @@ func NewWorkPreparer(
 // Prepare implements workreport.Preparer. Every value returned here is final:
 // callers persist its P4 journal and resume with SubmitPrepared instead of
 // re-rendering or re-evaluating.
+// Prepare is part of the public package API.
 func (p *WorkPreparer) Prepare(ctx context.Context, request workreport.PreparationRequest) (workreport.PreparedOperation, error) {
 	runtime, err := p.runtime.ResolveWorkPreparation(ctx)
 	if err != nil {
@@ -171,7 +193,8 @@ func (p *WorkPreparer) Prepare(ctx context.Context, request workreport.Preparati
 	artifactPath := layout.Exchange(artifactID)
 	eventPath := layout.EventFile(request.ReportedAt.UTC().Format("2006"), eventID)
 	validation := WorkCheckpointValidation{
-		ProjectID: request.Identity.ProjectID, Space: request.Identity.Space,
+		ProducerStampPending: true,
+		ProjectID:            request.Identity.ProjectID, Space: request.Identity.Space,
 		ArtifactID: artifactID, EventID: eventID,
 		ArtifactPath: artifactPath, EventPath: eventPath,
 		Artifact: bytes.Clone(announcement), Event: bytes.Clone(event),

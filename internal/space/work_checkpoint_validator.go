@@ -15,6 +15,7 @@ const maxWorkHistoryListingBytes = 1 << 20
 
 // WorkCheckpointRepositoryFacts is the neutral bounded Git/history adapter.
 // Policy remains in internal/validate through internal/workcheckpoint.
+// WorkCheckpointRepositoryFacts is part of the public package API.
 type WorkCheckpointRepositoryFacts struct {
 	mirrorDir     string
 	ownSystem     string
@@ -26,10 +27,12 @@ type WorkCheckpointRepositoryFacts struct {
 // WorkCheckpointContinuationResolver exposes only the exact prior accepted
 // local publication receipt. It never turns arbitrary working-tree or remote
 // branch contents into durable subject facts.
+// WorkCheckpointContinuationResolver is part of the public package API.
 type WorkCheckpointContinuationResolver interface {
 	ResolveWorkContinuation(context.Context, string, uint64) (WorkCheckpointContinuation, bool, error)
 }
 
+// WorkCheckpointContinuation is part of the public package API.
 type WorkCheckpointContinuation struct {
 	ArtifactID string
 	Artifact   []byte
@@ -38,12 +41,14 @@ type WorkCheckpointContinuation struct {
 // WorkSubmissionValidator mounts the same contextual validator at the P4
 // candidate and final-byte funnel seams. The final event may differ only by
 // its producer stamp; all work semantics and repository facts remain shared.
+// WorkSubmissionValidator is part of the public package API.
 type WorkSubmissionValidator struct {
 	validator WorkCheckpointValidator
 	projectID string
 	spaceID   string
 }
 
+// NewWorkSubmissionValidator is part of the public package API.
 func NewWorkSubmissionValidator(validator WorkCheckpointValidator, projectID, spaceID string) (*WorkSubmissionValidator, error) {
 	if validator == nil || strings.TrimSpace(projectID) == "" || strings.TrimSpace(spaceID) == "" {
 		return nil, fmt.Errorf("space: work submission validator requires checkpoint validator, project and space")
@@ -51,20 +56,22 @@ func NewWorkSubmissionValidator(validator WorkCheckpointValidator, projectID, sp
 	return &WorkSubmissionValidator{validator: validator, projectID: projectID, spaceID: spaceID}, nil
 }
 
+// ValidateSubmitCandidate is part of the public package API.
 func (v *WorkSubmissionValidator) ValidateSubmitCandidate(ctx context.Context, files []FileWrite) error {
-	return v.validate(ctx, files)
+	return v.validate(ctx, files, true)
 }
 
+// ValidateSubmit is part of the public package API.
 func (v *WorkSubmissionValidator) ValidateSubmit(ctx context.Context, files []FileWrite) error {
-	return v.validate(ctx, files)
+	return v.validate(ctx, files, false)
 }
 
-func (v *WorkSubmissionValidator) validate(ctx context.Context, files []FileWrite) error {
+func (v *WorkSubmissionValidator) validate(ctx context.Context, files []FileWrite, producerStampPending bool) error {
 	if len(files) != 2 {
 		return ErrWorkPreparedShapeInvalid
 	}
 	var candidate WorkCheckpointValidation
-	candidate.ProjectID, candidate.Space = v.projectID, v.spaceID
+	candidate.ProjectID, candidate.Space, candidate.ProducerStampPending = v.projectID, v.spaceID, producerStampPending
 	for _, file := range files {
 		switch {
 		case strings.HasSuffix(file.Path, ".md"):
@@ -89,10 +96,12 @@ func (v *WorkSubmissionValidator) validate(ctx context.Context, files []FileWrit
 	return v.validator.ValidateWorkCheckpoint(ctx, candidate)
 }
 
+// NewWorkCheckpointRepositoryFacts is part of the public package API.
 func NewWorkCheckpointRepositoryFacts(mirrorDir, ownSystem string) (*WorkCheckpointRepositoryFacts, error) {
 	return NewWorkCheckpointRepositoryFactsWithContinuations(mirrorDir, ownSystem, nil)
 }
 
+// NewWorkCheckpointRepositoryFactsWithContinuations is part of the public package API.
 func NewWorkCheckpointRepositoryFactsWithContinuations(mirrorDir, ownSystem string, continuations WorkCheckpointContinuationResolver) (*WorkCheckpointRepositoryFacts, error) {
 	return NewWorkCheckpointRepositoryFactsAt(mirrorDir, ownSystem, "origin/main", "origin/main", continuations)
 }
@@ -100,6 +109,7 @@ func NewWorkCheckpointRepositoryFactsWithContinuations(mirrorDir, ownSystem stri
 // NewWorkCheckpointRepositoryFactsAt binds durable history to authorityRef
 // and subject resolution/manifest to subjectRef. V3 passes merge-base and
 // proposed head explicitly; V2 uses origin/main for both.
+// NewWorkCheckpointRepositoryFactsAt is part of the public package API.
 func NewWorkCheckpointRepositoryFactsAt(mirrorDir, ownSystem, authorityRef, subjectRef string, continuations WorkCheckpointContinuationResolver) (*WorkCheckpointRepositoryFacts, error) {
 	if strings.TrimSpace(mirrorDir) == "" || strings.TrimSpace(ownSystem) == "" {
 		return nil, fmt.Errorf("space: work checkpoint facts require mirror and own system")
@@ -212,6 +222,7 @@ func (v *WorkCheckpointRepositoryFacts) historicalManifestSystems(ctx context.Co
 	return out, nil
 }
 
+// WorkCheckpointFactQuery is part of the public package API.
 type WorkCheckpointFactQuery struct {
 	ArtifactID       string
 	WorkID           string
@@ -219,6 +230,7 @@ type WorkCheckpointFactQuery struct {
 	SubjectRef       string
 }
 
+// WorkCheckpointPreviousFact is part of the public package API.
 type WorkCheckpointPreviousFact struct {
 	WorkID, Space, Thread, System, Name, Session, Mode string
 	Recipients                                         []string
@@ -226,8 +238,10 @@ type WorkCheckpointPreviousFact struct {
 	SemanticSequence                                   uint64
 }
 
+// WorkCheckpointSubjectFact is part of the public package API.
 type WorkCheckpointSubjectFact struct{ Ref, Thread, Classification string }
 
+// WorkCheckpointFacts is part of the public package API.
 type WorkCheckpointFacts struct {
 	ManifestRaw       []byte
 	Manifest          Manifest
@@ -236,6 +250,7 @@ type WorkCheckpointFacts struct {
 	Subjects          []WorkCheckpointSubjectFact
 }
 
+// ResolveWorkCheckpointFacts is part of the public package API.
 func (v *WorkCheckpointRepositoryFacts) ResolveWorkCheckpointFacts(ctx context.Context, query WorkCheckpointFactQuery) (WorkCheckpointFacts, error) {
 	manifest, raw, historical, err := v.repositoryManifestContext(ctx)
 	if err != nil {

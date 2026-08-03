@@ -100,20 +100,20 @@ func TestWorkPreparerEveryModeWaitAndFinishedShape(t *testing.T) {
 		workreport.ModePaused,
 		workreport.ModeFinished,
 	} {
-		mode := mode
 		t.Run(string(mode), func(t *testing.T) {
 			t.Parallel()
 			validator := newWorkPreparationValidator(t, nil)
 			preparer := newTestWorkPreparer(t, bytes.Repeat([]byte{byte(len(mode) + 1)}, 14), validator,
 				NewWriteFunnel(host.NewFakeHost(), validator, version.OperationalConfidenceFloor), nil)
 			request := validWorkPreparationRequest(t, mode)
-			if mode == workreport.ModeWaiting {
+			switch mode {
+			case workreport.ModeWaiting:
 				request.Action = workreport.ActionWait
 				request.WaitingOn = []workreport.WaitingOn{
 					{Kind: workreport.WaitSystem, ID: "seomatrix", Summary: "Revised invalid fixtures"},
 					{Kind: workreport.WaitTool, ID: "live-e2e"},
 				}
-			} else if mode == workreport.ModePaused || mode == workreport.ModeFinished {
+			case workreport.ModePaused, workreport.ModeFinished:
 				request.Action = workreport.ActionStop
 				request.LocalTarget = workreport.TargetClosing
 			}
@@ -513,6 +513,9 @@ func (v *workPreparationValidator) ValidateWorkCheckpoint(_ context.Context, can
 	}
 	if bytes.Contains(candidate.Event, []byte("produced_by:")) {
 		v.t.Fatal("context validator received a pre-stamped event")
+	}
+	if !candidate.ProducerStampPending {
+		v.t.Fatal("pre-funnel context validation did not declare the producer-stamp phase")
 	}
 	event := decodeYAMLObject(v.t, candidate.Event)
 	if event["state"] != "published" {
