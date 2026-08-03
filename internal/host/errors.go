@@ -59,13 +59,45 @@ var (
 	// green. A caller MUST NOT report this outcome as a landed write.
 	ErrPRHeadMoved = errors.New("host: pull request head moved")
 
-	// ErrMergeMethodUnavailable is returned by Merger.MergePR when the
-	// repository allows no merge method at all (merge commit, squash, and
-	// rebase all disabled) — there is no way to land the PR, and guessing
-	// would be wrong, so this is a typed, actionable error rather than a
-	// best-effort attempt.
+	// ErrMergeMethodUnavailable is returned before OpenPR, EnableAutoMerge,
+	// or MergePR writes when the repository allows no merge method at all
+	// (merge commit, squash, and rebase all disabled). There is no way to land
+	// the PR, and guessing would be wrong.
 	ErrMergeMethodUnavailable = errors.New("host: repository allows no merge method")
 )
+
+// PartialWriteStage is the last externally durable boundary proven by a host
+// operation that later failed. It is host-owned so this package does not
+// import the space orchestration layer.
+type PartialWriteStage string
+
+const (
+	PartialWriteStagePRCreated PartialWriteStage = "pr-created"
+)
+
+// PartialWriteOperation is a stable, machine-safe name for the unfinished
+// provider operation. It never contains request or provider response data.
+type PartialWriteOperation string
+
+const (
+	PartialWriteOperationEnableAutoMerge PartialWriteOperation = "enable-auto-merge"
+)
+
+// PartialWriteError reports a durable partial result plus the operation that
+// did not complete. Error deliberately does not render Err: GraphQL response
+// bodies can contain provider or untrusted data. The cause remains available
+// to trusted Go callers through errors.Is/As and Unwrap.
+type PartialWriteError struct {
+	Stage     PartialWriteStage
+	Operation PartialWriteOperation
+	Err       error
+}
+
+func (e *PartialWriteError) Error() string {
+	return packagePrefix + "partial write at " + string(e.Stage) + ": " + string(e.Operation) + " failed"
+}
+
+func (e *PartialWriteError) Unwrap() error { return e.Err }
 
 // Error is the small typed error every exported operation in this package
 // returns on failure. It always wraps one of the sentinels above so callers

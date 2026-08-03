@@ -25,6 +25,9 @@ func TestOpenPRAutoMerge(t *testing.T) {
 			t.Errorf("Authorization header = %q, want Bearer test-token", got)
 		}
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/space":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"allow_merge_commit": true})
 		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/space/pulls":
 			sawCreate = true
 			var body map[string]any
@@ -68,11 +71,12 @@ func TestOpenPRAutoMerge(t *testing.T) {
 
 	h := NewGitHubHost(srv.Client(), srv.URL)
 	got, err := h.OpenPR(context.Background(), OpenPRRequest{
-		Repo:       Repo{Owner: "acme", Name: "space"},
-		Head:       "a2a/axon/XQ-axon-1",
-		Base:       "main",
-		Title:      "a2a(question): XQ-axon-1",
-		Credential: Credential{Token: "test-token"},
+		Repo:            Repo{Owner: "acme", Name: "space"},
+		Head:            "a2a/axon/XQ-axon-1",
+		Base:            "main",
+		Title:           "a2a(question): XQ-axon-1",
+		ExpectedHeadSHA: "green-sha",
+		Credential:      Credential{Token: "test-token"},
 	})
 	if err != nil {
 		t.Fatalf("OpenPR: %v", err)
@@ -412,7 +416,7 @@ func TestMergePRSendsExplicitMergeMethod(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			var sawMethod string
+			var sawMethod, sawSHA string
 			var sawPath string
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch {
@@ -430,6 +434,7 @@ func TestMergePRSendsExplicitMergeMethod(t *testing.T) {
 						t.Fatalf("decode merge body: %v", err)
 					}
 					sawMethod, _ = body["merge_method"].(string)
+					sawSHA, _ = body["sha"].(string)
 					w.Header().Set("Content-Type", "application/json")
 					_ = json.NewEncoder(w).Encode(map[string]any{"merged": true})
 				default:
@@ -439,8 +444,8 @@ func TestMergePRSendsExplicitMergeMethod(t *testing.T) {
 			defer srv.Close()
 
 			h := NewGitHubHost(srv.Client(), srv.URL)
-			err := h.MergePR(context.Background(), MergePRRequest{
-				Repo: Repo{Owner: "acme", Name: "space"}, PRNumber: 7, Credential: Credential{Token: "tok"},
+			method, err := h.MergePR(context.Background(), MergePRRequest{
+				Repo: Repo{Owner: "acme", Name: "space"}, PRNumber: 7, ExpectedHeadSHA: "green-sha", Credential: Credential{Token: "tok"},
 			})
 			if err != nil {
 				t.Fatalf("MergePR: %v", err)
@@ -450,6 +455,9 @@ func TestMergePRSendsExplicitMergeMethod(t *testing.T) {
 			}
 			if sawMethod != tc.wantMethod {
 				t.Fatalf("merge_method = %q, want %q", sawMethod, tc.wantMethod)
+			}
+			if method != MergeMethod(tc.wantMethod) || sawSHA != "green-sha" {
+				t.Fatalf("result/body = method %q sha %q, want %q/green-sha", method, sawSHA, tc.wantMethod)
 			}
 		})
 	}
@@ -473,8 +481,8 @@ func TestMergePRNoMethodAllowed(t *testing.T) {
 	defer srv.Close()
 
 	h := NewGitHubHost(srv.Client(), srv.URL)
-	err := h.MergePR(context.Background(), MergePRRequest{
-		Repo: Repo{Owner: "acme", Name: "space"}, PRNumber: 7, Credential: Credential{Token: "tok"},
+	_, err := h.MergePR(context.Background(), MergePRRequest{
+		Repo: Repo{Owner: "acme", Name: "space"}, PRNumber: 7, ExpectedHeadSHA: "green-sha", Credential: Credential{Token: "tok"},
 	})
 	if !errors.Is(err, ErrMergeMethodUnavailable) {
 		t.Fatalf("expected errors.Is(err, ErrMergeMethodUnavailable), got %v", err)
@@ -514,9 +522,12 @@ func TestMergePRStatusOutcomes(t *testing.T) {
 			defer srv.Close()
 
 			h := NewGitHubHost(srv.Client(), srv.URL)
-			err := h.MergePR(context.Background(), MergePRRequest{
-				Repo: Repo{Owner: "acme", Name: "space"}, PRNumber: 7, Credential: Credential{Token: "tok"},
+			method, err := h.MergePR(context.Background(), MergePRRequest{
+				Repo: Repo{Owner: "acme", Name: "space"}, PRNumber: 7, ExpectedHeadSHA: "green-sha", Credential: Credential{Token: "tok"},
 			})
+			if method != MergeMethodMerge {
+				t.Fatalf("MergePR method = %q, want merge even on provider refusal", method)
+			}
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("errors.Is(err, %v) = false, err = %v", tc.wantErr, err)
 			}
@@ -534,7 +545,7 @@ func TestMergePRStatusOutcomes(t *testing.T) {
 func TestMergePRInvalidRequest(t *testing.T) {
 	t.Parallel()
 	h := NewGitHubHost(nil, "")
-	if err := h.MergePR(context.Background(), MergePRRequest{}); !errors.Is(err, ErrInvalidRequest) {
+	if _, err := h.MergePR(context.Background(), MergePRRequest{}); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("expected errors.Is(err, ErrInvalidRequest), got %v", err)
 	}
 }

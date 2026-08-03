@@ -38,7 +38,7 @@ type FakeHost struct {
 	// EnableAutoMergeFunc, when set, overrides the optional AutoMerger
 	// capability. Default: records the call and succeeds, which is what a
 	// real host does when auto-merge is already armed.
-	EnableAutoMergeFunc func(ctx context.Context, req EnableAutoMergeRequest) error
+	EnableAutoMergeFunc func(ctx context.Context, req EnableAutoMergeRequest) (MergeMethod, error)
 	// EnsureForkFunc, when set, overrides the optional Forker capability.
 	// Default: mints ForkLogin's fork of the same repo name, idempotently.
 	EnsureForkFunc func(ctx context.Context, req EnsureForkRequest) (ForkInfo, error)
@@ -50,7 +50,7 @@ type FakeHost struct {
 	// FindPRByHeadBranch reads it back as merged — the same shape a real
 	// merge produces, and what makes a funnel test's "landed" assertion
 	// observable rather than merely "was called".
-	MergePRFunc func(ctx context.Context, req MergePRRequest) error
+	MergePRFunc func(ctx context.Context, req MergePRRequest) (MergeMethod, error)
 
 	// Recorded calls, for test assertions.
 	Pushes   []PushBranchRequest
@@ -109,7 +109,10 @@ func (f *FakeHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, error
 
 	f.mu.Lock()
 	f.nextPR++
-	info := PRInfo{Number: f.nextPR, URL: "https://example.invalid/pr/" + req.Head, State: "open", Body: req.Body}
+	info := PRInfo{
+		Number: f.nextPR, URL: "https://example.invalid/pr/" + req.Head, State: "open", Body: req.Body,
+		AutoMergeArmed: true, MergeMethod: MergeMethodMerge,
+	}
 	f.byBranch[req.Head] = info
 	f.mu.Unlock()
 	return info, nil
@@ -199,15 +202,16 @@ func headRef(owner, branch string) string {
 }
 
 var (
-	_ Host               = (*FakeHost)(nil)
-	_ Forker             = (*FakeHost)(nil)
-	_ Forker             = (*GitHubHost)(nil)
-	_ RemoteBranchReader = (*FakeHost)(nil)
-	_ RemoteBranchReader = (*GitHubHost)(nil)
-	_ Merger             = (*FakeHost)(nil)
-	_ Merger             = (*GitHubHost)(nil)
-	_ OpenPRLister       = (*FakeHost)(nil)
-	_ OpenPRLister       = (*GitHubHost)(nil)
+	_ Host                 = (*FakeHost)(nil)
+	_ Forker               = (*FakeHost)(nil)
+	_ Forker               = (*GitHubHost)(nil)
+	_ RemoteBranchReader   = (*FakeHost)(nil)
+	_ RemoteBranchReader   = (*GitHubHost)(nil)
+	_ Merger               = (*FakeHost)(nil)
+	_ Merger               = (*GitHubHost)(nil)
+	_ OpenPRLister         = (*FakeHost)(nil)
+	_ OpenPRLister         = (*GitHubHost)(nil)
+	_ RepoVisibilityReader = (*GitHubHost)(nil)
 )
 
 // EnableAutoMerge implements the optional AutoMerger capability: it records
@@ -217,7 +221,7 @@ var (
 // short-circuit re-arms auto-merge on the PR it finds, because OpenPR is not
 // atomic on real GitHub — a fake that did NOT satisfy the capability would
 // make the type assertion fail and leave that path untested.
-func (f *FakeHost) EnableAutoMerge(ctx context.Context, req EnableAutoMergeRequest) error {
+func (f *FakeHost) EnableAutoMerge(ctx context.Context, req EnableAutoMergeRequest) (MergeMethod, error) {
 	f.mu.Lock()
 	f.AutoArms = append(f.AutoArms, req)
 	fn := f.EnableAutoMergeFunc
@@ -226,14 +230,14 @@ func (f *FakeHost) EnableAutoMerge(ctx context.Context, req EnableAutoMergeReque
 	if fn != nil {
 		return fn(ctx, req)
 	}
-	return nil
+	return MergeMethodMerge, nil
 }
 
 // MergePR implements the optional Merger capability: it records the request
 // and, by default, marks the PR it names merged in byBranch (across
 // whichever branch OpenPR minted it under) so a subsequent
 // FindPRByHeadBranch observes the merge.
-func (f *FakeHost) MergePR(ctx context.Context, req MergePRRequest) error {
+func (f *FakeHost) MergePR(ctx context.Context, req MergePRRequest) (MergeMethod, error) {
 	f.mu.Lock()
 	f.MergePRs = append(f.MergePRs, req)
 	fn := f.MergePRFunc
@@ -251,5 +255,5 @@ func (f *FakeHost) MergePR(ctx context.Context, req MergePRRequest) error {
 		}
 	}
 	f.mu.Unlock()
-	return nil
+	return MergeMethodMerge, nil
 }

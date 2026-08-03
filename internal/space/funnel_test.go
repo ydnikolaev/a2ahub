@@ -39,6 +39,64 @@ func newTestSubmitRequest(fx *spacefixture.Fixture, system string, l Layout) Sub
 	}
 }
 
+func TestRemainingActionForIsTotal(t *testing.T) {
+	t.Parallel()
+
+	type outcome struct {
+		stage WriteStage
+		state WriteState
+	}
+	valid := map[outcome]RemainingAction{
+		{WriteStageNone, ""}:                               RemainingActionRetryPush,
+		{WriteStageCommitted, ""}:                          RemainingActionRetryPush,
+		{WriteStagePushed, ""}:                             RemainingActionEnsurePR,
+		{WriteStagePRCreated, ""}:                          RemainingActionArmAutoMerge,
+		{WriteStageAutoMergeArmed, ""}:                     RemainingActionWaitForGates,
+		{WriteStagePRCreated, WriteStateNeedsAttention}:    RemainingActionResolvePR,
+		{WriteStageAutoMergeArmed, WriteStatePendingMerge}: RemainingActionWaitForGates,
+		{WriteStagePRCreated, WriteStateAlreadyOpen}:       RemainingActionArmAutoMerge,
+		{WriteStageAutoMergeArmed, WriteStateAlreadyOpen}:  RemainingActionWaitForGates,
+		{WriteStageMerged, ""}:                             RemainingActionNone,
+		{WriteStageMerged, WriteStateMerged}:               RemainingActionNone,
+		{WriteStageMerged, WriteStateAlreadyMerged}:        RemainingActionNone,
+	}
+	for _, stage := range []WriteStage{
+		WriteStageNone, WriteStageCommitted, WriteStagePushed, WriteStagePRCreated,
+		WriteStageAutoMergeArmed,
+	} {
+		valid[outcome{stage, WriteStateOutcomeUnknown}] = RemainingActionObserveProviderOutcome
+	}
+
+	stages := []WriteStage{
+		WriteStageNone, WriteStageCommitted, WriteStagePushed, WriteStagePRCreated,
+		WriteStageAutoMergeArmed, WriteStageMerged, WriteStage("invalid"),
+	}
+	states := []WriteState{
+		"", WriteStatePendingMerge, WriteStateAlreadyOpen, WriteStateAlreadyMerged,
+		WriteStateMerged, WriteStateNeedsAttention, WriteStateOutcomeUnknown, WriteState("invalid"),
+	}
+	for _, stage := range stages {
+		for _, state := range states {
+			stage, state := stage, state
+			t.Run(string(stage)+"/"+string(state), func(t *testing.T) {
+				t.Parallel()
+
+				got, err := RemainingActionFor(stage, state)
+				want, ok := valid[outcome{stage, state}]
+				if !ok {
+					if !errors.Is(err, ErrInvalidWriteOutcome) {
+						t.Fatalf("RemainingActionFor(%q, %q) = %q, %v; want ErrInvalidWriteOutcome", stage, state, got, err)
+					}
+					return
+				}
+				if err != nil || got != want {
+					t.Fatalf("RemainingActionFor(%q, %q) = %q, %v; want %q, nil", stage, state, got, err, want)
+				}
+			})
+		}
+	}
+}
+
 // TestFunnelSingleCommit is spec 05 §8 AC row 3: the write funnel produces
 // exactly ONE commit containing the artifact file and its first lifecycle
 // event before any push occurs.
@@ -68,6 +126,9 @@ func TestFunnelSingleCommit(t *testing.T) {
 	if len(fake.Pushes) != 1 || len(fake.Opens) != 1 {
 		t.Fatalf("expected exactly 1 push + 1 open, got %d/%d", len(fake.Pushes), len(fake.Opens))
 	}
+	if got := fake.Opens[0].ExpectedHeadSHA; got != result.CommitSHA || got == "" {
+		t.Fatalf("OpenPR ExpectedHeadSHA = %q, want committed SHA %q", got, result.CommitSHA)
+	}
 
 	// Assert commit tree contents: exactly one commit ahead of main,
 	// containing exactly the artifact file and its event.
@@ -85,6 +146,127 @@ func TestFunnelSingleCommit(t *testing.T) {
 	files := strings.Fields(changed)
 	if len(files) != 2 {
 		t.Fatalf("changed files = %v, want exactly 2 (artifact + event)", files)
+	}
+}
+
+func TestFunnelReturnsLastProvenBoundaryOnFailure(t *testing.T) {
+	t.Parallel()
+
+	pushFailure := errors.New("push failed")
+	openFailure := errors.New("open failed")
+	partialFailure := errors.New("auto-merge failed after PR creation")
+	tests := []struct {
+		name             string
+		configure        func(*host.FakeHost)
+		wantErr          error
+		wantStage        WriteStage
+		wantState        WriteState
+		wantAction       RemainingAction
+		wantPR           int
+		wantMethod       host.MergeMethod
+		wantOpenCalls    int
+		wantNonemptyNote bool
+	}{
+		{
+			name: "push failure retains committed boundary",
+			configure: func(fake *host.FakeHost) {
+				fake.PushBranchFunc = func(context.Context, host.PushBranchRequest) (host.PushBranchResult, error) {
+					return host.PushBranchResult{}, pushFailure
+				}
+			},
+			wantErr: pushFailure, wantStage: WriteStageCommitted,
+			wantAction: RemainingActionRetryPush,
+		},
+		{
+			name: "observed open failure retains pushed boundary",
+			configure: func(fake *host.FakeHost) {
+				fake.OpenPRFunc = func(context.Context, host.OpenPRRequest) (host.PRInfo, error) {
+					return host.PRInfo{}, openFailure
+				}
+			},
+			wantErr: openFailure, wantStage: WriteStagePushed,
+			wantAction: RemainingActionEnsurePR, wantOpenCalls: 1,
+		},
+		{
+			name: "unobserved open outcome is explicit",
+			configure: func(fake *host.FakeHost) {
+				fake.OpenPRFunc = func(context.Context, host.OpenPRRequest) (host.PRInfo, error) {
+					return host.PRInfo{}, host.ErrTransient
+				}
+			},
+			wantErr: host.ErrTransient, wantStage: WriteStagePushed,
+			wantState: WriteStateOutcomeUnknown, wantAction: RemainingActionObserveProviderOutcome,
+			wantOpenCalls: 1, wantNonemptyNote: true,
+		},
+		{
+			name: "partial open retains PR identity and host merge method",
+			configure: func(fake *host.FakeHost) {
+				fake.OpenPRFunc = func(context.Context, host.OpenPRRequest) (host.PRInfo, error) {
+					return host.PRInfo{
+							Number: 42, URL: "https://example.invalid/pr/42", State: "open",
+							MergeMethod: host.MergeMethodSquash,
+						}, &host.PartialWriteError{
+							Stage: host.PartialWriteStagePRCreated, Operation: host.PartialWriteOperationEnableAutoMerge,
+							Err: partialFailure,
+						}
+				}
+			},
+			wantErr: partialFailure, wantStage: WriteStagePRCreated,
+			wantState: WriteStateNeedsAttention, wantAction: RemainingActionResolvePR,
+			wantPR: 42, wantMethod: host.MergeMethodSquash, wantOpenCalls: 1, wantNonemptyNote: true,
+		},
+		{
+			name: "partial open timeout retains PR but marks provider outcome unknown",
+			configure: func(fake *host.FakeHost) {
+				fake.OpenPRFunc = func(context.Context, host.OpenPRRequest) (host.PRInfo, error) {
+					return host.PRInfo{
+							Number: 43, URL: "https://example.invalid/pr/43", State: "open",
+							MergeMethod: host.MergeMethodRebase,
+						}, &host.PartialWriteError{
+							Stage: host.PartialWriteStagePRCreated, Operation: host.PartialWriteOperationEnableAutoMerge,
+							Err: host.ErrTransient,
+						}
+				}
+			},
+			wantErr: host.ErrTransient, wantStage: WriteStagePRCreated,
+			wantState: WriteStateOutcomeUnknown, wantAction: RemainingActionObserveProviderOutcome,
+			wantPR: 43, wantMethod: host.MergeMethodRebase, wantOpenCalls: 1, wantNonemptyNote: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fx := spacefixture.New(t, "axon")
+			layout, err := NewLayout("axon")
+			if err != nil {
+				t.Fatalf("NewLayout: %v", err)
+			}
+			req := newTestSubmitRequest(fx, "axon", layout)
+			fake := host.NewFakeHost()
+			tc.configure(fake)
+
+			result, err := NewWriteFunnel(fake, nil, "0.1.0").Submit(context.Background(), req)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("Submit error = %v, want %v", err, tc.wantErr)
+			}
+			if result.Stage != tc.wantStage || result.State != tc.wantState || result.RemainingAction != tc.wantAction {
+				t.Fatalf("result = %+v, want stage=%q state=%q remaining=%q", result, tc.wantStage, tc.wantState, tc.wantAction)
+			}
+			if result.CommitSHA == "" {
+				t.Fatalf("result = %+v, want committed SHA retained", result)
+			}
+			if result.PRNumber != tc.wantPR || result.MergeMethod != tc.wantMethod {
+				t.Fatalf("result PR/method = %d/%q, want %d/%q", result.PRNumber, result.MergeMethod, tc.wantPR, tc.wantMethod)
+			}
+			if len(fake.Opens) != tc.wantOpenCalls {
+				t.Fatalf("OpenPR calls = %d, want %d", len(fake.Opens), tc.wantOpenCalls)
+			}
+			if (result.Note != "") != tc.wantNonemptyNote || result.AutoMergeNote != result.Note {
+				t.Fatalf("result Note/alias = %q/%q, want nonempty=%v and identical", result.Note, result.AutoMergeNote, tc.wantNonemptyNote)
+			}
+		})
 	}
 }
 
@@ -171,6 +353,9 @@ func TestFunnelIdempotentShortCircuit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Submit: %v", err)
 	}
+	fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
+		return host.CheckStatusResult{State: "queued", HeadSHA: "checked-head"}, nil
+	}
 
 	second, err := funnel.Submit(context.Background(), req)
 	if err != nil {
@@ -207,6 +392,9 @@ func TestFunnelOperationRetryReturnsOriginalIDsAcrossDateChange(t *testing.T) {
 	created, err := funnel.Submit(context.Background(), first)
 	if err != nil {
 		t.Fatalf("first Submit: %v", err)
+	}
+	fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
+		return host.CheckStatusResult{State: "queued", HeadSHA: "checked-head"}, nil
 	}
 
 	retry := first
@@ -289,7 +477,7 @@ func TestFunnelOperationRetryRecognizesMergedRemoteDespiteStaleLocalIntent(t *te
 	if err != nil {
 		t.Fatalf("first Submit: %v", err)
 	}
-	if err := fake.MergePR(context.Background(), host.MergePRRequest{
+	if _, err := fake.MergePR(context.Background(), host.MergePRRequest{
 		Repo: req.Repo, PRNumber: first.PRNumber,
 	}); err != nil {
 		t.Fatalf("MergePR: %v", err)
@@ -791,6 +979,9 @@ func TestFunnelShortCircuitReArmsAutoMerge(t *testing.T) {
 	if len(fake.AutoArms) != 0 {
 		t.Fatalf("the create path armed via the repair capability (%d calls); OpenPR does it inline", len(fake.AutoArms))
 	}
+	fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
+		return host.CheckStatusResult{State: "queued", HeadSHA: "checked-head"}, nil
+	}
 
 	if _, err := funnel.Submit(context.Background(), req); err != nil {
 		t.Fatalf("second (re-run) Submit: %v", err)
@@ -798,7 +989,7 @@ func TestFunnelShortCircuitReArmsAutoMerge(t *testing.T) {
 	if len(fake.AutoArms) != 1 {
 		t.Fatalf("re-run armed auto-merge %d times, want exactly 1", len(fake.AutoArms))
 	}
-	if got := fake.AutoArms[0]; got.PRNumber != first.PRNumber || got.Repo != req.Repo {
+	if got := fake.AutoArms[0]; got.PRNumber != first.PRNumber || got.Repo != req.Repo || got.ExpectedHeadSHA != "checked-head" {
 		t.Fatalf("armed %+v, want PR %d on %+v", got, first.PRNumber, req.Repo)
 	}
 }
@@ -823,11 +1014,116 @@ func TestFunnelShortCircuitFailsWhenReArmingFails(t *testing.T) {
 	}
 
 	sentinel := errors.New("auto-merge not allowed on this repository")
-	fake.EnableAutoMergeFunc = func(context.Context, host.EnableAutoMergeRequest) error { return sentinel }
+	fake.EnableAutoMergeFunc = func(context.Context, host.EnableAutoMergeRequest) (host.MergeMethod, error) {
+		return host.MergeMethodMerge, sentinel
+	}
+	fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
+		return host.CheckStatusResult{State: "queued", HeadSHA: "checked-head"}, nil
+	}
 
-	if _, err := funnel.Submit(context.Background(), req); !errors.Is(err, sentinel) {
+	result, err := funnel.Submit(context.Background(), req)
+	if !errors.Is(err, sentinel) {
 		t.Fatalf("re-run error = %v, want the arming failure to surface", err)
 	}
+	if result.PRNumber == 0 || result.Stage != WriteStagePRCreated || result.State != WriteStateNeedsAttention || result.RemainingAction != RemainingActionResolvePR {
+		t.Fatalf("re-run result = %+v, want known PR retained as needs-attention", result)
+	}
+}
+
+func TestFunnelReArmStatusFailureReturnsKnownPR(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	layout, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", layout)
+	fake := host.NewFakeHost()
+	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	first, err := funnel.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("first Submit: %v", err)
+	}
+
+	statusFailure := errors.New("status unavailable")
+	fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
+		return host.CheckStatusResult{}, statusFailure
+	}
+	result, err := funnel.Submit(context.Background(), req)
+	if !errors.Is(err, statusFailure) {
+		t.Fatalf("re-run error = %v, want %v", err, statusFailure)
+	}
+	if result.PRNumber != first.PRNumber || result.PRURL == "" || result.Stage != WriteStagePRCreated ||
+		result.State != WriteStateNeedsAttention || result.RemainingAction != RemainingActionResolvePR {
+		t.Fatalf("re-run result = %+v, want known PR retained as needs-attention", result)
+	}
+	if len(fake.AutoArms) != 0 || len(fake.MergePRs) != 0 {
+		t.Fatalf("status failure caused mutation: auto-arms=%d merges=%d", len(fake.AutoArms), len(fake.MergePRs))
+	}
+}
+
+func TestFunnelNeverUsesAnEmptyCheckedHead(t *testing.T) {
+	t.Parallel()
+
+	t.Run("re-arm", func(t *testing.T) {
+		t.Parallel()
+
+		fx := spacefixture.New(t, "axon")
+		layout, err := NewLayout("axon")
+		if err != nil {
+			t.Fatalf("NewLayout: %v", err)
+		}
+		req := newTestSubmitRequest(fx, "axon", layout)
+		fake := host.NewFakeHost()
+		funnel := NewWriteFunnel(fake, nil, "0.1.0")
+		first, err := funnel.Submit(context.Background(), req)
+		if err != nil {
+			t.Fatalf("first Submit: %v", err)
+		}
+		fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
+			return host.CheckStatusResult{State: "completed", Conclusion: "success"}, nil
+		}
+
+		result, err := funnel.Submit(context.Background(), req)
+		if !errors.Is(err, ErrExpectedHeadUnavailable) {
+			t.Fatalf("re-run error = %v, want ErrExpectedHeadUnavailable", err)
+		}
+		if result.PRNumber != first.PRNumber || result.Stage != WriteStagePRCreated ||
+			result.State != WriteStateNeedsAttention || result.RemainingAction != RemainingActionResolvePR {
+			t.Fatalf("re-run result = %+v, want known PR retained as needs-attention", result)
+		}
+		if len(fake.AutoArms) != 0 || len(fake.MergePRs) != 0 {
+			t.Fatalf("empty checked head caused mutation: auto-arms=%d merges=%d", len(fake.AutoArms), len(fake.MergePRs))
+		}
+	})
+
+	t.Run("direct merge", func(t *testing.T) {
+		t.Parallel()
+
+		fx := spacefixture.New(t, "axon")
+		layout, err := NewLayout("axon")
+		if err != nil {
+			t.Fatalf("NewLayout: %v", err)
+		}
+		req := newTestSubmitRequest(fx, "axon", layout)
+		fake := host.NewFakeHost()
+		openAlreadyCleanPR(fake, 99)
+		fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
+			return host.CheckStatusResult{State: "completed", Conclusion: "success"}, nil
+		}
+
+		result, err := NewWriteFunnel(fake, nil, "0.1.0").Submit(context.Background(), req)
+		if err != nil {
+			t.Fatalf("Submit: %v", err)
+		}
+		if result.Stage != WriteStagePRCreated || result.State != WriteStateNeedsAttention || result.RemainingAction != RemainingActionResolvePR {
+			t.Fatalf("result = %+v, want PR-created needs-attention", result)
+		}
+		if len(fake.MergePRs) != 0 {
+			t.Fatalf("empty checked head caused %d merge call(s)", len(fake.MergePRs))
+		}
+	})
 }
 
 // --- WAVE M4: landing a PR GitHub declines to auto-merge because it is
@@ -867,7 +1163,7 @@ func TestFunnelLandsAlreadyCleanPR(t *testing.T) {
 	fake := host.NewFakeHost()
 	openAlreadyCleanPR(fake, 99)
 	fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
-		return host.CheckStatusResult{State: "completed", Conclusion: "success"}, nil
+		return host.CheckStatusResult{State: "completed", Conclusion: "success", HeadSHA: "checked-head"}, nil
 	}
 	funnel := NewWriteFunnel(fake, nil, "0.1.0")
 
@@ -886,11 +1182,47 @@ func TestFunnelLandsAlreadyCleanPR(t *testing.T) {
 	if result.AutoMergeNote != "" {
 		t.Fatalf("AutoMergeNote = %q, want empty — the write landed, nothing is pending", result.AutoMergeNote)
 	}
+	if result.MergeMethod != host.MergeMethodMerge || result.Stage != WriteStageMerged || result.RemainingAction != RemainingActionNone {
+		t.Fatalf("landed result = %+v, want selected merge method and no remaining action", result)
+	}
 	if len(fake.MergePRs) != 1 {
 		t.Fatalf("MergePR called %d time(s), want exactly 1", len(fake.MergePRs))
 	}
-	if got := fake.MergePRs[0]; got.PRNumber != 99 || got.Repo != req.Repo {
+	if got := fake.MergePRs[0]; got.PRNumber != 99 || got.Repo != req.Repo || got.ExpectedHeadSHA != "checked-head" {
 		t.Fatalf("MergePR request = %+v, want PR 99 on %+v", got, req.Repo)
+	}
+}
+
+func TestFunnelDirectMergeFailureRetainsKnownPRAndMethod(t *testing.T) {
+	t.Parallel()
+
+	fx := spacefixture.New(t, "axon")
+	layout, err := NewLayout("axon")
+	if err != nil {
+		t.Fatalf("NewLayout: %v", err)
+	}
+	req := newTestSubmitRequest(fx, "axon", layout)
+	fake := host.NewFakeHost()
+	openAlreadyCleanPR(fake, 99)
+	fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
+		return host.CheckStatusResult{State: "completed", Conclusion: "success", HeadSHA: "checked-head"}, nil
+	}
+	mergeFailure := errors.New("head moved before merge")
+	fake.MergePRFunc = func(context.Context, host.MergePRRequest) (host.MergeMethod, error) {
+		return host.MergeMethodSquash, mergeFailure
+	}
+
+	result, err := NewWriteFunnel(fake, nil, "0.1.0").Submit(context.Background(), req)
+	if !errors.Is(err, mergeFailure) {
+		t.Fatalf("Submit error = %v, want %v", err, mergeFailure)
+	}
+	if result.PRNumber != 99 || result.PRURL == "" || result.Stage != WriteStagePRCreated ||
+		result.State != WriteStateNeedsAttention || result.RemainingAction != RemainingActionResolvePR ||
+		result.MergeMethod != host.MergeMethodSquash {
+		t.Fatalf("result = %+v, want known PR and host-selected method retained", result)
+	}
+	if len(fake.MergePRs) != 1 || fake.MergePRs[0].ExpectedHeadSHA != "checked-head" {
+		t.Fatalf("MergePR calls = %+v, want one request for checked-head", fake.MergePRs)
 	}
 }
 
@@ -926,8 +1258,8 @@ func TestFunnelNeverMergesAnUnreportedCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
 	}
-	if result.State != WriteStatePendingMerge {
-		t.Fatalf("State = %v, want %v — an unreported check must never be merged", result.State, WriteStatePendingMerge)
+	if result.State != WriteStateNeedsAttention {
+		t.Fatalf("State = %v, want %v — an unreported check must never be merged", result.State, WriteStateNeedsAttention)
 	}
 	if result.AutoMergeNote != host.AutoMergeAlreadyCleanNote {
 		t.Fatalf("AutoMergeNote = %q, want the note preserved exactly as today", result.AutoMergeNote)
@@ -948,15 +1280,15 @@ func TestFunnelNeverMergesWithoutExplicitGreen(t *testing.T) {
 		name   string
 		status host.CheckStatusResult
 	}{
-		{name: "pending (in progress)", status: host.CheckStatusResult{State: "in_progress"}},
+		{name: "pending (in progress)", status: host.CheckStatusResult{State: "in_progress", HeadSHA: "checked-head"}},
 		{
 			name: "ambiguous (more than one compound run matched)",
 			status: host.CheckStatusResult{
-				State: "completed", Conclusion: "success",
+				State: "completed", Conclusion: "success", HeadSHA: "checked-head",
 				Ambiguous: []string{"a2a-validate / validate", "a2a-validate / validate"},
 			},
 		},
-		{name: "failing", status: host.CheckStatusResult{State: "completed", Conclusion: "failure"}},
+		{name: "failing", status: host.CheckStatusResult{State: "completed", Conclusion: "failure", HeadSHA: "checked-head"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -980,8 +1312,8 @@ func TestFunnelNeverMergesWithoutExplicitGreen(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Submit: %v", err)
 			}
-			if result.State != WriteStatePendingMerge {
-				t.Fatalf("State = %v, want %v", result.State, WriteStatePendingMerge)
+			if result.State != WriteStateNeedsAttention {
+				t.Fatalf("State = %v, want %v", result.State, WriteStateNeedsAttention)
 			}
 			if result.AutoMergeNote != host.AutoMergeAlreadyCleanNote {
 				t.Fatalf("AutoMergeNote = %q, want the note preserved exactly as today", result.AutoMergeNote)
@@ -995,9 +1327,8 @@ func TestFunnelNeverMergesWithoutExplicitGreen(t *testing.T) {
 
 // hostWithoutMerger is a Host (plus the AutoMerger capability the repair
 // path also needs) that does NOT satisfy the optional Merger capability —
-// the GitLab/Gitea-profile case ADR-003 keeps possible, and the concrete
-// "this build predates WAVE M4" case: today's pending-merge behaviour must
-// be byte-for-byte unchanged when nothing offers a direct-merge capability.
+// the GitLab/Gitea-profile case ADR-003 keeps possible. The funnel must fail
+// closed as needs-attention when nothing offers a direct-merge capability.
 type hostWithoutMerger struct{ inner *host.FakeHost }
 
 func (h hostWithoutMerger) PushBranch(ctx context.Context, req host.PushBranchRequest) (host.PushBranchResult, error) {
@@ -1024,7 +1355,7 @@ func (h hostWithoutMerger) FindPRByHeadBranch(ctx context.Context, req host.Find
 	return h.inner.FindPRByHeadBranch(ctx, req)
 }
 
-func (h hostWithoutMerger) EnableAutoMerge(ctx context.Context, req host.EnableAutoMergeRequest) error {
+func (h hostWithoutMerger) EnableAutoMerge(ctx context.Context, req host.EnableAutoMergeRequest) (host.MergeMethod, error) {
 	return h.inner.EnableAutoMerge(ctx, req)
 }
 
@@ -1033,11 +1364,10 @@ var (
 	_ host.AutoMerger = hostWithoutMerger{}
 )
 
-// TestFunnelKeepsPendingMergeWhenHostHasNoMerger is the optional-capability
-// half: a host implementing neither Merger keeps today's exact behaviour —
-// no panic, no failed type assertion, the same pending-merge note as before
-// this wave existed.
-func TestFunnelKeepsPendingMergeWhenHostHasNoMerger(t *testing.T) {
+// TestFunnelNeedsAttentionWhenHostHasNoMerger is the optional-capability
+// half: a host implementing neither Merger fails closed — no panic, no
+// failed type assertion, and a truthful needs-attention outcome.
+func TestFunnelNeedsAttentionWhenHostHasNoMerger(t *testing.T) {
 	t.Parallel()
 
 	fx := spacefixture.New(t, "axon")
@@ -1058,8 +1388,8 @@ func TestFunnelKeepsPendingMergeWhenHostHasNoMerger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
 	}
-	if result.State != WriteStatePendingMerge {
-		t.Fatalf("State = %v, want %v — a host without Merger must keep today's behaviour", result.State, WriteStatePendingMerge)
+	if result.State != WriteStateNeedsAttention {
+		t.Fatalf("State = %v, want %v — a host without Merger cannot claim unattended progress", result.State, WriteStateNeedsAttention)
 	}
 	if result.AutoMergeNote != host.AutoMergeAlreadyCleanNote {
 		t.Fatalf("AutoMergeNote = %q, want preserved", result.AutoMergeNote)
