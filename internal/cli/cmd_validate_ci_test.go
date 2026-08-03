@@ -1237,10 +1237,10 @@ func TestValidateCIAndContractHaveNoSecondCompatCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadDir(.): %v", err)
 	}
-	// Every non-test file in package cli that is supposed to enforce the
-	// rule must be seen CALLING the core. Asserting only one side lets the
-	// other be deleted silently — which is the divergence, not its cure.
-	mustCall := map[string]bool{"cmd_validate_ci.go": false, "cmd_contract.go": false}
+	// CI is the remaining validation consumer. Contract publication now
+	// delegates to the shared P6 planner through an injected interface and
+	// must not carry a second transport-local compatibility implementation.
+	mustCall := map[string]bool{"cmd_validate_ci.go": false}
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -1284,7 +1284,7 @@ func TestValidateCIAndContractHaveNoSecondCompatCopy(t *testing.T) {
 			return true
 		})
 	}
-	for _, file := range []string{"cmd_contract.go", "cmd_validate_ci.go"} {
+	for _, file := range []string{"cmd_validate_ci.go"} {
 		if !mustCall[file] {
 			t.Fatalf("%s does not call validate.CheckComputedCompatibility at all — AC-970.2 requires BOTH layers to read the SAME exported core, not merely its absence elsewhere", file)
 		}

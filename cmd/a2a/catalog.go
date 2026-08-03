@@ -141,6 +141,11 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		return cli.NewAwaitCommand(nil), true
 	case "whatsnew":
 		return cli.NewWhatsnewCommand(""), true
+	case "work":
+		// Metadata-only zero value: Name/Synopsis do not touch dependencies.
+		return &cli.WorkCommand{}, true
+	case "serve":
+		return cli.NewServeCommand(nil), true
 	}
 	if construct, ok := readVerbs()[name]; ok {
 		return construct(nil), true

@@ -95,6 +95,14 @@ func newWireFixture(t *testing.T, system string, others ...string) *wireFixture 
 	if err := os.WriteFile(filepath.Join(projectRoot, ".a2a", "config.yaml"), []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write project config: %v", err)
 	}
+	// P6 preflight/read operations are local-only and publish must freeze the
+	// candidate before its shared service refreshes main. Seed the disposable
+	// mirror explicitly, as a preceding `a2a sync` would in production.
+	mirrorDir := filepath.Join(projectRoot, ".a2a", "cache", "mirrors", "fixture-space")
+	if err := os.MkdirAll(filepath.Dir(mirrorDir), 0o755); err != nil {
+		t.Fatalf("mkdir mirror parent: %v", err)
+	}
+	runGitFixture(t, "", "clone", fx.OriginDir, mirrorDir)
 
 	t.Setenv("HOME", home)
 	t.Setenv("A2A_TOKEN_FIXTURE_SPACE", "wire-tier-token")
@@ -178,7 +186,7 @@ func TestWireContractResolvesTheWholeChain(t *testing.T) {
 				wiringFailure, code, out)
 		}
 	}
-	if !strings.Contains(out, "XC-axon-nothing") {
+	if !strings.Contains(out, "XC-axon-nothing") && !strings.Contains(out, "axon/provides/nothing") {
 		t.Fatalf("output never names the contract, so the verb was never reached; code=%d\noutput:\n%s", code, out)
 	}
 }

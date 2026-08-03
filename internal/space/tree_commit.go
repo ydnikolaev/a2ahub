@@ -92,10 +92,7 @@ func commitTreeFromBase(ctx context.Context, lock *MirrorLock, req treeCommitReq
 			if hashErr != nil {
 				return "", false, fmt.Errorf("hash tree mutation %s: %w", mutation.Path, hashErr)
 			}
-			mode := "100644"
-			if mutation.ExpectedBefore != nil && mutation.ExpectedBefore.Mode == "100755" {
-				mode = "100755"
-			}
+			mode := mutationResultMode(mutation)
 			indexEntry = mode + " " + strings.TrimSpace(blobSHA) + "\t" + mutation.Path + "\x00"
 		case MutationDelete:
 			indexEntry = "0 " + zeroOID + "\t" + mutation.Path + "\x00"
@@ -174,7 +171,7 @@ func validateTreeCommitRequest(ctx context.Context, req treeCommitRequest) error
 		seen[mutation.Path] = struct{}{}
 		switch mutation.Operation {
 		case MutationWrite:
-			if mutation.Bytes == nil || len(mutation.Bytes) > maxMutationBytes {
+			if mutation.Bytes == nil || len(mutation.Bytes) > maxMutationBytes || (mutation.Mode != "" && mutation.Mode != "100644" && mutation.Mode != "100755") {
 				return fmt.Errorf("%w: write mutation %q has an invalid shape", ErrMutationInvalid, mutation.Path)
 			}
 			total += len(mutation.Bytes)
@@ -193,6 +190,16 @@ func validateTreeCommitRequest(ctx context.Context, req treeCommitRequest) error
 		}
 	}
 	return nil
+}
+
+func mutationResultMode(mutation Mutation) string {
+	if mutation.Mode == "100644" || mutation.Mode == "100755" {
+		return mutation.Mode
+	}
+	if mutation.ExpectedBefore != nil && mutation.ExpectedBefore.Mode == "100755" {
+		return "100755"
+	}
+	return "100644"
 }
 
 type baseTreeEntry struct {

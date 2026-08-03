@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 )
@@ -220,6 +221,15 @@ func TestRegistryClosure(t *testing.T) {
 		t.Fatalf("ValidateContractCarriedSet POL-013 probe: %v", err)
 	}
 	record(pol013.Violations)
+	// POL-014: a declared invalid fixture that validates contradicts the
+	// contract's own executable conformance suite.
+	record(ValidateContractConformance(contract.ConformanceResult{
+		Mode: contract.ConformanceModeSuite, Outcome: contract.ConformanceSuiteInconsistent,
+		Results: []contract.ConformanceCaseResult{{
+			Path:     "fixtures/invalid/unexpectedly-valid.json",
+			Expected: contract.ConformanceExpectedNonconformant, Actual: contract.ConformanceActualConformant,
+		}},
+	}))
 	// POL-015: work is isolated to status announcements; the same contextual
 	// validator is used at V2 and V3 (its dedicated test pins parity).
 	pol015Input := validWorkCheckpointInput()

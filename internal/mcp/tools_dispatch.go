@@ -44,7 +44,7 @@ var ExchangeActions = []string{"respond", "verify", "dispute", "note"}
 // because ADR-001 forbids internal/mcp importing internal/cli — the
 // cmd/a2a capability-parity test is the reconciliation gate that reds on
 // any drift between this slice and cli.ContractSubcommands().
-var ContractActions = []string{"new", "publish", "deprecate", "retire", "diff", "verify-export", "adopt"}
+var ContractActions = []string{"new", "preflight", "publish", "materialize", "check", "deprecate", "retire", "diff", "verify-export", "adopt"}
 
 // newDispatch builds a grouped tool's handler: it reads the discKey
 // discriminator ("action"/"view"), looks up the matching per-verb handler,
@@ -120,7 +120,10 @@ func newExchangeDispatch(write WriteDeps) HandlerFunc {
 func newContractDispatch(newDeps NewDeps, contractDeps ContractDeps) HandlerFunc {
 	return newDispatch("a2a_contract", "action", map[string]HandlerFunc{
 		"new":           newContractNewHandler(newDeps),
+		"preflight":     newContractPreflightHandler(contractDeps),
 		"publish":       newContractPublishHandler(contractDeps),
+		"materialize":   newContractMaterializeHandler(contractDeps),
+		"check":         newContractCheckHandler(contractDeps),
 		"deprecate":     newContractDeprecateHandler(contractDeps),
 		"retire":        newContractRetireHandler(contractDeps),
 		"diff":          newContractDiffHandler(contractDeps),

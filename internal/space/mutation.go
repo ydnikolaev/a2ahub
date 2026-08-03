@@ -43,9 +43,13 @@ type MutationPrecondition struct {
 // deliberately unexported and therefore absent from every JSON round trip.
 // External callers may describe delete intent, but cannot authorize it.
 type Mutation struct {
-	Path           string                `json:"path"`
-	Operation      MutationOperation     `json:"operation"`
-	Bytes          []byte                `json:"bytes,omitempty"`
+	Path      string            `json:"path"`
+	Operation MutationOperation `json:"operation"`
+	Bytes     []byte            `json:"bytes,omitempty"`
+	// Mode is empty for the canonical 100644 default and 100755 for an
+	// executable result. It is independent of ExpectedBefore so a publication
+	// can intentionally change a file mode.
+	Mode           string                `json:"mode,omitempty"`
 	ExpectedBefore *MutationPrecondition `json:"expected_before,omitempty"`
 	ContractRoot   string                `json:"contract_root,omitempty"`
 	PlanDigest     string                `json:"plan_digest,omitempty"`
@@ -153,7 +157,7 @@ func (f *WriteFunnel) validateMutationSet(operationKey string, mutations []Mutat
 		switch mutation.Operation {
 		case MutationWrite:
 			if mutation.Bytes == nil || len(mutation.Bytes) > maxMutationBytes || mutation.deletePermit != nil ||
-				mutation.ContractRoot != "" || mutation.PlanDigest != "" {
+				mutation.ContractRoot != "" || mutation.PlanDigest != "" || (mutation.Mode != "" && mutation.Mode != "100644" && mutation.Mode != "100755") {
 				return fmt.Errorf("%w: write mutation %q has an invalid shape", ErrMutationInvalid, mutation.Path)
 			}
 			totalBytes += len(mutation.Bytes)

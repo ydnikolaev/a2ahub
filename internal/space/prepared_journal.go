@@ -22,6 +22,7 @@ type preparedMutationWire struct {
 	Path                 string            `json:"path"`
 	Operation            MutationOperation `json:"operation"`
 	Bytes                []byte            `json:"bytes"`
+	Mode                 string            `json:"mode,omitempty"`
 	ExpectedBeforeDigest string            `json:"expected_before_digest"`
 	ExpectedBeforeMode   string            `json:"expected_before_mode"`
 	ContractRoot         string            `json:"contract_root"`
@@ -180,7 +181,7 @@ func mutationsToWire(mutations []Mutation) []preparedMutationWire {
 	for i, mutation := range mutations {
 		out[i] = preparedMutationWire{
 			Path: mutation.Path, Operation: mutation.Operation, Bytes: append([]byte{}, mutation.Bytes...),
-			ContractRoot: mutation.ContractRoot, PlanDigest: mutation.PlanDigest,
+			Mode: mutation.Mode, ContractRoot: mutation.ContractRoot, PlanDigest: mutation.PlanDigest,
 		}
 		if mutation.ExpectedBefore != nil {
 			out[i].ExpectedBeforeDigest = mutation.ExpectedBefore.Digest
@@ -198,7 +199,7 @@ func mutationsFromWire(wire []preparedMutationWire) ([]Mutation, error) {
 	for i, encoded := range wire {
 		mutation := Mutation{
 			Path: encoded.Path, Operation: encoded.Operation, Bytes: append([]byte{}, encoded.Bytes...),
-			ContractRoot: encoded.ContractRoot, PlanDigest: encoded.PlanDigest,
+			Mode: encoded.Mode, ContractRoot: encoded.ContractRoot, PlanDigest: encoded.PlanDigest,
 		}
 		if encoded.ExpectedBeforeDigest != "" || encoded.ExpectedBeforeMode != "" {
 			mutation.ExpectedBefore = &MutationPrecondition{
@@ -209,6 +210,7 @@ func mutationsFromWire(wire []preparedMutationWire) ([]Mutation, error) {
 			return nil, ErrPreparedNotJournalable
 		}
 		if mutation.Operation != MutationWrite || encoded.Bytes == nil || mutation.ContractRoot != "" || mutation.PlanDigest != "" ||
+			(mutation.Mode != "" && mutation.Mode != "100644" && mutation.Mode != "100755") ||
 			(mutation.ExpectedBefore != nil && !validMutationPrecondition(*mutation.ExpectedBefore)) || !isCleanRelativePath(mutation.Path) {
 			return nil, ErrPreparedJournalInvalid
 		}

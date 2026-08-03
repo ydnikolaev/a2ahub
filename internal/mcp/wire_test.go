@@ -2,12 +2,16 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
@@ -30,6 +34,53 @@ func fixValidManifest(t *testing.T, fx *spacefixture.Fixture, system string) {
 	runGitTest(t, dir, "add", "space.yaml")
 	runGitTest(t, dir, "-c", "user.name=fixture", "-c", "user.email=fixture@a2ahub.invalid", "commit", "-m", "fix manifest shape")
 	runGitTest(t, dir, "push", "origin", "HEAD:main")
+}
+
+// reason: mutates process env through the production credential seam.
+func TestProductionDegradedContractSurfaceFailsLegacyWritesClosed(t *testing.T) {
+	t.Setenv("A2A_TOKEN_FIXTURE_SPACE", "test-token")
+
+	projectRoot := t.TempDir()
+	projectConfig := filepath.Join(projectRoot, ".a2a", "config.yaml")
+	machineConfig := filepath.Join(t.TempDir(), "machine-config.yaml")
+	if err := os.MkdirAll(filepath.Dir(projectConfig), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unreachable := filepath.Join(t.TempDir(), "no-such-origin.git")
+	if err := os.WriteFile(projectConfig, []byte(
+		"system: beta\nspaces:\n  - id: fixture-space\n    repo_url: "+unreachable+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(machineConfig, []byte(
+		"credentials:\n  fixture-space: \"env:A2A_TOKEN_FIXTURE_SPACE\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	publication := &mcpP6PublicationFake{result: space.ContractPublicationResult{
+		Status: space.ContractPublicationPlanned,
+		Plan:   contract.PublicationPlan{Contract: "XC-axon-orders", TargetVersion: "1.0.0", PlanDigest: "sha256:plan"},
+	}}
+	build := func(ActorResolver) (ContractToolOperations, error) {
+		return ContractToolOperations{
+			Publication: publication, Materialize: &mcpP6MaterializeFake{},
+			Check: &mcpP6CheckFake{}, Inspection: &mcpP6InspectionFake{},
+		}, nil
+	}
+	p := Paths{ProjectConfig: projectConfig, MachineConfig: machineConfig, ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
+	server, err := NewServerFromConfigWithContractOperations(t.Context(), p, "0.19.0", unavailableWorkToolDeps(), build)
+	if err != nil {
+		t.Fatalf("degraded production server: %v", err)
+	}
+	spec, ok := server.registry.Get("a2a_contract")
+	if !ok {
+		t.Fatal("degraded production server omitted safe contract reads")
+	}
+	if _, _, err := spec.Handler(t.Context(), json.RawMessage(`{"action":"deprecate","id":"XC-axon-orders","successor":"XC-axon-next@1.0.0","sunset":"2026-12-01"}`)); err == nil || !strings.Contains(err.Error(), "legacy contract write unavailable while space write dependencies are offline") {
+		t.Fatalf("degraded legacy write error = %v", err)
+	}
+	if _, _, err := spec.Handler(t.Context(), json.RawMessage(`{"action":"preflight","id":"XC-axon-orders","version":"1.0.0"}`)); err != nil {
+		t.Fatalf("safe degraded preflight unavailable: %v", err)
+	}
 }
 
 func runGitTest(t *testing.T, dir string, args ...string) {

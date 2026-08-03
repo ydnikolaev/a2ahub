@@ -11,7 +11,9 @@ package mcp
 // the other half of its capability-parity check.
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -20,6 +22,8 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/releasenotes"
 )
+
+var ErrLegacyContractWriteUnavailable = errors.New("mcp: legacy contract write unavailable while space write dependencies are offline")
 
 // genericSchema is a permissive (additionalProperties allowed) object
 // schema — every tool's InputSchema embeds a JSON Schema descriptor per
@@ -135,6 +139,26 @@ func registerSpaceFree(r *Registry, store *cache.Store) {
 // cmd/a2a-composed work dependency graph; the omitted form is retained only
 // for isolated registry tests and exposes an explicit unavailable backend.
 func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string, legality *LegalityAdapter, newDeps NewDeps, workDeps ...WorkToolDeps) *Registry {
+	return BuildRegistryWithContractOperations(store, write, submitStagingDir, legality, newDeps, ContractToolOperations{}, workDeps...)
+}
+
+// ContractToolOperations is the cmd/a2a-composed P6 dependency set. Keeping
+// these consumer-side seams in MCP while constructing their production
+// implementations only at cmd/a2a preserves ADR-001's single DI point.
+type ContractToolOperations struct {
+	Publication ContractPublicationOperations
+	Materialize ContractMaterializeOperation
+	Check       ContractCheckOperation
+	Inspection  ContractInspectionOperations
+}
+
+func (o ContractToolOperations) complete() bool {
+	return o.Publication != nil && o.Materialize != nil && o.Check != nil && o.Inspection != nil
+}
+
+// BuildRegistryWithContractOperations is the production registry assembly.
+// BuildRegistry remains the source-compatible isolated-test constructor.
+func BuildRegistryWithContractOperations(store *cache.Store, write WriteDeps, submitStagingDir string, legality *LegalityAdapter, newDeps NewDeps, contractOperations ContractToolOperations, workDeps ...WorkToolDeps) *Registry {
 	r := NewRegistry()
 	if len(workDeps) > 1 {
 		panic("mcp: BuildRegistry accepts at most one work dependency set")
@@ -144,7 +168,11 @@ func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string,
 	// edit into the version it is declaring (ContractDeps.StagingDir's own
 	// doc comment) — no new BuildRegistry parameter, this one is already
 	// threaded through for submit's own idempotency short-circuit.
-	contractDeps := ContractDeps{WriteDeps: write, StagingDir: submitStagingDir}
+	contractDeps := ContractDeps{
+		WriteDeps: write, StagingDir: submitStagingDir,
+		Publication: contractOperations.Publication, Materialize: contractOperations.Materialize,
+		Check: contractOperations.Check, Inspection: contractOperations.Inspection,
+	}
 	submitDeps := SubmitDeps{WriteDeps: write, StagingDir: submitStagingDir, Legality: legality}
 
 	// --- a2a_read + a2a_whatsnew (need no space; see registerSpaceFree) --
@@ -187,21 +215,50 @@ func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string,
 		Handler: newExchangeDispatch(write),
 	})
 
-	// --- a2a_contract (action: the 6 contract sub-verbs) -----------------
+	registerContractTool(r, newDeps, contractDeps)
+
+	return r
+}
+
+// registerContractTool keeps the grouped contract surface available when the
+// MCP session is offline but its local mirror exists. P6 read/preflight paths
+// remain usable; remote mutations fail through their own injected boundaries.
+func registerContractTool(r *Registry, newDeps NewDeps, contractDeps ContractDeps, degraded ...bool) {
+	handler := newContractDispatch(newDeps, contractDeps)
+	if len(degraded) > 1 {
+		panic("mcp: registerContractTool accepts at most one degraded flag")
+	}
+	if len(degraded) == 1 && degraded[0] {
+		handler = rejectDegradedLegacyContractWrites(handler)
+	}
+	// --- a2a_contract (action: the contract sub-verbs) -------------------
 	r.Register(ToolSpec{
 		Name:        "a2a_contract",
-		Description: "contract family: action=new|publish|deprecate|retire|diff|verify-export|adopt",
+		Description: "contract family: action=new|preflight|publish|materialize|check|deprecate|retire|diff|verify-export|adopt",
 		InputSchema: groupedSchema("action", ContractActions, map[string]string{
-			"slug": "string", "fields": "object", "body": "string",
+			"space": "string", "slug": "string", "fields": "object", "body": "string",
 			"thread": "string", "id": "string", "version": "string",
-			"bump": "string", "generated_from_digest": "string",
+			"bump":    "string",
+			"staging": "string", "expect_plan": "string", "to": "string",
+			"mode": "string", "payload": "string", "schema": "string",
 			"successor": "string", "sunset": "string", "override": "boolean",
 			"v1": "string", "v2": "string", "local": "string",
 			"ref": "string", "actor": "object",
 			"major": "integer", "note": "string",
 		}),
-		Handler: newContractDispatch(newDeps, contractDeps),
+		Handler: handler,
 	})
+}
 
-	return r
+func rejectDegradedLegacyContractWrites(next HandlerFunc) HandlerFunc {
+	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
+		var input struct {
+			Action string `json:"action"`
+		}
+		if err := json.Unmarshal(args, &input); err == nil &&
+			(input.Action == "deprecate" || input.Action == "retire" || input.Action == "adopt") {
+			return nil, "", ErrLegacyContractWriteUnavailable
+		}
+		return next(ctx, args)
+	}
 }

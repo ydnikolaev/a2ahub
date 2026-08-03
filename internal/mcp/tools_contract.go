@@ -12,10 +12,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
-	"io/fs"
-	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
@@ -137,130 +133,6 @@ func contractCanonicalVersion(v string) string {
 	return v
 }
 
-func contractBump(prior contractSemver, kind string) contractSemver {
-	switch kind {
-	case "major":
-		return contractSemver{prior[0] + 1, 0, 0}
-	case "minor":
-		return contractSemver{prior[0], prior[1] + 1, 0}
-	case "patch":
-		return contractSemver{prior[0], prior[1], prior[2] + 1}
-	default:
-		return prior
-	}
-}
-
-// contractInferBumpKind mirrors internal/cli's classifier for an explicit
-// version publish. internal/mcp cannot import internal/cli (ADR-001), but it
-// must pass the same major/minor/patch declaration to the shared compatibility
-// core or the two publish surfaces can disagree.
-func contractInferBumpKind(baseline, next contractSemver) string {
-	switch {
-	case next[0] != baseline[0]:
-		return "major"
-	case next[1] != baseline[1]:
-		return "minor"
-	default:
-		return "patch"
-	}
-}
-
-// contractSelectBaseline mirrors internal/cli's own copy (ADR-001:
-// internal/mcp never imports internal/cli) — P4 wave 5's Edge 2
-// (04-per-version-lifecycle.md §4): the baseline is
-// max{v ∈ priorVersions : v < newVersion}, NOT necessarily the
-// globally-highest published version (`priorVersions[len(priorVersions)-1]`,
-// this file's own former rule). The DECISION itself lives in
-// internal/version.Baseline, shared with internal/cli's own copy of this
-// same bridge (decision 8, 04-per-version-lifecycle.plan.md); this is only
-// the adapter between contractSemver's own numeric shape and that
-// string-based rule. Every contractSemver.String() is always a
-// well-formed dotted-integer version, so version.Baseline can only ever
-// fail on an input this function itself produced wrong — never a
-// caller-reachable path — and such a failure is treated the same as "not
-// found" (the zero value, false).
-func contractSelectBaseline(priorVersions []contractSemver, newVersion contractSemver) (contractSemver, bool) {
-	published := make([]string, len(priorVersions))
-	for i, v := range priorVersions {
-		published[i] = v.String()
-	}
-	baseline, found, err := version.Baseline(published, newVersion.String())
-	if err != nil || !found {
-		return contractSemver{0, 0, 0}, false
-	}
-	parsed, perr := contractParseSemver(baseline)
-	if perr != nil {
-		return contractSemver{0, 0, 0}, false
-	}
-	return parsed, true
-}
-
-var contractDigestSubtrees = []string{"schema", "fixtures"}
-
-// contractReadWorkingTreeFiles mirrors internal/cli's own copy
-// (cmd_contract.go, same name, same behaviour) — ADR-001: internal/mcp
-// never imports internal/cli, so this package carries its own file-private
-// copy rather than a shared one. Reads every regular file under
-// filepath.Join(root, sub), keyed "<sub>/<path-relative-to-root>"
-// (forward-slash). A missing directory is not an error — an empty map.
-func contractReadWorkingTreeFiles(root, sub string) (map[string][]byte, error) {
-	dir := filepath.Join(root, sub)
-	info, err := os.Stat(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return map[string][]byte{}, nil
-		}
-		return nil, err
-	}
-	if !info.IsDir() {
-		return map[string][]byte{}, nil
-	}
-	out := map[string][]byte{}
-	walkErr := filepath.WalkDir(dir, func(p string, d fs.DirEntry, werr error) error {
-		if werr != nil {
-			return werr
-		}
-		if d.IsDir() {
-			return nil
-		}
-		raw, rerr := readBoundedFile(p, maxMirrorEventBytes)
-		if rerr != nil {
-			return rerr
-		}
-		rel, relErr := filepath.Rel(root, p)
-		if relErr != nil {
-			return relErr
-		}
-		out[filepath.ToSlash(rel)] = raw
-		return nil
-	})
-	if walkErr != nil {
-		return nil, walkErr
-	}
-	return out, nil
-}
-
-// contractStagingOverlay mirrors internal/cli's own copy (cmd_contract.go,
-// same name, same PER-FILE-not-per-directory merge, same "absence in
-// staging means unchanged, never removed" rule) — see that copy's own doc
-// comment for the full rationale; ADR-001 duplication, not a second source
-// of truth (the equivalence suite, cmd/a2a/mcp_equivalence_test.go's
-// TestEquivContractPublish, keeps the two behaviours honest).
-func contractStagingOverlay(landed map[string][]byte, staged []space.FileWrite, relDir string) map[string][]byte {
-	out := make(map[string][]byte, len(landed))
-	for k, v := range landed {
-		out[k] = v
-	}
-	prefix := relDir + "/"
-	for _, sc := range staged {
-		if !strings.HasPrefix(sc.Path, prefix) {
-			continue
-		}
-		out[strings.TrimPrefix(sc.Path, prefix)] = sc.Content
-	}
-	return out
-}
-
 func contractDeprecateSeed(contractID, version, sunset string) []byte {
 	var buf bytes.Buffer
 	buf.WriteString("contract=" + contractID + "\n")
@@ -268,190 +140,6 @@ func contractDeprecateSeed(contractID, version, sunset string) []byte {
 	buf.WriteString("sunset=" + sunset + "\n")
 	sum := sha256.Sum256(buf.Bytes())
 	return sum[:]
-}
-
-type contractDiffTree struct {
-	Added   []string `json:"added"`
-	Removed []string `json:"removed"`
-	Changed []string `json:"changed"`
-}
-
-func contractDiff(a, b map[string]string) contractDiffTree {
-	var out contractDiffTree
-	for p, da := range a {
-		db, ok := b[p]
-		if !ok {
-			out.Removed = append(out.Removed, p)
-		} else if da != db {
-			out.Changed = append(out.Changed, p)
-		}
-	}
-	for p := range b {
-		if _, ok := a[p]; !ok {
-			out.Added = append(out.Added, p)
-		}
-	}
-	sort.Strings(out.Added)
-	sort.Strings(out.Removed)
-	sort.Strings(out.Changed)
-	return out
-}
-
-func contractResolveVersionSHA(ctx context.Context, repoDir, descriptorPath, version string) (string, error) {
-	out, err := contractGitBounded(ctx, repoDir, maxMirrorEventBytes, "log", "--format=%H", "--", descriptorPath)
-	if err != nil {
-		return "", fmt.Errorf("mcp: git log %s: %w", descriptorPath, err)
-	}
-	shas := strings.Fields(string(out))
-	for _, sha := range shas {
-		content, serr := contractGitBounded(ctx, repoDir, maxMirrorEventBytes, "show", sha+":"+descriptorPath)
-		if serr != nil {
-			continue
-		}
-		fm, ferr := artifact.ParseFrontmatter(content)
-		if ferr != nil {
-			continue
-		}
-		var probe contractDescriptorProbe
-		if yaml.Unmarshal(fm.YAML, &probe) == nil && probe.Version == version {
-			return sha, nil
-		}
-	}
-	return "", fmt.Errorf("mcp: no commit found where %s has version %s", descriptorPath, version)
-}
-
-// contractGitBounded is the MCP package's bounded git-content reader. It
-// mirrors the CLI package's private helper because ADR-001 forbids importing
-// internal/cli; both the tree listing and each historical file are external
-// inputs and must stay under the package's existing artifact read ceiling.
-func contractGitBounded(ctx context.Context, repoDir string, max int64, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", repoDir}, args...)...)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	raw, readErr := io.ReadAll(io.LimitReader(stdout, max+1))
-	if readErr != nil {
-		_ = cmd.Process.Kill() // reason: abandon a subprocess whose output cannot be read
-		_ = cmd.Wait()         // reason: reap after kill; readErr is the actionable error
-		return nil, readErr
-	}
-	if int64(len(raw)) > max {
-		_ = cmd.Process.Kill() // reason: output crossed the explicit memory bound
-		_ = cmd.Wait()         // reason: reap after kill; the bound error is actionable
-		return nil, fmt.Errorf("content exceeds %d byte read bound", max)
-	}
-	if waitErr := cmd.Wait(); waitErr != nil {
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return nil, fmt.Errorf("%w: %s", waitErr, msg)
-		}
-		return nil, waitErr
-	}
-	return raw, nil
-}
-
-func contractLooksLikeObjectID(s string) bool {
-	if len(s) < 4 || len(s) > 64 {
-		return false
-	}
-	for _, r := range s {
-		switch {
-		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F':
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-// contractReadTreeAtSHA returns historical contract sidecars keyed relative
-// to descriptorDir. The commit is verified before an empty subtree can be
-// interpreted as "no fixtures", preventing an unreachable revision from
-// degrading into a compatibility no-op.
-func contractReadTreeAtSHA(ctx context.Context, repoDir, sha, descriptorDir string, subtrees []string) (map[string][]byte, error) {
-	if !contractLooksLikeObjectID(sha) {
-		return nil, fmt.Errorf("mcp: %q is not a git object id", sha)
-	}
-	if err := exec.CommandContext(ctx, "git", "-C", repoDir, "rev-parse", "--verify", "--quiet", sha+"^{commit}").Run(); err != nil {
-		return nil, fmt.Errorf("mcp: %s is not a commit in %s: %w", sha, repoDir, err)
-	}
-
-	out := map[string][]byte{}
-	for _, sub := range subtrees {
-		dir := path.Join(descriptorDir, sub)
-		listing, err := contractGitBounded(ctx, repoDir, maxMirrorEventBytes, "ls-tree", "-r", "-z", "--name-only", sha, "--", dir)
-		if err != nil {
-			continue
-		}
-		files := strings.FieldsFunc(string(listing), func(r rune) bool { return r == 0 })
-		sort.Strings(files)
-		for _, repoPath := range files {
-			relative, relErr := filepath.Rel(descriptorDir, repoPath)
-			if relErr != nil {
-				return nil, fmt.Errorf("mcp: %s:%s: %w", sha, repoPath, relErr)
-			}
-			relative = filepath.ToSlash(relative)
-			if relative == ".." || strings.HasPrefix(relative, "../") {
-				return nil, fmt.Errorf("mcp: %s: git listed %q outside %s", sha, repoPath, descriptorDir)
-			}
-			content, contentErr := contractGitBounded(ctx, repoDir, maxMirrorEventBytes, "show", sha+":"+repoPath)
-			if contentErr != nil {
-				return nil, fmt.Errorf("mcp: git show %s:%s: %w", sha, repoPath, contentErr)
-			}
-			out[relative] = content
-		}
-	}
-	return out, nil
-}
-
-func contractPriorVersionFiles(ctx context.Context, repoDir, descriptorPath, descriptorDir, version string) (schemas, validFixtures map[string][]byte, err error) {
-	sha, err := contractResolveVersionSHA(ctx, repoDir, descriptorPath, version)
-	if err != nil {
-		return nil, nil, err
-	}
-	tree, err := contractReadTreeAtSHA(ctx, repoDir, sha, descriptorDir, []string{"schema", "fixtures"})
-	if err != nil {
-		return nil, nil, err
-	}
-	schemas = map[string][]byte{}
-	validFixtures = map[string][]byte{}
-	for relative, content := range tree {
-		switch {
-		case relative == "schema" || strings.HasPrefix(relative, "schema/"):
-			schemas[relative] = content
-		case relative == "fixtures/valid" || strings.HasPrefix(relative, "fixtures/valid/"):
-			validFixtures[relative] = content
-		}
-	}
-	return schemas, validFixtures, nil
-}
-
-func contractDigestTreeAtSHA(ctx context.Context, repoDir, sha, descriptorDir string) (map[string]string, error) {
-	perFile := map[string]string{}
-	for _, sub := range []string{"schema", "fixtures"} {
-		dir := path.Join(descriptorDir, sub)
-		out, err := exec.CommandContext(ctx, "git", "-C", repoDir, "ls-tree", "-r", "--name-only", sha, "--", dir).Output()
-		if err != nil {
-			continue
-		}
-		for _, rel := range strings.Fields(string(out)) {
-			content, serr := exec.CommandContext(ctx, "git", "-C", repoDir, "show", sha+":"+rel).Output()
-			if serr != nil {
-				return nil, fmt.Errorf("mcp: git show %s:%s: %w", sha, rel, serr)
-			}
-			relToDescriptorRoot, rerr := filepath.Rel(descriptorDir, rel)
-			if rerr != nil {
-				return nil, rerr
-			}
-			perFile[filepath.ToSlash(relToDescriptorRoot)] = artifact.Digest(content)
-		}
-	}
-	return perFile, nil
 }
 
 // --- ContractDeps -----------------------------------------------------
@@ -465,7 +153,14 @@ func contractDigestTreeAtSHA(ctx context.Context, repoDir, sha, descriptorDir st
 // it) degrades to exactly the pre-wave behaviour, never a panic.
 type ContractDeps struct {
 	WriteDeps
-	StagingDir string
+	// StagingDir is retained only for source compatibility while cmd/a2a
+	// moves to the per-request staging selector. Contract handlers never read
+	// it and there is no transport-local staging overlay fallback.
+	StagingDir  string
+	Publication ContractPublicationOperations
+	Materialize ContractMaterializeOperation
+	Check       ContractCheckOperation
+	Inspection  ContractInspectionOperations
 }
 
 // ContractNewInput is a2a_contract_new's structured input: a thin delegate
@@ -527,236 +222,23 @@ func contractPublishedVersions(all []eventDoc, id string) []contractSemver {
 
 // ContractPublishInput is a2a_contract_publish's structured input.
 type ContractPublishInput struct {
+	Space               string     `json:"space,omitempty"`
 	ID                  string     `json:"id"`
 	Version             string     `json:"version,omitempty"`
 	Bump                string     `json:"bump,omitempty"`
+	Staging             string     `json:"staging,omitempty"`
+	ExpectPlan          string     `json:"expect_plan,omitempty"`
 	GeneratedFromDigest string     `json:"generated_from_digest,omitempty"`
 	Actor               ActorInput `json:"actor,omitempty"`
 }
 
 func newContractPublishHandler(deps ContractDeps) HandlerFunc {
-	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
-		var in ContractPublishInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, "", fmt.Errorf("contract publish: invalid input: %w", err)
+	if deps.Publication == nil {
+		return func(context.Context, json.RawMessage) (any, string, error) {
+			return nil, "", fmt.Errorf("contract publish: P6 service is not configured")
 		}
-		if in.ID == "" || (in.Version == "" && in.Bump == "") {
-			return nil, "", fmt.Errorf("contract publish: id and one of version or bump are required")
-		}
-
-		resolved, actorErr := deps.ResolveActor(in.Actor)
-		if actorErr != nil {
-			return nil, "", fmt.Errorf("contract publish: %w", actorErr)
-		}
-		actor := fold.Actor{Kind: resolved.Kind, Name: resolved.Name, System: deps.OwnSystem}
-
-		// P4: newVersion must be resolved BEFORE the legality check below —
-		// see internal/cli's own runPublish comment on why the order
-		// matters once a contract carries any recorded version. This needs
-		// only the event history + the version/bump input, not the
-		// descriptor.
-		all, err := readAllEvents(deps.MirrorDir)
-		if err != nil {
-			return nil, "", fmt.Errorf("contract publish: %w", err)
-		}
-		priorVersions := contractPublishedVersions(all, in.ID)
-		isFirstPublish := len(priorVersions) == 0
-
-		// bumpSource is the globally-highest published version — `bump`
-		// must choose it BEFORE newVersion is known (Edge 2's own
-		// documented consequence, 04-per-version-lifecycle.md §4), so a
-		// maintenance-line publish uses an explicit `version` instead.
-		bumpSource := contractSemver{0, 0, 0}
-		if !isFirstPublish {
-			bumpSource = priorVersions[len(priorVersions)-1]
-		}
-
-		var newVersion contractSemver
-		if in.Version != "" {
-			newVersion, err = contractParseSemver(in.Version)
-			if err != nil {
-				return nil, "", fmt.Errorf("contract publish: %w", err)
-			}
-		} else {
-			newVersion = contractBump(bumpSource, in.Bump)
-		}
-
-		// baseline is Edge 2's own rule (max{v ∈ priorVersions : v <
-		// newVersion}) — NOT bumpSource above once newVersion names a
-		// maintenance line (AC-8). The two agree whenever newVersion came
-		// from `bump` (bumpSource is by construction the highest prior
-		// version strictly less than its own bump), so ordinary sequential
-		// publishing never regresses.
-		//
-		// hasBaseline is NOT `!isFirstPublish` — see internal/cli's own
-		// comment at the same call site: prior versions can exist with none
-		// older than newVersion (opening a lower line while a higher one is
-		// live), and there is genuinely no baseline to compare against then.
-		baseline, hasBaseline := contractSelectBaseline(priorVersions, newVersion)
-
-		evaluation, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, in.ID, fold.Event{
-			Transition: fold.TPublish, Version: newVersion.String(), Actor: actor,
-		})
-		if err != nil {
-			return nil, "", fmt.Errorf("contract publish: %s: %w", in.ID, err)
-		}
-		if evaluation.Verdict != fold.VerdictLegal {
-			return nil, "", fmt.Errorf("contract publish: %w", verdictError(in.ID, evaluation.Verdict))
-		}
-
-		fm, probe, relPath, relDir, err := contractReadDescriptor(deps.MirrorDir, in.ID)
-		if err != nil {
-			return nil, "", fmt.Errorf("contract publish: %w", err)
-		}
-
-		isMajorBump := hasBaseline && newVersion[0] > baseline[0]
-		gated := !hasBaseline || isMajorBump
-
-		now := deps.Now()
-		eventID, err := artifact.MintULIDAt(now, deps.Entropy)
-		if err != nil {
-			return nil, "", fmt.Errorf("contract publish: cannot mint event id: %w", err)
-		}
-
-		var doc map[string]any
-		if err := yaml.Unmarshal(fm.YAML, &doc); err != nil {
-			return nil, "", fmt.Errorf("contract publish: %w", err)
-		}
-		doc["version"] = newVersion.String()
-		if in.GeneratedFromDigest != "" {
-			gf, _ := doc["generated_from"].(map[string]any)
-			if gf == nil {
-				gf = map[string]any{"tool": probe.GeneratedFrom.Tool}
-			}
-			gf["source_digest"] = in.GeneratedFromDigest
-			doc["generated_from"] = gf
-		}
-		newYAML, err := yaml.Marshal(doc)
-		if err != nil {
-			return nil, "", fmt.Errorf("contract publish: %w", err)
-		}
-		newRaw := artifact.SerializeFrontmatter(artifact.Frontmatter{YAML: newYAML, Body: fm.Body})
-
-		// P37 Wave I (parity with internal/cli's own runPublish, mirrored
-		// here per ADR-001): internal/space/mirror.go's checkoutRemoteHead
-		// hard-resets the mirror working tree to origin/<branch> on EVERY
-		// `a2a` invocation, so by the time this handler runs the mirror can
-		// never carry an author's own schema/fixture edit — only
-		// deps.StagingDir (never touched by the reset) still can.
-		// deps.StagingDir is empty on any construction that predates this
-		// wave (the zero value), which degrades this to the landed tree.
-		landedSchema, err := contractReadWorkingTreeFiles(filepath.Join(deps.MirrorDir, relDir), "schema")
-		if err != nil {
-			return nil, "", fmt.Errorf("contract publish: %w", err)
-		}
-		landedFixtures, err := contractReadWorkingTreeFiles(filepath.Join(deps.MirrorDir, relDir), "fixtures")
-		if err != nil {
-			return nil, "", fmt.Errorf("contract publish: %w", err)
-		}
-		landedAll := make(map[string][]byte, len(landedSchema)+len(landedFixtures))
-		for k, v := range landedSchema {
-			landedAll[k] = v
-		}
-		for k, v := range landedFixtures {
-			landedAll[k] = v
-		}
-		var stagedSidecars []space.FileWrite
-		if deps.StagingDir != "" {
-			parsed, perr := artifact.ParseID(in.ID)
-			if perr != nil {
-				return nil, "", fmt.Errorf("contract publish: %w", perr)
-			}
-			stagedSidecars, err = template.ContractSidecarsFromStaging(deps.StagingDir, parsed.System, parsed.Slug)
-			if err != nil {
-				return nil, "", fmt.Errorf("contract publish: %w", err)
-			}
-		}
-		overlayAll := contractStagingOverlay(landedAll, stagedSidecars, relDir)
-
-		newSchemas := map[string][]byte{}
-		newFixturesValid := map[string][]byte{}
-		newFixturesInvalid := map[string][]byte{}
-		for relative, content := range overlayAll {
-			switch {
-			case relative == "schema" || strings.HasPrefix(relative, "schema/"):
-				newSchemas[relative] = content
-			case relative == "fixtures/valid" || strings.HasPrefix(relative, "fixtures/valid/"):
-				newFixturesValid[relative] = content
-			case relative == "fixtures/invalid" || strings.HasPrefix(relative, "fixtures/invalid/"):
-				newFixturesInvalid[relative] = content
-			}
-		}
-		if violation := validate.CheckContractPublishable(validate.PublishableInput{
-			SchemaFormat:    probe.SchemaFormat,
-			ContractID:      in.ID,
-			Schemas:         len(newSchemas),
-			ValidFixtures:   len(newFixturesValid),
-			InvalidFixtures: len(newFixturesInvalid),
-		}); violation != nil {
-			return nil, "", fmt.Errorf("contract publish: %s: refused: %s (%s)", in.ID, violation.Message, violation.Code)
-		}
-
-		compatMessage := ""
-		if hasBaseline && validate.IsJSONSchemaFormat(probe.SchemaFormat) {
-			declaredBump := in.Bump
-			if declaredBump == "" {
-				declaredBump = contractInferBumpKind(baseline, newVersion)
-			}
-			_, priorValidFixtures, priorErr := contractPriorVersionFiles(ctx, deps.MirrorDir, relPath, relDir, baseline.String())
-			if priorErr != nil {
-				return nil, "", fmt.Errorf("contract publish: %w", priorErr)
-			}
-			compat := validate.CheckComputedCompatibility(validate.CompatInput{
-				DeclaredBump:  declaredBump,
-				PriorVersion:  baseline.String(),
-				NewVersion:    newVersion.String(),
-				NewSchemas:    newSchemas,
-				PriorFixtures: priorValidFixtures,
-			})
-			switch {
-			case compat.Violation != nil:
-				return nil, "", fmt.Errorf("contract publish: %s: refused: %s (%s)", in.ID, compat.Violation.Message, compat.Violation.Code)
-			case !compat.Computed:
-				compatMessage = compat.Reason
-			default:
-				compatMessage = fmt.Sprintf("contract publish: %s: computed compatibility confirmed (%s -> %s)", in.ID, baseline.String(), newVersion.String())
-			}
-		}
-
-		files := []space.FileWrite{{Path: relPath, Content: newRaw}}
-		files = append(files, stagedSidecars...)
-
-		// §5.7/D-029 multi-file digest tree, computed from overlayAll — see
-		// internal/cli's own runPublish for why this uses artifact.Digest +
-		// artifact.CombineDigestPairs directly rather than
-		// artifact.DigestTreeFS (which cannot see the staged override).
-		perFileDigest := make(map[string]string, len(overlayAll))
-		for k, v := range overlayAll {
-			perFileDigest[k] = artifact.Digest(v)
-		}
-		digest := artifact.CombineDigestPairs(perFileDigest)
-
-		ev := eventDoc{
-			Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
-			Subject: in.ID, Transition: fold.TPublish, State: eventReceiptState(evaluation),
-			Actor:   eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
-			At:      now.UTC().Format(time.RFC3339),
-			Version: newVersion.String(), Digest: digest,
-		}
-		layout, err := space.NewLayout(deps.OwnSystem)
-		if err != nil {
-			return nil, "", fmt.Errorf("contract publish: %w", err)
-		}
-		raw, merr := yaml.Marshal(ev)
-		if merr != nil {
-			return nil, "", fmt.Errorf("contract publish: cannot encode event: %w", merr)
-		}
-		files = append(files, space.FileWrite{Path: layout.EventFile(now.UTC().Format("2006"), eventID.String()), Content: raw})
-
-		req := deps.buildRequest([]string{in.ID}, files, "contract-publish", gated)
-		result, err := deps.submit(ctx, req, "contract publish", []string{in.ID})
-		return result, compatMessage, err
 	}
+	return newP6ContractPublishHandler(deps)
 }
 
 // contractDistinctPublishedVersions dedupes contractPublishedVersions' own
@@ -1235,69 +717,45 @@ func contractDeprecateAddressees(mirrorDir, contractID, from string, fallback []
 
 // ContractDiffInput is a2a_contract_diff's structured (read-only) input.
 type ContractDiffInput struct {
-	ID string `json:"id"`
-	V1 string `json:"v1"`
-	V2 string `json:"v2"`
+	Space string `json:"space,omitempty"`
+	ID    string `json:"id"`
+	V1    string `json:"v1"`
+	V2    string `json:"v2"`
 }
 
 func newContractDiffHandler(deps ContractDeps) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
+		if deps.Inspection == nil {
+			return nil, "", fmt.Errorf("contract diff: P6 service is not configured")
+		}
 		var in ContractDiffInput
 		if err := json.Unmarshal(args, &in); err != nil {
 			return nil, "", fmt.Errorf("contract diff: invalid input: %w", err)
 		}
-		if in.ID == "" || in.V1 == "" || in.V2 == "" {
-			return nil, "", fmt.Errorf("contract diff: id, v1 and v2 are required")
+		if in.ID == "" || in.V1 == "" || in.V2 == "" || in.V1 == in.V2 {
+			return nil, "", fmt.Errorf("contract diff: distinct id, v1 and v2 are required")
 		}
-		if in.V1 == in.V2 {
-			return nil, "", fmt.Errorf("contract diff: v1 and v2 are the same version")
-		}
-
-		_, _, relPath, relDir, err := contractReadDescriptor(deps.MirrorDir, in.ID)
+		result, err := deps.Inspection.DiffContract(ctx, ContractDiffRequest{Space: in.Space, ID: in.ID, V1: in.V1, V2: in.V2})
 		if err != nil {
 			return nil, "", fmt.Errorf("contract diff: %w", err)
 		}
-
-		sha1, err := contractResolveVersionSHA(ctx, deps.MirrorDir, relPath, in.V1)
-		if err != nil {
-			return nil, "", fmt.Errorf("contract diff: %s: %w", in.V1, err)
-		}
-		sha2, err := contractResolveVersionSHA(ctx, deps.MirrorDir, relPath, in.V2)
-		if err != nil {
-			return nil, "", fmt.Errorf("contract diff: %s: %w", in.V2, err)
-		}
-
-		tree1, err := contractDigestTreeAtSHA(ctx, deps.MirrorDir, sha1, relDir)
-		if err != nil {
-			return nil, "", fmt.Errorf("contract diff: %w", err)
-		}
-		tree2, err := contractDigestTreeAtSHA(ctx, deps.MirrorDir, sha2, relDir)
-		if err != nil {
-			return nil, "", fmt.Errorf("contract diff: %w", err)
-		}
-
-		return contractDiff(tree1, tree2), "", nil
+		return result, "", nil
 	}
 }
 
 // ContractVerifyExportInput is a2a_contract_verify_export's structured
 // (read-only) input.
 type ContractVerifyExportInput struct {
+	Space string `json:"space,omitempty"`
 	Local string `json:"local"`
 	Ref   string `json:"ref"`
 }
 
-// contractVerifyExportResult is the structured result.
-type contractVerifyExportResult struct {
-	ID          string           `json:"id"`
-	Matches     bool             `json:"matches"`
-	LocalDigest string           `json:"local_digest"`
-	WantDigest  string           `json:"want_digest"`
-	Diff        contractDiffTree `json:"diff,omitempty"`
-}
-
 func newContractVerifyExportHandler(deps ContractDeps) HandlerFunc {
-	return func(_ context.Context, args json.RawMessage) (any, string, error) {
+	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
+		if deps.Inspection == nil {
+			return nil, "", fmt.Errorf("contract verify-export: P6 service is not configured")
+		}
 		var in ContractVerifyExportInput
 		if err := json.Unmarshal(args, &in); err != nil {
 			return nil, "", fmt.Errorf("contract verify-export: invalid input: %w", err)
@@ -1305,48 +763,11 @@ func newContractVerifyExportHandler(deps ContractDeps) HandlerFunc {
 		if in.Local == "" || in.Ref == "" {
 			return nil, "", fmt.Errorf("contract verify-export: local and ref are required")
 		}
-		id, version, _ := splitRefGrammar(in.Ref)
-
-		_, probe, _, relDir, err := contractReadDescriptor(deps.MirrorDir, id)
+		result, err := deps.Inspection.VerifyContractExport(ctx, ContractVerifyExportRequest{Space: in.Space, Local: in.Local, Ref: in.Ref})
 		if err != nil {
 			return nil, "", fmt.Errorf("contract verify-export: %w", err)
 		}
-
-		var wantDigest string
-		if version != "" {
-			all, aerr := readAllEvents(deps.MirrorDir)
-			if aerr != nil {
-				return nil, "", fmt.Errorf("contract verify-export: %w", aerr)
-			}
-			for _, ev := range all {
-				if ev.Subject == id && ev.Transition == fold.TPublish && ev.Version == version {
-					wantDigest = ev.Digest
-				}
-			}
-			if wantDigest == "" {
-				return nil, "", fmt.Errorf("contract verify-export: no recorded digest for %s@%s", id, version)
-			}
-		} else {
-			wantDigest = probe.GeneratedFrom.SourceDigest
-			if wantDigest == "" {
-				return nil, "", fmt.Errorf("contract verify-export: %s has no generated_from.source_digest recorded", id)
-			}
-		}
-
-		localDigest, localPerFile, err := artifact.DigestTreeFS(in.Local, contractDigestSubtrees)
-		if err != nil {
-			return nil, "", fmt.Errorf("contract verify-export: %w", err)
-		}
-		if localDigest == wantDigest {
-			return contractVerifyExportResult{ID: id, Matches: true, LocalDigest: localDigest, WantDigest: wantDigest}, "", nil
-		}
-
-		var diff contractDiffTree
-		_, spacePerFile, serr := artifact.DigestTreeFS(filepath.Join(deps.MirrorDir, relDir), contractDigestSubtrees)
-		if serr == nil {
-			diff = contractDiff(spacePerFile, localPerFile)
-		}
-		return contractVerifyExportResult{ID: id, Matches: false, LocalDigest: localDigest, WantDigest: wantDigest, Diff: diff}, "", nil
+		return result, "", nil
 	}
 }
 

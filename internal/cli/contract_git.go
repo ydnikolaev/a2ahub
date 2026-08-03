@@ -1,17 +1,9 @@
-// P37 wave A2 (spec 37 §2 T2's compat core needs raw bytes, not just
-// digests). `contract diff` already resolves a version to a commit
-// (contractResolveVersionSHA, cmd_contract.go) and digests its tree
-// (contractDigestTreeAtSHA, cmd_contract.go) — this file gives the CLI one
-// home for reading a PRIOR contract version's actual file CONTENT out of
-// git history, since internal/space/layout.go's ProvidesContract/
-// ProvidesSchemaDir/ProvidesFixturesValidDir shape has NO per-version
-// directories: a prior version's files exist only in git history, nowhere
-// on disk.
+// validate --ci's bounded historical tree reader. Contract commands no
+// longer call this helper: P6 routes their version resolution and exact
+// historical reads through internal/space.
 //
-// This file's only package-level symbols are contractReadTreeAtSHA,
-// contractPriorVersionFiles, and their file-private contractGit* helper —
-// same file-private, uniquely-named-helper discipline cmd_contract.go
-// documents for itself.
+// This file remains only for validate --ci until that validator receives a
+// space-owned history adapter of its own.
 package cli
 
 import (
@@ -76,13 +68,8 @@ func contractGitBounded(ctx context.Context, repoDir string, max int64, args ...
 // descriptorDir (forward-slash) — e.g. "schema/main.schema.json",
 // "fixtures/valid/ok.json". Note this differs from this function's own doc
 // comment as originally briefed ("keyed by repo-relative path"): it is
-// deliberately keyed the SAME way contractDigestTreeAtSHA already keys its
-// own digest map (relative to descriptorDir, via filepath.Rel), not
-// repo-relative — see this phase's Deviations report.
-//
-// This is contractDigestTreeAtSHA's (cmd_contract.go) raw-content sibling:
-// SAME traversal (git ls-tree -r --name-only per subtree, then git show
-// sha:path per file) and SAME tolerance — a subtree that does not exist at
+// keyed relative to descriptorDir, via filepath.Rel. A subtree that does not
+// exist at
 // sha (an ls-tree with no matches, exit 0) is omitted, not an error.
 //
 // It deliberately does NOT inherit two of the sibling's quirks, because
@@ -121,9 +108,8 @@ func contractReadTreeAtSHA(ctx context.Context, repoDir, sha, descriptorDir stri
 	// D-B reads an empty PriorFixtures as "the prior version published no
 	// fixtures — nothing computed, proceed", so an unreachable base would
 	// wave a breaking change through while reporting a benign reason. The
-	// callers that resolve their own sha (contractPriorVersionFiles, via
-	// contractResolveVersionSHA) never needed this; `validate --ci`, which
-	// is handed a `--base` it did not resolve, does.
+	// validate --ci is handed a `--base` it did not resolve, so it must prove
+	// the commit before an empty subtree can be interpreted as absence.
 	if !contractLooksLikeObjectID(sha) {
 		return nil, fmt.Errorf("cli: %q is not a git object id", sha)
 	}
@@ -170,8 +156,7 @@ func contractReadTreeAtSHA(ctx context.Context, repoDir, sha, descriptorDir stri
 
 // contractLooksLikeObjectID reports whether s is a plain hex object id.
 // It is a cheap end-of-options stand-in: every sha reaching this file is
-// either resolved by contractResolveVersionSHA or is `validate --ci`'s
-// `--base`, which arrives from outside. A leading dash would be read by
+// `validate --ci`'s `--base` arrives from outside. A leading dash would be read by
 // git as a flag rather than a revision, and refusing the shape up front is
 // clearer than relying on rev-parse to fail closed on every spelling.
 func contractLooksLikeObjectID(s string) bool {
@@ -186,62 +171,4 @@ func contractLooksLikeObjectID(s string) bool {
 		}
 	}
 	return true
-}
-
-// contractPriorVersionFiles resolves version to its commit — via
-// contractResolveVersionSHA (cmd_contract.go), this package's own
-// version->commit primitive, never re-derived here — and returns that
-// commit's schema/** and fixtures/valid/** content, split into two
-// separate maps.
-//
-// ONE call answers for ONE version. validate.CheckComputedCompatibility
-// (spec 37 §2 T2) needs the PRIOR version's fixtures and the NEW version's
-// schemas — two different commits — so a caller comparing versions calls
-// this twice and keeps a different half of each result: `fixturesValid`
-// from the prior version, `schemas` from the new one. (At publish time the
-// new version's schemas are simply the working tree's, so only the prior
-// call is needed.) Reading this as a single call that fills both
-// CompatInput fields would compare a version against itself and pass
-// everything.
-//
-// Both returned maps are keyed the SAME way contractReadTreeAtSHA itself
-// keys its combined tree — relative to descriptorDir, i.e. "schema/"- and
-// "fixtures/valid/"-PREFIXED (e.g. schemas["schema/main.schema.json"],
-// fixturesValid["fixtures/valid/ok.json"]), NOT re-keyed to strip the
-// prefix. This is deliberate: D-E's fixture->schema mapping rule (the
-// phase plan) is stated in this same prefixed vocabulary
-// (fixtures/valid/<stem>.json -> schema/<stem>.schema.json), and
-// AC-970.1 requires a refusal to NAME THE FIXTURE — a stripped key would
-// name a path that does not exist anywhere in the repo. A caller that
-// wants bare stems can strip the prefix itself; this function cannot
-// un-strip it once dropped.
-//
-// fixtures/invalid/** is deliberately EXCLUDED from fixturesValid: an
-// invalid fixture failing the NEW schema is the fixture doing its job,
-// not a compatibility break — feeding it to the compat core would
-// silently invert the check.
-func contractPriorVersionFiles(ctx context.Context, repoDir, descriptorPath, descriptorDir, version string) (schemas, fixturesValid map[string][]byte, err error) {
-	sha, err := contractResolveVersionSHA(ctx, repoDir, descriptorPath, version)
-	if err != nil {
-		return nil, nil, err
-	}
-	tree, err := contractReadTreeAtSHA(ctx, repoDir, sha, descriptorDir, []string{"schema", "fixtures"})
-	if err != nil {
-		return nil, nil, err
-	}
-	schemas = map[string][]byte{}
-	fixturesValid = map[string][]byte{}
-	for relPath, content := range tree {
-		switch {
-		case relPath == "schema" || strings.HasPrefix(relPath, "schema/"):
-			schemas[relPath] = content
-		case relPath == "fixtures/valid" || strings.HasPrefix(relPath, "fixtures/valid/"):
-			fixturesValid[relPath] = content
-		default:
-			// fixtures/invalid/** and anything else under fixtures/ that is
-			// not fixtures/valid/** is intentionally dropped — see doc
-			// comment above.
-		}
-	}
-	return schemas, fixturesValid, nil
 }

@@ -7,15 +7,11 @@ package mcp
 // legitimately differs from the CLI's per-invocation wiring). It does NOT
 // import cmd/a2a or internal/cli.
 //
-// Deviation (see this phase's report): a long-lived MCP session may have
-// MULTIPLE connected spaces, but every write tool ultimately targets ONE
-// space per call (the CLI resolves it per-invocation from the first
-// artifact id in args — see cmd/a2a/wire.go's resolveTargetSpaceRef).
-// This constructor builds write-tool deps for the FIRST connected space
-// only (a real multi-space server would need to re-resolve per call,
-// mirroring resolveTargetSpaceRef, which this phase's own tests do not
-// exercise and which the equivalence suite constructs directly instead —
-// out of scope for this tail phase's ~1 day budget).
+// The legacy lifecycle write graph below retains its historical single-space
+// construction. P6 contract operations are injected by cmd/a2a as a
+// per-request router: every contract request can name its connected space,
+// and ambiguous multi-space requests fail closed instead of inheriting the
+// first configured connection.
 
 import (
 	"context"
@@ -91,6 +87,25 @@ func cacheDirOf(p Paths) string { return filepath.Join(p.ProjectRoot, ".a2a", "c
 // multi-space call; MCP never composes or silently selects a space itself.
 // The result is a ready-to-Serve Server with the full §7.7 tool set.
 func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string, injectedWork ...WorkToolDeps) (*Server, error) {
+	return newServerFromConfig(ctx, p, binaryVersion, nil, injectedWork...)
+}
+
+// ContractOperationsFactory is cmd/a2a's production composition seam. It is
+// invoked only after the existing bounded mirror/config wiring succeeds, so
+// an unreachable space retains this constructor's read-only degradation.
+type ContractOperationsFactory func(ActorResolver) (ContractToolOperations, error)
+
+// NewServerFromConfigWithContractOperations is the production constructor
+// used by cmd/a2a. P6 filesystem/Git/domain adapters are composed at cmd/a2a
+// and injected here; internal/mcp owns only transport registration.
+func NewServerFromConfigWithContractOperations(ctx context.Context, p Paths, binaryVersion string, work WorkToolDeps, buildContractOperations ContractOperationsFactory) (*Server, error) {
+	if buildContractOperations == nil {
+		return nil, fmt.Errorf("mcp: production contract dependency factory must be injected by cmd/a2a")
+	}
+	return newServerFromConfig(ctx, p, binaryVersion, buildContractOperations, work)
+}
+
+func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, buildContractOperations ContractOperationsFactory, injectedWork ...WorkToolDeps) (*Server, error) {
 	cfg, err := space.LoadProjectConfig(p.ProjectConfig)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: load project config: %w", err)
@@ -123,6 +138,16 @@ func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string, inj
 	if err != nil {
 		return nil, err
 	}
+	var contractOperations ContractToolOperations
+	if buildContractOperations != nil {
+		contractOperations, err = buildContractOperations(resolveActor)
+		if err != nil {
+			return nil, fmt.Errorf("mcp: build contract dependencies: %w", err)
+		}
+		if !contractOperations.complete() {
+			return nil, fmt.Errorf("mcp: production contract dependencies are incomplete")
+		}
+	}
 
 	write, submitDeps, newDeps, err := buildWriteDeps(ctx, cfg, machine, p, binaryVersion)
 	if err != nil {
@@ -143,15 +168,34 @@ func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string, inj
 		// channel and this package never writes there.
 		fmt.Fprintf(os.Stderr,
 			"a2a mcp: write tools unavailable — could not reach the space (%v).\n"+
-				"a2a mcp: serving READ tools over the local mirror; re-start once the space is reachable.\n", err)
+				"a2a mcp: serving local read/contract tools over the mirror; re-start once the space is reachable.\n", err)
 		registerSpaceFree(registry, store)
 		registry.Register(workTool)
+		if contractOperations.complete() {
+			ref := cfg.Spaces[0]
+			registerContractTool(registry, NewDeps{
+				StagingDir: p.Staging, OwnSystem: cfg.System, Now: time.Now, Entropy: rand.Reader,
+				ResolveActor: resolveActor, WriteFile: os.WriteFile,
+			}, ContractDeps{
+				WriteDeps: WriteDeps{
+					MirrorDir: space.ResolveMirrorLocation(p.ProjectRoot, ref, machine), RepoURL: ref.RepoURL,
+					SpaceID: ref.ID, OwnSystem: cfg.System, ResolveActor: resolveActor,
+				},
+				StagingDir: p.Staging, Publication: contractOperations.Publication,
+				Materialize: contractOperations.Materialize, Check: contractOperations.Check,
+				Inspection: contractOperations.Inspection,
+			}, true)
+		}
 		return NewServer(registry, "a2a-mcp", binaryVersion, nil), nil
 	}
-	registry = BuildRegistry(store, write, submitDeps.StagingDir, submitDeps.Legality, newDeps, workDeps)
+	registry = BuildRegistryWithContractOperations(store, write, submitDeps.StagingDir, submitDeps.Legality, newDeps, contractOperations, workDeps)
 	srv := NewServer(registry, "a2a-mcp", binaryVersion, nil)
 
-	// The session refreshes its mirror before every tool call. Without this,
+	// The session refreshes its mirror before every non-contract write/read
+	// tool call. P6 contract reads are explicitly offline, while contract
+	// publish freezes its candidate before its shared service refreshes main;
+	// refreshing the grouped contract tool here would violate both contracts.
+	// Without this hook for the remaining tools,
 	// the CloneOrFetch above is the ONLY one the process ever runs: every
 	// later call — including the legality fold that decides whether a
 	// transition is legal — reads a working tree frozen at server start.
@@ -162,7 +206,7 @@ func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string, inj
 	// matters).
 	refreshDir, refreshURL := write.MirrorDir, write.RepoURL
 	srv.SetPreCall(func(ctx context.Context, tool string) error {
-		if tool == WorkToolName {
+		if tool == WorkToolName || tool == "a2a_contract" {
 			return nil
 		}
 		return space.CloneOrFetch(ctx, refreshDir, refreshURL)

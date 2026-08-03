@@ -106,6 +106,79 @@ func TestReadContractCandidateFingerprintCoversExecutableMode(t *testing.T) {
 	}
 }
 
+func TestFrozenContractPublicationCandidateDerivesAndVerifiesExactGitTreeOID(t *testing.T) {
+	t.Parallel()
+
+	project, commit := newTreeCommitRepo(t, map[string]treeCommitFixtureFile{
+		"candidate/contract.md": {content: "descriptor before\n", mode: 0o644},
+		"candidate/schema/tool": {content: "#!/bin/sh\n", mode: 0o755},
+	})
+	root := filepath.Join(project, "candidate")
+	reader, err := OpenContractCandidateReader(project, ContractCandidateLocation{Path: "candidate", Source: ContractCandidateSourceMirror})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frozen, err := NewFrozenContractPublicationCandidate(t.Context(), reader, ContractPublicationMirrorTree{
+		RepoDir: project, Commit: commit, Path: "candidate",
+	})
+	if err != nil {
+		t.Fatalf("NewFrozenContractPublicationCandidate: %v", err)
+	}
+	tree, err := contractGitTreeObjectID(t.Context(), project, commit, "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	writeContractCandidateFile(t, root, "contract.md", "descriptor after\n")
+
+	snapshot, err := frozen.ReadContractPublicationCandidate(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := frozen.ContractPublicationCandidateSource()
+	if source.Kind != contract.CandidateSourceMirror || source.Location != tree || source.Fingerprint != snapshot.Fingerprint {
+		t.Fatalf("source = %+v snapshot fingerprint=%q", source, snapshot.Fingerprint)
+	}
+	if got := string(snapshot.file("contract.md").Raw); got != "descriptor before\n" {
+		t.Fatalf("frozen descriptor = %q", got)
+	}
+	if snapshot.file("schema/tool").Mode != "100755" {
+		t.Fatalf("frozen executable mode = %q", snapshot.file("schema/tool").Mode)
+	}
+	writeContractCandidateFile(t, root, "contract.md", "descriptor before\n")
+	if err := os.Chmod(filepath.Join(root, "schema", "tool"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	reader, err = OpenContractCandidateReader(project, ContractCandidateLocation{Path: "candidate", Source: ContractCandidateSourceMirror})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reader.Close() }()
+	if _, err := NewFrozenContractPublicationCandidate(t.Context(), reader, ContractPublicationMirrorTree{
+		RepoDir: project, Commit: commit, Path: "candidate",
+	}); !errors.Is(err, ErrContractPublicationInvalid) {
+		t.Fatalf("tree/snapshot mismatch error = %v", err)
+	}
+}
+
+func TestResolveContractPublicationCandidateCommitReturnsExactHead(t *testing.T) {
+	t.Parallel()
+
+	project, commit := newTreeCommitRepo(t, map[string]treeCommitFixtureFile{
+		"candidate/contract.md": {content: "descriptor\n", mode: 0o644},
+	})
+	got, err := ResolveContractPublicationCandidateCommit(t.Context(), project)
+	if err != nil {
+		t.Fatalf("ResolveContractPublicationCandidateCommit: %v", err)
+	}
+	if got != commit {
+		t.Fatalf("candidate commit = %q, want exact HEAD %q", got, commit)
+	}
+}
+
 func TestReadContractCandidateRefusesSymlinkAndIrregularLeaves(t *testing.T) {
 	t.Parallel()
 

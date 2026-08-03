@@ -112,7 +112,6 @@ func CompileExternal(name string, raw []byte) (*ExternalSchema, error) {
 // tell the two apart use errors.Is.
 func (s *ExternalSchema) ValidateInstance(raw []byte) error {
 	const op = "ValidateInstance"
-
 	var inst any
 	if err := json.Unmarshal(raw, &inst); err != nil {
 		return &Error{Op: op, Input: s.name, Err: fmt.Errorf("%w: %w", ErrExternalInstanceDecode, err)}
@@ -121,4 +120,20 @@ func (s *ExternalSchema) ValidateInstance(raw []byte) error {
 		return &Error{Op: op, Input: s.name, Err: fmt.Errorf("%w: %w", ErrExternalSchemaViolation, err)}
 	}
 	return nil
+}
+
+// ValidateInstanceViolations returns the canonical library-independent leaf
+// violations used by validation adapters. Instance JSON decoding remains an
+// operational error; a schema rejection is data in the returned slice.
+func (s *ExternalSchema) ValidateInstanceViolations(raw []byte) ([]FieldViolation, error) {
+	const op = "ValidateInstance"
+
+	var inst any
+	if err := json.Unmarshal(raw, &inst); err != nil {
+		return nil, &Error{Op: op, Input: s.name, Err: fmt.Errorf("%w: %w", ErrExternalInstanceDecode, err)}
+	}
+	if err := s.schema.Validate(inst); err != nil {
+		return extractFieldViolations(err, nil), nil
+	}
+	return []FieldViolation{}, nil
 }

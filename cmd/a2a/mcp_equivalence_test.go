@@ -63,6 +63,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -80,6 +81,70 @@ import (
 type spyFunnel struct {
 	inner *space.WriteFunnel
 	calls []space.SubmitRequest
+}
+
+type equivContractPublicationCall struct {
+	id, version, bump, staging, expectPlan string
+}
+
+type equivContractPublicationState struct {
+	calls []equivContractPublicationCall
+	err   error
+}
+
+func (s *equivContractPublicationState) record(id, version, bump, staging, expectPlan string) (space.ContractPublicationResult, error) {
+	s.calls = append(s.calls, equivContractPublicationCall{id: id, version: version, bump: bump, staging: staging, expectPlan: expectPlan})
+	if s.err != nil {
+		return space.ContractPublicationResult{}, s.err
+	}
+	return space.ContractPublicationResult{
+		Status: space.ContractPublicationSubmitted,
+		Plan:   contract.PublicationPlan{Contract: id, TargetVersion: version, PlanDigest: "sha256:" + strings.Repeat("a", 64)},
+	}, nil
+}
+
+type equivCLIContractPublication struct {
+	state *equivContractPublicationState
+}
+
+func (a equivCLIContractPublication) Preflight(_ context.Context, request cli.ContractPublicationRequest) (space.ContractPublicationResult, error) {
+	return a.state.record(request.ID, request.Version, request.Bump, request.Staging, request.ExpectPlan)
+}
+
+func (a equivCLIContractPublication) Publish(_ context.Context, request cli.ContractPublicationRequest) (space.ContractPublicationResult, error) {
+	return a.state.record(request.ID, request.Version, request.Bump, request.Staging, request.ExpectPlan)
+}
+
+type equivMCPContractPublication struct {
+	state *equivContractPublicationState
+}
+
+func (a equivMCPContractPublication) Preflight(_ context.Context, request mcp.ContractPublicationRequest) (space.ContractPublicationResult, error) {
+	return a.state.record(request.ID, request.Version, request.Bump, request.Staging, request.ExpectPlan)
+}
+
+func (a equivMCPContractPublication) Publish(_ context.Context, request mcp.ContractPublicationRequest) (space.ContractPublicationResult, error) {
+	return a.state.record(request.ID, request.Version, request.Bump, request.Staging, request.ExpectPlan)
+}
+
+type equivCLIContractInspection struct{ result cli.ContractDiffResult }
+
+func (a equivCLIContractInspection) DiffContract(context.Context, cli.ContractDiffRequest) (cli.ContractDiffResult, error) {
+	return a.result, nil
+}
+
+func (equivCLIContractInspection) VerifyContractExport(context.Context, cli.ContractVerifyExportRequest) (cli.ContractVerifyExportResult, error) {
+	return cli.ContractVerifyExportResult{}, nil
+}
+
+type equivMCPContractInspection struct{ result mcp.ContractDiffResult }
+
+func (a equivMCPContractInspection) DiffContract(context.Context, mcp.ContractDiffRequest) (mcp.ContractDiffResult, error) {
+	return a.result, nil
+}
+
+func (equivMCPContractInspection) VerifyContractExport(context.Context, mcp.ContractVerifyExportRequest) (mcp.ContractVerifyExportResult, error) {
+	return mcp.ContractVerifyExportResult{}, nil
 }
 
 func (s *spyFunnel) Submit(ctx context.Context, req space.SubmitRequest) (space.WriteResult, error) {
@@ -161,6 +226,18 @@ func equivWriteRequirement(t *testing.T, mirrorDir, id string) {
 	writeMirrorFileEquiv(t, mirrorDir, "axon/requires/"+id+".md", content)
 }
 
+func equivWriteSatisfyContract(t *testing.T, mirrorDir, id string) {
+	t.Helper()
+	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: contract\ntitle: t\nspace: fixture-space\nfrom: axon\nto: [beta]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\nclassification: internal\n---\nbody\n"
+	writeMirrorFileEquiv(t, mirrorDir, "axon/provides/widget/contract.md", content)
+}
+
+func equivWriteSatisfyResponse(t *testing.T, mirrorDir, id, parent string) {
+	t.Helper()
+	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: response\ntitle: t\nspace: fixture-space\nfrom: beta\nto: [axon]\nparent: " + parent + "\nthread: thread:axon-20260721-k3f9\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\nclassification: internal\n---\nbody\n"
+	writeMirrorFileEquiv(t, mirrorDir, "beta/exchanges/"+id+".md", content)
+}
+
 func equivWriteHandoff(t *testing.T, mirrorDir, id, to string) {
 	t.Helper()
 	content := "---\nschema: envelope/v1\nid: " + id + "\ntype: handoff\ntitle: t\nspace: fixture-space\nthread: thread:axon-20260721-k3f9\nfrom: axon\nto: [" + to + "]\nactor: {kind: agent, name: bot}\ncreated: 2026-07-21T10:00:00Z\npriority: p3\nblocking: true\nclassification: internal\n---\nbody\n"
@@ -186,6 +263,18 @@ func equivWriteEvent(t *testing.T, mirrorDir, actingSystem string, seq int, subj
 	content := fmt.Sprintf(
 		"schema: event/v1\nevent: %s\nspace: fixture-space\nsubject: %s\ntransition: %s\nactor: {kind: agent, name: bot, system: %s}\nat: 2020-01-01T00:00:00Z\n",
 		id.String(), subject, transition, actorSystem)
+	writeMirrorFileEquiv(t, mirrorDir, actingSystem+"/events/2020/"+id.String()+".yaml", content)
+}
+
+func equivWriteVersionedEvent(t *testing.T, mirrorDir, actingSystem string, seq int, subject, transition, actorSystem, version string) {
+	t.Helper()
+	id, err := artifact.MintULIDAt(time.Date(2020, 1, 1, 0, 0, seq, 0, time.UTC), rand.Reader)
+	if err != nil {
+		t.Fatalf("equivWriteVersionedEvent: mint ulid: %v", err)
+	}
+	content := fmt.Sprintf(
+		"schema: event/v1\nevent: %s\nspace: fixture-space\nsubject: %s\ntransition: %s\nactor: {kind: agent, name: bot, system: %s}\nat: 2020-01-01T00:00:00Z\nversion: %s\n",
+		id.String(), subject, transition, actorSystem, version)
 	writeMirrorFileEquiv(t, mirrorDir, actingSystem+"/events/2020/"+id.String()+".yaml", content)
 }
 
@@ -459,6 +548,10 @@ func genericVerbEquivCases() []genericVerbEquivCase {
 				equivWriteRequirement(t, mirrorDir, "XR-axon-satisfiable-a010")
 				equivWriteEvent(t, mirrorDir, "axon", 0, "XR-axon-satisfiable-a010", "publish", "axon")
 				equivWriteEvent(t, mirrorDir, "beta", 1, "XR-axon-satisfiable-a010", "acknowledge", "beta")
+				equivWriteSatisfyContract(t, mirrorDir, "XC-axon-widget")
+				equivWriteSatisfyResponse(t, mirrorDir, "XS-beta-20260721-p1p1", "XR-axon-satisfiable-a010")
+				equivWriteVersionedEvent(t, mirrorDir, "axon", 2, "XC-axon-widget", "publish", "axon", "1.0.0")
+				equivWriteEvent(t, mirrorDir, "axon", 3, "XS-beta-20260721-p1p1", "verify", "axon")
 			},
 			cliArgs:  []string{"--refs", "XC-axon-widget@1.0.0,XS-beta-20260721-p1p1", "XR-axon-satisfiable-a010"},
 			mcpInput: mcp.LifecycleInput{IDs: []string{"XR-axon-satisfiable-a010"}, Refs: []string{"XC-axon-widget@1.0.0", "XS-beta-20260721-p1p1"}},
@@ -972,10 +1065,9 @@ func TestEquivContractPublish(t *testing.T) {
 	stageExtraSchema(t, cliStaging)
 	cliNewCmd := cli.NewNewCommand(cliStaging, "axon", equivCLIActorResolver("agent", "bot"), nil)
 	cliCmd := cli.NewContractCommand(cliNewCmd, cliFunnel, cliDir, "fixture-space", "axon", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+	cliPublication := &equivContractPublicationState{}
+	cliCmd.SetP6Operations(equivCLIContractPublication{state: cliPublication}, nil, nil)
 	runCLICommand(t, cliCmd, []string{"publish", "--version", "1.0.0", id})
-	if len(cliFunnel.calls) != 1 {
-		t.Fatalf("contract publish: expected 1 CLI funnel call, got %d", len(cliFunnel.calls))
-	}
 
 	mcpDir, mcpFunnel, _ := newEquivMirror(t, "axon")
 	seed(t, mcpDir)
@@ -986,13 +1078,17 @@ func TestEquivContractPublish(t *testing.T) {
 		Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}
-	registry := mcp.BuildRegistry(nil, writeDeps, mcpStaging, nil, mcp.NewDeps{})
+	mcpPublication := &equivContractPublicationState{}
+	registry := mcp.BuildRegistryWithContractOperations(nil, writeDeps, mcpStaging, nil, mcp.NewDeps{}, mcp.ContractToolOperations{
+		Publication: equivMCPContractPublication{state: mcpPublication},
+	})
 	runMCPHandler(t, registry, "a2a_contract", "publish", mcp.ContractPublishInput{ID: id, Version: "1.0.0"})
-	if len(mcpFunnel.calls) != 1 {
-		t.Fatalf("contract publish: expected 1 MCP funnel call, got %d", len(mcpFunnel.calls))
+	if len(cliPublication.calls) != 1 || len(mcpPublication.calls) != 1 || cliPublication.calls[0] != mcpPublication.calls[0] {
+		t.Fatalf("contract publish P6 request differs: CLI=%+v MCP=%+v", cliPublication.calls, mcpPublication.calls)
 	}
-
-	assertRequestsEquivalent(t, "contract-publish", cliFunnel.calls[0], mcpFunnel.calls[0])
+	if len(cliFunnel.calls) != 0 || len(mcpFunnel.calls) != 0 {
+		t.Fatalf("transport bypassed shared P6 publication seam: CLI=%d MCP=%d", len(cliFunnel.calls), len(mcpFunnel.calls))
+	}
 }
 
 func TestEquivContractPublishRefusesBreakingMinorOnBothSurfaces(t *testing.T) {
@@ -1042,6 +1138,8 @@ func TestEquivContractPublishRefusesBreakingMinorOnBothSurfaces(t *testing.T) {
 	stageBreaking(t, cliStaging)
 	cliNewCmd := cli.NewNewCommand(cliStaging, "axon", equivCLIActorResolver("agent", "bot"), nil)
 	cliCmd := cli.NewContractCommand(cliNewCmd, cliFunnel, cliDir, "fixture-space", "axon", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+	sharedRefusal := fmt.Errorf("POL-007 fixtures/valid/ok.json")
+	cliCmd.SetP6Operations(equivCLIContractPublication{state: &equivContractPublicationState{err: sharedRefusal}}, nil, nil)
 	cliIO, _, cliErr := equivIO()
 	if code := cliCmd.Run(context.Background(), []string{"publish", "--bump", "minor", id}, cliIO); code != 1 {
 		t.Fatalf("CLI code = %d, want local refusal; stderr=%s", code, cliErr)
@@ -1056,7 +1154,9 @@ func TestEquivContractPublishRefusesBreakingMinorOnBothSurfaces(t *testing.T) {
 		Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
 		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
 	}
-	registry := mcp.BuildRegistry(nil, writeDeps, mcpStaging, nil, mcp.NewDeps{})
+	registry := mcp.BuildRegistryWithContractOperations(nil, writeDeps, mcpStaging, nil, mcp.NewDeps{}, mcp.ContractToolOperations{
+		Publication: equivMCPContractPublication{state: &equivContractPublicationState{err: sharedRefusal}},
+	})
 	spec, ok := registry.Get("a2a_contract")
 	if !ok {
 		t.Fatal("a2a_contract is not registered")
@@ -1288,8 +1388,11 @@ func TestEquivContractDiffAndVerifyExportAreReadOnly(t *testing.T) {
 	runGit("-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-m", "v2")
 
 	id := "XC-axon-diffable-e001"
+	cliInspection := equivCLIContractInspection{result: cli.ContractDiffResult{Changed: []string{"schema/main.schema.json"}}}
+	mcpInspection := equivMCPContractInspection{result: mcp.ContractDiffResult{Changed: []string{"schema/main.schema.json"}}}
 
 	cliCmd := cli.NewContractCommand(nil, nil, mirrorDir, "fixture-space", "axon", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+	cliCmd.SetP6Inspection(cliInspection)
 	_, out, errOut := equivIO()
 	code := cliCmd.Run(context.Background(), []string{"diff", id, "1.0.0", "1.1.0"}, cli.IO{Stdin: bytes.NewReader(nil), Stdout: out, Stderr: errOut})
 	if code != 0 {
@@ -1301,7 +1404,7 @@ func TestEquivContractDiffAndVerifyExportAreReadOnly(t *testing.T) {
 	}
 
 	writeDeps := mcp.WriteDeps{MirrorDir: mirrorDir, OwnSystem: "axon", Manifest: equivManifest()}
-	registry := mcp.BuildRegistry(nil, writeDeps, "", nil, mcp.NewDeps{})
+	registry := mcp.BuildRegistryWithContractOperations(nil, writeDeps, "", nil, mcp.NewDeps{}, mcp.ContractToolOperations{Inspection: mcpInspection})
 	spec, ok := registry.Get("a2a_contract")
 	if !ok {
 		t.Fatal("a2a_contract not registered")

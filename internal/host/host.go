@@ -101,6 +101,9 @@ type PRInfo struct {
 	Number int
 	URL    string
 	State  string
+	// Title and Body are provider-observed host metadata. Recovery paths use
+	// both to prove an existing PR is the exact frozen request.
+	Title string
 	// BaseBranch and HeadSHA bind a retry to the exact PR identity observed
 	// by the provider. A branch name alone is reusable and therefore is not
 	// sufficient evidence for a mutation such as re-arming auto-merge.

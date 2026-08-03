@@ -368,11 +368,62 @@ func TestPlanPublicationEmitsSortedWriteDeleteMetadataOnly(t *testing.T) {
 		t.Fatalf("mutations = %v, want %v", got, want)
 	}
 	deletion := plan.Mutations[0]
-	if deletion.BeforeDigest == "" || deletion.BeforeMode != CandidateRegular || deletion.DeleteDomain != ContractSidecarDeleteDomain || deletion.ContractRoot != "contracts/atlas/demo" {
+	if deletion.BeforeDigest == "" || deletion.BeforeMode != "100644" || deletion.DeleteDomain != ContractSidecarDeleteDomain || deletion.ContractRoot != "contracts/atlas/demo" {
 		t.Fatalf("delete metadata is incomplete: %+v", deletion)
 	}
 	if deletion.AfterDigest != "" || deletion.AfterSize != 0 {
 		t.Fatalf("delete carries write metadata: %+v", deletion)
+	}
+	for _, mutation := range plan.Mutations {
+		switch mutation.Path {
+		case "artifacts/errors.yaml":
+			if mutation.BeforeDigest != "" || mutation.BeforeMode != "" || mutation.AfterMode != "100644" {
+				t.Fatalf("new write carries invalid tree metadata: %+v", mutation)
+			}
+		case DescriptorPath, "schema/order.schema.json":
+			if mutation.BeforeDigest == "" || mutation.BeforeMode != "100644" || mutation.AfterMode != "100644" {
+				t.Fatalf("replacement lacks exact prior tree metadata: %+v", mutation)
+			}
+		}
+	}
+}
+
+func TestPlanPublicationPreservesExecutableModeAndRefusesUnknownPriorMode(t *testing.T) {
+	t.Parallel()
+
+	priorSnapshot := plannerDeclaredSnapshot("XC-atlas-demo", "1.0.0", "json-schema-2020-12", nil)
+	prior := publishedDeclared(t, "1.0.0", priorSnapshot)
+	prior.Modes["schema/order.schema.json"] = "100755"
+	desiredSnapshot := plannerDeclaredSnapshot("XC-atlas-demo", "1.0.0", "json-schema-2020-12", nil)
+	desiredSnapshot.Files[0].Raw = []byte(`{"type":"string"}`)
+	desired := mustCandidateIntent(t, desiredSnapshot)
+	input := PublicationInput{
+		System: "atlas", ContractID: "XC-atlas-demo", Selector: "explicit:1.1.0", AuthoringFloor: "0.19.0",
+		Candidate: desired, Published: []PublishedContract{prior}, ContractRoot: "contracts/atlas/demo",
+		CandidateSource: CandidateSource{Kind: CandidateSourceMirror, Location: "tree", Fingerprint: "sha256:" + strings.Repeat("7", 64)},
+	}
+	plan, issues := PlanPublication(input, &recordingCompatibilityChecker{result: CompatibilityResult{Verdict: CompatibilityCompatible}})
+	assertNoIssues(t, issues)
+	mutation := findPublicationMutation(t, plan.Mutations, "schema/order.schema.json")
+	if mutation.BeforeMode != "100755" || mutation.AfterMode != "100755" || mutation.BeforeDigest == "" {
+		t.Fatalf("executable replacement metadata = %+v", mutation)
+	}
+	input.CandidateModes = map[string]string{
+		DescriptorPath: "100644", "schema/order.schema.json": "100644",
+		"fixtures/valid/order.json": "100644", "fixtures/invalid/missing-id.json": "100644",
+	}
+	plan, issues = PlanPublication(input, &recordingCompatibilityChecker{result: CompatibilityResult{Verdict: CompatibilityCompatible}})
+	assertNoIssues(t, issues)
+	mutation = findPublicationMutation(t, plan.Mutations, "schema/order.schema.json")
+	if mutation.BeforeMode != "100755" || mutation.AfterMode != "100644" {
+		t.Fatalf("intentional executable-to-regular transition = %+v", mutation)
+	}
+
+	prior.Modes["schema/order.schema.json"] = ""
+	input.Published = []PublishedContract{prior}
+	_, issues = PlanPublication(input, &recordingCompatibilityChecker{result: CompatibilityResult{Verdict: CompatibilityCompatible}})
+	if len(issues) == 0 || issues[0].Path != "schema/order.schema.json" {
+		t.Fatalf("unknown prior mode issues = %+v", issues)
 	}
 }
 
@@ -394,7 +445,7 @@ func TestPlanPublicationByteIdenticalRerunAndCanonicalGolden(t *testing.T) {
 	if !first.Equal(second) || first.PlanDigest != second.PlanDigest || !bytes.Equal(first.CanonicalBytes(), second.CanonicalBytes()) || !bytes.Equal(first.FinalDescriptorBytes(), second.FinalDescriptorBytes()) {
 		t.Fatalf("byte-identical rerun diverged:\n%+v\n%+v", first, second)
 	}
-	const wantPlanDigest = "sha256:567fa4d0d73e0e883c3730e7551649173429ae20865f958355f5b89e9cb7b367"
+	const wantPlanDigest = "sha256:3d80eb79ee84ab1aa23160152842bdd3b199ec46a0a4192ed51edf79cd1c94e3"
 	if first.PlanDigest != wantPlanDigest {
 		t.Fatalf("plan digest = %q, want golden %q\ncanonical=%s", first.PlanDigest, wantPlanDigest, first.CanonicalBytes())
 	}
@@ -511,7 +562,22 @@ func publishedDeclared(t *testing.T, version string, snapshot CandidateSnapshot)
 	}
 	set, issues := ValidateCarriedSet(ProfileContractSetV2, descriptor, snapshot)
 	assertNoIssues(t, issues)
-	return PublishedContract{Version: version, DescriptorRaw: bytes.Clone(snapshot.Descriptor.Raw), Set: set}
+	modes := map[string]string{DescriptorPath: "100644"}
+	for path := range set.Bytes {
+		modes[path] = "100644"
+	}
+	return PublishedContract{Version: version, DescriptorRaw: bytes.Clone(snapshot.Descriptor.Raw), Set: set, Modes: modes}
+}
+
+func findPublicationMutation(t *testing.T, mutations []PublicationMutation, path string) PublicationMutation {
+	t.Helper()
+	for _, mutation := range mutations {
+		if mutation.Path == path {
+			return mutation
+		}
+	}
+	t.Fatalf("plan has no mutation %q: %+v", path, mutations)
+	return PublicationMutation{}
 }
 
 func findPlanEntry(t *testing.T, entries []PublicationEntry, path string) PublicationEntry {
