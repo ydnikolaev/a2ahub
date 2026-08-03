@@ -101,6 +101,60 @@ func (s *Store) OwnSystem() string { return s.ownSystem }
 // own (callers must not mutate it).
 func (s *Store) SpaceMirrors() []SpaceMirror { return s.spaces }
 
+// ClassificationSummaries walks the same decoded artifact corpus as the read
+// index and returns policy-free facts for each connected space. It deliberately
+// does not call doctor or infer repository visibility.
+func (s *Store) ClassificationSummaries(ctx context.Context) ([]ClassificationSummary, error) {
+	out := make([]ClassificationSummary, 0, len(s.spaces))
+	for _, sm := range s.spaces {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		artifacts, skipped, err := walkArtifacts(sm.Dir)
+		if err != nil {
+			return nil, fmt.Errorf("cache: classification summary %s: %w", sm.SpaceID, err)
+		}
+		summary := ClassificationSummary{
+			Space: sm.SpaceID, DecodedCount: len(artifacts), SkippedCount: len(skipped),
+			Complete: len(skipped) == 0, Skipped: append([]SkippedFile(nil), skipped...),
+		}
+		highestRank := 0
+		for _, artifact := range artifacts {
+			classification := artifact.Env.Classification
+			if classification == "" {
+				classification = "internal"
+			}
+			rank, known := classificationRank(classification)
+			if !known {
+				summary.Complete = false
+				summary.IncompletePaths = append(summary.IncompletePaths, artifact.RelPath)
+				continue
+			}
+			if summary.Highest == "" || rank > highestRank {
+				summary.Highest, highestRank = classification, rank
+			}
+		}
+		summary.IncompleteCount = len(summary.IncompletePaths)
+		sort.Strings(summary.IncompletePaths)
+		out = append(out, summary)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Space < out[j].Space })
+	return out, nil
+}
+
+func classificationRank(classification string) (int, bool) {
+	switch classification {
+	case "public":
+		return 0, true
+	case "internal":
+		return 1, true
+	case "restricted":
+		return 2, true
+	default:
+		return 0, false
+	}
+}
+
 // AvatarDataURL reads one validated, project-local avatar cache record. It is
 // intentionally a Store capability so HTML does not learn the cache layout;
 // the false result is a normal monogram fallback, never a render failure.
@@ -518,9 +572,13 @@ func (s *Store) buildShowResult(fa foldedArtifact, spaceID string, all []foldedA
 
 	events := make([]EventSummary, 0, len(fa.Events))
 	for _, e := range fa.Events {
+		evidence := fa.EventEvidence[e.ULID]
 		events = append(events, EventSummary{
 			ULID: e.ULID, Subject: e.Subject, Transition: e.Transition,
-			ClaimedState: string(e.ClaimedState), Actor: e.Actor.Name, ActorSystem: e.Actor.System, At: fa.EventAt[e.ULID],
+			ClaimedState: string(e.ClaimedState), ActorKind: evidence.Actor.Kind,
+			Actor: evidence.Actor.Name, ActorSystem: evidence.Actor.System,
+			ActorModel: evidence.Actor.Model, ActorSession: evidence.Actor.Session,
+			ProducedBy: evidence.Producer, Consistency: receiptMismatchFor(fa, e.ULID), At: fa.EventAt[e.ULID],
 		})
 	}
 	sort.Slice(events, func(i, j int) bool { return events[i].At.Before(events[j].At) })

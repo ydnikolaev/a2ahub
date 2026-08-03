@@ -222,10 +222,14 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 		return Data{}, fmt.Errorf("html: protocol flags: %w", err)
 	}
 	for _, f := range protocolFlags {
+		source := f.Source
+		if source == "" {
+			source = "fold"
+		}
 		d.Flags = append(d.Flags, Flag{
 			Space: f.Space, System: f.System, Code: f.Code,
-			Message: f.Message, Severity: f.Severity, Source: "fold",
-			Artifact: f.Artifact, Event: f.EventULID,
+			Message: f.Message, Severity: f.Severity, Source: source,
+			Artifact: f.Artifact, Event: f.EventULID, Consistency: f.Consistency,
 		})
 	}
 	skipped, err := store.AllSkippedFiles(ctx)
@@ -366,10 +370,20 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 			row.Artifact = &TranscriptArtifact{ID: entry.Artifact.ID, Type: entry.Artifact.Type, From: entry.Artifact.From, To: entry.Artifact.To, Title: entry.Artifact.Title}
 		}
 		if entry.Event != nil {
+			actor := map[string]any{
+				"kind": entry.Event.Actor.Kind, "name": entry.Event.Actor.Name, "system": entry.Event.Actor.System,
+			}
+			if entry.Event.Actor.Model != "" {
+				actor["model"] = entry.Event.Actor.Model
+			}
+			if entry.Event.Actor.Session != "" {
+				actor["session"] = entry.Event.Actor.Session
+			}
 			row.Event = &TranscriptEvent{
 				ULID: entry.Event.ULID, Subject: entry.Event.Subject, Transition: entry.Event.Transition,
 				ClaimedState: entry.Event.ClaimedState, ResponseID: entry.Event.ResponseID,
-				Actor: map[string]any{"kind": entry.Event.Actor.Kind, "name": entry.Event.Actor.Name, "system": entry.Event.Actor.System},
+				Actor: actor, ProducedBy: entry.Event.ProducedBy,
+				Consistency: entry.Event.Consistency,
 			}
 		}
 		view.Transcript = append(view.Transcript, row)
@@ -403,7 +417,9 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 		}
 	}
 	for _, flag := range result.Flags {
-		view.Flags = append(view.Flags, ThreadViewFlag{Kind: flag.Kind, Subject: flag.Subject, EventULID: flag.EventULID})
+		view.Flags = append(view.Flags, ThreadViewFlag{
+			Kind: flag.Kind, Subject: flag.Subject, EventULID: flag.EventULID, Consistency: flag.Consistency,
+		})
 	}
 	for _, unresolved := range result.Unresolved {
 		view.Unresolved = append(view.Unresolved, ThreadUnresolvedRef{ID: unresolved.ID, Kind: unresolved.Kind})
@@ -570,8 +586,9 @@ func toArtifactDetail(show cache.ShowResult) (ArtifactDetail, error) {
 		}
 		events = append(events, ArtifactDetailEvent{
 			ULID: event.ULID, Subject: event.Subject, Transition: event.Transition,
-			ClaimedState: event.ClaimedState, Actor: event.Actor,
-			ActorSystem: event.ActorSystem, At: at,
+			ClaimedState: event.ClaimedState, ActorKind: event.ActorKind, Actor: event.Actor,
+			ActorSystem: event.ActorSystem, ActorModel: event.ActorModel, ActorSession: event.ActorSession,
+			ProducedBy: event.ProducedBy, Consistency: event.Consistency, At: at,
 		})
 	}
 	refs := make([]ArtifactDetailRef, 0, len(show.Refs))

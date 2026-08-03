@@ -147,10 +147,16 @@ type eventProbe struct {
 	Transition string `yaml:"transition"`
 	State      string `yaml:"state"`
 	Actor      struct {
-		Kind   string `yaml:"kind"`
-		Name   string `yaml:"name"`
-		System string `yaml:"system"`
+		Kind    string `yaml:"kind"`
+		Name    string `yaml:"name"`
+		System  string `yaml:"system"`
+		Model   string `yaml:"model"`
+		Session string `yaml:"session"`
 	} `yaml:"actor"`
+	ProducedBy struct {
+		Tool    string `yaml:"tool"`
+		Version string `yaml:"version"`
+	} `yaml:"produced_by"`
 	At      string     `yaml:"at"`
 	Refs    []refEntry `yaml:"refs"`
 	Version string     `yaml:"version"`
