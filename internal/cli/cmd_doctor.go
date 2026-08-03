@@ -84,6 +84,11 @@ type DoctorCommand struct {
 	// result says a validated local image exists; the second says foreground
 	// sync supports this owner identifier at all.
 	ParticipantAvatarStatus func(login string) (cached, supported bool)
+
+	// ClassificationSummaryReader is P4's consumer-side seam for P1's cache
+	// classification summary. Nil is an explicit UNVERIFIED diagnostic, never a
+	// scan reimplementation or a false PASS.
+	ClassificationSummaryReader DoctorClassificationSummaryReader
 }
 
 // NewDoctorCommand constructs the basic doctor command. h is the host
@@ -129,7 +134,7 @@ func (c *DoctorCommand) Name() string { return "doctor" }
 // stays green forever. A summary cannot go stale that way; the enumeration lives
 // where it can be checked against `checks` — troubleshooting.md's table.
 func (c *DoctorCommand) Synopsis() string {
-	return "run local health checks over every connected space (credentials, mirror access, identity, participant avatars, versions, CI, space scaffolding, auto-merge, CODEOWNERS, notifications, statusline, skill) — see troubleshooting.md for what each FAIL means"
+	return "run local health checks over every connected space (credentials, mirror access, identity, participant avatars, versions, CI, space scaffolding, repository visibility, auto-merge, CODEOWNERS, notifications, statusline, skill) — see troubleshooting.md for what each FAIL means"
 }
 
 // Run implements cli.Command. Exit codes: 2 = usage error (including the
@@ -198,6 +203,11 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		}
 		allOK = false
 		_, _ = fmt.Fprintf(stdio.Stdout, "%s: FAIL: %s\n", chk.name, detail)
+	}
+	for _, row := range c.doctorVisibilityRows(ctx, cfg, machine) {
+		// P4 §5.2: WARN and UNVERIFIED are advisory-on-success. They are
+		// intentionally rendered as their own statuses and never change allOK.
+		_, _ = fmt.Fprintf(stdio.Stdout, "repository visibility [%s]: %s: %s\n", row.SpaceID, row.Status, row.Detail)
 	}
 
 	if !allOK {
