@@ -1,10 +1,11 @@
-package contract
+package contract_test
 
 import (
 	"testing"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 )
@@ -50,20 +51,22 @@ func TestCanonicalV2TemplateRendersSchemaValidCarriedSet(t *testing.T) {
 		t.Fatalf("canonical render is not schema-valid: %+v\n%s", violations, raw)
 	}
 
-	descriptor, err := ParseDescriptor(raw)
+	descriptor, err := contract.ParseDescriptor(raw)
 	if err != nil {
 		t.Fatalf("parse rendered descriptor projection: %v", err)
 	}
 	schemaRaw, validRaw, invalidRaw := template.ContractScaffold("contract")
-	set, issues := ValidateCarriedSet(ProfileContractSetV2, descriptor, CandidateSnapshot{
-		Descriptor: CandidateFile{Path: DescriptorPath, Kind: CandidateRegular, Raw: raw},
-		Files: []CandidateFile{
-			{Path: "schema/contract.schema.json", Kind: CandidateRegular, Raw: schemaRaw},
-			{Path: "fixtures/valid/example.json", Kind: CandidateRegular, Raw: validRaw},
-			{Path: "fixtures/invalid/example.json", Kind: CandidateRegular, Raw: invalidRaw},
+	set, issues := contract.ValidateCarriedSet(contract.ProfileContractSetV2, descriptor, contract.CandidateSnapshot{
+		Descriptor: contract.CandidateFile{Path: contract.DescriptorPath, Kind: contract.CandidateRegular, Raw: raw},
+		Files: []contract.CandidateFile{
+			{Path: "schema/contract.schema.json", Kind: contract.CandidateRegular, Raw: schemaRaw},
+			{Path: "fixtures/valid/example.json", Kind: contract.CandidateRegular, Raw: validRaw},
+			{Path: "fixtures/invalid/example.json", Kind: contract.CandidateRegular, Raw: invalidRaw},
 		},
 	})
-	assertNoIssues(t, issues)
+	if len(issues) != 0 {
+		t.Fatalf("rendered template carried-set issues: %+v", issues)
+	}
 	if set.AggregateDigest == "" || len(set.PerFileDigest) != 4 {
 		t.Fatalf("rendered template projection did not produce descriptor + three starter files: %+v", set)
 	}

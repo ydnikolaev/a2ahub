@@ -15,6 +15,13 @@ import (
 
 const prefix = "op-v1-"
 
+// BranchName renders the deterministic write branch shared by planning and
+// the space write funnel. Keeping the protocol string here prevents a pure
+// planner and the I/O adapter from deriving different retry heads.
+func BranchName(system, verb, operationID string) string {
+	return fmt.Sprintf("a2a/%s/%s/%s", system, verb, operationID)
+}
+
 const (
 	WorkActionStart      = "start"
 	WorkActionCheckpoint = "checkpoint"
