@@ -194,7 +194,8 @@ func TestVersionSeam(t *testing.T) {
 	}{
 		{0, false},
 		{1, true},
-		{2, false}, // CC-005: unknown newer version refused
+		{2, true},
+		{3, false}, // CC-005: unknown newer version refused
 	}
 	for _, tc := range cases {
 		if got := AcceptsEnvelopeVersion(tc.v); got != tc.want {
@@ -211,9 +212,9 @@ func TestVersionSeam_CC005Fixture(t *testing.T) {
 	t.Parallel()
 	c := mustLoad(t)
 
-	_, err := c.ValidateEnvelope("work_request", "v2", toInstance(t, validWorkRequest))
+	_, err := c.ValidateEnvelope("work_request", "v3", toInstance(t, validWorkRequest))
 	if err == nil {
-		t.Fatal("expected ValidateEnvelope to refuse envelope/v2 (CC-005: unknown newer version), got nil error")
+		t.Fatal("expected ValidateEnvelope to refuse envelope/v3 (CC-005: unknown newer version), got nil error")
 	}
 	if !errors.Is(err, ErrUnsupportedVersion) {
 		t.Fatalf("expected ErrUnsupportedVersion, got %v", err)

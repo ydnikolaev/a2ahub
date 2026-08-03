@@ -1,4 +1,4 @@
-// Package schemas embeds the product schema corpus — envelope, event,
+// Package schemas embeds the product schema corpus — versioned envelope, event,
 // manifest, consumes JSON schemas, the error-code registry, and the
 // per-type templates — so it ships inside the `a2a` binary (§5.1, D-009:
 // "schemas and validator travel as one artifact").
@@ -13,13 +13,14 @@
 // data, read straight from disk by tests (internal/schema, internal/
 // validate), never compiled into the binary.
 //
-// internal/schema is this package's v1 consumer; P6's internal/template
+// internal/schema is this package's corpus consumer; P6's internal/template
 // reuses the same FS later for template rendering (§5.6).
 package schemas
 
 import "embed"
 
 //go:embed envelope/v1/*.schema.json
+//go:embed envelope/v2/*.schema.json
 //go:embed event/v1/*.schema.json
 //go:embed manifest/v1/*.schema.json
 //go:embed consumes/v1/*.schema.json
@@ -31,10 +32,10 @@ import "embed"
 //go:embed release-notes/v1/*.schema.json
 //go:embed known-issues/v1/*.schema.json
 
-// FS is the embedded, fixture-free slice of the schemas/ corpus: the 11
-// product JSON schemas (base + 8 envelope extensions + event + manifest +
-// consumes), the error-code registry data file, the 8 per-type templates,
-// (P25) the feedback family's 2 schemas + its own authoring template +
+// FS is the embedded, fixture-free slice of the schemas/ corpus: the envelope
+// v1 base + 8 extensions, the separately compiled envelope/v2 base, event,
+// manifest and consumes schemas, the error-code registry data file, the 8
+// per-type templates, (P25) the feedback family's 2 schemas + its own authoring template +
 // its own feedback-local FB-### code table (schemas/feedback/v1/, I1: not
 // an envelope, own code path), and (P31) the release-notes/v1 schema that
 // validates the authored corpus embedded separately under releasenotes/
