@@ -367,10 +367,14 @@ func validateEntryShape(schemaFormat string, entry Entry) []Issue {
 }
 
 func validateCandidate(candidate CandidateFile, issues *[]Issue) {
+	validateCandidateKind(candidate, issues)
+	validateText(candidate.Path, candidate.Raw, issues)
+}
+
+func validateCandidateKind(candidate CandidateFile, issues *[]Issue) {
 	if candidate.Kind != CandidateRegular {
 		*issues = append(*issues, Issue{Kind: IssueUnsafeMode, Path: candidate.Path, Detail: fmt.Sprintf("candidate kind %q is not a regular file", candidate.Kind)})
 	}
-	validateText(candidate.Path, candidate.Raw, issues)
 }
 
 func validateText(path string, raw []byte, issues *[]Issue) {
