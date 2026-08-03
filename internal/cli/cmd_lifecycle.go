@@ -290,79 +290,77 @@ func lifecycleMembership(manifest space.Manifest) fold.MembershipView {
 	}
 }
 
-// lifecycleCheckLegality is the generic (non-response-scoped) pre-write
-// legality check every OP-211 verb except verify/dispute uses: read id's
-// own committed envelope + full event history, fold to its full prior
-// Result, and delegate to fold.CheckCandidate — never re-deriving §3.4
-// locally.
+// lifecycleEvaluateCandidate is the generic (non-response-scoped) pre-write
+// evaluator every OP-211 verb except verify/dispute uses: read id's own
+// committed envelope + full event history, fold to its full prior Result, and
+// delegate legality, receipt applicability and outcome to
+// fold.EvaluateCandidate — never re-deriving §3.4 locally.
 //
-// version is "" for every non-contract-version transition (the fallback
+// candidate.Version is "" for every non-contract-version transition (the fallback
 // this leans on lands unchanged on the legacy version-less path — see
-// fold.CheckCandidate's own doc comment); a contract publish/deprecate/
+// fold.EvaluateCandidate's own doc comment); a contract publish/deprecate/
 // retire caller supplies the version the candidate event itself names
 // (P4, 04-per-version-lifecycle.plan.md). Passing "" for a contract that
 // already has ANY recorded version is a caller bug, not this function's
 // to guess around: contractVersionVerdict refuses a version-less publish
 // outright once any version is recorded (fold/contract.go), so a caller
 // must resolve its own version BEFORE calling this — never after.
-func lifecycleCheckLegality(mirrorDir string, manifest space.Manifest, id, transition, version string, actor fold.Actor) (fold.Verdict, fold.Envelope, error) {
+func lifecycleEvaluateCandidate(mirrorDir string, manifest space.Manifest, id string, candidate fold.Event) (fold.CandidateEvaluation, fold.Envelope, error) {
 	env, _, err := lifecycleLoadEnvelope(mirrorDir, id)
 	if err != nil {
-		return "", fold.Envelope{}, err
+		return fold.CandidateEvaluation{}, fold.Envelope{}, err
 	}
 	all, err := lifecycleReadAllEvents(mirrorDir)
 	if err != nil {
-		return "", env, err
+		return fold.CandidateEvaluation{}, env, err
 	}
 	events := lifecycleFoldEvents(all, id)
 	membership := lifecycleMembership(manifest)
 
 	// prior carries the FULL fold.Result (not just its .State) so a
 	// contract on the per-version path answers per-version rather than
-	// per-subject — see fold.CheckCandidate's own doc comment.
+	// per-subject — see fold.EvaluateCandidate's own doc comment.
 	prior := fold.NewResult(env.Kind)
 	if len(events) > 0 {
 		prior = fold.Fold(env.Kind, env, events, membership)
 	}
-	actorStatus := membership(actor.System)
-	return fold.CheckCandidate(env.Kind, prior, transition, version, env, actor, actorStatus), env, nil
+	candidate.Subject = id
+	return fold.EvaluateCandidate(env.Kind, prior, candidate, env, membership), env, nil
 }
 
-// lifecycleCheckResponseLegality is the verify/dispute pre-write legality
-// check (spec 08 Placement decisions, binding): the subject is a RESPONSE,
-// so it resolves the response's own closure sub-state (Result.Responses,
-// folded from the PARENT's full history) and the PARENT's own envelope
-// (RoleOwner resolves to the original requester) — mirroring
-// internal/fold's own applyResponseScoped exactly, at pre-write time via
-// the new fold.CheckLegality branch this phase adds.
-func lifecycleCheckResponseLegality(mirrorDir string, manifest space.Manifest, responseID, transition string, actor fold.Actor) (fold.Verdict, fold.Envelope, string, fold.Result, error) {
+// lifecycleEvaluateResponseCandidate is the verify/dispute pre-write
+// evaluator: response closure state lives in the parent's full fold, while
+// fold.EvaluateCandidate remains the sole owner of legality and receipts.
+func lifecycleEvaluateResponseCandidate(mirrorDir string, manifest space.Manifest, responseID string, candidate fold.Event) (fold.CandidateEvaluation, fold.Envelope, string, fold.Result, error) {
 	_, responseProbe, err := lifecycleLoadEnvelope(mirrorDir, responseID)
 	if err != nil {
-		return "", fold.Envelope{}, "", fold.Result{}, err
+		return fold.CandidateEvaluation{}, fold.Envelope{}, "", fold.Result{}, err
 	}
 	parentID := responseProbe.Parent
 	if parentID == "" {
-		return "", fold.Envelope{}, "", fold.Result{}, fmt.Errorf("cli: response %s carries no `parent` link", responseID)
+		return fold.CandidateEvaluation{}, fold.Envelope{}, "", fold.Result{}, fmt.Errorf("cli: response %s carries no `parent` link", responseID)
 	}
 	parentEnv, _, err := lifecycleLoadEnvelope(mirrorDir, parentID)
 	if err != nil {
-		return "", fold.Envelope{}, "", fold.Result{}, err
+		return fold.CandidateEvaluation{}, fold.Envelope{}, "", fold.Result{}, err
 	}
 	all, err := lifecycleReadAllEvents(mirrorDir)
 	if err != nil {
-		return "", parentEnv, parentID, fold.Result{}, err
+		return fold.CandidateEvaluation{}, parentEnv, parentID, fold.Result{}, err
 	}
 	events := lifecycleFoldEvents(all, parentID)
 	membership := lifecycleMembership(manifest)
 	result := fold.Fold(parentEnv.Kind, parentEnv, events, membership)
+	candidate.Subject = responseID
+	evaluation := fold.EvaluateCandidate(parentEnv.Kind, result, candidate, parentEnv, membership)
+	return evaluation, parentEnv, parentID, result, nil
+}
 
-	substate := fold.State("")
-	if result.Responses != nil {
-		substate = result.Responses[responseID]
+func lifecycleReceiptState(evaluation fold.CandidateEvaluation) string {
+	if !evaluation.Applicable {
+		return ""
 	}
-	actorStatus := membership(actor.System)
-	verdict := fold.CheckLegality(fold.KindResponse, substate, transition, parentEnv, actor, actorStatus)
-	return verdict, parentEnv, parentID, result, nil
+	return string(evaluation.Outcome)
 }
 
 // lifecycleRefsFromFlag splits a comma-separated --refs value into
@@ -730,13 +728,15 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 
 	var files []space.FileWrite
 	for _, id := range ids {
-		verdict, env, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, c.spec.Transition, "", actor)
+		evaluation, _, err := lifecycleEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, id, fold.Event{
+			Transition: c.spec.Transition, Actor: actor,
+		})
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s: %v\n", c.spec.Verb, id, err)
 			return 1
 		}
-		if verdict != fold.VerdictLegal {
-			_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s\n", c.spec.Verb, c.deps.refusalMessage(id, verdict))
+		if evaluation.Verdict != fold.VerdictLegal {
+			_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s\n", c.spec.Verb, c.deps.refusalMessage(id, evaluation.Verdict))
 			return 1
 		}
 
@@ -745,8 +745,6 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 			_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s: %v\n", c.spec.Verb, id, err)
 			return 1
 		}
-		_ = env
-
 		eventID, err := artifact.MintULIDAt(now, c.deps.entropy)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "%s: cannot mint event id: %v\n", c.spec.Verb, err)
@@ -754,7 +752,7 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 		}
 		ev := lifecycleEventDoc{
 			Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
-			Subject: id, Transition: c.spec.Transition,
+			Subject: id, Transition: c.spec.Transition, State: lifecycleReceiptState(evaluation),
 			Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 			At:    now.UTC().Format(time.RFC3339),
 		}
@@ -915,16 +913,7 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	var files []space.FileWrite
 	var ids []string
 	for _, parentID := range parents {
-		verdict, parentEnv, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, parentID, fold.TRespond, "", actor)
-		if err != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: %v\n", parentID, err)
-			return 1
-		}
-		if verdict != fold.VerdictLegal {
-			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s\n", c.deps.refusalMessage(parentID, verdict))
-			return 1
-		}
-		_, parentProbe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, parentID)
+		parentEnv, parentProbe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, parentID)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: %v\n", parentID, err)
 			return 1
@@ -959,6 +948,17 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		responseID, err := artifact.MintExchangeIDAt("XS", c.deps.ownSystem, now, bytes.NewReader(seed))
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "respond: cannot mint response id: %v\n", err)
+			return 1
+		}
+		evaluation, _, err := lifecycleEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, parentID, fold.Event{
+			Transition: fold.TRespond, ResponseID: responseID, Actor: actor,
+		})
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s: %v\n", parentID, err)
+			return 1
+		}
+		if evaluation.Verdict != fold.VerdictLegal {
+			_, _ = fmt.Fprintf(stdio.Stderr, "respond: %s\n", c.deps.refusalMessage(parentID, evaluation.Verdict))
 			return 1
 		}
 
@@ -1108,7 +1108,7 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		}
 		respondEvent := lifecycleEventDoc{
 			Schema: "event/v1", Event: respondEventID.String(), Space: parentProbe.Space,
-			Subject: parentID, Transition: fold.TRespond,
+			Subject: parentID, Transition: fold.TRespond, State: lifecycleReceiptState(evaluation),
 			Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 			At:    now.UTC().Format(time.RFC3339),
 			Refs:  []lifecycleRefEntry{{Ref: responseID}},
@@ -1199,13 +1199,15 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			return 1
 		}
 
-		verdict, parentEnv, parentID, result, err := lifecycleCheckResponseLegality(c.deps.mirrorDir, c.deps.manifest, responseID, fold.TVerify, actor)
+		evaluation, parentEnv, parentID, result, err := lifecycleEvaluateResponseCandidate(c.deps.mirrorDir, c.deps.manifest, responseID, fold.Event{
+			Transition: fold.TVerify, Actor: actor,
+		})
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s: %v\n", responseID, err)
 			return 1
 		}
-		if verdict != fold.VerdictLegal {
-			_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s\n", c.deps.refusalMessage(responseID, verdict))
+		if evaluation.Verdict != fold.VerdictLegal {
+			_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s\n", c.deps.refusalMessage(responseID, evaluation.Verdict))
 			return 1
 		}
 		_, parentProbe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, parentID)
@@ -1221,7 +1223,7 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		}
 		verifyEvent := lifecycleEventDoc{
 			Schema: "event/v1", Event: verifyEventID.String(), Space: parentProbe.Space,
-			Subject: responseID, Transition: fold.TVerify,
+			Subject: responseID, Transition: fold.TVerify, State: lifecycleReceiptState(evaluation),
 			Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 			At:    now.UTC().Format(time.RFC3339),
 		}
@@ -1237,12 +1239,10 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// parent in the SAME PR. len(result.Responses) counts every
 		// response tracked so far (this one included, already legal).
 		if len(result.Responses) == 1 {
-			closeVerdict, _, cerr := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, parentID, fold.TClose, "", actor)
-			if cerr != nil {
-				_, _ = fmt.Fprintf(stdio.Stderr, "verify: %s: %v\n", parentID, cerr)
-				return 1
-			}
-			if closeVerdict != fold.VerdictLegal {
+			closeEvaluation := fold.EvaluateCandidate(parentEnv.Kind, evaluation.Result, fold.Event{
+				Subject: parentID, Transition: fold.TClose, Actor: actor,
+			}, parentEnv, lifecycleMembership(c.deps.manifest))
+			if closeEvaluation.Verdict != fold.VerdictLegal {
 				// Not this phase's business to force a close that isn't
 				// legal (e.g. an already-superseded parent) — verify still
 				// stands on its own merit; only the convenience is skipped.
@@ -1255,7 +1255,7 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			}
 			closeEvent := lifecycleEventDoc{
 				Schema: "event/v1", Event: closeEventID.String(), Space: parentProbe.Space,
-				Subject: parentID, Transition: fold.TClose,
+				Subject: parentID, Transition: fold.TClose, State: lifecycleReceiptState(closeEvaluation),
 				Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 				At:    now.UTC().Format(time.RFC3339),
 			}
@@ -1267,7 +1267,6 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			files = append(files, space.FileWrite{Path: layout.EventFile(now.UTC().Format("2006"), closeEventID.String()), Content: closeRaw})
 			ids = append(ids, parentID)
 		}
-		_ = parentEnv
 	}
 
 	req := c.deps.buildRequest(ids, files, "verify", false)
@@ -1380,13 +1379,15 @@ func (c *DisputeCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	var files []space.FileWrite
 	for _, responseID := range ids {
-		verdict, _, parentID, _, err := lifecycleCheckResponseLegality(c.deps.mirrorDir, c.deps.manifest, responseID, fold.TDispute, actor)
+		evaluation, _, parentID, _, err := lifecycleEvaluateResponseCandidate(c.deps.mirrorDir, c.deps.manifest, responseID, fold.Event{
+			Transition: fold.TDispute, Actor: actor,
+		})
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "dispute: %s: %v\n", responseID, err)
 			return 1
 		}
-		if verdict != fold.VerdictLegal {
-			_, _ = fmt.Fprintf(stdio.Stderr, "dispute: %s\n", c.deps.refusalMessage(responseID, verdict))
+		if evaluation.Verdict != fold.VerdictLegal {
+			_, _ = fmt.Fprintf(stdio.Stderr, "dispute: %s\n", c.deps.refusalMessage(responseID, evaluation.Verdict))
 			return 1
 		}
 		_, parentProbe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, parentID)
@@ -1402,7 +1403,7 @@ func (c *DisputeCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		}
 		ev := lifecycleEventDoc{
 			Schema: "event/v1", Event: eventID.String(), Space: parentProbe.Space,
-			Subject: responseID, Transition: fold.TDispute,
+			Subject: responseID, Transition: fold.TDispute, State: lifecycleReceiptState(evaluation),
 			Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 			At:    now.UTC().Format(time.RFC3339),
 			Note:  *reason, ReasonCode: *reasonCode,
@@ -1482,13 +1483,15 @@ func (c *NoteCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	var files []space.FileWrite
 	for _, id := range ids {
-		verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TNote, "", actor)
+		evaluation, _, err := lifecycleEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, id, fold.Event{
+			Transition: fold.TNote, Actor: actor,
+		})
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "note: %s: %v\n", id, err)
 			return 1
 		}
-		if verdict != fold.VerdictLegal {
-			_, _ = fmt.Fprintf(stdio.Stderr, "note: %s\n", c.deps.refusalMessage(id, verdict))
+		if evaluation.Verdict != fold.VerdictLegal {
+			_, _ = fmt.Fprintf(stdio.Stderr, "note: %s\n", c.deps.refusalMessage(id, evaluation.Verdict))
 			return 1
 		}
 
@@ -1504,7 +1507,7 @@ func (c *NoteCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		}
 		ev := lifecycleEventDoc{
 			Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
-			Subject: id, Transition: fold.TNote,
+			Subject: id, Transition: fold.TNote, State: lifecycleReceiptState(evaluation),
 			Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 			At:    now.UTC().Format(time.RFC3339),
 			Note:  *noteText,
