@@ -318,7 +318,7 @@ func TestFunnelStampShapedVersionFailsClosed(t *testing.T) {
 	req.MinBinaryVersion = "0.5.0" // a bare "1.0.0" is NEWER → would clear the guard
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "a2a 1.0.0 (abcdef0)") // the STAMP, not bare
+	funnel := NewWriteFunnel(fake, testNoSubmitValidation{}, "a2a 1.0.0 (abcdef0)") // the STAMP, not bare
 
 	_, err = funnel.Submit(context.Background(), req)
 	if err == nil {
@@ -558,7 +558,7 @@ func TestFunnelWrongSectionRefusedBeforeGitAction(t *testing.T) {
 	}
 }
 
-func TestFunnelRefusesSymlinkDestinationBeforeAnyFileMutation(t *testing.T) {
+func TestFunnelCommitTreeIgnoresHostileWorktreeSymlink(t *testing.T) {
 	t.Parallel()
 
 	fx := spacefixture.New(t, "axon")
@@ -582,22 +582,23 @@ func TestFunnelRefusesSymlinkDestinationBeforeAnyFileMutation(t *testing.T) {
 	}
 
 	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
-	_, err = funnel.Submit(context.Background(), req)
-	if !errors.Is(err, ErrSymlinkWrite) {
-		t.Fatalf("Submit error = %v, want ErrSymlinkWrite", err)
+	result, err := funnel.Submit(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(external, "outside.md")); !os.IsNotExist(err) {
 		t.Fatalf("external destination was mutated, stat error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(req.RepoDir, "axon", "exchanges", "safe-before-escape.md")); !os.IsNotExist(err) {
-		t.Fatalf("safe file was partially written before refusal, stat error = %v", err)
+		t.Fatalf("private-index commit mutated the worktree, stat error = %v", err)
 	}
-	staged, err := runGitOutput(context.Background(), req.RepoDir, nil, "diff", "--cached", "--name-only")
-	if err != nil {
-		t.Fatalf("git diff --cached: %v", err)
+	for _, path := range []string{"axon/exchanges/safe-before-escape.md", "axon/exchanges/escape/outside.md"} {
+		if err := runGit(context.Background(), req.RepoDir, "cat-file", "-e", result.CommitSHA+":"+path); err != nil {
+			t.Fatalf("committed tree does not contain %s: %v", path, err)
+		}
 	}
-	if staged != "" {
-		t.Fatalf("refusal left staged mutations: %q", staged)
+	if info, statErr := os.Lstat(link); statErr != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("worktree symlink changed: info=%v err=%v", info, statErr)
 	}
 }
 

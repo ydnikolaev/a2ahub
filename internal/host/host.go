@@ -101,6 +101,11 @@ type PRInfo struct {
 	Number int
 	URL    string
 	State  string
+	// BaseBranch and HeadSHA bind a retry to the exact PR identity observed
+	// by the provider. A branch name alone is reusable and therefore is not
+	// sufficient evidence for a mutation such as re-arming auto-merge.
+	BaseBranch string
+	HeadSHA    string
 	// MergeMethod is set once repository policy was read and a method was
 	// selected. It remains populated when PR creation succeeded but the later
 	// auto-merge operation failed.
