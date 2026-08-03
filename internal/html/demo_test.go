@@ -40,8 +40,8 @@ func TestDemoFixtureParses(t *testing.T) {
 		"spaces": {len(data.Spaces), 4}, "nodes": {len(data.Nodes), 10},
 		"contracts": {len(data.Contracts), 12}, "contractEdges": {len(data.ContractEdges), 15},
 		"exchangeEdges": {len(data.ExchangeEdges), 20}, "inbox": {len(data.Inbox), 11},
-		"outbox": {len(data.Outbox), 8}, "threadViews": {len(data.ThreadViews), 6},
-		"artifactDetails": {len(data.ArtifactDetails), 9}, "unavailable": {len(data.Unavailable), 4},
+		"outbox": {len(data.Outbox), 8}, "threadViews": {len(data.ThreadViews), 7},
+		"artifactDetails": {len(data.ArtifactDetails), 12}, "unavailable": {len(data.Unavailable), 4},
 	}
 	for name, gotWant := range wantCounts {
 		if gotWant[0] != gotWant[1] {
@@ -103,6 +103,29 @@ func TestDemoFixtureParses(t *testing.T) {
 		if flag.Source != "fold" && flag.Source != "cache-index" {
 			t.Errorf("demo flag %q has unsupported source %q", flag.Code, flag.Source)
 		}
+	}
+}
+
+func TestDemoOperationalSnapshotUsesSharedProjection(t *testing.T) {
+	t.Parallel()
+	d, err := DemoData()
+	if err != nil {
+		t.Fatalf("DemoData: %v", err)
+	}
+	if d.Operational.SchemaVersion != 1 || d.Operational.Revision == "" || len(d.Operational.Timeline) == 0 {
+		t.Fatalf("operational snapshot is not a canonical shared projection: %#v", d.Operational)
+	}
+	foundConcurrentWork := false
+	for _, row := range d.Operational.Timeline {
+		if row.Space == "" || row.Thread == "" || row.Title == "" {
+			t.Fatalf("operational row lacks qualified process identity: %+v", row)
+		}
+		if len(row.Work) > 1 {
+			foundConcurrentWork = true
+		}
+	}
+	if !foundConcurrentWork {
+		t.Fatal("demo snapshot does not exercise simultaneous work on one process")
 	}
 }
 
@@ -266,9 +289,9 @@ func TestDemoOwnershipIsDerivedNotAuthored(t *testing.T) {
 }
 
 // TestDemoRowFactsAreDerivedNotAuthored is the same guard one field further on.
-// The exchange list sorts on MovedAt and the prompt button appears on YourMove;
-// both decode to their zero value from a fixture that predates them, and a
-// zeroed sort key looks like an order rather than like a bug.
+// The exchange list sorts on CreatedAt and the prompt button appears on
+// YourMove; both decode to their zero value from a fixture that predates them,
+// and a zeroed sort key looks like an order rather than like a bug.
 func TestDemoRowFactsAreDerivedNotAuthored(t *testing.T) {
 	t.Parallel()
 	d, err := DemoData()
@@ -284,26 +307,26 @@ func TestDemoRowFactsAreDerivedNotAuthored(t *testing.T) {
 	}
 
 	rows, dated, ours := 0, 0, 0
-	for _, list := range [][]Item{d.Inbox, d.Outbox} {
+	for _, list := range [][]Item{d.Inbox, d.Outbox, d.Archive} {
 		for _, it := range list {
 			rows++
 			if it.Age == "" {
-				if it.MovedAt != "" {
-					t.Errorf("%s: no age but MovedAt=%q", it.ID, it.MovedAt)
+				if it.CreatedAt != "" {
+					t.Errorf("%s: no age but CreatedAt=%q", it.ID, it.CreatedAt)
 				}
 				continue
 			}
-			if it.MovedAt == "" {
-				t.Errorf("%s: age %q with no MovedAt — the exchange list would sort it at random", it.ID, it.Age)
+			if it.CreatedAt == "" {
+				t.Errorf("%s: age %q with no CreatedAt — the exchange list would sort it at random", it.ID, it.Age)
 				continue
 			}
-			moved, parseErr := time.Parse(time.RFC3339, it.MovedAt)
+			created, parseErr := time.Parse(time.RFC3339, it.CreatedAt)
 			if parseErr != nil {
-				t.Errorf("%s: MovedAt %q does not parse: %v", it.ID, it.MovedAt, parseErr)
+				t.Errorf("%s: CreatedAt %q does not parse: %v", it.ID, it.CreatedAt, parseErr)
 				continue
 			}
-			if got := humanizeAge(d.GeneratedAt, moved); got != it.Age {
-				t.Errorf("%s: MovedAt reformats to %q, but the row is labelled %q", it.ID, got, it.Age)
+			if got := humanizeAge(d.GeneratedAt, created); got != it.Age {
+				t.Errorf("%s: CreatedAt reformats to %q, but the row is labelled %q", it.ID, got, it.Age)
 			}
 			dated++
 

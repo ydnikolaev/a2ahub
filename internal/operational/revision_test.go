@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ydnikolaev/a2ahub/internal/workreport"
 )
 
 func TestSemanticRevisionIncludesSourceStateButExcludesPollObservation(t *testing.T) {
@@ -55,5 +57,60 @@ func TestSemanticRevisionExcludesLocalLeasePollObservation(t *testing.T) {
 	}
 	if first.Timeline[0].Work[0].ObservedAt.Equal(*second.Timeline[0].Work[0].ObservedAt) {
 		t.Fatal("test did not vary the response-only observation timestamp")
+	}
+}
+
+func TestSemanticRevisionTracksCoreCurrentBoundary(t *testing.T) {
+	t.Parallel()
+	boundary := time.Date(2026, 8, 3, 13, 0, 0, 0, time.UTC)
+	input := baseInput(boundary)
+	input.CommittedWork = []CommittedWorkEvidence{checkpoint(
+		"work:01ARZ3NDEKTSV4RRFFQ69G5FAV", "alice", "session-a", workreport.ModeTesting,
+		boundary.Add(-time.Hour), boundary, 1,
+	)}
+
+	current, err := Build(input, fixedClock{boundary}, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale, err := Build(input, fixedClock{boundary.Add(time.Nanosecond)}, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !current.Timeline[0].Work[0].Current || stale.Timeline[0].Work[0].Current {
+		t.Fatalf("current boundary = %v -> %v", current.Timeline[0].Work[0].Current, stale.Timeline[0].Work[0].Current)
+	}
+	if current.Revision == stale.Revision {
+		t.Fatal("current boundary did not change semantic revision")
+	}
+}
+
+func TestSemanticRevisionIncludesCurrentWireFact(t *testing.T) {
+	t.Parallel()
+	snapshot := Snapshot{
+		SchemaVersion: SchemaVersion,
+		Sources:       []Source{},
+		Timeline: []TimelineRow{{
+			Space: "space-a", Thread: "thread:one", Participants: []string{},
+			Protocol: Protocol{WaitingOn: []string{}, BlockingBy: []string{}},
+			Work: []Work{{
+				WorkID: "work:01ARZ3NDEKTSV4RRFFQ69G5FAV", SubjectRef: "XC-one@1.0.0",
+				Freshness: FreshnessLocalCurrent, Current: false, WaitingOn: []workreport.WaitingOn{},
+			}},
+			Consistency: []Consistency{},
+		}},
+		Unavailable: []Unavailable{},
+	}
+	withoutCurrent, err := semanticRevision(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot.Timeline[0].Work[0].Current = true
+	withCurrent, err := semanticRevision(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutCurrent == withCurrent {
+		t.Fatal("current wire fact is absent from semantic revision")
 	}
 }

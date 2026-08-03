@@ -89,6 +89,25 @@ func TestReceiptEvidenceHTMLJSONOmitsAbsentOptionalFields(t *testing.T) {
 	}
 }
 
+func TestReceiptMismatchTemplateIsConsistencyActualFirst(t *testing.T) {
+	t.Parallel()
+	tmpl := string(DefaultTemplate())
+	for _, required := range []string{
+		"Consistency, protocol and read evidence",
+		"authoritative actual ",
+		"; producer claimed ",
+		`f.source === "consistency"`,
+		`ev.consistency`,
+	} {
+		if !strings.Contains(tmpl, required) {
+			t.Fatalf("template missing receipt consistency contract %q", required)
+		}
+	}
+	if strings.Contains(tmpl, "ev.claimed_state") {
+		t.Fatal("ordinary HTML timeline reads a matching receipt as a display signal")
+	}
+}
+
 func receiptHTMLMismatch() *cache.ReceiptMismatch {
 	return &cache.ReceiptMismatch{
 		Kind: string(fold.FlagStateClaimMismatch), EventULID: "02", Subject: "XQ-receipt",

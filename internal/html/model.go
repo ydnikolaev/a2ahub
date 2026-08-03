@@ -13,31 +13,34 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/provenance"
 )
 
 // Data is the full dashboard model — the `DATA` global the page renders from.
 // Everything is space-tagged so the per-space tabs filter by space id.
 type Data struct {
-	Meta            DemoMeta          `json:"meta,omitempty"`
-	GeneratedAt     time.Time         `json:"generatedAt"` // snapshot time (STATIC view)
-	Self            string            `json:"self"`        // the viewing system (ego node)
-	Tooling         Tooling           `json:"tooling"`
-	Spaces          []SpaceHealth     `json:"spaces"`
-	Nodes           []Node            `json:"nodes"`
-	ContractEdges   []ContractEdge    `json:"contractEdges"`
-	ExchangeEdges   []ExchangeEdge    `json:"exchangeEdges"`
-	Threads         []Thread          `json:"threads"`
-	Inbox           []Item            `json:"inbox"`
-	Outbox          []Item            `json:"outbox"`
-	Contracts       []Contract        `json:"contracts"`
-	Flags           []Flag            `json:"flags"`
-	ReleaseNotes    []ReleaseNote     `json:"releaseNotes"`
-	UpdateDetail    UpdateDetail      `json:"updateDetail"`
-	Focus           *Focus            `json:"focus,omitempty"`
-	ThreadViews     []ThreadView      `json:"threadViews,omitempty"`
-	ArtifactDetails []ArtifactDetail  `json:"artifactDetails,omitempty"`
-	Unavailable     []UnavailableFact `json:"unavailable,omitempty"`
+	Meta            DemoMeta             `json:"meta,omitempty"`
+	GeneratedAt     time.Time            `json:"generatedAt"` // snapshot time (STATIC view)
+	Self            string               `json:"self"`        // the viewing system (ego node)
+	Tooling         Tooling              `json:"tooling"`
+	Spaces          []SpaceHealth        `json:"spaces"`
+	Nodes           []Node               `json:"nodes"`
+	ContractEdges   []ContractEdge       `json:"contractEdges"`
+	ExchangeEdges   []ExchangeEdge       `json:"exchangeEdges"`
+	Threads         []Thread             `json:"threads"`
+	Inbox           []Item               `json:"inbox"`
+	Outbox          []Item               `json:"outbox"`
+	Archive         []Item               `json:"archive"`
+	Contracts       []Contract           `json:"contracts"`
+	Flags           []Flag               `json:"flags"`
+	ReleaseNotes    []ReleaseNote        `json:"releaseNotes"`
+	UpdateDetail    UpdateDetail         `json:"updateDetail"`
+	Focus           *Focus               `json:"focus,omitempty"`
+	ThreadViews     []ThreadView         `json:"threadViews,omitempty"`
+	Operational     operational.Snapshot `json:"operational"`
+	ArtifactDetails []ArtifactDetail     `json:"artifactDetails,omitempty"`
+	Unavailable     []UnavailableFact    `json:"unavailable,omitempty"`
 }
 
 // DemoMeta labels the canonical dense design fixture. Live data leaves this
@@ -164,18 +167,31 @@ type Item struct {
 	Blocking    bool     `json:"blocking"`
 	GatePending bool     `json:"gatePending"`
 	Thread      string   `json:"thread,omitempty"`
-	Age         string   `json:"age,omitempty"` // pre-formatted (e.g. "5d"), "" if no events
+	Age         string   `json:"age,omitempty"` // pre-formatted age since document creation
 	NeededBy    string   `json:"neededBy,omitempty"`
-	// MovedAt is the same instant Age is formatted from, as RFC3339 — the sort
-	// key the exchange list orders on. Age is lossy ("1d" covers 24 hours), so
-	// it cannot order the rows it labels. Empty when the artifact has no events.
-	MovedAt      string   `json:"movedAt,omitempty"`
-	New          bool     `json:"new"`
-	Severity     string   `json:"severity"` // blocking | attention | normal
-	Reasons      []string `json:"reasons,omitempty"`
-	PendingMerge bool     `json:"pendingMerge,omitempty"`
-	SyncStale    bool     `json:"syncStale,omitempty"`
-	YourMove     bool     `json:"yourMove"`
+	// CreatedAt plus the per-space committed sequence are the immutable
+	// Exchange ordering key. A late acknowledge/note changes activity history,
+	// never the document's place in the feed. Sequence zero is valid when
+	// CreatedOrderKnown is true (the first commit in a space).
+	CreatedAt         string `json:"createdAt,omitempty"`
+	CreatedSeq        int64  `json:"createdSeq,omitempty"`
+	CreatedOrderKnown bool   `json:"createdOrderKnown,omitempty"`
+	// MovedAt is the latest lifecycle activity instant. It remains available
+	// for freshness and history surfaces, but is not an Exchange sort key.
+	MovedAt string `json:"movedAt,omitempty"`
+	// ActivitySeq and ActivityEventID identify that latest transition.
+	ActivitySeq     int64    `json:"activitySeq,omitempty"`
+	ActivityEventID string   `json:"activityEventId,omitempty"`
+	New             bool     `json:"new"`
+	Severity        string   `json:"severity"` // blocking | attention | normal
+	Reasons         []string `json:"reasons,omitempty"`
+	PendingMerge    bool     `json:"pendingMerge,omitempty"`
+	SyncStale       bool     `json:"syncStale,omitempty"`
+	// Archived means the exchange is operationally complete for this system.
+	// It is intentionally separate from State: announcements remain formally
+	// `published` even after every intended recipient has acknowledged them.
+	Archived bool `json:"archived,omitempty"`
+	YourMove bool `json:"yourMove"`
 	// Description is a short human-readable summary (from the artifact body) —
 	// UNTRUSTED, rendered via textContent (D-001). Omitted when the body is empty.
 	Description string `json:"description,omitempty"`
@@ -436,6 +452,7 @@ type TranscriptEvent struct {
 	ProducedBy   provenance.Producer    `json:"produced_by,omitzero"`
 	Consistency  *cache.ReceiptMismatch `json:"consistency,omitempty"`
 	ResponseID   string                 `json:"response_id,omitempty"`
+	Note         string                 `json:"note,omitempty"`
 }
 
 // ThreadOpenItem describes one unresolved item and its legal next actions.
@@ -524,6 +541,7 @@ type ArtifactDetailEvent struct {
 	ProducedBy   provenance.Producer    `json:"produced_by,omitzero"`
 	Consistency  *cache.ReceiptMismatch `json:"consistency,omitempty"`
 	At           string                 `json:"at"`
+	Note         string                 `json:"note,omitempty"`
 }
 
 // ArtifactDetailRef carries the resolution and digest evidence for one reference.

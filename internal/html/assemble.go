@@ -11,6 +11,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/notes"
+	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/releasenotes"
 	"gopkg.in/yaml.v3"
@@ -22,14 +23,27 @@ import (
 // consumes.yaml is walked per space mirror to derive contract-dependency edges.
 // No network.
 func Assemble(ctx context.Context, store *cache.Store, self string, now time.Time) (Data, error) {
+	empty := operational.Snapshot{
+		SchemaVersion: operational.SchemaVersion, GeneratedAt: now.UTC(),
+		Sources: []operational.Source{}, Timeline: []operational.TimelineRow{},
+		TimelineWindow: operational.Window{}, Unavailable: []operational.Unavailable{},
+	}
+	return AssembleWithOperational(ctx, store, self, now, empty)
+}
+
+// AssembleWithOperational injects the exact snapshot produced by the shared
+// operationalsource adapter. HTML may present these fields, but it never
+// rebuilds protocol, work freshness, precedence, consistency or ordering from
+// ThreadView.
+func AssembleWithOperational(ctx context.Context, store *cache.Store, self string, now time.Time, snapshot operational.Snapshot) (Data, error) {
 	if self == "" {
 		self = store.OwnSystem()
 	}
 	mirrors := store.SpaceMirrors()
 	d := Data{GeneratedAt: now, Self: self, Nodes: []Node{}, ContractEdges: []ContractEdge{},
-		ExchangeEdges: []ExchangeEdge{}, Threads: []Thread{}, Inbox: []Item{}, Outbox: []Item{}, Contracts: []Contract{},
+		ExchangeEdges: []ExchangeEdge{}, Threads: []Thread{}, Inbox: []Item{}, Outbox: []Item{}, Archive: []Item{}, Contracts: []Contract{},
 		Spaces: []SpaceHealth{}, Flags: []Flag{}, ReleaseNotes: []ReleaseNote{}, ThreadViews: []ThreadView{},
-		ArtifactDetails: []ArtifactDetail{}, Unavailable: []UnavailableFact{}}
+		Operational: snapshot, ArtifactDetails: []ArtifactDetail{}, Unavailable: []UnavailableFact{}}
 
 	un := store.UpdateNotice()
 	d.Tooling = Tooling{Current: un.Current, Latest: un.Latest, UpdateAvailable: un.UpdateAvailable,
@@ -166,14 +180,21 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 		})
 	}
 
-	// Inbox / outbox items (open only — the Store already filters to open).
-	inItems, err := store.InboxSnapshot(ctx, false)
+	// Exchange is an active-work surface. The ordinary inbox query also
+	// contains terminal history by protocol design, so use the explicitly open
+	// passive projection here; completed documents remain fully available in
+	// Threads and never masquerade as work "in flight".
+	inItems, err := store.OpenInboxSnapshot(ctx)
 	if err != nil {
 		return Data{}, fmt.Errorf("html: inbox: %w", err)
 	}
 	outItems, err := store.OutboxSnapshot(ctx)
 	if err != nil {
 		return Data{}, fmt.Errorf("html: outbox: %w", err)
+	}
+	archiveItems, err := store.ExchangeArchiveSnapshot(ctx)
+	if err != nil {
+		return Data{}, fmt.Errorf("html: exchange archive: %w", err)
 	}
 	// Conversations, including their first turn, with their members and the
 	// document-to-document links inside them (spec 46 §T6.1). Built before the
@@ -192,11 +213,20 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 	for _, it := range outItems {
 		d.Outbox = append(d.Outbox, toItem(it, now, self, openItems))
 	}
+	for _, it := range archiveItems {
+		item := toItem(it, now, self, openItems)
+		item.Archived = true
+		// Archive is the Exchange read-model's completed surface. Preserve the
+		// protocol state (for example, an announcement remains published), but
+		// do not keep presenting a completed document as needing attention.
+		item.Severity = "normal"
+		d.Archive = append(d.Archive, item)
+	}
 
 	// Full detail records for every visible Work row. Resolve the union in one
 	// cache pass: ShowMany reuses the canonical folded index, so this does not
 	// create a dashboard-only artifact walk or lifecycle projection.
-	detailRefs := visibleArtifactRefs(inItems, outItems)
+	detailRefs := visibleArtifactRefs(inItems, outItems, archiveItems)
 	if len(detailRefs) > 0 {
 		details, detailErr := store.ShowMany(ctx, detailRefs)
 		if detailErr != nil {
@@ -207,6 +237,7 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 			if projectErr != nil {
 				return Data{}, fmt.Errorf("html: artifact detail %s Markdown: %w", detail.ID, projectErr)
 			}
+			attachLinkedArtifactEvents(&projected, threadViews)
 			d.ArtifactDetails = append(d.ArtifactDetails, projected)
 		}
 	}
@@ -333,7 +364,9 @@ func buildThreads(ctx context.Context, store *cache.Store, self string, now time
 		rows = append(rows, row{t: th, v: toThreadView(result, self), at: at})
 	}
 
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].at.After(rows[j].at) })
+	sort.Slice(rows, func(i, j int) bool {
+		return threadRowComesBefore(rows[i].at, rows[i].t.Space, rows[i].t.ID, rows[j].at, rows[j].t.Space, rows[j].t.ID)
+	})
 	out := make([]Thread, 0, len(rows))
 	views := make([]ThreadView, 0, len(rows))
 	for _, r := range rows {
@@ -342,6 +375,16 @@ func buildThreads(ctx context.Context, store *cache.Store, self string, now time
 		views = append(views, r.v)
 	}
 	return out, views, openItems, nil
+}
+
+func threadRowComesBefore(aAt time.Time, aSpace, aID string, bAt time.Time, bSpace, bID string) bool {
+	if !aAt.Equal(bAt) {
+		return aAt.After(bAt)
+	}
+	if aSpace != bSpace {
+		return aSpace < bSpace
+	}
+	return aID < bID
 }
 
 func toThreadView(result cache.ThreadResult, self string) ThreadView {
@@ -382,7 +425,7 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 			row.Event = &TranscriptEvent{
 				ULID: entry.Event.ULID, Subject: entry.Event.Subject, Transition: entry.Event.Transition,
 				ClaimedState: entry.Event.ClaimedState, ResponseID: entry.Event.ResponseID,
-				Actor: actor, ProducedBy: entry.Event.ProducedBy,
+				Note: entry.Event.Note, Actor: actor, ProducedBy: entry.Event.ProducedBy,
 				Consistency: entry.Event.Consistency,
 			}
 		}
@@ -541,6 +584,17 @@ func containsString(in []string, want string) bool {
 // toItem maps a cache.Item to the model Item with derived age + severity.
 func toItem(it cache.Item, now time.Time, self string, open openItemIndex) Item {
 	gate := hasReason(it.Reasons, "gate-pending-on-me")
+	createdAt := it.CreatedAt
+	if createdAt.IsZero() {
+		// Legacy callers constructed cache.Item before the immutable creation
+		// clock was projected. Preserve a deterministic degraded view for those
+		// rows; real cache reads always populate CreatedAt from the envelope.
+		createdAt = it.LatestEventAt
+	}
+	created := ""
+	if !createdAt.IsZero() {
+		created = createdAt.UTC().Format(time.RFC3339)
+	}
 	moved := ""
 	if !it.LatestEventAt.IsZero() {
 		moved = it.LatestEventAt.UTC().Format(time.RFC3339)
@@ -552,8 +606,9 @@ func toItem(it cache.Item, now time.Time, self string, open openItemIndex) Item 
 	return Item{
 		Space: it.Space, ID: it.ID, Type: it.Type, Title: it.Title, From: it.From, To: it.To,
 		State: it.State, Priority: it.Priority, Blocking: it.Blocking, GatePending: gate,
-		Thread: it.Thread, Age: humanizeAge(now, it.LatestEventAt), NeededBy: it.NeededBy,
-		MovedAt: moved, New: it.New,
+		Thread: it.Thread, Age: humanizeAge(now, createdAt), NeededBy: it.NeededBy,
+		CreatedAt: created, CreatedSeq: it.CreatedSeq, CreatedOrderKnown: it.CreatedOrderKnown,
+		MovedAt: moved, ActivitySeq: it.LatestEventSeq, ActivityEventID: it.LatestEventID, New: it.New,
 		Severity: severityOf(it, gate), Reasons: it.Reasons, PendingMerge: it.PendingMerge,
 		SyncStale: it.SyncStale, YourMove: it.YourMove, Description: it.Description,
 		Prompt: prompt,
@@ -588,7 +643,7 @@ func toArtifactDetail(show cache.ShowResult) (ArtifactDetail, error) {
 			ULID: event.ULID, Subject: event.Subject, Transition: event.Transition,
 			ClaimedState: event.ClaimedState, ActorKind: event.ActorKind, Actor: event.Actor,
 			ActorSystem: event.ActorSystem, ActorModel: event.ActorModel, ActorSession: event.ActorSession,
-			ProducedBy: event.ProducedBy, Consistency: event.Consistency, At: at,
+			ProducedBy: event.ProducedBy, Consistency: event.Consistency, At: at, Note: event.Note,
 		})
 	}
 	refs := make([]ArtifactDetailRef, 0, len(show.Refs))
@@ -619,6 +674,52 @@ func toArtifactDetail(show cache.ShowResult) (ArtifactDetail, error) {
 		// this page uses.
 		Refs: refs, SyncStale: show.SyncStale, SyncAge: humanizeDuration(show.SyncAge),
 	}, nil
+}
+
+// attachLinkedArtifactEvents restores lifecycle events that create or name the
+// selected artifact without using it as the event subject. A response is the
+// canonical example: the `respond` event belongs to the original request and
+// carries the new response in response_id. ShowResult correctly stays scoped
+// to subject events; the document timeline, however, must also show the event
+// that introduced the selected response. ThreadView is the authoritative
+// causal projection, so this joins that already-folded record instead of
+// inventing a second event traversal for HTML.
+func attachLinkedArtifactEvents(detail *ArtifactDetail, views []ThreadView) {
+	seen := make(map[string]bool, len(detail.Events))
+	for _, event := range detail.Events {
+		seen[event.ULID] = true
+	}
+
+	for _, view := range views {
+		if view.Space != detail.Space || (detail.Thread != "" && view.Thread != detail.Thread) {
+			continue
+		}
+		for _, row := range view.Transcript {
+			if row.Event == nil || row.Event.ResponseID != detail.ID || seen[row.Event.ULID] {
+				continue
+			}
+			actor, _ := row.Event.Actor["name"].(string)
+			actorSystem, _ := row.Event.Actor["system"].(string)
+			detail.Events = append(detail.Events, ArtifactDetailEvent{
+				ULID: row.Event.ULID, Subject: row.Event.Subject,
+				Transition: row.Event.Transition, ClaimedState: row.Event.ClaimedState,
+				Actor: actor, ActorSystem: actorSystem, At: row.At,
+			})
+			seen[row.Event.ULID] = true
+		}
+	}
+
+	sort.SliceStable(detail.Events, func(i, j int) bool {
+		a, aErr := time.Parse(time.RFC3339Nano, detail.Events[i].At)
+		b, bErr := time.Parse(time.RFC3339Nano, detail.Events[j].At)
+		if aErr == nil && bErr == nil && !a.Equal(b) {
+			return a.Before(b)
+		}
+		if detail.Events[i].At != detail.Events[j].At {
+			return detail.Events[i].At < detail.Events[j].At
+		}
+		return detail.Events[i].ULID < detail.Events[j].ULID
+	})
 }
 
 // humanizeDuration re-formats a Go duration string into the dashboard's own

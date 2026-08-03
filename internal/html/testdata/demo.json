@@ -855,6 +855,32 @@
           "kind": "ref"
         }
       ]
+    },
+    {
+      "id": "thread:redaction-fixture-closed",
+      "space": "customer-ops",
+      "participants": ["atlas", "support"],
+      "memberCount": 1,
+      "openCount": 0,
+      "lastActivity": "3d",
+      "opener": {
+        "id": "XQ-atlas-20260726-t5v6",
+        "title": "Which fixture proves attachment names are redacted?"
+      },
+      "yourMove": false,
+      "settled": true,
+      "members": [
+        {
+          "id": "XQ-atlas-20260726-t5v6",
+          "type": "question",
+          "title": "Which fixture proves attachment names are redacted?",
+          "from": "atlas",
+          "to": ["support"],
+          "state": "closed",
+          "seq": 701
+        }
+      ],
+      "links": []
     }
   ],
   "inbox": [
@@ -1245,6 +1271,52 @@
       "pendingMerge": false,
       "syncStale": true,
       "description": "Support acknowledged the question but has not attached an answer; the requested date has passed."
+    }
+  ],
+  "archive": [
+    {
+      "space": "customer-ops",
+      "id": "XQ-atlas-20260726-t5v6",
+      "type": "question",
+      "title": "Which fixture proves attachment names are redacted?",
+      "from": "atlas",
+      "to": ["support"],
+      "state": "closed",
+      "priority": "p2",
+      "blocking": false,
+      "gatePending": false,
+      "thread": "thread:redaction-fixture-closed",
+      "age": "4d",
+      "neededBy": "2026-07-27",
+      "new": false,
+      "severity": "normal",
+      "reasons": [],
+      "pendingMerge": false,
+      "syncStale": true,
+      "archived": true,
+      "description": "Support supplied the requested fixture and Atlas closed the question."
+    },
+    {
+      "space": "customer-ops",
+      "id": "XW-atlas-20260712-cancelled",
+      "type": "work_request",
+      "title": "Prepare a temporary CRM replay bridge",
+      "from": "atlas",
+      "to": ["legacycrm"],
+      "state": "cancelled",
+      "priority": "p3",
+      "blocking": false,
+      "gatePending": false,
+      "thread": "thread:legacycrm-20260709-x3y4",
+      "age": "2w",
+      "neededBy": "2026-07-18",
+      "new": false,
+      "severity": "normal",
+      "reasons": [],
+      "pendingMerge": false,
+      "syncStale": true,
+      "archived": true,
+      "description": "The bridge was cancelled after the archive path replaced the temporary replay plan."
     }
   ],
   "contracts": [
@@ -3073,6 +3145,78 @@
           "id": "XS-legacycrm-20260709-c5d6"
         }
       ]
+    },
+    {
+      "thread": "thread:redaction-fixture-closed",
+      "space": "customer-ops",
+      "order": "committed",
+      "opener": {
+        "id": "XQ-atlas-20260726-t5v6",
+        "title": "Which fixture proves attachment names are redacted?",
+        "from": "atlas"
+      },
+      "participants": ["atlas", "support"],
+      "sync_stale": true,
+      "settled": true,
+      "artifacts": [
+        {
+          "id": "XQ-atlas-20260726-t5v6",
+          "type": "question",
+          "from": "atlas",
+          "to": ["support"],
+          "title": "Which fixture proves attachment names are redacted?",
+          "state": "closed"
+        }
+      ],
+      "transcript": [
+        {
+          "seq": 701,
+          "kind": "artifact",
+          "at": "2026-07-26T09:00:00Z",
+          "artifact": {
+            "id": "XQ-atlas-20260726-t5v6",
+            "type": "question",
+            "from": "atlas",
+            "to": ["support"],
+            "title": "Which fixture proves attachment names are redacted?"
+          }
+        },
+        {
+          "seq": 702,
+          "kind": "event",
+          "at": "2026-07-26T09:01:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1M7",
+            "subject": "XQ-atlas-20260726-t5v6",
+            "transition": "submit",
+            "claimed_state": "submitted",
+            "actor": {
+              "kind": "agent",
+              "name": "atlas-agent",
+              "system": "atlas"
+            }
+          }
+        },
+        {
+          "seq": 703,
+          "kind": "event",
+          "at": "2026-07-27T11:30:00Z",
+          "event": {
+            "ulid": "01K4A2B3C4D5E6F7G8H9J0K1MN",
+            "subject": "XQ-atlas-20260726-t5v6",
+            "transition": "close",
+            "claimed_state": "closed",
+            "actor": {
+              "kind": "agent",
+              "name": "atlas-agent",
+              "system": "atlas"
+            }
+          }
+        }
+      ],
+      "open_items": [],
+      "flags": [],
+      "unresolved": []
     }
   ],
   "artifactDetails": [
@@ -3705,6 +3849,63 @@
     },
     {
       "sourceClass": "canonical",
+      "space": "customer-ops",
+      "id": "XH-legacycrm-20260709-x3y4",
+      "type": "handoff",
+      "title": "</script><img src=x onerror=alert('rendering-test')>",
+      "from": "legacycrm",
+      "to": ["atlas"],
+      "state": "submitted",
+      "thread": "thread:legacycrm-20260709-x3y4",
+      "envelope": {
+        "schema": "envelope/v1",
+        "id": "XH-legacycrm-20260709-x3y4",
+        "type": "handoff",
+        "title": "</script><img src=x onerror=alert('rendering-test')>",
+        "space": "customer-ops",
+        "from": "legacycrm",
+        "to": ["atlas"],
+        "actor": {
+          "kind": "agent",
+          "name": "legacy-agent",
+          "model": "demo-agent-model"
+        },
+        "created": "2026-07-09T10:00:00Z",
+        "priority": "p2",
+        "blocking": false,
+        "thread": "thread:legacycrm-20260709-x3y4",
+        "classification": "internal",
+        "category": "migration",
+        "context": "The hostile-looking title is deliberate rendering-test data and must never execute as markup."
+      },
+      "body": "Legacy CRM handed off its final export snapshot before leaving the shared space. Atlas still needs to decide whether to accept or decline it.",
+      "events": [
+        {
+          "ulid": "01K6A2B3C4D5E6F7G8H9J0K1M2",
+          "subject": "XH-legacycrm-20260709-x3y4",
+          "transition": "submit",
+          "claimed_state": "submitted",
+          "actor": "legacy-agent",
+          "actor_system": "legacycrm",
+          "at": "2026-07-09T10:01:00Z"
+        },
+        {
+          "ulid": "01K6A2B3C4D5E6F7G8H9J0K1M3",
+          "subject": "XH-legacycrm-20260709-x3y4",
+          "transition": "acknowledge",
+          "claimed_state": "acknowledged",
+          "actor": "unrelated-agent",
+          "actor_system": "comms",
+          "at": "2026-07-09T10:05:00Z"
+        }
+      ],
+      "flags": ["unauthorized-actor"],
+      "refs": [],
+      "sync_stale": true,
+      "sync_age": "4h"
+    },
+    {
+      "sourceClass": "canonical",
       "space": "checkout-core",
       "id": "XA-atlas-20260730-d9e2",
       "type": "announcement",
@@ -3762,6 +3963,125 @@
       "refs": [],
       "sync_stale": false,
       "sync_age": "2m"
+    },
+    {
+      "sourceClass": "canonical",
+      "space": "customer-ops",
+      "id": "XQ-atlas-20260726-t5v6",
+      "type": "question",
+      "title": "Which fixture proves attachment names are redacted?",
+      "from": "atlas",
+      "to": ["support"],
+      "state": "closed",
+      "thread": "thread:redaction-fixture-closed",
+      "envelope": {
+        "schema": "envelope/v1",
+        "id": "XQ-atlas-20260726-t5v6",
+        "type": "question",
+        "title": "Which fixture proves attachment names are redacted?",
+        "space": "customer-ops",
+        "from": "atlas",
+        "to": ["support"],
+        "actor": {
+          "kind": "agent",
+          "name": "atlas-agent",
+          "model": "demo-agent-model"
+        },
+        "created": "2026-07-26T09:00:00Z",
+        "priority": "p2",
+        "blocking": false,
+        "needed_by": "2026-07-27",
+        "expected_response": {
+          "shape": "A redacted replay fixture and its expected digest",
+          "by": "2026-07-27"
+        },
+        "thread": "thread:redaction-fixture-closed",
+        "classification": "restricted"
+      },
+      "body": "Support supplied the fixture, Atlas verified the digest and the question is now closed.",
+      "events": [
+        {
+          "ulid": "01K4A2B3C4D5E6F7G8H9J0K1M7",
+          "subject": "XQ-atlas-20260726-t5v6",
+          "transition": "submit",
+          "claimed_state": "submitted",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "at": "2026-07-26T09:01:00Z"
+        },
+        {
+          "ulid": "01K4A2B3C4D5E6F7G8H9J0K1MN",
+          "subject": "XQ-atlas-20260726-t5v6",
+          "transition": "close",
+          "claimed_state": "closed",
+          "actor": "atlas-agent",
+          "actor_system": "atlas",
+          "at": "2026-07-27T11:30:00Z"
+        }
+      ],
+      "flags": [],
+      "refs": [],
+      "sync_stale": true,
+      "sync_age": "4h"
+    },
+    {
+      "sourceClass": "canonical",
+      "space": "customer-ops",
+      "id": "XW-atlas-20260712-cancelled",
+      "type": "work_request",
+      "title": "Prepare a temporary CRM replay bridge",
+      "from": "atlas",
+      "to": ["legacycrm"],
+      "state": "cancelled",
+      "thread": "thread:legacycrm-20260709-x3y4",
+      "envelope": {
+        "schema": "envelope/v1",
+        "id": "XW-atlas-20260712-cancelled",
+        "type": "work_request",
+        "title": "Prepare a temporary CRM replay bridge",
+        "space": "customer-ops",
+        "from": "atlas",
+        "to": ["legacycrm"],
+        "actor": {
+          "kind": "human",
+          "name": "platform-owner"
+        },
+        "created": "2026-07-12T10:00:00Z",
+        "priority": "p3",
+        "blocking": false,
+        "needed_by": "2026-07-18",
+        "expected_response": {
+          "shape": "A replayable bridge and a removal plan",
+          "by": "2026-07-18"
+        },
+        "thread": "thread:legacycrm-20260709-x3y4",
+        "classification": "internal"
+      },
+      "body": "The temporary bridge was cancelled after the archive path replaced the replay plan.",
+      "events": [
+        {
+          "ulid": "01K6A2B3C4D5E6F7G8H9J0K1P1",
+          "subject": "XW-atlas-20260712-cancelled",
+          "transition": "submit",
+          "claimed_state": "submitted",
+          "actor": "platform-owner",
+          "actor_system": "atlas",
+          "at": "2026-07-12T10:01:00Z"
+        },
+        {
+          "ulid": "01K6A2B3C4D5E6F7G8H9J0K1P2",
+          "subject": "XW-atlas-20260712-cancelled",
+          "transition": "cancel",
+          "claimed_state": "cancelled",
+          "actor": "platform-owner",
+          "actor_system": "atlas",
+          "at": "2026-07-16T14:00:00Z"
+        }
+      ],
+      "flags": [],
+      "refs": [],
+      "sync_stale": true,
+      "sync_age": "4h"
     }
   ],
   "unavailable": [

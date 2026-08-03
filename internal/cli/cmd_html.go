@@ -20,6 +20,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/html"
+	"github.com/ydnikolaev/a2ahub/internal/operational"
 )
 
 const htmlDefaultOut = ".a2a/dashboard.html"
@@ -28,8 +29,16 @@ const htmlDefaultOut = ".a2a/dashboard.html"
 // verb so the usage line and catalog show the right one (they are the same
 // command; `dashboard` is the friendly alias).
 type HtmlCommand struct {
-	store *cache.Store
-	name  string
+	store       *cache.Store
+	operational OperationalSnapshotReader
+	name        string
+}
+
+// OperationalSnapshotReader supplies the shared operational projection. The
+// HTML transport consumes it verbatim; it does not infer work or protocol
+// state from its separate attention/read models.
+type OperationalSnapshotReader interface {
+	Snapshot(context.Context) (operational.Snapshot, error)
 }
 
 // NewHtmlCommand constructs the `a2a html` command over a composed Store.
@@ -37,9 +46,20 @@ func NewHtmlCommand(store *cache.Store) *HtmlCommand {
 	return &HtmlCommand{store: store, name: "html"}
 }
 
+// NewHtmlCommandWithOperational constructs the production HTML command over
+// the canonical operational source.
+func NewHtmlCommandWithOperational(store *cache.Store, source OperationalSnapshotReader) *HtmlCommand {
+	return &HtmlCommand{store: store, operational: source, name: "html"}
+}
+
 // NewDashboardCommand is the `a2a dashboard` alias (same behavior).
 func NewDashboardCommand(store *cache.Store) *HtmlCommand {
 	return &HtmlCommand{store: store, name: "dashboard"}
+}
+
+// NewDashboardCommandWithOperational is the production dashboard alias.
+func NewDashboardCommandWithOperational(store *cache.Store, source OperationalSnapshotReader) *HtmlCommand {
+	return &HtmlCommand{store: store, operational: source, name: "dashboard"}
 }
 
 // Name implements Command.
@@ -75,7 +95,16 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if *demo {
 		data, err = html.DemoData()
 	} else {
-		data, err = html.Assemble(ctx, c.store, *system, time.Now())
+		now := time.Now()
+		if c.operational == nil {
+			data, err = html.Assemble(ctx, c.store, *system, now)
+		} else {
+			var snapshot operational.Snapshot
+			snapshot, err = c.operational.Snapshot(ctx)
+			if err == nil {
+				data, err = html.AssembleWithOperational(ctx, c.store, *system, now, snapshot)
+			}
+		}
 	}
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "a2a %s: %v\n", c.name, err)

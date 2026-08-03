@@ -25,6 +25,47 @@ func TestProviderOf(t *testing.T) {
 	}
 }
 
+func TestNoteProjectionReachesThreadAndArtifactDetail(t *testing.T) {
+	t.Parallel()
+	note := "A committed note must remain readable."
+	thread := toThreadView(cache.ThreadResult{
+		Thread: "thread:test", Space: "space", Order: cache.ThreadOrderCommitted,
+		Transcript: []cache.TranscriptEntry{{
+			Kind: "event",
+			Event: &cache.TranscriptEvent{
+				ULID: "01NOTE", Subject: "XW-test", Transition: "note", Note: note,
+				Actor: cache.TranscriptEventActor{Kind: "agent", Name: "agent", System: "axon"},
+			},
+		}},
+	}, "axon")
+	if got := thread.Transcript[0].Event.Note; got != note {
+		t.Fatalf("thread note = %q, want %q", got, note)
+	}
+
+	detail, err := toArtifactDetail(cache.ShowResult{
+		ID: "XW-test", Type: "work_request", Title: "Test", Body: "body",
+		Events: []cache.EventSummary{{ULID: "01NOTE", Transition: "note", Note: note}},
+	})
+	if err != nil {
+		t.Fatalf("toArtifactDetail: %v", err)
+	}
+	if got := detail.Events[0].Note; got != note {
+		t.Fatalf("artifact note = %q, want %q", got, note)
+	}
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestDriftOf(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -400,20 +441,27 @@ func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 		`modal ? \"420\" : \"220\"`,
 		`this.props.onClose`,
 		`Развернуть карточку на всю ширину`,
-		`Главное о документе`,
-		`Все поля frontmatter`,
+		`Метаданные`,
 		`История событий`,
 		`FreshnessDot`,
+		`ActorEventLine`,
 		`authorProfileURL`,
 		`authorAvatar`,
-		`\u003cimg src=\"{{ authorAvatar }}\"`,
 		`calloutParts`,
-		`Тело документа`,
 		`SectionHeading`,
 		`data-artifact-section`,
 	} {
 		if !strings.Contains(detail, required) {
 			t.Errorf("ArtifactDetail is missing %q", required)
+		}
+	}
+	for _, removed := range []string{
+		`Главное о документе`,
+		`Тело документа`,
+		`Все поля frontmatter`,
+	} {
+		if strings.Contains(detail, removed) {
+			t.Errorf("ArtifactDetail still renders removed duplicate heading %q", removed)
 		}
 	}
 	if !strings.Contains(tmpl, "Что до ответа делаем мы") {
@@ -422,7 +470,7 @@ func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 	if !strings.Contains(tmpl, "Локальная копия спейса актуальна. Последняя синхронизация:") {
 		t.Error("dashboard does not explain the compact current-snapshot indicator")
 	}
-	if !strings.Contains(tmpl, `const preferred = ["created", "space", "category"]`) {
+	if !strings.Contains(tmpl, `const primary = [];`) {
 		t.Error("dashboard essentials still duplicate author, priority, or blocking from the header")
 	}
 	if strings.Contains(tmpl, "А пока:") {
@@ -520,6 +568,12 @@ func TestDefaultTemplate_HumanFacingDashboardLabelsStayActionable(t *testing.T) 
 		`ru ? "Нужно действие"`,
 		`position:absolute; right:18px; bottom:18px`,
 		`freshnessOpen`,
+		`operational.timeline`,
+		`Где мы сейчас`,
+		`Отсутствие отчёта означает «неизвестно»`,
+		`Сейчас в работе: `,
+		`По протоколу открытых обязательств нет`,
+		`Open the full thread`,
 	} {
 		if !strings.Contains(tmpl, want) {
 			t.Errorf("dashboard is missing human-facing copy/behavior %q", want)
@@ -542,10 +596,90 @@ func TestDefaultTemplate_HumanFacingDashboardLabelsStayActionable(t *testing.T) 
 			t.Errorf("dashboard still carries noisy or ambiguous copy %q", removed)
 		}
 	}
-	threadMeta := strings.Index(tmpl, `>{{ tvMeta }}</div>`)
+	threadMeta := strings.Index(tmpl, `{{ tvParticipantsAria }}`)
 	threadTitle := strings.Index(tmpl, `>{{ tvTitle }}</h2>`)
 	if threadMeta < 0 || threadTitle < 0 || threadMeta > threadTitle {
 		t.Error("thread participants and space are not rendered above the thread title")
+	}
+}
+
+func TestDefaultTemplate_ThreadCardsShareRhythmAndOpenByTitle(t *testing.T) {
+	t.Parallel()
+	tmpl := string(DefaultTemplate())
+
+	for _, want := range []string{
+		`--space-card-tags-to-author: 16px`,
+		`margin-bottom:var(--space-card-tags-to-author)`,
+		`margin:0 0 var(--space-card-author-to-title)`,
+		`margin:0 0 var(--space-card-title-to-content)`,
+		`onClick="{{ o.openDocument }}"`,
+		`{{ o.title }}`,
+		`const title = artifact.title || o.id`,
+		`padding:18px 20px`,
+		`[].concat(d.inbox || [], d.outbox || [], d.archive || [])`,
+		`const threadArtifact = (d.threadViews || [])`,
+		`|| threadArtifact`,
+		`missingTitle: it.title ||`,
+	} {
+		if !strings.Contains(tmpl, want) {
+			t.Errorf("thread cards are missing shared rhythm/title interaction %q", want)
+		}
+	}
+	if strings.Contains(tmpl, `>{{ claimedLabel }}`) || strings.Contains(tmpl, `>{{ e.claimLabel }}`) {
+		t.Fatal("matching claimed_state still renders as a duplicate timeline status")
+	}
+}
+
+func TestTimelineArtifactCardOpensDocumentFromWholeCard(t *testing.T) {
+	t.Parallel()
+	source, err := os.ReadFile("../../web/design-source/TimelineArtifactCard.dc.html")
+	if err != nil {
+		t.Fatalf("read TimelineArtifactCard: %v", err)
+	}
+	card := string(source)
+	for _, want := range []string{
+		`data-timeline-artifact-card`,
+		`onClick="{{ openDocument }}"`,
+		`aria-label="{{ openLabel }}"`,
+		`Открыть документ: `,
+		`width:100%`,
+		`cursor:pointer`,
+	} {
+		if !strings.Contains(card, want) {
+			t.Errorf("timeline artifact card is missing whole-card interaction %q", want)
+		}
+	}
+	if got := strings.Count(card, `<button`); got != 1 {
+		t.Fatalf("timeline artifact card has %d buttons, want only the whole-card button", got)
+	}
+	for _, removed := range []string{`Открыть в разделе «Обмен»`, `exchangeLabel`, `openExchange`, `documentLabel`} {
+		if strings.Contains(card, removed) {
+			t.Errorf("timeline artifact card still carries removed action %q", removed)
+		}
+	}
+}
+
+func TestDefaultTemplate_ContractRiskNamesActorsVersionsAndSuccessor(t *testing.T) {
+	t.Parallel()
+	tmpl := string(DefaultTemplate())
+	for _, want := range []string{
+		`Нужно обновить одну линию потребителя`,
+		`Потребитель`,
+		`Сейчас использует`,
+		`Поставщик публикует`,
+		`Дата снятия`,
+		`Перейти к контракту `,
+		`n.openContract`,
+		`n.contractAria`,
+	} {
+		if !strings.Contains(tmpl, want) {
+			t.Errorf("contract risk/version UI is missing %q", want)
+		}
+	}
+	for _, removed := range []string{`cdRiskTitle`, `cdRiskText`} {
+		if strings.Contains(tmpl, removed) {
+			t.Errorf("contract risk UI still carries the unstructured field %q", removed)
+		}
 	}
 }
 

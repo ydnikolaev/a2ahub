@@ -266,21 +266,13 @@ func slaFromManifest(m space.Manifest) time.Duration {
 }
 
 func toItem(fa foldedArtifact, syncStale, pendingMerge bool) Item {
-	latestEventID := ""
-	var latestEventAt time.Time
-	for _, event := range fa.Events {
-		at := fa.EventAt[event.ULID]
-		if at.After(latestEventAt) || (at.Equal(latestEventAt) && event.ULID > latestEventID) {
-			latestEventAt = at
-			latestEventID = event.ULID
-		}
-	}
 	return Item{
 		Space: fa.SpaceID, ID: fa.Env.ID, Type: fa.Env.Type, Title: fa.Env.Title,
 		From: fa.Env.From, To: normalizeTo(fa.Env.To), State: string(fa.Result.State),
 		Priority: fa.Env.Priority, Blocking: fa.Env.Blocking, NeededBy: fa.Env.NeededBy,
 		Thread: fa.Env.Thread, PendingMerge: pendingMerge, SyncStale: syncStale,
-		LatestEventAt: fa.LatestEventAt, LatestEventID: latestEventID,
+		CreatedAt: parseTimeField(fa.Env.Created), CreatedSeq: fa.Seq, CreatedOrderKnown: fa.OrderKnown,
+		LatestEventAt: fa.LatestEventAt, LatestEventSeq: fa.LatestEventSeq, LatestEventID: fa.LatestEventID,
 		Description: bodySummary(fa.Raw, 240),
 	}
 }
@@ -348,17 +340,63 @@ func sortItems(items []Item) {
 // advances the per-system read cursor (spec 07 "what to do" #2: "inbox
 // ... advances the read cursor on run" — unqualified by the flag).
 func (s *Store) Inbox(ctx context.Context, actionableOnly bool) ([]Item, error) {
-	return s.inbox(ctx, actionableOnly, true, false)
+	return s.inbox(ctx, actionableOnly, true, false, false)
 }
 
 // InboxSnapshot computes the same read model as Inbox without advancing the
 // human read cursor. Passive presentation surfaces such as local HTML use
 // this method; OP-207's explicit inbox read remains the only cursor writer.
 func (s *Store) InboxSnapshot(ctx context.Context, actionableOnly bool) ([]Item, error) {
-	return s.inbox(ctx, actionableOnly, false, true)
+	return s.inbox(ctx, actionableOnly, false, true, false)
 }
 
-func (s *Store) inbox(ctx context.Context, actionableOnly, advance, annotate bool) ([]Item, error) {
+// OpenInboxSnapshot returns the passive inbox projection used by surfaces
+// that promise to show exchanges still in progress. The CLI's ordinary inbox
+// deliberately includes every artifact addressed to this system, including
+// terminal history; presentation code must not silently relabel that broader
+// query as "in flight".
+func (s *Store) OpenInboxSnapshot(ctx context.Context) ([]Item, error) {
+	return s.inbox(ctx, false, false, true, true)
+}
+
+// ExchangeArchiveSnapshot returns every terminal artifact that belongs to the
+// current system's exchange: documents it authored or documents addressed to
+// it. Active Inbox/Outbox keep their operational meaning, while this explicit
+// archive makes the durable Git record discoverable instead of letting a
+// completed conversation appear to vanish from the dashboard.
+func (s *Store) ExchangeArchiveSnapshot(ctx context.Context) ([]Item, error) {
+	idx, _, err := s.index(ctx)
+	if err != nil {
+		return nil, err
+	}
+	prior, err := loadCursor(s.cursorPath())
+	if err != nil {
+		return nil, err
+	}
+	var out []Item
+	for spaceID, artifacts := range idx {
+		stale := s.spaceSyncStale(spaceID)
+		markers, _ := ReadMarkers(s.cacheDir, spaceID)
+		pending := markerSet(markers)
+		manifest := s.manifestFor(spaceID)
+		for _, fa := range artifacts {
+			if exchangeActive(fa, s.ownSystem, manifest) {
+				continue
+			}
+			if !ownedByMe(fa, s.ownSystem) && !addressedToMe(fa, s.ownSystem) {
+				continue
+			}
+			item := toItem(fa, stale, pending[fa.Env.ID])
+			_, seen := prior.Items[fa.Env.ID]
+			item.New = !seen
+			out = append(out, item)
+		}
+	}
+	sortItems(out)
+	return out, nil
+}
+
+func (s *Store) inbox(ctx context.Context, actionableOnly, advance, annotate, exchangeActiveOnly bool) ([]Item, error) {
 	idx, _, err := s.index(ctx)
 	if err != nil {
 		return nil, err
@@ -370,6 +408,7 @@ func (s *Store) inbox(ctx context.Context, actionableOnly, advance, annotate boo
 
 	var out []Item
 	for spaceID, artifacts := range idx {
+		manifest := s.manifestFor(spaceID)
 		stale := s.spaceSyncStale(spaceID)
 		markers, _ := ReadMarkers(s.cacheDir, spaceID)
 		pending := markerSet(markers)
@@ -378,6 +417,9 @@ func (s *Store) inbox(ctx context.Context, actionableOnly, advance, annotate boo
 			yourMove = yourMoveByArtifact(artifacts, s.manifestFor(spaceID), s.ownSystem)
 		}
 		for _, fa := range artifacts {
+			if exchangeActiveOnly && !exchangeActive(fa, s.ownSystem, manifest) {
+				continue
+			}
 			var reasons []string
 			if actionableOnly {
 				reasons = actionableReasons(fa, s.ownSystem)
@@ -432,17 +474,17 @@ func (s *Store) advanceCursor(idx map[string][]foldedArtifact) error {
 // (only `a2a inbox` does, per OP-207's own wording) — it reads whatever
 // cursor snapshot the last inbox run left behind.
 func (s *Store) Outbox(ctx context.Context, attentionOnly bool) ([]Item, error) {
-	return s.outbox(ctx, attentionOnly, false)
+	return s.outbox(ctx, attentionOnly, false, false)
 }
 
 // OutboxSnapshot returns every own open item without consuming cursor state,
 // annotated with all current attention reasons and canonical move ownership
 // for passive presentation surfaces such as the local dashboard.
 func (s *Store) OutboxSnapshot(ctx context.Context) ([]Item, error) {
-	return s.outbox(ctx, false, true)
+	return s.outbox(ctx, false, true, true)
 }
 
-func (s *Store) outbox(ctx context.Context, attentionOnly, annotate bool) ([]Item, error) {
+func (s *Store) outbox(ctx context.Context, attentionOnly, annotate, exchangeActiveOnly bool) ([]Item, error) {
 	idx, _, err := s.index(ctx)
 	if err != nil {
 		return nil, err
@@ -454,6 +496,7 @@ func (s *Store) outbox(ctx context.Context, attentionOnly, annotate bool) ([]Ite
 
 	var out []Item
 	for spaceID, artifacts := range idx {
+		manifest := s.manifestFor(spaceID)
 		stale := s.spaceSyncStale(spaceID)
 		markers, _ := ReadMarkers(s.cacheDir, spaceID)
 		pending := markerSet(markers)
@@ -464,6 +507,9 @@ func (s *Store) outbox(ctx context.Context, attentionOnly, annotate bool) ([]Ite
 		}
 		for _, fa := range artifacts {
 			if !ownedByMe(fa, s.ownSystem) {
+				continue
+			}
+			if exchangeActiveOnly && !exchangeActive(fa, s.ownSystem, manifest) {
 				continue
 			}
 			var reasons []string
@@ -579,9 +625,15 @@ func (s *Store) buildShowResult(fa foldedArtifact, spaceID string, all []foldedA
 			Actor: evidence.Actor.Name, ActorSystem: evidence.Actor.System,
 			ActorModel: evidence.Actor.Model, ActorSession: evidence.Actor.Session,
 			ProducedBy: evidence.Producer, Consistency: receiptMismatchFor(fa, e.ULID), At: fa.EventAt[e.ULID],
+			Note: fa.EventNotes[e.ULID],
 		})
 	}
-	sort.Slice(events, func(i, j int) bool { return events[i].At.Before(events[j].At) })
+	sort.Slice(events, func(i, j int) bool {
+		if !events[i].At.Equal(events[j].At) {
+			return events[i].At.Before(events[j].At)
+		}
+		return events[i].ULID < events[j].ULID
+	})
 
 	var flags []string
 	for _, f := range fa.Result.Flags {
@@ -659,9 +711,9 @@ func resolveRefFact(r refEntry, byID map[string]foldedArtifact) RefFact {
 
 // Thread computes `a2a thread <thread-id>` (OP-210): every artifact
 // across every connected space whose envelope `thread` field matches,
-// ordered by creation (earliest first) via the same commit-order fold
-// already resolved (LatestEventAt is used as the ordering proxy — the
-// entry event's own timestamp).
+// ordered by creation (earliest first). Within one readable space, Git commit
+// sequence is the primary truth; the declared creation timestamp is the
+// explicit degradation for legacy cross-space or unreadable-history calls.
 func (s *Store) Thread(ctx context.Context, threadID string) ([]Item, error) {
 	idx, _, err := s.index(ctx)
 	if err != nil {
@@ -675,7 +727,30 @@ func (s *Store) Thread(ctx context.Context, threadID string) ([]Item, error) {
 			}
 		}
 	}
-	sort.Slice(matched, func(i, j int) bool { return matched[i].LatestEventAt.Before(matched[j].LatestEventAt) })
+	useCommittedOrder := len(matched) > 0
+	committedSpace := ""
+	for _, fa := range matched {
+		if !fa.OrderKnown || (committedSpace != "" && fa.SpaceID != committedSpace) {
+			useCommittedOrder = false
+			break
+		}
+		committedSpace = fa.SpaceID
+	}
+	sort.Slice(matched, func(i, j int) bool {
+		if useCommittedOrder && matched[i].Seq != matched[j].Seq {
+			return matched[i].Seq < matched[j].Seq
+		}
+		at, bt := parseTimeField(matched[i].Env.Created), parseTimeField(matched[j].Env.Created)
+		if !at.Equal(bt) {
+			return at.Before(bt)
+		}
+		if !useCommittedOrder {
+			if matched[i].SpaceID != matched[j].SpaceID {
+				return matched[i].SpaceID < matched[j].SpaceID
+			}
+		}
+		return matched[i].Env.ID < matched[j].Env.ID
+	})
 
 	out := make([]Item, 0, len(matched))
 	for _, fa := range matched {

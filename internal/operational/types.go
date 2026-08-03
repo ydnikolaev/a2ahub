@@ -119,6 +119,7 @@ type Work struct {
 	Summary             string                 `json:"summary"`
 	Actor               Actor                  `json:"actor"`
 	Freshness           Freshness              `json:"freshness"`
+	Current             bool                   `json:"current"`
 	ReportedAt          *time.Time             `json:"reported_at,omitempty"`
 	ObservedAt          *time.Time             `json:"observed_at,omitempty"`
 	ValidUntil          *time.Time             `json:"valid_until,omitempty"`
