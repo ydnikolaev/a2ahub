@@ -26,7 +26,7 @@ func (s *Store) StatuslineRefreshNeeded() bool {
 			return true
 		}
 	}
-	for _, sm := range s.spaces {
+	for _, sm := range s.spaceMirrorsSnapshot() {
 		age, synced := mirrorSyncAge(s.now(), sm.Dir)
 		if !synced || age > s.ttl {
 			return true

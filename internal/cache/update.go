@@ -139,7 +139,7 @@ func (s *Store) UpdateDetail() release.DetailCache {
 // pins. floorSpace names the pinning space (the T4 REQUIRED-grade message's
 // remedy hint). No manifests, or none with a pin, returns ("", "").
 func (s *Store) updateFloor() (floor, floorSpace string) {
-	for _, sm := range s.spaces {
+	for _, sm := range s.spaceMirrorsSnapshot() {
 		pin := sm.Manifest.MinBinaryVersion
 		if pin == "" {
 			continue

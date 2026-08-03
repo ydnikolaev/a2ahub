@@ -52,7 +52,7 @@ type StatuslineResult struct {
 func (s *Store) Statusline(ctx context.Context) (StatuslineResult, error) {
 	n := s.UpdateNotice()
 
-	if len(s.spaces) == 0 {
+	if len(s.spaceMirrorsSnapshot()) == 0 {
 		if n.Grade != release.GradeNone {
 			return finishStatusline(StatuslineResult{Update: n.Segment}, SeverityQuiet), nil
 		}

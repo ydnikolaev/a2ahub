@@ -217,6 +217,25 @@ func TestOperationalThreadFromViewKeepsProtocolSeparateFromMilestone(t *testing.
 	}
 }
 
+func TestOperationalThreadFromViewDoesNotInventEscapeHatchObligation(t *testing.T) {
+	t.Parallel()
+	view := ThreadResult{
+		Space: "getvisa", Thread: "thread:axon-20260728-163w",
+		Opener:       ThreadOpener{Title: "Welcome, Seomatrix!"},
+		Participants: []string{"axon", "seomatrix"},
+		OpenItems: []OpenItem{{
+			ID: "XA-axon-20260728-343t", Type: "announcement", State: "published",
+			NextActions: []NextAction{{Transition: "supersede", By: []string{"axon"}}},
+			WaitingOn: []string{}, YourMove: false,
+		}},
+	}
+
+	thread := operationalThreadFromView(view, nil)
+	if !thread.Settled || thread.OpenCount != 0 || len(thread.WaitingOn) != 0 || thread.YourMove || len(thread.BlockingBy) != 0 {
+		t.Fatalf("escape-hatch-only member invented a protocol obligation: %#v", thread)
+	}
+}
+
 func TestOperationalThreadFromViewSkipsStatusCheckpointPublishMilestone(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
