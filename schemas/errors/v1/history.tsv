@@ -1,15 +1,17 @@
 # code	status	owner	meaning	introduced	retired
+SCH-010	live	operational-confidence/P2	declared numeric or string length bound is violated	0889d54	-
+SCH-011	live	operational-confidence/P2	unique array contains a duplicate entry	0889d54	-
 REF-009	live	thread-integrity	resolvable parent and child must share a thread	dbc0815	-
 REF-010	live	thread-integrity	unknown thread may be minted only by the artifact's own system	dbc0815	-
 REF-011	live	linkage-immutability	committed thread and parent linkage cannot change	e0a8375	-
 REF-012	live	thread-integrity	supersession crossing threads is warning evidence	dbc0815	-
-REF-014	reserved	operational-confidence/P5	declared contract sidecar path or role is invalid	32a6d05	-
+REF-014	live	operational-confidence/P5	declared contract sidecar path or role is invalid	32a6d05	-
 REF-015	reserved	operational-confidence/P6	materialization destination or plan precondition is invalid	32a6d05	-
 REF-016	reserved	operational-confidence/P2	work subject or waiting system is invalid in checkpoint context	32a6d05	-
 LFC-003	live	operational-confidence/P1	applicable first-party event is missing its producer evaluation receipt	32a6d05	-
 POL-011	tombstone	retire-version-guard	retire refused because another version remained published	269ae4d	1c8a959
 POL-012	live	operational-confidence/P1	first-party producer stamp is absent or invalid	32a6d05	-
-POL-013	reserved	operational-confidence/P5	declared contract carried set is invalid	32a6d05	-
+POL-013	live	operational-confidence/P5	declared contract carried set is invalid	32a6d05	-
 POL-014	reserved	operational-confidence/P6	declared conformance suite contradicts itself	32a6d05	-
 POL-015	reserved	operational-confidence/P2	work checkpoint semantics are invalid	32a6d05	-
 POL-016	live	operational-confidence/P1	first-party actor model or session is unsafe or invalid	32a6d05	-

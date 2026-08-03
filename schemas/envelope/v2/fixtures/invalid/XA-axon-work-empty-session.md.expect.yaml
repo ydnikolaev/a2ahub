@@ -1,0 +1,2 @@
+code: SCH-009
+note: "work conditionally requires a non-empty `actor.session`."

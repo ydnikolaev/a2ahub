@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "envelope/v2/announcement.schema.json",
+  "title": "Envelope: announcement (v2)",
+  "description": "An announcement. Status announcements may carry a closed durable work checkpoint without importing machine-local operation state.",
+  "allOf": [
+    { "$ref": "base.schema.json" },
+    {
+      "if": {
+        "properties": { "category": { "const": "deprecation" } },
+        "required": ["category"]
+      },
+      "then": { "required": ["deprecates"] }
+    },
+    {
+      "if": { "required": ["work"] },
+      "then": {
+        "properties": {
+          "category": { "const": "status" },
+          "blocking": { "const": false },
+          "ack_requested": { "const": false },
+          "actor": {
+            "type": "object",
+            "properties": {
+              "session": { "type": "string", "minLength": 1 }
+            },
+            "required": ["session"]
+          },
+          "deprecates": false,
+          "period": false,
+          "valid_until": false
+        },
+        "required": ["category", "blocking", "ack_requested"]
+      }
+    }
+  ],
+  "type": "object",
+  "properties": {
+    "type": { "const": "announcement" },
+    "id": { "pattern": "^XA-" },
+    "category": {
+      "type": "string",
+      "enum": ["release", "deprecation", "migration", "incident", "notice", "status"]
+    },
+    "ack_requested": { "type": "boolean" },
+    "deprecates": { "type": "string", "pattern": "^XC-.+@[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "period": { "type": "string" },
+    "work": { "$ref": "#/$defs/workCheckpoint" }
+  },
+  "required": ["category"],
+  "patternProperties": { "^x_": true },
+  "$defs": {
+    "workCheckpoint": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^work:[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "semantic_sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["planning", "implementing", "testing", "reviewing", "waiting", "paused", "finished"]
+        },
+        "subject_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "reported_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "valid_until": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "waiting_on": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/waitingOn" }
+        }
+      },
+      "required": ["id", "semantic_sequence", "mode", "subject_ref", "summary", "reported_at"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "mode": { "const": "finished" } },
+            "required": ["mode"]
+          },
+          "then": {
+            "properties": { "valid_until": false }
+          },
+          "else": {
+            "required": ["valid_until"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "mode": { "const": "waiting" } },
+            "required": ["mode"]
+          },
+          "then": {
+            "required": ["waiting_on"]
+          },
+          "else": {
+            "properties": { "waiting_on": false }
+          }
+        }
+      ]
+    },
+    "waitingOn": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["system", "human", "tool", "timer", "external"]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 160
+        }
+      },
+      "required": ["kind", "id"],
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

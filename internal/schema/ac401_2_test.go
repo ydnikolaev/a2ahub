@@ -88,7 +88,7 @@ func TestAC401_2_FixtureRegistryClosure(t *testing.T) {
 		t.Fatalf("LoadRegistry: %v", err)
 	}
 
-	allSidecars, err := filepath.Glob(filepath.Join(corpusRoot, "*/v1/fixtures/invalid/*.expect.yaml"))
+	allSidecars, err := filepath.Glob(filepath.Join(corpusRoot, "*/v*/fixtures/invalid/*.expect.yaml"))
 	if err != nil {
 		t.Fatalf("glob sidecars: %v", err)
 	}

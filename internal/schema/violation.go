@@ -43,10 +43,13 @@ const keywordFalseSchema = "falseSchema"
 // extractFieldViolations walks err's *jsonschema.ValidationError leaf
 // tree into a flat []FieldViolation, and applies the BaseEnvelopeFields
 // annotation-propagation workaround (see that doc comment): a
-// "falseSchema" (additionalProperties/unevaluatedProperties) leaf whose
-// flagged field is a KNOWN base-envelope field name is dropped as
-// cascade noise from a sibling allOf/$ref branch failure, never a
-// genuine "field not permitted" violation.
+// "falseSchema" leaf produced by the concrete schema's root
+// unevaluatedProperties whose flagged field is a KNOWN base-envelope field
+// name is dropped as cascade noise from a sibling allOf/$ref branch failure.
+// An explicit `properties.<field>: false` constraint is never suppressed:
+// versioned concrete schemas use that shape to forbid a base field in a
+// conditional profile (for example work announcements forbid top-level
+// valid_until).
 //
 // baseProps may be nil (event/manifest/consumes: no allOf+$ref
 // composition, so there is nothing to suppress).
@@ -98,12 +101,16 @@ func extractFieldViolations(err error, baseProps map[string]bool) []FieldViolati
 			Keyword:       classifyKeyword(leaf.ErrorKind),
 			SchemaPointer: ptr,
 		}
-		if fv.Keyword == keywordFalseSchema && baseProps[lastSegment(fv.Path)] {
+		if fv.Keyword == keywordFalseSchema && baseProps[lastSegment(fv.Path)] && !explicitPropertyConstraint(ptr) {
 			continue
 		}
 		out = append(out, fv)
 	}
 	return out
+}
+
+func explicitPropertyConstraint(schemaPointer string) bool {
+	return strings.Contains(schemaPointer, "/properties/")
 }
 
 func collectLeaves(ve *jsonschema.ValidationError, out *[]*jsonschema.ValidationError) {
@@ -140,6 +147,14 @@ func classifyKeyword(k jsonschema.ErrorKind) string {
 		return "minItems"
 	case *kind.MinLength:
 		return "minLength"
+	case *kind.MaxLength:
+		return "maxLength"
+	case *kind.Minimum:
+		return "minimum"
+	case *kind.Maximum:
+		return "maximum"
+	case *kind.UniqueItems:
+		return "uniqueItems"
 	case *kind.Format:
 		return "format"
 	default:

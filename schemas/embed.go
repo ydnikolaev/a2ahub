@@ -35,7 +35,7 @@ import "embed"
 //go:embed known-issues/v1/*.schema.json
 
 // FS is the embedded, fixture-free slice of the schemas/ corpus: envelope/v1,
-// the envelope/v2 base + contract descriptor, event/v1 and event/v2,
+// the envelope/v2 base + contract descriptor + work announcement, event/v1 and event/v2,
 // manifest and consumes schemas, the error-code registry data file, and the
 // versioned envelope templates, plus (P25) the feedback family's 2 schemas + its own authoring template +
 // its own feedback-local FB-### code table (schemas/feedback/v1/, I1: not

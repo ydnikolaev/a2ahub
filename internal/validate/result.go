@@ -11,6 +11,10 @@ const (
 	// referential + authz + lifecycle legality of the accompanying
 	// events.
 	V2 InvocationPoint = "V2"
+	// V3 is the merge-gate invocation point. It consumes the same pure
+	// validators as V2, but its caller supplies the candidate assembled from
+	// the complete base-to-head repository diff (including deleted paths).
+	V3 InvocationPoint = "V3"
 )
 
 // Class is one of §5.5's four validation classes. There is no separate
@@ -139,10 +143,10 @@ func (v Violation) isReject() bool {
 	return v.Severity != SeverityWarning
 }
 
-// Result is the JSON output shape shared by ValidateDraft (V1) and
-// ValidateForSubmit (V2) — spec 03 §7. Both invocation points return this
-// same shape so a caller gets "identical results everywhere" for shared
-// (schema-class) violations (AC-201.2).
+// Result is the JSON output shape shared by ValidateDraft (V1),
+// ValidateForSubmit (V2) and contextual merge-gate validators (V3) — spec 03
+// §7. Every invocation point returns this same shape so a caller gets
+// "identical results everywhere" for shared violations (AC-201.2).
 type Result struct {
 	// Valid is true iff zero Reject-severity violations were found.
 	Valid bool `json:"valid"`
