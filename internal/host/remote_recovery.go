@@ -156,7 +156,7 @@ func (h *GitHubHost) ReadRemoteRecoveryCommit(
 			return Repo{}, "", "", "", nil, false, recoveryGitError(op, "read changed blob", blobResult.err)
 		}
 		digest := sha256.Sum256(blobResult.stdout)
-		digests[change.path] = hex.EncodeToString(digest[:])
+		digests[change.path] = "sha256:" + hex.EncodeToString(digest[:])
 		totalBytes += size
 	}
 
