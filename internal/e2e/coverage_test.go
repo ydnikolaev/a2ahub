@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/internal/cli"
 )
 
 // TestE2ECoverageParity is spec 26 §1.3/§8 AC-1's self-enforcing gate: (a)
@@ -55,13 +57,13 @@ func TestE2ECoverageParity(t *testing.T) {
 	for _, e := range coverageManifest {
 		kind, err := e.evidenceKind()
 		if err != nil {
-			t.Errorf("verb %q: %v", e.Verb, err)
+			t.Errorf("command %q: %v", e.target(), err)
 			continue
 		}
 		switch kind {
 		case "txtar":
-			if err := resolveTxtarEntry(t3Dir, e.Txtar, e.Verb); err != nil {
-				t.Errorf("verb %q: %v", e.Verb, err)
+			if err := resolveTxtarEntry(t3Dir, e.Txtar, e.target()); err != nil {
+				t.Errorf("command %q: %v", e.target(), err)
 			}
 		case "goTest":
 			if _, ok := goTestCache[e.GoTest]; !ok {
@@ -72,6 +74,83 @@ func TestE2ECoverageParity(t *testing.T) {
 			}
 		case "skip":
 			// evidenceKind already proved Skip is non-empty.
+		}
+	}
+}
+
+// TestE2EWorkActionCoverage closes the one-family catalog seam: the command
+// catalog has a `work` row, while the transport dispatches a closed action
+// enum. Every action must have non-skip behavior evidence and stale action
+// rows fail in the reverse direction.
+func TestE2EWorkActionCoverage(t *testing.T) {
+	t.Parallel()
+
+	const semanticEvidence = "cmd/a2a.TestWorkProductionWiringMutations"
+	want := cli.WorkSubcommands()
+	covered := make(map[string]bool, len(want))
+	valid := make(map[string]bool, len(want))
+	for _, action := range want {
+		valid[action] = true
+	}
+	for _, entry := range coverageManifest {
+		if entry.Verb != "work" || entry.Action == "" {
+			continue
+		}
+		if !valid[entry.Action] {
+			t.Errorf("stale work action coverage row %q", entry.target())
+			continue
+		}
+		kind, err := entry.evidenceKind()
+		if err != nil {
+			t.Errorf("work action %q: %v", entry.Action, err)
+			continue
+		}
+		if kind == "skip" {
+			t.Errorf("work action %q has a permanent skip; executable behavior evidence is required", entry.Action)
+			continue
+		}
+		if entry.Action != "status" && (kind != "goTest" || entry.GoTest != semanticEvidence) {
+			t.Errorf("work mutation %q must resolve to exact production-wiring integration evidence %q; direct fake backends and usage-only txtar evidence are insufficient", entry.Action, semanticEvidence)
+			continue
+		}
+		covered[entry.Action] = true
+	}
+	for _, action := range want {
+		if !covered[action] {
+			t.Errorf("work action %q has no executable behavior coverage row", action)
+		}
+	}
+}
+
+// TestE2EContractP6OperationCoverage prevents parser-usage probes from being
+// reintroduced as evidence for operations that have successful production-
+// wiring coverage through the hermetic host rig.
+func TestE2EContractP6OperationCoverage(t *testing.T) {
+	t.Parallel()
+	const exactEvidence = "internal/e2e.TestHostLoopContractFamily"
+	want := map[string]bool{
+		"contract preflight":   false,
+		"contract materialize": false,
+		"contract check":       false,
+	}
+	for _, entry := range coverageManifest {
+		if _, tracked := want[entry.target()]; !tracked {
+			continue
+		}
+		kind, err := entry.evidenceKind()
+		if err != nil {
+			t.Errorf("%s: %v", entry.target(), err)
+			continue
+		}
+		if kind != "goTest" || entry.GoTest != exactEvidence {
+			t.Errorf("%s must resolve to successful production-wiring evidence %q; usage-only txtar evidence is insufficient", entry.target(), exactEvidence)
+			continue
+		}
+		want[entry.target()] = true
+	}
+	for target, covered := range want {
+		if !covered {
+			t.Errorf("%s has no exact successful production-wiring evidence", target)
 		}
 	}
 }

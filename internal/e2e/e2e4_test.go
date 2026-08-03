@@ -64,6 +64,7 @@ func testE2E4G2GateAndLinkedDeprecation(t *testing.T) {
 	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
 	hostCfg := e2eHostConfig("axon", fx.RemoteURL())
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), hostCfg, e2eActorResolver("agent", "bot"))
+	configureE2EContractP6(cmd, newE2EContractPublisher(t, funnel, mirrorDir, "axon", hostCfg))
 
 	// G1: first-ever publish (also gated, but not this test's assertion).
 	io, out, errOut := newIO()

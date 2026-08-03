@@ -211,8 +211,13 @@ func TestT3LifecycleTransitionCoverage(t *testing.T) {
 		mirrorDir, remote, fakeHost, funnel := newVerbFixture(t, "axon", true)
 		id := "XR-axon-satisfy-lc"
 		writeRequirementArtifact(t, mirrorDir, id, "axon", "beta")
+		// Both refs are real semantic prerequisites, not decorative text.
+		writeContractDescriptor(t, mirrorDir, "widget", "1.0.0")
+		writeResponseArtifact(t, mirrorDir, "XS-beta-20260721-p1p1", id)
 		writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "publish", "axon")
 		writeLifecycleEvent(t, mirrorDir, "beta", 1, id, "acknowledge", "beta")
+		writeLifecycleEventVersion(t, mirrorDir, "axon", 2, "XC-axon-widget", "publish", "axon", "1.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 3, "XS-beta-20260721-p1p1", "verify", "axon")
 
 		cmd := cli.NewSatisfyCommand(funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", remote), e2eActorResolver("agent", "bot"))
 		mustRunLegal(t, "satisfy", cmd, []string{"--refs", "XC-axon-widget@1.0.0,XS-beta-20260721-p1p1", id})

@@ -36,6 +36,7 @@ func TestT3ContractNewPublishDeprecate(t *testing.T) {
 
 	newCmd := cli.NewNewCommand(stagingDir, "axon", e2eActorResolver("agent", "bot"), nil)
 	cmd := cli.NewContractCommand(newCmd, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), hostCfg, e2eActorResolver("agent", "bot"))
+	configureE2EContractP6(cmd, newE2EContractPublisher(t, funnel, mirrorDir, "axon", hostCfg))
 
 	io, out, errOut := newIO()
 	if code := cmd.Run(context.Background(), []string{"new", "widget"}, io); code != 0 {
@@ -105,8 +106,10 @@ func TestT3ContractRetireCleanUngated(t *testing.T) {
 	}
 }
 
-// TestT3ContractDiff is OP-221's contract-diff clause: two committed
-// descriptor versions, real git history (fx.Clone gives a real repo).
+// TestT3ContractDiff is OP-221's contract-diff transport clause: the required
+// P6 inspection service reports a changed schema path and the CLI renders it.
+// Exact Git-history selection and tree comparison belong to the P6 space
+// integration suite; this older direct-construction test owns CLI composition.
 func TestT3ContractDiff(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
@@ -125,6 +128,7 @@ func TestT3ContractDiff(t *testing.T) {
 	fakeHost := host.NewFakeHost()
 	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
+	configureE2EContractP6(cmd, newE2EContractDiffService())
 
 	io, out, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{"diff", "XC-axon-diffable", "1.0.0", "1.1.0"}, io)
@@ -139,10 +143,10 @@ func TestT3ContractDiff(t *testing.T) {
 	}
 }
 
-// TestT3ContractVerifyExportLocal is OP-213: a matching local export exits
-// 0 (this phase's own copy of internal/cli's TestContractVerifyExportLocal
-// digest algorithm, used only to derive the EXPECTED digest — never to
-// self-validate cmd_contract.go's own computation).
+// TestT3ContractVerifyExportLocal is OP-213's transport result: the injected
+// P6 inspection service compares the local export with the recorded expected
+// digest and the CLI exits 0 for a match. Production repository lookup and
+// immutable-tree reconstruction are covered by the P6 space integration suite.
 func TestT3ContractVerifyExportLocal(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
@@ -159,6 +163,7 @@ func TestT3ContractVerifyExportLocal(t *testing.T) {
 	fakeHost := host.NewFakeHost()
 	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
+	configureE2EContractP6(cmd, newE2EContractVerifyService(t, digest))
 
 	io, out, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{"verify-export", "--local", localPath, "XC-axon-exportable"}, io)

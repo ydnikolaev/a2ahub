@@ -139,6 +139,31 @@ func writeRequirementArtifact(t *testing.T, mirrorDir, id, from, to string) {
 	writeMirrorFile(t, mirrorDir, from+"/requires/"+id+".md", content)
 }
 
+// writeResponseArtifact seeds the response proof consumed by satisfy. Its
+// parent must be the requirement being satisfied; a response-shaped ID in
+// --refs is not proof unless the canonical artifact resolves and links back.
+func writeResponseArtifact(t *testing.T, mirrorDir, id, parent string) {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: " + id + "\n" +
+		"type: response\n" +
+		"title: delivered\n" +
+		"space: fixture-space\n" +
+		"from: beta\n" +
+		"to: [axon]\n" +
+		"thread: " + e2eFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"parent: " + parent + "\n" +
+		"result: delivered\n" +
+		"classification: internal\n" +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, "beta/exchanges/"+id+".md", content)
+}
+
 // writeHandoffArtifact seeds a committed `handoff` under axon's own
 // section, from axon to `to`.
 func writeHandoffArtifact(t *testing.T, mirrorDir, id, to string) {
@@ -285,6 +310,14 @@ func writeDeprecationAnnouncement(t *testing.T, mirrorDir, id, deprecates, sunse
 // internal/cli/cmd_lifecycle_test.go's own documented convention).
 func writeLifecycleEvent(t *testing.T, mirrorDir, actingSystem string, seq int, subject, transition, actorSystem string) {
 	t.Helper()
+	writeLifecycleEventVersion(t, mirrorDir, actingSystem, seq, subject, transition, actorSystem, "")
+}
+
+// writeLifecycleEventVersion is the version-bearing form required for a
+// contract publication proof. Ordinary lifecycle fixtures use the wrapper
+// above so version cannot accidentally leak onto unrelated event kinds.
+func writeLifecycleEventVersion(t *testing.T, mirrorDir, actingSystem string, seq int, subject, transition, actorSystem, version string) {
+	t.Helper()
 	id, err := artifact.MintULIDAt(time.Date(2020, 1, 1, 0, 0, seq, 0, time.UTC), rand.Reader)
 	if err != nil {
 		t.Fatalf("writeLifecycleEvent: mint ulid: %v", err)
@@ -293,6 +326,9 @@ func writeLifecycleEvent(t *testing.T, mirrorDir, actingSystem string, seq int, 
 		"schema: event/v1\nevent: %s\nspace: fixture-space\nsubject: %s\ntransition: %s\nactor: {kind: agent, name: bot, system: %s}\nat: 2020-01-01T00:00:00Z\n",
 		id.String(), subject, transition, actorSystem,
 	)
+	if version != "" {
+		content += "version: " + version + "\n"
+	}
 	writeMirrorFile(t, mirrorDir, actingSystem+"/events/2020/"+id.String()+".yaml", content)
 }
 

@@ -49,11 +49,12 @@ import (
 // has NO respond/verify transition — `satisfy` is a requirement's sole
 // closing move, direct from `acknowledged`. So "response"/"verify" (steps
 // 5b/6) run against a SEPARATE, real `question` exchange (axon -> gamma,
-// exercising the shipped respond/verify verbs exactly as P8 ships them),
-// referenced by axon's final `satisfy` on its ORIGINAL requirement
-// (step 7) alongside gamma's newly-published contract version — this is
-// the closest real mapping the ACTUALLY SHIPPED OP-211 verb set supports
-// for every one of the vision's 7 named steps, not an invented shortcut.
+// exercising the shipped respond/verify verbs exactly as P8 ships them).
+// Satisfy now resolves its response proof canonically and requires that
+// response's parent to be the requirement itself, so the question response
+// cannot truthfully double as that proof. Step 7 therefore seeds a distinct
+// verified response linked to the original requirement, matching the same
+// canonical proof shape exercised by the lifecycle suite.
 func TestE2E1Cascade(t *testing.T) {
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
 	origin := fx.RemoteURL()
@@ -134,7 +135,9 @@ func TestE2E1Cascade(t *testing.T) {
 	// --- step 5: contract version (gamma publishes) ----------------------
 	writeContractDescriptorFor(t, gammaMirror, "gamma", "widget", "0.0.0")
 	writeContractSchemaFixture(t, gammaMirror, "gamma", "widget")
-	contractCmd := cli.NewContractCommand(nil, funnel, gammaMirror, "fixture-space", "gamma", e2eManifest(), e2eHostConfig("gamma", origin), e2eActorResolver("agent", "bot"))
+	contractHostConfig := e2eHostConfig("gamma", origin)
+	contractCmd := cli.NewContractCommand(nil, funnel, gammaMirror, "fixture-space", "gamma", e2eManifest(), contractHostConfig, e2eActorResolver("agent", "bot"))
+	configureE2EContractP6(contractCmd, newE2EContractPublisher(t, funnel, gammaMirror, "gamma", contractHostConfig))
 	io, out, errOut := newIO()
 	if code := contractCmd.Run(context.Background(), []string{"publish", "--version", "1.0.0", "XC-gamma-widget"}, io); code != 0 {
 		t.Fatalf("contract publish: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
@@ -162,9 +165,21 @@ func TestE2E1Cascade(t *testing.T) {
 	assertShow(t, axonMirror, "fixture-space", qID, "closed")
 
 	// --- step 7: satisfy (axon folds its ORIGINAL requirement) -----------
+	// The shipped respond transition belongs to question/handoff state
+	// machines, while satisfy's proof response must parent the requirement.
+	// Persist that independent proof in the fixture's shared base before the
+	// satisfy write so both its resolver and its private-index commit see the
+	// same canonical history.
+	proofResponseID := "XS-beta-20260721-e2e1"
+	writeResponseArtifact(t, axonMirror, proofResponseID, reqID)
+	writeLifecycleEvent(t, axonMirror, "axon", 9, proofResponseID, "verify", "axon")
+	gitRun(t, axonMirror, "add", "beta/exchanges/"+proofResponseID+".md", "axon/events/2020")
+	gitRun(t, axonMirror, "commit", "-m", "fixture: record satisfy proof")
+	gitRun(t, axonMirror, "push", "origin", "main")
+
 	satisfyCmd := cli.NewSatisfyCommand(funnel, axonMirror, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", origin), e2eActorResolver("agent", "bot"))
 	io3, _, errOut3 := newIO()
-	if code := satisfyCmd.Run(context.Background(), []string{"--refs", "XC-gamma-widget@1.0.0," + responseID, reqID}, io3); code != 0 {
+	if code := satisfyCmd.Run(context.Background(), []string{"--refs", "XC-gamma-widget@1.0.0," + proofResponseID, reqID}, io3); code != 0 {
 		t.Fatalf("satisfy: code = %d, want 0; stderr=%s", code, errOut3.String())
 	}
 	mergeBranchToMain(t, axonMirror, lastOpenedBranch(fakeHost))
