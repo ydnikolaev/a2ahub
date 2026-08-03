@@ -70,15 +70,54 @@ type WorkToolDeps struct {
 	ResolveActor WorkActorResolver
 	ProjectID    string
 	Space        string
+	ResolveSpace func(string) (WorkToolDeps, error)
+}
+
+type unavailableWorkBackend struct{}
+
+func (unavailableWorkBackend) Start(context.Context, workreport.StartInput) (workreport.OperationResult, error) {
+	return workreport.OperationResult{LocalState: workreport.LocalUnchanged}, fmt.Errorf("a2a_work: production work dependencies are unavailable")
+}
+func (unavailableWorkBackend) Checkpoint(context.Context, workreport.CheckpointInput) (workreport.OperationResult, error) {
+	return workreport.OperationResult{LocalState: workreport.LocalUnchanged}, fmt.Errorf("a2a_work: production work dependencies are unavailable")
+}
+func (unavailableWorkBackend) Wait(context.Context, workreport.WaitInput) (workreport.OperationResult, error) {
+	return workreport.OperationResult{LocalState: workreport.LocalUnchanged}, fmt.Errorf("a2a_work: production work dependencies are unavailable")
+}
+func (unavailableWorkBackend) Stop(context.Context, workreport.StopInput) (workreport.OperationResult, error) {
+	return workreport.OperationResult{LocalState: workreport.LocalUnchanged}, fmt.Errorf("a2a_work: production work dependencies are unavailable")
+}
+func (unavailableWorkBackend) Heartbeat(context.Context, workreport.HeartbeatInput) (workreport.OperationResult, error) {
+	return workreport.OperationResult{LocalState: workreport.LocalUnchanged}, fmt.Errorf("a2a_work: production work dependencies are unavailable")
+}
+func (unavailableWorkBackend) Resume(context.Context, workreport.ResumeInput) (workreport.OperationResult, error) {
+	return workreport.OperationResult{LocalState: workreport.LocalUnchanged}, fmt.Errorf("a2a_work: production work dependencies are unavailable")
+}
+func (unavailableWorkBackend) ResolveWork(context.Context, string, string, string, string) (workreport.WorkIdentityInput, error) {
+	return workreport.WorkIdentityInput{}, fmt.Errorf("a2a_work: production work dependencies are unavailable")
+}
+func (unavailableWorkBackend) ListWork(context.Context, string, string, string, bool) ([]workreport.Lease, error) {
+	return nil, fmt.Errorf("a2a_work: production work dependencies are unavailable")
+}
+
+func unavailableWorkToolDeps() WorkToolDeps {
+	backend := unavailableWorkBackend{}
+	return WorkToolDeps{
+		Starter: backend, Progressor: backend, Local: backend, Reader: backend,
+		ResolveActor: func(WorkActorInput) (workreport.Actor, error) {
+			return workreport.Actor{}, fmt.Errorf("a2a_work: production work dependencies are unavailable")
+		},
+		ProjectID: "unavailable", Space: "unavailable",
+	}
 }
 
 // NewWorkTool constructs the closed, offline a2a_work tool. Registration and
 // the server pre-call exclusion are lead-owned wiring concerns.
 func NewWorkTool(deps WorkToolDeps) (ToolSpec, error) {
-	if deps.Starter == nil || deps.Progressor == nil || deps.Local == nil || deps.Reader == nil || deps.ResolveActor == nil {
+	if deps.ResolveSpace == nil && (deps.Starter == nil || deps.Progressor == nil || deps.Local == nil || deps.Reader == nil || deps.ResolveActor == nil) {
 		return ToolSpec{}, fmt.Errorf("mcp: work starter, progressor, local operator, local reader and actor resolver are required")
 	}
-	if strings.TrimSpace(deps.ProjectID) == "" || strings.TrimSpace(deps.Space) == "" {
+	if strings.TrimSpace(deps.ProjectID) == "" || (deps.ResolveSpace == nil && strings.TrimSpace(deps.Space) == "") {
 		return ToolSpec{}, fmt.Errorf("mcp: work project id and space are required")
 	}
 	return ToolSpec{
@@ -91,6 +130,7 @@ func NewWorkTool(deps WorkToolDeps) (ToolSpec, error) {
 
 type WorkInput struct {
 	Action         string             `json:"action"`
+	Space          string             `json:"space,omitempty"`
 	Thread         string             `json:"thread,omitempty"`
 	SubjectRef     string             `json:"subject_ref,omitempty"`
 	Mode           string             `json:"mode,omitempty"`
@@ -122,6 +162,16 @@ func newWorkHandler(deps WorkToolDeps) HandlerFunc {
 		if !workStringIn(in.Action, WorkActions) {
 			return nil, "", fmt.Errorf("a2a_work: action is required and must be one of %s", strings.Join(WorkActions, "|"))
 		}
+		callDeps := deps
+		if deps.ResolveSpace != nil {
+			var resolveErr error
+			callDeps, resolveErr = deps.ResolveSpace(in.Space)
+			if resolveErr != nil {
+				return nil, "", resolveErr
+			}
+		} else if in.Space != "" && in.Space != deps.Space {
+			return nil, "", fmt.Errorf("a2a_work: space %q is not connected", in.Space)
+		}
 		ttl, err := workDuration(in.TTL, "ttl")
 		if err != nil {
 			return nil, "", err
@@ -146,12 +196,12 @@ func newWorkHandler(deps WorkToolDeps) HandlerFunc {
 			if actorInput.Session == "" {
 				actorInput.Session = in.Session
 			}
-			actor, actorErr := deps.ResolveActor(actorInput)
+			actor, actorErr := callDeps.ResolveActor(actorInput)
 			if actorErr != nil {
 				return nil, "", fmt.Errorf("a2a_work start: %w", actorErr)
 			}
-			result, callErr := deps.Starter.Start(ctx, workreport.StartInput{
-				ProjectID: deps.ProjectID, Space: deps.Space, Thread: in.Thread, Actor: actor,
+			result, callErr := callDeps.Starter.Start(ctx, workreport.StartInput{
+				ProjectID: callDeps.ProjectID, Space: callDeps.Space, Thread: in.Thread, Actor: actor,
 				SubjectRef: in.SubjectRef, Mode: workreport.Mode(in.Mode), Summary: in.Summary,
 				TTL: ttl, ReportValidFor: validFor, Recipients: append([]string(nil), in.Recipients...), Classification: in.Classification,
 			})
@@ -160,40 +210,40 @@ func newWorkHandler(deps WorkToolDeps) HandlerFunc {
 			if err := workForbidInput(in, "thread", "subject_ref", "mode", "summary", "report_valid_for", "recipients", "classification", "actor", "waiting_on", "result", "include_expired"); err != nil {
 				return nil, "", err
 			}
-			identity, selectErr := resolveWork(ctx, deps, in.WorkID, in.Session)
+			identity, selectErr := resolveWork(ctx, callDeps, in.WorkID, in.Session)
 			if selectErr != nil {
 				return workOperationFrom(workSelectionFailure(in.WorkID, in.Session)), "", selectErr
 			}
-			result, callErr := deps.Local.Heartbeat(ctx, workreport.HeartbeatInput{Work: identity, TTL: ttl})
+			result, callErr := callDeps.Local.Heartbeat(ctx, workreport.HeartbeatInput{Work: identity, TTL: ttl})
 			return workOperationFrom(result), "", callErr
 		case "resume":
 			if err := workForbidInput(in, "thread", "subject_ref", "mode", "summary", "ttl", "report_valid_for", "recipients", "classification", "actor", "waiting_on", "result", "include_expired"); err != nil {
 				return nil, "", fmt.Errorf("%w; persisted inputs are replayed exactly", err)
 			}
-			identity, selectErr := resolveWork(ctx, deps, in.WorkID, in.Session)
+			identity, selectErr := resolveWork(ctx, callDeps, in.WorkID, in.Session)
 			if selectErr != nil {
 				return workOperationFrom(workSelectionFailure(in.WorkID, in.Session)), "", selectErr
 			}
-			result, callErr := deps.Local.Resume(ctx, workreport.ResumeInput{Work: identity})
+			result, callErr := callDeps.Local.Resume(ctx, workreport.ResumeInput{Work: identity})
 			return workOperationFrom(result), "", callErr
 		case "checkpoint":
-			if err := workForbidInput(in, "thread", "actor", "waiting_on", "result", "include_expired"); err != nil {
+			if err := workForbidInput(in, "thread", "recipients", "classification", "actor", "waiting_on", "result", "include_expired"); err != nil {
 				return nil, "", err
 			}
 			if strings.TrimSpace(in.Summary) == "" || !workActiveMode(in.Mode) {
 				return nil, "", fmt.Errorf("a2a_work checkpoint: summary and active mode are required")
 			}
-			identity, selectErr := resolveWork(ctx, deps, in.WorkID, in.Session)
+			identity, selectErr := resolveWork(ctx, callDeps, in.WorkID, in.Session)
 			if selectErr != nil {
 				return workOperationFrom(workSelectionFailure(in.WorkID, in.Session)), "", selectErr
 			}
-			result, callErr := deps.Progressor.Checkpoint(ctx, workreport.CheckpointInput{
+			result, callErr := callDeps.Progressor.Checkpoint(ctx, workreport.CheckpointInput{
 				Work: identity, SubjectRef: in.SubjectRef, Mode: workreport.Mode(in.Mode), Summary: in.Summary,
-				TTL: ttl, ReportValidFor: validFor, Recipients: append([]string(nil), in.Recipients...), Classification: in.Classification,
+				TTL: ttl, ReportValidFor: validFor,
 			})
 			return workOperationFrom(result), "", callErr
 		case "wait":
-			if err := workForbidInput(in, "thread", "subject_ref", "mode", "actor", "result", "include_expired"); err != nil {
+			if err := workForbidInput(in, "thread", "subject_ref", "mode", "recipients", "classification", "actor", "result", "include_expired"); err != nil {
 				return nil, "", err
 			}
 			waiting, waitingErr := workWaitingOn(in.WaitingOn)
@@ -203,36 +253,34 @@ func newWorkHandler(deps WorkToolDeps) HandlerFunc {
 				}
 				return nil, "", fmt.Errorf("a2a_work wait: summary and at least one waiting_on item are required")
 			}
-			identity, selectErr := resolveWork(ctx, deps, in.WorkID, in.Session)
+			identity, selectErr := resolveWork(ctx, callDeps, in.WorkID, in.Session)
 			if selectErr != nil {
 				return workOperationFrom(workSelectionFailure(in.WorkID, in.Session)), "", selectErr
 			}
-			result, callErr := deps.Progressor.Wait(ctx, workreport.WaitInput{
+			result, callErr := callDeps.Progressor.Wait(ctx, workreport.WaitInput{
 				Work: identity, Summary: in.Summary, WaitingOn: waiting, TTL: ttl, ReportValidFor: validFor,
-				Recipients: append([]string(nil), in.Recipients...), Classification: in.Classification,
 			})
 			return workOperationFrom(result), "", callErr
 		case "stop":
-			if err := workForbidInput(in, "thread", "subject_ref", "mode", "ttl", "actor", "waiting_on", "include_expired"); err != nil {
+			if err := workForbidInput(in, "thread", "subject_ref", "mode", "ttl", "recipients", "classification", "actor", "waiting_on", "include_expired"); err != nil {
 				return nil, "", err
 			}
 			if strings.TrimSpace(in.Summary) == "" || (in.Result != string(workreport.ModeFinished) && in.Result != string(workreport.ModePaused)) {
 				return nil, "", fmt.Errorf("a2a_work stop: summary and result=finished|paused are required")
 			}
-			identity, selectErr := resolveWork(ctx, deps, in.WorkID, in.Session)
+			identity, selectErr := resolveWork(ctx, callDeps, in.WorkID, in.Session)
 			if selectErr != nil {
 				return workOperationFrom(workSelectionFailure(in.WorkID, in.Session)), "", selectErr
 			}
-			result, callErr := deps.Progressor.Stop(ctx, workreport.StopInput{
+			result, callErr := callDeps.Progressor.Stop(ctx, workreport.StopInput{
 				Work: identity, Result: workreport.Mode(in.Result), Summary: in.Summary, ReportValidFor: validFor,
-				Recipients: append([]string(nil), in.Recipients...), Classification: in.Classification,
 			})
 			return workOperationFrom(result), "", callErr
 		case "status":
 			if err := workForbidInput(in, "thread", "subject_ref", "mode", "summary", "session", "ttl", "report_valid_for", "recipients", "classification", "actor", "waiting_on", "result"); err != nil {
 				return nil, "", err
 			}
-			leases, listErr := deps.Reader.ListWork(ctx, deps.ProjectID, deps.Space, in.WorkID, in.IncludeExpired)
+			leases, listErr := callDeps.Reader.ListWork(ctx, callDeps.ProjectID, callDeps.Space, in.WorkID, in.IncludeExpired)
 			return workStatusFrom(leases), "", listErr
 		default:
 			panic("unreachable closed a2a_work action")
@@ -349,16 +397,18 @@ func workStringIn(value string, values []string) bool {
 }
 
 type workOperationOutput struct {
-	WorkID           string           `json:"work_id,omitempty"`
-	Session          string           `json:"session,omitempty"`
-	OperationKey     string           `json:"operation_key,omitempty"`
-	SemanticSequence uint64           `json:"semantic_sequence,omitempty"`
-	Local            workLocalOutput  `json:"local"`
-	Shared           workSharedOutput `json:"shared"`
+	WorkID           string            `json:"work_id,omitempty"`
+	Session          string            `json:"session,omitempty"`
+	OperationKey     string            `json:"operation_key,omitempty"`
+	Action           workreport.Action `json:"action,omitempty"`
+	SemanticSequence uint64            `json:"semantic_sequence,omitempty"`
+	Local            workLocalOutput   `json:"local"`
+	Shared           workSharedOutput  `json:"shared"`
 }
 
 type workLocalOutput struct {
 	State     workreport.LocalState `json:"state"`
+	ErrorCode string                `json:"error_code,omitempty"`
 	ExpiresAt *time.Time            `json:"expires_at,omitempty"`
 }
 
@@ -370,7 +420,7 @@ type workSharedOutput struct {
 }
 
 func workOperationFrom(result workreport.OperationResult) workOperationOutput {
-	local := workLocalOutput{State: result.LocalState}
+	local := workLocalOutput{State: result.LocalState, ErrorCode: result.LocalErrorCode}
 	if !result.ExpiresAt.IsZero() {
 		expires := result.ExpiresAt.UTC()
 		local.ExpiresAt = &expires
@@ -382,7 +432,7 @@ func workOperationFrom(result workreport.OperationResult) workOperationOutput {
 		shared.WriteResult = json.RawMessage(raw)
 	}
 	return workOperationOutput{
-		WorkID: result.WorkID, Session: result.Session, OperationKey: result.OperationKey,
+		WorkID: result.WorkID, Session: result.Session, OperationKey: result.OperationKey, Action: result.Action,
 		SemanticSequence: result.SemanticSequence, Local: local, Shared: shared,
 	}
 }
@@ -467,6 +517,7 @@ func workStatusFrom(leases []workreport.Lease) workStatusOutput {
 func workToolSchema() json.RawMessage {
 	properties := map[string]any{
 		"action": map[string]any{"type": "string", "enum": WorkActions},
+		"space":  map[string]any{"type": "string"},
 		"thread": map[string]any{"type": "string"}, "subject_ref": map[string]any{"type": "string"},
 		"mode": map[string]any{"type": "string", "enum": workModes}, "summary": map[string]any{"type": "string"},
 		"work_id": map[string]any{"type": "string"}, "session": map[string]any{"type": "string"},

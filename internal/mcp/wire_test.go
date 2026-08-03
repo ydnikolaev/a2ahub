@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
@@ -20,8 +21,9 @@ import (
 func fixValidManifest(t *testing.T, fx *spacefixture.Fixture, system string) {
 	t.Helper()
 	dir := fx.Clone(system)
-	manifest := "schema: space/v1\nspace: fixture-space\nmin_binary_version: \"0.0.0\"\nparticipants:\n" +
-		"  - system: axon\n    status: active\n  - system: beta\n    status: active\n"
+	manifest := "schema: space/v1\nspace: fixture-space\nmin_binary_version: \"0.19.0\"\nparticipants:\n" +
+		"  - system: axon\n    org: fixture\n    section: axon\n    owners: [axon-bot]\n    status: active\n    joined: \"2026-01-01\"\n" +
+		"  - system: beta\n    org: fixture\n    section: beta\n    owners: [beta-bot]\n    status: active\n    joined: \"2026-01-01\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "space.yaml"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -102,12 +104,25 @@ func TestNewServerFromConfigFullHappyPath(t *testing.T) {
 	}
 
 	p := Paths{ProjectConfig: projectConfig, MachineConfig: machineConfig, ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
-	server, err := NewServerFromConfig(context.Background(), p, "0.0.1-test")
+	server, err := NewServerFromConfig(context.Background(), p, "0.0.1-test", unavailableWorkToolDeps())
 	if err != nil {
 		t.Fatalf("NewServerFromConfig: %v", err)
 	}
 	if server == nil {
 		t.Fatal("expected a non-nil server")
+	}
+	if server.preCall == nil {
+		t.Fatal("expected connected server pre-call hook")
+	}
+	offlineOrigin := fx.OriginDir + ".offline"
+	if err := os.Rename(fx.OriginDir, offlineOrigin); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.preCall(context.Background(), WorkToolName); err != nil {
+		t.Fatalf("a2a_work invoked generic mirror refresh: %v", err)
+	}
+	if err := server.preCall(context.Background(), "a2a_read"); err == nil {
+		t.Fatal("control tool unexpectedly skipped unavailable mirror refresh")
 	}
 }
 
@@ -128,7 +143,7 @@ func TestNewServerFromConfigNoConnectedSpaces(t *testing.T) {
 	}
 
 	p := Paths{ProjectConfig: projectConfig, MachineConfig: machineConfig, ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
-	server, err := NewServerFromConfig(context.Background(), p, "0.0.1-test")
+	server, err := NewServerFromConfig(context.Background(), p, "0.0.1-test", unavailableWorkToolDeps())
 	if err != nil {
 		t.Fatalf("NewServerFromConfig: %v", err)
 	}
@@ -247,12 +262,15 @@ func TestNewServerFromConfigUnreachableSpaceStillServesReads(t *testing.T) {
 	}
 
 	p := Paths{ProjectConfig: projectConfig, MachineConfig: machineConfig, ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
-	server, err := NewServerFromConfig(context.Background(), p, "0.0.1-test")
+	server, err := NewServerFromConfig(context.Background(), p, "0.0.1-test", unavailableWorkToolDeps())
 	if err != nil {
 		t.Fatalf("an unreachable space must not stop the server from starting: %v", err)
 	}
 	names := server.registry.ToolNames()
-	assertSpaceFreeSurface(t, names)
+	wantDegraded := []string{"a2a_read", "a2a_whatsnew", "a2a_work"}
+	if !slices.Equal(names, wantDegraded) {
+		t.Fatalf("unreachable-space surface = %v, want %v", names, wantDegraded)
+	}
 	// Exact names, not substrings: `a2a_contracts` (plural) is a READ tool
 	// and `a2a_contract` (singular) is the write one — a substring match
 	// cannot tell them apart and would fail on a correct registry.

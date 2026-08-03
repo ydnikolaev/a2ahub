@@ -169,6 +169,13 @@ func (c *SyncCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			_, _ = fmt.Fprintf(stdio.Stderr, "sync: %s: %v\n", ref.ID, err)
 			continue
 		}
+		if reconciler, ok := c.pending.(PendingMarkerReconciler); ok {
+			if err := reconciler.ReconcilePending(ref.ID, dir); err != nil {
+				allOK = false
+				_, _ = fmt.Fprintf(stdio.Stderr, "sync: %s: pending-marker reconciliation failed: %v\n", ref.ID, err)
+				continue
+			}
+		}
 		// Cache-refresh seam call (this phase's convention: spaceID set,
 		// artifactID empty, a zero WriteResult — see PendingMarker's doc
 		// comment in adapters.go).

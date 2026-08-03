@@ -204,14 +204,12 @@ func (c *WorkCommand) runCheckpoint(ctx context.Context, args []string, stdio IO
 	subject := fs.String("subject-ref", "", "optional changed subject")
 	ttl := fs.Duration("ttl", 0, "machine-local lease ttl")
 	validFor := fs.Duration("report-valid-for", 0, "durable report validity")
-	recipients := fs.String("to", "", "comma-separated recipients")
-	classification := fs.String("classification", "", "checkpoint classification")
 	jsonOut := fs.Bool("json", false, "emit structured two-axis result")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 || strings.TrimSpace(*summary) == "" || !workActiveMode(*mode) {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a work checkpoint [--work-id <id>] [--session <id>] --mode <planning|implementing|testing|reviewing> --summary <text> [--subject-ref <ref>] [--ttl <duration>] [--report-valid-for <duration>] [--to <systems>] [--classification <class>] [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a work checkpoint [--work-id <id>] [--session <id>] --mode <planning|implementing|testing|reviewing> --summary <text> [--subject-ref <ref>] [--ttl <duration>] [--report-valid-for <duration>] [--json]")
 		return 2
 	}
 	identity, err := c.resolveWork(ctx, *workID, *session)
@@ -220,7 +218,7 @@ func (c *WorkCommand) runCheckpoint(ctx context.Context, args []string, stdio IO
 	}
 	result, callErr := c.deps.Progressor.Checkpoint(ctx, workreport.CheckpointInput{
 		Work: identity, SubjectRef: *subject, Mode: workreport.Mode(*mode), Summary: *summary,
-		TTL: *ttl, ReportValidFor: *validFor, Recipients: workRecipients(*recipients), Classification: *classification,
+		TTL: *ttl, ReportValidFor: *validFor,
 	})
 	return renderWorkOperation(stdio, "work checkpoint", result, callErr, *jsonOut)
 }
@@ -233,14 +231,12 @@ func (c *WorkCommand) runWait(ctx context.Context, args []string, stdio IO) int 
 	fs.Var(&waiting, "waiting-on", "typed dependency kind:id[:summary] (repeatable)")
 	ttl := fs.Duration("ttl", 0, "machine-local lease ttl")
 	validFor := fs.Duration("report-valid-for", 0, "durable report validity")
-	recipients := fs.String("to", "", "comma-separated recipients")
-	classification := fs.String("classification", "", "checkpoint classification")
 	jsonOut := fs.Bool("json", false, "emit structured two-axis result")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 || strings.TrimSpace(*summary) == "" || len(waiting.values) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a work wait [--work-id <id>] [--session <id>] --summary <text> --waiting-on <kind:id[:summary]>... [--ttl <duration>] [--report-valid-for <duration>] [--to <systems>] [--classification <class>] [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a work wait [--work-id <id>] [--session <id>] --summary <text> --waiting-on <kind:id[:summary]>... [--ttl <duration>] [--report-valid-for <duration>] [--json]")
 		return 2
 	}
 	identity, err := c.resolveWork(ctx, *workID, *session)
@@ -249,7 +245,7 @@ func (c *WorkCommand) runWait(ctx context.Context, args []string, stdio IO) int 
 	}
 	result, callErr := c.deps.Progressor.Wait(ctx, workreport.WaitInput{
 		Work: identity, Summary: *summary, WaitingOn: waiting.values,
-		TTL: *ttl, ReportValidFor: *validFor, Recipients: workRecipients(*recipients), Classification: *classification,
+		TTL: *ttl, ReportValidFor: *validFor,
 	})
 	return renderWorkOperation(stdio, "work wait", result, callErr, *jsonOut)
 }
@@ -260,14 +256,12 @@ func (c *WorkCommand) runStop(ctx context.Context, args []string, stdio IO) int 
 	resultMode := fs.String("result", "", "finished|paused")
 	summary := fs.String("summary", "", "plain-text terminal or pause summary")
 	validFor := fs.Duration("report-valid-for", 0, "paused report validity; forbidden for finished")
-	recipients := fs.String("to", "", "comma-separated recipients")
-	classification := fs.String("classification", "", "checkpoint classification")
 	jsonOut := fs.Bool("json", false, "emit structured two-axis result")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 || strings.TrimSpace(*summary) == "" || (*resultMode != string(workreport.ModeFinished) && *resultMode != string(workreport.ModePaused)) {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a work stop [--work-id <id>] [--session <id>] --result <finished|paused> --summary <text> [--report-valid-for <duration>] [--to <systems>] [--classification <class>] [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a work stop [--work-id <id>] [--session <id>] --result <finished|paused> --summary <text> [--report-valid-for <duration>] [--json]")
 		return 2
 	}
 	identity, err := c.resolveWork(ctx, *workID, *session)
@@ -276,7 +270,7 @@ func (c *WorkCommand) runStop(ctx context.Context, args []string, stdio IO) int 
 	}
 	result, callErr := c.deps.Progressor.Stop(ctx, workreport.StopInput{
 		Work: identity, Result: workreport.Mode(*resultMode), Summary: *summary,
-		ReportValidFor: *validFor, Recipients: workRecipients(*recipients), Classification: *classification,
+		ReportValidFor: *validFor,
 	})
 	return renderWorkOperation(stdio, "work stop", result, callErr, *jsonOut)
 }
@@ -366,16 +360,18 @@ func (f *workWaitingFlags) Set(raw string) error {
 }
 
 type workOperationOutput struct {
-	WorkID           string           `json:"work_id,omitempty"`
-	Session          string           `json:"session,omitempty"`
-	OperationKey     string           `json:"operation_key,omitempty"`
-	SemanticSequence uint64           `json:"semantic_sequence,omitempty"`
-	Local            workLocalOutput  `json:"local"`
-	Shared           workSharedOutput `json:"shared"`
+	WorkID           string            `json:"work_id,omitempty"`
+	Session          string            `json:"session,omitempty"`
+	OperationKey     string            `json:"operation_key,omitempty"`
+	Action           workreport.Action `json:"action,omitempty"`
+	SemanticSequence uint64            `json:"semantic_sequence,omitempty"`
+	Local            workLocalOutput   `json:"local"`
+	Shared           workSharedOutput  `json:"shared"`
 }
 
 type workLocalOutput struct {
 	State     workreport.LocalState `json:"state"`
+	ErrorCode string                `json:"error_code,omitempty"`
 	ExpiresAt *time.Time            `json:"expires_at,omitempty"`
 }
 
@@ -387,7 +383,7 @@ type workSharedOutput struct {
 }
 
 func workOperationFrom(result workreport.OperationResult) workOperationOutput {
-	local := workLocalOutput{State: result.LocalState}
+	local := workLocalOutput{State: result.LocalState, ErrorCode: result.LocalErrorCode}
 	if !result.ExpiresAt.IsZero() {
 		expires := result.ExpiresAt.UTC()
 		local.ExpiresAt = &expires
@@ -399,7 +395,7 @@ func workOperationFrom(result workreport.OperationResult) workOperationOutput {
 		shared.WriteResult = json.RawMessage(raw)
 	}
 	return workOperationOutput{
-		WorkID: result.WorkID, Session: result.Session, OperationKey: result.OperationKey,
+		WorkID: result.WorkID, Session: result.Session, OperationKey: result.OperationKey, Action: result.Action,
 		SemanticSequence: result.SemanticSequence, Local: local, Shared: shared,
 	}
 }
@@ -423,8 +419,8 @@ func renderWorkOperation(stdio IO, label string, result workreport.OperationResu
 	if jsonOut {
 		renderErr = json.NewEncoder(stdio.Stdout).Encode(output)
 	} else {
-		_, renderErr = fmt.Fprintf(stdio.Stdout, "work_id=%s session=%s operation_key=%s semantic_sequence=%d\nlocal state=%s",
-			output.WorkID, output.Session, output.OperationKey, output.SemanticSequence, output.Local.State)
+		_, renderErr = fmt.Fprintf(stdio.Stdout, "work_id=%s session=%s operation_key=%s action=%s semantic_sequence=%d\nlocal state=%s error_code=%s",
+			output.WorkID, output.Session, output.OperationKey, output.Action, output.SemanticSequence, output.Local.State, output.Local.ErrorCode)
 		if renderErr == nil && output.Local.ExpiresAt != nil {
 			_, renderErr = fmt.Fprintf(stdio.Stdout, " expires_at=%s", output.Local.ExpiresAt.Format(time.RFC3339))
 		}

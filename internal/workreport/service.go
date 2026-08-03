@@ -34,6 +34,10 @@ func (s *Service) Start(ctx context.Context, command StartCommand) (OperationRes
 	if command.Mode != ModePlanning && command.Mode != ModeImplementing && command.Mode != ModeTesting && command.Mode != ModeReviewing {
 		return emptyResult(command.Identity, command.Prepared), fmt.Errorf("%w: start requires a nonterminal active mode", ErrInvalidLease)
 	}
+	recipients, classification, err := normalizeStartAudience(command.Recipients, command.Classification)
+	if err != nil {
+		return emptyResult(command.Identity, command.Prepared), err
+	}
 	lease := Lease{
 		SchemaVersion:     SchemaVersion,
 		Identity:          command.Identity,
@@ -41,6 +45,8 @@ func (s *Service) Start(ctx context.Context, command StartCommand) (OperationRes
 		Mode:              command.Mode,
 		Summary:           command.Summary,
 		WaitingOn:         append([]WaitingOn(nil), command.WaitingOn...),
+		Recipients:        recipients,
+		Classification:    classification,
 		StartedAt:         now,
 		RenewedAt:         now,
 		ExpiresAt:         now.Add(command.TTL),
@@ -90,7 +96,7 @@ func (s *Service) Apply(ctx context.Context, command SemanticCommand) (Operation
 		if errors.Is(err, ErrLeaseNotOwned) {
 			return emptyResult(command.Identity, command.Prepared), err
 		}
-		return resultFor(lease, state), err
+		return resultForError(lease, state, err), err
 	}
 	if lease.Pending != nil {
 		return s.submit(ctx, lease.Identity, command.Prepared.OperationKey, resultFor(lease, state))
@@ -157,7 +163,10 @@ func preflightSemanticContinuation(
 		if prepared != nil && samePrepared(*lease.Pending, *prepared) {
 			return localState(lease), nil
 		}
-		return localState(lease), ErrPendingOperation
+		return localState(lease), &PendingOperationError{OperationKey: lease.Pending.OperationKey, Action: lease.Pending.Action}
+	}
+	if !leaseAudienceKnown(lease) {
+		return localState(lease), ErrLegacyAudience
 	}
 	return localState(lease), nil
 }
@@ -386,7 +395,19 @@ func resultFor(lease Lease, state LocalState) OperationResult {
 	}
 	if lease.Pending != nil {
 		result.OperationKey = lease.Pending.OperationKey
+		result.Action = lease.Pending.Action
 		result.Shared = lease.Pending.Shared.clone()
+	}
+	return result
+}
+
+func resultForError(lease Lease, state LocalState, err error) OperationResult {
+	result := resultFor(lease, state)
+	var pending *PendingOperationError
+	if errors.As(err, &pending) {
+		result.OperationKey = pending.OperationKey
+		result.Action = pending.Action
+		result.LocalErrorCode = LocalErrorPendingOperation
 	}
 	return result
 }

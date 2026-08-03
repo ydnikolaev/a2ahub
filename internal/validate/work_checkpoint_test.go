@@ -105,7 +105,7 @@ func TestValidateWorkCheckpointContinuationContext(t *testing.T) {
 			Space: "demo", Thread: "thread:axon-20260803-abcd",
 			System: "axon", Name: "codex", Session: "session-1",
 		},
-		Mode: WorkModeImplementing,
+		Mode: WorkModeImplementing, Recipients: []string{"beta"}, Classification: "internal",
 	}
 	tests := []struct {
 		name string
@@ -121,6 +121,9 @@ func TestValidateWorkCheckpointContinuationContext(t *testing.T) {
 		{name: "system changes", edit: func(in *WorkCheckpointInput) { in.Actor.System = "beta" }, path: "actor.system"},
 		{name: "name changes", edit: func(in *WorkCheckpointInput) { in.Actor.Name = "other" }, path: "actor.name"},
 		{name: "session changes", edit: func(in *WorkCheckpointInput) { in.Actor.Session = "session-2" }, path: "actor.session"},
+		{name: "audience broadens", edit: func(in *WorkCheckpointInput) { in.Recipients = []string{"all"} }, path: "to"},
+		{name: "audience changes", edit: func(in *WorkCheckpointInput) { in.Recipients = []string{"axon"} }, path: "to"},
+		{name: "classification changes", edit: func(in *WorkCheckpointInput) { in.Classification = "restricted" }, path: "classification"},
 		{name: "sequence repeats", edit: func(in *WorkCheckpointInput) { in.Work.SemanticSequence = 3 }, path: "work.semantic_sequence"},
 		{name: "sequence skips", edit: func(in *WorkCheckpointInput) { in.Work.SemanticSequence = 5 }, path: "work.semantic_sequence"},
 		{name: "finished stream continues", edit: func(in *WorkCheckpointInput) { in.Previous.Mode = WorkModeFinished }, path: "work.mode"},
@@ -129,21 +132,31 @@ func TestValidateWorkCheckpointContinuationContext(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			in := validWorkCheckpointInput()
-			in.Previous = cloneWorkPrevious(basePrevious)
-			in.Work.SemanticSequence = 4
-			test.edit(&in)
-			assertOnlyWorkViolation(t, ValidateWorkCheckpoint(in), "POL-015", test.path)
+			for _, point := range []InvocationPoint{V2, V3} {
+				point := point
+				t.Run(string(point), func(t *testing.T) {
+					t.Parallel()
+					in := validWorkCheckpointInput()
+					in.InvocationPoint = point
+					in.Previous = cloneWorkPrevious(basePrevious)
+					in.Work.SemanticSequence = 4
+					test.edit(&in)
+					assertOnlyWorkViolation(t, ValidateWorkCheckpoint(in), "POL-015", test.path)
+				})
+			}
 		})
 	}
 
 	t.Run("exact next checkpoint is valid", func(t *testing.T) {
 		t.Parallel()
-		in := validWorkCheckpointInput()
-		in.Previous = cloneWorkPrevious(basePrevious)
-		in.Work.SemanticSequence = 4
-		if got := ValidateWorkCheckpoint(in); !got.Valid {
-			t.Fatalf("valid continuation rejected: %+v", got.Violations)
+		for _, point := range []InvocationPoint{V2, V3} {
+			in := validWorkCheckpointInput()
+			in.InvocationPoint = point
+			in.Previous = cloneWorkPrevious(basePrevious)
+			in.Work.SemanticSequence = 4
+			if got := ValidateWorkCheckpoint(in); !got.Valid {
+				t.Fatalf("valid %s continuation rejected: %+v", point, got.Violations)
+			}
 		}
 	})
 }
@@ -233,6 +246,7 @@ func validWorkCheckpointInput() WorkCheckpointInput {
 		Space:           "demo",
 		Thread:          "thread:axon-20260803-abcd",
 		Refs:            []string{"XW-axon-20260803-abcd"},
+		Recipients:      []string{"beta"},
 		Classification:  "internal",
 		FirstParty:      true,
 		Actor:           WorkCheckpointActor{System: "axon", Name: "codex", Session: "session-1"},
@@ -251,6 +265,7 @@ func validWorkCheckpointInput() WorkCheckpointInput {
 
 func cloneWorkPrevious(previous WorkCheckpointPrevious) *WorkCheckpointPrevious {
 	cloned := previous
+	cloned.Recipients = append([]string(nil), previous.Recipients...)
 	return &cloned
 }
 

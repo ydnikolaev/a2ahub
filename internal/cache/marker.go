@@ -136,6 +136,59 @@ func RemoveSpaceMarkers(cacheDir, spaceID string) error {
 	return os.RemoveAll(filepath.Join(cacheDir, "pending", spaceID))
 }
 
+// ReconcilePendingMarkers removes the machine-local marker for each artifact
+// that is already present in mirrorDir's refreshed canonical working tree.
+// Current writes record one marker per artifact. Historical combined writes
+// may instead have one `A+B` marker; that marker is removed only after every
+// component is canonical. An absent marker or a marker whose artifact has not
+// landed yet is left untouched, so repeated refreshes are idempotent.
+func ReconcilePendingMarkers(cacheDir, spaceID, mirrorDir string) error {
+	markers, err := ReadMarkers(cacheDir, spaceID)
+	if err != nil {
+		return fmt.Errorf("cache: reconcile pending markers for %s: read markers: %w", spaceID, err)
+	}
+	if len(markers) == 0 {
+		return nil
+	}
+
+	artifacts, _, err := walkArtifacts(mirrorDir)
+	if err != nil {
+		return fmt.Errorf("cache: reconcile pending markers for %s: walk canonical mirror: %w", spaceID, err)
+	}
+	canonical := make(map[string]struct{}, len(artifacts))
+	for _, artifact := range artifacts {
+		canonical[artifact.Env.ID] = struct{}{}
+	}
+	for _, marker := range markers {
+		if !markerArtifactsCanonical(marker.ArtifactID, canonical) {
+			continue
+		}
+		if err := RemoveMarker(cacheDir, spaceID, marker.ArtifactID); err != nil {
+			return fmt.Errorf("cache: reconcile pending marker %s in %s: %w", marker.ArtifactID, spaceID, err)
+		}
+	}
+	return nil
+}
+
+func markerArtifactsCanonical(markerID string, canonical map[string]struct{}) bool {
+	if _, landed := canonical[markerID]; landed {
+		return true
+	}
+	parts := strings.Split(markerID, "+")
+	if len(parts) < 2 {
+		return false
+	}
+	for _, artifactID := range parts {
+		if artifactID == "" {
+			return false
+		}
+		if _, landed := canonical[artifactID]; !landed {
+			return false
+		}
+	}
+	return true
+}
+
 func markerSet(markers []PendingMarker) map[string]bool {
 	out := make(map[string]bool, len(markers))
 	for _, m := range markers {

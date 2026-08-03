@@ -81,12 +81,17 @@ type WorkCheckpointOwner struct {
 }
 
 // WorkCheckpointPrevious is the latest committed checkpoint for this work id,
-// when one exists. A nil previous value means this is the first publication.
+// including the exact audience/classification selected at start. A nil
+// previous value means this is the first publication; each accepted
+// continuation carries the same values forward, preserving the original by
+// induction.
 type WorkCheckpointPrevious struct {
 	WorkID           string
 	SemanticSequence uint64
 	Owner            WorkCheckpointOwner
 	Mode             WorkMode
+	Recipients       []string
+	Classification   string
 }
 
 // WorkCheckpointSubject is a repository-resolved artifact or contract fact.
@@ -115,6 +120,7 @@ type WorkCheckpointInput struct {
 	Space          string
 	Thread         string
 	Refs           []string
+	Recipients     []string
 	Classification string
 	FirstParty     bool
 	Actor          WorkCheckpointActor
@@ -245,6 +251,12 @@ func checkWorkContinuation(in WorkCheckpointInput) []Violation {
 	}
 	if previous.Owner.Session != in.Actor.Session {
 		return []Violation{workPolicyViolation("actor.session", "a work id cannot change reporter session")}
+	}
+	if !slices.Equal(previous.Recipients, in.Recipients) {
+		return []Violation{workPolicyViolation("to", "a continuation must retain the audience selected by its first checkpoint")}
+	}
+	if previous.Classification != in.Classification {
+		return []Violation{workPolicyViolation("classification", "a continuation must retain the classification selected by its first checkpoint")}
 	}
 	if previous.Mode == WorkModeFinished {
 		return []Violation{workPolicyViolation("work.mode", "a finished work stream cannot publish another checkpoint")}

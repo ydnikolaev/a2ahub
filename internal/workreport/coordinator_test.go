@@ -82,6 +82,48 @@ func TestCoordinatorStartOrdersIdentityPreparationAndService(t *testing.T) {
 	}
 }
 
+func TestCoordinatorDefaultsAudienceAndContinuationRetainsDurableAudience(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 3, 10, 15, 0, 0, time.UTC)
+	preparer := &coordinatorPreparer{prepare: preparedFromRequest}
+	service := &coordinatorService{}
+	service.start = func(command StartCommand) (OperationResult, error) {
+		if fmt.Sprint(command.Recipients) != "[all]" || command.Classification != DefaultClassification {
+			t.Fatalf("default audience = %v/%q", command.Recipients, command.Classification)
+		}
+		return resultFromPrepared(command.Identity, command.Prepared), nil
+	}
+	coordinator := newTestCoordinator(
+		t, service, service, coordinatorReader{}, preparer,
+		&coordinatorIDs{workID: testIdentity().WorkID, sessionID: testIdentity().Actor.Session},
+		coordinatorKeys{key: testIdentity().LeaseKey}, &fakeClock{now: now},
+	)
+	if _, err := coordinator.Start(context.Background(), validStartInput()); err != nil {
+		t.Fatal(err)
+	}
+
+	stored := coordinatorLease(1)
+	stored.Recipients = []string{"beta"}
+	stored.Classification = "restricted"
+	preparer = &coordinatorPreparer{prepare: preparedFromRequest}
+	service.apply = func(command SemanticCommand) (OperationResult, error) {
+		return resultFromPrepared(command.Identity, command.Prepared), nil
+	}
+	coordinator = newTestCoordinator(
+		t, service, service, coordinatorReader{lease: stored, revision: "r1"}, preparer,
+		&coordinatorIDs{}, coordinatorKeys{key: stored.Identity.LeaseKey}, &fakeClock{now: stored.RenewedAt.Add(time.Minute)},
+	)
+	if _, err := coordinator.Checkpoint(context.Background(), CheckpointInput{
+		Work: continuationInput(stored.Identity), Mode: ModeTesting, Summary: "Testing",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	request := preparer.requests[0]
+	if fmt.Sprint(request.Recipients) != "[beta]" || request.Classification != "restricted" {
+		t.Fatalf("retained audience = %v/%q", request.Recipients, request.Classification)
+	}
+}
+
 func TestCoordinatorAuthoritativeGateFloorMatrixIgnoresProducerClaim(t *testing.T) {
 	t.Parallel()
 
@@ -1032,6 +1074,7 @@ func coordinatorLease(sequence uint64) Lease {
 	return Lease{
 		SchemaVersion: SchemaVersion, Identity: testIdentity(), SubjectRef: "XW-checkout-20260803-abcd",
 		Mode: ModeImplementing, Summary: "Implementing", StartedAt: now,
+		Recipients: []string{"all"}, Classification: DefaultClassification,
 		RenewedAt: now, ExpiresAt: now.Add(DefaultTTL), HeartbeatSequence: 1, SemanticSequence: sequence,
 	}
 }

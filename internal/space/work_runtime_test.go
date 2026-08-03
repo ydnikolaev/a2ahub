@@ -1,0 +1,102 @@
+package space
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"testing"
+
+	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
+)
+
+type acceptingWorkManifestValidator struct{ calls int }
+
+func (v *acceptingWorkManifestValidator) ValidateManifest(context.Context, []byte) error {
+	v.calls++
+	return nil
+}
+
+func TestWorkRuntimeIsLazyAndResolvesAuthoritativeFacts(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon", "beta")
+	mirror := filepath.Join(t.TempDir(), "mirror")
+	manifest := &acceptingWorkManifestValidator{}
+	credentialCalls := 0
+	runtime, err := NewWorkRuntime(
+		"sha256:project", "fixture-space", "axon", mirror, fx.RemoteURL(),
+		host.Repo{Owner: "acme", Name: "fixture-space"},
+		func(context.Context) (host.Credential, error) {
+			credentialCalls++
+			return host.Credential{Token: "secret"}, nil
+		},
+		manifest,
+	)
+	if err != nil {
+		t.Fatalf("NewWorkRuntime: %v", err)
+	}
+	if credentialCalls != 0 || manifest.calls != 0 {
+		t.Fatalf("constructor performed I/O: credential=%d manifest=%d", credentialCalls, manifest.calls)
+	}
+
+	floor, err := runtime.ResolveWorkManifestFloor(context.Background())
+	if err != nil {
+		t.Fatalf("ResolveWorkManifestFloor: %v", err)
+	}
+	if floor.ProjectID != "sha256:project" || floor.Space != "fixture-space" || floor.MinimumBinaryVersion != "0.0.0" {
+		t.Fatalf("floor = %+v", floor)
+	}
+	if credentialCalls != 0 {
+		t.Fatalf("floor lookup resolved credential %d times", credentialCalls)
+	}
+
+	preparation, err := runtime.ResolveWorkPreparation(context.Background())
+	if err != nil {
+		t.Fatalf("ResolveWorkPreparation: %v", err)
+	}
+	if preparation.ReporterMembership != fold.MembershipMember || preparation.BaseCommitSHA == "" || preparation.Space != "fixture-space" {
+		t.Fatalf("preparation = %+v", preparation)
+	}
+	if credentialCalls != 0 {
+		t.Fatalf("preparation resolved credential %d times", credentialCalls)
+	}
+
+	submission, err := runtime.SubmissionRuntime(context.Background())
+	if err != nil {
+		t.Fatalf("SubmissionRuntime: %v", err)
+	}
+	if credentialCalls != 1 || submission.Credential.Token != "secret" || submission.CurrentSpaceFloor != "0.0.0" {
+		t.Fatalf("submission=%+v credential calls=%d", submission, credentialCalls)
+	}
+}
+
+func TestWorkRuntimeFailsClosedOnScopeAndCredential(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon")
+	wantCredential := errors.New("credential unavailable")
+	runtime, err := NewWorkRuntime(
+		"sha256:project", "other-space", "axon", filepath.Join(t.TempDir(), "mirror"), fx.RemoteURL(),
+		host.Repo{Owner: "acme", Name: "fixture-space"},
+		func(context.Context) (host.Credential, error) { return host.Credential{}, wantCredential },
+		&acceptingWorkManifestValidator{},
+	)
+	if err != nil {
+		t.Fatalf("NewWorkRuntime: %v", err)
+	}
+	if _, err := runtime.ResolveWorkManifestFloor(context.Background()); !errors.Is(err, ErrWorkAuthoringScopeMismatch) {
+		t.Fatalf("scope error = %v, want ErrWorkAuthoringScopeMismatch", err)
+	}
+
+	runtime.spaceID = "fixture-space"
+	if _, err := runtime.SubmissionRuntime(context.Background()); !errors.Is(err, wantCredential) {
+		t.Fatalf("credential error = %v, want %v", err, wantCredential)
+	}
+}
+
+func TestNewWorkRuntimeRefusesIncompleteDependencies(t *testing.T) {
+	t.Parallel()
+	if runtime, err := NewWorkRuntime("", "", "", "", "", host.Repo{}, nil, nil); err == nil || runtime != nil {
+		t.Fatalf("NewWorkRuntime = %+v, %v; want refusal", runtime, err)
+	}
+}

@@ -265,6 +265,7 @@ func testWorkPreparedJournal(t *testing.T) (PreparedSubmission, workreport.Prepa
 	req := newTestSubmitRequest(fx, "axon", layout)
 	req.MinBinaryVersion = "0.19.0"
 	req.ArtifactIDs = []string{req.ArtifactID}
+	req.OperationKey = "op-v1-" + strings.Repeat("a", 64)
 	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
 		context.Background(), req, testPreparationContext("0.19.0"),
 	)

@@ -381,6 +381,116 @@ func lifecycleRefsFromFlag(v string) []lifecycleRefEntry {
 	return out
 }
 
+// lifecycleValidateSatisfyRefs enforces §3.4.2's satisfy proof bundle at
+// the CLI boundary: one resolvable, version-pinned contract plus one
+// verified response whose parent is the requirement being satisfied. The
+// lifecycle table deliberately owns only state transitions; cross-artifact
+// reference integrity belongs here, where the committed mirror is available.
+func lifecycleValidateSatisfyRefs(mirrorDir string, manifest space.Manifest, requirementID string, refs []lifecycleRefEntry) ([]lifecycleRefEntry, error) {
+	if len(refs) != 2 {
+		return nil, fmt.Errorf("--refs must contain exactly one XC contract@version and one XS response")
+	}
+
+	var contractID, contractVersion, responseID string
+	normalizedRefs := make([]lifecycleRefEntry, len(refs))
+	for i, entry := range refs {
+		ref := entry.Ref
+		if at := strings.LastIndex(ref, "@"); at >= 0 {
+			id, rawVersion := ref[:at], ref[at+1:]
+			parsed, err := artifact.ParseID(id)
+			if err != nil || parsed.Prefix != "XC" {
+				return nil, fmt.Errorf("invalid contract ref %q: want XC-...@<semver>", ref)
+			}
+			version, err := contractParseSemver(rawVersion)
+			if err != nil {
+				return nil, fmt.Errorf("invalid contract ref %q: %w", ref, err)
+			}
+			if contractID != "" {
+				return nil, fmt.Errorf("--refs contains more than one contract ref")
+			}
+			contractID, contractVersion = id, version.String()
+			normalizedRefs[i] = lifecycleRefEntry{Ref: contractID + "@" + contractVersion}
+			continue
+		}
+
+		parsed, err := artifact.ParseID(ref)
+		if err == nil && parsed.Prefix == "XC" {
+			return nil, fmt.Errorf("contract ref %q must pin an explicit semantic version", ref)
+		}
+		if err != nil || parsed.Prefix != "XS" {
+			return nil, fmt.Errorf("invalid response ref %q: want XS-...", ref)
+		}
+		if responseID != "" {
+			return nil, fmt.Errorf("--refs contains more than one response ref")
+		}
+		responseID = ref
+		normalizedRefs[i] = entry
+	}
+	if contractID == "" || responseID == "" {
+		return nil, fmt.Errorf("--refs must contain one XC contract@version and one XS response")
+	}
+
+	contractEnv, _, err := lifecycleLoadEnvelope(mirrorDir, contractID)
+	if err != nil {
+		return nil, fmt.Errorf("contract ref %s@%s does not resolve: %w", contractID, contractVersion, err)
+	}
+	if contractEnv.Kind != fold.KindContract {
+		return nil, fmt.Errorf("contract ref %s@%s resolves to %s, want contract", contractID, contractVersion, contractEnv.Kind)
+	}
+	responseEnv, responseProbe, err := lifecycleLoadEnvelope(mirrorDir, responseID)
+	if err != nil {
+		return nil, fmt.Errorf("response ref %s does not resolve: %w", responseID, err)
+	}
+	if responseEnv.Kind != fold.KindResponse {
+		return nil, fmt.Errorf("response ref %s resolves to %s, want response", responseID, responseEnv.Kind)
+	}
+	if responseProbe.Parent != requirementID {
+		return nil, fmt.Errorf("response ref %s has parent %q, want %q", responseID, responseProbe.Parent, requirementID)
+	}
+
+	all, err := lifecycleReadAllEvents(mirrorDir)
+	if err != nil {
+		return nil, err
+	}
+	membership := lifecycleMembership(manifest)
+	contractResult := fold.Fold(contractEnv.Kind, contractEnv, lifecycleFoldEvents(all, contractID), membership)
+	if _, ok := contractResult.Versions[contractVersion]; !ok {
+		return nil, fmt.Errorf("contract ref %s@%s does not resolve to a recorded version", contractID, contractVersion)
+	}
+	requirementEnv, _, err := lifecycleLoadEnvelope(mirrorDir, requirementID)
+	if err != nil {
+		return nil, err
+	}
+	requirementResult := fold.Fold(requirementEnv.Kind, requirementEnv, lifecycleFoldEvents(all, requirementID), membership)
+	// A requirement does not have a parent-level `respond` transition. Its
+	// response is attached by the XS envelope's `parent` field, so seed that
+	// response's documented submitted state and replay its own closure events
+	// through fold.Apply (the canonical authorization/transition engine).
+	if requirementResult.Responses == nil {
+		requirementResult.Responses = map[string]fold.State{}
+	}
+	requirementResult.Responses[responseID] = fold.StateSubmitted
+	var responseEvents []lifecycleEventDoc
+	for _, ev := range all {
+		if ev.Subject == responseID {
+			responseEvents = append(responseEvents, ev)
+		}
+	}
+	sort.Slice(responseEvents, func(i, j int) bool { return responseEvents[i].Event < responseEvents[j].Event })
+	for _, ev := range responseEvents {
+		requirementResult = fold.Apply(requirementEnv.Kind, requirementEnv, requirementResult, fold.Event{
+			ULID: ev.Event, Subject: ev.Subject, Transition: ev.Transition,
+			ClaimedState: fold.State(ev.State),
+			Actor:        fold.Actor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
+		}, membership)
+	}
+	if got := requirementResult.Responses[responseID]; got != fold.StateVerified {
+		return nil, fmt.Errorf("response ref %s is %q, want %q", responseID, got, fold.StateVerified)
+	}
+
+	return normalizedRefs, nil
+}
+
 // verdictRefusalMessage renders a human-readable local-refusal message for
 // a non-legal fold.Verdict, naming the LFC- registry code (rails: "every
 // violation carries a non-empty registry code" applies to any V2-class
@@ -727,6 +837,7 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 	}
 
 	var files []space.FileWrite
+	parsedRefs := lifecycleRefsFromFlag(*refs)
 	for _, id := range ids {
 		evaluation, _, err := lifecycleEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, id, fold.Event{
 			Transition: c.spec.Transition, Actor: actor,
@@ -738,6 +849,14 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 		if evaluation.Verdict != fold.VerdictLegal {
 			_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s\n", c.spec.Verb, c.deps.refusalMessage(id, evaluation.Verdict))
 			return 1
+		}
+		eventRefs := parsedRefs
+		if c.spec.Transition == fold.TSatisfy {
+			eventRefs, err = lifecycleValidateSatisfyRefs(c.deps.mirrorDir, c.deps.manifest, id, parsedRefs)
+			if err != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "%s: %s: %v\n", c.spec.Verb, id, err)
+				return 1
+			}
 		}
 
 		_, probe, err := lifecycleLoadEnvelope(c.deps.mirrorDir, id)
@@ -762,8 +881,8 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 		if *reasonCode != "" {
 			ev.ReasonCode = *reasonCode
 		}
-		if *refs != "" {
-			ev.Refs = lifecycleRefsFromFlag(*refs)
+		if len(eventRefs) > 0 {
+			ev.Refs = eventRefs
 		}
 		if *findings != "" {
 			ev.Note = *findings

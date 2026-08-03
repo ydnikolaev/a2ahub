@@ -53,6 +53,9 @@ func TestStartPersistsPreparedBeforePublishAndClearsAcceptedPending(t *testing.T
 	if lease.HeartbeatSequence != 1 || lease.SemanticSequence != 1 {
 		t.Fatalf("unexpected sequences: heartbeat=%d semantic=%d", lease.HeartbeatSequence, lease.SemanticSequence)
 	}
+	if len(lease.Recipients) != 1 || lease.Recipients[0] != "all" || lease.Classification != DefaultClassification {
+		t.Fatalf("default audience not persisted: %v/%q", lease.Recipients, lease.Classification)
+	}
 }
 
 func TestPublicationFailurePersistsExactResultAndResumeUsesExactPreparedBytes(t *testing.T) {
@@ -636,10 +639,53 @@ func TestNewSemanticOperationRefusesPendingAndSequenceConflict(t *testing.T) {
 		Identity: identity, SubjectRef: "XW-test", Mode: ModeTesting, Summary: "Testing", TTL: DefaultTTL,
 		Prepared: testPrepared(t, ActionCheckpoint, 2, "checkpoint"),
 	}
-	_, err = service.Apply(ctx, command)
+	result, err := service.Apply(ctx, command)
 	requireErrorIs(t, err, ErrPendingOperation)
+	var pending *PendingOperationError
+	if !errors.As(err, &pending) || result.LocalErrorCode != LocalErrorPendingOperation ||
+		result.OperationKey != pending.OperationKey || result.Action != pending.Action || pending.Action != ActionStart {
+		t.Fatalf("pending refusal lost structure: result=%+v err=%v", result, err)
+	}
 	if len(publisher.calls) != 1 {
 		t.Fatalf("conflicting operation published; calls=%d", len(publisher.calls))
+	}
+}
+
+func TestLegacyLeaseRemainsInspectableAndRenewableButCannotAuthorizeContinuation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	now := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
+	clock := &fakeClock{now: now}
+	repository := newMemoryRepository()
+	identity := testIdentity()
+	legacy := coordinatorLease(1)
+	legacy.Recipients = nil
+	legacy.Classification = ""
+	repository.entries[identity.LeaseKey] = memoryEntry{lease: legacy, revision: 1}
+	publisher := &fakePublisher{attempts: []PublishAttempt{testAttempt(t, ConvergenceAccepted, "must-not-publish")}}
+	service, err := NewService(repository, publisher, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Apply(ctx, SemanticCommand{
+		Identity: identity, SubjectRef: legacy.SubjectRef, Mode: ModeTesting, Summary: "Testing", TTL: DefaultTTL,
+		Prepared: testPrepared(t, ActionCheckpoint, 2, "legacy-continuation"),
+	})
+	requireErrorIs(t, err, ErrLegacyAudience)
+	if result.LocalState != LocalActive || len(publisher.calls) != 0 {
+		t.Fatalf("legacy continuation result=%+v publisher calls=%d", result, len(publisher.calls))
+	}
+
+	clock.set(now.Add(time.Minute))
+	if _, err := service.Heartbeat(ctx, identity, DefaultTTL); err != nil {
+		t.Fatalf("legacy heartbeat: %v", err)
+	}
+	got, _, err := repository.Load(ctx, identity.LeaseKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Recipients) != 0 || got.Classification != "" {
+		t.Fatalf("heartbeat invented legacy audience: %v/%q", got.Recipients, got.Classification)
 	}
 }
 

@@ -27,17 +27,20 @@ description: >-
 ## Which surface to work through — read this before your first command
 
 There are two ways to drive a2a. For a configured target space, both use the
-same validation/write cores and both refresh the local mirror before a
-decision-bearing call.
+same validation/write cores and refresh the local mirror before a
+decision-bearing shared-space call.
 
 **Work through the CLI.** `a2a inbox`, `a2a show`, `a2a submit`, `a2a contract
 publish` — the verbs in [reference/commands.md](reference/commands.md). This is
 the surface every loop in [loops.md](loops.md) assumes.
 
 **`a2a mcp` is a typed façade over the same core**, for harnesses that prefer
-tool calls. Before every tool call the server fetches the configured space, so
-`a2a_read` does not stay frozen at session startup and a write validates against
-the refreshed view. If that fetch fails, the server logs an explicit
+tool calls. Before shared-space tool calls the server fetches the configured
+space, so `a2a_read` does not stay frozen at session startup and a write
+validates against the refreshed view. `a2a_work` is the deliberate exception:
+its heartbeat/status actions are machine-local and skip the generic fetch;
+semantic work actions refresh through their own write boundary. If a generic
+fetch fails, the server logs an explicit
 `pre-call mirror refresh failed; serving from the last good view` warning and
 continues from the last good mirror; treat that warning as stale evidence and
 restore connectivity before making an absence-dependent decision.
@@ -88,6 +91,7 @@ the requested work.
 | [reference/decompose-example.md](reference/decompose-example.md) | A worked single-intent decompose: one thread carrying an announcement + a question + a work_request, referencing the product-repo fixtures. |
 | [reference/feedback.md](reference/feedback.md) | The feedback channel — filing a defect or a gap against a2a itself (`a2a feedback new/validate/submit/status`), what the quarantined intake does with it, and what makes a report actionable. Hand-maintained prose, not generated. |
 | [reference/status-announcements.md](reference/status-announcements.md) | Feed liveness via `announcement` + `category: status` (+ `period`) — the shipped mechanism, no new type. Hand-maintained prose, not generated. |
+| [reference/work-reporting.md](reference/work-reporting.md) | Provider-neutral start/heartbeat/checkpoint/wait/stop loop; durable checkpoint versus machine-local lease; unknown-not-idle honesty. Hand-maintained prose, not generated. |
 | [reference/retraction.md](reference/retraction.md) | Withdrawing a live datum via a `work_request` carrying an `x_retraction` block — schema-valid today, no release needed. Hand-maintained prose, not generated. |
 | [reference/bindings.md](reference/bindings.md) | A tracked, local `.a2a/bindings.yaml` mapping a consumed contract to where it lands in YOUR code — the missing half of `consumes.yaml`. Hand-maintained prose, not generated. |
 | [reference/threads.md](reference/threads.md) | What a thread IS and why it is the unit you read: one intent, both systems, ordered by commit rather than by anyone's clock, with "whose move is it" computed from the same engine the write verbs enforce. Hand-maintained prose, not generated. |
@@ -113,7 +117,7 @@ Full semantics in [loops.md](loops.md); template + fields per type in
 
 The prose files in this skill — `SKILL.md`, `loops.md`, `troubleshooting.md`,
 `onboarding.md`, `reference/decompose-example.md`, `reference/feedback.md`,
-`reference/status-announcements.md`, `reference/retraction.md`,
+`reference/status-announcements.md`, `reference/work-reporting.md`, `reference/retraction.md`,
 `reference/bindings.md`, `reference/threads.md`, `notifications.md` and
 `reference/contract-versions.md` — are **hand-maintained** and single-sourced here;
 they are reviewed at each tagged release against the maintainers' own

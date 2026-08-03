@@ -72,7 +72,14 @@ func (m *CacheBackedPendingMarker) ClearPending(spaceID, artifactID string) erro
 	return cache.RemoveMarker(m.cacheDir, spaceID, artifactID)
 }
 
+// ReconcilePending implements PendingMarkerReconciler after a successful
+// canonical mirror refresh.
+func (m *CacheBackedPendingMarker) ReconcilePending(spaceID, mirrorDir string) error {
+	return cache.ReconcilePendingMarkers(m.cacheDir, spaceID, mirrorDir)
+}
+
 var _ PendingMarker = (*CacheBackedPendingMarker)(nil)
+var _ PendingMarkerReconciler = (*CacheBackedPendingMarker)(nil)
 
 // CacheBackedCacheRemover is P7's real CacheRemover (the cli.
 // CacheRemover seam, adapters.go): `a2a disconnect`'s cache-removal step

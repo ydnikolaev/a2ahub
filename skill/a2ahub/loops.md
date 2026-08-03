@@ -108,6 +108,15 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
    earlier and feeds the `duplicates_checked` gate (§8.7) the next time you
    consider filing.
 
+6. **Recover reported work.** Read `a2a work status` before starting a second
+   stream. Resume an exact pending operation when one exists; otherwise report
+   newly chosen meaningful work with `a2a work start`. Renew locally while it
+   continues, publish checkpoints only on semantic change, and stop or report a
+   typed wait honestly. The provider-neutral sequence and the distinction
+   between durable checkpoints and local heartbeats live in
+   [reference/work-reporting.md](reference/work-reporting.md); command syntax
+   remains generated in [reference/commands.md](reference/commands.md).
+
 ## §8.2 Send loop — "I need something from another system"
 
 1. **Classify** the need using §3.1: answer → `question`; work/data →

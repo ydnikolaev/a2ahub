@@ -16,13 +16,16 @@ import (
 )
 
 const (
-	SchemaVersion       = 1
-	DefaultTTL          = 15 * time.Minute
-	MinimumTTL          = time.Minute
-	MaximumTTL          = 24 * time.Hour
-	MaximumPrepared     = 24 * 1024
-	MaximumEncodedLease = 32 * 1024
+	SchemaVersion         = 1
+	DefaultTTL            = 15 * time.Minute
+	MinimumTTL            = time.Minute
+	MaximumTTL            = 24 * time.Hour
+	MaximumPrepared       = 24 * 1024
+	MaximumEncodedLease   = 32 * 1024
+	DefaultClassification = "internal"
 )
+
+func defaultAudienceRecipients() []string { return []string{"all"} }
 
 var (
 	workIDPattern = regexp.MustCompile(`^work:[0-9A-HJKMNP-TV-Z]{26}$`)
@@ -254,12 +257,17 @@ func (p *PendingOperation) clone() *PendingOperation {
 }
 
 type Lease struct {
-	SchemaVersion     int
-	Identity          Identity
-	SubjectRef        string
-	Mode              Mode
-	Summary           string
-	WaitingOn         []WaitingOn
+	SchemaVersion int
+	Identity      Identity
+	SubjectRef    string
+	Mode          Mode
+	Summary       string
+	WaitingOn     []WaitingOn
+	// Recipients and Classification are both empty only for inspectable
+	// schema-v1 leases written before audience persistence. That legacy state
+	// may renew/replay exact pending bytes but cannot authorize new semantics.
+	Recipients        []string
+	Classification    string
 	StartedAt         time.Time
 	RenewedAt         time.Time
 	ExpiresAt         time.Time
@@ -273,6 +281,7 @@ type Lease struct {
 func (l Lease) Clone() Lease {
 	copy := l
 	copy.WaitingOn = append([]WaitingOn(nil), l.WaitingOn...)
+	copy.Recipients = append([]string(nil), l.Recipients...)
 	copy.Pending = l.Pending.clone()
 	copy.LastResult = l.LastResult.clone()
 	return copy
@@ -298,13 +307,15 @@ type Publisher interface {
 type Clock interface{ Now() time.Time }
 
 type StartCommand struct {
-	Identity   Identity
-	SubjectRef string
-	Mode       Mode
-	Summary    string
-	WaitingOn  []WaitingOn
-	TTL        time.Duration
-	Prepared   PreparedOperation
+	Identity       Identity
+	SubjectRef     string
+	Mode           Mode
+	Summary        string
+	WaitingOn      []WaitingOn
+	Recipients     []string
+	Classification string
+	TTL            time.Duration
+	Prepared       PreparedOperation
 }
 
 type SemanticCommand struct {
@@ -330,6 +341,8 @@ type OperationResult struct {
 	WorkID           string
 	Session          string
 	OperationKey     string
+	Action           Action
+	LocalErrorCode   string
 	SemanticSequence uint64
 	LocalState       LocalState
 	ExpiresAt        time.Time
@@ -353,6 +366,13 @@ func validateLeaseStructure(lease Lease) error {
 	}
 	if err := validateReport(lease.SubjectRef, lease.Mode, lease.Summary, lease.WaitingOn); err != nil {
 		return err
+	}
+	if leaseAudienceKnown(lease) {
+		if err := validateAudience(lease.Recipients, lease.Classification); err != nil {
+			return err
+		}
+	} else if len(lease.Recipients) != 0 || lease.Classification != "" {
+		return fmt.Errorf("%w: audience must be either fully persisted or fully absent", ErrInvalidLease)
 	}
 	if lease.StartedAt.IsZero() || lease.RenewedAt.IsZero() || lease.ExpiresAt.IsZero() ||
 		lease.RenewedAt.Before(lease.StartedAt) || lease.ExpiresAt.Before(lease.RenewedAt) {
@@ -388,6 +408,35 @@ func validateLeaseStructure(lease Lease) error {
 		}
 		if err := validateActionMode(lease.LastResult.Action, lease.Mode); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func leaseAudienceKnown(lease Lease) bool {
+	return len(lease.Recipients) != 0 && lease.Classification != ""
+}
+
+func validateAudience(recipients []string, classification string) error {
+	if classification != "public" && classification != "internal" && classification != "restricted" {
+		return fmt.Errorf("%w: invalid classification", ErrInvalidLease)
+	}
+	if len(recipients) == 0 || len(recipients) > 32 {
+		return fmt.Errorf("%w: invalid recipients", ErrInvalidLease)
+	}
+	seen := make(map[string]struct{}, len(recipients))
+	for _, recipient := range recipients {
+		if strings.TrimSpace(recipient) == "" || utf8.RuneCountInString(recipient) > 96 {
+			return fmt.Errorf("%w: invalid recipient", ErrInvalidLease)
+		}
+		if _, ok := seen[recipient]; ok {
+			return fmt.Errorf("%w: duplicate recipient", ErrInvalidLease)
+		}
+		seen[recipient] = struct{}{}
+	}
+	if len(recipients) > 1 {
+		if _, ok := seen["all"]; ok {
+			return fmt.Errorf("%w: all recipient must stand alone", ErrInvalidLease)
 		}
 	}
 	return nil

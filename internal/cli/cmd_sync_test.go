@@ -43,6 +43,9 @@ func TestSyncFetchesAllConnectedMirrors(t *testing.T) {
 	if len(pending.calls) != 1 {
 		t.Fatalf("expected exactly one cache-refresh seam call, got %d", len(pending.calls))
 	}
+	if len(pending.reconcileCalls) != 1 || pending.reconcileCalls[0].spaceID != "fixture-space" || pending.reconcileCalls[0].mirrorDir == "" {
+		t.Fatalf("pending reconciliation calls = %+v, want refreshed fixture-space mirror", pending.reconcileCalls)
+	}
 }
 
 func TestSyncNoConnectedSpaces(t *testing.T) {
@@ -185,10 +188,22 @@ func TestSyncRejectsUnexpectedArgs(t *testing.T) {
 }
 
 type recordingPendingMarker struct {
-	calls []string
+	calls          []string
+	reconcileCalls []struct {
+		spaceID   string
+		mirrorDir string
+	}
 }
 
 func (m *recordingPendingMarker) MarkPending(_ context.Context, spaceID, _ string, _ space.WriteResult) error {
 	m.calls = append(m.calls, spaceID)
+	return nil
+}
+
+func (m *recordingPendingMarker) ReconcilePending(spaceID, mirrorDir string) error {
+	m.reconcileCalls = append(m.reconcileCalls, struct {
+		spaceID   string
+		mirrorDir string
+	}{spaceID: spaceID, mirrorDir: mirrorDir})
 	return nil
 }

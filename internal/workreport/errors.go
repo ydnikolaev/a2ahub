@@ -1,6 +1,11 @@
 package workreport
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
+
+const LocalErrorPendingOperation = "pending-operation"
 
 var (
 	ErrLeaseNotFound      = errors.New("work lease not found")
@@ -9,6 +14,7 @@ var (
 	ErrLeaseNotOwned      = errors.New("work lease not owned by session")
 	ErrLeaseClosing       = errors.New("work lease is closing")
 	ErrPendingOperation   = errors.New("work lease has a pending operation")
+	ErrLegacyAudience     = errors.New("legacy work lease has no persisted audience; start a new work item")
 	ErrNoPendingOperation = errors.New("work lease has no pending operation")
 	ErrSequenceConflict   = errors.New("work lease sequence conflict")
 	ErrClockBackward      = errors.New("work lease clock moved backward")
@@ -18,3 +24,16 @@ var (
 	ErrInvalidAttempt     = errors.New("invalid publication attempt")
 	ErrResultPersistence  = errors.New("publication result could not be persisted")
 )
+
+// PendingOperationError preserves the exact resumable operation identity for
+// machine callers while remaining compatible with ErrPendingOperation.
+type PendingOperationError struct {
+	OperationKey string
+	Action       Action
+}
+
+func (e *PendingOperationError) Error() string {
+	return fmt.Sprintf("%s: operation_key=%s action=%s", ErrPendingOperation, e.OperationKey, e.Action)
+}
+
+func (e *PendingOperationError) Unwrap() error { return ErrPendingOperation }

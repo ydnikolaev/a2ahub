@@ -782,6 +782,13 @@ type PendingMarkerClearer interface {
 	ClearPending(spaceID, artifactID string) error
 }
 
+// PendingMarkerReconciler is the optional post-refresh cleanup seam. A real
+// cache-backed marker store removes markers whose artifacts are now visible in
+// the refreshed canonical mirror; no-op and test adapters may omit it.
+type PendingMarkerReconciler interface {
+	ReconcilePending(spaceID, mirrorDir string) error
+}
+
 // NoopPendingMarker is P6's injected no-op PendingMarker.
 type NoopPendingMarker struct{}
 
@@ -800,6 +807,9 @@ func (NoopPendingMarker) Pending(string, string) (PendingWrite, bool, error) {
 
 // ClearPending implements PendingMarkerClearer as a pure no-op cleanup.
 func (NoopPendingMarker) ClearPending(string, string) error { return nil }
+
+// ReconcilePending implements PendingMarkerReconciler as a pure no-op.
+func (NoopPendingMarker) ReconcilePending(string, string) error { return nil }
 
 // CacheRemover is the future internal/cache seam for `a2a disconnect`'s
 // "remove config entry + mirror + cache for that space" step (§7.2
