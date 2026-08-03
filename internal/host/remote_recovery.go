@@ -26,6 +26,17 @@ const (
 	maxRecoveryAggregateBytes = 32 << 20
 )
 
+// RemoteRecoveryChange is the exact before/after Git-tree evidence for one
+// changed path. Empty before fields mean the path was added; empty after
+// fields mean it was deleted. Digests use the canonical sha256:<hex> wire
+// form and modes are restricted to regular-file 100644/100755.
+type RemoteRecoveryChange struct {
+	BeforeDigest string
+	BeforeMode   string
+	AfterDigest  string
+	AfterMode    string
+}
+
 // ReadRemoteRecoveryCommit fetches exactly one remote branch into an
 // invocation-private ref and returns the complete first-parent change set.
 // It deliberately uses only Git object plumbing: a recovery probe must never
@@ -42,7 +53,7 @@ func (h *GitHubHost) ReadRemoteRecoveryCommit(
 	observedBranch string,
 	headSHA string,
 	commitMessage string,
-	changedFileDigests map[string]string,
+	changedFiles map[string]RemoteRecoveryChange,
 	exists bool,
 	err error,
 ) {
@@ -125,7 +136,7 @@ func (h *GitHubHost) ReadRemoteRecoveryCommit(
 
 	diffResult := runRecoveryGit(ctx, maxRecoveryGitOutput,
 		"-C", repoDir, "diff-tree", "-r", "--no-commit-id", "--name-status", "-z",
-		"--find-renames", "--find-copies", "-l256", parentSHA, headSHA, "--",
+		"--no-renames", parentSHA, headSHA, "--",
 	)
 	if diffResult.err != nil || diffResult.exitCode != 0 {
 		return Repo{}, "", "", "", nil, false, recoveryGitError(op, "read complete commit diff", diffResult.err)
@@ -135,29 +146,25 @@ func (h *GitHubHost) ReadRemoteRecoveryCommit(
 		return Repo{}, "", "", "", nil, false, recoveryGitError(op, "invalid commit diff", parseErr)
 	}
 
-	digests := make(map[string]string, len(statuses))
+	changes := make(map[string]RemoteRecoveryChange, len(statuses))
 	totalBytes := 0
 	for _, change := range statuses {
-		if change.status == "D" {
-			digests[change.path] = ""
-			continue
+		var observed RemoteRecoveryChange
+		if change.status == "M" || change.status == "D" {
+			beforeDigest, beforeMode, beforeExists, readErr := readRecoveryTreeBlob(ctx, repoDir, parentSHA, change.path, &totalBytes)
+			if readErr != nil || !beforeExists {
+				return Repo{}, "", "", "", nil, false, recoveryGitError(op, "read prior changed blob", readErr)
+			}
+			observed.BeforeDigest, observed.BeforeMode = beforeDigest, beforeMode
 		}
-		sizeResult := runRecoveryGit(ctx, 128, "-C", repoDir, "cat-file", "-s", headSHA+":"+change.path)
-		if sizeResult.err != nil || sizeResult.exitCode != 0 {
-			return Repo{}, "", "", "", nil, false, recoveryGitError(op, "read changed blob size", sizeResult.err)
+		if change.status == "A" || change.status == "M" {
+			afterDigest, afterMode, afterExists, readErr := readRecoveryTreeBlob(ctx, repoDir, headSHA, change.path, &totalBytes)
+			if readErr != nil || !afterExists {
+				return Repo{}, "", "", "", nil, false, recoveryGitError(op, "read resulting changed blob", readErr)
+			}
+			observed.AfterDigest, observed.AfterMode = afterDigest, afterMode
 		}
-		sizeText := strings.TrimSuffix(string(sizeResult.stdout), "\n")
-		size, sizeErr := strconv.Atoi(sizeText)
-		if sizeErr != nil || size < 0 || size > maxRecoveryBlobBytes || size > maxRecoveryAggregateBytes-totalBytes {
-			return Repo{}, "", "", "", nil, false, recoveryGitError(op, "changed blob exceeds recovery bounds", nil)
-		}
-		blobResult := runRecoveryGit(ctx, size, "-C", repoDir, "cat-file", "blob", headSHA+":"+change.path)
-		if blobResult.err != nil || blobResult.exitCode != 0 || len(blobResult.stdout) != size {
-			return Repo{}, "", "", "", nil, false, recoveryGitError(op, "read changed blob", blobResult.err)
-		}
-		digest := sha256.Sum256(blobResult.stdout)
-		digests[change.path] = "sha256:" + hex.EncodeToString(digest[:])
-		totalBytes += size
+		changes[change.path] = observed
 	}
 
 	cleanup := runRecoveryGit(context.WithoutCancel(ctx), 1024, "-C", repoDir, "update-ref", "-d", privateRef)
@@ -165,7 +172,45 @@ func (h *GitHubHost) ReadRemoteRecoveryCommit(
 		return Repo{}, "", "", "", nil, false, recoveryGitError(op, "remove private ref", cleanup.err)
 	}
 	cleanupNeeded = false
-	return repository, branch, headSHA, string(messageResult.stdout), digests, true, nil
+	return repository, branch, headSHA, string(messageResult.stdout), changes, true, nil
+}
+
+func readRecoveryTreeBlob(ctx context.Context, repoDir, commitSHA, filePath string, totalBytes *int) (digest, mode string, exists bool, err error) {
+	entryResult := runRecoveryGit(ctx, maxRecoveryPathBytes+256,
+		"-C", repoDir, "ls-tree", "-z", "--full-tree", commitSHA, "--", filePath,
+	)
+	if entryResult.err != nil || entryResult.exitCode != 0 {
+		return "", "", false, entryResult.err
+	}
+	if len(entryResult.stdout) == 0 {
+		return "", "", false, nil
+	}
+	if entryResult.stdout[len(entryResult.stdout)-1] != 0 || bytes.Count(entryResult.stdout, []byte{0}) != 1 {
+		return "", "", false, errors.New("tree entry is not one NUL-terminated record")
+	}
+	record := string(entryResult.stdout[:len(entryResult.stdout)-1])
+	metadata, observedPath, ok := strings.Cut(record, "\t")
+	fields := strings.Fields(metadata)
+	if !ok || observedPath != filePath || len(fields) != 3 || fields[1] != "blob" ||
+		(fields[0] != "100644" && fields[0] != "100755") || !validRecoveryGitOID(fields[2]) {
+		return "", "", false, errors.New("tree entry is not an exact regular file")
+	}
+	sizeResult := runRecoveryGit(ctx, 128, "-C", repoDir, "cat-file", "-s", fields[2])
+	if sizeResult.err != nil || sizeResult.exitCode != 0 {
+		return "", "", false, sizeResult.err
+	}
+	sizeText := strings.TrimSuffix(string(sizeResult.stdout), "\n")
+	size, sizeErr := strconv.Atoi(sizeText)
+	if sizeErr != nil || size < 0 || size > maxRecoveryBlobBytes || size > maxRecoveryAggregateBytes-*totalBytes {
+		return "", "", false, errors.New("changed blob exceeds recovery bounds")
+	}
+	blobResult := runRecoveryGit(ctx, size, "-C", repoDir, "cat-file", "blob", fields[2])
+	if blobResult.err != nil || blobResult.exitCode != 0 || len(blobResult.stdout) != size {
+		return "", "", false, errors.New("changed blob read is incomplete")
+	}
+	*totalBytes += size
+	hash := sha256.Sum256(blobResult.stdout)
+	return "sha256:" + hex.EncodeToString(hash[:]), fields[0], true, nil
 }
 
 type recoveryDiffChange struct {
