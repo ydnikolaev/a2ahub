@@ -206,9 +206,14 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (any, *rp
 
 	structured, body, err := spec.Handler(ctx, p.Arguments)
 	if err != nil {
+		content := []contentBlock{{Type: "text", Text: err.Error()}}
+		if structured != nil {
+			if raw, merr := json.Marshal(structured); merr == nil {
+				content = append(content, contentBlock{Type: "text", Text: string(raw)})
+			}
+		}
 		return toolsCallResult{
-			Content: []contentBlock{{Type: "text", Text: err.Error()}},
-			IsError: true,
+			Content: content, StructuredContent: structured, IsError: true,
 		}, nil
 	}
 

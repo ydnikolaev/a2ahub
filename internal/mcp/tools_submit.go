@@ -103,7 +103,7 @@ func newSubmitHandler(deps SubmitDeps) HandlerFunc {
 
 		result, serr := deps.submit(ctx, req, "submit", ids)
 		if serr != nil {
-			return nil, "", serr
+			return result, "", serr
 		}
 		if len(alreadyDone) > 0 {
 			if sr, ok := result.(submitResult); ok {
