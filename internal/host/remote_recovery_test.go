@@ -292,7 +292,7 @@ func gitInputOutput(t testing.TB, dir string, env []string, input []byte, args .
 
 func recoveryTestDigest(content []byte) string {
 	digest := sha256.Sum256(content)
-	return hex.EncodeToString(digest[:])
+	return "sha256:" + hex.EncodeToString(digest[:])
 }
 
 func leftPadRecoveryNumber(value int) string {
