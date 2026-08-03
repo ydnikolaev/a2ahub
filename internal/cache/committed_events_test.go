@@ -1,10 +1,12 @@
 package cache
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/provenance"
 )
 
 // TestCommittedEvents_FiltersBySubjectAndYear proves CommittedEvents'
@@ -85,5 +87,114 @@ func TestCommittedEvents_NoEventsDirReturnsEmptyNotError(t *testing.T) {
 	}
 	if len(events) != 0 {
 		t.Fatalf("events = %+v, want none", events)
+	}
+}
+
+func TestCommittedEventsWithEvidenceRetainsReceiptAndSafeProvenance(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"})
+	base := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
+	ulid := fxULID(1)
+
+	fx.commitEvent("axon", ulid, map[string]any{
+		"subject": "XQ-axon-20260803-p1d", "transition": "acknowledge",
+		"state": "acknowledged",
+		"actor": map[string]any{
+			"kind": "agent", "name": "axon-bot", "system": "axon",
+			"model": "gpt-5.6", "session": "session:worker-17",
+		},
+		"produced_by": map[string]any{"tool": "a2a", "version": "0.19.0"},
+		"at":          fxAt(base),
+	})
+
+	history, err := CommittedEventsWithEvidence(fx.dir, "axon", "XQ-axon-20260803-p1d")
+	if err != nil {
+		t.Fatalf("CommittedEventsWithEvidence: %v", err)
+	}
+	if len(history.Events) != 1 {
+		t.Fatalf("len(history.Events) = %d, want 1", len(history.Events))
+	}
+	if history.Events[0].ClaimedState != fold.StateAcknowledged {
+		t.Fatalf("receipt = %q, want %q", history.Events[0].ClaimedState, fold.StateAcknowledged)
+	}
+	want := provenance.EventEvidence{
+		Receipt: "acknowledged",
+		Actor: provenance.Actor{
+			Kind: "agent", Name: "axon-bot", System: "axon",
+			Model: "gpt-5.6", Session: "session:worker-17",
+		},
+		Producer: provenance.Producer{Tool: "a2a", Version: "0.19.0"},
+	}
+	if got := history.EvidenceByULID[ulid]; got != want {
+		t.Fatalf("EvidenceByULID[%q] = %+v, want %+v", ulid, got, want)
+	}
+}
+
+func TestCommittedEventsWithEvidenceRedactsUnsafeLegacySession(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"})
+	ulid := fxULID(1)
+	const unsafe = "token:super-secret"
+	const wantDigest = "sha256:360f0b0743ceb50fd947fd94c0137516a7ddc7b52bbc5e9a4e6e855174e63a6a"
+
+	fx.commitEvent("axon", ulid, map[string]any{
+		"subject": "XQ-axon-20260803-legacy", "transition": "submit",
+		"actor": map[string]any{
+			"kind": "agent", "name": "legacy-bot", "system": "axon", "session": unsafe,
+		},
+		"at": fxAt(time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)),
+	})
+
+	history, err := CommittedEventsWithEvidence(fx.dir, "axon", "XQ-axon-20260803-legacy")
+	if err != nil {
+		t.Fatalf("CommittedEventsWithEvidence: %v", err)
+	}
+	if got := history.EvidenceByULID[ulid].Actor.Session; got != wantDigest {
+		t.Fatalf("legacy session = %q, want %q", got, wantDigest)
+	}
+}
+
+func TestCommittedEventsCompatibilityAndMetadataPerturbation(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"})
+	base := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
+	subject := "XQ-axon-20260803-equivalence"
+
+	fx.commitEvent("axon", fxULID(1), map[string]any{
+		"subject": subject, "transition": "submit", "state": "submitted",
+		"actor": map[string]any{
+			"kind": "agent", "name": "axon-bot", "system": "axon",
+			"model": "model-a", "session": "session:a",
+		},
+		"produced_by": map[string]any{"tool": "a2a", "version": "0.19.0"},
+		"at":          fxAt(base),
+	})
+
+	history, err := CommittedEventsWithEvidence(fx.dir, "axon", subject)
+	if err != nil {
+		t.Fatalf("CommittedEventsWithEvidence: %v", err)
+	}
+	legacy, err := CommittedEvents(fx.dir, "axon", subject)
+	if err != nil {
+		t.Fatalf("CommittedEvents: %v", err)
+	}
+	if !reflect.DeepEqual(legacy, history.Events) {
+		t.Fatalf("compatibility reader = %+v, richer events = %+v", legacy, history.Events)
+	}
+
+	before := append([]fold.Event(nil), history.Events...)
+	env := fold.Envelope{ID: subject, Kind: fold.KindQuestion, From: "axon", To: []string{"beta"}}
+	membership := func(string) fold.MembershipStatus { return fold.MembershipMember }
+	resultBefore := fold.Fold(fold.KindQuestion, env, before, membership)
+	evidence := history.EvidenceByULID[fxULID(1)]
+	evidence.Actor.Model = "different-model"
+	evidence.Actor.Session = "different:session"
+	evidence.Producer = provenance.Producer{Tool: "other-tool", Version: "build-2"}
+	history.EvidenceByULID[fxULID(1)] = evidence
+	if !reflect.DeepEqual(history.Events, before) {
+		t.Fatalf("sidecar metadata mutation changed fold events: before=%+v after=%+v", before, history.Events)
+	}
+	if resultAfter := fold.Fold(fold.KindQuestion, env, history.Events, membership); !reflect.DeepEqual(resultAfter, resultBefore) {
+		t.Fatalf("sidecar metadata mutation changed fold result: before=%+v after=%+v", resultBefore, resultAfter)
 	}
 }
