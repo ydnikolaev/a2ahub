@@ -7,7 +7,8 @@
   "actor": { "kind": "agent", "name": "publisher", "system": "atlas" },
   "at": "2026-08-03T12:00:00Z",
   "version": "2.3.0",
-  "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "digest": "sha256:short",
+  "digest_profile": "contract-set-v2",
   "publication": {
     "intent_key": "op-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "candidate_intent_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",

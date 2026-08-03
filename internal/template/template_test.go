@@ -245,6 +245,34 @@ func TestRenderUnknownType(t *testing.T) {
 	}
 }
 
+func TestRenderSelectsExplicitEnvelopeTemplateGeneration(t *testing.T) {
+	t.Parallel()
+
+	legacy, err := template.Render(fixedInput("contract", "XC-axon-contract"))
+	if err != nil {
+		t.Fatalf("render default contract template: %v", err)
+	}
+	if !strings.Contains(string(legacy), "schema: envelope/v1") {
+		t.Fatalf("empty EnvelopeSchema no longer preserves the v1 default:\n%s", legacy)
+	}
+
+	v2Input := fixedInput("contract", "XC-axon-contract")
+	v2Input.EnvelopeSchema = "envelope/v2"
+	v2, err := template.Render(v2Input)
+	if err != nil {
+		t.Fatalf("render explicit contract/v2 template: %v", err)
+	}
+	if !strings.Contains(string(v2), "schema: envelope/v2") || !strings.Contains(string(v2), "artifacts:") {
+		t.Fatalf("explicit EnvelopeSchema did not select contract/v2:\n%s", v2)
+	}
+
+	unsupported := fixedInput("contract", "XC-axon-contract")
+	unsupported.EnvelopeSchema = "envelope/v3"
+	if _, err := template.Render(unsupported); !errors.Is(err, template.ErrUnsupportedEnvelopeSchema) {
+		t.Fatalf("unsupported envelope generation error = %v, want ErrUnsupportedEnvelopeSchema", err)
+	}
+}
+
 func TestShowUnknownType(t *testing.T) {
 	t.Parallel()
 	if _, err := template.Show("bogus"); err == nil {

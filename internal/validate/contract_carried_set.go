@@ -74,9 +74,7 @@ func ValidateContractCarriedSet(in ContractCarriedSetInput) (contract.CarriedSet
 	}
 	if len(issues) == 0 && profile != "" {
 		contextViolations = append(contextViolations, mapContractIssues(in.ContractID, set.VerifyGeneratedSource())...)
-		if in.ExpectedDigest != "" {
-			contextViolations = append(contextViolations, mapContractIssues(in.ContractID, set.VerifyDigest(in.ExpectedDigest))...)
-		}
+		contextViolations = append(contextViolations, mapContractIssues(in.ContractID, set.VerifyDigest(in.ExpectedDigest))...)
 		contextViolations = append(contextViolations, scanCarriedSetSecrets(set)...)
 	}
 
@@ -203,7 +201,7 @@ func contractIssueViolation(issue contract.Issue) Violation {
 
 func contractIssueIsReferential(kind contract.IssueKind) bool {
 	switch kind {
-	case contract.IssueMissingFile, contract.IssueUnsafeMode, contract.IssueDigestMismatch:
+	case contract.IssueDescriptorMismatch, contract.IssueMissingFile, contract.IssueUnsafeMode, contract.IssueDigestMismatch:
 		return true
 	default:
 		return false

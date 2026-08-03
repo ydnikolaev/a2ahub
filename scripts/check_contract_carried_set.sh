@@ -41,6 +41,18 @@ var canonicalRoles = []string{
 	"other",
 }
 
+var canonicalRoleRoots = map[string]string{
+	"schema":          "schema/",
+	"valid-fixture":   "fixtures/valid/",
+	"invalid-fixture": "fixtures/invalid/",
+	"errors":          "artifacts/",
+	"vocabulary":      "artifacts/",
+	"limits":          "artifacts/",
+	"changelog":       "artifacts/",
+	"example":         "artifacts/",
+	"other":           "artifacts/",
+}
+
 var publicationProfiles = []string{
 	"contract-tree-v1",
 	"contract-set-v2",
@@ -55,12 +67,12 @@ var allProfiles = []string{
 const publishedV1ManifestDigest = "fbf7b01a7e024e2431c2104422df28c5d74595d509fe61cd6a03a0d9fd59a599"
 
 var canonicalBuilderFunctions = map[string]bool{
-	"BuildCarriedSet":     true,
-	"ValidateCarriedSet":  true,
+	"BuildCarriedSet":      true,
+	"ValidateCarriedSet":   true,
 	"ResolveDigestProfile": true,
-	"buildDeclaredSet":    true,
-	"buildLegacySet":      true,
-	"digestBytes":         true,
+	"buildDeclaredSet":     true,
+	"buildLegacySet":       true,
+	"digestBytes":          true,
 }
 
 var combineDigestAllowlist = map[string]bool{
@@ -122,23 +134,46 @@ func (c *checker) checkContractSchema() {
 	if !reflect.DeepEqual(roles, canonicalRoles) {
 		c.add("contract schema role enum = %v, want canonical 9-role vocabulary %v", roles, canonicalRoles)
 	}
+	roleRoots := schemaRoleRoots(doc)
+	if !reflect.DeepEqual(roleRoots, canonicalRoleRoots) {
+		c.add("contract schema role/root matrix = %v, want %v", roleRoots, canonicalRoleRoots)
+	}
 }
 
 func (c *checker) checkCoreVocabulary() {
 	fset := token.NewFileSet()
-	rel := "internal/contract/types.go"
-	file, err := parser.ParseFile(fset, filepath.Join(c.root, filepath.FromSlash(rel)), nil, parser.AllErrors)
+	typesRel := "internal/contract/types.go"
+	typesFile, err := parser.ParseFile(fset, filepath.Join(c.root, filepath.FromSlash(typesRel)), nil, parser.AllErrors)
 	if err != nil {
-		c.add("parse %s: %v", rel, err)
+		c.add("parse %s: %v", typesRel, err)
 		return
 	}
-	roles := typedStringConstants(file, "Role")
+	roles := typedStringConstants(typesFile, "Role")
 	if !reflect.DeepEqual(roles, canonicalRoles) {
 		c.add("internal/contract Role constants = %v, want %v", roles, canonicalRoles)
 	}
-	profiles := typedStringConstants(file, "DigestProfile")
+	profiles := typedStringConstants(typesFile, "DigestProfile")
 	if !reflect.DeepEqual(profiles, allProfiles) {
 		c.add("internal/contract DigestProfile constants = %v, want %v", profiles, allProfiles)
+	}
+
+	setRel := "internal/contract/set.go"
+	setFile, err := parser.ParseFile(fset, filepath.Join(c.root, filepath.FromSlash(setRel)), nil, parser.AllErrors)
+	if err != nil {
+		c.add("parse %s: %v", setRel, err)
+		return
+	}
+	roleRoots := coreRoleRoots(setFile, typedStringConstantMap(typesFile, "Role"))
+	if !reflect.DeepEqual(roleRoots, canonicalRoleRoots) {
+		c.add("internal/contract role/root matrix = %v, want %v", roleRoots, canonicalRoleRoots)
+	}
+	routedProfiles := switchCaseValues(setFile, "BuildCarriedSet", typedStringConstantMap(typesFile, "DigestProfile"))
+	if !reflect.DeepEqual(routedProfiles, sortedStrings(publicationProfiles)) {
+		c.add("internal/contract BuildCarriedSet profiles = %v, want publication profiles %v", routedProfiles, publicationProfiles)
+	}
+	legacyRoots := stringLiteralsInFunction(setFile, "insideLegacyRoot")
+	if !reflect.DeepEqual(legacyRoots, []string{"schema/", "fixtures/"}) {
+		c.add("internal/contract legacy roots = %v, want immutable [schema/ fixtures/]", legacyRoots)
 	}
 }
 
@@ -201,6 +236,25 @@ func (c *checker) checkEventProfiles() {
 	profiles := stringArrayAt(doc, "properties", "digest_profile", "enum")
 	if !reflect.DeepEqual(profiles, publicationProfiles) {
 		c.add("event/v2 digest_profile enum = %v, want %v", profiles, publicationProfiles)
+	}
+	required := stringArrayAt(doc, "allOf", "0", "then", "required")
+	if required == nil {
+		rawAllOf, _ := doc["allOf"].([]any)
+		if len(rawAllOf) != 0 {
+			if first, ok := rawAllOf[0].(map[string]any); ok {
+				required = stringArrayAt(first, "then", "required")
+			}
+		}
+	}
+	wantRequired := []string{"version", "digest", "digest_profile", "publication"}
+	if !reflect.DeepEqual(required, wantRequired) {
+		c.add("event/v2 contract publish required fields = %v, want %v", required, wantRequired)
+	}
+	if pattern, _ := valueAt(doc, "properties", "version", "pattern").(string); pattern != "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" {
+		c.add("event/v2 publication version pattern is not canonical semver")
+	}
+	if pattern, _ := valueAt(doc, "properties", "digest", "pattern").(string); pattern != "^sha256:[a-f0-9]{64}$" {
+		c.add("event/v2 publication digest pattern is not full lowercase sha256")
 	}
 }
 
@@ -266,6 +320,7 @@ func (c *checker) checkPublishedV1() {
 func (c *checker) checkDuplicateImplementations() {
 	root := filepath.Join(c.root, "internal")
 	combineCalls := make(map[string]int)
+	canonicalDefinitions := make(map[string]int)
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -288,6 +343,9 @@ func (c *checker) checkDuplicateImplementations() {
 		for _, decl := range file.Decls {
 			switch value := decl.(type) {
 			case *ast.FuncDecl:
+				if insideCanonicalPackage && canonicalBuilderFunctions[value.Name.Name] {
+					canonicalDefinitions[value.Name.Name]++
+				}
 				if !insideCanonicalPackage && canonicalBuilderFunctions[value.Name.Name] {
 					c.add("%s declares second carried-set/profile builder %s", rel, value.Name.Name)
 				}
@@ -348,6 +406,11 @@ func (c *checker) checkDuplicateImplementations() {
 	if err != nil {
 		c.add("walk internal Go sources: %v", err)
 	}
+	for name := range canonicalBuilderFunctions {
+		if canonicalDefinitions[name] != 1 {
+			c.add("internal/contract canonical function %s has %d definitions, want exactly 1", name, canonicalDefinitions[name])
+		}
+	}
 }
 
 func (c *checker) readJSON(rel string) map[string]any {
@@ -388,6 +451,165 @@ func stringArrayAt(root map[string]any, path ...string) []string {
 	return result
 }
 
+func schemaRoleRoots(doc map[string]any) map[string]string {
+	result := make(map[string]string)
+	rawRules, ok := valueAt(doc, "$defs", "artifactEntry", "allOf").([]any)
+	if !ok {
+		return result
+	}
+	for _, rawRule := range rawRules {
+		rule, ok := rawRule.(map[string]any)
+		if !ok {
+			continue
+		}
+		var roles []string
+		if role, ok := valueAt(rule, "if", "properties", "role", "const").(string); ok {
+			roles = []string{role}
+		} else {
+			rawRoles, ok := valueAt(rule, "if", "properties", "role", "enum").([]any)
+			if !ok {
+				continue
+			}
+			for _, rawRole := range rawRoles {
+				role, ok := rawRole.(string)
+				if !ok {
+					roles = nil
+					break
+				}
+				roles = append(roles, role)
+			}
+		}
+		pattern, ok := valueAt(rule, "then", "properties", "path", "pattern").(string)
+		if !ok {
+			continue
+		}
+		root := ""
+		for _, candidate := range []string{"schema/", "fixtures/valid/", "fixtures/invalid/", "artifacts/"} {
+			if strings.HasPrefix(pattern, "^"+candidate) {
+				root = candidate
+				break
+			}
+		}
+		for _, role := range roles {
+			result[role] = root
+		}
+	}
+	return result
+}
+
+func valueAt(root map[string]any, path ...string) any {
+	var value any = root
+	for _, key := range path {
+		object, ok := value.(map[string]any)
+		if !ok {
+			return nil
+		}
+		value = object[key]
+	}
+	return value
+}
+
+func coreRoleRoots(file *ast.File, constants map[string]string) map[string]string {
+	result := make(map[string]string)
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "rootForRole" || fn.Body == nil {
+			continue
+		}
+		ast.Inspect(fn.Body, func(node ast.Node) bool {
+			switchStmt, ok := node.(*ast.SwitchStmt)
+			if !ok {
+				return true
+			}
+			for _, rawClause := range switchStmt.Body.List {
+				clause, ok := rawClause.(*ast.CaseClause)
+				if !ok || len(clause.List) == 0 {
+					continue
+				}
+				root := ""
+				for _, stmt := range clause.Body {
+					ret, ok := stmt.(*ast.ReturnStmt)
+					if !ok || len(ret.Results) == 0 {
+						continue
+					}
+					literal, ok := ret.Results[0].(*ast.BasicLit)
+					if !ok || literal.Kind != token.STRING {
+						continue
+					}
+					root, _ = strconv.Unquote(literal.Value)
+				}
+				for _, expression := range clause.List {
+					ident, ok := expression.(*ast.Ident)
+					if !ok {
+						continue
+					}
+					if role, exists := constants[ident.Name]; exists {
+						result[role] = root
+					}
+				}
+			}
+			return false
+		})
+	}
+	return result
+}
+
+func switchCaseValues(file *ast.File, function string, constants map[string]string) []string {
+	var result []string
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != function || fn.Body == nil {
+			continue
+		}
+		ast.Inspect(fn.Body, func(node ast.Node) bool {
+			switchStmt, ok := node.(*ast.SwitchStmt)
+			if !ok {
+				return true
+			}
+			for _, rawClause := range switchStmt.Body.List {
+				clause, ok := rawClause.(*ast.CaseClause)
+				if !ok {
+					continue
+				}
+				for _, expression := range clause.List {
+					ident, ok := expression.(*ast.Ident)
+					if !ok {
+						continue
+					}
+					if value, exists := constants[ident.Name]; exists {
+						result = append(result, value)
+					}
+				}
+			}
+			return false
+		})
+	}
+	sort.Strings(result)
+	return result
+}
+
+func stringLiteralsInFunction(file *ast.File, function string) []string {
+	var result []string
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != function || fn.Body == nil {
+			continue
+		}
+		ast.Inspect(fn.Body, func(node ast.Node) bool {
+			literal, ok := node.(*ast.BasicLit)
+			if !ok || literal.Kind != token.STRING {
+				return true
+			}
+			value, err := strconv.Unquote(literal.Value)
+			if err == nil {
+				result = append(result, value)
+			}
+			return true
+		})
+	}
+	return result
+}
+
 func typedStringConstants(file *ast.File, typeName string) []string {
 	var result []string
 	for _, decl := range file.Decls {
@@ -419,11 +641,48 @@ func typedStringConstants(file *ast.File, typeName string) []string {
 	return result
 }
 
+func typedStringConstantMap(file *ast.File, typeName string) map[string]string {
+	result := make(map[string]string)
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, rawSpec := range gen.Specs {
+			spec, ok := rawSpec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			ident, ok := spec.Type.(*ast.Ident)
+			if !ok || ident.Name != typeName || len(spec.Names) != len(spec.Values) {
+				continue
+			}
+			for i, expression := range spec.Values {
+				literal, ok := expression.(*ast.BasicLit)
+				if !ok || literal.Kind != token.STRING {
+					continue
+				}
+				decoded, err := strconv.Unquote(literal.Value)
+				if err == nil {
+					result[spec.Names[i].Name] = decoded
+				}
+			}
+		}
+	}
+	return result
+}
+
 func stringSet(values []string) map[string]bool {
 	result := make(map[string]bool, len(values))
 	for _, value := range values {
 		result[value] = true
 	}
+	return result
+}
+
+func sortedStrings(values []string) []string {
+	result := append([]string(nil), values...)
+	sort.Strings(result)
 	return result
 }
 

@@ -30,6 +30,10 @@ type Actor struct {
 type Input struct {
 	// Type is one of the 8 §3.1 envelope types (schema.EnvelopeTypes()).
 	Type string
+	// EnvelopeSchema selects the canonical template generation. Empty keeps
+	// the historical envelope/v1 default; envelope/v2 selects the concrete
+	// v2 template for types that have shipped one.
+	EnvelopeSchema string
 	// ID is the already-minted artifact id, used verbatim — this package
 	// never mints an ID itself (internal/artifact does, at the cmd_new.go
 	// call site, per §3.3).
@@ -71,7 +75,7 @@ func Types() []string {
 // template Render fills.
 func Show(typ string) ([]byte, error) {
 	const op = "Show"
-	raw, err := rawTemplate(typ)
+	raw, err := rawTemplate(typ, "")
 	if err != nil {
 		return nil, &Error{Op: op, Input: typ, Err: err}
 	}
@@ -90,7 +94,7 @@ func Show(typ string) ([]byte, error) {
 // per-type domain knowledge beyond the enum-placeholder convention.
 func Render(in Input) ([]byte, error) {
 	const op = "Render"
-	raw, err := rawTemplate(in.Type)
+	raw, err := rawTemplate(in.Type, in.EnvelopeSchema)
 	if err != nil {
 		return nil, &Error{Op: op, Input: in.Type, Err: err}
 	}
@@ -389,11 +393,19 @@ func orDefault(v, def string) string {
 	return v
 }
 
-func rawTemplate(typ string) ([]byte, error) {
+func rawTemplate(typ, envelopeSchema string) ([]byte, error) {
 	if !isKnownType(typ) {
 		return nil, ErrUnknownType
 	}
-	return schemas.FS.ReadFile("templates/v1/" + typ + ".md")
+	version := "v1"
+	switch envelopeSchema {
+	case "", "envelope/v1":
+	case "envelope/v2":
+		version = "v2"
+	default:
+		return nil, ErrUnsupportedEnvelopeSchema
+	}
+	return schemas.FS.ReadFile("templates/" + version + "/" + typ + ".md")
 }
 
 func isKnownType(typ string) bool {

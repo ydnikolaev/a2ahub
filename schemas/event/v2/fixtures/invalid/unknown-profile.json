@@ -6,6 +6,8 @@
   "transition": "publish",
   "actor": { "kind": "agent", "name": "publisher", "system": "atlas" },
   "at": "2026-08-03T12:00:00Z",
+  "version": "2.3.0",
+  "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "digest_profile": "current",
   "publication": {
     "intent_key": "op-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

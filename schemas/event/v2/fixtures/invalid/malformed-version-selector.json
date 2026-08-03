@@ -8,10 +8,11 @@
   "at": "2026-08-03T12:00:00Z",
   "version": "2.3.0",
   "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "digest_profile": "contract-set-v2",
   "publication": {
     "intent_key": "op-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "candidate_intent_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-    "version_selector": "auto:minor",
+    "version_selector": "explicit:01.2.3",
     "operation_key": "op-v1-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
   }
 }

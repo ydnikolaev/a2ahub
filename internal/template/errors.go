@@ -1,5 +1,5 @@
-// Package template embeds and renders the P2 per-type canonical templates
-// (schemas/templates/v1/*.md, §5.6) for `a2a new`/`a2a template
+// Package template embeds and renders the versioned per-type canonical templates
+// (schemas/templates/v*/*.md, §5.6) for `a2a new`/`a2a template
 // list|show` (P6). It imports only internal/artifact (frontmatter split,
 // ID/digest reuse) and internal/schema (the canonical type list + embedded
 // schema property sets for its own field-subset self-check) per ADR-001's
@@ -22,6 +22,10 @@ var (
 	// ErrUnknownType is returned when the requested type is not one of the
 	// 8 §3.1 envelope types this package has an embedded template for.
 	ErrUnknownType = errors.New("template: unknown envelope type")
+
+	// ErrUnsupportedEnvelopeSchema is returned when a caller selects an
+	// envelope template generation this binary has not shipped.
+	ErrUnsupportedEnvelopeSchema = errors.New("template: unsupported envelope schema")
 
 	// ErrUnappliableField is returned when a --field override cannot be
 	// applied to the node the template has at that key.
