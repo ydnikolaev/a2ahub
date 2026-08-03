@@ -58,7 +58,6 @@ func TestWriteResultJournalRejectsNonCanonicalAndInconsistentForms(t *testing.T)
 		"bad method":   bytes.Replace(valid, []byte(`"merge_method":""`), []byte(`"merge_method":"magic"`), 1),
 	}
 	for name, raw := range tests {
-		name, raw := name, raw
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			if _, err := DecodeWriteResultJournal(raw); !errors.Is(err, ErrWriteResultJournalInvalid) {

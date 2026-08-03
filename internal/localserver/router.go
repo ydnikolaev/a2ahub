@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// ErrBoundedWriterUnsupported reports a ResponseWriter without deadline support.
 var ErrBoundedWriterUnsupported = errors.New("localserver: response writer does not support bounded writes")
 
 func (s *Server) routeHandler() http.Handler {

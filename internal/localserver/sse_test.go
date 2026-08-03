@@ -3,6 +3,7 @@ package localserver
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"runtime"
 	"strings"
@@ -160,7 +161,7 @@ func TestBrokerReplacesBackpressuredRevisionAndClosesClients(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register() error = %v", err)
 	}
-	if _, _, err := broker.register(); err != ErrClientLimit {
+	if _, _, err := broker.register(); !errors.Is(err, ErrClientLimit) {
 		t.Fatalf("excess register error = %v", err)
 	}
 	broker.publish("r1")

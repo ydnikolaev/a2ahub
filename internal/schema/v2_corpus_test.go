@@ -23,7 +23,6 @@ func TestContractV2GoldenFixtures(t *testing.T) {
 		t.Fatal("expected at least one valid contract/v2 fixture")
 	}
 	for _, path := range validPaths {
-		path := path
 		t.Run("valid/"+filepath.Base(path), func(t *testing.T) {
 			t.Parallel()
 			violations, err := c.ValidateEnvelope("contract", "v2", readEnvelopeFixture(t, path))
@@ -56,7 +55,6 @@ func TestContractV2GoldenFixtures(t *testing.T) {
 		t.Fatalf("invalid contract/v2 fixture count = %d, want %d", len(invalidPaths), len(wantKeywords))
 	}
 	for _, path := range invalidPaths {
-		path := path
 		name := filepath.Base(path)
 		wantKeyword, ok := wantKeywords[name]
 		if !ok {
@@ -121,7 +119,6 @@ func TestAnnouncementV2GoldenFixtures(t *testing.T) {
 		t.Fatal("expected at least one valid announcement/v2 fixture")
 	}
 	for _, path := range validPaths {
-		path := path
 		t.Run("valid/"+filepath.Base(path), func(t *testing.T) {
 			t.Parallel()
 			violations, err := c.ValidateEnvelope("announcement", "v2", readEnvelopeFixture(t, path))
@@ -142,7 +139,6 @@ func TestAnnouncementV2GoldenFixtures(t *testing.T) {
 		t.Fatal("expected at least one invalid announcement/v2 fixture")
 	}
 	for _, path := range invalidPaths {
-		path := path
 		name := filepath.Base(path)
 		if _, err := os.Stat(path + ".expect.yaml"); err != nil {
 			t.Fatalf("invalid announcement/v2 fixture %q has no sidecar: %v", name, err)
@@ -173,7 +169,6 @@ func TestEventV2CorpusFixtures(t *testing.T) {
 		t.Fatal("expected at least one valid event/v2 fixture")
 	}
 	for _, path := range validPaths {
-		path := path
 		t.Run("valid/"+filepath.Base(path), func(t *testing.T) {
 			t.Parallel()
 			violations, err := c.ValidateEvent("v2", readJSONFixture(t, path))
@@ -216,7 +211,6 @@ func TestEventV2CorpusFixtures(t *testing.T) {
 		t.Fatalf("invalid event/v2 fixture count = %d, want %d", len(invalidPaths), len(want))
 	}
 	for _, path := range invalidPaths {
-		path := path
 		name := filepath.Base(path)
 		expected, ok := want[name]
 		if !ok {

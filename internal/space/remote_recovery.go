@@ -12,6 +12,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/host"
 )
 
+// ErrOperationConflict is part of the public package API.
 var ErrOperationConflict = errors.New("space: operation-conflict")
 
 // remoteRecoveryReader is the narrow read capability required to repair a
@@ -161,12 +162,8 @@ func parseRemoteRecoveryTrailers(message string) (remoteRecoveryTrailers, string
 	// message, whose canonical object form itself ends in one newline. Test
 	// adapters may return the canonical text directly. Accept either transport
 	// shape, normalize both to the prepared message, and reject a third suffix.
-	if strings.HasSuffix(canonical, "\n") {
-		canonical = strings.TrimSuffix(canonical, "\n")
-	}
-	if strings.HasSuffix(canonical, "\n") {
-		canonical = strings.TrimSuffix(canonical, "\n")
-	}
+	canonical = strings.TrimSuffix(canonical, "\n")
+	canonical = strings.TrimSuffix(canonical, "\n")
 	if strings.HasSuffix(canonical, "\n") {
 		return remoteRecoveryTrailers{}, "", remoteRecoveryConflict("commit-message-noncanonical")
 	}
@@ -318,7 +315,7 @@ func validRemoteRecoveryOID(oid string) bool {
 		return false
 	}
 	for _, ch := range oid {
-		if !('0' <= ch && ch <= '9') && !('a' <= ch && ch <= 'f') {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
 			return false
 		}
 	}

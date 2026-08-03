@@ -17,12 +17,15 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
 )
 
+// ErrInvalidConfiguration reports missing or incoherent projection dependencies.
 var ErrInvalidConfiguration = errors.New("operationalsource: invalid configuration")
 
+// CacheReader supplies committed cache evidence for a snapshot.
 type CacheReader interface {
 	OperationalEvidence(context.Context) (cache.OperationalEvidence, error)
 }
 
+// LeaseReader supplies local work-lease evidence for a snapshot.
 type LeaseReader interface {
 	ListWork(context.Context, string, string, string, bool) ([]workreport.Lease, error)
 }
@@ -36,10 +39,12 @@ type PendingResult struct {
 	RemainingAction string
 }
 
+// PendingDecoder decodes the safe subset of a pending write result.
 type PendingDecoder interface {
 	DecodePending([]byte) (PendingResult, error)
 }
 
+// SyncResult records the outcome of refreshing one configured space.
 type SyncResult struct {
 	Space   string
 	Code    string
@@ -47,6 +52,7 @@ type SyncResult struct {
 	Failed  bool
 }
 
+// Fetcher refreshes committed evidence before the projection is rebuilt.
 type Fetcher interface {
 	Sync(context.Context) ([]SyncResult, error)
 }
@@ -60,6 +66,7 @@ type CacheSyncer interface {
 // CacheFetcher adapts cache refresh outcomes to stable operational facts.
 type CacheFetcher struct{ cache CacheSyncer }
 
+// NewCacheFetcher adapts the cache refresh seam for the operational source.
 func NewCacheFetcher(cacheSyncer CacheSyncer) (*CacheFetcher, error) {
 	if cacheSyncer == nil {
 		return nil, ErrInvalidConfiguration
@@ -67,6 +74,7 @@ func NewCacheFetcher(cacheSyncer CacheSyncer) (*CacheFetcher, error) {
 	return &CacheFetcher{cache: cacheSyncer}, nil
 }
 
+// Sync returns one stable result per cache refresh attempt.
 func (f *CacheFetcher) Sync(ctx context.Context) ([]SyncResult, error) {
 	cacheResults := f.cache.SyncIfStaleResults(ctx)
 	results := make([]SyncResult, 0, len(cacheResults))
@@ -84,12 +92,14 @@ func (f *CacheFetcher) Sync(ctx context.Context) ([]SyncResult, error) {
 	return results, errors.Join(failures...)
 }
 
+// Config identifies the project, spaces, and output limits to project.
 type Config struct {
 	ProjectID string
 	Spaces    []string
 	Limits    operational.Limits
 }
 
+// Source composes cache and local-lease evidence into operational snapshots.
 type Source struct {
 	config  Config
 	cache   CacheReader
@@ -112,6 +122,7 @@ type syncDegradation struct {
 	revision string
 }
 
+// New creates an operational source with all required read dependencies.
 func New(config Config, cacheReader CacheReader, leases LeaseReader, pending PendingDecoder, fetcher Fetcher, clock operational.Clock) (*Source, error) {
 	if config.ProjectID == "" || cacheReader == nil || leases == nil || pending == nil || clock == nil {
 		return nil, ErrInvalidConfiguration
@@ -130,6 +141,7 @@ func New(config Config, cacheReader CacheReader, leases LeaseReader, pending Pen
 	}, nil
 }
 
+// Snapshot builds the current projection without fetching.
 func (s *Source) Snapshot(ctx context.Context) (operational.Snapshot, error) {
 	s.syncMu.Lock()
 	defer s.syncMu.Unlock()

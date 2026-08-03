@@ -21,15 +21,18 @@ type FetchSyncer interface {
 	Sync(context.Context) (operational.Snapshot, error)
 }
 
+// ShellRenderer renders an operational snapshot into the dashboard document.
 type ShellRenderer interface {
 	Render(context.Context, operational.Snapshot) ([]byte, error)
 }
 
+// Ticker is the owned refresh clock seam.
 type Ticker interface {
 	C() <-chan time.Time
 	Stop()
 }
 
+// TickerFactory creates refresh clocks with caller-owned lifetimes.
 type TickerFactory interface {
 	NewTicker(time.Duration) Ticker
 }

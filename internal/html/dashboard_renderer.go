@@ -9,6 +9,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/operational"
 )
 
+// ErrInvalidDashboardRenderer reports an incomplete renderer or invalid snapshot.
 var ErrInvalidDashboardRenderer = errors.New("html: invalid dashboard renderer")
 
 // DashboardRenderer turns an already-built operational snapshot into the
@@ -21,6 +22,7 @@ type DashboardRenderer struct {
 	docs     []DocSection
 }
 
+// NewDashboardRenderer creates a renderer backed by the supplied cache store.
 func NewDashboardRenderer(store *cache.Store, system string) (*DashboardRenderer, error) {
 	if store == nil {
 		return nil, ErrInvalidDashboardRenderer

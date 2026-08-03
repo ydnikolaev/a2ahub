@@ -80,7 +80,7 @@ func TestPrepareSubmissionFreezesFinalBytesWithoutSideEffects(t *testing.T) {
 
 	mutations := prepared.Mutations()
 	mutations[0].Bytes[0] ^= 0xff
-	if reflect.DeepEqual(mutations, prepared.Mutations()) {
+	if bytes.Equal(mutations[0].Bytes, prepared.Mutations()[0].Bytes) {
 		t.Fatal("Mutations accessor exposed mutable prepared storage")
 	}
 }
@@ -112,7 +112,7 @@ func TestPreparedJournalRoundTripSubmitsExactFrozenRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodePreparedSubmissionJournal: %v", err)
 	}
-	if decoded.Digest() != prepared.Digest() || !reflect.DeepEqual(decoded.Mutations(), prepared.Mutations()) || decoded.HostRequest() != prepared.HostRequest() {
+	if decoded.Digest() != prepared.Digest() || !equalJournalableMutations(decoded.Mutations(), prepared.Mutations()) || decoded.HostRequest() != prepared.HostRequest() {
 		t.Fatalf("decoded prepared submission drifted\n got: %+v\nwant: %+v", decoded.HostRequest(), prepared.HostRequest())
 	}
 
@@ -160,6 +160,24 @@ func TestPreparedJournalRoundTripSubmitsExactFrozenRequest(t *testing.T) {
 			t.Fatalf("committed %s blob = %q, want exact prepared blob %q", mutation.Path, gotBlob, wantBlob)
 		}
 	}
+}
+
+func equalJournalableMutations(left, right []Mutation) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index].Path != right[index].Path || left[index].Operation != right[index].Operation ||
+			!bytes.Equal(left[index].Bytes, right[index].Bytes) || left[index].Mode != right[index].Mode ||
+			left[index].ContractRoot != right[index].ContractRoot || left[index].PlanDigest != right[index].PlanDigest ||
+			(left[index].ExpectedBefore == nil) != (right[index].ExpectedBefore == nil) {
+			return false
+		}
+		if left[index].ExpectedBefore != nil && *left[index].ExpectedBefore != *right[index].ExpectedBefore {
+			return false
+		}
+	}
+	return true
 }
 
 func TestSubmitPreparedRefusesCorruptionTargetAndFloorBeforeHost(t *testing.T) {

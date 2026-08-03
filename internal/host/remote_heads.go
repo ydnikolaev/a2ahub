@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 )
 
+// MaxContractPublishRemoteHeads bounds a publication-head namespace listing.
 const MaxContractPublishRemoteHeads = 256
 
 // RemoteHead is one exact remote branch identity returned by an exhaustive

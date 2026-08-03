@@ -79,8 +79,10 @@ func NewWorkCommand(deps WorkCommandDeps) (*WorkCommand, error) {
 	return &WorkCommand{deps: deps}, nil
 }
 
+// Name returns the command name.
 func (c *WorkCommand) Name() string { return "work" }
 
+// Synopsis returns a concise command description.
 func (c *WorkCommand) Synopsis() string {
 	return "report local and durable work: work <start|heartbeat|resume|checkpoint|wait|stop|status>"
 }
@@ -90,6 +92,7 @@ func WorkSubcommands() []string {
 	return []string{"start", "heartbeat", "resume", "checkpoint", "wait", "stop", "status"}
 }
 
+// Run dispatches the selected work subcommand.
 func (c *WorkCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a work <start|heartbeat|resume|checkpoint|wait|stop|status> ...")

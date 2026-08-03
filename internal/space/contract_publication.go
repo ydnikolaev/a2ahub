@@ -19,24 +19,34 @@ import (
 )
 
 var (
-	ErrContractPublicationInvalid         = errors.New("space: invalid contract publication request")
-	ErrContractPublicationPlanChanged     = errors.New("space: plan-changed")
-	ErrContractPublicationInProgress      = errors.New("space: publication-in-progress")
+	// ErrContractPublicationInvalid is part of the public package API.
+	ErrContractPublicationInvalid = errors.New("space: invalid contract publication request")
+	// ErrContractPublicationPlanChanged is part of the public package API.
+	ErrContractPublicationPlanChanged = errors.New("space: plan-changed")
+	// ErrContractPublicationInProgress is part of the public package API.
+	ErrContractPublicationInProgress = errors.New("space: publication-in-progress")
+	// ErrContractPublicationExplicitVersion is part of the public package API.
 	ErrContractPublicationExplicitVersion = errors.New("space: explicit-version-required")
 )
 
+// ContractPublicationStatus is part of the public package API.
 type ContractPublicationStatus string
 
 const (
-	ContractPublicationPlanned          ContractPublicationStatus = "planned"
+	// ContractPublicationPlanned is part of the public package API.
+	ContractPublicationPlanned ContractPublicationStatus = "planned"
+	// ContractPublicationAlreadyPublished is part of the public package API.
 	ContractPublicationAlreadyPublished ContractPublicationStatus = "already-published"
-	ContractPublicationSubmitted        ContractPublicationStatus = "submitted"
-	ContractPublicationRepaired         ContractPublicationStatus = "repaired"
+	// ContractPublicationSubmitted is part of the public package API.
+	ContractPublicationSubmitted ContractPublicationStatus = "submitted"
+	// ContractPublicationRepaired is part of the public package API.
+	ContractPublicationRepaired ContractPublicationStatus = "repaired"
 )
 
 // ContractPublicationCandidateReader freezes one bounded source. It is called
 // exactly once before authoritative-main, remote-head, floor, or baseline
 // reads. The returned snapshot is detached before any other dependency runs.
+// ContractPublicationCandidateReader is part of the public package API.
 type ContractPublicationCandidateReader interface {
 	ReadContractPublicationCandidate(context.Context) (ContractCandidateSnapshot, error)
 	ContractPublicationCandidateSource() contract.CandidateSource
@@ -46,6 +56,7 @@ type ContractPublicationCandidateReader interface {
 // from the rooted candidate collector to publication. It binds the exact
 // snapshot fingerprint and an opaque mirror tree identity (or the contained
 // staging location) before a transport can construct a publication request.
+// FrozenContractPublicationCandidate is part of the public package API.
 type FrozenContractPublicationCandidate struct {
 	snapshot ContractCandidateSnapshot
 	source   contract.CandidateSource
@@ -54,6 +65,7 @@ type FrozenContractPublicationCandidate struct {
 // ContractPublicationMirrorTree names one exact Git tree from the already
 // fetched mirror. Location is derived from that tree's object id only after
 // every candidate byte and mode has been compared to the rooted snapshot.
+// ContractPublicationMirrorTree is part of the public package API.
 type ContractPublicationMirrorTree struct {
 	RepoDir string
 	Commit  string
@@ -65,10 +77,12 @@ type ContractPublicationMirrorTree struct {
 // bounded, ambient-Git-hardened contract read seam; callers then pass this OID
 // to NewFrozenContractPublicationCandidate, which proves the rooted working
 // tree bytes and modes match that immutable Git tree before planning.
+// ResolveContractPublicationCandidateCommit is part of the public package API.
 func ResolveContractPublicationCandidateCommit(ctx context.Context, repoDir string) (string, error) {
 	return contractGitResolveCommit(ctx, repoDir, "HEAD")
 }
 
+// NewFrozenContractPublicationCandidate is part of the public package API.
 func NewFrozenContractPublicationCandidate(ctx context.Context, reader *ContractCandidateReader, mirrorTree ContractPublicationMirrorTree) (*FrozenContractPublicationCandidate, error) {
 	if reader == nil {
 		return nil, fmt.Errorf("%w: rooted candidate reader is required", ErrContractPublicationInvalid)
@@ -79,16 +93,17 @@ func NewFrozenContractPublicationCandidate(ctx context.Context, reader *Contract
 	}
 	kind := contract.CandidateSourceMirror
 	location := ""
-	if snapshot.Source == ContractCandidateSourceStaging {
+	switch snapshot.Source {
+	case ContractCandidateSourceStaging:
 		kind, location = contract.CandidateSourceStaging, reader.location.Path
-	} else if snapshot.Source != ContractCandidateSourceMirror {
-		return nil, fmt.Errorf("%w: candidate source is unsupported", ErrContractPublicationInvalid)
-	} else {
+	case ContractCandidateSourceMirror:
 		var verifyErr error
 		location, verifyErr = verifyContractPublicationMirrorTree(ctx, snapshot, mirrorTree)
 		if verifyErr != nil {
 			return nil, verifyErr
 		}
+	default:
+		return nil, fmt.Errorf("%w: candidate source is unsupported", ErrContractPublicationInvalid)
 	}
 	if snapshot.Fingerprint == "" {
 		return nil, fmt.Errorf("%w: candidate fingerprint is missing", ErrContractPublicationInvalid)
@@ -151,6 +166,7 @@ func verifyContractPublicationMirrorTree(ctx context.Context, snapshot ContractC
 	return treeOID, nil
 }
 
+// ContractPublicationCandidateSource is part of the public package API.
 func (r *FrozenContractPublicationCandidate) ContractPublicationCandidateSource() contract.CandidateSource {
 	if r == nil {
 		return contract.CandidateSource{}
@@ -158,6 +174,7 @@ func (r *FrozenContractPublicationCandidate) ContractPublicationCandidateSource(
 	return r.source
 }
 
+// ReadContractPublicationCandidate is part of the public package API.
 func (r *FrozenContractPublicationCandidate) ReadContractPublicationCandidate(context.Context) (ContractCandidateSnapshot, error) {
 	if r == nil || r.source.Fingerprint == "" {
 		return ContractCandidateSnapshot{}, ErrContractPublicationInvalid
@@ -178,12 +195,14 @@ func clonePublicationSnapshot(snapshot ContractCandidateSnapshot) ContractCandid
 // staging-over-landed virtual candidate. Staging wins by file, retained
 // declarations may reuse landed bytes, additions require staged bytes, and a
 // staged file removed from the final descriptor is a contradiction.
+// ContractPublicationStagingOverlayReader is part of the public package API.
 type ContractPublicationStagingOverlayReader struct {
 	mirror   ContractPublicationCandidateReader
 	staging  ContractPublicationCandidateReader
 	location string
 }
 
+// NewContractPublicationStagingOverlayReader is part of the public package API.
 func NewContractPublicationStagingOverlayReader(mirror, staging ContractPublicationCandidateReader, location string) (*ContractPublicationStagingOverlayReader, error) {
 	if mirror == nil || staging == nil || location == "" {
 		return nil, fmt.Errorf("%w: exact mirror and contained staging readers are required", ErrContractPublicationInvalid)
@@ -196,6 +215,7 @@ func NewContractPublicationStagingOverlayReader(mirror, staging ContractPublicat
 	return &ContractPublicationStagingOverlayReader{mirror: mirror, staging: staging, location: location}, nil
 }
 
+// ContractPublicationCandidateSource is part of the public package API.
 func (r *ContractPublicationStagingOverlayReader) ContractPublicationCandidateSource() contract.CandidateSource {
 	if r == nil {
 		return contract.CandidateSource{}
@@ -203,6 +223,7 @@ func (r *ContractPublicationStagingOverlayReader) ContractPublicationCandidateSo
 	return contract.CandidateSource{Kind: contract.CandidateSourceStaging, Location: r.location}
 }
 
+// ReadContractPublicationCandidate is part of the public package API.
 func (r *ContractPublicationStagingOverlayReader) ReadContractPublicationCandidate(ctx context.Context) (ContractCandidateSnapshot, error) {
 	if r == nil || r.mirror == nil || r.staging == nil {
 		return ContractCandidateSnapshot{}, ErrContractPublicationInvalid
@@ -321,6 +342,7 @@ func legacyContractPublicationSidecar(name string) bool {
 // The snapshot fingerprint is filled from the bytes returned by Read; keeping
 // location on the reader prevents a caller from labelling one directory as a
 // different source in the accepted plan.
+// ContractPublicationCandidateSource is part of the public package API.
 func (r *ContractCandidateReader) ContractPublicationCandidateSource() contract.CandidateSource {
 	if r == nil {
 		return contract.CandidateSource{}
@@ -335,17 +357,20 @@ func (r *ContractCandidateReader) ContractPublicationCandidateSource() contract.
 // ContractPublicationMain owns only refreshed authoritative-main reads. Both
 // lookup results must prove an exhaustive tree/history walk; non-exhaustive is
 // a bounded refusal, never an empty result.
+// ContractPublicationMain is part of the public package API.
 type ContractPublicationMain interface {
 	RefreshContractPublicationMain(context.Context) (string, error)
 	ResolveContractPublicationTarget(context.Context, string, string) (ContractPublicationCompletion, bool, error)
 	LookupContractPublicationIntent(context.Context, string, string) (ContractPublicationIntentLookup, error)
 }
 
+// ContractPublicationCompletion is part of the public package API.
 type ContractPublicationCompletion struct {
 	Snapshot        HistoricalSnapshot
 	PublishedBefore []contract.PublishedContract
 }
 
+// ContractPublicationIntentLookup is part of the public package API.
 type ContractPublicationIntentLookup struct {
 	Matches    []ContractPublicationCompletion
 	Exhaustive bool
@@ -354,10 +379,12 @@ type ContractPublicationIntentLookup struct {
 // ContractPublicationPlanningReader supplies mutable current context only
 // after completion and remote recovery probes prove absence. Preflight passes
 // an empty AuthoritativeCommit and remains local/read-only.
+// ContractPublicationPlanningReader is part of the public package API.
 type ContractPublicationPlanningReader interface {
 	ReadContractPublicationPlanningContext(context.Context, ContractPublicationPlanningRequest) (ContractPublicationPlanningContext, error)
 }
 
+// ContractPublicationPlanningRequest is part of the public package API.
 type ContractPublicationPlanningRequest struct {
 	System              string
 	ContractID          string
@@ -367,6 +394,7 @@ type ContractPublicationPlanningRequest struct {
 	CandidateSource     contract.CandidateSource
 }
 
+// ContractPublicationPlanningContext is part of the public package API.
 type ContractPublicationPlanningContext struct {
 	AuthoringFloor        string
 	ContractRoot          string
@@ -385,6 +413,7 @@ type ContractPublicationPlanningContext struct {
 // and compared raw descriptor/carried/event bytes to the frozen candidate at
 // the recorded target/profile. TreeVerified is deliberately explicit so a
 // listing-only adapter cannot accidentally authorize repair.
+// ContractPublicationHeadProof is part of the public package API.
 type ContractPublicationHeadProof struct {
 	Branch        string
 	HeadSHA       string
@@ -393,12 +422,14 @@ type ContractPublicationHeadProof struct {
 	recoveredPlan contract.PublicationPlan
 }
 
+// ContractPublicationHeadListing is part of the public package API.
 type ContractPublicationHeadListing struct {
 	Heads      []ContractPublicationHeadProof
 	Observed   int
 	Exhaustive bool
 }
 
+// ContractPublicationHeadProbeRequest is part of the public package API.
 type ContractPublicationHeadProbeRequest struct {
 	System          string
 	ContractID      string
@@ -409,15 +440,18 @@ type ContractPublicationHeadProbeRequest struct {
 // ContractPublicationRemoteProof is the restart boundary. Repair must use the
 // already-verified remote commit and reconstruct only its PR from recovery-v1;
 // it must not reapply mutations, restamp, rerender, push, or mint a permit.
+// ContractPublicationRemoteProof is part of the public package API.
 type ContractPublicationRemoteProof interface {
 	ProbeContractPublicationHeads(context.Context, ContractPublicationHeadProbeRequest) (ContractPublicationHeadListing, error)
 	RepairContractPublicationHead(context.Context, ContractPublicationHeadProof, SubmissionRuntime) (WriteResult, error)
 }
 
+// ContractPublicationEventBuilder is part of the public package API.
 type ContractPublicationEventBuilder interface {
 	BuildContractPublicationEvent(context.Context, contract.PublicationPlan) (FileWrite, error)
 }
 
+// ContractPublicationRequest is part of the public package API.
 type ContractPublicationRequest struct {
 	System          string
 	ContractID      string
@@ -434,6 +468,7 @@ type ContractPublicationRequest struct {
 	ProducerCompatibility string
 }
 
+// ContractPublicationResult is part of the public package API.
 type ContractPublicationResult struct {
 	Status ContractPublicationStatus `json:"status"`
 	Plan   contract.PublicationPlan  `json:"plan"`
@@ -443,20 +478,24 @@ type ContractPublicationResult struct {
 // ContractPublicationPlanningError retains the complete stable planner issue
 // set. Transports can render the fields without parsing prose, while errors.Is
 // still classifies it as an invalid publication request.
+// ContractPublicationPlanningError is part of the public package API.
 type ContractPublicationPlanningError struct {
 	Issues []contract.Issue
 }
 
+// Error is part of the public package API.
 func (e *ContractPublicationPlanningError) Error() string {
 	return fmt.Sprintf("space: contract publication planner refused with %d issue(s)", len(e.Issues))
 }
 
+// Unwrap is part of the public package API.
 func (e *ContractPublicationPlanningError) Unwrap() error { return ErrContractPublicationInvalid }
 
 func newContractPublicationPlanningError(issues []contract.Issue) error {
 	return &ContractPublicationPlanningError{Issues: append([]contract.Issue(nil), issues...)}
 }
 
+// ContractPublicationService is part of the public package API.
 type ContractPublicationService struct {
 	main     ContractPublicationMain
 	planning ContractPublicationPlanningReader
@@ -466,6 +505,7 @@ type ContractPublicationService struct {
 	funnel   *WriteFunnel
 }
 
+// NewContractPublicationService is part of the public package API.
 func NewContractPublicationService(
 	main ContractPublicationMain,
 	planning ContractPublicationPlanningReader,
@@ -484,6 +524,7 @@ func NewContractPublicationService(
 
 // NewContractPreflightService exposes the deliberately smaller dependency
 // graph for the write-free preflight surface.
+// NewContractPreflightService is part of the public package API.
 func NewContractPreflightService(planning ContractPublicationPlanningReader, checker contract.CompatibilityChecker) (*ContractPublicationService, error) {
 	if planning == nil || checker == nil {
 		return nil, fmt.Errorf("%w: preflight planning dependencies are required", ErrContractPublicationInvalid)
@@ -493,6 +534,7 @@ func NewContractPreflightService(planning ContractPublicationPlanningReader, che
 
 // Preflight freezes the candidate and calls the same planner used by Publish.
 // It never refreshes main, probes remote heads, prepares, or submits.
+// Preflight is part of the public package API.
 func (s *ContractPublicationService) Preflight(ctx context.Context, request ContractPublicationRequest) (ContractPublicationResult, error) {
 	candidate, modes, err := freezeContractPublicationCandidate(ctx, request)
 	if err != nil {
@@ -510,6 +552,7 @@ func (s *ContractPublicationService) Preflight(ctx context.Context, request Cont
 
 // Publish performs completion/recovery probes before reading mutable planning
 // context, then prepares once and submits that exact immutable form once.
+// Publish is part of the public package API.
 func (s *ContractPublicationService) Publish(ctx context.Context, request ContractPublicationRequest) (ContractPublicationResult, error) {
 	candidate, modes, err := freezeContractPublicationCandidate(ctx, request)
 	if err != nil {

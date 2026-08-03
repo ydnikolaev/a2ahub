@@ -12,6 +12,7 @@ import (
 // journals as raw JSON values. It never decodes or re-marshals those values.
 // A schema-v1 lease predating audience persistence keeps both audience fields
 // absent; encoding must not manufacture authorization the old record lacks.
+// MarshalLease is part of the public package API.
 func MarshalLease(lease Lease) ([]byte, error) {
 	if err := validateLeaseStructure(lease); err != nil {
 		return nil, err
@@ -137,7 +138,7 @@ func nonNilRecipients(recipients []string) []string {
 func appendEncodedField(out *[]byte, first *bool, name string, value any) error {
 	encoded, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("%w: encode %s: %v", ErrInvalidLease, name, err)
+		return fmt.Errorf("%w: encode %s: %w", ErrInvalidLease, name, err)
 	}
 	appendRawField(out, first, name, encoded)
 	return nil
@@ -212,6 +213,7 @@ func marshalAttempt(attempt PublishAttempt) ([]byte, error) {
 	return out, nil
 }
 
+// UnmarshalLease is part of the public package API.
 func UnmarshalLease(encoded []byte) (Lease, error) {
 	if len(encoded) == 0 || len(encoded) > MaximumEncodedLease || !json.Valid(encoded) {
 		return Lease{}, fmt.Errorf("%w: malformed or oversized JSON", ErrInvalidLease)
@@ -257,7 +259,7 @@ func UnmarshalLease(encoded []byte) (Lease, error) {
 	}
 	var decoded wire
 	if err := json.Unmarshal(encoded, &decoded); err != nil {
-		return Lease{}, fmt.Errorf("%w: %v", ErrInvalidLease, err)
+		return Lease{}, fmt.Errorf("%w: %w", ErrInvalidLease, err)
 	}
 	if err := rejectDuplicateObjectKeys(decoded.Actor); err != nil {
 		return Lease{}, err

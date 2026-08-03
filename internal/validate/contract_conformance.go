@@ -10,6 +10,8 @@ import (
 // ValidateContractConformance projects a self-suite contradiction into the
 // canonical validation registry. Payload nonconformance and unsupported or
 // unevaluated operations remain operation results, not policy findings.
+//
+//nolint:revive // Validate is the established package API verb used by V2/V3 callers.
 func ValidateContractConformance(result contract.ConformanceResult) []Violation {
 	if result.Mode != contract.ConformanceModeSuite || result.Outcome != contract.ConformanceSuiteInconsistent {
 		return []Violation{}

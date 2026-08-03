@@ -214,7 +214,6 @@ func TestSubmitPreparedBindsPriorPRToExactProviderIdentity(t *testing.T) {
 		{name: "head changed after lookup", mutatePR: func(*host.PRInfo) {}, statusHead: strings.Repeat("c", 40)},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			fake := host.NewFakeHost()
@@ -272,7 +271,6 @@ func TestProbePreparedRemoteRecoveryRejectsMalformedDuplicateAndMissingTrailers(
 		{name: "missing", message: strings.Replace(canonical, "A2A-Plan-Digest: "+testRecoveryPlanDigest()+"\n", "", 1)},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			reader := matchingRemoteRecoveryReader(prepared)
@@ -308,7 +306,6 @@ func TestProbePreparedRemoteRecoveryRejectsNonExactChangedPathSet(t *testing.T) 
 		}},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			reader := matchingRemoteRecoveryReader(prepared)
@@ -370,7 +367,6 @@ func TestProbePreparedRemoteRecoveryRejectsObservedIdentityMismatch(t *testing.T
 		{name: "base commit", mutate: func(r *fakeRemoteRecoveryReader) { r.parentSHA = strings.Repeat("e", 40) }},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			reader := matchingRemoteRecoveryReader(prepared)

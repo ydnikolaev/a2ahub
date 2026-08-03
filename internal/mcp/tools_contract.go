@@ -735,7 +735,7 @@ func newContractDiffHandler(deps ContractDeps) HandlerFunc {
 		if in.ID == "" || in.V1 == "" || in.V2 == "" || in.V1 == in.V2 {
 			return nil, "", fmt.Errorf("contract diff: distinct id, v1 and v2 are required")
 		}
-		result, err := deps.Inspection.DiffContract(ctx, ContractDiffRequest{Space: in.Space, ID: in.ID, V1: in.V1, V2: in.V2})
+		result, err := deps.Inspection.DiffContract(ctx, ContractDiffRequest(in))
 		if err != nil {
 			return nil, "", fmt.Errorf("contract diff: %w", err)
 		}
@@ -763,7 +763,7 @@ func newContractVerifyExportHandler(deps ContractDeps) HandlerFunc {
 		if in.Local == "" || in.Ref == "" {
 			return nil, "", fmt.Errorf("contract verify-export: local and ref are required")
 		}
-		result, err := deps.Inspection.VerifyContractExport(ctx, ContractVerifyExportRequest{Space: in.Space, Local: in.Local, Ref: in.Ref})
+		result, err := deps.Inspection.VerifyContractExport(ctx, ContractVerifyExportRequest(in))
 		if err != nil {
 			return nil, "", fmt.Errorf("contract verify-export: %w", err)
 		}

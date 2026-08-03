@@ -1,16 +1,25 @@
 package operational
 
 const (
-	DefaultTimelineRows    = 100
-	MaximumTimelineRows    = 1000
-	DefaultWorkPerRow      = 16
-	MaximumWorkPerRow      = 64
-	DefaultConsistency     = 32
-	MaximumConsistency     = 128
+	// DefaultTimelineRows bounds the default number of timeline rows.
+	DefaultTimelineRows = 100
+	// MaximumTimelineRows bounds the largest permitted number of timeline rows.
+	MaximumTimelineRows = 1000
+	// DefaultWorkPerRow bounds the default work entries shown per timeline row.
+	DefaultWorkPerRow = 16
+	// MaximumWorkPerRow bounds the largest permitted work entries per row.
+	MaximumWorkPerRow = 64
+	// DefaultConsistency bounds the default consistency facts shown per row.
+	DefaultConsistency = 32
+	// MaximumConsistency bounds the largest permitted consistency facts per row.
+	MaximumConsistency = 128
+	// DefaultEncodedSnapshot bounds the default encoded snapshot size.
 	DefaultEncodedSnapshot = 4 << 20
+	// MaximumEncodedSnapshot bounds the largest permitted encoded snapshot.
 	MaximumEncodedSnapshot = 16 << 20
 )
 
+// Limits bounds the encoded operational snapshot and its collections.
 type Limits struct {
 	TimelineRows      int
 	WorkPerRow        int
@@ -18,6 +27,7 @@ type Limits struct {
 	EncodedSnapshot   int
 }
 
+// DefaultLimits returns the standard bounded operational projection limits.
 func DefaultLimits() Limits {
 	return Limits{
 		TimelineRows: DefaultTimelineRows, WorkPerRow: DefaultWorkPerRow,

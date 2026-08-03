@@ -33,7 +33,6 @@ func TestAnnouncementV2WorkGoldenFixtures(t *testing.T) {
 	}
 	statusFeedFound := false
 	for _, path := range validPaths {
-		path := path
 		name := filepath.Base(path)
 		if strings.Contains(name, "status-feed") {
 			statusFeedFound = true
@@ -68,7 +67,6 @@ func TestAnnouncementV2WorkGoldenFixtures(t *testing.T) {
 		t.Fatal("expected invalid announcement/v2 fixtures")
 	}
 	for _, path := range invalidPaths {
-		path := path
 		t.Run("invalid/"+filepath.Base(path), func(t *testing.T) {
 			t.Parallel()
 			if _, err := os.Stat(path + ".expect.yaml"); err != nil {

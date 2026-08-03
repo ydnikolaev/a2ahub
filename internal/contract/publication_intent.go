@@ -13,10 +13,13 @@ import (
 
 // InventoryMode freezes which candidate-intent record shape was used before
 // authoritative floor and publication-profile selection.
+// InventoryMode is part of the public package API.
 type InventoryMode string
 
 const (
-	InventoryDeclaredV2    InventoryMode = "declared-v2"
+	// InventoryDeclaredV2 is part of the public package API.
+	InventoryDeclaredV2 InventoryMode = "declared-v2"
+	// InventoryLegacyFixedV1 is part of the public package API.
 	InventoryLegacyFixedV1 InventoryMode = "legacy-fixed-v1"
 )
 
@@ -24,6 +27,7 @@ const (
 // semantic lookup identity, never an integrity or completion proof. Accessors
 // return clones so a collector, checker, or transport cannot change the bytes
 // later consumed by publication planning.
+// CandidateIntentSnapshot is part of the public package API.
 type CandidateIntentSnapshot struct {
 	digest         string
 	canonical      []byte
@@ -34,12 +38,25 @@ type CandidateIntentSnapshot struct {
 	snapshot       CandidateSnapshot
 }
 
-func (s CandidateIntentSnapshot) Digest() string               { return s.digest }
+// Digest is part of the public package API.
+func (s CandidateIntentSnapshot) Digest() string { return s.digest }
+
+// InventoryMode is part of the public package API.
 func (s CandidateIntentSnapshot) InventoryMode() InventoryMode { return s.inventoryMode }
-func (s CandidateIntentSnapshot) ContractID() string           { return s.contractID }
-func (s CandidateIntentSnapshot) CurrentVersion() string       { return s.currentVersion }
-func (s CandidateIntentSnapshot) Descriptor() Descriptor       { return cloneDescriptor(s.descriptor) }
-func (s CandidateIntentSnapshot) CanonicalBytes() []byte       { return bytes.Clone(s.canonical) }
+
+// ContractID is part of the public package API.
+func (s CandidateIntentSnapshot) ContractID() string { return s.contractID }
+
+// CurrentVersion is part of the public package API.
+func (s CandidateIntentSnapshot) CurrentVersion() string { return s.currentVersion }
+
+// Descriptor is part of the public package API.
+func (s CandidateIntentSnapshot) Descriptor() Descriptor { return cloneDescriptor(s.descriptor) }
+
+// CanonicalBytes is part of the public package API.
+func (s CandidateIntentSnapshot) CanonicalBytes() []byte { return bytes.Clone(s.canonical) }
+
+// Snapshot is part of the public package API.
 func (s CandidateIntentSnapshot) Snapshot() CandidateSnapshot {
 	return cloneCandidateSnapshot(s.snapshot)
 }
@@ -71,6 +88,7 @@ type candidateIntentDeclaredFields struct {
 // and source location are deliberately absent from the canonical record.
 // Markdown line endings and terminal blank lines are normalized, while every
 // other body byte remains semantic. Declared artifacts retain descriptor order.
+// BuildCandidateIntent is part of the public package API.
 func BuildCandidateIntent(input CandidateSnapshot) (CandidateIntentSnapshot, []Issue) {
 	snapshot := cloneCandidateSnapshot(input)
 	issues := validateDescriptorCandidate(snapshot.Descriptor)

@@ -7,9 +7,13 @@
 package contract
 
 const (
-	DescriptorPath    = "contract.md"
-	MaxExplicitFiles  = 256
-	MaxFileBytes      = 1 << 20  // 1 MiB
+	// DescriptorPath is part of the public package API.
+	DescriptorPath = "contract.md"
+	// MaxExplicitFiles is part of the public package API.
+	MaxExplicitFiles = 256
+	// MaxFileBytes is part of the public package API.
+	MaxFileBytes = 1 << 20 // 1 MiB
+	// MaxAggregateBytes is part of the public package API.
 	MaxAggregateBytes = 16 << 20 // 16 MiB
 )
 
@@ -17,8 +21,11 @@ const (
 type DigestProfile string
 
 const (
+	// ProfileContractTreeV1 is part of the public package API.
 	ProfileContractTreeV1 DigestProfile = "contract-tree-v1"
-	ProfileContractSetV2  DigestProfile = "contract-set-v2"
+	// ProfileContractSetV2 is part of the public package API.
+	ProfileContractSetV2 DigestProfile = "contract-set-v2"
+	// ProfileExportSourceV1 is part of the public package API.
 	ProfileExportSourceV1 DigestProfile = "export-source-v1"
 )
 
@@ -26,26 +33,37 @@ const (
 type Role string
 
 const (
-	RoleSchema         Role = "schema"
-	RoleValidFixture   Role = "valid-fixture"
+	// RoleSchema is part of the public package API.
+	RoleSchema Role = "schema"
+	// RoleValidFixture is part of the public package API.
+	RoleValidFixture Role = "valid-fixture"
+	// RoleInvalidFixture is part of the public package API.
 	RoleInvalidFixture Role = "invalid-fixture"
-	RoleErrors         Role = "errors"
-	RoleVocabulary     Role = "vocabulary"
-	RoleLimits         Role = "limits"
-	RoleChangelog      Role = "changelog"
-	RoleExample        Role = "example"
-	RoleOther          Role = "other"
+	// RoleErrors is part of the public package API.
+	RoleErrors Role = "errors"
+	// RoleVocabulary is part of the public package API.
+	RoleVocabulary Role = "vocabulary"
+	// RoleLimits is part of the public package API.
+	RoleLimits Role = "limits"
+	// RoleChangelog is part of the public package API.
+	RoleChangelog Role = "changelog"
+	// RoleExample is part of the public package API.
+	RoleExample Role = "example"
+	// RoleOther is part of the public package API.
+	RoleOther Role = "other"
 )
 
 // Descriptor contains the contract-domain fields consumed by the carried-set
 // core. Envelope/schema validation remains the responsibility of
 // internal/validate; ParseDescriptor only decodes this typed projection.
+// Descriptor is part of the public package API.
 type Descriptor struct {
 	SchemaFormat  string         `yaml:"schema_format" json:"schema_format"`
 	GeneratedFrom *GeneratedFrom `yaml:"generated_from,omitempty" json:"generated_from,omitempty"`
 	Artifacts     []Entry        `yaml:"artifacts" json:"artifacts"`
 }
 
+// GeneratedFrom is part of the public package API.
 type GeneratedFrom struct {
 	Tool         string `yaml:"tool" json:"tool"`
 	SourceDigest string `yaml:"source_digest" json:"source_digest"`
@@ -63,17 +81,23 @@ type Entry struct {
 // CandidateKind is the resolved kind supplied by a filesystem or Git-tree
 // collector. Executable and non-executable regular files both map to Regular;
 // symlinks and submodules retain distinct kinds so the core can fail closed.
+// CandidateKind is part of the public package API.
 type CandidateKind string
 
 const (
-	CandidateRegular   CandidateKind = "regular"
-	CandidateSymlink   CandidateKind = "symlink"
+	// CandidateRegular is part of the public package API.
+	CandidateRegular CandidateKind = "regular"
+	// CandidateSymlink is part of the public package API.
+	CandidateSymlink CandidateKind = "symlink"
+	// CandidateSubmodule is part of the public package API.
 	CandidateSubmodule CandidateKind = "submodule"
-	CandidateOther     CandidateKind = "other"
+	// CandidateOther is part of the public package API.
+	CandidateOther CandidateKind = "other"
 )
 
 // CandidateFile is a bounded, contract-root-relative input. Raw must contain
 // the exact bytes to be committed or read from the historical Git object.
+// CandidateFile is part of the public package API.
 type CandidateFile struct {
 	Path string
 	Kind CandidateKind
@@ -83,6 +107,7 @@ type CandidateFile struct {
 // CarriedSet is an immutable-by-convention result. BuildCarriedSet clones all
 // carried bytes and returns sorted Entries plus a detached digest map, so
 // caller mutation of candidate buffers cannot change the result.
+// CarriedSet is part of the public package API.
 type CarriedSet struct {
 	Profile         DigestProfile
 	Descriptor      Descriptor
@@ -94,6 +119,7 @@ type CarriedSet struct {
 
 // DigestProjection is a named digest profile result, used to keep
 // export-source-v1 provenance visibly separate from publication integrity.
+// DigestProjection is part of the public package API.
 type DigestProjection struct {
 	Profile       DigestProfile
 	PerFileDigest map[string]string
@@ -102,6 +128,7 @@ type DigestProjection struct {
 
 // PublicationIntent is the closed event/v2 durable operation-identity wire
 // object. P6 owns derivation and subject/version cross-checks.
+// PublicationIntent is part of the public package API.
 type PublicationIntent struct {
 	IntentKey             string `json:"intent_key" yaml:"intent_key"`
 	CandidateIntentDigest string `json:"candidate_intent_digest" yaml:"candidate_intent_digest"`

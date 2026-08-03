@@ -86,7 +86,6 @@ func TestCandidateModeAndTextFailures(t *testing.T) {
 func TestPerFileSizeBoundaries(t *testing.T) {
 	t.Parallel()
 	for _, size := range []int{MaxFileBytes - 1, MaxFileBytes, MaxFileBytes + 1} {
-		size := size
 		t.Run(fmt.Sprintf("candidate-%d", size), func(t *testing.T) {
 			t.Parallel()
 			candidates := validCandidates()
@@ -104,7 +103,6 @@ func TestPerFileSizeBoundaries(t *testing.T) {
 	}
 
 	for _, size := range []int{MaxFileBytes - 1, MaxFileBytes, MaxFileBytes + 1} {
-		size := size
 		t.Run(fmt.Sprintf("descriptor-%d", size), func(t *testing.T) {
 			t.Parallel()
 			raw := bytes.Repeat([]byte{'d'}, size)
@@ -121,7 +119,6 @@ func TestPerFileSizeBoundaries(t *testing.T) {
 func TestExplicitCountBoundaries(t *testing.T) {
 	t.Parallel()
 	for _, count := range []int{MaxExplicitFiles - 1, MaxExplicitFiles, MaxExplicitFiles + 1} {
-		count := count
 		t.Run(fmt.Sprintf("count-%d", count), func(t *testing.T) {
 			t.Parallel()
 			descriptor, candidates := descriptorWithCount(count)

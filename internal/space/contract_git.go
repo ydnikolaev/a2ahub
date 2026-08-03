@@ -38,7 +38,8 @@ func contractGitBytes(ctx context.Context, repoDir string, limit int64, args ...
 	// not propagate the writer's overflow error after the process exits.
 	bufferLimit := limit + 1
 	gitArgs := append([]string{"--no-replace-objects", "--literal-pathspecs"}, args...)
-	cmd := exec.CommandContext(ctx, "git", gitArgs...)
+	cmd := exec.CommandContext(ctx, "git")
+	cmd.Args = append([]string{"git"}, gitArgs...)
 	cmd.Dir = repoDir
 	cmd.Env = contractGitEnvironment()
 	stdout := &boundedCommandBuffer{remaining: bufferLimit}
@@ -97,7 +98,7 @@ func contractGitResolveCommit(ctx context.Context, repoDir, ref string) (string,
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return "", ctxErr
 		}
-		return "", fmt.Errorf("%w: commit %q is unavailable; run a2a sync: %v", ErrContractObjectUnavailable, ref, err)
+		return "", fmt.Errorf("%w: commit %q is unavailable; run a2a sync: %w", ErrContractObjectUnavailable, ref, err)
 	}
 	oid := strings.TrimSpace(string(raw))
 	if !contractGitObjectID(oid) || strings.ContainsRune(oid, '\n') {
@@ -176,7 +177,7 @@ func contractGitReadBlob(ctx context.Context, repoDir string, entry contractGitT
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
-		return nil, fmt.Errorf("%w: blob for %q is unavailable; run a2a sync: %v", ErrContractObjectUnavailable, entry.Path, err)
+		return nil, fmt.Errorf("%w: blob for %q is unavailable; run a2a sync: %w", ErrContractObjectUnavailable, entry.Path, err)
 	}
 	size, err := strconv.ParseInt(strings.TrimSpace(string(sizeRaw)), 10, 64)
 	if err != nil || size < 0 {
@@ -190,7 +191,7 @@ func contractGitReadBlob(ctx context.Context, repoDir string, entry contractGitT
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
-		return nil, fmt.Errorf("%w: blob for %q is unavailable; run a2a sync: %v", ErrContractObjectUnavailable, entry.Path, err)
+		return nil, fmt.Errorf("%w: blob for %q is unavailable; run a2a sync: %w", ErrContractObjectUnavailable, entry.Path, err)
 	}
 	if int64(len(raw)) != size {
 		return nil, fmt.Errorf("%w: blob size for %q changed while reading", ErrContractObjectUnavailable, entry.Path)

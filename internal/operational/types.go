@@ -12,52 +12,61 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
 )
 
+// SchemaVersion is the version of the operational snapshot wire format.
 const SchemaVersion = 1
 
 var (
-	ErrInvalidInput  = errors.New("operational: invalid input")
+	// ErrInvalidInput reports invalid source evidence or projection configuration.
+	ErrInvalidInput = errors.New("operational: invalid input")
+	// ErrBoundedResult reports a projection result exceeding its configured bound.
 	ErrBoundedResult = errors.New("operational: bounded result")
 
 	machineCodePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
 )
 
+// Freshness classifies how current a projected work item is.
 type Freshness string
 
 const (
-	FreshnessLocalCurrent     Freshness = "local-current"
+	// FreshnessLocalCurrent identifies a non-expired valid local lease.
+	FreshnessLocalCurrent Freshness = "local-current"
+	// FreshnessCommittedCurrent identifies current durable shared evidence.
 	FreshnessCommittedCurrent Freshness = "committed-current"
-	FreshnessStale            Freshness = "stale"
-	FreshnessFinished         Freshness = "finished"
-	FreshnessPendingRecovery  Freshness = "pending-recovery"
-	FreshnessUnknown          Freshness = "unknown"
+	// FreshnessStale identifies evidence that is no longer current.
+	FreshnessStale Freshness = "stale"
+	// FreshnessFinished identifies completed work.
+	FreshnessFinished Freshness = "finished"
+	// FreshnessPendingRecovery identifies a closing lease awaiting recovery.
+	FreshnessPendingRecovery Freshness = "pending-recovery"
+	// FreshnessUnknown identifies work whose current status cannot be established.
+	FreshnessUnknown Freshness = "unknown"
 )
 
-func (f Freshness) valid() bool {
-	switch f {
-	case FreshnessLocalCurrent, FreshnessCommittedCurrent, FreshnessStale,
-		FreshnessFinished, FreshnessPendingRecovery, FreshnessUnknown:
-		return true
-	default:
-		return false
-	}
-}
-
+// SourceKind identifies the origin of a projection fact.
 type SourceKind string
 
 const (
-	SourceSpace     SourceKind = "space"
+	// SourceSpace identifies committed evidence from a configured space.
+	SourceSpace SourceKind = "space"
+	// SourceLocalWork identifies evidence read from the local lease store.
 	SourceLocalWork SourceKind = "local-work"
 )
 
+// SourceFreshness classifies how current a source mirror is.
 type SourceFreshness string
 
 const (
-	SourceCurrent     SourceFreshness = "current"
-	SourceStale       SourceFreshness = "stale"
+	// SourceCurrent identifies a readable current source mirror.
+	SourceCurrent SourceFreshness = "current"
+	// SourceStale identifies a readable mirror older than its freshness target.
+	SourceStale SourceFreshness = "stale"
+	// SourceUnavailable identifies a source whose evidence cannot be read.
 	SourceUnavailable SourceFreshness = "unavailable"
-	SourceDegraded    SourceFreshness = "degraded"
+	// SourceDegraded identifies a source refreshed with an explicit problem.
+	SourceDegraded SourceFreshness = "degraded"
 )
 
+// Actor identifies a protocol or work actor in public-safe form.
 type Actor struct {
 	Kind    string `json:"kind"`
 	Name    string `json:"name"`
@@ -66,6 +75,7 @@ type Actor struct {
 	Session string `json:"session"`
 }
 
+// Source describes a committed-space or local-work evidence source.
 type Source struct {
 	Kind       SourceKind      `json:"kind"`
 	Space      string          `json:"space,omitempty"`
@@ -75,6 +85,7 @@ type Source struct {
 	Freshness  SourceFreshness `json:"freshness"`
 }
 
+// Unavailable reports a bounded, public-safe evidence gap.
 type Unavailable struct {
 	SourceKind SourceKind `json:"source_kind"`
 	Space      string     `json:"space,omitempty"`
@@ -82,6 +93,7 @@ type Unavailable struct {
 	Summary    string     `json:"summary"`
 }
 
+// Protocol is the folded obligation state of one timeline row.
 type Protocol struct {
 	Settled    bool     `json:"settled"`
 	OpenCount  int      `json:"open_count"`
@@ -90,6 +102,7 @@ type Protocol struct {
 	BlockingBy []string `json:"blocking_by"`
 }
 
+// Milestone is the latest meaningful protocol transition on a row.
 type Milestone struct {
 	Kind       string    `json:"kind"`
 	At         time.Time `json:"at"`
@@ -98,12 +111,14 @@ type Milestone struct {
 	Subject    string    `json:"subject"`
 }
 
+// CommittedCheckpoint points to durable shared work evidence.
 type CommittedCheckpoint struct {
 	ArtifactID string     `json:"artifact_id"`
 	ReportedAt time.Time  `json:"reported_at"`
 	ValidUntil *time.Time `json:"valid_until,omitempty"`
 }
 
+// SharedPending is the safe projection of an unfinished shared write.
 type SharedPending struct {
 	OperationID     string `json:"operation_id"`
 	Action          string `json:"action"`
@@ -112,6 +127,7 @@ type SharedPending struct {
 	RemainingAction string `json:"remaining_action"`
 }
 
+// Work is one bounded committed or local work-status projection.
 type Work struct {
 	WorkID              string                 `json:"work_id"`
 	SubjectRef          string                 `json:"subject_ref"`
@@ -129,6 +145,7 @@ type Work struct {
 	WaitingOn           []workreport.WaitingOn `json:"waiting_on"`
 }
 
+// Consistency records a bounded cross-source anomaly for a work item.
 type Consistency struct {
 	Code       string `json:"code"`
 	SubjectRef string `json:"subject_ref"`
@@ -136,12 +153,14 @@ type Consistency struct {
 	Summary    string `json:"summary"`
 }
 
+// Window describes truncation applied to a bounded collection.
 type Window struct {
 	Truncated bool `json:"truncated"`
 	Total     int  `json:"total"`
 	Shown     int  `json:"shown"`
 }
 
+// TimelineRow is the public projection of one protocol thread.
 type TimelineRow struct {
 	Space             string        `json:"space"`
 	Thread            string        `json:"thread"`
@@ -155,6 +174,7 @@ type TimelineRow struct {
 	ConsistencyWindow Window        `json:"consistency_window"`
 }
 
+// Snapshot is the immutable, versioned operational read model.
 type Snapshot struct {
 	SchemaVersion  int           `json:"schema_version"`
 	GeneratedAt    time.Time     `json:"generated_at"`
@@ -165,6 +185,7 @@ type Snapshot struct {
 	Unavailable    []Unavailable `json:"unavailable"`
 }
 
+// Input groups parsed evidence supplied to Build.
 type Input struct {
 	Sources       []SourceEvidence
 	Threads       []ThreadEvidence
@@ -173,8 +194,10 @@ type Input struct {
 	Unavailable   []Unavailable
 }
 
+// SourceEvidence is input-only source evidence for a snapshot.
 type SourceEvidence Source
 
+// ThreadEvidence is input-only folded evidence for a protocol thread.
 type ThreadEvidence struct {
 	Space           string
 	Thread          string
@@ -184,6 +207,7 @@ type ThreadEvidence struct {
 	LatestMilestone *Milestone
 }
 
+// CommittedWorkEvidence is input-only durable work checkpoint evidence.
 type CommittedWorkEvidence struct {
 	Space          string
 	Thread         string
@@ -208,8 +232,10 @@ type LocalLeaseEvidence struct {
 	Pending    *SharedPending
 }
 
+// Clock supplies the explicit projection time boundary.
 type Clock interface{ Now() time.Time }
 
+// BoundedResultError reports a collection that exceeds a public result bound.
 type BoundedResultError struct {
 	Boundary string
 	Count    int

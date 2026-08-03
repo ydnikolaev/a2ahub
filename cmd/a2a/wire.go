@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -1422,7 +1423,7 @@ func connectedSpaceIDs(cfg space.ProjectConfig) []string {
 }
 
 func loadManifest(mirrorDir string) (space.Manifest, error) {
-	raw, err := os.ReadFile(filepath.Join(mirrorDir, "space.yaml"))
+	raw, err := fs.ReadFile(os.DirFS(mirrorDir), "space.yaml")
 	if err != nil {
 		return space.Manifest{}, fmt.Errorf("read space.yaml: %w", err)
 	}

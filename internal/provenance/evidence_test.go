@@ -57,7 +57,6 @@ func TestSafeSessionEvidenceRejectsCredentialShapesInsideSafeAlphabet(t *testing
 		"sk_live_TEST_FIXTURE",
 	}
 	for _, session := range tests {
-		session := session
 		t.Run(session, func(t *testing.T) {
 			t.Parallel()
 			if got := SafeSessionEvidence(session); got == session || len(got) != len("sha256:")+64 {

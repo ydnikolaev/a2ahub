@@ -124,7 +124,6 @@ func TestWorkLeaseStoreRejectsCorruptOversizeAndUnknownVersion(t *testing.T) {
 		}, want: workreport.ErrInvalidLease},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			store, _ := newTestWorkLeaseStore(t)
@@ -207,7 +206,6 @@ func TestWorkLeaseStoreRejectsSymlinkRootDirectoryLeafTempAndLock(t *testing.T) 
 		}
 	})
 	for _, target := range []string{"leaf", "temp", "lock"} {
-		target := target
 		t.Run(target, func(t *testing.T) {
 			t.Parallel()
 			store, cacheRoot := newTestWorkLeaseStore(t)
@@ -502,7 +500,6 @@ func TestWorkLeaseStoreCrashCloseAllowsConcurrentCASReclaim(t *testing.T) {
 	results := make(chan error, contenders)
 	var wait sync.WaitGroup
 	for _, contender := range stores {
-		contender := contender
 		wait.Add(1)
 		go func() {
 			defer wait.Done()

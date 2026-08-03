@@ -13,7 +13,9 @@ import (
 )
 
 const (
-	MutationWrite  MutationOperation = "write"
+	// MutationWrite is part of the public package API.
+	MutationWrite MutationOperation = "write"
+	// MutationDelete is part of the public package API.
 	MutationDelete MutationOperation = "delete"
 
 	contractSidecarDeleteDomain = "contract-sidecar-v1"
@@ -23,10 +25,14 @@ const (
 )
 
 var (
-	ErrMutationInvalid       = errors.New("space: invalid mutation")
+	// ErrMutationInvalid is part of the public package API.
+	ErrMutationInvalid = errors.New("space: invalid mutation")
+	// ErrMutationDuplicatePath is part of the public package API.
 	ErrMutationDuplicatePath = errors.New("space: duplicate mutation path")
-	ErrMutationUnauthorized  = errors.New("space: delete mutation is not authorized by an invocation-local permit")
-	ErrMutationPrecondition  = errors.New("space: mutation precondition does not match the current file")
+	// ErrMutationUnauthorized is part of the public package API.
+	ErrMutationUnauthorized = errors.New("space: delete mutation is not authorized by an invocation-local permit")
+	// ErrMutationPrecondition is part of the public package API.
+	ErrMutationPrecondition = errors.New("space: mutation precondition does not match the current file")
 )
 
 // MutationOperation is the closed shared-funnel operation set.
@@ -34,6 +40,7 @@ type MutationOperation string
 
 // MutationPrecondition binds a reviewed replacement or deletion to the exact
 // prior regular file. Mode is a canonical Git mode (100644 or 100755).
+// MutationPrecondition is part of the public package API.
 type MutationPrecondition struct {
 	Digest string `json:"digest"`
 	Mode   string `json:"mode"`
@@ -42,6 +49,7 @@ type MutationPrecondition struct {
 // Mutation is one exact desired tree change. The delete capability is
 // deliberately unexported and therefore absent from every JSON round trip.
 // External callers may describe delete intent, but cannot authorize it.
+// Mutation is part of the public package API.
 type Mutation struct {
 	Path      string            `json:"path"`
 	Operation MutationOperation `json:"operation"`
@@ -256,5 +264,5 @@ func mutationPreconditionError(path string, cause error) error {
 	if cause == nil {
 		return fmt.Errorf("%w: %s", ErrMutationPrecondition, path)
 	}
-	return fmt.Errorf("%w: %s: %v", ErrMutationPrecondition, path, cause)
+	return fmt.Errorf("%w: %s: %w", ErrMutationPrecondition, path, cause)
 }

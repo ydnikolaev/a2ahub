@@ -25,6 +25,7 @@ type OperationalEvidence struct {
 	Unavailable   []OperationalUnavailable
 }
 
+// OperationalSpaceSource describes one cache mirror used as operational evidence.
 type OperationalSpaceSource struct {
 	Space      string
 	Revision   string
@@ -33,12 +34,14 @@ type OperationalSpaceSource struct {
 	Freshness  string
 }
 
+// OperationalUnavailable records a bounded explanation for unavailable cache evidence.
 type OperationalUnavailable struct {
 	Space   string
 	Code    string
 	Summary string
 }
 
+// OperationalThread is the cache-level projection of one protocol thread.
 type OperationalThread struct {
 	Space           string
 	Thread          string
@@ -52,6 +55,7 @@ type OperationalThread struct {
 	LatestMilestone *OperationalMilestone
 }
 
+// OperationalMilestone describes the latest meaningful protocol transition.
 type OperationalMilestone struct {
 	At         time.Time
 	Actor      OperationalActor
@@ -59,6 +63,7 @@ type OperationalMilestone struct {
 	Subject    string
 }
 
+// OperationalActor identifies the actor that created a milestone.
 type OperationalActor struct {
 	Kind    string
 	Name    string
@@ -67,6 +72,7 @@ type OperationalActor struct {
 	Session string
 }
 
+// OperationalCommittedWork is a validated status checkpoint from a mirror.
 type OperationalCommittedWork struct {
 	Space          string
 	Thread         string
@@ -294,12 +300,12 @@ func operationalThreadFromView(view ThreadResult, statusWorkIDs map[string]struc
 }
 
 func decodeOperationalCheckpoint(member foldedArtifact) (OperationalCommittedWork, bool, error) {
-	frontmatter, err := artifact.ParseFrontmatter(member.Raw)
-	if err != nil {
+	frontmatter, parsed := operationalFrontmatter(member.Raw)
+	if !parsed {
 		return OperationalCommittedWork{}, false, nil
 	}
-	var envelope operationalWorkEnvelope
-	if err := yaml.Unmarshal(frontmatter.YAML, &envelope); err != nil {
+	envelope, decoded := operationalWorkEnvelopeFromYAML(frontmatter)
+	if !decoded {
 		return OperationalCommittedWork{}, false, nil
 	}
 	if envelope.Schema != "envelope/v2" || envelope.Type != "announcement" || envelope.Category != "status" || envelope.Work == nil {
@@ -340,4 +346,20 @@ func decodeOperationalCheckpoint(member foldedArtifact) (OperationalCommittedWor
 		WaitingOn:  append([]workreport.WaitingOn(nil), envelope.Work.WaitingOn...),
 		ReportedAt: reportedAt.UTC(), ValidUntil: validUntil.UTC(), ArtifactID: envelope.ID, CommitSequence: sequence,
 	}, true, nil
+}
+
+func operationalFrontmatter(raw []byte) ([]byte, bool) {
+	frontmatter, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return nil, false
+	}
+	return frontmatter.YAML, true
+}
+
+func operationalWorkEnvelopeFromYAML(raw []byte) (operationalWorkEnvelope, bool) {
+	var envelope operationalWorkEnvelope
+	if err := yaml.Unmarshal(raw, &envelope); err != nil {
+		return operationalWorkEnvelope{}, false
+	}
+	return envelope, true
 }

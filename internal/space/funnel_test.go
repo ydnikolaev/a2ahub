@@ -77,7 +77,6 @@ func TestRemainingActionForIsTotal(t *testing.T) {
 	}
 	for _, stage := range stages {
 		for _, state := range states {
-			stage, state := stage, state
 			t.Run(string(stage)+"/"+string(state), func(t *testing.T) {
 				t.Parallel()
 

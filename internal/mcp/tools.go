@@ -23,6 +23,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/releasenotes"
 )
 
+// ErrLegacyContractWriteUnavailable reports an unavailable legacy write path.
 var ErrLegacyContractWriteUnavailable = errors.New("mcp: legacy contract write unavailable while space write dependencies are offline")
 
 // genericSchema is a permissive (additionalProperties allowed) object

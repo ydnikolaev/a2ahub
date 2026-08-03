@@ -229,7 +229,7 @@ func TestEvaluateCandidatePropertiesAcrossTransitionRows(t *testing.T) {
 		}
 
 		wantApplicable := row.Transition != TRespond && row.Transition != TDispute &&
-			!(row.Kind == KindContract && (row.Transition == TDeprecate || row.Transition == TRetire))
+			(row.Kind != KindContract || (row.Transition != TDeprecate && row.Transition != TRetire))
 		if got.Applicable != wantApplicable {
 			t.Fatalf("row %d (%+v): Applicable = %v, want %v", i, row, got.Applicable, wantApplicable)
 		}

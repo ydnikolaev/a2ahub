@@ -72,6 +72,7 @@ var (
 type PartialWriteStage string
 
 const (
+	// PartialWriteStagePRCreated means the pull request was created before failure.
 	PartialWriteStagePRCreated PartialWriteStage = "pr-created"
 )
 
@@ -80,6 +81,7 @@ const (
 type PartialWriteOperation string
 
 const (
+	// PartialWriteOperationEnableAutoMerge identifies the auto-merge mutation.
 	PartialWriteOperationEnableAutoMerge PartialWriteOperation = "enable-auto-merge"
 )
 

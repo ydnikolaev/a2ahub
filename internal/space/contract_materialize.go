@@ -24,25 +24,34 @@ import (
 const maxContractMaterializeDifferences = 64
 
 var (
-	ErrContractDestinationParentMissing     = errors.New("space: contract destination parent is missing")
-	ErrContractDestinationDiverged          = errors.New("space: contract destination diverged")
+	// ErrContractDestinationParentMissing is part of the public package API.
+	ErrContractDestinationParentMissing = errors.New("space: contract destination parent is missing")
+	// ErrContractDestinationDiverged is part of the public package API.
+	ErrContractDestinationDiverged = errors.New("space: contract destination diverged")
+	// ErrContractDestinationDurabilityUnknown is part of the public package API.
 	ErrContractDestinationDurabilityUnknown = errors.New("space: contract destination is visible but durability is unknown")
-	ErrContractMaterializationInvalid       = errors.New("space: contract historical snapshot is not materializable")
-	ErrContractAtomicNoReplaceUnsupported   = errors.New("space: atomic no-replace directory install is unsupported")
+	// ErrContractMaterializationInvalid is part of the public package API.
+	ErrContractMaterializationInvalid = errors.New("space: contract historical snapshot is not materializable")
+	// ErrContractAtomicNoReplaceUnsupported is part of the public package API.
+	ErrContractAtomicNoReplaceUnsupported = errors.New("space: atomic no-replace directory install is unsupported")
 
 	contractMaterializeMu sync.Mutex
 )
 
+// ContractMaterializeOutcome is part of the public package API.
 type ContractMaterializeOutcome string
 
 const (
-	ContractMaterialized   ContractMaterializeOutcome = "materialized"
+	// ContractMaterialized is part of the public package API.
+	ContractMaterialized ContractMaterializeOutcome = "materialized"
+	// ContractAlreadyPresent is part of the public package API.
 	ContractAlreadyPresent ContractMaterializeOutcome = "already-present"
 )
 
 // ContractMaterializeResult keeps the two historical verification facts
 // distinct: a legacy descriptor is a Git object at the publish commit, not an
 // event-digest-covered byte stream.
+// ContractMaterializeResult is part of the public package API.
 type ContractMaterializeResult struct {
 	ContractID             string                     `json:"contract"`
 	Version                string                     `json:"version"`
@@ -59,6 +68,7 @@ type ContractMaterializeResult struct {
 // ContractMaterializer owns one held project-root capability. Materialize
 // never reopens the configured pathname and every descendant traversal keeps
 // using os.Root capabilities plus no-follow identity checks.
+// ContractMaterializer is part of the public package API.
 type ContractMaterializer struct {
 	root  *os.Root
 	hooks contractMaterializeHooks
@@ -75,6 +85,7 @@ type contractMaterializeHooks struct {
 	syncParent                func(*os.File) error
 }
 
+// NewContractMaterializer is part of the public package API.
 func NewContractMaterializer(projectRoot string) (*ContractMaterializer, error) {
 	root, _, err := openHeldContractRoot(projectRoot)
 	if err != nil {
@@ -83,6 +94,7 @@ func NewContractMaterializer(projectRoot string) (*ContractMaterializer, error) 
 	return &ContractMaterializer{root: root}, nil
 }
 
+// Close is part of the public package API.
 func (m *ContractMaterializer) Close() error {
 	if m == nil || m.root == nil {
 		return nil
@@ -94,6 +106,7 @@ func (m *ContractMaterializer) Close() error {
 
 // Materialize writes exactly contract.md plus the verified carried set. The
 // complete snapshot is revalidated before the destination is inspected.
+// Materialize is part of the public package API.
 func (m *ContractMaterializer) Materialize(
 	ctx context.Context,
 	snapshot HistoricalSnapshot,

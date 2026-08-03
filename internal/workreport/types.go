@@ -16,12 +16,19 @@ import (
 )
 
 const (
-	SchemaVersion         = 1
-	DefaultTTL            = 15 * time.Minute
-	MinimumTTL            = time.Minute
-	MaximumTTL            = 24 * time.Hour
-	MaximumPrepared       = 24 * 1024
-	MaximumEncodedLease   = 32 * 1024
+	// SchemaVersion is part of the public package API.
+	SchemaVersion = 1
+	// DefaultTTL is part of the public package API.
+	DefaultTTL = 15 * time.Minute
+	// MinimumTTL is part of the public package API.
+	MinimumTTL = time.Minute
+	// MaximumTTL is part of the public package API.
+	MaximumTTL = 24 * time.Hour
+	// MaximumPrepared is part of the public package API.
+	MaximumPrepared = 24 * 1024
+	// MaximumEncodedLease is part of the public package API.
+	MaximumEncodedLease = 32 * 1024
+	// DefaultClassification is part of the public package API.
 	DefaultClassification = "internal"
 )
 
@@ -32,18 +39,27 @@ var (
 	digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 )
 
+// Mode is part of the public package API.
 type Mode string
 
 const (
-	ModePlanning     Mode = "planning"
+	// ModePlanning is part of the public package API.
+	ModePlanning Mode = "planning"
+	// ModeImplementing is part of the public package API.
 	ModeImplementing Mode = "implementing"
-	ModeTesting      Mode = "testing"
-	ModeReviewing    Mode = "reviewing"
-	ModeWaiting      Mode = "waiting"
-	ModePaused       Mode = "paused"
-	ModeFinished     Mode = "finished"
+	// ModeTesting is part of the public package API.
+	ModeTesting Mode = "testing"
+	// ModeReviewing is part of the public package API.
+	ModeReviewing Mode = "reviewing"
+	// ModeWaiting is part of the public package API.
+	ModeWaiting Mode = "waiting"
+	// ModePaused is part of the public package API.
+	ModePaused Mode = "paused"
+	// ModeFinished is part of the public package API.
+	ModeFinished Mode = "finished"
 )
 
+// Valid is part of the public package API.
 func (m Mode) Valid() bool {
 	switch m {
 	case ModePlanning, ModeImplementing, ModeTesting, ModeReviewing, ModeWaiting, ModePaused, ModeFinished:
@@ -53,16 +69,23 @@ func (m Mode) Valid() bool {
 	}
 }
 
+// WaitKind is part of the public package API.
 type WaitKind string
 
 const (
-	WaitSystem   WaitKind = "system"
-	WaitHuman    WaitKind = "human"
-	WaitTool     WaitKind = "tool"
-	WaitTimer    WaitKind = "timer"
+	// WaitSystem is part of the public package API.
+	WaitSystem WaitKind = "system"
+	// WaitHuman is part of the public package API.
+	WaitHuman WaitKind = "human"
+	// WaitTool is part of the public package API.
+	WaitTool WaitKind = "tool"
+	// WaitTimer is part of the public package API.
+	WaitTimer WaitKind = "timer"
+	// WaitExternal is part of the public package API.
 	WaitExternal WaitKind = "external"
 )
 
+// Valid is part of the public package API.
 func (k WaitKind) Valid() bool {
 	switch k {
 	case WaitSystem, WaitHuman, WaitTool, WaitTimer, WaitExternal:
@@ -72,12 +95,14 @@ func (k WaitKind) Valid() bool {
 	}
 }
 
+// WaitingOn is part of the public package API.
 type WaitingOn struct {
 	Kind    WaitKind `json:"kind"`
 	ID      string   `json:"id"`
 	Summary string   `json:"summary,omitempty"`
 }
 
+// Actor is part of the public package API.
 type Actor struct {
 	Kind    string `json:"kind"`
 	Name    string `json:"name"`
@@ -86,6 +111,7 @@ type Actor struct {
 	Session string `json:"session"`
 }
 
+// Identity is part of the public package API.
 type Identity struct {
 	LeaseKey  string
 	ProjectID string
@@ -95,6 +121,7 @@ type Identity struct {
 	Actor     Actor
 }
 
+// Equal is part of the public package API.
 func (i Identity) Equal(other Identity) bool {
 	return i.LeaseKey == other.LeaseKey && i.ProjectID == other.ProjectID &&
 		i.Space == other.Space && i.Thread == other.Thread && i.WorkID == other.WorkID &&
@@ -105,8 +132,10 @@ func (i Identity) Equal(other Identity) bool {
 // PreparedJournal is the opaque canonical journal emitted by the P4 adapter.
 // It deliberately exposes copies only: callers cannot mutate bytes persisted
 // for restart recovery.
+// PreparedJournal is part of the public package API.
 type PreparedJournal struct{ raw []byte }
 
+// NewPreparedJournal is part of the public package API.
 func NewPreparedJournal(raw []byte) (PreparedJournal, error) {
 	if err := validateOpaqueJSON(raw, MaximumPrepared, "prepared journal"); err != nil {
 		return PreparedJournal{}, err
@@ -114,13 +143,18 @@ func NewPreparedJournal(raw []byte) (PreparedJournal, error) {
 	return PreparedJournal{raw: bytes.Clone(raw)}, nil
 }
 
+// Bytes is part of the public package API.
 func (j PreparedJournal) Bytes() []byte { return bytes.Clone(j.raw) }
-func (j PreparedJournal) Len() int      { return len(j.raw) }
+
+// Len is part of the public package API.
+func (j PreparedJournal) Len() int { return len(j.raw) }
 
 // WriteResultJournal is the opaque canonical P4 result. The strict adapter,
 // not this package, owns its schema and maps it to a convergence class.
+// WriteResultJournal is part of the public package API.
 type WriteResultJournal struct{ raw []byte }
 
+// NewWriteResultJournal is part of the public package API.
 func NewWriteResultJournal(raw []byte) (WriteResultJournal, error) {
 	if err := validateOpaqueJSON(raw, MaximumEncodedLease, "write result journal"); err != nil {
 		return WriteResultJournal{}, err
@@ -128,8 +162,11 @@ func NewWriteResultJournal(raw []byte) (WriteResultJournal, error) {
 	return WriteResultJournal{raw: bytes.Clone(raw)}, nil
 }
 
+// Bytes is part of the public package API.
 func (j WriteResultJournal) Bytes() []byte { return bytes.Clone(j.raw) }
-func (j WriteResultJournal) Len() int      { return len(j.raw) }
+
+// Len is part of the public package API.
+func (j WriteResultJournal) Len() int { return len(j.raw) }
 
 func validateOpaqueJSON(raw []byte, maximum int, label string) error {
 	if len(raw) == 0 {
@@ -144,15 +181,21 @@ func validateOpaqueJSON(raw []byte, maximum int, label string) error {
 	return nil
 }
 
+// Action is part of the public package API.
 type Action string
 
 const (
-	ActionStart      Action = "start"
+	// ActionStart is part of the public package API.
+	ActionStart Action = "start"
+	// ActionCheckpoint is part of the public package API.
 	ActionCheckpoint Action = "checkpoint"
-	ActionWait       Action = "wait"
-	ActionStop       Action = "stop"
+	// ActionWait is part of the public package API.
+	ActionWait Action = "wait"
+	// ActionStop is part of the public package API.
+	ActionStop Action = "stop"
 )
 
+// Valid is part of the public package API.
 func (a Action) Valid() bool {
 	switch a {
 	case ActionStart, ActionCheckpoint, ActionWait, ActionStop:
@@ -162,25 +205,34 @@ func (a Action) Valid() bool {
 	}
 }
 
+// LocalTarget is part of the public package API.
 type LocalTarget string
 
 const (
-	TargetActive  LocalTarget = "active"
+	// TargetActive is part of the public package API.
+	TargetActive LocalTarget = "active"
+	// TargetClosing is part of the public package API.
 	TargetClosing LocalTarget = "closing"
 )
 
+// Convergence is part of the public package API.
 type Convergence string
 
 const (
+	// ConvergenceResumable is part of the public package API.
 	ConvergenceResumable Convergence = "resumable"
-	ConvergenceAccepted  Convergence = "accepted"
-	ConvergenceTerminal  Convergence = "terminal"
+	// ConvergenceAccepted is part of the public package API.
+	ConvergenceAccepted Convergence = "accepted"
+	// ConvergenceTerminal is part of the public package API.
+	ConvergenceTerminal Convergence = "terminal"
 )
 
+// Valid is part of the public package API.
 func (c Convergence) Valid() bool {
 	return c == ConvergenceResumable || c == ConvergenceAccepted || c == ConvergenceTerminal
 }
 
+// PublishAttempt is part of the public package API.
 type PublishAttempt struct {
 	Attempted   bool
 	WriteResult WriteResultJournal
@@ -197,6 +249,7 @@ func (a PublishAttempt) clone() PublishAttempt {
 	}
 }
 
+// PreparedOperation is part of the public package API.
 type PreparedOperation struct {
 	OperationKey     string
 	Action           Action
@@ -207,6 +260,7 @@ type PreparedOperation struct {
 	LocalTarget      LocalTarget
 }
 
+// PendingOperation is part of the public package API.
 type PendingOperation struct {
 	OperationKey     string
 	Action           Action
@@ -222,6 +276,7 @@ type PendingOperation struct {
 // PublicationReceipt is a bounded local idempotency receipt. It proves only
 // which exact prepared bytes already converged; it is never projected as work
 // truth and is replaced when the next semantic operation is persisted.
+// PublicationReceipt is part of the public package API.
 type PublicationReceipt struct {
 	OperationKey     string
 	Action           Action
@@ -256,6 +311,7 @@ func (p *PendingOperation) clone() *PendingOperation {
 	return &copy
 }
 
+// Lease is part of the public package API.
 type Lease struct {
 	SchemaVersion int
 	Identity      Identity
@@ -278,6 +334,7 @@ type Lease struct {
 	LastResult        *PublicationReceipt
 }
 
+// Clone is part of the public package API.
 func (l Lease) Clone() Lease {
 	copy := l
 	copy.WaitingOn = append([]WaitingOn(nil), l.WaitingOn...)
@@ -287,25 +344,32 @@ func (l Lease) Clone() Lease {
 	return copy
 }
 
+// Expired is part of the public package API.
 func (l Lease) Expired(now time.Time) bool { return now.After(l.ExpiresAt) }
 
+// OwnedBy is part of the public package API.
 func (l Lease) OwnedBy(identity Identity) bool { return l.Identity.Equal(identity) }
 
+// Revision is part of the public package API.
 type Revision string
 
 // LeaseRepository supplies process-safe compare-and-swap semantics. A zero
 // revision means the key must not exist. Passing next=nil removes it.
+// LeaseRepository is part of the public package API.
 type LeaseRepository interface {
 	Load(context.Context, string) (Lease, Revision, error)
 	CompareAndSwap(context.Context, string, Revision, *Lease) (Revision, error)
 }
 
+// Publisher is part of the public package API.
 type Publisher interface {
 	SubmitPrepared(context.Context, PreparedJournal, WriteResultJournal) (PublishAttempt, error)
 }
 
+// Clock is part of the public package API.
 type Clock interface{ Now() time.Time }
 
+// StartCommand is part of the public package API.
 type StartCommand struct {
 	Identity       Identity
 	SubjectRef     string
@@ -318,6 +382,7 @@ type StartCommand struct {
 	Prepared       PreparedOperation
 }
 
+// SemanticCommand is part of the public package API.
 type SemanticCommand struct {
 	Identity   Identity
 	SubjectRef string
@@ -328,15 +393,21 @@ type SemanticCommand struct {
 	Prepared   PreparedOperation
 }
 
+// LocalState is part of the public package API.
 type LocalState string
 
 const (
-	LocalActive    LocalState = "active"
-	LocalClosing   LocalState = "closing"
-	LocalCleared   LocalState = "cleared"
+	// LocalActive is part of the public package API.
+	LocalActive LocalState = "active"
+	// LocalClosing is part of the public package API.
+	LocalClosing LocalState = "closing"
+	// LocalCleared is part of the public package API.
+	LocalCleared LocalState = "cleared"
+	// LocalUnchanged is part of the public package API.
 	LocalUnchanged LocalState = "unchanged"
 )
 
+// OperationResult is part of the public package API.
 type OperationResult struct {
 	WorkID           string
 	Session          string
@@ -349,6 +420,7 @@ type OperationResult struct {
 	Shared           PublishAttempt
 }
 
+// ValidateLease is part of the public package API.
 func ValidateLease(lease Lease) error {
 	if err := validateLeaseStructure(lease); err != nil {
 		return err
@@ -578,7 +650,7 @@ func expectedOperationKey(sequence uint64, action Action, workID string) (string
 	}
 	key, err := operation.Work(workID, int64(sequence), string(action))
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrInvalidLease, err)
+		return "", fmt.Errorf("%w: %w", ErrInvalidLease, err)
 	}
 	return key, nil
 }

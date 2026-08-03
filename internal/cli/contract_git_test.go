@@ -45,21 +45,6 @@ func contractWriteFile(t *testing.T, repoDir, relPath, content string) {
 	}
 }
 
-// contractWriteDescriptorAt writes a minimal contract.md carrying just
-// enough frontmatter for contractResolveVersionSHA to parse (schema/id/
-// version — the fields its own contractDescriptorProbe decodes; the fuller
-// shape cmd_contract_test.go's writeContractDescriptor uses is for schema
-// validation this file's functions never do).
-func contractWriteDescriptorAt(t *testing.T, repoDir, descriptorPath, version string) {
-	t.Helper()
-	content := "---\n" +
-		"schema: envelope/v1\n" +
-		"id: XC-axon-widget\n" +
-		"version: \"" + version + "\"\n" +
-		"---\nbody\n"
-	contractWriteFile(t, repoDir, descriptorPath, content)
-}
-
 // TestContractPriorVersionFilesByteIdenticalAfterLaterEdit is this file's
 // AC: a prior version's schema+valid-fixture bytes come back byte-identical
 // even after a LATER commit changed those same paths on disk.

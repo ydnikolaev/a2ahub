@@ -54,18 +54,6 @@ func TestNoteProjectionReachesThreadAndArtifactDetail(t *testing.T) {
 	}
 }
 
-func equalStrings(got, want []string) bool {
-	if len(got) != len(want) {
-		return false
-	}
-	for i := range got {
-		if got[i] != want[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func TestDriftOf(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

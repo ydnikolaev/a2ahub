@@ -28,16 +28,20 @@ const (
 // ContractCandidateSource identifies where a frozen candidate was observed.
 // It is presentation metadata; the fingerprint itself depends only on exact
 // relative paths, kinds, modes, and bytes so equal mirror/staging trees agree.
+// ContractCandidateSource is part of the public package API.
 type ContractCandidateSource string
 
 const (
-	ContractCandidateSourceMirror  ContractCandidateSource = "mirror"
+	// ContractCandidateSourceMirror is part of the public package API.
+	ContractCandidateSourceMirror ContractCandidateSource = "mirror"
+	// ContractCandidateSourceStaging is part of the public package API.
 	ContractCandidateSourceStaging ContractCandidateSource = "staging"
 )
 
 // ContractCandidateLocation selects one already-existing directory beneath a
 // configured root. Path is always relative to the configured root; callers do
 // not get an absolute-path escape hatch.
+// ContractCandidateLocation is part of the public package API.
 type ContractCandidateLocation struct {
 	Path   string
 	Source ContractCandidateSource
@@ -46,6 +50,7 @@ type ContractCandidateLocation struct {
 // ContractSnapshotFile is one exact leaf frozen by a filesystem or Git
 // collector. Mode uses Git's canonical 100644/100755 spelling for regular
 // files. ObjectID is populated for Git objects and empty for filesystem input.
+// ContractSnapshotFile is part of the public package API.
 type ContractSnapshotFile struct {
 	Path     string
 	Kind     contract.CandidateKind
@@ -57,6 +62,7 @@ type ContractSnapshotFile struct {
 
 // ContractCandidateSnapshot is detached from every open file/path. Planning
 // consumes this exact value and never reopens the candidate source.
+// ContractCandidateSnapshot is part of the public package API.
 type ContractCandidateSnapshot struct {
 	Source      ContractCandidateSource
 	Fingerprint string
@@ -65,6 +71,7 @@ type ContractCandidateSnapshot struct {
 
 // CoreSnapshot projects the frozen I/O result into the pure contract core.
 // It clones every byte slice so neither side can mutate the other's snapshot.
+// CoreSnapshot is part of the public package API.
 func (s ContractCandidateSnapshot) CoreSnapshot() contract.CandidateSnapshot {
 	var out contract.CandidateSnapshot
 	for _, file := range s.Files {
@@ -95,6 +102,7 @@ func (s ContractCandidateSnapshot) file(name string) ContractSnapshotFile {
 // capabilities. Keeping the anchor lets Read prove the configured pathname
 // still names the selected directory before and after collection; keeping the
 // child capability prevents a concurrent rename from redirecting any read.
+// ContractCandidateReader is part of the public package API.
 type ContractCandidateReader struct {
 	configured *os.Root
 	root       *os.Root
@@ -112,6 +120,7 @@ type contractCandidateHooks struct {
 
 // OpenContractCandidateReader resolves every location component through
 // os.Root and retains the resulting capability until Close.
+// OpenContractCandidateReader is part of the public package API.
 func OpenContractCandidateReader(configuredRoot string, location ContractCandidateLocation) (*ContractCandidateReader, error) {
 	if !cleanContractRelativePath(location.Path) ||
 		(location.Source != ContractCandidateSourceMirror && location.Source != ContractCandidateSourceStaging) {
@@ -205,6 +214,7 @@ func ReadContractCandidate(ctx context.Context, configuredRoot string, location 
 
 // Read freezes descriptor, schema/**, fixtures/**, and artifacts/** from the
 // held root. It checks cancellation between directory and file operations.
+// Read is part of the public package API.
 func (r *ContractCandidateReader) Read(ctx context.Context) (ContractCandidateSnapshot, error) {
 	if r == nil || r.root == nil || r.configured == nil {
 		return ContractCandidateSnapshot{}, fmt.Errorf("%w: candidate reader is closed", ErrContractUnsafePath)
@@ -394,7 +404,7 @@ func readRootContractFile(ctx context.Context, root *os.Root, name, relative str
 	}
 	file, err := root.Open(name)
 	if err != nil {
-		return ContractSnapshotFile{}, fmt.Errorf("%w: open %q after inspection: %v", ErrContractUnsafeEntry, relative, err)
+		return ContractSnapshotFile{}, fmt.Errorf("%w: open %q after inspection: %w", ErrContractUnsafeEntry, relative, err)
 	}
 	closed := false
 	defer func() {

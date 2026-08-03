@@ -12,10 +12,12 @@ import (
 
 // WorkLeaseLister is the bounded local-store seam needed to recover the exact
 // accepted checkpoint that has not landed on main yet.
+// WorkLeaseLister is part of the public package API.
 type WorkLeaseLister interface {
 	ListWork(context.Context, string, string, string, bool) ([]workreport.Lease, error)
 }
 
+// WorkLeaseContinuationResolver is part of the public package API.
 type WorkLeaseContinuationResolver struct {
 	store     WorkLeaseLister
 	projectID string
@@ -23,6 +25,7 @@ type WorkLeaseContinuationResolver struct {
 	repoDir   string
 }
 
+// NewWorkLeaseContinuationResolver is part of the public package API.
 func NewWorkLeaseContinuationResolver(store WorkLeaseLister, projectID, spaceID, repoDir string) (*WorkLeaseContinuationResolver, error) {
 	if store == nil || strings.TrimSpace(projectID) == "" || strings.TrimSpace(spaceID) == "" || strings.TrimSpace(repoDir) == "" {
 		return nil, fmt.Errorf("space: work continuation resolver requires store, project, space and mirror")
@@ -30,6 +33,7 @@ func NewWorkLeaseContinuationResolver(store WorkLeaseLister, projectID, spaceID,
 	return &WorkLeaseContinuationResolver{store: store, projectID: projectID, spaceID: spaceID, repoDir: repoDir}, nil
 }
 
+// ResolveWorkContinuation is part of the public package API.
 func (r *WorkLeaseContinuationResolver) ResolveWorkContinuation(ctx context.Context, workID string, sequence uint64) (WorkCheckpointContinuation, bool, error) {
 	leases, err := r.store.ListWork(ctx, r.projectID, r.spaceID, workID, true)
 	if err != nil {
@@ -81,11 +85,13 @@ func (r *WorkLeaseContinuationResolver) ResolveWorkContinuation(ctx context.Cont
 // WorkHistoryPublisher short-circuits an exact terminal checkpoint already
 // present in the local origin/main first-parent tree before the delegate asks
 // for credentials or contacts the host. All prepared write bytes must match.
+// WorkHistoryPublisher is part of the public package API.
 type WorkHistoryPublisher struct {
 	repoDir  string
 	delegate workreport.Publisher
 }
 
+// NewWorkHistoryPublisher is part of the public package API.
 func NewWorkHistoryPublisher(repoDir string, delegate workreport.Publisher) (*WorkHistoryPublisher, error) {
 	if strings.TrimSpace(repoDir) == "" || delegate == nil {
 		return nil, fmt.Errorf("space: work history publisher requires mirror and delegate")
@@ -93,6 +99,7 @@ func NewWorkHistoryPublisher(repoDir string, delegate workreport.Publisher) (*Wo
 	return &WorkHistoryPublisher{repoDir: repoDir, delegate: delegate}, nil
 }
 
+// SubmitPrepared is part of the public package API.
 func (p *WorkHistoryPublisher) SubmitPrepared(ctx context.Context, preparedJournal workreport.PreparedJournal, priorJournal workreport.WriteResultJournal) (workreport.PublishAttempt, error) {
 	prepared, err := DecodePreparedSubmissionJournal(preparedJournal.Bytes())
 	if err != nil {

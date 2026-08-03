@@ -11,6 +11,7 @@ import (
 
 const writeResultJournalMaxBytes = 16 * 1024
 
+// ErrWriteResultJournalInvalid is part of the public package API.
 var ErrWriteResultJournalInvalid = errors.New("space: invalid write result journal")
 
 type writeResultJournalV1 struct {
@@ -34,6 +35,7 @@ type writeResultWireV1 struct {
 // EncodeWriteResultJournal freezes the complete result/error axis without
 // changing WriteResult's public JSON projection or retaining deprecated
 // compatibility aliases.
+// EncodeWriteResultJournal is part of the public package API.
 func EncodeWriteResultJournal(result WriteResult) ([]byte, error) {
 	if err := validateJournalWriteResult(result); err != nil {
 		return nil, err
@@ -45,12 +47,13 @@ func EncodeWriteResultJournal(result WriteResult) ([]byte, error) {
 // DecodeWriteResultJournal accepts only the exact canonical v1 object. This
 // rejects missing, unknown, duplicate, reordered, nullable and trailing data
 // rather than allowing Go zero values to fill an ambiguous checkpoint.
+// DecodeWriteResultJournal is part of the public package API.
 func DecodeWriteResultJournal(raw []byte) (WriteResult, error) {
 	if len(raw) == 0 || len(raw) > writeResultJournalMaxBytes {
 		return WriteResult{}, ErrWriteResultJournalInvalid
 	}
 	if err := rejectDuplicateJSONKeys(raw); err != nil {
-		return WriteResult{}, fmt.Errorf("%w: %v", ErrWriteResultJournalInvalid, err)
+		return WriteResult{}, fmt.Errorf("%w: %w", ErrWriteResultJournalInvalid, err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -95,7 +98,7 @@ func encodeCanonicalWriteResultJournal(wire writeResultJournalV1) ([]byte, error
 	encoder := json.NewEncoder(&out)
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(wire); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrWriteResultJournalInvalid, err)
+		return nil, fmt.Errorf("%w: %w", ErrWriteResultJournalInvalid, err)
 	}
 	raw := bytes.TrimSuffix(out.Bytes(), []byte("\n"))
 	if len(raw) > writeResultJournalMaxBytes {

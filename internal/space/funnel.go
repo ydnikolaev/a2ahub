@@ -16,15 +16,18 @@ import (
 // WriteState is the funnel's own claim about a Submit outcome — the
 // contract P7's cache persistence (out of this phase's footprint) is
 // built against. Kept stable across phases per spec 05 §9.
+// WriteState is part of the public package API.
 type WriteState string
 
 const (
 	// WriteStatePendingMerge is returned after a fresh push+PR-open: the
 	// PR is open and auto-merge is armed, but not yet merged.
+	// WriteStatePendingMerge is part of the public package API.
 	WriteStatePendingMerge WriteState = "pending-merge"
 	// WriteStateAlreadyOpen is returned by the idempotent short-circuit
 	// (step 0) when a re-run finds an already-open PR for the
 	// deterministic branch.
+	// WriteStateAlreadyOpen is part of the public package API.
 	WriteStateAlreadyOpen WriteState = "already-open"
 	// WriteStateAlreadyMerged is returned by the idempotent short-circuit
 	// when the deterministic branch's PR was ALREADY merged before this
@@ -40,6 +43,7 @@ const (
 	// tell "it was merged before I ran" from "I landed what a prior call
 	// opened". That distinction changes nothing a caller does (nothing is
 	// pending either way), so it stays one state rather than three.
+	// WriteStateAlreadyMerged is part of the public package API.
 	WriteStateAlreadyMerged WriteState = "already-merged"
 	// WriteStateMerged is returned when THIS call did the whole thing:
 	// a fresh push + PR-open, GitHub declined to arm auto-merge because the
@@ -56,50 +60,72 @@ const (
 	// already-merged, because the consumers switching on WriteState were off
 	// that wave's allowlist; that was an allowlist artifact, not a design
 	// conclusion, and the lead split it.)
+	// WriteStateMerged is part of the public package API.
 	WriteStateMerged WriteState = "merged"
 	// WriteStateNeedsAttention means a PR is confirmed but unattended merge
 	// is not armed. Note names the operator-visible unfinished condition.
+	// WriteStateNeedsAttention is part of the public package API.
 	WriteStateNeedsAttention WriteState = "needs-attention"
 	// WriteStateOutcomeUnknown means a later provider side effect may have
 	// happened but could not be observed. Stage remains the last proven fact.
+	// WriteStateOutcomeUnknown is part of the public package API.
 	WriteStateOutcomeUnknown WriteState = "outcome-unknown"
 )
 
 // WriteStage is monotonic evidence about the furthest durable boundary a
 // funnel invocation proved.
+// WriteStage is part of the public package API.
 type WriteStage string
 
 const (
-	WriteStageNone           WriteStage = "none"
-	WriteStageCommitted      WriteStage = "committed"
-	WriteStagePushed         WriteStage = "pushed"
-	WriteStagePRCreated      WriteStage = "pr-created"
+	// WriteStageNone is part of the public package API.
+	WriteStageNone WriteStage = "none"
+	// WriteStageCommitted is part of the public package API.
+	WriteStageCommitted WriteStage = "committed"
+	// WriteStagePushed is part of the public package API.
+	WriteStagePushed WriteStage = "pushed"
+	// WriteStagePRCreated is part of the public package API.
+	WriteStagePRCreated WriteStage = "pr-created"
+	// WriteStageAutoMergeArmed is part of the public package API.
 	WriteStageAutoMergeArmed WriteStage = "auto-merge-armed"
-	WriteStageMerged         WriteStage = "merged"
+	// WriteStageMerged is part of the public package API.
+	WriteStageMerged WriteStage = "merged"
 )
 
 // RemainingAction is the closed machine-readable next step derived from
 // Stage and State. It is never reconstructed from Note.
+// RemainingAction is part of the public package API.
 type RemainingAction string
 
 const (
-	RemainingActionNone                   RemainingAction = "none"
-	RemainingActionRetryPush              RemainingAction = "retry-push"
-	RemainingActionEnsurePR               RemainingAction = "ensure-pr"
-	RemainingActionArmAutoMerge           RemainingAction = "arm-auto-merge"
-	RemainingActionWaitForGates           RemainingAction = "wait-for-gates"
-	RemainingActionResolvePR              RemainingAction = "resolve-pr"
+	// RemainingActionNone is part of the public package API.
+	RemainingActionNone RemainingAction = "none"
+	// RemainingActionRetryPush is part of the public package API.
+	RemainingActionRetryPush RemainingAction = "retry-push"
+	// RemainingActionEnsurePR is part of the public package API.
+	RemainingActionEnsurePR RemainingAction = "ensure-pr"
+	// RemainingActionArmAutoMerge is part of the public package API.
+	RemainingActionArmAutoMerge RemainingAction = "arm-auto-merge"
+	// RemainingActionWaitForGates is part of the public package API.
+	RemainingActionWaitForGates RemainingAction = "wait-for-gates"
+	// RemainingActionResolvePR is part of the public package API.
+	RemainingActionResolvePR RemainingAction = "resolve-pr"
+	// RemainingActionObserveProviderOutcome is part of the public package API.
 	RemainingActionObserveProviderOutcome RemainingAction = "observe-provider-outcome"
 )
 
 var (
-	ErrInvalidWriteOutcome     = errors.New("space: invalid write stage/state combination")
+	// ErrInvalidWriteOutcome is part of the public package API.
+	ErrInvalidWriteOutcome = errors.New("space: invalid write stage/state combination")
+	// ErrExpectedHeadUnavailable is part of the public package API.
 	ErrExpectedHeadUnavailable = errors.New("space: host did not return the pull request head checked by CI")
+	// ErrSubmitValidatorRequired is part of the public package API.
 	ErrSubmitValidatorRequired = errors.New("space: final submission validator is required at the operational-confidence floor")
 )
 
 // FileWrite is one file the write funnel commits — a path (relative to
 // the mirror clone's working directory) and its full content.
+// FileWrite is part of the public package API.
 type FileWrite struct {
 	Path    string
 	Content []byte
@@ -109,6 +135,7 @@ type FileWrite struct {
 // Files as ONE commit (an artifact file + its first lifecycle event, per
 // D-026) on the deterministic branch a2a/<System>/<ArtifactID>, push, open
 // a PR with auto-merge enabled.
+// SubmitRequest is part of the public package API.
 type SubmitRequest struct {
 	// RepoDir is the local mirror clone's working directory (already
 	// cloned/fetched via CloneOrFetch) that the commit is made in.
@@ -200,6 +227,7 @@ type SubmitRequest struct {
 // WriteResult is what Submit returns: the contract P7's cache persistence
 // (pending-merge marker) and P8's gated verbs are built against (spec 05
 // §7, §9 — "keep that return contract stable across phases").
+// WriteResult is part of the public package API.
 type WriteResult struct {
 	Branch    string
 	PRNumber  int
@@ -226,6 +254,7 @@ type WriteResult struct {
 
 // RemainingActionFor is the total stage/state mapping defined by P4. Invalid
 // combinations return ErrInvalidWriteOutcome rather than guessing.
+// RemainingActionFor is part of the public package API.
 func RemainingActionFor(stage WriteStage, state WriteState) (RemainingAction, error) {
 	switch state {
 	case WriteStateMerged, WriteStateAlreadyMerged:
@@ -335,6 +364,7 @@ func failWriteResult(op, input string, result WriteResult, cause error) (WriteRe
 // (P3 internal/validate, wired for real at P6). internal/space depends on
 // this interface only — never a concrete validate.Engine (ADR-001's
 // import grant is a ceiling, not a mandate; plan 05 Placement decisions).
+// SubmitValidator is part of the public package API.
 type SubmitValidator interface {
 	// ValidateSubmit validates files about to be committed and returns a
 	// non-nil error describing every violation found (or nil).
@@ -344,6 +374,7 @@ type SubmitValidator interface {
 // WriteFunnel implements the D-002/D-026 single write funnel: the ONLY
 // code path internal/space exposes for mutating a space (rails: "one
 // write shape"). It is the sole caller of internal/host.
+// WriteFunnel is part of the public package API.
 type WriteFunnel struct {
 	host              host.Host
 	validator         SubmitValidator
@@ -358,6 +389,7 @@ type WriteFunnel struct {
 // validator is nil. The temporary nil allowance exists only so pre-v0.19
 // compatibility tests and old embedding callers remain readable while they
 // migrate to an explicit domain validator.
+// NewWriteFunnel is part of the public package API.
 func NewWriteFunnel(h host.Host, validator SubmitValidator, binaryVersion string) *WriteFunnel {
 	return &WriteFunnel{
 		host: h, validator: validator, binaryVersion: binaryVersion,
@@ -604,7 +636,8 @@ func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitReque
 	// directly, gated by tryLandCleanPR's explicit-green guard.
 	state := WriteStateNeedsAttention
 	note := pr.AutoMergeNote
-	if !pr.AutoMergeArmed && host.AutoMergeNoteIsAlreadyClean(pr.AutoMergeNote) {
+	switch {
+	case !pr.AutoMergeArmed && host.AutoMergeNoteIsAlreadyClean(pr.AutoMergeNote):
 		merged, mergeMethod, merr := f.tryLandCleanPR(ctx, req, pr.Number)
 		if mergeMethod != "" {
 			result.MergeMethod = mergeMethod
@@ -617,10 +650,10 @@ func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitReque
 		if merged {
 			state, note = WriteStateMerged, ""
 		}
-	} else if pr.AutoMergeArmed {
+	case pr.AutoMergeArmed:
 		state, note = WriteStatePendingMerge, ""
 		result.Stage = furthestWriteStage(result.Stage, WriteStageAutoMergeArmed)
-	} else if note == "" {
+	case note == "":
 		note = "PR exists, but unattended merge is not armed"
 	}
 
@@ -760,6 +793,7 @@ func checkStatusExplicitlyGreen(s host.CheckStatusResult) bool {
 // BranchName IS PROTOCOL, not an implementation detail. Read
 // validateBranchSegments and TestBranchNameGrammarIsProtocol before changing
 // the format string.
+// BranchName is part of the public package API.
 func BranchName(system, verb, artifactID string) string {
 	return operation.BranchName(system, verb, artifactID)
 }
@@ -792,6 +826,7 @@ func appendOperationMetadata(body, key string, ids []string) string {
 // request body. It is exported only inside this repository's internal tree so
 // recovery observers (including the live release harness) use the same parser
 // as Submit instead of re-deriving the private comment format.
+// ParseOperationMetadata is part of the public package API.
 func ParseOperationMetadata(body string) (key string, ids []string, ok bool) {
 	for _, line := range strings.Split(body, "\n") {
 		if !strings.HasPrefix(line, operationMetadataPrefix) || !strings.HasSuffix(line, operationMetadataSuffix) {
@@ -1230,6 +1265,7 @@ func spaceInfraOK(path string) bool { return IsInfrastructurePath(path) }
 // failure mode is nasty: the planner proposes a file, the funnel refuses it
 // with ErrWrongSection, and the whole write fails on a path nobody asked
 // for. One predicate, both sides.
+// IsInfrastructurePath is part of the public package API.
 func IsInfrastructurePath(path string) bool {
 	if !isCleanRelativePath(path) {
 		return false

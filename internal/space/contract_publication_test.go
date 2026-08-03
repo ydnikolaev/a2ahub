@@ -451,7 +451,6 @@ func TestContractPublicationRemoteProofIsExhaustiveAndRecoveryBound(t *testing.T
 		{name: "malformed", listing: ContractPublicationHeadListing{Heads: []ContractPublicationHeadProof{{Branch: "bad", HeadSHA: strings.Repeat("a", 40), TreeVerified: true}}, Observed: 1, Exhaustive: true}, want: ErrOperationConflict},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			reader, source := publicationDeclaredCandidate(nil, false)
@@ -585,7 +584,6 @@ func TestContractPublicationRepairPreservesPartialOutcomeAndRequiresObservedPR(t
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			candidateReader, _ := publicationDeclaredCandidate(nil, false)

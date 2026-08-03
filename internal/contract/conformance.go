@@ -12,58 +12,87 @@ import (
 )
 
 const (
-	ConformanceJSONSchema202012         = "json-schema-2020-12"
+	// ConformanceJSONSchema202012 is part of the public package API.
+	ConformanceJSONSchema202012 = "json-schema-2020-12"
+	// ConformanceSchemaScopeSelfContained is part of the public package API.
 	ConformanceSchemaScopeSelfContained = "self-contained"
-	MaxConformanceViolations            = 256
-	MaxConformanceDetailBytes           = 512
+	// MaxConformanceViolations is part of the public package API.
+	MaxConformanceViolations = 256
+	// MaxConformanceDetailBytes is part of the public package API.
+	MaxConformanceDetailBytes = 512
 )
 
+// ConformanceMode is part of the public package API.
 type ConformanceMode string
 
 const (
+	// ConformanceModePayload is part of the public package API.
 	ConformanceModePayload ConformanceMode = "payload"
-	ConformanceModeSuite   ConformanceMode = "suite"
+	// ConformanceModeSuite is part of the public package API.
+	ConformanceModeSuite ConformanceMode = "suite"
 )
 
+// ConformanceOutcome is part of the public package API.
 type ConformanceOutcome string
 
 const (
-	ConformanceConformant           ConformanceOutcome = "conformant"
-	ConformanceNonconformant        ConformanceOutcome = "nonconformant"
-	ConformanceSuiteConsistent      ConformanceOutcome = "suite-consistent"
-	ConformanceSuiteInconsistent    ConformanceOutcome = "suite-inconsistent"
-	ConformanceUnsupported          ConformanceOutcome = "unsupported"
-	ConformanceIntegrityFailed      ConformanceOutcome = "integrity-failed"
-	ConformanceInvalidInput         ConformanceOutcome = "invalid-input"
+	// ConformanceConformant is part of the public package API.
+	ConformanceConformant ConformanceOutcome = "conformant"
+	// ConformanceNonconformant is part of the public package API.
+	ConformanceNonconformant ConformanceOutcome = "nonconformant"
+	// ConformanceSuiteConsistent is part of the public package API.
+	ConformanceSuiteConsistent ConformanceOutcome = "suite-consistent"
+	// ConformanceSuiteInconsistent is part of the public package API.
+	ConformanceSuiteInconsistent ConformanceOutcome = "suite-inconsistent"
+	// ConformanceUnsupported is part of the public package API.
+	ConformanceUnsupported ConformanceOutcome = "unsupported"
+	// ConformanceIntegrityFailed is part of the public package API.
+	ConformanceIntegrityFailed ConformanceOutcome = "integrity-failed"
+	// ConformanceInvalidInput is part of the public package API.
+	ConformanceInvalidInput ConformanceOutcome = "invalid-input"
+	// ConformanceUnsupportedReference is part of the public package API.
 	ConformanceUnsupportedReference ConformanceOutcome = "unsupported-reference"
 )
 
+// ConformanceExpectation is part of the public package API.
 type ConformanceExpectation string
 
 const (
-	ConformanceExpectedConformant    ConformanceExpectation = "conformant"
+	// ConformanceExpectedConformant is part of the public package API.
+	ConformanceExpectedConformant ConformanceExpectation = "conformant"
+	// ConformanceExpectedNonconformant is part of the public package API.
 	ConformanceExpectedNonconformant ConformanceExpectation = "nonconformant"
 )
 
+// ConformanceActual is part of the public package API.
 type ConformanceActual string
 
 const (
-	ConformanceActualConformant    ConformanceActual = "conformant"
+	// ConformanceActualConformant is part of the public package API.
+	ConformanceActualConformant ConformanceActual = "conformant"
+	// ConformanceActualNonconformant is part of the public package API.
 	ConformanceActualNonconformant ConformanceActual = "nonconformant"
-	ConformanceActualInvalidJSON   ConformanceActual = "invalid-json"
+	// ConformanceActualInvalidJSON is part of the public package API.
+	ConformanceActualInvalidJSON ConformanceActual = "invalid-json"
+	// ConformanceActualInvalidSchema is part of the public package API.
 	ConformanceActualInvalidSchema ConformanceActual = "invalid-schema"
-	ConformanceActualUnevaluated   ConformanceActual = "unevaluated"
+	// ConformanceActualUnevaluated is part of the public package API.
+	ConformanceActualUnevaluated ConformanceActual = "unevaluated"
 )
 
+// ConformanceMappingSource is part of the public package API.
 type ConformanceMappingSource string
 
 const (
+	// ConformanceMappingManifest is part of the public package API.
 	ConformanceMappingManifest ConformanceMappingSource = "manifest"
-	ConformanceMappingLegacy   ConformanceMappingSource = "legacy"
+	// ConformanceMappingLegacy is part of the public package API.
+	ConformanceMappingLegacy ConformanceMappingSource = "legacy"
 )
 
 // ConformanceInput contains already-resolved immutable bytes. The pure core
 // performs no filesystem, Git, schema-loader or network I/O.
+// ConformanceInput is part of the public package API.
 type ConformanceInput struct {
 	ContractID      string
 	Version         string
@@ -77,6 +106,7 @@ type ConformanceInput struct {
 	Payload         []byte
 }
 
+// ConformanceCaseResult is part of the public package API.
 type ConformanceCaseResult struct {
 	Path       string                 `json:"path"`
 	Schema     string                 `json:"schema"`
@@ -85,6 +115,7 @@ type ConformanceCaseResult struct {
 	Violations []InstanceViolation    `json:"violations"`
 }
 
+// ConformanceResult is part of the public package API.
 type ConformanceResult struct {
 	Ref             string                   `json:"ref"`
 	Commit          string                   `json:"commit"`
@@ -110,6 +141,7 @@ type ConformanceResult struct {
 // Passed=false with no violations means compilation/evaluation did not occur.
 // Keeping that distinction prevents an uncompilable schema from satisfying an
 // invalid-fixture expectation.
+// CheckConformance is part of the public package API.
 func CheckConformance(input ConformanceInput, checker InstanceChecker) ConformanceResult {
 	result := ConformanceResult{
 		Ref: input.ContractID + "@" + input.Version, Commit: input.Commit,
@@ -146,7 +178,7 @@ func CheckConformance(input ConformanceInput, checker InstanceChecker) Conforman
 	case ConformanceModePayload:
 		return checkConformancePayload(result, input, set, schemas, checker)
 	case ConformanceModeSuite:
-		return checkConformanceSuite(result, input, set, schemas, checker)
+		return checkConformanceSuite(result, set, schemas, checker)
 	default:
 		result.Outcome = ConformanceInvalidInput
 		return result
@@ -336,7 +368,6 @@ func checkConformancePayload(
 
 func checkConformanceSuite(
 	result ConformanceResult,
-	input ConformanceInput,
 	set CarriedSet,
 	schemas []string,
 	checker InstanceChecker,

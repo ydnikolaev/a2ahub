@@ -196,7 +196,6 @@ func TestResolveContractVersionRequiresCanonicalDocumentsAndExactIdentity(t *tes
 			eventPath:  contractTestEventPath,
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			repo := newContractHistoryRepo(t)
@@ -303,7 +302,6 @@ func TestResolveContractVersionFirstParentPublicationShapes(t *testing.T) {
 	t.Parallel()
 
 	for _, shape := range []string{"merge", "squash", "rebase"} {
-		shape := shape
 		t.Run(shape, func(t *testing.T) {
 			t.Parallel()
 			repo := newContractHistoryRepo(t)
@@ -419,7 +417,6 @@ func TestResolveContractVersionRejectsHostileTreeModesPathsBoundsAndDigest(t *te
 			want: ErrContractDigestMismatch,
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			repo := newContractHistoryRepo(t)

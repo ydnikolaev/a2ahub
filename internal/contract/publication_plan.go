@@ -16,30 +16,40 @@ import (
 )
 
 const (
-	ContractPublicationFloor    = "0.19.0"
+	// ContractPublicationFloor is part of the public package API.
+	ContractPublicationFloor = "0.19.0"
+	// ContractSidecarDeleteDomain is part of the public package API.
 	ContractSidecarDeleteDomain = "contract-sidecar-v1"
 )
 
+// CandidateSourceKind is part of the public package API.
 type CandidateSourceKind string
 
 const (
-	CandidateSourceMirror  CandidateSourceKind = "mirror"
+	// CandidateSourceMirror is part of the public package API.
+	CandidateSourceMirror CandidateSourceKind = "mirror"
+	// CandidateSourceStaging is part of the public package API.
 	CandidateSourceStaging CandidateSourceKind = "staging"
 )
 
+// CandidateSource is part of the public package API.
 type CandidateSource struct {
 	Kind        CandidateSourceKind `json:"kind"`
 	Location    string              `json:"location"`
 	Fingerprint string              `json:"fingerprint"`
 }
 
+// MutationAction is part of the public package API.
 type MutationAction string
 
 const (
-	MutationWrite  MutationAction = "write"
+	// MutationWrite is part of the public package API.
+	MutationWrite MutationAction = "write"
+	// MutationDelete is part of the public package API.
 	MutationDelete MutationAction = "delete"
 )
 
+// PublicationMutation is part of the public package API.
 type PublicationMutation struct {
 	Action       MutationAction `json:"action"`
 	Path         string         `json:"path"`
@@ -53,6 +63,7 @@ type PublicationMutation struct {
 	Bytes        []byte         `json:"-"`
 }
 
+// PublicationEntry is part of the public package API.
 type PublicationEntry struct {
 	Path             string `json:"path"`
 	Role             string `json:"role"`
@@ -64,21 +75,28 @@ type PublicationEntry struct {
 	IntegrityCovered bool   `json:"integrity_covered"`
 }
 
+// CompatibilityVerdict is part of the public package API.
 type CompatibilityVerdict string
 
 const (
-	CompatibilityCompatible   CompatibilityVerdict = "compatible"
-	CompatibilityBreaking     CompatibilityVerdict = "breaking"
+	// CompatibilityCompatible is part of the public package API.
+	CompatibilityCompatible CompatibilityVerdict = "compatible"
+	// CompatibilityBreaking is part of the public package API.
+	CompatibilityBreaking CompatibilityVerdict = "breaking"
+	// CompatibilityNotEvaluated is part of the public package API.
 	CompatibilityNotEvaluated CompatibilityVerdict = "not-evaluated"
-	CompatibilityRefused      CompatibilityVerdict = "refused"
+	// CompatibilityRefused is part of the public package API.
+	CompatibilityRefused CompatibilityVerdict = "refused"
 )
 
+// CompatibilityFailure is part of the public package API.
 type CompatibilityFailure struct {
 	Path   string `json:"path"`
 	Schema string `json:"schema"`
 	Reason string `json:"reason"`
 }
 
+// CompatibilityResult is part of the public package API.
 type CompatibilityResult struct {
 	Verdict         CompatibilityVerdict   `json:"verdict"`
 	Reason          string                 `json:"reason"`
@@ -86,6 +104,7 @@ type CompatibilityResult struct {
 	PolicyViolation *Finding               `json:"-"`
 }
 
+// CompatibilityCheckInput is part of the public package API.
 type CompatibilityCheckInput struct {
 	DeclaredBump    string
 	PriorVersion    string
@@ -98,16 +117,19 @@ type CompatibilityCheckInput struct {
 
 // CompatibilityChecker is contract-owned and implemented by a validation
 // adapter. The pure core never imports internal/validate or internal/schema.
+// CompatibilityChecker is part of the public package API.
 type CompatibilityChecker interface {
 	CheckCompatibility(CompatibilityCheckInput) CompatibilityResult
 }
 
+// InstanceViolation is part of the public package API.
 type InstanceViolation struct {
 	InstancePointer string `json:"instance_pointer"`
 	SchemaPointer   string `json:"schema_pointer"`
 	Message         string `json:"message"`
 }
 
+// InstanceCheckInput is part of the public package API.
 type InstanceCheckInput struct {
 	SchemaPath   string
 	Schema       []byte
@@ -115,6 +137,7 @@ type InstanceCheckInput struct {
 	Instance     []byte
 }
 
+// InstanceCheckResult is part of the public package API.
 type InstanceCheckResult struct {
 	Passed     bool                `json:"passed"`
 	Violations []InstanceViolation `json:"violations"`
@@ -123,32 +146,40 @@ type InstanceCheckResult struct {
 // InstanceChecker is the matching one-method consumer seam for later payload
 // and suite conformance. It is declared here so schema-library types never
 // cross into the contract core.
+// InstanceChecker is part of the public package API.
 type InstanceChecker interface {
 	CheckInstance(InstanceCheckInput) InstanceCheckResult
 }
 
+// Finding is part of the public package API.
 type Finding struct {
 	Code    string `json:"code"`
 	Path    string `json:"path"`
 	Message string `json:"message"`
 }
 
+// CompatibilityExclusion is part of the public package API.
 type CompatibilityExclusion struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
 }
 
+// PublicationGate is part of the public package API.
 type PublicationGate string
 
 const (
+	// GateNone is part of the public package API.
 	GateNone PublicationGate = "none"
-	GateG1   PublicationGate = "G1"
-	GateG2   PublicationGate = "G2"
+	// GateG1 is part of the public package API.
+	GateG1 PublicationGate = "G1"
+	// GateG2 is part of the public package API.
+	GateG2 PublicationGate = "G2"
 )
 
 // PublishedContract is caller-resolved historical input. DescriptorRaw is
 // required for legacy snapshots because contract-tree-v1 deliberately excludes
 // contract.md from CarriedSet.Bytes.
+// PublishedContract is part of the public package API.
 type PublishedContract struct {
 	Version       string
 	DescriptorRaw []byte
@@ -159,6 +190,7 @@ type PublishedContract struct {
 	Modes map[string]string
 }
 
+// PublicationInput is part of the public package API.
 type PublicationInput struct {
 	System         string
 	ContractID     string
@@ -180,6 +212,7 @@ type PublicationInput struct {
 // PublicationPlan is immutable-by-construction. Exported fields are a detached
 // wire projection; the exact descriptor, desired bytes and canonical record
 // used by publish are retained privately and returned only as clones.
+// PublicationPlan is part of the public package API.
 type PublicationPlan struct {
 	Contract                  string                   `json:"contract"`
 	CurrentVersion            string                   `json:"current_version"`
@@ -214,8 +247,13 @@ type PublicationPlan struct {
 	wire            []byte
 }
 
-func (p PublicationPlan) CanonicalBytes() []byte       { return bytes.Clone(p.canonical) }
+// CanonicalBytes is part of the public package API.
+func (p PublicationPlan) CanonicalBytes() []byte { return bytes.Clone(p.canonical) }
+
+// FinalDescriptorBytes is part of the public package API.
 func (p PublicationPlan) FinalDescriptorBytes() []byte { return bytes.Clone(p.finalDescriptor) }
+
+// PlannedBytes is part of the public package API.
 func (p PublicationPlan) PlannedBytes() map[string][]byte {
 	return cloneBytesByPath(p.plannedBytes)
 }
@@ -225,6 +263,7 @@ type publicationPlanWire PublicationPlan
 // MarshalJSON always emits the frozen wire projection captured when the plan
 // digest was computed. Mutating a detached exported slice cannot create JSON
 // that claims the original digest while carrying different semantics.
+// MarshalJSON is part of the public package API.
 func (p PublicationPlan) MarshalJSON() ([]byte, error) {
 	if len(p.wire) != 0 {
 		return bytes.Clone(p.wire), nil
@@ -234,6 +273,7 @@ func (p PublicationPlan) MarshalJSON() ([]byte, error) {
 
 // Equal is suitable for preflight/publish binding: it compares the frozen
 // semantic record and exact desired bytes, not mutable presentation fields.
+// Equal is part of the public package API.
 func (p PublicationPlan) Equal(other PublicationPlan) bool {
 	if p.PlanDigest == "" || p.PlanDigest != other.PlanDigest || !bytes.Equal(p.canonical, other.canonical) {
 		return false
@@ -281,6 +321,7 @@ type publicationPlanRecord struct {
 // PlanPublication is the sole pure owner of selector/target/baseline/floor,
 // descriptor finalization, carried-set, compatibility, mutation metadata and
 // canonical plan semantics. It performs no I/O and never mints delete permits.
+// PlanPublication is part of the public package API.
 func PlanPublication(input PublicationInput, checker CompatibilityChecker) (PublicationPlan, []Issue) {
 	selectorKind, explicitTarget, issues := parsePublicationSelector(input.Selector)
 	if len(issues) != 0 {

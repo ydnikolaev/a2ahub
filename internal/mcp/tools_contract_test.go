@@ -4,12 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 func writeContractDescriptor(t *testing.T, mirrorDir, slug, version string) {
@@ -367,45 +364,6 @@ func TestContractRetireGuardAllowsSolePublishedVersion(t *testing.T) {
 	if len(fake.calls) != 1 {
 		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
 	}
-}
-
-func gitRunTest(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", gitfixture.Args(args...)...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME=a2a-fixture", "GIT_AUTHOR_EMAIL=fixture@a2ahub.invalid",
-		"GIT_COMMITTER_NAME=a2a-fixture", "GIT_COMMITTER_EMAIL=fixture@a2ahub.invalid",
-	)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v (dir=%s): %v\n%s", args, dir, err, out)
-	}
-}
-
-func writeContractDescriptorWithDigest(t *testing.T, mirrorDir, slug, version, digest string) {
-	t.Helper()
-	content := "---\n" +
-		"schema: envelope/v1\n" +
-		"id: XC-axon-" + slug + "\n" +
-		"type: contract\n" +
-		"title: t\n" +
-		"space: fixture-space\n" +
-		"from: axon\n" +
-		"to: [beta]\n" +
-		"thread: " + testFixtureThread + "\n" +
-		"actor: {kind: agent, name: bot}\n" +
-		"created: 2026-07-21T10:00:00Z\n" +
-		"category: api\n" +
-		"priority: p3\n" +
-		"blocking: false\n" +
-		"classification: internal\n" +
-		"version: \"" + version + "\"\n" +
-		"compat_policy: strict-semver\n" +
-		"schema_format: json-schema-2020-12\n" +
-		"generated_from: {tool: test, source_digest: \"" + digest + "\"}\n" +
-		"---\nbody\n"
-	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/contract.md", content)
 }
 
 func TestContractNewDelegatesToNewDraft(t *testing.T) {

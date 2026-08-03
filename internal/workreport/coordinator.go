@@ -14,13 +14,17 @@ import (
 )
 
 const (
+	// DefaultReportValidFor is part of the public package API.
 	DefaultReportValidFor = 24 * time.Hour
+	// MinimumReportValidFor is part of the public package API.
 	MinimumReportValidFor = 5 * time.Minute
+	// MaximumReportValidFor is part of the public package API.
 	MaximumReportValidFor = 7 * 24 * time.Hour
 )
 
 // SemanticWorkService is the coordinator's semantic mutation seam. Service
 // satisfies it and remains the sole owner of lease CAS and publication.
+// SemanticWorkService is part of the public package API.
 type SemanticWorkService interface {
 	Start(context.Context, StartCommand) (OperationResult, error)
 	Apply(context.Context, SemanticCommand) (OperationResult, error)
@@ -28,6 +32,7 @@ type SemanticWorkService interface {
 
 // LocalWorkService is deliberately separate from SemanticWorkService so
 // heartbeat and restart recovery cannot accidentally acquire preparation.
+// LocalWorkService is part of the public package API.
 type LocalWorkService interface {
 	Heartbeat(context.Context, Identity, time.Duration) (OperationResult, error)
 	Resume(context.Context, Identity) (OperationResult, error)
@@ -35,6 +40,7 @@ type LocalWorkService interface {
 
 // LeaseReader provides the persisted owner and semantic sequence needed to
 // construct a continuation. It does not grant the coordinator mutation.
+// LeaseReader is part of the public package API.
 type LeaseReader interface {
 	Load(context.Context, string) (Lease, Revision, error)
 }
@@ -42,10 +48,12 @@ type LeaseReader interface {
 // WorkAuthoringGate reads authoritative space compatibility state. Its input
 // deliberately contains no producer stamp: self-asserted produced_by data can
 // never activate work authoring.
+// WorkAuthoringGate is part of the public package API.
 type WorkAuthoringGate interface {
 	AuthorizeWork(context.Context, WorkAuthoringScope) error
 }
 
+// WorkAuthoringScope is part of the public package API.
 type WorkAuthoringScope struct {
 	ProjectID string
 	Space     string
@@ -54,12 +62,14 @@ type WorkAuthoringScope struct {
 // Preparer owns render, P1 evaluation, producer stamping, exact-byte
 // validation, and side-effect-free P4 preparation. It must return the final
 // PreparedOperation; the coordinator never rebuilds or edits its journal.
+// Preparer is part of the public package API.
 type Preparer interface {
 	Prepare(context.Context, PreparationRequest) (PreparedOperation, error)
 }
 
 // IDSource mints the two coordinator-owned identities. Both methods return
 // their complete prefixed form: work:<ULID> and session:<ULID>.
+// IDSource is part of the public package API.
 type IDSource interface {
 	NewWorkID(time.Time) (string, error)
 	NewSessionID(time.Time) (string, error)
@@ -68,10 +78,12 @@ type IDSource interface {
 // LeaseKeySource binds the complete local identity to the adapter's
 // configuration-trusted canonical project root without exposing that path in
 // a durable checkpoint.
+// LeaseKeySource is part of the public package API.
 type LeaseKeySource interface {
 	LeaseKey(Identity) (string, error)
 }
 
+// WorkIdentityInput is part of the public package API.
 type WorkIdentityInput struct {
 	ProjectID string
 	Space     string
@@ -80,6 +92,7 @@ type WorkIdentityInput struct {
 	Actor     Actor
 }
 
+// StartInput is part of the public package API.
 type StartInput struct {
 	ProjectID      string
 	Space          string
@@ -94,6 +107,7 @@ type StartInput struct {
 	Classification string
 }
 
+// CheckpointInput is part of the public package API.
 type CheckpointInput struct {
 	Work           WorkIdentityInput
 	SubjectRef     string
@@ -103,6 +117,7 @@ type CheckpointInput struct {
 	ReportValidFor time.Duration
 }
 
+// WaitInput is part of the public package API.
 type WaitInput struct {
 	Work           WorkIdentityInput
 	Summary        string
@@ -111,6 +126,7 @@ type WaitInput struct {
 	ReportValidFor time.Duration
 }
 
+// StopInput is part of the public package API.
 type StopInput struct {
 	Work           WorkIdentityInput
 	Result         Mode
@@ -118,16 +134,19 @@ type StopInput struct {
 	ReportValidFor time.Duration
 }
 
+// HeartbeatInput is part of the public package API.
 type HeartbeatInput struct {
 	Work WorkIdentityInput
 	TTL  time.Duration
 }
 
+// ResumeInput is part of the public package API.
 type ResumeInput struct{ Work WorkIdentityInput }
 
 // PreparationRequest is the complete semantic intent presented to the single
 // validation/preparation path. OperationKey is local retry identity and must
 // not be rendered into the durable announcement.
+// PreparationRequest is part of the public package API.
 type PreparationRequest struct {
 	Identity         Identity
 	Action           Action
@@ -144,6 +163,7 @@ type PreparationRequest struct {
 	Classification   string
 }
 
+// Coordinator is part of the public package API.
 type Coordinator struct {
 	semantic SemanticWorkService
 	local    LocalWorkService
@@ -155,6 +175,7 @@ type Coordinator struct {
 	clock    Clock
 }
 
+// NewCoordinator is part of the public package API.
 func NewCoordinator(
 	semantic SemanticWorkService,
 	local LocalWorkService,
@@ -180,6 +201,7 @@ func NewCoordinator(
 	}, nil
 }
 
+// Start is part of the public package API.
 func (c *Coordinator) Start(ctx context.Context, input StartInput) (OperationResult, error) {
 	if err := c.authorize(ctx, input.ProjectID, input.Space); err != nil {
 		return OperationResult{LocalState: LocalUnchanged}, err
@@ -268,6 +290,7 @@ func (c *Coordinator) Start(ctx context.Context, input StartInput) (OperationRes
 	})
 }
 
+// Checkpoint is part of the public package API.
 func (c *Coordinator) Checkpoint(ctx context.Context, input CheckpointInput) (OperationResult, error) {
 	if err := c.authorize(ctx, input.Work.ProjectID, input.Work.Space); err != nil {
 		return inputResult(input.Work), err
@@ -290,6 +313,7 @@ func (c *Coordinator) Checkpoint(ctx context.Context, input CheckpointInput) (Op
 	})
 }
 
+// Wait is part of the public package API.
 func (c *Coordinator) Wait(ctx context.Context, input WaitInput) (OperationResult, error) {
 	if err := c.authorize(ctx, input.Work.ProjectID, input.Work.Space); err != nil {
 		return inputResult(input.Work), err
@@ -309,6 +333,7 @@ func (c *Coordinator) Wait(ctx context.Context, input WaitInput) (OperationResul
 	})
 }
 
+// Stop is part of the public package API.
 func (c *Coordinator) Stop(ctx context.Context, input StopInput) (OperationResult, error) {
 	if err := c.authorize(ctx, input.Work.ProjectID, input.Work.Space); err != nil {
 		return inputResult(input.Work), err
@@ -325,6 +350,7 @@ func (c *Coordinator) Stop(ctx context.Context, input StopInput) (OperationResul
 	})
 }
 
+// Heartbeat is part of the public package API.
 func (c *Coordinator) Heartbeat(ctx context.Context, input HeartbeatInput) (OperationResult, error) {
 	ttl, err := normalizedTTL(input.TTL)
 	if err != nil {
@@ -341,6 +367,7 @@ func (c *Coordinator) Heartbeat(ctx context.Context, input HeartbeatInput) (Oper
 // Resume resolves only local ownership identity and enters Service.Resume.
 // It deliberately does not consult the clock, ID source, lease reader, or
 // preparer; Service replays the exact persisted prepared/result journals.
+// Resume is part of the public package API.
 func (c *Coordinator) Resume(ctx context.Context, input ResumeInput) (OperationResult, error) {
 	identity, err := c.resolveIdentity(input.Work)
 	if err != nil {
@@ -551,6 +578,7 @@ func normalizedSuppliedSession(session string) string {
 // NormalizeSession returns the only session representation safe to expose or
 // use as lease ownership. Canonical safe sessions are preserved; provider/raw
 // values are irreversibly reduced to a deterministic digest.
+// NormalizeSession is part of the public package API.
 func NormalizeSession(session string) string {
 	if session == "" {
 		return ""

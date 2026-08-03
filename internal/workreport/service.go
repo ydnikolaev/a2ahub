@@ -10,12 +10,14 @@ import (
 
 const maxCASAttempts = 16
 
+// Service is part of the public package API.
 type Service struct {
 	repository LeaseRepository
 	publisher  Publisher
 	clock      Clock
 }
 
+// NewService is part of the public package API.
 func NewService(repository LeaseRepository, publisher Publisher, clock Clock) (*Service, error) {
 	if repository == nil || publisher == nil || clock == nil {
 		return nil, fmt.Errorf("workreport: repository, publisher and clock are required")
@@ -23,6 +25,7 @@ func NewService(repository LeaseRepository, publisher Publisher, clock Clock) (*
 	return &Service{repository: repository, publisher: publisher, clock: clock}, nil
 }
 
+// Start is part of the public package API.
 func (s *Service) Start(ctx context.Context, command StartCommand) (OperationResult, error) {
 	now := s.clock.Now().UTC()
 	if err := validateTTL(command.TTL); err != nil {
@@ -76,6 +79,7 @@ func (s *Service) Start(ctx context.Context, command StartCommand) (OperationRes
 	return s.submit(ctx, lease.Identity, command.Prepared.OperationKey, result)
 }
 
+// Apply is part of the public package API.
 func (s *Service) Apply(ctx context.Context, command SemanticCommand) (OperationResult, error) {
 	if command.Prepared.Action == ActionStart || !command.Prepared.Action.Valid() {
 		return emptyResult(command.Identity, command.Prepared), fmt.Errorf("%w: invalid continuation action", ErrInvalidLease)
@@ -171,6 +175,7 @@ func preflightSemanticContinuation(
 	return localState(lease), nil
 }
 
+// Heartbeat is part of the public package API.
 func (s *Service) Heartbeat(ctx context.Context, identity Identity, ttl time.Duration) (OperationResult, error) {
 	if err := validateTTL(ttl); err != nil {
 		return OperationResult{WorkID: identity.WorkID, Session: identity.Actor.Session, LocalState: LocalUnchanged}, err
@@ -208,6 +213,7 @@ func (s *Service) Heartbeat(ctx context.Context, identity Identity, ttl time.Dur
 	return resultFor(lease, LocalActive), nil
 }
 
+// Resume is part of the public package API.
 func (s *Service) Resume(ctx context.Context, identity Identity) (OperationResult, error) {
 	lease, _, err := s.repository.Load(ctx, identity.LeaseKey)
 	if err != nil {

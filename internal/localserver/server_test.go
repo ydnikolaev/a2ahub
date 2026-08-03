@@ -267,7 +267,11 @@ func TestRealNetSlowRootWriterIsBoundedAndCanceledByPublication(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dial() error = %v", err)
 	}
-	defer connection.Close()
+	t.Cleanup(func() {
+		if err := connection.Close(); err != nil {
+			t.Errorf("close connection: %v", err)
+		}
+	})
 	if _, err := fmt.Fprintf(connection, "GET / HTTP/1.1\r\nHost: localhost:%s\r\nConnection: close\r\n\r\n", port); err != nil {
 		t.Fatalf("write request error = %v", err)
 	}
@@ -375,7 +379,11 @@ func TestProductionServeKeepsHealthySSEBeyondOrdinaryWriteDeadlineAndJoins(t *te
 	if err != nil {
 		t.Fatalf("SSE request error = %v", err)
 	}
-	defer response.Body.Close()
+	t.Cleanup(func() {
+		if err := response.Body.Close(); err != nil {
+			t.Errorf("close response body: %v", err)
+		}
+	})
 	stream := bufio.NewReader(response.Body)
 	if line, err := stream.ReadString('\n'); err != nil || line != "event: revision\n" {
 		t.Fatalf("first SSE line = %q, %v", line, err)
@@ -449,7 +457,11 @@ func TestProductionServeStalledRootWriteHitsDeadlineAndReleasesBudget(t *testing
 	if err != nil {
 		t.Fatalf("Dial() error = %v", err)
 	}
-	defer connection.Close()
+	t.Cleanup(func() {
+		if err := connection.Close(); err != nil {
+			t.Errorf("close connection: %v", err)
+		}
+	})
 	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
 	if _, err := fmt.Fprintf(connection, "GET / HTTP/1.1\r\nHost: localhost:%s\r\nConnection: close\r\n\r\n", port); err != nil {
 		t.Fatalf("write request error = %v", err)
