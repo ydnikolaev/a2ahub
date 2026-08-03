@@ -9,7 +9,12 @@
 // the snake_case CLI --json surfaces.
 package html
 
-import "time"
+import (
+	"time"
+
+	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/provenance"
+)
 
 // Data is the full dashboard model — the `DATA` global the page renders from.
 // Everything is space-tagged so the per-space tabs filter by space id.
@@ -318,14 +323,15 @@ type ContractVersion struct {
 // space/system. Source distinguishes fold from read-index; it never pretends
 // these are V4/V5 results unless that engine was actually mounted.
 type Flag struct {
-	Space    string `json:"space"`
-	System   string `json:"system"`
-	Code     string `json:"code"`
-	Message  string `json:"message"`
-	Severity string `json:"severity"`
-	Source   string `json:"source,omitempty"`
-	Artifact string `json:"artifact,omitempty"`
-	Event    string `json:"event,omitempty"`
+	Space       string                 `json:"space"`
+	System      string                 `json:"system"`
+	Code        string                 `json:"code"`
+	Message     string                 `json:"message"`
+	Severity    string                 `json:"severity"`
+	Source      string                 `json:"source,omitempty"`
+	Artifact    string                 `json:"artifact,omitempty"`
+	Event       string                 `json:"event,omitempty"`
+	Consistency *cache.ReceiptMismatch `json:"consistency,omitempty"`
 }
 
 // ReleaseNote is one embedded releasenotes/<version>.yaml document projected
@@ -422,12 +428,14 @@ type TranscriptArtifact struct {
 
 // TranscriptEvent carries the lifecycle fields shown in a transcript row.
 type TranscriptEvent struct {
-	ULID         string         `json:"ulid"`
-	Subject      string         `json:"subject"`
-	Transition   string         `json:"transition"`
-	ClaimedState string         `json:"claimed_state"`
-	Actor        map[string]any `json:"actor"`
-	ResponseID   string         `json:"response_id,omitempty"`
+	ULID         string                 `json:"ulid"`
+	Subject      string                 `json:"subject"`
+	Transition   string                 `json:"transition"`
+	ClaimedState string                 `json:"claimed_state,omitempty"`
+	Actor        map[string]any         `json:"actor"`
+	ProducedBy   provenance.Producer    `json:"produced_by,omitzero"`
+	Consistency  *cache.ReceiptMismatch `json:"consistency,omitempty"`
+	ResponseID   string                 `json:"response_id,omitempty"`
 }
 
 // ThreadOpenItem describes one unresolved item and its legal next actions.
@@ -463,9 +471,10 @@ type ThreadNextAction struct {
 
 // ThreadViewFlag identifies an integrity warning attached to a thread.
 type ThreadViewFlag struct {
-	Kind      string `json:"kind"`
-	Subject   string `json:"subject"`
-	EventULID string `json:"event_ulid,omitempty"`
+	Kind        string                 `json:"kind"`
+	Subject     string                 `json:"subject"`
+	EventULID   string                 `json:"event_ulid,omitempty"`
+	Consistency *cache.ReceiptMismatch `json:"consistency,omitempty"`
 }
 
 // ThreadUnresolvedRef identifies a reference the snapshot cannot resolve.
@@ -503,13 +512,18 @@ type ArtifactDetail struct {
 
 // ArtifactDetailEvent carries one lifecycle event in the artifact detail panel.
 type ArtifactDetailEvent struct {
-	ULID         string `json:"ulid"`
-	Subject      string `json:"subject"`
-	Transition   string `json:"transition"`
-	ClaimedState string `json:"claimed_state"`
-	Actor        string `json:"actor"`
-	ActorSystem  string `json:"actor_system"`
-	At           string `json:"at"`
+	ULID         string                 `json:"ulid"`
+	Subject      string                 `json:"subject"`
+	Transition   string                 `json:"transition"`
+	ClaimedState string                 `json:"claimed_state,omitempty"`
+	ActorKind    string                 `json:"actor_kind,omitempty"`
+	Actor        string                 `json:"actor"`
+	ActorSystem  string                 `json:"actor_system"`
+	ActorModel   string                 `json:"actor_model,omitempty"`
+	ActorSession string                 `json:"actor_session,omitempty"`
+	ProducedBy   provenance.Producer    `json:"produced_by,omitzero"`
+	Consistency  *cache.ReceiptMismatch `json:"consistency,omitempty"`
+	At           string                 `json:"at"`
 }
 
 // ArtifactDetailRef carries the resolution and digest evidence for one reference.

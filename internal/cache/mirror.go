@@ -16,6 +16,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/provenance"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/version"
 )
@@ -76,6 +77,12 @@ type foldedArtifact struct {
 	Env     envelopeProbe
 	Result  fold.Result
 	Events  []fold.Event
+	// EventEvidence preserves receipt/actor/producer diagnostics beside the
+	// pure fold input. Model/session/producer never enter fold.Event.
+	EventEvidence map[string]provenance.EventEvidence
+	// ReceiptMismatches is produced during the same canonical event replay as
+	// Result, so dynamic actual outcomes are never reconstructed from final state.
+	ReceiptMismatches map[string]ReceiptMismatch
 	// EventRefs preserves each committed event's refs[] beside the pure fold
 	// input. fold.Event deliberately does not need relationship metadata, but
 	// read models do: contract deprecate records its successor on the
@@ -199,6 +206,7 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 	}
 
 	eventsBySubject := map[string][]fold.Event{}
+	eventEvidence := make(map[string]provenance.EventEvidence, len(events))
 	for _, re := range events {
 		fe := fold.Event{
 			ULID:         re.Ev.Event,
@@ -216,6 +224,14 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			}
 		}
 		eventsBySubject[fe.Subject] = append(eventsBySubject[fe.Subject], fe)
+		eventEvidence[fe.ULID] = provenance.NewEventEvidence(
+			re.Ev.State,
+			provenance.Actor{
+				Kind: re.Ev.Actor.Kind, Name: re.Ev.Actor.Name, System: re.Ev.Actor.System,
+				Model: re.Ev.Actor.Model, Session: re.Ev.Actor.Session,
+			},
+			provenance.Producer{Tool: re.Ev.ProducedBy.Tool, Version: re.Ev.ProducedBy.Version},
+		)
 	}
 
 	eventAt := make(map[string]time.Time, len(events))
@@ -226,6 +242,7 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 	}
 
 	out := make([]foldedArtifact, 0, len(artifacts))
+	receiptMismatches := map[string]ReceiptMismatch{}
 	for _, a := range artifacts {
 		if a.Env.ID == "" || a.Env.Type == "" {
 			continue
@@ -238,7 +255,10 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			RequiredApprovers: a.Env.RequiredApprovers,
 		}
 		evs := gatherEvents(a.Env.ID, parentOf, eventsBySubject)
-		result := fold.Fold(env.Kind, env, evs, membership)
+		result, mismatches := foldWithReceiptEvidence(env.Kind, env, evs, membership, eventEvidence)
+		for eventULID, mismatch := range mismatches {
+			receiptMismatches[eventULID] = mismatch
+		}
 
 		var latest time.Time
 		var latestPublishSeq int64 = -1
@@ -262,7 +282,8 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 
 		out = append(out, foldedArtifact{
 			SpaceID: spaceID, RelPath: a.RelPath, Raw: a.Raw, Digest: a.Digest,
-			Env: a.Env, Result: result, Events: evs, LatestEventAt: latest,
+			Env: a.Env, Result: result, Events: evs, EventEvidence: eventEvidence,
+			ReceiptMismatches: receiptMismatches, LatestEventAt: latest,
 			EventAt: eventAt, EventRefs: eventRefs, LatestPublishVersion: latestPublishVersion,
 			Seq: seq[a.RelPath], OrderKnown: orderKnown,
 			// Edge 3, evaluated once — see foldedArtifact's own comment.
@@ -306,6 +327,75 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 	}
 
 	return out, skips, nil
+}
+
+// foldWithReceiptEvidence performs the same canonical (CommitSeq, ULID) replay
+// as fold.Fold and captures evidence only when Apply itself appends the stable
+// mismatch flag. This avoids reconstructing dynamic actual outcomes from the
+// final result and avoids diagnosing duplicate/idempotent replays that Apply
+// correctly treats as no-ops.
+func foldWithReceiptEvidence(kind fold.Kind, env fold.Envelope, events []fold.Event, membership fold.MembershipView, evidence map[string]provenance.EventEvidence) (fold.Result, map[string]ReceiptMismatch) {
+	if len(events) == 0 {
+		return fold.Fold(kind, env, nil, membership), nil
+	}
+	sorted := append([]fold.Event(nil), events...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].CommitSeq != sorted[j].CommitSeq {
+			return sorted[i].CommitSeq < sorted[j].CommitSeq
+		}
+		return sorted[i].ULID < sorted[j].ULID
+	})
+
+	result := fold.NewResult(kind)
+	var mismatches map[string]ReceiptMismatch
+	for _, event := range sorted {
+		evaluation := fold.EvaluateCandidate(kind, result, event, env, membership)
+		next := fold.Apply(kind, env, result, event, membership)
+		if evaluation.Applicable && event.ClaimedState != fold.StateNone &&
+			event.ClaimedState != evaluation.Outcome && appendedReceiptMismatch(result, next, event.ULID) {
+			if mismatches == nil {
+				mismatches = map[string]ReceiptMismatch{}
+			}
+			eventEvidence := evidence[event.ULID]
+			if eventEvidence.Receipt == "" {
+				eventEvidence.Receipt = string(event.ClaimedState)
+			}
+			if eventEvidence.Actor.Kind == "" {
+				eventEvidence.Actor.Kind = event.Actor.Kind
+			}
+			if eventEvidence.Actor.Name == "" {
+				eventEvidence.Actor.Name = event.Actor.Name
+			}
+			if eventEvidence.Actor.System == "" {
+				eventEvidence.Actor.System = event.Actor.System
+			}
+			mismatches[event.ULID] = ReceiptMismatch{
+				Kind: string(fold.FlagStateClaimMismatch), EventULID: event.ULID, Subject: event.Subject,
+				Scope:  ReceiptScope{Kind: string(evaluation.Scope.Kind), Subject: evaluation.Scope.Subject, Version: evaluation.Scope.Version},
+				Actual: string(evaluation.Outcome), Claimed: string(event.ClaimedState),
+				Actor: eventEvidence.Actor, Producer: eventEvidence.Producer, Cause: "unknown",
+			}
+		}
+		result = next
+	}
+	return result, mismatches
+}
+
+func appendedReceiptMismatch(before, after fold.Result, eventULID string) bool {
+	for _, flag := range after.Flags[len(before.Flags):] {
+		if flag.Kind == fold.FlagStateClaimMismatch && flag.EventULID == eventULID {
+			return true
+		}
+	}
+	return false
+}
+
+func receiptMismatchFor(fa foldedArtifact, eventULID string) *ReceiptMismatch {
+	mismatch, ok := fa.ReceiptMismatches[eventULID]
+	if !ok {
+		return nil
+	}
+	return &mismatch
 }
 
 // gatherEvents assembles the FULL event set fold.Fold needs to compute

@@ -33,14 +33,24 @@ func (s *Store) ProtocolFlags(ctx context.Context) ([]ProtocolFlagInfo, error) {
 						break
 					}
 				}
+				mismatch := receiptMismatchFor(fa, flag.EventULID)
+				source := "fold"
+				message := fmt.Sprintf(
+					"committed event %s on %s was folded with %s",
+					flag.EventULID, flag.Subject, flag.Kind,
+				)
+				if mismatch != nil {
+					source = "consistency"
+					system = mismatch.Actor.System
+					message = fmt.Sprintf(
+						"authoritative actual %s; producer claimed %s for %s scope %s",
+						mismatch.Actual, mismatch.Claimed, mismatch.Scope.Kind, mismatch.Scope.Subject,
+					)
+				}
 				out = append(out, ProtocolFlagInfo{
 					Space: spaceID, System: system, Artifact: flag.Subject,
 					Code: string(flag.Kind), EventULID: flag.EventULID,
-					Message: fmt.Sprintf(
-						"committed event %s on %s was folded with %s",
-						flag.EventULID, flag.Subject, flag.Kind,
-					),
-					Severity: "attention",
+					Message: message, Severity: "attention", Source: source, Consistency: mismatch,
 				})
 			}
 		}

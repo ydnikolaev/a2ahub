@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/provenance"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
@@ -86,9 +87,11 @@ type TranscriptArtifact struct {
 // TranscriptEventActor is one event's actor block, as rendered in a
 // transcript entry.
 type TranscriptEventActor struct {
-	Kind   string `json:"kind"`
-	Name   string `json:"name"`
-	System string `json:"system"`
+	Kind    string `json:"kind"`
+	Name    string `json:"name"`
+	System  string `json:"system"`
+	Model   string `json:"model,omitempty"`
+	Session string `json:"session,omitempty"`
 }
 
 // TranscriptEvent is a transcript entry's event-kind payload.
@@ -98,6 +101,8 @@ type TranscriptEvent struct {
 	Transition   string               `json:"transition"`
 	ClaimedState string               `json:"claimed_state,omitempty"`
 	Actor        TranscriptEventActor `json:"actor"`
+	ProducedBy   provenance.Producer  `json:"produced_by,omitzero"`
+	Consistency  *ReceiptMismatch     `json:"consistency,omitempty"`
 	// ResponseID is set only on a `respond` event (D-024's newly attached
 	// response id).
 	ResponseID string `json:"response_id,omitempty"`
@@ -139,9 +144,10 @@ type OpenItem struct {
 // ThreadFlag is one fold.Flag attributable to a thread member, rendered
 // (never dropped — §T3 "flags ... ALWAYS present").
 type ThreadFlag struct {
-	Kind      string `json:"kind"`
-	Subject   string `json:"subject"`
-	EventULID string `json:"event_ulid,omitempty"`
+	Kind        string           `json:"kind"`
+	Subject     string           `json:"subject"`
+	EventULID   string           `json:"event_ulid,omitempty"`
+	Consistency *ReceiptMismatch `json:"consistency,omitempty"`
 }
 
 // UnresolvedFact is one reference this thread's own rendered member set
@@ -377,7 +383,10 @@ func (s *Store) renderThread(threadID, resolvedFrom, spaceID string, members []f
 				continue
 			}
 			seenFlag[key] = true
-			flags = append(flags, ThreadFlag{Kind: string(f.Kind), Subject: f.Subject, EventULID: f.EventULID})
+			flags = append(flags, ThreadFlag{
+				Kind: string(f.Kind), Subject: f.Subject, EventULID: f.EventULID,
+				Consistency: receiptMismatchFor(fa, f.EventULID),
+			})
 		}
 	}
 
@@ -510,14 +519,20 @@ func buildTranscript(sorted []foldedArtifact, order string) ([]TranscriptEntry, 
 				unresolved = append(unresolved, UnresolvedFact{Kind: "event-subject", ID: ev.Subject})
 			}
 			at := fa.EventAt[ev.ULID]
+			evidence := fa.EventEvidence[ev.ULID]
 			candidates = append(candidates, transcriptCandidate{
 				entry: TranscriptEntry{
 					Seq: ev.CommitSeq, Kind: "event", At: at,
 					Event: &TranscriptEvent{
 						ULID: ev.ULID, Subject: ev.Subject, Transition: ev.Transition,
 						ClaimedState: string(ev.ClaimedState),
-						Actor:        TranscriptEventActor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
-						ResponseID:   ev.ResponseID,
+						Actor: TranscriptEventActor{
+							Kind: evidence.Actor.Kind, Name: evidence.Actor.Name, System: evidence.Actor.System,
+							Model: evidence.Actor.Model, Session: evidence.Actor.Session,
+						},
+						ProducedBy:  evidence.Producer,
+						Consistency: receiptMismatchFor(fa, ev.ULID),
+						ResponseID:  ev.ResponseID,
 					},
 				},
 				seq: ev.CommitSeq, at: at, isEvent: true, tieID: ev.ULID,

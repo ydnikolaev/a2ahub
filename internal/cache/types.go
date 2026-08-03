@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/provenance"
 )
 
 // DefaultStatuslineTTL is §7.5's default cache-age TTL (5 minutes) that
@@ -94,13 +95,54 @@ type RefFact struct {
 // EventSummary is one folded event, for `a2a show`'s event-history
 // rendering.
 type EventSummary struct {
-	ULID         string    `json:"ulid"`
-	Subject      string    `json:"subject"`
-	Transition   string    `json:"transition"`
-	ClaimedState string    `json:"claimed_state,omitempty"`
-	Actor        string    `json:"actor"`
-	ActorSystem  string    `json:"actor_system"`
-	At           time.Time `json:"at"`
+	ULID         string              `json:"ulid"`
+	Subject      string              `json:"subject"`
+	Transition   string              `json:"transition"`
+	ClaimedState string              `json:"claimed_state,omitempty"`
+	ActorKind    string              `json:"actor_kind,omitempty"`
+	Actor        string              `json:"actor"`
+	ActorSystem  string              `json:"actor_system"`
+	ActorModel   string              `json:"actor_model,omitempty"`
+	ActorSession string              `json:"actor_session,omitempty"`
+	ProducedBy   provenance.Producer `json:"produced_by,omitzero"`
+	Consistency  *ReceiptMismatch    `json:"consistency,omitempty"`
+	At           time.Time           `json:"at"`
+}
+
+// ReceiptScope names the one scalar fold result compared with a producer's
+// optional event.state receipt.
+type ReceiptScope struct {
+	Kind    string `json:"kind"`
+	Subject string `json:"subject"`
+	Version string `json:"version,omitempty"`
+}
+
+// ReceiptMismatch is non-blocking consistency evidence. Actual is the
+// authoritative fold outcome; Claimed is retained only for comparison.
+type ReceiptMismatch struct {
+	Kind      string              `json:"kind"`
+	EventULID string              `json:"event_ulid"`
+	Subject   string              `json:"subject"`
+	Scope     ReceiptScope        `json:"scope"`
+	Actual    string              `json:"actual"`
+	Claimed   string              `json:"claimed"`
+	Actor     provenance.Actor    `json:"actor"`
+	Producer  provenance.Producer `json:"producer,omitzero"`
+	Cause     string              `json:"cause"`
+}
+
+// ClassificationSummary is cache's policy-free, per-space fact for the P4
+// doctor consumer: the highest successfully decoded artifact classification
+// plus enough bounded evidence to know whether the scan was complete.
+type ClassificationSummary struct {
+	Space           string        `json:"space"`
+	Highest         string        `json:"highest,omitempty"`
+	DecodedCount    int           `json:"decoded_count"`
+	SkippedCount    int           `json:"skipped_count"`
+	IncompleteCount int           `json:"incomplete_count"`
+	Complete        bool          `json:"complete"`
+	Skipped         []SkippedFile `json:"skipped,omitempty"`
+	IncompletePaths []string      `json:"incomplete_paths,omitempty"`
 }
 
 // ShowResult is `a2a show <ref>`'s full output shape (OP-209): artifact
@@ -191,13 +233,15 @@ type ContractVersion struct {
 // pretending to be a V4/V5 validation result: those invocations are a
 // different engine and require their own mounted context.
 type ProtocolFlagInfo struct {
-	Space     string
-	System    string
-	Artifact  string
-	Code      string
-	EventULID string
-	Message   string
-	Severity  string
+	Space       string
+	System      string
+	Artifact    string
+	Code        string
+	EventULID   string
+	Message     string
+	Severity    string
+	Source      string
+	Consistency *ReceiptMismatch
 }
 
 // SearchFilters narrows `a2a search`'s free-text match.
