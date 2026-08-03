@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,6 +40,49 @@ checks:
   duplicates_checked: true
 status: new
 `, id, title)
+}
+
+func TestFeedbackSubmit_JSONValidationBatchIsCompleteAndDeterministic(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "feedback")
+	fakeHost := host.NewFakeHost()
+	projectRoot := t.TempDir()
+	ledgerPath := filepath.Join(projectRoot, ".a2a", "feedback", "ledger.yaml")
+	submitter := feedback.NewSubmitter(
+		space.NewWriteFunnel(fakeHost, nil, "0.13.0"),
+		ledgerPath, projectRoot, "test-repo",
+		feedback.SubmitConfig{RemoteURL: fx.RemoteURL(), Repo: host.Repo{Owner: "a2ahub", Name: "a2ahub"}, BaseBranch: "main"},
+	)
+	submitter.SetMirrorDirForTest(func(string, string) string { return fx.Clone("feedback") })
+	submitter.SetCloneOrFetchForTest(func(context.Context, string, string) error { return nil })
+	cmd := cli.NewFeedbackCommand(nil, submitter, ledgerPath, "", nil)
+
+	first := filepath.Join(t.TempDir(), "a-valid.yaml")
+	second := filepath.Join(t.TempDir(), "z-invalid.yaml")
+	if err := os.WriteFile(first, []byte(feedbackDraftYAML("fb-20260728-ddd444", "valid but batch-refused")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(second, []byte("feedback: v1\nkind: bug\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{"submit", second, first, "--json"}, io); code != 1 {
+		t.Fatalf("code=%d, want validation refusal; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	var results []feedback.SubmitResult
+	if err := json.Unmarshal(out.Bytes(), &results); err != nil {
+		t.Fatalf("JSON output is not parseable: %v\n%s", err, out.String())
+	}
+	if len(results) != 2 || results[0].InputPath != first || results[1].InputPath != second {
+		t.Fatalf("results are not complete and bytewise path-sorted: %+v", results)
+	}
+	if results[0].ErrorCode != feedback.ErrorCodeBatchRefused || results[1].ErrorCode != feedback.ErrorCodeValidation {
+		t.Fatalf("validation outcomes = %+v", results)
+	}
+	if errOut.Len() != 0 || len(fakeHost.Pushes) != 0 || len(fakeHost.Opens) != 0 {
+		t.Fatalf("JSON validation refusal leaked prose or wrote externally: stderr=%q pushes=%d opens=%d", errOut.String(), len(fakeHost.Pushes), len(fakeHost.Opens))
+	}
 }
 
 func TestFeedbackSubcommands_MatchDispatch(t *testing.T) {

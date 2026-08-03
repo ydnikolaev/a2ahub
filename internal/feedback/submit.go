@@ -46,11 +46,40 @@ type SubmitConfig struct {
 
 // SubmitResult is what Submit returns to its CLI caller.
 type SubmitResult struct {
-	ID          string
-	PRURL       string
-	Branch      string
-	AlreadyOpen bool
+	ID              string                `json:"id"`
+	InputPath       string                `json:"input_path"`
+	Branch          string                `json:"branch,omitempty"`
+	PRNumber        int                   `json:"pr_number,omitempty"`
+	PRURL           string                `json:"pr_url,omitempty"`
+	Stage           space.WriteStage      `json:"stage"`
+	State           space.WriteState      `json:"state,omitempty"`
+	RemainingAction space.RemainingAction `json:"remaining_action"`
+	MergeMethod     host.MergeMethod      `json:"merge_method,omitempty"`
+	Note            string                `json:"note,omitempty"`
+	LedgerRecorded  bool                  `json:"ledger_recorded"`
+	ErrorCode       string                `json:"error_code,omitempty"`
+	Error           string                `json:"error,omitempty"`
+
+	// AlreadyOpen is retained for one compatibility cycle. New callers branch
+	// on State and RemainingAction and never reconstruct them from this bit.
+	AlreadyOpen bool `json:"-"`
 }
+
+const (
+	ErrorCodeValidation   = "validation"
+	ErrorCodeBatchRefused = "batch-validation-refused"
+	ErrorCodeSubmit       = "submit"
+	ErrorCodeSharedWrite  = "shared-write"
+	ErrorCodeLocalLedger  = "local-ledger"
+)
+
+// LedgerRecordError means the shared write reached a confirmed PR, but the
+// machine-local acknowledgement ledger could not be updated. The submission
+// result remains authoritative and is returned alongside this error.
+type LedgerRecordError struct{ Err error }
+
+func (e *LedgerRecordError) Error() string { return "feedback: record local ledger: " + e.Err.Error() }
+func (e *LedgerRecordError) Unwrap() error { return e.Err }
 
 // Submitter drives `a2a feedback submit <file>` (§T1, §11 A6): validate
 // first (refuse red), resolve/refresh a local mirror clone of cfg's
@@ -70,6 +99,7 @@ type Submitter struct {
 
 	now          func() time.Time
 	readFile     func(path string) ([]byte, error)
+	appendLedger func(path string, item LedgerItem) error
 	cloneOrFetch func(ctx context.Context, dir, repoURL string) error
 	mirrorDir    func(projectRoot, slug string) string
 }
@@ -83,6 +113,7 @@ func NewSubmitter(funnel Funnel, ledgerPath, projectRoot, slug string, cfg Submi
 		funnel: funnel, ledgerPath: ledgerPath, projectRoot: projectRoot, slug: slug, cfg: cfg,
 		now:          time.Now,
 		readFile:     os.ReadFile,
+		appendLedger: AppendLedger,
 		cloneOrFetch: space.CloneOrFetch,
 		mirrorDir:    defaultMirrorDir,
 	}
@@ -112,6 +143,11 @@ func (s *Submitter) SetClockForTest(now func() time.Time) { s.now = now }
 
 // SetReadFileForTest overrides the injected file reader.
 func (s *Submitter) SetReadFileForTest(f func(path string) ([]byte, error)) { s.readFile = f }
+
+// SetAppendLedgerForTest overrides only the local acknowledgement boundary.
+func (s *Submitter) SetAppendLedgerForTest(f func(path string, item LedgerItem) error) {
+	s.appendLedger = f
+}
 
 type submitProbe struct {
 	ID    string `yaml:"id"`
@@ -177,20 +213,47 @@ func (s *Submitter) Submit(ctx context.Context, path string) (SubmitResult, erro
 		ReplaceOrphanBranch: true,
 	}
 
-	result, err := s.funnel.Submit(ctx, req)
-	if err != nil {
-		return SubmitResult{}, fmt.Errorf("feedback: %s: %w", op, err)
+	writeResult, writeErr := s.funnel.Submit(ctx, req)
+	result := mapSubmitResult(path, probe.ID, writeResult)
+	if writeErr != nil {
+		result.ErrorCode = ErrorCodeSharedWrite
+		result.Error = writeErr.Error()
 	}
 
-	already := result.State == space.WriteStateAlreadyOpen || result.State == space.WriteStateAlreadyMerged
-	if err := AppendLedger(s.ledgerPath, LedgerItem{
-		ID: probe.ID, Kind: probe.Kind, Title: probe.Title, PRURL: result.PRURL,
-		Filed: s.now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		return SubmitResult{}, fmt.Errorf("feedback: %s: %w", op, err)
+	// A decoded PR number and URL are the ledger boundary. A pushed branch or
+	// an ambiguous provider outcome is not enough evidence to claim filing.
+	if writeResult.PRNumber > 0 && writeResult.PRURL != "" {
+		if ledgerErr := s.appendLedger(s.ledgerPath, LedgerItem{
+			ID: probe.ID, Kind: probe.Kind, Title: probe.Title, PRURL: writeResult.PRURL,
+			Filed: s.now().UTC().Format(time.RFC3339),
+		}); ledgerErr != nil {
+			result.ErrorCode = ErrorCodeLocalLedger
+			result.Error = "local ledger was not recorded"
+			return result, &LedgerRecordError{Err: ledgerErr}
+		}
+		result.LedgerRecorded = true
 	}
 
-	return SubmitResult{ID: probe.ID, PRURL: result.PRURL, Branch: result.Branch, AlreadyOpen: already}, nil
+	if writeErr != nil {
+		return result, fmt.Errorf("feedback: %s: %w", op, writeErr)
+	}
+	return result, nil
+}
+
+func mapSubmitResult(path, id string, result space.WriteResult) SubmitResult {
+	return SubmitResult{
+		ID:              id,
+		InputPath:       path,
+		Branch:          result.Branch,
+		PRNumber:        result.PRNumber,
+		PRURL:           result.PRURL,
+		Stage:           result.Stage,
+		State:           result.State,
+		RemainingAction: result.RemainingAction,
+		MergeMethod:     result.MergeMethod,
+		Note:            result.Note,
+		AlreadyOpen:     result.State == space.WriteStateAlreadyOpen || result.State == space.WriteStateAlreadyMerged,
+	}
 }
 
 // ValidatePath performs every pre-write check Submit applies without cloning,
