@@ -1,0 +1,30 @@
+# P7 AC-P7.4: execute safe offline operational surfaces through the built
+# binary. Host-backed work mutations and P6 contract operations are mapped to
+# exact Go/host-rig integration evidence in coverage.go; missing-argument usage
+# failures are deliberately not counted as execution.
+#
+# The shared fixture uses a local origin for every older testscript. The new
+# command wiring correctly requires a GitHub-shaped configured URL even when an
+# operation performs no network I/O, so this scenario swaps only the config URL;
+# the already-cloned mirror remains the authoritative hermetic input.
+cp project-config.yaml .a2a/config.yaml
+
+exec a2a work status --json
+stdout '^\{"items":\[\]\}$'
+
+# `serve` is long-lived by design, so testscript must not orphan it. Exact
+# coverage here is (1) the help contract after real runtime construction and
+# (2) the non-loopback bind refusal before Listen. Bounded loopback startup,
+# HTTP snapshot/SSE behavior and graceful join are covered by the dedicated
+# localserver and cmd/a2a integration tests.
+exec a2a serve -h
+stdout 'Usage of serve:'
+
+! exec a2a serve --listen 0.0.0.0:8765
+stderr 'loopback'
+
+-- project-config.yaml --
+system: axon
+spaces:
+  - id: fixture-space
+    repo_url: https://github.com/fixture/space.git

@@ -337,28 +337,54 @@ func TestHostLoopContractFamily(t *testing.T) {
 	// 1. Submit the descriptor — the step that was IMPOSSIBLE before P27:
 	// the id guard red every contract, so the family could not enter the
 	// space at all, through the funnel or a hand-opened PR.
-	draft, id := provider.stageContract("export", "1.0.0")
+	// The submitted descriptor is an unpublished 0.0.0 candidate. Publishing
+	// 1.0.0 must establish a real descriptor-changing historical commit; a
+	// fixture pre-seeded at 1.0.0 would create an invalid no-change event.
+	draft, id := provider.stageContract("export", "0.0.0")
 	provider.mustRun("submit", draft)
 	if got := gitOutput(t, provider.fx.RemoteURL(), "show", "--name-only", "--pretty=format:", "main"); !strings.Contains(got, "provides/export/contract.md") {
 		t.Fatalf("origin main does not carry the contract at its §4.2 path:\n%s", got)
 	}
 
-	// 2. Publish the version.
+	// 2. Preflight and publish the version through the production P6
+	// composition. Preflight is read-only: the fake host must observe no PR.
 	provider.mustRun("sync")
+	beforePreflightPRs := len(provider.gh.PRs())
+	preflight := provider.mustRun("contract", "preflight", "--version", "1.0.0", "--json", id)
+	if !strings.Contains(preflight, `"target_version":"1.0.0"`) || len(provider.gh.PRs()) != beforePreflightPRs {
+		t.Fatalf("preflight result/host mutation mismatch: stdout=%s PRs before=%d after=%d", preflight, beforePreflightPRs, len(provider.gh.PRs()))
+	}
 	provider.mustRun("contract", "publish", "--version", "1.0.0", id)
 	if len(provider.gh.PRs()) != 2 {
 		t.Fatalf("PRs = %d after submit+publish, want 2 (host calls: %v)",
 			len(provider.gh.PRs()), provider.gh.Requests())
 	}
 
-	// 3. The consumer registers itself.
+	// 3. Resolve the exact merged historical version, materialize it beneath
+	// an existing rooted parent, then run its complete self-suite. These are
+	// successful built-binary paths, not parser/usage probes.
+	provider.mustRun("sync")
+	mustMkdirAll(t, filepath.Join(provider.projectDir, "vendor"))
+	materialized := provider.mustRun("contract", "materialize", "--to", "vendor/export", "--json", id+"@1.0.0")
+	if !strings.Contains(materialized, `"outcome":"materialized"`) {
+		t.Fatalf("materialize result does not report a real write: %s", materialized)
+	}
+	if _, err := os.Stat(filepath.Join(provider.projectDir, "vendor", "export", "contract.md")); err != nil {
+		t.Fatalf("materialized descriptor missing: %v", err)
+	}
+	checked := provider.mustRun("contract", "check", "--suite", "--json", id+"@1.0.0")
+	if !strings.Contains(checked, `"passed":true`) || !strings.Contains(checked, `"outcome":"suite-consistent"`) {
+		t.Fatalf("contract suite did not execute successfully: %s", checked)
+	}
+
+	// 4. The consumer registers itself.
 	consumer.mustRun("sync")
 	consumer.mustRun("contract", "adopt", id)
 	if got := gitOutput(t, consumer.fx.RemoteURL(), "show", "--name-only", "--pretty=format:", "main"); !strings.Contains(got, "beta/consumes.yaml") {
 		t.Fatalf("origin main does not carry beta's consumer registry:\n%s", got)
 	}
 
-	// 4. Deprecate — the transition retire requires first. This is the
+	// 5. Deprecate — the transition retire requires first. This is the
 	// THIRD write by the provider on this artifact, and the second after a
 	// merge: exactly the shape that used to vanish.
 	provider.mustRun("sync")
@@ -368,7 +394,7 @@ func TestHostLoopContractFamily(t *testing.T) {
 	provider.mustRun("contract", "deprecate",
 		"--successor", id+"@2.0.0", "--sunset", "2027-01-01", id)
 
-	// 5. Retire must REFUSE: beta is a registered consumer that has not
+	// 6. Retire must REFUSE: beta is a registered consumer that has not
 	// acked. This is the read-side fail-closed guard, reached only because
 	// every write above actually landed.
 	provider.mustRun("sync")

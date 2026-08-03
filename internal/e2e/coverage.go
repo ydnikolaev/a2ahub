@@ -10,7 +10,7 @@
 // Two evidence kinds (spec 26 §11 amendment), never a third: `Txtar`
 // resolves by reading testdata/t3/<file>.txtar and confirming the script
 // actually invokes `a2a <verb>` (grepped); `GoTest` resolves via `go test
-// -list ^TestXxx$ ./internal/e2e` (cccoverage_test.go's resolveTestRef,
+// -list ^TestXxx$ ./<owning-package>` (cccoverage_test.go's resolveTestRef,
 // reused — never re-implemented here). `Skip` carries a one-line
 // justification for a verb not yet covered (pending a later P26 wave) or
 // permanently out of scope (mcp, update — spec 26 §1).
@@ -36,9 +36,19 @@ import (
 // Skip must be non-empty — see (coverageEntry).evidenceKind.
 type coverageEntry struct {
 	Verb   string
+	Action string // optional sub-action when the binary catalog exposes only the family
 	Txtar  string // testdata/t3/<file>.txtar
 	GoTest string // "internal/e2e.TestXxx"
 	Skip   string // one-line justification
+}
+
+// target is the exact command spelling the evidence must exercise. Most
+// catalog rows are already complete (for example "contract preflight"). Work
+// is intentionally catalogued as one top-level family, so its closed action
+// set uses Action to prevent a generic `a2a work --help` row from standing in
+// for seven independent transport paths.
+func (e coverageEntry) target() string {
+	return strings.TrimSpace(e.Verb + " " + e.Action)
 }
 
 // evidenceKind reports which of Txtar/GoTest/Skip is set, erroring if it is
@@ -128,9 +138,12 @@ var coverageManifest = []coverageEntry{
 
 	// --- Contract ops (direct-construction, exec-unreachable) -----------
 	{Verb: "contract adopt", GoTest: "internal/e2e.TestT3ContractAdopt"},
+	{Verb: "contract check", GoTest: "internal/e2e.TestHostLoopContractFamily"},
 	{Verb: "contract deprecate", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},
 	{Verb: "contract diff", GoTest: "internal/e2e.TestT3ContractDiff"},
+	{Verb: "contract materialize", GoTest: "internal/e2e.TestHostLoopContractFamily"},
 	{Verb: "contract new", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},
+	{Verb: "contract preflight", GoTest: "internal/e2e.TestHostLoopContractFamily"},
 	{Verb: "contract publish", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},
 	{Verb: "contract retire", GoTest: "internal/e2e.TestT3ContractRetireCleanUngated"},
 	{Verb: "contract verify-export", GoTest: "internal/e2e.TestT3ContractVerifyExportLocal"},
@@ -140,9 +153,25 @@ var coverageManifest = []coverageEntry{
 	{Verb: "dashboard", Txtar: "ops_html.txtar"},
 	{Verb: "html", Txtar: "ops_html.txtar"},
 	{Verb: "notifications", GoTest: "internal/e2e.TestT3Notifications"},
+	{Verb: "serve", Txtar: "operational_commands.txtar"},
 	{Verb: "skill", Txtar: "ops_skill.txtar"},
 	{Verb: "version", Txtar: "ops_version.txtar"},
 	{Verb: "whatsnew", Txtar: "whatsnew.txtar"},
+
+	// --- Operational work family (OP-224) ------------------------------
+	// The binary catalog exposes `work` as one family. Action-qualified rows
+	// make every closed subcommand carry behavior-level evidence. The six
+	// mutations resolve to the exact production-wiring host integration test;
+	// a direct fake backend or missing-argument usage line is deliberately not
+	// executable evidence for buildCommands/buildWorkCommand.
+	// Status remains a real successful built-binary offline path.
+	{Verb: "work", Action: "start", GoTest: "cmd/a2a.TestWorkProductionWiringMutations"},
+	{Verb: "work", Action: "heartbeat", GoTest: "cmd/a2a.TestWorkProductionWiringMutations"},
+	{Verb: "work", Action: "resume", GoTest: "cmd/a2a.TestWorkProductionWiringMutations"},
+	{Verb: "work", Action: "checkpoint", GoTest: "cmd/a2a.TestWorkProductionWiringMutations"},
+	{Verb: "work", Action: "wait", GoTest: "cmd/a2a.TestWorkProductionWiringMutations"},
+	{Verb: "work", Action: "stop", GoTest: "cmd/a2a.TestWorkProductionWiringMutations"},
+	{Verb: "work", Action: "status", Txtar: "operational_commands.txtar"},
 
 	// --- Feedback (P25) — spec 26 §2 Feedback row: this phase only
 	// registers P25's own evidence, 4 exec-txtar + 1 Go-test ref. --------

@@ -126,8 +126,17 @@ func TestT3LifecycleVerbs(t *testing.T) {
 			seed: func(t *testing.T, dir string) (string, []string) {
 				id := "XR-axon-satisfiable"
 				writeRequirementArtifact(t, dir, id, "axon", "beta")
+				// Satisfy's contract ref is now resolved through the canonical
+				// descriptor reader; the referenced version must exist in the
+				// fixture instead of being an opaque string. The response is the
+				// second half of the proof: it resolves, links to this requirement,
+				// and has reached verified state.
+				writeContractDescriptor(t, dir, "widget", "1.0.0")
+				writeResponseArtifact(t, dir, "XS-beta-20260721-p1p1", id)
 				writeLifecycleEvent(t, dir, "axon", 0, id, "publish", "axon")
 				writeLifecycleEvent(t, dir, "beta", 1, id, "acknowledge", "beta")
+				writeLifecycleEventVersion(t, dir, "axon", 2, "XC-axon-widget", "publish", "axon", "1.0.0")
+				writeLifecycleEvent(t, dir, "axon", 3, "XS-beta-20260721-p1p1", "verify", "axon")
 				return "axon", []string{"--refs", "XC-axon-widget@1.0.0,XS-beta-20260721-p1p1", id}
 			},
 			build: func(f *space.WriteFunnel, dir, sys string, hc cli.SubmitHostConfig) cli.Command {

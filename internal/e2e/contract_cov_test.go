@@ -123,6 +123,7 @@ func TestT3ContractDiffJSON(t *testing.T) {
 	fakeHost := host.NewFakeHost()
 	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
+	configureE2EContractP6(cmd, newE2EContractDiffService())
 
 	io, out, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{"diff", "--json", "XC-axon-diffable-json", "1.0.0", "1.1.0"}, io)
@@ -153,10 +154,10 @@ func TestT3ContractDiffJSON(t *testing.T) {
 }
 
 // TestT3ContractVerifyExportTamperedDigest is spec 26 §2's "tampered-digest
-// red" clause: a local export whose content has drifted from the recorded
-// generated_from.source_digest exits non-zero with a digest-mismatch
-// diagnostic (the write side of TestT3ContractVerifyExportLocal in
-// contract_write_test.go, which only covers the matching/green case).
+// red" transport clause: the P6 inspection fixture compares a drifted local
+// export with the recorded digest and the CLI emits the mismatch refusal. The
+// production repository/history implementation is covered by the P6 space
+// integration suite.
 func TestT3ContractVerifyExportTamperedDigest(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon", "beta", "gamma")
@@ -176,6 +177,7 @@ func TestT3ContractVerifyExportTamperedDigest(t *testing.T) {
 	fakeHost := host.NewFakeHost()
 	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
+	configureE2EContractP6(cmd, newE2EContractVerifyService(t, digest))
 
 	io, out, errOut := newIO()
 	code := cmd.Run(context.Background(), []string{"verify-export", "--local", localPath, "XC-axon-tampered"}, io)

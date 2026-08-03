@@ -68,8 +68,10 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
+	"github.com/ydnikolaev/a2ahub/internal/workreport"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
+	"gopkg.in/yaml.v3"
 )
 
 // --- shared plumbing -------------------------------------------------------
@@ -125,6 +127,30 @@ func (a equivMCPContractPublication) Preflight(_ context.Context, request mcp.Co
 
 func (a equivMCPContractPublication) Publish(_ context.Context, request mcp.ContractPublicationRequest) (space.ContractPublicationResult, error) {
 	return a.state.record(request.ID, request.Version, request.Bump, request.Staging, request.ExpectPlan)
+}
+
+type equivCLIContractMaterialize struct{ err error }
+
+func (a equivCLIContractMaterialize) MaterializeContract(context.Context, cli.ContractMaterializeRequest) (space.ContractMaterializeResult, error) {
+	return space.ContractMaterializeResult{}, a.err
+}
+
+type equivMCPContractMaterialize struct{ err error }
+
+func (a equivMCPContractMaterialize) MaterializeContract(context.Context, mcp.ContractMaterializeRequest) (space.ContractMaterializeResult, error) {
+	return space.ContractMaterializeResult{}, a.err
+}
+
+type equivCLIContractCheck struct{ err error }
+
+func (a equivCLIContractCheck) CheckContract(context.Context, cli.ContractCheckRequest) (contract.ConformanceResult, error) {
+	return contract.ConformanceResult{}, a.err
+}
+
+type equivMCPContractCheck struct{ err error }
+
+func (a equivMCPContractCheck) CheckContract(context.Context, mcp.ContractCheckRequest) (contract.ConformanceResult, error) {
+	return contract.ConformanceResult{}, a.err
 }
 
 type equivCLIContractInspection struct{ result cli.ContractDiffResult }
@@ -404,6 +430,178 @@ func runMCPHandler(t *testing.T, registry *mcp.Registry, tool, action string, in
 	}
 }
 
+// equivWorkBackend is intentionally shared in shape by the two transports.
+// It returns a complete two-axis result and records the domain inputs so the
+// IT-09 assertion covers semantic delegation as well as JSON presentation.
+type equivWorkBackend struct {
+	result   workreport.OperationResult
+	identity workreport.WorkIdentityInput
+	leases   []workreport.Lease
+	calls    []any
+}
+
+func (b *equivWorkBackend) Start(_ context.Context, in workreport.StartInput) (workreport.OperationResult, error) {
+	b.calls = append(b.calls, in)
+	return b.result, nil
+}
+
+func (b *equivWorkBackend) Checkpoint(_ context.Context, in workreport.CheckpointInput) (workreport.OperationResult, error) {
+	b.calls = append(b.calls, in)
+	return b.result, nil
+}
+
+func (b *equivWorkBackend) Wait(_ context.Context, in workreport.WaitInput) (workreport.OperationResult, error) {
+	b.calls = append(b.calls, in)
+	return b.result, nil
+}
+
+func (b *equivWorkBackend) Stop(_ context.Context, in workreport.StopInput) (workreport.OperationResult, error) {
+	b.calls = append(b.calls, in)
+	return b.result, nil
+}
+
+func (b *equivWorkBackend) Heartbeat(_ context.Context, in workreport.HeartbeatInput) (workreport.OperationResult, error) {
+	b.calls = append(b.calls, in)
+	return b.result, nil
+}
+
+func (b *equivWorkBackend) Resume(_ context.Context, in workreport.ResumeInput) (workreport.OperationResult, error) {
+	b.calls = append(b.calls, in)
+	return b.result, nil
+}
+
+func (b *equivWorkBackend) ResolveWork(_ context.Context, _, _, _, _ string) (workreport.WorkIdentityInput, error) {
+	return b.identity, nil
+}
+
+func (b *equivWorkBackend) ListWork(_ context.Context, _, _, _ string, _ bool) ([]workreport.Lease, error) {
+	return append([]workreport.Lease(nil), b.leases...), nil
+}
+
+func canonicalEquivJSON(t *testing.T, value any) string {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := json.Marshal(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(canonical)
+}
+
+func workParityDeps(backend *equivWorkBackend) (cli.WorkCommandDeps, mcp.WorkToolDeps) {
+	const projectID = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	cliDeps := cli.WorkCommandDeps{
+		Starter: backend, Progressor: backend, Local: backend, Reader: backend,
+		ProjectID: projectID, Space: "fixture-space",
+		ResolveActor: func(in cli.WorkActorFlags) (workreport.Actor, error) {
+			return workreport.Actor{Kind: in.Kind, Name: in.Name, Model: in.Model, System: "axon", Session: in.Session}, nil
+		},
+	}
+	mcpDeps := mcp.WorkToolDeps{
+		Starter: backend, Progressor: backend, Local: backend, Reader: backend,
+		ProjectID: projectID, Space: "fixture-space",
+		ResolveActor: func(in mcp.WorkActorInput) (workreport.Actor, error) {
+			return workreport.Actor{Kind: in.Kind, Name: in.Name, Model: in.Model, System: "axon", Session: in.Session}, nil
+		},
+	}
+	return cliDeps, mcpDeps
+}
+
+// TestIT09WorkCLIMCPSemanticParity is the behavior-level half of VG-OC-23.
+// Every closed work action receives the same core result, and the public CLI
+// JSON and MCP result must preserve the same two-axis state and stable codes.
+func TestIT09WorkCLIMCPSemanticParity(t *testing.T) {
+	t.Parallel()
+	// Bind this exact coverage reference to cmd/a2a's real composition as
+	// well as the transport table below. If production DI drops any work
+	// capability, the catalogue evidence must turn red rather than continuing
+	// to pass against test-only dependencies.
+	compositionRoot := t.TempDir()
+	compositionPaths := paths{
+		projectRoot: compositionRoot, projectConfig: filepath.Join(compositionRoot, ".a2a", "config.yaml"),
+		machineConfig: filepath.Join(compositionRoot, "machine.yaml"), staging: filepath.Join(compositionRoot, ".a2a", "staging"),
+	}
+	compositionRef := space.Ref{ID: "fixture-space", RepoURL: "https://github.com/fixture/space.git"}
+	compositionConfig := space.ProjectConfig{System: "axon", Spaces: []space.Ref{compositionRef}}
+	if _, err := buildWorkCommand(compositionPaths, compositionConfig, space.MachineConfig{}, compositionRef); err != nil {
+		t.Fatalf("production CLI work DI: %v", err)
+	}
+	productionMCPDeps, err := buildMCPWorkDeps(compositionPaths, compositionConfig, space.MachineConfig{})
+	if err != nil {
+		t.Fatalf("production MCP work DI: %v", err)
+	}
+	if _, err := mcp.NewWorkTool(productionMCPDeps); err != nil {
+		t.Fatalf("production MCP work tool: %v", err)
+	}
+
+	const (
+		workID  = "work:01K1A2B3C4D5E6F7G8H9J0K1M7"
+		session = "session:provider-opaque"
+	)
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	result := workreport.OperationResult{
+		WorkID: workID, Session: session, OperationKey: "op-v1-" + strings.Repeat("a", 64),
+		Action: workreport.ActionCheckpoint, SemanticSequence: 7, LocalState: workreport.LocalActive,
+		LocalErrorCode: workreport.LocalErrorPendingOperation, ExpiresAt: now.Add(15 * time.Minute),
+		Shared: workreport.PublishAttempt{Attempted: true, Convergence: workreport.ConvergenceResumable, ErrorCode: "host-timeout"},
+	}
+	identity := workreport.WorkIdentityInput{ProjectID: "sha256:" + strings.Repeat("b", 64), Space: "fixture-space", Thread: "thread:axon-20260803-p7it", WorkID: workID, Actor: workreport.Actor{Kind: "agent", Name: "codex", System: "axon", Session: session}}
+	lease := workreport.Lease{Identity: workreport.Identity{ProjectID: identity.ProjectID, Space: identity.Space, Thread: identity.Thread, WorkID: identity.WorkID, Actor: identity.Actor}, SubjectRef: "XC-axon-widget@1.0.0", Mode: workreport.ModeTesting, Summary: "parity", WaitingOn: []workreport.WaitingOn{}, StartedAt: now, RenewedAt: now, ExpiresAt: now.Add(15 * time.Minute), SemanticSequence: 7}
+	cases := []struct {
+		name    string
+		cliArgs []string
+		mcpIn   mcp.WorkInput
+	}{
+		{"start", []string{"start", "--thread", identity.Thread, "--subject-ref", lease.SubjectRef, "--mode", "testing", "--summary", "parity", "--actor-kind", "agent", "--actor-name", "codex", "--session", session, "--json"}, mcp.WorkInput{Action: "start", Thread: identity.Thread, SubjectRef: lease.SubjectRef, Mode: "testing", Summary: "parity", Actor: mcp.WorkActorInput{Kind: "agent", Name: "codex", Session: session}}},
+		{"heartbeat", []string{"heartbeat", "--work-id", workID, "--session", session, "--ttl", "10m", "--json"}, mcp.WorkInput{Action: "heartbeat", WorkID: workID, Session: session, TTL: "10m"}},
+		{"resume", []string{"resume", "--work-id", workID, "--session", session, "--json"}, mcp.WorkInput{Action: "resume", WorkID: workID, Session: session}},
+		{"checkpoint", []string{"checkpoint", "--work-id", workID, "--session", session, "--mode", "testing", "--summary", "parity", "--json"}, mcp.WorkInput{Action: "checkpoint", WorkID: workID, Session: session, Mode: "testing", Summary: "parity"}},
+		{"wait", []string{"wait", "--work-id", workID, "--session", session, "--summary", "blocked", "--waiting-on", "system:beta:review", "--json"}, mcp.WorkInput{Action: "wait", WorkID: workID, Session: session, Summary: "blocked", WaitingOn: []mcp.WorkWaitingInput{{Kind: "system", ID: "beta", Summary: "review"}}}},
+		{"stop", []string{"stop", "--work-id", workID, "--session", session, "--result", "paused", "--summary", "handoff", "--json"}, mcp.WorkInput{Action: "stop", WorkID: workID, Session: session, Result: "paused", Summary: "handoff"}},
+		{"status", []string{"status", "--work-id", workID, "--include-expired", "--json"}, mcp.WorkInput{Action: "status", WorkID: workID, IncludeExpired: true}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cliBackend := &equivWorkBackend{result: result, identity: identity, leases: []workreport.Lease{lease}}
+			cliDeps, _ := workParityDeps(cliBackend)
+			command, err := cli.NewWorkCommand(cliDeps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stdio, cliOut, cliErr := equivIO()
+			if code := command.Run(t.Context(), tc.cliArgs, stdio); code != 0 {
+				t.Fatalf("CLI code=%d stderr=%s", code, cliErr)
+			}
+
+			mcpBackend := &equivWorkBackend{result: result, identity: identity, leases: []workreport.Lease{lease}}
+			_, mcpDeps := workParityDeps(mcpBackend)
+			tool, err := mcp.NewWorkTool(mcpDeps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := json.Marshal(tc.mcpIn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mcpResult, _, err := tool.Handler(t.Context(), raw)
+			if err != nil {
+				t.Fatalf("MCP error=%v", err)
+			}
+			if got, want := canonicalEquivJSON(t, mcpResult), canonicalEquivJSON(t, json.RawMessage(cliOut.Bytes())); got != want {
+				t.Fatalf("semantic result differs\nCLI %s\nMCP %s", want, got)
+			}
+		})
+	}
+}
+
 // marshalWithAction marshals input and, when action is non-empty, injects an
 // `"action"` discriminator alongside the input's own fields — the exact
 // payload shape a grouped-tool caller sends.
@@ -644,6 +842,37 @@ func TestEquivGenericLifecycleVerbs(t *testing.T) {
 
 			assertRequestsEquivalent(t, tc.verb, cliFunnel.calls[0], mcpFunnel.calls[0])
 		})
+	}
+}
+
+// TestIT09ReceiptBearingLifecycleParity pins the P1 addition that action-name
+// parity alone missed: both transports must carry the evaluator's exact
+// receipt for an applicable lifecycle transition.
+func TestIT09ReceiptBearingLifecycleParity(t *testing.T) {
+	t.Parallel()
+	const id = "XQ-axon-20260803-z009"
+	seed := func(t *testing.T, dir string) {
+		equivWriteQuestion(t, dir, id, "beta")
+		equivWriteEvent(t, dir, "axon", 0, id, "submit", "axon")
+	}
+
+	cliDir, cliFunnel, _ := newEquivMirror(t, "beta")
+	seed(t, cliDir)
+	runCLICommand(t, cli.NewAckCommand(cliFunnel, cliDir, "fixture-space", "beta", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot")), []string{id})
+	mcpDir, mcpFunnel, _ := newEquivMirror(t, "beta")
+	seed(t, mcpDir)
+	registry := mcp.BuildRegistry(nil, mcp.WriteDeps{
+		Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "beta",
+		Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"),
+		Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile,
+	}, "", nil, mcp.NewDeps{})
+	runMCPHandler(t, registry, "a2a_lifecycle", "ack", mcp.LifecycleInput{IDs: []string{id}})
+
+	assertRequestsEquivalent(t, "receipt-bearing ack", cliFunnel.calls[0], mcpFunnel.calls[0])
+	for surface, request := range map[string]space.SubmitRequest{"CLI": cliFunnel.calls[0], "MCP": mcpFunnel.calls[0]} {
+		if len(request.Files) != 1 || !strings.Contains(string(request.Files[0].Content), "state: acknowledged") {
+			t.Fatalf("%s omitted exact acknowledged receipt: %+v", surface, request.Files)
+		}
 	}
 }
 
@@ -1179,6 +1408,181 @@ func TestEquivContractPublishRefusesBreakingMinorOnBothSurfaces(t *testing.T) {
 	if len(cliFunnel.calls) != 0 || len(mcpFunnel.calls) != 0 {
 		t.Fatalf("local refusal must precede both funnels: CLI=%d MCP=%d", len(cliFunnel.calls), len(mcpFunnel.calls))
 	}
+}
+
+// TestIT09P6FailureCodeParity covers the shared P6 seams at the transport
+// boundary. MCP has no process exit status, so the equivalent contract is a
+// tool error carrying the same stable code while CLI exits 1.
+func TestIT09P6FailureCodeParity(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, action, stable string
+		failure              error
+		cliArgs              []string
+		mcpInput             any
+	}{
+		{"preflight", "preflight", "POL-007", fmt.Errorf("POL-007 deterministic refusal"), []string{"preflight", "--version", "1.0.0", "XC-axon-widget"}, mcp.ContractPreflightInput{ID: "XC-axon-widget", Version: "1.0.0"}},
+		{"publish", "publish", "plan-changed", space.ErrContractPublicationPlanChanged, []string{"publish", "--version", "1.0.0", "XC-axon-widget"}, mcp.ContractPublishInput{ID: "XC-axon-widget", Version: "1.0.0"}},
+		{"materialize", "materialize", "not safely contained", space.ErrContractUnsafePath, []string{"materialize", "--to", "vendor/widget", "XC-axon-widget@1.0.0"}, mcp.ContractMaterializeInput{Ref: "XC-axon-widget@1.0.0", To: "vendor/widget"}},
+		{"check", "check", string(contract.ConformanceUnsupportedReference), fmt.Errorf("%s", contract.ConformanceUnsupportedReference), []string{"check", "--payload", "payload.json", "XC-axon-widget@1.0.0"}, mcp.ContractCheckInput{Ref: "XC-axon-widget@1.0.0", Mode: "payload", Payload: "payload.json"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			sharedErr := test.failure
+			cliPublication := &equivContractPublicationState{}
+			mcpPublication := &equivContractPublicationState{}
+			if test.action == "preflight" || test.action == "publish" {
+				cliPublication.err = sharedErr
+				mcpPublication.err = sharedErr
+			}
+			cliMaterializeErr, mcpMaterializeErr := error(nil), error(nil)
+			cliCheckErr, mcpCheckErr := error(nil), error(nil)
+			if test.action == "materialize" {
+				cliMaterializeErr, mcpMaterializeErr = sharedErr, sharedErr
+			}
+			if test.action == "check" {
+				cliCheckErr, mcpCheckErr = sharedErr, sharedErr
+			}
+
+			cliCommand := cli.NewContractCommand(cli.NewNewCommand(t.TempDir(), "axon", equivCLIActorResolver("agent", "bot"), nil), &spyFunnel{}, t.TempDir(), "fixture-space", "axon", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+			cliCommand.SetP6Operations(equivCLIContractPublication{state: cliPublication}, equivCLIContractMaterialize{err: cliMaterializeErr}, equivCLIContractCheck{err: cliCheckErr})
+			stdio, _, cliErr := equivIO()
+			if got := cliCommand.Run(t.Context(), test.cliArgs, stdio); got != 1 {
+				t.Fatalf("CLI exit=%d want 1; stderr=%s", got, cliErr)
+			}
+
+			registry := mcp.BuildRegistryWithContractOperations(nil, mcp.WriteDeps{}, "", nil, mcp.NewDeps{}, mcp.ContractToolOperations{
+				Publication: equivMCPContractPublication{state: mcpPublication},
+				Materialize: equivMCPContractMaterialize{err: mcpMaterializeErr},
+				Check:       equivMCPContractCheck{err: mcpCheckErr},
+				Inspection:  equivMCPContractInspection{},
+			})
+			spec, ok := registry.Get("a2a_contract")
+			if !ok {
+				t.Fatal("a2a_contract is not registered")
+			}
+			raw, err := marshalWithAction(test.action, test.mcpInput)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, mcpErr := spec.Handler(t.Context(), raw)
+			if mcpErr == nil {
+				t.Fatal("MCP accepted shared failure")
+			}
+			if !strings.Contains(cliErr.String(), test.stable) || !strings.Contains(mcpErr.Error(), test.stable) {
+				t.Fatalf("stable code differs: CLI=%q MCP=%q", cliErr.String(), mcpErr)
+			}
+			if !strings.HasSuffix(strings.TrimSpace(cliErr.String()), sharedErr.Error()) || !strings.HasSuffix(mcpErr.Error(), sharedErr.Error()) {
+				t.Fatalf("semantic cause differs: CLI=%q MCP=%q", cliErr.String(), mcpErr)
+			}
+		})
+	}
+}
+
+// TestIT10HostileValuesRemainDataAcrossCLIAndMCP drives credential-shaped and
+// syntax-shaped values through both transports. The fakes are capture seams:
+// execution, interpolation, or a transport-side rewrite would change the
+// captured domain input or create the sentinel.
+func TestIT10HostileValuesRemainDataAcrossCLIAndMCP(t *testing.T) {
+	t.Parallel()
+	t.Run("credential-shaped work session", func(t *testing.T) {
+		t.Parallel()
+		sentinel := filepath.Join(t.TempDir(), "must-not-exist")
+		hostile := "Bearer ghp_not-a-real-token; touch " + sentinel + " $(ignored)"
+		result := workreport.OperationResult{WorkID: "work:01K1A2B3C4D5E6F7G8H9J0K1M7", Session: hostile, LocalState: workreport.LocalActive}
+
+		cliBackend := &equivWorkBackend{result: result}
+		cliDeps, _ := workParityDeps(cliBackend)
+		command, err := cli.NewWorkCommand(cliDeps)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stdio, cliOut, cliErr := equivIO()
+		if code := command.Run(t.Context(), []string{"start", "--thread", "thread:axon-20260803-hostile", "--subject-ref", "XQ-axon-20260803-hostile", "--mode", "testing", "--summary", "still data", "--actor-kind", "agent", "--actor-name", "codex", "--session", hostile, "--json"}, stdio); code != 0 {
+			t.Fatalf("CLI code=%d stderr=%s", code, cliErr)
+		}
+		cliStart := cliBackend.calls[0].(workreport.StartInput)
+		if cliStart.Actor.Session != hostile {
+			t.Fatalf("CLI changed hostile session: %q", cliStart.Actor.Session)
+		}
+
+		mcpBackend := &equivWorkBackend{result: result}
+		_, mcpDeps := workParityDeps(mcpBackend)
+		tool, err := mcp.NewWorkTool(mcpDeps)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(mcp.WorkInput{Action: "start", Thread: "thread:axon-20260803-hostile", SubjectRef: "XQ-axon-20260803-hostile", Mode: "testing", Summary: "still data", Actor: mcp.WorkActorInput{Kind: "agent", Name: "codex", Session: hostile}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		mcpResult, _, err := tool.Handler(t.Context(), raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mcpStart := mcpBackend.calls[0].(workreport.StartInput)
+		if mcpStart.Actor.Session != hostile || canonicalEquivJSON(t, mcpResult) != canonicalEquivJSON(t, json.RawMessage(cliOut.Bytes())) {
+			t.Fatalf("hostile work value/result differs: CLI=%q MCP=%q", cliStart.Actor.Session, mcpStart.Actor.Session)
+		}
+		if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+			t.Fatalf("hostile session escaped data boundary: stat=%v", err)
+		}
+	})
+
+	t.Run("event note cannot inject YAML fields", func(t *testing.T) {
+		t.Parallel()
+		const id = "XQ-axon-20260803-h010"
+		hostile := "Bearer not-a-token\nstate: hacked\n---\n<script>alert(1)</script>"
+		seed := func(t *testing.T, dir string) { equivWriteQuestion(t, dir, id, "beta") }
+
+		cliDir, cliFunnel, _ := newEquivMirror(t, "beta")
+		seed(t, cliDir)
+		runCLICommand(t, cli.NewNoteCommand(cliFunnel, cliDir, "fixture-space", "beta", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot")), []string{"--note", hostile, id})
+		mcpDir, mcpFunnel, _ := newEquivMirror(t, "beta")
+		seed(t, mcpDir)
+		registry := mcp.BuildRegistry(nil, mcp.WriteDeps{Funnel: mcpFunnel, MirrorDir: mcpDir, SpaceID: "fixture-space", OwnSystem: "beta", Manifest: equivManifest(), HostCfg: equivMCPHostConfig(""), ResolveActor: equivMCPActorResolver("agent", "bot"), Now: time.Now, Entropy: rand.Reader, ReadFile: os.ReadFile}, "", nil, mcp.NewDeps{})
+		runMCPHandler(t, registry, "a2a_exchange", "note", mcp.NoteInput{IDs: []string{id}, Note: hostile})
+		assertRequestsEquivalent(t, "hostile note", cliFunnel.calls[0], mcpFunnel.calls[0])
+		for surface, request := range map[string]space.SubmitRequest{"CLI": cliFunnel.calls[0], "MCP": mcpFunnel.calls[0]} {
+			var document map[string]any
+			if err := yaml.Unmarshal(request.Files[0].Content, &document); err != nil {
+				t.Fatalf("%s event no longer parses: %v", surface, err)
+			}
+			if got := document["note"]; got != hostile {
+				t.Fatalf("%s note=%q want exact hostile data", surface, got)
+			}
+			if _, injected := document["state"]; injected {
+				t.Fatalf("%s hostile note injected state: %#v", surface, document)
+			}
+		}
+	})
+
+	t.Run("contract candidate selector remains data", func(t *testing.T) {
+		t.Parallel()
+		sentinel := filepath.Join(t.TempDir(), "must-not-exist")
+		hostile := "candidate; touch " + sentinel + " $(ignored)"
+		cliState := &equivContractPublicationState{}
+		cliCommand := cli.NewContractCommand(cli.NewNewCommand(t.TempDir(), "axon", equivCLIActorResolver("agent", "bot"), nil), &spyFunnel{}, t.TempDir(), "fixture-space", "axon", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
+		cliCommand.SetP6Operations(equivCLIContractPublication{state: cliState}, equivCLIContractMaterialize{}, equivCLIContractCheck{})
+		stdio, _, cliErr := equivIO()
+		if code := cliCommand.Run(t.Context(), []string{"preflight", "--version", "1.0.0", "--staging", hostile, "XC-axon-widget"}, stdio); code != 0 {
+			t.Fatalf("CLI code=%d stderr=%s", code, cliErr)
+		}
+
+		mcpState := &equivContractPublicationState{}
+		registry := mcp.BuildRegistryWithContractOperations(nil, mcp.WriteDeps{}, "", nil, mcp.NewDeps{}, mcp.ContractToolOperations{
+			Publication: equivMCPContractPublication{state: mcpState}, Materialize: equivMCPContractMaterialize{},
+			Check: equivMCPContractCheck{}, Inspection: equivMCPContractInspection{},
+		})
+		runMCPHandler(t, registry, "a2a_contract", "preflight", mcp.ContractPreflightInput{ID: "XC-axon-widget", Version: "1.0.0", Staging: hostile})
+		if len(cliState.calls) != 1 || len(mcpState.calls) != 1 || cliState.calls[0] != mcpState.calls[0] || cliState.calls[0].staging != hostile {
+			t.Fatalf("hostile contract selector differs: CLI=%+v MCP=%+v", cliState.calls, mcpState.calls)
+		}
+		if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+			t.Fatalf("hostile contract selector escaped data boundary: stat=%v", err)
+		}
+	})
 }
 
 func TestEquivContractDeprecate(t *testing.T) {
