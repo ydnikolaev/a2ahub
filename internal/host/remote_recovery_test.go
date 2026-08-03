@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -47,17 +48,24 @@ func TestReadRemoteRecoveryCommitReturnsCompleteFirstParentDiff(t *testing.T) {
 	if message != "recover\n\nbody\n\n" {
 		t.Fatalf("message = %q", message)
 	}
-	want := map[string]string{
-		"changed.txt":         recoveryTestDigest([]byte("after\n")),
-		"deleted.txt":         "",
-		"extra/evidence.json": recoveryTestDigest([]byte("{\"extra\":true}\n")),
+	want := map[string]RemoteRecoveryChange{
+		"changed.txt": {
+			BeforeDigest: recoveryTestDigest([]byte("before\n")), BeforeMode: "100644",
+			AfterDigest: recoveryTestDigest([]byte("after\n")), AfterMode: "100644",
+		},
+		"deleted.txt": {
+			BeforeDigest: recoveryTestDigest([]byte("delete me\n")), BeforeMode: "100644",
+		},
+		"extra/evidence.json": {
+			AfterDigest: recoveryTestDigest([]byte("{\"extra\":true}\n")), AfterMode: "100644",
+		},
 	}
 	if len(digests) != len(want) {
 		t.Fatalf("digests = %#v, want complete set %#v", digests, want)
 	}
-	for filePath, digest := range want {
-		if digests[filePath] != digest {
-			t.Errorf("digest[%q] = %q, want %q", filePath, digests[filePath], digest)
+	for filePath, change := range want {
+		if digests[filePath] != change {
+			t.Errorf("change[%q] = %+v, want %+v", filePath, digests[filePath], change)
 		}
 	}
 	if refs := gitOutput(t, fixture.probe, "for-each-ref", "--format=%(refname)", "refs/a2a/recovery"); refs != "" {
@@ -109,7 +117,7 @@ func TestReadRemoteRecoveryCommitRefusesRootAndMergeCommits(t *testing.T) {
 	})
 }
 
-func TestReadRemoteRecoveryCommitRefusesRenameAndOversizedEvidence(t *testing.T) {
+func TestReadRemoteRecoveryCommitExpandsRenameAndRefusesOversizedEvidence(t *testing.T) {
 	t.Parallel()
 	t.Run("rename", func(t *testing.T) {
 		t.Parallel()
@@ -122,7 +130,20 @@ func TestReadRemoteRecoveryCommitRefusesRenameAndOversizedEvidence(t *testing.T)
 		}
 		fixture.commitAll("rename")
 		fixture.push("rename")
-		assertRecoveryReadFails(t, fixture, "rename")
+		_, _, _, _, changes, exists, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
+			context.Background(), fixture.probe, fixture.remote, Repo{Owner: "acme", Name: "space"},
+			"rename", Credential{},
+		)
+		if err != nil || !exists {
+			t.Fatalf("read rename: exists=%v err=%v", exists, err)
+		}
+		want := map[string]RemoteRecoveryChange{
+			"before.txt": {BeforeDigest: recoveryTestDigest([]byte("same bytes\n")), BeforeMode: "100644"},
+			"after.txt":  {AfterDigest: recoveryTestDigest([]byte("same bytes\n")), AfterMode: "100644"},
+		}
+		if !reflect.DeepEqual(changes, want) {
+			t.Fatalf("rename changes = %#v, want delete+write %#v", changes, want)
+		}
 	})
 	t.Run("oversized blob", func(t *testing.T) {
 		t.Parallel()
@@ -134,6 +155,44 @@ func TestReadRemoteRecoveryCommitRefusesRenameAndOversizedEvidence(t *testing.T)
 		fixture.commitAll("large")
 		fixture.push("large")
 		assertRecoveryReadFails(t, fixture, "large")
+	})
+}
+
+func TestReadRemoteRecoveryCommitReportsExecutableModeAndRefusesSymlink(t *testing.T) {
+	t.Parallel()
+
+	t.Run("executable", func(t *testing.T) {
+		t.Parallel()
+		fixture := newRemoteRecoveryFixture(t)
+		writeRecoveryFile(t, fixture.source, "base.txt", []byte("base\n"))
+		fixture.commitAll("base")
+		fixture.push("main")
+		writeRecoveryFile(t, fixture.source, "tool.sh", []byte("#!/bin/sh\n"))
+		if err := os.Chmod(filepath.Join(fixture.source, "tool.sh"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		fixture.commitAll("tool")
+		fixture.push("tool")
+		_, _, _, _, changes, exists, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
+			context.Background(), fixture.probe, fixture.remote, Repo{Owner: "acme", Name: "space"}, "tool", Credential{},
+		)
+		if err != nil || !exists || changes["tool.sh"].AfterMode != "100755" {
+			t.Fatalf("executable evidence = %#v exists=%v err=%v", changes, exists, err)
+		}
+	})
+
+	t.Run("symlink", func(t *testing.T) {
+		t.Parallel()
+		fixture := newRemoteRecoveryFixture(t)
+		writeRecoveryFile(t, fixture.source, "base.txt", []byte("base\n"))
+		fixture.commitAll("base")
+		fixture.push("main")
+		if err := os.Symlink("base.txt", filepath.Join(fixture.source, "link.txt")); err != nil {
+			t.Fatal(err)
+		}
+		fixture.commitAll("link")
+		fixture.push("link")
+		assertRecoveryReadFails(t, fixture, "link")
 	})
 }
 
