@@ -1,0 +1,506 @@
+package localserver
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"runtime"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ydnikolaev/a2ahub/internal/operational"
+)
+
+func TestServeDefaultDoesNoSyncAndJoinsOnCancellation(t *testing.T) {
+	t.Parallel()
+	config := DefaultConfig()
+	config.Listen = "127.0.0.1:0"
+	reader := &fakeReader{snapshot: testSnapshot("sha256:one"), called: make(chan struct{}, 2)}
+	syncer := &fakeSyncer{called: make(chan struct{}, 1)}
+	server, err := New(config, reader, syncer, fakeRenderer{shell: []byte("ok")}, newFakeTickerFactory())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(ctx, listener) }()
+	select {
+	case <-reader.called:
+	case <-t.Context().Done():
+		t.Fatal("initial snapshot was not read")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Serve() error = %v", err)
+		}
+	case <-t.Context().Done():
+		t.Fatal("Serve did not join after cancellation")
+	}
+	if syncer.callCount() != 0 {
+		t.Fatalf("default server made %d sync calls", syncer.callCount())
+	}
+}
+
+func TestOptInSyncPublishesDegradedSnapshotWhileReportingFailure(t *testing.T) {
+	t.Parallel()
+	config := DefaultConfig()
+	config.Listen = "127.0.0.1:0"
+	config.SyncEvery = MinimumSyncEvery
+	tickers := newFakeTickerFactory()
+	reader := &fakeReader{snapshot: testSnapshot("sha256:one"), called: make(chan struct{}, 2)}
+	syncFailure := errors.New("fetch unavailable")
+	degraded := testSnapshot("sha256:degraded")
+	degraded.Unavailable = []operational.Unavailable{{SourceKind: operational.SourceSpace, Space: "space-a", Code: "sync-failed", Summary: "fetch unavailable"}}
+	syncer := &fakeSyncer{snapshot: degraded, err: syncFailure, called: make(chan struct{}, 1)}
+	server, err := New(config, reader, syncer, fakeRenderer{shell: []byte("ok")}, tickers)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(ctx, listener) }()
+	select {
+	case <-reader.called:
+	case <-t.Context().Done():
+		t.Fatal("initial snapshot was not read")
+	}
+	syncTicker := tickers.await(t, config.SyncEvery)
+	syncTicker.channel <- time.Now()
+	select {
+	case <-syncer.called:
+	case <-t.Context().Done():
+		t.Fatal("sync was not invoked")
+	}
+	for server.store.get().revision != testRevision("sha256:degraded") {
+		select {
+		case <-t.Context().Done():
+			t.Fatal("degraded snapshot was not published")
+		default:
+			runtime.Gosched()
+		}
+	}
+	for !errors.Is(server.LastError(), syncFailure) {
+		select {
+		case <-t.Context().Done():
+			t.Fatalf("LastError() = %v", server.LastError())
+		default:
+			runtime.Gosched()
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Serve() error = %v", err)
+		}
+	case <-t.Context().Done():
+		t.Fatal("Serve did not stop")
+	}
+}
+
+func TestConfigEnforcesHeaderClientRefreshAndBodyHardBounds(t *testing.T) {
+	t.Parallel()
+	tests := []Config{
+		func() Config { c := DefaultConfig(); c.Refresh = MinimumRefresh - time.Nanosecond; return c }(),
+		func() Config { c := DefaultConfig(); c.SyncEvery = MinimumSyncEvery - time.Nanosecond; return c }(),
+		func() Config { c := DefaultConfig(); c.MaxSSEClients = MaximumSSEClients + 1; return c }(),
+		func() Config { c := DefaultConfig(); c.MaxHeaderBytes = DefaultMaxHeaderBytes + 1; return c }(),
+		func() Config { c := DefaultConfig(); c.MaxSnapshotBytes = (16 << 20) + 1; return c }(),
+		func() Config { c := DefaultConfig(); c.MaxShellBytes = DefaultMaxShellBytes + 1; return c }(),
+	}
+	for _, config := range tests {
+		if _, err := New(config, &fakeReader{}, nil, fakeRenderer{}, nil); err == nil {
+			t.Fatalf("New() accepted invalid config: %#v", config)
+		}
+	}
+}
+
+type blockingReader struct {
+	started chan struct{}
+	release chan struct{}
+	result  operational.Snapshot
+}
+
+func (r *blockingReader) Snapshot(context.Context) (operational.Snapshot, error) {
+	close(r.started)
+	<-r.release
+	return r.result, nil
+}
+
+func TestPollAndSyncPublicationIsCausallySerialized(t *testing.T) {
+	t.Parallel()
+	config := DefaultConfig()
+	config.SyncEvery = MinimumSyncEvery
+	reader := &blockingReader{started: make(chan struct{}), release: make(chan struct{}), result: testSnapshot("old-poll")}
+	syncer := &fakeSyncer{snapshot: testSnapshot("new-sync")}
+	server, err := New(config, reader, syncer, fakeRenderer{shell: []byte("ok")}, newFakeTickerFactory())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := server.publish(t.Context(), testSnapshot("initial")); err != nil {
+		t.Fatalf("initial publish error = %v", err)
+	}
+	pollDone := make(chan error, 1)
+	go func() { pollDone <- server.refresh(t.Context()) }()
+	select {
+	case <-reader.started:
+	case <-t.Context().Done():
+		t.Fatal("poll did not begin")
+	}
+	syncDone := make(chan error, 1)
+	go func() { syncDone <- server.sync(t.Context()) }()
+	runtime.Gosched()
+	close(reader.release)
+	if err := <-pollDone; err != nil {
+		t.Fatalf("poll error = %v", err)
+	}
+	if err := <-syncDone; err != nil {
+		t.Fatalf("sync error = %v", err)
+	}
+	if got := server.store.get().revision; got != testRevision("new-sync") {
+		t.Fatalf("old poll regressed newer sync: revision=%s", got)
+	}
+}
+
+func TestSyncErrorRequiresExplicitDegradedSnapshotAndPreservesCurrent(t *testing.T) {
+	t.Parallel()
+	config := DefaultConfig()
+	config.SyncEvery = MinimumSyncEvery
+	syncFailure := errors.New("fetch failed")
+	server, err := New(config, &fakeReader{}, &fakeSyncer{err: syncFailure}, fakeRenderer{shell: []byte("ok")}, newFakeTickerFactory())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := server.publish(t.Context(), testSnapshot("current")); err != nil {
+		t.Fatalf("publish() error = %v", err)
+	}
+	err = server.sync(t.Context())
+	if !errors.Is(err, syncFailure) || !errors.Is(err, ErrDegradedSnapshotRequired) {
+		t.Fatalf("sync error = %v", err)
+	}
+	if got := server.store.get().revision; got != testRevision("current") {
+		t.Fatalf("failed sync replaced current snapshot: %s", got)
+	}
+}
+
+func TestSameRevisionPublicationRetainsServingGeneration(t *testing.T) {
+	t.Parallel()
+	server, err := New(DefaultConfig(), &fakeReader{}, nil, fakeRenderer{shell: []byte("first")}, newFakeTickerFactory())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	first := testSnapshot("stable")
+	if err := server.publish(t.Context(), first); err != nil {
+		t.Fatalf("first publish error = %v", err)
+	}
+	servingSnapshot := server.store.get()
+	servingShell := server.store.shell()
+
+	second := first
+	second.GeneratedAt = second.GeneratedAt.Add(time.Minute)
+	if err := server.publish(t.Context(), second); err != nil {
+		t.Fatalf("same-revision publish error = %v", err)
+	}
+	if server.store.get() != servingSnapshot || server.store.shell() != servingShell {
+		t.Fatal("same semantic revision replaced the serving generation")
+	}
+	select {
+	case <-servingSnapshot.ctx.Done():
+		t.Fatal("same semantic revision canceled an in-flight snapshot reader")
+	default:
+	}
+	select {
+	case <-servingShell.ctx.Done():
+		t.Fatal("same semantic revision canceled an in-flight shell reader")
+	default:
+	}
+}
+
+func TestRealNetSlowRootWriterIsBoundedAndCanceledByPublication(t *testing.T) {
+	t.Parallel()
+	config := DefaultConfig()
+	config.WriteDeadline = 250 * time.Millisecond
+	largeShell := bytes.Repeat([]byte("x"), config.MaxShellBytes)
+	server, err := New(config, &fakeReader{snapshot: testSnapshot("one")}, nil, fakeRenderer{shell: largeShell}, newFakeTickerFactory())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := server.refresh(t.Context()); err != nil {
+		t.Fatalf("refresh() error = %v", err)
+	}
+	testServer := httptest.NewUnstartedServer(server.Handler())
+	testServer.Start()
+	t.Cleanup(testServer.Close)
+	host, port, err := net.SplitHostPort(testServer.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("SplitHostPort() error = %v", err)
+	}
+	server.mu.Lock()
+	server.listenerHost, server.listenerPort = host, port
+	server.mu.Unlock()
+	connection, err := net.Dial("tcp", testServer.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("Dial() error = %v", err)
+	}
+	defer connection.Close()
+	if _, err := fmt.Fprintf(connection, "GET / HTTP/1.1\r\nHost: localhost:%s\r\nConnection: close\r\n\r\n", port); err != nil {
+		t.Fatalf("write request error = %v", err)
+	}
+	for len(server.writerSlots) == 0 {
+		select {
+		case <-t.Context().Done():
+			t.Fatal("slow root writer never acquired bounded slot")
+		default:
+			runtime.Gosched()
+		}
+	}
+	oldShell := server.store.shell()
+	if err := server.publish(t.Context(), testSnapshot("two")); err != nil {
+		t.Fatalf("publish() error = %v", err)
+	}
+	select {
+	case <-oldShell.ctx.Done():
+	default:
+		t.Fatal("new publication did not cancel slow shell generation")
+	}
+	for len(server.writerSlots) != 0 {
+		select {
+		case <-t.Context().Done():
+			t.Fatal("slow root writer did not release bounded slot")
+		default:
+			runtime.Gosched()
+		}
+	}
+}
+
+func TestRealNetSSEDisconnectReleasesClient(t *testing.T) {
+	t.Parallel()
+	server, _ := newTestServer(t, DefaultConfig())
+	testServer := httptest.NewServer(server.Handler())
+	t.Cleanup(testServer.Close)
+	_, portText, err := net.SplitHostPort(strings.TrimPrefix(testServer.URL, "http://"))
+	if err != nil {
+		t.Fatalf("SplitHostPort() error = %v", err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatalf("Atoi() error = %v", err)
+	}
+	server.mu.Lock()
+	server.listenerHost, server.listenerPort = "127.0.0.1", strconv.Itoa(port)
+	server.mu.Unlock()
+	ctx, cancel := context.WithCancel(t.Context())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, testServer.URL+"/api/v1/events", nil)
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	req.Host = "localhost:" + portText
+	response, err := testServer.Client().Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	reader := bufio.NewReader(response.Body)
+	line, err := reader.ReadString('\n')
+	if err != nil || line != "event: revision\n" {
+		t.Fatalf("first SSE line = %q, %v", line, err)
+	}
+	cancel()
+	if err := response.Body.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	for server.broker.count() != 0 {
+		select {
+		case <-t.Context().Done():
+			t.Fatalf("SSE disconnect leaked %d clients", server.broker.count())
+		default:
+			runtime.Gosched()
+		}
+	}
+}
+
+func TestProductionServeKeepsHealthySSEBeyondOrdinaryWriteDeadlineAndJoins(t *testing.T) {
+	t.Parallel()
+	config := DefaultConfig()
+	config.Listen = "127.0.0.1:0"
+	config.WriteDeadline = 25 * time.Millisecond
+	reader := &fakeReader{snapshot: testSnapshot("sse-one"), called: make(chan struct{}, 1)}
+	server, err := New(config, reader, nil, fakeRenderer{shell: []byte("ok")}, newFakeTickerFactory())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(ctx, listener) }()
+	select {
+	case <-reader.called:
+	case <-t.Context().Done():
+		t.Fatal("initial snapshot was not read")
+	}
+	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://127.0.0.1:"+port+"/api/v1/events", nil)
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	req.Host = "localhost:" + port
+	response, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("SSE request error = %v", err)
+	}
+	defer response.Body.Close()
+	stream := bufio.NewReader(response.Body)
+	if line, err := stream.ReadString('\n'); err != nil || line != "event: revision\n" {
+		t.Fatalf("first SSE line = %q, %v", line, err)
+	}
+	// Real time is the behavior under test: the stream must outlive the
+	// ordinary per-write deadline while idle between successful flushes.
+	timer := time.NewTimer(3 * config.WriteDeadline)
+	select {
+	case <-timer.C:
+	case <-t.Context().Done():
+		timer.Stop()
+		t.Fatal("test context ended before SSE lifetime probe")
+	}
+	if err := server.publish(t.Context(), testSnapshot("sse-two")); err != nil {
+		t.Fatalf("publish changed revision error = %v", err)
+	}
+	found := false
+	for i := 0; i < 8; i++ {
+		line, readErr := stream.ReadString('\n')
+		if readErr != nil {
+			t.Fatalf("read changed SSE event error = %v", readErr)
+		}
+		if strings.Contains(line, testRevision("sse-two")) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("healthy SSE did not deliver a revision after the ordinary timeout")
+	}
+	cancel()
+	if err := response.Body.Close(); err != nil {
+		t.Fatalf("close SSE body error = %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Serve() error = %v", err)
+		}
+	case <-t.Context().Done():
+		t.Fatal("production Serve did not join with an active SSE client")
+	}
+	if server.broker.count() != 0 {
+		t.Fatalf("shutdown retained %d SSE clients", server.broker.count())
+	}
+}
+
+func TestProductionServeStalledRootWriteHitsDeadlineAndReleasesBudget(t *testing.T) {
+	t.Parallel()
+	config := DefaultConfig()
+	config.Listen = "127.0.0.1:0"
+	config.WriteDeadline = 25 * time.Millisecond
+	reader := &fakeReader{snapshot: testSnapshot("deadline"), called: make(chan struct{}, 1)}
+	server, err := New(config, reader, nil, fakeRenderer{shell: bytes.Repeat([]byte("x"), config.MaxShellBytes)}, newFakeTickerFactory())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(ctx, listener) }()
+	select {
+	case <-reader.called:
+	case <-t.Context().Done():
+		t.Fatal("initial snapshot was not read")
+	}
+	connection, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("Dial() error = %v", err)
+	}
+	defer connection.Close()
+	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
+	if _, err := fmt.Fprintf(connection, "GET / HTTP/1.1\r\nHost: localhost:%s\r\nConnection: close\r\n\r\n", port); err != nil {
+		t.Fatalf("write request error = %v", err)
+	}
+	for len(server.writerSlots) == 0 {
+		select {
+		case <-t.Context().Done():
+			t.Fatal("stalled writer never acquired a bounded slot")
+		default:
+			runtime.Gosched()
+		}
+	}
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	for len(server.writerSlots) != 0 || server.LastError() == nil {
+		select {
+		case <-deadline.C:
+			t.Fatalf("stalled writer did not hit its deadline: slots=%d error=%v", len(server.writerSlots), server.LastError())
+		default:
+			runtime.Gosched()
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Serve() error = %v", err)
+		}
+	case <-t.Context().Done():
+		t.Fatal("Serve did not join after stalled-writer probe")
+	}
+}
+
+func TestPollLoopUsesInjectedTickerAndStopsWithoutSleep(t *testing.T) {
+	t.Parallel()
+	config := DefaultConfig()
+	tickers := newFakeTickerFactory()
+	reader := &fakeReader{snapshot: testSnapshot("sha256:one"), called: make(chan struct{}, 2)}
+	server, err := New(config, reader, nil, fakeRenderer{shell: []byte("ok")}, tickers)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.pollLoop(ctx)
+	}()
+	ticker := tickers.await(t, config.Refresh)
+	ticker.channel <- time.Now()
+	select {
+	case <-reader.called:
+	case <-t.Context().Done():
+		t.Fatal("poll did not read snapshot")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-t.Context().Done():
+		t.Fatal("poll loop did not stop")
+	}
+}
