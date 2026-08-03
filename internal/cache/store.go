@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
@@ -37,6 +38,7 @@ type SpaceMirror struct {
 type Store struct {
 	ownSystem string
 	cacheDir  string
+	spacesMu  sync.RWMutex
 	spaces    []SpaceMirror
 	now       Clock
 	ttl       time.Duration
@@ -97,16 +99,28 @@ func (s *Store) OwnSystem() string { return s.ownSystem }
 // SpaceMirrors returns a read-only view of the connected space mirrors (id,
 // dir, repo URL, manifest) — the dashboard reads nodes (participants), the
 // connected-repo list, and each mirror's dir (to walk consumes.yaml) from here
-// rather than replicating wire.go's buildStore wiring. The slice is the Store's
-// own (callers must not mutate it).
-func (s *Store) SpaceMirrors() []SpaceMirror { return s.spaces }
+// rather than replicating wire.go's buildStore wiring. The returned slice is a
+// stable snapshot; callers must not mutate manifests' nested values.
+func (s *Store) SpaceMirrors() []SpaceMirror { return s.spaceMirrorsSnapshot() }
+
+// spaceMirrorsSnapshot returns a stable copy of the connected-space slice.
+// SyncIfStale replaces a mirror's Manifest after fetching; readers must not
+// retain or range over s.spaces while that replacement is in progress.
+// Manifest's nested slices are safe to share because Store never mutates a
+// published manifest in place: refresh installs a newly parsed value.
+func (s *Store) spaceMirrorsSnapshot() []SpaceMirror {
+	s.spacesMu.RLock()
+	defer s.spacesMu.RUnlock()
+	return append([]SpaceMirror(nil), s.spaces...)
+}
 
 // ClassificationSummaries walks the same decoded artifact corpus as the read
 // index and returns policy-free facts for each connected space. It deliberately
 // does not call doctor or infer repository visibility.
 func (s *Store) ClassificationSummaries(ctx context.Context) ([]ClassificationSummary, error) {
-	out := make([]ClassificationSummary, 0, len(s.spaces))
-	for _, sm := range s.spaces {
+	spaces := s.spaceMirrorsSnapshot()
+	out := make([]ClassificationSummary, 0, len(spaces))
+	for _, sm := range spaces {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -167,9 +181,10 @@ func (s *Store) AvatarDataURL(login string) (string, bool) {
 // mirrorSyncAge and the TTL in their owner instead of making the HTML layer
 // inspect .git metadata or duplicate stale policy.
 func (s *Store) SpaceSyncFacts(ctx context.Context) []SpaceSyncInfo {
-	out := make([]SpaceSyncInfo, 0, len(s.spaces))
+	spaces := s.spaceMirrorsSnapshot()
+	out := make([]SpaceSyncInfo, 0, len(spaces))
 	now := s.now()
-	for _, sm := range s.spaces {
+	for _, sm := range spaces {
 		age, synced := mirrorSyncAge(now, sm.Dir)
 		revision, _ := runGitOutput(ctx, sm.Dir, "rev-parse", "--verify", "HEAD")
 		out = append(out, SpaceSyncInfo{
@@ -213,9 +228,10 @@ func (s *Store) EnableUpdateNotice(binaryVersion, cachePath string, ttl time.Dur
 // never merged into foldedArtifact, because a skip's whole point is that
 // no per-item foldedArtifact exists for it.
 func (s *Store) index(ctx context.Context) (map[string][]foldedArtifact, map[string][]SkippedFile, error) {
-	out := make(map[string][]foldedArtifact, len(s.spaces))
-	skips := make(map[string][]SkippedFile, len(s.spaces))
-	for _, sm := range s.spaces {
+	spaces := s.spaceMirrorsSnapshot()
+	out := make(map[string][]foldedArtifact, len(spaces))
+	skips := make(map[string][]SkippedFile, len(spaces))
+	for _, sm := range spaces {
 		fa, sk, err := buildIndex(ctx, sm.SpaceID, sm.Dir, s.ownSystem, sm.Manifest)
 		if err != nil {
 			return nil, nil, fmt.Errorf("cache: Store.index: space %s: %w", sm.SpaceID, err)
@@ -229,7 +245,7 @@ func (s *Store) index(ctx context.Context) (map[string][]foldedArtifact, map[str
 // spaceSyncStale reports whether spaceID's mirror sync-age exceeds the
 // Store's TTL (never-synced counts as stale).
 func (s *Store) spaceSyncStale(spaceID string) bool {
-	for _, sm := range s.spaces {
+	for _, sm := range s.spaceMirrorsSnapshot() {
 		if sm.SpaceID == spaceID {
 			age, synced := mirrorSyncAge(s.now(), sm.Dir)
 			return !synced || age > s.ttl
@@ -239,7 +255,7 @@ func (s *Store) spaceSyncStale(spaceID string) bool {
 }
 
 func (s *Store) slaFor(spaceID string) time.Duration {
-	for _, sm := range s.spaces {
+	for _, sm := range s.spaceMirrorsSnapshot() {
 		if sm.SpaceID == spaceID {
 			return slaFromManifest(sm.Manifest)
 		}
@@ -673,7 +689,7 @@ func yourMoveByArtifact(artifacts []foldedArtifact, manifest space.Manifest, own
 }
 
 func (s *Store) mirrorDirFor(spaceID string) string {
-	for _, sm := range s.spaces {
+	for _, sm := range s.spaceMirrorsSnapshot() {
 		if sm.SpaceID == spaceID {
 			return sm.Dir
 		}
@@ -686,7 +702,7 @@ func (s *Store) mirrorDirFor(spaceID string) string {
 // system set (spec 46 §T3's documented "legalRole also takes a membership
 // status, and open_items passes a constant" V1 imprecision).
 func (s *Store) manifestFor(spaceID string) space.Manifest {
-	for _, sm := range s.spaces {
+	for _, sm := range s.spaceMirrorsSnapshot() {
 		if sm.SpaceID == spaceID {
 			return sm.Manifest
 		}

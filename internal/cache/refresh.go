@@ -164,11 +164,11 @@ func (s *Store) SyncIfStale(ctx context.Context) []error {
 // including successful rows, so callers can attribute degradation without
 // inspecting human-readable errors.
 func (s *Store) SyncIfStaleResults(ctx context.Context) []SpaceSyncResult {
-	// Indices into s.spaces, not copies — a successful refresh below
-	// writes the reloaded manifest straight back into s.spaces[idx]
-	// (clause 6), which a copied SpaceMirror value could not do.
+	spaces := s.spaceMirrorsSnapshot()
+	// Indices into the stable snapshot. A successful refresh below installs
+	// the reloaded manifest into the corresponding Store slot under spacesMu.
 	var staleIdx []int
-	for i, sm := range s.spaces {
+	for i, sm := range spaces {
 		if !isRefreshableMirror(sm.Dir) {
 			continue // poisoning guard: never first-clone from a read verb
 		}
@@ -187,7 +187,7 @@ func (s *Store) SyncIfStaleResults(ctx context.Context) []SpaceSyncResult {
 	for i, idx := range staleIdx {
 		if time.Since(start) >= totalBudget {
 			for _, restIdx := range staleIdx[i:] {
-				spaceID := s.spaces[restIdx].SpaceID
+				spaceID := spaces[restIdx].SpaceID
 				results = append(results, SpaceSyncResult{
 					Space: spaceID,
 					Err:   fmt.Errorf("cache: SyncIfStale: space %s: %w", spaceID, ErrSyncBudgetExhausted),
@@ -195,7 +195,7 @@ func (s *Store) SyncIfStaleResults(ctx context.Context) []SpaceSyncResult {
 			}
 			break
 		}
-		sm := s.spaces[idx]
+		sm := spaces[idx]
 		mctx, cancel := context.WithTimeout(ctx, perMirrorTimeout)
 		err := s.cloneOrFetch(mctx, sm.Dir, sm.RepoURL)
 		cancel()
@@ -227,7 +227,11 @@ func (s *Store) SyncIfStaleResults(ctx context.Context) []SpaceSyncResult {
 // it leaves the prior manifest in place rather than turning a successful
 // git fetch into a SyncIfStale error over it.
 func (s *Store) refreshManifestAfterFetch(idx int) {
-	raw, err := os.ReadFile(filepath.Join(s.spaces[idx].Dir, "space.yaml"))
+	spaces := s.spaceMirrorsSnapshot()
+	if idx < 0 || idx >= len(spaces) {
+		return
+	}
+	raw, err := os.ReadFile(filepath.Join(spaces[idx].Dir, "space.yaml"))
 	if err != nil {
 		return
 	}
@@ -235,7 +239,13 @@ func (s *Store) refreshManifestAfterFetch(idx int) {
 	if err != nil {
 		return
 	}
-	s.spaces[idx].Manifest = m
+	s.spacesMu.Lock()
+	defer s.spacesMu.Unlock()
+	// The Store's connected-space set is immutable after construction. Keep
+	// the bounds check so this helper remains fail-safe if that changes.
+	if idx < len(s.spaces) {
+		s.spaces[idx].Manifest = m
+	}
 }
 
 // isRefreshableMirror reports whether dir already holds a git repository

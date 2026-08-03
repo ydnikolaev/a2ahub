@@ -122,7 +122,7 @@ func (s *Store) OperationalEvidence(ctx context.Context) (OperationalEvidence, e
 		CommittedWork: []OperationalCommittedWork{},
 		Unavailable:   []OperationalUnavailable{},
 	}
-	spaces := append([]SpaceMirror(nil), s.spaces...)
+	spaces := s.spaceMirrorsSnapshot()
 	sort.Slice(spaces, func(i, j int) bool { return spaces[i].SpaceID < spaces[j].SpaceID })
 	for _, mirror := range spaces {
 		if err := ctx.Err(); err != nil {
@@ -241,6 +241,15 @@ func operationalThreadFromView(view ThreadResult, statusWorkIDs map[string]struc
 		// announcement protocol. It must never create a user-facing protocol
 		// obligation in the process it describes.
 		if _, isStatusWork := statusWorkIDs[item.ID]; isStatusWork {
+			continue
+		}
+		// ThreadView deliberately retains non-terminal members whose only legal
+		// moves are owner escape hatches (cancel/withdraw/supersede), but removes
+		// those moves from WaitingOn. Such a member is historical context, not an
+		// obligation owed by anyone. The HTML thread projection already consumes
+		// this fold-owned distinction; the shared operational projection must use
+		// the same admitted fact instead of counting every OpenItems row.
+		if len(item.WaitingOn) == 0 {
 			continue
 		}
 		openCount++

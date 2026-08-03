@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -294,6 +295,55 @@ func TestSyncIfStale_RefreshesManifestSoNewParticipantIsAuthorized(t *testing.T)
 	}
 	if len(show.Flags) != 0 {
 		t.Fatalf("Flags = %v, want none", show.Flags)
+	}
+}
+
+// TestStoreIndexConcurrentManifestRefresh guards the shared Store boundary
+// used by SSE snapshot refreshes: a successful fetch may replace the cached
+// manifest while another goroutine is composing the read index. The race
+// detector must see both operations as synchronized, while every index still
+// observes a complete parsed manifest value.
+func TestStoreIndexConcurrentManifestRefresh(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+	fx.commitArtifact("seomatrix/exchanges/XW-seomatrix-20260701-concurrent.md",
+		wr("XW-seomatrix-20260701-concurrent", "concurrent manifest refresh", "seomatrix", []string{"axon"}, "p2", false), "body")
+	fx.commitEvent("seomatrix", fxULID(925), evt("XW-seomatrix-20260701-concurrent", "submit", "seomatrix", base))
+
+	store := NewStore("axon", t.TempDir(), []SpaceMirror{{
+		SpaceID: "sp1", Dir: fx.dir, RepoURL: fx.dir, Manifest: mustManifest(t, fx),
+	}}, time.Now, time.Hour)
+
+	const iterations = 50
+	start := make(chan struct{})
+	errCh := make(chan error, 1)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		close(start)
+		for range iterations * 5 {
+			store.refreshManifestAfterFetch(0)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		for range iterations {
+			if _, _, err := store.index(context.Background()); err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+				return
+			}
+		}
+	}()
+	wg.Wait()
+	close(errCh)
+	if err := <-errCh; err != nil {
+		t.Fatalf("index during manifest refresh: %v", err)
 	}
 }
 
