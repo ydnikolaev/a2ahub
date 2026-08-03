@@ -18,6 +18,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/version"
+	"gopkg.in/yaml.v3"
 )
 
 const maxContractMaterializeDifferences = 64
@@ -149,7 +150,7 @@ func (m *ContractMaterializer) Materialize(
 	case errors.Is(err, os.ErrNotExist):
 		return m.materializeAbsent(ctx, parent, leaf, destination, snapshot, files)
 	default:
-		return ContractMaterializeResult{}, fmt.Errorf("%w: inspect destination: %v", ErrContractUnsafePath, err)
+		return ContractMaterializeResult{}, fmt.Errorf("%w: inspect destination: %w", ErrContractUnsafePath, err)
 	}
 }
 
@@ -210,6 +211,28 @@ func validateMaterializationSnapshot(snapshot HistoricalSnapshot) ([]ContractSna
 	if err != nil || !reflect.DeepEqual(parsedDescriptor, snapshot.Descriptor) {
 		return nil, ErrContractMaterializationInvalid
 	}
+	descriptorIdentity, err := parseHistoricalDescriptor(core.Descriptor.Raw)
+	if err != nil || descriptorIdentity.ID != snapshot.ContractID || descriptorIdentity.Version != snapshot.Version ||
+		(snapshot.DigestProfile == contract.ProfileContractSetV2 && descriptorIdentity.Schema != "envelope/v2") ||
+		(snapshot.DigestProfile == contract.ProfileContractTreeV1 && descriptorIdentity.Schema != "envelope/v1") {
+		return nil, ErrContractMaterializationInvalid
+	}
+	var event contractHistoricalEvent
+	if len(snapshot.PublishEventRaw) == 0 || yaml.Unmarshal(snapshot.PublishEventRaw, &event) != nil ||
+		event.Schema != snapshot.EventSchema || event.Subject != snapshot.ContractID || event.Transition != "publish" ||
+		event.Version != snapshot.Version || event.Digest != snapshot.PublishedDigest {
+		return nil, ErrContractMaterializationInvalid
+	}
+	resolvedProfile, issues := contract.ResolveDigestProfile(event.Schema, event.DigestProfile)
+	if len(issues) != 0 || resolvedProfile != snapshot.DigestProfile || !isContractEventPath(snapshot.PublishEventPath) ||
+		strings.TrimSuffix(path.Base(snapshot.PublishEventPath), ".yaml") != event.Event {
+		return nil, ErrContractMaterializationInvalid
+	}
+	layout, layoutErr := NewLayout(parsedID.System)
+	if layoutErr != nil || snapshot.DescriptorPath != layout.ProvidesContract(parsedID.Slug) ||
+		!strings.HasPrefix(snapshot.PublishEventPath, parsedID.System+"/events/") || event.Actor.System != parsedID.System {
+		return nil, ErrContractMaterializationInvalid
+	}
 	set, issues := contract.ValidateCarriedSet(snapshot.DigestProfile, parsedDescriptor, core)
 	if len(issues) != 0 || len(set.VerifyDigest(snapshot.PublishedDigest)) != 0 ||
 		snapshot.CarriedSet.Profile != set.Profile || snapshot.CarriedSet.AggregateDigest != set.AggregateDigest {
@@ -244,7 +267,7 @@ func (m *ContractMaterializer) openMaterializeParent(destination string) (*os.Ro
 			if closeCurrent {
 				_ = current.Close() // reason: preserve the unsafe-parent refusal
 			}
-			return nil, "", false, fmt.Errorf("%w: inspect %s: %v", ErrContractUnsafePath, display, err)
+			return nil, "", false, fmt.Errorf("%w: inspect %s: %w", ErrContractUnsafePath, display, err)
 		}
 		child, _, err := openContractDirectory(current, component, display, func() {
 			if m.hooks.afterParentComponentLstat != nil {
@@ -322,12 +345,12 @@ func (s *contractMaterializeCompare) walk(ctx context.Context, root *os.Root, di
 	}
 	handle, err := root.Open(".")
 	if err != nil {
-		return fmt.Errorf("%w: open destination directory %s: %v", ErrContractUnsafePath, directory, err)
+		return fmt.Errorf("%w: open destination directory %s: %w", ErrContractUnsafePath, directory, err)
 	}
 	entries, readErr := handle.ReadDir(contract.MaxExplicitFiles*4 + 2)
 	closeErr := handle.Close()
 	if readErr != nil && !errors.Is(readErr, io.EOF) {
-		return fmt.Errorf("%w: enumerate destination directory %s: %v", ErrContractUnsafePath, directory, readErr)
+		return fmt.Errorf("%w: enumerate destination directory %s: %w", ErrContractUnsafePath, directory, readErr)
 	}
 	if closeErr != nil {
 		return fmt.Errorf("space: close destination directory %s: %w", directory, closeErr)
@@ -351,7 +374,7 @@ func (s *contractMaterializeCompare) walk(ctx context.Context, root *os.Root, di
 		}
 		before, err := root.Lstat(name)
 		if err != nil {
-			return fmt.Errorf("%w: inspect destination entry %s: %v", ErrContractUnsafePath, relative, err)
+			return fmt.Errorf("%w: inspect destination entry %s: %w", ErrContractUnsafePath, relative, err)
 		}
 		if before.Mode()&os.ModeSymlink != 0 {
 			s.addDifference("unsafe:" + relative)
@@ -385,7 +408,7 @@ func (s *contractMaterializeCompare) walk(ctx context.Context, root *os.Root, di
 		}
 		file, err := root.OpenFile(name, os.O_RDONLY, 0)
 		if err != nil {
-			return fmt.Errorf("%w: open destination entry %s: %v", ErrContractUnsafePath, relative, err)
+			return fmt.Errorf("%w: open destination entry %s: %w", ErrContractUnsafePath, relative, err)
 		}
 		opened, statErr := file.Stat()
 		raw, readErr := io.ReadAll(io.LimitReader(file, contract.MaxFileBytes+1))
@@ -508,7 +531,7 @@ func (m *ContractMaterializer) materializeAbsent(
 		result.Outcome, result.Durable = ContractAlreadyPresent, true
 		return result, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return ContractMaterializeResult{}, fmt.Errorf("%w: re-inspect destination before rename: %v", ErrContractUnsafePath, err)
+		return ContractMaterializeResult{}, fmt.Errorf("%w: re-inspect destination before rename: %w", ErrContractUnsafePath, err)
 	}
 
 	if m.hooks.afterDestinationRecheck != nil {
@@ -538,7 +561,7 @@ func (m *ContractMaterializer) materializeAbsent(
 	result.Outcome = ContractMaterialized
 	parentHandle, err := parent.Open(".")
 	if err != nil {
-		return result, fmt.Errorf("%w: %v", ErrContractDestinationDurabilityUnknown, errors.Join(installErr, err))
+		return result, fmt.Errorf("%w: %w", ErrContractDestinationDurabilityUnknown, errors.Join(installErr, err))
 	}
 	if m.hooks.syncParent != nil {
 		err = m.hooks.syncParent(parentHandle)
@@ -547,7 +570,7 @@ func (m *ContractMaterializer) materializeAbsent(
 	}
 	closeErr := parentHandle.Close()
 	if installErr != nil || err != nil || closeErr != nil {
-		return result, fmt.Errorf("%w: %v", ErrContractDestinationDurabilityUnknown, errors.Join(installErr, err, closeErr))
+		return result, fmt.Errorf("%w: %w", ErrContractDestinationDurabilityUnknown, errors.Join(installErr, err, closeErr))
 	}
 	result.Durable = true
 	return result, nil

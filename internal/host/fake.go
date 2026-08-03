@@ -110,7 +110,7 @@ func (f *FakeHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, error
 	f.mu.Lock()
 	f.nextPR++
 	info := PRInfo{
-		Number: f.nextPR, URL: "https://example.invalid/pr/" + req.Head, State: "open", Body: req.Body,
+		Number: f.nextPR, URL: "https://example.invalid/pr/" + req.Head, State: "open", Title: req.Title, Body: req.Body,
 		BaseBranch: req.Base, HeadSHA: req.ExpectedHeadSHA,
 		AutoMergeArmed: true, MergeMethod: MergeMethodMerge,
 	}

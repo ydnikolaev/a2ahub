@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -176,6 +177,44 @@ func TestContractMaterializerRejectsUnsafeOrMissingDestinationWithZeroChanges(t 
 	}
 	if after := filesystemProjection(t, project); !reflect.DeepEqual(before, after) {
 		t.Fatalf("missing parent changed project: before=%v after=%v", before, after)
+	}
+}
+
+func TestContractMaterializerCrossChecksRawDescriptorAndEventIdentity(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name   string
+		mutate func(*HistoricalSnapshot)
+	}{
+		{name: "event subject", mutate: func(snapshot *HistoricalSnapshot) {
+			snapshot.PublishEventRaw = bytes.Replace(snapshot.PublishEventRaw, []byte("subject: XC-axon-orders"), []byte("subject: XC-axon-other"), 1)
+		}},
+		{name: "descriptor version", mutate: func(snapshot *HistoricalSnapshot) {
+			for index := range snapshot.Files {
+				if snapshot.Files[index].Path == contract.DescriptorPath {
+					snapshot.Files[index].Raw = bytes.Replace(snapshot.Files[index].Raw, []byte("version: 1.2.3"), []byte("version: 9.9.9"), 1)
+				}
+			}
+		}},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			project := t.TempDir()
+			if err := os.Mkdir(filepath.Join(project, "vendor"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			materializer, err := NewContractMaterializer(project)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = materializer.Close() }() // reason: assertion remains primary
+			snapshot := contractMaterializeSnapshot(t)
+			test.mutate(&snapshot)
+			if _, err := materializer.Materialize(t.Context(), snapshot, "vendor/orders"); !errors.Is(err, ErrContractMaterializationInvalid) {
+				t.Fatalf("Materialize error = %v, want invalid snapshot", err)
+			}
+		})
 	}
 }
 
@@ -442,7 +481,7 @@ var errContractMaterializeInjected = errors.New("injected materialize fault")
 
 func contractMaterializeSnapshot(t *testing.T) HistoricalSnapshot {
 	t.Helper()
-	descriptorRaw := []byte("---\nschema_format: json-schema-2020-12\nartifacts:\n" +
+	descriptorRaw := []byte("---\nschema: envelope/v2\nid: XC-axon-orders\nversion: 1.2.3\nschema_format: json-schema-2020-12\nartifacts:\n" +
 		"  - {path: schema/order.json, role: schema, normative: true, media_type: application/schema+json}\n" +
 		"  - {path: fixtures/valid/order.json, role: valid-fixture, normative: true, media_type: application/json, conforms_to: schema/order.json}\n" +
 		"  - {path: fixtures/invalid/order.json, role: invalid-fixture, normative: false, media_type: application/json, conforms_to: schema/order.json}\n---\nOrders contract.\n")
@@ -464,8 +503,12 @@ func contractMaterializeSnapshot(t *testing.T) HistoricalSnapshot {
 	if len(issues) != 0 {
 		t.Fatalf("fixture carried set: %+v", issues)
 	}
+	eventID := "01K1A2B3C4D5E6F7G8H9J0K1M7"
+	eventRaw := []byte(fmt.Sprintf("schema: event/v2\nevent: %s\nsubject: XC-axon-orders\ntransition: publish\nversion: 1.2.3\ndigest: %s\ndigest_profile: contract-set-v2\nactor:\n  system: axon\n", eventID, set.AggregateDigest))
 	return HistoricalSnapshot{
 		ContractID: "XC-axon-orders", Version: "1.2.3", CommitSHA: strings.Repeat("a", 40),
+		DescriptorPath: "axon/provides/orders/contract.md", PublishEventPath: "axon/events/2026/" + eventID + ".yaml",
+		PublishEventRaw: eventRaw, EventSchema: "event/v2",
 		DigestProfile: contract.ProfileContractSetV2, PublishedDigest: set.AggregateDigest,
 		AggregateVerification: ContractVerificationEventDigest, DescriptorVerification: ContractVerificationEventDigest,
 		Descriptor: descriptor, CarriedSet: set, Files: files,

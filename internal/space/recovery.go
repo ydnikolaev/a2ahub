@@ -78,7 +78,7 @@ func EncodeRecoveryV1(record RecoveryV1) ([]byte, error) {
 	encoder := json.NewEncoder(&out)
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(record); err != nil {
-		return nil, fmt.Errorf("%w: encode: %v", ErrRecoveryInvalid, err)
+		return nil, fmt.Errorf("%w: encode: %w", ErrRecoveryInvalid, err)
 	}
 	raw := bytes.TrimSuffix(out.Bytes(), []byte("\n"))
 	if len(raw) > recoveryMaxJSONBytes {
@@ -97,11 +97,11 @@ func DecodeRecoveryV1(raw []byte) (RecoveryV1, error) {
 		return RecoveryV1{}, fmt.Errorf("%w: empty input", ErrRecoveryInvalid)
 	}
 	if err := rejectDuplicateJSONKeys(raw); err != nil {
-		return RecoveryV1{}, fmt.Errorf("%w: %v", ErrRecoveryInvalid, err)
+		return RecoveryV1{}, fmt.Errorf("%w: %w", ErrRecoveryInvalid, err)
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
-		return RecoveryV1{}, fmt.Errorf("%w: decode object: %v", ErrRecoveryInvalid, err)
+		return RecoveryV1{}, fmt.Errorf("%w: decode object: %w", ErrRecoveryInvalid, err)
 	}
 	if len(fields) != len(recoveryV1Fields) {
 		return RecoveryV1{}, fmt.Errorf("%w: field set is not closed", ErrRecoveryInvalid)
@@ -122,7 +122,7 @@ func DecodeRecoveryV1(raw []byte) (RecoveryV1, error) {
 	decoder.DisallowUnknownFields()
 	var record RecoveryV1
 	if err := decoder.Decode(&record); err != nil {
-		return RecoveryV1{}, fmt.Errorf("%w: decode: %v", ErrRecoveryInvalid, err)
+		return RecoveryV1{}, fmt.Errorf("%w: decode: %w", ErrRecoveryInvalid, err)
 	}
 	if err := validateRecoveryV1(record); err != nil {
 		return RecoveryV1{}, err

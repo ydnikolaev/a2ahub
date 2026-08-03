@@ -32,7 +32,7 @@ func TestReadRemoteRecoveryCommitReturnsCompleteFirstParentDiff(t *testing.T) {
 	head := gitOutput(t, fixture.source, "rev-parse", "HEAD")
 	fixture.push("a2a/atlas/recover-1")
 
-	repo, branch, oid, parent, message, digests, exists, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
+	repo, branch, oid, parent, message, authorName, authorEmail, digests, exists, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
 		context.Background(), fixture.probe, fixture.remote, Repo{Owner: "acme", Name: "space"},
 		"a2a/atlas/recover-1", Credential{},
 	)
@@ -50,6 +50,9 @@ func TestReadRemoteRecoveryCommitReturnsCompleteFirstParentDiff(t *testing.T) {
 	}
 	if message != "recover\n\nbody\n\n" {
 		t.Fatalf("message = %q", message)
+	}
+	if authorName != "a2a-test" || authorEmail != "test@a2ahub.invalid" {
+		t.Fatalf("author = %q <%s>", authorName, authorEmail)
 	}
 	want := map[string]RemoteRecoveryChange{
 		"changed.txt": {
@@ -79,7 +82,7 @@ func TestReadRemoteRecoveryCommitReturnsCompleteFirstParentDiff(t *testing.T) {
 func TestReadRemoteRecoveryCommitAbsentBranch(t *testing.T) {
 	t.Parallel()
 	fixture := newRemoteRecoveryFixture(t)
-	repo, branch, oid, parent, message, digests, exists, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
+	repo, branch, oid, parent, message, authorName, authorEmail, digests, exists, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
 		context.Background(), fixture.probe, fixture.remote, Repo{Owner: "acme", Name: "space"},
 		"a2a/atlas/absent", Credential{},
 	)
@@ -87,8 +90,8 @@ func TestReadRemoteRecoveryCommitAbsentBranch(t *testing.T) {
 		t.Fatalf("ReadRemoteRecoveryCommit: %v", err)
 	}
 	if exists || repo != (Repo{Owner: "acme", Name: "space"}) || branch != "a2a/atlas/absent" ||
-		oid != "" || parent != "" || message != "" || digests != nil {
-		t.Fatalf("absent result = (%+v, %q, %q, %q, %q, %#v, %v)", repo, branch, oid, parent, message, digests, exists)
+		oid != "" || parent != "" || message != "" || authorName != "" || authorEmail != "" || digests != nil {
+		t.Fatalf("absent result = (%+v, %q, %q, %q, %q, %q, %q, %#v, %v)", repo, branch, oid, parent, message, authorName, authorEmail, digests, exists)
 	}
 }
 
@@ -133,7 +136,7 @@ func TestReadRemoteRecoveryCommitExpandsRenameAndRefusesOversizedEvidence(t *tes
 		}
 		fixture.commitAll("rename")
 		fixture.push("rename")
-		_, _, _, _, _, changes, exists, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
+		_, _, _, _, _, _, _, changes, exists, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
 			context.Background(), fixture.probe, fixture.remote, Repo{Owner: "acme", Name: "space"},
 			"rename", Credential{},
 		)
@@ -176,7 +179,7 @@ func TestReadRemoteRecoveryCommitReportsExecutableModeAndRefusesSymlink(t *testi
 		}
 		fixture.commitAll("tool")
 		fixture.push("tool")
-		_, _, _, _, _, changes, exists, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
+		_, _, _, _, _, _, _, changes, exists, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
 			context.Background(), fixture.probe, fixture.remote, Repo{Owner: "acme", Name: "space"}, "tool", Credential{},
 		)
 		if err != nil || !exists || changes["tool.sh"].AfterMode != "100755" {
@@ -253,7 +256,7 @@ func TestReadRemoteRecoveryCommitNeverLeaksCredential(t *testing.T) {
 	encoded := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
 	probe := filepath.Join(t.TempDir(), "probe.git")
 	runGit(t, "", nil, "init", "--bare", probe)
-	_, _, _, _, _, _, _, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
+	_, _, _, _, _, _, _, _, _, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
 		context.Background(), probe, filepath.Join(t.TempDir(), "missing.git"),
 		Repo{Owner: "acme", Name: "space"}, "recovery", Credential{Token: token},
 	)
@@ -298,7 +301,7 @@ func (f remoteRecoveryFixture) push(branch string) {
 
 func assertRecoveryReadFails(t *testing.T, fixture remoteRecoveryFixture, branch string) {
 	t.Helper()
-	_, _, _, _, _, _, _, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
+	_, _, _, _, _, _, _, _, _, err := NewGitHubHost(nil, "").ReadRemoteRecoveryCommit(
 		context.Background(), fixture.probe, fixture.remote, Repo{Owner: "acme", Name: "space"}, branch, Credential{},
 	)
 	if err == nil || !errors.Is(err, ErrRequestFailed) {

@@ -323,6 +323,8 @@ func (p PreparedSubmission) RecoveryDigest() string { return p.data.recoveryDige
 
 func (p PreparedSubmission) Branch() string { return p.data.headBranch }
 
+func (p PreparedSubmission) OperationKey() string { return p.data.operationKey }
+
 func (p PreparedSubmission) ArtifactIDs() []string {
 	return append([]string(nil), p.data.artifactIDs...)
 }
@@ -535,7 +537,7 @@ func preparedDataDigest(data preparedSubmissionData) (string, error) {
 	encoder := json.NewEncoder(&encoded)
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(payload); err != nil {
-		return "", fmt.Errorf("%w: digest encoding: %v", ErrPreparedInvalid, err)
+		return "", fmt.Errorf("%w: digest encoding: %w", ErrPreparedInvalid, err)
 	}
 	digest := sha256.Sum256(bytes.TrimSuffix(encoded.Bytes(), []byte("\n")))
 	return "sha256:" + hex.EncodeToString(digest[:]), nil

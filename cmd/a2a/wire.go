@@ -302,6 +302,34 @@ func buildCommands() map[string]command {
 		// bare major.minor.patch, not the "a2a x.y.z (sha)" stamp.
 		return cli.NewWhatsnewCommand(version).Run(context.Background(), args, stdio(stdout, stderr))
 	}
+	m["work"] = func(args []string, stdout, stderr io.Writer) int {
+		p, err := resolvePaths()
+		if err != nil {
+			return fail(stderr, err)
+		}
+		cfg, err := space.LoadProjectConfig(p.projectConfig)
+		if err != nil {
+			return failf(stderr, "a2a work: no project config (run `a2a init` first): %v", err)
+		}
+		machine, err := space.LoadMachineConfig(p.machineConfig)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return failf(stderr, "a2a work: load machine config: %v", err)
+		}
+		requested, commandArgs, err := extractWorkSpace(args)
+		if err != nil {
+			return failf(stderr, "a2a work: %v", err)
+		}
+		ref, err := configuredWorkSpace(cfg, requested)
+		if err != nil {
+			return failf(stderr, "a2a work: %v", err)
+		}
+		cmd, err := buildWorkCommand(p, cfg, machine, ref)
+		if err != nil {
+			return failf(stderr, "a2a work: %v", err)
+		}
+		return cmd.Run(context.Background(), commandArgs, stdio(stdout, stderr))
+	}
+	m["serve"] = runServe
 
 	// Read verbs (P7): federated over ALL connected spaces via one
 	// cache.Store. Every verb in freshReadVerbs refreshes a stale mirror
@@ -327,7 +355,24 @@ func buildCommands() map[string]command {
 					_, _ = fmt.Fprintf(stderr, "a2a: %v — reading local data, which may be stale\n", err)
 				}
 			}
-			return construct(store).Run(ctx, args, stdio(stdout, stderr))
+			command := construct(store)
+			if (name == "html" || name == "dashboard") && !htmlDemoRequested(args) {
+				runtimeState, runtimeErr := buildOperationalRuntime(p, store)
+				if runtimeErr != nil {
+					return failf(stderr, "a2a %s: %v", name, runtimeErr)
+				}
+				defer func() {
+					if closeErr := runtimeState.Close(); closeErr != nil {
+						_, _ = fmt.Fprintf(stderr, "a2a %s: close local work store: %v\n", name, closeErr)
+					}
+				}()
+				if name == "html" {
+					command = cli.NewHtmlCommandWithOperational(store, runtimeState.source)
+				} else {
+					command = cli.NewDashboardCommandWithOperational(store, runtimeState.source)
+				}
+			}
+			return command.Run(ctx, args, stdio(stdout, stderr))
 		}
 	}
 
@@ -359,7 +404,25 @@ func buildCommands() map[string]command {
 		if err != nil {
 			return fail(stderr, err)
 		}
-		srv, err := mcp.NewServerFromConfig(ctx, p, version)
+		cfg, cfgErr := space.LoadProjectConfig(p.ProjectConfig)
+		if cfgErr != nil {
+			return failf(stderr, "a2a mcp: %v", cfgErr)
+		}
+		machine, machineErr := space.LoadMachineConfig(p.MachineConfig)
+		if machineErr != nil && !errors.Is(machineErr, os.ErrNotExist) {
+			return failf(stderr, "a2a mcp: %v", machineErr)
+		}
+		var srv *mcp.Server
+		if len(cfg.Spaces) == 0 {
+			srv, err = mcp.NewServerFromConfig(ctx, p, version)
+		} else {
+			mainPaths := paths{projectConfig: p.ProjectConfig, machineConfig: p.MachineConfig, projectRoot: p.ProjectRoot, staging: p.Staging}
+			workDeps, workErr := buildMCPWorkDeps(mainPaths, cfg, machine)
+			if workErr != nil {
+				return failf(stderr, "a2a mcp: %v", workErr)
+			}
+			srv, err = mcp.NewServerFromConfigWithContractOperations(ctx, p, version, workDeps, newMCPContractOperationsFactory(mainPaths, cfg, machine))
+		}
 		if err != nil {
 			return failf(stderr, "a2a mcp: %v", err)
 		}
@@ -370,6 +433,15 @@ func buildCommands() map[string]command {
 	}
 
 	return m
+}
+
+func htmlDemoRequested(args []string) bool {
+	for _, arg := range args {
+		if arg == "--demo" || arg == "--demo=true" {
+			return true
+		}
+	}
+	return false
 }
 
 // completionCmds returns the top-level verb names `a2a completion` offers:
@@ -411,6 +483,7 @@ func completionSubFamilies() map[string][]string {
 		"feedback":      cli.FeedbackSubcommands(),
 		"notifications": cli.NotificationsSubcommands(),
 		"skill":         cli.SkillSubcommands(),
+		"work":          cli.WorkSubcommands(),
 	}
 }
 
@@ -640,13 +713,120 @@ func runContract(args []string, stdout, stderr io.Writer) int {
 		return failf(stderr, "a2a contract: no project config (run `a2a init` first): %v", err)
 	}
 	newCmd := cli.NewNewCommand(p.staging, cfg.System, actorResolver(), connectedSpaceIDs(cfg))
-	deps, code := resolveLifecycleDeps(ctx, p, args, stderr)
+	deps, code := resolveContractDeps(ctx, p, args, stderr)
 	if code >= 0 {
 		return code
 	}
 	cmd := cli.NewContractCommand(newCmd, deps.funnel, deps.mirrorDir, deps.spaceID, deps.ownSystem, deps.manifest, deps.hostCfg, deps.resolveActor)
+	core, err := newCLIContractP6Core(p, deps)
+	if err != nil {
+		return failf(stderr, "a2a contract: build P6 services: %v", err)
+	}
+	operations := cliContractP6Adapter{core: core}
+	cmd.SetP6Operations(operations, operations, operations)
+	cmd.SetP6Inspection(operations)
 	cmd.SetPendingMarker(cli.NewCacheBackedPendingMarker(cacheDirOf(p)))
 	return cmd.Run(ctx, args, stdio(stdout, stderr))
+}
+
+func resolveContractDeps(ctx context.Context, p paths, args []string, stderr io.Writer) (lifecycleDeps, int) {
+	action := ""
+	if len(args) != 0 {
+		action = args[0]
+	}
+	// P6 freezes the local candidate before publish's shared service refreshes
+	// authoritative main. Its read/preflight operations never fetch at all.
+	legacyMutation := action == "deprecate" || action == "retire" || action == "adopt"
+	needsCredential := legacyMutation || action == "publish"
+	return resolveLifecycleDepsWithPolicy(ctx, p, contractTargetArgs(args), stderr, legacyMutation, needsCredential)
+}
+
+// contractTargetArgs removes the contract subcommand and reduces the target
+// selection input to an actual XC artifact id. Flag values such as a version,
+// destination or payload path can therefore never masquerade as the target.
+func contractTargetArgs(args []string) []string {
+	if len(args) < 2 {
+		return nil
+	}
+	valueFlags, booleanFlags, ok := contractTargetFlagGrammar(args[0])
+	if !ok {
+		return nil
+	}
+
+	positionalOnly := false
+	for index := 1; index < len(args); index++ {
+		candidate := args[index]
+		if !positionalOnly && candidate == "--" {
+			positionalOnly = true
+			continue
+		}
+		if !positionalOnly && strings.HasPrefix(candidate, "-") {
+			name, _, hasValue := strings.Cut(strings.TrimLeft(candidate, "-"), "=")
+			switch {
+			case booleanFlags[name]:
+				continue
+			case valueFlags[name] && hasValue:
+				continue
+			case valueFlags[name]:
+				index++
+				if index >= len(args) {
+					return nil
+				}
+				continue
+			default:
+				// The command will report the unknown flag. Target routing must
+				// not guess whether its next token is a value or an artifact.
+				return nil
+			}
+		}
+
+		id, _, _ := strings.Cut(candidate, "@")
+		parsed, err := artifact.ParseID(id)
+		if err != nil || parsed.Prefix != "XC" {
+			return nil
+		}
+		return []string{id}
+	}
+	return nil
+}
+
+// contractTargetFlagGrammar describes only the flags relevant while locating
+// each contract verb's first positional target. The command remains the
+// authority for parsing and validation; this earlier wiring pass merely skips
+// known flag values so they cannot influence space selection.
+func contractTargetFlagGrammar(action string) (valueFlags, booleanFlags map[string]bool, ok bool) {
+	values := func(names ...string) map[string]bool {
+		out := make(map[string]bool, len(names))
+		for _, name := range names {
+			out[name] = true
+		}
+		return out
+	}
+	booleans := func(names ...string) map[string]bool {
+		return values(names...)
+	}
+	actorFlags := []string{"actor-kind", "actor-name", "actor-model"}
+
+	switch action {
+	case "preflight", "publish":
+		return values(append(actorFlags, "version", "bump", "staging", "expect-plan")...), booleans("json"), true
+	case "materialize":
+		return values("to"), booleans("json"), true
+	case "check":
+		return values("payload", "schema"), booleans("suite", "json"), true
+	case "deprecate":
+		return values(append(actorFlags, "version", "successor", "sunset")...), nil, true
+	case "retire":
+		return values(append(actorFlags, "version")...), booleans("override"), true
+	case "diff":
+		return nil, booleans("json"), true
+	case "adopt":
+		return values("major", "note"), nil, true
+	case "verify-export":
+		return values("local"), nil, true
+	default:
+		return nil, nil, false
+	}
 }
 
 func awaitResolver(p paths) cli.AwaitResolver {
@@ -760,6 +940,10 @@ func loadMachineConfigForWrite(path string) (space.MachineConfig, error) {
 // funnel context they won't necessarily use), and builds the per-space
 // funnel + deps. A non-negative return is a terminal exit code.
 func resolveLifecycleDeps(ctx context.Context, p paths, args []string, stderr io.Writer) (lifecycleDeps, int) {
+	return resolveLifecycleDepsWithPolicy(ctx, p, args, stderr, true, true)
+}
+
+func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string, stderr io.Writer, syncMirror, needsCredential bool) (lifecycleDeps, int) {
 	cfg, err := space.LoadProjectConfig(p.projectConfig)
 	if err != nil {
 		return lifecycleDeps{}, failf(stderr, "a2a: no project config (run `a2a init` first): %v", err)
@@ -774,8 +958,10 @@ func resolveLifecycleDeps(ctx context.Context, p paths, args []string, stderr io
 
 	ref := resolveTargetSpaceRef(cfg, machine, p.projectRoot, firstArtifactID(args))
 	mirrorDir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
-	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL); err != nil {
-		return lifecycleDeps{}, failf(stderr, "a2a: mirror sync failed: %v", err)
+	if syncMirror {
+		if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL); err != nil {
+			return lifecycleDeps{}, failf(stderr, "a2a: mirror sync failed: %v", err)
+		}
 	}
 	manifest, err := loadManifest(mirrorDir)
 	if err != nil {
@@ -785,9 +971,12 @@ func resolveLifecycleDeps(ctx context.Context, p paths, args []string, stderr io
 	if err != nil {
 		return lifecycleDeps{}, fail(stderr, err)
 	}
-	cred, err := resolveCredential(ctx, ref.ID, machine)
-	if err != nil {
-		return lifecycleDeps{}, failf(stderr, "a2a: %v", err)
+	var cred host.Credential
+	if needsCredential {
+		cred, err = resolveCredential(ctx, ref.ID, machine)
+		if err != nil {
+			return lifecycleDeps{}, failf(stderr, "a2a: %v", err)
+		}
 	}
 	owner, name, err := parseGitHubRepo(ref.RepoURL)
 	if err != nil {

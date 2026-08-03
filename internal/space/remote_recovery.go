@@ -42,6 +42,8 @@ type remoteRecoveryReader interface {
 		headSHA string,
 		parentSHA string,
 		commitMessage string,
+		commitAuthorName string,
+		commitAuthorEmail string,
 		changedFiles map[string]host.RemoteRecoveryChange,
 		exists bool,
 		err error,
@@ -90,7 +92,7 @@ func probePreparedRemoteRecovery(
 		return remoteRecoveryRepair{}, false, err
 	}
 	request := prepared.HostRequest()
-	observedRepository, observedBranch, headSHA, parentSHA, message, fileDigests, exists, err :=
+	observedRepository, observedBranch, headSHA, parentSHA, message, _, _, fileDigests, exists, err :=
 		reader.ReadRemoteRecoveryCommit(
 			ctx, runtime.RepoDir, runtime.RemoteURL, request.Repository, request.HeadBranch, runtime.Credential,
 		)
@@ -152,10 +154,20 @@ type remoteRecoveryTrailers struct {
 
 func parseRemoteRecoveryTrailers(message string) (remoteRecoveryTrailers, string, error) {
 	canonical := message
+	if strings.ContainsRune(canonical, '\r') {
+		return remoteRecoveryTrailers{}, "", remoteRecoveryConflict("commit-message-noncanonical")
+	}
+	// `git show --format=%B` appends one presentation newline to the commit
+	// message, whose canonical object form itself ends in one newline. Test
+	// adapters may return the canonical text directly. Accept either transport
+	// shape, normalize both to the prepared message, and reject a third suffix.
 	if strings.HasSuffix(canonical, "\n") {
 		canonical = strings.TrimSuffix(canonical, "\n")
 	}
-	if strings.HasSuffix(canonical, "\n") || strings.ContainsRune(canonical, '\r') {
+	if strings.HasSuffix(canonical, "\n") {
+		canonical = strings.TrimSuffix(canonical, "\n")
+	}
+	if strings.HasSuffix(canonical, "\n") {
 		return remoteRecoveryTrailers{}, "", remoteRecoveryConflict("commit-message-noncanonical")
 	}
 	lines := strings.Split(canonical, "\n")
@@ -194,6 +206,22 @@ func parseRemoteRecoveryTrailers(message string) (remoteRecoveryTrailers, string
 		operationKey: values[0], planDigest: values[1], target: values[2],
 		preparedDigest: values[3], recoveryDigest: values[5], recoveryV1: values[6],
 	}, canonical, nil
+}
+
+func recoveryCommitMessageBase(canonical string) (string, bool) {
+	lines := strings.Split(canonical, "\n")
+	const trailerCount = 7
+	if len(lines) < trailerCount {
+		return "", false
+	}
+	start := len(lines) - trailerCount
+	if start == 0 {
+		return "", true
+	}
+	if lines[start-1] != "" {
+		return "", false
+	}
+	return strings.Join(lines[:start-1], "\n"), true
 }
 
 func verifyRemoteRecoveryMetadata(
@@ -260,10 +288,7 @@ func verifyRemoteRecoveryTree(mutations []Mutation, observed map[string]host.Rem
 		change, exists := observed[mutation.Path]
 		switch mutation.Operation {
 		case MutationWrite:
-			wantMode := "100644"
-			if mutation.ExpectedBefore != nil && mutation.ExpectedBefore.Mode == "100755" {
-				wantMode = "100755"
-			}
+			wantMode := mutationResultMode(mutation)
 			if !exists || change.AfterDigest != remoteRecoveryFileDigest(mutation.Bytes) || change.AfterMode != wantMode {
 				return remoteRecoveryConflict("tree-write-mismatch")
 			}

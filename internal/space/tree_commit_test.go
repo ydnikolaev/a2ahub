@@ -136,7 +136,8 @@ func TestCommitTreeFromBaseUnchangedTreeReturnsBaseAndCreatesRef(t *testing.T) {
 func TestCommitTreeFromBasePreservesExecutableMode(t *testing.T) {
 	t.Parallel()
 	repo, base := newTreeCommitRepo(t, map[string]treeCommitFixtureFile{
-		"axon/tool": {content: "#!/bin/sh\nexit 0\n", mode: 0o755},
+		"axon/tool":     {content: "#!/bin/sh\nexit 0\n", mode: 0o755},
+		"axon/old-tool": {content: "#!/bin/sh\nexit 0\n", mode: 0o755},
 	})
 	lock := acquireTreeCommitLock(t, repo)
 	defer func() { _ = lock.Release() }()
@@ -144,10 +145,17 @@ func TestCommitTreeFromBasePreservesExecutableMode(t *testing.T) {
 	sha, fresh, err := commitTreeFromBase(context.Background(), lock, treeCommitRequest{
 		RepoDir: repo, BaseRef: base, UpdateRef: "refs/heads/a2a/axon/test/XW-mode",
 		Message: "test: executable mode", AuthorName: "a2a test", AuthorMail: "test@a2a.invalid",
-		Mutations: []Mutation{{
-			Path: "axon/tool", Operation: MutationWrite, Bytes: []byte("#!/bin/sh\nexit 1\n"),
-			ExpectedBefore: treeCommitPrecondition("#!/bin/sh\nexit 0\n", "100755"),
-		}},
+		Mutations: []Mutation{
+			{
+				Path: "axon/tool", Operation: MutationWrite, Bytes: []byte("#!/bin/sh\nexit 1\n"),
+				ExpectedBefore: treeCommitPrecondition("#!/bin/sh\nexit 0\n", "100755"),
+			},
+			{Path: "axon/new-tool", Operation: MutationWrite, Bytes: []byte("#!/bin/sh\nexit 0\n"), Mode: "100755"},
+			{
+				Path: "axon/old-tool", Operation: MutationWrite, Bytes: []byte("no longer executable\n"), Mode: "100644",
+				ExpectedBefore: treeCommitPrecondition("#!/bin/sh\nexit 0\n", "100755"),
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("commitTreeFromBase: %v", err)
@@ -158,6 +166,14 @@ func TestCommitTreeFromBasePreservesExecutableMode(t *testing.T) {
 	entry, err := runGitOutput(context.Background(), repo, nil, "ls-tree", sha, "--", "axon/tool")
 	if err != nil || !strings.HasPrefix(entry, "100755 blob ") {
 		t.Fatalf("ls-tree executable = %q, %v", entry, err)
+	}
+	entry, err = runGitOutput(context.Background(), repo, nil, "ls-tree", sha, "--", "axon/new-tool")
+	if err != nil || !strings.HasPrefix(entry, "100755 blob ") {
+		t.Fatalf("ls-tree new executable = %q, %v", entry, err)
+	}
+	entry, err = runGitOutput(context.Background(), repo, nil, "ls-tree", sha, "--", "axon/old-tool")
+	if err != nil || !strings.HasPrefix(entry, "100644 blob ") {
+		t.Fatalf("ls-tree mode downgrade = %q, %v", entry, err)
 	}
 }
 

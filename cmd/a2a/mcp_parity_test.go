@@ -40,7 +40,7 @@ import (
 // groupedToolNames is the P15 capability-grouped tool set (spec 15 §T1).
 var groupedToolNames = []string{
 	"a2a_contract", "a2a_exchange", "a2a_lifecycle",
-	"a2a_new", "a2a_read", "a2a_submit", "a2a_whatsnew",
+	"a2a_new", "a2a_read", "a2a_submit", "a2a_whatsnew", "a2a_work",
 }
 
 // mcpExcludedVerbs is the CLI-only verb set with NO MCP tool by design
@@ -62,6 +62,7 @@ var mcpExcludedVerbs = map[string]bool{
 	"skill":         true, // P20: installs the skill tree to the local repo — a host-machine act, CLI-only (like update)
 	"html":          true, // OP-214: renders a local HTML file — a host-machine act, CLI-only
 	"dashboard":     true, // alias of html — CLI-only
+	"serve":         true, // loopback HTTP process lifecycle is a host-machine act, CLI-only
 	"completion":    true, // P23/OP-222: prints a shell completion script — a host-machine act, CLI-only
 	"notifications": true, // P49/OP-223: installs and coordinates host-native UI components — CLI-only
 	"feedback":      true, // P25: files feedback on a2a itself (consumer submit + hub-operator triage) — a host act, CLI-only (spec 25 §T1: triage "Not exposed via MCP")
@@ -88,6 +89,8 @@ func (ta toolAction) verb() string {
 		return "submit"
 	case "a2a_whatsnew":
 		return "whatsnew"
+	case "a2a_work":
+		return "work-" + ta.action
 	default:
 		// a2a_read view == the read verb; a2a_lifecycle / a2a_exchange
 		// action == the lifecycle/exchange verb.
@@ -107,6 +110,12 @@ func designatedCLIVerbs() []string {
 		if name == "contract" {
 			for _, sub := range cli.ContractSubcommands() {
 				out = append(out, "contract-"+sub.Name)
+			}
+			continue
+		}
+		if name == "work" {
+			for _, sub := range cli.WorkSubcommands() {
+				out = append(out, "work-"+sub)
 			}
 			continue
 		}
@@ -145,6 +154,9 @@ func mcpCapabilityPairs(t *testing.T) []toolAction {
 	}
 	for _, a := range mcp.ContractActions {
 		pairs = append(pairs, toolAction{"a2a_contract", a})
+	}
+	for _, a := range mcp.WorkActions {
+		pairs = append(pairs, toolAction{"a2a_work", a})
 	}
 	return pairs
 }

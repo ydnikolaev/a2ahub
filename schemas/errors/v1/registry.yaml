@@ -233,6 +233,11 @@ entries:
     title: Declared contract carried set is invalid
     applies_to: envelope/v2 contract carried-set V2/V3 validation for profile, role, path, media, bounds, exactness and authoritative-floor failures
 
+  - code: POL-014
+    class: policy
+    title: Declared conformance suite contradicts itself
+    applies_to: internal/validate.ValidateContractConformance for suite-inconsistent JSON Schema valid/invalid fixture outcomes; payload nonconformance and unsupported formats remain operation results
+
   - code: POL-015
     class: policy
     title: Work checkpoint semantics are invalid

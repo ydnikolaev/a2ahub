@@ -12,6 +12,6 @@ LFC-003	live	operational-confidence/P1	applicable first-party event is missing i
 POL-011	tombstone	retire-version-guard	retire refused because another version remained published	269ae4d	1c8a959
 POL-012	live	operational-confidence/P1	first-party producer stamp is absent or invalid	32a6d05	-
 POL-013	live	operational-confidence/P5	declared contract carried set is invalid	32a6d05	-
-POL-014	reserved	operational-confidence/P6	declared conformance suite contradicts itself	32a6d05	-
+POL-014	live	operational-confidence/P6	declared conformance suite contradicts itself	32a6d05	-
 POL-015	live	operational-confidence/P2	work checkpoint semantics are invalid	32a6d05	-
 POL-016	live	operational-confidence/P1	first-party actor model or session is unsafe or invalid	32a6d05	-

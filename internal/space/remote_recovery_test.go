@@ -26,6 +26,8 @@ type fakeRemoteRecoveryReader struct {
 	wantRemoteURL  string
 	wantCredential host.Credential
 	calls          int
+	authorName     string
+	authorEmail    string
 }
 
 type recoveryCapableFakeHost struct {
@@ -40,7 +42,7 @@ func (f *recoveryCapableFakeHost) ReadRemoteRecoveryCommit(
 	repository host.Repo,
 	branch string,
 	credential host.Credential,
-) (host.Repo, string, string, string, string, map[string]host.RemoteRecoveryChange, bool, error) {
+) (host.Repo, string, string, string, string, string, string, map[string]host.RemoteRecoveryChange, bool, error) {
 	return f.reader.ReadRemoteRecoveryCommit(ctx, repoDir, remoteURL, repository, branch, credential)
 }
 
@@ -51,14 +53,14 @@ func (f *fakeRemoteRecoveryReader) ReadRemoteRecoveryCommit(
 	repository host.Repo,
 	branch string,
 	credential host.Credential,
-) (host.Repo, string, string, string, string, map[string]host.RemoteRecoveryChange, bool, error) {
+) (host.Repo, string, string, string, string, string, string, map[string]host.RemoteRecoveryChange, bool, error) {
 	f.calls++
 	f.wantRepository = repository
 	f.wantBranch = branch
 	f.wantRepoDir = repoDir
 	f.wantRemoteURL = remoteURL
 	f.wantCredential = credential
-	return f.repository, f.branch, f.headSHA, f.parentSHA, f.message, cloneRecoveryChanges(f.changes), f.exists, f.err
+	return f.repository, f.branch, f.headSHA, f.parentSHA, f.message, f.authorName, f.authorEmail, cloneRecoveryChanges(f.changes), f.exists, f.err
 }
 
 func TestProbePreparedRemoteRecoveryRepairsOnlyThePRAfterLostAck(t *testing.T) {
@@ -104,14 +106,14 @@ func TestPrepareRecoverableSubmissionRequiresFrozenBaseCommit(t *testing.T) {
 		context.Background(), SubmitRequest{
 			System: "atlas", Verb: "contract-publish", ArtifactID: "XC-atlas-demo",
 			ArtifactIDs: []string{"XC-atlas-demo"}, OperationKey: operationKey,
-			Mutations: []Mutation{{Path: "atlas/provides/demo/schema/contract.json", Operation: MutationWrite, Bytes: []byte("{}\n")}},
+			Mutations:     []Mutation{{Path: "atlas/provides/demo/schema/contract.json", Operation: MutationWrite, Bytes: []byte("{}\n")}},
 			CommitMessage: "publish", RemoteURL: "https://github.com/acme/space.git",
 			Repo: host.Repo{Owner: "acme", Name: "space"}, BaseBranch: "main", PRTitle: "publish",
 		}, PreparationContext{
 			TargetIdentity: "acme/space", ProducerCompatibility: "0.19.0",
 			Recovery: &RecoveryV1{
 				CandidateIntentDigest: "sha256:" + strings.Repeat("c", 64),
-				IntentKey: "op-v1-" + strings.Repeat("b", 64), PlanDigest: testRecoveryPlanDigest(),
+				IntentKey:             "op-v1-" + strings.Repeat("b", 64), PlanDigest: testRecoveryPlanDigest(),
 				Target: "XC-atlas-demo@2.0.0", VersionSelector: "auto:major",
 			},
 		},
@@ -134,7 +136,7 @@ func TestSubmitPreparedRepairsLostPushAcknowledgementWithoutSecondCommitOrPush(t
 		prepared,
 		SubmissionRuntime{
 			RepoDir: "/cache/acme-space", RemoteURL: "https://github.com/acme/space.git",
-			TargetIdentity: "acme/space", Credential: host.Credential{Token: "invocation-only"},
+			TargetIdentity: "acme/space", CurrentSpaceFloor: "0.19.0", Credential: host.Credential{Token: "invocation-only"},
 			PriorResult: WriteResult{
 				Branch: prepared.Branch(), Stage: WriteStageCommitted,
 				RemainingAction: RemainingActionRetryPush,
@@ -175,7 +177,7 @@ func TestSubmitPreparedNeverReplacesAPriorProvenPR(t *testing.T) {
 	result, err := NewWriteFunnel(fake, testNoSubmitValidation{}, "0.19.0").SubmitPrepared(
 		context.Background(), prepared, SubmissionRuntime{
 			RepoDir: "/cache/acme-space", RemoteURL: "https://github.com/acme/space.git",
-			TargetIdentity: "acme/space", PriorResult: prior,
+			TargetIdentity: "acme/space", CurrentSpaceFloor: "0.19.0", PriorResult: prior,
 		},
 	)
 	if !errors.Is(err, ErrOperationConflict) {
@@ -231,7 +233,7 @@ func TestSubmitPreparedBindsPriorPRToExactProviderIdentity(t *testing.T) {
 			result, err := NewWriteFunnel(fake, testNoSubmitValidation{}, "0.19.0").SubmitPrepared(
 				context.Background(), prepared, SubmissionRuntime{
 					RepoDir: "/cache/acme-space", RemoteURL: "https://github.com/acme/space.git",
-					TargetIdentity: "acme/space", PriorResult: prior,
+					TargetIdentity: "acme/space", CurrentSpaceFloor: "0.19.0", PriorResult: prior,
 				},
 			)
 			if !errors.Is(err, ErrOperationConflict) || result.PRNumber != prior.PRNumber || len(fake.AutoArms) != 0 {
@@ -399,14 +401,16 @@ func testRemoteRecoveryPrepared(t *testing.T) PreparedSubmission {
 			Path: "atlas/provides/demo/schema/contract.json", Operation: MutationWrite,
 			Bytes: []byte("{\"type\":\"object\"}\n"),
 		}},
-		CommitMessage: "a2a(contract): publish XC-atlas-demo@2.0.0",
-		RemoteURL:     "https://github.com/acme/space.git",
-		Repo:          host.Repo{Owner: "acme", Name: "space"}, BaseBranch: "main",
+		CommitMessage:    "a2a(contract): publish XC-atlas-demo@2.0.0",
+		CommitAuthorName: "a2a-atlas", CommitAuthorEmail: "a2a-atlas@a2ahub.invalid",
+		RemoteURL: "https://github.com/acme/space.git",
+		Repo:      host.Repo{Owner: "acme", Name: "space"}, BaseBranch: "main",
 		PRTitle: "Publish XC-atlas-demo@2.0.0", PRBody: "Publish XC-atlas-demo@2.0.0",
 	}
 	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
 		context.Background(), req, PreparationContext{
-			TargetIdentity: "acme/space", ProducerCompatibility: "0.19.0",
+			TargetIdentity: "acme/space", ObservedSpaceFloor: "0.19.0", FeatureFloor: "0.19.0",
+			SchemaFloor: "0.19.0", ProfileFloor: "0.19.0", ProducerCompatibility: "0.19.0",
 			BaseCommitSHA: strings.Repeat("f", 40), Recovery: recovery,
 		},
 	)

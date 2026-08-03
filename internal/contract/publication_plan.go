@@ -44,10 +44,10 @@ type PublicationMutation struct {
 	Action       MutationAction `json:"action"`
 	Path         string         `json:"path"`
 	BeforeDigest string         `json:"before_digest"`
-	BeforeMode   CandidateKind  `json:"before_mode"`
+	BeforeMode   string         `json:"before_mode"`
 	AfterDigest  string         `json:"after_digest"`
 	AfterSize    int            `json:"after_size"`
-	AfterMode    CandidateKind  `json:"after_mode"`
+	AfterMode    string         `json:"after_mode"`
 	DeleteDomain string         `json:"delete_domain"`
 	ContractRoot string         `json:"contract_root"`
 	Bytes        []byte         `json:"-"`
@@ -153,14 +153,22 @@ type PublishedContract struct {
 	Version       string
 	DescriptorRaw []byte
 	Set           CarriedSet
+	// Modes records the exact canonical Git mode observed for every path in
+	// DescriptorRaw/Set. A mutation cannot safely bind a replacement or
+	// deletion without this prior-tree fact.
+	Modes map[string]string
 }
 
 type PublicationInput struct {
-	System                string
-	ContractID            string
-	Selector              string
-	AuthoringFloor        string
-	Candidate             CandidateIntentSnapshot
+	System         string
+	ContractID     string
+	Selector       string
+	AuthoringFloor string
+	Candidate      CandidateIntentSnapshot
+	// CandidateModes binds every desired regular file to the exact canonical
+	// Git mode frozen with the candidate. Nil retains the legacy pure-core test
+	// default (new files are 100644; replacements preserve their prior mode).
+	CandidateModes        map[string]string
 	Published             []PublishedContract
 	CandidateSource       CandidateSource
 	ContractRoot          string
@@ -398,7 +406,7 @@ func PlanPublication(input PublicationInput, checker CompatibilityChecker) (Publ
 	}
 	desiredBytes := cloneBytesByPath(set.Bytes)
 	desiredBytes[DescriptorPath] = bytes.Clone(finalRaw)
-	mutations, mutationIssues := publicationMutations(profile, desiredBytes, mutationBaseline, input.ContractRoot)
+	mutations, mutationIssues := publicationMutations(profile, desiredBytes, input.CandidateModes, mutationBaseline, input.ContractRoot)
 	if len(mutationIssues) != 0 {
 		return PublicationPlan{}, mutationIssues
 	}
@@ -488,7 +496,7 @@ func validatePublicationInput(input PublicationInput) []Issue {
 	if input.CandidateSource.Kind != CandidateSourceMirror && input.CandidateSource.Kind != CandidateSourceStaging {
 		issues = append(issues, Issue{Kind: IssueInvalidPublication, Path: "candidate_source.kind", Detail: "candidate source must be mirror or staging"})
 	}
-	if input.CandidateSource.Location == "" || input.CandidateSource.Fingerprint == "" {
+	if input.CandidateSource.Location == "" || !sha256DigestPattern.MatchString(input.CandidateSource.Fingerprint) {
 		issues = append(issues, Issue{Kind: IssueInvalidPublication, Path: "candidate_source", Detail: "candidate source location and subtree fingerprint are required"})
 	}
 	if input.CandidateSource.Kind == CandidateSourceStaging && !cleanPortablePath(input.CandidateSource.Location) {
@@ -779,19 +787,34 @@ func normalizeCompatibility(result CompatibilityResult) (CompatibilityResult, []
 	return result, nil
 }
 
-func publicationMutations(profile DigestProfile, desired map[string][]byte, prior PublishedContract, contractRoot string) ([]PublicationMutation, []Issue) {
+func publicationMutations(profile DigestProfile, desired map[string][]byte, desiredModes map[string]string, prior PublishedContract, contractRoot string) ([]PublicationMutation, []Issue) {
 	priorBytes := cloneBytesByPath(prior.Set.Bytes)
 	if len(prior.DescriptorRaw) != 0 {
 		priorBytes[DescriptorPath] = bytes.Clone(prior.DescriptorRaw)
 	}
 	mutations := make([]PublicationMutation, 0)
 	for path, raw := range desired {
-		if bytes.Equal(raw, priorBytes[path]) {
+		beforeDigest, beforeMode, afterMode := "", "", "100644"
+		if priorRaw, exists := priorBytes[path]; exists {
+			mode, ok := canonicalPublicationGitMode(prior.Modes[path])
+			if !ok {
+				return nil, []Issue{{Kind: IssueInvalidPublication, Path: path, Detail: "replacement lacks an exact canonical prior Git mode"}}
+			}
+			beforeDigest, beforeMode, afterMode = artifact.Digest(priorRaw), mode, mode
+		}
+		if desiredModes != nil {
+			mode, ok := canonicalPublicationGitMode(desiredModes[path])
+			if !ok {
+				return nil, []Issue{{Kind: IssueInvalidPublication, Path: path, Detail: "candidate lacks an exact canonical Git mode"}}
+			}
+			afterMode = mode
+		}
+		if bytes.Equal(raw, priorBytes[path]) && (beforeMode == "" || beforeMode == afterMode) {
 			continue
 		}
 		mutations = append(mutations, PublicationMutation{
-			Action: MutationWrite, Path: path, AfterDigest: artifact.Digest(raw),
-			AfterSize: len(raw), AfterMode: CandidateRegular,
+			Action: MutationWrite, Path: path, BeforeDigest: beforeDigest, BeforeMode: beforeMode,
+			AfterDigest: artifact.Digest(raw), AfterSize: len(raw), AfterMode: afterMode,
 		})
 	}
 	if profile == ProfileContractSetV2 && prior.Set.Profile == ProfileContractSetV2 {
@@ -803,8 +826,12 @@ func publicationMutations(profile DigestProfile, desired map[string][]byte, prio
 			if !exists || !insideCarriedRoot(entry.Path) || entry.Path == DescriptorPath {
 				return nil, []Issue{{Kind: IssueInvalidPublication, Path: entry.Path, Detail: "delete candidate is not an exact prior-declared contract sidecar"}}
 			}
+			mode, ok := canonicalPublicationGitMode(prior.Modes[entry.Path])
+			if !ok {
+				return nil, []Issue{{Kind: IssueInvalidPublication, Path: entry.Path, Detail: "delete candidate lacks an exact canonical prior Git mode"}}
+			}
 			mutations = append(mutations, PublicationMutation{
-				Action: MutationDelete, Path: entry.Path, BeforeDigest: artifact.Digest(raw), BeforeMode: CandidateRegular,
+				Action: MutationDelete, Path: entry.Path, BeforeDigest: artifact.Digest(raw), BeforeMode: mode,
 				DeleteDomain: ContractSidecarDeleteDomain, ContractRoot: contractRoot,
 			})
 		}
@@ -821,8 +848,24 @@ func publicationMutations(profile DigestProfile, desired map[string][]byte, prio
 	return mutations, nil
 }
 
+func canonicalPublicationGitMode(mode string) (string, bool) {
+	switch mode {
+	case "100644", "100755":
+		return mode, true
+	default:
+		return "", false
+	}
+}
+
 func clonePublishedContract(input PublishedContract) PublishedContract {
-	return PublishedContract{Version: input.Version, DescriptorRaw: bytes.Clone(input.DescriptorRaw), Set: cloneCarriedSet(input.Set)}
+	clone := PublishedContract{
+		Version: input.Version, DescriptorRaw: bytes.Clone(input.DescriptorRaw), Set: cloneCarriedSet(input.Set),
+		Modes: make(map[string]string, len(input.Modes)),
+	}
+	for path, mode := range input.Modes {
+		clone.Modes[path] = mode
+	}
+	return clone
 }
 
 func cloneCarriedSet(input CarriedSet) CarriedSet {

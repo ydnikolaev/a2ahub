@@ -124,94 +124,11 @@ func ResolveContractVersion(ctx context.Context, repoDir, contractID, requestedV
 	if validator == nil {
 		return HistoricalSnapshot{}, fmt.Errorf("%w: canonical document validator is required", ErrContractHistoryInvalid)
 	}
-	layout, err := NewLayout(parsedID.System)
-	if err != nil {
-		return HistoricalSnapshot{}, fmt.Errorf("%w: %q", ErrContractInvalidReference, contractID)
-	}
-	descriptorPath := layout.ProvidesContract(parsedID.Slug)
 	authoritativeCommit, err := contractGitResolveCommit(ctx, repoDir, contractAuthoritativeMainRef)
 	if err != nil {
 		return HistoricalSnapshot{}, err
 	}
-	descriptorHistory, err := contractDescriptorHistory(ctx, repoDir, authoritativeCommit, descriptorPath)
-	if err != nil {
-		return HistoricalSnapshot{}, err
-	}
-	eventHistory, err := contractPublishEventHistory(ctx, repoDir, authoritativeCommit)
-	if err != nil {
-		return HistoricalSnapshot{}, err
-	}
-	establishments := make([]contractEstablishment, 0, 1)
-	for _, commitSHA := range eventHistory {
-		if err := ctx.Err(); err != nil {
-			return HistoricalSnapshot{}, err
-		}
-		parent, err := contractGitFirstParent(ctx, repoDir, commitSHA)
-		if err != nil {
-			return HistoricalSnapshot{}, err
-		}
-		eventPath, eventRaw, event, profile, found, err := contractPublishEventAtCommit(
-			ctx, repoDir, commitSHA, parent, parsedID.System, contractID, requestedVersion,
-		)
-		if err != nil {
-			return HistoricalSnapshot{}, err
-		}
-		if !found {
-			continue
-		}
-		if _, changed := descriptorHistory[commitSHA]; !changed {
-			return HistoricalSnapshot{}, fmt.Errorf("%w: matching publish event does not add or change its descriptor in the same first-parent commit", ErrContractHistoryInvalid)
-		}
-		currentFile, err := contractGitReadPath(ctx, repoDir, commitSHA, descriptorPath, contract.MaxFileBytes)
-		if err != nil {
-			return HistoricalSnapshot{}, fmt.Errorf("%w: matching publish event has no descriptor: %v", ErrContractHistoryInvalid, err)
-		}
-		current, err := parseHistoricalDescriptor(currentFile.Raw)
-		if err != nil {
-			return HistoricalSnapshot{}, fmt.Errorf("%w: descriptor at %s cannot be decoded: %v", ErrContractHistoryInvalid, commitSHA, err)
-		}
-		if current.Version != requestedVersion || current.ID != contractID {
-			return HistoricalSnapshot{}, fmt.Errorf("%w: matching publish event does not pair with descriptor %s@%s", ErrContractHistoryInvalid, current.ID, current.Version)
-		}
-		if parent != "" {
-			parentFile, parentErr := contractGitReadPath(ctx, repoDir, parent, descriptorPath, contract.MaxFileBytes)
-			if parentErr == nil {
-				prior, parseErr := parseHistoricalDescriptor(parentFile.Raw)
-				if parseErr != nil {
-					return HistoricalSnapshot{}, fmt.Errorf("%w: prior descriptor at %s cannot be decoded: %v", ErrContractHistoryInvalid, parent, parseErr)
-				}
-				if prior.Version == requestedVersion {
-					return HistoricalSnapshot{}, fmt.Errorf("%w: %s@%s has a later same-version publish event", ErrContractHistoryInvalid, contractID, requestedVersion)
-				}
-			} else if !errors.Is(parentErr, ErrContractHistoryInvalid) {
-				return HistoricalSnapshot{}, parentErr
-			}
-		}
-		if err := validateContractPublicationPair(current, event, profile); err != nil {
-			return HistoricalSnapshot{}, err
-		}
-		documents := ContractHistoryDocuments{
-			Descriptor:   ContractHistoryDocument{Path: descriptorPath, Schema: current.Schema, Raw: append([]byte(nil), currentFile.Raw...)},
-			PublishEvent: ContractHistoryDocument{Path: eventPath, Schema: event.Schema, Raw: append([]byte(nil), eventRaw...)},
-		}
-		if err := validator.ValidateHistoricalContractDocuments(ctx, documents); err != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return HistoricalSnapshot{}, ctxErr
-			}
-			return HistoricalSnapshot{}, fmt.Errorf("%w: canonical document validation failed: %v", ErrContractHistoryInvalid, err)
-		}
-		establishments = append(establishments, contractEstablishment{
-			CommitSHA: commitSHA, Descriptor: current,
-			EventPath: eventPath, EventRaw: eventRaw, Event: event, Profile: profile,
-		})
-	}
-	if len(establishments) == 0 {
-		return HistoricalSnapshot{}, fmt.Errorf("%w: %s@%s has no first-parent establishment with a same-commit publish event", ErrContractNotPublished, contractID, requestedVersion)
-	}
-	if len(establishments) != 1 {
-		return HistoricalSnapshot{}, fmt.Errorf("%w: %s@%s has %d distinct publish establishments", ErrContractHistoryInvalid, contractID, requestedVersion, len(establishments))
-	}
-	return readHistoricalContractSnapshot(ctx, repoDir, descriptorPath, establishments[0])
+	return resolveContractVersionAt(ctx, repoDir, authoritativeCommit, contractID, requestedVersion, validator)
 }
 
 func parseHistoricalDescriptor(raw []byte) (contractHistoricalDescriptor, error) {
@@ -233,7 +150,7 @@ func contractDescriptorHistory(ctx context.Context, repoDir, authoritativeCommit
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
-		return nil, fmt.Errorf("%w: cannot walk first-parent history; run a2a sync: %v", ErrContractObjectUnavailable, err)
+		return nil, fmt.Errorf("%w: cannot walk first-parent history; run a2a sync: %w", ErrContractObjectUnavailable, err)
 	}
 	fields := strings.Fields(string(raw))
 	seen := make(map[string]struct{}, len(fields))
@@ -266,7 +183,7 @@ func contractPublishEventHistory(ctx context.Context, repoDir, authoritativeComm
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
-		return nil, fmt.Errorf("%w: cannot walk contract publish events; run a2a sync: %v", ErrContractObjectUnavailable, err)
+		return nil, fmt.Errorf("%w: cannot walk contract publish events; run a2a sync: %w", ErrContractObjectUnavailable, err)
 	}
 	records := bytes.Split(raw, []byte{0})
 	commits := make([]string, 0)
@@ -312,7 +229,7 @@ func contractGitFirstParent(ctx context.Context, repoDir, commitSHA string) (str
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return "", ctxErr
 		}
-		return "", fmt.Errorf("%w: cannot inspect commit parents; run a2a sync: %v", ErrContractObjectUnavailable, err)
+		return "", fmt.Errorf("%w: cannot inspect commit parents; run a2a sync: %w", ErrContractObjectUnavailable, err)
 	}
 	fields := strings.Fields(string(raw))
 	if len(fields) == 0 || strings.ToLower(fields[0]) != commitSHA {
@@ -395,7 +312,7 @@ func contractGitAddedPaths(ctx context.Context, repoDir, commitSHA, firstParent 
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
-		return nil, fmt.Errorf("%w: cannot inspect establishment commit tree: %v", ErrContractObjectUnavailable, err)
+		return nil, fmt.Errorf("%w: cannot inspect establishment commit tree: %w", ErrContractObjectUnavailable, err)
 	}
 	return parseContractGitNames(raw)
 }
@@ -447,7 +364,7 @@ func readHistoricalContractSnapshot(ctx context.Context, repoDir, descriptorPath
 	descriptorFile.Path = contract.DescriptorPath
 	descriptor, err := contract.ParseDescriptor(descriptorFile.Raw)
 	if err != nil {
-		return HistoricalSnapshot{}, fmt.Errorf("%w: descriptor at %s cannot be decoded: %v", ErrContractHistoryInvalid, establishment.CommitSHA, err)
+		return HistoricalSnapshot{}, fmt.Errorf("%w: descriptor at %s cannot be decoded: %w", ErrContractHistoryInvalid, establishment.CommitSHA, err)
 	}
 	if err := validateContractPublicationPair(establishment.Descriptor, establishment.Event, establishment.Profile); err != nil {
 		return HistoricalSnapshot{}, err
@@ -461,7 +378,7 @@ func readHistoricalContractSnapshot(ctx context.Context, repoDir, descriptorPath
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return HistoricalSnapshot{}, ctxErr
 		}
-		return HistoricalSnapshot{}, fmt.Errorf("%w: cannot list historical contract tree: %v", ErrContractObjectUnavailable, err)
+		return HistoricalSnapshot{}, fmt.Errorf("%w: cannot list historical contract tree: %w", ErrContractObjectUnavailable, err)
 	}
 	if len(entries) > contract.MaxExplicitFiles {
 		return HistoricalSnapshot{}, fmt.Errorf("%w: historical carried tree has %d files", ErrContractBoundedResult, len(entries))

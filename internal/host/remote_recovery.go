@@ -54,6 +54,8 @@ func (h *GitHubHost) ReadRemoteRecoveryCommit(
 	headSHA string,
 	parentSHA string,
 	commitMessage string,
+	commitAuthorName string,
+	commitAuthorEmail string,
 	changedFiles map[string]RemoteRecoveryChange,
 	exists bool,
 	err error,
@@ -62,13 +64,13 @@ func (h *GitHubHost) ReadRemoteRecoveryCommit(
 	if repoDir == "" || remoteURL == "" || strings.HasPrefix(remoteURL, "-") ||
 		repository.Owner == "" || repository.Name == "" || branch == "" ||
 		!utf8.ValidString(branch) || len(branch) > maxRecoveryPathBytes {
-		return Repo{}, "", "", "", "", nil, false, recoveryRequestError(op)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryRequestError(op)
 	}
 	remoteRef := "refs/heads/" + branch
 	if result := runRecoveryGit(ctx, maxRecoveryGitOutput,
 		"check-ref-format", remoteRef,
 	); result.err != nil || result.exitCode != 0 {
-		return Repo{}, "", "", "", "", nil, false, recoveryRequestError(op)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryRequestError(op)
 	}
 
 	authArgs := recoveryGitAuthArgs(credential)
@@ -76,21 +78,21 @@ func (h *GitHubHost) ReadRemoteRecoveryCommit(
 	lsArgs = append(lsArgs, "ls-remote", "--exit-code", "--heads", remoteURL, remoteRef)
 	ls := runRecoveryGit(ctx, 4096, lsArgs...)
 	if ls.err != nil {
-		return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "read remote ref", ls.err)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "read remote ref", ls.err)
 	}
 	if ls.exitCode == 2 && len(ls.stdout) == 0 {
-		return repository, branch, "", "", "", nil, false, nil
+		return repository, branch, "", "", "", "", "", nil, false, nil
 	}
 	if ls.exitCode != 0 {
-		return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "read remote ref", nil)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "read remote ref", nil)
 	}
 	if _, ok := parseExactRemoteRef(ls.stdout, remoteRef); !ok {
-		return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "malformed remote ref", nil)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "malformed remote ref", nil)
 	}
 
 	privateRef, randomErr := recoveryPrivateRef()
 	if randomErr != nil {
-		return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "allocate private ref", randomErr)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "allocate private ref", randomErr)
 	}
 	// The ref name is random and therefore cannot pre-exist legitimately.
 	// Arm cleanup before fetch because git may update the ref and still fail
@@ -108,43 +110,51 @@ func (h *GitHubHost) ReadRemoteRecoveryCommit(
 	fetchArgs = append(fetchArgs, "fetch", "--no-tags", "--no-write-fetch-head", remoteURL, "+"+remoteRef+":"+privateRef)
 	fetched := runRecoveryGit(ctx, maxRecoveryGitOutput, fetchArgs...)
 	if fetched.err != nil || fetched.exitCode != 0 {
-		return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "fetch exact remote ref", fetched.err)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "fetch exact remote ref", fetched.err)
 	}
 	resolved := runRecoveryGit(ctx, 256, "-C", repoDir, "rev-parse", "--verify", privateRef+"^{commit}")
 	if resolved.err != nil || resolved.exitCode != 0 {
-		return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "resolve fetched commit", resolved.err)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "resolve fetched commit", resolved.err)
 	}
 	headSHA = strings.TrimSuffix(string(resolved.stdout), "\n")
 	if !validRecoveryGitOID(headSHA) || strings.Contains(headSHA, "\n") {
-		return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "malformed fetched commit", nil)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "malformed fetched commit", nil)
 	}
 
 	parentsResult := runRecoveryGit(ctx, 1024, "-C", repoDir, "rev-list", "--parents", "-n", "1", headSHA)
 	if parentsResult.err != nil || parentsResult.exitCode != 0 {
-		return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "read commit parents", parentsResult.err)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "read commit parents", parentsResult.err)
 	}
 	parentFields := strings.Fields(string(parentsResult.stdout))
 	if len(parentFields) != 2 || parentFields[0] != headSHA || !validRecoveryGitOID(parentFields[1]) {
-		return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "root or merge commit is not recoverable", nil)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "root or merge commit is not recoverable", nil)
 	}
 	parentSHA = parentFields[1]
 
 	messageResult := runRecoveryGit(ctx, maxRecoveryCommitMessage, "-C", repoDir, "show", "-s", "--format=%B", headSHA)
 	if messageResult.err != nil || messageResult.exitCode != 0 ||
 		!utf8.Valid(messageResult.stdout) || bytes.IndexByte(messageResult.stdout, 0) >= 0 {
-		return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "read canonical commit message", messageResult.err)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "read canonical commit message", messageResult.err)
 	}
+	authorResult := runRecoveryGit(ctx, 2048, "-C", repoDir, "show", "-s", "--format=%an%x00%ae", headSHA)
+	authorFields := bytes.Split(bytes.TrimSuffix(authorResult.stdout, []byte("\n")), []byte{0})
+	if authorResult.err != nil || authorResult.exitCode != 0 || len(authorFields) != 2 ||
+		len(authorFields[0]) == 0 || len(authorFields[1]) == 0 || !utf8.Valid(authorFields[0]) || !utf8.Valid(authorFields[1]) ||
+		bytes.ContainsAny(authorFields[0], "\r\n") || bytes.ContainsAny(authorFields[1], "\r\n") {
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "read canonical commit author", authorResult.err)
+	}
+	commitAuthorName, commitAuthorEmail = string(authorFields[0]), string(authorFields[1])
 
 	diffResult := runRecoveryGit(ctx, maxRecoveryGitOutput,
 		"-C", repoDir, "diff-tree", "-r", "--no-commit-id", "--name-status", "-z",
 		"--no-renames", parentSHA, headSHA, "--",
 	)
 	if diffResult.err != nil || diffResult.exitCode != 0 {
-		return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "read complete commit diff", diffResult.err)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "read complete commit diff", diffResult.err)
 	}
 	statuses, parseErr := parseRecoveryDiff(diffResult.stdout)
 	if parseErr != nil {
-		return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "invalid commit diff", parseErr)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "invalid commit diff", parseErr)
 	}
 
 	changes := make(map[string]RemoteRecoveryChange, len(statuses))
@@ -154,14 +164,14 @@ func (h *GitHubHost) ReadRemoteRecoveryCommit(
 		if change.status == "M" || change.status == "D" {
 			beforeDigest, beforeMode, beforeExists, readErr := readRecoveryTreeBlob(ctx, repoDir, parentSHA, change.path, &totalBytes)
 			if readErr != nil || !beforeExists {
-				return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "read prior changed blob", readErr)
+				return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "read prior changed blob", readErr)
 			}
 			observed.BeforeDigest, observed.BeforeMode = beforeDigest, beforeMode
 		}
 		if change.status == "A" || change.status == "M" {
 			afterDigest, afterMode, afterExists, readErr := readRecoveryTreeBlob(ctx, repoDir, headSHA, change.path, &totalBytes)
 			if readErr != nil || !afterExists {
-				return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "read resulting changed blob", readErr)
+				return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "read resulting changed blob", readErr)
 			}
 			observed.AfterDigest, observed.AfterMode = afterDigest, afterMode
 		}
@@ -170,10 +180,10 @@ func (h *GitHubHost) ReadRemoteRecoveryCommit(
 
 	cleanup := runRecoveryGit(context.WithoutCancel(ctx), 1024, "-C", repoDir, "update-ref", "-d", privateRef)
 	if cleanup.err != nil || cleanup.exitCode != 0 {
-		return Repo{}, "", "", "", "", nil, false, recoveryGitError(op, "remove private ref", cleanup.err)
+		return Repo{}, "", "", "", "", "", "", nil, false, recoveryGitError(op, "remove private ref", cleanup.err)
 	}
 	cleanupNeeded = false
-	return repository, branch, headSHA, parentSHA, string(messageResult.stdout), changes, true, nil
+	return repository, branch, headSHA, parentSHA, string(messageResult.stdout), commitAuthorName, commitAuthorEmail, changes, true, nil
 }
 
 func readRecoveryTreeBlob(ctx context.Context, repoDir, commitSHA, filePath string, totalBytes *int) (digest, mode string, exists bool, err error) {
