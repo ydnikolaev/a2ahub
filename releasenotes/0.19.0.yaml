@@ -90,6 +90,10 @@ changes:
       server rendering, and keeps protocol completion separate from reported
       implementation activity. CLI, MCP, static HTML and server reads therefore
       agree on what was committed and on what is merely unknown locally.
+      Work-checkpoint validation now treats the absent producer stamp as pending
+      only inside the funnel's internal V2 candidate phase, then revalidates the
+      stamped final bytes in full before any write; malformed, caller-supplied or
+      final missing stamps still fail closed.
     affects: ["event validation", "receipt evidence", "operational projection", "cache refresh", "SSE"]
     action:
       scope: none
