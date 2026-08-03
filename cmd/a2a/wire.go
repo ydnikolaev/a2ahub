@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -255,6 +256,9 @@ func buildCommands() map[string]command {
 		// the full stamp made `a2a doctor` report `versions: FAIL` against
 		// every space that pins min_binary_version (P10 e2e surfaced it).
 		cmd := cli.NewDoctorCommand(h, version, p.projectConfig, p.machineConfig, p.projectRoot)
+		if store, storeErr := buildStore(p); storeErr == nil {
+			cmd.ClassificationSummaryReader = doctorClassificationReader{store: store}
+		}
 		// The "space scaffolding current" row compares the connected space's
 		// committed scaffolding against what THIS binary's embedded template
 		// would write — the reverse of "versions", which only asks whether the
@@ -985,19 +989,28 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 // neither --repo nor A2A_FEEDBACK_REPO is set: the product repo itself.
 const canonicalFeedbackRepo = "https://github.com/ydnikolaev/a2ahub"
 
-// feedbackToken resolves the push credential for `a2a feedback submit`. Feedback
-// targets a fixed repo, not a connected space, so it does not use the machine
-// config's per-space credential refs; it reads an ambient token (A2A_FEEDBACK_
-// TOKEN, else GITHUB_TOKEN/GH_TOKEN). feedback.Submitter refuses an empty
-// credential before git when the target is GitHub; local fixture remotes stay
-// credential-free (§11 A5).
-func feedbackToken() string {
-	for _, k := range []string{"A2A_FEEDBACK_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"} {
-		if v := os.Getenv(k); v != "" {
-			return v
+// resolveFeedbackCredential keeps feedback on the canonical credential seam:
+// its explicit override wins, then the machine-local `credentials.feedback`
+// reference, then the two compatibility env names used by earlier releases.
+// All values are resolved transiently by space.ResolveCredential.
+func resolveFeedbackCredential(ctx context.Context, machine space.MachineConfig) (host.Credential, error) {
+	var configured space.CredentialReference
+	if raw, ok := machine.Credentials["feedback"]; ok {
+		parsed, err := space.ParseCredentialReference(raw)
+		if err != nil {
+			return host.Credential{}, err
 		}
+		configured = parsed
 	}
-	return ""
+	credential, configuredErr := space.ResolveCredential(ctx, "A2A_FEEDBACK_TOKEN", configured)
+	if configuredErr == nil {
+		return credential, nil
+	}
+	credential, fallbackErr := space.ResolveCredential(ctx, "GITHUB_TOKEN", space.CredentialReference{Kind: "env", Env: "GH_TOKEN"})
+	if fallbackErr == nil {
+		return credential, nil
+	}
+	return host.Credential{}, errors.Join(configuredErr, fallbackErr)
 }
 
 // runFeedback wires `a2a feedback <new|validate|submit|status|triage>`. Unlike
@@ -1008,6 +1021,7 @@ func feedbackToken() string {
 // validates before Submit). All state lives under the project-local
 // .a2a/feedback/ (gitignored), so no `a2a init`/connect is required.
 func runFeedback(args []string, stdout, stderr io.Writer) int {
+	ctx := context.Background()
 	p, err := resolvePaths()
 	if err != nil {
 		return fail(stderr, err)
@@ -1025,6 +1039,17 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return failf(stderr, "a2a feedback: bad feedback repo %q: %v", repoURL, err)
 	}
+	var credential host.Credential
+	if len(args) > 0 && args[0] == "submit" && feedbackGitHubRemote(repoURL) {
+		machine, loadErr := loadMachineConfigForWrite(p.machineConfig)
+		if loadErr != nil {
+			return failf(stderr, "a2a feedback: unreadable machine config (%s): %v", p.machineConfig, loadErr)
+		}
+		credential, err = resolveFeedbackCredential(ctx, machine)
+		if err != nil {
+			return failf(stderr, "a2a feedback: credential: %v", err)
+		}
+	}
 
 	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
 	funnel := space.NewWriteFunnel(h, nil, funnelBinaryVersion())
@@ -1032,7 +1057,7 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 		RemoteURL:         repoURL,
 		Repo:              host.Repo{Owner: owner, Name: name},
 		BaseBranch:        defaultBaseBranch,
-		Credential:        host.Credential{Token: feedbackToken()},
+		Credential:        credential,
 		CommitAuthorName:  "a2a-feedback",
 		CommitAuthorEmail: "a2a-feedback@a2a.local",
 	}
@@ -1047,7 +1072,18 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 	}
 
 	cmd := cli.NewFeedbackCommand(drafter, submitter, ledgerPath, hubRoot, hubReader)
-	return cmd.Run(context.Background(), args, stdio(stdout, stderr))
+	return cmd.Run(ctx, args, stdio(stdout, stderr))
+}
+
+// feedbackGitHubRemote mirrors the feedback package's credential boundary
+// without exporting transport policy from that package. Local filesystem
+// remotes are test/development fixtures and deliberately stay credential-free.
+func feedbackGitHubRemote(remote string) bool {
+	if strings.HasPrefix(remote, "git@github.com:") {
+		return true
+	}
+	parsed, err := url.Parse(remote)
+	return err == nil && strings.EqualFold(parsed.Hostname(), "github.com")
 }
 
 // envelopeFacts is the minimal frontmatter the submit closure reads locally
