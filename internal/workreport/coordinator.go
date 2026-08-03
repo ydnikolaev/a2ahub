@@ -541,6 +541,16 @@ func normalizedSuppliedSession(session string) string {
 	return "session-sha256:" + hex.EncodeToString(sum[:])
 }
 
+// NormalizeSession returns the only session representation safe to expose or
+// use as lease ownership. Canonical safe sessions are preserved; provider/raw
+// values are irreversibly reduced to a deterministic digest.
+func NormalizeSession(session string) string {
+	if session == "" {
+		return ""
+	}
+	return normalizedSuppliedSession(session)
+}
+
 func clonePreparationRequest(request PreparationRequest) PreparationRequest {
 	request.WaitingOn = append([]WaitingOn(nil), request.WaitingOn...)
 	request.Recipients = append([]string(nil), request.Recipients...)
