@@ -34,10 +34,14 @@ work: {id: "work:01K20ABCDEFHJKMNPQRSTVWXYZ", semantic_sequence: 1, mode: implem
 Work.
 `
 
-type recordingWorkCheckpointValidator struct{ calls int }
+type recordingWorkCheckpointValidator struct {
+	calls  int
+	phases []bool
+}
 
-func (v *recordingWorkCheckpointValidator) ValidateWorkCheckpoint(context.Context, WorkCheckpointValidation) error {
+func (v *recordingWorkCheckpointValidator) ValidateWorkCheckpoint(_ context.Context, candidate WorkCheckpointValidation) error {
 	v.calls++
+	v.phases = append(v.phases, candidate.ProducerStampPending)
 	return nil
 }
 
@@ -112,5 +116,8 @@ func TestWorkSubmissionValidatorMountsBothSeams(t *testing.T) {
 	}
 	if recorder.calls != 2 {
 		t.Fatalf("calls=%d", recorder.calls)
+	}
+	if got := fmt.Sprint(recorder.phases); got != "[true false]" {
+		t.Fatalf("producer-stamp phases = %s, want candidate pending then final", got)
 	}
 }

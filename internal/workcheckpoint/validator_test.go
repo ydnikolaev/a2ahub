@@ -23,6 +23,13 @@ func (acceptingGeneric) ValidateGenericWorkCheckpoint(context.Context, space.Wor
 	return nil
 }
 
+type recordingGeneric struct{ calls int }
+
+func (g *recordingGeneric) ValidateGenericWorkCheckpoint(context.Context, space.WorkCheckpointValidation) error {
+	g.calls++
+	return nil
+}
+
 const validArtifact = `---
 schema: envelope/v2
 id: XA-axon-20260803-b3c4
@@ -70,6 +77,75 @@ func TestValidatorUsesCanonicalEngineAndRetainsCodes(t *testing.T) {
 	if !errors.As(err, &violations) || len(violations.Violations) == 0 || violations.Violations[0].Code != "POL-015" {
 		t.Fatalf("error=%v", err)
 	}
+}
+
+func TestValidatorProducerStampPendingExemptsOnlyAbsentStamp(t *testing.T) {
+	t.Parallel()
+	manifest, err := space.ParseManifest([]byte(manifestRaw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	generic := &recordingGeneric{}
+	validator, err := New(validate.New(corpus), fixedFacts{space.WorkCheckpointFacts{
+		ManifestRaw: []byte(manifestRaw), Manifest: manifest, HistoricalSystems: []string{"axon", "beta"},
+	}}, generic, "axon")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withoutStamp := strings.Replace(validEvent, "produced_by:\n  tool: a2a\n  version: \"0.19.0\"\n", "", 1)
+	candidate := space.WorkCheckpointValidation{
+		ProducerStampPending: true, Space: "fixture-space",
+		ArtifactID: "XA-axon-20260803-b3c4", EventID: "01J5A1B2C3D4E5F6G7H8J9K0M1",
+		ArtifactPath: "axon/exchanges/XA-axon-20260803-b3c4.md", EventPath: "axon/events/2026/01J5A1B2C3D4E5F6G7H8J9K0M1.yaml",
+		Artifact: []byte(validArtifact), Event: []byte(withoutStamp),
+	}
+	if err := validator.ValidateWorkCheckpoint(t.Context(), candidate); err != nil {
+		t.Fatalf("pre-stamp candidate rejected: %v", err)
+	}
+	if generic.calls != 0 {
+		t.Fatalf("pre-stamp candidate crossed generic final validation %d times", generic.calls)
+	}
+
+	final := candidate
+	final.ProducerStampPending = false
+	assertWorkViolationCode(t, validator.ValidateWorkCheckpoint(t.Context(), final), "POL-012")
+	if generic.calls != 1 {
+		t.Fatalf("final missing-stamp candidate generic calls = %d, want 1", generic.calls)
+	}
+	v3 := candidate
+	v3.InvocationPoint = string(validate.V3)
+	assertWorkViolationCode(t, validator.ValidateWorkCheckpoint(t.Context(), v3), "POL-012")
+
+	malformed := candidate
+	malformed.Event = []byte(strings.Replace(validEvent, "  version: \"0.19.0\"\n", "", 1))
+	assertWorkViolationCode(t, validator.ValidateWorkCheckpoint(t.Context(), malformed), "POL-012")
+	if generic.calls != 2 {
+		t.Fatalf("malformed present stamp generic calls = %d, want 2", generic.calls)
+	}
+
+	invalid := candidate
+	invalid.Event = []byte(strings.Replace(withoutStamp, "transition: publish", "transition: impossible", 1))
+	if err := validator.ValidateWorkCheckpoint(t.Context(), invalid); err == nil {
+		t.Fatal("pre-stamp candidate suppressed a non-producer violation")
+	}
+}
+
+func assertWorkViolationCode(t *testing.T, err error, code string) {
+	t.Helper()
+	var violations *ViolationError
+	if !errors.As(err, &violations) {
+		t.Fatalf("error = %v, want coded work violation", err)
+	}
+	for _, violation := range violations.Violations {
+		if violation.Code == code {
+			return
+		}
+	}
+	t.Fatalf("violations = %+v, want %s", violations.Violations, code)
 }
 
 func TestValidatorRejectsV2V3ContinuationAudienceOrClassificationChange(t *testing.T) {
