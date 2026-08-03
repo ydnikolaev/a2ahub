@@ -1,12 +1,11 @@
 package validate
 
 import (
-	"crypto/sha256"
-	"fmt"
 	"regexp"
 	"unicode/utf8"
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/provenance"
 	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
@@ -133,9 +132,5 @@ func safeSessionEvidence(session *string) string {
 	if session == nil {
 		return ""
 	}
-	if safeFirstPartySession.MatchString(*session) && len(scanSecretIdentifier(*session, "actor.session")) == 0 {
-		return *session
-	}
-	digest := sha256.Sum256([]byte(*session))
-	return fmt.Sprintf("sha256:%x", digest)
+	return provenance.SafeSessionEvidence(*session)
 }
