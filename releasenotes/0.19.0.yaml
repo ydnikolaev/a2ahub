@@ -1,0 +1,97 @@
+schema: release-notes/v1
+version: "0.19.0"
+released: "2026-08-03"
+headline: "A2A shows the work behind an exchange and makes every contract version reproducible"
+changes:
+  - id: RN-01900-0
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: "Reported work and the operational timeline are the user-facing answer to who is working, waiting or blocked now."
+    impact: high
+    subject: "The dashboard distinguishes completed exchanges from work that is still happening"
+    detail: >
+      Agents can record durable work checkpoints and keep a short machine-local
+      lease while they are active. Overview folds those facts into a separate
+      operational timeline without changing the attention queue: one process
+      can show several simultaneous actors, what each one is doing, who or what
+      they are waiting for, and whether the last evidence is current, stale or
+      unknown. Static HTML and the loopback server consume the same canonical
+      snapshot, so a closed thread is no longer misreported as proof that all
+      implementation work stopped. Missing reports remain visibly unknown
+      instead of being rounded down to inactivity.
+    affects: ["a2a work", "a2a html", "a2a dashboard", "a2a serve", "Overview", "MCP"]
+    action:
+      scope: local
+      why: >
+        Update the binary and installed skill before agents begin reporting
+        work; existing exchange history remains readable and needs no rewrite.
+      detect:
+        - "a2a version"
+      run:
+        - "a2a update --yes"
+
+  - id: RN-01900-1
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: "The contract confidence loop turns a contract release into an exact, inspectable and reproducible version."
+    impact: high
+    subject: "A contract version can be preflighted, published, recovered, materialized and checked from one immutable plan"
+    detail: >
+      Contract publication now freezes one bounded candidate, finalizes its
+      descriptor before hashing, records the exact carried set and digest
+      profile, and uses the same plan for preflight and publish. Historical
+      resolution identifies the unique version-establishing commit, including
+      retired versions; materialize reproduces those verified bytes without
+      overwriting divergent local work; check runs the declared self-suite or a
+      payload against that exact version offline. CLI and MCP share the same
+      services, multi-space requests fail closed when ambiguous, and interrupted
+      writes resume the same operation instead of silently creating a new
+      version or pull request.
+    affects: ["a2a contract preflight", "a2a contract publish", "a2a contract materialize", "a2a contract check", "a2a_contract", "contract/v2", "event/v2"]
+    action:
+      scope: local
+      why: >
+        Update the binary before publishing with the v2 carried-set profile.
+        Existing v1 history remains readable and does not need migration.
+      detect:
+        - "a2a version"
+      run:
+        - "a2a update --yes"
+
+  - id: RN-01900-2
+    kind: fix
+    impact: high
+    subject: "Partial GitHub writes preserve enough evidence to repair the same operation safely"
+    detail: >
+      Every post-push outcome now retains the remote stage, branch, tree and pull
+      request reference that actually exist. Retry first proves that evidence
+      and repairs the same head or pull request; it does not report a generic
+      failure that tempts an agent to submit a duplicate. Publication recovery
+      also returns the exact recomputed plan, and the caller-observed space
+      writer floor is revalidated after refresh instead of trusting a stale
+      authoring decision.
+    affects: ["shared write funnel", "GitHub recovery", "contract publish", "CLI", "MCP"]
+    action:
+      scope: none
+      why: >
+        Recovery and result-shape corrections apply automatically to new writes.
+
+  - id: RN-01900-3
+    kind: fix
+    impact: normal
+    subject: "Producer claims, protocol status and current work no longer collapse into one misleading state"
+    detail: >
+      Applicable first-party events carry evaluator-owned receipt and provenance
+      evidence, and mismatches remain diagnostic facts rather than a second
+      editable state. The operational projection ignores lifecycle escape
+      hatches that owe nobody a move, synchronizes cache refresh with concurrent
+      server rendering, and keeps protocol completion separate from reported
+      implementation activity. CLI, MCP, static HTML and server reads therefore
+      agree on what was committed and on what is merely unknown locally.
+    affects: ["event validation", "receipt evidence", "operational projection", "cache refresh", "SSE"]
+    action:
+      scope: none
+      why: >
+        The corrected folds and projections are rebuilt from existing Git history.
