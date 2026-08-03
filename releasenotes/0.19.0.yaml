@@ -70,8 +70,8 @@ changes:
       and repairs the same head or pull request; it does not report a generic
       failure that tempts an agent to submit a duplicate. Publication recovery
       also returns the exact recomputed plan, and the caller-observed space
-      writer floor is revalidated after refresh instead of trusting a stale
-      authoring decision.
+      writer floor is required and revalidated after refresh instead of trusting
+      a missing or stale authoring decision.
     affects: ["shared write funnel", "GitHub recovery", "contract publish", "CLI", "MCP"]
     action:
       scope: none
