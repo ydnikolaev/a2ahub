@@ -2,6 +2,7 @@ package validate
 
 import (
 	"regexp"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -56,6 +57,23 @@ var secretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`Bearer\s+[A-Za-z0-9._-]{20,}`),
 }
 
+// secretIdentifierPrefixes is the operational-confidence closed denylist for identifier
+// fields such as actor.session. These short prefixes are intentionally NOT
+// applied to arbitrary prose by scanForSecrets: values like "sk-" can occur
+// innocently in a body, while they are never valid at the start of an opaque
+// non-secret session identifier.
+var secretIdentifierPrefixes = []string{
+	"token:",
+	"password:",
+	"bearer:",
+	"ghp_",
+	"github_pat_",
+	"glpat-",
+	"sk-",
+	"xoxb-",
+	"xoxp-",
+}
+
 // scanForSecrets is the V2 policy class's secret-scan rule (CC-010,
 // AC-203.1): ALL text content crossing the boundary is in scope (§10.4);
 // callers pass the artifact's full raw bytes (envelope + body), not just
@@ -64,20 +82,46 @@ var secretPatterns = []*regexp.Regexp{
 // PR-identity mechanism that could grant it is host-side, out of this
 // pure engine's reach).
 func scanForSecrets(raw []byte) []Violation {
-	content := string(raw)
-	for _, p := range secretPatterns {
-		if p.MatchString(content) {
-			return []Violation{{
-				Code:     "POL-001",
-				Class:    ClassPolicy,
-				Path:     "",
-				Message:  "content matches a forbidden secret/credential pattern",
-				CCRef:    "CC-010",
-				Severity: SeverityReject,
-			}}
-		}
+	if matchesSecretPattern(string(raw)) {
+		return []Violation{secretViolation("", "content matches a forbidden secret/credential pattern")}
 	}
 	return nil
+}
+
+// scanSecretIdentifier is the canonical POL-001 policy seam for a bounded
+// identifier. It reuses every general secret pattern above and additionally
+// applies the case-insensitive closed prefix denylist for session IDs.
+func scanSecretIdentifier(value, path string) []Violation {
+	lower := strings.ToLower(value)
+	for _, prefix := range secretIdentifierPrefixes {
+		if strings.HasPrefix(lower, prefix) {
+			return []Violation{secretViolation(path, "identifier resembles a credential; use an opaque non-secret value")}
+		}
+	}
+	if matchesSecretPattern(value) {
+		return []Violation{secretViolation(path, "identifier matches a forbidden secret/credential pattern")}
+	}
+	return nil
+}
+
+func matchesSecretPattern(content string) bool {
+	for _, pattern := range secretPatterns {
+		if pattern.MatchString(content) {
+			return true
+		}
+	}
+	return false
+}
+
+func secretViolation(path, message string) Violation {
+	return Violation{
+		Code:     "POL-001",
+		Class:    ClassPolicy,
+		Path:     path,
+		Message:  message,
+		CCRef:    "CC-010",
+		Severity: SeverityReject,
+	}
 }
 
 // checkAdmission runs the two boundary structural guards §6 requires of

@@ -3,6 +3,7 @@ package validate
 import (
 	"fmt"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
@@ -63,7 +64,7 @@ func (e *Engine) validateEventProducer(raw []byte, spaceFloor string) (result Re
 		return newResult(V2, probe.Event, nil), true, nil
 	}
 	return newResult(V2, probe.Event, []Violation{{
-		Code:  "POL-005",
+		Code:  "POL-012",
 		Class: ClassPolicy,
 		Path:  "produced_by",
 		Message: fmt.Sprintf("event does not name the tool and version that produced it, and this space's "+
@@ -77,10 +78,21 @@ func (e *Engine) validateEventProducer(raw []byte, spaceFloor string) (result Re
 	}}), true, nil
 }
 
-// eventProducerProbe is the two things this check reads: the event id (for the
-// report) and the stamp.
+// eventProducerProbe is validate's bounded typed projection of the event fields
+// used by producer, actor-provenance and receipt policy.
 type eventProducerProbe struct {
-	Event      string `yaml:"event"`
+	Event      string  `yaml:"event"`
+	Subject    string  `yaml:"subject"`
+	Transition string  `yaml:"transition"`
+	State      *string `yaml:"state"`
+	Version    string  `yaml:"version"`
+	Actor      struct {
+		Kind    string  `yaml:"kind"`
+		Name    string  `yaml:"name"`
+		System  string  `yaml:"system"`
+		Model   *string `yaml:"model"`
+		Session *string `yaml:"session"`
+	} `yaml:"actor"`
 	ProducedBy struct {
 		Tool    string `yaml:"tool"`
 		Version string `yaml:"version"`
@@ -137,6 +149,19 @@ func malformedEventViolation() Violation {
 // ONE Result for both halves, so a reader gets one verdict per event rather than
 // two entries for the same file disagreeing about how bad it is.
 func (e *Engine) ValidateEvent(raw []byte, spaceFloor string) (Result, error) {
+	return e.validateEvent(raw, spaceFloor, nil)
+}
+
+// ValidateEventWithEvaluation is the contextual V2/V3 event-validation path.
+// The caller supplies the exact fold.EvaluateCandidate result it used for
+// legality, so receipt applicability and outcome cannot grow a second state
+// machine in validation. ValidateEvent remains the raw/full-history path for
+// callers that do not have candidate context.
+func (e *Engine) ValidateEventWithEvaluation(raw []byte, spaceFloor string, evaluation fold.CandidateEvaluation) (Result, error) {
+	return e.validateEvent(raw, spaceFloor, &evaluation)
+}
+
+func (e *Engine) validateEvent(raw []byte, spaceFloor string, evaluation *fold.CandidateEvaluation) (Result, error) {
 	const op = "ValidateEvent"
 
 	instance, probe, parseable := decodeEvent(raw)
@@ -160,7 +185,34 @@ func (e *Engine) ValidateEvent(raw []byte, spaceFloor string) (Result, error) {
 	if required {
 		violations = append(violations, stampResult.Violations...)
 	}
-	return newResult(V2, probe.Event, violations), nil
+
+	firstPartyAtFloor, producerViolation := firstPartyReceiptStatus(probe)
+	if producerViolation != nil && !hasViolationCode(violations, producerViolation.Code) {
+		violations = append(violations, *producerViolation)
+	}
+	if firstPartyAtFloor {
+		violations = append(violations, checkFirstPartyActor(probe)...)
+	}
+
+	var consistency []ConsistencyFlag
+	if evaluation != nil {
+		receiptViolations, receiptConsistency := checkEventReceipt(probe, firstPartyAtFloor, *evaluation)
+		violations = append(violations, receiptViolations...)
+		consistency = append(consistency, receiptConsistency...)
+	}
+
+	result := newResult(V2, probe.Event, violations)
+	result.ConsistencyFlags = consistency
+	return result, nil
+}
+
+func hasViolationCode(violations []Violation, code string) bool {
+	for _, violation := range violations {
+		if violation.Code == code {
+			return true
+		}
+	}
+	return false
 }
 
 // decodeEvent decodes raw twice — once as a schema instance, once into the

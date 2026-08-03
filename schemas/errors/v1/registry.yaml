@@ -148,6 +148,11 @@ entries:
     title: Event's actor is not authorized for the attempted transition
     applies_to: lifecycle events checked pre-write via the fold seam (§3.5 rule 3, §10.3, §7, CC-021)
 
+  - code: LFC-003
+    class: lifecycle
+    title: Applicable first-party event is missing its producer evaluation receipt
+    applies_to: contextual event validation when produced_by is a2a at or above ClaimReceiptFloor and fold.EvaluateCandidate identifies one scalar receipt scope
+
   - code: POL-001
     class: policy
     title: Content matches a forbidden secret/credential pattern
@@ -197,3 +202,13 @@ entries:
     class: policy
     title: Frontmatter value is still the template's own unfilled placeholder
     applies_to: internal/validate.checkUnfilledPlaceholders — V2 (`a2a submit` / `validate --ci`) ONLY, never V1 (`a2a new`/`a2a validate`, AC-401.1's "placeholder-only fills pass" is a shipped guarantee at that invocation point). Fires when a frontmatter scalar, anywhere in the tree (including nested inside a mapping like `expected_response.shape`, or inside a sequence element like `refs[].ref`), matches `^<.*>$` verbatim — the template's own placeholder grammar, anchored at both ends and nothing more. An earlier narrower form additionally banned inner angle brackets and therefore missed every template's own `title` placeholder — the literal `<human/agent-scannable title, <=120 chars>` all eight templates carry, whose inner `<` comes from "<=120" — and any two-span value such as a `refs[].ref` holding `<id>#<digest>`; internal/validate's corpus test now pins the reported path set per type so that gap cannot reopen. The body is never in scope (free prose legitimately carries angle brackets). Accepted cost — a value that is GENUINELY, deliberately exactly `<foo>` is refused too and must be rephrased — this rule cannot distinguish "still a placeholder" from "a real value that happens to look like one". The message names both remedies, because an OPTIONAL field carrying a placeholder remains schema-valid (`needed_by`, `valid_until`, `env_requirements` — internal/schema does not assert `format`); deletion is correct only when that field is genuinely unused. The send loop separately requires an autonomous +1/+2-day `needed_by` on every response-bearing cross-system ask. For a path through a sequence index `--field` cannot reach it at all, so that case names the file edit instead
+
+  - code: POL-012
+    class: policy
+    title: Required first-party producer stamp is absent or invalid
+    applies_to: committed event validation after the authoritative space floor activates ProducerStampFloor, plus malformed a2a produced_by.version claims
+
+  - code: POL-016
+    class: policy
+    title: First-party actor model or session is unsafe or invalid
+    applies_to: a2a events at or above ClaimReceiptFloor; model is 1–96 Unicode scalars and session must be a bounded non-secret identifier

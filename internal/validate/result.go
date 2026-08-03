@@ -84,6 +84,56 @@ type Violation struct {
 	Subjects []string `json:"subjects,omitempty"`
 }
 
+// ConsistencyFlagKind identifies a non-blocking diagnostic whose evidence is
+// useful to readers but which is not a schema, lifecycle, policy or security
+// violation. It deliberately does not use the stable error-code registry.
+type ConsistencyFlagKind string
+
+const (
+	// ConsistencyStateClaimMismatch means the producer's scoped evaluation
+	// receipt differs from the outcome independently computed by fold.
+	ConsistencyStateClaimMismatch ConsistencyFlagKind = "state-claim-mismatch"
+)
+
+// ConsistencyScope is the JSON-safe projection of the scalar fold scope used
+// to compare one producer evaluation receipt.
+type ConsistencyScope struct {
+	Kind    string `json:"kind"`
+	Subject string `json:"subject"`
+	Version string `json:"version,omitempty"`
+}
+
+// ConsistencyActor carries diagnostic attribution only. None of these fields
+// participates in lifecycle authorization or changes the authoritative fold.
+type ConsistencyActor struct {
+	Kind    string `json:"kind,omitempty"`
+	Name    string `json:"name,omitempty"`
+	System  string `json:"system,omitempty"`
+	Model   string `json:"model,omitempty"`
+	Session string `json:"session,omitempty"`
+}
+
+// ConsistencyProducer identifies the tool/version that recorded a receipt.
+// It is self-asserted attribution, never an integrity or authorization fact.
+type ConsistencyProducer struct {
+	Tool    string `json:"tool,omitempty"`
+	Version string `json:"version,omitempty"`
+}
+
+// ConsistencyFlag is the evidence-rich, non-blocking receipt diagnostic from
+// P1. Actual is authoritative; Claimed is retained only for comparison.
+type ConsistencyFlag struct {
+	Kind      ConsistencyFlagKind `json:"kind"`
+	EventULID string              `json:"event_ulid"`
+	Subject   string              `json:"subject"`
+	Scope     ConsistencyScope    `json:"scope"`
+	Claimed   string              `json:"claimed"`
+	Actual    string              `json:"actual"`
+	Actor     ConsistencyActor    `json:"actor"`
+	Producer  ConsistencyProducer `json:"producer"`
+	Cause     string              `json:"cause"`
+}
+
 // isReject reports whether v should flip Result.Valid to false.
 func (v Violation) isReject() bool {
 	return v.Severity != SeverityWarning
@@ -104,6 +154,9 @@ type Result struct {
 	InvocationPoint InvocationPoint `json:"invocation_point"`
 	// Violations is empty when Valid is true.
 	Violations []Violation `json:"violations"`
+	// ConsistencyFlags contains non-blocking evidence such as a producer
+	// evaluation mismatch. These flags never affect Valid.
+	ConsistencyFlags []ConsistencyFlag `json:"consistency_flags,omitempty"`
 }
 
 // newResult builds a Result from an accumulated violation list, computing
