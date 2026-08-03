@@ -1,6 +1,142 @@
 package operation
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+)
+
+func TestWorkGoldenVectors(t *testing.T) {
+	t.Parallel()
+
+	// Wire preimage: each value is framed as uint64-big-endian byte length
+	// followed by its bytes. The frames are, in order:
+	// "a2ahub-operation-v1", "work", work ID, uint64-big-endian semantic
+	// sequence, action. These vectors lock both the domain and framing.
+	tests := []struct {
+		name     string
+		workID   string
+		sequence int64
+		action   string
+		want     string
+	}{
+		{"start", "work:01ARZ3NDEKTSV4RRFFQ69G5FAV", 1, WorkActionStart, "op-v1-438c5a0a406bc7a789362f82f53ff5829f0f5a7a6d7753637185937ba3ac047c"},
+		{"checkpoint", "work:01ARZ3NDEKTSV4RRFFQ69G5FAV", 2, WorkActionCheckpoint, "op-v1-dee8c2ca3b52d16bc1c2ae844369907d6959b524c8776f78c7db91d4432f825a"},
+		{"wait", "work:01K1A2B3C4D5E6F7G8H9J0K1M2", 19, WorkActionWait, "op-v1-c444906d06a107b4758f5e13c283b3c6a5c3e6cfff7cc7e435d24eeb0adf89ea"},
+		{"stop", "work:01K1A2B3C4D5E6F7G8H9J0K1M2", 20, WorkActionStop, "op-v1-fd681bd9adaf5a51d8c5b66ab4c1e8fde9ebd77e74a6c839808483a03481c228"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := Work(test.workID, test.sequence, test.action)
+			if err != nil {
+				t.Fatalf("Work() error = %v", err)
+			}
+			if got != test.want {
+				t.Fatalf("Work() = %q, want %q", got, test.want)
+			}
+			if !Valid(got) || strings.Contains(got, "workop") {
+				t.Fatalf("Work() returned non-canonical/private key %q", got)
+			}
+		})
+	}
+}
+
+func TestWorkDomainAndTupleSeparation(t *testing.T) {
+	t.Parallel()
+
+	const workID = "work:01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	base, err := Work(workID, 1, WorkActionStart)
+	if err != nil {
+		t.Fatalf("Work() error = %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		workID   string
+		sequence int64
+		action   string
+	}{
+		{"work id", "work:01ARZ3NDEKTSV4RRFFQ69G5FAW", 1, WorkActionStart},
+		{"sequence", workID, 2, WorkActionStart},
+		{"action", workID, 1, WorkActionStop},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			changed, changedErr := Work(test.workID, test.sequence, test.action)
+			if changedErr != nil {
+				t.Fatalf("Work() error = %v", changedErr)
+			}
+			if changed == base {
+				t.Fatalf("changed %s collided with base key %q", test.name, base)
+			}
+		})
+	}
+
+	otherDomain := newEncoder("work-other-domain")
+	otherDomain.add(workID)
+	var sequence [8]byte
+	sequence[7] = 1
+	otherDomain.addBytes(sequence[:])
+	otherDomain.add(WorkActionStart)
+	if got := otherDomain.key(); got == base {
+		t.Fatalf("different domain collided with work key %q", base)
+	}
+}
+
+func TestEncoderLengthFramingSeparatesConcatenationAliases(t *testing.T) {
+	t.Parallel()
+
+	left := newEncoder("work-framing-proof")
+	left.add("ab")
+	left.add("c")
+	right := newEncoder("work-framing-proof")
+	right.add("a")
+	right.add("bc")
+	if left.key() == right.key() {
+		t.Fatal("length-framed tuples collapsed to the same operation key")
+	}
+}
+
+func TestWorkRejectsInvalidTuple(t *testing.T) {
+	t.Parallel()
+
+	const validID = "work:01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	tests := []struct {
+		name     string
+		workID   string
+		sequence int64
+		action   string
+	}{
+		{"empty work id", "", 1, WorkActionStart},
+		{"wrong prefix", "workop:01ARZ3NDEKTSV4RRFFQ69G5FAV", 1, WorkActionStart},
+		{"lowercase ulid", "work:01arz3ndektsv4rrffq69g5fav", 1, WorkActionStart},
+		{"ambiguous ulid character", "work:01ARZ3NDEKTSV4RRFFQ69G5FAI", 1, WorkActionStart},
+		{"short ulid", "work:01ARZ3NDEKTSV4RRFFQ69G5FA", 1, WorkActionStart},
+		{"zero sequence", validID, 0, WorkActionStart},
+		{"negative sequence", validID, -1, WorkActionStart},
+		{"empty action", validID, 1, ""},
+		{"heartbeat is local only", validID, 1, "heartbeat"},
+		{"unknown action", validID, 1, "resume"},
+		{"case changed action", validID, 1, "Start"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := Work(test.workID, test.sequence, test.action)
+			if !errors.Is(err, ErrInvalidWorkOperation) {
+				t.Fatalf("Work() error = %v, want ErrInvalidWorkOperation", err)
+			}
+			if got != "" {
+				t.Fatalf("Work() key = %q on invalid input", got)
+			}
+		})
+	}
+}
 
 func TestRespondCanonicalAndSemantic(t *testing.T) {
 	t.Parallel()
