@@ -113,6 +113,26 @@ entries:
     title: A digest-pinned ref's target could not be resolved to verify
     applies_to: envelope/v1 refs[].ref pinned with `#digest` but unresolvable (§5.7) — warning, not a reject ("can't verify" ≠ "verified")
 
+  - code: REF-009
+    class: referential
+    title: Artifact thread differs from its resolvable parent's thread
+    applies_to: envelope thread+parent linkage — a resolvable parent cannot be silently forked into another conversation
+
+  - code: REF-010
+    class: referential
+    title: Thread names no known artifact and is not legally minted by the artifact's own system
+    applies_to: envelope thread introduction when a ThreadResolver can prove the thread does not yet exist
+
+  - code: REF-011
+    class: referential
+    title: A committed artifact's thread or parent linkage changed after merge
+    applies_to: V3 base-to-head comparison for immutable thread/parent linkage
+
+  - code: REF-012
+    class: referential
+    title: A superseding artifact sits on a different thread from its predecessor
+    applies_to: supersede linkage — warning severity because a later renegotiation may intentionally open a new conversation
+
   - code: REF-013
     class: referential
     title: Space manifest authority map is ambiguous or cannot safely grant write authority
