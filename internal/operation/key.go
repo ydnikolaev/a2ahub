@@ -7,10 +7,61 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"regexp"
 	"sort"
 )
 
 const prefix = "op-v1-"
+
+const (
+	WorkActionStart      = "start"
+	WorkActionCheckpoint = "checkpoint"
+	WorkActionWait       = "wait"
+	WorkActionStop       = "stop"
+)
+
+var (
+	// ErrInvalidWorkOperation marks work identity inputs that cannot name a
+	// durable semantic step.
+	ErrInvalidWorkOperation = errors.New("operation: invalid work operation")
+
+	workIDPattern = regexp.MustCompile(`^work:[0-9A-HJKMNP-TV-Z]{26}$`)
+)
+
+// Work derives the private retry identity for one durable work-report step.
+// The domain, work ID, fixed-width semantic sequence, and action are all
+// independently length-framed by the package's canonical v1 encoder. Local
+// heartbeat activity deliberately has no action and therefore no key here.
+func Work(workID string, semanticSequence int64, action string) (string, error) {
+	if !workIDPattern.MatchString(workID) {
+		return "", fmt.Errorf("%w: work id must be work:<ULID>", ErrInvalidWorkOperation)
+	}
+	if semanticSequence < 1 {
+		return "", fmt.Errorf("%w: semantic sequence must be at least 1", ErrInvalidWorkOperation)
+	}
+	if !validWorkAction(action) {
+		return "", fmt.Errorf("%w: action %q is not semantic", ErrInvalidWorkOperation, action)
+	}
+
+	encoder := newEncoder("work")
+	encoder.add(workID)
+	var sequence [8]byte
+	binary.BigEndian.PutUint64(sequence[:], uint64(semanticSequence))
+	encoder.addBytes(sequence[:])
+	encoder.add(action)
+	return encoder.key(), nil
+}
+
+func validWorkAction(action string) bool {
+	switch action {
+	case WorkActionStart, WorkActionCheckpoint, WorkActionWait, WorkActionStop:
+		return true
+	default:
+		return false
+	}
+}
 
 // Respond derives the operation key for one respond invocation. Parent order
 // and field map iteration cannot affect the result; body bytes are represented
