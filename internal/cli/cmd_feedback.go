@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/feedback"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
 // FeedbackCommand implements `a2a feedback <new|validate|submit|status|
@@ -175,12 +176,13 @@ func (c *FeedbackCommand) runSubmit(ctx context.Context, args []string, stdio IO
 	fs := flag.NewFlagSet("feedback submit", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	all := fs.Bool("all", false, "submit every unledgered feedback draft")
+	jsonOutput := fs.Bool("json", false, "emit one JSON outcome per selected input")
 	paths, err := parseArgsAnyOrder(fs, args)
 	if err != nil {
 		return 2
 	}
 	if (*all && len(paths) != 0) || (!*all && len(paths) == 0) {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a feedback submit <file...> [--all]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a feedback submit <file...> [--all] [--json]")
 		return 2
 	}
 	if *all {
@@ -190,37 +192,86 @@ func (c *FeedbackCommand) runSubmit(ctx context.Context, args []string, stdio IO
 			return 1
 		}
 		if len(paths) == 0 {
-			_, _ = fmt.Fprintln(stdio.Stdout, "feedback submit: no unsubmitted drafts")
+			if *jsonOutput {
+				_, _ = fmt.Fprintln(stdio.Stdout, "[]")
+			} else {
+				_, _ = fmt.Fprintln(stdio.Stdout, "feedback submit: no unsubmitted drafts")
+			}
 			return 0
 		}
 	}
+	sort.Strings(paths)
 
 	// Batch atomicity ends at the first external write, so validate the whole
 	// selected set first. A bad final file must never leave earlier PRs open.
-	for _, path := range paths {
-		if err := c.submitter.ValidatePath(path); err != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "feedback submit: %s: %v\n", path, err)
-			return 1
+	results := make([]feedback.SubmitResult, len(paths))
+	validationFailed := false
+	for i, path := range paths {
+		results[i] = feedback.SubmitResult{
+			InputPath: path, Stage: space.WriteStageNone,
+			RemainingAction: space.RemainingActionRetryPush,
+		}
+		if validationErr := c.submitter.ValidatePath(path); validationErr != nil {
+			results[i].ErrorCode = feedback.ErrorCodeValidation
+			results[i].Error = validationErr.Error()
+			validationFailed = true
 		}
 	}
+	if validationFailed {
+		for i := range results {
+			if results[i].ErrorCode == "" {
+				results[i].ErrorCode = feedback.ErrorCodeBatchRefused
+				results[i].Error = "not submitted because another selected input failed validation"
+			}
+		}
+		c.renderSubmitResults(results, *jsonOutput, stdio)
+		return 1
+	}
+
 	failed := false
-	for _, path := range paths {
+	for i, path := range paths {
 		result, err := c.submitter.Submit(ctx, path)
+		result.InputPath = path
 		if err != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "feedback submit: %s: %v\n", path, err)
+			if result.ErrorCode == "" {
+				result.ErrorCode = feedback.ErrorCodeSubmit
+				result.Error = err.Error()
+			}
 			failed = true
-			continue
 		}
-		if result.AlreadyOpen {
-			_, _ = fmt.Fprintf(stdio.Stdout, "feedback submit: already submitted (PR %s)\n", result.PRURL)
-			continue
-		}
-		_, _ = fmt.Fprintf(stdio.Stdout, "feedback submit: opened PR %s for %s\n", result.PRURL, result.ID)
+		results[i] = result
 	}
+	c.renderSubmitResults(results, *jsonOutput, stdio)
 	if failed {
 		return 1
 	}
 	return 0
+}
+
+func (c *FeedbackCommand) renderSubmitResults(results []feedback.SubmitResult, jsonOutput bool, stdio IO) {
+	if jsonOutput {
+		enc := json.NewEncoder(stdio.Stdout)
+		enc.SetEscapeHTML(false)
+		_ = enc.Encode(results) // reason: presentation writer errors cannot change already-completed external outcomes
+		return
+	}
+	for _, result := range results {
+		if result.PRURL != "" {
+			switch result.State {
+			case space.WriteStateAlreadyOpen, space.WriteStateAlreadyMerged:
+				_, _ = fmt.Fprintf(stdio.Stdout, "feedback submit: already submitted (PR %s; next %s)\n", result.PRURL, result.RemainingAction)
+			default:
+				verb := "opened PR"
+				if result.Error != "" {
+					verb = "confirmed PR"
+				}
+				_, _ = fmt.Fprintf(stdio.Stdout, "feedback submit: %s %s for %s (%s; next %s)\n", verb, result.PRURL, result.ID, result.State, result.RemainingAction)
+			}
+		}
+		if result.Error != "" {
+			_, _ = fmt.Fprintf(stdio.Stderr, "feedback submit: %s: %s (%s)\n", result.InputPath, result.Error, result.ErrorCode)
+		}
+	}
 }
 
 func (c *FeedbackCommand) unledgeredDrafts() ([]string, error) {

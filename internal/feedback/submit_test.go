@@ -2,6 +2,7 @@ package feedback
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,12 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
+
+type submitFunnelFunc func(context.Context, space.SubmitRequest) (space.WriteResult, error)
+
+func (f submitFunnelFunc) Submit(ctx context.Context, req space.SubmitRequest) (space.WriteResult, error) {
+	return f(ctx, req)
+}
 
 // validFeedbackYAML is a minimal, honestly-cleared bug report — schema +
 // checks + status all green, the state Submit requires before it will
@@ -203,5 +210,96 @@ func TestSubmit_GitHubWithoutCredentialRefusesBeforeGit(t *testing.T) {
 	}
 	if cloneCalls != 0 || len(fakeHost.Pushes) != 0 || len(fakeHost.Opens) != 0 {
 		t.Fatalf("credential refusal performed writes: clone=%d push=%d open=%d", cloneCalls, len(fakeHost.Pushes), len(fakeHost.Opens))
+	}
+}
+
+func TestSubmit_PreservesPartialPRAndRecordsLedger(t *testing.T) {
+	t.Parallel()
+	wantErr := errors.New("auto-merge arm refused")
+	partial := space.WriteResult{
+		Branch: "a2a/feedback/submit/fb-20260723-abc123", PRNumber: 42,
+		PRURL: "https://example.test/pr/42", Stage: space.WriteStagePRCreated,
+		State: space.WriteStateNeedsAttention, RemainingAction: space.RemainingActionResolvePR,
+		Note: "arm auto-merge manually",
+	}
+	ledgerPath := filepath.Join(t.TempDir(), "ledger.yaml")
+	sub := NewSubmitter(submitFunnelFunc(func(context.Context, space.SubmitRequest) (space.WriteResult, error) {
+		return partial, wantErr
+	}), ledgerPath, t.TempDir(), "test-repo", SubmitConfig{RemoteURL: t.TempDir()})
+	sub.SetCloneOrFetchForTest(func(context.Context, string, string) error { return nil })
+	path := filepath.Join(t.TempDir(), "fb-20260723-abc123.yaml")
+	if err := os.WriteFile(path, []byte(validFeedbackYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := sub.Submit(context.Background(), path)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Submit error = %v, want wrapped %v", err, wantErr)
+	}
+	if got.PRNumber != 42 || got.PRURL != partial.PRURL || got.Stage != partial.Stage ||
+		got.State != partial.State || got.RemainingAction != partial.RemainingAction ||
+		got.Note != partial.Note || !got.LedgerRecorded || got.ErrorCode != ErrorCodeSharedWrite {
+		t.Fatalf("partial result was collapsed or reinterpreted: %+v", got)
+	}
+	items, readErr := ReadLedger(ledgerPath)
+	if readErr != nil || len(items) != 1 || items[0].PRURL != partial.PRURL {
+		t.Fatalf("confirmed partial PR was not ledgered once: items=%+v err=%v", items, readErr)
+	}
+}
+
+func TestSubmit_DoesNotLedgerUnconfirmedOutcome(t *testing.T) {
+	t.Parallel()
+	wantErr := errors.New("push acknowledgement unknown")
+	ledgerPath := filepath.Join(t.TempDir(), "ledger.yaml")
+	sub := NewSubmitter(submitFunnelFunc(func(context.Context, space.SubmitRequest) (space.WriteResult, error) {
+		return space.WriteResult{
+			Branch: "a2a/feedback/submit/fb-20260723-abc123", Stage: space.WriteStagePushed,
+			State: space.WriteStateOutcomeUnknown, RemainingAction: space.RemainingActionObserveProviderOutcome,
+		}, wantErr
+	}), ledgerPath, t.TempDir(), "test-repo", SubmitConfig{RemoteURL: t.TempDir()})
+	sub.SetCloneOrFetchForTest(func(context.Context, string, string) error { return nil })
+	path := filepath.Join(t.TempDir(), "fb-20260723-abc123.yaml")
+	if err := os.WriteFile(path, []byte(validFeedbackYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := sub.Submit(context.Background(), path)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Submit error = %v, want wrapped %v", err, wantErr)
+	}
+	if got.LedgerRecorded || got.PRNumber != 0 || got.Stage != space.WriteStagePushed {
+		t.Fatalf("unconfirmed outcome was overclaimed: %+v", got)
+	}
+	if items, readErr := ReadLedger(ledgerPath); readErr != nil || len(items) != 0 {
+		t.Fatalf("unconfirmed outcome wrote ledger: items=%+v err=%v", items, readErr)
+	}
+}
+
+func TestSubmit_LedgerFailureReturnsConfirmedPROutcome(t *testing.T) {
+	t.Parallel()
+	ledgerErr := errors.New("disk full")
+	confirmed := space.WriteResult{
+		Branch: "a2a/feedback/submit/fb-20260723-abc123", PRNumber: 42,
+		PRURL: "https://example.test/pr/42", Stage: space.WriteStageAutoMergeArmed,
+		State: space.WriteStatePendingMerge, RemainingAction: space.RemainingActionWaitForGates,
+	}
+	sub := NewSubmitter(submitFunnelFunc(func(context.Context, space.SubmitRequest) (space.WriteResult, error) {
+		return confirmed, nil
+	}), filepath.Join(t.TempDir(), "ledger.yaml"), t.TempDir(), "test-repo", SubmitConfig{RemoteURL: t.TempDir()})
+	sub.SetCloneOrFetchForTest(func(context.Context, string, string) error { return nil })
+	sub.SetAppendLedgerForTest(func(string, LedgerItem) error { return ledgerErr })
+	path := filepath.Join(t.TempDir(), "fb-20260723-abc123.yaml")
+	if err := os.WriteFile(path, []byte(validFeedbackYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := sub.Submit(context.Background(), path)
+	var typed *LedgerRecordError
+	if !errors.As(err, &typed) || !errors.Is(err, ledgerErr) {
+		t.Fatalf("Submit error = %v, want LedgerRecordError wrapping %v", err, ledgerErr)
+	}
+	if got.PRNumber != 42 || got.PRURL != confirmed.PRURL || got.LedgerRecorded ||
+		got.ErrorCode != ErrorCodeLocalLedger || got.Error != "local ledger was not recorded" {
+		t.Fatalf("ledger failure erased or leaked into confirmed PR outcome: %+v", got)
 	}
 }
