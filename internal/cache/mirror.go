@@ -89,12 +89,22 @@ type foldedArtifact struct {
 	// deprecate event, and the dashboard must not lose that canonical link.
 	EventRefs     map[string][]refEntry
 	LatestEventAt time.Time
+	// LatestEventSeq and LatestEventID identify the SAME own-subject event as
+	// LatestEventAt. Keeping the three keys coherent matters to activity feeds:
+	// two lifecycle events commonly share a second-level timestamp, while Git
+	// commit order and the ULID still preserve their actual order.
+	LatestEventSeq int64
+	LatestEventID  string
 	// EventAt maps a committed event's ULID to its `at` timestamp —
 	// fold.Event itself carries none (fold is a pure, timestamp-free
 	// package, §T1); this side table is this package's own way of
 	// recovering it for show/thread rendering without extending fold's
 	// input shape.
 	EventAt map[string]time.Time
+	// EventNotes preserves optional human-authored lifecycle commentary beside
+	// the pure fold input. Notes never influence state, but read surfaces must
+	// not reduce a committed note event to an unexplained status change.
+	EventNotes map[string]string
 	// LatestPublishVersion is the most recent `publish` event's `version`
 	// field for this artifact (D-023: contract versions resolve through
 	// publish events) — empty when none recorded (never published, or a
@@ -235,9 +245,13 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 	}
 
 	eventAt := make(map[string]time.Time, len(events))
+	eventNotes := make(map[string]string, len(events))
 	for _, re := range events {
 		if t, terr := time.Parse(time.RFC3339, re.Ev.At); terr == nil {
 			eventAt[re.Ev.Event] = t
+		}
+		if re.Ev.Note != "" {
+			eventNotes[re.Ev.Event] = re.Ev.Note
 		}
 	}
 
@@ -261,6 +275,9 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 		}
 
 		var latest time.Time
+		var latestEventSeq int64
+		var latestEventID string
+		hasLatestEvent := false
 		var latestPublishSeq int64 = -1
 		var latestPublishVersion string
 		eventRefs := map[string][]refEntry{}
@@ -271,8 +288,19 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			if len(re.Ev.Refs) > 0 {
 				eventRefs[re.Ev.Event] = append([]refEntry(nil), re.Ev.Refs...)
 			}
-			if t, terr := time.Parse(time.RFC3339, re.Ev.At); terr == nil && t.After(latest) {
-				latest = t
+			if t, terr := time.Parse(time.RFC3339, re.Ev.At); terr == nil {
+				newer := !hasLatestEvent
+				if orderKnown {
+					newer = newer || re.CommitSeq > latestEventSeq || (re.CommitSeq == latestEventSeq && re.Ev.Event > latestEventID)
+				} else {
+					newer = newer || t.After(latest) || (t.Equal(latest) && re.Ev.Event > latestEventID)
+				}
+				if newer {
+					hasLatestEvent = true
+					latest = t
+					latestEventSeq = re.CommitSeq
+					latestEventID = re.Ev.Event
+				}
 			}
 			if re.Ev.Transition == fold.TPublish && re.Ev.Version != "" && re.CommitSeq > latestPublishSeq {
 				latestPublishSeq = re.CommitSeq
@@ -284,7 +312,8 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			SpaceID: spaceID, RelPath: a.RelPath, Raw: a.Raw, Digest: a.Digest,
 			Env: a.Env, Result: result, Events: evs, EventEvidence: eventEvidence,
 			ReceiptMismatches: receiptMismatches, LatestEventAt: latest,
-			EventAt: eventAt, EventRefs: eventRefs, LatestPublishVersion: latestPublishVersion,
+			LatestEventSeq: latestEventSeq, LatestEventID: latestEventID,
+			EventAt: eventAt, EventNotes: eventNotes, EventRefs: eventRefs, LatestPublishVersion: latestPublishVersion,
 			Seq: seq[a.RelPath], OrderKnown: orderKnown,
 			// Edge 3, evaluated once — see foldedArtifact's own comment.
 			// The lookup is on the contract id alone; myDependencies is

@@ -4,13 +4,16 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/avatar"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/workreport"
 	"gopkg.in/yaml.v3"
 )
 
@@ -194,6 +197,7 @@ func writeArtifact(t *testing.T, dir, relPath string, fields map[string]any, bod
 func TestAssemble_Threads(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
+	now := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
 
 	const hostileTitle = `<script>alert(1)</script> question`
 	const threadA = "thread:axon-20260701-tt01"
@@ -228,9 +232,9 @@ func TestAssemble_Threads(t *testing.T) {
 	}}
 	store := cache.NewStore("axon", t.TempDir(),
 		[]cache.SpaceMirror{{SpaceID: "getvisa", Dir: dir, RepoURL: "https://github.com/r22d222/a2a", Manifest: manifest}},
-		time.Now, 0)
+		func() time.Time { return now }, 0)
 
-	data, err := Assemble(context.Background(), store, "", time.Now())
+	data, err := Assemble(context.Background(), store, "", now)
 	if err != nil {
 		t.Fatalf("Assemble: %v", err)
 	}
@@ -333,13 +337,43 @@ func TestAssemble_Threads(t *testing.T) {
 			t.Fatalf("%s is submitted and unanswered; %q is not a move its own sender holds", soloID, move)
 		}
 	}
-	// The label and the sort key are two formattings of one instant, so a row
+	// The label and the creation sort key are two formattings of one instant, so a row
 	// can never carry an age the exchange list cannot order it by. (These
 	// artifacts are written without git history, so both are legitimately
 	// empty here; what must not happen is one without the other.)
 	for id, row := range byRowID {
-		if (row.Age == "") != (row.MovedAt == "") {
-			t.Fatalf("%s: age=%q but MovedAt=%q — the label and the sort key come from one instant", id, row.Age, row.MovedAt)
+		if (row.Age == "") != (row.CreatedAt == "") {
+			t.Fatalf("%s: age=%q but CreatedAt=%q — the label and the sort key come from one instant", id, row.Age, row.CreatedAt)
 		}
+	}
+
+	// Operational work is a separate overview read model. Injecting it must
+	// not reinterpret the existing attention queue: identity, order, reasons,
+	// and prompt moves are owned by the protocol projection above.
+	if len(data.Inbox) == 0 {
+		t.Fatal("fixture did not produce an attention queue")
+	}
+	validUntil := now.Add(time.Hour)
+	operationalSnapshot := operational.Snapshot{
+		SchemaVersion: operational.SchemaVersion, GeneratedAt: now, Revision: "sha256:" + strings.Repeat("a", 64),
+		Sources: []operational.Source{},
+		Timeline: []operational.TimelineRow{{
+			Space: "getvisa", Thread: threadB, Title: "solo, no reply yet",
+			Participants: []string{"axon", "seomatrix"}, Protocol: operational.Protocol{WaitingOn: []string{}, BlockingBy: []string{}},
+			Work: []operational.Work{{
+				WorkID: "work:01ARZ3NDEKTSV4RRFFQ69G5FAV", SubjectRef: soloID, Mode: workreport.ModeImplementing,
+				Summary: "Implementing ingest", Actor: operational.Actor{Kind: "agent", Name: "codex", System: "axon", Session: "session-a"},
+				Freshness: operational.FreshnessLocalCurrent, Current: true, ValidUntil: &validUntil,
+				Source: "local-lease", WaitingOn: []workreport.WaitingOn{},
+			}},
+		}},
+		Unavailable: []operational.Unavailable{},
+	}
+	injected, err := AssembleWithOperational(context.Background(), store, "", now, operationalSnapshot)
+	if err != nil {
+		t.Fatalf("AssembleWithOperational: %v", err)
+	}
+	if !reflect.DeepEqual(data.Inbox, injected.Inbox) {
+		t.Fatalf("operational work changed attention queue\nbefore: %#v\n after: %#v", data.Inbox, injected.Inbox)
 	}
 }

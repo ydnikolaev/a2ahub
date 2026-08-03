@@ -41,6 +41,9 @@ func TestBuildMergesCommittedAndLocalEvidenceWithoutCollapsingActors(t *testing.
 	if work[1].Freshness != FreshnessCommittedCurrent || work[1].Actor.Name != "bob" {
 		t.Fatalf("independent committed actor = %#v", work[1])
 	}
+	if !work[0].Current || !work[1].Current {
+		t.Fatalf("current classification not projected by core: %#v", work)
+	}
 	if snapshot.Timeline[0].Protocol.Settled || snapshot.Timeline[0].Protocol.OpenCount != 1 {
 		t.Fatalf("work changed protocol = %#v", snapshot.Timeline[0].Protocol)
 	}
@@ -62,12 +65,18 @@ func TestBuildFreshnessExpiryAndFinishedOrphanBoundaries(t *testing.T) {
 	if got := atBoundary.Timeline[0].Work[0].Freshness; got != FreshnessCommittedCurrent {
 		t.Fatalf("freshness at exact expiry = %q", got)
 	}
+	if !atBoundary.Timeline[0].Work[0].Current {
+		t.Fatal("committed-current work is not current")
+	}
 	after, err := Build(input, fixedClock{boundary.Add(time.Nanosecond)}, DefaultLimits())
 	if err != nil {
 		t.Fatalf("Build(after boundary) error = %v", err)
 	}
 	if got := after.Timeline[0].Work[0].Freshness; got != FreshnessStale {
 		t.Fatalf("freshness after expiry = %q", got)
+	}
+	if after.Timeline[0].Work[0].Current {
+		t.Fatal("stale work is current")
 	}
 	if atBoundary.Revision == after.Revision {
 		t.Fatal("expiry transition did not change semantic revision")
@@ -85,6 +94,9 @@ func TestBuildFreshnessExpiryAndFinishedOrphanBoundaries(t *testing.T) {
 	}
 	if snapshot.Timeline[0].Work[0].Freshness != FreshnessFinished {
 		t.Fatalf("orphan lease resurrected finished work: %#v", snapshot.Timeline[0].Work[0])
+	}
+	if snapshot.Timeline[0].Work[0].Current {
+		t.Fatal("finished work is current")
 	}
 	if !containsConsistency(snapshot.Timeline[0], "orphan-lease-finished") {
 		t.Fatalf("missing orphan consistency fact: %#v", snapshot.Timeline[0].Consistency)
@@ -198,6 +210,9 @@ func TestBuildPendingProjectionAndHostileTextRemainBoundedData(t *testing.T) {
 	if item.Freshness != FreshnessLocalCurrent || item.SharedPending == nil || item.SharedPending.Stage != "pushed" {
 		t.Fatalf("pending projection = %#v", item)
 	}
+	if !item.Current {
+		t.Fatal("local-current work is not current")
+	}
 	if strings.Contains(item.Summary, "\u202e") || !strings.Contains(item.Summary, "</script>") {
 		t.Fatalf("hostile text was interpreted or bidi control retained: %q", item.Summary)
 	}
@@ -228,6 +243,9 @@ func TestBuildClosingLeaseIsPendingRecoveryNotPresence(t *testing.T) {
 	}
 	if got := snapshot.Timeline[0].Work[0].Freshness; got != FreshnessPendingRecovery {
 		t.Fatalf("closing lease freshness = %q", got)
+	}
+	if snapshot.Timeline[0].Work[0].Current {
+		t.Fatal("pending-recovery work must not claim current execution")
 	}
 }
 

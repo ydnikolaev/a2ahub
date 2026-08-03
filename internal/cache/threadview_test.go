@@ -85,6 +85,44 @@ func verifiedChainThreadView(t *testing.T) ThreadResult {
 	return res
 }
 
+func TestThreadAndShowPreserveEventNote(t *testing.T) {
+	t.Parallel()
+	fx, threadID, parentID, _ := buildExchangeThread(t)
+	note := "The result is valid; keep the synthetic-locale evidence attached for the next release."
+	fields := evt(parentID, "note", "axon", time.Date(2026, 7, 1, 10, 35, 0, 0, time.UTC))
+	fields["note"] = note
+	fx.commitEvent("axon", fxULID(6), fields)
+
+	store := newThreadStore(t, fx, "sp1")
+	thread, err := store.ThreadView(context.Background(), threadID, "")
+	if err != nil {
+		t.Fatalf("ThreadView: %v", err)
+	}
+	found := false
+	for _, entry := range thread.Transcript {
+		if entry.Event != nil && entry.Event.Note == note {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("thread transcript lost committed note: %+v", thread.Transcript)
+	}
+
+	show, err := store.Show(context.Background(), parentID)
+	if err != nil {
+		t.Fatalf("Show: %v", err)
+	}
+	found = false
+	for _, event := range show.Events {
+		if event.Note == note {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("artifact history lost committed note: %+v", show.Events)
+	}
+}
+
 func newThreadStore(t *testing.T, fx *fixtureSpace, spaceID string) *Store {
 	t.Helper()
 	return NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: spaceID, Dir: fx.dir, Manifest: mustManifest(t, fx)}}, time.Now, 0)

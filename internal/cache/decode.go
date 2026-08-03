@@ -25,18 +25,19 @@ type refEntry struct {
 // every one of the 8 §3.1 types (response's `parent`/`result` fields are
 // simply empty/zero on every other type).
 type envelopeProbe struct {
-	Schema   string `yaml:"schema"`
-	ID       string `yaml:"id"`
-	Type     string `yaml:"type"`
-	Title    string `yaml:"title"`
-	Space    string `yaml:"space"`
-	From     string `yaml:"from"`
-	To       any    `yaml:"to"`
-	Priority string `yaml:"priority"`
-	Blocking bool   `yaml:"blocking"`
-	NeededBy string `yaml:"needed_by"`
-	Thread   string `yaml:"thread"`
-	Category string `yaml:"category"`
+	Schema       string `yaml:"schema"`
+	ID           string `yaml:"id"`
+	Type         string `yaml:"type"`
+	Title        string `yaml:"title"`
+	Space        string `yaml:"space"`
+	From         string `yaml:"from"`
+	To           any    `yaml:"to"`
+	Priority     string `yaml:"priority"`
+	Blocking     bool   `yaml:"blocking"`
+	AckRequested bool   `yaml:"ack_requested"`
+	NeededBy     string `yaml:"needed_by"`
+	Thread       string `yaml:"thread"`
+	Category     string `yaml:"category"`
 	// Contract descriptor metadata. Empty on every non-contract artifact.
 	SchemaFormat  string `yaml:"schema_format"`
 	CompatPolicy  string `yaml:"compat_policy"`
@@ -158,6 +159,7 @@ type eventProbe struct {
 		Version string `yaml:"version"`
 	} `yaml:"produced_by"`
 	At      string     `yaml:"at"`
+	Note    string     `yaml:"note"`
 	Refs    []refEntry `yaml:"refs"`
 	Version string     `yaml:"version"`
 }

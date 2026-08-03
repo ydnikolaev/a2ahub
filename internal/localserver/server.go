@@ -65,6 +65,14 @@ func DefaultConfig() Config {
 	}
 }
 
+// ValidateConfig validates the public server configuration without binding a
+// listener or starting goroutines. CLI flag handling uses it to reject unsafe
+// addresses and out-of-range intervals before any process side effect.
+func ValidateConfig(config Config) error {
+	_, err := config.normalized()
+	return err
+}
+
 func (c Config) normalized() (Config, error) {
 	defaults := DefaultConfig()
 	if c.Listen == "" {
@@ -155,13 +163,18 @@ func (s *snapshotStore) replace(next *snapshotGeneration, shell *shellGeneration
 	defer s.mu.Unlock()
 	previous := s.current
 	previousShell := s.currentShell
-	// A semantic revision identifies the complete observable generation. A
-	// poll that only advances observation time must not replace that generation:
-	// doing so would both change bytes behind the same ETag and cancel every
-	// slow reader even though no domain fact changed.
+	// A semantic revision controls SSE and cancellation, but response-only
+	// observation fields are intentionally excluded from it. Publish the fresh
+	// bytes behind the same weak ETag while sharing the existing cancellation
+	// lifetime, so current readers are not aborted and a later semantic change
+	// still cancels every reader from this revision.
 	if previous != nil && previous.revision == next.revision {
 		next.cancel()
 		shell.cancel()
+		next.ctx, next.cancel = previous.ctx, previous.cancel
+		shell.ctx, shell.cancel = previousShell.ctx, previousShell.cancel
+		s.current = next
+		s.currentShell = shell
 		return false
 	}
 	s.current = next

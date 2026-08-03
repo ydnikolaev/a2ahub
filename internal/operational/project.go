@@ -310,8 +310,10 @@ func validateWorkCoordinates(space, thread, workID string) error {
 	return nil
 }
 
-func projectWorkGroup(group *workGroup, now time.Time) (projectedWork, []Consistency) {
-	var facts []Consistency
+func projectWorkGroup(group *workGroup, now time.Time) (projected projectedWork, facts []Consistency) {
+	defer func() {
+		projected.value.Current = currentFreshness(projected.value.Freshness)
+	}()
 	var committed *CommittedWorkEvidence
 	if len(group.committed) > 0 {
 		sort.SliceStable(group.committed, func(i, j int) bool {
@@ -397,6 +399,15 @@ func projectWorkGroup(group *workGroup, now time.Time) (projectedWork, []Consist
 		return local, facts
 	}
 	return projectedWork{value: base, anomalous: anomaly, orderTime: boundedTime(committed.ReportedAt, now), include: validWireWork(base)}, facts
+}
+
+func currentFreshness(value Freshness) bool {
+	switch value {
+	case FreshnessLocalCurrent, FreshnessCommittedCurrent:
+		return true
+	default:
+		return false
+	}
 }
 
 func projectCommitted(e CommittedWorkEvidence, now time.Time) (Work, bool, bool) {

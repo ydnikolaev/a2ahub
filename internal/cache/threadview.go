@@ -106,6 +106,7 @@ type TranscriptEvent struct {
 	// ResponseID is set only on a `respond` event (D-024's newly attached
 	// response id).
 	ResponseID string `json:"response_id,omitempty"`
+	Note       string `json:"note,omitempty"`
 }
 
 // TranscriptEntry is ONE strictly seq-ordered transcript row — a
@@ -533,6 +534,7 @@ func buildTranscript(sorted []foldedArtifact, order string) ([]TranscriptEntry, 
 						ProducedBy:  evidence.Producer,
 						Consistency: receiptMismatchFor(fa, ev.ULID),
 						ResponseID:  ev.ResponseID,
+						Note:        fa.EventNotes[ev.ULID],
 					},
 				},
 				seq: ev.CommitSeq, at: at, isEvent: true, tieID: ev.ULID,
@@ -678,11 +680,20 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 		// exists (legalnext.go's own doc comment), so a NOT-YET-ACKED
 		// participant is this function's own explicit case, membership
 		// only (broadcastAckPermitted's rule, never re-derived here).
-		if fa.kind() == fold.KindAnnouncement {
+		if fa.kind() == fold.KindAnnouncement && fa.Env.AckRequested {
 			var pending []string
-			for _, p := range manifest.Participants {
-				if !fa.Result.Acks[p.System] {
-					pending = append(pending, p.System)
+			targets := normalizeTo(fa.Env.To)
+			if fa.Env.isBroadcast() {
+				targets = targets[:0]
+				for _, p := range manifest.Participants {
+					if p.Status == "active" && p.System != fa.Env.From {
+						targets = append(targets, p.System)
+					}
+				}
+			}
+			for _, target := range targets {
+				if target != "all" && target != fa.Env.From && !fa.Result.Acks[target] {
+					pending = append(pending, target)
 				}
 			}
 			sort.Strings(pending)

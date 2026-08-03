@@ -37,6 +37,14 @@ const totalBudget = 10 * time.Second
 // first.
 var ErrSyncBudgetExhausted = errors.New("cache: SyncIfStale: budget exhausted")
 
+// SpaceSyncResult preserves the owning space for an opt-in refresh outcome.
+// Read verbs retain the historical []error surface through SyncIfStale;
+// operational consumers use this typed form and never parse error strings.
+type SpaceSyncResult struct {
+	Space string
+	Err   error
+}
+
 // readRefreshTTL is how recently a mirror must have been fetched for a READ
 // VERB to accept it without fetching again.
 //
@@ -141,6 +149,21 @@ const ReadRefreshTTLForTest = readRefreshTTL
 // nothing else from Store's own state, so there is nothing else to leave
 // inconsistent.
 func (s *Store) SyncIfStale(ctx context.Context) []error {
+	results := s.SyncIfStaleResults(ctx)
+	errs := make([]error, 0, len(results))
+	for _, result := range results {
+		if result.Err != nil {
+			errs = append(errs, result.Err)
+		}
+	}
+	return errs
+}
+
+// SyncIfStaleResults is SyncIfStale's typed production seam. It returns one
+// row for every refresh attempted or refused by the global admission budget,
+// including successful rows, so callers can attribute degradation without
+// inspecting human-readable errors.
+func (s *Store) SyncIfStaleResults(ctx context.Context) []SpaceSyncResult {
 	// Indices into s.spaces, not copies — a successful refresh below
 	// writes the reloaded manifest straight back into s.spaces[idx]
 	// (clause 6), which a copied SpaceMirror value could not do.
@@ -160,11 +183,15 @@ func (s *Store) SyncIfStale(ctx context.Context) []error {
 	}
 
 	start := time.Now()
-	var errs []error
+	var results []SpaceSyncResult
 	for i, idx := range staleIdx {
 		if time.Since(start) >= totalBudget {
 			for _, restIdx := range staleIdx[i:] {
-				errs = append(errs, fmt.Errorf("cache: SyncIfStale: space %s: %w", s.spaces[restIdx].SpaceID, ErrSyncBudgetExhausted))
+				spaceID := s.spaces[restIdx].SpaceID
+				results = append(results, SpaceSyncResult{
+					Space: spaceID,
+					Err:   fmt.Errorf("cache: SyncIfStale: space %s: %w", spaceID, ErrSyncBudgetExhausted),
+				})
 			}
 			break
 		}
@@ -173,12 +200,23 @@ func (s *Store) SyncIfStale(ctx context.Context) []error {
 		err := s.cloneOrFetch(mctx, sm.Dir, sm.RepoURL)
 		cancel()
 		if err != nil {
-			errs = append(errs, fmt.Errorf("cache: SyncIfStale: space %s: %w", sm.SpaceID, err))
+			results = append(results, SpaceSyncResult{
+				Space: sm.SpaceID,
+				Err:   fmt.Errorf("cache: SyncIfStale: space %s: %w", sm.SpaceID, err),
+			})
 			continue
 		}
 		s.refreshManifestAfterFetch(idx)
+		if err := ReconcilePendingMarkers(s.cacheDir, sm.SpaceID, sm.Dir); err != nil {
+			results = append(results, SpaceSyncResult{
+				Space: sm.SpaceID,
+				Err:   fmt.Errorf("cache: SyncIfStale: space %s: reconcile pending markers: %w", sm.SpaceID, err),
+			})
+			continue
+		}
+		results = append(results, SpaceSyncResult{Space: sm.SpaceID})
 	}
-	return errs
+	return results
 }
 
 // refreshManifestAfterFetch re-reads space.yaml from s.spaces[idx]'s own

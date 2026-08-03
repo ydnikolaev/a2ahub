@@ -130,6 +130,161 @@ func TestInboxActionable_JSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestOpenInboxSnapshotExcludesTerminalHistory(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+
+	fx.commitArtifact("seomatrix/exchanges/XW-seomatrix-20260701-open.md", wr("XW-seomatrix-20260701-open", "open", "seomatrix", []string{"axon"}, "p2", false), "body")
+	fx.commitEvent("seomatrix", fxULID(700), evt("XW-seomatrix-20260701-open", "submit", "seomatrix", base))
+
+	fx.commitArtifact("seomatrix/exchanges/XW-seomatrix-20260701-closed.md", wr("XW-seomatrix-20260701-closed", "closed", "seomatrix", []string{"axon"}, "p2", false), "body")
+	fx.commitEvent("seomatrix", fxULID(710), evt("XW-seomatrix-20260701-closed", "submit", "seomatrix", base))
+	fx.commitEvent("seomatrix", fxULID(711), evt("XW-seomatrix-20260701-closed", "cancel", "seomatrix", base.Add(time.Hour)))
+
+	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, Manifest: mustManifest(t, fx)}}, func() time.Time { return base.Add(3 * time.Hour) }, 0)
+	all, err := store.InboxSnapshot(context.Background(), false)
+	if err != nil {
+		t.Fatalf("InboxSnapshot: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("ordinary inbox len = %d, want terminal history retained (2)", len(all))
+	}
+
+	open, err := store.OpenInboxSnapshot(context.Background())
+	if err != nil {
+		t.Fatalf("OpenInboxSnapshot: %v", err)
+	}
+	if got := itemIDs(open); len(got) != 1 || got[0] != "XW-seomatrix-20260701-open" {
+		t.Fatalf("open inbox ids = %v, want only active request", got)
+	}
+
+	archive, err := store.ExchangeArchiveSnapshot(context.Background())
+	if err != nil {
+		t.Fatalf("ExchangeArchiveSnapshot: %v", err)
+	}
+	if got := itemIDs(archive); len(got) != 1 || got[0] != "XW-seomatrix-20260701-closed" {
+		t.Fatalf("archive ids = %v, want only terminal request", got)
+	}
+}
+
+func TestExchangeSnapshotsArchiveAcknowledgedAnnouncement(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+	id := "XA-axon-20260701-delivered"
+	fields := map[string]any{
+		"schema": "envelope/v1", "id": id, "type": "announcement",
+		"title": "delivered announcement", "space": "fixture-space",
+		"from": "axon", "to": []string{"seomatrix"},
+		"actor":          map[string]any{"kind": "agent", "name": "axon-bot"},
+		"created":        fxAt(base),
+		"priority":       "p3",
+		"blocking":       false,
+		"ack_requested":  true,
+		"classification": "internal",
+		"thread":         id,
+		"category":       "notice",
+	}
+	fx.commitArtifact("axon/announcements/"+id+".md", fields, "hello")
+	fx.commitEvent("axon", fxULID(720), evt(id, "create", "axon", base))
+	fx.commitEvent("axon", fxULID(721), evt(id, "publish", "axon", base.Add(time.Minute)))
+
+	newStore := func(system string) *Store {
+		return NewStore(system, t.TempDir(), []SpaceMirror{{
+			SpaceID: "sp1", Dir: fx.dir, Manifest: mustManifest(t, fx),
+		}}, func() time.Time { return base.Add(time.Hour) }, 0)
+	}
+
+	ownerActive, err := newStore("axon").OutboxSnapshot(context.Background())
+	if err != nil {
+		t.Fatalf("OutboxSnapshot before acknowledge: %v", err)
+	}
+	if !containsItemID(ownerActive, id) {
+		t.Fatalf("published announcement disappeared before recipient acknowledgement: %v", itemIDs(ownerActive))
+	}
+	recipientActive, err := newStore("seomatrix").OpenInboxSnapshot(context.Background())
+	if err != nil {
+		t.Fatalf("OpenInboxSnapshot before acknowledge: %v", err)
+	}
+	if !containsItemID(recipientActive, id) {
+		t.Fatalf("recipient cannot see unacknowledged announcement: %v", itemIDs(recipientActive))
+	}
+
+	fx.commitEvent("seomatrix", fxULID(722), evt(id, "acknowledge", "seomatrix", base.Add(2*time.Minute)))
+	for _, system := range []string{"axon", "seomatrix"} {
+		store := newStore(system)
+		var active []Item
+		if system == "axon" {
+			active, err = store.OutboxSnapshot(context.Background())
+		} else {
+			active, err = store.OpenInboxSnapshot(context.Background())
+		}
+		if err != nil {
+			t.Fatalf("active exchange for %s after acknowledge: %v", system, err)
+		}
+		if containsItemID(active, id) {
+			t.Fatalf("delivered announcement still active for %s: %v", system, itemIDs(active))
+		}
+		archive, archiveErr := store.ExchangeArchiveSnapshot(context.Background())
+		if archiveErr != nil {
+			t.Fatalf("ExchangeArchiveSnapshot for %s: %v", system, archiveErr)
+		}
+		if !containsItemID(archive, id) {
+			t.Fatalf("delivered announcement missing from %s archive: %v", system, itemIDs(archive))
+		}
+	}
+}
+
+func TestExchangeSnapshotsArchiveAnnouncementWithoutRequestedAcknowledgement(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+	id := "XA-axon-20260701-no-ack"
+	fields := map[string]any{
+		"schema": "envelope/v1", "id": id, "type": "announcement",
+		"title": "informational announcement", "space": "fixture-space",
+		"from": "axon", "to": []string{"seomatrix"},
+		"actor":          map[string]any{"kind": "agent", "name": "axon-bot"},
+		"created":        fxAt(base),
+		"priority":       "p3",
+		"blocking":       false,
+		"ack_requested":  false,
+		"classification": "internal",
+		"thread":         id,
+		"category":       "notice",
+	}
+	fx.commitArtifact("axon/announcements/"+id+".md", fields, "hello")
+	fx.commitEvent("axon", fxULID(730), evt(id, "create", "axon", base))
+	fx.commitEvent("axon", fxULID(731), evt(id, "publish", "axon", base.Add(time.Minute)))
+
+	for _, system := range []string{"axon", "seomatrix"} {
+		store := NewStore(system, t.TempDir(), []SpaceMirror{{
+			SpaceID: "sp1", Dir: fx.dir, Manifest: mustManifest(t, fx),
+		}}, func() time.Time { return base.Add(time.Hour) }, 0)
+		var active []Item
+		var err error
+		if system == "axon" {
+			active, err = store.OutboxSnapshot(context.Background())
+		} else {
+			active, err = store.OpenInboxSnapshot(context.Background())
+		}
+		if err != nil {
+			t.Fatalf("active exchange for %s: %v", system, err)
+		}
+		if containsItemID(active, id) {
+			t.Fatalf("announcement without requested acknowledgement is active for %s: %v", system, itemIDs(active))
+		}
+		archive, err := store.ExchangeArchiveSnapshot(context.Background())
+		if err != nil {
+			t.Fatalf("ExchangeArchiveSnapshot for %s: %v", system, err)
+		}
+		if !containsItemID(archive, id) {
+			t.Fatalf("announcement without requested acknowledgement missing from %s archive: %v", system, itemIDs(archive))
+		}
+	}
+}
+
 // TestInboxActionable_Federation2Space is AC row 8: a system connected
 // to 2 spaces sees one aggregated inbox, each item attributable to its
 // origin space.

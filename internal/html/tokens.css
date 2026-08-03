@@ -76,6 +76,10 @@
   --surface-workbench: var(--map-canvas);
   --space-section: 24px;
   --space-section-strong: 30px;
+  --space-after-section-heading: 16px;
+  --space-card-tags-to-author: 16px;
+  --space-card-author-to-title: 15px;
+  --space-card-title-to-content: 18px;
   /* One display scale for the title of the selected thing in every
    * master/detail surface. A thread, document, contract or map detail is the
    * same level in the reading hierarchy even when its container differs. */

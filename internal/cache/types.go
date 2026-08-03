@@ -5,6 +5,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/provenance"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
 // DefaultStatuslineTTL is §7.5's default cache-age TTL (5 minutes) that
@@ -44,6 +45,13 @@ type Item struct {
 	// callers know the data may be behind (T1: "works offline ... with
 	// sync age flagged when stale").
 	SyncStale bool `json:"sync_stale,omitempty"`
+	// CreatedAt and CreatedSeq identify when this artifact first entered the
+	// space. They deliberately do not change when a later lifecycle event is
+	// appended: Exchange uses them to keep the document feed chronological,
+	// while LatestEvent* remains the activity/history clock.
+	CreatedAt         time.Time `json:"-"`
+	CreatedSeq        int64     `json:"-"`
+	CreatedOrderKnown bool      `json:"-"`
 	// LatestEventAt is the timestamp of the artifact's most recent folded
 	// event — the "pending since" anchor. Zero when the artifact has no events
 	// yet (a bare draft). `json:"-"` deliberately: the dashboard assembler reads
@@ -51,6 +59,10 @@ type Item struct {
 	// `--json` stay byte-stable for their existing consumers (a time.Time would
 	// not honor omitempty anyway).
 	LatestEventAt time.Time `json:"-"`
+	// LatestEventSeq is the committed-order tie-breaker for LatestEventAt.
+	// It identifies the same event as LatestEventID and remains outside the
+	// stable inbox/outbox JSON contract.
+	LatestEventSeq int64 `json:"-"`
 	// LatestEventID is the current transition identity for local
 	// notification projections. It stays outside the established inbox JSON
 	// contract, just like LatestEventAt.
@@ -107,6 +119,7 @@ type EventSummary struct {
 	ProducedBy   provenance.Producer `json:"produced_by,omitzero"`
 	Consistency  *ReceiptMismatch    `json:"consistency,omitempty"`
 	At           time.Time           `json:"at"`
+	Note         string              `json:"note,omitempty"`
 }
 
 // ReceiptScope names the one scalar fold result compared with a producer's
@@ -278,7 +291,7 @@ var preAckState = map[fold.Kind]fold.State{
 // this stays correct if a kind's terminal-state set ever grows
 // asymmetrically.
 var openStates = map[fold.Kind]map[fold.State]bool{
-	fold.KindContract:     {fold.StateDraft: true, fold.StatePublished: true},
+	fold.KindContract:     {fold.StateDraft: true, fold.StatePublished: true, fold.StateDeprecated: true},
 	fold.KindRequirement:  {fold.StateDraft: true, fold.StatePublished: true, fold.StateAcknowledged: true},
 	fold.KindQuestion:     openExchangeStates,
 	fold.KindWorkRequest:  openExchangeStates,
@@ -299,4 +312,44 @@ var openExchangeStates = map[fold.State]bool{
 func isOpen(kind fold.Kind, state fold.State) bool {
 	m, ok := openStates[kind]
 	return ok && m[state]
+}
+
+// exchangeActive narrows the protocol's durable "open" states to the
+// operational question answered by the dashboard: is this document still in
+// flight for the current system? Announcements intentionally remain
+// `published` until superseded, but delivery itself is complete once every
+// intended recipient has acknowledged it. Treating published as permanently
+// active made delivered announcements linger in Outgoing forever.
+func exchangeActive(fa foldedArtifact, me string, manifest space.Manifest) bool {
+	if !isOpen(fa.kind(), fa.Result.State) {
+		return false
+	}
+	if fa.kind() != fold.KindAnnouncement || fa.Result.State != fold.StatePublished {
+		return true
+	}
+	// An announcement without an acknowledgement request is delivered by the
+	// publish itself. Its durable protocol state remains `published`, while the
+	// operational Exchange feed archives it immediately.
+	if !fa.Env.AckRequested {
+		return false
+	}
+	if !ownedByMe(fa, me) {
+		return addressedToMe(fa, me) && !fa.Result.Acks[me]
+	}
+
+	targets := normalizeTo(fa.Env.To)
+	if fa.Env.isBroadcast() {
+		targets = targets[:0]
+		for _, participant := range manifest.Participants {
+			if participant.Status == "active" && participant.System != fa.Env.From {
+				targets = append(targets, participant.System)
+			}
+		}
+	}
+	for _, target := range targets {
+		if target != "all" && target != fa.Env.From && !fa.Result.Acks[target] {
+			return true
+		}
+	}
+	return false
 }

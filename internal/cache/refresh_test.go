@@ -38,8 +38,10 @@ func ageMirror(t *testing.T, dir string, past time.Duration) {
 func TestSyncIfStale_RefreshRevealsNewlyPublishedArtifact(t *testing.T) {
 	t.Parallel()
 	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	cacheDir := t.TempDir()
+	const freshID = "XW-seomatrix-20260701-fresh"
 
-	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, RepoURL: fx.dir, Manifest: mustManifest(t, fx)}}, time.Now, time.Hour)
+	store := NewStore("axon", cacheDir, []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, RepoURL: fx.dir, Manifest: mustManifest(t, fx)}}, time.Now, time.Hour)
 
 	before, err := store.Inbox(context.Background(), false)
 	if err != nil {
@@ -57,9 +59,12 @@ func TestSyncIfStale_RefreshRevealsNewlyPublishedArtifact(t *testing.T) {
 	fxRunGit(t, "", "clone", origin, other)
 	second := &fixtureSpace{t: t, dir: other, year: fx.year}
 	base := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
-	second.commitArtifact("seomatrix/exchanges/XW-seomatrix-20260701-fresh.md",
-		wr("XW-seomatrix-20260701-fresh", "fresh work", "seomatrix", []string{"axon"}, "p2", false), "body")
-	second.commitEvent("seomatrix", fxULID(900), evt("XW-seomatrix-20260701-fresh", "submit", "seomatrix", base))
+	second.commitArtifact("seomatrix/exchanges/"+freshID+".md",
+		wr(freshID, "fresh work", "seomatrix", []string{"axon"}, "p2", false), "body")
+	second.commitEvent("seomatrix", fxULID(900), evt(freshID, "submit", "seomatrix", base))
+	if err := WriteMarker(cacheDir, "sp1", PendingMarker{ArtifactID: freshID, State: "pending-merge"}); err != nil {
+		t.Fatalf("WriteMarker: %v", err)
+	}
 
 	ageMirror(t, fx.dir, 2*time.Hour)
 
@@ -71,8 +76,11 @@ func TestSyncIfStale_RefreshRevealsNewlyPublishedArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Inbox (after): %v", err)
 	}
-	if len(after) != 1 || after[0].ID != "XW-seomatrix-20260701-fresh" {
+	if len(after) != 1 || after[0].ID != freshID {
 		t.Fatalf("Inbox (after) = %+v, want the newly-published artifact", after)
+	}
+	if _, err := ReadMarker(cacheDir, "sp1", freshID); !os.IsNotExist(err) {
+		t.Fatalf("pending marker still exists after read refresh revealed canonical artifact: %v", err)
 	}
 }
 
@@ -555,5 +563,23 @@ func TestSyncIfStaleDoesNotInheritTheStatuslineTTL(t *testing.T) {
 	if readRefreshTTL > time.Minute {
 		t.Fatalf("readRefreshTTL is %s — long enough for a just-merged artifact to stay invisible "+
 			"across a normal back-and-forth", readRefreshTTL)
+	}
+}
+
+func TestSyncIfStaleResultsAttributesFailureWithoutStringParsing(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixtureSpace(t, fixtureParticipant{System: "atlas"})
+	store := NewStore("atlas", t.TempDir(), []SpaceMirror{{
+		SpaceID: "northstar", Dir: fx.dir, RepoURL: fx.dir, Manifest: mustManifest(t, fx),
+	}}, time.Now, time.Hour)
+	ageMirror(t, fx.dir, 2*time.Hour)
+	store.SetCloneOrFetchForTest(func(context.Context, string, string) error {
+		return errors.New("provider detail that callers must not parse")
+	})
+
+	results := store.SyncIfStaleResults(context.Background())
+	if len(results) != 1 || results[0].Space != "northstar" || results[0].Err == nil {
+		t.Fatalf("SyncIfStaleResults = %+v, want attributed northstar failure", results)
 	}
 }
