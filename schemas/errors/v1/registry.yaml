@@ -153,6 +153,11 @@ entries:
     title: Declared contract sidecar cannot be resolved as the exact expected regular file
     applies_to: envelope/v2 contract carried-set V2/V3 validation for missing, unsafe-mode, or digest-mismatched descriptor and sidecar bytes
 
+  - code: REF-016
+    class: referential
+    title: Work subject or waiting system is invalid in checkpoint context
+    applies_to: envelope/v2 work checkpoint V2/V3 validation when subject_ref is not the same thread or a resolved referenced artifact/contract, or a system wait target is absent from current and historical manifests
+
   - code: LFC-001
     class: lifecycle
     title: Event encodes an illegal transition for the subject's current folded state
@@ -227,6 +232,11 @@ entries:
     class: policy
     title: Declared contract carried set is invalid
     applies_to: envelope/v2 contract carried-set V2/V3 validation for profile, role, path, media, bounds, exactness and authoritative-floor failures
+
+  - code: POL-015
+    class: policy
+    title: Work checkpoint semantics are invalid
+    applies_to: envelope/v2 work checkpoint V2/V3 validation for status/attention isolation, UTC validity bounds, immutable owner/sequence context, first-party session, and classification no-downgrade
 
   - code: POL-016
     class: policy
