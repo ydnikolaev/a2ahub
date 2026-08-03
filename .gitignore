@@ -39,6 +39,7 @@ scripts/*
 !scripts/check-gosec-scope.sh
 !scripts/check-readme.sh
 !scripts/dashboard-template-drift.sh
+!scripts/check-operational-confidence.sh
 !scripts/verify.sh
 !scripts/build-release-cohort.sh
 !scripts/releasebody/

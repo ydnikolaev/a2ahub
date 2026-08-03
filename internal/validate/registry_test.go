@@ -111,6 +111,23 @@ func TestRegistryClosure(t *testing.T) {
 	record(checkAddressees(envelope{To: []any{"unknown-system"}}, resolver))
 	// REF-006 (left branch): to includes a system marked left.
 	record(checkAddressees(envelope{To: []any{"seomatrix"}}, resolver))
+	// REF-009: resolvable parent and child disagree on thread.
+	record(checkFork(envelope{Parent: "XC-axon-ingest", Thread: "thread:axon-20260731-bbbb"}, &fakeThreadResolver{
+		known:   map[string]bool{"XC-axon-ingest": true},
+		threads: map[string]string{"XC-axon-ingest": "thread:axon-20260731-aaaa"},
+	}))
+	// REF-010: a new thread is minted under another system's name.
+	record(checkForeignMint(envelope{From: "axon", Thread: "thread:seomatrix-20260731-abcd"}, &fakeThreadResolver{
+		exists: map[string]bool{},
+	}))
+	// REF-012: supersession crosses threads (warning).
+	record(checkSupersedeThreadContinuity("thread:axon-20260731-aaaa", "thread:axon-20260731-bbbb"))
+	// REF-011 is emitted by the V3 base-to-head adapter in internal/cli. The
+	// repository-wide error-history gate verifies that literal emitter against
+	// this registry; mark the cross-package owner here without importing cli.
+	if registry.Has("REF-011") {
+		produced["REF-011"] = true
+	}
 	// REF-013: manifest authority map assigns one active login twice.
 	record(checkManifestPolicy(manifestProbe{Participants: []manifestParticipantProbe{
 		{System: "axon", Section: "axon/", Owners: []string{"alice"}, Status: "active"},

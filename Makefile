@@ -13,6 +13,8 @@
 #                        (private harness gate — skips cleanly if absent).
 # make epic-drift        an epic's committed docs match its reality
 #                        (private harness gate — skips cleanly if absent).
+# make operational-confidence-guard
+#                        P0 stable IDs/history/DAG/v1-bytes/package-boundary ratchet.
 # make skill-citations   every `a2a <verb>` / error code the shipped skill PROSE
 #                        cites must exist (private harness gate — skips if absent).
 # make harness-check     both harness gates' --teeth self-tests (the gates bite).
@@ -34,7 +36,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators _print-repo-gates dashboard-template-drift feature-lint epic-drift skill-citations release-notes-freshness roadmap-release-decisions readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e install
+.PHONY: check test check-validators _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard skill-citations release-notes-freshness roadmap-release-decisions readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -45,7 +47,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift skill-citations release-notes-freshness roadmap-release-decisions
+REPO_GATES := classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard skill-citations release-notes-freshness roadmap-release-decisions
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -131,6 +133,9 @@ epic-drift: ## An epic's committed docs (status.md stamp, receipts) must match i
 	  echo "epic-drift: skip — .agents/scripts/epic_docs_drift.sh absent (public checkout)."; \
 	fi
 
+operational-confidence-guard: ## P0 IDs/history/DAG/v1-byte/boundary invariants.
+	@bash scripts/check-operational-confidence.sh
+
 harness-check: ## Run the gates' --teeth self-tests (harness gates are private/presence-gated; release-preflight is public).
 	@bash scripts/verify.sh harness
 
@@ -160,5 +165,6 @@ _harness-check:
 	@if [ -f scripts/check-skill-citations.sh ]; then \
 	  bash scripts/check-skill-citations.sh --teeth; \
 	else \
-	  echo "harness-check: skip — scripts/check-skill-citations.sh absent (public checkout)."; \
+		echo "harness-check: skip — scripts/check-skill-citations.sh absent (public checkout)."; \
 	fi
+	@bash scripts/check-operational-confidence.sh --teeth
