@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/operation"
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
 )
 
@@ -540,10 +541,246 @@ func TestWorkLeaseStoreHonorsCancelledContext(t *testing.T) {
 	}
 }
 
-func newTestWorkLeaseStore(t *testing.T) (*WorkLeaseStore, string) {
+func TestWorkLeaseStoreListFiltersExpiryScopeAndSortsDetachedCopies(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	store, _ := newTestWorkLeaseStoreWithOptions(t, WithWorkLeaseClock(fixedWorkLeaseClock{now: now}))
+	project := testWorkLeaseDigest("project:list")
+	leases := []workreport.Lease{
+		workLeaseForSelection("z-current", project, "alpha", "work:01K20ABCDEFHJKMNPQRSTVWXY2", "session:z", now.Add(time.Minute), false),
+		workLeaseForSelection("a-current", project, "alpha", "work:01K20ABCDEFHJKMNPQRSTVWXY1", "session:a", now, false),
+		workLeaseForSelection("equal-current", project, "alpha", "work:01K20ABCDEFHJKMNPQRSTVWXY3", "session:e", now, false),
+		workLeaseForSelection("expired", project, "alpha", "work:01K20ABCDEFHJKMNPQRSTVWXY4", "session:x", now.Add(-time.Nanosecond), false),
+		workLeaseForSelection("other-space", project, "beta", "work:01K20ABCDEFHJKMNPQRSTVWXY5", "session:b", now, false),
+		workLeaseForSelection("other-project", testWorkLeaseDigest("project:other"), "alpha", "work:01K20ABCDEFHJKMNPQRSTVWXY6", "session:p", now, false),
+	}
+	for index := range leases {
+		seedWorkLease(t, store, leases[index])
+	}
+
+	got, err := store.ListWork(context.Background(), project, "alpha", "", false)
+	if err != nil {
+		t.Fatalf("ListWork: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("current list length = %d, want 3", len(got))
+	}
+	wantOrder := []string{
+		"work:01K20ABCDEFHJKMNPQRSTVWXY1",
+		"work:01K20ABCDEFHJKMNPQRSTVWXY2",
+		"work:01K20ABCDEFHJKMNPQRSTVWXY3",
+	}
+	for index, want := range wantOrder {
+		if got[index].Identity.WorkID != want {
+			t.Fatalf("list[%d].work_id = %q, want %q", index, got[index].Identity.WorkID, want)
+		}
+	}
+	got[0].WaitingOn = append(got[0].WaitingOn, workreport.WaitingOn{Kind: workreport.WaitHuman, ID: "mutated"})
+	again, err := store.ListWork(context.Background(), project, "alpha", wantOrder[0], false)
+	if err != nil || len(again) != 1 {
+		t.Fatalf("filtered ListWork = %d, %v, want one", len(again), err)
+	}
+	if len(again[0].WaitingOn) != 0 {
+		t.Fatal("caller mutation reached the persisted/listed lease")
+	}
+
+	all, err := store.ListWork(context.Background(), project, "alpha", "", true)
+	if err != nil || len(all) != 4 {
+		t.Fatalf("include-expired ListWork = %d, %v, want four", len(all), err)
+	}
+}
+
+func TestWorkLeaseStoreExpiredClosingPendingIsNeverCurrent(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	store, _ := newTestWorkLeaseStoreWithOptions(t, WithWorkLeaseClock(fixedWorkLeaseClock{now: now}))
+	project := testWorkLeaseDigest("project:closing")
+	lease := workLeaseForSelection("closing", project, "alpha", "work:01K20ABCDEFHJKMNPQRSTVWXY7", "session:closing", now.Add(-time.Nanosecond), false)
+	lease = closingPendingWorkLease(t, lease)
+	seedWorkLease(t, store, lease)
+
+	current, err := store.ListWork(context.Background(), project, "alpha", "", false)
+	if err != nil || len(current) != 0 {
+		t.Fatalf("current closing expired list = %d, %v, want empty", len(current), err)
+	}
+	if _, err := store.ResolveWork(context.Background(), project, "alpha", "", ""); !errors.Is(err, workreport.ErrLeaseNotFound) {
+		t.Fatalf("implicit ResolveWork expired closing = %v, want ErrLeaseNotFound", err)
+	}
+	resolved, err := store.ResolveWork(context.Background(), project, "alpha", lease.Identity.WorkID, lease.Identity.Actor.Session)
+	if err != nil || resolved.WorkID != lease.Identity.WorkID {
+		t.Fatalf("explicit ResolveWork expired closing = %+v, %v", resolved, err)
+	}
+}
+
+func TestWorkLeaseStoreResolveWorkExactAbsentAndAmbiguous(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	store, _ := newTestWorkLeaseStoreWithOptions(t, WithWorkLeaseClock(fixedWorkLeaseClock{now: now}))
+	project := testWorkLeaseDigest("project:resolve")
+	first := workLeaseForSelection("resolve-a", project, "alpha", "work:01K20ABCDEFHJKMNPQRSTVWXY8", "session:a", now, false)
+	second := workLeaseForSelection("resolve-b", project, "alpha", "work:01K20ABCDEFHJKMNPQRSTVWXY9", "session:b", now, false)
+	seedWorkLease(t, store, first)
+	seedWorkLease(t, store, second)
+
+	if _, err := store.ResolveWork(context.Background(), project, "alpha", "", ""); !errors.Is(err, ErrWorkSelectionAmbiguous) {
+		t.Fatalf("implicit ResolveWork = %v, want ErrWorkSelectionAmbiguous", err)
+	}
+	resolved, err := store.ResolveWork(context.Background(), project, "alpha", second.Identity.WorkID, second.Identity.Actor.Session)
+	if err != nil {
+		t.Fatalf("ResolveWork exact: %v", err)
+	}
+	if resolved.ProjectID != project || resolved.Space != "alpha" || resolved.Thread != second.Identity.Thread ||
+		resolved.WorkID != second.Identity.WorkID || resolved.Actor != second.Identity.Actor {
+		t.Fatalf("resolved identity = %+v, want exact owner %+v", resolved, second.Identity)
+	}
+	if _, err := store.ResolveWork(context.Background(), project, "alpha", second.Identity.WorkID, ""); !errors.Is(err, workreport.ErrLeaseNotOwned) {
+		t.Fatalf("work-only ResolveWork = %v, want ErrLeaseNotOwned", err)
+	}
+	if _, err := store.ResolveWork(context.Background(), project, "alpha", "", second.Identity.Actor.Session); !errors.Is(err, workreport.ErrLeaseNotOwned) {
+		t.Fatalf("session-only ResolveWork = %v, want ErrLeaseNotOwned", err)
+	}
+	if _, err := store.ResolveWork(context.Background(), project, "alpha", "work:01K20ABCDEFHJKMNPQRSTVWXYZ", "session:missing"); !errors.Is(err, workreport.ErrLeaseNotFound) {
+		t.Fatalf("missing ResolveWork = %v, want ErrLeaseNotFound", err)
+	}
+	if _, err := store.ResolveWork(context.Background(), project, "beta", second.Identity.WorkID, second.Identity.Actor.Session); !errors.Is(err, workreport.ErrLeaseNotFound) {
+		t.Fatalf("cross-space ResolveWork = %v, want ErrLeaseNotFound", err)
+	}
+	if _, err := store.ResolveWork(context.Background(), testWorkLeaseDigest("project:other"), "alpha", second.Identity.WorkID, second.Identity.Actor.Session); !errors.Is(err, workreport.ErrLeaseNotFound) {
+		t.Fatalf("cross-project ResolveWork = %v, want ErrLeaseNotFound", err)
+	}
+}
+
+func TestWorkLeaseStoreListingFailsClosedOnUnsafeCorruptAndOversize(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		seed func(t *testing.T, store *WorkLeaseStore, cacheRoot string)
+		want error
+	}{
+		{name: "irregular-name", seed: func(t *testing.T, _ *WorkLeaseStore, root string) {
+			writeWorkLeaseTestFile(t, root, "notes.txt", []byte("data"))
+		}, want: workreport.ErrInvalidLease},
+		{name: "symlink", seed: func(t *testing.T, _ *WorkLeaseStore, root string) {
+			lease := testWorkLease("list-symlink")
+			name, _ := workLeaseFilename(lease.Identity.LeaseKey)
+			if err := os.Symlink(filepath.Join(t.TempDir(), "outside"), filepath.Join(root, workLeaseDirectory, name)); err != nil {
+				t.Fatalf("seed symlink: %v", err)
+			}
+		}, want: workreport.ErrInvalidLease},
+		{name: "corrupt", seed: func(t *testing.T, _ *WorkLeaseStore, root string) {
+			lease := testWorkLease("list-corrupt")
+			name, _ := workLeaseFilename(lease.Identity.LeaseKey)
+			writeWorkLeaseTestFile(t, root, name, []byte("{bad"))
+		}, want: workreport.ErrInvalidLease},
+		{name: "oversize", seed: func(t *testing.T, _ *WorkLeaseStore, root string) {
+			lease := testWorkLease("list-oversize")
+			name, _ := workLeaseFilename(lease.Identity.LeaseKey)
+			writeWorkLeaseTestFile(t, root, name, bytes.Repeat([]byte("x"), workreport.MaximumEncodedLease+1))
+		}, want: workreport.ErrLeaseTooLarge},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			store, root := newTestWorkLeaseStore(t)
+			tc.seed(t, store, root)
+			if _, err := store.ListWork(context.Background(), "project", "alpha", "", true); !errors.Is(err, tc.want) {
+				t.Fatalf("ListWork = %v, want %v", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestWorkLeaseStoreListingBoundedByEntryCount(t *testing.T) {
+	t.Parallel()
+	store, root := newTestWorkLeaseStore(t)
+	directory := filepath.Join(root, workLeaseDirectory)
+	for index := 0; index <= maximumWorkLeaseEntries; index++ {
+		name := fmt.Sprintf("%064x.json.lock", index)
+		if err := os.WriteFile(filepath.Join(directory, name), nil, 0o600); err != nil {
+			t.Fatalf("seed bounded entry %d: %v", index, err)
+		}
+	}
+	if _, err := store.ListWork(context.Background(), "project", "alpha", "", true); !errors.Is(err, ErrWorkLeaseEnumerationLimit) {
+		t.Fatalf("ListWork count bound = %v, want ErrWorkLeaseEnumerationLimit", err)
+	}
+}
+
+func TestWorkLeaseStoreListingBoundedByNameBytes(t *testing.T) {
+	t.Parallel()
+	store, root := newTestWorkLeaseStore(t)
+	directory := filepath.Join(root, workLeaseDirectory)
+	sample := fmt.Sprintf("%064x.json.lock", 0)
+	entries := maximumWorkLeaseListingBytes/len(sample) + 1
+	if entries >= maximumWorkLeaseEntries {
+		t.Fatalf("test precondition: name-byte bound needs %d entries, count bound is %d", entries, maximumWorkLeaseEntries)
+	}
+	for index := 0; index < entries; index++ {
+		name := fmt.Sprintf("%064x.json.lock", index)
+		if err := os.WriteFile(filepath.Join(directory, name), nil, 0o600); err != nil {
+			t.Fatalf("seed name-byte entry %d: %v", index, err)
+		}
+	}
+	if _, err := store.ListWork(context.Background(), "project", "alpha", "", true); !errors.Is(err, ErrWorkLeaseEnumerationLimit) {
+		t.Fatalf("ListWork name-byte bound = %v, want ErrWorkLeaseEnumerationLimit", err)
+	}
+}
+
+func TestWorkLeaseStoreConcurrentCASAndList(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	store, _ := newTestWorkLeaseStoreWithOptions(t, WithWorkLeaseClock(fixedWorkLeaseClock{now: now}))
+	project := testWorkLeaseDigest("project:race-list")
+	lease := workLeaseForSelection("race-list", project, "alpha", "work:01K20ABCDEFHJKMNPQRSTVWXYA", "session:race", now.Add(time.Hour), false)
+	seedWorkLease(t, store, lease)
+	ctx := context.Background()
+
+	var wait sync.WaitGroup
+	errorsSeen := make(chan error, 2)
+	wait.Add(2)
+	go func() {
+		defer wait.Done()
+		for range 50 {
+			loaded, revision, err := store.Load(ctx, lease.Identity.LeaseKey)
+			if err != nil {
+				errorsSeen <- err
+				return
+			}
+			loaded.HeartbeatSequence++
+			if _, err := store.CompareAndSwap(ctx, lease.Identity.LeaseKey, revision, &loaded); err != nil {
+				errorsSeen <- err
+				return
+			}
+		}
+	}()
+	go func() {
+		defer wait.Done()
+		for range 100 {
+			listed, err := store.ListWork(ctx, project, "alpha", "", false)
+			if err != nil {
+				errorsSeen <- err
+				return
+			}
+			if len(listed) != 1 {
+				errorsSeen <- fmt.Errorf("listed %d leases, want one", len(listed))
+				return
+			}
+		}
+	}()
+	wait.Wait()
+	close(errorsSeen)
+	for err := range errorsSeen {
+		t.Fatalf("concurrent CAS/list: %v", err)
+	}
+}
+
+type fixedWorkLeaseClock struct{ now time.Time }
+
+func (c fixedWorkLeaseClock) Now() time.Time { return c.now }
+
+func newTestWorkLeaseStoreWithOptions(t *testing.T, options ...WorkLeaseStoreOption) (*WorkLeaseStore, string) {
 	t.Helper()
 	cacheRoot := t.TempDir()
-	store, err := NewWorkLeaseStore(cacheRoot)
+	store, err := NewWorkLeaseStore(cacheRoot, options...)
 	if err != nil {
 		t.Fatalf("NewWorkLeaseStore: %v", err)
 	}
@@ -553,6 +790,60 @@ func newTestWorkLeaseStore(t *testing.T) (*WorkLeaseStore, string) {
 		}
 	})
 	return store, cacheRoot
+}
+
+func workLeaseForSelection(seed, project, spaceID, workID, session string, expiresAt time.Time, waiting bool) workreport.Lease {
+	lease := testWorkLease(seed)
+	lease.Identity.ProjectID = project
+	lease.Identity.Space = spaceID
+	lease.Identity.WorkID = workID
+	lease.Identity.Actor.Session = session
+	lease.StartedAt = expiresAt.Add(-workreport.DefaultTTL)
+	lease.RenewedAt = lease.StartedAt
+	lease.ExpiresAt = expiresAt
+	if waiting {
+		lease.Mode = workreport.ModeWaiting
+		lease.WaitingOn = []workreport.WaitingOn{{Kind: workreport.WaitSystem, ID: "dependency"}}
+	}
+	return lease
+}
+
+func closingPendingWorkLease(t *testing.T, lease workreport.Lease) workreport.Lease {
+	t.Helper()
+	prepared, err := workreport.NewPreparedJournal([]byte(`{"prepared":"closing"}`))
+	if err != nil {
+		t.Fatalf("NewPreparedJournal: %v", err)
+	}
+	lease.Mode = workreport.ModePaused
+	lease.Closing = true
+	lease.SemanticSequence = 2
+	key, err := operation.Work(lease.Identity.WorkID, 2, string(workreport.ActionStop))
+	if err != nil {
+		t.Fatalf("operation.Work: %v", err)
+	}
+	lease.Pending = &workreport.PendingOperation{
+		OperationKey: key, Action: workreport.ActionStop, ArtifactID: "XA-test-20260803-a2b3", EventID: "01K20ABCDEFHJKMNPQRSTVWXYZ",
+		SemanticSequence: 2, Prepared: prepared, LocalTarget: workreport.TargetClosing,
+	}
+	return lease
+}
+
+func seedWorkLease(t *testing.T, store *WorkLeaseStore, lease workreport.Lease) {
+	t.Helper()
+	if _, err := store.CompareAndSwap(context.Background(), lease.Identity.LeaseKey, "", &lease); err != nil {
+		t.Fatalf("seed lease %s: %v", lease.Identity.WorkID, err)
+	}
+}
+
+func writeWorkLeaseTestFile(t *testing.T, cacheRoot, name string, raw []byte) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(cacheRoot, workLeaseDirectory, name), raw, 0o600); err != nil {
+		t.Fatalf("seed work lease file: %v", err)
+	}
+}
+
+func newTestWorkLeaseStore(t *testing.T) (*WorkLeaseStore, string) {
+	return newTestWorkLeaseStoreWithOptions(t)
 }
 
 func testWorkLease(seed string) workreport.Lease {
