@@ -396,28 +396,52 @@ func (d WriteDeps) buildRequest(ids []string, files []space.FileWrite, verb stri
 }
 
 // submitResult is the structured StructuredContent shape every write
-// tool's handler returns on success — the §7.7 "structured returns"
-// contract for the write side.
+// tool's handler returns on success or alongside a partial-write error — the
+// §7.7 structured-return contract plus P4's two-axis outcome contract.
 type submitResult struct {
-	Verb   string   `json:"verb"`
-	IDs    []string `json:"ids"`
-	Branch string   `json:"branch"`
-	PRURL  string   `json:"pr_url"`
-	State  string   `json:"state"`
+	Verb            string   `json:"verb"`
+	IDs             []string `json:"ids"`
+	Branch          string   `json:"branch"`
+	PRNumber        int      `json:"pr_number,omitempty"`
+	PRURL           string   `json:"pr_url"`
+	CommitSHA       string   `json:"commit_sha,omitempty"`
+	State           string   `json:"state"`
+	Stage           string   `json:"stage,omitempty"`
+	MergeMethod     string   `json:"merge_method,omitempty"`
+	RemainingAction string   `json:"remaining_action,omitempty"`
+	Note            string   `json:"note,omitempty"`
 }
 
 // submit runs req through d.Funnel and shapes the result/error the same
 // way every write tool handler needs.
 func (d WriteDeps) submit(ctx context.Context, req space.SubmitRequest, verb string, ids []string) (any, error) {
 	result, err := d.Funnel.Submit(ctx, req)
-	if err != nil {
+	if err != nil && !hasWriteResult(result) {
 		return nil, fmt.Errorf("%s: %w", verb, err)
 	}
 	effectiveIDs := ids
 	if len(result.ArtifactIDs) > 0 {
 		effectiveIDs = result.ArtifactIDs
 	}
-	return submitResult{
-		Verb: verb, IDs: effectiveIDs, Branch: result.Branch, PRURL: result.PRURL, State: string(result.State),
-	}, nil
+	structured := submitResult{
+		Verb: verb, IDs: effectiveIDs, Branch: result.Branch,
+		PRNumber: result.PRNumber, PRURL: result.PRURL, CommitSHA: result.CommitSHA,
+		State: string(result.State), Stage: string(result.Stage), MergeMethod: string(result.MergeMethod),
+		RemainingAction: string(result.RemainingAction), Note: result.Note,
+	}
+	if err != nil {
+		return structured, fmt.Errorf("%s: %w", verb, err)
+	}
+	return structured, nil
+}
+
+// hasWriteResult distinguishes a genuine partial P4 outcome from the zero
+// result returned when the funnel failed before proving any write boundary.
+// WriteResult intentionally permits result+error, so checking err first and
+// discarding result would erase the PR/stage a caller needs to recover.
+func hasWriteResult(result space.WriteResult) bool {
+	return result.Branch != "" || result.PRNumber != 0 || result.PRURL != "" ||
+		result.CommitSHA != "" || result.State != "" || result.Stage != "" ||
+		len(result.ArtifactIDs) != 0 || result.MergeMethod != "" ||
+		result.RemainingAction != "" || result.Note != "" || result.AutoMergeNote != ""
 }

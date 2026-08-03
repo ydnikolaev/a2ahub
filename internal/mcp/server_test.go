@@ -130,6 +130,67 @@ func TestServerToolsCallHandlerErrorIsNotRPCError(t *testing.T) {
 	if !callResult.IsError {
 		t.Fatalf("expected isError:true, got %+v", callResult)
 	}
+	if callResult.StructuredContent != nil {
+		t.Fatalf("nil handler result must remain absent, got %+v", callResult.StructuredContent)
+	}
+	if len(callResult.Content) != 1 || callResult.Content[0].Text != "boom" {
+		t.Fatalf("nil-result error content changed: %+v", callResult.Content)
+	}
+}
+
+func TestServerToolsCallHandlerErrorPreservesStructuredContent(t *testing.T) {
+	t.Parallel()
+
+	r := NewRegistry()
+	r.Register(ToolSpec{
+		Name: "a2a_partial",
+		Handler: func(_ context.Context, _ json.RawMessage) (any, string, error) {
+			return submitResult{
+				Verb: "ack", IDs: []string{"XQ-axon-20260803-partial"},
+				Branch: "a2a/beta/XQ-axon-20260803-partial", PRNumber: 42,
+				PRURL: "https://example.invalid/pr/42", State: "needs-attention",
+				Stage: "pr-created", RemainingAction: "resolve-pr",
+			}, "", errors.New("ack: auto-merge arm failed")
+		},
+	})
+	s := NewServer(r, "a2a-mcp", "0.0.1-test", nil)
+	req := `{"jsonrpc":"2.0","id":41,"method":"tools/call","params":{"name":"a2a_partial","arguments":{}}}` + "\n"
+	var out bytes.Buffer
+	if err := s.Serve(context.Background(), strings.NewReader(req), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	resps := decodeLines(t, &out)
+	if len(resps) != 1 || resps[0].Error != nil {
+		t.Fatalf("partial tool failure must be a result, got %+v", resps)
+	}
+	raw, err := json.Marshal(resps[0].Result)
+	if err != nil {
+		t.Fatalf("marshal result: %v", err)
+	}
+	var callResult toolsCallResult
+	if err := json.Unmarshal(raw, &callResult); err != nil {
+		t.Fatalf("decode tools/call result: %v", err)
+	}
+	if !callResult.IsError || callResult.StructuredContent == nil {
+		t.Fatalf("partial result lost error axis or structured axis: %+v", callResult)
+	}
+	structured, err := json.Marshal(callResult.StructuredContent)
+	if err != nil {
+		t.Fatalf("marshal structuredContent: %v", err)
+	}
+	var gotStructured submitResult
+	if err := json.Unmarshal(structured, &gotStructured); err != nil {
+		t.Fatalf("decode structuredContent: %v", err)
+	}
+	wantStructured := `{"verb":"ack","ids":["XQ-axon-20260803-partial"],"branch":"a2a/beta/XQ-axon-20260803-partial","pr_number":42,"pr_url":"https://example.invalid/pr/42","state":"needs-attention","stage":"pr-created","remaining_action":"resolve-pr"}`
+	if gotStructured.Verb != "ack" || gotStructured.PRNumber != 42 || gotStructured.Stage != "pr-created" ||
+		gotStructured.RemainingAction != "resolve-pr" {
+		t.Fatalf("structuredContent lost partial facts: %+v", gotStructured)
+	}
+	if len(callResult.Content) != 2 || callResult.Content[0].Text != "ack: auto-merge arm failed" ||
+		callResult.Content[1].Text != wantStructured {
+		t.Fatalf("error content must carry stable error then serialized structure: %+v", callResult.Content)
+	}
 }
 
 func TestServerToolsCallUnknownTool(t *testing.T) {

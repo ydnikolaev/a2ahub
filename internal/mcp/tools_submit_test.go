@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,6 +70,39 @@ func TestSubmitHandlerFreshArtifact(t *testing.T) {
 	}
 	if !strings.Contains(string(fake.calls[0].Files[1].Content), "state: submitted") {
 		t.Fatalf("expected an evaluator-authored submitted receipt, got:\n%s", fake.calls[0].Files[1].Content)
+	}
+}
+
+func TestSubmitHandlerPreservesPartialWriteResultOnError(t *testing.T) {
+	t.Parallel()
+
+	mirrorDir := t.TempDir()
+	staging := t.TempDir()
+	id := "XQ-beta-20260721-a009"
+	writeStagedDraft(t, staging, id, "question")
+	writeMirrorFile(t, mirrorDir, "space.yaml", "id: fixture-space\nschema_version: \"1\"\nmin_binary_version: \"0.0.0\"\nparticipants:\n  axon-bot: axon\n  beta-bot: beta\n")
+	wantErr := errors.New("provider outcome is partial")
+	partial := space.WriteResult{
+		Branch: "a2a/beta/submit/op-v1-partial", PRNumber: 77,
+		PRURL: "https://example.invalid/pr/77", CommitSHA: "abc123",
+		Stage: space.WriteStagePRCreated, State: space.WriteStateNeedsAttention,
+		RemainingAction: space.RemainingActionResolvePR, Note: "auto-merge is not armed",
+		ArtifactIDs: []string{id},
+	}
+	write := testWriteDeps(mirrorDir, partialResultFunnel{result: partial, err: wantErr})
+	handler := newSubmitHandler(SubmitDeps{
+		WriteDeps: write, StagingDir: staging,
+		Legality: NewLegalityAdapter(mirrorDir, "beta", testManifest()),
+	})
+	args, _ := json.Marshal(SubmitInput{IDs: []string{id}})
+	result, _, err := handler(context.Background(), args)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("handler error = %v, want %v", err, wantErr)
+	}
+	got, ok := result.(submitResult)
+	if !ok || got.PRNumber != partial.PRNumber || got.Stage != string(partial.Stage) ||
+		got.RemainingAction != string(partial.RemainingAction) || got.Note != partial.Note {
+		t.Fatalf("handler discarded partial result: %#v", result)
 	}
 }
 
