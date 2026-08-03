@@ -534,9 +534,13 @@ func TestTokenScopesRejectsAnEmptyCredential(t *testing.T) {
 func TestEnableAutoMergeResolvesTheNodeAndArms(t *testing.T) {
 	t.Parallel()
 
-	var gotPRPath, gotQuery, gotNodeID string
+	var gotPRPath, gotQuery, gotNodeID, gotExpectedHead string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/repos/o/r" {
+			_, _ = w.Write([]byte(`{"allow_merge_commit":true}`))
+			return
+		}
 		if r.URL.Path == "/graphql" {
 			var body struct {
 				Query     string         `json:"query"`
@@ -545,20 +549,24 @@ func TestEnableAutoMergeResolvesTheNodeAndArms(t *testing.T) {
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			gotQuery = body.Query
 			gotNodeID, _ = body.Variables["id"].(string)
+			gotExpectedHead, _ = body.Variables["head"].(string)
 			_, _ = w.Write([]byte(`{"data":{}}`))
 			return
 		}
 		gotPRPath = r.URL.Path
-		_, _ = w.Write([]byte(`{"node_id":"PR_kwDO"}`))
+		_, _ = w.Write([]byte(`{"node_id":"PR_kwDO","head":{"sha":"green-sha"}}`))
 	}))
 	defer srv.Close()
 
 	h := NewGitHubHost(srv.Client(), srv.URL)
-	err := h.EnableAutoMerge(context.Background(), EnableAutoMergeRequest{
-		Repo: Repo{Owner: "o", Name: "r"}, PRNumber: 2, Credential: Credential{Token: "t"},
+	method, err := h.EnableAutoMerge(context.Background(), EnableAutoMergeRequest{
+		Repo: Repo{Owner: "o", Name: "r"}, PRNumber: 2, ExpectedHeadSHA: "green-sha", Credential: Credential{Token: "t"},
 	})
 	if err != nil {
 		t.Fatalf("EnableAutoMerge: %v", err)
+	}
+	if method != MergeMethodMerge {
+		t.Fatalf("EnableAutoMerge method = %q, want merge", method)
 	}
 	if gotPRPath != "/repos/o/r/pulls/2" {
 		t.Errorf("resolved the node id from %q", gotPRPath)
@@ -569,6 +577,9 @@ func TestEnableAutoMergeResolvesTheNodeAndArms(t *testing.T) {
 	if gotNodeID != "PR_kwDO" {
 		t.Errorf("armed node %q, want the one the PR reported", gotNodeID)
 	}
+	if gotExpectedHead != "green-sha" || !strings.Contains(gotQuery, "expectedHeadOid") {
+		t.Errorf("expected-head mutation = query %q head %q, want expectedHeadOid/green-sha", gotQuery, gotExpectedHead)
+	}
 }
 
 func TestEnableAutoMergeRejectsAnIncompleteRequest(t *testing.T) {
@@ -576,11 +587,12 @@ func TestEnableAutoMergeRejectsAnIncompleteRequest(t *testing.T) {
 
 	h := NewGitHubHost(nil, "http://unused.invalid")
 	for name, req := range map[string]EnableAutoMergeRequest{
-		"no owner":  {Repo: Repo{Name: "r"}, PRNumber: 1},
-		"no name":   {Repo: Repo{Owner: "o"}, PRNumber: 1},
-		"no number": {Repo: Repo{Owner: "o", Name: "r"}},
+		"no owner":         {Repo: Repo{Name: "r"}, PRNumber: 1, ExpectedHeadSHA: "sha"},
+		"no name":          {Repo: Repo{Owner: "o"}, PRNumber: 1, ExpectedHeadSHA: "sha"},
+		"no number":        {Repo: Repo{Owner: "o", Name: "r"}, ExpectedHeadSHA: "sha"},
+		"no expected head": {Repo: Repo{Owner: "o", Name: "r"}, PRNumber: 1},
 	} {
-		if err := h.EnableAutoMerge(context.Background(), req); !errors.Is(err, ErrInvalidRequest) {
+		if _, err := h.EnableAutoMerge(context.Background(), req); !errors.Is(err, ErrInvalidRequest) {
 			t.Errorf("%s: want ErrInvalidRequest, got %v", name, err)
 		}
 	}
@@ -600,19 +612,23 @@ func TestGraphQLErrorsSurfaceDespiteHTTP200(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/repos/o/r" {
+			_, _ = w.Write([]byte(`{"allow_merge_commit":true}`))
+			return
+		}
 		if r.URL.Path == "/graphql" {
 			// The exact shape GitHub sends: success status, failed operation.
 			_, _ = w.Write([]byte(`{"data":{"enablePullRequestAutoMerge":null},` +
 				`"errors":[{"message":"Pull request Pull request is in clean status"}]}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"node_id":"PR_1"}`))
+		_, _ = w.Write([]byte(`{"node_id":"PR_1","head":{"sha":"green-sha"}}`))
 	}))
 	defer srv.Close()
 
 	h := NewGitHubHost(srv.Client(), srv.URL)
-	err := h.EnableAutoMerge(context.Background(), EnableAutoMergeRequest{
-		Repo: Repo{Owner: "o", Name: "r"}, PRNumber: 2,
+	_, err := h.EnableAutoMerge(context.Background(), EnableAutoMergeRequest{
+		Repo: Repo{Owner: "o", Name: "r"}, PRNumber: 2, ExpectedHeadSHA: "green-sha",
 	})
 	if err == nil {
 		t.Fatal("a GraphQL failure returned nil — the whole defect")
@@ -637,17 +653,21 @@ func TestGraphQLSuccessStaysSuccess(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/repos/o/r" {
+			_, _ = w.Write([]byte(`{"allow_merge_commit":true}`))
+			return
+		}
 		if r.URL.Path == "/graphql" {
 			_, _ = w.Write([]byte(`{"data":{"enablePullRequestAutoMerge":{"clientMutationId":null}}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"node_id":"PR_1"}`))
+		_, _ = w.Write([]byte(`{"node_id":"PR_1","head":{"sha":"green-sha"}}`))
 	}))
 	defer srv.Close()
 
 	h := NewGitHubHost(srv.Client(), srv.URL)
-	if err := h.EnableAutoMerge(context.Background(), EnableAutoMergeRequest{
-		Repo: Repo{Owner: "o", Name: "r"}, PRNumber: 2,
+	if _, err := h.EnableAutoMerge(context.Background(), EnableAutoMergeRequest{
+		Repo: Repo{Owner: "o", Name: "r"}, PRNumber: 2, ExpectedHeadSHA: "green-sha",
 	}); err != nil {
 		t.Fatalf("EnableAutoMerge on a clean success: %v", err)
 	}
@@ -670,6 +690,10 @@ func TestOpenPRReportsADisabledAutoMergeInsteadOfFailing(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/repos/o/r" {
+			_, _ = w.Write([]byte(`{"allow_merge_commit":true}`))
+			return
+		}
 		if r.URL.Path == "/graphql" {
 			// GitHub's exact wording, captured from the real API.
 			_, _ = w.Write([]byte(`{"data":{"enablePullRequestAutoMerge":null},` +
@@ -682,7 +706,7 @@ func TestOpenPRReportsADisabledAutoMergeInsteadOfFailing(t *testing.T) {
 
 	h := NewGitHubHost(srv.Client(), srv.URL)
 	pr, err := h.OpenPR(context.Background(), OpenPRRequest{
-		Repo: Repo{Owner: "o", Name: "r"}, Head: "a2a/x/y", Base: "main", Title: "t",
+		Repo: Repo{Owner: "o", Name: "r"}, Head: "a2a/x/y", Base: "main", Title: "t", ExpectedHeadSHA: "green-sha",
 	})
 	if err != nil {
 		t.Fatalf("OpenPR failed on a repo with auto-merge disabled: %v", err)
@@ -705,6 +729,10 @@ func TestOpenPRStillFailsOnAnUnknownGraphQLError(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/repos/o/r" {
+			_, _ = w.Write([]byte(`{"allow_merge_commit":true}`))
+			return
+		}
 		if r.URL.Path == "/graphql" {
 			_, _ = w.Write([]byte(`{"errors":[{"message":"Resource not accessible by personal access token"}]}`))
 			return
@@ -715,7 +743,7 @@ func TestOpenPRStillFailsOnAnUnknownGraphQLError(t *testing.T) {
 
 	h := NewGitHubHost(srv.Client(), srv.URL)
 	_, err := h.OpenPR(context.Background(), OpenPRRequest{
-		Repo: Repo{Owner: "o", Name: "r"}, Head: "a2a/x/y", Base: "main", Title: "t",
+		Repo: Repo{Owner: "o", Name: "r"}, Head: "a2a/x/y", Base: "main", Title: "t", ExpectedHeadSHA: "green-sha",
 	})
 	if err == nil {
 		t.Fatal("an unrecognised GraphQL failure was swallowed as a known limitation")
@@ -731,6 +759,10 @@ func TestOpenPRArmedReportsNoNote(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/repos/o/r" {
+			_, _ = w.Write([]byte(`{"allow_merge_commit":true}`))
+			return
+		}
 		if r.URL.Path == "/graphql" {
 			_, _ = w.Write([]byte(`{"data":{"enablePullRequestAutoMerge":{"clientMutationId":null}}}`))
 			return
@@ -741,7 +773,7 @@ func TestOpenPRArmedReportsNoNote(t *testing.T) {
 
 	h := NewGitHubHost(srv.Client(), srv.URL)
 	pr, err := h.OpenPR(context.Background(), OpenPRRequest{
-		Repo: Repo{Owner: "o", Name: "r"}, Head: "a2a/x/y", Base: "main", Title: "t",
+		Repo: Repo{Owner: "o", Name: "r"}, Head: "a2a/x/y", Base: "main", Title: "t", ExpectedHeadSHA: "green-sha",
 	})
 	if err != nil {
 		t.Fatalf("OpenPR: %v", err)

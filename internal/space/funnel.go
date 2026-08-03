@@ -59,6 +59,44 @@ const (
 	// that wave's allowlist; that was an allowlist artifact, not a design
 	// conclusion, and the lead split it.)
 	WriteStateMerged WriteState = "merged"
+	// WriteStateNeedsAttention means a PR is confirmed but unattended merge
+	// is not armed. Note names the operator-visible unfinished condition.
+	WriteStateNeedsAttention WriteState = "needs-attention"
+	// WriteStateOutcomeUnknown means a later provider side effect may have
+	// happened but could not be observed. Stage remains the last proven fact.
+	WriteStateOutcomeUnknown WriteState = "outcome-unknown"
+)
+
+// WriteStage is monotonic evidence about the furthest durable boundary a
+// funnel invocation proved.
+type WriteStage string
+
+const (
+	WriteStageNone           WriteStage = "none"
+	WriteStageCommitted      WriteStage = "committed"
+	WriteStagePushed         WriteStage = "pushed"
+	WriteStagePRCreated      WriteStage = "pr-created"
+	WriteStageAutoMergeArmed WriteStage = "auto-merge-armed"
+	WriteStageMerged         WriteStage = "merged"
+)
+
+// RemainingAction is the closed machine-readable next step derived from
+// Stage and State. It is never reconstructed from Note.
+type RemainingAction string
+
+const (
+	RemainingActionNone                   RemainingAction = "none"
+	RemainingActionRetryPush              RemainingAction = "retry-push"
+	RemainingActionEnsurePR               RemainingAction = "ensure-pr"
+	RemainingActionArmAutoMerge           RemainingAction = "arm-auto-merge"
+	RemainingActionWaitForGates           RemainingAction = "wait-for-gates"
+	RemainingActionResolvePR              RemainingAction = "resolve-pr"
+	RemainingActionObserveProviderOutcome RemainingAction = "observe-provider-outcome"
+)
+
+var (
+	ErrInvalidWriteOutcome     = errors.New("space: invalid write stage/state combination")
+	ErrExpectedHeadUnavailable = errors.New("space: host did not return the pull request head checked by CI")
 )
 
 // FileWrite is one file the write funnel commits — a path (relative to
@@ -162,15 +200,128 @@ type WriteResult struct {
 	PRURL     string
 	CommitSHA string
 	State     WriteState
+	Stage     WriteStage
 	// ArtifactIDs are the IDs actually present on the operation's PR. They
 	// may differ from this invocation's candidates on a cross-midnight retry.
 	ArtifactIDs []string
-	// AutoMergeNote is non-empty when the PR opened but auto-merge could NOT
-	// be armed — the repository forbids it, or the PR is already mergeable.
-	// The write succeeded either way, so this is not an error; it is the one
-	// thing the caller must be told, because State says "pending-merge" and
-	// nothing will act on that pending unless a human does.
+	// MergeMethod is the method selected by the host. The funnel never
+	// guesses or reconstructs it.
+	MergeMethod host.MergeMethod
+	// RemainingAction is derived solely from Stage and State.
+	RemainingAction RemainingAction
+	// Note is the actionable explanation for needs-attention and related
+	// partial outcomes.
+	Note string
+	// AutoMergeNote is the deprecated compatibility alias for Note. New
+	// consumers branch on State and RemainingAction and render Note only as
+	// operator-facing context.
 	AutoMergeNote string
+}
+
+// RemainingActionFor is the total stage/state mapping defined by P4. Invalid
+// combinations return ErrInvalidWriteOutcome rather than guessing.
+func RemainingActionFor(stage WriteStage, state WriteState) (RemainingAction, error) {
+	switch state {
+	case WriteStateMerged, WriteStateAlreadyMerged:
+		if stage != WriteStageMerged {
+			return "", ErrInvalidWriteOutcome
+		}
+		return RemainingActionNone, nil
+	}
+	if stage == WriteStageMerged {
+		if state == "" {
+			return RemainingActionNone, nil
+		}
+		return "", ErrInvalidWriteOutcome
+	}
+	if !validNonMergedStage(stage) {
+		return "", ErrInvalidWriteOutcome
+	}
+	if state == WriteStateOutcomeUnknown {
+		return RemainingActionObserveProviderOutcome, nil
+	}
+	switch state {
+	case WriteStateNeedsAttention:
+		if stage != WriteStagePRCreated {
+			return "", ErrInvalidWriteOutcome
+		}
+		return RemainingActionResolvePR, nil
+	case WriteStatePendingMerge:
+		if stage != WriteStageAutoMergeArmed {
+			return "", ErrInvalidWriteOutcome
+		}
+		return RemainingActionWaitForGates, nil
+	case WriteStateAlreadyOpen:
+		switch stage {
+		case WriteStagePRCreated:
+			return RemainingActionArmAutoMerge, nil
+		case WriteStageAutoMergeArmed:
+			return RemainingActionWaitForGates, nil
+		default:
+			return "", ErrInvalidWriteOutcome
+		}
+	case "":
+		switch stage {
+		case WriteStageNone, WriteStageCommitted:
+			return RemainingActionRetryPush, nil
+		case WriteStagePushed:
+			return RemainingActionEnsurePR, nil
+		case WriteStagePRCreated:
+			return RemainingActionArmAutoMerge, nil
+		case WriteStageAutoMergeArmed:
+			return RemainingActionWaitForGates, nil
+		default:
+			return "", ErrInvalidWriteOutcome
+		}
+	default:
+		return "", ErrInvalidWriteOutcome
+	}
+}
+
+func validNonMergedStage(stage WriteStage) bool {
+	switch stage {
+	case WriteStageNone, WriteStageCommitted, WriteStagePushed, WriteStagePRCreated, WriteStageAutoMergeArmed:
+		return true
+	default:
+		return false
+	}
+}
+
+func finalizeWriteResult(result WriteResult) (WriteResult, error) {
+	action, err := RemainingActionFor(result.Stage, result.State)
+	if err != nil {
+		return result, err
+	}
+	if result.State == WriteStateNeedsAttention && result.Note == "" {
+		return result, ErrInvalidWriteOutcome
+	}
+	result.RemainingAction = action
+	result.AutoMergeNote = result.Note // deprecated compatibility alias
+	return result, nil
+}
+
+func baseWriteResult(branch string, artifactIDs []string) WriteResult {
+	return WriteResult{
+		Branch: branch, Stage: WriteStageNone,
+		RemainingAction: RemainingActionRetryPush,
+		ArtifactIDs:     append([]string(nil), artifactIDs...),
+	}
+}
+
+func completeWriteResult(op, input string, result WriteResult) (WriteResult, error) {
+	result, err := finalizeWriteResult(result)
+	if err != nil {
+		return result, &Error{Op: op, Input: input, Err: err}
+	}
+	return result, nil
+}
+
+func failWriteResult(op, input string, result WriteResult, cause error) (WriteResult, error) {
+	result, err := finalizeWriteResult(result)
+	if err != nil {
+		cause = errors.Join(cause, err)
+	}
+	return result, &Error{Op: op, Input: input, Err: cause}
 }
 
 // SubmitValidator is the consumer-side seam (rails ISP/DI) for V2
@@ -219,19 +370,20 @@ func NewWriteFunnel(h host.Host, validator SubmitValidator, binaryVersion string
 func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResult, error) {
 	const op = "Submit"
 	if req.Verb == "" {
-		return WriteResult{}, &Error{Op: op, Input: req.ArtifactID, Err: ErrMissingVerb}
+		return baseWriteResult("", req.ArtifactIDs), &Error{Op: op, Input: req.ArtifactID, Err: ErrMissingVerb}
 	}
 	branchID := req.ArtifactID
 	if req.OperationKey != "" {
 		if !operation.Valid(req.OperationKey) {
-			return WriteResult{}, &Error{Op: op, Input: req.OperationKey, Err: ErrInvalidOperationKey}
+			return baseWriteResult("", req.ArtifactIDs), &Error{Op: op, Input: req.OperationKey, Err: ErrInvalidOperationKey}
 		}
 		branchID = req.OperationKey
 	}
 	if err := validateBranchSegments(req.System, req.Verb, branchID); err != nil {
-		return WriteResult{}, &Error{Op: op, Input: req.ArtifactID, Err: err}
+		return baseWriteResult("", req.ArtifactIDs), &Error{Op: op, Input: req.ArtifactID, Err: err}
 	}
 	branch := BranchName(req.System, req.Verb, branchID)
+	result := baseWriteResult(branch, req.ArtifactIDs)
 
 	// Step 0: idempotent-retry short-circuit — before ANY other check or
 	// git action (spec 05 §7 idempotency note). Only an OPEN PR
@@ -243,16 +395,20 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		Repo: req.Repo, Branch: branch, Credential: req.Credential,
 	})
 	if err != nil {
-		return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
+		return result, &Error{Op: op, Input: branch, Err: err}
 	}
 	if existing != nil && (existing.State != "merged" || req.OperationKey != "") {
 		existingIDs := req.ArtifactIDs
 		if req.OperationKey != "" {
 			key, ids, ok := ParseOperationMetadata(existing.Body)
 			if !ok || key != req.OperationKey {
-				return WriteResult{}, &Error{Op: op, Input: branch, Err: ErrOperationMismatch}
+				return result, &Error{Op: op, Input: branch, Err: ErrOperationMismatch}
 			}
 			existingIDs = ids
+		}
+		result, err = existingPRResult(branch, existing, existingIDs)
+		if err != nil {
+			return result, &Error{Op: op, Input: branch, Err: err}
 		}
 		// Re-arm auto-merge before reporting success. OpenPR is NOT atomic
 		// on GitHub — creating the PR and arming auto-merge are two calls —
@@ -267,9 +423,24 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		// case — the PR was fully configured — costs one no-op call.
 		if existing.State != "merged" {
 			if am, isAutoMerger := f.host.(host.AutoMerger); isAutoMerger {
-				err := am.EnableAutoMerge(ctx, host.EnableAutoMergeRequest{
+				status, statusErr := f.host.CheckStatus(ctx, host.StatusRequest{
 					Repo: req.Repo, PRNumber: existing.Number, Credential: req.Credential,
 				})
+				if statusErr != nil {
+					result.State = WriteStateNeedsAttention
+					result.Note = "PR exists, but its current head could not be checked before re-arming auto-merge"
+					return failWriteResult(op, branch, result, statusErr)
+				}
+				if status.HeadSHA == "" {
+					result.State = WriteStateNeedsAttention
+					result.Note = "PR exists, but the checked head is unavailable; auto-merge was not armed"
+					return failWriteResult(op, branch, result, ErrExpectedHeadUnavailable)
+				}
+				method, err := am.EnableAutoMerge(ctx, host.EnableAutoMergeRequest{
+					Repo: req.Repo, PRNumber: existing.Number, ExpectedHeadSHA: status.HeadSHA,
+					Credential: req.Credential,
+				})
+				result.MergeMethod = method
 				// "Already clean" is GitHub declining because the PR can be
 				// merged right now — nothing to wait for. That is not a failed
 				// repair; it means the write must LAND the PR itself instead
@@ -277,19 +448,38 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 				// never merge, either way, must not fail the retry.
 				if err != nil {
 					if !host.IsAutoMergeAlreadyClean(err) {
-						return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
+						result.State = WriteStateNeedsAttention
+						result.Note = "PR exists, but auto-merge could not be armed; retry after observing its current head"
+						return failWriteResult(op, branch, result, err)
 					}
-					merged, merr := f.tryLandCleanPR(ctx, req, existing.Number)
+					merged, mergeMethod, merr := f.tryLandCleanPRWithStatus(ctx, req, existing.Number, status)
+					if mergeMethod != "" {
+						result.MergeMethod = mergeMethod
+					}
 					if merr != nil {
-						return WriteResult{}, &Error{Op: op, Input: branch, Err: merr}
+						result.State = WriteStateNeedsAttention
+						result.Note = "PR exists and is green, but direct merge did not complete"
+						return failWriteResult(op, branch, result, merr)
 					}
 					if merged {
-						existing.State = "merged"
+						result.State = WriteStateAlreadyMerged
+						result.Stage = WriteStageMerged
+						result.Note = ""
+						return completeWriteResult(op, branch, result)
 					}
+					result.State = WriteStateNeedsAttention
+					result.Note = "PR exists, but unattended merge is not armed"
+					return completeWriteResult(op, branch, result)
 				}
+				result.Stage = WriteStageAutoMergeArmed
+				result.State = WriteStateAlreadyOpen
+				return completeWriteResult(op, branch, result)
 			}
+			result.State = WriteStateNeedsAttention
+			result.Note = "PR exists, but this host cannot arm auto-merge"
+			return completeWriteResult(op, branch, result)
 		}
-		return existingPRResult(branch, existing, existingIDs), nil
+		return result, nil
 	}
 
 	// Step 1a: section guard — wrong-section files refused before any
@@ -300,7 +490,7 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	for _, file := range req.Files {
 		if !sectionOK(req.System, file.Path) &&
 			(!req.AllowSpaceInfrastructure || !spaceInfraOK(file.Path)) {
-			return WriteResult{}, &Error{Op: op, Input: file.Path, Err: ErrWrongSection}
+			return result, &Error{Op: op, Input: file.Path, Err: ErrWrongSection}
 		}
 	}
 
@@ -310,10 +500,10 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	if req.MinBinaryVersion != "" {
 		older, err := versionOlderThan(f.binaryVersion, req.MinBinaryVersion)
 		if err != nil {
-			return WriteResult{}, &Error{Op: op, Err: err}
+			return result, &Error{Op: op, Err: err}
 		}
 		if older {
-			return WriteResult{}, &Error{
+			return result, &Error{
 				Op: op,
 				Input: fmt.Sprintf("local binary %s < space.yaml min_binary_version %s — run 'a2a update'",
 					f.binaryVersion, req.MinBinaryVersion),
@@ -333,14 +523,14 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	// get committed, or a space would validate one document and receive another.
 	stamped, err := StampProducer(req.Files, f.binaryVersion, req.MinBinaryVersion)
 	if err != nil {
-		return WriteResult{}, &Error{Op: op, Err: err}
+		return result, &Error{Op: op, Err: err}
 	}
 	req.Files = stamped
 
 	// Step 1c: V2 validation via the submit-validator seam.
 	if f.validator != nil {
 		if err := f.validator.ValidateSubmit(ctx, req.Files); err != nil {
-			return WriteResult{}, &Error{Op: op, Err: err}
+			return result, &Error{Op: op, Err: err}
 		}
 	}
 
@@ -350,8 +540,12 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	// space (mirror_root), and this is the only part of Submit that
 	// mutates it. See commitAndPush's own doc for the exact hold window.
 	outcome, err := f.commitAndPush(ctx, req, branch)
+	result.CommitSHA = outcome.sha
+	if outcome.stage != "" {
+		result.Stage = outcome.stage
+	}
 	if err != nil {
-		return WriteResult{}, err
+		return failWriteResult(op, branch, result, err)
 	}
 	if outcome.done != nil {
 		return *outcome.done, nil
@@ -370,11 +564,27 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	}
 	pr, err := f.host.OpenPR(ctx, host.OpenPRRequest{
 		Repo: req.Repo, Head: head, Base: req.BaseBranch,
-		Title: req.PRTitle, Body: prBody, Credential: req.Credential,
+		Title: req.PRTitle, Body: prBody, ExpectedHeadSHA: sha, Credential: req.Credential,
 	})
 	if err != nil {
-		return WriteResult{}, &Error{Op: op, Input: branch, Err: err}
+		if pr.Number > 0 && pr.URL != "" {
+			result.PRNumber, result.PRURL = pr.Number, pr.URL
+			result.Stage, result.MergeMethod = WriteStagePRCreated, pr.MergeMethod
+			if hostOutcomeUnknown(err) {
+				result.State = WriteStateOutcomeUnknown
+				result.Note = "PR was created, but the auto-merge outcome could not be confirmed"
+			} else {
+				result.State = WriteStateNeedsAttention
+				result.Note = "PR was created, but auto-merge could not be armed"
+			}
+		} else if hostOutcomeUnknown(err) {
+			result.State = WriteStateOutcomeUnknown
+			result.Note = "The PR creation outcome could not be observed; retry is required"
+		}
+		return failWriteResult(op, branch, result, err)
 	}
+	result.PRNumber, result.PRURL = pr.Number, pr.URL
+	result.Stage, result.MergeMethod = WriteStagePRCreated, pr.MergeMethod
 
 	// Step 4b (WAVE M4): OpenPR's own auto-merge arming can be refused
 	// because the PR is ALREADY mergeable — nothing to wait for. That is
@@ -382,27 +592,39 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	// "pending-merge" over it and stopping there is exactly the defect this
 	// wave closes: nothing else will ever merge that PR. Try to land it
 	// directly, gated by tryLandCleanPR's explicit-green guard.
-	state := WriteStatePendingMerge
+	state := WriteStateNeedsAttention
 	note := pr.AutoMergeNote
 	if !pr.AutoMergeArmed && host.AutoMergeNoteIsAlreadyClean(pr.AutoMergeNote) {
-		merged, merr := f.tryLandCleanPR(ctx, req, pr.Number)
+		merged, mergeMethod, merr := f.tryLandCleanPR(ctx, req, pr.Number)
+		if mergeMethod != "" {
+			result.MergeMethod = mergeMethod
+		}
 		if merr != nil {
-			return WriteResult{}, &Error{Op: op, Input: branch, Err: merr}
+			result.State = WriteStateNeedsAttention
+			result.Note = "PR exists and is green, but direct merge did not complete"
+			return failWriteResult(op, branch, result, merr)
 		}
 		if merged {
 			state, note = WriteStateMerged, ""
 		}
+	} else if pr.AutoMergeArmed {
+		state, note = WriteStatePendingMerge, ""
+		result.Stage = WriteStageAutoMergeArmed
+	} else if note == "" {
+		note = "PR exists, but unattended merge is not armed"
 	}
 
 	// Step 5: return the write-result (cache persistence is P7's, not
 	// this phase's — spec 05 §7).
-	return WriteResult{
-		Branch: branch, PRNumber: pr.Number, PRURL: pr.URL,
-		CommitSHA: sha, State: state, ArtifactIDs: append([]string(nil), req.ArtifactIDs...),
-		// Carried, not swallowed: "pending-merge" over a PR nobody will
-		// merge is the one outcome the caller must not read as done.
-		AutoMergeNote: note,
-	}, nil
+	result.State, result.Note = state, note
+	if state == WriteStateMerged {
+		result.Stage = WriteStageMerged
+	}
+	return completeWriteResult(op, branch, result)
+}
+
+func hostOutcomeUnknown(err error) bool {
+	return errors.Is(err, host.ErrTransient) || errors.Is(err, host.ErrRetriedWriteWasDuplicate)
 }
 
 // tryLandCleanPR attempts to merge a PR GitHub has already told us is
@@ -414,7 +636,7 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 // merged=true, err=nil: MergePR succeeded — the PR is now merged.
 // merged=false, err=nil: the guard was not satisfied, OR the host implements
 //
-//	no Merger — today's pending-merge behaviour is unchanged, note preserved.
+//	no Merger — the caller reports needs-attention and preserves the note.
 //
 // err != nil: MergePR (or the CheckStatus read) itself failed — the caller
 //
@@ -440,10 +662,10 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 // a2a must never merge something CI has not passed; this is the one place
 // that decision is made, and it is made by requiring a positive answer, not
 // by excluding known-bad ones.
-func (f *WriteFunnel) tryLandCleanPR(ctx context.Context, req SubmitRequest, prNumber int) (merged bool, err error) {
-	merger, ok := f.host.(host.Merger)
+func (f *WriteFunnel) tryLandCleanPR(ctx context.Context, req SubmitRequest, prNumber int) (merged bool, method host.MergeMethod, err error) {
+	_, ok := f.host.(host.Merger)
 	if !ok {
-		return false, nil
+		return false, "", nil
 	}
 	// Both failures below are returned, not swallowed — an unevaluable or
 	// failed landing must never be reported as a completed write, which is
@@ -459,26 +681,35 @@ func (f *WriteFunnel) tryLandCleanPR(ctx context.Context, req SubmitRequest, prN
 		Repo: req.Repo, PRNumber: prNumber, Credential: req.Credential,
 	})
 	if err != nil {
-		return false, fmt.Errorf("the write landed and PR #%d is open, but its required check could not be read, "+
+		return false, "", fmt.Errorf("the write landed and PR #%d is open, but its required check could not be read, "+
 			"so a2a did not merge it — re-running is safe and will retry the merge: %w", prNumber, err)
 	}
-	if !checkStatusExplicitlyGreen(status) {
-		return false, nil
+	return f.tryLandCleanPRWithStatus(ctx, req, prNumber, status)
+}
+
+func (f *WriteFunnel) tryLandCleanPRWithStatus(ctx context.Context, req SubmitRequest, prNumber int, status host.CheckStatusResult) (merged bool, method host.MergeMethod, err error) {
+	merger, ok := f.host.(host.Merger)
+	if !ok {
+		return false, "", nil
 	}
-	if err := merger.MergePR(ctx, host.MergePRRequest{
-		Repo: req.Repo, PRNumber: prNumber, Credential: req.Credential,
-	}); err != nil {
-		return false, fmt.Errorf("the write landed and PR #%d is green, but merging it failed, "+
+	if !checkStatusExplicitlyGreen(status) {
+		return false, "", nil
+	}
+	method, err = merger.MergePR(ctx, host.MergePRRequest{
+		Repo: req.Repo, PRNumber: prNumber, ExpectedHeadSHA: status.HeadSHA, Credential: req.Credential,
+	})
+	if err != nil {
+		return false, method, fmt.Errorf("the write landed and PR #%d is green, but merging it failed, "+
 			"so the artifact is not on the base branch yet — re-running is safe and will retry: %w", prNumber, err)
 	}
-	return true, nil
+	return true, method, nil
 }
 
 // checkStatusExplicitlyGreen is AC-1050.13's guard condition in one place:
 // present AND explicitly successful, nothing looser. See tryLandCleanPR's
 // doc for why each of absent/pending/ambiguous/failing falls through false.
 func checkStatusExplicitlyGreen(s host.CheckStatusResult) bool {
-	return s.State == "completed" && s.Conclusion == "success" && len(s.Ambiguous) == 0
+	return s.State == "completed" && s.Conclusion == "success" && len(s.Ambiguous) == 0 && s.HeadSHA != ""
 }
 
 // BranchName renders the funnel's deterministic branch:
@@ -647,6 +878,7 @@ func (f *WriteFunnel) commitIsOnBase(ctx context.Context, req SubmitRequest, sha
 // anything.
 type commitAndPushOutcome struct {
 	sha, head string
+	stage     WriteStage
 	// done, when non-nil, is Submit's final result: nothing left to do.
 	done *WriteResult
 }
@@ -737,7 +969,7 @@ func (f *WriteFunnel) commitAndPush(ctx context.Context, req SubmitRequest, bran
 				return commitAndPushOutcome{}, &Error{Op: op, Input: branch, Err: ErrOperationMismatch}
 			}
 			restoreAndRelease()
-			return commitAndPushOutcome{sha: remote.SHA, head: branch}, nil
+			return commitAndPushOutcome{sha: remote.SHA, head: branch, stage: WriteStagePushed}, nil
 		}
 	}
 
@@ -756,13 +988,18 @@ func (f *WriteFunnel) commitAndPush(ctx context.Context, req SubmitRequest, bran
 			return commitAndPushOutcome{}, &Error{Op: op, Err: berr}
 		}
 		if onBase {
-			done := WriteResult{
+			done, derr := finalizeWriteResult(WriteResult{
 				Branch: branch, CommitSHA: sha, State: WriteStateAlreadyMerged,
+				Stage:       WriteStageMerged,
 				ArtifactIDs: append([]string(nil), req.ArtifactIDs...),
+			})
+			if derr != nil {
+				return commitAndPushOutcome{}, &Error{Op: op, Input: branch, Err: derr}
 			}
 			return commitAndPushOutcome{done: &done}, nil
 		}
 	}
+	committed := commitAndPushOutcome{sha: sha, head: branch, stage: WriteStageCommitted}
 
 	// Push the ephemeral branch — into req.Repo itself, or (when the
 	// caller allowed it and the push was refused for ACCESS) into the
@@ -770,17 +1007,20 @@ func (f *WriteFunnel) commitAndPush(ctx context.Context, req SubmitRequest, bran
 	head := branch
 	if err := f.push(ctx, req, branch, req.RemoteURL); err != nil {
 		if !req.AllowForkFallback || !errors.Is(err, host.ErrPushForbidden) {
-			return commitAndPushOutcome{}, &Error{Op: op, Input: branch, Err: err}
+			return committed, &Error{Op: op, Input: branch, Err: err}
 		}
 		forkHead, forked, ferr := f.pushViaFork(ctx, req, branch)
 		if ferr != nil {
-			return commitAndPushOutcome{}, ferr
+			return committed, ferr
 		}
 		if forked != nil {
 			// The fork already carries this branch's PR — the fork-head
 			// idempotency check step 0 could not make, because the fork's
 			// owner was unknown until now.
-			done := existingPRResult(branch, forked, req.ArtifactIDs)
+			done, derr := existingPRResult(branch, forked, req.ArtifactIDs)
+			if derr != nil {
+				return committed, &Error{Op: op, Input: branch, Err: derr}
+			}
 			return commitAndPushOutcome{done: &done}, nil
 		}
 		head = forkHead
@@ -793,20 +1033,23 @@ func (f *WriteFunnel) commitAndPush(ctx context.Context, req SubmitRequest, bran
 	// merely returns.
 	restoreAndRelease()
 
-	return commitAndPushOutcome{sha: sha, head: head}, nil
+	return commitAndPushOutcome{sha: sha, head: head, stage: WriteStagePushed}, nil
 }
 
 // existingPRResult renders the idempotent short-circuit's result for a PR
 // the host already has open or merged for this branch.
-func existingPRResult(branch string, pr *host.PRInfo, artifactIDs []string) WriteResult {
+func existingPRResult(branch string, pr *host.PRInfo, artifactIDs []string) (WriteResult, error) {
 	state := WriteStateAlreadyOpen
+	stage := WriteStagePRCreated
 	if pr.State == "merged" {
 		state = WriteStateAlreadyMerged
+		stage = WriteStageMerged
 	}
-	return WriteResult{
+	return finalizeWriteResult(WriteResult{
 		Branch: branch, PRNumber: pr.Number, PRURL: pr.URL, State: state,
+		Stage: stage, MergeMethod: pr.MergeMethod,
 		ArtifactIDs: append([]string(nil), artifactIDs...),
-	}
+	})
 }
 
 func operationCommitMatches(ctx context.Context, repoDir, branch, remoteSHA, key string) (bool, error) {

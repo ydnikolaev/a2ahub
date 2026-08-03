@@ -265,8 +265,17 @@ func (h *GitHubHost) waitForRepo(ctx context.Context, op string, repo Repo, cred
 // exercise the full sequence against one httptest server.
 func (h *GitHubHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, error) {
 	const op = "OpenPR"
-	if req.Repo.Owner == "" || req.Repo.Name == "" || req.Head == "" || req.Base == "" {
+	if req.Repo.Owner == "" || req.Repo.Name == "" || req.Head == "" || req.Base == "" || req.ExpectedHeadSHA == "" {
 		return PRInfo{}, &Error{Op: op, Err: ErrInvalidRequest}
+	}
+
+	settings, err := h.readRepoSettings(ctx, op, req.Repo, req.Credential)
+	if err != nil {
+		return PRInfo{}, err
+	}
+	method, err := settings.resolveMergeMethod()
+	if err != nil {
+		return PRInfo{}, mergeMethodUnavailableError(op, req.Repo, err)
 	}
 
 	createBody := map[string]any{
@@ -285,6 +294,14 @@ func (h *GitHubHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, err
 	if err := h.restCall(ctx, op, http.MethodPost, path, req.Credential, createBody, &created); err != nil {
 		return PRInfo{}, err
 	}
+	state := created.State
+	if state == "" {
+		state = "open"
+	}
+	info := PRInfo{
+		Number: created.Number, URL: created.HTMLURL, State: state, Body: req.Body,
+		MergeMethod: method,
+	}
 
 	// Auto-merge is UNIFORM (spec 05 §T1) — always requested, never
 	// gated by a parameter here.
@@ -294,24 +311,22 @@ func (h *GitHubHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, err
 	// That is why AutoMerger exists and why the funnel re-arms on its
 	// idempotent-retry path — see EnableAutoMerge.
 	armed, note := true, ""
-	if err := h.armAutoMerge(ctx, op, req.Credential, created.NodeID); err != nil {
+	if err := h.armAutoMerge(ctx, op, req.Credential, created.NodeID, method, req.ExpectedHeadSHA); err != nil {
 		note = autoMergeRefusal(err)
 		if note == "" {
-			// An unrecognised failure is a surprise, not a known limitation:
-			// surface it rather than shipping a PR nobody knows is stuck.
-			return PRInfo{}, err
+			// The create response is durable evidence even though the later
+			// provider operation failed. Keep the PR handle and wrap the cause
+			// without rendering its response body in stable output.
+			info.AutoMergeArmed = false
+			return info, &PartialWriteError{
+				Stage: PartialWriteStagePRCreated, Operation: PartialWriteOperationEnableAutoMerge, Err: err,
+			}
 		}
 		armed = false
 	}
-
-	state := created.State
-	if state == "" {
-		state = "open"
-	}
-	return PRInfo{
-		Number: created.Number, URL: created.HTMLURL, State: state,
-		AutoMergeArmed: armed, AutoMergeNote: note,
-	}, nil
+	info.AutoMergeArmed = armed
+	info.AutoMergeNote = note
+	return info, nil
 }
 
 // requiredCheckName is the space CI's gate job name — frozen by spec 33 §11
@@ -798,18 +813,16 @@ func (h *GitHubHost) CodeownersErrors(ctx context.Context, req RepoSettingsReque
 	return payload.Errors, nil
 }
 
-// repoMergeSettings is the subset of GET /repos/{owner}/{repo} both
-// AutoMergeAllowed and MergePR read — ONE response body, two callers, kept
-// as one struct so the fields can never drift apart (WAVE M4: MergePR needs
-// exactly the sibling fields AutoMergeAllowed already reads, per the same
-// GitHub response). RepoPermissions reads the SAME response's `permissions`
-// object — a third caller, still no second GET.
+// repoMergeSettings is the one subset of GET /repos/{owner}/{repo} decoded by
+// settings consumers. Merge policy, credential permissions, and visibility
+// stay in this single response shape so no parallel provider fact can drift.
 type repoMergeSettings struct {
-	AllowAutoMerge   bool            `json:"allow_auto_merge"`
-	AllowMergeCommit bool            `json:"allow_merge_commit"`
-	AllowSquashMerge bool            `json:"allow_squash_merge"`
-	AllowRebaseMerge bool            `json:"allow_rebase_merge"`
-	Permissions      RepoPermissions `json:"permissions"`
+	AllowAutoMerge   bool                 `json:"allow_auto_merge"`
+	AllowMergeCommit bool                 `json:"allow_merge_commit"`
+	AllowSquashMerge bool                 `json:"allow_squash_merge"`
+	AllowRebaseMerge bool                 `json:"allow_rebase_merge"`
+	Permissions      RepoPermissions      `json:"permissions"`
+	Visibility       RepositoryVisibility `json:"visibility"`
 }
 
 // RepoPermissions is the subset of GET /repos/{owner}/{repo}'s `permissions`
@@ -840,8 +853,22 @@ func (h *GitHubHost) RepoPermissions(ctx context.Context, req RepoSettingsReques
 	return settings.Permissions, nil
 }
 
-// readRepoSettings issues the single GET /repos/{owner}/{repo} call both
-// AutoMergeAllowed and MergePR need.
+// RepoVisibility reads GitHub's repository visibility through the same
+// settings response shape used for permissions and merge policy. The value is
+// diagnostic evidence only; this package never turns it into write authority.
+func (h *GitHubHost) RepoVisibility(ctx context.Context, req RepoSettingsRequest) (RepositoryVisibility, error) {
+	const op = "RepoVisibility"
+	if req.Repo.Owner == "" || req.Repo.Name == "" {
+		return "", &Error{Op: op, Err: ErrInvalidRequest}
+	}
+	settings, err := h.readRepoSettings(ctx, op, req.Repo, req.Credential)
+	if err != nil {
+		return "", err
+	}
+	return settings.Visibility, nil
+}
+
+// readRepoSettings is the sole decoder for GET /repos/{owner}/{repo}.
 func (h *GitHubHost) readRepoSettings(ctx context.Context, op string, repo Repo, cred Credential) (repoMergeSettings, error) {
 	path := fmt.Sprintf("/repos/%s/%s", repo.Owner, repo.Name)
 	var settings repoMergeSettings
@@ -851,38 +878,39 @@ func (h *GitHubHost) readRepoSettings(ctx context.Context, op string, repo Repo,
 	return settings, nil
 }
 
-// mergeMethodPreference is the order MergePR tries direct-merge methods in.
-// GitHub exposes no "repository default merge method" field over REST — only
-// which methods are ALLOWED — so a direct merge cannot literally read the
-// same default armAutoMerge implicitly uses; it instead picks the first
-// allowed method in this order, which is both GitHub's own new-repository
-// default (merge commit) and the order `a2a space init`'s repos ship with all
-// three enabled. Pinning this (rather than leaving it to chance) is what
-// keeps a direct merge from landing a DIFFERENT commit shape than auto-merge
-// would have, and from failing outright on a repo that disallows merge
-// commits specifically.
-var mergeMethodPreference = []string{"merge", "squash", "rebase"}
+// mergeMethodPreference is the deterministic order shared by every arm and
+// merge operation. GitHub exposes which methods are allowed but no repository
+// default, so every mutation sends the first allowed method explicitly.
+var mergeMethodPreference = []MergeMethod{MergeMethodMerge, MergeMethodSquash, MergeMethodRebase}
 
-// pickMergeMethod selects the first allowed method in mergeMethodPreference.
-// ok=false means the repository allows none — MergePR must not guess.
-func (s repoMergeSettings) pickMergeMethod() (method string, ok bool) {
+// resolveMergeMethod is the one deterministic repository-policy resolver used
+// by fresh auto-merge, repair auto-merge, and direct merge.
+func (s repoMergeSettings) resolveMergeMethod() (MergeMethod, error) {
 	for _, m := range mergeMethodPreference {
 		switch m {
-		case "merge":
+		case MergeMethodMerge:
 			if s.AllowMergeCommit {
-				return m, true
+				return m, nil
 			}
-		case "squash":
+		case MergeMethodSquash:
 			if s.AllowSquashMerge {
-				return m, true
+				return m, nil
 			}
-		case "rebase":
+		case MergeMethodRebase:
 			if s.AllowRebaseMerge {
-				return m, true
+				return m, nil
 			}
 		}
 	}
-	return "", false
+	return "", ErrMergeMethodUnavailable
+}
+
+func mergeMethodUnavailableError(op string, repo Repo, err error) error {
+	return &Error{
+		Op:    op,
+		Input: repo.Owner + "/" + repo.Name,
+		Err:   fmt.Errorf("%w: merge commit, squash, and rebase are all disabled — enable at least one in Settings -> General -> Pull Requests", err),
+	}
 }
 
 // MergePR implements the optional Merger capability: PUT
@@ -890,14 +918,10 @@ func (s repoMergeSettings) pickMergeMethod() (method string, ok bool) {
 // GitHub's own auto-merge toggle refused to arm because the PR is already
 // mergeable (see Merger's doc; WAVE M4).
 //
-// The merge method is PINNED, never left implicit: armAutoMerge sends no
-// merge_method (auto-merge falls back to the repository's own default), so a
-// direct merge that guessed a DIFFERENT method could land a different commit
-// shape than auto-merge would have, or fail outright on a repo that disallows
-// that specific method. MergePR reads the same GET /repos/{owner}/{repo}
-// response AutoMergeAllowed reads and picks the first method the repository
-// allows, in mergeMethodPreference's order. No method allowed at all is
-// ErrMergeMethodUnavailable — a typed, actionable error, never a guess.
+// The merge method is PINNED, never left implicit. MergePR uses the same
+// settings decoder and resolver as fresh and repaired auto-merge, sends that
+// method plus ExpectedHeadSHA, and returns the selected method to its caller.
+// No method allowed at all is ErrMergeMethodUnavailable before the mutation.
 //
 // 405 and 409 are returned as distinguishable typed errors (ErrPRNotMergeable,
 // ErrPRHeadMoved) rather than the generic ErrRequestFailed every other status
@@ -905,41 +929,40 @@ func (s repoMergeSettings) pickMergeMethod() (method string, ok bool) {
 // last verified it, so the commit that would actually be merged is not the
 // one that was checked green — a caller MUST NOT report that as a landed
 // write.
-func (h *GitHubHost) MergePR(ctx context.Context, req MergePRRequest) error {
+func (h *GitHubHost) MergePR(ctx context.Context, req MergePRRequest) (MergeMethod, error) {
 	const op = "MergePR"
-	if req.Repo.Owner == "" || req.Repo.Name == "" || req.PRNumber == 0 {
-		return &Error{Op: op, Err: ErrInvalidRequest}
+	if req.Repo.Owner == "" || req.Repo.Name == "" || req.PRNumber == 0 || req.ExpectedHeadSHA == "" {
+		return "", &Error{Op: op, Err: ErrInvalidRequest}
 	}
 
 	settings, err := h.readRepoSettings(ctx, op, req.Repo, req.Credential)
 	if err != nil {
-		return err
+		return "", err
 	}
-	method, ok := settings.pickMergeMethod()
-	if !ok {
-		return &Error{
-			Op:    op,
-			Input: req.Repo.Owner + "/" + req.Repo.Name,
-			Err:   fmt.Errorf("%w: merge commit, squash, and rebase are all disabled — enable at least one in Settings -> General -> Pull Requests", ErrMergeMethodUnavailable),
-		}
+	method, err := settings.resolveMergeMethod()
+	if err != nil {
+		return "", mergeMethodUnavailableError(op, req.Repo, err)
 	}
 
 	path := fmt.Sprintf("/repos/%s/%s/pulls/%d/merge", req.Repo.Owner, req.Repo.Name, req.PRNumber)
-	status, _, raw, err := h.httpDo(ctx, op, http.MethodPut, h.BaseURL+path, req.Credential, map[string]any{"merge_method": method})
+	status, _, raw, err := h.httpDo(ctx, op, http.MethodPut, h.BaseURL+path, req.Credential, map[string]any{
+		"merge_method": method,
+		"sha":          req.ExpectedHeadSHA,
+	})
 	if err != nil {
-		return err
+		return method, err
 	}
 
 	input := fmt.Sprintf("%s/%s#%d", req.Repo.Owner, req.Repo.Name, req.PRNumber)
 	switch {
 	case status >= 200 && status < 300:
-		return nil
+		return method, nil
 	case status == http.StatusMethodNotAllowed: // 405: not mergeable right now
-		return &Error{Op: op, Input: input, Err: fmt.Errorf("%w: %s", ErrPRNotMergeable, strings.TrimSpace(string(raw)))}
+		return method, &Error{Op: op, Input: input, Err: fmt.Errorf("%w: %s", ErrPRNotMergeable, strings.TrimSpace(string(raw)))}
 	case status == http.StatusConflict: // 409: head moved under us
-		return &Error{Op: op, Input: input, Err: fmt.Errorf("%w: %s", ErrPRHeadMoved, strings.TrimSpace(string(raw)))}
+		return method, &Error{Op: op, Input: input, Err: fmt.Errorf("%w: %s", ErrPRHeadMoved, strings.TrimSpace(string(raw)))}
 	default:
-		return &Error{Op: op, Input: input, Err: fmt.Errorf("%w: status %d: %s", ErrRequestFailed, status, strings.TrimSpace(string(raw)))}
+		return method, &Error{Op: op, Input: input, Err: fmt.Errorf("%w: status %d: %s", ErrRequestFailed, status, strings.TrimSpace(string(raw)))}
 	}
 }
 
@@ -1187,19 +1210,42 @@ func (h *GitHubHost) httpAttempt(ctx context.Context, op, method, url string, cr
 }
 
 // armAutoMerge runs the enable-auto-merge mutation for an already-created PR
-// node. One implementation, shared by OpenPR's create path and by
-// EnableAutoMerge's repair path, so the two can never drift.
-func (h *GitHubHost) armAutoMerge(ctx context.Context, op string, cred Credential, nodeID string) error {
+// node. One implementation is shared by OpenPR and the guarded repair path.
+// A non-empty expectedHeadSHA is also sent as GraphQL expectedHeadOid, closing
+// the race between the repair path's immediate PR read and the mutation.
+func (h *GitHubHost) armAutoMerge(ctx context.Context, op string, cred Credential, nodeID string, method MergeMethod, expectedHeadSHA string) error {
 	if nodeID == "" {
 		return &Error{Op: op, Err: ErrInvalidRequest}
 	}
+	graphQLMethod, err := method.graphQLEnum()
+	if err != nil {
+		return &Error{Op: op, Err: err}
+	}
 	mutation := map[string]any{
-		"query": "mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id}) { clientMutationId } }",
+		"query": "mutation($id: ID!, $method: PullRequestMergeMethod!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: $method}) { clientMutationId } }",
 		"variables": map[string]any{
-			"id": nodeID,
+			"id":     nodeID,
+			"method": graphQLMethod,
 		},
 	}
+	if expectedHeadSHA != "" {
+		mutation["query"] = "mutation($id: ID!, $method: PullRequestMergeMethod!, $head: GitObjectID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: $method, expectedHeadOid: $head}) { clientMutationId } }"
+		mutation["variables"].(map[string]any)["head"] = expectedHeadSHA
+	}
 	return h.graphQLCall(ctx, op, cred, mutation, nil)
+}
+
+func (m MergeMethod) graphQLEnum() (string, error) {
+	switch m {
+	case MergeMethodMerge:
+		return "MERGE", nil
+	case MergeMethodSquash:
+		return "SQUASH", nil
+	case MergeMethodRebase:
+		return "REBASE", nil
+	default:
+		return "", ErrInvalidRequest
+	}
 }
 
 // EnableAutoMerge implements AutoMerger: arm auto-merge on an EXISTING PR.
@@ -1210,20 +1256,40 @@ func (h *GitHubHost) armAutoMerge(ctx context.Context, op string, cred Credentia
 // use it.
 //
 // Idempotent by construction: GitHub treats enabling auto-merge on a PR that
-// already has it as a no-op success, which is what the retry path needs,
-// since it cannot know whether the original OpenPR got this far.
-func (h *GitHubHost) EnableAutoMerge(ctx context.Context, req EnableAutoMergeRequest) error {
+// already has it as a no-op success. The PR read also binds arming to the exact
+// head whose green check the caller supplied; a moved head is ErrPRHeadMoved
+// and no GraphQL mutation is sent.
+func (h *GitHubHost) EnableAutoMerge(ctx context.Context, req EnableAutoMergeRequest) (MergeMethod, error) {
 	const op = "EnableAutoMerge"
-	if req.Repo.Owner == "" || req.Repo.Name == "" || req.PRNumber == 0 {
-		return &Error{Op: op, Err: ErrInvalidRequest}
+	if req.Repo.Owner == "" || req.Repo.Name == "" || req.PRNumber == 0 || req.ExpectedHeadSHA == "" {
+		return "", &Error{Op: op, Err: ErrInvalidRequest}
+	}
+
+	settings, err := h.readRepoSettings(ctx, op, req.Repo, req.Credential)
+	if err != nil {
+		return "", err
+	}
+	method, err := settings.resolveMergeMethod()
+	if err != nil {
+		return "", mergeMethodUnavailableError(op, req.Repo, err)
 	}
 
 	var pr struct {
 		NodeID string `json:"node_id"`
+		Head   struct {
+			SHA string `json:"sha"`
+		} `json:"head"`
 	}
 	path := fmt.Sprintf("/repos/%s/%s/pulls/%d", req.Repo.Owner, req.Repo.Name, req.PRNumber)
 	if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &pr); err != nil {
-		return err
+		return method, err
 	}
-	return h.armAutoMerge(ctx, op, req.Credential, pr.NodeID)
+	if pr.Head.SHA != req.ExpectedHeadSHA {
+		return method, &Error{
+			Op:    op,
+			Input: fmt.Sprintf("%s/%s#%d", req.Repo.Owner, req.Repo.Name, req.PRNumber),
+			Err:   ErrPRHeadMoved,
+		}
+	}
+	return method, h.armAutoMerge(ctx, op, req.Credential, pr.NodeID, method, req.ExpectedHeadSHA)
 }

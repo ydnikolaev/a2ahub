@@ -33,6 +33,17 @@ type Credential struct {
 	Token string
 }
 
+// MergeMethod is the repository-authorized method the adapter selected for
+// an auto-merge or direct-merge operation. Callers carry this observed value;
+// they must not reconstruct it from a local preference.
+type MergeMethod string
+
+const (
+	MergeMethodMerge  MergeMethod = "merge"
+	MergeMethodSquash MergeMethod = "squash"
+	MergeMethodRebase MergeMethod = "rebase"
+)
+
 // PushBranchRequest describes an ephemeral-branch push (§4.2 D-002): push
 // a local commit ref, already committed in RepoDir, to RemoteURL as
 // Branch (the deterministic a2a/<system>/<id> name).
@@ -71,12 +82,13 @@ type PushBranchResult struct {
 // CODEOWNERS + the V3 required check blocking auto-merge from firing, not
 // an API parameter.
 type OpenPRRequest struct {
-	Repo       Repo
-	Head       string
-	Base       string
-	Title      string
-	Body       string
-	Credential Credential
+	Repo            Repo
+	Head            string
+	Base            string
+	Title           string
+	Body            string
+	ExpectedHeadSHA string
+	Credential      Credential
 }
 
 // PRInfo is the minimal PR handle other phases (P7's cache, P8's gated
@@ -89,6 +101,10 @@ type PRInfo struct {
 	Number int
 	URL    string
 	State  string
+	// MergeMethod is set once repository policy was read and a method was
+	// selected. It remains populated when PR creation succeeded but the later
+	// auto-merge operation failed.
+	MergeMethod MergeMethod
 	// Body carries tool-owned operation metadata on semantic-idempotency
 	// branches. Ordinary callers may leave it empty.
 	Body string
@@ -249,10 +265,13 @@ type RemoteBranchReader interface {
 }
 
 // EnableAutoMergeRequest identifies the PR whose auto-merge is (re-)armed.
+// ExpectedHeadSHA is the exact head whose required check the caller evaluated;
+// the adapter re-reads the PR and refuses to arm if the head has changed.
 type EnableAutoMergeRequest struct {
-	Repo       Repo
-	PRNumber   int
-	Credential Credential
+	Repo            Repo
+	PRNumber        int
+	ExpectedHeadSHA string
+	Credential      Credential
 }
 
 // AutoMerger is an OPTIONAL capability a Host MAY satisfy — deliberately not
@@ -274,17 +293,20 @@ type EnableAutoMergeRequest struct {
 //
 // Implementations MUST be idempotent: arming auto-merge on a PR that already
 // has it is a no-op success, because the retry path cannot know which state
-// it is repairing.
+// it is repairing. Success returns the repository-selected method; errors
+// after selection may return it alongside the error as partial evidence.
 type AutoMerger interface {
-	EnableAutoMerge(ctx context.Context, req EnableAutoMergeRequest) error
+	EnableAutoMerge(ctx context.Context, req EnableAutoMergeRequest) (MergeMethod, error)
 }
 
 // MergePRRequest identifies the PR a direct merge (PUT .../pulls/{n}/merge)
-// lands.
+// lands. ExpectedHeadSHA is sent as GitHub's `sha` precondition so a green
+// result cannot authorize merging a newer head.
 type MergePRRequest struct {
-	Repo       Repo
-	PRNumber   int
-	Credential Credential
+	Repo            Repo
+	PRNumber        int
+	ExpectedHeadSHA string
+	Credential      Credential
 }
 
 // Merger is an OPTIONAL capability a Host MAY satisfy — deliberately not a
@@ -311,8 +333,26 @@ type Merger interface {
 	// of GitHub's own "clean status" claim — that the PR's required check is
 	// present AND explicitly successful before calling this; MergePR itself
 	// performs no such check, because it has no opinion on which check is
-	// required (that is space.yaml's concern, not this package's, D-019).
-	MergePR(ctx context.Context, req MergePRRequest) error
+	// required (that is space.yaml's concern, not this package's, D-019). It
+	// does bind the mutation to ExpectedHeadSHA and returns the selected method.
+	MergePR(ctx context.Context, req MergePRRequest) (MergeMethod, error)
+}
+
+// RepositoryVisibility is GitHub's observed repository visibility. It is a
+// transport fact, not a claim about artifact confidentiality or access policy.
+type RepositoryVisibility string
+
+const (
+	RepositoryVisibilityPublic   RepositoryVisibility = "public"
+	RepositoryVisibilityPrivate  RepositoryVisibility = "private"
+	RepositoryVisibilityInternal RepositoryVisibility = "internal"
+)
+
+// RepoVisibilityReader is an optional repository-settings read capability.
+// It deliberately stays outside Host: visibility is diagnostic evidence, not
+// a prerequisite or authorization input for shared writes.
+type RepoVisibilityReader interface {
+	RepoVisibility(ctx context.Context, req RepoSettingsRequest) (RepositoryVisibility, error)
 }
 
 // Host is the 5-primitive host adapter interface (spec 05 §T1). It is
