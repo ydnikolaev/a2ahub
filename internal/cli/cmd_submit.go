@@ -48,6 +48,20 @@ var submitFirstTransition = map[string]string{
 	"announcement": fold.TPublish,
 }
 
+// submitFoldKind maps the same envelope discriminator to fold's domain kind.
+// Keeping this beside submitFirstTransition makes the fresh-candidate inputs
+// explicit; the evaluator, not this table, remains the owner of outcomes.
+var submitFoldKind = map[string]fold.Kind{
+	"contract":     fold.KindContract,
+	"requirement":  fold.KindRequirement,
+	"question":     fold.KindQuestion,
+	"work_request": fold.KindWorkRequest,
+	"decision":     fold.KindDecision,
+	"handoff":      fold.KindHandoff,
+	"response":     fold.KindResponse,
+	"announcement": fold.KindAnnouncement,
+}
+
 // --- validate (OP-204) ---------------------------------------------------
 
 // validateReport is one path's JSON report line — `a2a validate`'s
@@ -225,6 +239,7 @@ type submitEventDoc struct {
 	Space      string           `yaml:"space"`
 	Subject    string           `yaml:"subject"`
 	Transition string           `yaml:"transition"`
+	State      string           `yaml:"state,omitempty"`
 	Actor      submitEventActor `yaml:"actor"`
 	At         string           `yaml:"at"`
 }
@@ -592,6 +607,21 @@ func (c *SubmitCommand) buildRequest(fresh []submitItem) (space.SubmitRequest, [
 		if !ok {
 			return space.SubmitRequest{}, nil, nil, fmt.Errorf("%s: unknown envelope type %q", it.path, it.env.Type)
 		}
+		kind, ok := submitFoldKind[it.env.Type]
+		if !ok {
+			return space.SubmitRequest{}, nil, nil, fmt.Errorf("%s: unknown envelope type %q", it.path, it.env.Type)
+		}
+		actor := fold.Actor{Kind: it.env.Actor.Kind, Name: it.env.Actor.Name, System: c.ownSystem}
+		env := fold.Envelope{
+			ID: it.env.ID, Kind: kind, From: it.env.From,
+			To: toStringSlice(it.env.To), RequiredApprovers: it.env.RequiredApprovers,
+		}
+		evaluation := fold.EvaluateCandidate(kind, fold.NewResult(kind), fold.Event{
+			Subject: it.env.ID, Transition: transition, Actor: actor,
+		}, env, c.legality.membershipView)
+		if evaluation.Verdict != fold.VerdictLegal {
+			return space.SubmitRequest{}, nil, nil, errors.New(verdictRefusalMessage(it.env.ID, evaluation.Verdict))
+		}
 		eventID, err := artifact.MintULIDAt(now, c.entropy)
 		if err != nil {
 			return space.SubmitRequest{}, nil, nil, fmt.Errorf("cannot mint event id: %w", err)
@@ -606,7 +636,8 @@ func (c *SubmitCommand) buildRequest(fresh []submitItem) (space.SubmitRequest, [
 			Space:      it.env.Space,
 			Subject:    it.env.ID,
 			Transition: transition,
-			Actor:      submitEventActor{Kind: it.env.Actor.Kind, Name: it.env.Actor.Name, System: c.ownSystem},
+			State:      string(evaluation.Outcome),
+			Actor:      submitEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 			At:         now.UTC().Format(time.RFC3339),
 		}
 		eventRaw, err := yaml.Marshal(eventDoc)

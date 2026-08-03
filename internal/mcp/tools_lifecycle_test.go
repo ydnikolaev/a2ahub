@@ -46,6 +46,39 @@ func TestLifecycleHandlerAckLegalBatch(t *testing.T) {
 		if !strings.Contains(string(fw.Content), "transition: acknowledge") {
 			t.Fatalf("expected an acknowledge event, got:\n%s", fw.Content)
 		}
+		if !strings.Contains(string(fw.Content), "state: acknowledged") {
+			t.Fatalf("expected an evaluator-authored acknowledged receipt, got:\n%s", fw.Content)
+		}
+	}
+}
+
+func TestLifecycleAnnouncementAckOmitsReceiptState(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	id := "XA-axon-20260721-a007"
+	writeMirrorFile(t, mirrorDir, "axon/exchanges/"+id+".md", "---\n"+
+		"schema: envelope/v1\n"+
+		"id: "+id+"\n"+
+		"type: announcement\n"+
+		"space: fixture-space\n"+
+		"from: axon\n"+
+		"to: [beta]\n"+
+		"actor: {kind: agent, name: bot}\n"+
+		"---\nbody\n")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "publish", "axon")
+
+	fake := &fakeFunnel{}
+	handler := newLifecycleHandler(LifecycleVerbTable[0], testWriteDeps(mirrorDir, fake))
+	args, _ := json.Marshal(LifecycleInput{IDs: []string{id}})
+	if _, _, err := handler(context.Background(), args); err != nil {
+		t.Fatalf("ack announcement: %v", err)
+	}
+	if len(fake.calls) != 1 || len(fake.calls[0].Files) != 1 {
+		t.Fatalf("expected one ack event, got %+v", fake.calls)
+	}
+	content := string(fake.calls[0].Files[0].Content)
+	if strings.Contains(content, "state:") {
+		t.Fatalf("broadcast acknowledgement is receipt-N/A and must omit state:\n%s", content)
 	}
 }
 
@@ -132,6 +165,12 @@ func TestRespondHandlerDeterministicResponseID(t *testing.T) {
 	}
 	if len(fake.calls) != 1 {
 		t.Fatalf("expected 1 funnel call, got %d", len(fake.calls))
+	}
+	for _, file := range fake.calls[0].Files {
+		content := string(file.Content)
+		if strings.Contains(content, "transition: respond") && strings.Contains(content, "state:") {
+			t.Fatalf("respond is receipt-N/A and must omit state:\n%s", content)
+		}
 	}
 	firstFileCount := len(fake.calls[0].Files)
 
@@ -323,9 +362,15 @@ func TestVerifyHandlerSingleResponseAutoCloses(t *testing.T) {
 		c := string(fw.Content)
 		if strings.Contains(c, "transition: verify") {
 			sawVerify = true
+			if !strings.Contains(c, "state: verified") {
+				t.Fatalf("verify event omitted its evaluator receipt:\n%s", c)
+			}
 		}
 		if strings.Contains(c, "transition: close") {
 			sawClose = true
+			if !strings.Contains(c, "state: closed") {
+				t.Fatalf("close event omitted its evaluator receipt:\n%s", c)
+			}
 		}
 	}
 	if !sawVerify || !sawClose {
@@ -376,6 +421,9 @@ func TestDisputeHandlerLegal(t *testing.T) {
 	if !strings.Contains(string(fake.calls[0].Files[0].Content), "transition: dispute") {
 		t.Fatalf("expected a dispute event, got:\n%s", fake.calls[0].Files[0].Content)
 	}
+	if strings.Contains(string(fake.calls[0].Files[0].Content), "state:") {
+		t.Fatalf("dispute is receipt-N/A and must omit state, got:\n%s", fake.calls[0].Files[0].Content)
+	}
 }
 
 func TestDisputeHandlerMissingReason(t *testing.T) {
@@ -414,6 +462,9 @@ func TestNoteHandlerChecksAuthorizationWithoutStatePrecondition(t *testing.T) {
 	}
 	if !strings.Contains(string(fake.calls[0].Files[0].Content), "note: fyi") {
 		t.Fatalf("expected the note text in the event, got:\n%s", fake.calls[0].Files[0].Content)
+	}
+	if strings.Contains(string(fake.calls[0].Files[0].Content), "state:") {
+		t.Fatalf("note is receipt-N/A and must omit state, got:\n%s", fake.calls[0].Files[0].Content)
 	}
 
 	outsiderFake := &fakeFunnel{}

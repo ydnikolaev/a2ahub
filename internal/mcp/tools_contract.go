@@ -594,12 +594,14 @@ func newContractPublishHandler(deps ContractDeps) HandlerFunc {
 		// live), and there is genuinely no baseline to compare against then.
 		baseline, hasBaseline := contractSelectBaseline(priorVersions, newVersion)
 
-		verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, in.ID, fold.TPublish, newVersion.String(), actor)
+		evaluation, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, in.ID, fold.Event{
+			Transition: fold.TPublish, Version: newVersion.String(), Actor: actor,
+		})
 		if err != nil {
 			return nil, "", fmt.Errorf("contract publish: %s: %w", in.ID, err)
 		}
-		if verdict != fold.VerdictLegal {
-			return nil, "", fmt.Errorf("contract publish: %w", verdictError(in.ID, verdict))
+		if evaluation.Verdict != fold.VerdictLegal {
+			return nil, "", fmt.Errorf("contract publish: %w", verdictError(in.ID, evaluation.Verdict))
 		}
 
 		fm, probe, relPath, relDir, err := contractReadDescriptor(deps.MirrorDir, in.ID)
@@ -736,7 +738,7 @@ func newContractPublishHandler(deps ContractDeps) HandlerFunc {
 
 		ev := eventDoc{
 			Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
-			Subject: in.ID, Transition: fold.TPublish,
+			Subject: in.ID, Transition: fold.TPublish, State: eventReceiptState(evaluation),
 			Actor:   eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 			At:      now.UTC().Format(time.RFC3339),
 			Version: newVersion.String(), Digest: digest,
@@ -851,12 +853,14 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 		if len(contractPublishedVersions(allEvents, in.ID)) > 0 {
 			legalityVersion = contractCanonicalVersion(deprecatedVersion)
 		}
-		verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, in.ID, fold.TDeprecate, legalityVersion, actor)
+		deprecateEvaluation, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, in.ID, fold.Event{
+			Transition: fold.TDeprecate, Version: legalityVersion, Actor: actor,
+		})
 		if err != nil {
 			return nil, "", fmt.Errorf("contract deprecate: %s: %w", in.ID, err)
 		}
-		if verdict != fold.VerdictLegal {
-			return nil, "", fmt.Errorf("contract deprecate: %w", verdictError(in.ID, verdict))
+		if deprecateEvaluation.Verdict != fold.VerdictLegal {
+			return nil, "", fmt.Errorf("contract deprecate: %w", verdictError(in.ID, deprecateEvaluation.Verdict))
 		}
 
 		now := deps.Now()
@@ -875,7 +879,7 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 		// never a second reading" invariant, one caller layer up).
 		deprecateEvent := eventDoc{
 			Schema: "event/v1", Event: deprecateEventID.String(), Space: probe.Space,
-			Subject: in.ID, Transition: fold.TDeprecate, Version: legalityVersion,
+			Subject: in.ID, Transition: fold.TDeprecate, State: eventReceiptState(deprecateEvaluation), Version: legalityVersion,
 			Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 			At:    now.UTC().Format(time.RFC3339),
 			Refs:  []refEntry{{Ref: in.Successor}},
@@ -950,9 +954,22 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 		if err != nil {
 			return nil, "", fmt.Errorf("contract deprecate: cannot mint event id: %w", err)
 		}
+		announcementEnv := fold.Envelope{
+			ID: announcementID, Kind: fold.KindAnnouncement, From: deps.OwnSystem, To: to,
+		}
+		announcementEvaluation := fold.EvaluateCandidate(
+			fold.KindAnnouncement,
+			fold.NewResult(fold.KindAnnouncement),
+			fold.Event{Subject: announcementID, Transition: fold.TPublish, Actor: actor},
+			announcementEnv,
+			membership(deps.Manifest),
+		)
+		if announcementEvaluation.Verdict != fold.VerdictLegal {
+			return nil, "", fmt.Errorf("contract deprecate: %w", verdictError(announcementID, announcementEvaluation.Verdict))
+		}
 		announcementPublishEvent := eventDoc{
 			Schema: "event/v1", Event: announcementPublishEventID.String(), Space: probe.Space,
-			Subject: announcementID, Transition: fold.TPublish,
+			Subject: announcementID, Transition: fold.TPublish, State: eventReceiptState(announcementEvaluation),
 			Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 			At:    now.UTC().Format(time.RFC3339),
 		}
@@ -1023,12 +1040,14 @@ func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 		if len(contractPublishedVersions(allEvents, in.ID)) > 0 {
 			legalityVersion = contractCanonicalVersion(retiredVersion)
 		}
-		verdict, _, err := checkLegality(deps.MirrorDir, deps.Manifest, in.ID, fold.TRetire, legalityVersion, actor)
+		retireEvaluation, _, err := evaluateCandidate(deps.MirrorDir, deps.Manifest, in.ID, fold.Event{
+			Transition: fold.TRetire, Version: legalityVersion, Actor: actor,
+		})
 		if err != nil {
 			return nil, "", fmt.Errorf("contract retire: %s: %w", in.ID, err)
 		}
-		if verdict != fold.VerdictLegal {
-			return nil, "", fmt.Errorf("contract retire: %w", verdictError(in.ID, verdict))
+		if retireEvaluation.Verdict != fold.VerdictLegal {
+			return nil, "", fmt.Errorf("contract retire: %w", verdictError(in.ID, retireEvaluation.Verdict))
 		}
 
 		now := deps.Now()
@@ -1058,7 +1077,7 @@ func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 		// retiredVersion — see the deprecate handler's own comment above.
 		ev := eventDoc{
 			Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
-			Subject: in.ID, Transition: fold.TRetire, Version: legalityVersion,
+			Subject: in.ID, Transition: fold.TRetire, State: eventReceiptState(retireEvaluation), Version: legalityVersion,
 			Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 			At:    now.UTC().Format(time.RFC3339),
 			Note:  note,

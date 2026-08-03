@@ -62,6 +62,9 @@ func TestContractPublishFirstPublishGated(t *testing.T) {
 	if len(fake.calls) != 1 || fake.calls[0].PRBody == "" {
 		t.Fatalf("expected first publish to be gated (advisory marker), got %+v", fake.calls)
 	}
+	if !strings.Contains(string(fake.calls[0].Files[len(fake.calls[0].Files)-1].Content), "state: published") {
+		t.Fatalf("versioned publish omitted its evaluator receipt: %+v", fake.calls[0].Files)
+	}
 }
 
 // TestContractPublishNewMajorBaselineIsPriorInLine is epic AC-8
@@ -407,6 +410,50 @@ func TestContractDeprecateAuthorsAnnouncement(t *testing.T) {
 	if len(fake.calls) != 1 || len(fake.calls[0].Files) != 3 {
 		t.Fatalf("expected 3 files (deprecate event + announcement draft + its publish event), got %+v", fake.calls)
 	}
+	for _, file := range fake.calls[0].Files {
+		content := string(file.Content)
+		switch {
+		case strings.Contains(content, "transition: deprecate"):
+			if strings.Contains(content, "state:") {
+				t.Fatalf("whole-contract deprecate is receipt-N/A and must omit state:\n%s", content)
+			}
+		case strings.Contains(content, "transition: publish"):
+			if !strings.Contains(content, "state: published") {
+				t.Fatalf("derived announcement publish omitted its evaluator receipt:\n%s", content)
+			}
+		}
+	}
+}
+
+func TestContractVersionedDeprecateAuthorsReceipt(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "dep-versioned", "1.0.0")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-dep-versioned", "publish", "axon")
+	appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+
+	fake := &fakeFunnel{}
+	handler := newContractDeprecateHandler(contractTestDeps(mirrorDir, fake))
+	args, _ := json.Marshal(ContractDeprecateInput{
+		ID: "XC-axon-dep-versioned", Version: "1.0.0",
+		Successor: "XC-axon-dep-next@1.0.0", Sunset: "2099-01-01",
+	})
+	if _, _, err := handler(context.Background(), args); err != nil {
+		t.Fatalf("versioned deprecate: %v", err)
+	}
+	var saw bool
+	for _, file := range fake.calls[0].Files {
+		content := string(file.Content)
+		if strings.Contains(content, "transition: deprecate") {
+			saw = true
+			if !strings.Contains(content, "state: deprecated") {
+				t.Fatalf("versioned deprecate omitted its evaluator receipt:\n%s", content)
+			}
+		}
+	}
+	if !saw {
+		t.Fatal("versioned deprecate event was not authored")
+	}
 }
 
 func TestContractRetireCleanAckSucceedsUngated(t *testing.T) {
@@ -425,6 +472,9 @@ func TestContractRetireCleanAckSucceedsUngated(t *testing.T) {
 	}
 	if len(fake.calls) != 1 || fake.calls[0].PRBody != "" {
 		t.Fatalf("expected an ungated retire (no registered consumers), got %+v", fake.calls)
+	}
+	if strings.Contains(string(fake.calls[0].Files[0].Content), "state:") {
+		t.Fatalf("whole-contract retire is receipt-N/A and must omit state:\n%s", fake.calls[0].Files[0].Content)
 	}
 }
 
@@ -583,6 +633,9 @@ func TestContractRetireSucceedsWhileAnotherVersionPublished(t *testing.T) {
 	}
 	if len(fake.calls) != 1 {
 		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	if !strings.Contains(string(fake.calls[0].Files[0].Content), "state: retired") {
+		t.Fatalf("versioned retire omitted its evaluator receipt:\n%s", fake.calls[0].Files[0].Content)
 	}
 }
 

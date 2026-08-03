@@ -48,6 +48,37 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// contractEvaluateCandidate assembles the committed prior fold through the
+// lifecycle package-local readers, then delegates legality, applicability and
+// outcome to fold's sole writer-facing evaluator. It exists here because the
+// contract writer must serialize the evaluator receipt as well as inspect the
+// verdict; lifecycleCheckLegality intentionally exposes only the latter.
+func contractEvaluateCandidate(mirrorDir string, manifest space.Manifest, id string, candidate fold.Event) (fold.CandidateEvaluation, fold.Envelope, error) {
+	env, _, err := lifecycleLoadEnvelope(mirrorDir, id)
+	if err != nil {
+		return fold.CandidateEvaluation{}, fold.Envelope{}, err
+	}
+	all, err := lifecycleReadAllEvents(mirrorDir)
+	if err != nil {
+		return fold.CandidateEvaluation{}, env, err
+	}
+	membership := lifecycleMembership(manifest)
+	prior := fold.NewResult(env.Kind)
+	events := lifecycleFoldEvents(all, id)
+	if len(events) > 0 {
+		prior = fold.Fold(env.Kind, env, events, membership)
+	}
+	candidate.Subject = id
+	return fold.EvaluateCandidate(env.Kind, prior, candidate, env, membership), env, nil
+}
+
+func contractReceiptState(evaluation fold.CandidateEvaluation) string {
+	if !evaluation.Applicable {
+		return ""
+	}
+	return string(evaluation.Outcome)
+}
+
 // contractDescriptorProbe is this file's own minimal decode of a
 // contract's descriptor (contract.md) fields (§5.2.1's contract-only
 // extensions) — a richer sibling of lifecycleEnvelopeProbe (which only
@@ -809,13 +840,15 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 	// compatibility against, and gated for human review.
 	baseline, hasBaseline := contractSelectBaseline(priorVersions, newVersion)
 
-	verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TPublish, newVersion.String(), actor)
+	evaluation, _, err := contractEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, id, fold.Event{
+		Transition: fold.TPublish, Version: newVersion.String(), Actor: actor,
+	})
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %s: %v\n", id, err)
 		return 1
 	}
-	if verdict != fold.VerdictLegal {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %s\n", c.deps.refusalMessage(id, verdict))
+	if evaluation.Verdict != fold.VerdictLegal {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract publish: %s\n", c.deps.refusalMessage(id, evaluation.Verdict))
 		return 1
 	}
 
@@ -1061,7 +1094,7 @@ func (c *ContractCommand) runPublish(ctx context.Context, args []string, stdio I
 
 	ev := lifecycleEventDoc{
 		Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
-		Subject: id, Transition: fold.TPublish,
+		Subject: id, Transition: fold.TPublish, State: contractReceiptState(evaluation),
 		Actor:   lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 		At:      now.UTC().Format(time.RFC3339),
 		Version: newVersion.String(), Digest: digest,
@@ -1260,13 +1293,15 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 	if len(contractPublishedVersions(allEvents, id)) > 0 {
 		legalityVersion = contractCanonicalVersion(deprecatedVersion)
 	}
-	verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TDeprecate, legalityVersion, actor)
+	deprecateEvaluation, _, err := contractEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, id, fold.Event{
+		Transition: fold.TDeprecate, Version: legalityVersion, Actor: actor,
+	})
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %s: %v\n", id, err)
 		return 1
 	}
-	if verdict != fold.VerdictLegal {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %s\n", c.deps.refusalMessage(id, verdict))
+	if deprecateEvaluation.Verdict != fold.VerdictLegal {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %s\n", c.deps.refusalMessage(id, deprecateEvaluation.Verdict))
 		return 1
 	}
 
@@ -1294,7 +1329,7 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 	// of whether THIS contract's fold is on the per-version path yet.
 	deprecateEvent := lifecycleEventDoc{
 		Schema: "event/v1", Event: deprecateEventID.String(), Space: probe.Space,
-		Subject: id, Transition: fold.TDeprecate, Version: legalityVersion,
+		Subject: id, Transition: fold.TDeprecate, State: contractReceiptState(deprecateEvaluation), Version: legalityVersion,
 		Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 		At:    now.UTC().Format(time.RFC3339),
 		Refs:  []lifecycleRefEntry{{Ref: *successor}},
@@ -1406,9 +1441,23 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: cannot mint event id: %v\n", err)
 		return 1
 	}
+	announcementEnv := fold.Envelope{
+		ID: announcementID, Kind: fold.KindAnnouncement, From: c.deps.ownSystem, To: to,
+	}
+	announcementEvaluation := fold.EvaluateCandidate(
+		fold.KindAnnouncement,
+		fold.NewResult(fold.KindAnnouncement),
+		fold.Event{Subject: announcementID, Transition: fold.TPublish, Actor: actor},
+		announcementEnv,
+		lifecycleMembership(c.deps.manifest),
+	)
+	if announcementEvaluation.Verdict != fold.VerdictLegal {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract deprecate: %s\n", c.deps.refusalMessage(announcementID, announcementEvaluation.Verdict))
+		return 1
+	}
 	announcementPublishEvent := lifecycleEventDoc{
 		Schema: "event/v1", Event: announcementPublishEventID.String(), Space: probe.Space,
-		Subject: announcementID, Transition: fold.TPublish,
+		Subject: announcementID, Transition: fold.TPublish, State: contractReceiptState(announcementEvaluation),
 		Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 		At:    now.UTC().Format(time.RFC3339),
 	}
@@ -1492,13 +1541,15 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 	if len(contractPublishedVersions(allEvents, id)) > 0 {
 		legalityVersion = contractCanonicalVersion(retiredVersion)
 	}
-	verdict, _, err := lifecycleCheckLegality(c.deps.mirrorDir, c.deps.manifest, id, fold.TRetire, legalityVersion, actor)
+	retireEvaluation, _, err := contractEvaluateCandidate(c.deps.mirrorDir, c.deps.manifest, id, fold.Event{
+		Transition: fold.TRetire, Version: legalityVersion, Actor: actor,
+	})
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %s: %v\n", id, err)
 		return 1
 	}
-	if verdict != fold.VerdictLegal {
-		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %s\n", c.deps.refusalMessage(id, verdict))
+	if retireEvaluation.Verdict != fold.VerdictLegal {
+		_, _ = fmt.Fprintf(stdio.Stderr, "contract retire: %s\n", c.deps.refusalMessage(id, retireEvaluation.Verdict))
 		return 1
 	}
 
@@ -1539,7 +1590,7 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 	// agree.
 	ev := lifecycleEventDoc{
 		Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
-		Subject: id, Transition: fold.TRetire, Version: legalityVersion,
+		Subject: id, Transition: fold.TRetire, State: contractReceiptState(retireEvaluation), Version: legalityVersion,
 		Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
 		At:    now.UTC().Format(time.RFC3339),
 		Note:  note,
