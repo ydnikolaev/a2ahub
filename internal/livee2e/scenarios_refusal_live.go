@@ -388,7 +388,7 @@ var refusalMinBinaryVersionLine = regexp.MustCompile(`(?m)^(min_binary_version:\
 // min_binary_version, reusing the sibling's own parser (scaffold.go) rather
 // than a second copy of the pattern.
 func refusalCurrentMinBinaryVersion(cloneDir string) (string, error) {
-	raw, err := os.ReadFile(filepath.Join(cloneDir, "space.yaml"))
+	raw, err := os.ReadFile(filepath.Join(cloneDir, "space.yaml")) //nolint:gosec // reason: cloneDir is the harness-owned disposable clone.
 	if err != nil {
 		return "", fmt.Errorf("livee2e: refusal: read space.yaml: %w", err)
 	}
@@ -404,7 +404,7 @@ func refusalCurrentMinBinaryVersion(cloneDir string) (string, error) {
 // row).
 func refusalSetSpaceMinBinaryVersion(ctx context.Context, hc *host.GitHubHost, dir, remoteURL, token, version, commitMsg string) error {
 	manifestPath := filepath.Join(dir, "space.yaml")
-	raw, err := os.ReadFile(manifestPath)
+	raw, err := os.ReadFile(manifestPath) //nolint:gosec // reason: manifestPath is rooted beneath the harness-owned disposable clone.
 	if err != nil {
 		return fmt.Errorf("livee2e: refusal: read space.yaml: %w", err)
 	}
@@ -412,7 +412,7 @@ func refusalSetSpaceMinBinaryVersion(ctx context.Context, hc *host.GitHubHost, d
 		return fmt.Errorf("livee2e: refusal: space.yaml declares no min_binary_version line to rewrite")
 	}
 	patched := refusalMinBinaryVersionLine.ReplaceAll(raw, []byte("${1}"+version))
-	if err := os.WriteFile(manifestPath, patched, 0o644); err != nil {
+	if err := os.WriteFile(manifestPath, patched, 0o644); err != nil { //nolint:gosec // reason: manifestPath is rooted beneath the harness-owned disposable clone.
 		return fmt.Errorf("livee2e: refusal: write space.yaml: %w", err)
 	}
 	if err := runCmd(ctx, "git", "-C", dir, "add", "space.yaml"); err != nil {
@@ -450,7 +450,7 @@ func refusalRestoreMinBinaryVersion(ctx context.Context, hc *host.GitHubHost, di
 // provisioner (admin) raises the live space's min_binary_version above the
 // harness binary's own floor (the harness stamps its binary with the
 // TEMPLATE's floor exactly, so the binary starts out sitting AT the line —
-// harnessBinaryVersion, provision_live.go), participant B's write is then
+// the exact-candidate floor attestation and provision_live.go), participant B's write is then
 // refused naming the floor, and the original value is restored in a defer
 // that MUST run even on a failure path — the single most dangerous mutation
 // in this family, because every scenario family that runs after this one

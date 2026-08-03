@@ -18,6 +18,20 @@ const DefaultRepo = "live-e2e-space"
 // systems and surfaces it applies to.
 type Scenario struct {
 	Name string
+	// Branch distinguishes separately adjudicated evidence branches of one
+	// named scenario. Legacy matrix rows leave it empty; the P7 operational-
+	// confidence catalogue uses the exact baseline/provider branch tokens
+	// frozen by the evidence contract.
+	Branch string
+	// Optional permits an honest unverified result. It is deliberately a
+	// declaration property rather than a verdict-side convention: only the
+	// provider-setting branch of LE-OC-04 and unsupported-provider branch of
+	// LE-OC-08 may set it.
+	Optional bool
+	// Assertions is the complete assertion set this scenario must prove. P7
+	// runtime evidence is accepted only when each named assertion has an
+	// explicit outcome; old matrix rows leave it nil.
+	Assertions []string
 	// Systems the scenario is meaningful for. Boundary scenarios list only
 	// SystemB: an assertion authored by an admin proves nothing (§T5).
 	Systems []string
@@ -95,7 +109,7 @@ func cliOnly() []Surface { return []Surface{SurfaceCLI} }
 // Critical write parity is declared on both surfaces; GitHub-administration
 // and other host-only properties remain CLI-only.
 func Catalogue() []Scenario {
-	return []Scenario{
+	return append([]Scenario{
 		// AC-960.1 — the rig provisions and scaffolds its own space. No
 		// envelope kind: this row asserts the SPACE exists, not any
 		// artifact's lifecycle.
@@ -243,5 +257,5 @@ func Catalogue() []Scenario {
 		// other end, which is the coverage this row's own name already
 		// claims.
 		{Name: "thread-chain-reads-identically-from-both-sides", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"question", "response"}, Family: "thread-chain"},
-	}
+	}, OperationalConfidenceCatalogue()...)
 }

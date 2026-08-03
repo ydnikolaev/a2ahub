@@ -42,6 +42,20 @@ scripts/*
 !scripts/check-operational-confidence.sh
 !scripts/verify.sh
 !scripts/build-release-cohort.sh
+!scripts/check_contract_carried_set.sh
+!scripts/check_event_writer_receipts.sh
+!scripts/check_live_e2e_evidence.sh
+!scripts/check_localserver_readonly_routes.sh
+!scripts/check_operational_projection_single_source.sh
+!scripts/check_work_checkpoint_schema.sh
+!scripts/tests/
+scripts/tests/*
+!scripts/tests/check_contract_carried_set_test.sh
+!scripts/tests/check_event_writer_receipts_test.sh
+!scripts/tests/check_live_e2e_evidence_test.sh
+!scripts/tests/check_localserver_readonly_routes_test.sh
+!scripts/tests/check_operational_projection_single_source_test.sh
+!scripts/tests/check_work_checkpoint_schema_test.sh
 !scripts/releasebody/
 # install.sh's regression net (P40 AC-1002.*). A directory, not a file: `scripts/*`
 # excludes the DIRECTORY `scripts/installsh`, and git cannot re-include a file whose

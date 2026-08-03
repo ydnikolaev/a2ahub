@@ -1,0 +1,279 @@
+package livee2e
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
+	"runtime/debug"
+	"strings"
+	"testing"
+)
+
+type candidateSourceFixture struct {
+	want     CandidateExpectation
+	commands map[string]string
+	files    map[string][]byte
+}
+
+func newCandidateSourceFixture(t *testing.T) candidateSourceFixture {
+	t.Helper()
+	root := t.TempDir()
+	verificationRoot := t.TempDir()
+	sha := strings.Repeat("a", 40)
+	tree := strings.Repeat("b", 40)
+	checkLog := filepath.Join(t.TempDir(), "candidate-check.log")
+	want := CandidateExpectation{
+		Root: root, SHA: sha, Tree: tree, Tag: "v0.19.0",
+		Floor: requiredCandidateFloor, CheckLog: checkLog,
+	}
+	workflow := []byte("jobs:\n  validate:\n    uses: ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@v0.19.0\n  audit:\n    uses: ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@v0.19.0\n")
+	return candidateSourceFixture{
+		want: want,
+		commands: map[string]string{
+			"git rev-parse --show-toplevel":                   root,
+			"git rev-parse HEAD":                              sha,
+			"git rev-parse HEAD^{tree}":                       tree,
+			"git rev-parse --abbrev-ref HEAD":                 "HEAD",
+			"git diff --cached --name-only --no-ext-diff":     "",
+			"git diff --name-only --no-ext-diff":              "",
+			"git status --porcelain=v1 --untracked-files=all": "",
+		},
+		files: map[string][]byte{
+			filepath.Join(root, "go.mod"):                                                     []byte("module github.com/ydnikolaev/a2ahub\n\ngo 1.26\n"),
+			filepath.Join(root, "space-template", "space.yaml"):                               []byte("schema: space/v1\nmin_binary_version: 0.19.0\n"),
+			filepath.Join(root, "space-template", ".github", "workflows", "a2a-validate.yml"): workflow,
+			checkLog: candidateCheckLog(verificationRoot, sha, tree, want.Tag, "0"),
+		},
+	}
+}
+
+func candidateCheckLog(root, sha, tree, tag, exit string) []byte {
+	return []byte("CHECKOUT_ROOT=" + root + "\n" +
+		"CANDIDATE_SHA=" + sha + "\n" +
+		"CANDIDATE_TREE=" + tree + "\n" +
+		"CANDIDATE_TAG=" + tag + "\n" +
+		"CHECKOUT_DETACHED=true\n" +
+		"INDEX_CLEAN=true\n" +
+		"WORKTREE_CLEAN=true\n" +
+		"UNTRACKED_CLEAN=true\n" +
+		"EXIT=" + exit + "\n")
+}
+
+func TestCandidateRunbookEmitsParserMarkers(t *testing.T) {
+	t.Parallel()
+	_, sourceFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	runbook := filepath.Join(filepath.Dir(sourceFile), "..", "..", "docs", "runbooks", "live-e2e", "candidate.sh")
+	raw, err := os.ReadFile(runbook)
+	if err != nil {
+		t.Fatalf("read candidate runbook: %v", err)
+	}
+	text := string(raw)
+	if strings.Count(text, `echo "CHECKOUT_ROOT=$VERIFY_ROOT"`) != 1 {
+		t.Fatalf("candidate runbook must emit exactly one CHECKOUT_ROOT marker")
+	}
+	if strings.Contains(text, `echo "CHECKOUT=$VERIFY_ROOT"`) {
+		t.Fatalf("candidate runbook emits obsolete CHECKOUT marker")
+	}
+}
+
+func (f candidateSourceFixture) runner(_ context.Context, _ string, name string, args ...string) (string, error) {
+	key := strings.Join(append([]string{name}, args...), " ")
+	out, ok := f.commands[key]
+	if !ok {
+		return "", errors.New("unexpected command: " + key)
+	}
+	return out, nil
+}
+
+func (f candidateSourceFixture) readFile(path string) ([]byte, error) {
+	raw, ok := f.files[path]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return raw, nil
+}
+
+func identityPath(path string) (string, error) { return path, nil }
+
+func TestAttestCandidateSourceAcceptsExactCleanExecutionCheckout(t *testing.T) {
+	t.Parallel()
+	f := newCandidateSourceFixture(t)
+	got, err := attestCandidateSourceWith(t.Context(), f.want, f.runner, f.readFile, identityPath)
+	if err != nil {
+		t.Fatalf("attestCandidateSourceWith: %v", err)
+	}
+	if got.SourceRoot != f.want.Root || got.SourceSHA != f.want.SHA || got.SourceTree != f.want.Tree ||
+		!got.SourceDetached || !got.IndexClean || !got.WorktreeClean || !got.UntrackedClean ||
+		got.IntendedTag != f.want.Tag || got.TemplateFloor != f.want.Floor || got.CheckLog != f.want.CheckLog {
+		t.Fatalf("attestation = %+v, want expectation %+v", got, f.want)
+	}
+}
+
+func TestAttestCandidateSourceRefusesEveryCandidateMismatch(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		mutate func(*candidateSourceFixture)
+		want   string
+	}{
+		{"ambient subdirectory", func(f *candidateSourceFixture) {
+			f.commands["git rev-parse --show-toplevel"] = filepath.Dir(f.want.Root)
+		}, "not the git module root"},
+		{"wrong module", func(f *candidateSourceFixture) {
+			f.files[filepath.Join(f.want.Root, "go.mod")] = []byte("module example.invalid/other\n")
+		}, "does not declare module"},
+		{"head mismatch", func(f *candidateSourceFixture) { f.commands["git rev-parse HEAD"] = strings.Repeat("c", 40) }, "HEAD="},
+		{"tree mismatch", func(f *candidateSourceFixture) { f.commands["git rev-parse HEAD^{tree}"] = strings.Repeat("c", 40) }, "HEAD tree="},
+		{"attached checkout", func(f *candidateSourceFixture) { f.commands["git rev-parse --abbrev-ref HEAD"] = "main" }, "want detached HEAD"},
+		{"staged change", func(f *candidateSourceFixture) {
+			f.commands["git diff --cached --name-only --no-ext-diff"] = "staged.go"
+		}, "index is dirty"},
+		{"worktree change", func(f *candidateSourceFixture) { f.commands["git diff --name-only --no-ext-diff"] = "changed.go" }, "worktree is dirty"},
+		{"untracked change", func(f *candidateSourceFixture) {
+			f.commands["git status --porcelain=v1 --untracked-files=all"] = "?? stray"
+		}, "including untracked"},
+		{"verification checkout reused for execution", func(f *candidateSourceFixture) {
+			raw := string(f.files[f.want.CheckLog])
+			firstEnd := strings.IndexByte(raw, '\n')
+			f.files[f.want.CheckLog] = []byte("CHECKOUT_ROOT=" + f.want.Root + raw[firstEnd:])
+		}, "roots are identical"},
+		{"wrong floor", func(f *candidateSourceFixture) {
+			f.files[filepath.Join(f.want.Root, "space-template", "space.yaml")] = []byte("min_binary_version: 0.18.2\n")
+		}, "embedded min_binary_version"},
+		{"duplicate floor", func(f *candidateSourceFixture) {
+			f.files[filepath.Join(f.want.Root, "space-template", "space.yaml")] = []byte("min_binary_version: 0.19.0\nmin_binary_version: 0.19.0\n")
+		}, "cardinality=2"},
+		{"stale workflow ref", func(f *candidateSourceFixture) {
+			path := filepath.Join(f.want.Root, "space-template", ".github", "workflows", "a2a-validate.yml")
+			f.files[path] = []byte(strings.Replace(string(f.files[path]), "@v0.19.0", "@v0.18.2", 1))
+		}, "found v0.18.2"},
+		{"missing workflow ref", func(f *candidateSourceFixture) {
+			path := filepath.Join(f.want.Root, "space-template", ".github", "workflows", "a2a-validate.yml")
+			f.files[path] = []byte("jobs: {}\n")
+		}, "cardinality=0"},
+		{"extra workflow ref", func(f *candidateSourceFixture) {
+			path := filepath.Join(f.want.Root, "space-template", ".github", "workflows", "a2a-validate.yml")
+			f.files[path] = append(f.files[path], []byte("  extra:\n    uses: ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@main\n")...)
+		}, "cardinality=3"},
+		{"wrong check sha", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = candidateCheckLog(t.TempDir(), "nope", f.want.Tree, f.want.Tag, "0")
+		}, "CANDIDATE_SHA="},
+		{"wrong check tree", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = candidateCheckLog(t.TempDir(), f.want.SHA, "nope", f.want.Tag, "0")
+		}, "CANDIDATE_TREE="},
+		{"wrong check tag", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, "v0.18.2", "0")
+		}, "CANDIDATE_TAG="},
+		{"verification checkout attached", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = []byte(strings.Replace(string(candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "0")), "CHECKOUT_DETACHED=true", "CHECKOUT_DETACHED=false", 1))
+		}, "CHECKOUT_DETACHED"},
+		{"verification index dirty", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = []byte(strings.Replace(string(candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "0")), "INDEX_CLEAN=true", "INDEX_CLEAN=false", 1))
+		}, "INDEX_CLEAN"},
+		{"verification worktree dirty", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = []byte(strings.Replace(string(candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "0")), "WORKTREE_CLEAN=true", "WORKTREE_CLEAN=false", 1))
+		}, "WORKTREE_CLEAN"},
+		{"verification untracked dirty", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = []byte(strings.Replace(string(candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "0")), "UNTRACKED_CLEAN=true", "UNTRACKED_CLEAN=false", 1))
+		}, "UNTRACKED_CLEAN"},
+		{"failed check", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "1")
+		}, "retained check log EXIT"},
+		{"ambiguous check exit", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = append(candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "0"), []byte("EXIT=0\n")...)
+		}, "exactly one EXIT marker"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newCandidateSourceFixture(t)
+			tc.mutate(&f)
+			_, err := attestCandidateSourceWith(t.Context(), f.want, f.runner, f.readFile, identityPath)
+			if !errors.Is(err, ErrCandidateSource) || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want candidate source refusal containing %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+func TestAttestCandidateSourceRefusesRelativeRootAndUnreadableEvidence(t *testing.T) {
+	t.Parallel()
+	f := newCandidateSourceFixture(t)
+	f.want.Root = "relative"
+	if _, err := attestCandidateSourceWith(t.Context(), f.want, f.runner, f.readFile, identityPath); !errors.Is(err, ErrCandidateSource) {
+		t.Fatalf("want relative-root refusal, got %v", err)
+	}
+
+	f = newCandidateSourceFixture(t)
+	delete(f.files, f.want.CheckLog)
+	if _, err := attestCandidateSourceWith(t.Context(), f.want, f.runner, f.readFile, identityPath); !errors.Is(err, ErrCandidateSource) || !strings.Contains(err.Error(), "read retained") {
+		t.Fatalf("want unreadable-check-log refusal, got %v", err)
+	}
+}
+
+func TestAttestCandidateBinaryRecordsDigestRevisionAndStamp(t *testing.T) {
+	t.Parallel()
+	bin := filepath.Join(t.TempDir(), "a2a")
+	if err := os.WriteFile(bin, []byte("candidate-binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want := CandidateExpectation{Root: t.TempDir(), SHA: strings.Repeat("a", 40), Floor: requiredCandidateFloor}
+	source := CandidateAttestation{SourceSHA: want.SHA}
+	info := &debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: want.SHA}, {Key: "vcs.modified", Value: "false"}}}
+	run := func(_ context.Context, _, _ string, _ ...string) (string, error) {
+		return "a2a 0.19.0 (" + want.SHA + ")", nil
+	}
+	got, err := attestCandidateBinaryWith(t.Context(), bin, want, source, run, func(string) (*debug.BuildInfo, error) { return info, nil })
+	if err != nil {
+		t.Fatalf("attestCandidateBinaryWith: %v", err)
+	}
+	if len(got.BinarySHA256) != 64 || got.BuildRevision != want.SHA || got.BuildModified || got.BinaryStamp == "" {
+		t.Fatalf("incomplete binary attestation: %+v", got)
+	}
+}
+
+func TestAttestCandidateBinaryRefusesEveryStampAndBuildInfoMismatch(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		settings []debug.BuildSetting
+		stamp    string
+		infoErr  error
+		wantErr  string
+	}{
+		{"missing revision", []debug.BuildSetting{{Key: "vcs.modified", Value: "false"}}, "", nil, "vcs.revision"},
+		{"wrong revision", []debug.BuildSetting{{Key: "vcs.revision", Value: strings.Repeat("b", 40)}, {Key: "vcs.modified", Value: "false"}}, "", nil, "vcs.revision"},
+		{"missing modified", []debug.BuildSetting{{Key: "vcs.revision", Value: strings.Repeat("a", 40)}}, "", nil, "vcs.modified"},
+		{"modified source", []debug.BuildSetting{{Key: "vcs.revision", Value: strings.Repeat("a", 40)}, {Key: "vcs.modified", Value: "true"}}, "", nil, "vcs.modified"},
+		{"stamp mismatch", []debug.BuildSetting{{Key: "vcs.revision", Value: strings.Repeat("a", 40)}, {Key: "vcs.modified", Value: "false"}}, "a2a 0.19.0 (wrong)", nil, "binary stamp"},
+		{"unreadable build info", nil, "", errors.New("not a Go executable"), "read Go build info"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			bin := filepath.Join(t.TempDir(), "a2a")
+			if err := os.WriteFile(bin, []byte("candidate-binary"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			want := CandidateExpectation{Root: t.TempDir(), SHA: strings.Repeat("a", 40), Floor: requiredCandidateFloor}
+			stamp := tc.stamp
+			if stamp == "" {
+				stamp = "a2a 0.19.0 (" + want.SHA + ")"
+			}
+			run := func(_ context.Context, _, _ string, _ ...string) (string, error) { return stamp, nil }
+			reader := func(string) (*debug.BuildInfo, error) {
+				if tc.infoErr != nil {
+					return nil, tc.infoErr
+				}
+				return &debug.BuildInfo{Settings: tc.settings}, nil
+			}
+			_, err := attestCandidateBinaryWith(t.Context(), bin, want, CandidateAttestation{}, run, reader)
+			if !errors.Is(err, ErrCandidateBinary) || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("want binary refusal containing %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}

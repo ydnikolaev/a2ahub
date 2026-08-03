@@ -76,25 +76,18 @@ var canonicalBuilderFunctions = map[string]bool{
 }
 
 var combineDigestAllowlist = map[string]bool{
-	"internal/artifact/digesttree.go": true,
-	"internal/contract/set.go":        true,
-	// These two unreleased legacy-profile adapters are explicitly grandfathered
-	// by P5 §5 until P6 replaces their orchestration with internal/contract.
-	"internal/cli/cmd_contract.go":     true,
-	"internal/mcp/tools_contract.go":   true,
+	"internal/artifact/digesttree.go":         true,
+	"internal/contract/set.go":                true,
+	"internal/contract/publication_plan.go":   true,
 }
 
 var combineDigestCallCeiling = map[string]int{
-	"internal/artifact/digesttree.go": 1,
-	"internal/contract/set.go":        3,
-	"internal/cli/cmd_contract.go":     1,
-	"internal/mcp/tools_contract.go":   1,
+	"internal/artifact/digesttree.go":       1,
+	"internal/contract/set.go":              3,
+	"internal/contract/publication_plan.go": 1,
 }
 
-var legacySubtreeAllowlist = map[string]bool{
-	"internal/cli/cmd_contract.go":   true,
-	"internal/mcp/tools_contract.go": true,
-}
+var legacySubtreeAllowlist = map[string]bool{}
 
 type checker struct {
 	root   string

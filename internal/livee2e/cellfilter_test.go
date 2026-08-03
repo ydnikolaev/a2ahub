@@ -5,6 +5,19 @@ import (
 	"testing"
 )
 
+func TestSelectedCellsDistinguishesOperationalBranches(t *testing.T) {
+	t.Parallel()
+
+	got, err := selectedCells("LE-OC-08@unsupported-provider/A/cli", Catalogue())
+	if err != nil {
+		t.Fatalf("selectedCells: %v", err)
+	}
+	want := cellKey{scenario: "LE-OC-08", branch: "unsupported-provider", system: SystemA, surface: SurfaceCLI}
+	if len(got) != 1 || !got[want] {
+		t.Fatalf("selected cells=%v, want only %s", got, renderCellKey(want))
+	}
+}
+
 func TestSelectedCellsNarrowsToExactDeclaredCells(t *testing.T) {
 	t.Parallel()
 

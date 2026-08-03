@@ -145,7 +145,9 @@ func TestListPullsCarriesOperationMetadataBody(t *testing.T) {
 <!-- a2a-operation: {"key":"op-v1-example","ids":["XQ-alpha-parent","XS-bravo-response"]} -->`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `[{"number":17,"state":"open","body":%q,"head":{"ref":"a2a/bravo/respond/op-v1-example"}}]`, body)
+		if _, err := fmt.Fprintf(w, `[{"number":17,"state":"open","body":%q,"head":{"ref":"a2a/bravo/respond/op-v1-example"}}]`, body); err != nil {
+			t.Errorf("write fake pull response: %v", err)
+		}
 	}))
 	defer srv.Close()
 

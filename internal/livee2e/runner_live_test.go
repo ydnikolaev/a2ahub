@@ -61,7 +61,15 @@ func TestLiveMatrix(t *testing.T) {
 			run.Preflight = pre
 
 			h, cleanup, hErr := newHarness(ctx, cfg, pre)
-			defer cleanup()
+			defer func() {
+				if cleanupErr := cleanup(); cleanupErr != nil {
+					t.Errorf("candidate/harness cleanup failed: %v", cleanupErr)
+				}
+			}()
+			if h != nil {
+				run.VerificationCandidate = h.VerificationCandidate
+				run.ExecutionCandidate = h.ExecutionCandidate
+			}
 			switch {
 			case hErr != nil:
 				run.Abort("harness construction failed: " + hErr.Error())
@@ -87,7 +95,25 @@ func TestLiveMatrix(t *testing.T) {
 
 	report := run.Report()
 	rendered := report.Render()
-	fmt.Fprint(os.Stdout, "\n"+rendered)
+	if _, writeErr := fmt.Fprint(os.Stdout, "\n"+rendered); writeErr != nil {
+		t.Errorf("write live report to stdout: %v", writeErr)
+	}
+	if run.ExecutionCandidate.SourceSHA != "" {
+		evidencePath, pathErr := DefaultEvidencePath(run.VerificationCandidate.CheckLog)
+		if pathErr != nil {
+			t.Errorf("create P7 retained evidence run: %v", pathErr)
+		}
+		run.EvidencePath = evidencePath
+		if pathErr == nil {
+			if _, evidenceErr := run.WriteEvidenceBundle(evidencePath); evidenceErr != nil {
+				t.Errorf("write P7 evidence bundle %s: %v", evidencePath, evidenceErr)
+			} else {
+				if _, writeErr := fmt.Fprintf(os.Stdout, "evidence: %s\n", evidencePath); writeErr != nil {
+					t.Errorf("write evidence path to stdout: %v", writeErr)
+				}
+			}
+		}
+	}
 
 	if path := os.Getenv(EnvReportPath); path != "" {
 		if writeErr := os.WriteFile(path, []byte(rendered), 0o644); writeErr != nil {
@@ -100,7 +126,7 @@ func TestLiveMatrix(t *testing.T) {
 	}
 }
 
-// driveFamilies runs the four scenario families and records what they return.
+// driveFamilies runs the eleven scenario families and records what they return.
 //
 // SERIALLY, and that is a correctness requirement rather than a simplification:
 // the families are file-disjoint but they all drive ONE real space, and two of
@@ -119,6 +145,10 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 		name string
 		fn   func(context.Context, *harness) []Result
 	}{
+		// P7 §6.2 owns its own ordered sequence (visibility first, then
+		// receipt/work/server/contracts). Run it before legacy families mutate
+		// repository settings or the write floor.
+		{FamilyOperationalConfidence, runOperationalConfidenceScenarios},
 		{"happy", runHappyScenarios},
 		// contract-integrity (AC-973.1) writes only to its own contract's
 		// section, the same "no shared-state mutation" property the happy

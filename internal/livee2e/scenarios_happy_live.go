@@ -250,7 +250,7 @@ func happySpaceInit(ctx context.Context, h *harness) Result {
 	}
 	mirrorDir := h.A.MirrorDir()
 
-	raw, err := os.ReadFile(filepath.Join(mirrorDir, "space.yaml"))
+	raw, err := os.ReadFile(filepath.Join(mirrorDir, "space.yaml")) //nolint:gosec // reason: mirrorDir is the harness-owned clone cache.
 	if err != nil {
 		return Result{
 			Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictFail,
@@ -278,7 +278,7 @@ func happySpaceInit(ctx context.Context, h *harness) Result {
 		}
 	}
 
-	craw, err := os.ReadFile(filepath.Join(mirrorDir, "CODEOWNERS"))
+	craw, err := os.ReadFile(filepath.Join(mirrorDir, "CODEOWNERS")) //nolint:gosec // reason: mirrorDir is the harness-owned clone cache.
 	if err != nil {
 		return Result{
 			Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictFail,

@@ -4,6 +4,7 @@ package livee2e
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -74,12 +75,12 @@ func mcpSubmitAndVisibility(ctx context.Context, h *harness, system string, auth
 	}
 	evidence := string(call.Structured) + mcpText(call)
 	if !strings.Contains(evidence, write.IDs[0]) {
-		return []Result{submitResult, Result{
+		return []Result{submitResult, {
 			Scenario: visibilityScenario, System: system, Surface: SurfaceMCP, Verdict: VerdictFail,
 			Expected: "observer MCP inbox contains " + write.IDs[0], Observed: evidence,
 		}}
 	}
-	return []Result{submitResult, Result{
+	return []Result{submitResult, {
 		Scenario: visibilityScenario, System: system, Surface: SurfaceMCP, Verdict: VerdictPass,
 		Detail: fmt.Sprintf("%s authored through MCP by %s and observed through MCP by %s", write.IDs[0], author.System, observer.System),
 	}}
@@ -214,7 +215,7 @@ func mcpOutOfSectionRefused(ctx context.Context, h *harness) Result {
 	branchesAfter, berr := h.Prov.ListBranches(ctx, h.Org, h.Repo)
 	pullsAfter, perr := h.runPulls(ctx)
 	if berr != nil || perr != nil {
-		return mcpFail(scenario, SystemB, "read remote state after refusal", fmt.Errorf("branches=%v pulls=%v", berr, perr))
+		return mcpFail(scenario, SystemB, "read remote state after refusal", fmt.Errorf("read branches/pulls: %w", errors.Join(berr, perr)))
 	}
 	newBranches := refusalNewElements(branchesBefore, branchesAfter)
 	newPulls := refusalNewElements(refusalPullNumberStrings(pullsBefore), refusalPullNumberStrings(pullsAfter))

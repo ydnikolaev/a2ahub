@@ -4,9 +4,9 @@ package livee2e
 
 import (
 	"context"
+	"debug/buildinfo"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/space"
-	spacetemplate "github.com/ydnikolaev/a2ahub/space-template"
 )
 
 // githubAPIEnv mirrors cmd/a2a/wire.go's own seam name (A2A_GITHUB_API) —
@@ -30,6 +29,51 @@ const githubAPIEnv = "A2A_GITHUB_API"
 // mode §T2 exists to rule out.
 var ErrAmbientAPIRoot = errors.New("livee2e: A2A_GITHUB_API is set in the ambient environment — a live run needs the seam at its default (spec 36 §T2)")
 
+func attestCandidateCheck(want CandidateExpectation) (CandidateAttestation, error) {
+	raw, err := readBoundedRuntimeFile(want.CheckLog, maxCandidateCheckLogBytes)
+	if err != nil {
+		return CandidateAttestation{}, fmt.Errorf("%w: read retained candidate check log: %w", ErrCandidateSource, err)
+	}
+	attestation, err := candidateCheckAttestation(raw, want.CheckLog, want)
+	if err != nil {
+		return CandidateAttestation{}, fmt.Errorf("%w: %w", ErrCandidateSource, err)
+	}
+	return attestation, nil
+}
+
+func runCandidateCommand(ctx context.Context, dir, name string, args ...string) (string, error) {
+	var cmd *exec.Cmd
+	switch name {
+	case "git":
+		// #nosec G204 -- executable is a fixed literal and argv comes only from the harness's closed attestation calls.
+		cmd = exec.CommandContext(ctx, "git", args...)
+	default:
+		if !filepath.IsAbs(name) {
+			return "", fmt.Errorf("candidate command must be git or an absolute attested binary: %q", name)
+		}
+		// #nosec G204 -- name is the absolute just-built candidate binary; its digest/build-info are attested before provider use.
+		cmd = exec.CommandContext(ctx, filepath.Clean(name), args...)
+	}
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// attestCandidateSource repeats the execution checkout's identity,
+// cleanliness, template, and prior-check assertions immediately before build.
+func attestCandidateSource(ctx context.Context, want CandidateExpectation) (CandidateAttestation, error) {
+	return attestCandidateSourceWith(ctx, want, runCandidateCommand, os.ReadFile, filepath.EvalSymlinks)
+}
+
+// attestCandidateBinary binds the built bytes and both independent Go/CLI
+// stamps to the candidate before ResetSpace can mutate the provider.
+func attestCandidateBinary(ctx context.Context, bin string, want CandidateExpectation, source CandidateAttestation) (CandidateAttestation, error) {
+	return attestCandidateBinaryWith(ctx, bin, want, source, runCandidateCommand, buildinfo.ReadFile)
+}
+
 // assertNoAmbientAPIRoot refuses to proceed if the seam driving CLI behavior
 // toward a fake host is already set for this process.
 func assertNoAmbientAPIRoot(getenv func(string) string) error {
@@ -39,59 +83,33 @@ func assertNoAmbientAPIRoot(getenv func(string) string) error {
 	return nil
 }
 
-// harnessBinaryVersion is what -ldflags "-X main.version=..." stamps into the
-// binary the tier builds. It MUST be a bare, parseable major.minor.patch,
-// because the write funnel's CC-085 min_binary_version guard (and `a2a
-// doctor`) parse it as one — an unparseable stamp like main.go's own "dev"
-// default breaks every write scenario in the matrix, not just the version
-// ones.
-//
-// It is READ FROM THE TEMPLATE the harness also scaffolds the space from
-// (TemplateMinBinaryVersion, scaffold.go), never hand-maintained.
-// docs/runbooks/live-e2e/reset.sh used a hardcoded fallback, which works right
-// up until the template's floor moves past it — and then every write row in
-// the matrix reds on a CC-085 refusal that has nothing to do with the product.
-// One source, so the two versions cannot drift apart.
-func harnessBinaryVersion() (string, error) {
-	raw, err := fs.ReadFile(spacetemplate.Files, "space.yaml")
+// buildBinary attests the explicit fresh candidate checkout immediately before
+// building, stamps both its floor and immutable revision, then attests the
+// resulting bytes. It performs no provider operation; callers must not invoke
+// ResetSpace until it returns successfully.
+func buildBinary(ctx context.Context, dir string, want CandidateExpectation) (string, CandidateAttestation, CandidateAttestation, error) {
+	verification, err := attestCandidateCheck(want)
 	if err != nil {
-		return "", fmt.Errorf("livee2e: read the embedded space template: %w", err)
+		return "", CandidateAttestation{}, CandidateAttestation{}, err
 	}
-	return TemplateMinBinaryVersion(string(raw))
-}
-
-// repoRootFromGoEnv discovers the repository root via `go env GOMOD` rather
-// than a relative-path guess: the test process's working directory is the
-// package directory, not the repo root, so ".." arithmetic would be fragile
-// wherever `go test` happens to run from.
-func repoRootFromGoEnv(ctx context.Context) (string, error) {
-	out, err := exec.CommandContext(ctx, "go", "env", "GOMOD").Output()
+	execution, err := attestCandidateSource(ctx, want)
 	if err != nil {
-		return "", fmt.Errorf("livee2e: go env GOMOD: %w", err)
-	}
-	gomod := strings.TrimSpace(string(out))
-	if gomod == "" || gomod == os.DevNull {
-		return "", fmt.Errorf("livee2e: go env GOMOD reported no module (working directory is outside a Go module)")
-	}
-	return filepath.Dir(gomod), nil
-}
-
-// buildBinary builds the a2a binary ONCE per run into dir, from the repo
-// root discovered via repoRootFromGoEnv, stamped with version.
-func buildBinary(ctx context.Context, dir, version string) (string, error) {
-	root, err := repoRootFromGoEnv(ctx)
-	if err != nil {
-		return "", err
+		return "", CandidateAttestation{}, CandidateAttestation{}, err
 	}
 	bin := filepath.Join(dir, "a2a")
-	cmd := exec.CommandContext(ctx, "go", "build", "-o", bin, "-ldflags", "-X main.version="+version, "./cmd/a2a")
-	cmd.Dir = root
+	stampFlags := "-X main.version=" + want.Floor + " -X main.commit=" + want.SHA
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", bin, "-ldflags", stampFlags, "./cmd/a2a") //nolint:gosec // reason: executable/package are fixed and stamp values are validated candidate SHA/floor inputs.
+	cmd.Dir = want.Root
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("livee2e: go build ./cmd/a2a: %w: %s", err, strings.TrimSpace(stderr.String()))
+		return "", CandidateAttestation{}, CandidateAttestation{}, fmt.Errorf("livee2e: go build candidate ./cmd/a2a: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
-	return bin, nil
+	execution, err = attestCandidateBinary(ctx, bin, want, execution)
+	if err != nil {
+		return "", CandidateAttestation{}, CandidateAttestation{}, err
+	}
+	return bin, verification, execution, nil
 }
 
 // checkout is one of the two local systems (the axon/seomatrix shape, spec
@@ -156,7 +174,7 @@ func (c *checkout) Run(ctx context.Context, args ...string) (stdout, stderr stri
 // product defect and must not be reported as one — it is the harness calling
 // a repo-scoped verb from the wrong repo. MirrorDir names the right one.
 func (c *checkout) RunIn(ctx context.Context, dir string, args ...string) (stdout, stderr string, err error) {
-	cmd := exec.CommandContext(ctx, c.Bin, args...)
+	cmd := exec.CommandContext(ctx, c.Bin, args...) //nolint:gosec // reason: c.Bin is the attested candidate and argv is supplied only by closed live scenario code.
 	cmd.Dir = dir
 	cmd.Env = checkoutEnv(c.Token, c.SpaceSlug)
 	var out, errBuf strings.Builder
@@ -189,7 +207,7 @@ func (c *checkout) MainContains(ctx context.Context, sha string) (bool, error) {
 // report.go): every other call in this package still goes through Run/RunIn,
 // which checkoutEnv still filters unconditionally.
 func (c *checkout) RunWithAPIRoot(ctx context.Context, apiRoot string, args ...string) (stdout, stderr string, err error) {
-	cmd := exec.CommandContext(ctx, c.Bin, args...)
+	cmd := exec.CommandContext(ctx, c.Bin, args...) //nolint:gosec // reason: c.Bin is the attested candidate and argv is supplied only by closed live scenario code.
 	cmd.Dir = c.Dir
 	cmd.Env = append(checkoutEnv(c.Token, c.SpaceSlug), githubAPIEnv+"="+apiRoot)
 	var out, errBuf strings.Builder

@@ -6,7 +6,7 @@ import (
 )
 
 // CanonicalFamilies is the hand-written twin of driveFamilies' own dispatch
-// table (runner_live_test.go, `//go:build livee2e`) — the ten family names,
+// table (runner_live_test.go, `//go:build livee2e`) — the eleven family names,
 // in the EXACT order that function's `families` slice declares them.
 //
 // Written out by hand rather than computed FROM driveFamilies' table on
@@ -27,6 +27,7 @@ import (
 // `make check` cannot type-check.
 func CanonicalFamilies() []string {
 	return []string{
+		FamilyOperationalConfidence,
 		"happy",
 		"contract-integrity",
 		"submitted-family",
@@ -48,10 +49,10 @@ func CanonicalFamilies() []string {
 // driveFamilies returns, deliberately — that row asks what else went red in
 // the space while every other family was running, so it has to observe the
 // run's WHOLE window and therefore has to run last, outside the loop that
-// runs the other ten families serially. Giving it a canonical-list entry
+// runs the other eleven families serially. Giving it a canonical-list entry
 // instead would make driveFamiliesMatchCanonical's equality check fail on
 // every single healthy run (the table legitimately never dispatches an
-// 11th family), which is exactly the kind of gate-asserts-a-lie outcome
+// 12th family), which is exactly the kind of gate-asserts-a-lie outcome
 // this whole change exists to avoid. Naming it here, outside
 // CanonicalFamilies(), keeps the exception a single visible fact instead of
 // a silent carve-out inside a comparison function.
