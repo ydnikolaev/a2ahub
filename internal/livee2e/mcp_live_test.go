@@ -39,7 +39,6 @@ func TestMCPRPCValidatesResponseEnvelope(t *testing.T) {
 		{"result and error", `{"jsonrpc":"2.0","id":1,"result":{},"error":{"code":-32603,"message":"broken"}}`, "result and error"},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			session, written := protocolSession(tc.response)

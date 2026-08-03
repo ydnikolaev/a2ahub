@@ -3,6 +3,7 @@ package livee2e
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 )
 
@@ -60,9 +61,24 @@ const (
 	// both the reusable-workflow `uses:` ref and its `a2a-ref` input must run.
 	// A live release verdict against a branch or tag is intentionally refused.
 	EnvCandidateSHA = "A2A_LIVE_E2E_CANDIDATE_SHA"
+	// EnvCandidateRoot is the explicit second fresh checkout from which the
+	// live binary must be built. Ambient module discovery is not release
+	// evidence.
+	EnvCandidateRoot = "A2A_LIVE_E2E_CANDIDATE_ROOT"
+	// EnvCandidateTree is the tree object reported by the public publisher.
+	EnvCandidateTree = "A2A_LIVE_E2E_CANDIDATE_TREE"
+	// EnvCandidateTag is the release tag the candidate's embedded workflow
+	// refs are intended to become.
+	EnvCandidateTag = "A2A_LIVE_E2E_CANDIDATE_TAG"
+	// EnvCandidateFloor is the exact embedded write floor expected for P7.
+	EnvCandidateFloor = "A2A_LIVE_E2E_CANDIDATE_FLOOR"
+	// EnvCandidateCheckLog is the retained SHA-bound make-check transcript
+	// produced from the separate verification checkout.
+	EnvCandidateCheckLog = "A2A_LIVE_E2E_CANDIDATE_CHECK_LOG"
 )
 
 var candidateSHAPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
+var candidateTagPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 
 // Ambient credential variables the tier refuses to be handed. Not a
 // stylistic preference: these are the variables that are already exported in
@@ -106,6 +122,33 @@ type Config struct {
 	ParticipantToken string
 	// CandidateSHA is the immutable public product commit under test.
 	CandidateSHA string
+	// CandidateRoot is the second fresh detached execution checkout. It is
+	// never the verification checkout that ran make check.
+	CandidateRoot string
+	// CandidateTree is the publisher-reported tree for CandidateSHA.
+	CandidateTree string
+	// CandidateTag is the intended immutable release tag embedded in the
+	// candidate template workflow.
+	CandidateTag string
+	// CandidateFloor is the exact embedded template write floor.
+	CandidateFloor string
+	// CandidateCheckLog is the retained successful make-check transcript from
+	// the first, verification-only checkout.
+	CandidateCheckLog string
+}
+
+// CandidateExpectation is the complete immutable source expectation used by
+// the pre-build attestation. Keeping it as one value prevents a caller from
+// accidentally checking the SHA while dropping the tree, floor, or check log.
+func (c Config) CandidateExpectation() CandidateExpectation {
+	return CandidateExpectation{
+		Root:     c.CandidateRoot,
+		SHA:      c.CandidateSHA,
+		Tree:     c.CandidateTree,
+		Tag:      c.CandidateTag,
+		Floor:    c.CandidateFloor,
+		CheckLog: c.CandidateCheckLog,
+	}
 }
 
 // LoadConfig resolves the configuration from an environment lookup —
@@ -128,10 +171,15 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	}
 
 	cfg := Config{
-		Org:              getenv(EnvOrg),
-		ProvisionerToken: getenv(EnvProvisionerToken),
-		ParticipantToken: getenv(EnvParticipantToken),
-		CandidateSHA:     getenv(EnvCandidateSHA),
+		Org:               getenv(EnvOrg),
+		ProvisionerToken:  getenv(EnvProvisionerToken),
+		ParticipantToken:  getenv(EnvParticipantToken),
+		CandidateSHA:      getenv(EnvCandidateSHA),
+		CandidateRoot:     getenv(EnvCandidateRoot),
+		CandidateTree:     getenv(EnvCandidateTree),
+		CandidateTag:      getenv(EnvCandidateTag),
+		CandidateFloor:    getenv(EnvCandidateFloor),
+		CandidateCheckLog: getenv(EnvCandidateCheckLog),
 	}
 
 	for _, missing := range []struct {
@@ -142,6 +190,11 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		{EnvProvisionerToken, cfg.ProvisionerToken},
 		{EnvParticipantToken, cfg.ParticipantToken},
 		{EnvCandidateSHA, cfg.CandidateSHA},
+		{EnvCandidateRoot, cfg.CandidateRoot},
+		{EnvCandidateTree, cfg.CandidateTree},
+		{EnvCandidateTag, cfg.CandidateTag},
+		{EnvCandidateFloor, cfg.CandidateFloor},
+		{EnvCandidateCheckLog, cfg.CandidateCheckLog},
 	} {
 		if missing.value == "" {
 			return Config{}, fmt.Errorf("%w: %s is unset", ErrNotConfigured, missing.name)
@@ -150,6 +203,26 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	if !candidateSHAPattern.MatchString(cfg.CandidateSHA) {
 		return Config{}, fmt.Errorf("%w: %s must be a full lowercase 40-hex public commit SHA",
 			ErrNotConfigured, EnvCandidateSHA)
+	}
+	if !candidateSHAPattern.MatchString(cfg.CandidateTree) {
+		return Config{}, fmt.Errorf("%w: %s must be a full lowercase 40-hex tree SHA",
+			ErrNotConfigured, EnvCandidateTree)
+	}
+	if !candidateTagPattern.MatchString(cfg.CandidateTag) {
+		return Config{}, fmt.Errorf("%w: %s must match vMAJOR.MINOR.PATCH",
+			ErrNotConfigured, EnvCandidateTag)
+	}
+	if cfg.CandidateFloor != requiredCandidateFloor {
+		return Config{}, fmt.Errorf("%w: %s must be %s for the P7 release boundary, got %q",
+			ErrNotConfigured, EnvCandidateFloor, requiredCandidateFloor, cfg.CandidateFloor)
+	}
+	if !filepath.IsAbs(cfg.CandidateRoot) {
+		return Config{}, fmt.Errorf("%w: %s must be an absolute path to the fresh execution checkout",
+			ErrNotConfigured, EnvCandidateRoot)
+	}
+	if !filepath.IsAbs(cfg.CandidateCheckLog) {
+		return Config{}, fmt.Errorf("%w: %s must be an absolute path to the retained verification log",
+			ErrNotConfigured, EnvCandidateCheckLog)
 	}
 
 	if cfg.ProvisionerToken == cfg.ParticipantToken {

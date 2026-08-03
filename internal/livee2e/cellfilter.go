@@ -7,9 +7,11 @@ import (
 )
 
 // EnvCells narrows a diagnostic run to exact declared matrix cells. Values
-// are comma-separated `<scenario>/<system>/<surface>` triples, for example:
+// are comma-separated `<scenario>[@<branch>]/<system>/<surface>` triples, for
+// example:
 //
 //	contract-publish-deprecate-retire/A/cli
+//	LE-OC-08@unsupported-provider/A/cli
 //
 // Like EnvFamilies, this can never produce a release verdict: every
 // unselected declared cell remains not-run.
@@ -25,7 +27,7 @@ func selectedCells(raw string, catalogue []Scenario) (map[cellKey]bool, error) {
 	for _, scenario := range catalogue {
 		for _, system := range scenario.Systems {
 			for _, surface := range scenario.Surfaces {
-				key := cellKey{scenario: scenario.Name, system: system, surface: surface}
+				key := cellKey{scenario: scenario.Name, branch: scenario.Branch, system: system, surface: surface}
 				known[key] = scenario.Family
 				legal = append(legal, renderCellKey(key))
 			}
@@ -45,7 +47,8 @@ func selectedCells(raw string, catalogue []Scenario) (map[cellKey]bool, error) {
 			unknown = append(unknown, token)
 			continue
 		}
-		key := cellKey{scenario: pieces[0], system: pieces[1], surface: Surface(pieces[2])}
+		scenario, branch, _ := strings.Cut(pieces[0], "@")
+		key := cellKey{scenario: scenario, branch: branch, system: pieces[1], surface: Surface(pieces[2])}
 		if _, ok := known[key]; !ok {
 			unknown = append(unknown, token)
 			continue
@@ -54,7 +57,7 @@ func selectedCells(raw string, catalogue []Scenario) (map[cellKey]bool, error) {
 	}
 	if len(unknown) > 0 {
 		sort.Strings(unknown)
-		return nil, fmt.Errorf("unknown matrix cell(s) %s; use exact scenario/system/surface triples; declared cells are: %s",
+		return nil, fmt.Errorf("unknown matrix cell(s) %s; use exact scenario[@branch]/system/surface triples; declared cells are: %s",
 			strings.Join(unknown, ", "), strings.Join(legal, ", "))
 	}
 	if len(out) == 0 {
@@ -64,5 +67,9 @@ func selectedCells(raw string, catalogue []Scenario) (map[cellKey]bool, error) {
 }
 
 func renderCellKey(key cellKey) string {
-	return key.scenario + "/" + key.system + "/" + string(key.surface)
+	scenario := key.scenario
+	if key.branch != "" {
+		scenario += "@" + key.branch
+	}
+	return scenario + "/" + key.system + "/" + string(key.surface)
 }

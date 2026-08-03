@@ -124,13 +124,14 @@ func TestCatalogueDeclaresExactlyTheNineMCPParityCells(t *testing.T) {
 
 func TestCatalogueIsWellFormed(t *testing.T) {
 	t.Parallel()
-	names := map[string]bool{}
+	keys := map[string]bool{}
 	for _, scenario := range Catalogue() {
+		key := scenario.Name + "/" + scenario.Branch
 		switch {
 		case scenario.Name == "":
 			t.Error("catalogue holds an unnamed scenario")
-		case names[scenario.Name]:
-			t.Errorf("duplicate scenario %q — the matrix would silently collapse the rows", scenario.Name)
+		case keys[key]:
+			t.Errorf("duplicate scenario branch %q — the matrix would silently collapse the rows", key)
 		case strings.TrimSpace(scenario.Name) != scenario.Name:
 			t.Errorf("scenario %q has surrounding whitespace; report columns are padded from these", scenario.Name)
 		case len(scenario.Systems) == 0:
@@ -138,9 +139,9 @@ func TestCatalogueIsWellFormed(t *testing.T) {
 		case len(scenario.Surfaces) == 0:
 			t.Errorf("scenario %q declares no surfaces, so it can never produce a row", scenario.Name)
 		}
-		names[scenario.Name] = true
+		keys[key] = true
 	}
-	if len(names) == 0 {
+	if len(keys) == 0 {
 		t.Fatal("the catalogue is empty")
 	}
 }

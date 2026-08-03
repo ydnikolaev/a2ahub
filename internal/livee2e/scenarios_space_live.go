@@ -207,7 +207,7 @@ func spaceLiveUpdateScenario(ctx context.Context, h *harness) (res Result) {
 	defer cleanup()
 
 	spacePath := filepath.Join(cloneDir, "space.yaml")
-	raw, err := os.ReadFile(spacePath)
+	raw, err := os.ReadFile(spacePath) //nolint:gosec // reason: spacePath is rooted beneath the harness-owned disposable clone.
 	if err != nil {
 		res.Verdict = VerdictRefused
 		res.Observed = fmt.Sprintf("could not read the cloned space.yaml: %v", err)
@@ -219,7 +219,7 @@ func spaceLiveUpdateScenario(ctx context.Context, h *harness) (res Result) {
 		res.Observed = "the cloned space.yaml carries no min_binary_version line to drift"
 		return res
 	}
-	if err := os.WriteFile(spacePath, drifted, 0o644); err != nil {
+	if err := os.WriteFile(spacePath, drifted, 0o644); err != nil { //nolint:gosec // reason: spacePath is rooted beneath the harness-owned disposable clone.
 		res.Verdict = VerdictRefused
 		res.Observed = fmt.Sprintf("could not write the drifted space.yaml: %v", err)
 		return res
@@ -247,7 +247,7 @@ func spaceLiveUpdateScenario(ctx context.Context, h *harness) (res Result) {
 		defer cancelRestore()
 
 		restored := spaceLiveSetFloor(drifted, original)
-		if writeErr := os.WriteFile(spacePath, restored, 0o644); writeErr != nil {
+		if writeErr := os.WriteFile(spacePath, restored, 0o644); writeErr != nil { //nolint:gosec // reason: spacePath is rooted beneath the harness-owned disposable clone.
 			res.Verdict = VerdictFail
 			res.Observed = joinNonEmpty(res.Observed, fmt.Sprintf("FAILED TO RESTORE min_binary_version: %v", writeErr))
 			return

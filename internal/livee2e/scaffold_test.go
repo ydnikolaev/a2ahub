@@ -201,7 +201,7 @@ func TestTemplateMinBinaryVersionRefusesWhatItCannotRead(t *testing.T) {
 // The chain, each link verified in source rather than assumed:
 //
 //	space-template/space.yaml `min_binary_version`
-//	  -> harnessBinaryVersion() stamps the harness binary with it
+//	  -> the exact-candidate builder verifies the same floor and stamps the binary with it
 //	     (workspace_live.go — deliberately, so a floor bump cannot make every
 //	     write row red on a CC-085 refusal that has nothing to do with the
 //	     product)

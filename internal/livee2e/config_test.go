@@ -2,6 +2,7 @@ package livee2e
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -13,11 +14,17 @@ func env(pairs map[string]string) func(string) string {
 }
 
 func validEnv() map[string]string {
+	root := filepath.Join(string(filepath.Separator), "tmp", "a2a-candidate")
 	return map[string]string{
-		EnvOrg:              "a2ahub-live-e2e",
-		EnvProvisionerToken: "tok-provisioner",
-		EnvParticipantToken: "tok-participant",
-		EnvCandidateSHA:     strings.Repeat("a", 40),
+		EnvOrg:               "a2ahub-live-e2e",
+		EnvProvisionerToken:  "tok-provisioner",
+		EnvParticipantToken:  "tok-participant",
+		EnvCandidateSHA:      strings.Repeat("a", 40),
+		EnvCandidateRoot:     root,
+		EnvCandidateTree:     strings.Repeat("b", 40),
+		EnvCandidateTag:      "v0.19.0",
+		EnvCandidateFloor:    requiredCandidateFloor,
+		EnvCandidateCheckLog: filepath.Join(string(filepath.Separator), "tmp", "candidate-check.log"),
 	}
 }
 
@@ -37,7 +44,17 @@ func TestLoadConfigResolvesBothCredentials(t *testing.T) {
 // missing one lets the other two through.
 func TestLoadConfigFailsClosedOnEachMissingVar(t *testing.T) {
 	t.Parallel()
-	for _, missing := range []string{EnvOrg, EnvProvisionerToken, EnvParticipantToken, EnvCandidateSHA} {
+	for _, missing := range []string{
+		EnvOrg,
+		EnvProvisionerToken,
+		EnvParticipantToken,
+		EnvCandidateSHA,
+		EnvCandidateRoot,
+		EnvCandidateTree,
+		EnvCandidateTag,
+		EnvCandidateFloor,
+		EnvCandidateCheckLog,
+	} {
 		t.Run(missing, func(t *testing.T) {
 			t.Parallel()
 			pairs := validEnv()
@@ -50,6 +67,45 @@ func TestLoadConfigFailsClosedOnEachMissingVar(t *testing.T) {
 				t.Errorf("error does not name the missing variable %q: %v", missing, err)
 			}
 		})
+	}
+}
+
+func TestLoadConfigRefusesInvalidCandidateExpectation(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		env   string
+		value string
+	}{
+		{"short tree", EnvCandidateTree, strings.Repeat("b", 39)},
+		{"mutable tag", EnvCandidateTag, "main"},
+		{"wrong floor", EnvCandidateFloor, "0.18.2"},
+		{"relative root", EnvCandidateRoot, "candidate"},
+		{"relative check log", EnvCandidateCheckLog, "candidate-check.log"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			pairs := validEnv()
+			pairs[tc.env] = tc.value
+			_, err := LoadConfig(env(pairs))
+			if !errors.Is(err, ErrNotConfigured) || !strings.Contains(err.Error(), tc.env) {
+				t.Fatalf("want refusal naming %s, got %v", tc.env, err)
+			}
+		})
+	}
+}
+
+func TestConfigCandidateExpectationCarriesEveryBoundaryField(t *testing.T) {
+	t.Parallel()
+	cfg, err := LoadConfig(env(validEnv()))
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	want := cfg.CandidateExpectation()
+	if want.Root != cfg.CandidateRoot || want.SHA != cfg.CandidateSHA ||
+		want.Tree != cfg.CandidateTree || want.Tag != cfg.CandidateTag ||
+		want.Floor != cfg.CandidateFloor || want.CheckLog != cfg.CandidateCheckLog {
+		t.Fatalf("CandidateExpectation dropped a field: %+v from %+v", want, cfg)
 	}
 }
 

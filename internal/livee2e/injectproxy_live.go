@@ -3,6 +3,7 @@
 package livee2e
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -104,7 +105,7 @@ func newInjectingProxy(target string, inject func(*http.Request) bool, injectedS
 		// inherited Content-Encoding header.
 		outReq.Header.Set("Accept-Encoding", "identity")
 
-		resp, err := client.Do(outReq)
+		resp, err := client.Do(outReq) //nolint:gosec // reason: this live-only reverse proxy intentionally forwards to the explicitly parsed provider/test target.
 		if err != nil {
 			http.Error(w, "livee2e: injectingProxy: forward to "+target+": "+err.Error(), http.StatusBadGateway)
 			return
@@ -120,10 +121,15 @@ func newInjectingProxy(target string, inject func(*http.Request) bool, injectedS
 			fired.Store(true)
 			injected := fmt.Sprintf("%s: upstream's own real response was status %d for %s %s (forwarded for real, then discarded on purpose)",
 				injectedFaultMarker, resp.StatusCode, r.Method, r.URL.Path)
+			encoded, marshalErr := json.Marshal(map[string]string{"message": injected})
+			if marshalErr != nil {
+				http.Error(w, "livee2e: injectingProxy: encode injected response", http.StatusInternalServerError)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(injected)))
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(encoded)))
 			w.WriteHeader(injectedStatus)
-			_, _ = w.Write([]byte(injected))
+			_, _ = w.Write(encoded)
 			return
 		}
 

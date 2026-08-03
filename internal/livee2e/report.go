@@ -1,10 +1,16 @@
 package livee2e
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Surface is the entry point a scenario is driven through. P15 claims CLI/MCP
@@ -29,6 +35,7 @@ var ErrUndeclaredCell = errors.New("livee2e: result recorded for an undeclared m
 // Result is one cell of the matrix.
 type Result struct {
 	Scenario string
+	Branch   string
 	System   string
 	Surface  Surface
 	Verdict  Verdict
@@ -78,6 +85,27 @@ type Result struct {
 	// summary — a row that reds because its own recovery leg failed is
 	// still a defect this report must not hide.
 	EvidenceClass string
+
+	// OperationalEvidence is populated only by P7 LE-OC rows. It contains
+	// publish-safe facts required to produce the candidate-bound scenario log
+	// and manifest row; provider payloads and credentials have no field here.
+	OperationalEvidence *OperationalEvidence
+}
+
+// OperationalEvidence is the runtime-owned half of ScenarioEvidence. Exact
+// candidate data is supplied by Run when the bundle is frozen.
+type OperationalEvidence struct {
+	StartedAt          time.Time
+	EndedAt            time.Time
+	Assertions         []AssertionEvidence
+	SurfaceIDs         []string
+	CommandFamily      string
+	ArtifactRefs       []string
+	PRRefs             []string
+	CleanupStatus      string
+	Limitations        []string
+	LiveManifestFloor  string
+	LiveManifestCommit string
 }
 
 // EvidenceClassInjectedFault marks a Result produced by a row that drove a
@@ -93,6 +121,7 @@ const EvidenceClassInjectedFault = "injected-fault (proxied — not a live row; 
 
 type cellKey struct {
 	scenario string
+	branch   string
 	system   string
 	surface  Surface
 }
@@ -108,6 +137,15 @@ type Run struct {
 	// Preflight names the identities every boundary assertion rests on. A
 	// report that does not state them cannot be audited after the fact.
 	Preflight Preflight
+	// VerificationCandidate records the clean detached checkout that ran the
+	// retained make-check transcript. ExecutionCandidate independently records
+	// the second clean detached checkout used to build and drive live scenarios.
+	VerificationCandidate CandidateAttestation
+	ExecutionCandidate    CandidateAttestation
+	// EvidencePath is the explicit manifest destination. Empty disables file
+	// production for legacy/diagnostic callers; TestLiveMatrix sets it beside
+	// the retained candidate check log.
+	EvidencePath string
 
 	order   []cellKey
 	results map[cellKey]*Result
@@ -137,13 +175,14 @@ func NewRunFor(org, repo string, scenarios []Scenario) *Run {
 	for _, scenario := range scenarios {
 		for _, system := range scenario.Systems {
 			for _, surface := range scenario.Surfaces {
-				key := cellKey{scenario.Name, system, surface}
+				key := cellKey{scenario: scenario.Name, branch: scenario.Branch, system: system, surface: surface}
 				if _, dup := r.results[key]; dup {
 					continue
 				}
 				r.order = append(r.order, key)
 				r.results[key] = &Result{
 					Scenario: scenario.Name,
+					Branch:   scenario.Branch,
 					System:   system,
 					Surface:  surface,
 					Verdict:  VerdictNotRun,
@@ -159,17 +198,24 @@ func NewRunFor(org, repo string, scenarios []Scenario) *Run {
 // not-run would hide the one state the report cannot distinguish from
 // "never dispatched".
 func (r *Run) Record(res Result) error {
-	key := cellKey{res.Scenario, res.System, res.Surface}
+	key := cellKey{scenario: res.Scenario, branch: res.Branch, system: res.System, surface: res.Surface}
 	cell, ok := r.results[key]
 	if !ok {
-		return fmt.Errorf("%w: %s/%s/%s", ErrUndeclaredCell, res.Scenario, res.System, res.Surface)
+		return fmt.Errorf("%w: %s/%s/%s/%s", ErrUndeclaredCell, res.Scenario, res.Branch, res.System, res.Surface)
 	}
 	if res.Verdict == VerdictNotRun {
-		return fmt.Errorf("livee2e: %s/%s/%s recorded VerdictNotRun — record the real outcome or leave the cell untouched",
-			res.Scenario, res.System, res.Surface)
+		return fmt.Errorf("livee2e: %s/%s/%s/%s recorded VerdictNotRun — record the real outcome or leave the cell untouched",
+			res.Scenario, res.Branch, res.System, res.Surface)
+	}
+	if res.Verdict == VerdictUnverified && !operationalOptionalBranch(res.Scenario, res.Branch) {
+		return fmt.Errorf("livee2e: %s/%s is mandatory and cannot be unverified", res.Scenario, res.Branch)
 	}
 	*cell = res
 	return nil
+}
+
+func operationalOptionalBranch(id, branch string) bool {
+	return id == "LE-OC-04" && branch == "provider-setting" || id == "LE-OC-08" && branch == "unsupported-provider"
 }
 
 // Abort marks the whole run as not run — no credentials, preflight refused,
@@ -187,11 +233,13 @@ func (r *Run) Abort(reason string) {
 // Report freezes the run for rendering.
 func (r *Run) Report() Report {
 	out := Report{
-		Org:          r.Org,
-		Repo:         r.Repo,
-		Preflight:    r.Preflight,
-		NotRunReason: r.aborted,
-		Results:      make([]Result, 0, len(r.order)),
+		Org:                   r.Org,
+		Repo:                  r.Repo,
+		Preflight:             r.Preflight,
+		VerificationCandidate: r.VerificationCandidate,
+		ExecutionCandidate:    r.ExecutionCandidate,
+		NotRunReason:          r.aborted,
+		Results:               make([]Result, 0, len(r.order)),
 	}
 	for _, key := range r.order {
 		out.Results = append(out.Results, *r.results[key])
@@ -201,11 +249,13 @@ func (r *Run) Report() Report {
 
 // Report is a rendered-ready snapshot of a run.
 type Report struct {
-	Org          string
-	Repo         string
-	Preflight    Preflight
-	NotRunReason string
-	Results      []Result
+	Org                   string
+	Repo                  string
+	Preflight             Preflight
+	VerificationCandidate CandidateAttestation
+	ExecutionCandidate    CandidateAttestation
+	NotRunReason          string
+	Results               []Result
 }
 
 // Tally counts results by verdict.
@@ -219,7 +269,8 @@ func (r Report) Tally() map[Verdict]int {
 
 // ExitCode classifies the run:
 //
-//	0 — every declared cell ran and passed
+//	0 — every declared cell ran; mandatory cells passed and only the two
+//	    explicitly optional provider branches may be unverified
 //	1 — the run happened and at least one cell did not pass
 //	2 — the run did not happen (not configured, aborted, or an empty matrix)
 //
@@ -240,7 +291,7 @@ func (r Report) ExitCode() int {
 		return 2
 	}
 	for _, res := range r.Results {
-		if !res.Verdict.IsPass() {
+		if !res.Verdict.IsPass() && (res.Verdict != VerdictUnverified || !operationalOptionalBranch(res.Scenario, res.Branch)) {
 			return 1
 		}
 	}
@@ -258,6 +309,20 @@ func (r Report) Render() string {
 	fmt.Fprintf(&b, "space:       %s/%s\n", orNone(r.Org), r.Repo)
 	fmt.Fprintf(&b, "provisioner: %s\n", orNone(r.Preflight.ProvisionerLogin))
 	fmt.Fprintf(&b, "participant: %s\n", orNone(r.Preflight.ParticipantLogin))
+	if r.ExecutionCandidate.SourceSHA != "" {
+		fmt.Fprintf(&b, "candidate:   %s tree=%s tag=%s floor=%s\n",
+			r.ExecutionCandidate.SourceSHA, r.ExecutionCandidate.SourceTree, r.ExecutionCandidate.IntendedTag, r.ExecutionCandidate.TemplateFloor)
+		fmt.Fprintf(&b, "verification-source: %s\n", r.VerificationCandidate.SourceRoot)
+		fmt.Fprintf(&b, "verification-state: detached=%t index-clean=%t worktree-clean=%t untracked-clean=%t\n",
+			r.VerificationCandidate.SourceDetached, r.VerificationCandidate.IndexClean, r.VerificationCandidate.WorktreeClean, r.VerificationCandidate.UntrackedClean)
+		fmt.Fprintf(&b, "execution-source: %s\n", r.ExecutionCandidate.SourceRoot)
+		fmt.Fprintf(&b, "execution-state: detached=%t index-clean=%t worktree-clean=%t untracked-clean=%t\n",
+			r.ExecutionCandidate.SourceDetached, r.ExecutionCandidate.IndexClean, r.ExecutionCandidate.WorktreeClean, r.ExecutionCandidate.UntrackedClean)
+		fmt.Fprintf(&b, "check-log:   %s\n", r.VerificationCandidate.CheckLog)
+		fmt.Fprintf(&b, "binary:      sha256=%s vcs.revision=%s vcs.modified=%t\n",
+			r.ExecutionCandidate.BinarySHA256, r.ExecutionCandidate.BuildRevision, r.ExecutionCandidate.BuildModified)
+		fmt.Fprintf(&b, "binary-stamp: %s\n", r.ExecutionCandidate.BinaryStamp)
+	}
 	if r.NotRunReason != "" {
 		fmt.Fprintf(&b, "NOT RUN:     %s\n", r.NotRunReason)
 	}
@@ -271,7 +336,7 @@ func (r Report) Render() string {
 	// names grow without a hand-tuned constant going stale.
 	scenarioWidth, systemWidth, surfaceWidth := len("SCENARIO"), len("SYSTEM"), len("SURFACE")
 	for _, res := range r.Results {
-		scenarioWidth = max(scenarioWidth, len(res.Scenario))
+		scenarioWidth = max(scenarioWidth, len(resultScenarioKey(res)))
 		systemWidth = max(systemWidth, len(res.System))
 		surfaceWidth = max(surfaceWidth, len(string(res.Surface)))
 	}
@@ -282,7 +347,7 @@ func (r Report) Render() string {
 	}
 	for _, res := range r.Results {
 		fmt.Fprintf(&b, "%-*s  %-*s  %-*s  %s\n",
-			scenarioWidth, res.Scenario, systemWidth, res.System, surfaceWidth, string(res.Surface), res.Verdict)
+			scenarioWidth, resultScenarioKey(res), systemWidth, res.System, surfaceWidth, string(res.Surface), res.Verdict)
 		// Rendered on EVERY row that carries it, pass or fail — see
 		// Result.EvidenceClass's own doc comment for why this cannot wait
 		// for the non-pass branch below.
@@ -328,6 +393,259 @@ func (r Report) Render() string {
 	fmt.Fprintf(&b, "summary: %s (exit %d)\n", strings.Join(parts, " "), r.ExitCode())
 
 	return b.String()
+}
+
+func resultScenarioKey(result Result) string {
+	if result.Branch == "" {
+		return result.Scenario
+	}
+	return result.Scenario + "/" + result.Branch
+}
+
+// DefaultEvidencePath reserves one unique retained-run directory beside the
+// candidate-check transcript. Its manifest and logs therefore share one
+// run-scoped root, while every file inside remains create-only.
+func DefaultEvidencePath(candidateCheckLog string) (string, error) {
+	dir, name := filepath.Split(candidateCheckLog)
+	name = strings.TrimSuffix(name, filepath.Ext(name))
+	name = strings.TrimSuffix(name, "-check")
+	runDir, err := os.MkdirTemp(dir, name+"-evidence-")
+	if err != nil {
+		return "", fmt.Errorf("livee2e: reserve retained evidence directory: %w", err)
+	}
+	return filepath.Join(runDir, "manifest.json"), nil
+}
+
+// WriteEvidenceBundle persists canonical scenario records first and the
+// manifest last. Files are create-only: a retry must select a new run path,
+// never overwrite evidence already attributed to a candidate execution.
+func (r *Run) WriteEvidenceBundle(evidencePath string) (EvidenceManifest, error) {
+	if r == nil || evidencePath == "" {
+		return EvidenceManifest{}, errors.New("livee2e: evidence path is required")
+	}
+	if err := validateCandidateAttestationPair(r.VerificationCandidate, r.ExecutionCandidate); err != nil {
+		return EvidenceManifest{}, err
+	}
+	dir := filepath.Dir(evidencePath)
+	if err := os.MkdirAll(filepath.Join(dir, "logs"), 0o755); err != nil {
+		return EvidenceManifest{}, fmt.Errorf("livee2e: create evidence logs directory: %w", err)
+	}
+	checkRaw, err := readBoundedRuntimeFile(r.VerificationCandidate.CheckLog, maxCandidateCheckLogBytes)
+	if err != nil {
+		return EvidenceManifest{}, fmt.Errorf("livee2e: read candidate check log: %w", err)
+	}
+	loggedVerification, err := candidateCheckAttestation(checkRaw, r.VerificationCandidate.CheckLog, CandidateExpectation{
+		SHA: r.ExecutionCandidate.SourceSHA, Tree: r.ExecutionCandidate.SourceTree,
+		Tag: r.ExecutionCandidate.IntendedTag, Floor: r.ExecutionCandidate.TemplateFloor,
+	})
+	if err != nil {
+		return EvidenceManifest{}, fmt.Errorf("livee2e: bind retained candidate check log: %w", err)
+	}
+	if loggedVerification.SourceRoot != r.VerificationCandidate.SourceRoot ||
+		loggedVerification.SourceSHA != r.VerificationCandidate.SourceSHA ||
+		loggedVerification.SourceTree != r.VerificationCandidate.SourceTree ||
+		loggedVerification.IntendedTag != r.VerificationCandidate.IntendedTag ||
+		loggedVerification.SourceDetached != r.VerificationCandidate.SourceDetached ||
+		loggedVerification.IndexClean != r.VerificationCandidate.IndexClean ||
+		loggedVerification.WorktreeClean != r.VerificationCandidate.WorktreeClean ||
+		loggedVerification.UntrackedClean != r.VerificationCandidate.UntrackedClean {
+		return EvidenceManifest{}, errors.New("livee2e: retained candidate check log does not match the verification checkout attestation")
+	}
+	checkRel := "logs/candidate-check.log"
+	if err := writeNewEvidenceFile(filepath.Join(dir, filepath.FromSlash(checkRel)), checkRaw); err != nil {
+		return EvidenceManifest{}, err
+	}
+
+	truth := true
+	verificationDetached := r.VerificationCandidate.SourceDetached
+	verificationIndexClean := r.VerificationCandidate.IndexClean
+	verificationWorktreeClean := r.VerificationCandidate.WorktreeClean
+	verificationUntrackedClean := r.VerificationCandidate.UntrackedClean
+	executionDetached := r.ExecutionCandidate.SourceDetached
+	executionIndexClean := r.ExecutionCandidate.IndexClean
+	executionWorktreeClean := r.ExecutionCandidate.WorktreeClean
+	executionUntrackedClean := r.ExecutionCandidate.UntrackedClean
+	buildModified := r.ExecutionCandidate.BuildModified
+	manifest := EvidenceManifest{
+		ManifestVersion: EvidenceManifestVersion,
+		Candidate: CandidateEvidence{
+			SHA: r.ExecutionCandidate.SourceSHA, Tree: r.ExecutionCandidate.SourceTree, Version: r.ExecutionCandidate.IntendedTag,
+			VerificationCheckout: CheckoutEvidence{
+				ID: checkoutEvidenceID(r.VerificationCandidate.SourceRoot), SHA: r.VerificationCandidate.SourceSHA, Tree: r.VerificationCandidate.SourceTree,
+				Detached: &verificationDetached, IndexClean: &verificationIndexClean, WorktreeClean: &verificationWorktreeClean, UntrackedClean: &verificationUntrackedClean,
+			},
+			ExecutionCheckout: CheckoutEvidence{
+				ID: checkoutEvidenceID(r.ExecutionCandidate.SourceRoot), SHA: r.ExecutionCandidate.SourceSHA, Tree: r.ExecutionCandidate.SourceTree,
+				Detached: &executionDetached, IndexClean: &executionIndexClean, WorktreeClean: &executionWorktreeClean, UntrackedClean: &executionUntrackedClean,
+			},
+			BuiltSourceSHA: r.ExecutionCandidate.SourceSHA,
+			Binary: BinaryEvidence{
+				SHA256: "sha256:" + strings.TrimPrefix(r.ExecutionCandidate.BinarySHA256, "sha256:"), Version: r.ExecutionCandidate.TemplateFloor,
+				BuildInfo: BinaryBuildInfo{Revision: r.ExecutionCandidate.BuildRevision, Modified: &buildModified},
+			},
+			EmbeddedTemplateFloor: r.ExecutionCandidate.TemplateFloor,
+		},
+		CandidateCheck: CandidateCheck{LogPath: checkRel, LogSHA256: runtimeDigest(checkRaw), Passed: &truth},
+		Scenarios:      []ScenarioEvidence{},
+	}
+
+	for _, key := range r.order {
+		result := r.results[key]
+		if result == nil || result.OperationalEvidence == nil {
+			continue
+		}
+		runtime := result.OperationalEvidence
+		outcome, err := operationalOutcome(result.Verdict)
+		if err != nil {
+			return manifest, fmt.Errorf("livee2e: %s: %w", resultScenarioKey(*result), err)
+		}
+		row := ScenarioEvidence{
+			ScenarioID: result.Scenario, Branch: result.Branch,
+			StartedAt: runtime.StartedAt.UTC().Format(time.RFC3339), EndedAt: runtime.EndedAt.UTC().Format(time.RFC3339),
+			SurfaceIDs: cloneRuntimeStrings(runtime.SurfaceIDs), RepositoryID: r.Org + "/" + r.Repo,
+			CommandFamily: runtime.CommandFamily, Outcome: outcome,
+			ArtifactRefs: cloneRuntimeStrings(runtime.ArtifactRefs), PRRefs: cloneRuntimeStrings(runtime.PRRefs),
+			CleanupStatus: runtime.CleanupStatus, Limitations: cloneRuntimeStrings(runtime.Limitations),
+			LiveManifestFloor: runtime.LiveManifestFloor, LiveManifestCommit: runtime.LiveManifestCommit,
+			Assertions: append([]AssertionEvidence(nil), runtime.Assertions...),
+		}
+		row.LogPath = "logs/" + strings.ToLower(result.Scenario) + "-" + result.Branch + ".json"
+		canonical, marshalErr := json.Marshal(scenarioLogEvidence{
+			EvidenceVersion: ScenarioLogVersion,
+			CandidateSHA:    manifest.Candidate.SHA, CandidateTree: manifest.Candidate.Tree, BinarySHA256: manifest.Candidate.Binary.SHA256,
+			ScenarioID: row.ScenarioID, Branch: row.Branch, StartedAt: row.StartedAt, EndedAt: row.EndedAt,
+			Outcome: row.Outcome, Assertions: row.Assertions,
+		})
+		if marshalErr != nil {
+			return manifest, fmt.Errorf("livee2e: marshal %s scenario log: %w", resultScenarioKey(*result), marshalErr)
+		}
+		canonical = append(canonical, '\n')
+		row.LogSHA256 = runtimeDigest(canonical)
+		if err := writeNewEvidenceFile(filepath.Join(dir, filepath.FromSlash(row.LogPath)), canonical); err != nil {
+			return manifest, err
+		}
+		manifest.Scenarios = append(manifest.Scenarios, row)
+	}
+
+	if err := ValidateEvidenceManifest(manifest); err != nil {
+		return manifest, err
+	}
+	raw, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return manifest, fmt.Errorf("livee2e: marshal evidence manifest: %w", err)
+	}
+	raw = append(raw, '\n')
+	if err := writeNewEvidenceFile(evidencePath, raw); err != nil {
+		return manifest, err
+	}
+	validated, err := ValidateEvidenceFile(evidencePath)
+	if err != nil {
+		return manifest, err
+	}
+	return validated, nil
+}
+
+func operationalOutcome(verdict Verdict) (string, error) {
+	switch verdict {
+	case VerdictPass:
+		return "pass", nil
+	case VerdictFail:
+		return "fail", nil
+	case VerdictUnverified:
+		return "unverified", nil
+	default:
+		return "", fmt.Errorf("verdict %s cannot be persisted as scenario evidence", verdict)
+	}
+}
+
+func cloneRuntimeStrings(values []string) []string {
+	return append([]string{}, values...)
+}
+
+func validateCandidateAttestationPair(verification, execution CandidateAttestation) error {
+	if verification.SourceRoot == "" || execution.SourceRoot == "" {
+		return errors.New("livee2e: verification and execution checkout attestations are required")
+	}
+	if verification.SourceRoot == execution.SourceRoot {
+		return fmt.Errorf("livee2e: verification and execution checkout roots must differ: %s", verification.SourceRoot)
+	}
+	if verification.SourceSHA != execution.SourceSHA || verification.SourceTree != execution.SourceTree ||
+		verification.IntendedTag != execution.IntendedTag || verification.TemplateFloor != execution.TemplateFloor {
+		return errors.New("livee2e: verification and execution checkout candidate identities differ")
+	}
+	for name, candidate := range map[string]CandidateAttestation{"verification": verification, "execution": execution} {
+		if !candidate.SourceDetached || !candidate.IndexClean || !candidate.WorktreeClean || !candidate.UntrackedClean {
+			return fmt.Errorf("livee2e: %s checkout attestation is not detached and clean", name)
+		}
+	}
+	if verification.CheckLog == "" {
+		return errors.New("livee2e: verification checkout check log is required")
+	}
+	return nil
+}
+
+func runtimeDigest(raw []byte) string {
+	digest := sha256.Sum256(raw)
+	return fmt.Sprintf("sha256:%x", digest)
+}
+
+func readBoundedRuntimeFile(name string, limit int64) ([]byte, error) {
+	info, err := os.Lstat(name) //nolint:gosec // reason: callers provide explicit evidence/check paths; symlinks and size are rejected before reading.
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > limit {
+		return nil, fmt.Errorf("must be a regular file no larger than %d bytes", limit)
+	}
+	file, err := os.OpenFile(name, os.O_RDONLY, 0) //nolint:gosec // reason: Lstat above rejects symlinks and bounds the explicit evidence/check path.
+	if err != nil {
+		return nil, err
+	}
+	opened, err := file.Stat()
+	if err != nil {
+		closeErr := file.Close()
+		if closeErr != nil {
+			return nil, fmt.Errorf("close %q after stat: %w", name, closeErr)
+		}
+		return nil, fmt.Errorf("stat %q: %w", name, err)
+	}
+	if !opened.Mode().IsRegular() || opened.Size() > limit {
+		if closeErr := file.Close(); closeErr != nil {
+			return nil, fmt.Errorf("close %q after stat: %w", name, closeErr)
+		}
+		return nil, fmt.Errorf("opened file must be regular and no larger than %d bytes", limit)
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, limit+1))
+	closeErr := file.Close()
+	if err != nil {
+		return nil, err
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("close %q: %w", name, closeErr)
+	}
+	if int64(len(raw)) > limit {
+		return nil, fmt.Errorf("file grew beyond the %d-byte limit while reading", limit)
+	}
+	return raw, nil
+}
+
+func writeNewEvidenceFile(name string, raw []byte) error {
+	file, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // reason: name is beneath the run-scoped evidence root and O_EXCL preserves create-only evidence.
+	if err != nil {
+		return fmt.Errorf("livee2e: create evidence file %s: %w", name, err)
+	}
+	if _, err := file.Write(raw); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("livee2e: write evidence file %s: %w", name, err)
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("livee2e: sync evidence file %s: %w", name, err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("livee2e: close evidence file %s: %w", name, err)
+	}
+	return nil
 }
 
 // orNone keeps an unestablished identity legible in the header. Rendering an

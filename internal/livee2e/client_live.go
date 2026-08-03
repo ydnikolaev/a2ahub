@@ -542,6 +542,7 @@ func (c *ghClient) CheckRuns(ctx context.Context, owner, name, sha string) ([]Ch
 	return out, nil
 }
 
+// CheckAnnotation is one publish-safe provider check annotation.
 type CheckAnnotation struct {
 	Path    string `json:"path"`
 	Message string `json:"message"`

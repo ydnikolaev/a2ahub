@@ -36,7 +36,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e install
+.PHONY: check test check-validators _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -100,8 +100,12 @@ vulncheck: ## govulncheck ./... gated by .govulncheck-allow.txt (NEW called vuln
 	if [ -n "$$new" ]; then printf '%s\n' "$$out"; echo; echo "vulncheck: FAIL — NEW vulnerabilities (not in .govulncheck-allow.txt):$$new"; exit 1; fi; \
 	if [ -n "$$found" ]; then echo "vulncheck: OK — only accepted vulns present:$$(printf '%s' "$$found" | tr '\n' ' ' | sed 's/^/ /')"; else echo "vulncheck: OK — no called vulnerabilities"; fi
 
-live-e2e: ## THE LIVE TIER: the real binary against a real GitHub space (spec 36). Needs A2A_LIVE_E2E_{ORG,PROVISIONER_TOKEN,PARTICIPANT_TOKEN,CANDIDATE_SHA}; CANDIDATE_SHA is the immutable public release candidate used for workflow source and validator. NEVER in `check` or a merge gate. A narrowed A2A_LIVE_E2E_FAMILIES/A2A_LIVE_E2E_CELLS run always exits non-zero.
+live-e2e: ## THE LIVE TIER: exact public candidate against real GitHub. Launch via docs/runbooks/live-e2e/candidate.sh; requires explicit candidate root/SHA/tree/tag/floor/check-log plus two identities. NEVER in `check` or a merge gate. Narrowed family/cell runs always exit non-zero.
 	@bash scripts/verify.sh live
+
+live-e2e-evidence: ## VG-OC-24 release gate. Usage: make live-e2e-evidence EVIDENCE=path/to/evidence.json
+	@test -n "$(EVIDENCE)" || { echo "live-e2e-evidence: set EVIDENCE to the exact candidate's manifest"; exit 2; }
+	@bash scripts/check_live_e2e_evidence.sh "$(EVIDENCE)"
 
 install: ## Put a dev `a2a` on your PATH that always runs THIS source tree (rebuilds when changed).
 	@sh scripts/dev-install.sh
@@ -188,3 +192,4 @@ _harness-check:
 	@bash scripts/tests/check_work_checkpoint_schema_test.sh
 	@bash scripts/tests/check_operational_projection_single_source_test.sh
 	@bash scripts/tests/check_localserver_readonly_routes_test.sh
+	@bash scripts/tests/check_live_e2e_evidence_test.sh

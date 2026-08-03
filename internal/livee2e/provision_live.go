@@ -5,6 +5,7 @@ package livee2e
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -34,7 +35,7 @@ const testSpaceDescription = "a2ahub live-e2e test space — reset by the harnes
 // then re-arm repo settings and protection MIRRORING PRODUCTION
 // (enforce_admins: false — §T6-a: the rig tests the config production
 // actually runs, not a hardened one it does not).
-func (h *harness) ResetSpace(ctx context.Context) error {
+func (h *harness) ResetSpace(ctx context.Context) (retErr error) {
 	if err := h.Cfg.CheckRepo(h.Org, h.Repo); err != nil {
 		return fmt.Errorf("livee2e: ResetSpace: %w", err)
 	}
@@ -53,7 +54,11 @@ func (h *harness) ResetSpace(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("livee2e: ResetSpace: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(work) }()
+	defer func() {
+		if cleanupErr := os.RemoveAll(work); cleanupErr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("livee2e: ResetSpace: remove workspace %s: %w", work, cleanupErr))
+		}
+	}()
 	spaceDir := filepath.Join(work, "space")
 
 	if err := runCmd(ctx, h.Bin, "space", "init", h.SpaceSlug, "--dir", spaceDir); err != nil {
@@ -154,7 +159,7 @@ func (h *harness) ResetSpace(ctx context.Context) error {
 
 func pinCandidateWorkflowFile(spaceDir, sha string) error {
 	path := filepath.Join(spaceDir, ".github", "workflows", "a2a-validate.yml")
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) //nolint:gosec // reason: path is rooted beneath the harness-created scaffold directory.
 	if err != nil {
 		return fmt.Errorf("read caller workflow: %w", err)
 	}
@@ -162,7 +167,7 @@ func pinCandidateWorkflowFile(spaceDir, sha string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, []byte(pinned), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(pinned), 0o644); err != nil { //nolint:gosec // reason: path is rooted beneath the harness-created scaffold directory.
 		return fmt.Errorf("write caller workflow: %w", err)
 	}
 	return nil
@@ -197,7 +202,7 @@ func scaffoldParticipants(spaceDir, org string, pre Preflight) error {
 	}
 
 	manifestPath := filepath.Join(spaceDir, "space.yaml")
-	raw, err := os.ReadFile(manifestPath)
+	raw, err := os.ReadFile(manifestPath) //nolint:gosec // reason: manifestPath is rooted beneath the harness-created scaffold directory.
 	if err != nil {
 		return fmt.Errorf("read space.yaml: %w", err)
 	}
@@ -205,7 +210,7 @@ func scaffoldParticipants(spaceDir, org string, pre Preflight) error {
 	if err != nil {
 		return fmt.Errorf("patch space.yaml participants: %w", err)
 	}
-	if err := os.WriteFile(manifestPath, []byte(patched), 0o644); err != nil {
+	if err := os.WriteFile(manifestPath, []byte(patched), 0o644); err != nil { //nolint:gosec // reason: manifestPath is rooted beneath the harness-created scaffold directory.
 		return fmt.Errorf("write space.yaml: %w", err)
 	}
 
@@ -262,7 +267,7 @@ func gitForcePush(ctx context.Context, dir, remoteURL, token, localRef, branch s
 
 // runCmd execs name with args, capturing stderr for an actionable error.
 func runCmd(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // reason: live harness callers supply fixed git/candidate executables and explicit argv, never artifact text.
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

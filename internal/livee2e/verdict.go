@@ -35,6 +35,9 @@ const (
 	// saying so is the point: a refusal reported as a skip would be
 	// indistinguishable from a pass in a summary line.
 	VerdictRefused
+	// VerdictUnverified is reserved for the two optional P7 provider branches.
+	// It is evidence of a named provider limitation, never a pass.
+	VerdictUnverified
 )
 
 // String renders the verdict for the report. Values are stable report tokens
@@ -52,6 +55,8 @@ func (v Verdict) String() string {
 		return "timed-out"
 	case VerdictRefused:
 		return "refused"
+	case VerdictUnverified:
+		return "unverified"
 	default:
 		// An out-of-range Verdict is a programming error, and the
 		// fail-closed reading of "I do not recognise this" is NOT "pass".

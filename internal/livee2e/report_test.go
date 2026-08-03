@@ -65,6 +65,42 @@ func TestNewRunDeclaresTheWholeMatrixAsNotRun(t *testing.T) {
 	}
 }
 
+func TestReportRendersCandidateSourceAndBinaryAttestation(t *testing.T) {
+	t.Parallel()
+	run := newDemoRun()
+	run.VerificationCandidate = CandidateAttestation{
+		SourceRoot: "/tmp/verification", SourceSHA: strings.Repeat("a", 40),
+		SourceTree: strings.Repeat("b", 40), IntendedTag: "v0.19.0",
+		TemplateFloor: "0.19.0", CheckLog: "/tmp/check.log",
+		SourceDetached: true, IndexClean: true, WorktreeClean: true, UntrackedClean: true,
+	}
+	run.ExecutionCandidate = CandidateAttestation{
+		SourceRoot: "/tmp/execution", SourceSHA: strings.Repeat("a", 40),
+		SourceTree: strings.Repeat("b", 40), IntendedTag: "v0.19.0",
+		TemplateFloor:  "0.19.0",
+		SourceDetached: true, IndexClean: true, WorktreeClean: true, UntrackedClean: true,
+		BinarySHA256: strings.Repeat("c", 64), BuildRevision: strings.Repeat("a", 40),
+		BuildModified: false, BinaryStamp: "a2a 0.19.0 (" + strings.Repeat("a", 40) + ")",
+	}
+	rendered := run.Report().Render()
+	for _, want := range []string{
+		"candidate:   " + strings.Repeat("a", 40),
+		"tree=" + strings.Repeat("b", 40),
+		"verification-source: /tmp/verification",
+		"verification-state: detached=true index-clean=true worktree-clean=true untracked-clean=true",
+		"execution-source: /tmp/execution",
+		"execution-state: detached=true index-clean=true worktree-clean=true untracked-clean=true",
+		"check-log:   /tmp/check.log",
+		"sha256=" + strings.Repeat("c", 64),
+		"vcs.modified=false",
+		"binary-stamp: a2a 0.19.0 (" + strings.Repeat("a", 40) + ")",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("rendered report missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
 // The property that makes a partial run honest: cells nobody reached stay
 // not-run, so a crash halfway cannot render as a short all-green list.
 func TestUnreachedCellsStayNotRun(t *testing.T) {

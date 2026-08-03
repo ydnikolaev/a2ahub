@@ -40,14 +40,16 @@ const harnessSpaceSlug = "livee2e"
 // local checkouts, and the one seam (WaitForRequiredCheck) every family
 // needs and that four independent agents must not each reinvent.
 type harness struct {
-	Cfg       Config
-	Pre       Preflight
-	Org, Repo string
-	SpaceSlug string
-	Bin       string
-	Prov      *ghClient
-	Part      *ghClient
-	A, B      *checkout
+	Cfg                   Config
+	Pre                   Preflight
+	Org, Repo             string
+	SpaceSlug             string
+	Bin                   string
+	VerificationCandidate CandidateAttestation
+	ExecutionCandidate    CandidateAttestation
+	Prov                  *ghClient
+	Part                  *ghClient
+	A, B                  *checkout
 
 	// PRFloor is the highest PR number the space carried at the moment
 	// ResetSpace finished — every write THIS run makes is numbered above it.
@@ -411,12 +413,13 @@ func resolvedCheckRun(res host.CheckStatusResult) CheckRunRef {
 	}
 }
 
-// newHarness builds the binary, resets the test space, constructs both
+// newHarness attests and builds the exact candidate binary, resets the test space, constructs both
 // GitHub clients, and wires both checkouts — the harness every scenario
 // family receives. The returned func cleans up every temp dir this
-// construction created; callers must defer it unconditionally (it is never
+// construction created; callers must defer it unconditionally and report its
+// error (it is never
 // nil, even on an error return, so `h, cleanup, err := newHarness(...);
-// defer cleanup()` is always safe).
+// defer func() { if err := cleanup(); err != nil { ... } }()` is always safe).
 //
 // ResetSpace is called HERE rather than left for the caller to sequence,
 // which departs from a literal reading of "build the binary, construct both
@@ -427,8 +430,8 @@ func resolvedCheckRun(res host.CheckStatusResult) CheckRunRef {
 // Folding it in here is also what spec 36 §T4 calls for: "every run resets
 // the test space to a known state" is a property of USING the harness, not
 // an opt-in step a scenario family might forget.
-func newHarness(ctx context.Context, cfg Config, pre Preflight) (*harness, func(), error) {
-	noop := func() {}
+func newHarness(ctx context.Context, cfg Config, pre Preflight) (*harness, func() error, error) {
+	noop := func() error { return nil }
 
 	if err := assertNoAmbientAPIRoot(os.Getenv); err != nil {
 		return nil, noop, err
@@ -438,34 +441,33 @@ func newHarness(ctx context.Context, cfg Config, pre Preflight) (*harness, func(
 	if err != nil {
 		return nil, noop, fmt.Errorf("livee2e: newHarness: %w", err)
 	}
-	cleanup := func() { _ = os.RemoveAll(work) }
-
-	version, err := harnessBinaryVersion()
-	if err != nil {
-		cleanup()
-		return nil, noop, fmt.Errorf("livee2e: newHarness: %w", err)
+	cleanup := func() error {
+		if err := os.RemoveAll(work); err != nil {
+			return fmt.Errorf("livee2e: remove harness workspace %s: %w", work, err)
+		}
+		return nil
 	}
 
-	bin, err := buildBinary(ctx, work, version)
+	bin, verificationCandidate, executionCandidate, err := buildBinary(ctx, work, cfg.CandidateExpectation())
 	if err != nil {
-		cleanup()
-		return nil, noop, fmt.Errorf("livee2e: newHarness: %w", err)
+		return nil, cleanup, fmt.Errorf("livee2e: newHarness: %w", err)
 	}
 
 	h := &harness{
-		Cfg:       cfg,
-		Pre:       pre,
-		Org:       cfg.Org,
-		Repo:      DefaultRepo,
-		SpaceSlug: harnessSpaceSlug,
-		Bin:       bin,
-		Prov:      &ghClient{Token: cfg.ProvisionerToken},
-		Part:      &ghClient{Token: cfg.ParticipantToken},
+		Cfg:                   cfg,
+		Pre:                   pre,
+		Org:                   cfg.Org,
+		Repo:                  DefaultRepo,
+		SpaceSlug:             harnessSpaceSlug,
+		Bin:                   bin,
+		VerificationCandidate: verificationCandidate,
+		ExecutionCandidate:    executionCandidate,
+		Prov:                  &ghClient{Token: cfg.ProvisionerToken},
+		Part:                  &ghClient{Token: cfg.ParticipantToken},
 	}
 
 	if err := h.ResetSpace(ctx); err != nil {
-		cleanup()
-		return nil, noop, fmt.Errorf("livee2e: newHarness: %w: %w", ErrProvisionFailed, err)
+		return h, cleanup, fmt.Errorf("livee2e: newHarness: %w: %w", ErrProvisionFailed, err)
 	}
 
 	h.A = &checkout{
@@ -481,12 +483,10 @@ func newHarness(ctx context.Context, cfg Config, pre Preflight) (*harness, func(
 
 	spaceURL := "https://github.com/" + h.Org + "/" + h.Repo
 	if err := setupCheckout(ctx, h.A, spaceURL); err != nil {
-		cleanup()
-		return nil, noop, fmt.Errorf("livee2e: newHarness: checkout A: %w", err)
+		return h, cleanup, fmt.Errorf("livee2e: newHarness: checkout A: %w", err)
 	}
 	if err := setupCheckout(ctx, h.B, spaceURL); err != nil {
-		cleanup()
-		return nil, noop, fmt.Errorf("livee2e: newHarness: checkout B: %w", err)
+		return h, cleanup, fmt.Errorf("livee2e: newHarness: checkout B: %w", err)
 	}
 
 	return h, cleanup, nil
