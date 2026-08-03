@@ -186,6 +186,115 @@ func TestCompletedSemanticReplayReturnsExactReceiptAndRejectsChangedBytes(t *tes
 	}
 }
 
+func TestApplyExactPendingPreparedReplayStillSubmits(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newMemoryRepository()
+	identity := testIdentity()
+	prepared := testPrepared(t, ActionCheckpoint, 2, "checkpoint")
+	publisher := &fakePublisher{attempts: []PublishAttempt{
+		testAttempt(t, ConvergenceAccepted, "start"),
+		testAttempt(t, ConvergenceResumable, "pending"),
+		testAttempt(t, ConvergenceAccepted, "accepted"),
+	}}
+	service, err := NewService(repository, publisher, &fakeClock{now: time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Start(ctx, testStart(identity, testPrepared(t, ActionStart, 1, "start"))); err != nil {
+		t.Fatal(err)
+	}
+	command := SemanticCommand{
+		Identity: identity, SubjectRef: "XW-test", Mode: ModeTesting, Summary: "Testing",
+		TTL: DefaultTTL, Prepared: prepared,
+	}
+	if _, err := service.Apply(ctx, command); err != nil {
+		t.Fatal(err)
+	}
+	lease, _, err := repository.Load(ctx, identity.LeaseKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.Pending == nil || !samePrepared(*lease.Pending, prepared) {
+		t.Fatal("first resumable attempt did not persist the exact pending operation")
+	}
+	result, err := service.Apply(ctx, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(publisher.calls) != 3 || result.Shared.Convergence != ConvergenceAccepted {
+		t.Fatalf("exact pending replay result=%+v publisher calls=%d", result, len(publisher.calls))
+	}
+}
+
+func TestApplyOwnerMismatchReturnsOnlyCallerIdentity(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newMemoryRepository()
+	identity := testIdentity()
+	publisher := &fakePublisher{attempts: []PublishAttempt{testAttempt(t, ConvergenceAccepted, "start")}}
+	service, err := NewService(repository, publisher, &fakeClock{now: time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Start(ctx, testStart(identity, testPrepared(t, ActionStart, 1, "start"))); err != nil {
+		t.Fatal(err)
+	}
+	other := identity
+	other.Actor.Session = "session:OTHER"
+	prepared := testPrepared(t, ActionCheckpoint, 2, "other-owner")
+	result, err := service.Apply(ctx, SemanticCommand{
+		Identity: other, SubjectRef: "XW-test", Mode: ModeTesting, Summary: "Testing",
+		TTL: DefaultTTL, Prepared: prepared,
+	})
+	requireErrorIs(t, err, ErrLeaseNotOwned)
+	if result.WorkID != other.WorkID || result.Session != other.Actor.Session ||
+		result.OperationKey != prepared.OperationKey || result.SemanticSequence != prepared.SemanticSequence ||
+		result.LocalState != LocalUnchanged || result.Session == identity.Actor.Session {
+		t.Fatalf("owner mismatch leaked stored identity or lost caller identity: %+v", result)
+	}
+	if len(publisher.calls) != 1 {
+		t.Fatalf("owner mismatch reached publisher; calls=%d", len(publisher.calls))
+	}
+}
+
+func TestLocalOwnerMismatchReturnsOnlyCallerIdentity(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newMemoryRepository()
+	identity := testIdentity()
+	publisher := &fakePublisher{attempts: []PublishAttempt{testAttempt(t, ConvergenceAccepted, "start")}}
+	service, err := NewService(repository, publisher, &fakeClock{now: time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Start(ctx, testStart(identity, testPrepared(t, ActionStart, 1, "start"))); err != nil {
+		t.Fatal(err)
+	}
+	other := identity
+	other.Actor.Session = "session:OTHER"
+	for _, test := range []struct {
+		name string
+		call func() (OperationResult, error)
+	}{
+		{name: "heartbeat", call: func() (OperationResult, error) { return service.Heartbeat(ctx, other, DefaultTTL) }},
+		{name: "resume", call: func() (OperationResult, error) { return service.Resume(ctx, other) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := test.call()
+			requireErrorIs(t, err, ErrLeaseNotOwned)
+			if result.WorkID != other.WorkID || result.Session != other.Actor.Session ||
+				result.LocalState != LocalUnchanged || result.OperationKey != "" || result.SemanticSequence != 0 ||
+				result.Shared.Attempted || result.Session == identity.Actor.Session {
+				t.Fatalf("owner mismatch leaked stored local state: %+v", result)
+			}
+		})
+	}
+}
+
 func TestStopAcceptedRemainsClosingUntilTerminalThenClears(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

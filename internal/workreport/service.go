@@ -84,24 +84,16 @@ func (s *Service) Apply(ctx context.Context, command SemanticCommand) (Operation
 	if err != nil {
 		return emptyResult(command.Identity, command.Prepared), err
 	}
-	if !lease.OwnedBy(command.Identity) {
-		return emptyResult(command.Identity, command.Prepared), ErrLeaseNotOwned
-	}
 	now := s.clock.Now().UTC()
-	if lease.Expired(now) {
-		return resultFor(lease, LocalUnchanged), ErrLeaseExpired
-	}
-	if now.Before(lease.RenewedAt) {
-		return resultFor(lease, LocalUnchanged), ErrClockBackward
-	}
-	if lease.Closing {
-		return resultFor(lease, LocalClosing), ErrLeaseClosing
+	state, err := preflightSemanticContinuation(lease, command.Identity, now, &command.Prepared)
+	if err != nil {
+		if errors.Is(err, ErrLeaseNotOwned) {
+			return emptyResult(command.Identity, command.Prepared), err
+		}
+		return resultFor(lease, state), err
 	}
 	if lease.Pending != nil {
-		if lease.Pending.OperationKey == command.Prepared.OperationKey && samePrepared(*lease.Pending, command.Prepared) {
-			return s.submit(ctx, lease.Identity, command.Prepared.OperationKey, resultFor(lease, localState(lease)))
-		}
-		return resultFor(lease, localState(lease)), ErrPendingOperation
+		return s.submit(ctx, lease.Identity, command.Prepared.OperationKey, resultFor(lease, state))
 	}
 	if command.Prepared.SemanticSequence == lease.SemanticSequence {
 		if lease.LastResult != nil && receiptMatches(*lease.LastResult, command.Prepared) {
@@ -138,6 +130,38 @@ func (s *Service) Apply(ctx context.Context, command SemanticCommand) (Operation
 	return s.submit(ctx, lease.Identity, command.Prepared.OperationKey, resultFor(lease, localState(lease)))
 }
 
+// preflightSemanticContinuation centralizes the stable pre-CAS refusal order
+// used by both Coordinator and Service. A nil prepared value is a fresh
+// coordinator request and therefore cannot replay a pending operation. Service
+// supplies the final prepared value so an exact pending retry remains legal;
+// its later CAS is still authoritative over races after this observation.
+func preflightSemanticContinuation(
+	lease Lease,
+	identity Identity,
+	now time.Time,
+	prepared *PreparedOperation,
+) (LocalState, error) {
+	if !lease.OwnedBy(identity) {
+		return LocalUnchanged, ErrLeaseNotOwned
+	}
+	if lease.Expired(now) {
+		return LocalUnchanged, ErrLeaseExpired
+	}
+	if now.Before(lease.RenewedAt) {
+		return LocalUnchanged, ErrClockBackward
+	}
+	if lease.Closing {
+		return LocalClosing, ErrLeaseClosing
+	}
+	if lease.Pending != nil {
+		if prepared != nil && samePrepared(*lease.Pending, *prepared) {
+			return localState(lease), nil
+		}
+		return localState(lease), ErrPendingOperation
+	}
+	return localState(lease), nil
+}
+
 func (s *Service) Heartbeat(ctx context.Context, identity Identity, ttl time.Duration) (OperationResult, error) {
 	if err := validateTTL(ttl); err != nil {
 		return OperationResult{WorkID: identity.WorkID, Session: identity.Actor.Session, LocalState: LocalUnchanged}, err
@@ -147,7 +171,7 @@ func (s *Service) Heartbeat(ctx context.Context, identity Identity, ttl time.Dur
 		return OperationResult{WorkID: identity.WorkID, Session: identity.Actor.Session, LocalState: LocalUnchanged}, err
 	}
 	if !lease.OwnedBy(identity) {
-		return resultFor(lease, LocalUnchanged), ErrLeaseNotOwned
+		return OperationResult{WorkID: identity.WorkID, Session: identity.Actor.Session, LocalState: LocalUnchanged}, ErrLeaseNotOwned
 	}
 	now := s.clock.Now().UTC()
 	if lease.Closing {
@@ -181,7 +205,7 @@ func (s *Service) Resume(ctx context.Context, identity Identity) (OperationResul
 		return OperationResult{WorkID: identity.WorkID, Session: identity.Actor.Session, LocalState: LocalUnchanged}, err
 	}
 	if !lease.OwnedBy(identity) {
-		return resultFor(lease, LocalUnchanged), ErrLeaseNotOwned
+		return OperationResult{WorkID: identity.WorkID, Session: identity.Actor.Session, LocalState: LocalUnchanged}, ErrLeaseNotOwned
 	}
 	if lease.Pending == nil {
 		return resultFor(lease, localState(lease)), ErrNoPendingOperation
