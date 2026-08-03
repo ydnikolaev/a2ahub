@@ -1,9 +1,9 @@
 package validate
 
 import (
-	"regexp"
-	"strings"
 	"unicode/utf8"
+
+	"github.com/ydnikolaev/a2ahub/internal/sensitive"
 )
 
 // DefaultMaxArtifactBytes is CC-006's bounded-read limit: a "configurable,
@@ -30,50 +30,6 @@ const DefaultMaxArtifactBytes = 2 << 20 // 2 MiB
 // NOT added, per that same false-positive budget: bare email/PII, a
 // generic long hex/base64 blob (legit hashes/commit SHAs/IDs), and any
 // entropy-only heuristic — see this phase's Deviations report.
-var secretPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`AKIA[0-9A-Z]{16}`),
-	regexp.MustCompile(`ghp_[A-Za-z0-9]{36}`),
-	regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`),
-	// GitHub extra token prefixes (OAuth/user-to-server/server-to-server/
-	// refresh) alongside the existing ghp_ (personal access token).
-	regexp.MustCompile(`gh[ours]_[A-Za-z0-9]{36}`),
-	// GitHub fine-grained personal access token.
-	regexp.MustCompile(`github_pat_[0-9a-zA-Z_]{60,}`),
-	// Slack bot/app/legacy/refresh token shapes.
-	regexp.MustCompile(`xox[baprs]-[0-9A-Za-z-]{10,}`),
-	// Slack incoming-webhook URL.
-	regexp.MustCompile(`https://hooks\.slack\.com/services/[A-Za-z0-9/]+`),
-	// GitLab personal access token.
-	regexp.MustCompile(`glpat-[0-9A-Za-z_-]{20,}`),
-	// JWT: three base64url segments (header.payload.signature); both the
-	// header and a typical claims-object payload start with the base64
-	// encoding of `{"` (`eyJ`), a distinctive-enough anchor.
-	regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`),
-	// Google API key.
-	regexp.MustCompile(`AIza[0-9A-Za-z_-]{35}`),
-	// Stripe live secret key.
-	regexp.MustCompile(`sk_live_[0-9A-Za-z]{24,}`),
-	// Authorization: Bearer <token> header, inline in a body.
-	regexp.MustCompile(`Bearer\s+[A-Za-z0-9._-]{20,}`),
-}
-
-// secretIdentifierPrefixes is the operational-confidence closed denylist for identifier
-// fields such as actor.session. These short prefixes are intentionally NOT
-// applied to arbitrary prose by scanForSecrets: values like "sk-" can occur
-// innocently in a body, while they are never valid at the start of an opaque
-// non-secret session identifier.
-var secretIdentifierPrefixes = []string{
-	"token:",
-	"password:",
-	"bearer:",
-	"ghp_",
-	"github_pat_",
-	"glpat-",
-	"sk-",
-	"xoxb-",
-	"xoxp-",
-}
-
 // scanForSecrets is the V2 policy class's secret-scan rule (CC-010,
 // AC-203.1): ALL text content crossing the boundary is in scope (§10.4);
 // callers pass the artifact's full raw bytes (envelope + body), not just
@@ -92,25 +48,14 @@ func scanForSecrets(raw []byte) []Violation {
 // identifier. It reuses every general secret pattern above and additionally
 // applies the case-insensitive closed prefix denylist for session IDs.
 func scanSecretIdentifier(value, path string) []Violation {
-	lower := strings.ToLower(value)
-	for _, prefix := range secretIdentifierPrefixes {
-		if strings.HasPrefix(lower, prefix) {
-			return []Violation{secretViolation(path, "identifier resembles a credential; use an opaque non-secret value")}
-		}
-	}
-	if matchesSecretPattern(value) {
+	if sensitive.Identifier(value) {
 		return []Violation{secretViolation(path, "identifier matches a forbidden secret/credential pattern")}
 	}
 	return nil
 }
 
 func matchesSecretPattern(content string) bool {
-	for _, pattern := range secretPatterns {
-		if pattern.MatchString(content) {
-			return true
-		}
-	}
-	return false
+	return sensitive.ContainsContent(content)
 }
 
 func secretViolation(path, message string) Violation {
