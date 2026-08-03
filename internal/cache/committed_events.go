@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/provenance"
 	"gopkg.in/yaml.v3"
 )
 
@@ -29,34 +30,58 @@ type mirrorCommittedEvent struct {
 	Event      string `yaml:"event"`
 	Subject    string `yaml:"subject"`
 	Transition string `yaml:"transition"`
+	State      string `yaml:"state"`
 	Version    string `yaml:"version"`
 	Actor      struct {
-		Kind   string `yaml:"kind"`
-		Name   string `yaml:"name"`
-		System string `yaml:"system"`
+		Kind    string `yaml:"kind"`
+		Name    string `yaml:"name"`
+		System  string `yaml:"system"`
+		Model   string `yaml:"model"`
+		Session string `yaml:"session"`
 	} `yaml:"actor"`
+	ProducedBy struct {
+		Tool    string `yaml:"tool"`
+		Version string `yaml:"version"`
+	} `yaml:"produced_by"`
 }
 
-// CommittedEvents reads every committed event/v1 YAML file under
-// mirrorDir/system/events/<year>/*.yaml and returns the subset whose
-// `subject` equals subject, as fold.Event values (ULID/Subject/
-// Transition/Version/Actor only — no ClaimedState, no CommitSeq: the
-// identical shape the two former adapter-local copies produced, now with
-// Version added so a contract publish/deprecate/retire read through this
-// path carries its per-version fact instead of silently dropping it). An
-// absent events/ directory (fresh mirror, nothing committed for this
-// system yet) returns (nil, nil), never an error.
+// CommittedEventHistory is the compatibility-preserving committed-event read:
+// Events remains fold's minimal input, while EvidenceByULID retains bounded
+// diagnostic fields that must never participate in lifecycle behavior.
+type CommittedEventHistory struct {
+	Events         []fold.Event
+	EvidenceByULID map[string]provenance.EventEvidence
+}
+
+// CommittedEvents preserves the original []fold.Event API used by CLI/MCP
+// legality adapters. It delegates to CommittedEventsWithEvidence so receipt
+// decoding has one implementation; actor model/session and producer metadata
+// remain outside fold.Event by construction.
 func CommittedEvents(mirrorDir, system, subject string) ([]fold.Event, error) {
+	history, err := CommittedEventsWithEvidence(mirrorDir, system, subject)
+	if err != nil {
+		return nil, err
+	}
+	return history.Events, nil
+}
+
+// CommittedEventsWithEvidence reads every committed event/v1 YAML file under
+// mirrorDir/system/events/<year>/*.yaml and returns the subject-filtered fold
+// inputs plus a provenance sidecar keyed by event ULID. Receipt state is also
+// copied into fold.Event.ClaimedState because fold owns receipt comparison;
+// model/session/producer values never enter fold input. An absent events/
+// directory returns a zero history and nil error.
+func CommittedEventsWithEvidence(mirrorDir, system, subject string) (CommittedEventHistory, error) {
 	dir := filepath.Join(mirrorDir, system, "events")
 	years, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return CommittedEventHistory{}, nil
 		}
-		return nil, err
+		return CommittedEventHistory{}, err
 	}
 
-	var out []fold.Event
+	var history CommittedEventHistory
 	for _, year := range years {
 		if !year.IsDir() {
 			continue
@@ -64,7 +89,7 @@ func CommittedEvents(mirrorDir, system, subject string) ([]fold.Event, error) {
 		yearDir := filepath.Join(dir, year.Name())
 		files, err := os.ReadDir(yearDir)
 		if err != nil {
-			return nil, err
+			return CommittedEventHistory{}, err
 		}
 		for _, f := range files {
 			if f.IsDir() || !strings.HasSuffix(f.Name(), ".yaml") {
@@ -72,23 +97,35 @@ func CommittedEvents(mirrorDir, system, subject string) ([]fold.Event, error) {
 			}
 			raw, err := readBounded(filepath.Join(yearDir, f.Name()), maxCacheReadBytes)
 			if err != nil {
-				return nil, err
+				return CommittedEventHistory{}, err
 			}
 			var ev mirrorCommittedEvent
 			if err := yaml.Unmarshal(raw, &ev); err != nil {
-				return nil, fmt.Errorf("cache: decode committed event %s: %w", f.Name(), err)
+				return CommittedEventHistory{}, fmt.Errorf("cache: decode committed event %s: %w", f.Name(), err)
 			}
 			if ev.Subject != subject {
 				continue
 			}
-			out = append(out, fold.Event{
-				ULID:       ev.Event,
-				Subject:    ev.Subject,
-				Transition: ev.Transition,
-				Version:    canonicalEventVersion(ev.Version),
-				Actor:      fold.Actor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
+			history.Events = append(history.Events, fold.Event{
+				ULID:         ev.Event,
+				Subject:      ev.Subject,
+				Transition:   ev.Transition,
+				ClaimedState: fold.State(ev.State),
+				Version:      canonicalEventVersion(ev.Version),
+				Actor:        fold.Actor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
 			})
+			if history.EvidenceByULID == nil {
+				history.EvidenceByULID = make(map[string]provenance.EventEvidence)
+			}
+			history.EvidenceByULID[ev.Event] = provenance.NewEventEvidence(
+				ev.State,
+				provenance.Actor{
+					Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System,
+					Model: ev.Actor.Model, Session: ev.Actor.Session,
+				},
+				provenance.Producer{Tool: ev.ProducedBy.Tool, Version: ev.ProducedBy.Version},
+			)
 		}
 	}
-	return out, nil
+	return history, nil
 }
