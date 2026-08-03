@@ -128,13 +128,14 @@ func (f *FakeHost) TokenScopes(ctx context.Context, cred Credential) ([]string, 
 	return []string{"repo", "workflow"}, true, nil
 }
 
-// CheckStatus delegates to CheckStatusFunc, or reports a green check by
-// default.
+// CheckStatus delegates to CheckStatusFunc, or reports a head-bound green
+// check by default. A green conclusion without HeadSHA is deliberately
+// unusable by the real funnel because it cannot authorize a merge mutation.
 func (f *FakeHost) CheckStatus(ctx context.Context, req StatusRequest) (CheckStatusResult, error) {
 	if f.CheckStatusFunc != nil {
 		return f.CheckStatusFunc(ctx, req)
 	}
-	return CheckStatusResult{State: "completed", Conclusion: "success"}, nil
+	return CheckStatusResult{State: "completed", Conclusion: "success", HeadSHA: "fake-checked-head"}, nil
 }
 
 // ReviewStatus delegates to ReviewStatusFunc, or reports "approved" by
