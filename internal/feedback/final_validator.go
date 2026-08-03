@@ -15,6 +15,7 @@ import (
 // instead of wiring a nil dependency.
 type FinalSubmitValidator struct{}
 
+// ValidateSubmit validates the exact feedback bytes frozen by the shared funnel.
 func (FinalSubmitValidator) ValidateSubmit(_ context.Context, files []space.FileWrite) error {
 	if len(files) != 1 {
 		return fmt.Errorf("feedback: final submission must contain exactly one report")

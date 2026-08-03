@@ -28,9 +28,11 @@ const (
 var (
 	// ErrWorkSelectionAmbiguous refuses an under-specified local selection.
 	// The error deliberately carries no candidate identities or cache paths.
+	// ErrWorkSelectionAmbiguous is part of the public package API.
 	ErrWorkSelectionAmbiguous = errors.New("local work selection is ambiguous")
 	// ErrWorkLeaseEnumerationLimit refuses a cache directory whose entry or
 	// byte bounds no longer permit a complete, fail-closed view.
+	// ErrWorkLeaseEnumerationLimit is part of the public package API.
 	ErrWorkLeaseEnumerationLimit = errors.New("local work lease enumeration limit exceeded")
 )
 
@@ -40,14 +42,17 @@ type workLeaseStoreConfig struct {
 
 type wallClock struct{}
 
+// Now is part of the public package API.
 func (wallClock) Now() time.Time { return time.Now() }
 
 // WorkLeaseStoreOption configures a WorkLeaseStore without weakening its
 // rooted filesystem capability.
+// WorkLeaseStoreOption is part of the public package API.
 type WorkLeaseStoreOption func(*workLeaseStoreConfig) error
 
 // WithWorkLeaseClock injects the clock used only for read-time expiry
 // decisions. Lease mutation continues to receive its clock from workreport.
+// WithWorkLeaseClock is part of the public package API.
 func WithWorkLeaseClock(clock workreport.Clock) WorkLeaseStoreOption {
 	return func(config *workLeaseStoreConfig) error {
 		if clock == nil {
@@ -61,6 +66,7 @@ func WithWorkLeaseClock(clock workreport.Clock) WorkLeaseStoreOption {
 // WorkLeaseStore persists disposable work leases beneath one already-trusted
 // cache root. The held os.Root capability keeps every later operation bound to
 // the directory opened by the constructor even if its pathname is replaced.
+// WorkLeaseStore is part of the public package API.
 type WorkLeaseStore struct {
 	root        *os.Root
 	randomToken func() (string, error)
@@ -75,6 +81,7 @@ type heldWorkLeaseLock struct {
 // directory when absent. cacheRoot itself must already exist and must not be a
 // symbolic link; selection and creation of that trusted cache root belongs to
 // project configuration, not lease data.
+// NewWorkLeaseStore is part of the public package API.
 func NewWorkLeaseStore(cacheRoot string, options ...WorkLeaseStoreOption) (*WorkLeaseStore, error) {
 	config := workLeaseStoreConfig{clock: wallClock{}}
 	for _, option := range options {
@@ -178,6 +185,7 @@ func (s *WorkLeaseStore) Close() error {
 	return s.root.Close()
 }
 
+// Load is part of the public package API.
 func (s *WorkLeaseStore) Load(ctx context.Context, key string) (workreport.Lease, workreport.Revision, error) {
 	if err := ctx.Err(); err != nil {
 		return workreport.Lease{}, "", err
@@ -208,6 +216,7 @@ func (s *WorkLeaseStore) Load(ctx context.Context, key string) (workreport.Lease
 // explicit selectors may resolve an expired owner so resume can replay its
 // exact pending journal. Absence uses the repository's existing typed
 // ErrLeaseNotFound refusal and ambiguity has its own typed refusal.
+// ResolveWork is part of the public package API.
 func (s *WorkLeaseStore) ResolveWork(
 	ctx context.Context,
 	projectID string,
@@ -258,6 +267,7 @@ func (s *WorkLeaseStore) ResolveWork(
 // ListWork returns detached, deterministically ordered leases scoped to one
 // project and space. It never interprets pending or closing as activity:
 // includeExpired=false applies the sole currentness rule now > expires_at.
+// ListWork is part of the public package API.
 func (s *WorkLeaseStore) ListWork(
 	ctx context.Context,
 	projectID string,
@@ -451,6 +461,7 @@ func isLowerHex(value string) bool {
 	return true
 }
 
+// CompareAndSwap is part of the public package API.
 func (s *WorkLeaseStore) CompareAndSwap(ctx context.Context, key string, expected workreport.Revision, next *workreport.Lease) (revision workreport.Revision, retErr error) {
 	name, err := workLeaseFilename(key)
 	if err != nil {

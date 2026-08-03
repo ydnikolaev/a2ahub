@@ -35,6 +35,7 @@ type verifiedContractPublicationHead struct {
 // ContractPublicationRecovery is the production remote-head proof and PR-only
 // repair adapter. A repair is accepted only for a proof minted by the same
 // adapter after reading the remote commit and its complete resulting tree.
+// ContractPublicationRecovery is part of the public package API.
 type ContractPublicationRecovery struct {
 	host              contractPublicationRecoveryHost
 	repoDir           string
@@ -49,12 +50,14 @@ type ContractPublicationRecovery struct {
 	verified map[string]verifiedContractPublicationHead
 }
 
+// ContractPublicationRecoveryValidation is part of the public package API.
 type ContractPublicationRecoveryValidation struct {
 	ManifestValidator ManifestValidator
 	HistoryValidator  ContractHistoryDocumentValidator
 	Compatibility     contract.CompatibilityChecker
 }
 
+// NewContractPublicationRecovery is part of the public package API.
 func NewContractPublicationRecovery(h contractPublicationRecoveryHost, repoDir, remoteURL string, repository host.Repo, credential host.Credential, validation ContractPublicationRecoveryValidation) (*ContractPublicationRecovery, error) {
 	if h == nil || strings.TrimSpace(repoDir) == "" || strings.TrimSpace(remoteURL) == "" || repository.Owner == "" || repository.Name == "" ||
 		validation.ManifestValidator == nil || validation.HistoryValidator == nil || validation.Compatibility == nil {
@@ -67,6 +70,7 @@ func NewContractPublicationRecovery(h contractPublicationRecoveryHost, repoDir, 
 	}, nil
 }
 
+// ProbeContractPublicationHeads is part of the public package API.
 func (r *ContractPublicationRecovery) ProbeContractPublicationHeads(ctx context.Context, request ContractPublicationHeadProbeRequest) (ContractPublicationHeadListing, error) {
 	if r == nil || request.MaximumHeads != hostContractPublishHeadLimit || request.NamespacePrefix == "" {
 		return ContractPublicationHeadListing{}, ErrContractPublicationInvalid
@@ -125,7 +129,7 @@ func (r *ContractPublicationRecovery) proveHead(ctx context.Context, request Con
 		return ContractPublicationHeadProof{}, record, false, nil
 	}
 	var recoveredPlan contract.PublicationPlan
-	if err := r.verifyPublicationTree(ctx, request, record, parent, head, message, authorName, authorEmail, changes, &recoveredPlan); err != nil {
+	if err := r.verifyPublicationTree(ctx, record, parent, head, message, authorName, authorEmail, changes, &recoveredPlan); err != nil {
 		return ContractPublicationHeadProof{}, RecoveryV1{}, false, err
 	}
 	raw, err := EncodeRecoveryV1(record)
@@ -137,7 +141,7 @@ func (r *ContractPublicationRecovery) proveHead(ctx context.Context, request Con
 	}, record, true, nil
 }
 
-func (r *ContractPublicationRecovery) verifyPublicationTree(ctx context.Context, request ContractPublicationHeadProbeRequest, record RecoveryV1, parent, head, message, authorName, authorEmail string, changes map[string]host.RemoteRecoveryChange, recoveredPlan *contract.PublicationPlan) error {
+func (r *ContractPublicationRecovery) verifyPublicationTree(ctx context.Context, record RecoveryV1, parent, head, message, authorName, authorEmail string, changes map[string]host.RemoteRecoveryChange, recoveredPlan *contract.PublicationPlan) error {
 	contractID, target, ok := strings.Cut(record.Target, "@")
 	if !ok || operation.ContractPublish(record.System, contractID, target) != record.OperationKey {
 		return remoteRecoveryConflict("publication-target-operation")
@@ -396,6 +400,7 @@ func (r *ContractPublicationRecovery) verifyRecomputedPublication(
 	return nil
 }
 
+// RepairContractPublicationHead is part of the public package API.
 func (r *ContractPublicationRecovery) RepairContractPublicationHead(ctx context.Context, proof ContractPublicationHeadProof, runtime SubmissionRuntime) (WriteResult, error) {
 	if r == nil || runtime.RepoDir != r.repoDir || runtime.RemoteURL != r.remoteURL || runtime.TargetIdentity != repositoryIdentity(r.repository) {
 		return WriteResult{}, ErrPreparedTargetStale

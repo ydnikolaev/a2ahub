@@ -13,8 +13,11 @@ import (
 const preparedJournalMaxBytes = 24 * 1024
 
 var (
-	ErrPreparedNotJournalable  = errors.New("space: delete-bearing prepared submission is not journalable")
-	ErrPreparedJournalInvalid  = errors.New("space: invalid prepared submission journal")
+	// ErrPreparedNotJournalable is part of the public package API.
+	ErrPreparedNotJournalable = errors.New("space: delete-bearing prepared submission is not journalable")
+	// ErrPreparedJournalInvalid is part of the public package API.
+	ErrPreparedJournalInvalid = errors.New("space: invalid prepared submission journal")
+	// ErrPreparedJournalTooLarge is part of the public package API.
 	ErrPreparedJournalTooLarge = errors.New("space: prepared submission journal exceeds 24 KiB")
 )
 
@@ -55,7 +58,7 @@ func EncodePreparedSubmissionJournal(prepared PreparedSubmission) ([]byte, error
 	encoder := json.NewEncoder(&out)
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(wire); err != nil {
-		return nil, fmt.Errorf("%w: encode: %v", ErrPreparedJournalInvalid, err)
+		return nil, fmt.Errorf("%w: encode: %w", ErrPreparedJournalInvalid, err)
 	}
 	raw := bytes.TrimSuffix(out.Bytes(), []byte("\n"))
 	if len(raw) > preparedJournalMaxBytes {
@@ -66,6 +69,7 @@ func EncodePreparedSubmissionJournal(prepared PreparedSubmission) ([]byte, error
 
 // DecodePreparedSubmissionJournal accepts only the closed canonical v1 form
 // and reconstructs no authority: any delete operation is refused.
+// DecodePreparedSubmissionJournal is part of the public package API.
 func DecodePreparedSubmissionJournal(raw []byte) (PreparedSubmission, error) {
 	if len(raw) > preparedJournalMaxBytes {
 		return PreparedSubmission{}, ErrPreparedJournalTooLarge
@@ -74,13 +78,13 @@ func DecodePreparedSubmissionJournal(raw []byte) (PreparedSubmission, error) {
 		return PreparedSubmission{}, ErrPreparedJournalInvalid
 	}
 	if err := rejectDuplicateJSONKeys(raw); err != nil {
-		return PreparedSubmission{}, fmt.Errorf("%w: %v", ErrPreparedJournalInvalid, err)
+		return PreparedSubmission{}, fmt.Errorf("%w: %w", ErrPreparedJournalInvalid, err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	var wire preparedJournalV1
 	if err := decoder.Decode(&wire); err != nil {
-		return PreparedSubmission{}, fmt.Errorf("%w: %v", ErrPreparedJournalInvalid, err)
+		return PreparedSubmission{}, fmt.Errorf("%w: %w", ErrPreparedJournalInvalid, err)
 	}
 	if wire.Version != preparedVersion || wire.PreparedDigest == "" || wire.Payload.Version != preparedVersion {
 		return PreparedSubmission{}, ErrPreparedJournalInvalid
@@ -145,10 +149,12 @@ func DecodePreparedSubmissionJournal(raw []byte) (PreparedSubmission, error) {
 	return PreparedSubmission{data: clonePreparedData(data)}, nil
 }
 
+// MarshalJSON is part of the public package API.
 func (p PreparedSubmission) MarshalJSON() ([]byte, error) {
 	return EncodePreparedSubmissionJournal(p)
 }
 
+// UnmarshalJSON is part of the public package API.
 func (p *PreparedSubmission) UnmarshalJSON(raw []byte) error {
 	decoded, err := DecodePreparedSubmissionJournal(raw)
 	if err != nil {
@@ -192,7 +198,7 @@ func mutationsToWire(mutations []Mutation) []preparedMutationWire {
 }
 
 func mutationsFromWire(wire []preparedMutationWire) ([]Mutation, error) {
-	if wire == nil || len(wire) == 0 || len(wire) > maxMutationCount {
+	if len(wire) == 0 || len(wire) > maxMutationCount {
 		return nil, ErrPreparedJournalInvalid
 	}
 	out := make([]Mutation, len(wire))

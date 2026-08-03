@@ -143,7 +143,6 @@ func TestContractMaterializerRejectsUnsafeOrMissingDestinationWithZeroChanges(t 
 	t.Parallel()
 
 	for _, destination := range []string{"", ".", "/tmp/out", "../out", "vendor/../out", "vendor\\out", "vendor//out"} {
-		destination := destination
 		t.Run(strings.ReplaceAll(destination, "/", "_"), func(t *testing.T) {
 			t.Parallel()
 			project := t.TempDir()
@@ -197,7 +196,6 @@ func TestContractMaterializerCrossChecksRawDescriptorAndEventIdentity(t *testing
 			}
 		}},
 	} {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			project := t.TempDir()
@@ -292,7 +290,6 @@ func TestContractMaterializerRechecksConcurrentWinnerAndSymlinkRaces(t *testing.
 	t.Parallel()
 
 	for _, identical := range []bool{true, false} {
-		identical := identical
 		t.Run(map[bool]string{true: "identical", false: "divergent"}[identical], func(t *testing.T) {
 			t.Parallel()
 			project := t.TempDir()

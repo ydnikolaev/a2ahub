@@ -271,7 +271,6 @@ func TestVerifyDigestRequiresFullLowercaseSHA256(t *testing.T) {
 		"md5:" + strings.Repeat("0", 64),
 		"sha256:" + strings.Repeat("0", 63),
 	} {
-		invalid := invalid
 		t.Run(invalid, func(t *testing.T) {
 			t.Parallel()
 			assertIssue(t, set.VerifyDigest(invalid), IssueDigestMismatch)

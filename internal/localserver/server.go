@@ -15,29 +15,47 @@ import (
 )
 
 const (
-	DefaultListen          = "127.0.0.1:8765"
-	DefaultRefresh         = 2 * time.Second
-	MinimumRefresh         = 250 * time.Millisecond
-	MaximumRefresh         = time.Minute
-	MinimumSyncEvery       = 15 * time.Second
-	MaximumSyncEvery       = 24 * time.Hour
-	DefaultSSEClients      = 32
-	MaximumSSEClients      = 256
+	// DefaultListen is the loopback address used when no listener is configured.
+	DefaultListen = "127.0.0.1:8765"
+	// DefaultRefresh is the default interval between snapshot refreshes.
+	DefaultRefresh = 2 * time.Second
+	// MinimumRefresh is the shortest permitted snapshot refresh interval.
+	MinimumRefresh = 250 * time.Millisecond
+	// MaximumRefresh is the longest permitted snapshot refresh interval.
+	MaximumRefresh = time.Minute
+	// MinimumSyncEvery is the shortest permitted fetch refresh interval.
+	MinimumSyncEvery = 15 * time.Second
+	// MaximumSyncEvery is the longest permitted fetch refresh interval.
+	MaximumSyncEvery = 24 * time.Hour
+	// DefaultSSEClients is the default number of concurrent SSE clients.
+	DefaultSSEClients = 32
+	// MaximumSSEClients is the maximum number of concurrent SSE clients.
+	MaximumSSEClients = 256
+	// DefaultSnapshotWriters is the default concurrent snapshot response limit.
 	DefaultSnapshotWriters = 4
-	MaximumRetainedBodies  = 5
-	DefaultMaxShellBytes   = 4 << 20
-	DefaultWriteDeadline   = 2 * time.Second
-	DefaultKeepalive       = 15 * time.Second
-	DefaultMaxHeaderBytes  = 8 << 10
+	// MaximumRetainedBodies bounds retained response bodies.
+	MaximumRetainedBodies = 5
+	// DefaultMaxShellBytes bounds the default dashboard document size.
+	DefaultMaxShellBytes = 4 << 20
+	// DefaultWriteDeadline bounds individual response writes.
+	DefaultWriteDeadline = 2 * time.Second
+	// DefaultKeepalive is the SSE idle keepalive interval.
+	DefaultKeepalive = 15 * time.Second
+	// DefaultMaxHeaderBytes bounds HTTP request headers.
+	DefaultMaxHeaderBytes = 8 << 10
 )
 
 var (
-	ErrInvalidConfig            = errors.New("localserver: invalid configuration")
-	ErrSnapshotUnavailable      = errors.New("localserver: snapshot unavailable")
+	// ErrInvalidConfig reports invalid server configuration or lifecycle use.
+	ErrInvalidConfig = errors.New("localserver: invalid configuration")
+	// ErrSnapshotUnavailable reports a missing, invalid, or oversized snapshot.
+	ErrSnapshotUnavailable = errors.New("localserver: snapshot unavailable")
+	// ErrDegradedSnapshotRequired reports a sync error without explicit degradation.
 	ErrDegradedSnapshotRequired = errors.New("localserver: sync error requires an explicit degraded snapshot")
 	revisionPattern             = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 )
 
+// Config bounds the loopback HTTP server and its refresh behavior.
 type Config struct {
 	Listen            string
 	Refresh           time.Duration
@@ -54,6 +72,7 @@ type Config struct {
 	ShutdownTimeout   time.Duration
 }
 
+// DefaultConfig returns the safe localserver configuration.
 func DefaultConfig() Config {
 	return Config{
 		Listen: DefaultListen, Refresh: DefaultRefresh, SSEKeepalive: DefaultKeepalive,
@@ -199,6 +218,7 @@ func (s *snapshotStore) close() {
 	}
 }
 
+// Server exposes a read-only local operational snapshot and dashboard.
 type Server struct {
 	config   Config
 	reader   SnapshotReader
@@ -218,6 +238,7 @@ type Server struct {
 	serving      bool
 }
 
+// New creates a local server with explicit snapshot and rendering dependencies.
 func New(config Config, reader SnapshotReader, syncer FetchSyncer, renderer ShellRenderer, tickers TickerFactory) (*Server, error) {
 	normalized, err := config.normalized()
 	if err != nil {
@@ -237,8 +258,10 @@ func New(config Config, reader SnapshotReader, syncer FetchSyncer, renderer Shel
 	}, nil
 }
 
+// Handler returns the read-only HTTP handler.
 func (s *Server) Handler() http.Handler { return s.routeHandler() }
 
+// LastError returns the most recent background refresh or sync error.
 func (s *Server) LastError() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -260,7 +283,7 @@ func (s *Server) publish(ctx context.Context, snapshot operational.Snapshot) err
 	}
 	body, err := operational.CanonicalJSON(snapshot)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrSnapshotUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrSnapshotUnavailable, err)
 	}
 	if len(body) > s.config.MaxSnapshotBytes {
 		return fmt.Errorf("%w: snapshot has %d bytes, maximum %d", ErrSnapshotUnavailable, len(body), s.config.MaxSnapshotBytes)
@@ -351,6 +374,7 @@ func (s *Server) syncLoop(ctx context.Context) {
 	}
 }
 
+// Serve publishes snapshots and serves the supplied loopback listener until cancellation.
 func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 	if err := validateListener(listener); err != nil {
 		return err
@@ -370,7 +394,7 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 		s.mu.Lock()
 		s.serving = false
 		s.mu.Unlock()
-		return fmt.Errorf("%w: %v", ErrSnapshotUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrSnapshotUnavailable, err)
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)

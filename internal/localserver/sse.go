@@ -5,6 +5,7 @@ import (
 	"sync"
 )
 
+// ErrClientLimit reports that the bounded SSE broker cannot accept a client.
 var ErrClientLimit = errors.New("localserver: SSE client limit reached")
 
 type revisionBroker struct {

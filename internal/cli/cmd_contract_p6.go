@@ -30,15 +30,18 @@ type ContractPublicationOperations interface {
 	Publish(context.Context, ContractPublicationRequest) (space.ContractPublicationResult, error)
 }
 
+// ContractMaterializeRequest is the CLI request for an exported contract tree.
 type ContractMaterializeRequest struct {
 	Ref         string
 	Destination string
 }
 
+// ContractMaterializeOperation materializes a contract into a rooted destination.
 type ContractMaterializeOperation interface {
 	MaterializeContract(context.Context, ContractMaterializeRequest) (space.ContractMaterializeResult, error)
 }
 
+// ContractCheckRequest is the CLI request for contract conformance checking.
 type ContractCheckRequest struct {
 	Ref         string
 	PayloadPath string
@@ -46,16 +49,19 @@ type ContractCheckRequest struct {
 	Suite       bool
 }
 
+// ContractCheckOperation checks a contract using the shared conformance service.
 type ContractCheckOperation interface {
 	CheckContract(context.Context, ContractCheckRequest) (contract.ConformanceResult, error)
 }
 
+// ContractDiffRequest selects two contract versions to compare.
 type ContractDiffRequest struct {
 	ID string
 	V1 string
 	V2 string
 }
 
+// ContractDiffResult describes paths that differ between two contract versions.
 type ContractDiffResult struct {
 	Added              []string `json:"added"`
 	Removed            []string `json:"removed"`
@@ -63,11 +69,13 @@ type ContractDiffResult struct {
 	FrontmatterChanged []string `json:"frontmatter_changed"`
 }
 
+// ContractVerifyExportRequest selects a local export and its expected source ref.
 type ContractVerifyExportRequest struct {
 	Local string
 	Ref   string
 }
 
+// ContractVerifyExportResult reports whether a local export matches its source.
 type ContractVerifyExportResult struct {
 	ID          string             `json:"id"`
 	Matches     bool               `json:"matches"`
@@ -76,6 +84,7 @@ type ContractVerifyExportResult struct {
 	Diff        ContractDiffResult `json:"diff,omitempty"`
 }
 
+// ContractInspectionOperations provides read-only contract inspection operations.
 type ContractInspectionOperations interface {
 	DiffContract(context.Context, ContractDiffRequest) (ContractDiffResult, error)
 	VerifyContractExport(context.Context, ContractVerifyExportRequest) (ContractVerifyExportResult, error)
@@ -89,6 +98,7 @@ func (c *ContractCommand) SetP6Operations(publication ContractPublicationOperati
 	c.check = check
 }
 
+// SetP6Inspection wires the optional read-only P6 inspection service.
 func (c *ContractCommand) SetP6Inspection(inspection ContractInspectionOperations) {
 	c.inspection = inspection
 }

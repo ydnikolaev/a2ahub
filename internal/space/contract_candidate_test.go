@@ -197,7 +197,6 @@ func TestReadContractCandidateRefusesSymlinkAndIrregularLeaves(t *testing.T) {
 			},
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			project := t.TempDir()
@@ -279,7 +278,6 @@ func TestReadContractCandidateEnforcesPerFileCountAndAggregateBounds(t *testing.
 			},
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			project := t.TempDir()
@@ -378,7 +376,6 @@ func TestReadContractCandidateEnforcesTopologyBounds(t *testing.T) {
 			},
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			project := t.TempDir()
@@ -397,7 +394,6 @@ func TestContractCandidateReaderRefusesDeterministicComponentAndLeafSwap(t *test
 	t.Parallel()
 
 	for _, target := range []string{"directory", "leaf"} {
-		target := target
 		t.Run(target, func(t *testing.T) {
 			t.Parallel()
 			project := t.TempDir()

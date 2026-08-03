@@ -22,7 +22,6 @@ func TestRouterExactRouteAndMethodInventory(t *testing.T) {
 		{http.MethodPost, "/unknown", 404, ""},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.method+"_"+test.path, func(t *testing.T) {
 			t.Parallel()
 			response := request(t, server, test.method, test.path, false)

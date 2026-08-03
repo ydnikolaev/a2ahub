@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// CanonicalJSON encodes a snapshot for deterministic transport and storage.
 func CanonicalJSON(snapshot Snapshot) ([]byte, error) {
 	return json.Marshal(snapshot)
 }

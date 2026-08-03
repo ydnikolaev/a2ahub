@@ -232,8 +232,9 @@ func configuredWorkSpace(cfg space.ProjectConfig, requested string) (space.Ref, 
 func extractWorkSpace(args []string) (string, []string, error) {
 	remaining := make([]string, 0, len(args))
 	selected := ""
-	for index := 0; index < len(args); index++ {
-		arg := args[index]
+	for len(args) != 0 {
+		arg := args[0]
+		args = args[1:]
 		value := ""
 		switch {
 		case strings.HasPrefix(arg, "--space="):
@@ -241,11 +242,11 @@ func extractWorkSpace(args []string) (string, []string, error) {
 		case strings.HasPrefix(arg, "-space="):
 			value = strings.TrimPrefix(arg, "-space=")
 		case arg == "--space" || arg == "-space":
-			if index+1 >= len(args) {
+			if len(args) == 0 {
 				return "", nil, fmt.Errorf("work: --space requires an id")
 			}
-			index++
-			value = args[index]
+			value = args[0]
+			args = args[1:]
 		default:
 			remaining = append(remaining, arg)
 			continue

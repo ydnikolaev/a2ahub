@@ -15,22 +15,28 @@ type ServeOptions struct {
 	Open   bool
 }
 
+// ServeLauncher runs the configured loopback server.
 type ServeLauncher interface {
 	Serve(context.Context, ServeOptions) error
 }
 
+// ServeCommand is the thin CLI transport for the loopback server.
 type ServeCommand struct{ launcher ServeLauncher }
 
+// NewServeCommand constructs a ServeCommand using the supplied launcher.
 func NewServeCommand(launcher ServeLauncher) *ServeCommand {
 	return &ServeCommand{launcher: launcher}
 }
 
+// Name returns the command name.
 func (c *ServeCommand) Name() string { return "serve" }
 
+// Synopsis returns a concise command description.
 func (c *ServeCommand) Synopsis() string {
 	return "serve the local operational dashboard and snapshot API on loopback"
 }
 
+// Run parses command arguments and starts the loopback server.
 func (c *ServeCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	defaults := localserver.DefaultConfig()
 	fs := flag.NewFlagSet(c.Name(), flag.ContinueOnError)

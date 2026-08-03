@@ -19,6 +19,7 @@ const maxContractPublicationEstablishments = 256
 // ContractPublicationRepository is the production authoritative-main and
 // planning adapter. Refresh pins one origin/main object; every later read in
 // that publication invocation proves the ref still names that object.
+// ContractPublicationRepository is part of the public package API.
 type ContractPublicationRepository struct {
 	repoDir           string
 	remoteURL         string
@@ -29,6 +30,7 @@ type ContractPublicationRepository struct {
 	anchor string
 }
 
+// NewContractPublicationRepository is part of the public package API.
 func NewContractPublicationRepository(repoDir, remoteURL string, manifestValidator ManifestValidator, historyValidator ContractHistoryDocumentValidator) (*ContractPublicationRepository, error) {
 	if strings.TrimSpace(repoDir) == "" || strings.TrimSpace(remoteURL) == "" || manifestValidator == nil || historyValidator == nil {
 		return nil, fmt.Errorf("%w: repository, remote and validators are required", ErrContractPublicationInvalid)
@@ -39,6 +41,7 @@ func NewContractPublicationRepository(repoDir, remoteURL string, manifestValidat
 	}, nil
 }
 
+// RefreshContractPublicationMain is part of the public package API.
 func (r *ContractPublicationRepository) RefreshContractPublicationMain(ctx context.Context) (string, error) {
 	if r == nil {
 		return "", ErrContractPublicationInvalid
@@ -56,6 +59,7 @@ func (r *ContractPublicationRepository) RefreshContractPublicationMain(ctx conte
 	return commit, nil
 }
 
+// ResolveContractPublicationTarget is part of the public package API.
 func (r *ContractPublicationRepository) ResolveContractPublicationTarget(ctx context.Context, contractID, target string) (ContractPublicationCompletion, bool, error) {
 	anchor, err := r.authoritativeAnchor(ctx)
 	if err != nil {
@@ -76,6 +80,7 @@ func (r *ContractPublicationRepository) ResolveContractPublicationTarget(ctx con
 	return ContractPublicationCompletion{}, false, nil
 }
 
+// LookupContractPublicationIntent is part of the public package API.
 func (r *ContractPublicationRepository) LookupContractPublicationIntent(ctx context.Context, contractID, intentKey string) (ContractPublicationIntentLookup, error) {
 	anchor, err := r.authoritativeAnchor(ctx)
 	if err != nil {
@@ -103,6 +108,7 @@ func (r *ContractPublicationRepository) LookupContractPublicationIntent(ctx cont
 	return ContractPublicationIntentLookup{Matches: matches, Exhaustive: true}, nil
 }
 
+// ReadContractPublicationPlanningContext is part of the public package API.
 func (r *ContractPublicationRepository) ReadContractPublicationPlanningContext(ctx context.Context, request ContractPublicationPlanningRequest) (ContractPublicationPlanningContext, error) {
 	if r == nil || request.System == "" || request.ContractID == "" || request.Candidate.ContractID() != request.ContractID {
 		return ContractPublicationPlanningContext{}, ErrContractPublicationInvalid
@@ -283,7 +289,7 @@ func resolveContractVersionAt(ctx context.Context, repoDir, anchor, contractID, 
 		if err != nil {
 			return HistoricalSnapshot{}, err
 		}
-		eventPath, eventRaw, event, profile, found, err := contractPublishEventAtCommit(ctx, repoDir, commitSHA, parent, parsedID.System, contractID, requestedVersion)
+		eventPath, eventRaw, event, profile, found, err := contractPublishEventAtCommit(ctx, repoDir, commitSHA, parent, contractID, requestedVersion)
 		if err != nil {
 			return HistoricalSnapshot{}, err
 		}

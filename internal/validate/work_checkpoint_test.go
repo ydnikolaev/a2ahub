@@ -133,7 +133,6 @@ func TestValidateWorkCheckpointContinuationContext(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			for _, point := range []InvocationPoint{V2, V3} {
-				point := point
 				t.Run(string(point), func(t *testing.T) {
 					t.Parallel()
 					in := validWorkCheckpointInput()

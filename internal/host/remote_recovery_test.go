@@ -13,6 +13,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 func TestReadRemoteRecoveryCommitReturnsCompleteFirstParentDiff(t *testing.T) {
@@ -329,7 +331,7 @@ func recoveryGitIdentity() []string {
 
 func gitOutput(t testing.TB, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	cmd.Dir = dir
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
@@ -341,7 +343,7 @@ func gitOutput(t testing.TB, dir string, args ...string) string {
 
 func gitInputOutput(t testing.TB, dir string, env []string, input []byte, args ...string) []byte {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	cmd.Dir = dir
 	if env != nil {
 		cmd.Env = append(os.Environ(), env...)

@@ -17,7 +17,6 @@ func TestValidateListenAddressClosedLoopbackSet(t *testing.T) {
 		{"example.com:8765", false}, {"/tmp/a2a.sock", false}, {"127.0.0.1", false},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.address, func(t *testing.T) {
 			t.Parallel()
 			err := ValidateListenAddress(test.address)

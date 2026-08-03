@@ -66,11 +66,16 @@ type SubmitResult struct {
 }
 
 const (
-	ErrorCodeValidation   = "validation"
+	// ErrorCodeValidation reports local feedback validation failure.
+	ErrorCodeValidation = "validation"
+	// ErrorCodeBatchRefused reports rejection of the submitted feedback batch.
 	ErrorCodeBatchRefused = "batch-validation-refused"
-	ErrorCodeSubmit       = "submit"
-	ErrorCodeSharedWrite  = "shared-write"
-	ErrorCodeLocalLedger  = "local-ledger"
+	// ErrorCodeSubmit reports failure to submit a validated report.
+	ErrorCodeSubmit = "submit"
+	// ErrorCodeSharedWrite reports failure to write through the shared funnel.
+	ErrorCodeSharedWrite = "shared-write"
+	// ErrorCodeLocalLedger reports failure to update the local acknowledgement ledger.
+	ErrorCodeLocalLedger = "local-ledger"
 )
 
 // LedgerRecordError means the shared write reached a confirmed PR, but the

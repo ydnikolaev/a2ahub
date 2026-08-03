@@ -2,8 +2,6 @@ package cli_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,59 +61,6 @@ func writeContractDescriptor(t *testing.T, mirrorDir, slug, version string) {
 // state table. `contractRows()` folds `deprecate` to `StateDeprecated` for
 // the WHOLE contract subject id (not scoped by the event's own `version`
 // field), and carries no `(StateDeprecated, TPublish)` row — so a real
-func writeContractDescriptorWithFormat(t *testing.T, mirrorDir, slug, version, format string) {
-	t.Helper()
-	content := "---\n" +
-		"schema: envelope/v1\n" +
-		"id: XC-axon-" + slug + "\n" +
-		"type: contract\n" +
-		"title: t\n" +
-		"space: fixture-space\n" +
-		"from: axon\n" +
-		"to: [beta]\n" +
-		"thread: " + cliFixtureThread + "\n" +
-		"actor: {kind: agent, name: bot}\n" +
-		"created: 2026-07-21T10:00:00Z\n" +
-		"category: api\n" +
-		"priority: p3\n" +
-		"blocking: false\n" +
-		"classification: internal\n" +
-		"version: \"" + version + "\"\n" +
-		"compat_policy: strict-semver\n" +
-		"schema_format: " + format + "\n" +
-		"---\nbody\n"
-	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/contract.md", content)
-}
-
-// writeContractDescriptorWithCompatPolicy is writeContractDescriptor
-// generalized over compat_policy — F5/AC-975.1's own fixture needs two
-// commits that disagree ONLY on this field (schema/fixtures held
-// identical) to prove `contract diff` sees a frontmatter-only change that
-// contractDigestTreeAtSHA's file digest cannot.
-func writeContractDescriptorWithCompatPolicy(t *testing.T, mirrorDir, slug, version, compatPolicy string) {
-	t.Helper()
-	content := "---\n" +
-		"schema: envelope/v1\n" +
-		"id: XC-axon-" + slug + "\n" +
-		"type: contract\n" +
-		"title: t\n" +
-		"space: fixture-space\n" +
-		"from: axon\n" +
-		"to: [beta]\n" +
-		"thread: " + cliFixtureThread + "\n" +
-		"actor: {kind: agent, name: bot}\n" +
-		"created: 2026-07-21T10:00:00Z\n" +
-		"category: api\n" +
-		"priority: p3\n" +
-		"blocking: false\n" +
-		"classification: internal\n" +
-		"version: \"" + version + "\"\n" +
-		"compat_policy: " + compatPolicy + "\n" +
-		"schema_format: json-schema-2020-12\n" +
-		"---\nbody\n"
-	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/contract.md", content)
-}
-
 // TestContractPublishComputedCompatibility is spec 37's own T2/F1 (D-010,
 // §5.4b) driven end to end through `contract publish`: AC-970.1 (a
 // mislabeled minor is refused, naming the fixture), a genuinely additive
@@ -299,89 +244,6 @@ func TestContractRetireOverrideFullPreconditionSucceeds(t *testing.T) {
 	if !strings.Contains(string(fake.calls[0].Files[0].Content), "retired-unacked") {
 		t.Fatalf("expected the retire event to flag the overridden consumer, got:\n%s", fake.calls[0].Files[0].Content)
 	}
-}
-
-// gitRun runs `git <args...>` with cwd=dir, failing the test loudly.
-func gitRun(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", gitfixture.Args(args...)...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME=a2a-fixture", "GIT_AUTHOR_EMAIL=fixture@a2ahub.invalid",
-		"GIT_COMMITTER_NAME=a2a-fixture", "GIT_COMMITTER_EMAIL=fixture@a2ahub.invalid",
-	)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v (dir=%s): %v\n%s", args, dir, err, out)
-	}
-}
-
-// TestContractDiffTwoVersions is P8-4: a two-version fixture contract with
-// a schema field added between v1 and v2 -> `contract diff` reports it
-// under `changed`.
-func contractComputeDigestForTest(t *testing.T, mirrorDir, contractRelDir string) string {
-	t.Helper()
-	perFile := map[string]string{}
-	root := filepath.Join(mirrorDir, contractRelDir)
-	for _, sub := range []string{"schema", "fixtures"} {
-		dir := filepath.Join(root, sub)
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
-			if err != nil {
-				t.Fatalf("contractComputeDigestForTest: %v", err)
-			}
-			sum := sha256.Sum256(raw)
-			perFile[sub+"/"+e.Name()] = "sha256:" + hex.EncodeToString(sum[:])
-		}
-	}
-	paths := make([]string, 0, len(perFile))
-	for p := range perFile {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	h := sha256.New()
-	for _, p := range paths {
-		h.Write([]byte(p))
-		h.Write([]byte{0})
-		h.Write([]byte(perFile[p]))
-		h.Write([]byte{'\n'})
-	}
-	return "sha256:" + hex.EncodeToString(h.Sum(nil))
-}
-
-// writeContractDescriptorWithGeneratedFrom is writeContractDescriptor plus
-// a `generated_from` block (§5.3) — verify-export's own-version-
-// unspecified path reads generated_from.source_digest back.
-func writeContractDescriptorWithGeneratedFrom(t *testing.T, mirrorDir, slug, version, digest string) {
-	t.Helper()
-	content := "---\n" +
-		"schema: envelope/v1\n" +
-		"id: XC-axon-" + slug + "\n" +
-		"type: contract\n" +
-		"title: t\n" +
-		"space: fixture-space\n" +
-		"from: axon\n" +
-		"to: [beta]\n" +
-		"thread: " + cliFixtureThread + "\n" +
-		"actor: {kind: agent, name: bot}\n" +
-		"created: 2026-07-21T10:00:00Z\n" +
-		"category: api\n" +
-		"priority: p3\n" +
-		"blocking: false\n" +
-		"classification: internal\n" +
-		"version: \"" + version + "\"\n" +
-		"compat_policy: strict-semver\n" +
-		"schema_format: json-schema-2020-12\n" +
-		"generated_from: {tool: \"codegen\", source_digest: \"" + digest + "\"}\n" +
-		"---\nbody\n"
-	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/contract.md", content)
 }
 
 // TestContractDeprecateRealTemplateRender is an AC-302.1 transition test
@@ -1461,23 +1323,6 @@ func TestContractSubVerbsStillAcceptFlagsBeforeTheID(t *testing.T) {
 // narrowed schema is never seen, so the minor bump publishes clean instead
 // of refusing, and the major bump's carried Files never contain the
 // staged bytes.
-func contractEventDigest(t *testing.T, files []space.FileWrite) string {
-	t.Helper()
-	for _, f := range files {
-		if strings.HasPrefix(f.Path, "axon/events/") {
-			var ev struct {
-				Digest string `yaml:"digest"`
-			}
-			if err := yaml.Unmarshal(f.Content, &ev); err != nil {
-				t.Fatalf("decode event: %v", err)
-			}
-			return ev.Digest
-		}
-	}
-	t.Fatalf("no axon/events/**/*.yaml file found in %+v", files)
-	return ""
-}
-
 // gitOutputForTest runs `git <args...>` with cwd=dir and returns stdout,
 // failing the test loudly. The read-only sibling of gitRun, for assertions
 // that must inspect a COMMIT rather than the working tree — since a write

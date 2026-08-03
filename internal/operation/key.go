@@ -18,20 +18,26 @@ const prefix = "op-v1-"
 // BranchName renders the deterministic write branch shared by planning and
 // the space write funnel. Keeping the protocol string here prevents a pure
 // planner and the I/O adapter from deriving different retry heads.
+// BranchName is part of the public package API.
 func BranchName(system, verb, operationID string) string {
 	return fmt.Sprintf("a2a/%s/%s/%s", system, verb, operationID)
 }
 
 const (
-	WorkActionStart      = "start"
+	// WorkActionStart is part of the public package API.
+	WorkActionStart = "start"
+	// WorkActionCheckpoint is part of the public package API.
 	WorkActionCheckpoint = "checkpoint"
-	WorkActionWait       = "wait"
-	WorkActionStop       = "stop"
+	// WorkActionWait is part of the public package API.
+	WorkActionWait = "wait"
+	// WorkActionStop is part of the public package API.
+	WorkActionStop = "stop"
 )
 
 var (
 	// ErrInvalidWorkOperation marks work identity inputs that cannot name a
 	// durable semantic step.
+	// ErrInvalidWorkOperation is part of the public package API.
 	ErrInvalidWorkOperation = errors.New("operation: invalid work operation")
 
 	workIDPattern = regexp.MustCompile(`^work:[0-9A-HJKMNP-TV-Z]{26}$`)
@@ -41,6 +47,7 @@ var (
 // The domain, work ID, fixed-width semantic sequence, and action are all
 // independently length-framed by the package's canonical v1 encoder. Local
 // heartbeat activity deliberately has no action and therefore no key here.
+// Work is part of the public package API.
 func Work(workID string, semanticSequence int64, action string) (string, error) {
 	if !workIDPattern.MatchString(workID) {
 		return "", fmt.Errorf("%w: work id must be work:<ULID>", ErrInvalidWorkOperation)
@@ -73,6 +80,7 @@ func validWorkAction(action string) bool {
 // Respond derives the operation key for one respond invocation. Parent order
 // and field map iteration cannot affect the result; body bytes are represented
 // only by their digest.
+// Respond is part of the public package API.
 func Respond(system, actorKind, actorName string, parentIDs []string, result string, fields map[string]string, body []byte) string {
 	parents := append([]string(nil), parentIDs...)
 	sort.Strings(parents)
@@ -103,6 +111,7 @@ func Respond(system, actorKind, actorName string, parentIDs []string, result str
 // contract version. Successor is intentionally included: changing the
 // migration target is a different semantic write even though the legacy
 // announcement-ID seed did not distinguish it.
+// ContractDeprecate is part of the public package API.
 func ContractDeprecate(system, contractID, version, successor, sunset string) string {
 	encoder := newEncoder("contract-deprecate")
 	encoder.add(system)

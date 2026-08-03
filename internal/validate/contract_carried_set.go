@@ -16,7 +16,9 @@ import (
 type ContractCandidateMode string
 
 const (
-	ContractCandidateProposed   ContractCandidateMode = "proposed"
+	// ContractCandidateProposed is a new publication governed by the current floor.
+	ContractCandidateProposed ContractCandidateMode = "proposed"
+	// ContractCandidateHistorical is an immutable publication read under its old floor.
 	ContractCandidateHistorical ContractCandidateMode = "historical"
 )
 
@@ -48,6 +50,8 @@ type ContractCarriedSetInput struct {
 // A non-empty CarriedSet is returned only with a valid Result. Invalid content
 // is represented as violations. An error means the trusted invocation context
 // itself is unreadable (currently an invalid authoritative space floor).
+//
+//nolint:revive // Validate is the established package API verb used by V2/V3 callers.
 func ValidateContractCarriedSet(in ContractCarriedSetInput) (contract.CarriedSet, Result, error) {
 	const op = "ValidateContractCarriedSet"
 

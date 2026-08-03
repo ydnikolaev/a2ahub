@@ -21,13 +21,20 @@ var workSpaceIDPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 type WorkMode string
 
 const (
-	WorkModePlanning     WorkMode = "planning"
+	// WorkModePlanning represents plan-definition work.
+	WorkModePlanning WorkMode = "planning"
+	// WorkModeImplementing represents implementation work.
 	WorkModeImplementing WorkMode = "implementing"
-	WorkModeTesting      WorkMode = "testing"
-	WorkModeReviewing    WorkMode = "reviewing"
-	WorkModeWaiting      WorkMode = "waiting"
-	WorkModePaused       WorkMode = "paused"
-	WorkModeFinished     WorkMode = "finished"
+	// WorkModeTesting represents verification work.
+	WorkModeTesting WorkMode = "testing"
+	// WorkModeReviewing represents review work.
+	WorkModeReviewing WorkMode = "reviewing"
+	// WorkModeWaiting represents work blocked on a dependency.
+	WorkModeWaiting WorkMode = "waiting"
+	// WorkModePaused represents explicitly paused work.
+	WorkModePaused WorkMode = "paused"
+	// WorkModeFinished represents completed work.
+	WorkModeFinished WorkMode = "finished"
 )
 
 // WorkWaitKind is validate's closed contextual view of work.waiting_on.kind.
@@ -35,10 +42,15 @@ const (
 type WorkWaitKind string
 
 const (
-	WorkWaitSystem   WorkWaitKind = "system"
-	WorkWaitHuman    WorkWaitKind = "human"
-	WorkWaitTool     WorkWaitKind = "tool"
-	WorkWaitTimer    WorkWaitKind = "timer"
+	// WorkWaitSystem waits for a named system dependency.
+	WorkWaitSystem WorkWaitKind = "system"
+	// WorkWaitHuman waits for a human dependency.
+	WorkWaitHuman WorkWaitKind = "human"
+	// WorkWaitTool waits for a tool dependency.
+	WorkWaitTool WorkWaitKind = "tool"
+	// WorkWaitTimer waits for a timed dependency.
+	WorkWaitTimer WorkWaitKind = "timer"
+	// WorkWaitExternal waits for an external dependency.
 	WorkWaitExternal WorkWaitKind = "external"
 )
 
@@ -137,6 +149,8 @@ type WorkCheckpointInput struct {
 // closed object shapes, required fields, scalar/array bounds and enum syntax;
 // this validator owns the cross-field time, ownership, repository reference,
 // manifest-history and classification facts JSON Schema cannot see.
+//
+//nolint:revive // Validate is the established package API verb used by V2/V3 callers.
 func ValidateWorkCheckpoint(in WorkCheckpointInput) Result {
 	violations := checkWorkCheckpointPolicy(in)
 	violations = append(violations, checkWorkCheckpointReferences(in)...)
@@ -307,7 +321,7 @@ func canonicalWorkArtifactRef(ref, id string) bool {
 		return false
 	}
 	_, version, digest := parseRef(ref)
-	if strings.Count(ref, "@") > 1 || strings.Count(ref, "#") > 1 || strings.Index(ref, "#") >= 0 && strings.Index(ref, "@") > strings.Index(ref, "#") {
+	if strings.Count(ref, "@") > 1 || strings.Count(ref, "#") > 1 || strings.Contains(ref, "#") && strings.Index(ref, "@") > strings.Index(ref, "#") {
 		return false
 	}
 	if strings.Contains(ref, "@") && version == "" || strings.Contains(ref, "#") && digest == "" {

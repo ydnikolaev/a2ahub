@@ -14,6 +14,7 @@ import (
 // computed-compatibility validator.
 type ContractCompatibilityAdapter struct{}
 
+// CheckCompatibility compares the candidate schemas with the prior fixtures.
 func (ContractCompatibilityAdapter) CheckCompatibility(input contract.CompatibilityCheckInput) contract.CompatibilityResult {
 	newSchemas := make(map[string][]byte)
 	for _, entry := range input.NewEntries {
@@ -58,6 +59,7 @@ func (ContractCompatibilityAdapter) CheckCompatibility(input contract.Compatibil
 // internal/schema; jsonschema implementation types never cross this adapter.
 type ContractInstanceAdapter struct{}
 
+// CheckInstance validates the supplied instance through internal/schema.
 func (ContractInstanceAdapter) CheckInstance(input contract.InstanceCheckInput) contract.InstanceCheckResult {
 	compiled, err := schema.CompileExternal(input.SchemaPath, input.Schema)
 	if err != nil {
@@ -77,7 +79,7 @@ func (ContractInstanceAdapter) CheckInstance(input contract.InstanceCheckInput) 
 	return result
 }
 
-func instanceAdapterError(input contract.InstanceCheckInput, err error) contract.InstanceCheckResult {
+func instanceAdapterError(_ contract.InstanceCheckInput, _ error) contract.InstanceCheckResult {
 	// The contract core reserves Passed=false + zero violations for an
 	// unevaluated result. Returning a synthetic validation violation here would
 	// let an uncompilable schema satisfy an invalid-fixture expectation.

@@ -63,7 +63,6 @@ func TestServeCommandRejectsUnsafeOrOutOfRangeBeforeLauncher(t *testing.T) {
 		{"--sync-every", "25h"},
 	}
 	for _, args := range tests {
-		args := args
 		t.Run(args[0]+"="+args[1], func(t *testing.T) {
 			t.Parallel()
 			launcher := &fakeServeLauncher{}

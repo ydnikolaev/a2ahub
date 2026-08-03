@@ -348,6 +348,7 @@ func runRecoveryGit(ctx context.Context, stdoutLimit int, args ...string) recove
 	}
 	stdout := &boundedRecoveryBuffer{limit: stdoutLimit}
 	stderr := &boundedRecoveryBuffer{limit: maxRecoveryGitErrorOutput}
+	//nolint:gosec // executable is fixed; args are explicit Git argv validated by each recovery operation.
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr

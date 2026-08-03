@@ -20,7 +20,6 @@ func TestOpenContractCandidateReaderRefusesUnsafeLocations(t *testing.T) {
 	}
 
 	for _, path := range []string{"", ".", "../candidate", "/candidate", `candidate\schema`, "linked"} {
-		path := path
 		t.Run(path, func(t *testing.T) {
 			t.Parallel()
 			reader, err := OpenContractCandidateReader(project, ContractCandidateLocation{

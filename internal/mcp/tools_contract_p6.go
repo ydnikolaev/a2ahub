@@ -23,21 +23,25 @@ type ContractPublicationRequest struct {
 	Actor      ActorInput
 }
 
+// ContractPublicationOperations performs publication planning and writes.
 type ContractPublicationOperations interface {
 	Preflight(context.Context, ContractPublicationRequest) (space.ContractPublicationResult, error)
 	Publish(context.Context, ContractPublicationRequest) (space.ContractPublicationResult, error)
 }
 
+// ContractMaterializeRequest selects an exported contract tree and destination.
 type ContractMaterializeRequest struct {
 	Space       string
 	Ref         string
 	Destination string
 }
 
+// ContractMaterializeOperation materializes an exported contract tree.
 type ContractMaterializeOperation interface {
 	MaterializeContract(context.Context, ContractMaterializeRequest) (space.ContractMaterializeResult, error)
 }
 
+// ContractCheckRequest selects contract conformance-check inputs.
 type ContractCheckRequest struct {
 	Space       string
 	Ref         string
@@ -46,10 +50,12 @@ type ContractCheckRequest struct {
 	Suite       bool
 }
 
+// ContractCheckOperation evaluates contract conformance.
 type ContractCheckOperation interface {
 	CheckContract(context.Context, ContractCheckRequest) (contract.ConformanceResult, error)
 }
 
+// ContractDiffRequest selects two contract versions to compare.
 type ContractDiffRequest struct {
 	Space string
 	ID    string
@@ -57,6 +63,7 @@ type ContractDiffRequest struct {
 	V2    string
 }
 
+// ContractDiffResult lists changed paths between contract versions.
 type ContractDiffResult struct {
 	Added              []string `json:"added"`
 	Removed            []string `json:"removed"`
@@ -64,12 +71,14 @@ type ContractDiffResult struct {
 	FrontmatterChanged []string `json:"frontmatter_changed,omitempty"`
 }
 
+// ContractVerifyExportRequest selects a local export and expected source ref.
 type ContractVerifyExportRequest struct {
 	Space string
 	Local string
 	Ref   string
 }
 
+// ContractVerifyExportResult reports whether an export matches its source.
 type ContractVerifyExportResult struct {
 	ID          string             `json:"id"`
 	Matches     bool               `json:"matches"`
@@ -78,11 +87,13 @@ type ContractVerifyExportResult struct {
 	Diff        ContractDiffResult `json:"diff,omitempty"`
 }
 
+// ContractInspectionOperations exposes read-only contract inspection operations.
 type ContractInspectionOperations interface {
 	DiffContract(context.Context, ContractDiffRequest) (ContractDiffResult, error)
 	VerifyContractExport(context.Context, ContractVerifyExportRequest) (ContractVerifyExportResult, error)
 }
 
+// ContractPreflightInput is a preflight handler's structured MCP input.
 type ContractPreflightInput struct {
 	Space   string `json:"space,omitempty"`
 	ID      string `json:"id"`
@@ -91,12 +102,14 @@ type ContractPreflightInput struct {
 	Staging string `json:"staging,omitempty"`
 }
 
+// ContractMaterializeInput is a materialize handler's structured MCP input.
 type ContractMaterializeInput struct {
 	Space string `json:"space,omitempty"`
 	Ref   string `json:"ref"`
 	To    string `json:"to"`
 }
 
+// ContractCheckInput is a check handler's structured MCP input.
 type ContractCheckInput struct {
 	Space   string `json:"space,omitempty"`
 	Ref     string `json:"ref"`

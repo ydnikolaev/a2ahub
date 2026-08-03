@@ -117,7 +117,8 @@ func commitTreeFromBase(ctx context.Context, lock *MirrorLock, req treeCommitReq
 		}
 		return baseSHA, false, nil
 	}
-	authorEnv := append(indexEnv,
+	authorEnv := append([]string(nil), indexEnv...)
+	authorEnv = append(authorEnv,
 		"GIT_AUTHOR_NAME="+req.AuthorName,
 		"GIT_AUTHOR_EMAIL="+req.AuthorMail,
 		"GIT_COMMITTER_NAME="+req.AuthorName,
@@ -270,7 +271,8 @@ func gitPlumbingOutput(ctx context.Context, dir string, extraEnv []string, stdin
 }
 
 func gitPlumbingBytes(ctx context.Context, dir string, extraEnv []string, stdin []byte, limit int64, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git")
+	cmd.Args = append([]string{"git"}, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), extraEnv...)
 	if stdin != nil {
@@ -291,6 +293,7 @@ type boundedCommandBuffer struct {
 	remaining int64
 }
 
+// Write is part of the public package API.
 func (b *boundedCommandBuffer) Write(p []byte) (int, error) {
 	if int64(len(p)) > b.remaining {
 		allowed := int(b.remaining)

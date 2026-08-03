@@ -35,12 +35,6 @@ func (f *fakeReader) Snapshot(context.Context) (operational.Snapshot, error) {
 	return snapshot, err
 }
 
-func (f *fakeReader) callCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.calls
-}
-
 type fakeSyncer struct {
 	mu       sync.Mutex
 	snapshot operational.Snapshot

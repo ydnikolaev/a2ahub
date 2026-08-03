@@ -556,7 +556,6 @@ func TestSemanticActionModeMatrixRefusesBeforeCASOrPublish(t *testing.T) {
 func TestStartRefusesWaitingAndTerminalModesBeforeLeaseMutation(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []Mode{ModeWaiting, ModePaused, ModeFinished} {
-		mode := mode
 		t.Run(string(mode), func(t *testing.T) {
 			t.Parallel()
 			repository := newMemoryRepository()

@@ -159,10 +159,13 @@ func openLocalDashboard(target string) error {
 	var command *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
+		//nolint:gosec // target is a locally generated loopback URL, passed as data to a fixed executable.
 		command = exec.Command("open", target)
 	case "windows":
+		//nolint:gosec // target is a locally generated loopback URL, passed as data to a fixed executable.
 		command = exec.Command("rundll32", "url.dll,FileProtocolHandler", target)
 	default:
+		//nolint:gosec // target is a locally generated loopback URL, passed as data to a fixed executable.
 		command = exec.Command("xdg-open", target)
 	}
 	return command.Start()

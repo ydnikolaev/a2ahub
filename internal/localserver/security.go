@@ -9,14 +9,17 @@ import (
 )
 
 var (
+	// ErrNonLoopback rejects listener and Host values outside loopback.
 	ErrNonLoopback = errors.New("localserver: listener must be loopback-only")
+	// ErrInvalidHost rejects an HTTP Host header inconsistent with the listener.
 	ErrInvalidHost = errors.New("localserver: invalid host")
 )
 
+// ValidateListenAddress accepts only a loopback host and numeric TCP port.
 func ValidateListenAddress(address string) error {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		return fmt.Errorf("%w: use host:port: %v", ErrNonLoopback, err)
+		return fmt.Errorf("%w: use host:port: %w", ErrNonLoopback, err)
 	}
 	if port == "" {
 		return fmt.Errorf("%w: port is required", ErrNonLoopback)

@@ -626,7 +626,7 @@ func TestCoordinatorFailureBoundariesPreserveTypedErrorsAndResults(t *testing.T)
 		result, err := coordinator.Start(context.Background(), validStartInput())
 		if !errors.Is(err, want) || result.LocalState != serviceResult.LocalState ||
 			result.Shared.Convergence != serviceResult.Shared.Convergence ||
-			fmt.Sprint(result.Shared.WriteResult.Bytes()) != fmt.Sprint(serviceResult.Shared.WriteResult.Bytes()) {
+			string(result.Shared.WriteResult.Bytes()) != string(serviceResult.Shared.WriteResult.Bytes()) {
 			t.Fatalf("service result/error changed: (%+v, %v)", result, err)
 		}
 	})

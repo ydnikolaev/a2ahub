@@ -18,20 +18,28 @@ import (
 const (
 	contractAuthoritativeMainRef = "refs/remotes/origin/main"
 
-	ContractVerificationEventDigest              = "event-digest"
+	// ContractVerificationEventDigest is part of the public package API.
+	ContractVerificationEventDigest = "event-digest"
+	// ContractVerificationGitObjectAtPublishCommit is part of the public package API.
 	ContractVerificationGitObjectAtPublishCommit = "git-object-at-publish-commit"
 )
 
 var (
-	ErrContractInvalidReference  = errors.New("space: contract reference must be an exact XC id and canonical version")
-	ErrContractNotPublished      = errors.New("space: contract version is not published")
-	ErrContractHistoryInvalid    = errors.New("space: contract publication history is invalid")
-	ErrContractDigestMismatch    = errors.New("space: contract publication digest does not match historical bytes")
+	// ErrContractInvalidReference is part of the public package API.
+	ErrContractInvalidReference = errors.New("space: contract reference must be an exact XC id and canonical version")
+	// ErrContractNotPublished is part of the public package API.
+	ErrContractNotPublished = errors.New("space: contract version is not published")
+	// ErrContractHistoryInvalid is part of the public package API.
+	ErrContractHistoryInvalid = errors.New("space: contract publication history is invalid")
+	// ErrContractDigestMismatch is part of the public package API.
+	ErrContractDigestMismatch = errors.New("space: contract publication digest does not match historical bytes")
+	// ErrContractObjectUnavailable is part of the public package API.
 	ErrContractObjectUnavailable = errors.New("space: required Git object is unavailable")
 )
 
 // HistoricalSnapshot contains only bytes read from one verified Git commit.
 // Files includes contract.md plus every profile-carried leaf, sorted by path.
+// HistoricalSnapshot is part of the public package API.
 type HistoricalSnapshot struct {
 	ContractID             string
 	Version                string
@@ -81,6 +89,7 @@ type contractHistoricalEvent struct {
 
 // ContractHistoryDocument is one exact historical document presented to the
 // canonical validation consumer. Raw is detached from the Git read buffer.
+// ContractHistoryDocument is part of the public package API.
 type ContractHistoryDocument struct {
 	Path   string
 	Schema string
@@ -89,6 +98,7 @@ type ContractHistoryDocument struct {
 
 // ContractHistoryDocuments is the descriptor/event pair whose canonical
 // schema validity is required before it may establish publication.
+// ContractHistoryDocuments is part of the public package API.
 type ContractHistoryDocuments struct {
 	Descriptor   ContractHistoryDocument
 	PublishEvent ContractHistoryDocument
@@ -96,6 +106,7 @@ type ContractHistoryDocuments struct {
 
 // ContractHistoryDocumentValidator is the consumer-side seam that keeps
 // schema mechanics in internal/validate while making validity mandatory here.
+// ContractHistoryDocumentValidator is part of the public package API.
 type ContractHistoryDocumentValidator interface {
 	ValidateHistoricalContractDocuments(context.Context, ContractHistoryDocuments) error
 }
@@ -112,6 +123,7 @@ type contractEstablishment struct {
 // ResolveContractVersion walks only origin/main's first-parent line. A merge
 // publication is therefore established by the merge commit itself, while
 // second-parent-only commits never become authority.
+// ResolveContractVersion is part of the public package API.
 func ResolveContractVersion(ctx context.Context, repoDir, contractID, requestedVersion string, validator ContractHistoryDocumentValidator) (HistoricalSnapshot, error) {
 	parsedID, err := artifact.ParseID(contractID)
 	if err != nil || parsedID.Prefix != "XC" || parsedID.Class != artifact.ClassStanding {
@@ -241,7 +253,7 @@ func contractGitFirstParent(ctx context.Context, repoDir, commitSHA string) (str
 	return contractGitResolveCommit(ctx, repoDir, fields[1])
 }
 
-func contractPublishEventAtCommit(ctx context.Context, repoDir, commitSHA, firstParent, owner, contractID, version string) (string, []byte, contractHistoricalEvent, contract.DigestProfile, bool, error) {
+func contractPublishEventAtCommit(ctx context.Context, repoDir, commitSHA, firstParent, contractID, version string) (string, []byte, contractHistoricalEvent, contract.DigestProfile, bool, error) {
 	added, err := contractGitAddedPaths(ctx, repoDir, commitSHA, firstParent)
 	if err != nil {
 		return "", nil, contractHistoricalEvent{}, "", false, err

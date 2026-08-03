@@ -2,18 +2,27 @@ package workreport
 
 import "time"
 
+// Freshness is part of the public package API.
 type Freshness string
 
 const (
-	FreshnessLocalCurrent     Freshness = "local-current"
-	FreshnessUnknown          Freshness = "unknown"
-	FreshnessPendingRecovery  Freshness = "pending-recovery"
+	// FreshnessLocalCurrent is part of the public package API.
+	FreshnessLocalCurrent Freshness = "local-current"
+	// FreshnessUnknown is part of the public package API.
+	FreshnessUnknown Freshness = "unknown"
+	// FreshnessPendingRecovery is part of the public package API.
+	FreshnessPendingRecovery Freshness = "pending-recovery"
+	// FreshnessCommittedCurrent is part of the public package API.
 	FreshnessCommittedCurrent Freshness = "committed-current"
-	FreshnessStale            Freshness = "stale"
-	FreshnessFinished         Freshness = "finished"
-	FreshnessInvalid          Freshness = "invalid"
+	// FreshnessStale is part of the public package API.
+	FreshnessStale Freshness = "stale"
+	// FreshnessFinished is part of the public package API.
+	FreshnessFinished Freshness = "finished"
+	// FreshnessInvalid is part of the public package API.
+	FreshnessInvalid Freshness = "invalid"
 )
 
+// ClassifyLease is part of the public package API.
 func ClassifyLease(lease Lease, now time.Time) Freshness {
 	if ValidateLease(lease) != nil {
 		return FreshnessUnknown
@@ -30,12 +39,14 @@ func ClassifyLease(lease Lease, now time.Time) Freshness {
 	return FreshnessLocalCurrent
 }
 
+// Checkpoint is part of the public package API.
 type Checkpoint struct {
 	Mode       Mode
 	ReportedAt time.Time
 	ValidUntil time.Time
 }
 
+// ClassifyCheckpoint is part of the public package API.
 func ClassifyCheckpoint(checkpoint Checkpoint, now time.Time) Freshness {
 	if !checkpoint.Mode.Valid() || checkpoint.ReportedAt.IsZero() {
 		return FreshnessInvalid

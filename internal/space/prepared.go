@@ -21,21 +21,28 @@ import (
 const preparedVersion = 1
 
 var (
-	ErrPreparedInvalid          = errors.New("space: prepared submission is invalid")
-	ErrPreparedDigestMismatch   = errors.New("space: prepared submission digest mismatch")
-	ErrPreparedTargetStale      = errors.New("space: prepared-target-stale")
-	ErrPreparedFloorStale       = errors.New("space: prepared-floor-stale")
+	// ErrPreparedInvalid is part of the public package API.
+	ErrPreparedInvalid = errors.New("space: prepared submission is invalid")
+	// ErrPreparedDigestMismatch is part of the public package API.
+	ErrPreparedDigestMismatch = errors.New("space: prepared submission digest mismatch")
+	// ErrPreparedTargetStale is part of the public package API.
+	ErrPreparedTargetStale = errors.New("space: prepared-target-stale")
+	// ErrPreparedFloorStale is part of the public package API.
+	ErrPreparedFloorStale = errors.New("space: prepared-floor-stale")
+	// ErrPreparedProducerConflict is part of the public package API.
 	ErrPreparedProducerConflict = errors.New("space: caller supplied produced_by before preparation")
 )
 
 // CandidateSubmitValidator is the optional pre-stamp candidate/evaluator
 // check. SubmitValidator remains the mandatory final-byte validation seam.
+// CandidateSubmitValidator is part of the public package API.
 type CandidateSubmitValidator interface {
 	ValidateSubmitCandidate(ctx context.Context, files []FileWrite) error
 }
 
 // PreparationContext binds mutable environment facts before any external
 // side effect. ProducerCompatibility defaults to the funnel binary version.
+// PreparationContext is part of the public package API.
 type PreparationContext struct {
 	TargetIdentity string
 	// BaseCommitSHA is the authoritative commit at BaseBranch that a
@@ -54,6 +61,7 @@ type PreparationContext struct {
 // SubmissionRuntime contains only invocation-local facts that cannot be
 // journaled: the local mirror, push endpoint, refreshed credential, current
 // bound target/floor, and the last prior result to preserve on a refusal.
+// SubmissionRuntime is part of the public package API.
 type SubmissionRuntime struct {
 	RepoDir           string
 	RemoteURL         string
@@ -78,6 +86,7 @@ type PreparedHostRequest struct {
 // PreparedSubmission is an immutable value object to callers: every field is
 // private and every slice-returning accessor clones. Its journal codec lives
 // in prepared_journal.go and refuses delete-bearing values.
+// PreparedSubmission is part of the public package API.
 type PreparedSubmission struct {
 	data preparedSubmissionData
 }
@@ -146,6 +155,7 @@ type preparedDigestPayload struct {
 
 // Submit preserves the compatibility one-shot API while routing through the
 // same immutable preparation boundary used by restartable callers.
+// Submit is part of the public package API.
 func (f *WriteFunnel) Submit(ctx context.Context, request SubmitRequest) (WriteResult, error) {
 	target := repositoryIdentity(request.Repo)
 	prepared, err := f.PrepareSubmission(ctx, request, PreparationContext{
@@ -163,6 +173,7 @@ func (f *WriteFunnel) Submit(ctx context.Context, request SubmitRequest) (WriteR
 
 // PrepareSubmission validates, stamps, revalidates and freezes one exact
 // submission without branch/commit/push/PR or any other external write.
+// PrepareSubmission is part of the public package API.
 func (f *WriteFunnel) PrepareSubmission(ctx context.Context, candidate SubmitRequest, preparation PreparationContext) (PreparedSubmission, error) {
 	const op = "PrepareSubmission"
 	mutations, err := normalizeMutations(candidate.Files, candidate.Mutations)
@@ -283,6 +294,7 @@ func (f *WriteFunnel) PrepareSubmission(ctx context.Context, candidate SubmitReq
 
 // SubmitPrepared verifies every frozen layer and current target/floor before
 // making a host or Git call. It refreshes only the runtime credential/path.
+// SubmitPrepared is part of the public package API.
 func (f *WriteFunnel) SubmitPrepared(ctx context.Context, prepared PreparedSubmission, runtime SubmissionRuntime) (WriteResult, error) {
 	const op = "SubmitPrepared"
 	prior := runtime.PriorResult
@@ -317,20 +329,27 @@ func (f *WriteFunnel) finalValidationRequired() bool {
 	return err != nil || !older
 }
 
+// Digest is part of the public package API.
 func (p PreparedSubmission) Digest() string { return p.data.preparedDigest }
 
+// RecoveryDigest is part of the public package API.
 func (p PreparedSubmission) RecoveryDigest() string { return p.data.recoveryDigest }
 
+// Branch is part of the public package API.
 func (p PreparedSubmission) Branch() string { return p.data.headBranch }
 
+// OperationKey is part of the public package API.
 func (p PreparedSubmission) OperationKey() string { return p.data.operationKey }
 
+// ArtifactIDs is part of the public package API.
 func (p PreparedSubmission) ArtifactIDs() []string {
 	return append([]string(nil), p.data.artifactIDs...)
 }
 
+// Mutations is part of the public package API.
 func (p PreparedSubmission) Mutations() []Mutation { return cloneMutations(p.data.mutations) }
 
+// HostRequest is part of the public package API.
 func (p PreparedSubmission) HostRequest() PreparedHostRequest {
 	return PreparedHostRequest{
 		Repository: p.data.repository, HeadBranch: p.data.headBranch, BaseBranch: p.data.baseBranch,
@@ -388,15 +407,6 @@ func (p PreparedSubmission) verify() error {
 		return ErrPreparedDigestMismatch
 	}
 	return nil
-}
-
-func (p PreparedSubmission) hasDelete() bool {
-	for _, mutation := range p.data.mutations {
-		if mutation.Operation == MutationDelete {
-			return true
-		}
-	}
-	return false
 }
 
 func (p PreparedSubmission) submitRequest(runtime SubmissionRuntime) SubmitRequest {

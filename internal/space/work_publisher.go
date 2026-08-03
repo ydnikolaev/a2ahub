@@ -16,11 +16,13 @@ const (
 	workPublishErrorPending  = "shared-write-incomplete"
 )
 
+// ErrWorkPublishIncomplete is part of the public package API.
 var ErrWorkPublishIncomplete = errors.New("space: shared work checkpoint did not converge")
 
 // PreparedWorkSubmitter is the consumer-side seam used by WorkPublisher.
 // WriteFunnel satisfies it without exposing any of its preparation rules to
 // the workreport state machine.
+// PreparedWorkSubmitter is part of the public package API.
 type PreparedWorkSubmitter interface {
 	SubmitPrepared(context.Context, PreparedSubmission, SubmissionRuntime) (WriteResult, error)
 }
@@ -28,17 +30,20 @@ type PreparedWorkSubmitter interface {
 // WorkSubmissionRuntimeProvider refreshes invocation-local facts that may not
 // be persisted in a work lease: mirror path, remote URL and credentials plus
 // the current target and authoritative floor.
+// WorkSubmissionRuntimeProvider is part of the public package API.
 type WorkSubmissionRuntimeProvider interface {
 	SubmissionRuntime(context.Context) (SubmissionRuntime, error)
 }
 
 // WorkPublisher is the strict adapter between workreport's opaque journals
 // and the P4 prepared-submission funnel. It never re-prepares a candidate.
+// WorkPublisher is part of the public package API.
 type WorkPublisher struct {
 	submitter PreparedWorkSubmitter
 	runtime   WorkSubmissionRuntimeProvider
 }
 
+// NewWorkPublisher is part of the public package API.
 func NewWorkPublisher(submitter PreparedWorkSubmitter, runtime WorkSubmissionRuntimeProvider) (*WorkPublisher, error) {
 	if submitter == nil || runtime == nil {
 		return nil, fmt.Errorf("space: work publisher submitter and runtime provider are required")
@@ -46,6 +51,7 @@ func NewWorkPublisher(submitter PreparedWorkSubmitter, runtime WorkSubmissionRun
 	return &WorkPublisher{submitter: submitter, runtime: runtime}, nil
 }
 
+// SubmitPrepared is part of the public package API.
 func (p *WorkPublisher) SubmitPrepared(
 	ctx context.Context,
 	preparedJournal workreport.PreparedJournal,

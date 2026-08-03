@@ -18,7 +18,6 @@ func TestSchemaCompilesAndFixturesCloseTheV2Shape(t *testing.T) {
 		t.Fatal("valid fixture corpus is empty")
 	}
 	for _, path := range valid {
-		path := path
 		t.Run("valid/"+filepath.Base(path), func(t *testing.T) {
 			t.Parallel()
 			if err := schema.Validate(readInstance(t, path)); err != nil {
@@ -32,7 +31,6 @@ func TestSchemaCompilesAndFixturesCloseTheV2Shape(t *testing.T) {
 		t.Fatal("invalid fixture corpus is empty")
 	}
 	for _, path := range invalid {
-		path := path
 		t.Run("invalid/"+filepath.Base(path), func(t *testing.T) {
 			t.Parallel()
 			if err := schema.Validate(readInstance(t, path)); err == nil {

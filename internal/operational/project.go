@@ -44,6 +44,7 @@ type workGroup struct {
 	leases    []LocalLeaseEvidence
 }
 
+// Build projects bounded source evidence into one immutable operational snapshot.
 func Build(input Input, clock Clock, limits Limits) (Snapshot, error) {
 	if clock == nil {
 		return Snapshot{}, fmt.Errorf("%w: clock is required", ErrInvalidInput)
@@ -504,12 +505,13 @@ func projectLocal(e LocalLeaseEvidence, now time.Time) (projectedWork, []Consist
 		return projectedWork{value: item, include: validWireWork(item)}, facts
 	}
 	item.SharedPending = clonePending(e.Pending)
-	if lease.Closing {
+	switch {
+	case lease.Closing:
 		item.Freshness = FreshnessPendingRecovery
-	} else if now.After(lease.ExpiresAt) {
+	case now.After(lease.ExpiresAt):
 		item.Freshness = FreshnessStale
 		facts = append(facts, consistency("expired-local-lease", lease.SubjectRef, "The latest local work lease expired; current status is unknown"))
-	} else {
+	default:
 		item.Freshness = FreshnessLocalCurrent
 	}
 	return projectedWork{value: item, orderTime: boundedTime(lease.RenewedAt, now), include: validWireWork(item)}, facts
@@ -971,7 +973,7 @@ func containsCredentialToken(value string) bool {
 		return true
 	}
 	tokens := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
-		return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || strings.ContainsRune("._:-", r))
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && !strings.ContainsRune("._:-", r)
 	})
 	for _, token := range tokens {
 		if sensitive.Identifier(token) {
@@ -984,7 +986,7 @@ func containsCredentialToken(value string) bool {
 func publicSession(value string) string {
 	safe := value != "" && len(value) <= 128 && !sensitive.Identifier(value)
 	for _, r := range value {
-		if !((r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || strings.ContainsRune("._:-", r)) {
+		if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') && !strings.ContainsRune("._:-", r) {
 			safe = false
 			break
 		}

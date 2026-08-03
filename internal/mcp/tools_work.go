@@ -31,16 +31,19 @@ var workWaitKinds = []string{
 	string(workreport.WaitTimer), string(workreport.WaitExternal),
 }
 
+// WorkStarter starts a durable work lease.
 type WorkStarter interface {
 	Start(context.Context, workreport.StartInput) (workreport.OperationResult, error)
 }
 
+// WorkProgressor advances or closes a durable work lease.
 type WorkProgressor interface {
 	Checkpoint(context.Context, workreport.CheckpointInput) (workreport.OperationResult, error)
 	Wait(context.Context, workreport.WaitInput) (workreport.OperationResult, error)
 	Stop(context.Context, workreport.StopInput) (workreport.OperationResult, error)
 }
 
+// WorkLocalOperator changes a machine-local lease state.
 type WorkLocalOperator interface {
 	Heartbeat(context.Context, workreport.HeartbeatInput) (workreport.OperationResult, error)
 	Resume(context.Context, workreport.ResumeInput) (workreport.OperationResult, error)
@@ -53,6 +56,7 @@ type WorkLocalReader interface {
 	ListWork(context.Context, string, string, string, bool) ([]workreport.Lease, error)
 }
 
+// WorkActorInput is the actor subset accepted by the work tool.
 type WorkActorInput struct {
 	Kind    string `json:"kind,omitempty"`
 	Name    string `json:"name,omitempty"`
@@ -60,8 +64,10 @@ type WorkActorInput struct {
 	Session string `json:"session,omitempty"`
 }
 
+// WorkActorResolver resolves an MCP actor input to its durable identity.
 type WorkActorResolver func(WorkActorInput) (workreport.Actor, error)
 
+// WorkToolDeps are construction-time dependencies for the offline work tool.
 type WorkToolDeps struct {
 	Starter      WorkStarter
 	Progressor   WorkProgressor
@@ -128,6 +134,7 @@ func NewWorkTool(deps WorkToolDeps) (ToolSpec, error) {
 	}, nil
 }
 
+// WorkInput is the a2a_work handler's structured MCP input.
 type WorkInput struct {
 	Action         string             `json:"action"`
 	Space          string             `json:"space,omitempty"`
@@ -147,6 +154,7 @@ type WorkInput struct {
 	IncludeExpired bool               `json:"include_expired,omitempty"`
 }
 
+// WorkWaitingInput identifies one dependency for a work wait operation.
 type WorkWaitingInput struct {
 	Kind    string `json:"kind"`
 	ID      string `json:"id"`

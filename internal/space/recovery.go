@@ -26,13 +26,17 @@ const (
 )
 
 var (
-	ErrRecoveryInvalid        = errors.New("space: invalid contract-publish recovery-v1 record")
-	ErrRecoveryTooLarge       = errors.New("space: contract-publish recovery-v1 record exceeds 12 KiB")
+	// ErrRecoveryInvalid is part of the public package API.
+	ErrRecoveryInvalid = errors.New("space: invalid contract-publish recovery-v1 record")
+	// ErrRecoveryTooLarge is part of the public package API.
+	ErrRecoveryTooLarge = errors.New("space: contract-publish recovery-v1 record exceeds 12 KiB")
+	// ErrRecoveryDigestMismatch is part of the public package API.
 	ErrRecoveryDigestMismatch = errors.New("space: contract-publish recovery-v1 digest mismatch")
 )
 
 // RecoveryFlagsV1 is the closed behavior flag set frozen into a recovery-v1
 // record. Contract publication v1 requires every flag to be false.
+// RecoveryFlagsV1 is part of the public package API.
 type RecoveryFlagsV1 struct {
 	AllowForkFallback        bool `json:"allow_fork_fallback"`
 	AllowSpaceInfrastructure bool `json:"allow_space_infrastructure"`
@@ -42,6 +46,7 @@ type RecoveryFlagsV1 struct {
 // RecoveryV1 is the closed, non-secret contract-publish lost-ack wire record.
 // It intentionally contains no credential, absolute path, provider response,
 // or arbitrary commit trailer.
+// RecoveryV1 is part of the public package API.
 type RecoveryV1 struct {
 	ArtifactIDs           []string        `json:"artifact_ids"`
 	BaseBranch            string          `json:"base_branch"`
@@ -89,6 +94,7 @@ func EncodeRecoveryV1(record RecoveryV1) ([]byte, error) {
 
 // DecodeRecoveryV1 accepts only canonical JSON. Unknown, duplicate, missing,
 // nullable, reordered, or otherwise noncanonical input is rejected.
+// DecodeRecoveryV1 is part of the public package API.
 func DecodeRecoveryV1(raw []byte) (RecoveryV1, error) {
 	if len(raw) > recoveryMaxJSONBytes {
 		return RecoveryV1{}, ErrRecoveryTooLarge
@@ -145,6 +151,7 @@ func RecoveryDigest(canonical []byte) string {
 
 // EncodeRecoveryV1Trailer returns the unpadded base64url trailer payload and
 // its digest. Both derive from the same exact canonical JSON bytes.
+// EncodeRecoveryV1Trailer is part of the public package API.
 func EncodeRecoveryV1Trailer(record RecoveryV1) (encoded, digest string, err error) {
 	raw, err := EncodeRecoveryV1(record)
 	if err != nil {
@@ -155,6 +162,7 @@ func EncodeRecoveryV1Trailer(record RecoveryV1) (encoded, digest string, err err
 
 // DecodeRecoveryV1Trailer verifies the separately carried digest before
 // accepting the strict canonical record.
+// DecodeRecoveryV1Trailer is part of the public package API.
 func DecodeRecoveryV1Trailer(encoded, expectedDigest string) (RecoveryV1, error) {
 	if len(encoded) > base64.RawURLEncoding.EncodedLen(recoveryMaxJSONBytes) {
 		return RecoveryV1{}, ErrRecoveryTooLarge
@@ -249,7 +257,7 @@ func validTypedSHA256(value string) bool {
 		return false
 	}
 	for _, ch := range value[len(prefix):] {
-		if !('0' <= ch && ch <= '9') && !('a' <= ch && ch <= 'f') {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
 			return false
 		}
 	}
@@ -292,8 +300,8 @@ func validRecoveryRepository(repository string) bool {
 			return false
 		}
 		for _, ch := range part {
-			if !('a' <= ch && ch <= 'z') && !('A' <= ch && ch <= 'Z') &&
-				!('0' <= ch && ch <= '9') && ch != '-' && ch != '_' && ch != '.' {
+			if (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') &&
+				(ch < '0' || ch > '9') && ch != '-' && ch != '_' && ch != '.' {
 				return false
 			}
 		}

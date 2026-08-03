@@ -77,7 +77,6 @@ func TestParseContractPublishHeadListingRefusesOrMarksEveryIncompleteShape(t *te
 		{name: "duplicate", raw: row(0) + row(0)},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			if _, err := parseContractPublishHeadListing([]byte(test.raw), prefix, MaxContractPublishRemoteHeads); err == nil {

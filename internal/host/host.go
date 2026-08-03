@@ -39,8 +39,11 @@ type Credential struct {
 type MergeMethod string
 
 const (
-	MergeMethodMerge  MergeMethod = "merge"
+	// MergeMethodMerge uses GitHub's merge-commit strategy.
+	MergeMethodMerge MergeMethod = "merge"
+	// MergeMethodSquash uses GitHub's squash strategy.
 	MergeMethodSquash MergeMethod = "squash"
+	// MergeMethodRebase uses GitHub's rebase strategy.
 	MergeMethodRebase MergeMethod = "rebase"
 )
 
@@ -351,8 +354,11 @@ type Merger interface {
 type RepositoryVisibility string
 
 const (
-	RepositoryVisibilityPublic   RepositoryVisibility = "public"
-	RepositoryVisibilityPrivate  RepositoryVisibility = "private"
+	// RepositoryVisibilityPublic identifies a publicly visible repository.
+	RepositoryVisibilityPublic RepositoryVisibility = "public"
+	// RepositoryVisibilityPrivate identifies a private repository.
+	RepositoryVisibilityPrivate RepositoryVisibility = "private"
+	// RepositoryVisibilityInternal identifies an organization-internal repository.
 	RepositoryVisibilityInternal RepositoryVisibility = "internal"
 )
 

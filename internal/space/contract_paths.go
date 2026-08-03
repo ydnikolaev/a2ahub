@@ -13,14 +13,17 @@ var (
 	// ErrContractUnsafePath means a configured candidate location was not a
 	// clean project-root-relative path backed by the same real directory for
 	// the lifetime of its held capability.
+	// ErrContractUnsafePath is part of the public package API.
 	ErrContractUnsafePath = errors.New("space: contract path is not safely contained")
 
 	// ErrContractUnsafeEntry means a candidate or historical carried leaf is
 	// a symlink, submodule, device, socket, pipe, or otherwise non-regular.
+	// ErrContractUnsafeEntry is part of the public package API.
 	ErrContractUnsafeEntry = errors.New("space: contract entry is not a regular file")
 
 	// ErrContractBoundedResult means a file, tree, history, subprocess output,
 	// explicit inventory, or aggregate exceeded its protocol ceiling.
+	// ErrContractBoundedResult is part of the public package API.
 	ErrContractBoundedResult = errors.New("space: contract result exceeds bound")
 )
 
@@ -42,14 +45,14 @@ func cleanContractRelativePath(name string) bool {
 func openHeldContractRoot(name string) (*os.Root, os.FileInfo, error) {
 	before, err := os.Lstat(name)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: inspect configured root: %v", ErrContractUnsafePath, err)
+		return nil, nil, fmt.Errorf("%w: inspect configured root: %w", ErrContractUnsafePath, err)
 	}
 	if before.Mode()&os.ModeSymlink != 0 || !before.IsDir() {
 		return nil, nil, fmt.Errorf("%w: configured root must be a real directory", ErrContractUnsafePath)
 	}
 	root, err := os.OpenRoot(name)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: open configured root: %v", ErrContractUnsafePath, err)
+		return nil, nil, fmt.Errorf("%w: open configured root: %w", ErrContractUnsafePath, err)
 	}
 	valid := false
 	defer func() {
@@ -59,11 +62,11 @@ func openHeldContractRoot(name string) (*os.Root, os.FileInfo, error) {
 	}()
 	after, err := os.Lstat(name)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: re-inspect configured root: %v", ErrContractUnsafePath, err)
+		return nil, nil, fmt.Errorf("%w: re-inspect configured root: %w", ErrContractUnsafePath, err)
 	}
 	opened, err := root.Stat(".")
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: inspect configured root capability: %v", ErrContractUnsafePath, err)
+		return nil, nil, fmt.Errorf("%w: inspect configured root capability: %w", ErrContractUnsafePath, err)
 	}
 	if after.Mode()&os.ModeSymlink != 0 || !after.IsDir() || !opened.IsDir() ||
 		!os.SameFile(before, after) || !os.SameFile(before, opened) {
@@ -79,7 +82,7 @@ func openHeldContractRoot(name string) (*os.Root, os.FileInfo, error) {
 func openContractDirectory(parent *os.Root, name, displayPath string, afterLstat func()) (*os.Root, os.FileInfo, error) {
 	before, err := parent.Lstat(name)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: inspect %q: %v", ErrContractUnsafePath, displayPath, err)
+		return nil, nil, fmt.Errorf("%w: inspect %q: %w", ErrContractUnsafePath, displayPath, err)
 	}
 	if before.Mode()&os.ModeSymlink != 0 || !before.IsDir() {
 		return nil, nil, fmt.Errorf("%w: %q is not a real directory", ErrContractUnsafePath, displayPath)
@@ -89,7 +92,7 @@ func openContractDirectory(parent *os.Root, name, displayPath string, afterLstat
 	}
 	child, err := parent.OpenRoot(name)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: open %q: %v", ErrContractUnsafePath, displayPath, err)
+		return nil, nil, fmt.Errorf("%w: open %q: %w", ErrContractUnsafePath, displayPath, err)
 	}
 	valid := false
 	defer func() {
@@ -99,11 +102,11 @@ func openContractDirectory(parent *os.Root, name, displayPath string, afterLstat
 	}()
 	opened, err := child.Stat(".")
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: inspect opened %q: %v", ErrContractUnsafePath, displayPath, err)
+		return nil, nil, fmt.Errorf("%w: inspect opened %q: %w", ErrContractUnsafePath, displayPath, err)
 	}
 	after, err := parent.Lstat(name)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: re-inspect %q: %v", ErrContractUnsafePath, displayPath, err)
+		return nil, nil, fmt.Errorf("%w: re-inspect %q: %w", ErrContractUnsafePath, displayPath, err)
 	}
 	if after.Mode()&os.ModeSymlink != 0 || !after.IsDir() || !opened.IsDir() ||
 		!os.SameFile(before, opened) || !os.SameFile(opened, after) {

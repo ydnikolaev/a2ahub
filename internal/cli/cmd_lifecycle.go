@@ -418,7 +418,7 @@ func lifecycleValidateSatisfyRefs(mirrorDir string, manifest space.Manifest, req
 			return nil, fmt.Errorf("contract ref %q must pin an explicit semantic version", ref)
 		}
 		if err != nil || parsed.Prefix != "XS" {
-			return nil, fmt.Errorf("invalid response ref %q: want XS-...", ref)
+			return nil, fmt.Errorf("invalid response ref %q: want XS-prefixed response", ref)
 		}
 		if responseID != "" {
 			return nil, fmt.Errorf("--refs contains more than one response ref")

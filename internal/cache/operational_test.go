@@ -226,7 +226,7 @@ func TestOperationalThreadFromViewDoesNotInventEscapeHatchObligation(t *testing.
 		OpenItems: []OpenItem{{
 			ID: "XA-axon-20260728-343t", Type: "announcement", State: "published",
 			NextActions: []NextAction{{Transition: "supersede", By: []string{"axon"}}},
-			WaitingOn: []string{}, YourMove: false,
+			WaitingOn:   []string{}, YourMove: false,
 		}},
 	}
 

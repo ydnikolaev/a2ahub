@@ -79,7 +79,6 @@ func TestLifecycleProjectionOpenStates(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			for _, state := range tt.open {
@@ -222,7 +221,6 @@ func TestLifecycleProjectionAnnouncementWaitingOnAcknowledgements(t *testing.T) 
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			announcement := base
