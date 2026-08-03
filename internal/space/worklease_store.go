@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,10 +17,46 @@ import (
 )
 
 const (
-	workLeaseDirectory = "work-leases"
-	workLeaseLockWait  = 2 * time.Second
-	workLeasePoll      = 5 * time.Millisecond
+	workLeaseDirectory            = "work-leases"
+	workLeaseLockWait             = 2 * time.Second
+	workLeasePoll                 = 5 * time.Millisecond
+	maximumWorkLeaseEntries       = 2048
+	maximumWorkLeaseListingBytes  = 128 * 1024
+	maximumWorkLeaseContentsBytes = 8 * 1024 * 1024
 )
+
+var (
+	// ErrWorkSelectionAmbiguous refuses an under-specified local selection.
+	// The error deliberately carries no candidate identities or cache paths.
+	ErrWorkSelectionAmbiguous = errors.New("local work selection is ambiguous")
+	// ErrWorkLeaseEnumerationLimit refuses a cache directory whose entry or
+	// byte bounds no longer permit a complete, fail-closed view.
+	ErrWorkLeaseEnumerationLimit = errors.New("local work lease enumeration limit exceeded")
+)
+
+type workLeaseStoreConfig struct {
+	clock workreport.Clock
+}
+
+type wallClock struct{}
+
+func (wallClock) Now() time.Time { return time.Now() }
+
+// WorkLeaseStoreOption configures a WorkLeaseStore without weakening its
+// rooted filesystem capability.
+type WorkLeaseStoreOption func(*workLeaseStoreConfig) error
+
+// WithWorkLeaseClock injects the clock used only for read-time expiry
+// decisions. Lease mutation continues to receive its clock from workreport.
+func WithWorkLeaseClock(clock workreport.Clock) WorkLeaseStoreOption {
+	return func(config *workLeaseStoreConfig) error {
+		if clock == nil {
+			return fmt.Errorf("space: work lease clock is required")
+		}
+		config.clock = clock
+		return nil
+	}
+}
 
 // WorkLeaseStore persists disposable work leases beneath one already-trusted
 // cache root. The held os.Root capability keeps every later operation bound to
@@ -27,6 +64,7 @@ const (
 type WorkLeaseStore struct {
 	root        *os.Root
 	randomToken func() (string, error)
+	clock       workreport.Clock
 }
 
 type heldWorkLeaseLock struct {
@@ -37,7 +75,17 @@ type heldWorkLeaseLock struct {
 // directory when absent. cacheRoot itself must already exist and must not be a
 // symbolic link; selection and creation of that trusted cache root belongs to
 // project configuration, not lease data.
-func NewWorkLeaseStore(cacheRoot string) (*WorkLeaseStore, error) {
+func NewWorkLeaseStore(cacheRoot string, options ...WorkLeaseStoreOption) (*WorkLeaseStore, error) {
+	config := workLeaseStoreConfig{clock: wallClock{}}
+	for _, option := range options {
+		if option == nil {
+			return nil, fmt.Errorf("space: nil work lease store option")
+		}
+		if err := option(&config); err != nil {
+			return nil, err
+		}
+	}
+
 	before, err := os.Lstat(cacheRoot)
 	if err != nil {
 		return nil, fmt.Errorf("space: open work lease cache root: %w", err)
@@ -102,7 +150,7 @@ func NewWorkLeaseStore(cacheRoot string) (*WorkLeaseStore, error) {
 		return nil, fmt.Errorf("space: close cache root: %w", err)
 	}
 	closeCache = false
-	return &WorkLeaseStore{root: leaseRoot, randomToken: workLeaseRandomToken}, nil
+	return &WorkLeaseStore{root: leaseRoot, randomToken: workLeaseRandomToken, clock: config.clock}, nil
 }
 
 func ensureWorkLeaseDirectory(root *os.Root) error {
@@ -153,6 +201,254 @@ func (s *WorkLeaseStore) Load(ctx context.Context, key string) (workreport.Lease
 		return workreport.Lease{}, "", fmt.Errorf("%w: stored lease key does not match filename", workreport.ErrInvalidLease)
 	}
 	return lease, revisionOf(raw), nil
+}
+
+// ResolveWork selects one locally persisted work identity. An implicit
+// selection (no work ID and no session) considers only unexpired leases;
+// explicit selectors may resolve an expired owner so resume can replay its
+// exact pending journal. Absence uses the repository's existing typed
+// ErrLeaseNotFound refusal and ambiguity has its own typed refusal.
+func (s *WorkLeaseStore) ResolveWork(
+	ctx context.Context,
+	projectID string,
+	spaceID string,
+	workID string,
+	session string,
+) (workreport.WorkIdentityInput, error) {
+	if (workID == "") != (session == "") {
+		return workreport.WorkIdentityInput{}, workreport.ErrLeaseNotOwned
+	}
+	leases, err := s.listStoredWorkLeases(ctx)
+	if err != nil {
+		return workreport.WorkIdentityInput{}, err
+	}
+
+	now := s.clock.Now()
+	explicit := workID != ""
+	matches := make([]workreport.Lease, 0, 1)
+	for _, lease := range leases {
+		if lease.Identity.ProjectID != projectID || lease.Identity.Space != spaceID ||
+			(workID != "" && lease.Identity.WorkID != workID) ||
+			(session != "" && lease.Identity.Actor.Session != session) {
+			continue
+		}
+		if !explicit && lease.Expired(now) {
+			continue
+		}
+		matches = append(matches, lease)
+	}
+
+	switch len(matches) {
+	case 0:
+		return workreport.WorkIdentityInput{}, workreport.ErrLeaseNotFound
+	case 1:
+		identity := matches[0].Identity
+		return workreport.WorkIdentityInput{
+			ProjectID: identity.ProjectID,
+			Space:     identity.Space,
+			Thread:    identity.Thread,
+			WorkID:    identity.WorkID,
+			Actor:     identity.Actor,
+		}, nil
+	default:
+		return workreport.WorkIdentityInput{}, ErrWorkSelectionAmbiguous
+	}
+}
+
+// ListWork returns detached, deterministically ordered leases scoped to one
+// project and space. It never interprets pending or closing as activity:
+// includeExpired=false applies the sole currentness rule now > expires_at.
+func (s *WorkLeaseStore) ListWork(
+	ctx context.Context,
+	projectID string,
+	spaceID string,
+	workID string,
+	includeExpired bool,
+) ([]workreport.Lease, error) {
+	leases, err := s.listStoredWorkLeases(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := s.clock.Now()
+	selected := make([]workreport.Lease, 0, len(leases))
+	for _, lease := range leases {
+		if lease.Identity.ProjectID != projectID || lease.Identity.Space != spaceID ||
+			(workID != "" && lease.Identity.WorkID != workID) ||
+			(!includeExpired && lease.Expired(now)) {
+			continue
+		}
+		selected = append(selected, lease.Clone())
+	}
+	sort.Slice(selected, func(i, j int) bool {
+		left, right := selected[i].Identity, selected[j].Identity
+		if left.WorkID != right.WorkID {
+			return left.WorkID < right.WorkID
+		}
+		if left.Actor.Session != right.Actor.Session {
+			return left.Actor.Session < right.Actor.Session
+		}
+		return left.LeaseKey < right.LeaseKey
+	})
+	return selected, nil
+}
+
+func (s *WorkLeaseStore) listStoredWorkLeases(ctx context.Context) ([]workreport.Lease, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	directory, err := s.root.Open(".")
+	if err != nil {
+		return nil, fmt.Errorf("space: open work lease directory for listing: %w", err)
+	}
+	defer func() {
+		_ = directory.Close() // reason: preserve the listing/read error
+	}()
+	entries, err := directory.ReadDir(maximumWorkLeaseEntries + 1)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("space: list work leases: %w", err)
+	}
+	if len(entries) > maximumWorkLeaseEntries {
+		return nil, fmt.Errorf("%w: more than %d directory entries", ErrWorkLeaseEnumerationLimit, maximumWorkLeaseEntries)
+	}
+	if len(entries) <= maximumWorkLeaseEntries {
+		more, readErr := directory.ReadDir(1)
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return nil, fmt.Errorf("space: finish work lease listing: %w", readErr)
+		}
+		if len(more) != 0 {
+			return nil, fmt.Errorf("%w: more than %d directory entries", ErrWorkLeaseEnumerationLimit, maximumWorkLeaseEntries)
+		}
+	}
+
+	listingBytes := 0
+	contentsBytes := int64(0)
+	leases := make([]workreport.Lease, 0, len(entries)/2+1)
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		name := entry.Name()
+		listingBytes += len(name)
+		if listingBytes > maximumWorkLeaseListingBytes {
+			return nil, fmt.Errorf("%w: directory names exceed %d bytes", ErrWorkLeaseEnumerationLimit, maximumWorkLeaseListingBytes)
+		}
+
+		key, kind := classifyWorkLeaseEntry(name)
+		if kind == workLeaseEntryInvalid {
+			return nil, fmt.Errorf("%w: non-canonical entry in work lease directory", workreport.ErrInvalidLease)
+		}
+		info, statErr := s.root.Lstat(name)
+		if errors.Is(statErr, os.ErrNotExist) {
+			continue
+		}
+		if statErr != nil {
+			return nil, fmt.Errorf("space: inspect listed work lease entry: %w", statErr)
+		}
+		if !validWorkLeaseRegularFile(info) {
+			return nil, fmt.Errorf("%w: listed work lease entry failed platform regular-file checks", workreport.ErrInvalidLease)
+		}
+		switch kind {
+		case workLeaseEntryLock:
+			if info.Size() > 1024 {
+				return nil, fmt.Errorf("%w: work lease lock payload exceeds 1024 bytes", workreport.ErrInvalidLease)
+			}
+			continue
+		case workLeaseEntryTemporary:
+			if info.Size() > workreport.MaximumEncodedLease {
+				return nil, workreport.ErrLeaseTooLarge
+			}
+			continue
+		}
+		if info.Size() > workreport.MaximumEncodedLease {
+			return nil, workreport.ErrLeaseTooLarge
+		}
+		raw, readErr := s.readRegularStable(ctx, name)
+		if errors.Is(readErr, os.ErrNotExist) {
+			continue
+		}
+		if readErr != nil {
+			return nil, readErr
+		}
+		contentsBytes += int64(len(raw))
+		if contentsBytes > maximumWorkLeaseContentsBytes {
+			return nil, fmt.Errorf("%w: lease contents exceed %d bytes", ErrWorkLeaseEnumerationLimit, maximumWorkLeaseContentsBytes)
+		}
+		lease, decodeErr := workreport.UnmarshalLease(raw)
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if lease.Identity.LeaseKey != key {
+			return nil, fmt.Errorf("%w: stored lease key does not match filename", workreport.ErrInvalidLease)
+		}
+		leases = append(leases, lease.Clone())
+	}
+	return leases, nil
+}
+
+func (s *WorkLeaseStore) readRegularStable(ctx context.Context, name string) ([]byte, error) {
+	var err error
+	for range 3 {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return nil, contextErr
+		}
+		var raw []byte
+		raw, err = s.readRegular(name)
+		if err == nil || errors.Is(err, os.ErrNotExist) || errors.Is(err, workreport.ErrLeaseTooLarge) {
+			return raw, err
+		}
+		if !errors.Is(err, workreport.ErrInvalidLease) {
+			return nil, err
+		}
+	}
+	return nil, err
+}
+
+type workLeaseEntryKind uint8
+
+const (
+	workLeaseEntryInvalid workLeaseEntryKind = iota
+	workLeaseEntryLease
+	workLeaseEntryLock
+	workLeaseEntryTemporary
+)
+
+func classifyWorkLeaseEntry(name string) (string, workLeaseEntryKind) {
+	if key, ok := canonicalWorkLeaseName(name); ok {
+		return key, workLeaseEntryLease
+	}
+	if strings.HasSuffix(name, ".lock") {
+		if _, ok := canonicalWorkLeaseName(strings.TrimSuffix(name, ".lock")); ok {
+			return "", workLeaseEntryLock
+		}
+	}
+	const temporaryMarker = ".tmp-"
+	if marker := strings.LastIndex(name, temporaryMarker); marker >= 0 {
+		base, token := name[:marker], name[marker+len(temporaryMarker):]
+		if _, ok := canonicalWorkLeaseName(base); ok && len(token) == 32 && isLowerHex(token) {
+			return "", workLeaseEntryTemporary
+		}
+	}
+	return "", workLeaseEntryInvalid
+}
+
+func canonicalWorkLeaseName(name string) (string, bool) {
+	if len(name) != sha256.Size*2+len(".json") || !strings.HasSuffix(name, ".json") {
+		return "", false
+	}
+	hexPart := strings.TrimSuffix(name, ".json")
+	if !isLowerHex(hexPart) {
+		return "", false
+	}
+	return "sha256:" + hexPart, true
+}
+
+func isLowerHex(value string) bool {
+	for _, character := range []byte(value) {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *WorkLeaseStore) CompareAndSwap(ctx context.Context, key string, expected workreport.Revision, next *workreport.Lease) (revision workreport.Revision, retErr error) {
