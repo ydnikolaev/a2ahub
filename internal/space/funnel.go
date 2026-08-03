@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	gopath "path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -97,6 +95,7 @@ const (
 var (
 	ErrInvalidWriteOutcome     = errors.New("space: invalid write stage/state combination")
 	ErrExpectedHeadUnavailable = errors.New("space: host did not return the pull request head checked by CI")
+	ErrSubmitValidatorRequired = errors.New("space: final submission validator is required at the operational-confidence floor")
 )
 
 // FileWrite is one file the write funnel commits — a path (relative to
@@ -135,6 +134,10 @@ type SubmitRequest struct {
 	// under System's own section (or decisions/, the funnel-level
 	// exception) — checked BEFORE any git action.
 	Files []FileWrite
+	// Mutations is the mixed write/delete form. FileWrite remains the
+	// compatibility adapter for write-only callers; duplicate paths across
+	// the two collections are refused.
+	Mutations []Mutation
 	// CommitMessage, CommitAuthorName/Email: P6 supplies these (the exact
 	// "a2a(<type>): <id>" convention, OP-205, is a CLI-layer concern).
 	CommitMessage     string
@@ -150,6 +153,9 @@ type SubmitRequest struct {
 	Repo host.Repo
 	// BaseBranch is the PR's target branch (normatively "main", §4.2).
 	BaseBranch string
+	// ExpectedBaseSHA freezes the exact parent tree for a prepared write.
+	// Compatibility one-shot callers may leave it empty and use origin/base.
+	ExpectedBaseSHA string
 	// PRTitle/PRBody are passed through to host.OpenPR verbatim.
 	PRTitle string
 	PRBody  string
@@ -339,23 +345,30 @@ type SubmitValidator interface {
 // code path internal/space exposes for mutating a space (rails: "one
 // write shape"). It is the sole caller of internal/host.
 type WriteFunnel struct {
-	host      host.Host
-	validator SubmitValidator
+	host              host.Host
+	validator         SubmitValidator
+	mutationAuthority *mutationAuthority
 	// binaryVersion is injected via constructor DI (plan 05 Placement
 	// decision: "the version stamp lives in cmd/a2a; space never reads
 	// build info itself") — used only for the CC-085 guard.
 	binaryVersion string
 }
 
-// NewWriteFunnel constructs a WriteFunnel. h and validator are required
-// (a nil dependency used at runtime is a constructor bug, rails
-// anti-pattern #10) — callers wire fakes in tests, the real engines at
-// cmd/a2a (P6).
+// NewWriteFunnel constructs a WriteFunnel. New-floor writes fail closed when
+// validator is nil. The temporary nil allowance exists only so pre-v0.19
+// compatibility tests and old embedding callers remain readable while they
+// migrate to an explicit domain validator.
 func NewWriteFunnel(h host.Host, validator SubmitValidator, binaryVersion string) *WriteFunnel {
-	return &WriteFunnel{host: h, validator: validator, binaryVersion: binaryVersion}
+	return &WriteFunnel{
+		host: h, validator: validator, binaryVersion: binaryVersion,
+		mutationAuthority: newMutationAuthority(),
+	}
 }
 
-// Submit runs the write funnel end to end (spec 05 §7):
+// submitPreparedRequest runs an already-prepared request end to end. The
+// exported Submit and SubmitPrepared entry points in prepared.go are the only
+// callers: stamping and validation happen before this function and are never
+// repeated here.
 //
 //	(0) FindPRByHeadBranch short-circuit for a2a/<system>/<id> — an
 //	    existing open/merged PR returns immediately, no second
@@ -367,7 +380,7 @@ func NewWriteFunnel(h host.Host, validator SubmitValidator, binaryVersion string
 //	(3) host.PushBranch to a2a/<system>/<id>.
 //	(4) host.OpenPR with auto-merge enabled (uniform, D-002).
 //	(5) return the write-result.
-func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResult, error) {
+func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitRequest, prior WriteResult, prepared *PreparedSubmission) (WriteResult, error) {
 	const op = "Submit"
 	if req.Verb == "" {
 		return baseWriteResult("", req.ArtifactIDs), &Error{Op: op, Input: req.ArtifactID, Err: ErrMissingVerb}
@@ -383,7 +396,20 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		return baseWriteResult("", req.ArtifactIDs), &Error{Op: op, Input: req.ArtifactID, Err: err}
 	}
 	branch := BranchName(req.System, req.Verb, branchID)
-	result := baseWriteResult(branch, req.ArtifactIDs)
+	result := prior
+	if result.Stage == "" {
+		result = baseWriteResult(branch, req.ArtifactIDs)
+	} else {
+		// PriorResult is invocation-local evidence, not an alternate target.
+		// Keep its proven stage while restoring only immutable identity fields
+		// omitted by older journals.
+		if result.Branch == "" {
+			result.Branch = branch
+		}
+		if len(result.ArtifactIDs) == 0 {
+			result.ArtifactIDs = append([]string(nil), req.ArtifactIDs...)
+		}
+	}
 
 	// Step 0: idempotent-retry short-circuit — before ANY other check or
 	// git action (spec 05 §7 idempotency note). Only an OPEN PR
@@ -406,7 +432,16 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 			}
 			existingIDs = ids
 		}
-		result, err = existingPRResult(branch, existing, existingIDs)
+		if prepared != nil && writeStageRank(result.Stage) >= writeStageRank(WriteStagePushed) {
+			if err := verifyPriorPRIdentity(result, existing, req.BaseBranch); err != nil {
+				return result, &Error{Op: op, Input: branch, Err: err}
+			}
+		}
+		existingResult, existingErr := existingPRResult(branch, existing, existingIDs)
+		err = existingErr
+		if writeStageRank(existingResult.Stage) >= writeStageRank(result.Stage) {
+			result = existingResult
+		}
 		if err != nil {
 			return result, &Error{Op: op, Input: branch, Err: err}
 		}
@@ -436,6 +471,12 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 					result.Note = "PR exists, but the checked head is unavailable; auto-merge was not armed"
 					return failWriteResult(op, branch, result, ErrExpectedHeadUnavailable)
 				}
+				if writeStageRank(prior.Stage) >= writeStageRank(WriteStagePushed) &&
+					(existing.HeadSHA == "" || status.HeadSHA != existing.HeadSHA || status.HeadSHA != prior.CommitSHA) {
+					result.State = WriteStateNeedsAttention
+					result.Note = "PR head does not match the prepared commit; auto-merge was not armed"
+					return failWriteResult(op, branch, result, remoteRecoveryConflict("pr-head-mismatch"))
+				}
 				method, err := am.EnableAutoMerge(ctx, host.EnableAutoMergeRequest{
 					Repo: req.Repo, PRNumber: existing.Number, ExpectedHeadSHA: status.HeadSHA,
 					Credential: req.Credential,
@@ -463,7 +504,7 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 					}
 					if merged {
 						result.State = WriteStateAlreadyMerged
-						result.Stage = WriteStageMerged
+						result.Stage = furthestWriteStage(result.Stage, WriteStageMerged)
 						result.Note = ""
 						return completeWriteResult(op, branch, result)
 					}
@@ -471,7 +512,7 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 					result.Note = "PR exists, but unattended merge is not armed"
 					return completeWriteResult(op, branch, result)
 				}
-				result.Stage = WriteStageAutoMergeArmed
+				result.Stage = furthestWriteStage(result.Stage, WriteStageAutoMergeArmed)
 				result.State = WriteStateAlreadyOpen
 				return completeWriteResult(op, branch, result)
 			}
@@ -481,56 +522,29 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		}
 		return result, nil
 	}
-
-	// Step 1a: section guard — wrong-section files refused before any
-	// git action (shared refusal path, AC-201.3 precondition). A file passes
-	// either by being inside the authoring system's own section (or the
-	// decisions/ exception), or — only when the caller opted in — by being
-	// one of the fixed space-infrastructure paths.
-	for _, file := range req.Files {
-		if !sectionOK(req.System, file.Path) &&
-			(!req.AllowSpaceInfrastructure || !spaceInfraOK(file.Path)) {
-			return result, &Error{Op: op, Input: file.Path, Err: ErrWrongSection}
-		}
+	if writeStageRank(result.Stage) >= writeStageRank(WriteStagePRCreated) {
+		// A prior result proving that a PR existed is monotonic external
+		// evidence. Provider lookup absence cannot authorize a replacement PR;
+		// the caller must reconcile that exact provider outcome.
+		return result, &Error{Op: op, Input: branch, Err: remoteRecoveryConflict("prior-pr-not-observed")}
 	}
 
-	// Step 1b: CC-085 min_binary_version guard — refuse write, stay
-	// read-only. Fails CLOSED on an unparseable version (versionOlderThan
-	// itself already fails closed).
-	if req.MinBinaryVersion != "" {
-		older, err := versionOlderThan(f.binaryVersion, req.MinBinaryVersion)
-		if err != nil {
-			return result, &Error{Op: op, Err: err}
+	var openRequest host.OpenPRRequest
+	if prepared != nil && len(prepared.data.recoveryJSON) > 0 {
+		reader, ok := f.host.(remoteRecoveryReader)
+		if !ok {
+			return failWriteResult(op, branch, result, remoteRecoveryConflict("reader-unavailable"))
 		}
-		if older {
-			return result, &Error{
-				Op: op,
-				Input: fmt.Sprintf("local binary %s < space.yaml min_binary_version %s — run 'a2a update'",
-					f.binaryVersion, req.MinBinaryVersion),
-				Err: ErrStaleBinaryVersion,
-			}
+		repair, found, recoveryErr := probePreparedRemoteRecovery(ctx, reader, *prepared, remoteRecoveryRuntime{
+			RepoDir: req.RepoDir, RemoteURL: req.RemoteURL, Credential: req.Credential,
+		})
+		if recoveryErr != nil {
+			return failWriteResult(op, branch, result, recoveryErr)
 		}
-	}
-
-	// Step 1b-2: stamp every event with the producer that wrote it — the one
-	// place BOTH surfaces pass through, so no verb has to remember and no new
-	// call site can be added without it. Eleven event-construction sites across
-	// three CLI files plus internal/mcp's own builder would otherwise each need
-	// the same line, which is the "enforced only in the caller" shape that gave
-	// this repo an inert write floor for four releases.
-	//
-	// BEFORE step 1c on purpose: the validator must see exactly the bytes that
-	// get committed, or a space would validate one document and receive another.
-	stamped, err := StampProducer(req.Files, f.binaryVersion, req.MinBinaryVersion)
-	if err != nil {
-		return result, &Error{Op: op, Err: err}
-	}
-	req.Files = stamped
-
-	// Step 1c: V2 validation via the submit-validator seam.
-	if f.validator != nil {
-		if err := f.validator.ValidateSubmit(ctx, req.Files); err != nil {
-			return result, &Error{Op: op, Err: err}
+		if found {
+			result.CommitSHA = repair.HeadSHA
+			result.Stage = furthestWriteStage(result.Stage, WriteStagePushed)
+			openRequest = repair.OpenPR
 		}
 	}
 
@@ -539,18 +553,21 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	// across every project/system on this machine that connects the same
 	// space (mirror_root), and this is the only part of Submit that
 	// mutates it. See commitAndPush's own doc for the exact hold window.
-	outcome, err := f.commitAndPush(ctx, req, branch)
-	result.CommitSHA = outcome.sha
-	if outcome.stage != "" {
-		result.Stage = outcome.stage
+	if openRequest.Head == "" {
+		outcome, err := f.commitAndPush(ctx, req, branch)
+		result.CommitSHA = outcome.sha
+		result.Stage = furthestWriteStage(result.Stage, outcome.stage)
+		if err != nil {
+			return failWriteResult(op, branch, result, err)
+		}
+		if outcome.done != nil {
+			return *outcome.done, nil
+		}
+		openRequest = host.OpenPRRequest{
+			Repo: req.Repo, Head: outcome.head, Base: req.BaseBranch,
+			Title: req.PRTitle, Body: req.PRBody, ExpectedHeadSHA: outcome.sha, Credential: req.Credential,
+		}
 	}
-	if err != nil {
-		return failWriteResult(op, branch, result, err)
-	}
-	if outcome.done != nil {
-		return *outcome.done, nil
-	}
-	sha, head := outcome.sha, outcome.head
 
 	// Step 4: open the PR — UNIFORM, auto-merge always (D-002; spec 05
 	// §T1 "Gating needs no OpenPR parameter"). Head is owner-qualified on
@@ -558,18 +575,11 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	// UNLOCKED: commitAndPush already released the mirror lock once the
 	// push completed, so this network round trip does not hold up any
 	// other writer on the mirror.
-	prBody := req.PRBody
-	if req.OperationKey != "" {
-		prBody = appendOperationMetadata(prBody, req.OperationKey, req.ArtifactIDs)
-	}
-	pr, err := f.host.OpenPR(ctx, host.OpenPRRequest{
-		Repo: req.Repo, Head: head, Base: req.BaseBranch,
-		Title: req.PRTitle, Body: prBody, ExpectedHeadSHA: sha, Credential: req.Credential,
-	})
+	pr, err := f.host.OpenPR(ctx, openRequest)
 	if err != nil {
 		if pr.Number > 0 && pr.URL != "" {
 			result.PRNumber, result.PRURL = pr.Number, pr.URL
-			result.Stage, result.MergeMethod = WriteStagePRCreated, pr.MergeMethod
+			result.Stage, result.MergeMethod = furthestWriteStage(result.Stage, WriteStagePRCreated), pr.MergeMethod
 			if hostOutcomeUnknown(err) {
 				result.State = WriteStateOutcomeUnknown
 				result.Note = "PR was created, but the auto-merge outcome could not be confirmed"
@@ -584,7 +594,7 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		return failWriteResult(op, branch, result, err)
 	}
 	result.PRNumber, result.PRURL = pr.Number, pr.URL
-	result.Stage, result.MergeMethod = WriteStagePRCreated, pr.MergeMethod
+	result.Stage, result.MergeMethod = furthestWriteStage(result.Stage, WriteStagePRCreated), pr.MergeMethod
 
 	// Step 4b (WAVE M4): OpenPR's own auto-merge arming can be refused
 	// because the PR is ALREADY mergeable — nothing to wait for. That is
@@ -609,7 +619,7 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 		}
 	} else if pr.AutoMergeArmed {
 		state, note = WriteStatePendingMerge, ""
-		result.Stage = WriteStageAutoMergeArmed
+		result.Stage = furthestWriteStage(result.Stage, WriteStageAutoMergeArmed)
 	} else if note == "" {
 		note = "PR exists, but unattended merge is not armed"
 	}
@@ -618,9 +628,35 @@ func (f *WriteFunnel) Submit(ctx context.Context, req SubmitRequest) (WriteResul
 	// this phase's — spec 05 §7).
 	result.State, result.Note = state, note
 	if state == WriteStateMerged {
-		result.Stage = WriteStageMerged
+		result.Stage = furthestWriteStage(result.Stage, WriteStageMerged)
 	}
 	return completeWriteResult(op, branch, result)
+}
+
+func furthestWriteStage(left, right WriteStage) WriteStage {
+	if writeStageRank(right) > writeStageRank(left) {
+		return right
+	}
+	return left
+}
+
+func writeStageRank(stage WriteStage) int {
+	switch stage {
+	case WriteStageNone:
+		return 1
+	case WriteStageCommitted:
+		return 2
+	case WriteStagePushed:
+		return 3
+	case WriteStagePRCreated:
+		return 4
+	case WriteStageAutoMergeArmed:
+		return 5
+	case WriteStageMerged:
+		return 6
+	default:
+		return 0
+	}
 }
 
 func hostOutcomeUnknown(err error) bool {
@@ -1047,9 +1083,20 @@ func existingPRResult(branch string, pr *host.PRInfo, artifactIDs []string) (Wri
 	}
 	return finalizeWriteResult(WriteResult{
 		Branch: branch, PRNumber: pr.Number, PRURL: pr.URL, State: state,
-		Stage: stage, MergeMethod: pr.MergeMethod,
+		Stage: stage, CommitSHA: pr.HeadSHA, MergeMethod: pr.MergeMethod,
 		ArtifactIDs: append([]string(nil), artifactIDs...),
 	})
+}
+
+func verifyPriorPRIdentity(prior WriteResult, observed *host.PRInfo, expectedBase string) error {
+	if observed == nil || prior.CommitSHA == "" || observed.BaseBranch != expectedBase || observed.HeadSHA != prior.CommitSHA {
+		return remoteRecoveryConflict("prior-pr-identity-mismatch")
+	}
+	if writeStageRank(prior.Stage) >= writeStageRank(WriteStagePRCreated) &&
+		(prior.PRNumber <= 0 || observed.Number != prior.PRNumber) {
+		return remoteRecoveryConflict("prior-pr-identity-mismatch")
+	}
+	return nil
 }
 
 func operationCommitMatches(ctx context.Context, repoDir, branch, remoteSHA, key string) (bool, error) {
@@ -1212,87 +1259,18 @@ func hasPathPrefix(path, prefix string) bool {
 	return len(path) > len(prefix) && path[:len(prefix)] == prefix
 }
 
-// commitOne checks out branch FROM origin/<resolvedBaseBranch(req)> —
-// never from ambient HEAD — writes every req.Files entry to disk under
-// req.RepoDir, stages, and commits them as ONE commit — the D-026 shape.
-// Returns the new commit SHA.
-//
-// The explicit start point is load-bearing, not cosmetic. `checkout -B
-// branch` with NO start point resets branch to whatever HEAD happens to be
-// — and on a SHARED mirror (mirror_root puts every project's clone of a
-// space in one place), HEAD is left standing on the PREVIOUS caller's own
-// ephemeral branch (checkoutRemoteHead's own doc: "commitOne checks it out
-// and never leaves"). Two systems writing the same mirror back to back —
-// even perfectly serialized by AcquireMirrorLock, no race at all — used to
-// produce a second branch whose diff against main carried the FIRST
-// system's files too, because it forked from the first system's branch
-// instead of from base. Verified empirically before this fix (a hermetic
-// two-sequential-Submit repro, no goroutines involved) and is a second,
-// independent defect from the shared-index race AcquireMirrorLock exists
-// to close — a lock alone does not fix it.
+// commitOne builds the desired commit from origin/<base> through a private
+// Git index. It never checks out the ephemeral branch and never reads or
+// mutates a worktree path: symlinks and concurrent directory renames in the
+// shared mirror therefore cannot redirect protocol bytes. The explicit base
+// tree also prevents one writer from inheriting another writer's branch.
 func (f *WriteFunnel) commitOne(ctx context.Context, lock *MirrorLock, req SubmitRequest, branch string) (sha string, fresh bool, err error) {
-	if len(req.Files) == 0 {
-		return "", false, fmt.Errorf("space: commitOne: no files to commit")
-	}
-	if err := mutateTree(lock, req.RepoDir); err != nil {
-		return "", false, err
-	}
-
-	startPoint := "origin/" + resolvedBaseBranch(req)
-	if err := runGit(ctx, req.RepoDir, "checkout", "-B", branch, startPoint); err != nil {
-		return "", false, err
-	}
-
-	// Preflight the ENTIRE write set before creating a directory or writing a
-	// byte. A repository-controlled symlink anywhere below the clone could
-	// redirect a path that passed sectionOK outside the repository. Checking
-	// all destinations first also preserves the funnel's atomic local shape:
-	// one unsafe file cannot leave earlier files partially mutated.
-	for _, file := range req.Files {
-		if err := refuseSymlinkDestination(req.RepoDir, file.Path); err != nil {
-			return "", false, err
-		}
-	}
-
-	paths := make([]string, 0, len(req.Files))
-	for _, file := range req.Files {
-		full := filepath.Join(req.RepoDir, filepath.FromSlash(file.Path))
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			return "", false, err
-		}
-		if err := os.WriteFile(full, file.Content, 0o644); err != nil {
-			return "", false, err
-		}
-		paths = append(paths, file.Path)
-	}
-
-	addArgs := append([]string{"add"}, paths...)
-	if err := runGit(ctx, req.RepoDir, addArgs...); err != nil {
-		return "", false, err
-	}
-
-	// Nothing staged means the branch already carries exactly this content
-	// — a re-run over the same mirror. git refuses an empty commit, so
-	// report the branch tip and let the caller decide what it means: on the
-	// base branch it is a write that already landed, off it a previous
-	// attempt whose push or PR never completed.
-	//
-	// Since the checkout above now always starts branch fresh from
-	// origin/<base> (see this function's own doc), the "off base" half of
-	// that sentence is close to unreachable in practice: a previous
-	// attempt's un-pushed local commit is discarded by the reset before
-	// this diff runs, so re-writing the SAME content almost always stages
-	// as new (this returns fresh=true, a brand-new commit object with the
-	// same tree). Left in place rather than removed: it is still exactly
-	// correct for the one case that DOES reach it — this write's content
-	// already equals origin/<base>'s current tree, i.e. it already merged.
-	staged, err := runGitOutput(ctx, req.RepoDir, nil, "diff", "--cached", "--name-only")
+	mutations, err := normalizeMutations(req.Files, req.Mutations)
 	if err != nil {
 		return "", false, err
 	}
-	if staged == "" {
-		head, herr := runGitOutput(ctx, req.RepoDir, nil, "rev-parse", "HEAD")
-		return head, false, herr
+	if err := f.validateMutationSet(req.OperationKey, mutations); err != nil {
+		return "", false, err
 	}
 
 	authorName := req.CommitAuthorName
@@ -1303,45 +1281,33 @@ func (f *WriteFunnel) commitOne(ctx context.Context, lock *MirrorLock, req Submi
 	if authorEmail == "" {
 		authorEmail = "a2a@a2ahub.invalid"
 	}
-	env := []string{
-		"GIT_AUTHOR_NAME=" + authorName, "GIT_AUTHOR_EMAIL=" + authorEmail,
-		"GIT_COMMITTER_NAME=" + authorName, "GIT_COMMITTER_EMAIL=" + authorEmail,
-	}
 	msg := req.CommitMessage
 	if msg == "" {
 		msg = "a2a: submit " + req.ArtifactID
 	}
-	if req.OperationKey != "" {
+	if req.OperationKey != "" && !hasExactCommitTrailer(msg, "A2A-Operation-Key", req.OperationKey) {
 		msg += "\n\nA2A-Operation-Key: " + req.OperationKey
 	}
-	if _, err := runGitOutput(ctx, req.RepoDir, env, "commit", "-m", msg); err != nil {
-		return "", false, err
+	baseRef := "origin/" + resolvedBaseBranch(req)
+	if req.ExpectedBaseSHA != "" {
+		if !validRemoteRecoveryOID(req.ExpectedBaseSHA) {
+			return "", false, ErrPreparedInvalid
+		}
+		baseRef = req.ExpectedBaseSHA
 	}
-
-	head, err := runGitOutput(ctx, req.RepoDir, nil, "rev-parse", "HEAD")
-	if err != nil {
-		return "", false, err
-	}
-	return head, true, nil
+	return commitTreeFromBase(ctx, lock, treeCommitRequest{
+		RepoDir: req.RepoDir, BaseRef: baseRef,
+		UpdateRef: "refs/heads/" + branch, Mutations: mutations,
+		Message: msg, AuthorName: authorName, AuthorMail: authorEmail,
+	})
 }
 
-func refuseSymlinkDestination(root, rel string) error {
-	current := filepath.Clean(root)
-	for _, component := range strings.Split(filepath.FromSlash(rel), string(filepath.Separator)) {
-		current = filepath.Join(current, component)
-		info, err := os.Lstat(current)
-		if err != nil {
-			if os.IsNotExist(err) {
-				// Once a component is absent, every deeper component is absent
-				// too; MkdirAll may safely create the remainder after all
-				// destinations have passed this preflight.
-				return nil
-			}
-			return err
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return &Error{Op: "commitOne", Input: rel, Err: ErrSymlinkWrite}
+func hasExactCommitTrailer(message, name, value string) bool {
+	want := name + ": " + value
+	for _, line := range strings.Split(message, "\n") {
+		if line == want {
+			return true
 		}
 	}
-	return nil
+	return false
 }

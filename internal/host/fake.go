@@ -111,6 +111,7 @@ func (f *FakeHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, error
 	f.nextPR++
 	info := PRInfo{
 		Number: f.nextPR, URL: "https://example.invalid/pr/" + req.Head, State: "open", Body: req.Body,
+		BaseBranch: req.Base, HeadSHA: req.ExpectedHeadSHA,
 		AutoMergeArmed: true, MergeMethod: MergeMethodMerge,
 	}
 	f.byBranch[req.Head] = info
@@ -134,6 +135,13 @@ func (f *FakeHost) TokenScopes(ctx context.Context, cred Credential) ([]string, 
 func (f *FakeHost) CheckStatus(ctx context.Context, req StatusRequest) (CheckStatusResult, error) {
 	if f.CheckStatusFunc != nil {
 		return f.CheckStatusFunc(ctx, req)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, info := range f.byBranch {
+		if info.Number == req.PRNumber && info.HeadSHA != "" {
+			return CheckStatusResult{State: "completed", Conclusion: "success", HeadSHA: info.HeadSHA}, nil
+		}
 	}
 	return CheckStatusResult{State: "completed", Conclusion: "success", HeadSHA: "fake-checked-head"}, nil
 }

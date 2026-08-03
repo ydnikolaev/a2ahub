@@ -300,7 +300,7 @@ func (h *GitHubHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, err
 	}
 	info := PRInfo{
 		Number: created.Number, URL: created.HTMLURL, State: state, Body: req.Body,
-		MergeMethod: method,
+		BaseBranch: req.Base, HeadSHA: req.ExpectedHeadSHA, MergeMethod: method,
 	}
 
 	// Auto-merge is UNIFORM (spec 05 §T1) — always requested, never
@@ -545,6 +545,12 @@ func (h *GitHubHost) FindPRByHeadBranch(ctx context.Context, req FindPRRequest) 
 		Merged   bool   `json:"merged"`
 		MergedAt string `json:"merged_at"`
 		Body     string `json:"body"`
+		Base     struct {
+			Ref string `json:"ref"`
+		} `json:"base"`
+		Head struct {
+			SHA string `json:"sha"`
+		} `json:"head"`
 	}
 	if err := h.restCall(ctx, op, http.MethodGet, path, req.Credential, nil, &results); err != nil {
 		return nil, err
@@ -552,9 +558,9 @@ func (h *GitHubHost) FindPRByHeadBranch(ctx context.Context, req FindPRRequest) 
 	for _, r := range results {
 		switch {
 		case r.State == "open":
-			return &PRInfo{Number: r.Number, URL: r.HTMLURL, State: "open", Body: r.Body}, nil
+			return &PRInfo{Number: r.Number, URL: r.HTMLURL, State: "open", Body: r.Body, BaseBranch: r.Base.Ref, HeadSHA: r.Head.SHA}, nil
 		case r.Merged || r.MergedAt != "":
-			return &PRInfo{Number: r.Number, URL: r.HTMLURL, State: "merged", Body: r.Body}, nil
+			return &PRInfo{Number: r.Number, URL: r.HTMLURL, State: "merged", Body: r.Body, BaseBranch: r.Base.Ref, HeadSHA: r.Head.SHA}, nil
 		}
 	}
 	return nil, nil

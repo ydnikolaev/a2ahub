@@ -324,7 +324,8 @@ func TestFindPRByHeadBranchReturnsOpenMatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode([]map[string]any{
-			{"number": 9, "html_url": "https://example.invalid/pr/9", "state": "open", "merged": false},
+			{"number": 9, "html_url": "https://example.invalid/pr/9", "state": "open", "merged": false,
+				"base": map[string]any{"ref": "main"}, "head": map[string]any{"sha": "abc123"}},
 		})
 	}))
 	defer srv.Close()
@@ -336,8 +337,8 @@ func TestFindPRByHeadBranchReturnsOpenMatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindPRByHeadBranch: %v", err)
 	}
-	if got == nil || got.Number != 9 {
-		t.Fatalf("FindPRByHeadBranch = %+v, want PR #9", got)
+	if got == nil || got.Number != 9 || got.BaseBranch != "main" || got.HeadSHA != "abc123" {
+		t.Fatalf("FindPRByHeadBranch = %+v, want exact PR #9 identity", got)
 	}
 }
 
