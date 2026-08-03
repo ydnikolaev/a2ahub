@@ -81,6 +81,7 @@ func (e *Engine) validateEventProducer(raw []byte, spaceFloor string) (result Re
 // eventProducerProbe is validate's bounded typed projection of the event fields
 // used by producer, actor-provenance and receipt policy.
 type eventProducerProbe struct {
+	Schema     string  `yaml:"schema"`
 	Event      string  `yaml:"event"`
 	Subject    string  `yaml:"subject"`
 	Transition string  `yaml:"transition"`
@@ -129,7 +130,8 @@ func malformedEventViolation() Violation {
 	}
 }
 
-// ValidateEvent validates one committed event document: its event/v1 SCHEMA, and
+// ValidateEvent validates one committed event document against its exact shipped
+// event/v1 or event/v2 schema, and
 // — once the space's floor has reached version.ProducerStampFloor — that it names
 // the producer that wrote it.
 //
@@ -169,7 +171,16 @@ func (e *Engine) validateEvent(raw []byte, spaceFloor string, evaluation *fold.C
 		return newResult(V2, "", []Violation{malformedEventViolation()}), nil
 	}
 
-	fieldViolations, serr := e.corpus.ValidateEvent("event/v1", instance)
+	// Historical event/v1 and the contract-publication event/v2 are distinct
+	// shipped corpus objects. Select only from the document's exact schema id;
+	// an absent or unknown id is deliberately validated as v1 so its own
+	// required/const rule becomes a content violation instead of an engine
+	// error or an invented third dispatch path.
+	eventVersion := "v1"
+	if probe.Schema == "event/v2" {
+		eventVersion = "v2"
+	}
+	fieldViolations, serr := e.corpus.ValidateEvent(eventVersion, instance)
 	if serr != nil {
 		return Result{}, &Error{Op: op, Err: serr}
 	}
