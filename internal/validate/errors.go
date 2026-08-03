@@ -8,12 +8,12 @@
 //
 // This package is pure core (go-conventions.md "Architecture": no I/O,
 // never logs — every exported entry point returns a value). It imports
-// internal/artifact (ID parse, frontmatter split, digest) and
-// internal/schema (compiled corpus + registry); it does NOT import
-// internal/fold — the lifecycle class calls out through the
-// LegalityChecker interface (seam.go), a consumer-side ISP interface P4's
-// concrete implementation is wired into at cmd/a2a (P6), per this epic's
-// plan Amendment (2026-07-21).
+// internal/artifact (ID parse, frontmatter split, digest), internal/schema
+// (compiled corpus + registry), and internal/fold's immutable candidate-
+// evaluation value. Legacy lifecycle callers still use the consumer-side
+// LegalityChecker interface (seam.go); contextual event validation consumes
+// the exact fold.EvaluateCandidate result so receipt applicability/outcome are
+// never re-derived here.
 package validate
 
 import "errors"

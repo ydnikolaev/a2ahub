@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 )
 
@@ -145,6 +146,18 @@ func TestRegistryClosure(t *testing.T) {
 		t.Fatalf("checkLifecycle: %v", err)
 	}
 	record(lfc2)
+	// LFC-003: once the lead activates the reserved live-registry row, keep it
+	// tied to the real contextual receipt emitter rather than marking it by
+	// declaration. Before that atomic registry+fixture integration, the row is
+	// intentionally absent and this conditional does nothing.
+	if registry.Has("LFC-003") {
+		lfc3, _ := checkEventReceipt(
+			eventProducerProbe{},
+			true,
+			questionEvaluation(fold.StateNone, fold.TAcknowledge),
+		)
+		record(lfc3)
+	}
 
 	// POL-001: secret pattern in raw content.
 	record(scanForSecrets([]byte("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE")))
@@ -160,12 +173,32 @@ func TestRegistryClosure(t *testing.T) {
 	engine := mustEngine(t)
 	result, err := engine.ValidateDraft(Draft{
 		Path: "axon/exchanges/XW-axon-20260731-p9d3.md",
-		Raw:  []byte("---\nschema: envelope/v2\nid: XW-axon-20260731-p9d3\n---\nbody\n"),
+		Raw:  []byte("---\nschema: envelope/v3\nid: XW-axon-20260731-p9d3\n---\nbody\n"),
 	})
 	if err != nil {
 		t.Fatalf("ValidateDraft: %v", err)
 	}
 	record(result.Violations)
+
+	// POL-012/POL-016 are P0-reserved but land in the live registry only with
+	// their lead-owned fixtures. Once present, exercise each through its real
+	// emitter so registry closure cannot be satisfied by a hand-marked code.
+	if registry.Has("POL-012") {
+		probe := eventProducerProbe{}
+		probe.ProducedBy.Tool = "a2a"
+		probe.ProducedBy.Version = "not-semver"
+		_, violation := firstPartyReceiptStatus(probe)
+		if violation == nil {
+			t.Fatal("firstPartyReceiptStatus did not emit reserved POL-012")
+		}
+		record([]Violation{*violation})
+	}
+	if registry.Has("POL-016") {
+		emptyModel := ""
+		probe := eventProducerProbe{}
+		probe.Actor.Model = &emptyModel
+		record(checkFirstPartyActor(probe))
+	}
 
 	// POL-006: retire refused because a registered consumer hasn't acked.
 	if v, _ := CheckRetirePrecondition(RetirePrecondition{
