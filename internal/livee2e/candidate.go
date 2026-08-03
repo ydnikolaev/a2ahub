@@ -69,6 +69,17 @@ func candidateCheckAttestation(raw []byte, checkLog string, want CandidateExpect
 		"UNTRACKED_CLEAN":   "true",
 		"EXIT":              "0",
 	}
+	markerOrder := []string{
+		"CHECKOUT_ROOT",
+		"CANDIDATE_SHA",
+		"CANDIDATE_TREE",
+		"CANDIDATE_TAG",
+		"CHECKOUT_DETACHED",
+		"INDEX_CLEAN",
+		"WORKTREE_CLEAN",
+		"UNTRACKED_CLEAN",
+		"EXIT",
+	}
 	parsed := make(map[string]string, len(values))
 	counts := make(map[string]int, len(values))
 	for _, line := range strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n") {
@@ -82,7 +93,8 @@ func candidateCheckAttestation(raw []byte, checkLog string, want CandidateExpect
 		counts[key]++
 		parsed[key] = value
 	}
-	for key, expected := range values {
+	for _, key := range markerOrder {
+		expected := values[key]
 		if counts[key] != 1 {
 			return CandidateAttestation{}, fmt.Errorf("retained check log must contain exactly one %s marker", key)
 		}
