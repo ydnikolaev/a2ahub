@@ -7,7 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"regexp"
-	"strings"
+
+	"github.com/ydnikolaev/a2ahub/internal/sensitive"
 )
 
 // SafeSessionPattern is the frozen first-party session identifier contract.
@@ -65,46 +66,5 @@ func SafeSessionEvidence(session string) string {
 // credential-shape denylist. The latter matters because many real credential
 // formats use only characters permitted by the identifier grammar.
 func IsSafeSession(session string) bool {
-	return safeSession.MatchString(session) && !credentialShapedSession(session)
-}
-
-var credentialPrefixes = []string{
-	"token:",
-	"password:",
-	"bearer:",
-	"ghp_",
-	"github_pat_",
-	"glpat-",
-	"sk-",
-	"xoxb-",
-	"xoxp-",
-}
-
-var credentialPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`AKIA[0-9A-Z]{16}`),
-	regexp.MustCompile(`ghp_[A-Za-z0-9]{36}`),
-	regexp.MustCompile(`gh[ours]_[A-Za-z0-9]{36}`),
-	regexp.MustCompile(`github_pat_[0-9a-zA-Z_]{60,}`),
-	regexp.MustCompile(`xox[baprs]-[0-9A-Za-z-]{10,}`),
-	regexp.MustCompile(`https://hooks\.slack\.com/services/[A-Za-z0-9/]+`),
-	regexp.MustCompile(`glpat-[0-9A-Za-z_-]{20,}`),
-	regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`),
-	regexp.MustCompile(`AIza[0-9A-Za-z_-]{35}`),
-	regexp.MustCompile(`sk_live_[0-9A-Za-z]{24,}`),
-	regexp.MustCompile(`Bearer\s+[A-Za-z0-9._-]{20,}`),
-}
-
-func credentialShapedSession(session string) bool {
-	lower := strings.ToLower(session)
-	for _, prefix := range credentialPrefixes {
-		if strings.HasPrefix(lower, prefix) {
-			return true
-		}
-	}
-	for _, pattern := range credentialPatterns {
-		if pattern.MatchString(session) {
-			return true
-		}
-	}
-	return false
+	return safeSession.MatchString(session) && !sensitive.Identifier(session)
 }
