@@ -12,6 +12,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -130,9 +131,14 @@ func registerSpaceFree(r *Registry, store *cache.Store) {
 // a2a_read; write backs every write tool's shared plumbing (funnel, mirror,
 // manifest, actor resolution, clock/entropy); newDeps backs a2a_new and
 // a2a_contract action=new's draft path; submitStaging/legality back
-// a2a_submit's own idempotency short-circuit.
-func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string, legality *LegalityAdapter, newDeps NewDeps) *Registry {
+// a2a_submit's own idempotency short-circuit. Production passes exactly one
+// cmd/a2a-composed work dependency graph; the omitted form is retained only
+// for isolated registry tests and exposes an explicit unavailable backend.
+func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string, legality *LegalityAdapter, newDeps NewDeps, workDeps ...WorkToolDeps) *Registry {
 	r := NewRegistry()
+	if len(workDeps) > 1 {
+		panic("mcp: BuildRegistry accepts at most one work dependency set")
+	}
 	// P37 Wave I: `a2a_contract` publish needs the SAME staging dir
 	// `a2a_submit` already receives here, to fold a staged schema/fixture
 	// edit into the version it is declaring (ContractDeps.StagingDir's own
@@ -143,6 +149,15 @@ func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string,
 
 	// --- a2a_read + a2a_whatsnew (need no space; see registerSpaceFree) --
 	registerSpaceFree(r, store)
+	work := unavailableWorkToolDeps()
+	if len(workDeps) == 1 {
+		work = workDeps[0]
+	}
+	workTool, err := NewWorkTool(work)
+	if err != nil {
+		panic(fmt.Sprintf("mcp: build a2a_work: %v", err))
+	}
+	r.Register(workTool)
 
 	// --- new / submit (action-free tools, unchanged shape) ---------------
 	r.Register(ToolSpec{Name: "a2a_new", Description: "draft one or more new artifacts (items[]) on one thread; an item's fields key may be a dotted path into a nested field, e.g. expected_response.shape", InputSchema: rawSchema(map[string]string{"items": "array", "thread": "string"}, "items"), Handler: newNewHandler(newDeps)})

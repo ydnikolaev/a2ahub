@@ -14,6 +14,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -21,6 +22,8 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
+	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
 
 // cliFixtureThread is the §3.8 thread every hand-built envelope fixture in
@@ -145,6 +148,144 @@ func TestValidateCI_PRHappyPath(t *testing.T) {
 	if len(rep.DiffAuthz) != 0 {
 		t.Fatalf("unexpected diff-authz violations: %+v", rep.DiffAuthz)
 	}
+}
+
+func TestValidateCIWorkCheckpointMountsV3AgainstBaseAndHead(t *testing.T) {
+	t.Parallel()
+	pair := newCIWorkPair(t, nil, false)
+	code, report, stderr := runCI(t, ciEngine(t), pair.root, fakeGit(pair.artifactPath, pair.eventPath), "v3-pr", pair.base, "axon-bot")
+	if code != 0 || !report.Valid {
+		t.Fatalf("valid V3 checkpoint refused: code=%d stderr=%s report=%+v", code, stderr, report)
+	}
+	code, report, stderr = runCI(t, ciEngine(t), pair.root, nil, "v3-full-repo", "", "")
+	if code != 0 || !report.Valid {
+		t.Fatalf("valid full-repo V3 checkpoint refused: code=%d stderr=%s report=%+v", code, stderr, report)
+	}
+	if err := os.WriteFile(filepath.Join(pair.root, filepath.FromSlash(pair.artifactPath)), []byte(strings.Replace(pair.artifactRaw, "summary: Work", "summary: ghp_abcdefghijklmnopqrstuvwxyz1234567890", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, report, _ = runCI(t, ciEngine(t), pair.root, fakeGit(pair.artifactPath, pair.eventPath), "v3-pr", pair.base, "axon-bot")
+	if code == 0 || report.Valid {
+		t.Fatalf("secret-bearing manual work checkpoint passed V3: %+v", report)
+	}
+	if err := os.WriteFile(filepath.Join(pair.root, filepath.FromSlash(pair.artifactPath)), []byte(strings.Replace(pair.artifactRaw, "to: [beta]", "to: [ghost]", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, report, _ = runCI(t, ciEngine(t), pair.root, fakeGit(pair.artifactPath, pair.eventPath), "v3-pr", pair.base, "axon-bot")
+	if code == 0 || report.Valid {
+		t.Fatalf("unknown work recipient passed canonical validation: %+v", report)
+	}
+}
+
+func TestValidateCIWorkCheckpointRequiresExactPublishPairProvenance(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, want string
+		edit       func(string) string
+		split      bool
+	}{
+		{name: "wrong transition", want: "publish/published", edit: func(raw string) string { return strings.Replace(raw, "transition: publish", "transition: submit", 1) }},
+		{name: "wrong state", want: "publish/published", edit: func(raw string) string { return strings.Replace(raw, "state: published", "state: submitted", 1) }},
+		{name: "wrong actor", want: "actor does not match", edit: func(raw string) string { return strings.Replace(raw, "name: codex", "name: other", 1) }},
+		{name: "unrelated event", want: "no exact publish/published candidate event", edit: func(raw string) string {
+			return strings.Replace(raw, "subject: XA-axon-20260803-b3c4", "subject: XA-axon-20260803-c3d4", 1)
+		}},
+		{name: "split commits", want: "not introduced in one first-parent commit", split: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			pair := newCIWorkPair(t, test.edit, test.split)
+			for _, mode := range []string{"v3-pr", "v3-full-repo"} {
+				git := fakeGit(pair.artifactPath, pair.eventPath)
+				base := pair.base
+				if mode == "v3-full-repo" {
+					git, base = nil, ""
+				}
+				code, report, _ := runCI(t, ciEngine(t), pair.root, git, mode, base, "axon-bot")
+				if code == 0 || report.Valid || !ciReportHasError(report, test.want) {
+					t.Fatalf("invalid %s pair passed or wrong refusal: code=%d want=%q report=%+v", mode, code, test.want, report)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateCIFullRepoIgnoresLaterSameSubjectNonPublishEventForPairing(t *testing.T) {
+	t.Parallel()
+	pair := newCIWorkPair(t, nil, false)
+	noteID := "01J5A1B2C3D4E5F6G7H8J9K0M2"
+	notePath := "axon/events/2026/" + noteID + ".yaml"
+	note := "schema: event/v1\nevent: " + noteID + "\nspace: fixture-space\nsubject: XA-axon-20260803-b3c4\ntransition: note\nactor: {kind: agent, name: codex, system: axon}\nat: 2026-08-03T11:00:00Z\nnote: Still working.\nproduced_by: {tool: a2a, version: \"0.19.0\"}\n"
+	absolute := filepath.Join(pair.root, filepath.FromSlash(notePath))
+	if err := os.WriteFile(absolute, []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ciTestGit(t, pair.root, "add", "--", notePath)
+	ciTestGit(t, pair.root, "commit", "-m", "later checkpoint note")
+	code, report, stderr := runCI(t, ciEngine(t), pair.root, nil, "v3-full-repo", "", "")
+	if code != 0 || !report.Valid {
+		t.Fatalf("same-subject note displaced exact publish pair: code=%d stderr=%s report=%+v", code, stderr, report)
+	}
+}
+
+type ciWorkPairFixture struct {
+	root, base, artifactPath, eventPath, artifactRaw string
+}
+
+func newCIWorkPair(t *testing.T, editEvent func(string) string, split bool) ciWorkPairFixture {
+	t.Helper()
+	fx := spacefixture.New(t, "axon", "beta")
+	root := fx.Clone("axon")
+	base := strings.TrimSpace(ciTestGit(t, root, "rev-parse", "HEAD"))
+	id := "XA-axon-20260803-b3c4"
+	eventID := "01J5A1B2C3D4E5F6G7H8J9K0M1"
+	artifactPath := "axon/exchanges/" + id + ".md"
+	eventPath := "axon/events/2026/" + eventID + ".yaml"
+	artifactRaw := "---\nschema: envelope/v2\nid: " + id + "\ntype: announcement\ntitle: Work checkpoint\nspace: fixture-space\nfrom: axon\nto: [beta]\nactor: {kind: agent, name: codex, session: \"session:01K20ABCDEFHJKMNPQRSTVWXYZ\"}\ncreated: 2026-08-03T10:15:00Z\ncategory: status\npriority: p2\nblocking: false\nack_requested: false\nclassification: internal\nthread: thread:axon-20260803-a2b3\nwork: {id: \"work:01K20ABCDEFHJKMNPQRSTVWXYZ\", semantic_sequence: 1, mode: implementing, subject_ref: \"thread:axon-20260803-a2b3\", summary: Work, reported_at: \"2026-08-03T10:15:00Z\", valid_until: \"2026-08-04T10:15:00Z\"}\n---\nWork.\n"
+	eventRaw := "schema: event/v1\nevent: " + eventID + "\nspace: fixture-space\nsubject: " + id + "\ntransition: publish\nstate: published\nactor: {kind: agent, name: codex, system: axon, session: \"session:01K20ABCDEFHJKMNPQRSTVWXYZ\"}\nat: 2026-08-03T10:15:00Z\nproduced_by: {tool: a2a, version: \"0.19.0\"}\n"
+	if editEvent != nil {
+		eventRaw = editEvent(eventRaw)
+	}
+	for path, raw := range map[string]string{artifactPath: artifactRaw, eventPath: eventRaw} {
+		absolute := filepath.Join(root, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(absolute, []byte(raw), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if split {
+		ciTestGit(t, root, "add", "--", artifactPath)
+		ciTestGit(t, root, "commit", "-m", "manual work artifact")
+		ciTestGit(t, root, "add", "--", eventPath)
+		ciTestGit(t, root, "commit", "-m", "manual work event")
+	} else {
+		ciTestGit(t, root, "add", "--", artifactPath, eventPath)
+		ciTestGit(t, root, "commit", "-m", "manual work checkpoint")
+	}
+	return ciWorkPairFixture{root: root, base: base, artifactPath: artifactPath, eventPath: eventPath, artifactRaw: artifactRaw}
+}
+
+func ciReportHasError(report ciReport, want string) bool {
+	for _, artifact := range report.Artifacts {
+		if strings.Contains(artifact.Error, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func ciTestGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", gitfixture.Args(args...)...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=a2a", "GIT_AUTHOR_EMAIL=a@invalid", "GIT_COMMITTER_NAME=a2a", "GIT_COMMITTER_EMAIL=a@invalid")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return string(out)
 }
 
 func TestValidateCI_PRNoChangedArtifacts(t *testing.T) {

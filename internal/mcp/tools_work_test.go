@@ -143,6 +143,31 @@ func TestWorkToolRoutesEveryClosedActionAndBindsSelection(t *testing.T) {
 	}
 }
 
+func TestWorkToolRejectsContinuationAudienceOverridesAndPreservesPendingRefusal(t *testing.T) {
+	t.Parallel()
+	identity := workreport.WorkIdentityInput{ProjectID: testMCPWorkProject, Space: "checkout-core", Thread: "thread:t", WorkID: testMCPWorkID, Actor: workreport.Actor{Session: "s"}}
+	for _, field := range []WorkInput{
+		{Action: "checkpoint", WorkID: testMCPWorkID, Session: "s", Mode: "testing", Summary: "x", Recipients: []string{"beta"}},
+		{Action: "wait", WorkID: testMCPWorkID, Session: "s", Summary: "x", WaitingOn: []WorkWaitingInput{{Kind: "system", ID: "beta"}}, Classification: "restricted"},
+		{Action: "stop", WorkID: testMCPWorkID, Session: "s", Result: "paused", Summary: "x", Recipients: []string{"all"}},
+	} {
+		backend := &fakeMCPWorkBackend{identity: identity}
+		if _, err := callWorkTool(t, testWorkTool(t, backend), field); err == nil || len(backend.calls) != 0 {
+			t.Fatalf("override accepted: input=%+v calls=%v err=%v", field, backend.calls, err)
+		}
+	}
+	backend := &fakeMCPWorkBackend{
+		identity: identity,
+		result:   workreport.OperationResult{WorkID: testMCPWorkID, Session: "s", OperationKey: "op-v1-" + strings.Repeat("a", 64), Action: workreport.ActionStart, LocalErrorCode: workreport.LocalErrorPendingOperation, LocalState: workreport.LocalActive},
+		err:      &workreport.PendingOperationError{OperationKey: "op-v1-" + strings.Repeat("a", 64), Action: workreport.ActionStart},
+	}
+	got, err := callWorkTool(t, testWorkTool(t, backend), WorkInput{Action: "checkpoint", WorkID: testMCPWorkID, Session: "s", Mode: "testing", Summary: "x"})
+	output, ok := got.(workOperationOutput)
+	if err == nil || !ok || output.Local.ErrorCode != workreport.LocalErrorPendingOperation || output.OperationKey == "" || output.Action != workreport.ActionStart {
+		t.Fatalf("pending structure lost: output=%#v err=%v", got, err)
+	}
+}
+
 func TestWorkToolRequiresPairedOwnershipAndRedactsSelectionFailure(t *testing.T) {
 	t.Parallel()
 

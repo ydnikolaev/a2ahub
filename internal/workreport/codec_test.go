@@ -2,6 +2,7 @@ package workreport
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -75,6 +76,57 @@ func TestLeaseCodecPreservesOpaqueJSONBytesExactly(t *testing.T) {
 	}
 	if !bytes.Equal(encoded, reencoded) {
 		t.Fatalf("codec is not canonical\nfirst:  %s\nsecond: %s", encoded, reencoded)
+	}
+}
+
+func TestUnmarshalLeasePreservesUnknownLegacyAudienceWithoutInventingAuthority(t *testing.T) {
+	t.Parallel()
+	lease := coordinatorLease(1)
+	encoded, err := MarshalLease(lease)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &object); err != nil {
+		t.Fatal(err)
+	}
+	delete(object, "recipients")
+	delete(object, "classification")
+	legacy, err := json.Marshal(object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := UnmarshalLease(legacy)
+	if err != nil {
+		t.Fatalf("legacy lease rejected: %v", err)
+	}
+	if len(decoded.Recipients) != 0 || decoded.Classification != "" {
+		t.Fatalf("legacy audience was invented = %v/%q", decoded.Recipients, decoded.Classification)
+	}
+	rewritten, err := MarshalLease(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(rewritten, []byte(`"recipients"`)) || bytes.Contains(rewritten, []byte(`"classification"`)) {
+		t.Fatalf("rewritten legacy lease invented authority: %s", rewritten)
+	}
+	for _, field := range []string{"recipients", "classification"} {
+		partial := make(map[string]json.RawMessage, len(object)+1)
+		for key, value := range object {
+			partial[key] = value
+		}
+		if field == "recipients" {
+			partial[field] = json.RawMessage(`["all"]`)
+		} else {
+			partial[field] = json.RawMessage(`"internal"`)
+		}
+		raw, marshalErr := json.Marshal(partial)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		if _, unmarshalErr := UnmarshalLease(raw); unmarshalErr == nil {
+			t.Fatalf("partially persisted legacy audience accepted: field=%s", field)
+		}
 	}
 }
 

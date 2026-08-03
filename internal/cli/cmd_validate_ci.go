@@ -36,6 +36,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"github.com/ydnikolaev/a2ahub/internal/workcheckpoint"
 	"gopkg.in/yaml.v3"
 )
 
@@ -215,7 +216,7 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 				continue
 			}
 		}
-		rep, ok := validateCIArtifact(engine, root, relPath, manifest, resolver)
+		rep, ok := validateCIArtifact(ctx, engine, root, relPath, mode, base, events, manifest, resolver)
 		if rep == nil {
 			// Absent on disk (deleted in this PR) — nothing to validate.
 			continue
@@ -401,7 +402,7 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 // event/v1 documents use the PR head's envelopes and the merge-base's event
 // history, excluding every changed event path. Passing events here would fold
 // the PR checkout's candidate into its own prior.
-func validateCIArtifact(engine *validate.Engine, root, relPath string, manifest space.Manifest, resolver validate.Resolver) (*validateReport, bool) {
+func validateCIArtifact(ctx context.Context, engine *validate.Engine, root, relPath, mode, base string, eventPaths []string, manifest space.Manifest, resolver validate.Resolver) (*validateReport, bool) {
 	raw, err := os.ReadFile(filepath.Join(root, relPath))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -436,8 +437,136 @@ func validateCIArtifact(engine *validate.Engine, root, relPath string, manifest 
 	if err != nil {
 		return &validateReport{Path: relPath, Error: err.Error()}, false
 	}
+	result.InvocationPoint = validate.V3
+	// V3 preserves V2's fail-closed order: the existing generic submit policy
+	// owns the outer envelope first; contextual work rules only see a generic-
+	// valid candidate. This avoids replacing stable generic violation codes with
+	// parser/history errors from a malformed work-shaped document.
+	if result.Valid {
+		if contextual, applies, contextualErr := validateCIWorkCheckpoint(ctx, engine, root, relPath, mode, base, eventPaths, ownSystem, raw); contextualErr != nil {
+			return &validateReport{Path: relPath, Error: contextualErr.Error()}, false
+		} else if applies && !contextual.Valid {
+			result.Violations = append(result.Violations, contextual.Violations...)
+			result.Valid = false
+		}
+	}
 	r := result
 	return &validateReport{Path: relPath, Result: &r}, result.Valid
+}
+
+type ciWorkEnvelope struct {
+	ID       string `yaml:"id"`
+	Type     string `yaml:"type"`
+	Space    string `yaml:"space"`
+	From     string `yaml:"from"`
+	Category string `yaml:"category"`
+	Actor    struct {
+		Kind    string `yaml:"kind"`
+		Name    string `yaml:"name"`
+		Model   string `yaml:"model"`
+		Session string `yaml:"session"`
+	} `yaml:"actor"`
+	Work *struct{} `yaml:"work"`
+}
+
+type ciWorkEvent struct {
+	Event      string `yaml:"event"`
+	Space      string `yaml:"space"`
+	Subject    string `yaml:"subject"`
+	Transition string `yaml:"transition"`
+	State      string `yaml:"state"`
+	Actor      struct {
+		Kind    string `yaml:"kind"`
+		Name    string `yaml:"name"`
+		System  string `yaml:"system"`
+		Model   string `yaml:"model"`
+		Session string `yaml:"session"`
+	} `yaml:"actor"`
+}
+
+func validateCIWorkCheckpoint(ctx context.Context, engine *validate.Engine, root, relPath, mode, base string, eventPaths []string, ownSystem string, raw []byte) (validate.Result, bool, error) {
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return validate.Result{}, false, nil
+	}
+	var envelope ciWorkEnvelope
+	if err := yaml.Unmarshal(fm.YAML, &envelope); err != nil || envelope.Work == nil || envelope.Type != "announcement" || envelope.Category != "status" {
+		return validate.Result{}, false, nil
+	}
+	var eventRaw []byte
+	var eventPath, eventID string
+	var pairedEvent ciWorkEvent
+	for _, candidatePath := range eventPaths {
+		candidateRaw, readErr := readBoundedFile(filepath.Join(root, candidatePath), maxMirrorEventBytes)
+		if readErr != nil {
+			continue
+		}
+		var candidate ciWorkEvent
+		if yaml.Unmarshal(candidateRaw, &candidate) == nil && candidate.Subject == envelope.ID &&
+			candidate.Space == envelope.Space && candidate.Transition == "publish" && candidate.State == "published" {
+			if eventRaw != nil {
+				return validate.Result{}, true, fmt.Errorf("work checkpoint %s has multiple publish/published candidate events", envelope.ID)
+			}
+			eventRaw, eventPath, eventID, pairedEvent = candidateRaw, candidatePath, candidate.Event, candidate
+		}
+	}
+	if eventRaw == nil {
+		return validate.Result{}, true, fmt.Errorf("work checkpoint %s has no exact publish/published candidate event", envelope.ID)
+	}
+	if pairedEvent.Actor.System != envelope.From || pairedEvent.Actor.Kind != envelope.Actor.Kind || pairedEvent.Actor.Name != envelope.Actor.Name ||
+		pairedEvent.Actor.Model != envelope.Actor.Model || pairedEvent.Actor.Session != envelope.Actor.Session {
+		return validate.Result{}, true, fmt.Errorf("work checkpoint %s event actor does not match the checkpoint actor", envelope.ID)
+	}
+	artifactCommit, err := workCheckpointIntroductionCommit(ctx, root, relPath)
+	if err != nil {
+		return validate.Result{}, true, err
+	}
+	eventCommit, err := workCheckpointIntroductionCommit(ctx, root, eventPath)
+	if err != nil {
+		return validate.Result{}, true, err
+	}
+	if artifactCommit != eventCommit {
+		return validate.Result{}, true, fmt.Errorf("work checkpoint %s artifact and event were not introduced in one first-parent commit", envelope.ID)
+	}
+	authorityRef := base
+	if mode == "v3-full-repo" {
+		// A full-repo audit evaluates each immutable record at its own atomic
+		// introduction point. Reusing a later touch would let future history
+		// masquerade as the candidate's prior state.
+		authorityRef = artifactCommit
+	}
+	facts, err := space.NewWorkCheckpointRepositoryFactsAt(root, ownSystem, authorityRef, "HEAD", nil)
+	if err != nil {
+		return validate.Result{}, true, err
+	}
+	validator, err := workcheckpoint.NewContextual(engine, facts, ownSystem)
+	if err != nil {
+		return validate.Result{}, true, err
+	}
+	candidate := space.WorkCheckpointValidation{
+		InvocationPoint: string(validate.V3), Space: envelope.Space, ArtifactID: envelope.ID, EventID: eventID,
+		ArtifactPath: relPath, EventPath: eventPath, Artifact: raw, Event: eventRaw,
+	}
+	if err := validator.ValidateWorkCheckpoint(ctx, candidate); err != nil {
+		var violations *workcheckpoint.ViolationError
+		if errors.As(err, &violations) {
+			return validate.Result{InvocationPoint: validate.V3, ArtifactID: envelope.ID, Valid: false, Violations: violations.Violations}, true, nil
+		}
+		return validate.Result{}, true, err
+	}
+	return validate.Result{InvocationPoint: validate.V3, ArtifactID: envelope.ID, Valid: true, Violations: []validate.Violation{}}, true, nil
+}
+
+func workCheckpointIntroductionCommit(ctx context.Context, root, relPath string) (string, error) {
+	raw, err := contractGitBounded(ctx, root, 128, "log", "--first-parent", "--diff-filter=A", "-1", "--format=%H", "HEAD", "--", relPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve work checkpoint introduction for %s: %w", relPath, err)
+	}
+	commit := strings.TrimSpace(string(raw))
+	if commit == "" || strings.ContainsAny(commit, " \t\r\n") {
+		return "", fmt.Errorf("resolve work checkpoint introduction for %s: no exact first-parent commit", relPath)
+	}
+	return commit, nil
 }
 
 // diffAuthz enforces that every section-scoped changed path — any extension,
@@ -808,10 +937,12 @@ func spaceLevelOwnSystem(relPath string) string {
 }
 
 // walkArtifacts collects every validatable file in the checkout
-// (v3-full-repo scope): `*.md` under a participant section, each section's
-// `consumes.yaml`, and the space-level decisions/ artifacts, which belong
-// to no section. The bare `.git` object store is skipped (it holds no
-// artifacts and grows with history).
+// (v3-full-repo scope): `*.md`, event documents and `consumes.yaml` under a
+// participant section, plus the space-level decisions/ artifacts, which
+// belong to no section. Events are part of the walk both for their own V3
+// verdict and so a committed work checkpoint can bind its exact paired
+// publish event. The bare `.git` object store is skipped (it holds no
+// working-tree documents and grows with history).
 func walkArtifacts(root string, manifest space.Manifest) ([]string, error) {
 	var out []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -824,7 +955,7 @@ func walkArtifacts(root string, manifest space.Manifest) ([]string, error) {
 			}
 			return nil
 		}
-		if !strings.HasSuffix(path, ".md") && !isConsumesRegistry(path) {
+		if !strings.HasSuffix(path, ".md") && !isConsumesRegistry(path) && !isEventDocument(filepath.ToSlash(path)) {
 			return nil
 		}
 		rel, relErr := filepath.Rel(root, path)

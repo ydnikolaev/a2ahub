@@ -55,12 +55,15 @@ type WorkPreparationRuntimeProvider interface {
 // canonical validation engine; space supplies exact candidate documents and
 // does not duplicate contextual rules.
 type WorkCheckpointValidation struct {
-	ProjectID  string
-	Space      string
-	ArtifactID string
-	EventID    string
-	Artifact   []byte
-	Event      []byte
+	InvocationPoint string
+	ProjectID       string
+	Space           string
+	ArtifactID      string
+	EventID         string
+	ArtifactPath    string
+	EventPath       string
+	Artifact        []byte
+	Event           []byte
 }
 
 type WorkCheckpointValidator interface {
@@ -165,17 +168,18 @@ func (p *WorkPreparer) Prepare(ctx context.Context, request workreport.Preparati
 		return workreport.PreparedOperation{}, fmt.Errorf("space: encode work publish event: %w", err)
 	}
 
+	artifactPath := layout.Exchange(artifactID)
+	eventPath := layout.EventFile(request.ReportedAt.UTC().Format("2006"), eventID)
 	validation := WorkCheckpointValidation{
 		ProjectID: request.Identity.ProjectID, Space: request.Identity.Space,
 		ArtifactID: artifactID, EventID: eventID,
+		ArtifactPath: artifactPath, EventPath: eventPath,
 		Artifact: bytes.Clone(announcement), Event: bytes.Clone(event),
 	}
 	if err := p.validator.ValidateWorkCheckpoint(ctx, validation); err != nil {
 		return workreport.PreparedOperation{}, fmt.Errorf("space: validate work checkpoint context: %w", err)
 	}
 
-	artifactPath := layout.Exchange(artifactID)
-	eventPath := layout.EventFile(request.ReportedAt.UTC().Format("2006"), eventID)
 	candidate := SubmitRequest{
 		System: request.Identity.Actor.System, Verb: "work-checkpoint",
 		ArtifactID: artifactID, ArtifactIDs: []string{artifactID}, OperationKey: request.OperationKey,

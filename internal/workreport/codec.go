@@ -10,6 +10,8 @@ import (
 
 // MarshalLease encodes the lease deterministically while splicing the two P4
 // journals as raw JSON values. It never decodes or re-marshals those values.
+// A schema-v1 lease predating audience persistence keeps both audience fields
+// absent; encoding must not manufacture authorization the old record lacks.
 func MarshalLease(lease Lease) ([]byte, error) {
 	if err := validateLeaseStructure(lease); err != nil {
 		return nil, err
@@ -29,10 +31,41 @@ func marshalLeaseUnchecked(lease Lease) ([]byte, error) {
 		{"project_id", lease.Identity.ProjectID}, {"space", lease.Identity.Space}, {"thread", lease.Identity.Thread},
 		{"work_id", lease.Identity.WorkID}, {"subject_ref", lease.SubjectRef}, {"actor", lease.Identity.Actor},
 		{"mode", lease.Mode}, {"summary", lease.Summary}, {"waiting_on", nonNilWaiting(lease.WaitingOn)},
-		{"started_at", formatTime(lease.StartedAt)}, {"renewed_at", formatTime(lease.RenewedAt)},
-		{"expires_at", formatTime(lease.ExpiresAt)}, {"heartbeat_sequence", lease.HeartbeatSequence},
-		{"semantic_sequence", lease.SemanticSequence},
 	}
+	if leaseAudienceKnown(lease) {
+		fields = append(fields,
+			struct {
+				name  string
+				value any
+			}{"recipients", nonNilRecipients(lease.Recipients)},
+			struct {
+				name  string
+				value any
+			}{"classification", lease.Classification},
+		)
+	}
+	fields = append(fields,
+		struct {
+			name  string
+			value any
+		}{"started_at", formatTime(lease.StartedAt)},
+		struct {
+			name  string
+			value any
+		}{"renewed_at", formatTime(lease.RenewedAt)},
+		struct {
+			name  string
+			value any
+		}{"expires_at", formatTime(lease.ExpiresAt)},
+		struct {
+			name  string
+			value any
+		}{"heartbeat_sequence", lease.HeartbeatSequence},
+		struct {
+			name  string
+			value any
+		}{"semantic_sequence", lease.SemanticSequence},
+	)
 	for _, field := range fields {
 		if err := appendEncodedField(&out, &first, field.name, field.value); err != nil {
 			return nil, err
@@ -92,6 +125,13 @@ func nonNilWaiting(waiting []WaitingOn) []WaitingOn {
 		return []WaitingOn{}
 	}
 	return waiting
+}
+
+func nonNilRecipients(recipients []string) []string {
+	if recipients == nil {
+		return []string{}
+	}
+	return recipients
 }
 
 func appendEncodedField(out *[]byte, first *bool, name string, value any) error {
@@ -182,7 +222,7 @@ func UnmarshalLease(encoded []byte) (Lease, error) {
 	if err := rejectUnknown(encoded, []string{
 		"schema_version", "lease_key", "project_id", "space", "thread", "work_id", "subject_ref", "actor",
 		"mode", "summary", "waiting_on", "started_at", "renewed_at", "expires_at", "heartbeat_sequence",
-		"semantic_sequence", "pending", "last_result",
+		"semantic_sequence", "recipients", "classification", "pending", "last_result",
 	}); err != nil {
 		return Lease{}, err
 	}
@@ -205,6 +245,8 @@ func UnmarshalLease(encoded []byte) (Lease, error) {
 		Mode              Mode            `json:"mode"`
 		Summary           string          `json:"summary"`
 		WaitingOn         json.RawMessage `json:"waiting_on"`
+		Recipients        []string        `json:"recipients"`
+		Classification    string          `json:"classification"`
 		StartedAt         string          `json:"started_at"`
 		RenewedAt         string          `json:"renewed_at"`
 		ExpiresAt         string          `json:"expires_at"`
@@ -251,6 +293,7 @@ func UnmarshalLease(encoded []byte) (Lease, error) {
 		},
 		SubjectRef: decoded.SubjectRef, Mode: decoded.Mode, Summary: decoded.Summary,
 		WaitingOn: waitingOn, StartedAt: startedAt, RenewedAt: renewedAt, ExpiresAt: expiresAt,
+		Recipients: append([]string(nil), decoded.Recipients...), Classification: decoded.Classification,
 		HeartbeatSequence: decoded.HeartbeatSequence, SemanticSequence: decoded.SemanticSequence,
 	}
 	if len(decoded.Pending) != 0 && !bytes.Equal(decoded.Pending, []byte("null")) {

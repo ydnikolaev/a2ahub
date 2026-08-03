@@ -101,8 +101,6 @@ type CheckpointInput struct {
 	Summary        string
 	TTL            time.Duration
 	ReportValidFor time.Duration
-	Recipients     []string
-	Classification string
 }
 
 type WaitInput struct {
@@ -111,8 +109,6 @@ type WaitInput struct {
 	WaitingOn      []WaitingOn
 	TTL            time.Duration
 	ReportValidFor time.Duration
-	Recipients     []string
-	Classification string
 }
 
 type StopInput struct {
@@ -120,8 +116,6 @@ type StopInput struct {
 	Result         Mode
 	Summary        string
 	ReportValidFor time.Duration
-	Recipients     []string
-	Classification string
 }
 
 type HeartbeatInput struct {
@@ -202,6 +196,10 @@ func (c *Coordinator) Start(ctx context.Context, input StartInput) (OperationRes
 	}
 
 	now := c.clock.Now().UTC()
+	recipients, classification, err := normalizeStartAudience(input.Recipients, input.Classification)
+	if err != nil {
+		return OperationResult{LocalState: LocalUnchanged}, err
+	}
 	validUntil, err := reportValidUntil(now, input.Mode, input.ReportValidFor)
 	if err != nil {
 		return OperationResult{LocalState: LocalUnchanged}, err
@@ -252,8 +250,8 @@ func (c *Coordinator) Start(ctx context.Context, input StartInput) (OperationRes
 		Summary:          input.Summary,
 		ReportedAt:       now,
 		ValidUntil:       validUntil,
-		Recipients:       append([]string(nil), input.Recipients...),
-		Classification:   input.Classification,
+		Recipients:       recipients,
+		Classification:   classification,
 	}
 	prepared, err := c.prepare(ctx, request)
 	if err != nil {
@@ -264,8 +262,9 @@ func (c *Coordinator) Start(ctx context.Context, input StartInput) (OperationRes
 		SubjectRef: input.SubjectRef,
 		Mode:       input.Mode,
 		Summary:    input.Summary,
-		TTL:        ttl,
-		Prepared:   prepared,
+		Recipients: recipients, Classification: classification,
+		TTL:      ttl,
+		Prepared: prepared,
 	})
 }
 
@@ -288,8 +287,6 @@ func (c *Coordinator) Checkpoint(ctx context.Context, input CheckpointInput) (Op
 		summary:        input.Summary,
 		ttl:            ttl,
 		reportValidFor: input.ReportValidFor,
-		recipients:     input.Recipients,
-		classification: input.Classification,
 	})
 }
 
@@ -309,8 +306,6 @@ func (c *Coordinator) Wait(ctx context.Context, input WaitInput) (OperationResul
 		waitingOn:      append([]WaitingOn(nil), input.WaitingOn...),
 		ttl:            ttl,
 		reportValidFor: input.ReportValidFor,
-		recipients:     input.Recipients,
-		classification: input.Classification,
 	})
 }
 
@@ -327,8 +322,6 @@ func (c *Coordinator) Stop(ctx context.Context, input StopInput) (OperationResul
 		mode:           input.Result,
 		summary:        input.Summary,
 		reportValidFor: input.ReportValidFor,
-		recipients:     input.Recipients,
-		classification: input.Classification,
 	})
 }
 
@@ -366,8 +359,6 @@ type continuationCommand struct {
 	waitingOn      []WaitingOn
 	ttl            time.Duration
 	reportValidFor time.Duration
-	recipients     []string
-	classification string
 }
 
 func (c *Coordinator) continueSemantic(ctx context.Context, command continuationCommand) (OperationResult, error) {
@@ -385,7 +376,7 @@ func (c *Coordinator) continueSemantic(ctx context.Context, command continuation
 		if errors.Is(err, ErrLeaseNotOwned) {
 			return operationIdentityResult(identity, "", 0), err
 		}
-		return resultFor(lease, state), err
+		return resultForError(lease, state, err), err
 	}
 	if lease.SemanticSequence >= math.MaxInt64 {
 		return operationIdentityResult(lease.Identity, "", lease.SemanticSequence), ErrSequenceConflict
@@ -398,6 +389,8 @@ func (c *Coordinator) continueSemantic(ctx context.Context, command continuation
 	if err := validateReport(subjectRef, command.mode, command.summary, command.waitingOn); err != nil {
 		return operationIdentityResult(lease.Identity, "", lease.SemanticSequence), err
 	}
+	recipients := append([]string(nil), lease.Recipients...)
+	classification := lease.Classification
 	ttl := command.ttl
 	if command.action == ActionStop {
 		ttl = lease.ExpiresAt.Sub(lease.RenewedAt)
@@ -430,8 +423,8 @@ func (c *Coordinator) continueSemantic(ctx context.Context, command continuation
 		WaitingOn:        append([]WaitingOn(nil), command.waitingOn...),
 		ReportedAt:       now,
 		ValidUntil:       validUntil,
-		Recipients:       append([]string(nil), command.recipients...),
-		Classification:   command.classification,
+		Recipients:       recipients,
+		Classification:   classification,
 	}
 	prepared, err := c.prepare(ctx, request)
 	if err != nil {
@@ -446,6 +439,20 @@ func (c *Coordinator) continueSemantic(ctx context.Context, command continuation
 		TTL:        ttl,
 		Prepared:   prepared,
 	})
+}
+
+func normalizeStartAudience(recipients []string, classification string) ([]string, string, error) {
+	if len(recipients) == 0 {
+		recipients = defaultAudienceRecipients()
+	}
+	if classification == "" {
+		classification = DefaultClassification
+	}
+	recipients = append([]string(nil), recipients...)
+	if err := validateAudience(recipients, classification); err != nil {
+		return nil, "", err
+	}
+	return recipients, classification, nil
 }
 
 func (c *Coordinator) prepare(ctx context.Context, request PreparationRequest) (PreparedOperation, error) {

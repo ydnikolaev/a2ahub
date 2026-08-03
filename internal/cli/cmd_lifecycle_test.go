@@ -599,6 +599,58 @@ func writeRequirementArtifact(t *testing.T, mirrorDir, id string) {
 	writeMirrorFile(t, mirrorDir, "axon/requires/"+id+".md", content)
 }
 
+func writeSatisfyContractArtifact(t *testing.T, mirrorDir, id string) {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: " + id + "\n" +
+		"type: contract\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [beta]\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"classification: internal\n" +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, "axon/provides/widget/contract.md", content)
+}
+
+func writeSatisfyResponseArtifact(t *testing.T, mirrorDir, id, parent string) {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v1\n" +
+		"id: " + id + "\n" +
+		"type: response\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: beta\n" +
+		"to: [axon]\n" +
+		"parent: " + parent + "\n" +
+		"thread: " + cliFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"classification: internal\n" +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, "beta/exchanges/"+id+".md", content)
+}
+
+func writeSatisfyProofEvent(t *testing.T, mirrorDir, actingSystem string, seq int, subject, transition, actorSystem, version string) {
+	t.Helper()
+	id, err := artifact.MintULIDAt(time.Date(2020, 1, 1, 0, 1, seq, 0, time.UTC), rand.Reader)
+	if err != nil {
+		t.Fatalf("writeSatisfyProofEvent: mint ulid: %v", err)
+	}
+	content := fmt.Sprintf(
+		"schema: event/v1\nevent: %s\nspace: fixture-space\nsubject: %s\ntransition: %s\nactor: {kind: agent, name: bot, system: %s}\nat: 2020-01-01T00:01:00Z\n",
+		id.String(), subject, transition, actorSystem,
+	)
+	if version != "" {
+		content += "version: " + version + "\n"
+	}
+	writeMirrorFile(t, mirrorDir, actingSystem+"/events/2020/"+id.String()+".yaml", content)
+}
+
 func writeHandoffArtifact(t *testing.T, mirrorDir, id, to string) {
 	t.Helper()
 	content := "---\n" +
@@ -711,13 +763,19 @@ func TestRemainingGenericVerbsLegalPath(t *testing.T) {
 		writeRequirementArtifact(t, mirrorDir, id)
 		writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "publish", "axon")
 		writeLifecycleEvent(t, mirrorDir, "beta", 1, id, "acknowledge", "beta")
+		contractID := "XC-axon-widget"
+		responseID := "XS-beta-20260721-p1p1"
+		writeSatisfyContractArtifact(t, mirrorDir, contractID)
+		writeSatisfyResponseArtifact(t, mirrorDir, responseID, id)
+		writeSatisfyProofEvent(t, mirrorDir, "axon", 0, contractID, "publish", "axon", "1.0.0")
+		writeSatisfyProofEvent(t, mirrorDir, "axon", 1, responseID, "verify", "axon", "")
 		fake := &fakeLifecycleFunnel{}
 		// satisfy is the REQUESTER's own event (RoleOwner = axon, domain
 		// doc §3.4.2: "target publishes, requester verifies + authors
 		// satisfy").
 		cmd := cli.NewSatisfyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
 		io, _, errOut := newIO()
-		if code := cmd.Run(context.Background(), []string{"--refs", "XC-axon-widget@1.0.0,XS-beta-20260721-p1p1", id}, io); code != 0 {
+		if code := cmd.Run(context.Background(), []string{"--refs", contractID + "@1.0.0," + responseID, id}, io); code != 0 {
 			t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
 		}
 	})
@@ -795,6 +853,71 @@ func TestRemainingGenericVerbsLegalPath(t *testing.T) {
 			t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
 		}
 	})
+}
+
+func TestSatisfyRequiresResolvedContractAndVerifiedMatchingResponse(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		refs            string
+		contract        bool
+		contractVersion string
+		response        bool
+		responseParent  string
+		verified        bool
+		want            string
+	}{
+		{name: "missing_ref", refs: "XC-axon-widget@1.0.0", contract: true, contractVersion: "1.0.0", response: true, responseParent: "self", verified: true, want: "exactly one XC contract@version and one XS response"},
+		{name: "missing_contract", refs: "XC-axon-widget@1.0.0,XS-beta-20260721-s001", response: true, responseParent: "self", verified: true, want: "does not resolve"},
+		{name: "missing_response", refs: "XC-axon-widget@1.0.0,XS-beta-20260721-s001", contract: true, contractVersion: "1.0.0", want: "response ref XS-beta-20260721-s001 does not resolve"},
+		{name: "unpinned_contract", refs: "XC-axon-widget,XS-beta-20260721-s001", contract: true, contractVersion: "1.0.0", response: true, responseParent: "self", verified: true, want: "must pin an explicit semantic version"},
+		{name: "wrong_kind_contract", refs: "XQ-axon-20260721-s001@1.0.0,XS-beta-20260721-s001", contract: true, contractVersion: "1.0.0", response: true, responseParent: "self", verified: true, want: "want XC-...@<semver>"},
+		{name: "unresolved_contract_version", refs: "XC-axon-widget@2.0.0,XS-beta-20260721-s001", contract: true, contractVersion: "1.0.0", response: true, responseParent: "self", verified: true, want: "does not resolve to a recorded version"},
+		{name: "wrong_kind", refs: "XC-axon-widget@1.0.0,XQ-axon-20260721-s001", contract: true, contractVersion: "1.0.0", response: true, responseParent: "self", verified: true, want: "want XS-"},
+		{name: "unverified_response", refs: "XC-axon-widget@1.0.0,XS-beta-20260721-s001", contract: true, contractVersion: "1.0.0", response: true, responseParent: "self", want: "want \"verified\""},
+		{name: "mismatched_response_parent", refs: "XC-axon-widget@1.0.0,XS-beta-20260721-s001", contract: true, contractVersion: "1.0.0", response: true, responseParent: "XR-axon-other", verified: true, want: "want \"XR-axon-satisfy-guard\""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mirrorDir := t.TempDir()
+			const requirementID = "XR-axon-satisfy-guard"
+			const contractID = "XC-axon-widget"
+			const responseID = "XS-beta-20260721-s001"
+			writeRequirementArtifact(t, mirrorDir, requirementID)
+			writeLifecycleEvent(t, mirrorDir, "axon", 0, requirementID, "publish", "axon")
+			writeLifecycleEvent(t, mirrorDir, "beta", 1, requirementID, "acknowledge", "beta")
+			if tc.contract {
+				writeSatisfyContractArtifact(t, mirrorDir, contractID)
+				writeSatisfyProofEvent(t, mirrorDir, "axon", 0, contractID, "publish", "axon", tc.contractVersion)
+			}
+			if tc.response {
+				parent := tc.responseParent
+				if parent == "self" {
+					parent = requirementID
+				}
+				writeSatisfyResponseArtifact(t, mirrorDir, responseID, parent)
+				if tc.verified {
+					writeSatisfyProofEvent(t, mirrorDir, "axon", 1, responseID, "verify", "axon", "")
+				}
+			}
+
+			fake := &fakeLifecycleFunnel{}
+			cmd := cli.NewSatisfyCommand(fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+			io, _, errOut := newIO()
+			if code := cmd.Run(context.Background(), []string{"--refs", tc.refs, requirementID}, io); code != 1 {
+				t.Fatalf("code = %d, want 1; stderr=%s", code, errOut.String())
+			}
+			if len(fake.calls) != 0 {
+				t.Fatalf("invalid satisfy proof reached the funnel: %d calls", len(fake.calls))
+			}
+			if got := errOut.String(); !strings.Contains(got, tc.want) {
+				t.Fatalf("stderr = %q, want substring %q", got, tc.want)
+			}
+		})
+	}
 }
 
 // TestAckAcceptsFlagWrittenAfterPositional is Wave K's live-run 6 defect

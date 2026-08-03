@@ -86,10 +86,11 @@ func cacheDirOf(p Paths) string { return filepath.Join(p.ProjectRoot, ".a2a", "c
 
 // NewServerFromConfig loads the project+machine config once (a long-lived
 // session's own "load config once" contract, plan 14 Brief item 5),
-// builds the federated cache.Store, resolves the FIRST connected space's
-// write-tool dependencies (see this file's own deviation note), and
-// returns a ready-to-Serve Server registered with the full §7.7 tool set.
-func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string) (*Server, error) {
+// builds the federated cache.Store, and accepts the work dependency graph
+// composed once at cmd/a2a. That graph routes an explicit space for every
+// multi-space call; MCP never composes or silently selects a space itself.
+// The result is a ready-to-Serve Server with the full §7.7 tool set.
+func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string, injectedWork ...WorkToolDeps) (*Server, error) {
 	cfg, err := space.LoadProjectConfig(p.ProjectConfig)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: load project config: %w", err)
@@ -114,6 +115,14 @@ func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string) (*S
 		registerSpaceFree(registry, store)
 		return NewServer(registry, "a2a-mcp", binaryVersion, nil), nil
 	}
+	if len(injectedWork) != 1 {
+		return nil, fmt.Errorf("mcp: production work dependencies must be injected by cmd/a2a")
+	}
+	workDeps := injectedWork[0]
+	workTool, err := NewWorkTool(workDeps)
+	if err != nil {
+		return nil, err
+	}
 
 	write, submitDeps, newDeps, err := buildWriteDeps(ctx, cfg, machine, p, binaryVersion)
 	if err != nil {
@@ -136,9 +145,10 @@ func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string) (*S
 			"a2a mcp: write tools unavailable — could not reach the space (%v).\n"+
 				"a2a mcp: serving READ tools over the local mirror; re-start once the space is reachable.\n", err)
 		registerSpaceFree(registry, store)
+		registry.Register(workTool)
 		return NewServer(registry, "a2a-mcp", binaryVersion, nil), nil
 	}
-	registry = BuildRegistry(store, write, submitDeps.StagingDir, submitDeps.Legality, newDeps)
+	registry = BuildRegistry(store, write, submitDeps.StagingDir, submitDeps.Legality, newDeps, workDeps)
 	srv := NewServer(registry, "a2a-mcp", binaryVersion, nil)
 
 	// The session refreshes its mirror before every tool call. Without this,
@@ -151,7 +161,10 @@ func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string) (*S
 	// nest (internal/space/mirrorlock.go's budget doc spells out why that
 	// matters).
 	refreshDir, refreshURL := write.MirrorDir, write.RepoURL
-	srv.SetPreCall(func(ctx context.Context, _ string) error {
+	srv.SetPreCall(func(ctx context.Context, tool string) error {
+		if tool == WorkToolName {
+			return nil
+		}
 		return space.CloneOrFetch(ctx, refreshDir, refreshURL)
 	})
 	return srv, nil

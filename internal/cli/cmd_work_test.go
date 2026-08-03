@@ -189,6 +189,9 @@ func TestWorkCommandRejectsInvalidEnumsAndFlagsBeforeCalls(t *testing.T) {
 		{"stop", "--result", "done", "--summary", "x"},
 		{"heartbeat", "--ttl", "not-duration"},
 		{"resume", "unexpected"},
+		{"checkpoint", "--mode", "testing", "--summary", "x", "--to", "beta"},
+		{"wait", "--summary", "x", "--waiting-on", "system:beta", "--classification", "restricted"},
+		{"stop", "--result", "paused", "--summary", "x", "--to", "all"},
 	}
 	for _, args := range cases {
 		backend := &fakeWorkBackend{}
@@ -229,6 +232,20 @@ func TestWorkCommandPreservesTwoAxisPartialResultOnError(t *testing.T) {
 	write := shared["write_result"].(map[string]any)
 	if local["state"] != "active" || shared["attempted"] != true || write["pr_url"] != "https://example.invalid/pr/8" {
 		t.Fatalf("partial two-axis result reduced: %#v", got)
+	}
+}
+
+func TestWorkCommandPreservesStructuredPendingRefusal(t *testing.T) {
+	t.Parallel()
+	key := "op-v1-" + strings.Repeat("a", 64)
+	backend := &fakeWorkBackend{
+		identity: workreport.WorkIdentityInput{WorkID: testWorkID, Actor: workreport.Actor{Session: "s"}},
+		result:   workreport.OperationResult{WorkID: testWorkID, Session: "s", OperationKey: key, Action: workreport.ActionStart, LocalErrorCode: workreport.LocalErrorPendingOperation, LocalState: workreport.LocalActive},
+		err:      &workreport.PendingOperationError{OperationKey: key, Action: workreport.ActionStart},
+	}
+	exit, stdout, _ := runWorkCommand(t, testWorkCommand(t, backend), "checkpoint", "--work-id", testWorkID, "--session", "s", "--mode", "testing", "--summary", "x", "--json")
+	if exit != 1 || !strings.Contains(stdout, `"error_code":"pending-operation"`) || !strings.Contains(stdout, `"operation_key":"`+key+`"`) || !strings.Contains(stdout, `"action":"start"`) {
+		t.Fatalf("pending refusal exit=%d output=%s", exit, stdout)
 	}
 }
 

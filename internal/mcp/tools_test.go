@@ -27,7 +27,7 @@ func TestBuildRegistryExpectedToolCount(t *testing.T) {
 	names := registry.ToolNames()
 	want := []string{
 		"a2a_contract", "a2a_exchange", "a2a_lifecycle",
-		"a2a_new", "a2a_read", "a2a_submit", "a2a_whatsnew",
+		"a2a_new", "a2a_read", "a2a_submit", "a2a_whatsnew", "a2a_work",
 	}
 	if len(names) != len(want) {
 		t.Fatalf("expected %d tools, got %d: %v", len(want), len(names), names)
