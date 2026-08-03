@@ -7,11 +7,11 @@ REF-011	live	linkage-immutability	committed thread and parent linkage cannot cha
 REF-012	live	thread-integrity	supersession crossing threads is warning evidence	dbc0815	-
 REF-014	live	operational-confidence/P5	declared contract sidecar path or role is invalid	32a6d05	-
 REF-015	reserved	operational-confidence/P6	materialization destination or plan precondition is invalid	32a6d05	-
-REF-016	reserved	operational-confidence/P2	work subject or waiting system is invalid in checkpoint context	32a6d05	-
+REF-016	live	operational-confidence/P2	work subject or waiting system is invalid in checkpoint context	32a6d05	-
 LFC-003	live	operational-confidence/P1	applicable first-party event is missing its producer evaluation receipt	32a6d05	-
 POL-011	tombstone	retire-version-guard	retire refused because another version remained published	269ae4d	1c8a959
 POL-012	live	operational-confidence/P1	first-party producer stamp is absent or invalid	32a6d05	-
 POL-013	live	operational-confidence/P5	declared contract carried set is invalid	32a6d05	-
 POL-014	reserved	operational-confidence/P6	declared conformance suite contradicts itself	32a6d05	-
-POL-015	reserved	operational-confidence/P2	work checkpoint semantics are invalid	32a6d05	-
+POL-015	live	operational-confidence/P2	work checkpoint semantics are invalid	32a6d05	-
 POL-016	live	operational-confidence/P1	first-party actor model or session is unsafe or invalid	32a6d05	-

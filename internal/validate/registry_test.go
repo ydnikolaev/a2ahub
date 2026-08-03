@@ -143,6 +143,11 @@ func TestRegistryClosure(t *testing.T) {
 		t.Fatalf("ValidateContractCarriedSet REF-014 probe: %v", err)
 	}
 	record(ref014.Violations)
+	// REF-016: a work subject must parse through the canonical thread/artifact
+	// grammar before any repository resolution can accept it.
+	ref016Input := validWorkCheckpointInput()
+	ref016Input.Work.SubjectRef = "../../not-a-subject"
+	record(ValidateWorkCheckpoint(ref016Input).Violations)
 
 	// LFC-001 / LFC-002.
 	lfc1, err := checkLifecycle([]CandidateEvent{{Subject: "XW-axon-20260731-p9d3", Transition: "respond"}}, &fakeLegality{verdict: VerdictIllegalTransition})
@@ -215,6 +220,11 @@ func TestRegistryClosure(t *testing.T) {
 		t.Fatalf("ValidateContractCarriedSet POL-013 probe: %v", err)
 	}
 	record(pol013.Violations)
+	// POL-015: work is isolated to status announcements; the same contextual
+	// validator is used at V2 and V3 (its dedicated test pins parity).
+	pol015Input := validWorkCheckpointInput()
+	pol015Input.Category = "notice"
+	record(ValidateWorkCheckpoint(pol015Input).Violations)
 
 	// POL-006: retire refused because a registered consumer hasn't acked.
 	if v, _ := CheckRetirePrecondition(RetirePrecondition{

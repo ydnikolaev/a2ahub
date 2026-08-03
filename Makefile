@@ -36,7 +36,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set skill-citations release-notes-freshness roadmap-release-decisions readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e install
+.PHONY: check test check-validators _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema skill-citations release-notes-freshness roadmap-release-decisions readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -47,7 +47,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set skill-citations release-notes-freshness roadmap-release-decisions
+REPO_GATES := classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema skill-citations release-notes-freshness roadmap-release-decisions
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -142,6 +142,9 @@ event-writer-receipts: ## First-party event.state is evaluator-owned across CLI 
 contract-carried-set: ## Contract v2 roles/profiles and digest builder remain one closed corpus.
 	@bash scripts/check_contract_carried_set.sh
 
+work-checkpoint-schema: ## Work schema/template/core/validator/docs share one closed mode/wait vocabulary.
+	@bash scripts/check_work_checkpoint_schema.sh
+
 harness-check: ## Run the gates' --teeth self-tests (harness gates are private/presence-gated; release-preflight is public).
 	@bash scripts/verify.sh harness
 
@@ -176,3 +179,4 @@ _harness-check:
 	@bash scripts/check-operational-confidence.sh --teeth
 	@bash scripts/tests/check_event_writer_receipts_test.sh
 	@bash scripts/tests/check_contract_carried_set_test.sh
+	@bash scripts/tests/check_work_checkpoint_schema_test.sh

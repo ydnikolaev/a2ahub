@@ -51,7 +51,7 @@ check_history() {
     [ -n "$owner" ] && [ -n "$meaning" ] && [ -n "$introduced" ] || fail "$code history row is incomplete"
   done < "$history"
 
-  for code in POL-011 POL-012 POL-013 POL-014 POL-015 POL-016 LFC-003 REF-014 REF-015; do
+  for code in POL-011 POL-012 POL-013 POL-014 POL-015 POL-016 LFC-003 REF-014 REF-015 REF-016; do
     grep -q "^${code}"$'\t' "$history" || fail "$code missing from stable error history"
   done
 
