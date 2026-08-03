@@ -2,6 +2,8 @@ package validate
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -9,6 +11,50 @@ import (
 )
 
 const receiptTestEventULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+
+func TestValidateEventSelectsExactShippedSchema(t *testing.T) {
+	t.Parallel()
+
+	engine := mustEngine(t)
+	v2, err := os.ReadFile(filepath.Join(corpusRoot, "event/v2/fixtures/valid/contract-publish.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := engine.ValidateEvent(v2, "0.19.0")
+	if err != nil {
+		t.Fatalf("ValidateEvent(event/v2): %v", err)
+	}
+	if !result.Valid {
+		t.Fatalf("valid event/v2 rejected: %+v", result.Violations)
+	}
+
+	unknown := []byte(strings.Replace(string(v2), `"schema": "event/v2"`, `"schema": "event/v9"`, 1))
+	result, err = engine.ValidateEvent(unknown, "0.19.0")
+	if err != nil {
+		t.Fatalf("ValidateEvent(unknown schema): %v", err)
+	}
+	if result.Valid || !hasCode(result.Violations, "SCH-002") || !hasViolationPath(result.Violations, "publication") {
+		t.Fatalf("unknown event schema = %+v, want event/v1 fallback to reject schema and v2-only publication", result)
+	}
+
+	missing := []byte(strings.Replace(string(v2), `"schema": "event/v2",`, "", 1))
+	result, err = engine.ValidateEvent(missing, "0.19.0")
+	if err != nil {
+		t.Fatalf("ValidateEvent(missing schema): %v", err)
+	}
+	if result.Valid || !hasCode(result.Violations, "SCH-001") || !hasViolationPath(result.Violations, "publication") {
+		t.Fatalf("missing event schema = %+v, want event/v1 fallback to reject schema and v2-only publication", result)
+	}
+}
+
+func hasViolationPath(vs []Violation, path string) bool {
+	for _, violation := range vs {
+		if violation.Path == path {
+			return true
+		}
+	}
+	return false
+}
 
 type receiptEventOptions struct {
 	transition string
