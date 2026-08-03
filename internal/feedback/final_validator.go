@@ -24,7 +24,7 @@ func (FinalSubmitValidator) ValidateSubmit(_ context.Context, files []space.File
 	if clean != file.Path || !strings.HasPrefix(clean, "feedback/inbox/") || path.Ext(clean) != ".yaml" {
 		return fmt.Errorf("feedback: final submission path %q is not an inbox report", file.Path)
 	}
-	report := Validate(file.Content, Options{})
+	report := Validate(file.Content, Options{CI: true, Path: file.Path})
 	if !report.Valid {
 		return &ValidationRefusedError{Violations: report.Violations}
 	}
