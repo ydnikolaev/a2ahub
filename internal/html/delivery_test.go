@@ -253,15 +253,30 @@ func TestDefaultTemplate_ConsumesThreadViewDeliveries(t *testing.T) {
 	}
 	// "passed" and "failed" already occur in the pre-existing bundle
 	// (transition vocabulary, `verify-fail`, unrelated UI copy), so they do
-	// not discriminate this wave's own markup. The reader-facing verdict
-	// copy this wave introduces does: "not yet verified" and "verification
-	// errored" exist ONLY in deliveryVerdictText, and their presence is what
-	// makes "unverified" visibly distinct from "passed" at the markup level,
-	// not merely in the Go projection. A rebuild that dropped the delivery
-	// branch would fail every assertion below.
-	for _, want := range []string{"not yet verified", "verification errored", "Attempt history"} {
+	// not discriminate the delivery markup. The reader-facing copy below
+	// does — each string exists ONLY in the delivery branch:
+	//
+	//   "not yet verified" / "verification errored" — deliveryVerdictText,
+	//     what makes unverified visibly distinct from passed at the markup
+	//     level rather than only in the Go projection.
+	//   "Data deliveries" — the group heading that says these boxes are data
+	//     handed over with the document above them, not more protocol events.
+	//   "Every attempt" — the supersede-chain heading.
+	//   "Package not found in the local mirror" — the unresolved branch,
+	//     which must keep its own presentation rather than collapsing into
+	//     the failed one.
+	//   "recordLabel" — a property read, so a minifier must not rename it;
+	//     its presence proves a failing check is still split into file,
+	//     record and rule instead of being concatenated back into one line.
+	//
+	// A rebuild that dropped or flattened the delivery branch fails here.
+	for _, want := range []string{
+		"not yet verified", "verification errored",
+		"Data deliveries", "Every attempt",
+		"Package not found in the local mirror", "recordLabel",
+	} {
 		if !strings.Contains(tmpl, want) {
-			t.Errorf("template.html missing %q — the delivery markup this wave added is not in the shipped bundle", want)
+			t.Errorf("template.html missing %q — the delivery markup is not in the shipped bundle", want)
 		}
 	}
 }
