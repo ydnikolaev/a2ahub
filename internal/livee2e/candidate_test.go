@@ -58,6 +58,7 @@ func candidateCheckLog(root, sha, tree, tag, exit string) []byte {
 		"INDEX_CLEAN=true\n" +
 		"WORKTREE_CLEAN=true\n" +
 		"UNTRACKED_CLEAN=true\n" +
+		"WEB_DEPS_READY=true\n" +
 		"EXIT=" + exit + "\n")
 }
 
@@ -78,6 +79,25 @@ func TestCandidateRunbookEmitsParserMarkers(t *testing.T) {
 	}
 	if strings.Contains(text, `echo "CHECKOUT=$VERIFY_ROOT"`) {
 		t.Fatalf("candidate runbook emits obsolete CHECKOUT marker")
+	}
+	if strings.Count(text, "npm --prefix web ci --ignore-scripts") != 1 ||
+		strings.Count(text, `echo "WEB_DEPS_READY=true"`) != 1 {
+		t.Fatalf("candidate runbook must prepare the locked web toolchain and retain its marker")
+	}
+	install := strings.Index(text, "npm --prefix web ci --ignore-scripts")
+	marker := strings.Index(text, `echo "WEB_DEPS_READY=true"`)
+	check := strings.Index(text, "make check")
+	if !strings.Contains(text, "set +e\n  (\n    set -e") || install < 0 || marker < install || check < marker {
+		t.Fatalf("candidate runbook must fail fast in npm ci before marking dependencies ready and running make check")
+	}
+
+	detached := filepath.Join(filepath.Dir(sourceFile), "..", "..", "docs", "runbooks", "live-e2e", "detached.sh")
+	detachedRaw, err := os.ReadFile(detached)
+	if err != nil {
+		t.Fatalf("read detached runbook: %v", err)
+	}
+	if strings.Count(string(detachedRaw), `"WEB_DEPS_READY=true"`) != 1 {
+		t.Fatalf("detached runbook must require exactly one successful web-dependency marker")
 	}
 }
 
@@ -181,6 +201,15 @@ func TestAttestCandidateSourceRefusesEveryCandidateMismatch(t *testing.T) {
 		{"verification untracked dirty", func(f *candidateSourceFixture) {
 			f.files[f.want.CheckLog] = []byte(strings.Replace(string(candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "0")), "UNTRACKED_CLEAN=true", "UNTRACKED_CLEAN=false", 1))
 		}, "UNTRACKED_CLEAN"},
+		{"web dependencies not ready", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = []byte(strings.Replace(string(candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "0")), "WEB_DEPS_READY=true", "WEB_DEPS_READY=false", 1))
+		}, "WEB_DEPS_READY"},
+		{"missing web dependencies marker", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = []byte(strings.Replace(string(candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "0")), "WEB_DEPS_READY=true\n", "", 1))
+		}, "exactly one WEB_DEPS_READY marker"},
+		{"ambiguous web dependencies marker", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = append(candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "0"), []byte("WEB_DEPS_READY=true\n")...)
+		}, "exactly one WEB_DEPS_READY marker"},
 		{"failed check", func(f *candidateSourceFixture) {
 			f.files[f.want.CheckLog] = candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "1")
 		}, "retained check log EXIT"},
