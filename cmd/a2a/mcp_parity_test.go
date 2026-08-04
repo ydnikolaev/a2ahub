@@ -29,6 +29,7 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -39,7 +40,7 @@ import (
 
 // groupedToolNames is the P15 capability-grouped tool set (spec 15 §T1).
 var groupedToolNames = []string{
-	"a2a_contract", "a2a_exchange", "a2a_lifecycle",
+	"a2a_contract", "a2a_data", "a2a_exchange", "a2a_lifecycle",
 	"a2a_new", "a2a_read", "a2a_submit", "a2a_whatsnew", "a2a_work",
 }
 
@@ -83,6 +84,19 @@ func (ta toolAction) verb() string {
 	switch ta.tool {
 	case "a2a_contract":
 		return "contract-" + ta.action
+	case "a2a_data":
+		// Without this case a2a_data's "verify" would fall to default and
+		// project to the same bare "verify" key a2a_exchange's own verify
+		// action already claims, and checkBijection's map-keyed-by-verb()
+		// would let one silently overwrite the other in `got` — the exact
+		// drift class this gate exists to catch (seeded-red receipt: remove
+		// this case and TestMCPParityBijection fails naming data-pack,
+		// data-deliver, data-fetch, data-verify as unreachable AND a2a_data
+		// pack/deliver/fetch as decoy MCP-only capabilities — "verify"
+		// itself does not appear in either list because it silently
+		// collided with a2a_exchange's own verify action instead of
+		// failing loud).
+		return "data-" + ta.action
 	case "a2a_new":
 		return "new"
 	case "a2a_submit":
@@ -100,7 +114,12 @@ func (ta toolAction) verb() string {
 
 // designatedCLIVerbs returns the §7.7-designated CLI verb names:
 // buildCommands() keys minus mcpExcludedVerbs, with `contract` expanded to
-// `contract-<sub>` for each of cli.ContractSubcommands().
+// `contract-<sub>` for each of cli.ContractSubcommands(), and `data`
+// expanded to `data-<sub>` for each of cli.DataSubcommands() (spec 05a) —
+// buildCommands()["data"] (wire.go's runData), the a2a_data registration
+// (internal/mcp/tools.go), and this file's own groupedToolNames slice +
+// mcp.DataActions pairs loop in mcpCapabilityPairs all landed together in
+// this wave, so this branch is live from here on.
 func designatedCLIVerbs() []string {
 	var out []string
 	for name := range buildCommands() {
@@ -110,6 +129,12 @@ func designatedCLIVerbs() []string {
 		if name == "contract" {
 			for _, sub := range cli.ContractSubcommands() {
 				out = append(out, "contract-"+sub.Name)
+			}
+			continue
+		}
+		if name == "data" {
+			for _, sub := range cli.DataSubcommands() {
+				out = append(out, "data-"+sub.Name)
 			}
 			continue
 		}
@@ -123,6 +148,28 @@ func designatedCLIVerbs() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// TestDataSubcommandsMatchMCPDataActions is this wave's own "byte-identical
+// to DataSubcommands()" acceptance line for the a2a_data grouped tool's
+// closed action enum. cli.DataSubcommands() returns []DataSubcommand (the
+// same {Name, Synopsis} shape ContractSubcommands() already uses, so help/
+// completion/catalog can read it identically); the projection to plain
+// names is what "byte-identical" is checked against, since mcp.DataActions
+// is a plain []string enum (mirroring mcp.WorkActions).
+//
+// This test is fully self-contained: unlike TestMCPParityBijection it does
+// NOT depend on buildCommands()["data"] or the registry ever registering
+// a2a_data, so it is green today, ahead of that wiring landing.
+func TestDataSubcommandsMatchMCPDataActions(t *testing.T) {
+	t.Parallel()
+	names := make([]string, len(cli.DataSubcommands()))
+	for i, sub := range cli.DataSubcommands() {
+		names[i] = sub.Name
+	}
+	if !reflect.DeepEqual(names, mcp.DataActions) {
+		t.Fatalf("cli.DataSubcommands() names must be byte-identical, in order, to mcp.DataActions: got %v, want %v", names, mcp.DataActions)
+	}
 }
 
 // mcpCapabilityPairs enumerates every reachable (tool, action) from the
@@ -154,6 +201,9 @@ func mcpCapabilityPairs(t *testing.T) []toolAction {
 	}
 	for _, a := range mcp.ContractActions {
 		pairs = append(pairs, toolAction{"a2a_contract", a})
+	}
+	for _, a := range mcp.DataActions {
+		pairs = append(pairs, toolAction{"a2a_data", a})
 	}
 	for _, a := range mcp.WorkActions {
 		pairs = append(pairs, toolAction{"a2a_work", a})

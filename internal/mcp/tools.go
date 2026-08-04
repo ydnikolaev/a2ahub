@@ -143,23 +143,22 @@ func BuildRegistry(store *cache.Store, write WriteDeps, submitStagingDir string,
 	return BuildRegistryWithContractOperations(store, write, submitStagingDir, legality, newDeps, ContractToolOperations{}, workDeps...)
 }
 
-// ContractToolOperations is the cmd/a2a-composed P6 dependency set. Keeping
-// these consumer-side seams in MCP while constructing their production
-// implementations only at cmd/a2a preserves ADR-001's single DI point.
-type ContractToolOperations struct {
-	Publication ContractPublicationOperations
-	Materialize ContractMaterializeOperation
-	Check       ContractCheckOperation
-	Inspection  ContractInspectionOperations
-}
-
-func (o ContractToolOperations) complete() bool {
-	return o.Publication != nil && o.Materialize != nil && o.Check != nil && o.Inspection != nil
-}
-
-// BuildRegistryWithContractOperations is the production registry assembly.
-// BuildRegistry remains the source-compatible isolated-test constructor.
-func BuildRegistryWithContractOperations(store *cache.Store, write WriteDeps, submitStagingDir string, legality *LegalityAdapter, newDeps NewDeps, contractOperations ContractToolOperations, workDeps ...WorkToolDeps) *Registry {
+// BuildRegistryWithOperations is the full production registry assembly,
+// threading BOTH contract and data operations — the seam cmd/a2a uses to
+// hand this package a production DataOperations implementation, mirroring
+// how contractOperations is already threaded. dataOperations' zero value
+// (DataToolDeps{}) registers a2a_data degraded (every action refuses
+// "service is not configured", NewDataTool's own precedent), exactly like
+// ContractToolOperations{}'s zero value degrades a2a_contract.
+//
+// BuildRegistryWithContractOperations remains the source-compatible
+// constructor for callers not yet supplying data operations (it now calls
+// through here with DataToolDeps{}) — it is called by internal/mcp/wire.go
+// with a fixed positional argument list (outside this wave's allowlist), so
+// this new parameter could not be inserted there without breaking that
+// call; a variadic cannot follow another variadic, so this is a new
+// function rather than a widened signature.
+func BuildRegistryWithOperations(store *cache.Store, write WriteDeps, submitStagingDir string, legality *LegalityAdapter, newDeps NewDeps, contractOperations ContractToolOperations, dataOperations DataToolDeps, workDeps ...WorkToolDeps) *Registry {
 	r := NewRegistry()
 	if len(workDeps) > 1 {
 		panic("mcp: BuildRegistry accepts at most one work dependency set")
@@ -218,7 +217,37 @@ func BuildRegistryWithContractOperations(store *cache.Store, write WriteDeps, su
 
 	registerContractTool(r, newDeps, contractDeps)
 
+	dataTool, err := NewDataTool(dataOperations)
+	if err != nil {
+		panic(fmt.Sprintf("mcp: build a2a_data: %v", err))
+	}
+	r.Register(dataTool)
+
 	return r
+}
+
+// ContractToolOperations is the cmd/a2a-composed P6 dependency set. Keeping
+// these consumer-side seams in MCP while constructing their production
+// implementations only at cmd/a2a preserves ADR-001's single DI point.
+type ContractToolOperations struct {
+	Publication ContractPublicationOperations
+	Materialize ContractMaterializeOperation
+	Check       ContractCheckOperation
+	Inspection  ContractInspectionOperations
+}
+
+func (o ContractToolOperations) complete() bool {
+	return o.Publication != nil && o.Materialize != nil && o.Check != nil && o.Inspection != nil
+}
+
+// BuildRegistryWithContractOperations is the production registry assembly
+// for callers not yet supplying data operations (internal/mcp/wire.go's own
+// call site, fixed-arity, outside this wave's allowlist) — it delegates to
+// BuildRegistryWithOperations with DataToolDeps{} (a2a_data registered
+// degraded). BuildRegistry remains the source-compatible isolated-test
+// constructor.
+func BuildRegistryWithContractOperations(store *cache.Store, write WriteDeps, submitStagingDir string, legality *LegalityAdapter, newDeps NewDeps, contractOperations ContractToolOperations, workDeps ...WorkToolDeps) *Registry {
+	return BuildRegistryWithOperations(store, write, submitStagingDir, legality, newDeps, contractOperations, DataToolDeps{}, workDeps...)
 }
 
 // registerContractTool keeps the grouped contract surface available when the

@@ -129,6 +129,15 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		return cli.NewValidateCommand(nil, ""), true
 	case "sync":
 		return cli.NewSyncCommand("", "", "", nil), true
+	case "data":
+		// Nil operations: the catalog/help path only reads Name()+Synopsis()
+		// (DataCommand.Run tolerates nil ops for every sub-verb it never
+		// reaches here). One flat row, mirroring "work"'s own precedent
+		// (WorkCommand{} below) rather than "contract"'s per-sub expansion:
+		// catalog_test.go's expectedCatalogCommandNames() — an independent
+		// second derivation outside this wave's allowlist — special-cases
+		// only "contract", so expanding "data" here would drift against it.
+		return cli.NewDataCommand(nil), true
 	case "doctor":
 		return cli.NewDoctorCommand(nil, "", "", "", ""), true
 	case "update":

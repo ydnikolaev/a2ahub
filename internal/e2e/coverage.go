@@ -148,6 +148,25 @@ var coverageManifest = []coverageEntry{
 	{Verb: "contract retire", GoTest: "internal/e2e.TestT3ContractRetireCleanUngated"},
 	{Verb: "contract verify-export", GoTest: "internal/e2e.TestT3ContractVerifyExportLocal"},
 
+	// --- Data (spec 05a T1): pack|deliver|fetch|verify fold into ONE
+	// catalog verb, "data" — unlike `contract`, DataCommand's sub-verbs are
+	// NOT expanded into "data <sub>" catalog rows (catalog.go's own
+	// catalogCLICommand mirrors `work`'s single-row precedent here, not
+	// `contract`'s per-sub expansion), so cli.DataSubcommands() names are
+	// not this manifest's verb keys. `pack` never syncs the mirror or
+	// resolves a credential (cmd/a2a/wire.go's resolveDataDeps: it is
+	// write-free by design, its own synopsis says so), so a pinned
+	// <XC-id>@<version> this space never published refuses LOCALLY
+	// (internal/space.ErrContractNotPublished), exec-able against the local
+	// fixture before any GitHub host is ever reached. `deliver` and
+	// `verify --pass` can each drive a write and so are exec-unreachable for
+	// the same reason every contract sub-verb is (txtar_test.go's own doc
+	// comment: no github.com-shaped remote in this fixture) — covered
+	// instead by cmd/a2a's own direct-construction dataCore tests
+	// (data_wiring_test.go).
+	{Verb: "data", Txtar: "data_pack_refusal.txtar"},
+	{Verb: "data", GoTest: "cmd/a2a.TestDataCorePackEndToEnd"},
+
 	// --- Ops & delivery --------------------------------------------------
 	{Verb: "completion", Txtar: "ops_completion.txtar"},
 	{Verb: "dashboard", Txtar: "ops_html.txtar"},

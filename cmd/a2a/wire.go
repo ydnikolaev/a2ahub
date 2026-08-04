@@ -390,6 +390,10 @@ func buildCommands() map[string]command {
 	// lifecycle verbs, plus the P6 new-command for the `contract new` alias.
 	m["contract"] = runContract
 
+	// Data verb (spec 05a T1): `a2a data pack|deliver|fetch|verify`,
+	// dispatches its own sub-verbs; per-space like contract/lifecycle.
+	m["data"] = runData
+
 	// MCP façade (P14, OP-216): serve the §7.7 tool set over stdio JSON-RPC
 	// for the life of the session. internal/mcp re-wires the same core (never
 	// imports internal/cli); the bare `version` (not the full stamp) feeds
@@ -473,14 +477,28 @@ func completionContractSubs() []string {
 	return out
 }
 
+// completionDataSubs returns the `a2a data <sub>` sub-verb names from the
+// same cli.DataSubcommands() SSOT the catalog/MCP parity use — mirrors
+// completionContractSubs' own shape.
+func completionDataSubs() []string {
+	subs := cli.DataSubcommands()
+	out := make([]string, 0, len(subs))
+	for _, s := range subs {
+		out = append(out, s.Name)
+	}
+	return out
+}
+
 // completionSubFamilies maps each `a2a <verb> <sub>` family to its sub-verb
 // names from the same SSOTs the catalog/MCP parity use — contract
-// (ContractSubcommands), feedback (FeedbackSubcommands), notifications
-// (NotificationsSubcommands), and skill (SkillSubcommands). Adding a family here
-// is the ONLY completion edit a new sub-verb family needs (renderer is N-family).
+// (ContractSubcommands), data (DataSubcommands), feedback
+// (FeedbackSubcommands), notifications (NotificationsSubcommands), and skill
+// (SkillSubcommands). Adding a family here is the ONLY completion edit a new
+// sub-verb family needs (renderer is N-family).
 func completionSubFamilies() map[string][]string {
 	return map[string][]string{
 		"contract":      completionContractSubs(),
+		"data":          completionDataSubs(),
 		"feedback":      cli.FeedbackSubcommands(),
 		"notifications": cli.NotificationsSubcommands(),
 		"skill":         cli.SkillSubcommands(),
@@ -828,6 +846,56 @@ func contractTargetFlagGrammar(action string) (valueFlags, booleanFlags map[stri
 	default:
 		return nil, nil, false
 	}
+}
+
+// runData is `a2a data`'s dispatch closure — the same shape runContract
+// already uses: resolve the target space's per-space deps, build the
+// production dataCore + its cli.DataOperations adapter, construct the
+// command, run it.
+func runData(args []string, stdout, stderr io.Writer) int {
+	ctx := context.Background()
+	p, err := resolvePaths()
+	if err != nil {
+		return fail(stderr, err)
+	}
+	deps, code := resolveDataDeps(ctx, p, args, stderr)
+	if code >= 0 {
+		return code
+	}
+	core, err := newCLIDataCore(p, deps)
+	if err != nil {
+		return failf(stderr, "a2a data: build data services: %v", err)
+	}
+	cmd := cli.NewDataCommand(cliDataAdapter{core: core})
+	return cmd.Run(ctx, args, stdio(stdout, stderr))
+}
+
+// resolveDataDeps resolves `a2a data`'s per-space deps, routing on
+// dataTargetArgs(args) (data_command_wiring.go) instead of
+// contractTargetArgs — the two families' routing target lives in a
+// different flag/positional per sub-verb, per that file's own doc comment.
+//
+// Policy per sub-verb (DEVIATION, recorded because spec 05a's own T1 does
+// not fix this wiring-tier choice): `pack` is write-free (its own synopsis:
+// "write-free") — it never opens a credential-bearing connection, so
+// needsCredential is false, and it pins an EXACT already-published
+// <XC-id>@<version>, so syncMirror is also false (mirrors contract
+// preflight/publish's own "read/preflight operations never fetch at all").
+// `deliver` and `verify` can each drive a write (deliver always; verify
+// only under --pass, decided too late for this earlier per-verb policy
+// pass, so the safe upper bound is chosen) — both sync the mirror and
+// resolve a credential, exactly like the plain OP-211 lifecycle verbs
+// (resolveLifecycleDeps's own default). `fetch` is read-only but wants a
+// fresh mirror (a package delivered moments ago must be visible), so it
+// syncs without needing a credential.
+func resolveDataDeps(ctx context.Context, p paths, args []string, stderr io.Writer) (lifecycleDeps, int) {
+	action := ""
+	if len(args) != 0 {
+		action = args[0]
+	}
+	syncMirror := action != "pack"
+	needsCredential := action == "deliver" || action == "verify"
+	return resolveLifecycleDepsWithPolicy(ctx, p, dataTargetArgs(args), stderr, syncMirror, needsCredential)
 }
 
 func awaitResolver(p paths) cli.AwaitResolver {
