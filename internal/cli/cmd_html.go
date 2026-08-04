@@ -21,6 +21,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/html"
 	"github.com/ydnikolaev/a2ahub/internal/operational"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
 const htmlDefaultOut = ".a2a/dashboard.html"
@@ -29,9 +30,10 @@ const htmlDefaultOut = ".a2a/dashboard.html"
 // verb so the usage line and catalog show the right one (they are the same
 // command; `dashboard` is the friendly alias).
 type HtmlCommand struct {
-	store       *cache.Store
-	operational OperationalSnapshotReader
-	name        string
+	store            *cache.Store
+	operational      OperationalSnapshotReader
+	historyValidator space.ContractHistoryDocumentValidator
+	name             string
 }
 
 // OperationalSnapshotReader supplies the shared operational projection. The
@@ -52,6 +54,12 @@ func NewHtmlCommandWithOperational(store *cache.Store, source OperationalSnapsho
 	return &HtmlCommand{store: store, operational: source, name: "html"}
 }
 
+// NewHtmlCommandWithOperationalAndContractHistory constructs the production
+// HTML command with both canonical read dependencies supplied by cmd/a2a.
+func NewHtmlCommandWithOperationalAndContractHistory(store *cache.Store, source OperationalSnapshotReader, validator space.ContractHistoryDocumentValidator) *HtmlCommand {
+	return &HtmlCommand{store: store, operational: source, historyValidator: validator, name: "html"}
+}
+
 // NewDashboardCommand is the `a2a dashboard` alias (same behavior).
 func NewDashboardCommand(store *cache.Store) *HtmlCommand {
 	return &HtmlCommand{store: store, name: "dashboard"}
@@ -60,6 +68,12 @@ func NewDashboardCommand(store *cache.Store) *HtmlCommand {
 // NewDashboardCommandWithOperational is the production dashboard alias.
 func NewDashboardCommandWithOperational(store *cache.Store, source OperationalSnapshotReader) *HtmlCommand {
 	return &HtmlCommand{store: store, operational: source, name: "dashboard"}
+}
+
+// NewDashboardCommandWithOperationalAndContractHistory is the production
+// dashboard alias with the canonical historical-document validator injected.
+func NewDashboardCommandWithOperationalAndContractHistory(store *cache.Store, source OperationalSnapshotReader, validator space.ContractHistoryDocumentValidator) *HtmlCommand {
+	return &HtmlCommand{store: store, operational: source, historyValidator: validator, name: "dashboard"}
 }
 
 // Name implements Command.
@@ -97,12 +111,12 @@ func (c *HtmlCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	} else {
 		now := time.Now()
 		if c.operational == nil {
-			data, err = html.Assemble(ctx, c.store, *system, now)
+			data, err = html.AssembleWithContractHistory(ctx, c.store, *system, now, c.historyValidator)
 		} else {
 			var snapshot operational.Snapshot
 			snapshot, err = c.operational.Snapshot(ctx)
 			if err == nil {
-				data, err = html.AssembleWithOperational(ctx, c.store, *system, now, snapshot)
+				data, err = html.AssembleWithOperationalAndContractHistory(ctx, c.store, *system, now, snapshot, c.historyValidator)
 			}
 		}
 	}

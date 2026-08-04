@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -61,6 +62,52 @@ func TestCacheRefreshIsIdempotentAndConditional(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("stale cache made %d calls, want conditional second call", calls)
+	}
+}
+
+func TestCacheReplacesOlderSchemaOnRefresh(t *testing.T) {
+	t.Parallel()
+	cacheDir := t.TempDir()
+	avatarDir := filepath.Join(cacheDir, "avatars")
+	if err := os.MkdirAll(avatarDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(avatarDir, "octocat.json")
+	old := record{
+		Schema:      "avatar-cache/v2",
+		Login:       "octocat",
+		SourceURL:   "https://avatars.githubusercontent.com/u/1?s=256",
+		ContentType: "image/png",
+		CheckedAt:   time.Now(),
+		Data:        []byte("old-256px"),
+	}
+	if err := writeRecord(path, old); err != nil {
+		t.Fatal(err)
+	}
+	if Cached(cacheDir, "octocat") {
+		t.Fatal("older cache schema must not be treated as current")
+	}
+
+	var calls int
+	c, err := NewCache(cacheDir, func(context.Context, string, string, string) ([]byte, string, string, string, bool, error) {
+		calls++
+		return []byte("new-460px"), "image/png", "https://avatars.githubusercontent.com/u/1?s=460", `"v3"`, false, nil
+	}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Refresh(context.Background(), []string{"octocat"}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("refresh calls = %d, want 1", calls)
+	}
+	r, err := readRecord(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Schema != recordSchema || string(r.Data) != "new-460px" {
+		t.Fatalf("refreshed record = schema %q data %q", r.Schema, r.Data)
 	}
 }
 

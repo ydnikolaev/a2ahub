@@ -10,6 +10,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/provenance"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/workreport"
 )
 
 // Spec 46 ("threads that hold") §T3/§T4 — the read model that replaces
@@ -77,11 +78,30 @@ type ThreadArtifact struct {
 // TranscriptArtifact is a transcript entry's artifact-kind payload — a
 // deliberately minimal projection (no state: see ThreadArtifact's doc).
 type TranscriptArtifact struct {
-	ID    string   `json:"id"`
-	Type  string   `json:"type"`
-	From  string   `json:"from"`
-	To    []string `json:"to,omitempty"`
-	Title string   `json:"title"`
+	ID    string                `json:"id"`
+	Type  string                `json:"type"`
+	From  string                `json:"from"`
+	To    []string              `json:"to,omitempty"`
+	Title string                `json:"title"`
+	Work  *TranscriptWorkReport `json:"work,omitempty"`
+}
+
+// TranscriptWorkReport is the durable semantic payload carried by a status
+// announcement. It remains attached to the announcement's committed
+// transcript position so human-facing readers can render one work-history row
+// instead of the technical announcement + publish pair. Local leases never
+// enter this type.
+type TranscriptWorkReport struct {
+	ArtifactID     string                 `json:"artifact_id"`
+	WorkID         string                 `json:"work_id"`
+	SubjectRef     string                 `json:"subject_ref"`
+	Mode           workreport.Mode        `json:"mode"`
+	Summary        string                 `json:"summary"`
+	Actor          TranscriptEventActor   `json:"actor"`
+	WaitingOn      []workreport.WaitingOn `json:"waiting_on,omitempty"`
+	ReportedAt     time.Time              `json:"reported_at"`
+	ValidUntil     time.Time              `json:"valid_until,omitempty"`
+	CommitSequence uint64                 `json:"commit_sequence"`
 }
 
 // TranscriptEventActor is one event's actor block, as rendered in a
@@ -496,12 +516,26 @@ func buildTranscript(sorted []foldedArtifact, order string) ([]TranscriptEntry, 
 
 	var candidates []transcriptCandidate
 	for _, fa := range sorted {
+		var work *TranscriptWorkReport
+		if checkpoint, recognized, err := classifyOperationalCheckpoint(fa); recognized && err == nil {
+			work = &TranscriptWorkReport{
+				ArtifactID: checkpoint.ArtifactID, WorkID: checkpoint.WorkID,
+				SubjectRef: checkpoint.SubjectRef, Mode: checkpoint.Mode, Summary: checkpoint.Summary,
+				Actor: TranscriptEventActor{
+					Kind: checkpoint.Actor.Kind, Name: checkpoint.Actor.Name, System: checkpoint.Actor.System,
+					Model: checkpoint.Actor.Model, Session: checkpoint.Actor.Session,
+				},
+				WaitingOn:  append([]workreport.WaitingOn(nil), checkpoint.WaitingOn...),
+				ReportedAt: checkpoint.ReportedAt, ValidUntil: checkpoint.ValidUntil,
+				CommitSequence: checkpoint.CommitSequence,
+			}
+		}
 		candidates = append(candidates, transcriptCandidate{
 			entry: TranscriptEntry{
 				Seq: fa.Seq, Kind: "artifact", At: parseTimeField(fa.Env.Created),
 				Artifact: &TranscriptArtifact{
 					ID: fa.Env.ID, Type: fa.Env.Type, From: fa.Env.From,
-					To: normalizeTo(fa.Env.To), Title: fa.Env.Title,
+					To: normalizeTo(fa.Env.To), Title: fa.Env.Title, Work: work,
 				},
 			},
 			seq: fa.Seq, at: parseTimeField(fa.Env.Created), isEvent: false, tieID: fa.Env.ID,

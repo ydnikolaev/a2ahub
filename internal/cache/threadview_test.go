@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -121,6 +122,116 @@ func TestThreadAndShowPreserveEventNote(t *testing.T) {
 	if !found {
 		t.Fatalf("artifact history lost committed note: %+v", show.Events)
 	}
+}
+
+func TestThreadViewCarriesCommittedWorkReportOnStatusAnnouncement(t *testing.T) {
+	t.Parallel()
+	fx, threadID, parentID, _ := buildExchangeThread(t)
+	reportedAt := time.Date(2026, 7, 1, 11, 0, 0, 0, time.UTC)
+	validUntil := reportedAt.Add(30 * time.Minute)
+	statusID := "XA-axon-20260701-status"
+	fx.commitArtifact("axon/exchanges/"+statusID+".md", map[string]any{
+		"schema": "envelope/v2", "id": statusID, "type": "announcement", "title": "Implementation checkpoint",
+		"space": "fixture-space", "from": "axon", "to": []string{"seomatrix"}, "thread": threadID,
+		"actor":   map[string]any{"kind": "agent", "name": "codex", "model": "gpt-5", "session": "session:01K20ABCDEFHJKMNPQRSTVWXYZ"},
+		"created": reportedAt.Format(time.RFC3339), "category": "status", "priority": "p2", "blocking": false,
+		"ack_requested": false, "classification": "internal", "refs": []map[string]any{{"ref": parentID}},
+		"work": map[string]any{
+			"id": "work:01K20ABCDEFHJKMNPQRSTVWXYZ", "semantic_sequence": 1, "mode": "implementing",
+			"subject_ref": parentID, "summary": "Implementing the replay-safe capture path",
+			"reported_at": reportedAt.Format(time.RFC3339), "valid_until": validUntil.Format(time.RFC3339),
+		},
+	}, "Durable checkpoint")
+
+	store := newThreadStore(t, fx, "sp1")
+	thread, err := store.ThreadView(context.Background(), threadID, "")
+	if err != nil {
+		t.Fatalf("ThreadView: %v", err)
+	}
+	for _, entry := range thread.Transcript {
+		if entry.Artifact == nil || entry.Artifact.ID != statusID {
+			continue
+		}
+		work := entry.Artifact.Work
+		if work == nil {
+			t.Fatalf("status announcement lost its committed work payload: %+v", entry.Artifact)
+		}
+		if work.SubjectRef != parentID || work.Mode != "implementing" || work.Summary != "Implementing the replay-safe capture path" ||
+			work.Actor.Name != "codex" || work.Actor.Model != "gpt-5" ||
+			work.Actor.Session != "session:01K20ABCDEFHJKMNPQRSTVWXYZ" || work.ReportedAt != reportedAt {
+			t.Fatalf("work report = %+v", work)
+		}
+		return
+	}
+	t.Fatalf("status announcement %s not found in transcript: %+v", statusID, thread.Transcript)
+}
+
+func TestThreadViewWorkHistoryProjectsHostileLegacyTextSafely(t *testing.T) {
+	t.Parallel()
+	fx, threadID, parentID, _ := buildExchangeThread(t)
+	reportedAt := time.Date(2026, 7, 1, 11, 0, 0, 0, time.UTC)
+	statusID := "XA-axon-20260701-hostile-status"
+	const (
+		unsafeModel       = "password=model-secret"
+		unsafeSession     = "token:super-secret"
+		unsafeSummary     = "api_key=summary-secret"
+		unsafeWaitSummary = "Bearer wait-summary-secret"
+		wantSession       = "sha256:360f0b0743ceb50fd947fd94c0137516a7ddc7b52bbc5e9a4e6e855174e63a6a"
+	)
+	fx.commitArtifact("axon/exchanges/"+statusID+".md", map[string]any{
+		"schema": "envelope/v2", "id": statusID, "type": "announcement", "title": "Legacy checkpoint",
+		"space": "fixture-space", "from": "axon", "to": []string{"seomatrix"}, "thread": threadID,
+		"actor": map[string]any{
+			"kind": "agent", "name": "codex", "model": unsafeModel, "session": unsafeSession,
+		},
+		"created": reportedAt.Format(time.RFC3339), "category": "status", "priority": "p2", "blocking": false,
+		"ack_requested": false, "classification": "internal", "refs": []map[string]any{{"ref": parentID}},
+		"work": map[string]any{
+			"id": "work:01K20ABCDEFHJKMNPQRSTVWXYZ", "semantic_sequence": 2, "mode": "waiting",
+			"subject_ref": parentID, "summary": unsafeSummary,
+			"reported_at": reportedAt.Format(time.RFC3339), "valid_until": reportedAt.Add(30 * time.Minute).Format(time.RFC3339),
+			"waiting_on": []map[string]any{{"kind": "system", "id": "seomatrix", "summary": unsafeWaitSummary}},
+		},
+	}, "Legacy durable checkpoint")
+
+	store := newThreadStore(t, fx, "sp1")
+	thread, err := store.ThreadView(context.Background(), threadID, "")
+	if err != nil {
+		t.Fatalf("ThreadView: %v", err)
+	}
+	for _, entry := range thread.Transcript {
+		if entry.Artifact == nil || entry.Artifact.ID != statusID {
+			continue
+		}
+		work := entry.Artifact.Work
+		if work == nil {
+			t.Fatalf("hostile status announcement lost its work history: %+v", entry.Artifact)
+		}
+		if work.Actor.Kind != "agent" || work.Actor.Name != "codex" || work.Actor.System != "axon" ||
+			work.Actor.Model != "[redacted unsafe text]" || work.Actor.Session != wantSession ||
+			work.Summary != "[redacted unsafe text]" {
+			t.Fatalf("safe work history = %+v", work)
+		}
+		if len(work.WaitingOn) != 1 || work.WaitingOn[0].Kind != "system" || work.WaitingOn[0].ID != "seomatrix" ||
+			work.WaitingOn[0].Summary != "[redacted unsafe text]" {
+			t.Fatalf("safe history waits = %+v", work.WaitingOn)
+		}
+		if work.SubjectRef != parentID || work.Mode != "waiting" || work.ReportedAt != reportedAt ||
+			work.CommitSequence == 0 || work.CommitSequence != uint64(entry.Seq)+1 {
+			t.Fatalf("safe projection changed history meaning or commit sequence: entry=%+v work=%+v", entry, work)
+		}
+		encoded, marshalErr := json.Marshal(work)
+		if marshalErr != nil {
+			t.Fatalf("json.Marshal(work): %v", marshalErr)
+		}
+		for _, secret := range []string{unsafeModel, unsafeSession, unsafeSummary, unsafeWaitSummary} {
+			if strings.Contains(string(encoded), secret) {
+				t.Fatalf("public work history leaked %q: %s", secret, encoded)
+			}
+		}
+		return
+	}
+	t.Fatalf("status announcement %s not found in transcript: %+v", statusID, thread.Transcript)
 }
 
 func newThreadStore(t *testing.T, fx *fixtureSpace, spaceID string) *Store {

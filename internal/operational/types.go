@@ -72,7 +72,7 @@ type Actor struct {
 	Name    string `json:"name"`
 	System  string `json:"system"`
 	Model   string `json:"model,omitempty"`
-	Session string `json:"session"`
+	Session string `json:"session,omitempty"`
 }
 
 // Source describes a committed-space or local-work evidence source.

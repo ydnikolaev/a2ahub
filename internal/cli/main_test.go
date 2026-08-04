@@ -48,8 +48,15 @@ func TestMain(m *testing.M) {
 			if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
 				os.Exit(6)
 			}
-			if err := os.WriteFile(marker, []byte("child survived parent exit\n"), 0o600); err != nil {
+			markerTemp := marker + ".tmp"
+			if err := os.WriteFile(markerTemp, []byte("child survived parent exit\n"), 0o600); err != nil {
 				os.Exit(7)
+			}
+			// Publish the probe atomically. A direct WriteFile briefly exposes a
+			// zero-length marker and lets the parent mistake an in-progress write
+			// for a failed detached child under the race-enabled full suite.
+			if err := os.Rename(markerTemp, marker); err != nil {
+				os.Exit(9)
 			}
 			os.Exit(0)
 		}

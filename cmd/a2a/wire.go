@@ -368,9 +368,9 @@ func buildCommands() map[string]command {
 					}
 				}()
 				if name == "html" {
-					command = cli.NewHtmlCommandWithOperational(store, runtimeState.source)
+					command = cli.NewHtmlCommandWithOperationalAndContractHistory(store, runtimeState.source, runtimeState.historyValidator)
 				} else {
-					command = cli.NewDashboardCommandWithOperational(store, runtimeState.source)
+					command = cli.NewDashboardCommandWithOperationalAndContractHistory(store, runtimeState.source, runtimeState.historyValidator)
 				}
 			}
 			return command.Run(ctx, args, stdio(stdout, stderr))

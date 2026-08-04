@@ -38,9 +38,10 @@ func (operationalPendingDecoder) DecodePending(raw []byte) (operationalsource.Pe
 }
 
 type operationalRuntime struct {
-	source   *operationalsource.Source
-	renderer *html.DashboardRenderer
-	leases   *space.WorkLeaseStore
+	source           *operationalsource.Source
+	renderer         *html.DashboardRenderer
+	historyValidator space.ContractHistoryDocumentValidator
+	leases           *space.WorkLeaseStore
 }
 
 func (runtime *operationalRuntime) Close() error {
@@ -93,12 +94,17 @@ func buildOperationalRuntimeWithClock(p paths, store *cache.Store, clock operati
 	if err != nil {
 		return nil, err
 	}
-	renderer, err := html.NewDashboardRenderer(store, store.OwnSystem())
+	engine, err := newEngine()
+	if err != nil {
+		return nil, fmt.Errorf("operational runtime: load validation engine: %w", err)
+	}
+	historyValidator := contractHistoryDocumentEngine{engine: engine}
+	renderer, err := html.NewDashboardRendererWithContractHistory(store, store.OwnSystem(), historyValidator)
 	if err != nil {
 		return nil, err
 	}
 	closeOnError = false
-	return &operationalRuntime{source: source, renderer: renderer, leases: leases}, nil
+	return &operationalRuntime{source: source, renderer: renderer, historyValidator: historyValidator, leases: leases}, nil
 }
 
 type productionServeLauncher struct {
