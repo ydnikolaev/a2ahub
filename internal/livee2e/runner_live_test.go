@@ -6,16 +6,28 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 )
 
-// EnvReportPath optionally names a file the rendered report is also written
-// to. Unset means stdout only — no default path, so a run can never quietly
-// drop an artifact into the working tree.
+// EnvReportPath overrides where the rendered report is written.
+//
+// Unset, the report lands beside the manifest in this run's retained evidence
+// directory — never in the working tree, which is what the old "stdout only"
+// default was protecting. Stdout alone turned out not to be durable: the
+// evidence bundle carries scenario logs for the P7 rows only, so a run driven
+// outside `detached.sh` (which redirects stdout into a timestamped log) left
+// every other family's verdict, and every failure's text, in a terminal
+// buffer nobody could read afterwards. A candidate whose report cannot be
+// re-read is a candidate that has to be run again, so this is no longer
+// something the operator has to remember to ask for.
 const EnvReportPath = "A2A_LIVE_E2E_REPORT"
+
+// DefaultReportName is the report's file name inside the evidence directory.
+const DefaultReportName = "report.txt"
 
 // liveRunCeiling bounds the entire matrix. `make live-e2e` must pass a
 // -timeout at least this large, or `go test`'s own 10-minute default kills the
@@ -115,9 +127,20 @@ func TestLiveMatrix(t *testing.T) {
 		}
 	}
 
-	if path := os.Getenv(EnvReportPath); path != "" {
-		if writeErr := os.WriteFile(path, []byte(rendered), 0o644); writeErr != nil {
-			t.Errorf("write report to %s: %v", path, writeErr)
+	// Deliberately AFTER the bundle and keyed on the evidence directory rather
+	// than on the bundle succeeding: a run whose evidence write is refused is
+	// exactly the run whose report is most worth keeping. The directory is
+	// created by DefaultEvidencePath and is unique per run, so a rerun of the
+	// same candidate cannot overwrite an earlier report.
+	reportPath := os.Getenv(EnvReportPath)
+	if reportPath == "" && run.EvidencePath != "" {
+		reportPath = filepath.Join(filepath.Dir(run.EvidencePath), DefaultReportName)
+	}
+	if reportPath != "" {
+		if writeErr := os.WriteFile(reportPath, []byte(rendered), 0o644); writeErr != nil {
+			t.Errorf("write report to %s: %v", reportPath, writeErr)
+		} else if _, writeErr := fmt.Fprintf(os.Stdout, "report: %s\n", reportPath); writeErr != nil {
+			t.Errorf("write report path to stdout: %v", writeErr)
 		}
 	}
 
