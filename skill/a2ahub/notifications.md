@@ -1,7 +1,8 @@
 # Notifications
 
-Use the binary as the source of truth. Read exact syntax from
-[reference/commands.md](reference/commands.md).
+Use the binary as the source of truth.
+[reference/commands.md](reference/commands.md) catalogues which verbs exist —
+synopsis only, no flags.
 
 ## Activation preflight
 

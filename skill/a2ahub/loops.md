@@ -8,10 +8,15 @@
 > drift.
 >
 > **Defer, don't restate.** Verb names appear here because they are part of the
-> loop text; their *syntax* (flags, argument grammar) lives in
-> [reference/commands.md](reference/commands.md). Template bodies live in
-> [reference/authoring/](reference/authoring/). Whether a specific draft is
-> legal is answered by running `a2a validate` — never by this file.
+> loop text. [reference/commands.md](reference/commands.md) is the generated
+> catalog of which verbs and MCP tools exist — one synopsis line each, and
+> **no flags**; do not expect argument grammar there. What a flag *decides*
+> lives in that family's reference page where one exists (e.g.
+> [reference/data-exchange.md](reference/data-exchange.md) for `a2a data`), and
+> a verb invoked wrongly names what it expected in its own error. Template
+> bodies live in [reference/authoring/](reference/authoring/). Whether a
+> specific draft is legal is answered by running `a2a validate` — never by
+> this file.
 
 ## Condensed §0/§3 semantics
 
@@ -100,7 +105,7 @@ forge or skip a gate (§8.5).
 >    requested is YOUR duty — nobody else closes your exchanges (S-7).
 
 *(Attribution: plan §8.1 "Session-start checklist"; guaranteed-floor status per
-D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
+D-021. Both verbs are catalogued in
 [reference/commands.md](reference/commands.md).)*
 
 4. **Read each thread.** For any item in step 2 or 3 that you intend to act on
@@ -120,8 +125,9 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
    continues, publish checkpoints only on semantic change, and stop or report a
    typed wait honestly. The provider-neutral sequence and the distinction
    between durable checkpoints and local heartbeats live in
-   [reference/work-reporting.md](reference/work-reporting.md); command syntax
-   remains generated in [reference/commands.md](reference/commands.md).
+   [reference/work-reporting.md](reference/work-reporting.md); the verbs
+   themselves are catalogued in
+   [reference/commands.md](reference/commands.md).
 
 ## §8.2 Send loop — "I need something from another system"
 
@@ -219,8 +225,25 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
 4. **Respond** with `a2a respond` — reference concrete artifacts
    (`id@version` / `id#digest`) and address every acceptance criterion
    explicitly.
+   - **A `work_request` with `category: data` that asks for an actual payload
+     is NOT discharged by `a2a respond`.** A response describes; it carries no
+     bytes anyone can check. Pack the result against the pinned contract and
+     deliver it — `a2a data pack` then `a2a data deliver` — which mints a
+     `handoff` carrying the package, and the requester judges it with
+     `a2a data verify --record`. Only once that handoff is accepted do you
+     discharge the original request with
+     `a2a respond --result delivered <XW-id>`. Full producer sequence, the
+     source-directory-to-schema mapping, and what each refusal means:
+     [reference/data-exchange.md](reference/data-exchange.md). A data request
+     that genuinely asks only for a description — a dictionary, a field list —
+     is an ordinary response; the split is whether a payload is expected.
 5. **Await closure:** the sender verifies. A dispute reopens the exchange with
-   findings — treat it as a failing test, not an argument.
+   findings — treat it as a failing test, not an argument. For a delivered
+   payload the equivalent step is the requester's `a2a data verify --record`,
+   whose `verify-fail` is your signal to pack a superseding attempt (never to
+   edit the failed one in place) and then to run
+   `a2a supersede <rejected-XH-id> --refs <new-XH-id>` so the thread stops
+   showing the failed attempt as the last word.
 
 ## §8.4 Contract-owner loop — "my interface changed"
 
@@ -387,7 +410,7 @@ this manual has no way to know about.
 
 ## §8.5 Escalation ladder
 
-Condensed from plan §8.5 (verb syntax in [reference/commands.md](reference/commands.md)):
+Condensed from plan §8.5 (the verbs are catalogued in [reference/commands.md](reference/commands.md)):
 
 | Situation | Action |
 |-----------|--------|

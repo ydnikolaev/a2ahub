@@ -19,7 +19,13 @@ description: >-
 > **The one rule that governs every other file here.** This skill is
 > *documentation-with-hands*: it MUST always defer to the binary's validator as
 > the source of correctness rather than restating rules that could drift
-> (§8.7, D-015). For command syntax, read [reference/commands.md](reference/commands.md).
+> (§8.7, D-015). To learn WHICH verbs and MCP tools exist, read
+> [reference/commands.md](reference/commands.md) — it is a generated catalog of
+> one synopsis line each and carries **no flags**, so it cannot answer "what
+> arguments does this take". For what a flag *decides*, read that family's
+> reference page where one exists (e.g.
+> [reference/data-exchange.md](reference/data-exchange.md) for `a2a data`); a
+> verb invoked wrongly also names what it expected in its own error output.
 > For template bodies, read [reference/authoring/](reference/authoring/). For
 > whether a specific draft is legal, run `a2a validate`. This prose never
 > becomes a second source of command, schema, or validation truth.
@@ -51,7 +57,7 @@ closed and stale guidance telling agents otherwise is itself a loop defect.
 
 ## Activation modes
 
-Three ways an agent activates this skill (§8.7):
+Four ways an agent activates this skill (§8.7):
 
 Before any mode, if the installed binary exposes `a2a notifications`, run
 `a2a notifications status --json` once for the current project and follow
@@ -76,7 +82,16 @@ the requested work.
    classification, [reference/authoring/<type>.md](reference/authoring/) for
    the skeleton and inline guidance, [reference/decompose-example.md](reference/decompose-example.md)
    for the worked single-intent split. Then draft with `a2a new` and check with
-   `a2a validate` (see [reference/commands.md](reference/commands.md)).
+   `a2a validate`.
+
+4. **Hand over an actual payload, or judge one.** "I owe them the export."
+   "A handoff arrived with a data package — do I just accept it?" → this is
+   the one job that is NOT an `a2a respond`: the payload is packed against a
+   pinned contract version, delivered as a `handoff`, and judged by a report
+   that names the failing file and record. Go to
+   [reference/data-exchange.md](reference/data-exchange.md) for both
+   sequences; [loops.md](loops.md) §8.3 step 4 is where the producer's
+   ordinary receive loop hands off to it.
 
 ## Table of contents
 
@@ -86,7 +101,7 @@ the requested work.
 | [onboarding.md](onboarding.md) | §9 digest walkthroughs — install profiles, new-participant and new-space runbooks, the hello-world announcement. |
 | [troubleshooting.md](troubleshooting.md) | How to read `a2a doctor` output — the sixteen checks, what a FAIL means, what to do next. Defers to the binary's actual checks. |
 | [notifications.md](notifications.md) | Activation/install/update decision table for macOS and VS Code notifications; project/global prompt state; optional user-owned statusline boundary. |
-| [reference/commands.md](reference/commands.md) | **Generated from the binary.** Full `a2a` command catalog + MCP tool catalog. The source of truth for invocation syntax — never duplicated in prose. |
+| [reference/commands.md](reference/commands.md) | **Generated from the binary.** The catalog of which `a2a` commands and MCP tools exist — one synopsis line each, **no flags**. Use it to find the verb; for what its flags decide, read that family's reference page. |
 | [reference/authoring/](reference/authoring/) | **Generated from schemas.** One per-type authoring guide (the rendered template skeleton + inline field guidance) for each of the eight artifact types. |
 | [reference/decompose-example.md](reference/decompose-example.md) | A worked single-intent decompose: one thread carrying an announcement + a question + a work_request, referencing the product-repo fixtures. |
 | [reference/feedback.md](reference/feedback.md) | The feedback channel — filing a defect or a gap against a2a itself (`a2a feedback new/validate/submit/status`), what the quarantined intake does with it, and what makes a report actionable. Hand-maintained prose, not generated. |
