@@ -211,6 +211,10 @@ changes:
       immutable one, and what failed and why stays readable. Deliveries and
       their verdicts appear in the thread under the handoff that carries them,
       with an unverified delivery visibly distinct from a passed one.
+      Recording a verdict is its own step: verifying judges and prints, and
+      asking it to record writes the report and the lifecycle transition
+      together, in the direction the report itself derived — there is no flag
+      that lets a caller declare a pass over a failing report.
     affects: ["a2a data pack", "a2a data deliver", "a2a data fetch", "a2a data verify", "a2a_data", "data-package/v1", "verification-report/v1", "dashboard"]
     action:
       scope: local
