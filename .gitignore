@@ -23,6 +23,7 @@
 
 # macOS
 .DS_Store
+.history/
 
 # ── publish boundary: private harness ─────────────────────────────────────────
 # SSOT of this list is scripts/classify-guard.sh; the guard asserts the two
