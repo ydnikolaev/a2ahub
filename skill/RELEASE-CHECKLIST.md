@@ -29,6 +29,7 @@ not drifted from the plan wording it quotes.
 | `skill/a2ahub/reference/decompose-example.md` | The worked decompose still models one composite need → three single-intent artifacts on one thread; cited fixtures still exist on disk with the stated IDs; the "separate fixtures, not a coordinated trio" deviation is still accurate (or the file was updated when a real trio landed). | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/feedback.md` | The feedback channel still matches the shipped verbs and intake behaviour (`a2a feedback new/validate/submit/status`, the quarantined `feedback/inbox/` path, the FB-### codes); what it tells a reporter makes a report actionable rather than merely filed. **Added 2026-07-25**: this file is hand-maintained prose and had no row here, which the row below already declared impossible — the completeness clause was true of the list and false of the tree. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/status-announcements.md` | `period` is still an unconstrained string on `schemas/envelope/v1/announcement.schema.json` (no `format`/`pattern`) and the page still states plainly why it isn't enforced yet; the noted collision with the generated authoring template's `2026-W35` example is still named, not silently resolved by an edit to that generated file. | ☑ | Codex | 2026-07-31 |
+| `skill/a2ahub/reference/work-reporting.md` | Durable checkpoints and machine-local leases remain separate authorities; the provider-neutral start/heartbeat/checkpoint/wait/stop loop matches the shipped CLI/MCP surface; missing or expired evidence is unknown, never idle; unsafe report content remains forbidden. | ☑ | Codex | 2026-08-04 |
 | `skill/a2ahub/reference/retraction.md` | An `x_retraction` block on a `work_request` still round-trips `valid: true` through `a2a validate` against the shipped schema with no release; the page still states why `x_` was chosen over a new `category` rather than restating it as settled. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/bindings.md` | The file is still described as local-tracked with no space-visible path or aggregate; if the first real deprecation in `getvisa` (conventions spec §10) has happened since the last review, its pass/fail verdict has been recorded in the spec's §11 amendments — not left for this row alone to remember. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/threads.md` | Thread order, open-item/next-move semantics and the space-local boundary match the current read/fold implementation; no prose implies two independent threads can be merged after authoring. | ☑ | Codex | 2026-08-01 |
@@ -39,37 +40,30 @@ not drifted from the plan wording it quotes.
 
 ## Sign-off
 
-- **Release tag:** `v0.18.2`
+- **Release tag:** `v0.19.0`
 - **Reviewer:** `Codex`
-- **Date:** `2026-08-01`
+- **Date:** `2026-08-04`
 - [x] Every prose row above is ticked, or an un-ticked row has a written reason
       and a follow-up filed.
-- [x] The `skill-drift` CI job is green on the exact release candidate tree
+- [ ] The `skill-drift` CI job is green on the exact release candidate tree
       under `make check` (confirms the generated
       `reference/**` tree matches the binary/schemas — separate from this
       prose review).
 
-**What this review was, exactly.** A delta review against `v0.18.1`. No
-hand-maintained lifecycle rule changed. The lifecycle fix makes the
-implementation match the already-published rule: `note` remains a
-transition-free annotation, does not change folded state, and is authored only
-by an active party to the exchange. `loops.md` and `reference/threads.md` were
-read against that behavior; neither promises third-party annotation or treats a
-note as a correction that changes a commitment. `SKILL.md` and
-`troubleshooting.md` now enumerate the executable participant-avatar advisory:
-doctor reads only the local cache, never fails on a missing image, and hands the
-invoking agent the idempotent `a2a sync` repair while initials remain available.
-The generated command catalogue carries the matching synopsis and remains
-outside this hand-review table; `skill-drift` checks it byte-for-byte. The
-public-site, release-index and tag-import changes do not alter the agent
-operating contract.
+The exact-candidate checkbox intentionally remains open: the private-tree
+review and local gates do not prove the filtered public SHA. Tick it only after
+`candidate.sh` records `WEB_DEPS_READY=true` and `EXIT=0` exactly once for that
+candidate's retained `make check` transcript.
 
-Root `README.md` is unchanged and was read against the human half of `make
-readme-lint`. Its product boundary, current capabilities and explicitly bounded
-last full live baseline remain accurate. This patch repairs an existing
-lifecycle command and its release machinery, then projects those existing
-capabilities through the public site; it does not add a new protocol capability
-that requires another README row.
+**What this review was, exactly.** A delta review against `v0.18.2`. The new
+hand-maintained surface is `reference/work-reporting.md`; `SKILL.md` and
+`loops.md` link it and preserve its durable-checkpoint versus local-lease
+boundary. The generated command catalogue remains outside the hand-review
+table and is byte-gated by `skill-drift`. Every other prose row is unchanged
+from its recorded content review. Root `README.md` was updated and read against
+the human half of `make readme-lint`: it now names durable work visibility,
+reproducible contract releases, and the current static/server boundary without
+claiming the proposed full live-file server already exists.
 
 ## Notes for the reviewer
 

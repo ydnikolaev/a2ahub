@@ -43,6 +43,7 @@ CHECKOUT_DETACHED=true
 INDEX_CLEAN=true
 WORKTREE_CLEAN=true
 UNTRACKED_CLEAN=true
+WEB_DEPS_READY=true
 EXIT=0
 EOF
 CHECK_DIGEST="sha256:$(shasum -a 256 "$WORK/logs/make-check.log" | awk '{print $1}')"

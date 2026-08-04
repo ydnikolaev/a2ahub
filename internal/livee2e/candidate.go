@@ -67,6 +67,7 @@ func candidateCheckAttestation(raw []byte, checkLog string, want CandidateExpect
 		"INDEX_CLEAN":       "true",
 		"WORKTREE_CLEAN":    "true",
 		"UNTRACKED_CLEAN":   "true",
+		"WEB_DEPS_READY":    "true",
 		"EXIT":              "0",
 	}
 	markerOrder := []string{
@@ -78,6 +79,7 @@ func candidateCheckAttestation(raw []byte, checkLog string, want CandidateExpect
 		"INDEX_CLEAN",
 		"WORKTREE_CLEAN",
 		"UNTRACKED_CLEAN",
+		"WEB_DEPS_READY",
 		"EXIT",
 	}
 	parsed := make(map[string]string, len(values))
