@@ -1,6 +1,6 @@
 schema: release-notes/v1
 version: "0.19.0"
-released: "2026-08-03"
+released: "2026-08-04"
 headline: "A2A shows the work behind an exchange and makes every contract version reproducible"
 changes:
   - id: RN-01900-0

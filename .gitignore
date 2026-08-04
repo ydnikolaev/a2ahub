@@ -10,6 +10,13 @@
 /dist/
 /coverage.out
 
+# Local design handoff/inbox material. Canonical implementation sources live in
+# web/design-source; exported prototypes and raw briefs are not release inputs.
+/docs/inbox/export/
+/docs/inbox/a2a-claude-design-v3-demo-data.json
+/docs/inbox/a2a-claude-design-v3-prompt.md
+/docs/inbox/public-site-discovery-performance-spec.md
+
 # Local a2a runtime state (config + cache + generated dashboard) — created when
 # you run the dev `a2a` from this repo; never committed.
 /.a2a/
