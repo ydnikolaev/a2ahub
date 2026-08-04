@@ -71,7 +71,9 @@ func TestDataGoldenSequence(t *testing.T) {
 	pkg2ID, manifest2Raw := dataGoldenPack(t, r, contractID, from2, requestID, pkg1ID)
 	stagingRoot2 := filepath.Join(r.projectDir, ".a2a", "staging", "data", pkg2ID)
 	patchStagedManifestProvenance(t, stagingRoot2)
-	r.mustRun("data", "deliver", stagingRoot2, "--fulfills", requestID, "--supersedes", pkg1ID)
+	// Supersession is already in the manifest pack produced; deliver only
+	// ships it, and refuses the flag rather than ignoring it.
+	r.mustRun("data", "deliver", stagingRoot2, "--fulfills", requestID)
 	r.mustRun("sync")
 
 	// --- masking: every id this run minted (packages via crypto/rand +

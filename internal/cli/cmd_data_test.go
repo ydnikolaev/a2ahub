@@ -193,11 +193,11 @@ func TestDataDeliverIsThin(t *testing.T) {
 	cmd := cli.NewDataCommand(fake)
 
 	code, output, stderr := runDataCommand(t, cmd,
-		"deliver", "staging/packed-attempt-1", "--fulfills", "XW-axon-20260804-ef56", "--supersedes", "DP-axon-20260803-zz99")
+		"deliver", "staging/packed-attempt-1", "--fulfills", "XW-axon-20260804-ef56")
 	if code != 0 || stderr != "" {
 		t.Fatalf("deliver: code=%d out=%q err=%q", code, output, stderr)
 	}
-	if fake.deliverReq.StagingRoot != "staging/packed-attempt-1" || fake.deliverReq.Fulfills != "XW-axon-20260804-ef56" || fake.deliverReq.Supersedes != "DP-axon-20260803-zz99" {
+	if fake.deliverReq.StagingRoot != "staging/packed-attempt-1" || fake.deliverReq.Fulfills != "XW-axon-20260804-ef56" {
 		t.Fatalf("deliver request not forwarded thin: %+v", fake.deliverReq)
 	}
 	if !strings.Contains(output, "delivered DP-axon-20260804-ab12 handoff XH-axon-20260804-cd34") {
@@ -397,5 +397,32 @@ func TestDataSubcommandsMatchRunSwitch(t *testing.T) {
 				t.Fatalf("data %s: DataSubcommands() names a sub-verb the Run switch does not dispatch: %s", sub.Name, stderr)
 			}
 		})
+	}
+}
+
+// TestDataDeliverRefusesSupersedesRatherThanIgnoringIt pins the correction of
+// a flag that used to be accepted and silently do nothing.
+//
+// Supersession is baked into the manifest at pack time; deliver only ships
+// what pack produced, so it cannot honour --supersedes. Ignoring it was the
+// worst available option: an agent that set it there — the intuitive place —
+// would believe the chain was recorded, and would find out one feedback cycle
+// later that attempt 2 claims to be attempt 1.
+func TestDataDeliverRefusesSupersedesRatherThanIgnoringIt(t *testing.T) {
+	t.Parallel()
+	fake := &fakeDataOperations{}
+	cmd := cli.NewDataCommand(fake)
+
+	code, _, stderr := runDataCommand(t, cmd,
+		"deliver", "staging/packed-attempt-2", "--fulfills", "XW-axon-20260804-ef56",
+		"--supersedes", "DP-axon-20260803-zz99")
+	if code == 0 {
+		t.Fatalf("deliver --supersedes = exit 0, want a refusal")
+	}
+	if !strings.Contains(stderr, "set at pack time") {
+		t.Fatalf("refusal does not say where supersession belongs: %q", stderr)
+	}
+	if fake.deliverReq.StagingRoot != "" {
+		t.Fatalf("deliver reached the core despite refusing: %+v", fake.deliverReq)
 	}
 }

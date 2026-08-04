@@ -252,6 +252,38 @@ func mustSparseFile(t *testing.T, path string, size int64) {
 // need a package that actually landed) can still run; it is not a product
 // fix, and the defect is reported in this brief's deviations, not silently
 // routed around.
+
+// backdateStagedManifestExpiry pushes a staged attempt's expires_at into the
+// past so the fetch-side expiry guard can be exercised.
+//
+// It replaced `--expires=-1h`, which stopped working once `data pack` began
+// refusing a non-positive expiry outright — a change made because the flag
+// used to DEFAULT to zero, so a producer who simply forgot it minted a
+// package that was expired the instant it existed and that its counterpart
+// could never fetch. The refusal is the product being right; the test needs
+// another way in, and editing the staged manifest is honest about being a
+// test arrangement rather than a thing a producer can do.
+func backdateStagedManifestExpiry(t *testing.T, stagingRoot string) {
+	t.Helper()
+	manifestPath := filepath.Join(stagingRoot, "manifest.json")
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read staged manifest: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("decode staged manifest: %v", err)
+	}
+	doc["expires_at"] = "2020-01-01T00:00:00Z"
+	patched, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("encode patched manifest: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, patched, 0o644); err != nil {
+		t.Fatalf("write patched manifest: %v", err)
+	}
+}
+
 func patchStagedManifestProvenance(t *testing.T, stagingRoot string) {
 	t.Helper()
 	manifestPath := filepath.Join(stagingRoot, "manifest.json")
@@ -611,14 +643,14 @@ func TestDataAdversarialFetchAndVerifyRefusals(t *testing.T) {
 	from := t.TempDir()
 	mustWrite(t, filepath.Join(from, "orders.json"), `{"example":"x"}`+"\n")
 
-	// §6.4 case: "an expired package at fetch". `--expires=-1h` needs no
-	// sleep and no clock injection: Pack never validates Expires > 0, and
-	// ExpiresAt is simply now.Add(Expires) (pack.go), so a negative
-	// duration is already in the past the instant the package is minted.
+	// §6.4 case: "an expired package at fetch". The attempt is packed
+	// normally and its staged manifest is then backdated — `data pack` now
+	// refuses a non-positive --expires, so a package cannot be minted
+	// already-expired through the product's own surface.
 	packOut := r.mustRun(
 		"data", "pack", "--contract", contractID+"@1.0.0", "--from", from,
 		"--profile", "synthetic", "--format", "json", "--fulfills", requestID,
-		"--expires=-1h", "--json",
+		"--json",
 	)
 	var packResult cli.DataResult
 	if err := json.Unmarshal([]byte(packOut), &packResult); err != nil {
@@ -630,6 +662,7 @@ func TestDataAdversarialFetchAndVerifyRefusals(t *testing.T) {
 	packageID := packResult.Manifest.ID
 	stagingRoot := filepath.Join(r.projectDir, ".a2a", "staging", "data", packageID)
 	patchStagedManifestProvenance(t, stagingRoot)
+	backdateStagedManifestExpiry(t, stagingRoot)
 
 	r.mustRun("data", "deliver", stagingRoot, "--fulfills", requestID)
 	r.mustRun("sync")
