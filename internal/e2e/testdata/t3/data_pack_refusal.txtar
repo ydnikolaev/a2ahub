@@ -1,0 +1,12 @@
+# spec 05a T1 `a2a data pack`: a pinned <XC-id>@<version> that this space
+# never published is refused LOCALLY (internal/space's own
+# ErrContractNotPublished, surfaced by ResolveDataContractSchemas reading
+# the mirror's own committed contract-history file) — pack is write-free
+# by design (its own synopsis: "write-free") and this wave's own policy
+# (cmd/a2a/wire.go's resolveDataDeps) does not sync the mirror or resolve a
+# credential for it, so the refusal is exec-able against this local
+# fixture without ever reaching a GitHub host, matching submit_refusal.txtar
+# in this same directory.
+mkdir srcdir
+! exec a2a data pack --contract XC-axon-widget@1.0.0 --from srcdir --profile synthetic --format json
+stderr 'contract version is not published'
