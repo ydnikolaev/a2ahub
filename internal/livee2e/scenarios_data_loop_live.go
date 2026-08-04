@@ -534,14 +534,24 @@ func dataLoopFailSupersedePass(ctx context.Context, h *harness) Result {
 		return dataLoopFail("terminal-state-read", finalState, "the work_request reaches the terminal `closed` state", finalState)
 	}
 
+	// This family is deliberately OUTSIDE the LE-OC-01..08 evidence manifest
+	// (plan decision D-7): it proves itself through the retained report.txt
+	// and nothing else. Report.Render() prints Detail only on a FAILING row
+	// and PassEvidence only on a passing one, so a pass carrying Detail alone
+	// renders as the bare line `data-loop-fail-supersede-pass A cli pass` —
+	// byte-identical to a row that silently did nothing, which is exactly the
+	// evidence-free pass D-7 rests against. Both fields carry the narrative,
+	// matching thread-chain's own decisive row.
+	narrative := fmt.Sprintf(
+		"%s: contract %s (PR #%d) -> work_request %s (PR #%d, ack PR #%d) -> attempt 1 %s FAILS (deliver PR #%d, ack PR #%d, verify-fail PR #%d, handoff %s rejected) -> attempt 2 %s supersedes and PASSES (deliver PR #%d, ack PR #%d, verify-pass PR #%d, handoff %s accepted) -> respond PR #%d -> close PR #%d",
+		wr.ID, contractRef, baselinePR.Number, wr.ID, wr.PRNumber, ackWRPR.Number,
+		pack1.Manifest.ID, deliver1Pull.Number, ackHandoff1PR.Number, verify1Pull.Number, handoff1,
+		pack2.Manifest.ID, deliver2Pull.Number, ackHandoff2PR.Number, verify2Pull.Number, handoff2,
+		respondPR.Number, closePR.Number,
+	)
 	return Result{
 		Scenario: dataLoopScenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf(
-			"%s: contract %s (PR #%d) -> work_request %s (PR #%d, ack PR #%d) -> attempt 1 %s FAILS (deliver PR #%d, ack PR #%d, verify-fail PR #%d, handoff %s rejected) -> attempt 2 %s supersedes and PASSES (deliver PR #%d, ack PR #%d, verify-pass PR #%d, handoff %s accepted) -> respond PR #%d -> close PR #%d",
-			wr.ID, contractRef, baselinePR.Number, wr.ID, wr.PRNumber, ackWRPR.Number,
-			pack1.Manifest.ID, deliver1Pull.Number, ackHandoff1PR.Number, verify1Pull.Number, handoff1,
-			pack2.Manifest.ID, deliver2Pull.Number, ackHandoff2PR.Number, verify2Pull.Number, handoff2,
-			respondPR.Number, closePR.Number,
-		),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }
