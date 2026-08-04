@@ -765,39 +765,64 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                              back to the first attempt. A delivery whose manifest cannot be
                              resolved still gets its own row, marked as such, never omitted. -->
                         <sc-if value="{{ e.hasDeliveries }}" hint-placeholder-val="{{ false }}">
-                          <div style="display:flex; flex-direction:column; gap:10px; margin-top:10px;">
-                            <sc-for list="{{ e.deliveries }}" as="del" hint-placeholder-count="1">
-                              <div style="border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline);">
-                                <!-- Outside both branches on purpose: a handoff can carry
-                                     several data deliverables, so every box says WHICH one
-                                     it is — including the box whose manifest never resolved. -->
-                                <div style="font-size:12px; font-weight:600; color:var(--muted); margin-bottom:6px; overflow-wrap:anywhere;">{{ del.nameLabel }}</div>
-                                <sc-if value="{{ del.resolved }}" hint-placeholder-val="{{ true }}">
-                                  <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:8px;">
-                                    <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; color:var(--muted); overflow-wrap:anywhere;">{{ del.packageLabel }}</span>
-                                    <dc-import name="StatusPill" text="{{ del.verdictText }}" tone="{{ del.verdictTone }}" size="small" hint-size="140px,24px"></dc-import>
+                          <div style="margin-top:14px;">
+                            <div style="font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;">{{ e.deliveriesTitle }}</div>
+                            <div style="display:flex; flex-direction:column; gap:10px;">
+                              <sc-for list="{{ e.deliveries }}" as="del" hint-placeholder-count="1">
+                                <div style="border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline);">
+                                  <!-- Header, outside both branches on purpose: the box whose
+                                       manifest never resolved is labelled exactly like the ones
+                                       that did. Name leads, package id and attempt follow it. -->
+                                  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                                    <span style="min-width:0; flex:1 1 220px;">
+                                      <strong style="display:block; font-size:15px; line-height:1.4; overflow-wrap:anywhere;">{{ del.nameLabel }}</strong>
+                                      <span style="display:block; margin-top:4px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; color:var(--muted); overflow-wrap:anywhere;">{{ del.metaLabel }}</span>
+                                    </span>
+                                    <sc-if value="{{ del.resolved }}" hint-placeholder-val="{{ true }}">
+                                      <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ del.verdictText }}" tone="{{ del.verdictTone }}" size="small" hint-size="140px,24px"></dc-import></span>
+                                    </sc-if>
                                   </div>
                                   <sc-if value="{{ del.hasFailures }}" hint-placeholder-val="{{ false }}">
-                                    <div style="display:flex; flex-direction:column; gap:5px; margin-bottom:8px;">
-                                      <sc-for list="{{ del.failures }}" as="fl" hint-placeholder-count="1">
-                                        <div style="font-size:13px; line-height:1.45; color:var(--blocking-strong); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ fl.text }}</div>
-                                      </sc-for>
+                                    <div style="margin-top:12px;">
+                                      <div style="font-size:13px; font-weight:600; color:var(--blocking-ink); margin-bottom:6px;">{{ del.failuresTitle }}</div>
+                                      <div style="display:flex; flex-direction:column; gap:6px;">
+                                        <sc-for list="{{ del.failures }}" as="fl" hint-placeholder-count="1">
+                                          <div style="border-radius:var(--radius-nested); padding:9px 11px; background:var(--blocking-tint);">
+                                            <div style="display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+                                              <span style="min-width:0; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; font-weight:600; color:var(--blocking-strong); overflow-wrap:anywhere;">{{ fl.path }}</span>
+                                              <sc-if value="{{ fl.hasRecord }}" hint-placeholder-val="{{ true }}"><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; color:var(--blocking-ink);">{{ fl.recordLabel }}</span></sc-if>
+                                            </div>
+                                            <div style="margin-top:4px; font-size:14px; line-height:1.5; color:var(--blocking-ink); overflow-wrap:anywhere;">{{ fl.rule }}</div>
+                                          </div>
+                                        </sc-for>
+                                      </div>
                                     </div>
                                   </sc-if>
                                   <sc-if value="{{ del.hasChain }}" hint-placeholder-val="{{ false }}">
-                                    <div style="display:flex; flex-direction:column; gap:4px; padding-top:8px; border-top:1px solid var(--hairline);">
-                                      <div style="font-size:12px; font-weight:600; color:var(--muted);">{{ del.chainLabel }}</div>
-                                      <sc-for list="{{ del.chain }}" as="ch" hint-placeholder-count="1">
-                                        <div style="font-size:13px; color:var(--muted); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ ch.text }}</div>
-                                      </sc-for>
+                                    <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--hairline);">
+                                      <div style="font-size:13px; font-weight:600; color:var(--muted); margin-bottom:6px;">{{ del.chainTitle }}</div>
+                                      <div style="display:flex; flex-direction:column; gap:6px;">
+                                        <sc-for list="{{ del.chain }}" as="ch" hint-placeholder-count="1">
+                                          <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+                                            <span style="min-width:0;"><strong style="font-size:14px;">{{ ch.attemptLabel }}</strong><span style="margin-left:7px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px; color:var(--muted); overflow-wrap:anywhere;">{{ ch.packageId }}</span></span>
+                                            <span style="flex:0 0 auto; display:inline-flex; align-items:center; gap:7px;">
+                                              <sc-if value="{{ ch.isCurrent }}" hint-placeholder-val="{{ true }}"><span style="font-size:12px; color:var(--muted);">{{ ch.currentLabel }}</span></sc-if>
+                                              <dc-import name="StatusPill" text="{{ ch.verdictText }}" tone="{{ ch.verdictTone }}" size="small" hint-size="120px,22px"></dc-import>
+                                            </span>
+                                          </div>
+                                        </sc-for>
+                                      </div>
                                     </div>
                                   </sc-if>
-                                </sc-if>
-                                <sc-if value="{{ del.unresolved }}" hint-placeholder-val="{{ false }}">
-                                  <div style="font-size:13px; line-height:1.5; color:var(--blocking-strong); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ del.unresolvedText }}</div>
-                                </sc-if>
-                              </div>
-                            </sc-for>
+                                  <sc-if value="{{ del.unresolved }}" hint-placeholder-val="{{ false }}">
+                                    <div style="margin-top:12px; border-radius:var(--radius-nested); padding:9px 11px; background:var(--attention-tint);">
+                                      <div style="font-size:13px; font-weight:600; color:var(--attention-ink); margin-bottom:4px;">{{ del.unresolvedTitle }}</div>
+                                      <div style="font-size:13px; line-height:1.5; color:var(--attention-ink); overflow-wrap:anywhere;">{{ del.unresolvedText }}</div>
+                                    </div>
+                                  </sc-if>
+                                </div>
+                              </sc-for>
+                            </div>
                           </div>
                         </sc-if>
                       </div>
@@ -4103,33 +4128,65 @@ class Component extends DCLogic {
         // never re-derived here. An unresolved delivery still gets a row
         // (never vanishes); "not yet verified" gets its own pill, never
         // the passed one.
+        // A delivery is a package of FILES, and the reader is a person deciding
+        // what to do next — so every part of it is named rather than run
+        // together into one mono string. The deliverable's name leads (a handoff
+        // may carry several, and adjacent boxes labelled only by an opaque DP-
+        // id say nothing about which is which); the package id and attempt drop
+        // to a secondary line; each failing check becomes its own row with the
+        // file path, the record it is aimed at, and the rule in prose rather
+        // than three fields glued together with separators.
+        const attemptWord = (n) => (ru ? "Попытка " : "Attempt ") + n;
         const deliveriesFor = (id) => (tv.deliveries || []).filter(del => del.handoffId === id).map(del => {
           const resolved = del.resolution === "resolved";
           const failures = (del.failures || []).map(f => ({
-            text: f.entryPath + " · " + f.rule + (f.record != null ? " · " + (ru ? "запись " : "record ") + f.record : "")
+            path: f.entryPath,
+            rule: f.rule,
+            hasRecord: f.record != null,
+            // ndjson violations are aimed at one line; a json entry has none.
+            recordLabel: f.record != null ? (ru ? "строка " : "line ") + f.record : ""
           }));
           const chain = (del.chain || []).map(c => ({
-            text: c.packageId + (c.attempt ? " · " + (ru ? "попытка " : "attempt ") + c.attempt : "") + " · " +
-              (c.resolution === "resolved" ? deliveryVerdictText(c.verdict, ru) : (ru ? "манифест не найден" : "manifest unresolved"))
+            attemptLabel: c.attempt ? attemptWord(c.attempt) : (ru ? "Попытка" : "Attempt"),
+            packageId: c.packageId,
+            verdictText: c.resolution === "resolved" ? deliveryVerdictText(c.verdict, ru) : (ru ? "манифест не найден" : "manifest not found"),
+            verdictTone: c.resolution === "resolved" ? (DELIVERY_VERDICT_TONE[c.verdict] || "outline") : "outline",
+            isCurrent: !!del.packageId && c.packageId === del.packageId,
+            currentLabel: ru ? "эта" : "this one"
           }));
+          const metaParts = [];
+          if (resolved && del.attempt) metaParts.push(attemptWord(del.attempt));
+          metaParts.push(resolved ? del.packageId : del.ref);
           return {
             resolved,
             unresolved: !resolved,
-            // The deliverable's own name, not its package id: a handoff may
-            // carry several data deliverables, and two adjacent boxes labelled
-            // only by an opaque DP- id do not say which is which. Falls back to
-            // a generic label rather than an empty heading, so an unnamed
-            // deliverable still reads as a delivery.
             nameLabel: del.name || (ru ? "Поставка данных" : "Data delivery"),
-            unresolvedText: !resolved ? (del.unavailable || (ru ? "манифест поставки не найден" : "the delivery manifest could not be resolved")) : "",
-            packageLabel: resolved ? (del.packageId + (del.attempt ? " · " + (ru ? "попытка " : "attempt ") + del.attempt : "")) : "",
+            metaLabel: metaParts.filter(Boolean).join(" · "),
             verdictText: resolved ? deliveryVerdictText(del.verdict, ru) : "",
             verdictTone: resolved ? (DELIVERY_VERDICT_TONE[del.verdict] || "outline") : "outline",
             hasFailures: failures.length > 0,
+            failuresTitle: ru
+              ? "Не прошло проверок: " + failures.length
+              : failures.length + (failures.length === 1 ? " check did not pass" : " checks did not pass"),
             failures,
             hasChain: chain.length > 1,
-            chainLabel: ru ? "Ход попыток" : "Attempt history",
-            chain
+            chainTitle: ru ? "Все попытки" : "Every attempt",
+            chain,
+            // Amber, not red: an unresolved manifest means the mirror cannot
+            // show the package, which is not the same as the package failing.
+            //
+            // The resolver's own reason string (del.unavailable) is deliberately
+            // not printed here: cache.ResolveDelivery produces exactly one, and
+            // every fact in it — the package ref, the handoff, the deliverable
+            // name — is already on screen in this box's header, so rendering it
+            // repeats the header in English inside a localized panel. It stays
+            // in the page data and in every JSON consumer. If a SECOND
+            // unavailable reason is ever added on the Go side, it carries
+            // information this panel does not, and this branch must surface it.
+            unresolvedTitle: ru ? "Пакет не найден в локальном зеркале" : "Package not found in the local mirror",
+            unresolvedText: ru
+              ? "Синхронизируйте спейс — до этого состав пакета и его вердикт показать нечем."
+              : "Sync the space — until then there is nothing to show about this package or its verdict."
           };
         });
         const transcriptRows = (tv.transcript || []).filter(en => !(en.event && en.event.transition === "publish" && reportByArtifact.has(en.event.subject)));
@@ -4225,6 +4282,12 @@ class Component extends DCLogic {
               openDoc: card.openExchange,
               card,
               hasDeliveries: deliveries.length > 0,
+              // Names the whole group, so a reader knows these boxes are data
+              // packages handed over with the document above them — not more
+              // protocol events.
+              deliveriesTitle: ru
+                ? (deliveries.length === 1 ? "Поставка данных" : "Поставки данных")
+                : (deliveries.length === 1 ? "Data delivery" : "Data deliveries"),
               deliveries,
               text: "", meta: card.route + " · " + when(en.at), hasSubject: false, subjectLabel: String(TYPE_WORDS(ru)[a.type] || a.type).toLocaleLowerCase(ru ? "ru-RU" : "en-US"), subjectStyle: "", subjectTitle: "", goSubject: () => {},
               actorName: identity.name, actionText: ru ? "создал" : "created", hasSubjectLink: false, hasNoteLink: false,
