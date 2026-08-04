@@ -536,10 +536,11 @@ func (c *dataCore) pack(ctx context.Context, req cli.DataPackRequest) (cli.DataR
 	}
 	document.Locator = filepath.ToSlash(filepath.Join(c.ownSystem, "data", document.ID))
 
-	if err := c.writeStagedPackage(document, req.From); err != nil {
+	stagingRoot, err := c.writeStagedPackage(document, req.From)
+	if err != nil {
 		return cli.DataResult{}, err
 	}
-	return cli.DataResult{Manifest: &document}, nil
+	return cli.DataResult{Manifest: &document, StagingRoot: stagingRoot}, nil
 }
 
 // classifyPackEntries walks req.From per dataPackDeclaration's convention
@@ -682,32 +683,32 @@ func dataListSchemaStems(stems map[string]string) string {
 // by the CLI's own renderDataPackText as part of the manifest preview).
 // DEVIATION, recorded because the spec names the staging root as an input
 // to deliver without ever specifying where pack writes it.
-func (c *dataCore) writeStagedPackage(document datapackage.Document, from string) error {
+func (c *dataCore) writeStagedPackage(document datapackage.Document, from string) (string, error) {
 	root := filepath.Join(c.stagingDir, "data", document.ID)
 	if err := os.MkdirAll(root, 0o755); err != nil {
-		return fmt.Errorf("data: pack: stage %s: %w", root, err)
+		return "", fmt.Errorf("data: pack: stage %s: %w", root, err)
 	}
 	manifestRaw, err := json.Marshal(document)
 	if err != nil {
-		return fmt.Errorf("data: pack: encode manifest: %w", err)
+		return "", fmt.Errorf("data: pack: encode manifest: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "manifest.json"), manifestRaw, 0o644); err != nil {
-		return fmt.Errorf("data: pack: write staged manifest: %w", err)
+		return "", fmt.Errorf("data: pack: write staged manifest: %w", err)
 	}
 	for _, entry := range document.Entries {
 		raw, err := os.ReadFile(filepath.Join(from, entry.Path)) //nolint:gosec // reason: entry.Path was already proven contained by WalkLocalDirectory inside datapackage.Pack
 		if err != nil {
-			return fmt.Errorf("data: pack: re-read %s for staging: %w", entry.Path, err)
+			return "", fmt.Errorf("data: pack: re-read %s for staging: %w", entry.Path, err)
 		}
 		dest := filepath.Join(root, entry.Path)
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return fmt.Errorf("data: pack: stage %s: %w", dest, err)
+			return "", fmt.Errorf("data: pack: stage %s: %w", dest, err)
 		}
 		if err := os.WriteFile(dest, raw, 0o644); err != nil { //nolint:gosec // reason: staged content is not secret
-			return fmt.Errorf("data: pack: write staged entry %s: %w", entry.Path, err)
+			return "", fmt.Errorf("data: pack: write staged entry %s: %w", entry.Path, err)
 		}
 	}
-	return nil
+	return root, nil
 }
 
 // stagedManifestName is the manifest's fixed name inside a staging root. It

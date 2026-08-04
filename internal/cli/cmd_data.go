@@ -81,6 +81,12 @@ type DataResult struct {
 	Outcome   string                `json:"outcome,omitempty"`    // fetch: installed | already-present
 	Write     *space.WriteResult    `json:"write,omitempty"`      // deliver: branch, pull request, commit
 	HandoffID string                `json:"handoff_id,omitempty"` // deliver: the handoff carrying the package
+	// StagingRoot is where pack wrote the attempt. It is the exact
+	// argument `data deliver` takes next, and it is returned rather than
+	// left to be derived: an agent that has to reconstruct a path from a
+	// minted id will eventually reconstruct it wrong, and the tool already
+	// knows the answer.
+	StagingRoot string `json:"staging_root,omitempty"`
 }
 
 // DataOperations is the whole data surface behind one interface, so CLI,
@@ -147,6 +153,18 @@ func (c *DataCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 var _ Command = (*DataCommand)(nil)
 
+// defaultPackExpiry is how long a packed attempt stays fetchable when the
+// caller does not say.
+//
+// It is not zero, and that is the whole point: `expires_at` is stamped as
+// now + this duration, and `data fetch` refuses an expired package. A zero
+// default therefore produced a package that was expired the instant it was
+// created — every first-time producer would have shipped one their
+// counterpart could never fetch, and the failure would surface on the OTHER
+// side of a long feedback cycle. A week comfortably outlives a review round
+// without keeping a payload fetchable indefinitely.
+const defaultPackExpiry = 168 * time.Hour
+
 // runPack implements `a2a data pack --contract <XC-id>@<version> --from
 // <dir> --profile synthetic|sanitized --format json|ndjson [--expires
 // <duration>] [--fulfills <id>] [--supersedes <package-id>]
@@ -170,13 +188,19 @@ func (c *DataCommand) runPack(ctx context.Context, args []string, stdio IO) int 
 	from := fs.String("from", "", "local source directory")
 	profile := fs.String("profile", "", "synthetic|sanitized")
 	format := fs.String("format", "", "json|ndjson")
-	expires := fs.Duration("expires", 0, "how long the packed attempt remains fetchable")
+	expires := fs.Duration("expires", defaultPackExpiry, "how long the packed attempt remains fetchable")
 	fulfills := fs.String("fulfills", "", "the work_request this delivery will answer")
 	supersedes := fs.String("supersedes", "", "prior package id this attempt supersedes, empty for a first attempt")
 	maxAttempts := fs.Int("max-attempts", 0, "attempt ceiling; 0 = unset, nothing refused (L-1)")
 	asJSON := fs.Bool("json", false, "emit JSON")
 	positionals, err := parseArgsAnyOrder(fs, args)
 	if err != nil {
+		return 2
+	}
+	if *expires <= 0 {
+		_, _ = fmt.Fprintf(stdio.Stderr,
+			"data pack: --expires must be positive (got %s): expires_at is stamped as now + this duration, and `a2a data fetch` refuses an expired package, so a non-positive value produces an attempt the consumer can never fetch\n",
+			*expires)
 		return 2
 	}
 	// Usage shape only — --profile and --format's own enum membership
@@ -222,7 +246,18 @@ func (c *DataCommand) runDeliver(ctx context.Context, args []string, stdio IO) i
 		return 2
 	}
 	if len(positionals) != 1 || *fulfills == "" {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a data deliver <packed-staging-root> --fulfills <request-id> [--supersedes <package-id>] [--expect-pack <digest>] [--json]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a data deliver <packed-staging-root> --fulfills <request-id> [--expect-pack <digest>] [--json]")
+		return 2
+	}
+	if *supersedes != "" {
+		// The flag is accepted so this message can exist. Supersession is
+		// baked into the manifest at pack time — deliver only ships what pack
+		// produced, so honouring it here is impossible and IGNORING it is
+		// worse than refusing: an agent that set it would believe the chain
+		// was recorded when it was not, and would find out one feedback cycle
+		// later.
+		_, _ = fmt.Fprintln(stdio.Stderr,
+			"data deliver: --supersedes is set at pack time, not here: the supersession chain lives in the manifest deliver ships. Re-run `a2a data pack ... --supersedes <prior-package-id>` and deliver the staging root it prints.")
 		return 2
 	}
 	result, err := c.ops.Deliver(ctx, DataDeliverRequest{
@@ -382,6 +417,11 @@ func renderDataPackText(stdio IO, result DataResult) {
 	}
 	_, _ = fmt.Fprintf(stdio.Stdout, "packed %s (%s) attempt %d entries=%d size=%d records=%d aggregate=%s expires=%s\n",
 		m.ID, m.Contract, m.Attempt, len(m.Entries), m.SizeBytes, m.RecordCount, m.AggregateDigest, m.ExpiresAt)
+	if result.StagingRoot != "" {
+		// The next command's own argument, printed rather than implied.
+		_, _ = fmt.Fprintf(stdio.Stdout, "staged at %s\n", result.StagingRoot)
+		_, _ = fmt.Fprintf(stdio.Stdout, "next: a2a data deliver %s --fulfills <request-id>\n", result.StagingRoot)
+	}
 }
 
 func renderDataDeliverText(stdio IO, result DataResult) {
