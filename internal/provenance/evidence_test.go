@@ -54,7 +54,7 @@ func TestSafeSessionEvidenceRejectsCredentialShapesInsideSafeAlphabet(t *testing
 		"password:not-a-session",
 		"ghp_0123456789abcdefghijklmnopqrstuvwxyz",
 		"eyJheader.eyJpayload.signature",
-		"sk_live_TEST_FIXTURE",
+		"sk_live_" + strings.Repeat("1", 24),
 	}
 	for _, session := range tests {
 		t.Run(session, func(t *testing.T) {
