@@ -38,6 +38,14 @@ expect_red() {
 
 bash "$GATE" >/dev/null || fail "the real P2 vocabulary is not green"
 
+public_projection="$WORK/public-projection"
+copy_tree "$public_projection"
+rm -rf "$public_projection/docs"
+public_output="$(WORK_CHECKPOINT_SCHEMA_ROOT="$public_projection" bash "$GATE")" || \
+  fail "the public projection without private docs is not green"
+grep -Fq "public projection has no private normative spec" <<<"$public_output" || \
+  fail "the public projection did not report its deliberately reduced comparison surface"
+
 schema_mode="$WORK/schema-mode"
 copy_tree "$schema_mode"
 target="$schema_mode/schemas/envelope/v2/announcement.schema.json"
