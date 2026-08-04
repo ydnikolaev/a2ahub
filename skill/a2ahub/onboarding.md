@@ -2,7 +2,8 @@
 
 > Condensed from plan §9 (Human Operations). These are the walkthroughs an
 > agent uses to guide a first-time participant or human through setup. Every
-> command's exact syntax lives in [reference/commands.md](reference/commands.md);
+> command is catalogued in [reference/commands.md](reference/commands.md)
+> (synopsis only — that catalog carries no flags);
 > confirm a green setup with `a2a doctor` (read [troubleshooting.md](troubleshooting.md)
 > for what each check means). The non-overengineering bar (§9): every runbook
 > must be executable by one person in the stated time.

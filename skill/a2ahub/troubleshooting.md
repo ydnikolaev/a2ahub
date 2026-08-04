@@ -4,7 +4,8 @@
 > command actually produces. It does NOT invent failure modes or restate
 > aspirational checks that the binary does not yet run. When in doubt, run the
 > command and read its own message — the FAIL detail string tells you the
-> concrete cause. Invocation syntax: [reference/commands.md](reference/commands.md).
+> concrete cause. The verb catalog is
+> [reference/commands.md](reference/commands.md) — synopsis only, no flags.
 
 ## What `a2a doctor` does
 

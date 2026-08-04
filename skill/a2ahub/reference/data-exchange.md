@@ -6,10 +6,49 @@
 > consumer verifies it, and on failure the producer supersedes. The four
 > `a2a data` verbs below are how that handoff's payload is produced, moved
 > and judged — they are not a second protocol next to the one you already
-> know. **Command syntax is generated in
-> [commands.md](commands.md); this page is the how-to and the one thing
-> most likely to trip an agent — mapping a source directory onto a
-> contract's schemas — that a flag list cannot show.**
+> know.
+>
+> **Where syntax comes from.** [commands.md](commands.md) is the generated
+> catalog of WHICH verbs exist; it carries one synopsis line each and **no
+> flags**. The authoritative usage line for a verb is the binary itself —
+> run it with no arguments inside a configured project and it prints its
+> exact usage and exits `2`. The table below is that surface written out
+> with meanings, which a usage line cannot give you.
+
+## Flags, and what each one decides
+
+| Verb | Flag | Required | What it decides |
+|---|---|---|---|
+| `pack` | `--contract <XC-id>@<version>` | yes | The exact contract version every entry is checked against, pinned into the manifest. A digest suffix (`#sha256:…`) is accepted and re-proven. |
+| `pack` | `--from <dir>` | yes | The local source tree. Read-only; nothing under it is modified. See the directory-mapping section below — this is where most packs fail. |
+| `pack` | `--profile synthetic\|sanitized` | yes | The data-handling claim recorded in the manifest. `production` is refused outright; there is no flag combination that admits real end-user data. |
+| `pack` | `--format json\|ndjson` | yes | How every dataset entry is parsed and counted. `ndjson` is one JSON document per line and is what makes a violation report an exact **record number**; `json` is one document per file and reports the file only. Choose `ndjson` for anything row-shaped — the consumer's feedback is only as aimed as this choice. |
+| `pack` | `--expires <duration>` | no (default `168h`) | How long the attempt stays fetchable. Non-positive is refused. No maximum. |
+| `pack` | `--fulfills <XW-id>` | no | The `work_request` this attempt will answer. Recorded now so `deliver` can mint the handoff against it. |
+| `pack` | `--supersedes <DP-id>` | no | The prior attempt this one replaces. **This is the only place supersession is set** — it is baked into the manifest here. |
+| `pack` | `--max-attempts <n>` | no (default `0` = no ceiling) | An escalation guard. When set, packing an attempt whose number exceeds `n` is refused with *"escalate rather than retry"* instead of minting attempt N+1. Use it when a loop could otherwise retry forever; leave it unset and nothing is ever refused on this ground. |
+| `pack` | `--json` | no | Machine-readable result, including `staging_root`. |
+| `deliver` | `<staging-root>` (positional) | yes | The path `pack` printed. Do not reconstruct it from the package id. |
+| `deliver` | `--fulfills <XW-id>` | yes | The request this delivery answers. Required here even if `pack` also received it. |
+| `deliver` | `--expect-pack <digest>` | no | Binds this call to the exact `aggregate_digest` `pack` printed; refuses if the staged manifest changed underneath you. |
+| `deliver` | `--supersedes` | — | **Refused.** Belongs to `pack`. |
+| `deliver` | `--json` | no | Machine-readable result. |
+| `fetch` | `<DP-id>` (positional) | yes | The package to retrieve. |
+| `fetch` | `--to <dir>` | yes | Destination. A divergent existing destination is refused untouched; a byte-identical one succeeds as `already-present`. |
+| `fetch` | `--json` | no | Machine-readable result. |
+| `verify` | `<DP-id>` (positional) | yes | The package to judge. |
+| `verify` | `--record` | no | Performs the ONE funnel write (report + lifecycle event). Without it, nothing is written anywhere. |
+| `verify` | `--json` | no | Machine-readable result — see the verdict-vs-error rule below. |
+
+`deliver` and `verify` also accept the ordinary lifecycle actor flags
+(`--actor-kind`, `--actor-name`, `--actor-model`), because both write a
+lifecycle event; they behave exactly as they do on any other transition verb
+and are normally left to the configured identity.
+
+**Exit codes.** `0` success. `1` a failing verdict **or** a refusal — these
+are distinguished by content, not by code (see the `--json` rule in the
+consumer sequence). `2` a usage error: a missing required flag, an unknown
+one, or a malformed package id.
 
 ## Where this sits in the handoff arc
 
@@ -260,6 +299,14 @@ written on the way to it.
 | `no committed handoff carries package …` | `verify` | The package id you gave was never referenced by any handoff's `deliverables[]` — you likely typed the wrong `DP-` id, or fetched from a different space than the one the handoff was submitted to. | Re-check the id against `a2a inbox`/`a2a show <XH-id>`. |
 | `--supersedes is set at pack time, not here` | `deliver` | You put `--supersedes` on `deliver`. The chain lives in the manifest `pack` produced, so `deliver` cannot honour it — and ignoring it silently would let you believe attempt 2 was linked when it was not. | Re-run `a2a data pack ... --supersedes <prior-id>` and deliver the staging root it prints. |
 | a divergent fetch destination | `fetch` | The destination directory already holds content that disagrees with the package. It is left completely untouched. | Fetch into a clean directory, or delete the local copy first if you are certain you want to overwrite it — `fetch` will not do that for you. |
+| `symlinks are refused` | `pack`, `fetch` | Your source tree (or the delivered set) contains a symlink. A package must be exactly the bytes it declares; a link is a pointer to bytes nobody agreed on, and following it would let a package smuggle in content from outside its own root. | Replace the link with the real file, or exclude it from the source directory. There is no follow-symlinks option. |
+| `entry path escapes the package root` | `pack`, `fetch` | A path resolves outside the package root — `..`, an absolute path, or a directory that changed underneath the walk. | Pack from a directory that contains only what you intend to ship. If it recurs on `fetch`, the package itself is malformed and the producer must re-pack. |
+| `two entries claim the same path` | `pack` | Two files in the source map to the same package-relative path. Digests are per path, so the package would be ambiguous about which bytes that path means. | De-duplicate the source tree; on a case-insensitive filesystem, check for two names that differ only in case. |
+| `declared entry has no delivered bytes` | `pack`, `fetch`, `verify` | The manifest declares an entry that is not present. On `pack` a listed file vanished from the source; on `fetch`/`verify` the delivered set is incomplete. | Re-run `pack` against a stable source tree. After delivery this means the package is broken: it needs a superseding attempt, not a re-fetch. |
+| `attempt ceiling reached` | `pack` | You set `--max-attempts <n>` and this attempt would exceed it. The message names the attempt number and the configured maximum. | This is the guard doing its job: **escalate rather than retry** (loops.md §8.5). If the ceiling is genuinely too low for the work, re-pack with a higher `--max-attempts` deliberately, not reflexively. |
+| `locator must not be a credential or an absolute path` | `pack` | The payload locator carries a credential or an absolute path. Neither may be recorded in a manifest that lands in a shared repository. | Use a relative, credential-free locator. Never embed a token to make a fetch work — that is a leak into git history, not a configuration step. |
+| `resolved contract ref does not match the contract pinned in the manifest` | `verify` | The contract the package pinned is not the contract that resolved locally — a different id, a different version, or a different digest. The verdict is refused rather than computed against the wrong schema. | `a2a sync`, then retry. If it persists, the producer pinned a version your mirror does not have, or the pin and the local contract genuinely disagree — resolve that before any verdict means anything. |
+| `atomic no-replace directory install is unsupported on this platform` | `fetch` | The platform cannot install the destination directory atomically-without-replacing, so `fetch` refuses rather than fall back to a non-atomic write that could half-populate a directory. | Fetch to a path on a filesystem that supports it. This is a platform property, not something the package or the flags can change. |
 
 ## Do not drive the handoff by hand
 
