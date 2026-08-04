@@ -1,0 +1,40 @@
+{
+  "schema": "verification-report/v1",
+  "id": "VR-seomatrix-20260804-r9t1",
+  "thread": "thread:axon-20260721-k3f9",
+  "package": {
+    "id": "DP-axon-20260804-k3f9",
+    "aggregate_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "contract": "XC-axon-order-api@2.3.0#sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "consumer": "seomatrix",
+  "checks": [
+    {
+      "id": "CHK-orders-schema",
+      "path": "data/orders.json",
+      "status": "pass",
+      "violations": []
+    },
+    {
+      "id": "CHK-index-schema",
+      "path": "data/index.json",
+      "status": "fail",
+      "violations": [
+        {
+          "instance_pointer": "/0/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        }
+      ]
+    }
+  ],
+  "observed": {
+    "record_count": 12,
+    "size_bytes": 4160,
+    "duration_ms": 512,
+    "contract_superseded_by": "XC-axon-order-api@2.4.0#sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "result": "fail",
+  "started_at": "2026-08-04T13:05:00Z",
+  "finished_at": "2026-08-04T13:05:02Z"
+}

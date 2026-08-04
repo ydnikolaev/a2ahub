@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "verification-report/v1/verification-report.schema.json",
+  "title": "Verification report (v1) — a verdict bound to exact bytes",
+  "description": "Spec 05a §T2.3. checks[] reuses the shipped conformance result vocabulary (pass|fail|error, instance/schema pointers, bounded violation lists) rather than inventing a second one; result is derived from checks[] here, never authored directly.",
+  "type": "object",
+  "properties": {
+    "schema": { "const": "verification-report/v1" },
+    "id": { "$ref": "#/$defs/reportId" },
+    "thread": { "$ref": "#/$defs/threadId" },
+    "package": {
+      "$ref": "#/$defs/packageRef",
+      "description": "The package ID and aggregate_digest as verified locally."
+    },
+    "contract": {
+      "$ref": "#/$defs/pinnedContractRef",
+      "description": "The contract version and digest actually used."
+    },
+    "consumer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Authenticated system identity."
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/check" }
+    },
+    "observed": {
+      "$ref": "#/$defs/observed",
+      "description": "Re-counted records, bytes, duration — the consumer's own numbers, never the producer's claim copied."
+    },
+    "result": {
+      "type": "string",
+      "enum": ["pass", "fail", "error"],
+      "description": "Derived from checks[]; never authored directly (see the allOf result-derivation block below)."
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" }
+  },
+  "required": [
+    "schema", "id", "thread", "package", "contract", "consumer",
+    "checks", "observed", "result", "started_at", "finished_at"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "description": "result derivation, error precedence: any errored check makes the whole report an error.",
+      "if": { "$ref": "#/$defs/hasErrorCheck" },
+      "then": {
+        "properties": { "result": { "const": "error" } },
+        "required": ["result"]
+      }
+    },
+    {
+      "description": "result derivation, fail precedence: no errored check but at least one failing check makes the whole report a fail.",
+      "if": {
+        "allOf": [
+          { "not": { "$ref": "#/$defs/hasErrorCheck" } },
+          { "$ref": "#/$defs/hasFailCheck" }
+        ]
+      },
+      "then": {
+        "properties": { "result": { "const": "fail" } },
+        "required": ["result"]
+      }
+    },
+    {
+      "description": "result derivation, pass: no errored and no failing check means the whole report passes.",
+      "if": {
+        "allOf": [
+          { "not": { "$ref": "#/$defs/hasErrorCheck" } },
+          { "not": { "$ref": "#/$defs/hasFailCheck" } }
+        ]
+      },
+      "then": {
+        "properties": { "result": { "const": "pass" } },
+        "required": ["result"]
+      }
+    }
+  ],
+  "$defs": {
+    "reportId": {
+      "type": "string",
+      "pattern": "^VR-[a-z0-9]+-[0-9]{8}-[0-9abcdefghjkmnpqrstvwxyz]{4}$"
+    },
+    "packageId": {
+      "type": "string",
+      "pattern": "^DP-[a-z0-9]+-[0-9]{8}-[0-9abcdefghjkmnpqrstvwxyz]{4}$"
+    },
+    "threadId": {
+      "type": "string",
+      "pattern": "^thread:[a-z0-9]+-[0-9]{8}-[0-9abcdefghjkmnpqrstvwxyz]{4}$"
+    },
+    "pinnedContractRef": {
+      "type": "string",
+      "pattern": "^XC-[a-z0-9]+-[A-Za-z0-9]+(-[A-Za-z0-9]+)*@(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)#sha256:[a-f0-9]{64}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "cleanRelativePath": {
+      "type": "string",
+      "pattern": "^(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,})(?:/(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,}))*$"
+    },
+    "packageRef": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/$defs/packageId" },
+        "aggregate_digest": { "$ref": "#/$defs/sha256" }
+      },
+      "required": ["id", "aggregate_digest"],
+      "additionalProperties": false
+    },
+    "observed": {
+      "type": "object",
+      "properties": {
+        "record_count": { "type": "integer", "minimum": 0 },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "contract_superseded_by": {
+          "$ref": "#/$defs/pinnedContractRef",
+          "description": "L-2: set when a newer version of the same contract existed at verify time. The verdict itself is unaffected."
+        }
+      },
+      "required": ["record_count", "size_bytes", "duration_ms"],
+      "additionalProperties": false
+    },
+    "violation": {
+      "type": "object",
+      "description": "Mirrors internal/contract's InstanceViolation field names and RFC 6901 pointer semantics — an empty root pointer is legitimate and is not constrained to non-empty here.",
+      "properties": {
+        "instance_pointer": { "type": "string", "maxLength": 512 },
+        "schema_pointer": { "type": "string", "maxLength": 512 },
+        "message": { "type": "string", "maxLength": 512 }
+      },
+      "required": ["instance_pointer", "schema_pointer", "message"],
+      "additionalProperties": false
+    },
+    "check": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "path": {
+          "$ref": "#/$defs/cleanRelativePath",
+          "description": "The target entry path this check ran against."
+        },
+        "status": { "type": "string", "enum": ["pass", "fail", "error"] },
+        "violations": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/violation" }
+        }
+      },
+      "required": ["id", "path", "status", "violations"],
+      "additionalProperties": false
+    },
+    "hasErrorCheck": {
+      "properties": {
+        "checks": {
+          "contains": {
+            "properties": { "status": { "const": "error" } },
+            "required": ["status"]
+          }
+        }
+      },
+      "required": ["checks"]
+    },
+    "hasFailCheck": {
+      "properties": {
+        "checks": {
+          "contains": {
+            "properties": { "status": { "const": "fail" } },
+            "required": ["status"]
+          }
+        }
+      },
+      "required": ["checks"]
+    }
+  }
+}

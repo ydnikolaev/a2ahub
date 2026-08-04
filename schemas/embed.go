@@ -33,6 +33,8 @@ import "embed"
 //go:embed feedback/v1/codes.yaml
 //go:embed release-notes/v1/*.schema.json
 //go:embed known-issues/v1/*.schema.json
+//go:embed data-package/v1/*.schema.json
+//go:embed verification-report/v1/*.schema.json
 
 // FS is the embedded, fixture-free slice of the schemas/ corpus: envelope/v1,
 // the envelope/v2 base + contract descriptor + work announcement, event/v1 and event/v2,
@@ -43,5 +45,9 @@ import "embed"
 // validates the authored corpus embedded separately under releasenotes/
 // (this package cannot embed it directly: go:embed cannot traverse ".."),
 // plus the current known-issues schema used by the standing release-warning
-// list.
+// list, plus (spec 05a) the data-package/v1 and verification-report/v1
+// schemas — flat, non-envelope wire shapes for the contract data exchange
+// loop's delivery attempt and its verdict, mirroring the release-notes/v1
+// precedent: own directory, own Corpus validate method, no envelope
+// registry entry, no .expect.yaml sidecar.
 var FS embed.FS
