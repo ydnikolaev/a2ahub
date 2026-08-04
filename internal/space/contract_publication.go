@@ -484,8 +484,18 @@ type ContractPublicationPlanningError struct {
 }
 
 // Error is part of the public package API.
+//
+// Renders every issue, not a count. "refused with 1 issue(s)" told an author
+// nothing they could act on: not which file, not which rule, not what to
+// change — and the issues were right there, each already carrying a kind, a
+// path and a detail. A refusal an agent cannot act on costs the same round
+// trip as no refusal at all.
 func (e *ContractPublicationPlanningError) Error() string {
-	return fmt.Sprintf("space: contract publication planner refused with %d issue(s)", len(e.Issues))
+	parts := make([]string, 0, len(e.Issues))
+	for _, issue := range e.Issues {
+		parts = append(parts, issue.Error())
+	}
+	return "space: contract publication planner refused: " + strings.Join(parts, "; ")
 }
 
 // Unwrap is part of the public package API.

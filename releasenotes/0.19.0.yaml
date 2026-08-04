@@ -121,6 +121,9 @@ changes:
       on its review gate, so a first publish and an honest major bump are
       unaffected, and recovery of an already-published contract is never
       blocked by a finding its own publication carries.
+      A refused publication plan now also names each issue's rule, file and
+      detail instead of reporting how many issues there were, so a refusal can
+      be acted on from the message alone.
     affects: ["a2a contract publish", "contract compatibility", "agent feedback loop"]
     action:
       scope: none

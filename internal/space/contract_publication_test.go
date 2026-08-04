@@ -955,3 +955,33 @@ func TestContractPublicationRefusesAViolationBeforeTheFunnel(t *testing.T) {
 		t.Fatalf("refused result status = %q, want no status", result.Status)
 	}
 }
+
+// TestContractPublicationPlanningErrorNamesEveryIssue pins that a planner
+// refusal is actionable from the message alone.
+//
+// It used to render "refused with 1 issue(s)" — no rule, no path, no detail —
+// while carrying all three. A live release run failed on exactly that string
+// and the cause could only be found by reading the planner's source.
+func TestContractPublicationPlanningErrorNamesEveryIssue(t *testing.T) {
+	t.Parallel()
+
+	err := newContractPublicationPlanningError([]contract.Issue{
+		{Kind: contract.IssueUndeclaredFile, Path: "schema/order.schema.json", Detail: "staged file is not declared by the descriptor"},
+		{Kind: contract.IssueMissingFile, Path: "fixtures/valid/order.json", Detail: "declared entry has no bytes"},
+	})
+	message := err.Error()
+	for _, want := range []string{
+		"schema/order.schema.json", "staged file is not declared by the descriptor",
+		"fixtures/valid/order.json", "declared entry has no bytes",
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("planner refusal = %q, missing %q", message, want)
+		}
+	}
+	if strings.Contains(message, "issue(s)") {
+		t.Fatalf("planner refusal still reports a count instead of its issues: %q", message)
+	}
+	if !errors.Is(err, ErrContractPublicationInvalid) {
+		t.Fatalf("planner refusal lost its classification: %v", err)
+	}
+}
