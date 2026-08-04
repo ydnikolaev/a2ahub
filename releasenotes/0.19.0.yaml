@@ -220,7 +220,15 @@ changes:
       have reached the first real exchange: verification could not resolve
       the contract of any package packing had produced, delivery refused
       every real manifest, and a contract published under the older digest
-      profile reported having no schemas at all.
+      profile reported having no schemas at all. Packing now defaults an
+      attempt's lifetime to a week and refuses a non-positive one, so an
+      attempt is never minted already expired; it prints the staged path and
+      the exact next command rather than leaving it to be reconstructed; and
+      delivery refuses a supersession flag that belongs to packing instead of
+      accepting it and doing nothing with it. Deliveries and their verdicts
+      reach the dashboard through the same projection the rest of a thread
+      is built from, with a delivery nobody has judged yet rendered as
+      exactly that rather than as one that passed.
     affects: ["a2a data pack", "a2a data deliver", "a2a data fetch", "a2a data verify", "a2a_data", "data-package/v1", "verification-report/v1", "dashboard"]
     action:
       scope: local

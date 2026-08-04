@@ -759,6 +759,43 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                         <div style="margin-top:14px;">
                           <dc-import name="TimelineArtifactCard" card="{{ e.card }}" hint-size="100%,190px"></dc-import>
                         </div>
+                        <!-- The handoff's own data deliverables (spec 05a AC-7): package,
+                             attempt, verdict — unverified never reads like passed — the
+                             failing entry/rule/record on failure, and the supersede chain
+                             back to the first attempt. A delivery whose manifest cannot be
+                             resolved still gets its own row, marked as such, never omitted. -->
+                        <sc-if value="{{ e.hasDeliveries }}" hint-placeholder-val="{{ false }}">
+                          <div style="display:flex; flex-direction:column; gap:10px; margin-top:10px;">
+                            <sc-for list="{{ e.deliveries }}" as="del" hint-placeholder-count="1">
+                              <div style="border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline);">
+                                <sc-if value="{{ del.resolved }}" hint-placeholder-val="{{ true }}">
+                                  <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:8px;">
+                                    <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; color:var(--muted); overflow-wrap:anywhere;">{{ del.packageLabel }}</span>
+                                    <dc-import name="StatusPill" text="{{ del.verdictText }}" tone="{{ del.verdictTone }}" size="small" hint-size="140px,24px"></dc-import>
+                                  </div>
+                                  <sc-if value="{{ del.hasFailures }}" hint-placeholder-val="{{ false }}">
+                                    <div style="display:flex; flex-direction:column; gap:5px; margin-bottom:8px;">
+                                      <sc-for list="{{ del.failures }}" as="fl" hint-placeholder-count="1">
+                                        <div style="font-size:13px; line-height:1.45; color:var(--blocking-strong); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ fl.text }}</div>
+                                      </sc-for>
+                                    </div>
+                                  </sc-if>
+                                  <sc-if value="{{ del.hasChain }}" hint-placeholder-val="{{ false }}">
+                                    <div style="display:flex; flex-direction:column; gap:4px; padding-top:8px; border-top:1px solid var(--hairline);">
+                                      <div style="font-size:12px; font-weight:600; color:var(--muted);">{{ del.chainLabel }}</div>
+                                      <sc-for list="{{ del.chain }}" as="ch" hint-placeholder-count="1">
+                                        <div style="font-size:13px; color:var(--muted); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ ch.text }}</div>
+                                      </sc-for>
+                                    </div>
+                                  </sc-if>
+                                </sc-if>
+                                <sc-if value="{{ del.unresolved }}" hint-placeholder-val="{{ false }}">
+                                  <div style="font-size:13px; line-height:1.5; color:var(--blocking-strong); font-family:'IBM Plex Mono',monospace; overflow-wrap:anywhere;">{{ del.unresolvedText }}</div>
+                                </sc-if>
+                              </div>
+                            </sc-for>
+                          </div>
+                        </sc-if>
                       </div>
                     </sc-if>
                     <sc-if value="{{ e.isEvent }}" hint-placeholder-val="{{ false }}">
@@ -2018,6 +2055,21 @@ function WORK_WAIT_KIND(value, ru) {
     system:"system", human:"human", tool:"tool", timer:"timer", external:"external party"
   };
   return words[value] || (ru ? "тип не указан" : "type not recorded");
+}
+// A delivery's verdict is a closed four-state vocabulary
+// (internal/html/delivery.go DeliveryVerdict) and "unverified" gets its own
+// tone, deliberately never `healthy`: this project has already shipped the
+// defect of a missing report rounding down to a settled/passed look once,
+// and the fix lives here as much as it lives in the Go projection — absent
+// is unknown, never good.
+const DELIVERY_VERDICT_TONE = { passed:"healthy", failed:"blockingStrong", errored:"attention", unverified:"outline" };
+function deliveryVerdictText(value, ru) {
+  const words = ru ? {
+    passed:"пройдено", failed:"не пройдено", errored:"ошибка проверки", unverified:"ещё не проверено"
+  } : {
+    passed:"passed", failed:"failed", errored:"verification errored", unverified:"not yet verified"
+  };
+  return words[value] || (ru ? "неизвестный вердикт: " + value : "unknown verdict: " + value);
 }
 const DRIFT_TONE = { current: "healthy", behind: "attention", deprecated: "attention", retired: "neutral", missing: "blockingStrong", dangling: "outline" };
 const SUCCESS_STATES = ["closed", "verified", "satisfied", "approved"];
@@ -4040,6 +4092,36 @@ class Component extends DCLogic {
             openDocument: () => this.setState({ mapDocument: { id:a.id, space:tv.space || "" } })
           };
         };
+        // Deliveries render under the handoff artifact that carries them
+        // (Delivery.HandoffID joins against the artifact id) — spec 05a
+        // AC-7's own "thread-side, under the handoff that carries it"
+        // scope, and internal/html.Delivery's own render vocabulary,
+        // never re-derived here. An unresolved delivery still gets a row
+        // (never vanishes); "not yet verified" gets its own pill, never
+        // the passed one.
+        const deliveriesFor = (id) => (tv.deliveries || []).filter(del => del.handoffId === id).map(del => {
+          const resolved = del.resolution === "resolved";
+          const failures = (del.failures || []).map(f => ({
+            text: f.entryPath + " · " + f.rule + (f.record != null ? " · " + (ru ? "запись " : "record ") + f.record : "")
+          }));
+          const chain = (del.chain || []).map(c => ({
+            text: c.packageId + (c.attempt ? " · " + (ru ? "попытка " : "attempt ") + c.attempt : "") + " · " +
+              (c.resolution === "resolved" ? deliveryVerdictText(c.verdict, ru) : (ru ? "манифест не найден" : "manifest unresolved"))
+          }));
+          return {
+            resolved,
+            unresolved: !resolved,
+            unresolvedText: !resolved ? (del.unavailable || (ru ? "манифест поставки не найден" : "the delivery manifest could not be resolved")) : "",
+            packageLabel: resolved ? (del.packageId + (del.attempt ? " · " + (ru ? "попытка " : "attempt ") + del.attempt : "")) : "",
+            verdictText: resolved ? deliveryVerdictText(del.verdict, ru) : "",
+            verdictTone: resolved ? (DELIVERY_VERDICT_TONE[del.verdict] || "outline") : "outline",
+            hasFailures: failures.length > 0,
+            failures,
+            hasChain: chain.length > 1,
+            chainLabel: ru ? "Ход попыток" : "Attempt history",
+            chain
+          };
+        });
         const transcriptRows = (tv.transcript || []).filter(en => !(en.event && en.event.transition === "publish" && reportByArtifact.has(en.event.subject)));
         const representedReports = new Set(transcriptRows.filter(en => en.artifact && reportByArtifact.has(en.artifact.id)).map(en => en.artifact.id));
         reports.filter(report => !representedReports.has(report.artifact_id)).slice().sort((left, right) => {
@@ -4115,6 +4197,7 @@ class Component extends DCLogic {
             const dim = !!focus && focus !== a.id;
             const identity = identityOf(a.from || meta.from, a.from || meta.from);
             const card = artifactCard(a, meta, dim);
+            const deliveries = deliveriesFor(a.id);
             return Object.assign({
               isArtifact: true, isEvent: false, isWorkReport: false, type: a.type, title: a.title, id: a.id,
               anchor: anchorOf(a.id),
@@ -4131,6 +4214,8 @@ class Component extends DCLogic {
               opensChain: rels.length === 0,
               openDoc: card.openExchange,
               card,
+              hasDeliveries: deliveries.length > 0,
+              deliveries,
               text: "", meta: card.route + " · " + when(en.at), hasSubject: false, subjectLabel: String(TYPE_WORDS(ru)[a.type] || a.type).toLocaleLowerCase(ru ? "ru-RU" : "en-US"), subjectStyle: "", subjectTitle: "", goSubject: () => {},
               actorName: identity.name, actionText: ru ? "создал" : "created", hasSubjectLink: false, hasNoteLink: false,
               hasAttachment: false, attachment: {}, responseID: "",

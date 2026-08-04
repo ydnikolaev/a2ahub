@@ -231,6 +231,17 @@ type ThreadResult struct {
 	OpenItems    []OpenItem        `json:"open_items"`
 	Flags        []ThreadFlag      `json:"flags"`
 	Unresolved   []UnresolvedFact  `json:"unresolved"`
+
+	// Deliveries carries this thread's handoff deliverables of kind "data"
+	// (spec 05a AC-7), resolved via ResolveDeliveries against
+	// packageresolver.go's mirror-backed PackageResolver — thread-side,
+	// under the handoff artifact that names them (Delivery.HandoffID),
+	// never a per-contract-version table (plan decision 2, deferred to
+	// P8). `omitempty` is deliberate, matching internal/html's own
+	// ThreadView.Deliveries doc comment: a thread with no data
+	// deliverables must produce byte-identical output to before this
+	// field existed, not a stray `"deliveries":[]`.
+	Deliveries []Delivery `json:"deliveries,omitempty"`
 }
 
 // escapeHatchTransitions are always available to an artifact's owner and
@@ -417,6 +428,8 @@ func (s *Store) renderThread(threadID, resolvedFrom, spaceID string, members []f
 	}
 	sort.Strings(participants)
 
+	deliveries := buildDeliveries(sorted, s.deliveryResolverFor(spaceID))
+
 	if artifacts == nil {
 		artifacts = []ThreadArtifact{}
 	}
@@ -440,8 +453,65 @@ func (s *Store) renderThread(threadID, resolvedFrom, spaceID string, members []f
 		Thread: threadID, Space: spaceID, Order: order, ResolvedFrom: resolvedFrom,
 		Opener: openerOf(sorted[0]), Participants: participants, SyncStale: s.spaceSyncStale(spaceID),
 		Artifacts: artifacts, Transcript: transcript, OpenItems: openItems,
-		Flags: flags, Unresolved: unresolved,
+		Flags: flags, Unresolved: unresolved, Deliveries: deliveries,
 	}, nil
+}
+
+// mirrorFor returns spaceID's own connected-space mirror (dir + manifest),
+// alongside manifestFor's own lookup but returning the WHOLE mirror —
+// buildDeliveries' resolver needs the mirror's checked-out directory,
+// which manifestFor's own narrower return type does not carry.
+func (s *Store) mirrorFor(spaceID string) (SpaceMirror, bool) {
+	for _, sm := range s.spaceMirrorsSnapshot() {
+		if sm.SpaceID == spaceID {
+			return sm, true
+		}
+	}
+	return SpaceMirror{}, false
+}
+
+// deliveryResolverFor builds spaceID's own mirror-backed PackageResolver
+// (packageresolver.go) — nil when spaceID's mirror cannot be found, which
+// buildDeliveries treats as "no deliveries resolved" rather than a panic
+// or a fabricated resolver over an empty directory.
+func (s *Store) deliveryResolverFor(spaceID string) PackageResolver {
+	mirror, ok := s.mirrorFor(spaceID)
+	if !ok {
+		return nil
+	}
+	participants := make([]string, 0, len(mirror.Manifest.Participants))
+	for _, p := range mirror.Manifest.Participants {
+		participants = append(participants, p.System)
+	}
+	return newMirrorPackageResolver(mirror.Dir, participants)
+}
+
+// buildDeliveries resolves every rendered handoff member's data-kind
+// deliverables[] (spec 05a AC-7) against resolver, in member order —
+// composed over ResolveDeliveries (delivery.go), never a second
+// deliverables[] decode here. A nil resolver (no mirror found for this
+// thread's own space — should not happen for a thread ThreadView itself
+// already resolved to one connected space, but guarded rather than
+// assumed) or a handoff whose deliverables[] cannot even be decoded
+// degrades that handoff's own deliveries away, mirroring this file's own
+// "degrade, never fail the whole thread render" convention elsewhere
+// (buildOpenItems' response-parent fallback, unresolved parents/events).
+func buildDeliveries(sorted []foldedArtifact, resolver PackageResolver) []Delivery {
+	if resolver == nil {
+		return nil
+	}
+	var out []Delivery
+	for _, fa := range sorted {
+		if fa.kind() != fold.KindHandoff {
+			continue
+		}
+		resolved, err := ResolveDeliveries(fa.Env.ID, fa.Raw, resolver)
+		if err != nil {
+			continue
+		}
+		out = append(out, resolved...)
+	}
+	return out
 }
 
 func openerOf(fa foldedArtifact) ThreadOpener {
