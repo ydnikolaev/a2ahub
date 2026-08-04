@@ -516,6 +516,10 @@
                           <div style="display:flex; flex-direction:column; gap:10px; margin-top:10px;">
                             <sc-for list="{{ e.deliveries }}" as="del" hint-placeholder-count="1">
                               <div style="border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); box-shadow:inset 0 0 0 1px var(--hairline);">
+                                <!-- Outside both branches on purpose: a handoff can carry
+                                     several data deliverables, so every box says WHICH one
+                                     it is — including the box whose manifest never resolved. -->
+                                <div style="font-size:12px; font-weight:600; color:var(--muted); margin-bottom:6px; overflow-wrap:anywhere;">{{ del.nameLabel }}</div>
                                 <sc-if value="{{ del.resolved }}" hint-placeholder-val="{{ true }}">
                                   <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:8px;">
                                     <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; color:var(--muted); overflow-wrap:anywhere;">{{ del.packageLabel }}</span>
@@ -3859,6 +3863,12 @@ class Component extends DCLogic {
           return {
             resolved,
             unresolved: !resolved,
+            // The deliverable's own name, not its package id: a handoff may
+            // carry several data deliverables, and two adjacent boxes labelled
+            // only by an opaque DP- id do not say which is which. Falls back to
+            // a generic label rather than an empty heading, so an unnamed
+            // deliverable still reads as a delivery.
+            nameLabel: del.name || (ru ? "Поставка данных" : "Data delivery"),
             unresolvedText: !resolved ? (del.unavailable || (ru ? "манифест поставки не найден" : "the delivery manifest could not be resolved")) : "",
             packageLabel: resolved ? (del.packageId + (del.attempt ? " · " + (ru ? "попытка " : "attempt ") + del.attempt : "")) : "",
             verdictText: resolved ? deliveryVerdictText(del.verdict, ru) : "",
