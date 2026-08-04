@@ -125,7 +125,11 @@ changes:
       violation legitimately carries. Every live run now retains its rendered
       report next to the evidence it produced, so a verdict is readable after
       the session that produced it ends rather than only in that session's
-      terminal.
+      terminal. The harness also shuts its local server down at the row that
+      started it, restores a repository setting it borrowed on every exit path,
+      and reads a write-free proof as "nothing appeared" rather than "the set
+      is identical", so provider housekeeping can no longer be reported as a
+      write the release did not make.
     affects: ["write preflight", "a2a doctor", "cache visibility", "GitHub cleanup", "release live E2E"]
     action:
       scope: none

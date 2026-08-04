@@ -17,6 +17,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/contract"
@@ -601,31 +602,53 @@ func operationalStaticServer(ctx context.Context, oc *operationalConfidenceRun) 
 	cmd := exec.CommandContext(serverCtx, oc.h.B.Bin, "serve", "--listen", address, "--refresh", "250ms", "--sync-every", "15s") //nolint:gosec // reason: binary is the attested candidate and argv contains only the loopback listener allocated above.
 	cmd.Dir = oc.h.B.Dir
 	cmd.Env = checkoutEnv(oc.h.B.Token, oc.h.B.SpaceSlug)
-	var serverOutput strings.Builder
-	cmd.Stdout, cmd.Stderr = &serverOutput, &serverOutput
+	// os/exec copies the child's pipes from goroutines that only Wait reaps,
+	// and this buffer is read on the startup-failure path BEFORE Wait — a
+	// plain strings.Builder is a data race there. The live tier runs without
+	// -race, so the race would never be reported; it would just corrupt the one
+	// diagnostic an operator has when serve fails to come up.
+	serverOutput := &syncBuffer{}
+	cmd.Stdout, cmd.Stderr = serverOutput, serverOutput
 	if err := cmd.Start(); err != nil {
 		cancelServer()
 		return proof, VerdictFail, err
 	}
-	oc.cleanup.Register(owner, func(context.Context) error {
-		cancelServer()
-		wait := make(chan error, 1)
-		go func() { wait <- cmd.Wait() }()
-		select {
-		case err := <-wait:
-			if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "signal: killed") {
-				return err
+	// Spec 07 §6.2 makes "graceful server shutdown, no process/port leak" this
+	// row's own cleanup, so it is discharged at this row's own boundary. Family
+	// cleanup is LIFO across all nine cells, which would have left serve
+	// running through LE-OC-06/07/08/04 — twenty-plus minutes of a full mirror
+	// tree-walk every 250ms and a fetch every 15s, contending for the mirror
+	// lock with the very writes those rows make. The registered entry stays as
+	// an idempotent backstop for the panic path and owns the reporting.
+	var stopOnce sync.Once
+	var stopErr error
+	stopServer := func() error {
+		stopOnce.Do(func() {
+			cancelServer()
+			wait := make(chan error, 1)
+			go func() { wait <- cmd.Wait() }()
+			select {
+			case err := <-wait:
+				if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "signal: killed") {
+					stopErr = err
+				}
+			case <-time.After(10 * time.Second):
+				stopErr = errors.New("serve process did not stop within 10s")
 			}
-			return nil
-		case <-time.After(10 * time.Second):
-			return errors.New("serve process did not stop within 10s")
-		}
-	})
+		})
+		return stopErr
+	}
+	oc.cleanup.Register(owner, func(context.Context) error { return stopServer() })
+	defer func() { _ = stopServer() }()
 	baseURL := "http://" + address
 	if err := operationalAwaitHTTP(ctx, baseURL+"/api/v1/snapshot"); err != nil {
 		return proof, VerdictFail, fmt.Errorf("serve startup: %w: %s", err, serverOutput.String())
 	}
-	initialResponse, err := http.Get(baseURL + "/api/v1/snapshot")
+	initialRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/v1/snapshot", nil)
+	if err != nil {
+		return proof, VerdictFail, err
+	}
+	initialResponse, err := http.DefaultClient.Do(initialRequest)
 	if err != nil {
 		return proof, VerdictFail, err
 	}
@@ -765,8 +788,18 @@ func operationalContractPublish(ctx context.Context, oc *operationalConfidenceRu
 	}
 	sort.Strings(beforeBranches)
 	sort.Strings(afterBranches)
-	if len(beforePulls) != len(afterPulls) || !reflect.DeepEqual(beforeBranches, afterBranches) || beforeCommit != afterCommit || preflight.Status != space.ContractPublicationPlanned {
-		return proof, VerdictFail, fmt.Errorf("preflight wrote provider state: pulls %d->%d branches %v->%v main %s->%s status=%s", len(beforePulls), len(afterPulls), beforeBranches, afterBranches, beforeCommit, afterCommit, preflight.Status)
+	// Set equality was the wrong test. The space is provisioned with
+	// `delete_branch_on_merge: true`, and the `before` sample is taken right
+	// after happyLandAndSync returns, so GitHub's asynchronous prune of that
+	// merge's head branch can land between the two reads. Equality then reports
+	// "preflight wrote provider state" for provider housekeeping preflight had
+	// nothing to do with. Spec 07 §6.2 asks only that preflight perform zero
+	// write, which is what an ADDED branch or pull request would show — a
+	// disappearance never can.
+	addedBranches := addedSince(beforeBranches, afterBranches)
+	addedPulls := addedSince(operationalPullNumbers(beforePulls), operationalPullNumbers(afterPulls))
+	if len(addedBranches) > 0 || len(addedPulls) > 0 || beforeCommit != afterCommit || preflight.Status != space.ContractPublicationPlanned {
+		return proof, VerdictFail, fmt.Errorf("preflight wrote provider state: added pulls %v added branches %v main %s->%s status=%s", addedPulls, addedBranches, beforeCommit, afterCommit, preflight.Status)
 	}
 	proof.Pass("preflight-write-free")
 	stdout, stderr, err = oc.h.A.Run(ctx, "contract", "publish", id, "--version", "1.0.0", "--staging", oc.contractStage, "--expect-plan", preflight.Plan.PlanDigest, "--json")
@@ -1034,6 +1067,16 @@ func operationalProviderRetry(ctx context.Context, oc *operationalConfidenceRun)
 		proof.limitations = append(proof.limitations, "The provider credential could not safely disable auto-merge for the controlled repository: "+err.Error())
 		return proof, VerdictUnverified, err
 	}
+	// A SECOND, earlier restore attempt covering every exit path below,
+	// including the two that return before the body re-enables the setting
+	// itself. Auto-merge is repository-wide: left disabled, the ten families
+	// that run after this one each wait out happyMergeWaitCeiling per pull
+	// request against the run ceiling, so the matrix degrades slowly and the
+	// symptom points at the product rather than at this row. The registered
+	// cleanup entry above stays the authority — it runs on its own fresh
+	// context and reds this cell with cleanup_status: incomplete if it fails —
+	// so the error here is deliberately dropped rather than reported twice.
+	defer func() { _ = operationalSetAutoMerge(ctx, oc, settings.AllowAutoMerge) }()
 	id, _, err := oc.h.A.Draft(ctx, "announcement", "--field", "title=P7 same PR retry")
 	if err != nil {
 		return proof, VerdictFail, err
@@ -1071,6 +1114,14 @@ func operationalProviderRetry(ctx context.Context, oc *operationalConfidenceRun)
 	proof.prs = append(proof.prs, operationalPR(oc.h, pr.Number))
 	proof.passEvidence = fmt.Sprintf("post-create state %q (submit error=%v) preserved PR #%d; retry repaired that same PR", pr.State, firstErr, pr.Number)
 	return proof, VerdictPass, nil
+}
+
+func operationalPullNumbers(pulls []PullState) []int {
+	numbers := make([]int, 0, len(pulls))
+	for _, pull := range pulls {
+		numbers = append(numbers, pull.Number)
+	}
+	return numbers
 }
 
 func operationalRegisterBranch(oc *operationalConfidenceRun, owner, branch string) {
