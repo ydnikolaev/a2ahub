@@ -235,6 +235,18 @@ changes:
       can see what to fix without decoding a line of identifiers. A package
       the local mirror cannot resolve says so as its own state, in the colour
       of something unseen rather than something failed.
+      The loop is reachable from both surfaces. The MCP tool was specified,
+      catalogued and schema-complete while having no backend at all — every
+      call refused as unconfigured — so an agent on a tool-calling harness
+      could not run the loop the documentation described. It now runs the
+      same production core the CLI does, selects a space explicitly and
+      refuses an ambiguous one rather than choosing. Its verify input is the
+      same record switch the CLI has, never a caller-supplied verdict: the
+      earlier schema would have let a tool call declare a pass, which is the
+      one thing this loop exists to make unrepresentable. Packing through
+      either surface now applies the same one-week expiry floor, because that
+      default lived in the CLI's own flag layer and a tool call omitting it
+      would have minted a package expired at birth.
     affects: ["a2a data pack", "a2a data deliver", "a2a data fetch", "a2a data verify", "a2a_data", "data-package/v1", "verification-report/v1", "dashboard"]
     action:
       scope: local
