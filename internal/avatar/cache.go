@@ -19,7 +19,10 @@ import (
 )
 
 const (
-	recordSchema         = "avatar-cache/v1"
+	// v3 raises the source image from a timeline-sized thumbnail to GitHub's
+	// largest 460 px rendition. A schema bump makes the next foreground sync
+	// replace older 64/256 px records instead of keeping them behind the TTL.
+	recordSchema         = "avatar-cache/v3"
 	defaultRefreshTTL    = 24 * time.Hour
 	defaultRefreshBudget = 20 * time.Second
 	maxAvatarBytes       = 512 << 10
@@ -107,6 +110,12 @@ func (c *Cache) refreshOne(ctx context.Context, login string) error {
 		return err
 	}
 	old, _ := readRecord(path)
+	if old.Schema != recordSchema {
+		// Never send an old validator with a new rendition request: an upstream
+		// 304 would leave us with the very low-resolution bytes this migration is
+		// intended to replace.
+		old = record{}
+	}
 	now := c.now().UTC()
 	if old.Schema == recordSchema && !old.CheckedAt.IsZero() {
 		age := now.Sub(old.CheckedAt)

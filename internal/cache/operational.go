@@ -4,16 +4,32 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/provenance"
+	"github.com/ydnikolaev/a2ahub/internal/sensitive"
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
 	"gopkg.in/yaml.v3"
 )
 
 var errInvalidOperationalCheckpoint = errors.New("cache: invalid operational checkpoint")
+
+const (
+	maximumOperationalActorModelRunes = 96
+	maximumOperationalSummaryRunes    = 512
+	maximumOperationalWaitIDRunes     = 512
+)
+
+var (
+	operationalCredentialAssignmentPattern = regexp.MustCompile(`(?i)(^|[^a-z0-9])(password|passwd|token|authorization|api[-_]?key|secret)[[:space:]]*[:=]`)
+	operationalBearerCredentialPattern     = regexp.MustCompile(`(?i)(^|[^a-z0-9])bearer([[:space:]]+|[:=])`)
+)
 
 // OperationalEvidence is cache's neutral, one-pass projection input. It
 // deliberately carries no operational freshness precedence or ordering
@@ -275,7 +291,7 @@ func operationalThreadFromView(view ThreadResult, statusWorkIDs map[string]struc
 		entry := view.Transcript[index]
 		if entry.Kind != "event" || entry.Event == nil || entry.At.IsZero() ||
 			entry.Event.Actor.Kind == "" || entry.Event.Actor.Name == "" ||
-			entry.Event.Actor.System == "" || entry.Event.Actor.Session == "" {
+			entry.Event.Actor.System == "" {
 			continue
 		}
 		// Publishing a status work checkpoint is transport bookkeeping for the
@@ -339,13 +355,76 @@ func decodeOperationalCheckpoint(member foldedArtifact) (OperationalCommittedWor
 		return OperationalCommittedWork{}, true, errInvalidOperationalCheckpoint
 	}
 	sequence := uint64(member.Seq) + 1
-	return OperationalCommittedWork{
+	checkpoint := OperationalCommittedWork{
 		Space: member.SpaceID, Thread: member.Env.Thread, WorkID: envelope.Work.ID,
 		SubjectRef: envelope.Work.SubjectRef, Mode: envelope.Work.Mode, Summary: envelope.Work.Summary,
 		Actor:      workreport.Actor{Kind: envelope.Actor.Kind, Name: envelope.Actor.Name, System: envelope.From, Model: envelope.Actor.Model, Session: envelope.Actor.Session},
 		WaitingOn:  append([]workreport.WaitingOn(nil), envelope.Work.WaitingOn...),
 		ReportedAt: reportedAt.UTC(), ValidUntil: validUntil.UTC(), ArtifactID: envelope.ID, CommitSequence: sequence,
-	}, true, nil
+	}
+	return safeOperationalCheckpoint(checkpoint), true, nil
+}
+
+// safeOperationalCheckpoint is the single cache/public boundary for durable
+// work-report text. Legacy mirrors remain readable, but credential-shaped
+// model/summary/wait values cannot reach operational or transcript consumers,
+// and an unsafe session survives only as the repository's canonical digest
+// reference. Structural meaning and commit-derived ordering metadata are
+// copied unchanged.
+func safeOperationalCheckpoint(checkpoint OperationalCommittedWork) OperationalCommittedWork {
+	checkpoint.SubjectRef = safeOperationalText(checkpoint.SubjectRef, maximumOperationalWaitIDRunes)
+	checkpoint.Actor.Name = safeOperationalText(checkpoint.Actor.Name, maximumOperationalWaitIDRunes)
+	checkpoint.Actor.Model = safeOperationalText(checkpoint.Actor.Model, maximumOperationalActorModelRunes)
+	checkpoint.Actor.Session = provenance.SafeSessionEvidence(checkpoint.Actor.Session)
+	checkpoint.Summary = safeOperationalText(checkpoint.Summary, maximumOperationalSummaryRunes)
+	checkpoint.WaitingOn = append([]workreport.WaitingOn(nil), checkpoint.WaitingOn...)
+	for index := range checkpoint.WaitingOn {
+		checkpoint.WaitingOn[index].ID = safeOperationalText(checkpoint.WaitingOn[index].ID, maximumOperationalWaitIDRunes)
+		checkpoint.WaitingOn[index].Summary = safeOperationalText(checkpoint.WaitingOn[index].Summary, maximumOperationalSummaryRunes)
+	}
+	return checkpoint
+}
+
+// safeOperationalText matches the established operational read-model policy:
+// bounded Unicode text remains readable, control/bidi characters become data,
+// and any credential-bearing field is replaced as a whole rather than partly
+// exposing a legacy value.
+func safeOperationalText(value string, maximum int) string {
+	if !utf8.ValidString(value) {
+		value = strings.ToValidUTF8(value, "�")
+	}
+	out := make([]rune, 0, min(utf8.RuneCountInString(value), maximum))
+	for _, r := range value {
+		if len(out) >= maximum {
+			break
+		}
+		if unicode.IsControl(r) || unicode.In(r, unicode.Bidi_Control) {
+			out = append(out, '�')
+			continue
+		}
+		out = append(out, r)
+	}
+	result := string(out)
+	if containsOperationalCredential(result) {
+		return "[redacted unsafe text]"
+	}
+	return result
+}
+
+func containsOperationalCredential(value string) bool {
+	if sensitive.ContainsContent(value) || operationalCredentialAssignmentPattern.MatchString(value) ||
+		operationalBearerCredentialPattern.MatchString(value) {
+		return true
+	}
+	tokens := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && !strings.ContainsRune("._:-", r)
+	})
+	for _, token := range tokens {
+		if sensitive.Identifier(token) {
+			return true
+		}
+	}
+	return false
 }
 
 func operationalFrontmatter(raw []byte) ([]byte, bool) {

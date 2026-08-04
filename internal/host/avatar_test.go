@@ -22,8 +22,8 @@ func TestGitHubHostFetchAvatarResolvesThenUsesConditionalImageRequest(t *testing
 			_, _ = fmt.Fprintf(w, `{"avatar_url":%q}`, server.URL+"/avatar")
 		case "/avatar":
 			avatarCalls++
-			if r.URL.Query().Get("s") != "64" {
-				t.Errorf("avatar size = %q, want 64", r.URL.Query().Get("s"))
+			if r.URL.Query().Get("s") != avatarRequestPixels {
+				t.Errorf("avatar size = %q, want %s", r.URL.Query().Get("s"), avatarRequestPixels)
 			}
 			w.Header().Set("ETag", `"avatar-v1"`)
 			if r.Header.Get("If-None-Match") == `"avatar-v1"` {

@@ -42,6 +42,147 @@ func TestResolveContractVersionUsesUniqueEstablishmentAndHistoricalBytes(t *test
 	}
 }
 
+func TestVisitContractVersionsStreamsExactPackagesAndKeepsErrorsVersionScoped(t *testing.T) {
+	t.Parallel()
+
+	repo := newContractHistoryRepo(t)
+	descriptorOne, filesOne, digestOne := contractV2Publication(t, "1.0.0", "VERSION_ONE_ONLY\n")
+	commitContractPublication(t, repo, descriptorOne, filesOne, contractEventV2("1.0.0", digestOne))
+	descriptorTwo, filesTwo, digestTwo := contractV2Publication(t, "2.0.0", "VERSION_TWO_ONLY\n")
+	secondEvent := strings.Replace(contractEventV2("2.0.0", digestTwo), "01K1A2B3C4D5E6F7G8H9J0K1M7", "01K1A2B3C4D5E6F7G8H9J0K1M8", 1)
+	commitContractPublicationAtPath(t, repo, "axon/events/2026/01K1A2B3C4D5E6F7G8H9J0K1M8.yaml", descriptorTwo, filesTwo, secondEvent)
+
+	type projectedResolution struct {
+		version, snapshotVersion, raw string
+		err                           error
+	}
+	results := make([]projectedResolution, 0, 3)
+	err := VisitContractVersions(t.Context(), repo, contractTestID, []string{"1.0.0", "2.0.0", "3.0.0"}, contractHistoryValidator(t), func(result *HistoricalResolution) error {
+		results = append(results, projectedResolution{
+			version: result.Version, snapshotVersion: result.Snapshot.Version,
+			raw: string(result.Snapshot.file("schema/order.schema.json").Raw), err: result.Err,
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("VisitContractVersions: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("result count = %d, want 3", len(results))
+	}
+	for index, token := range []string{"VERSION_ONE_ONLY", "VERSION_TWO_ONLY"} {
+		result := results[index]
+		if result.err != nil || result.snapshotVersion != result.version {
+			t.Fatalf("result %d = %+v", index, result)
+		}
+		if !strings.Contains(result.raw, token) || strings.Contains(result.raw, []string{"VERSION_TWO_ONLY", "VERSION_ONE_ONLY"}[index]) {
+			t.Errorf("%s mixed historical bytes: %q", result.version, result.raw)
+		}
+	}
+	if results[2].version != "3.0.0" || !errors.Is(results[2].err, ErrContractNotPublished) || results[2].snapshotVersion != "" {
+		t.Fatalf("missing version result = %+v", results[2])
+	}
+}
+
+func TestVisitContractVersionsKeepsNonCanonicalVersionErrorScoped(t *testing.T) {
+	t.Parallel()
+
+	repo := newContractHistoryRepo(t)
+	descriptor, files, digest := contractV2Publication(t, "1.0.0", "CANONICAL_VERSION_ONLY\n")
+	commitContractPublication(t, repo, descriptor, files, contractEventV2("1.0.0", digest))
+
+	type projectedResolution struct {
+		version, snapshotVersion, raw string
+		err                           error
+	}
+	results := make([]projectedResolution, 0, 2)
+	err := VisitContractVersions(t.Context(), repo, contractTestID, []string{"1.0.0", "v1.0.0"}, contractHistoryValidator(t), func(result *HistoricalResolution) error {
+		results = append(results, projectedResolution{
+			version: result.Version, snapshotVersion: result.Snapshot.Version,
+			raw: string(result.Snapshot.file("schema/order.schema.json").Raw), err: result.Err,
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("VisitContractVersions returned caller-global error: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("result count = %d, want 2", len(results))
+	}
+	if results[0].version != "1.0.0" || results[0].err != nil || results[0].snapshotVersion != "1.0.0" ||
+		!strings.Contains(results[0].raw, "CANONICAL_VERSION_ONLY") {
+		t.Fatalf("canonical result = %+v", results[0])
+	}
+	if results[1].version != "v1.0.0" || !errors.Is(results[1].err, ErrContractInvalidReference) || results[1].snapshotVersion != "" {
+		t.Fatalf("non-canonical result = %+v", results[1])
+	}
+}
+
+func TestVisitContractVersionsReleasesBorrowedRawBeforeNextVersion(t *testing.T) {
+	t.Parallel()
+
+	repo := newContractHistoryRepo(t)
+	descriptorOne, filesOne, digestOne := contractV2Publication(t, "1.0.0", strings.Repeat("ONE", 4096))
+	commitContractPublication(t, repo, descriptorOne, filesOne, contractEventV2("1.0.0", digestOne))
+	descriptorTwo, filesTwo, digestTwo := contractV2Publication(t, "2.0.0", strings.Repeat("TWO", 4096))
+	secondEvent := strings.Replace(contractEventV2("2.0.0", digestTwo), "01K1A2B3C4D5E6F7G8H9J0K1M7", "01K1A2B3C4D5E6F7G8H9J0K1M8", 1)
+	commitContractPublicationAtPath(t, repo, "axon/events/2026/01K1A2B3C4D5E6F7G8H9J0K1M8.yaml", descriptorTwo, filesTwo, secondEvent)
+
+	retained := make([]*HistoricalResolution, 0, 3)
+	order := make([]string, 0, 3)
+	err := VisitContractVersions(t.Context(), repo, contractTestID, []string{"1.0.0", "v1.0.0", "2.0.0"}, contractHistoryValidator(t), func(result *HistoricalResolution) error {
+		for _, prior := range retained {
+			if raw := historicalResolutionRawBytes(prior); raw != 0 {
+				t.Fatalf("prior borrowed result %s retains %d raw bytes at next callback", prior.Version, raw)
+			}
+		}
+		if result.Err == nil && historicalResolutionRawBytes(result) == 0 {
+			t.Fatalf("available result %s has no raw bytes during callback", result.Version)
+		}
+		order = append(order, result.Version)
+		retained = append(retained, result)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("VisitContractVersions: %v", err)
+	}
+	if got, want := strings.Join(order, ","), "1.0.0,v1.0.0,2.0.0"; got != want {
+		t.Fatalf("callback order = %q, want %q", got, want)
+	}
+	for _, result := range retained {
+		if raw := historicalResolutionRawBytes(result); raw != 0 {
+			t.Fatalf("borrowed result %s retains %d raw bytes after batch", result.Version, raw)
+		}
+	}
+
+	stop := errors.New("stop visitor")
+	var stopped *HistoricalResolution
+	err = VisitContractVersions(t.Context(), repo, contractTestID, []string{"1.0.0", "2.0.0"}, contractHistoryValidator(t), func(result *HistoricalResolution) error {
+		stopped = result
+		return stop
+	})
+	if !errors.Is(err, stop) {
+		t.Fatalf("visitor error = %v, want %v", err, stop)
+	}
+	if stopped == nil || stopped.Version != "1.0.0" || historicalResolutionRawBytes(stopped) != 0 {
+		t.Fatalf("visitor-error result was not released: %+v raw=%d", stopped, historicalResolutionRawBytes(stopped))
+	}
+}
+
+func historicalResolutionRawBytes(result *HistoricalResolution) int {
+	if result == nil {
+		return 0
+	}
+	total := len(result.Snapshot.PublishEventRaw)
+	for _, file := range result.Snapshot.Files {
+		total += len(file.Raw)
+	}
+	for _, raw := range result.Snapshot.CarriedSet.Bytes {
+		total += len(raw)
+	}
+	return total
+}
+
 func TestResolveContractVersionIgnoresLaterMalformedUnrelatedEvent(t *testing.T) {
 	t.Parallel()
 

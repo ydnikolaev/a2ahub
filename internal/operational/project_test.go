@@ -188,6 +188,34 @@ func TestBuildFutureAnomalyUsesStableBucketAndTransitionsOnce(t *testing.T) {
 	}
 }
 
+func TestBuildOrdersLegacySessionlessMilestonesNewestFirst(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	older := thread("space-a", "thread:older", false)
+	older.LatestMilestone = &Milestone{
+		Kind: "event", At: now.Add(-2 * time.Hour),
+		Actor:      Actor{Kind: "agent", Name: "legacy-agent", System: "atlas"},
+		Transition: "close", Subject: "XW-older",
+	}
+	newer := thread("space-a", "thread:newer", false)
+	newer.LatestMilestone = &Milestone{
+		Kind: "event", At: now.Add(-time.Hour),
+		Actor:      Actor{Kind: "agent", Name: "legacy-agent", System: "atlas"},
+		Transition: "note", Subject: "XS-newer",
+	}
+
+	snapshot, err := Build(Input{Threads: []ThreadEvidence{older, newer}}, fixedClock{now}, DefaultLimits())
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if got := []string{snapshot.Timeline[0].Thread, snapshot.Timeline[1].Thread}; !reflect.DeepEqual(got, []string{"thread:newer", "thread:older"}) {
+		t.Fatalf("timeline order = %v, want newest sessionless milestone first", got)
+	}
+	if snapshot.Timeline[0].LatestMilestone == nil || snapshot.Timeline[0].LatestMilestone.Actor.Session != "" {
+		t.Fatalf("legacy milestone was not preserved honestly: %#v", snapshot.Timeline[0].LatestMilestone)
+	}
+}
+
 func TestBuildDeterministicAcrossInputPermutationsAndObservationPolls(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
@@ -339,6 +367,9 @@ func TestPublicSessionHashesCanonicalCredentialShapes(t *testing.T) {
 	}
 	if got := publicSession("session-1"); got != "session-1" {
 		t.Fatalf("safe session = %q", got)
+	}
+	if got := publicSession(""); got != "" {
+		t.Fatalf("absent legacy session = %q, want omitted", got)
 	}
 }
 

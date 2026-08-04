@@ -15,6 +15,13 @@ import (
 const (
 	avatarRequestTimeout   = 12 * time.Second
 	maxAvatarResponseBytes = 512 << 10
+	// Keep the local source comfortably larger than every avatar currently
+	// rendered by the dashboard. The UI can then grow an avatar without
+	// stretching a thumbnail that was fetched for today's 38 px timeline node.
+	// GitHub currently caps avatar renditions at 460 px. Keep the largest
+	// available local source so the same cache can serve compact timeline faces
+	// and future large profile surfaces without another lossy up-scale.
+	avatarRequestPixels = "460"
 )
 
 var githubLoginPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
@@ -103,7 +110,7 @@ func (h *GitHubHost) normalizedAvatarURL(raw string) (string, error) {
 		return "", fmt.Errorf("%w: refused avatar host %q", ErrRequestFailed, u.Hostname())
 	}
 	q := u.Query()
-	q.Set("s", "64")
+	q.Set("s", avatarRequestPixels)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -74,6 +75,9 @@ func TestStaticHTMLConsumesExactProductionOperationalSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildOperationalRuntime: %v", err)
 	}
+	if runtimeState.historyValidator == nil {
+		t.Fatal("buildOperationalRuntime: canonical contract history validator was not injected")
+	}
 	defer func() {
 		if err := runtimeState.Close(); err != nil {
 			t.Errorf("Close: %v", err)
@@ -84,7 +88,7 @@ func TestStaticHTMLConsumesExactProductionOperationalSnapshot(t *testing.T) {
 		t.Fatalf("Snapshot: %v", err)
 	}
 	var stdout, stderr bytes.Buffer
-	code := cli.NewHtmlCommandWithOperational(store, runtimeState.source).Run(context.Background(), []string{"--json", "--no-open"}, cli.IO{
+	code := cli.NewHtmlCommandWithOperationalAndContractHistory(store, runtimeState.source, runtimeState.historyValidator).Run(context.Background(), []string{"--json", "--no-open"}, cli.IO{
 		Stdout: &stdout, Stderr: &stderr,
 	})
 	if code != 0 {
@@ -171,7 +175,8 @@ func TestProductionOperationalSnapshotRefreshesFromSecondCloneOverSSE(t *testing
 	config := localserver.DefaultConfig()
 	config.Listen = "127.0.0.1:0"
 	config.Refresh = localserver.MinimumRefresh
-	server, err := localserver.New(config, runtimeState.source, runtimeState.source, runtimeState.renderer, nil)
+	tickers := newControlledTickerFactory()
+	server, err := localserver.New(config, runtimeState.source, runtimeState.source, runtimeState.renderer, tickers)
 	if err != nil {
 		t.Fatalf("localserver.New: %v", err)
 	}
@@ -182,6 +187,7 @@ func TestProductionOperationalSnapshotRefreshesFromSecondCloneOverSSE(t *testing
 	serveCtx, stopServer := context.WithCancel(t.Context())
 	serveDone := make(chan error, 1)
 	go func() { serveDone <- server.Serve(serveCtx, listener) }()
+	refreshTicker := tickers.await(t, config.Refresh)
 	defer func() {
 		stopServer()
 		select {
@@ -207,13 +213,11 @@ func TestProductionOperationalSnapshotRefreshesFromSecondCloneOverSSE(t *testing
 	}
 	assertCanonicalSnapshotEqual(t, servedInitial, initial, "/api/v1/snapshot")
 
-	sseCtx, cancelSSE := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancelSSE()
-	sseRequest, err := http.NewRequestWithContext(sseCtx, http.MethodGet, baseURL+"/api/v1/events", nil)
+	sseRequest, err := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+"/api/v1/events", nil)
 	if err != nil {
 		t.Fatalf("new SSE request: %v", err)
 	}
-	sseResponse, err := client.Do(sseRequest)
+	sseResponse, err := (&http.Client{}).Do(sseRequest)
 	if err != nil {
 		t.Fatalf("open SSE: %v", err)
 	}
@@ -235,6 +239,7 @@ func TestProductionOperationalSnapshotRefreshesFromSecondCloneOverSSE(t *testing
 	if _, syncErr := runtimeState.source.Sync(t.Context()); syncErr != nil {
 		t.Fatalf("production source sync: %v", syncErr)
 	}
+	refreshTicker.tick()
 	newRevision := readRevisionEvent(t, sseReader)
 	if newRevision == initial.Revision {
 		t.Fatalf("SSE repeated initial revision %q after committed checkpoint", newRevision)
@@ -298,6 +303,7 @@ func TestProductionOperationalSnapshotRefreshesFromSecondCloneOverSSE(t *testing
 	if _, err := runtimeState.leases.CompareAndSwap(t.Context(), identity.LeaseKey, "", &lease); err != nil {
 		t.Fatalf("seed local heartbeat: %v", err)
 	}
+	refreshTicker.tick()
 	localRevision := readRevisionEvent(t, sseReader)
 	if localRevision == newRevision {
 		t.Fatalf("SSE did not advance for local-only heartbeat: %q", localRevision)
@@ -511,6 +517,59 @@ func readRevisionEvent(t *testing.T, reader *bufio.Reader) string {
 		t.Fatalf("SSE data is not revision-only: %#v", payload)
 	}
 	return fields["id"]
+}
+
+type controlledTicker struct {
+	channel chan time.Time
+}
+
+func (t *controlledTicker) C() <-chan time.Time { return t.channel }
+func (t *controlledTicker) Stop()               {}
+func (t *controlledTicker) tick()               { t.channel <- time.Now() }
+
+type controlledTickerFactory struct {
+	mu      sync.Mutex
+	tickers map[time.Duration][]*controlledTicker
+	created chan time.Duration
+}
+
+func newControlledTickerFactory() *controlledTickerFactory {
+	return &controlledTickerFactory{
+		tickers: make(map[time.Duration][]*controlledTicker),
+		created: make(chan time.Duration, 8),
+	}
+}
+
+func (f *controlledTickerFactory) NewTicker(interval time.Duration) localserver.Ticker {
+	ticker := &controlledTicker{channel: make(chan time.Time, 4)}
+	f.mu.Lock()
+	f.tickers[interval] = append(f.tickers[interval], ticker)
+	f.mu.Unlock()
+	f.created <- interval
+	return ticker
+}
+
+func (f *controlledTickerFactory) await(t *testing.T, interval time.Duration) *controlledTicker {
+	t.Helper()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	for {
+		f.mu.Lock()
+		available := f.tickers[interval]
+		if len(available) > 0 {
+			ticker := available[0]
+			f.mu.Unlock()
+			return ticker
+		}
+		f.mu.Unlock()
+		select {
+		case <-t.Context().Done():
+			t.Fatal("test context ended before controlled ticker was created")
+		case <-deadline.C:
+			t.Fatalf("controlled ticker %s was not created", interval)
+		case <-f.created:
+		}
+	}
 }
 
 func readBoundedResponse(t *testing.T, body io.Reader, maximum int) []byte {

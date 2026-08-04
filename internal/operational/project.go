@@ -298,7 +298,7 @@ func validateThreadEvidence(e ThreadEvidence) error {
 		return fmt.Errorf("%w: invalid milestone", ErrInvalidInput)
 	}
 	if e.LatestMilestone != nil && (!validKey(e.LatestMilestone.Actor.Kind) || !validKey(e.LatestMilestone.Actor.Name) ||
-		!validKey(e.LatestMilestone.Actor.System) || !validKey(e.LatestMilestone.Actor.Session)) {
+		!validKey(e.LatestMilestone.Actor.System) || (e.LatestMilestone.Actor.Session != "" && !validKey(e.LatestMilestone.Actor.Session))) {
 		return fmt.Errorf("%w: incomplete milestone actor", ErrInvalidInput)
 	}
 	return nil
@@ -984,6 +984,9 @@ func containsCredentialToken(value string) bool {
 }
 
 func publicSession(value string) string {
+	if value == "" {
+		return ""
+	}
 	safe := value != "" && len(value) <= 128 && !sensitive.Identifier(value)
 	for _, r := range value {
 		if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') && !strings.ContainsRune("._:-", r) {

@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -56,8 +57,11 @@ Waiting for checkout fixtures.
 		t.Fatal("valid work checkpoint was not decoded")
 	}
 	if checkpoint.WorkID != "work:01K20ABCDEFHJKMNPQRSTVWXYZ" || checkpoint.CommitSequence != 7 ||
-		checkpoint.Actor.System != "atlas" || checkpoint.Actor.Session == "" ||
-		checkpoint.Mode != workreport.ModeWaiting || len(checkpoint.WaitingOn) != 1 {
+		checkpoint.Actor.System != "atlas" || checkpoint.Actor.Model != "gpt-5" ||
+		checkpoint.Actor.Session != "session:01K20ABCDEFHJKMNPQRSTVWXYZ" ||
+		checkpoint.Summary != "Waiting for checkout fixtures" || checkpoint.Mode != workreport.ModeWaiting ||
+		len(checkpoint.WaitingOn) != 1 || checkpoint.WaitingOn[0].ID != "checkout" ||
+		checkpoint.WaitingOn[0].Summary != "Revised fixtures" {
 		t.Fatalf("checkpoint = %#v", checkpoint)
 	}
 
@@ -71,6 +75,86 @@ Waiting for checkout fixtures.
 	member.OrderKnown = false
 	if _, ok, err := decodeOperationalCheckpoint(member); !ok || !errors.Is(err, errInvalidOperationalCheckpoint) {
 		t.Fatalf("unknown commit order = ok %v, err %v; want explicit degradation", ok, err)
+	}
+}
+
+func TestDecodeOperationalCheckpointProjectsHostileLegacyTextSafely(t *testing.T) {
+	t.Parallel()
+	const (
+		unsafeActorName   = "api_key=actor-secret"
+		unsafeModel       = "password=model-secret"
+		unsafeSession     = "token:super-secret"
+		unsafeSubject     = "secret=subject-secret"
+		unsafeSummary     = "token=summary-secret"
+		unsafeWaitID      = "password:wait-id-secret"
+		unsafeWaitSummary = "Authorization: Bearer wait-summary-secret"
+		wantSession       = "sha256:360f0b0743ceb50fd947fd94c0137516a7ddc7b52bbc5e9a4e6e855174e63a6a"
+	)
+	raw := []byte(`---
+schema: envelope/v2
+id: XA-atlas-20260803-hostile
+type: announcement
+space: checkout-core
+from: atlas
+thread: thread:atlas-20260803-hostile
+category: status
+actor:
+  kind: agent
+  name: "` + unsafeActorName + `"
+  model: "` + unsafeModel + `"
+  session: "` + unsafeSession + `"
+work:
+  id: work:01K20ABCDEFHJKMNPQRSTVWXYZ
+  semantic_sequence: 4
+  mode: waiting
+  subject_ref: "` + unsafeSubject + `"
+  summary: "` + unsafeSummary + `"
+  reported_at: 2026-08-03T10:30:00Z
+  valid_until: 2026-08-03T11:00:00Z
+  waiting_on:
+    - kind: system
+      id: checkout
+      summary: "` + unsafeWaitSummary + `"
+    - kind: tool
+      id: "` + unsafeWaitID + `"
+      summary: Review access boundary
+---
+`)
+	member := foldedArtifact{
+		SpaceID: "checkout-core", Raw: raw, Seq: 6, OrderKnown: true,
+		Env: envelopeProbe{Thread: "thread:atlas-20260803-hostile"},
+	}
+
+	checkpoint, recognized, err := decodeOperationalCheckpoint(member)
+	if err != nil || !recognized {
+		t.Fatalf("decodeOperationalCheckpoint() = recognized %v, err %v", recognized, err)
+	}
+	if checkpoint.Actor.Kind != "agent" || checkpoint.Actor.Name != "[redacted unsafe text]" || checkpoint.Actor.System != "atlas" ||
+		checkpoint.Actor.Model != "[redacted unsafe text]" || checkpoint.Actor.Session != wantSession {
+		t.Fatalf("safe actor projection = %#v", checkpoint.Actor)
+	}
+	if checkpoint.Summary != "[redacted unsafe text]" {
+		t.Fatalf("safe summary = %q", checkpoint.Summary)
+	}
+	if len(checkpoint.WaitingOn) != 2 || checkpoint.WaitingOn[0].Kind != workreport.WaitSystem ||
+		checkpoint.WaitingOn[0].ID != "checkout" || checkpoint.WaitingOn[0].Summary != "[redacted unsafe text]" ||
+		checkpoint.WaitingOn[1].Kind != workreport.WaitTool || checkpoint.WaitingOn[1].ID != "[redacted unsafe text]" ||
+		checkpoint.WaitingOn[1].Summary != "Review access boundary" {
+		t.Fatalf("safe waits = %#v", checkpoint.WaitingOn)
+	}
+	if checkpoint.Mode != workreport.ModeWaiting || checkpoint.SubjectRef != "[redacted unsafe text]" ||
+		checkpoint.ReportedAt != time.Date(2026, 8, 3, 10, 30, 0, 0, time.UTC) ||
+		checkpoint.ValidUntil != time.Date(2026, 8, 3, 11, 0, 0, 0, time.UTC) || checkpoint.CommitSequence != 7 {
+		t.Fatalf("safe projection changed checkpoint meaning or sequence: %#v", checkpoint)
+	}
+	encoded, err := json.Marshal(checkpoint)
+	if err != nil {
+		t.Fatalf("json.Marshal(checkpoint): %v", err)
+	}
+	for _, secret := range []string{unsafeActorName, unsafeModel, unsafeSession, unsafeSubject, unsafeSummary, unsafeWaitID, unsafeWaitSummary} {
+		if strings.Contains(string(encoded), secret) {
+			t.Fatalf("public checkpoint leaked %q: %s", secret, encoded)
+		}
 	}
 }
 
@@ -214,6 +298,33 @@ func TestOperationalThreadFromViewKeepsProtocolSeparateFromMilestone(t *testing.
 	}
 	if thread.LatestMilestone == nil || thread.LatestMilestone.Transition != "respond" {
 		t.Fatalf("latest complete milestone = %#v", thread.LatestMilestone)
+	}
+}
+
+func TestOperationalThreadFromViewKeepsLatestLegacySessionlessMilestone(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	view := ThreadResult{
+		Space: "getvisa", Thread: "thread:axon-20260801-dfht",
+		Opener: ThreadOpener{Title: "Route vocabulary"},
+		Transcript: []TranscriptEntry{
+			{Kind: "event", At: now.Add(-time.Minute), Event: &TranscriptEvent{
+				ULID: "01K20ABCDEFHJKMNPQRSTVWXYZ", Subject: "XW-axon", Transition: "close",
+				Actor: TranscriptEventActor{Kind: "agent", Name: "yuranikolaev", System: "axon"},
+			}},
+			{Kind: "event", At: now, Event: &TranscriptEvent{
+				ULID: "01K20ABCDEFHJKMNPQRSTVWXYA", Subject: "XS-seomatrix", Transition: "note",
+				Actor: TranscriptEventActor{Kind: "agent", Name: "yuranikolaev", System: "axon"},
+			}},
+		},
+	}
+
+	thread := operationalThreadFromView(view, nil)
+	if thread.LatestMilestone == nil || thread.LatestMilestone.Transition != "note" || thread.LatestMilestone.Subject != "XS-seomatrix" {
+		t.Fatalf("latest legacy milestone = %#v", thread.LatestMilestone)
+	}
+	if thread.LatestMilestone.Actor.Session != "" {
+		t.Fatalf("legacy milestone invented a session: %#v", thread.LatestMilestone.Actor)
 	}
 }
 
