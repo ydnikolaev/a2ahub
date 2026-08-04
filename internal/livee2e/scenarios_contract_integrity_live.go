@@ -427,10 +427,23 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 		return ac973ResultFromErr("retire-land-sync", err, "the retirement lands on main and reaches A's mirror")
 	}
 
+	// This row's pass is a CLAIM, several of them: that a breaking change
+	// under a minor bump was refused, that B saw the deprecation through
+	// `inbox --actionable` while never being in the announcement's `to:`
+	// (AC-971.1), and that retire went through ungated once its one
+	// registered consumer acked. Report.Render() prints Detail only on a
+	// FAILING row — and a failure here returns a DIFFERENT Result via
+	// ac973ResultFromErr, so a Detail built in this branch can never render
+	// under any outcome. Without PassEvidence the whole narrative is dropped
+	// and the row reads as a bare `pass`, which is what an evidence-free
+	// no-op reads as too. This family is not in the LE-OC-01..08 evidence
+	// manifest, so this transcript line is the only proof it leaves.
+	narrative := fmt.Sprintf(
+		"%s: v1.0.0 (PR #%d) -> B adopts (PR #%d) -> breaking minor refused (no PR) -> v2.0.0 major (PR #%d) -> deprecate v1.0.0 (PR #%d, announcement %s) -> B sees it unaddressed-by-`to:` (AC-971.1) -> B acks (PR #%d) -> retire succeeds (PR #%d)",
+		sub.ID, baselinePR.Number, adoptPR.Number, majorPR.Number, deprecatePR.Number, announcementID, ackPR.Number, retirePR.Number)
 	return Result{
 		Scenario: ac973Scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf(
-			"%s: v1.0.0 (PR #%d) -> B adopts (PR #%d) -> breaking minor refused (no PR) -> v2.0.0 major (PR #%d) -> deprecate v1.0.0 (PR #%d, announcement %s) -> B sees it unaddressed-by-`to:` -> B acks (PR #%d) -> retire succeeds (PR #%d)",
-			sub.ID, baselinePR.Number, adoptPR.Number, majorPR.Number, deprecatePR.Number, announcementID, ackPR.Number, retirePR.Number),
+		Detail:       narrative,
+		PassEvidence: narrative,
 	}
 }
