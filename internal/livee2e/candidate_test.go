@@ -62,16 +62,32 @@ func candidateCheckLog(root, sha, tree, tag, exit string) []byte {
 		"EXIT=" + exit + "\n")
 }
 
-func TestCandidateRunbookEmitsParserMarkers(t *testing.T) {
+func TestCandidateRunbookEmitsParserMarkersWhenReleaseControlIsPresent(t *testing.T) {
 	t.Parallel()
 	_, sourceFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	runbook := filepath.Join(filepath.Dir(sourceFile), "..", "..", "docs", "runbooks", "live-e2e", "candidate.sh")
+	repoRoot := filepath.Join(filepath.Dir(sourceFile), "..", "..")
+	runbook := filepath.Join(repoRoot, "docs", "runbooks", "live-e2e", "candidate.sh")
 	raw, err := os.ReadFile(runbook)
 	if err != nil {
-		t.Fatalf("read candidate runbook: %v", err)
+		if !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("read candidate runbook: %v", err)
+		}
+		// docs/ and AGENTS.md are both private release-control surfaces removed
+		// from every public projection. Missing runbooks remain a hard failure in
+		// the private source; their deliberate joint absence is the public shape.
+		if _, railErr := os.Stat(filepath.Join(repoRoot, "AGENTS.md")); railErr == nil {
+			t.Fatalf("private release-control rail exists but candidate runbook is missing: %v", err)
+		} else if !errors.Is(railErr, os.ErrNotExist) {
+			t.Fatalf("stat private release-control rail: %v", railErr)
+		}
+		return
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "AGENTS.md")); err != nil {
+		// A public projection must not accidentally retain a private runbook.
+		t.Fatalf("candidate runbook exists without private release-control rail: %v", err)
 	}
 	text := string(raw)
 	if strings.Count(text, `echo "CHECKOUT_ROOT=$VERIFY_ROOT"`) != 1 {
@@ -91,7 +107,7 @@ func TestCandidateRunbookEmitsParserMarkers(t *testing.T) {
 		t.Fatalf("candidate runbook must fail fast in npm ci before marking dependencies ready and running make check")
 	}
 
-	detached := filepath.Join(filepath.Dir(sourceFile), "..", "..", "docs", "runbooks", "live-e2e", "detached.sh")
+	detached := filepath.Join(repoRoot, "docs", "runbooks", "live-e2e", "detached.sh")
 	detachedRaw, err := os.ReadFile(detached)
 	if err != nil {
 		t.Fatalf("read detached runbook: %v", err)
