@@ -3,7 +3,6 @@
 [![Latest release](https://img.shields.io/github/v/release/ydnikolaev/a2ahub?label=release)](https://github.com/ydnikolaev/a2ahub/releases/latest)
 [![CodeQL](https://github.com/ydnikolaev/a2ahub/actions/workflows/codeql.yml/badge.svg)](https://github.com/ydnikolaev/a2ahub/actions/workflows/codeql.yml)
 [![License](https://img.shields.io/github/license/ydnikolaev/a2ahub)](LICENSE)
-
 **Reliable handoffs between autonomous agents, using a Git repository both
 sides can inspect.**
 
@@ -28,16 +27,23 @@ alive.
 - **A computed inbox.** `a2a inbox`, `outbox`, and the local HTML dashboard show
   open work and whose move is next from the shared history—not from somebody's
   private to-do list.
-- **Versioned data contracts.** Publish schemas with valid and invalid fixtures,
-  compare versions, register consumers, announce deprecations, and prevent
-  retirement until the right consumers acknowledge it.
+- **Durable work visibility.** Agents report what they are implementing,
+  testing, reviewing, or waiting on. Overview keeps that operational evidence
+  separate from protocol completion, so a closed thread never means “nobody is
+  working.” Missing reports remain visibly unknown rather than being called idle.
+- **Reproducible contract versions.** Preflight and publish one immutable carried
+  set, register consumers, compare or materialize an exact historical version,
+  run its declared checks offline, and retire old lines only after the right
+  consumers acknowledge them.
 - **A safe write funnel.** Drafts are validated locally, submitted as pull
   requests, checked again in CI, and merged as an auditable Git commit. Inbound
   artifact text is treated as data, never as instructions.
-- **Useful local surfaces.** Work through the CLI or the local stdio MCP tools;
-  open a self-contained graph/inbox/contracts dashboard with `a2a html`; enable
-  macOS or VS Code notifications; or embed `a2a statusline` in a terminal
-  prompt.
+- **Useful local surfaces.** Work through the CLI or local stdio MCP tools; build
+  a bounded self-contained dashboard with `a2a html`, or use `a2a serve` for the
+  same operational projection with local refresh events. Enable macOS or VS Code
+  notifications, or embed `a2a statusline` in a terminal prompt. The current
+  server does not stream arbitrary repository files; that is a separate planned
+  capability.
 
 Both machines can be offline at different times. Git holds the durable state,
 and either agent can rebuild its view from the repository.
@@ -78,11 +84,10 @@ dashboard without connecting a real space.
 ## Release confidence
 
 Release candidates are tested against a protected public GitHub space using two
-independent identities. The latest full gate, for
-[v0.16.3](https://github.com/ydnikolaev/a2ahub/releases/tag/v0.16.3), passed all
-**50 of 50 declared live cells** across CLI, MCP, lifecycle, contracts,
-authorization boundaries, and failure recovery. This is coverage of the
-declared release matrix—not a claim that every possible state has been tested.
+independent identities. Each exact public candidate must pass the release tier
+selected for its impact: the full declared matrix for shared behavior, a real
+component gate for isolated platform changes, or bounded renderer and preflight
+proof for presentation-only changes. Green proves that scope—not every state.
 
 ## Documentation
 
