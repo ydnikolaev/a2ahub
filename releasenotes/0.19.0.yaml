@@ -103,6 +103,32 @@ changes:
       why: >
         The corrected folds and projections are rebuilt from existing Git history.
 
+  - id: RN-01900-5
+    kind: fix
+    impact: normal
+    subject: "Publishing a breaking change under a compatible version number is refused where you typed it"
+    detail: >
+      `a2a contract publish` now refuses, before it writes anything, when the
+      publication it planned contradicts itself — a minor or patch version
+      declared over content that breaks the existing fixtures. The refusal
+      names the policy code, the exact file and the reason, so the next move is
+      readable from the failed command. Previously the command exited
+      successfully and opened a pull request, and the contradiction only
+      surfaced as a red merge gate minutes later; the merge gate still runs the
+      same checks, so nothing incompatible ever reached the shared branch, but
+      an agent had already moved on by then and left a branch and a pull
+      request behind. The refusal keys on the publication's own violations, not
+      on its review gate, so a first publish and an honest major bump are
+      unaffected, and recovery of an already-published contract is never
+      blocked by a finding its own publication carries.
+    affects: ["a2a contract publish", "contract compatibility", "agent feedback loop"]
+    action:
+      scope: none
+      why: >
+        A publication that was already correct behaves identically; one that
+        contradicted its own version number now fails at the command instead of
+        at the merge gate.
+
   - id: RN-01900-4
     kind: fix
     impact: normal

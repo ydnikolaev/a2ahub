@@ -893,3 +893,65 @@ func appendPublicationOrder(order *[]string, value string) {
 		*order = append(*order, value)
 	}
 }
+
+// TestContractPublicationRefusesAViolationBeforeTheFunnel pins the decision the
+// pure planner deliberately does not take.
+//
+// `internal/contract` returns findings and decides no policy, so a publication
+// whose declared bump contradicts its own computed compatibility comes back as
+// a VALID plan carrying a POL-007 violation — asserted by that package's own
+// TestPlanPublicationMaintenanceBaselineAndCompatibility. Deciding is this
+// layer's job. Until this refusal existed nothing took it: the violation rode
+// along in the result, the publication reached the funnel, and the author got a
+// zero exit and an open pull request whose merge gate then went red. Together
+// with the planner's test this covers the whole chain: violation computed ->
+// violation carried -> publication refused, naming the code and the path.
+func TestContractPublicationRefusesAViolationBeforeTheFunnel(t *testing.T) {
+	t.Parallel()
+
+	reader, source := publicationDeclaredCandidate(nil, false)
+	main := &publicationMainFake{
+		commit: strings.Repeat("a", 40),
+		lookup: ContractPublicationIntentLookup{Matches: []ContractPublicationCompletion{}, Exhaustive: true},
+	}
+	remote := &publicationRemoteFake{listing: ContractPublicationHeadListing{Heads: []ContractPublicationHeadProof{}, Exhaustive: true}}
+	planningContext := publicationPlanningContext(strings.Repeat("a", 40), "0.19.0")
+	planningContext.Violations = []contract.Finding{{
+		Code: "POL-007", Path: "fixtures/valid/demo.json",
+		Message: "declared minor bump contradicts computed compatibility",
+	}}
+	planning := &publicationPlanningFake{context: planningContext}
+	events := &publicationEventBuilder{}
+	validator := &publicationSubmitValidator{}
+	service := mustPublicationService(t, main, planning, remote, events,
+		NewWriteFunnel(host.NewFakeHost(), validator, "0.19.0"))
+
+	result, err := service.Publish(t.Context(), ContractPublicationRequest{
+		System: "atlas", ContractID: "XC-atlas-demo", Selector: "auto:major",
+		Candidate: reader, CandidateSource: source,
+	})
+
+	var refusal *ContractPublicationViolationError
+	if !errors.As(err, &refusal) || !errors.Is(err, ErrContractPublicationInvalid) {
+		t.Fatalf("error = %v, want a violation refusal classified as an invalid publication", err)
+	}
+	// The message alone has to be actionable: a bare count sends the author
+	// back to a plan they cannot see from the failed command.
+	if !strings.Contains(err.Error(), "POL-007") ||
+		!strings.Contains(err.Error(), "fixtures/valid/demo.json") ||
+		!strings.Contains(err.Error(), "declared minor bump contradicts computed compatibility") {
+		t.Fatalf("refusal = %q, want the code, the path and the reason", err.Error())
+	}
+	if events.calls != 0 || validator.candidateCalls != 0 || validator.finalCalls != 0 {
+		t.Fatalf("refusal reached the write path: events=%d candidate=%d final=%d",
+			events.calls, validator.candidateCalls, validator.finalCalls)
+	}
+	// The plan is still returned, so a caller can render exactly what was
+	// refused without re-planning.
+	if len(result.Plan.Violations) != 1 || result.Plan.Violations[0].Code != "POL-007" {
+		t.Fatalf("refused result carries plan violations = %+v", result.Plan.Violations)
+	}
+	if result.Status != "" {
+		t.Fatalf("refused result status = %q, want no status", result.Status)
+	}
+}
