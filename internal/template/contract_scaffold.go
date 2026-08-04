@@ -122,6 +122,36 @@ func ScaffoldContractInStaging(stagingDir, ownSystem, slug string, writeFile fun
 	return written, nil
 }
 
+// ScaffoldContractCandidateInStaging creates the complete publication
+// candidate produced by fresh contract authoring: the rendered descriptor and
+// its schema/fixture scaffold share one contained provides/<slug> root. The
+// flat draft remains the submit surface; this copy is the durable authoring
+// candidate selected by contract preflight/publish after submit lands.
+func ScaffoldContractCandidateInStaging(stagingDir, ownSystem, slug string, draft []byte, writeFile func(string, []byte, os.FileMode) error) ([]string, error) {
+	layout, err := space.NewLayout(ownSystem)
+	if err != nil {
+		return nil, err
+	}
+	descriptor := filepath.Join(stagingDir, filepath.FromSlash(layout.ProvidesContract(slug)))
+	var written []string
+	if _, statErr := os.Stat(descriptor); statErr == nil {
+		// Never overwrite an author's existing candidate descriptor.
+	} else if !os.IsNotExist(statErr) {
+		return nil, statErr
+	} else {
+		if err := os.MkdirAll(filepath.Dir(descriptor), 0o755); err != nil {
+			return nil, err
+		}
+		if err := writeFile(descriptor, draft, 0o644); err != nil {
+			return nil, err
+		}
+		written = append(written, descriptor)
+	}
+	sidecars, err := ScaffoldContractInStaging(stagingDir, ownSystem, slug, writeFile)
+	written = append(written, sidecars...)
+	return written, err
+}
+
 // ContractDraftSchemaFormat decodes schema_format from a just-rendered
 // contract draft's OWN frontmatter — what Render produced, never the
 // template's literal default — so it reflects whatever `schema_format`

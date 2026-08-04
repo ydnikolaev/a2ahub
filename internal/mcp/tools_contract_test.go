@@ -376,12 +376,13 @@ func TestContractNewDelegatesToNewDraft(t *testing.T) {
 		t.Fatalf("contract new failed: %v", err)
 	}
 	drafts, ok := result.([]newDraftResult)
-	// P37 D-D/P43: a JSON-Schema contract is drafted AND scaffolded — the .md
-	// plus its starter schema and valid and invalid fixtures, so the contract is
-	// publishable (POL-009) and §5.4b has a baseline the moment it exists.
+	// P37 D-D/P43: a JSON-Schema contract is drafted AND scaffolded — the flat
+	// submit draft plus a complete candidate descriptor, starter schema and
+	// valid/invalid fixtures, so the first version is publishable at the current
+	// declared-v2 floor and §5.4b has a baseline the moment it exists.
 	// Every entry reports the same contract id; the paths differ.
-	if !ok || len(drafts) != 4 {
-		t.Fatalf("expected the drafted contract plus its schema/fixture scaffold (4 entries), got %#v", result)
+	if !ok || len(drafts) != 5 {
+		t.Fatalf("expected the submit draft plus a complete four-file publication candidate, got %#v", result)
 	}
 	for _, d := range drafts {
 		if !strings.HasPrefix(d.ID, "XC-") {
@@ -391,10 +392,11 @@ func TestContractNewDelegatesToNewDraft(t *testing.T) {
 	if !strings.HasSuffix(drafts[0].Path, ".md") {
 		t.Fatalf("the draft itself must come first, got %q", drafts[0].Path)
 	}
-	if !strings.HasSuffix(drafts[1].Path, "/schema/widget.schema.json") ||
-		!strings.HasSuffix(drafts[2].Path, "/fixtures/valid/widget.json") ||
-		!strings.HasSuffix(drafts[3].Path, "/fixtures/invalid/widget.json") {
-		t.Fatalf("scaffold paths must follow D-E's stem mapping, got %q, %q, and %q", drafts[1].Path, drafts[2].Path, drafts[3].Path)
+	if !strings.HasSuffix(drafts[1].Path, "/provides/widget/contract.md") ||
+		!strings.HasSuffix(drafts[2].Path, "/schema/widget.schema.json") ||
+		!strings.HasSuffix(drafts[3].Path, "/fixtures/valid/widget.json") ||
+		!strings.HasSuffix(drafts[4].Path, "/fixtures/invalid/widget.json") {
+		t.Fatalf("candidate paths must include its descriptor and follow D-E's stem mapping, got %#v", drafts)
 	}
 }
 

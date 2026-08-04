@@ -218,7 +218,7 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 	// change would NOT be refused. This sub-step is not literal in the
 	// brief's own step 1 wording; it is required by the product's actual
 	// behavior and is recorded as a deviation in the wave report.
-	if _, stderr, err := a.Run(ctx, contractPublishVersionArgs(sub.ID, "1.0.0", "")...); err != nil {
+	if _, stderr, err := a.Run(ctx, contractPublishVersionArgs(sub.ID, "1.0.0", contractPaths.StagingRoot)...); err != nil {
 		return ac973ResultFromErr("register-baseline-v1", fmt.Errorf("%w: %s", err, stderr), "`a2a contract publish --version 1.0.0` registers the first REAL published version (isFirstPublish, G1-gated, no compat baseline yet)")
 	}
 	publishBranch := space.BranchName(a.System, "contract-publish", sub.ID)

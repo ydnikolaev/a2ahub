@@ -125,8 +125,8 @@ func TestSubmitHandlerContractCarriesTheNewScaffold(t *testing.T) {
 		t.Fatalf("a2a_new contract: %v", err)
 	}
 	drafts := result.([]newDraftResult)
-	if len(drafts) != 4 {
-		t.Fatalf("a2a_new returned %d paths, want contract.md + 3 scaffold sidecars", len(drafts))
+	if len(drafts) != 5 {
+		t.Fatalf("a2a_new returned %d paths, want flat draft + complete four-file candidate", len(drafts))
 	}
 	id := drafts[0].ID
 
