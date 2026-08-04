@@ -531,3 +531,64 @@ func TestPollLoopUsesInjectedTickerAndStopsWithoutSleep(t *testing.T) {
 		t.Fatal("poll loop did not stop")
 	}
 }
+
+// TestBackgroundRefreshFailureIsVisibleToBothChannels pins that a server whose
+// refresh loop is failing stops looking healthy.
+//
+// It used to be completely silent: keepalives flowed, /api/v1/snapshot kept
+// answering 200, and the body stayed frozen at the last good generation for as
+// long as the process ran. The error was stored in a field nothing read, so a
+// consumer polling the dashboard could not tell live data from data that
+// stopped updating an hour ago.
+func TestBackgroundRefreshFailureIsVisibleToBothChannels(t *testing.T) {
+	t.Parallel()
+	var operatorLog bytes.Buffer
+	config := DefaultConfig()
+	config.ErrorLog = &operatorLog
+	reader := &fakeReader{snapshot: testSnapshot("sha256:one")}
+	server, err := New(config, reader, nil, fakeRenderer{shell: []byte("dashboard")}, newFakeTickerFactory())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := server.publish(t.Context(), testSnapshot("sha256:one")); err != nil {
+		t.Fatalf("publish error = %v", err)
+	}
+
+	healthy := request(t, server, http.MethodGet, "/api/v1/snapshot", false)
+	if healthy.header.Get(StaleHeader) != "" {
+		t.Fatalf("a healthy server marked its snapshot stale: %q", healthy.header.Get(StaleHeader))
+	}
+
+	reader.setError(errors.New("read committed evidence: mirror is unreadable"))
+	// Two failures, one transition: the operator channel must not emit a line
+	// per tick — at the minimum refresh interval that is four lines a second.
+	for range 2 {
+		if refreshErr := server.refresh(t.Context()); refreshErr != nil {
+			server.recordError(refreshErr)
+		}
+	}
+
+	stale := request(t, server, http.MethodGet, "/api/v1/snapshot", false)
+	if stale.status != http.StatusOK {
+		t.Fatalf("a stale server stopped answering: status = %d", stale.status)
+	}
+	if got := stale.header.Get(StaleHeader); !strings.Contains(got, "mirror is unreadable") {
+		t.Fatalf("%s = %q, want the failing reason", StaleHeader, got)
+	}
+	if got := strings.Count(operatorLog.String(), "background refresh is failing"); got != 1 {
+		t.Fatalf("operator log has %d failure lines, want exactly one per transition: %q", got, operatorLog.String())
+	}
+
+	reader.setError(nil)
+	if refreshErr := server.refresh(t.Context()); refreshErr != nil {
+		t.Fatalf("recovered refresh error = %v", refreshErr)
+	}
+	server.recordSuccess()
+	recovered := request(t, server, http.MethodGet, "/api/v1/snapshot", false)
+	if recovered.header.Get(StaleHeader) != "" {
+		t.Fatalf("a recovered server still marks its snapshot stale: %q", recovered.header.Get(StaleHeader))
+	}
+	if !strings.Contains(operatorLog.String(), "recovered") {
+		t.Fatalf("operator log never reported recovery: %q", operatorLog.String())
+	}
+}

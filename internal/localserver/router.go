@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -57,6 +58,7 @@ func (s *Server) handleRoot(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 	}
+	s.setStaleHeader(writer)
 	shell := s.store.shell()
 	if shell == nil {
 		http.Error(writer, "snapshot unavailable", http.StatusServiceUnavailable)
@@ -104,6 +106,7 @@ func (s *Server) handleSnapshot(writer http.ResponseWriter, request *http.Reques
 	etag := weakETag(generation.revision)
 	writer.Header().Set("ETag", etag)
 	writer.Header().Set("Cache-Control", "no-store")
+	s.setStaleHeader(writer)
 	if request.Header.Get("If-None-Match") == etag {
 		writer.WriteHeader(http.StatusNotModified)
 		return
@@ -257,4 +260,44 @@ func withWriteDeadline(writer http.ResponseWriter, duration time.Duration, write
 		clearErr = errors.Join(ErrBoundedWriterUnsupported, clearErr)
 	}
 	return errors.Join(writeErr, clearErr)
+}
+
+// StaleHeader names the response header that says this body is NOT the result
+// of a successful refresh.
+//
+// A header, deliberately, and not a field in the snapshot: the snapshot is the
+// domain's document, and degradation inside it is a domain fact that only the
+// source may assert (see SnapshotReader/FetchSyncer). "My own last refresh
+// attempt failed" is the transport's own fact about its own cache, so it
+// travels beside the body, on the very response whose freshness is in doubt,
+// and the frozen read-only route inventory is untouched.
+const StaleHeader = "X-A2A-Stale"
+
+// maxStaleHeaderBytes bounds an error rendered into a response header.
+const maxStaleHeaderBytes = 512
+
+func (s *Server) setStaleHeader(writer http.ResponseWriter) {
+	err := s.LastError()
+	if err == nil {
+		return
+	}
+	writer.Header().Set(StaleHeader, headerSafe(err.Error()))
+}
+
+// headerSafe reduces an arbitrary error to something legal in a header value:
+// bounded, single-line, and printable ASCII.
+func headerSafe(value string) string {
+	if len(value) > maxStaleHeaderBytes {
+		value = value[:maxStaleHeaderBytes]
+	}
+	var out strings.Builder
+	out.Grow(len(value))
+	for _, r := range value {
+		if r < 0x20 || r > 0x7e {
+			out.WriteByte(' ')
+			continue
+		}
+		out.WriteRune(r)
+	}
+	return strings.TrimSpace(out.String())
 }

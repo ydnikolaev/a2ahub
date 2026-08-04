@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"regexp"
@@ -70,6 +71,11 @@ type Config struct {
 	IdleTimeout       time.Duration
 	MaxHeaderBytes    int
 	ShutdownTimeout   time.Duration
+	// ErrorLog receives ONE line when the background refresh starts failing
+	// and one when it recovers — never one per tick, which at the minimum
+	// refresh interval would be four lines a second. Optional; nil silences
+	// the operator channel and leaves the response header as the only signal.
+	ErrorLog io.Writer
 }
 
 // DefaultConfig returns the safe localserver configuration.
@@ -261,20 +267,48 @@ func New(config Config, reader SnapshotReader, syncer FetchSyncer, renderer Shel
 // Handler returns the read-only HTTP handler.
 func (s *Server) Handler() http.Handler { return s.routeHandler() }
 
-// LastError returns the most recent background refresh or sync error.
+// LastError reports the CURRENT background degradation: the error from the
+// latest failed refresh or sync attempt, or nil once an attempt succeeds
+// again. It is the same fact the stale-snapshot response header carries.
 func (s *Server) LastError() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.lastError
 }
 
+// recordError marks the served generation as no longer the result of a
+// successful attempt.
+//
+// A refresh loop that fails every tick used to be completely invisible: the
+// keepalives kept flowing, /api/v1/snapshot kept answering 200, and the data
+// silently stayed frozen at the last good generation for as long as the
+// process ran. A consumer — an agent polling the dashboard most of all — had
+// no way to tell a live snapshot from one that stopped updating an hour ago.
+// The error was stored in a field nothing read.
 func (s *Server) recordError(err error) {
 	if err == nil {
 		return
 	}
 	s.mu.Lock()
+	first := s.lastError == nil
 	s.lastError = err
+	log := s.config.ErrorLog
 	s.mu.Unlock()
+	if first && log != nil {
+		_, _ = fmt.Fprintf(log, "a2a serve: background refresh is failing; served data is frozen at the last good snapshot: %v\n", err)
+	}
+}
+
+// recordSuccess clears the degradation after an attempt that worked.
+func (s *Server) recordSuccess() {
+	s.mu.Lock()
+	recovered := s.lastError != nil
+	s.lastError = nil
+	log := s.config.ErrorLog
+	s.mu.Unlock()
+	if recovered && log != nil {
+		_, _ = fmt.Fprintln(log, "a2a serve: background refresh recovered; served data is current again")
+	}
 }
 
 func (s *Server) publish(ctx context.Context, snapshot operational.Snapshot) error {
@@ -365,7 +399,9 @@ func (s *Server) pollLoop(ctx context.Context) {
 		case <-ticker.C():
 			if err := s.refresh(ctx); err != nil {
 				s.recordError(err)
+				continue
 			}
+			s.recordSuccess()
 		}
 	}
 }
@@ -380,7 +416,9 @@ func (s *Server) syncLoop(ctx context.Context) {
 		case <-ticker.C():
 			if err := s.sync(ctx); err != nil {
 				s.recordError(err)
+				continue
 			}
+			s.recordSuccess()
 		}
 	}
 }

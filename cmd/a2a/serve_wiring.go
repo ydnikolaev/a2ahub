@@ -112,9 +112,14 @@ type productionServeLauncher struct {
 	renderer *html.DashboardRenderer
 	opener   func(string) error
 	warn     func(error)
+	errorLog io.Writer
 }
 
 func (launcher productionServeLauncher) Serve(ctx context.Context, options cli.ServeOptions) error {
+	// The operator channel for a refresh loop that starts failing. Without it
+	// a serve whose background refresh dies keeps answering with data frozen
+	// at the last good snapshot and says nothing to anyone.
+	options.Config.ErrorLog = launcher.errorLog
 	server, err := localserver.New(options.Config, launcher.source, launcher.source, launcher.renderer, nil)
 	if err != nil {
 		return err

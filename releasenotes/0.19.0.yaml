@@ -103,6 +103,26 @@ changes:
       why: >
         The corrected folds and projections are rebuilt from existing Git history.
 
+  - id: RN-01900-6
+    kind: fix
+    impact: normal
+    subject: "A local server whose refresh is failing no longer looks healthy"
+    detail: >
+      `a2a serve` keeps answering from the last good snapshot when its
+      background refresh fails, which is the right thing to do — but it used to
+      do it silently, so a reader could not tell live data from data that
+      stopped updating an hour ago. Every affected response now carries an
+      `X-A2A-Stale` header naming the reason, and the terminal running the
+      server gets one line when the refresh starts failing and one when it
+      recovers, never one per refresh. The snapshot document itself is
+      unchanged: what is stale is the server's own copy, not a fact about the
+      spaces it projects.
+    affects: ["a2a serve", "local dashboard", "operational snapshot"]
+    action:
+      scope: none
+      why: >
+        A healthy server behaves and responds exactly as before.
+
   - id: RN-01900-5
     kind: fix
     impact: normal

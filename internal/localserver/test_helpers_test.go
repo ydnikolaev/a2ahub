@@ -35,6 +35,12 @@ func (f *fakeReader) Snapshot(context.Context) (operational.Snapshot, error) {
 	return snapshot, err
 }
 
+func (f *fakeReader) setError(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.err = err
+}
+
 type fakeSyncer struct {
 	mu       sync.Mutex
 	snapshot operational.Snapshot
