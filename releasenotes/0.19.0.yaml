@@ -122,7 +122,10 @@ changes:
       requests it lands mid-scenario can no longer expire the stream and
       discard the buffered revision it exists to observe, and its conformance
       proof accepts the whole-document JSON pointer that a root-level schema
-      violation legitimately carries.
+      violation legitimately carries. Every live run now retains its rendered
+      report next to the evidence it produced, so a verdict is readable after
+      the session that produced it ends rather than only in that session's
+      terminal.
     affects: ["write preflight", "a2a doctor", "cache visibility", "GitHub cleanup", "release live E2E"]
     action:
       scope: none
