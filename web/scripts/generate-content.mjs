@@ -164,7 +164,8 @@ const routeManifest = {
         markdown: interpolate(routeConfig.documentation.markdown_template, values),
         llms_section: routeConfig.documentation.llms_section,
         structured_data: routeConfig.documentation.structured_data,
-        html_budget_kib: routeConfig.documentation.html_budget_kib,
+        html_budget_kib: routeConfig.documentation.html_budget_kib_by_id?.[doc.id]
+          ?? routeConfig.documentation.html_budget_kib,
         docs_group: doc.group,
         change_sources: [`skill/${doc.file}`],
         lastmod: sourceLastModified([`skill/${doc.file}`]) ?? undefined
