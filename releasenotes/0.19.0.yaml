@@ -215,6 +215,12 @@ changes:
       asking it to record writes the report and the lifecycle transition
       together, in the direction the report itself derived — there is no flag
       that lets a caller declare a pass over a failing report.
+      The loop was proven end to end between two parties before release, and
+      that proof is what found and closed the defects that would otherwise
+      have reached the first real exchange: verification could not resolve
+      the contract of any package packing had produced, delivery refused
+      every real manifest, and a contract published under the older digest
+      profile reported having no schemas at all.
     affects: ["a2a data pack", "a2a data deliver", "a2a data fetch", "a2a data verify", "a2a_data", "data-package/v1", "verification-report/v1", "dashboard"]
     action:
       scope: local
