@@ -3,7 +3,6 @@
 package livee2e
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -651,7 +650,16 @@ func operationalStaticServer(ctx context.Context, oc *operationalConfidenceRun) 
 	}
 	proof.Pass("operational-rows-equal")
 
-	sseCtx, cancelSSE := context.WithTimeout(ctx, 3*time.Minute)
+	// The stream is opened BEFORE the mutations below so it observes the
+	// revision transition they cause, and its deadline is deliberately NOT a
+	// timeout on the request: the work between here and the first read lands
+	// two pull requests through the real provider and routinely outlives any
+	// read budget. A `context.WithTimeout` here expired while the caller was
+	// still merging, and net/http then cancelled the request and discarded
+	// every buffered event, leaving exactly the header-flushing keepalive and
+	// `context deadline exceeded` — the observed LE-OC-03 failure. The budget
+	// below is a READ budget, armed once there is something to read.
+	sseCtx, cancelSSE := context.WithCancel(ctx)
 	defer cancelSSE()
 	sseRequest, _ := http.NewRequestWithContext(sseCtx, http.MethodGet, baseURL+"/api/v1/events", nil)
 	sseRequest.Header.Set("Last-Event-ID", initial.Revision)
@@ -660,6 +668,7 @@ func operationalStaticServer(ctx context.Context, oc *operationalConfidenceRun) 
 		return proof, VerdictFail, err
 	}
 	defer func() { _ = sseResponse.Body.Close() }()
+	sseEvents := newSSEStream(sseResponse.Body)
 	checkpoint, err := operationalWorkCommand(ctx, oc, oc.h.B, "work", "checkpoint", "--work-id", oc.workB.ID, "--session", oc.workB.Session, "--mode", "reviewing", "--summary", "server checkpoint committed", "--report-valid-for", "30m")
 	if err != nil {
 		return proof, VerdictFail, err
@@ -673,7 +682,9 @@ func operationalStaticServer(ctx context.Context, oc *operationalConfidenceRun) 
 	if _, stderr, err := oc.h.B.Run(ctx, "sync"); err != nil {
 		return proof, VerdictFail, fmt.Errorf("sync checkpoint for server: %w: %s", err, stderr)
 	}
-	sseBlock, err := operationalReadRevisionSSE(sseResponse.Body)
+	readBudget := time.AfterFunc(3*time.Minute, cancelSSE)
+	defer readBudget.Stop()
+	sseBlock, err := sseEvents.readUntilRevision()
 	if err != nil || !strings.Contains(sseBlock, "event: revision") || strings.Contains(sseBlock, "timeline") {
 		return proof, VerdictFail, fmt.Errorf("SSE was not revision-only: %w: %q", err, sseBlock)
 	}
@@ -1327,38 +1338,6 @@ func operationalReadBounded(reader io.Reader, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("response exceeds %d-byte limit", limit)
 	}
 	return raw, nil
-}
-
-func operationalReadSSE(reader io.Reader) (string, error) {
-	lines := bufio.NewReader(io.LimitReader(reader, 64<<10))
-	var block strings.Builder
-	for {
-		line, err := lines.ReadString('\n')
-		block.WriteString(line)
-		if line == "\n" {
-			return block.String(), nil
-		}
-		if err != nil {
-			return block.String(), err
-		}
-	}
-}
-
-func operationalReadRevisionSSE(reader io.Reader) (string, error) {
-	var observed strings.Builder
-	for {
-		block, err := operationalReadSSE(reader)
-		observed.WriteString(block)
-		if strings.Contains(observed.String(), "timeline") {
-			return observed.String(), errors.New("SSE exposed snapshot rows")
-		}
-		if strings.Contains(block, "event: revision") {
-			return observed.String(), err
-		}
-		if err != nil {
-			return observed.String(), err
-		}
-	}
 }
 
 func operationalGit(ctx context.Context, dir string, args ...string) (string, error) {
