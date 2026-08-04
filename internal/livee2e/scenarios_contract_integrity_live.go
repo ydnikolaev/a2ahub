@@ -204,6 +204,10 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 	if err := happyLandAndSync(ctx, h, a, sub.PRNumber); err != nil {
 		return ac973ResultFromErr("publish-land-sync", err, "the published contract lands on main and reaches A's mirror")
 	}
+	contractPaths, err := contractPathsForID(sub.ID)
+	if err != nil {
+		return ac973ResultFromErr("resolve-contract-staging", err, "the current contract id resolves to its contained staging root")
+	}
 
 	// --- 1b. Register v1.0.0 as a REAL published version. A raw `a2a
 	// submit` writes a TPublish event with no `version` field
@@ -214,7 +218,7 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 	// change would NOT be refused. This sub-step is not literal in the
 	// brief's own step 1 wording; it is required by the product's actual
 	// behavior and is recorded as a deviation in the wave report.
-	if _, stderr, err := a.Run(ctx, "contract", "publish", sub.ID, "--version", "1.0.0"); err != nil {
+	if _, stderr, err := a.Run(ctx, "contract", "publish", sub.ID, "--version", "1.0.0", "--staging", contractPaths.StagingRoot); err != nil {
 		return ac973ResultFromErr("register-baseline-v1", fmt.Errorf("%w: %s", err, stderr), "`a2a contract publish --version 1.0.0` registers the first REAL published version (isFirstPublish, G1-gated, no compat baseline yet)")
 	}
 	publishBranch := space.BranchName(a.System, "contract-publish", sub.ID)
@@ -253,7 +257,7 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 	if err != nil {
 		return ac973ResultFromErr("breaking-minor-refused", err, "can list PRs on the contract-publish branch before the refused attempt")
 	}
-	_, minorStderr, minorErr := a.Run(ctx, "contract", "publish", sub.ID, "--bump", "minor")
+	_, minorStderr, minorErr := a.Run(ctx, "contract", "publish", sub.ID, "--bump", "minor", "--staging", contractPaths.StagingRoot)
 	if minorErr == nil {
 		return ac973Fail("breaking-minor-refused", "a2a contract publish --bump minor exited 0",
 			"AC-970.1: a breaking change declared as a minor is REFUSED, naming the offending fixture", "")
@@ -274,7 +278,7 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 
 	// --- 4. A publishes the SAME change correctly, as a major (D-B: a
 	// major bump is not compat-checked, and says so). ---
-	if _, stderr, err := a.Run(ctx, "contract", "publish", sub.ID, "--bump", "major"); err != nil {
+	if _, stderr, err := a.Run(ctx, "contract", "publish", sub.ID, "--bump", "major", "--staging", contractPaths.StagingRoot); err != nil {
 		return ac973ResultFromErr("major-publish", fmt.Errorf("%w: %s", err, stderr), "the SAME breaking change declared as a major publishes successfully (majors are not compat-checked)")
 	}
 	majorPR, err := h.pullForBranch(ctx, publishBranch)
@@ -292,11 +296,6 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 	// origin/main rather than anything local. Without it the row could pass
 	// on a publish that refused the minor for the right reason and then
 	// landed a major carrying nothing.
-	contractPaths, err := contractPathsForID(sub.ID)
-	if err != nil {
-		return ac973ResultFromErr("major-publish-carries-schema", err,
-			"the contract's run-scoped schema path resolves from its returned ID")
-	}
 	landedSchema, err := os.ReadFile(filepath.Join(a.MirrorDir(),
 		filepath.FromSlash(contractPaths.SchemaFile)))
 	if err != nil {

@@ -290,6 +290,11 @@ func TestMinBinaryVersionGuard(t *testing.T) {
 	if !errors.Is(err, ErrStaleBinaryVersion) {
 		t.Fatalf("Submit error = %v, want ErrStaleBinaryVersion", err)
 	}
+	for _, want := range []string{"current binary 1.0.0", "min_binary_version 2.0.0", "update a2a"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Submit error = %q, want actionable detail %q", err, want)
+		}
+	}
 	if len(fake.Pushes) != 0 || len(fake.Opens) != 0 {
 		t.Fatalf("expected zero git-host mutation on refusal, got pushes=%d opens=%d", len(fake.Pushes), len(fake.Opens))
 	}

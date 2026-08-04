@@ -526,6 +526,9 @@ func walkArtifacts(dir string) ([]rawArtifact, []SkippedFile, error) {
 		// artifact from a missing one. Use the write funnel's exported predicate
 		// rather than teaching the read walk a second infrastructure list.
 		rel, relErr := filepath.Rel(dir, path)
+		if relErr == nil && filepath.ToSlash(rel) == "README.md" {
+			return nil
+		}
 		if relErr == nil && space.IsInfrastructurePath(filepath.ToSlash(rel)) {
 			return nil
 		}

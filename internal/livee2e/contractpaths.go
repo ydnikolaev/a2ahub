@@ -13,6 +13,8 @@ import (
 // destructive-space generation, so recomputing paths from a scenario's base
 // slug can silently address a previous generation.
 type liveContractPaths struct {
+	ContractRoot    string
+	StagingRoot     string
 	SchemaFile      string
 	ValidFixtureKey string
 }
@@ -29,7 +31,10 @@ func contractPathsForID(contractID string) (liveContractPaths, error) {
 	if err != nil {
 		return liveContractPaths{}, fmt.Errorf("livee2e: contract layout for %q: %w", contractID, err)
 	}
+	contractRoot := path.Dir(layout.ProvidesContract(parsed.Slug))
 	return liveContractPaths{
+		ContractRoot:    contractRoot,
+		StagingRoot:     path.Join(".a2a", "staging", contractRoot),
 		SchemaFile:      path.Join(layout.ProvidesSchemaDir(parsed.Slug), parsed.Slug+".schema.json"),
 		ValidFixtureKey: path.Join("fixtures", "valid", parsed.Slug+".json"),
 	}, nil

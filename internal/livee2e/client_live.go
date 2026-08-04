@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -320,7 +321,23 @@ func (c *ghClient) ListBranches(ctx context.Context, owner, name string) ([]stri
 // escaping each one would double-encode a valid ref.
 func (c *ghClient) DeleteRef(ctx context.Context, owner, name, ref string) error {
 	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/git/refs/" + ref
-	_, err := c.do(ctx, http.MethodDelete, path, nil, nil)
+	status, err := c.do(ctx, http.MethodDelete, path, nil, nil)
+	if err == nil || status == http.StatusNotFound {
+		return nil
+	}
+	if status == http.StatusUnprocessableEntity {
+		branches, listErr := c.ListBranches(ctx, owner, name)
+		if listErr != nil {
+			return errors.Join(err, fmt.Errorf("verify ref after delete refusal: %w", listErr))
+		}
+		branch := strings.TrimPrefix(ref, "heads/")
+		for _, existing := range branches {
+			if existing == branch {
+				return err
+			}
+		}
+		return nil
+	}
 	return err
 }
 

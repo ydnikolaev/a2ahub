@@ -144,7 +144,11 @@ func rwDraftContractExcludingPeer(ctx context.Context, h *harness, c *checkout) 
 // its PR. Publish's branch is the plain contract-publish/<id> shape
 // (delete_branch_on_merge makes the name safely reusable across versions).
 func rwPublishAndLand(ctx context.Context, h *harness, a *checkout, id, version, step string) (int, error) {
-	if _, stderr, err := a.Run(ctx, "contract", "publish", id, "--version", version); err != nil {
+	paths, err := contractPathsForID(id)
+	if err != nil {
+		return 0, fmt.Errorf("%s: resolve staging root: %w", step, err)
+	}
+	if _, stderr, err := a.Run(ctx, "contract", "publish", id, "--version", version, "--staging", paths.StagingRoot); err != nil {
 		return 0, fmt.Errorf("%s: %w: %s", step, err, stderr)
 	}
 	pr, err := h.pullForBranch(ctx, space.BranchName(a.System, "contract-publish", id))
@@ -310,7 +314,11 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	// this whole phase exists to remove is a retire that succeeds and
 	// leaves nothing else possible. A publish on the live line is the
 	// cheapest proof that the subject did not fall into a terminal state.
-	if _, stderr, err := a.Run(ctx, "contract", "publish", sub.ID, "--version", "2.1.0"); err != nil {
+	contractPaths, pathErr := contractPathsForID(sub.ID)
+	if pathErr != nil {
+		return rwResultFromErr("contract-still-operable-after-retire", pathErr, "the current contract id resolves to its contained staging root")
+	}
+	if _, stderr, err := a.Run(ctx, "contract", "publish", sub.ID, "--version", "2.1.0", "--staging", contractPaths.StagingRoot); err != nil {
 		return rwResultFromErr("contract-still-operable-after-retire", fmt.Errorf("%w: %s", err, stderr),
 			"after retiring 1.1.0 the contract is still operable: publishing 2.1.0 on the live line succeeds, rather than every later operation being refused forever")
 	}
