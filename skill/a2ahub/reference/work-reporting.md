@@ -5,8 +5,9 @@ operational view. It reports what an actor says it is doing; it does not infer
 work from an open thread, a lifecycle state, process existence, or elapsed
 time.
 
-Command and tool input syntax is generated in [commands.md](commands.md). This
-page owns only the operating sequence and the honesty rules.
+[commands.md](commands.md) catalogues the `a2a work` subcommands and the
+`a2a_work` tool — synopsis only, **no flags**; do not expect argument grammar
+there. This page owns the operating sequence and the honesty rules.
 
 ## Two observations, two authorities
 
