@@ -2919,7 +2919,71 @@
         }
       ],
       "flags": [],
-      "unresolved": []
+      "unresolved": [],
+      "deliveries": [
+        {
+          "handoffId": "XH-support-20260729-q5n6",
+          "name": "Redaction replay fixture",
+          "ref": "DP-support-20260729-h4k2",
+          "resolution": "resolved",
+          "packageId": "DP-support-20260729-h4k2",
+          "attempt": 2,
+          "supersedes": "DP-support-20260728-b7c1",
+          "verdict": "failed",
+          "reportId": "VR-atlas-20260729-n2p5",
+          "failures": [
+            {
+              "entryPath": "events/cases-2026-07-28.ndjson",
+              "rule": "redaction: message_body must be absent",
+              "record": 4127
+            },
+            {
+              "entryPath": "events/cases-2026-07-28.ndjson",
+              "rule": "schema: attachment_name does not match ^\\[redacted\\]$",
+              "record": 8802
+            },
+            {
+              "entryPath": "index/cases.json",
+              "rule": "schema: required property \"case_count\" is missing"
+            }
+          ],
+          "chain": [
+            {
+              "packageId": "DP-support-20260728-b7c1",
+              "attempt": 1,
+              "resolution": "resolved",
+              "verdict": "failed",
+              "reportId": "VR-atlas-20260728-j9k4"
+            },
+            {
+              "packageId": "DP-support-20260729-h4k2",
+              "attempt": 2,
+              "resolution": "resolved",
+              "verdict": "failed",
+              "reportId": "VR-atlas-20260729-n2p5"
+            }
+          ]
+        },
+        {
+          "handoffId": "XH-support-20260729-q5n6",
+          "name": "Support case index",
+          "ref": "DP-support-20260729-m3q7",
+          "resolution": "resolved",
+          "packageId": "DP-support-20260729-m3q7",
+          "attempt": 1,
+          "verdict": "passed",
+          "reportId": "VR-atlas-20260729-r8t3",
+          "chain": [
+            {
+              "packageId": "DP-support-20260729-m3q7",
+              "attempt": 1,
+              "resolution": "resolved",
+              "verdict": "passed",
+              "reportId": "VR-atlas-20260729-r8t3"
+            }
+          ]
+        }
+      ]
     },
     {
       "thread": "thread:legacycrm-20260709-x3y4",
@@ -3154,6 +3218,33 @@
         {
           "kind": "event-subject",
           "id": "XS-legacycrm-20260709-c5d6"
+        }
+      ],
+      "deliveries": [
+        {
+          "handoffId": "XH-legacycrm-20260709-x3y4",
+          "name": "Final export snapshot",
+          "ref": "DP-legacycrm-20260709-w5z1",
+          "resolution": "resolved",
+          "packageId": "DP-legacycrm-20260709-w5z1",
+          "attempt": 1,
+          "verdict": "unverified",
+          "chain": [
+            {
+              "packageId": "DP-legacycrm-20260709-w5z1",
+              "attempt": 1,
+              "resolution": "resolved",
+              "verdict": "unverified"
+            }
+          ]
+        },
+        {
+          "handoffId": "XH-legacycrm-20260709-x3y4",
+          "name": "Attachment index",
+          "ref": "DP-legacycrm-20260709-q8v3",
+          "resolution": "unresolved",
+          "unavailable": "data package \"DP-legacycrm-20260709-q8v3\" referenced by handoff \"XH-legacycrm-20260709-x3y4\"'s deliverable \"Attachment index\" could not be resolved",
+          "chain": []
         }
       ]
     },
@@ -3610,7 +3701,12 @@
           },
           {
             "name": "Redaction replay fixture",
-            "ref": "support-case-v2-redaction.json",
+            "ref": "DP-support-20260729-h4k2",
+            "kind": "data"
+          },
+          {
+            "name": "Support case index",
+            "ref": "DP-support-20260729-m3q7",
             "kind": "data"
           },
           {
@@ -3875,7 +3971,19 @@
         "thread": "thread:legacycrm-20260709-x3y4",
         "classification": "internal",
         "category": "migration",
-        "context": "The hostile-looking title is deliberate rendering-test data and must never execute as markup."
+        "context": "The hostile-looking title is deliberate rendering-test data and must never execute as markup.",
+        "deliverables": [
+          {
+            "name": "Final export snapshot",
+            "ref": "DP-legacycrm-20260709-w5z1",
+            "kind": "data"
+          },
+          {
+            "name": "Attachment index",
+            "ref": "DP-legacycrm-20260709-q8v3",
+            "kind": "data"
+          }
+        ]
       },
       "body": "Legacy CRM handed off its final export snapshot before leaving the shared space. Atlas still needs to decide whether to accept or decline it.",
       "events": [
