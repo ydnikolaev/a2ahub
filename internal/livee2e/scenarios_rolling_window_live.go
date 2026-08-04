@@ -143,12 +143,16 @@ func rwDraftContractExcludingPeer(ctx context.Context, h *harness, c *checkout) 
 // rwPublishAndLand runs one `a2a contract publish --version <v>` and lands
 // its PR. Publish's branch is the plain contract-publish/<id> shape
 // (delete_branch_on_merge makes the name safely reusable across versions).
-func rwPublishAndLand(ctx context.Context, h *harness, a *checkout, id, version, step string) (int, error) {
+func rwPublishAndLand(ctx context.Context, h *harness, a *checkout, id, version, step string, useStaging bool) (int, error) {
 	paths, err := contractPathsForID(id)
 	if err != nil {
 		return 0, fmt.Errorf("%s: resolve staging root: %w", step, err)
 	}
-	if _, stderr, err := a.Run(ctx, "contract", "publish", id, "--version", version, "--staging", paths.StagingRoot); err != nil {
+	staging := ""
+	if useStaging {
+		staging = paths.StagingRoot
+	}
+	if _, stderr, err := a.Run(ctx, contractPublishVersionArgs(id, version, staging)...); err != nil {
 		return 0, fmt.Errorf("%s: %w: %s", step, err, stderr)
 	}
 	pr, err := h.pullForBranch(ctx, space.BranchName(a.System, "contract-publish", id))
@@ -180,11 +184,11 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	if err := happyLandAndSync(ctx, h, a, sub.PRNumber); err != nil {
 		return rwResultFromErr("submit-land-sync", err, "the drafted contract lands on main and reaches A's mirror")
 	}
-	v100PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "1.0.0", "publish-1.0.0")
+	v100PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "1.0.0", "publish-1.0.0", false)
 	if err != nil {
 		return rwResultFromErr("publish-1.0.0", err, "`a2a contract publish --version 1.0.0` registers the first real published version")
 	}
-	v110PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "1.1.0", "publish-1.1.0")
+	v110PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "1.1.0", "publish-1.1.0", false)
 	if err != nil {
 		return rwResultFromErr("publish-1.1.0", err, "1.1.0 publishes on the same line")
 	}
@@ -192,10 +196,20 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	// --- 2. A opens a SECOND line: 2.0.0, carrying a breaking schema. A
 	// major is not compat-checked (D-B), which is what lets the 1.x line
 	// keep a fixture 2.0 would reject — the asymmetry step 4 depends on. ---
+	contractPaths, err := contractPathsForID(sub.ID)
+	if err != nil {
+		return rwResultFromErr("stage-2.0.0-schema", err, "the run-scoped contract resolves to its complete staging candidate")
+	}
+	if err := os.RemoveAll(filepath.Join(a.Dir, filepath.FromSlash(contractPaths.StagingRoot))); err != nil {
+		return rwResultFromErr("stage-2.0.0-schema", err, "contract-new's transient staging tree can be replaced")
+	}
+	if _, stderr, err := a.Run(ctx, "contract", "materialize", sub.ID+"@1.1.0", "--to", contractPaths.StagingRoot); err != nil {
+		return rwResultFromErr("stage-2.0.0-schema", fmt.Errorf("%w: %s", err, stderr), "the exact 1.1.0 baseline materializes before the 2.0.0 edit")
+	}
 	if err := rwWriteSchema(a, sub.ID, rwSchemaNarrowedToInteger); err != nil {
 		return rwResultFromErr("stage-2.0.0-schema", err, "the contract's staged schema can be narrowed for the 2.x line")
 	}
-	v200PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "2.0.0", "publish-2.0.0")
+	v200PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "2.0.0", "publish-2.0.0", true)
 	if err != nil {
 		return rwResultFromErr("publish-2.0.0", err, "2.0.0 opens a second line (a major bump is not compat-checked, D-B)")
 	}
@@ -272,7 +286,7 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	if err := rwWriteSchema(a, sub.ID, rwSchemaWidened); err != nil {
 		return rwResultFromErr("stage-1.2.0-schema", err, "the contract's staged schema can be widened for the maintenance line")
 	}
-	v120PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "1.2.0", "publish-1.2.0-maintenance")
+	v120PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "1.2.0", "publish-1.2.0-maintenance", true)
 	if err != nil {
 		return rwResultFromErr("publish-1.2.0-maintenance", err,
 			"AC-8 (live): `publish --version 1.2.0` succeeds while 1.1.0 is deprecated and 2.0.0 is published — per-version legality allows it, and the compat check runs against 1.1.0")

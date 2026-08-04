@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"slices"
 	"testing"
 )
 
@@ -39,6 +40,20 @@ func TestContractPathsRefuseNonContractIDs(t *testing.T) {
 				t.Fatalf("contractPathsForID(%q) succeeded, want refusal", id)
 			}
 		})
+	}
+}
+
+func TestContractPublishVersionArgsDistinguishLandedAndCompleteStagingSources(t *testing.T) {
+	t.Parallel()
+
+	landed := contractPublishVersionArgs("XC-alpha-orders", "1.0.0", "")
+	if slices.Contains(landed, "--staging") {
+		t.Fatalf("landed publication unexpectedly selected staging: %v", landed)
+	}
+	staged := contractPublishVersionArgs("XC-alpha-orders", "2.0.0", ".a2a/staging/alpha/provides/orders")
+	want := []string{"contract", "publish", "XC-alpha-orders", "--version", "2.0.0", "--staging", ".a2a/staging/alpha/provides/orders"}
+	if !slices.Equal(staged, want) {
+		t.Fatalf("staged publication args = %v, want %v", staged, want)
 	}
 }
 

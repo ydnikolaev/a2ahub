@@ -110,9 +110,10 @@ changes:
       mistakes the checkout README for a malformed exchange artifact, while
       cleanup retries confirm that an already-removed remote branch is truly
       absent before reporting success. The release live harness follows the
-      same canonical work result and explicit contract staging paths as real
-      agents, so candidate evidence exercises the shipped flows rather than a
-      test-only approximation.
+      same canonical work result, latest-report projection and full
+      materialize-edit-publish contract flow as real agents, so candidate
+      evidence exercises the shipped flows rather than a test-only
+      approximation.
     affects: ["write preflight", "a2a doctor", "cache visibility", "GitHub cleanup", "release live E2E"]
     action:
       scope: none

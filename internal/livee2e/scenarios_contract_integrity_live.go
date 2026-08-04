@@ -218,7 +218,7 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 	// change would NOT be refused. This sub-step is not literal in the
 	// brief's own step 1 wording; it is required by the product's actual
 	// behavior and is recorded as a deviation in the wave report.
-	if _, stderr, err := a.Run(ctx, "contract", "publish", sub.ID, "--version", "1.0.0", "--staging", contractPaths.StagingRoot); err != nil {
+	if _, stderr, err := a.Run(ctx, contractPublishVersionArgs(sub.ID, "1.0.0", "")...); err != nil {
 		return ac973ResultFromErr("register-baseline-v1", fmt.Errorf("%w: %s", err, stderr), "`a2a contract publish --version 1.0.0` registers the first REAL published version (isFirstPublish, G1-gated, no compat baseline yet)")
 	}
 	publishBranch := space.BranchName(a.System, "contract-publish", sub.ID)
@@ -228,6 +228,12 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 	}
 	if err := happyLandAndSync(ctx, h, a, baselinePR.Number); err != nil {
 		return ac973ResultFromErr("register-baseline-land-sync", err, "the v1.0.0 registration lands on main and reaches A's mirror")
+	}
+	if err := os.RemoveAll(filepath.Join(a.Dir, filepath.FromSlash(contractPaths.StagingRoot))); err != nil {
+		return ac973ResultFromErr("stage-baseline-v1", err, "the first published version can replace contract-new's transient staging tree")
+	}
+	if _, stderr, err := a.Run(ctx, "contract", "materialize", sub.ID+"@1.0.0", "--to", contractPaths.StagingRoot); err != nil {
+		return ac973ResultFromErr("stage-baseline-v1", fmt.Errorf("%w: %s", err, stderr), "the exact published baseline materializes as the complete staging candidate before an edit")
 	}
 
 	// --- 2. B adopts the contract: a REGISTERED consumer, deliberately
