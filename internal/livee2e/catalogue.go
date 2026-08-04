@@ -191,6 +191,20 @@ func Catalogue() []Scenario {
 		// real branch protection while other versions are published.
 		{Name: "contract-rolling-window", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "contract-integrity"},
 
+		// Spec 05a — the contract data exchange loop, against real
+		// GitHub: A publishes a contract and a work_request, B packs and
+		// delivers a FAILING attempt (a record_count disagreement the
+		// digest cannot see), A records the failure, B packs and
+		// delivers a SECOND attempt that SUPERSEDES the first, A records
+		// a pass, B answers the original work_request and A closes it.
+		// Filed under SystemA, matching contract-integrity-registered-
+		// consumer's own precedent above: A is the requester/consumer
+		// whose work_request and verify-record calls the row's own
+		// narrative follows, and a second declaration under SystemB
+		// would double the Actions spend to re-observe the same
+		// exchange from the producer's own end.
+		{Name: "data-loop-fail-supersede-pass", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"work_request", "handoff"}, Family: "data-loop"},
+
 		// AC-980.1 (spec 38 wave F) — Layer-1 rows for the five envelope
 		// kinds nothing else in this matrix drives: the whole legal
 		// lifecycle to a terminal state, against real GitHub, both

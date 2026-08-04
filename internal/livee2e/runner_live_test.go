@@ -149,7 +149,7 @@ func TestLiveMatrix(t *testing.T) {
 	}
 }
 
-// driveFamilies runs the eleven scenario families and records what they return.
+// driveFamilies runs the twelve scenario families and records what they return.
 //
 // SERIALLY, and that is a correctness requirement rather than a simplification:
 // the families are file-disjoint but they all drive ONE real space, and two of
@@ -206,6 +206,13 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 		// question and response), so it sits with them, ahead of the
 		// families that bend protection and the write floor.
 		{"thread-chain", runThreadChainScenarios},
+		// Spec 05a — the contract data exchange loop. Same "no
+		// shared-state mutation" property as the families above (its one
+		// row authors its own fresh contract, work_request and data
+		// packages), so placed right after them, still ahead of
+		// boundary/refusal/space, which deliberately bend protection and
+		// the write floor.
+		{"data-loop", runDataLoopScenarios},
 		{"boundary", runBoundaryScenarios},
 		{"refusal", runRefusalScenarios},
 		{"space", runSpaceScenarios},
