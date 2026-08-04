@@ -21,10 +21,10 @@
 |---|---|---|---|
 | `pack` | `--contract <XC-id>@<version>` | yes | The exact contract version every entry is checked against, pinned into the manifest. A digest suffix (`#sha256:…`) is accepted and re-proven. |
 | `pack` | `--from <dir>` | yes | The local source tree. Read-only; nothing under it is modified. See the directory-mapping section below — this is where most packs fail. |
-| `pack` | `--profile synthetic\|sanitized` | yes | The data-handling claim recorded in the manifest. `production` is refused outright; there is no flag combination that admits real end-user data. |
+| `pack` | `--profile synthetic\|sanitized` | yes | The data-handling claim recorded in the manifest. `synthetic` asserts the payload was generated and never derived from real records; `sanitized` asserts it was derived from real data with identifying content removed. **Nothing verifies which is true** — it is your assertion, carried to the consumer, so claim the weaker one when unsure: anything derived from production data is `sanitized`, never `synthetic`. `production` is refused outright and is not a third option. |
 | `pack` | `--format json\|ndjson` | yes | How every dataset entry is parsed and counted. `ndjson` is one JSON document per line and is what makes a violation report an exact **record number**; `json` is one document per file and reports the file only. Choose `ndjson` for anything row-shaped — the consumer's feedback is only as aimed as this choice. |
 | `pack` | `--expires <duration>` | no (default `168h`) | How long the attempt stays fetchable. Non-positive is refused. No maximum. |
-| `pack` | `--fulfills <XW-id>` | no | The `work_request` this attempt will answer. Recorded now so `deliver` can mint the handoff against it. |
+| `pack` | `--fulfills <XW-id>` | no | The `work_request` this attempt will answer. Optional here — it only supplies the thread — but **required at `deliver`**, so pass it at both and the two never disagree. |
 | `pack` | `--supersedes <DP-id>` | no | The prior attempt this one replaces. **This is the only place supersession is set** — it is baked into the manifest here. |
 | `pack` | `--max-attempts <n>` | no (default `0` = no ceiling) | An escalation guard. When set, packing an attempt whose number exceeds `n` is refused with *"escalate rather than retry"* instead of minting attempt N+1. Use it when a loop could otherwise retry forever; leave it unset and nothing is ever refused on this ground. |
 | `pack` | `--json` | no | Machine-readable result, including `staging_root`. |
@@ -235,9 +235,16 @@ intend to start, `a2a accept <XW-id>`.
 
    With `--json`, distinguish a **failing verdict** from a **command
    error**: a failing verdict still emits the full result with a top-level
-   `report` key (and exits `1`); a command error (a bad package id, an
-   illegal transition because the handoff was never acked, a funnel
-   failure) emits `{"error": "..."}` instead, with no `report` key.
+   `report` key (and exits `1`); a command error — an unresolvable package
+   id, an illegal transition because the handoff was never acked, a funnel
+   failure — emits `{"error": "..."}` instead, with no `report` key, and
+   also exits `1`.
+
+   A **malformed** package id is a third case and does not reach either:
+   anything that is not `DP-`-shaped is rejected as a usage error before the
+   command runs, printing the bare usage line to stderr and exiting `2` with
+   nothing at all on stdout, `--json` or not. So branch on the exit code
+   first (`2` = you called it wrong), then on which key is present.
 
 5. **On fail**, wait for the producer's superseding attempt and repeat from
    step 2 against the new package id — it is a different `DP-` id, not a
@@ -300,19 +307,27 @@ recursively per top-level directory whose name matches a schema's own
 
 ## What each refusal means, and what to do
 
-Every one of these is a hard refusal, not a warning — nothing is staged or
-written on the way to it.
+Every row below is a hard refusal, not a warning — the command stops and
+nothing is staged or written on the way to it.
+
+**A failing verdict is not in this table.** An entry that does not conform to
+its contract is a *refusal* at `pack` — nothing is staged, no package exists.
+The same condition after delivery is a *verdict*: `verify` returns a complete
+report whose `checks[]` carry the violations, exits `1`, and refuses nothing.
+That distinction is the whole point of the loop, so do not go looking for an
+error envelope when a delivery fails its checks — read the report.
 
 | Refusal (sentinel) | Fires at | What it means | What to do |
 |---|---|---|---|
 | `data_profile production is refused` | `pack` | You set `--profile production`. Not negotiable — real end-user data may not enter the shared space. | Re-pack with `--profile synthetic` or `--profile sanitized`, sanitizing the source first if needed. |
-| `entry does not conform to its contract schema` | `pack` (before staging), `verify` (against delivered bytes) | One file failed its `conforms_to` schema. The message names the file; for an `ndjson` entry it also names the failing **record number**. | Fix that file (or that record) and re-pack. `verify` naming this after delivery means fix it and pack/deliver a **superseding** attempt — the failed one is not editable in place. |
-| `declared digest does not match computed digest` | `fetch`, `verify` — before parsing | The bytes you have do not hash to what the manifest declares, checked per entry before assembly (never a matching aggregate masking a tampered entry). | Re-`fetch` (or re-sync the mirror) rather than trust the local copy; if it recurs, the package itself is corrupt and needs a new attempt from the producer. |
+| `entry does not conform to its contract schema` | `pack` **only** | One file failed its `conforms_to` schema and the whole pack is refused — no package is minted. The message names the file; for an `ndjson` entry it also names the failing **record number**. | Fix that file (or that record) and re-pack. After delivery this same condition is not a refusal at all: `verify` returns a report whose `checks[]` name it, and the fix is a **superseding** attempt — a delivered package is never editable in place. |
+| `declared digest does not match computed digest` | `deliver`, `fetch`, `verify` — before parsing | The bytes do not hash to what the manifest declares, checked per entry before assembly (never a matching aggregate masking a tampered entry). At `deliver` this is the guard that reads the staging root the manifest points at; downstream it protects the consumer. | Re-`fetch` (or re-sync the mirror) rather than trust the local copy. At `deliver` it means the staging tree changed under you — re-`pack`. If it recurs after a fetch, the package is corrupt and needs a new attempt from the producer. |
 | `--expires must be positive` | `pack` | You passed a zero or negative `--expires`. The attempt would be expired the moment it existed. | Drop the flag to take the one-week default, or pass a real duration. |
 | `package has expired` | `fetch` only | `now` is past the manifest's `expires_at`. `verify` does **not** check this — a package already fetched, or resolved straight from the mirror, can still be verified after its nominal expiry. | Ask the producer for a fresh attempt with a longer `--expires`; there is no override. |
 | `configured bound exceeded` | `pack` and `fetch` | Per-entry bytes, total package bytes, entry count or record count is over the configured limit — the message names which one and both the observed and configured values. | Split the payload across more, smaller entries/attempts, or ask the operator to raise the bound if it is genuinely undersized for the dataset. |
 | `cannot pass a report whose result is not pass` | never surfaced to a caller | This sentinel exists only as the internal guard `--record` checks to pick `verify-pass` vs `verify-fail` — no input makes it appear as an error message; it is what makes a forced pass unrepresentable rather than merely refused. See the next section. | N/A — there is no flag to work around, because there is nothing to work around. |
 | illegal transition (e.g. `verify-fail refused: ...`) | `verify --record` | The handoff is not in `acknowledged` state yet (or is in a state the fold table does not permit this transition from). | `a2a ack <XH-id>` the handoff first, then retry `--record`. |
+| `handoff submit refused: …` | `deliver` | `deliver` writes a fresh handoff, and that submit goes through the same fold legality check as any other — most often your own system's membership in the space is not current. Nothing was written. | Fix the underlying condition the message names (usually `a2a sync`, or a membership that has not merged yet) and re-run the same `deliver`; it repairs its own pull request rather than opening a second one. |
 | `no committed handoff carries package …` | `verify` | The package id you gave was never referenced by any handoff's `deliverables[]` — you likely typed the wrong `DP-` id, or fetched from a different space than the one the handoff was submitted to. | Re-check the id against `a2a inbox`/`a2a show <XH-id>`. |
 | `--supersedes is set at pack time, not here` | `deliver` | You put `--supersedes` on `deliver`. The chain lives in the manifest `pack` produced, so `deliver` cannot honour it — and ignoring it silently would let you believe attempt 2 was linked when it was not. | Re-run `a2a data pack ... --supersedes <prior-id>` and deliver the staging root it prints. |
 | a divergent fetch destination | `fetch` | The destination directory already holds content that disagrees with the package. It is left completely untouched. | Fetch into a clean directory, or delete the local copy first if you are certain you want to overwrite it — `fetch` will not do that for you. |
