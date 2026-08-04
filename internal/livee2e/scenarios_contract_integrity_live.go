@@ -4,6 +4,7 @@ package livee2e
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -38,6 +39,44 @@ func runContractIntegrityScenarios(ctx context.Context, h *harness) []Result {
 	_, _, _ = h.B.Run(ctx, "sync")
 
 	return results
+}
+
+// contractPublishPull resolves the pull request a `contract publish` actually
+// opened, from the command's own JSON.
+//
+// The branch is NOT derivable from the contract id, and guessing it was this
+// family's silent killer. `contract publish` is the only contract verb that
+// sets SubmitRequest.OperationKey (internal/space/contract_publication.go), and
+// the funnel then branches on that key rather than the artifact id
+// (`branchID = req.OperationKey`, internal/space/funnel.go) — so the head is
+// `a2a/<system>/contract-publish/op-v1-<sha256>`, and it DIFFERS PER TARGET
+// VERSION. `space.BranchName(system, "contract-publish", id)` names a ref that
+// has never existed since the operation-key change; the lookup burned its full
+// 18x5s visibility budget and then reported a product failure.
+//
+// LE-OC-06 already reads Write.PRNumber out of `--json` for exactly this
+// reason; this is that recipe, shared by the two contract-integrity rows.
+func contractPublishPull(ctx context.Context, h *harness, c *checkout, args []string) (space.ContractPublicationResult, PullState, error) {
+	var published space.ContractPublicationResult
+	stdout, stderr, err := c.Run(ctx, append(args, "--json")...)
+	if err != nil {
+		return published, PullState{}, fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr))
+	}
+	if err := json.Unmarshal([]byte(stdout), &published); err != nil {
+		return published, PullState{}, fmt.Errorf("decode contract publish JSON: %w", err)
+	}
+	if published.Write.PRNumber > 0 {
+		pull, err := h.Prov.Pull(ctx, h.Org, h.Repo, published.Write.PRNumber)
+		if err != nil {
+			return published, PullState{}, err
+		}
+		return published, pull, nil
+	}
+	if published.Write.Branch == "" {
+		return published, PullState{}, fmt.Errorf("contract publish reported neither a pull request nor a branch: status=%s", published.Status)
+	}
+	pull, err := h.pullForBranch(ctx, published.Write.Branch)
+	return published, pull, err
 }
 
 // ac973Scenario is this row's catalogue name (catalogue.go).
@@ -218,13 +257,9 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 	// change would NOT be refused. This sub-step is not literal in the
 	// brief's own step 1 wording; it is required by the product's actual
 	// behavior and is recorded as a deviation in the wave report.
-	if _, stderr, err := a.Run(ctx, contractPublishVersionArgs(sub.ID, "1.0.0", contractPaths.StagingRoot)...); err != nil {
-		return ac973ResultFromErr("register-baseline-v1", fmt.Errorf("%w: %s", err, stderr), "`a2a contract publish --version 1.0.0` registers the first REAL published version (isFirstPublish, G1-gated, no compat baseline yet)")
-	}
-	publishBranch := space.BranchName(a.System, "contract-publish", sub.ID)
-	baselinePR, err := h.pullForBranch(ctx, publishBranch)
+	_, baselinePR, err := contractPublishPull(ctx, h, a, contractPublishVersionArgs(sub.ID, "1.0.0", contractPaths.StagingRoot))
 	if err != nil {
-		return ac973ResultFromErr("register-baseline-v1", err, "the v1.0.0 registration opens its own PR on the contract-publish branch")
+		return ac973ResultFromErr("register-baseline-v1", err, "`a2a contract publish --version 1.0.0` registers the first REAL published version (isFirstPublish, G1-gated, no compat baseline yet)")
 	}
 	if err := happyLandAndSync(ctx, h, a, baselinePR.Number); err != nil {
 		return ac973ResultFromErr("register-baseline-land-sync", err, "the v1.0.0 registration lands on main and reaches A's mirror")
@@ -259,9 +294,14 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 		return ac973ResultFromErr("break-schema", err, "the contract's schema can be rewritten to narrow `example` from string to integer, breaking the existing fixture")
 	}
 
-	beforeCount, err := h.countPRsForBranch(ctx, publishBranch)
+	// Counted across the whole run window rather than on one branch. The
+	// branch this used to count on could not exist — publish is
+	// operation-keyed, and a REFUSED publish never names a branch at all — so
+	// the old check compared 0 to 0 and could not fail. What "opens NO PR"
+	// actually means is that nothing new appeared anywhere.
+	beforePulls, err := h.runPulls(ctx)
 	if err != nil {
-		return ac973ResultFromErr("breaking-minor-refused", err, "can list PRs on the contract-publish branch before the refused attempt")
+		return ac973ResultFromErr("breaking-minor-refused", err, "can list the run's pull requests before the refused attempt")
 	}
 	_, minorStderr, minorErr := a.Run(ctx, "contract", "publish", sub.ID, "--bump", "minor", "--staging", contractPaths.StagingRoot)
 	if minorErr == nil {
@@ -272,24 +312,22 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 		return ac973Fail("breaking-minor-refused", minorStderr,
 			fmt.Sprintf("AC-970.1: the refusal names POL-007 and the offending fixture (%s)", fixtureCompatKey), minorStderr)
 	}
-	afterCount, err := h.countPRsForBranch(ctx, publishBranch)
+	afterPulls, err := h.runPulls(ctx)
 	if err != nil {
-		return ac973ResultFromErr("breaking-minor-no-pr-opened", err, "can list PRs on the contract-publish branch after the refused attempt")
+		return ac973ResultFromErr("breaking-minor-no-pr-opened", err, "can list the run's pull requests after the refused attempt")
 	}
-	if afterCount != beforeCount {
+	if added := addedSince(operationalPullNumbers(beforePulls), operationalPullNumbers(afterPulls)); len(added) != 0 {
 		return ac973Fail("breaking-minor-no-pr-opened",
-			fmt.Sprintf("PR count on %s went from %d to %d", publishBranch, beforeCount, afterCount),
+			fmt.Sprintf("the refused publish opened pull request(s) %v", added),
 			"a refused publish never reaches the write funnel, so it opens NO new PR", "")
 	}
 
 	// --- 4. A publishes the SAME change correctly, as a major (D-B: a
 	// major bump is not compat-checked, and says so). ---
-	if _, stderr, err := a.Run(ctx, "contract", "publish", sub.ID, "--bump", "major", "--staging", contractPaths.StagingRoot); err != nil {
-		return ac973ResultFromErr("major-publish", fmt.Errorf("%w: %s", err, stderr), "the SAME breaking change declared as a major publishes successfully (majors are not compat-checked)")
-	}
-	majorPR, err := h.pullForBranch(ctx, publishBranch)
+	_, majorPR, err := contractPublishPull(ctx, h, a,
+		[]string{"contract", "publish", sub.ID, "--bump", "major", "--staging", contractPaths.StagingRoot})
 	if err != nil {
-		return ac973ResultFromErr("major-publish", err, "the major publish opens its own PR on the contract-publish branch (delete_branch_on_merge means the branch name is safely reused)")
+		return ac973ResultFromErr("major-publish", err, "the SAME breaking change declared as a major publishes successfully (majors are not compat-checked)")
 	}
 	if err := happyLandAndSync(ctx, h, a, majorPR.Number); err != nil {
 		return ac973ResultFromErr("major-publish-land-sync", err, "v2.0.0 lands on main and reaches A's mirror")
