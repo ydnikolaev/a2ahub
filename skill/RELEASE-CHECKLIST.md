@@ -34,6 +34,7 @@ not drifted from the plan wording it quotes.
 | `skill/a2ahub/reference/bindings.md` | The file is still described as local-tracked with no space-visible path or aggregate; if the first real deprecation in `getvisa` (conventions spec §10) has happened since the last review, its pass/fail verdict has been recorded in the spec's §11 amendments — not left for this row alone to remember. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/reference/threads.md` | Thread order, open-item/next-move semantics and the space-local boundary match the current read/fold implementation; no prose implies two independent threads can be merged after authoring. | ☑ | Codex | 2026-08-01 |
 | `skill/a2ahub/reference/contract-versions.md` | Rolling-window, maintenance-baseline, major-scoped retirement and late-adopter deprecation guidance match the per-version engine and current command surface. | ☑ | Codex | 2026-07-31 |
+| `skill/a2ahub/reference/data-exchange.md` | Every flag on all four `a2a data` verbs is explained with what it DECIDES, not merely shown in an example; every sentinel in `internal/datapackage/errors.go` a caller can reach has a row in the refusal table; the exit-code contract and the verdict-versus-error `--json` rule match `runVerify`/`dataRefuse`; the handoff-arc table matches the fold table, including `rejected → superseded`; the source-directory-to-schema mapping matches the packer. **Added 2026-08-04**: this page shipped in v0.19.0 as a new hand-maintained file with no row here — the same completeness failure the last row of this table already records twice. | ☑ | Claude Code | 2026-08-04 |
 | `skill/a2ahub/notifications.md` | Offer-state handling, optional statusline boundary, trusted click routing, verified-future-notes fallback, and the ad-hoc macOS Gatekeeper approval path match the P49 binary/adapters; no prose claims Developer ID/notarization or interactive platform proof was run locally. | ☑ | Codex | 2026-07-31 |
 | `skill/a2ahub/SKILL.md` § "Which surface to work through" | The stated MCP limits are still the actual ones. When a limit is FIXED, the row must be removed here and in `troubleshooting.md`, and the fix shipped as a `kind: fix` note — a stale "do not use MCP for reads" is as harmful as the missing warning was, because an agent will keep avoiding a surface that works. | ☑ | Codex | 2026-07-31 |
 | `skill/RELEASE-CHECKLIST.md` (this file) | The prose-file list is complete — every hand-maintained prose file has a row; no generated `reference/**` file was added here by mistake. **Check it against `SKILL.md`'s own D-015 list, in both directions**: this clause silently held for two releases while `reference/feedback.md` was missing from both. | ☑ | Codex | 2026-08-01 |
@@ -55,13 +56,36 @@ review and local gates do not prove the filtered public SHA. Tick it only after
 `candidate.sh` records `WEB_DEPS_READY=true` and `EXIT=0` exactly once for that
 candidate's retained `make check` transcript.
 
-**What this review was, exactly.** A delta review against `v0.18.2`. The new
-hand-maintained surface is `reference/work-reporting.md`; `SKILL.md` and
-`loops.md` link it and preserve its durable-checkpoint versus local-lease
-boundary. The generated command catalogue remains outside the hand-review
-table and is byte-gated by `skill-drift`. Every other prose row is unchanged
-from its recorded content review. Root `README.md` was updated and read against
-the human half of `make readme-lint`: it now names durable work visibility,
+**What this review was, exactly.** A delta review against `v0.18.2`, then a
+second, deeper pass on 2026-08-04 after the first one was found to have
+under-read the release's own new surface.
+
+The new hand-maintained surface this release is `reference/data-exchange.md`
+(the contract data exchange loop); `reference/work-reporting.md` arrived in the
+same window and both are linked from `SKILL.md` and `loops.md`. The second pass
+diffed the prose against the shipped binary rather than reading it for sense,
+and that is what it found:
+
+- `reference/data-exchange.md` had **no row in this table at all** — the exact
+  completeness failure the last row already records having happened twice.
+- Eight sentinels in `internal/datapackage/errors.go` that a caller can reach
+  (symlinks, path escape, duplicate entry path, missing entry bytes, attempt
+  ceiling, unsafe locator, contract-ref mismatch, atomic-install unsupported)
+  had no row in the page's refusal table. Several are what an agent packing a
+  real directory hits first.
+- `--max-attempts` was documented nowhere, so the escalation guard it exists to
+  provide was unreachable by an agent reading the skill.
+- `loops.md` §8.3 — the producer's own receive loop — told an agent to
+  discharge a `work_request` with `a2a respond`, with nothing saying that a
+  request for an actual payload is delivered as a packed handoff instead. The
+  dedicated page was correct; the loop that routes into it was not.
+- Every page pointing at `reference/commands.md` for "exact syntax" was
+  pointing at a generated synopsis catalog that carries **no flags**. The
+  pointer is now honest and the data verbs carry their own flag table.
+
+The generated command catalogue remains outside the hand-review table and is
+byte-gated by `skill-drift`. Root `README.md` was updated and read against the
+human half of `make readme-lint`: it now names durable work visibility,
 reproducible contract releases, and the current static/server boundary without
 claiming the proposed full live-file server already exists.
 
