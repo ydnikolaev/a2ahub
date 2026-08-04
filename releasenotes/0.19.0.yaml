@@ -48,8 +48,11 @@ changes:
       payload against that exact version offline. CLI and MCP share the same
       services, multi-space requests fail closed when ambiguous, and interrupted
       writes resume the same operation instead of silently creating a new
-      version or pull request.
-    affects: ["a2a contract preflight", "a2a contract publish", "a2a contract materialize", "a2a contract check", "a2a_contract", "contract/v2", "event/v2"]
+      version or pull request. Fresh JSON-Schema contract authoring now creates
+      one complete declared-v2 staging candidate — descriptor, schema and
+      fixtures — so its first preflight and publication use the same real agent
+      workflow instead of requiring a hand-assembled descriptor.
+    affects: ["a2a contract new", "a2a contract preflight", "a2a contract publish", "a2a contract materialize", "a2a contract check", "a2a_contract", "contract/v2", "event/v2"]
     action:
       scope: local
       why: >
@@ -113,7 +116,8 @@ changes:
       same canonical work result, latest-report projection and full
       materialize-edit-publish contract flow as real agents, so candidate
       evidence exercises the shipped flows rather than a test-only
-      approximation.
+      approximation. Its local-server proof also runs the real bounded sync
+      cadence and filters SSE keepalives from semantic revision events.
     affects: ["write preflight", "a2a doctor", "cache visibility", "GitHub cleanup", "release live E2E"]
     action:
       scope: none

@@ -1705,6 +1705,15 @@ func TestEquivContractNew(t *testing.T) {
 		if !ok {
 			t.Fatalf("contract new: MCP staged no %s (CLI did) — the two surfaces are not equivalent", rel)
 		}
+		// The nested publication descriptor is an exact copy of each surface's
+		// flat draft, so its independently minted thread differs for the same
+		// legitimate reason as the flat draft above. Every deterministic
+		// sidecar remains byte-identical.
+		if strings.HasSuffix(rel, "/contract.md") {
+			if normalizeContent(cliBytes) == normalizeContent(mcpBytes) {
+				continue
+			}
+		}
 		if !bytes.Equal(cliBytes, mcpBytes) {
 			t.Fatalf("contract new: scaffold %s differs between surfaces:\n--- CLI ---\n%s\n--- MCP ---\n%s", rel, cliBytes, mcpBytes)
 		}

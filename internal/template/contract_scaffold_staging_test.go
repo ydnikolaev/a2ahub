@@ -43,6 +43,44 @@ func TestScaffoldContractInStagingWritesAllFilesAtTheLayoutShape(t *testing.T) {
 	}
 }
 
+func TestScaffoldContractCandidateInStagingWritesDescriptorAndSidecars(t *testing.T) {
+	t.Parallel()
+	staging := t.TempDir()
+	draft := []byte("---\nschema: envelope/v2\nid: XC-axon-widget\n---\nbody\n")
+
+	written, err := ScaffoldContractCandidateInStaging(staging, "axon", "widget", draft, os.WriteFile)
+	if err != nil {
+		t.Fatalf("ScaffoldContractCandidateInStaging: %v", err)
+	}
+	if len(written) != 4 {
+		t.Fatalf("written = %v, want descriptor plus three sidecars", written)
+	}
+	descriptor := filepath.Join(staging, "axon", "provides", "widget", "contract.md")
+	raw, err := os.ReadFile(descriptor)
+	if err != nil {
+		t.Fatalf("read staged descriptor: %v", err)
+	}
+	if string(raw) != string(draft) {
+		t.Fatalf("staged descriptor = %q, want exact rendered draft", raw)
+	}
+
+	authored := []byte("authored descriptor")
+	if err := os.WriteFile(descriptor, authored, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	written, err = ScaffoldContractCandidateInStaging(staging, "axon", "widget", []byte("replacement"), os.WriteFile)
+	if err != nil {
+		t.Fatalf("rerun: %v", err)
+	}
+	if len(written) != 0 {
+		t.Fatalf("rerun wrote over existing candidate files: %v", written)
+	}
+	raw, err = os.ReadFile(descriptor)
+	if err != nil || string(raw) != string(authored) {
+		t.Fatalf("rerun changed authored descriptor: %q err=%v", raw, err)
+	}
+}
+
 func TestScaffoldContractInStagingNeverOverwrites(t *testing.T) {
 	t.Parallel()
 	staging := t.TempDir()

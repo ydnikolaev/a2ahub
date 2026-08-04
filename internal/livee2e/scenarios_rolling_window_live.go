@@ -184,7 +184,7 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	if err := happyLandAndSync(ctx, h, a, sub.PRNumber); err != nil {
 		return rwResultFromErr("submit-land-sync", err, "the drafted contract lands on main and reaches A's mirror")
 	}
-	v100PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "1.0.0", "publish-1.0.0", false)
+	v100PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "1.0.0", "publish-1.0.0", true)
 	if err != nil {
 		return rwResultFromErr("publish-1.0.0", err, "`a2a contract publish --version 1.0.0` registers the first real published version")
 	}

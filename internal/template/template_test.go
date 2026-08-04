@@ -265,11 +265,43 @@ func TestRenderSelectsExplicitEnvelopeTemplateGeneration(t *testing.T) {
 	if !strings.Contains(string(v2), "schema: envelope/v2") || !strings.Contains(string(v2), "artifacts:") {
 		t.Fatalf("explicit EnvelopeSchema did not select contract/v2:\n%s", v2)
 	}
+	for _, want := range []string{
+		"schema/contract.schema.json",
+		"fixtures/valid/contract.json",
+		"fixtures/invalid/contract.json",
+	} {
+		if !strings.Contains(string(v2), want) {
+			t.Fatalf("explicit contract/v2 did not bind %q to the standing slug:\n%s", want, v2)
+		}
+	}
+	if strings.Contains(string(v2), "<slug>") {
+		t.Fatalf("explicit contract/v2 leaked an unresolved slug token:\n%s", v2)
+	}
 
 	unsupported := fixedInput("contract", "XC-axon-contract")
 	unsupported.EnvelopeSchema = "envelope/v3"
 	if _, err := template.Render(unsupported); !errors.Is(err, template.ErrUnsupportedEnvelopeSchema) {
 		t.Fatalf("unsupported envelope generation error = %v, want ErrUnsupportedEnvelopeSchema", err)
+	}
+}
+
+func TestRenderNewMovesOnlyJSONSchemaContractsToV2(t *testing.T) {
+	t.Parallel()
+	jsonInput := fixedInput("contract", "XC-axon-contract")
+	jsonDraft, err := template.RenderNew(jsonInput, func(format string) bool { return strings.HasPrefix(format, "json-schema") })
+	if err != nil || !strings.Contains(string(jsonDraft), "schema: envelope/v2") {
+		t.Fatalf("JSON-Schema contract did not select envelope/v2: err=%v\n%s", err, jsonDraft)
+	}
+	protoInput := fixedInput("contract", "XC-axon-contract")
+	protoInput.Fields = map[string]string{}
+	protoInput.Fields["schema_format"] = "proto3"
+	protoDraft, err := template.RenderNew(protoInput, func(format string) bool { return strings.HasPrefix(format, "json-schema") })
+	if err != nil || !strings.Contains(string(protoDraft), "schema: envelope/v1") {
+		t.Fatalf("non-JSON contract did not preserve envelope/v1 authoring: err=%v\n%s", err, protoDraft)
+	}
+	question, err := template.RenderNew(fixedInput("question", "XQ-axon-20260804-a2b3"), func(string) bool { return true })
+	if err != nil || !strings.Contains(string(question), "schema: envelope/v1") {
+		t.Fatalf("question did not preserve historical generation: err=%v\n%s", err, question)
 	}
 }
 

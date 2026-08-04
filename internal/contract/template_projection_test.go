@@ -60,8 +60,8 @@ func TestCanonicalV2TemplateRendersSchemaValidCarriedSet(t *testing.T) {
 		Descriptor: contract.CandidateFile{Path: contract.DescriptorPath, Kind: contract.CandidateRegular, Raw: raw},
 		Files: []contract.CandidateFile{
 			{Path: "schema/contract.schema.json", Kind: contract.CandidateRegular, Raw: schemaRaw},
-			{Path: "fixtures/valid/example.json", Kind: contract.CandidateRegular, Raw: validRaw},
-			{Path: "fixtures/invalid/example.json", Kind: contract.CandidateRegular, Raw: invalidRaw},
+			{Path: "fixtures/valid/contract.json", Kind: contract.CandidateRegular, Raw: validRaw},
+			{Path: "fixtures/invalid/contract.json", Kind: contract.CandidateRegular, Raw: invalidRaw},
 		},
 	})
 	if len(issues) != 0 {

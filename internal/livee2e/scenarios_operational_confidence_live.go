@@ -599,7 +599,7 @@ func operationalStaticServer(ctx context.Context, oc *operationalConfidenceRun) 
 	address := listener.Addr().String()
 	_ = listener.Close()
 	serverCtx, cancelServer := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(serverCtx, oc.h.B.Bin, "serve", "--listen", address, "--refresh", "250ms", "--sync-every", "0") //nolint:gosec // reason: binary is the attested candidate and argv contains only the loopback listener allocated above.
+	cmd := exec.CommandContext(serverCtx, oc.h.B.Bin, "serve", "--listen", address, "--refresh", "250ms", "--sync-every", "15s") //nolint:gosec // reason: binary is the attested candidate and argv contains only the loopback listener allocated above.
 	cmd.Dir = oc.h.B.Dir
 	cmd.Env = checkoutEnv(oc.h.B.Token, oc.h.B.SpaceSlug)
 	var serverOutput strings.Builder
@@ -1132,7 +1132,7 @@ classification: internal
 version: %s
 schema_format: json-schema-2020-12
 compat_policy: default
-thread: thread:%s-20260803-ocp7
+thread: thread:%s-20260803-0cp7
 artifacts:
   - {path: schema/order.schema.json, role: schema, normative: true, media_type: application/schema+json}
   - {path: fixtures/valid/order.json, role: valid-fixture, normative: true, media_type: application/json, conforms_to: schema/order.schema.json}

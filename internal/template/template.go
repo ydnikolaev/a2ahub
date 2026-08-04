@@ -115,6 +115,13 @@ func Render(in Input) ([]byte, error) {
 	if ferr := applyFills(doc.Content[0], in); ferr != nil {
 		return nil, &Error{Op: op, Input: in.Type, Err: ferr}
 	}
+	if in.Type == "contract" && in.EnvelopeSchema == "envelope/v2" {
+		parsed, parseErr := artifact.ParseID(in.ID)
+		if parseErr != nil || parsed.Class != artifact.ClassStanding || parsed.Prefix != "XC" {
+			return nil, &Error{Op: op, Input: in.Type, Err: ErrMalformedTemplate}
+		}
+		replaceScalarToken(doc.Content[0], "<slug>", parsed.Slug)
+	}
 
 	out, merr := yaml.Marshal(&doc)
 	if merr != nil {
@@ -126,6 +133,37 @@ func Render(in Input) ([]byte, error) {
 		body = in.Body
 	}
 	return artifact.SerializeFrontmatter(artifact.Frontmatter{YAML: out, Body: body}), nil
+}
+
+// RenderNew centralizes fresh-authoring generation selection. A JSON-Schema
+// contract is first rendered through the historical template so the actual
+// schema_format override is known, then re-rendered as declared-v2. The caller
+// supplies the canonical dialect classifier, keeping template independent of
+// validate while CLI and MCP still make one identical decision.
+func RenderNew(in Input, isJSONSchema func(string) bool) ([]byte, error) {
+	in.EnvelopeSchema = ""
+	draft, err := Render(in)
+	if err != nil || in.Type != "contract" {
+		return draft, err
+	}
+	format, err := ContractDraftSchemaFormat(draft)
+	if err != nil {
+		return nil, err
+	}
+	if isJSONSchema == nil || !isJSONSchema(format) {
+		return draft, nil
+	}
+	in.EnvelopeSchema = "envelope/v2"
+	return Render(in)
+}
+
+func replaceScalarToken(node *yaml.Node, old, replacement string) {
+	if node.Kind == yaml.ScalarNode {
+		node.Value = strings.ReplaceAll(node.Value, old, replacement)
+	}
+	for _, child := range node.Content {
+		replaceScalarToken(child, old, replacement)
+	}
 }
 
 // applyFills walks mapping's top-level key/value pairs in place, filling

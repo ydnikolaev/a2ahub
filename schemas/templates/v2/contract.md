@@ -22,20 +22,20 @@ thread: <thread:system-YYYYMMDD-rand4 — a2a new mints this>
 # refs:
 #   - {ref: "<XC-id>@<version>", note: "<why>"}
 artifacts:
-  - path: schema/contract.schema.json
+  - path: schema/<slug>.schema.json
     role: schema
     normative: true
     media_type: application/schema+json
-  - path: fixtures/valid/example.json
+  - path: fixtures/valid/<slug>.json
     role: valid-fixture
     normative: true
     media_type: application/json
-    conforms_to: schema/contract.schema.json
-  - path: fixtures/invalid/example.json
+    conforms_to: schema/<slug>.schema.json
+  - path: fixtures/invalid/<slug>.json
     role: invalid-fixture
     normative: true
     media_type: application/json
-    conforms_to: schema/contract.schema.json
+    conforms_to: schema/<slug>.schema.json
 # Declare every other regular carried file exactly once. Companion roles live
 # under artifacts/: errors, vocabulary, limits, changelog, example, or other.
 # `conforms_to` is required only on valid-fixture and invalid-fixture entries.

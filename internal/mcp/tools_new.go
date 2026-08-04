@@ -181,10 +181,10 @@ func newNewHandler(deps NewDeps) HandlerFunc {
 				bodyOverride = []byte(item.Body)
 			}
 
-			draft, err := template.Render(template.Input{
+			draft, err := template.RenderNew(template.Input{
 				Type: item.Type, ID: mintedID, Actor: resolvedActors[itemIndex], Created: now,
 				Fields: fields, Body: bodyOverride,
-			})
+			}, validate.IsJSONSchemaFormat)
 			if err != nil {
 				return nil, "", fmt.Errorf("new: render failed: %w", err)
 			}
@@ -213,7 +213,7 @@ func newNewHandler(deps NewDeps) HandlerFunc {
 					if slug == "" {
 						slug = item.Fields["slug"]
 					}
-					written, werr := template.ScaffoldContractInStaging(deps.StagingDir, deps.OwnSystem, slug, deps.WriteFile)
+					written, werr := template.ScaffoldContractCandidateInStaging(deps.StagingDir, deps.OwnSystem, slug, draft, deps.WriteFile)
 					if werr != nil {
 						return nil, "", fmt.Errorf("new: cannot scaffold contract schema: %w", werr)
 					}

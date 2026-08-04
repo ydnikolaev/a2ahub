@@ -238,14 +238,10 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 		return 1
 	}
 
-	draft, err := template.Render(template.Input{
-		Type:    typ,
-		ID:      mintedID,
-		Actor:   resolvedActor,
-		Created: now,
-		Fields:  fields,
-		Body:    bodyOverride,
-	})
+	draft, err := template.RenderNew(template.Input{
+		Type: typ,
+		ID:   mintedID, Actor: resolvedActor, Created: now, Fields: fields, Body: bodyOverride,
+	}, validate.IsJSONSchemaFormat)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "new: render failed: %v\n", err)
 		return 1
@@ -276,7 +272,7 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 			return 1
 		}
 		if validate.IsJSONSchemaFormat(schemaFormat) {
-			written, werr := template.ScaffoldContractInStaging(c.stagingDir, c.ownSystem, standingSlug, c.writeFile)
+			written, werr := template.ScaffoldContractCandidateInStaging(c.stagingDir, c.ownSystem, standingSlug, draft, c.writeFile)
 			if werr != nil {
 				_, _ = fmt.Fprintf(stdio.Stderr, "new: cannot scaffold contract schema: %v\n", werr)
 				return 1
