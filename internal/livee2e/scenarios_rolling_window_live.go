@@ -54,10 +54,21 @@ const rwScenario = "contract-rolling-window"
 // destructive-space generation before authoring.
 const rwSlug = "rw-rolling-window"
 
+// rwResultFromErr renders err into this row's ONE Result.
+//
+// The verdict is DELEGATED to happyVerdictForErr, the single place a
+// network/timeout class is told apart from a real product failure, exactly as
+// ac973ResultFromErr already does. Hardcoding VerdictFail here made every
+// infrastructure error — a timed-out required check, an invisible pull request,
+// a cancelled context — read as a defect in the product. verdictmap.go records
+// the mirror-image scar for THIS family: a row reported timed-out when the
+// truth was a red gate. Both directions cost a release cycle to un-diagnose.
 func rwResultFromErr(step string, err error, expected string) Result {
+	verdict, _ := happyVerdictForErr(err)
 	return Result{
-		Scenario: rwScenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictFail,
-		Detail: fmt.Sprintf("step %s: %v", step, err), Expected: expected,
+		Scenario: rwScenario, System: SystemA, Surface: SurfaceCLI, Verdict: verdict,
+		Observed: err.Error(),
+		Detail:   fmt.Sprintf("step %s: %v", step, err), Expected: expected,
 	}
 }
 
@@ -141,8 +152,9 @@ func rwDraftContractExcludingPeer(ctx context.Context, h *harness, c *checkout) 
 }
 
 // rwPublishAndLand runs one `a2a contract publish --version <v>` and lands
-// its PR. Publish's branch is the plain contract-publish/<id> shape
-// (delete_branch_on_merge makes the name safely reusable across versions).
+// its PR, resolving that PR from the command's own JSON — publish is
+// operation-keyed, so its branch cannot be derived from the contract id and
+// differs per target version (see contractPublishPull).
 func rwPublishAndLand(ctx context.Context, h *harness, a *checkout, id, version, step string, useStaging bool) (int, error) {
 	paths, err := contractPathsForID(id)
 	if err != nil {
@@ -152,10 +164,7 @@ func rwPublishAndLand(ctx context.Context, h *harness, a *checkout, id, version,
 	if useStaging {
 		staging = paths.StagingRoot
 	}
-	if _, stderr, err := a.Run(ctx, contractPublishVersionArgs(id, version, staging)...); err != nil {
-		return 0, fmt.Errorf("%s: %w: %s", step, err, stderr)
-	}
-	pr, err := h.pullForBranch(ctx, space.BranchName(a.System, "contract-publish", id))
+	_, pr, err := contractPublishPull(ctx, h, a, contractPublishVersionArgs(id, version, staging))
 	if err != nil {
 		return 0, fmt.Errorf("%s: %w", step, err)
 	}
@@ -242,8 +251,19 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	if err != nil {
 		return rwResultFromErr("rolling-window-state", fmt.Errorf("%w: %s", err, contractsErr), "`a2a contracts --json` succeeds after the deprecation lands")
 	}
-	if !strings.Contains(contractsOut, `"state":"published"`) && !strings.Contains(contractsOut, `"state": "published"`) {
+	// Selected by id, not searched for as a substring of the whole listing.
+	// `a2a contracts --json` returns every contract in every connected space,
+	// so a bare Contains was satisfied by any OTHER published contract — the
+	// operational-confidence family lands one earlier in the same run and never
+	// retires it, so this assertion could not fail and proved nothing about the
+	// rolling window it is named for.
+	state, err := rwContractState(contractsOut, sub.ID)
+	if err != nil {
 		return rwFail("rolling-window-state", contractsOut,
+			"AC-7 (live): the contract this row published appears in `a2a contracts --json`", err.Error())
+	}
+	if state != "published" {
+		return rwFail("rolling-window-state", fmt.Sprintf("%s state=%q", sub.ID, state),
 			"AC-7 (live): with 1.1.0 deprecated and 2.0.0 published, the contract's own state is `published` — the subject-level answer is a PROJECTION over the versions, not the last transition taken",
 			"the old subject-scoped engine reported the whole contract deprecated here")
 	}
@@ -332,13 +352,11 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	if pathErr != nil {
 		return rwResultFromErr("contract-still-operable-after-retire", pathErr, "the current contract id resolves to its contained staging root")
 	}
-	if _, stderr, err := a.Run(ctx, "contract", "publish", sub.ID, "--version", "2.1.0", "--staging", contractPaths.StagingRoot); err != nil {
-		return rwResultFromErr("contract-still-operable-after-retire", fmt.Errorf("%w: %s", err, stderr),
-			"after retiring 1.1.0 the contract is still operable: publishing 2.1.0 on the live line succeeds, rather than every later operation being refused forever")
-	}
-	stillOperablePR, err := h.pullForBranch(ctx, space.BranchName(a.System, "contract-publish", sub.ID))
+	_, stillOperablePR, err := contractPublishPull(ctx, h, a,
+		contractPublishVersionArgs(sub.ID, "2.1.0", contractPaths.StagingRoot))
 	if err != nil {
-		return rwResultFromErr("contract-still-operable-after-retire", err, "the post-retire publish opens its own PR")
+		return rwResultFromErr("contract-still-operable-after-retire", err,
+			"after retiring 1.1.0 the contract is still operable: publishing 2.1.0 on the live line succeeds, rather than every later operation being refused forever")
 	}
 	if err := happyLandAndSync(ctx, h, a, stillOperablePR.Number); err != nil {
 		return rwResultFromErr("contract-still-operable-land-sync", err, "2.1.0 lands on main")
