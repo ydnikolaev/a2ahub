@@ -13,6 +13,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -62,7 +63,7 @@ func main() {
 	c.checkTemplate()
 	c.checkGoVocabulary("internal/workreport/types.go", "Mode", "WaitKind", "workreport")
 	c.checkGoVocabulary("internal/validate/work_checkpoint.go", "WorkMode", "WorkWaitKind", "validator")
-	c.checkDocs()
+	docsChecked := c.checkDocsIfPresent()
 	if len(c.errors) > 0 {
 		sort.Strings(c.errors)
 		for _, message := range c.errors {
@@ -70,7 +71,11 @@ func main() {
 		}
 		os.Exit(1)
 	}
-	fmt.Println("work-checkpoint-schema: ok — schema/template/workreport/validator/docs share 7 modes and 5 wait kinds")
+	if docsChecked {
+		fmt.Println("work-checkpoint-schema: ok — schema/template/workreport/validator/docs share 7 modes and 5 wait kinds")
+		return
+	}
+	fmt.Println("work-checkpoint-schema: ok — public projection has no private normative spec; schema/template/workreport/validator share 7 modes and 5 wait kinds")
 }
 
 func (c *checker) checkSchema() {
@@ -112,16 +117,25 @@ func (c *checker) checkGoVocabulary(rel, modeType, waitType, label string) {
 	}
 }
 
-func (c *checker) checkDocs() {
+func (c *checker) checkDocsIfPresent() bool {
 	const rel = "docs/features/active/operational-confidence-2026-08/specs/02-reported-work-checkpoints.md"
+	_, err := os.Stat(filepath.Join(c.root, filepath.FromSlash(rel)))
+	if errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	if err != nil {
+		c.add("stat %s: %v", rel, err)
+		return false
+	}
 	raw, ok := c.read(rel)
 	if !ok {
-		return
+		return true
 	}
 	modes := tableBacktickVocabulary(string(raw), "| `mode` |", "mode")
 	c.compare(rel+" mode vocabulary", modes, canonicalModes)
 	waits := tableBacktickVocabulary(string(raw), "| `waiting_on[].kind` |", "waiting_on[].kind")
 	c.compare(rel+" wait-kind vocabulary", waits, canonicalWaitKinds)
+	return true
 }
 
 func (c *checker) readJSON(rel string, out any) bool {
