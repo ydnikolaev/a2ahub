@@ -491,6 +491,49 @@ func (e *ContractPublicationPlanningError) Error() string {
 // Unwrap is part of the public package API.
 func (e *ContractPublicationPlanningError) Unwrap() error { return ErrContractPublicationInvalid }
 
+// ContractPublicationViolationError refuses a publication whose own plan
+// contradicts itself, and renders every violation so the author can act on the
+// message alone.
+//
+// The planner deliberately RECORDS a policy violation rather than refusing:
+// `internal/contract` is a pure core that returns findings and decides no
+// policy. Deciding is this layer's job, and until now nothing did it — the
+// violation was carried into the result and the publication went through, so a
+// breaking change declared as a minor exited zero and opened a pull request.
+// Main was never at risk (the merge gate runs the same two checks), but the
+// author learned from a red gate on an already-open pull request instead of
+// from the command they ran, which for an agent means learning out of band,
+// after it has already moved on, with a branch and a pull request to clean up.
+//
+// This is not the G1/G2 gate. A gate says "this publication needs a decision";
+// every first publish is G1 and every honest major is G2, so gating on it would
+// refuse correct work. A violation says the request is self-contradictory —
+// the author asserted a compatible bump over incompatible content — and no
+// review can make that consistent. It is refused, not routed.
+// ContractPublicationViolationError is part of the public package API.
+type ContractPublicationViolationError struct {
+	Violations []contract.Finding
+}
+
+// Error is part of the public package API.
+func (e *ContractPublicationViolationError) Error() string {
+	parts := make([]string, 0, len(e.Violations))
+	for _, violation := range e.Violations {
+		part := violation.Code
+		if violation.Path != "" {
+			part += " " + violation.Path
+		}
+		if violation.Message != "" {
+			part += ": " + violation.Message
+		}
+		parts = append(parts, part)
+	}
+	return "space: contract publication refused: " + strings.Join(parts, "; ")
+}
+
+// Unwrap is part of the public package API.
+func (e *ContractPublicationViolationError) Unwrap() error { return ErrContractPublicationInvalid }
+
 func newContractPublicationPlanningError(issues []contract.Issue) error {
 	return &ContractPublicationPlanningError{Issues: append([]contract.Issue(nil), issues...)}
 }
@@ -639,6 +682,14 @@ func (s *ContractPublicationService) Publish(ctx context.Context, request Contra
 	plan, planning, err := s.plan(ctx, request, candidate, modes, authoritativeCommit)
 	if err != nil {
 		return ContractPublicationResult{}, err
+	}
+	// Refused HERE, and only here: the same planning helper also serves
+	// verifyCompletion, which re-plans a publication that already landed on
+	// main during recovery. Refusing there would make an already-published
+	// contract permanently unrecoverable over a finding its own publication
+	// already carries.
+	if len(plan.Violations) != 0 {
+		return ContractPublicationResult{Plan: plan}, &ContractPublicationViolationError{Violations: plan.Violations}
 	}
 	belowFloor, _ := version.OlderThan(plan.AuthoringFloor, contract.ContractPublicationFloor)
 	if belowFloor && !strings.HasPrefix(request.Selector, "explicit:") {
