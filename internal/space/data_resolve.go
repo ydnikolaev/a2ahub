@@ -50,15 +50,28 @@ const dataPackagePrefix = "DP"
 // cmd/a2a's splitExactContractReference already parses for `contract check`/
 // `contract materialize`, reimplemented here rather than imported because
 // internal/space cannot import cmd/a2a (the dependency runs the other way).
-func splitDataContractReference(ref string) (id, canonicalVersion string, err error) {
-	id, requestedVersion, found := strings.Cut(ref, "@")
+func splitDataContractReference(ref string) (id, canonicalVersion, pinnedDigest string, err error) {
+	// A pinned ref may carry the digest this package's own resolver emits:
+	// "<XC-id>@<version>#<digest>" is exactly what T2.1 requires a manifest's
+	// contract field to hold, so verify hands this function back the value
+	// pack wrote. An earlier revision accepted only "<id>@<version>" and
+	// refused the digest suffix it had itself produced, which made `data
+	// verify` fail against every package `data pack` ever produced. The
+	// suffix is now parsed AND checked by the caller, rather than tolerated:
+	// re-resolving to different bytes than the producer pinned is the one
+	// thing L-2 exists to make impossible.
+	body, digest, hasDigest := strings.Cut(ref, "#")
+	if hasDigest && digest == "" {
+		return "", "", "", fmt.Errorf("%w: %q", ErrContractInvalidReference, ref)
+	}
+	id, requestedVersion, found := strings.Cut(body, "@")
 	parsed, idErr := artifact.ParseID(id)
 	canonical, versionErr := version.Canonical(requestedVersion)
 	if !found || strings.Contains(requestedVersion, "@") || idErr != nil || parsed.Prefix != "XC" ||
 		versionErr != nil || canonical != requestedVersion {
-		return "", "", fmt.Errorf("%w: %q", ErrContractInvalidReference, ref)
+		return "", "", "", fmt.Errorf("%w: %q", ErrContractInvalidReference, ref)
 	}
-	return id, canonical, nil
+	return id, canonical, digest, nil
 }
 
 // ResolveDataContractSchemas resolves and digest-verifies EXACTLY ONE
@@ -81,7 +94,7 @@ func splitDataContractReference(ref string) (id, canonicalVersion string, err er
 // pinnedRef is "<XC-id>@<version>#<digest>" — the exact value
 // data-package/v1's own `contract` field pins (§T2.1).
 func ResolveDataContractSchemas(ctx context.Context, mirrorDir, ref string, validator ContractHistoryDocumentValidator) (schemas map[string][]byte, pinnedRef string, err error) {
-	id, canonicalVersion, err := splitDataContractReference(ref)
+	id, canonicalVersion, pinnedDigest, err := splitDataContractReference(ref)
 	if err != nil {
 		return nil, "", err
 	}
@@ -89,9 +102,17 @@ func ResolveDataContractSchemas(ctx context.Context, mirrorDir, ref string, vali
 	if err != nil {
 		return nil, "", err
 	}
+	if pinnedDigest != "" && pinnedDigest != snapshot.PublishedDigest {
+		// The caller pinned a digest and the version resolves to different
+		// bytes. Refuse rather than judge: a verdict produced against bytes
+		// the producer did not agree to is worse than no verdict, because it
+		// looks exactly like one that is true.
+		return nil, "", fmt.Errorf("%w: %s@%s pins %s but resolves to %s",
+			ErrContractHistoryInvalid, id, canonicalVersion, pinnedDigest, snapshot.PublishedDigest)
+	}
 	schemas = make(map[string][]byte, len(snapshot.CarriedSet.Entries))
 	for _, entry := range snapshot.CarriedSet.Entries {
-		if entry.Role != contract.RoleSchema {
+		if !dataContractSchemaEntry(snapshot.CarriedSet.Profile, entry) {
 			continue
 		}
 		raw, ok := snapshot.CarriedSet.Bytes[entry.Path]
@@ -104,6 +125,24 @@ func ResolveDataContractSchemas(ctx context.Context, mirrorDir, ref string, vali
 		return nil, "", fmt.Errorf("%w: %s@%s", ErrDataContractNoSchemas, id, canonicalVersion)
 	}
 	return schemas, fmt.Sprintf("%s@%s#%s", id, canonicalVersion, snapshot.PublishedDigest), nil
+}
+
+// dataContractSchemaEntry reports whether one carried-set entry is a schema,
+// by the same rule the shipped conformance core already uses
+// (internal/contract's conformanceSchemas).
+//
+// The role field only carries meaning under the declared contract-set-v2
+// profile; the legacy contract-tree-v1 builder never populates it, so a
+// role-only test finds ZERO schemas in every legacy contract and reports
+// the contract as having none. That is not a legacy edge case: it is every
+// contract published before the v2 profile, and the two-party e2e found it
+// by being unable to resolve one. Under the legacy profile the path prefix
+// is the classifier, exactly as conformance does it.
+func dataContractSchemaEntry(profile contract.DigestProfile, entry contract.Entry) bool {
+	if profile == contract.ProfileContractSetV2 {
+		return entry.Role == contract.RoleSchema
+	}
+	return strings.HasPrefix(entry.Path, "schema/")
 }
 
 // DataPackageBytes is one resolved data-package/v1 attempt's raw bytes:

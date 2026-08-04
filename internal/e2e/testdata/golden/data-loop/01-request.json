@@ -1,0 +1,25 @@
+{
+  "acceptance_criteria": [
+    "delivered payload conforms to the pinned contract"
+  ],
+  "actor": {
+    "kind": "agent",
+    "name": "e2e"
+  },
+  "blocking": true,
+  "body": "Please deliver a synthetic export of the order feed.",
+  "category": "data",
+  "classification": "internal",
+  "created": "REDACTED-TIMESTAMP",
+  "from": "axon",
+  "id": "XW-axon-20260804-g001",
+  "priority": "p3",
+  "schema": "envelope/v1",
+  "space": "fixture-space",
+  "thread": "thread:axon-20260804-g001",
+  "title": "deliver a synthetic export",
+  "to": [
+    "beta"
+  ],
+  "type": "work_request"
+}

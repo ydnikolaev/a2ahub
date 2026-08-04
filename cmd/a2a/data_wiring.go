@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
@@ -44,6 +45,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	semver "github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -517,6 +519,17 @@ func (c *dataCore) pack(ctx context.Context, req cli.DataPackRequest) (cli.DataR
 		Entries: entries, Expires: req.Expires, Attempt: attempt, Supersedes: supersedes,
 		MaxAttempts: req.MaxAttempts, Bounds: datapackage.DefaultBounds(), Checker: checker,
 		Now: c.now(), Entropy: c.entropy,
+		// Provenance is REQUIRED by data-package/v1 (origin_system has
+		// minLength 1), and an earlier revision left it at its zero value —
+		// so every real pack produced a manifest that `data deliver` then
+		// refused at its own schema check. What is honestly knowable here is
+		// who packed it and when; the cursor/watermark is the producer's to
+		// supply and stays empty rather than being invented, since a
+		// fabricated watermark is worse than an absent one.
+		Provenance: datapackage.Provenance{
+			OriginSystem: c.ownSystem,
+			ExtractedAt:  c.now().UTC().Format(time.RFC3339),
+		},
 	})
 	if err != nil {
 		return cli.DataResult{}, err
@@ -777,6 +790,71 @@ func readStagedPackage(ctx context.Context, stagingRoot string) (datapackage.Doc
 	return document, manifestRaw, payload, nil
 }
 
+// contractSupersededBy answers L-2's other half: the verdict is unaffected by
+// a newer contract version, and the consumer is TOLD the agreement moved.
+//
+// The verdict half is structural — verification only ever uses the version
+// pinned in the manifest, and nothing in this file can reach "latest" even by
+// accident. This observation is the part that has to be looked up, and an
+// earlier revision never set it at all, so a consumer judging against 1.0.0
+// while 1.1.0 was already published had no way to learn that.
+//
+// It is deliberately advisory and deliberately quiet on failure: an
+// unreadable event history makes the observation absent, never the
+// verification an error. Being unable to say "there is a newer version" must
+// not be able to change a verdict about bytes.
+func (c *dataCore) contractSupersededBy(pinnedRef string) string {
+	id, pinnedVersion, _, err := splitPinnedContractRef(pinnedRef)
+	if err != nil {
+		return ""
+	}
+	parsed, err := artifact.ParseID(id)
+	if err != nil {
+		return ""
+	}
+	events, err := cache.CommittedEvents(c.mirrorDir, parsed.System, id)
+	if err != nil {
+		return ""
+	}
+	newest := ""
+	for _, event := range events {
+		if event.Transition != "publish" || event.Version == "" {
+			continue
+		}
+		if older, err := semver.OlderThan(pinnedVersion, event.Version); err != nil || !older {
+			continue
+		}
+		if newest == "" {
+			newest = event.Version
+			continue
+		}
+		if older, err := semver.OlderThan(newest, event.Version); err == nil && older {
+			newest = event.Version
+		}
+	}
+	if newest == "" {
+		return ""
+	}
+	return id + "@" + newest
+}
+
+// splitPinnedContractRef parses "<XC-id>@<version>[#<digest>]" — the shape
+// T2.1 requires a manifest's contract field to carry. internal/space owns the
+// authoritative parser; this is the read-only projection cmd/a2a needs and
+// cannot import, since the dependency runs the other way.
+func splitPinnedContractRef(ref string) (id, canonicalVersion, digest string, err error) {
+	body, digest, _ := strings.Cut(ref, "#")
+	id, rawVersion, found := strings.Cut(body, "@")
+	if !found {
+		return "", "", "", fmt.Errorf("data: %q is not <contract-id>@<version>", ref)
+	}
+	canonical, err := semver.Canonical(rawVersion)
+	if err != nil {
+		return "", "", "", fmt.Errorf("data: %q: %w", ref, err)
+	}
+	return id, canonical, digest, nil
+}
+
 // --- deliver ---------------------------------------------------------------
 
 func (c *dataCore) deliver(ctx context.Context, req cli.DataDeliverRequest) (cli.DataResult, error) {
@@ -1018,6 +1096,7 @@ func (c *dataCore) verify(ctx context.Context, req cli.DataVerifyRequest) (cli.D
 	report, err := datapackage.Verify(ctx, datapackage.VerifyRequest{
 		ID: reportID, Manifest: document, Files: files, Checker: checker,
 		ContractRef: pinnedRef, Consumer: c.ownSystem, Clock: c.now,
+		ContractSupersededBy: c.contractSupersededBy(document.Contract),
 	})
 	if err != nil {
 		return cli.DataResult{}, err

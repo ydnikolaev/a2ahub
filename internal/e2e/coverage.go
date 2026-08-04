@@ -166,6 +166,13 @@ var coverageManifest = []coverageEntry{
 	// (data_wiring_test.go).
 	{Verb: "data", Txtar: "data_pack_refusal.txtar"},
 	{Verb: "data", GoTest: "cmd/a2a.TestDataCorePackEndToEnd"},
+	// The two-party host-rig loop (spec 05a §6.3): pack, deliver (one
+	// commit, idempotent re-run), fetch (clean + divergent destination),
+	// verify (judge-only and --record, both directions), and the
+	// fail->supersede->pass->close loop against a real fake-host merge —
+	// exercise no earlier row here reaches, since data_wiring_test.go's
+	// own rows are direct-construction, never through the funnel.
+	{Verb: "data", GoTest: "internal/e2e.TestDataLoopFailSupersedePassCloseInboxNeverAccumulates"},
 
 	// --- Ops & delivery --------------------------------------------------
 	{Verb: "completion", Txtar: "ops_completion.txtar"},
