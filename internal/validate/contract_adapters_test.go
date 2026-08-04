@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/contract"
@@ -52,6 +53,52 @@ func TestContractInstanceAdapterReturnsStructuredCanonicalViolations(t *testing.
 	result = adapter.CheckInstance(input)
 	if result.Passed || result.Violations == nil || len(result.Violations) != 0 {
 		t.Fatalf("malformed result = %+v", result)
+	}
+}
+
+// TestContractInstanceAdapterLocatesADocumentLevelViolationAtTheRoot pins the
+// conformance report's location semantics for the exact contract LE-OC-08
+// exercises live: `{}` against a root `required` keyword. The failure is the
+// whole document, so both pointers are RFC 6901's empty root pointer — spec 06
+// §5.4 exposes the pointers the approved library reports and never synthesizes
+// one. The live scenario read that empty schema pointer as "no location" and
+// failed a correct result; this fixes the semantics in place so a later change
+// that starts inventing a pointer is caught here.
+func TestContractInstanceAdapterLocatesADocumentLevelViolationAtTheRoot(t *testing.T) {
+	t.Parallel()
+	descriptor := contract.Descriptor{SchemaFormat: contract.ConformanceJSONSchema202012, Artifacts: []contract.Entry{
+		{Path: "schema/order.schema.json", Role: contract.RoleSchema, Normative: true, MediaType: "application/schema+json"},
+		{Path: "fixtures/valid/order.json", Role: contract.RoleValidFixture, Normative: true, MediaType: "application/json", ConformsTo: "schema/order.schema.json"},
+		{Path: "fixtures/invalid/order.json", Role: contract.RoleInvalidFixture, Normative: true, MediaType: "application/json", ConformsTo: "schema/order.schema.json"},
+	}}
+	set, issues := contract.BuildCarriedSet(contract.ProfileContractSetV2, []byte("descriptor"), descriptor, []contract.CandidateFile{
+		{Path: "schema/order.schema.json", Kind: contract.CandidateRegular, Raw: []byte(`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["id"],"properties":{"id":{"type":"string"}}}`)},
+		{Path: "fixtures/valid/order.json", Kind: contract.CandidateRegular, Raw: []byte(`{"id":"ok"}`)},
+		{Path: "fixtures/invalid/order.json", Kind: contract.CandidateRegular, Raw: []byte(`{}`)},
+	})
+	if len(issues) != 0 {
+		t.Fatal(issues)
+	}
+	input := contract.ConformanceInput{
+		ContractID: "XC-atlas-demo", Version: "1.0.0", Commit: "0123456789abcdef0123456789abcdef01234567",
+		SchemaFormat: contract.ConformanceJSONSchema202012, PublishedDigest: set.AggregateDigest,
+		Set: set, Mode: contract.ConformanceModePayload,
+		SchemaPath: "schema/order.schema.json", PayloadPath: "payloads/invalid.json", Payload: []byte(`{}`),
+	}
+	first := contract.CheckConformance(input, ContractInstanceAdapter{})
+	second := contract.CheckConformance(input, ContractInstanceAdapter{})
+	if first.Passed || first.Outcome != contract.ConformanceNonconformant || len(first.Results) != 1 {
+		t.Fatalf("known-invalid payload result = %+v", first)
+	}
+	if !reflect.DeepEqual(first.Results, second.Results) {
+		t.Fatalf("results are unstable across identical checks:\nfirst=%+v\nsecond=%+v", first.Results, second.Results)
+	}
+	if len(first.Results[0].Violations) != 1 {
+		t.Fatalf("violations = %+v, want exactly the document-level required failure", first.Results[0].Violations)
+	}
+	violation := first.Results[0].Violations[0]
+	if violation.InstancePointer != "" || violation.SchemaPointer != "" || violation.Message == "" {
+		t.Fatalf("document-level violation = %+v, want both pointers at the RFC 6901 root with a message", violation)
 	}
 }
 

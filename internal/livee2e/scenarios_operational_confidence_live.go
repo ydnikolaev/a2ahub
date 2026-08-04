@@ -987,8 +987,8 @@ func operationalConformance(ctx context.Context, oc *operationalConfidenceRun) (
 		return proof, VerdictFail, fmt.Errorf("known-invalid unstable/nonconformant mismatch: first=%+v second=%+v", first, second)
 	}
 	for _, violation := range first.Results[0].Violations {
-		if violation.SchemaPointer == "" {
-			return proof, VerdictFail, fmt.Errorf("known-invalid violation lacks stable schema location: %+v", violation)
+		if err := stableConformanceLocation(violation); err != nil {
+			return proof, VerdictFail, fmt.Errorf("known-invalid violation lacks a stable structured location: %w: %+v", err, violation)
 		}
 	}
 	proof.Pass("known-invalid-stable-locations")
