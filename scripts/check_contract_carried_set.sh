@@ -64,7 +64,7 @@ var allProfiles = []string{
 	"export-source-v1",
 }
 
-const publishedV1ManifestDigest = "38b833f3b57c35029ba94f75566714f690a96658eba1a4fd2d9b79ef62f5fa93"
+const publishedV1ManifestDigest = "fb4ae41dcdcebc645437ae726fb2abad6422635c72d92c11a639af584133d59d"
 
 var canonicalBuilderFunctions = map[string]bool{
 	"BuildCarriedSet":      true,

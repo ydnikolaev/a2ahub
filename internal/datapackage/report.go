@@ -38,10 +38,16 @@ const (
 // plan D-3). A caller that has an internal/contract.InstanceViolation
 // converts at its own boundary; this package's own callers stay free of
 // that dependency.
+// Record is the 1-based line of an ndjson entry the violation is in, and
+// is absent for a json entry, where the pointer already locates it. It
+// exists because "the file is wrong" does not aim the next attempt and
+// "record 4108 of 90000 is wrong" does — and a producer regenerating a
+// dataset needs to know which record, not merely which file (§T2.6).
 type InstanceViolation struct {
 	InstancePointer string `json:"instance_pointer"`
 	SchemaPointer   string `json:"schema_pointer"`
 	Message         string `json:"message"`
+	Record          *int64 `json:"record,omitempty"`
 }
 
 // Check is one checks[] entry (§T2.3): a stable check id, the target entry

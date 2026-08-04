@@ -133,7 +133,12 @@
       "properties": {
         "instance_pointer": { "type": "string", "maxLength": 512 },
         "schema_pointer": { "type": "string", "maxLength": 512 },
-        "message": { "type": "string", "maxLength": 512 }
+        "message": { "type": "string", "maxLength": 512 },
+        "record": {
+          "description": "1-based line of an ndjson entry this violation is in. Absent for a json entry, where instance_pointer already locates it.",
+          "type": "integer",
+          "minimum": 1
+        }
       },
       "required": ["instance_pointer", "schema_pointer", "message"],
       "additionalProperties": false
