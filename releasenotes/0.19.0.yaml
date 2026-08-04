@@ -228,7 +228,13 @@ changes:
       accepting it and doing nothing with it. Deliveries and their verdicts
       reach the dashboard through the same projection the rest of a thread
       is built from, with a delivery nobody has judged yet rendered as
-      exactly that rather than as one that passed.
+      exactly that rather than as one that passed. The thread names the
+      group as data, names each deliverable rather than labelling it only by
+      an opaque package id, and gives every failing check its own row — the
+      file, the record it is aimed at, and the rule in words — so a reader
+      can see what to fix without decoding a line of identifiers. A package
+      the local mirror cannot resolve says so as its own state, in the colour
+      of something unseen rather than something failed.
     affects: ["a2a data pack", "a2a data deliver", "a2a data fetch", "a2a data verify", "a2a_data", "data-package/v1", "verification-report/v1", "dashboard"]
     action:
       scope: local
