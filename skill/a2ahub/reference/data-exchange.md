@@ -352,6 +352,32 @@ delivery as passing — if the payload is right, `verify` computes `pass` on
 its own; if it is wrong, fix the payload and deliver a new attempt. There is
 no manual override path, by design.
 
+## If the pinned contract was superseded while the loop was in flight
+
+A package pins one exact contract version and is always judged against that
+version — the one the producer packed against, never whatever is newest. When
+`verify` notices that a newer version of the same contract exists, it records
+`observed.contract_superseded_by` in the report and **changes nothing about
+the verdict**. A package that conforms to the version it pinned passes, even
+if that version is no longer current.
+
+This is an observation for you to act on, not a failure:
+
+- **Passing with `contract_superseded_by` set** means the delivery is correct
+  and the pin is aging. Finish this exchange normally, then decide separately
+  whether the next request should pin the newer version — that is the ordinary
+  consumer loop ([loops.md](../loops.md) §8.4a), driven by
+  `a2a contract diff <id> <old> <new>`, not by this field.
+- **Do not fail a delivery for it.** The producer packed against what was
+  pinned when the work was requested; rejecting that is rejecting them for
+  your own version drift, and `verify` deliberately gives you no mechanism to
+  do it.
+
+A *different* contract entirely — a resolved ref that does not match the
+manifest's pin — is not this case: that is refused outright rather than
+observed (see `resolved contract ref does not match…` in the refusal table),
+because a verdict computed against the wrong schema would mean nothing.
+
 ## A superseding attempt never erases what failed
 
 Packing attempt 2 with `--supersedes <attempt-1-id>` does not touch attempt
