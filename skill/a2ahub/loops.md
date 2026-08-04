@@ -40,7 +40,13 @@ lifecycles): a proposed change to another party's artifact is a `work_request`
 with `category: contract-change` (or `process-change`); a periodic snapshot is
 an `announcement` with `category: status`. A defect report against a
 counterparty's contract is a `question` with `category: defect`. A
-data/dictionary request is a `work_request` with `category: data`.
+data/dictionary request is a `work_request` with `category: data`. **When
+that data request is fulfilled with an actual payload** (not merely a
+description), the delivery rides this same lifecycle through a `handoff`
+carrying a `data-package/v1` manifest, judged by a `verification-report/v1` —
+no new document type, no new loop. See
+[reference/data-exchange.md](reference/data-exchange.md) for the
+`a2a data pack/deliver/fetch/verify` sequence.
 
 **The single-intent rule (§3.2).** An artifact MUST carry exactly one intent of
 exactly one type. Multi-intent documents ("we shipped X, also here's a
@@ -158,7 +164,19 @@ D-021. Invocation syntax for `a2a inbox` / `a2a outbox`:
    automatically. Pass → `a2a verify` (for a single-response exchange this also
    closes the parent; a requirement completes via `a2a satisfy`). Fail →
    `a2a dispute` with concrete findings, at most twice per exchange before human
-   escalation (8.5).
+   escalation (8.5). **A data delivery is judged differently:** the handoff
+   carrying it goes through `a2a data verify <package-id> --record`, whose
+   `verify-pass`/`verify-fail` direction is derived from the package's own
+   conformance checks against the pinned contract. Plain `a2a verify` does
+   not apply to a handoff at all (that transition belongs to a response).
+   The generic `a2a verify-pass` / `a2a verify-fail` verbs DO exist and will
+   move a handoff — **do not use them on a data delivery.** They record a
+   verdict bound to nothing: no report, no digests re-proven, no conformance
+   run, and the counterparty has no way to reproduce what you decided. Use
+   them only for a handoff whose acceptance is a human judgement rather than
+   a schema check. The originating `work_request` still needs its own
+   `a2a respond`/`a2a close` once the handoff passes. See
+   [reference/data-exchange.md](reference/data-exchange.md).
 7. **Register consumed contracts:** `a2a contract adopt <XC-id>` writes your
    `consumes.yaml` and opens the PR (pin explicitly with `--major`; re-running
    is a no-op). This is what makes you a registered consumer whom breaking

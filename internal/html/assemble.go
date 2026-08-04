@@ -937,6 +937,16 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 	for _, unresolved := range result.Unresolved {
 		view.Unresolved = append(view.Unresolved, ThreadUnresolvedRef{ID: unresolved.ID, Kind: unresolved.Kind})
 	}
+	// Deliveries (spec 05a AC-7): projected via ProjectDeliveries
+	// (delivery.go), the last link between cache.Store.ThreadView's own
+	// resolution (internal/cache/threadview.go's buildDeliveries) and the
+	// rendered page. Left nil (never []Delivery{}) when result.Deliveries
+	// is empty, matching ThreadView.Deliveries' own `omitempty` contract
+	// (model.go) — a thread with no data deliverables emits no
+	// `"deliveries"` key at all, exactly as before this wave.
+	if len(result.Deliveries) > 0 {
+		view.Deliveries = ProjectDeliveries(result.Deliveries)
+	}
 	return view
 }
 

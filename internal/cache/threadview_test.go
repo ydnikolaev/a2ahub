@@ -795,3 +795,183 @@ func TestThreadViewThreadlessArtifactRefuses(t *testing.T) {
 		t.Fatalf("the error must name the actual condition, got: %v", err)
 	}
 }
+
+// twHandoff builds a minimal handoff/v1-shaped envelope carrying one
+// data-kind deliverable — the exact frontmatter shape
+// cmd/a2a/data_wiring.go's own deliver builder writes (bare
+// `manifest.ID` as deliverables[].ref, never a digest-qualified or
+// space-qualified form; verified by grep before writing this fixture).
+func twHandoff(id, from, to, thread, packageRef string, created time.Time) map[string]any {
+	return map[string]any{
+		"schema": "envelope/v1", "id": id, "type": "handoff", "title": "delivery",
+		"space": "fixture-space", "from": from, "to": []string{to}, "thread": thread,
+		"actor":   map[string]any{"kind": "agent", "name": from + "-bot"},
+		"created": fxAt(created), "priority": "p2", "blocking": false, "classification": "internal",
+		"deliverables": []map[string]any{
+			{"name": "dataset", "ref": packageRef, "kind": "data"},
+		},
+		"verification": "manual", "acceptance_criteria": []string{"done"}, "limitations": []string{},
+	}
+}
+
+// twWriteManifest/twWriteReport write a data-package/v1 manifest and a
+// verification-report/v1 report directly onto fx's own working directory
+// (fx.dir, the SAME directory Store reads as its mirror — mirror.go's
+// decodeArtifactFile/packageresolver.go's readBoundedRelative both read
+// straight off the checked-out tree, never a git-blob-at-commit
+// resolution), at EXACTLY the path internal/space/data_delivery.go's own
+// dataPackageManifestPath/dataPackageReportPath name — this file's own
+// packageresolver.go duplicates that same shape, so a test writing
+// anywhere else would prove nothing about production wiring.
+func twWriteManifest(t *testing.T, dir, system, packageID string, extra map[string]any) {
+	t.Helper()
+	fields := map[string]any{"schema": dataPackageSchema, "id": packageID, "attempt": 1}
+	for k, v := range extra {
+		fields[k] = v
+	}
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("twWriteManifest: marshal: %v", err)
+	}
+	full := filepath.Join(dir, filepath.FromSlash(dataPackageManifestPath(system, packageID)))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatalf("twWriteManifest: mkdir: %v", err)
+	}
+	if err := os.WriteFile(full, raw, 0o644); err != nil {
+		t.Fatalf("twWriteManifest: write: %v", err)
+	}
+}
+
+func twWriteReport(t *testing.T, dir, verifyingSystem, packageID string, extra map[string]any) {
+	t.Helper()
+	fields := map[string]any{
+		"schema": dataVerificationReportSchema, "id": "VR-" + verifyingSystem + "-20260101-aaaa",
+		"package": map[string]any{"id": packageID, "aggregate_digest": "sha256:deadbeef"},
+		"result":  "fail",
+		"checks": []map[string]any{
+			{"id": "chk-schema", "path": "dataset/records.ndjson", "status": "fail", "violations": []map[string]any{
+				{"instance_pointer": "/field", "schema_pointer": "/properties/field", "message": "wrong type", "record": 42},
+			}},
+		},
+	}
+	for k, v := range extra {
+		fields[k] = v
+	}
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("twWriteReport: marshal: %v", err)
+	}
+	full := filepath.Join(dir, filepath.FromSlash(dataPackageReportPath(verifyingSystem, packageID)))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatalf("twWriteReport: mkdir: %v", err)
+	}
+	if err := os.WriteFile(full, raw, 0o644); err != nil {
+		t.Fatalf("twWriteReport: write: %v", err)
+	}
+}
+
+// TestThreadView_DeliveriesResolveUnderTheirHandoff is spec 05a AC-7's own
+// closing link on the cache side: a handoff's data-kind deliverable
+// resolves against the mirror's own committed manifest+report and lands on
+// ThreadResult.Deliveries, carrying its package id, attempt and failing
+// entry/rule — not a hand-populated field, the real
+// Store.ThreadView->buildDeliveries->ResolveDeliveries->
+// mirrorPackageResolver path.
+func TestThreadView_DeliveriesResolveUnderTheirHandoff(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	threadID := "thread:axon-20260101-deliver1"
+	handoffID := "XH-axon-20260101-aaaa"
+	const packageID = "DP-axon-20260101-aaaa"
+	base := time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)
+
+	fx.commitArtifact("axon/exchanges/"+handoffID+".md",
+		twHandoff(handoffID, "axon", "seomatrix", threadID, packageID, base), "handoff body")
+	twWriteManifest(t, fx.dir, "axon", packageID, map[string]any{"attempt": 3})
+	twWriteReport(t, fx.dir, "seomatrix", packageID, nil)
+
+	store := newThreadStore(t, fx, "sp1")
+	result, err := store.ThreadView(context.Background(), threadID, "")
+	if err != nil {
+		t.Fatalf("ThreadView: %v", err)
+	}
+	if len(result.Deliveries) != 1 {
+		t.Fatalf("Deliveries = %+v, want exactly 1 (the handoff's own data deliverable)", result.Deliveries)
+	}
+	d := result.Deliveries[0]
+	if d.HandoffID != handoffID || d.PackageID != packageID || d.Attempt != 3 {
+		t.Fatalf("delivery identity wrong: %+v", d)
+	}
+	if d.Status != DeliveryAvailable {
+		t.Fatalf("Status = %q, want available (manifest resolved)", d.Status)
+	}
+	if d.Verdict != DeliveryVerdictFail {
+		t.Fatalf("Verdict = %q, want fail (report recorded by the verifying participant)", d.Verdict)
+	}
+	if len(d.Failures) != 1 || d.Failures[0].EntryPath != "dataset/records.ndjson" || d.Failures[0].Rule != "chk-schema" {
+		t.Fatalf("Failures = %+v, want the one failing entry/rule", d.Failures)
+	}
+	if d.Failures[0].Record == nil || *d.Failures[0].Record != 42 {
+		t.Fatalf("Failures[0].Record = %v, want 42", d.Failures[0].Record)
+	}
+}
+
+// TestThreadView_DeliveriesUnverifiedWhenNoReport proves the distinct
+// "not yet verified" branch: a package that resolves with no report
+// recorded anywhere must render unverified, never pass — the exact defect
+// this codebase has already shipped once (a missing report rounding down
+// to a settled state).
+func TestThreadView_DeliveriesUnverifiedWhenNoReport(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	threadID := "thread:axon-20260101-deliver2"
+	handoffID := "XH-axon-20260101-bbbb"
+	const packageID = "DP-axon-20260101-bbbb"
+	base := time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)
+
+	fx.commitArtifact("axon/exchanges/"+handoffID+".md",
+		twHandoff(handoffID, "axon", "seomatrix", threadID, packageID, base), "handoff body")
+	twWriteManifest(t, fx.dir, "axon", packageID, nil)
+	// Deliberately no report.json anywhere.
+
+	store := newThreadStore(t, fx, "sp1")
+	result, err := store.ThreadView(context.Background(), threadID, "")
+	if err != nil {
+		t.Fatalf("ThreadView: %v", err)
+	}
+	if len(result.Deliveries) != 1 {
+		t.Fatalf("Deliveries = %+v, want exactly 1", result.Deliveries)
+	}
+	d := result.Deliveries[0]
+	if d.Verdict != DeliveryVerdictUnverified {
+		t.Fatalf("Verdict = %q, want unverified (no report recorded)", d.Verdict)
+	}
+	if d.Verdict == DeliveryVerdictPass {
+		t.Fatal("unverified must never equal pass")
+	}
+}
+
+// TestThreadView_NoDataDeliverablesLeavesDeliveriesNil pins the brief's own
+// "change nothing about the existing output" requirement: a thread with no
+// data deliverables must not gain a stray `Deliveries` value, matching
+// ThreadResult.Deliveries' own `omitempty` contract.
+func TestThreadView_NoDataDeliverablesLeavesDeliveriesNil(t *testing.T) {
+	t.Parallel()
+	fx, threadID, _, _ := buildExchangeThread(t)
+	store := newThreadStore(t, fx, "sp1")
+
+	result, err := store.ThreadView(context.Background(), threadID, "")
+	if err != nil {
+		t.Fatalf("ThreadView: %v", err)
+	}
+	if result.Deliveries != nil {
+		t.Fatalf("Deliveries = %+v, want nil for a thread carrying no data deliverables", result.Deliveries)
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if strings.Contains(string(raw), `"deliveries"`) {
+		t.Fatalf("JSON = %s, want no \"deliveries\" key at all when there is nothing to carry", raw)
+	}
+}

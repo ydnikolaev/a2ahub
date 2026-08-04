@@ -496,6 +496,20 @@ type ThreadView struct {
 	// panel can be replaced with a finished state instead of rendering an
 	// empty prompt over zero open items.
 	Settled bool `json:"settled"`
+
+	// Deliveries carries the thread's handoff deliverables of kind "data"
+	// (spec 05a AC-7), projected via ProjectDeliveries(cache.ResolveDeliveries(...))
+	// and rendered under the handoff artifact that names them
+	// (Delivery.HandoffID joins against a ThreadViewArtifact/artifact id
+	// above — spec 05a's own "thread-side, under the handoff that carries
+	// it" scope). `omitempty` deliberately: nothing in this codebase's
+	// production assembly path (internal/html/assemble.go's toThreadView,
+	// internal/cache/threadview.go's Store.ThreadView) constructs this
+	// field yet — see this wave's own deviations report — and an
+	// un-populated ThreadView must keep emitting byte-identical JSON
+	// (no stray `"deliveries":null`) rather than silently changing every
+	// existing snapshot's shape.
+	Deliveries []Delivery `json:"deliveries,omitempty"`
 }
 
 // ThreadViewOpener identifies the artifact that began a thread.
