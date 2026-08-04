@@ -47,10 +47,17 @@ test('the public Features projection contains only the dashboard Guide screen', 
   const { template, logic } = runtimeDesignPage('14-local-dashboard-v4.dc.html', 'guide');
 
   assert.match(template, /data-screen-label="Guide"/);
+  assert.match(template, /data-guide-feedback[\s\S]*name="EmptyState" title="\{\{ feedbackTitle \}\}"/);
+  assert.match(template, /data-guide-status-card="true"/);
+  assert.match(template, /data-guide-reading-card="true"/);
   assert.doesNotMatch(template, /aria-label="\{\{ guideAria \}\}"/);
+  assert.doesNotMatch(template, /readOnlyLabel/);
   assert.doesNotMatch(template, /toggleTypeMenu|integrityFlagsLabel|data-screen-label="Overview"/);
   assert.match(logic, /const DASHBOARD_I18N = \{ en: DASHBOARD_EN \}/);
   assert.match(logic, /const A2A_GLOSSARY = \{ en: A2A_GLOSSARY_EN \}/);
+  assert.match(logic, /tone: stateTone\(key\)/);
+  assert.match(logic, /const STATE_TONE = \{/);
+  assert.doesNotMatch(logic, /key === "blocking"/);
   assert.doesNotMatch(logic, /DASHBOARD_RU|A2A_GLOSSARY_RU|GUIDE_FEATURES_RU|GUIDE_RU/);
   assert.doesNotMatch(logic, /[А-Яа-яЁё]/);
 });
@@ -62,6 +69,82 @@ test('the local dashboard projection retains both supported locales', () => {
   assert.match(logic, /const A2A_GLOSSARY = \{ en: A2A_GLOSSARY_EN, ru: A2A_GLOSSARY_RU \}/);
   assert.match(logic, /GUIDE_FEATURES_RU/);
   assert.match(logic, /[А-Яа-яЁё]/);
+});
+
+test('overview attention teasers route to Exchange and disappear when empty', () => {
+  const controller = dashboardController({ fetch: async () => ({ ok: false }), EventSource: null });
+  controller.state.data = JSON.parse(readFileSync(new URL('../../internal/html/testdata/demo.json', import.meta.url), 'utf8'));
+  controller.state.view = 'overview';
+
+  let values = controller.renderVals();
+  assert.equal(values.hasOvRows, true);
+  assert.ok(values.ovRows.length > 0);
+  const target = values.ovRows[0];
+  target.select();
+  assert.equal(controller.state.view, 'work');
+  assert.equal(controller.state.workSel, target.id);
+  assert.equal(controller.state.workTab, 'incoming');
+
+  controller.state.view = 'overview';
+  controller.state.data.inbox = [];
+  values = controller.renderVals();
+  assert.equal(values.hasOvRows, false);
+  assert.deepEqual(Array.from(values.ovRows), []);
+});
+
+test('contract version selection switches one atomic package without cross-version facts', () => {
+  const controller = dashboardController({ fetch: async () => ({ ok: false }), EventSource: null });
+  controller.state.data = JSON.parse(readFileSync(new URL('../../internal/html/testdata/demo.json', import.meta.url), 'utf8'));
+  controller.state.view = 'contracts';
+  controller.state.conSel = 'XC-atlas-order-envelope';
+
+  let values = controller.renderVals();
+  assert.equal(values.cdIsOverview, true);
+  assert.equal(values.cdIsVersion, false);
+
+  const riskTarget = values.cdRisks[0];
+  assert.match(riskTarget.successorLabel, /Open version 2\.0\.0/);
+  riskTarget.openSuccessor();
+  assert.equal(controller.state.conSel, 'XC-atlas-order-envelope');
+  assert.equal(controller.state.conVersion, '2.0.0');
+
+  controller.setState({ conVersion: '' });
+  values = controller.renderVals();
+  const currentVersionCard = values.cdVersions.find(version => version.version === '2.2.0');
+  assert.equal(currentVersionCard.role, 'button');
+  currentVersionCard.openVersion();
+  assert.equal(controller.state.conVersion, '2.2.0');
+
+  values = controller.renderVals();
+  assert.equal(values.cdIsOverview, false);
+  assert.equal(values.cdIsVersion, true);
+  assert.equal(values.cdVersionAvailable, true);
+  assert.deepEqual(Array.from(values.cdVersionPins, p => p.system), ['checkout']);
+  assert.ok(values.cdVersionNormativeDocs.every(file => file.path.includes('/2.2.0/')));
+  assert.ok(values.cdVersionSupportingDocs.every(file => file.path.includes('/2.2.0/')));
+  assert.ok(values.cdVersionFacts.some(row => row.value === '22aa11aa11aa11aa11aa11aa11aa11aa11aa11aa'));
+  assert.ok(values.cdVersionFacts.every(row => !String(row.value).includes('21aa11')));
+  assert.equal(values.cdVersionProvenanceExpanded, 'false');
+  values.toggleCdVersionProvenance();
+  values = controller.renderVals();
+  assert.equal(values.cdVersionProvenanceExpanded, 'true');
+
+  values.contractVersionSwitcher.options.find(option => option.shortLabel === '1.5.0').go();
+  values = controller.renderVals();
+  assert.equal(values.cdVersionLegacy, true);
+  assert.deepEqual(Array.from(values.cdVersionPins, p => p.system), ['fulfillment']);
+  assert.ok(values.cdVersionNormativeDocs.every(file => file.path.includes('/1.5.0/')));
+  assert.ok(values.cdVersionFacts.some(row => row.value === '15aa11aa11aa11aa11aa11aa11aa11aa11aa11aa'));
+  assert.ok(values.cdVersionFacts.every(row => !String(row.value).includes('22aa11')));
+
+  values.contractVersionSwitcher.options.find(option => option.shortLabel === 'Overview').go();
+  values = controller.renderVals();
+  const retiredVersionCard = values.cdVersions.find(version => version.version === '1.5.0');
+  assert.equal(retiredVersionCard.role, '');
+  const successorLink = retiredVersionCard.notes.find(note => note.hasContract);
+  successorLink.openContract();
+  assert.equal(controller.state.conSel, 'XC-atlas-order-envelope');
+  assert.equal(controller.state.conVersion, '2.0.0');
 });
 
 test('the live dashboard applies only the newest conditional snapshot and preserves attention data', async () => {
@@ -175,15 +258,15 @@ test('operational rows expose honest freshness metadata and navigate from proces
   const values = controller.renderVals();
   assert.equal(values.operationalRows.length, 1);
   assert.match(values.operationalSnapshot, /degraded sources/);
-  assert.match(values.operationalRows[0].now, /Current work:/);
-  assert.match(values.operationalRows[0].protocol, /checkout/);
-  assert.match(values.operationalRows[0].work[0].reported, /^reported /);
-  assert.match(values.operationalRows[0].work[0].observed, /^observed /);
-  assert.match(values.operationalRows[0].work[0].expires, /^valid until /);
+  assert.equal(values.operationalRows[0].hasCurrentWork, true);
+  assert.equal(values.operationalRows[0].waitingOn, 'checkout');
+  assert.match(values.operationalRows[0].currentWork[0].reported, /^reported /);
+  assert.match(values.operationalRows[0].currentWork[0].observed, /^observed /);
+  assert.match(values.operationalRows[0].currentWork[0].expires, /^valid until /);
 
-  values.operationalRows[0].work[0].openSubject({ stopPropagation() {} });
+  values.operationalRows[0].currentWork[0].openSubject({ stopPropagation() {} });
   assert.equal(controller.state.mapDocument.id, 'XW-atlas-20260803-work');
-  values.operationalRows[0].work[1].openSubject({ stopPropagation() {} });
+  values.operationalRows[0].currentWork[1].openSubject({ stopPropagation() {} });
   assert.equal(controller.state.view, 'contracts');
   assert.equal(controller.state.conSel, 'XC-atlas-events');
   values.operationalRows[0].openThread();
@@ -205,9 +288,10 @@ test('pending recovery is rendered as recovery, never current execution', () => 
   };
   controller.state.data = data;
   const row = controller.renderVals().operationalRows[0];
-  assert.equal(row.now, 'An unfinished publication needs recovery');
-  assert.doesNotMatch(row.now, /Current work/);
-  assert.equal(row.work[0].freshness, 'publication needs recovery');
+  assert.equal(row.hasCurrentWork, false);
+  assert.equal(row.currentUnknownText, 'Current work status is unknown: this snapshot has no current report.');
+  assert.equal(row.hasHistoricalWork, true);
+  assert.match(row.historicalWork[0].actorEvent.meta, /publication needs recovery/);
 });
 
 test('the shared segmented filter bounds wide options inside a horizontal scroller', () => {

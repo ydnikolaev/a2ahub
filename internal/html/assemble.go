@@ -2,14 +2,19 @@ package html
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -23,12 +28,18 @@ import (
 // consumes.yaml is walked per space mirror to derive contract-dependency edges.
 // No network.
 func Assemble(ctx context.Context, store *cache.Store, self string, now time.Time) (Data, error) {
+	return AssembleWithContractHistory(ctx, store, self, now, nil)
+}
+
+// AssembleWithContractHistory is the non-operational entry point with the
+// canonical historical validator supplied by the composition root.
+func AssembleWithContractHistory(ctx context.Context, store *cache.Store, self string, now time.Time, historyValidator space.ContractHistoryDocumentValidator) (Data, error) {
 	empty := operational.Snapshot{
 		SchemaVersion: operational.SchemaVersion, GeneratedAt: now.UTC(),
 		Sources: []operational.Source{}, Timeline: []operational.TimelineRow{},
 		TimelineWindow: operational.Window{}, Unavailable: []operational.Unavailable{},
 	}
-	return AssembleWithOperational(ctx, store, self, now, empty)
+	return AssembleWithOperationalAndContractHistory(ctx, store, self, now, empty, historyValidator)
 }
 
 // AssembleWithOperational injects the exact snapshot produced by the shared
@@ -36,6 +47,14 @@ func Assemble(ctx context.Context, store *cache.Store, self string, now time.Tim
 // rebuilds protocol, work freshness, precedence, consistency or ordering from
 // ThreadView.
 func AssembleWithOperational(ctx context.Context, store *cache.Store, self string, now time.Time, snapshot operational.Snapshot) (Data, error) {
+	return AssembleWithOperationalAndContractHistory(ctx, store, self, now, snapshot, nil)
+}
+
+// AssembleWithOperationalAndContractHistory injects both authoritative read
+// models needed by the dashboard. The composition root owns the canonical
+// historical validator; HTML only consumes it and never builds a second
+// schema engine locally.
+func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache.Store, self string, now time.Time, snapshot operational.Snapshot, historyValidator space.ContractHistoryDocumentValidator) (Data, error) {
 	if self == "" {
 		self = store.OwnSystem()
 	}
@@ -43,7 +62,7 @@ func AssembleWithOperational(ctx context.Context, store *cache.Store, self strin
 	d := Data{GeneratedAt: now, Self: self, Nodes: []Node{}, ContractEdges: []ContractEdge{},
 		ExchangeEdges: []ExchangeEdge{}, Threads: []Thread{}, Inbox: []Item{}, Outbox: []Item{}, Archive: []Item{}, Contracts: []Contract{},
 		Spaces: []SpaceHealth{}, Flags: []Flag{}, ReleaseNotes: []ReleaseNote{}, ThreadViews: []ThreadView{},
-		Operational: snapshot, ArtifactDetails: []ArtifactDetail{}, Unavailable: []UnavailableFact{}}
+		WorkReports: []WorkReport{}, Operational: snapshot, ArtifactDetails: []ArtifactDetail{}, Unavailable: []UnavailableFact{}}
 
 	un := store.UpdateNotice()
 	d.Tooling = Tooling{Current: un.Current, Latest: un.Latest, UpdateAvailable: un.UpdateAvailable,
@@ -114,14 +133,26 @@ func AssembleWithOperational(ctx context.Context, store *cache.Store, self strin
 	if err != nil {
 		return Data{}, fmt.Errorf("html: contracts: %w", err)
 	}
-	byID := map[string]cache.ContractInfo{}
+	type contractKey struct{ space, id string }
+	byID := map[contractKey]cache.ContractInfo{}
 	for _, c := range cinfos {
-		byID[c.ID] = c
+		byID[contractKey{space: c.Space, id: c.ID}] = c
 	}
-
+	contractMirrors := make(map[string]cache.SpaceMirror, len(mirrors))
+	ambiguousMirror := make(map[string]bool)
+	for _, mirror := range mirrors {
+		if _, duplicate := contractMirrors[mirror.SpaceID]; duplicate {
+			delete(contractMirrors, mirror.SpaceID)
+			ambiguousMirror[mirror.SpaceID] = true
+			continue
+		}
+		if !ambiguousMirror[mirror.SpaceID] {
+			contractMirrors[mirror.SpaceID] = mirror
+		}
+	}
 	// Contract-dependency edges from every space's consumes.yaml, plus the
 	// per-contract consumer lists.
-	consumersOf := map[string][]string{}
+	consumersOf := map[contractKey][]string{}
 	for _, m := range mirrors {
 		for _, p := range m.Manifest.Participants {
 			sec := strings.TrimSuffix(p.Section, "/")
@@ -138,10 +169,11 @@ func AssembleWithOperational(ctx context.Context, store *cache.Store, self strin
 			}
 			for _, dep := range cons.Dependencies {
 				provider := providerOf(dep.Contract)
-				consumersOf[dep.Contract] = append(consumersOf[dep.Contract], p.System)
+				key := contractKey{space: m.SpaceID, id: dep.Contract}
+				consumersOf[key] = append(consumersOf[key], p.System)
 				edge := ContractEdge{From: p.System, To: provider, Space: m.SpaceID,
 					Contract: dep.Contract, PinnedMajor: dep.Major}
-				ci, ok := byID[dep.Contract]
+				ci, ok := byID[key]
 				switch {
 				case !ok || nodeStatus(nodeIdx, provider) == "left":
 					edge.Drift = "dangling"
@@ -157,18 +189,25 @@ func AssembleWithOperational(ctx context.Context, store *cache.Store, self strin
 		}
 	}
 	sort.Slice(d.ContractEdges, func(i, j int) bool {
+		if d.ContractEdges[i].Space != d.ContractEdges[j].Space {
+			return d.ContractEdges[i].Space < d.ContractEdges[j].Space
+		}
 		return d.ContractEdges[i].Contract < d.ContractEdges[j].Contract
 	})
 
 	// Contracts catalog rows (with derived consumer lists).
 	for _, c := range cinfos {
-		cons := consumersOf[c.ID]
+		cons := consumersOf[contractKey{space: c.Space, id: c.ID}]
 		sort.Strings(cons)
+		details, detailErr := resolveContractVersionDetails(ctx, contractMirrors, c, d.ContractEdges, historyValidator)
+		if detailErr != nil {
+			return Data{}, detailErr
+		}
 		vers := make([]ContractVersion, 0, len(c.Versions))
 		for _, v := range c.Versions {
 			vers = append(vers, ContractVersion{
 				Version: v.Version, State: v.State, Sunset: v.Sunset,
-				Successor: v.Successor, DeprecationID: v.DeprecationID,
+				Successor: v.Successor, DeprecationID: v.DeprecationID, Detail: details[v.Version],
 			})
 		}
 		d.Contracts = append(d.Contracts, Contract{Space: c.Space, ID: c.ID, Provider: c.Provider,
@@ -179,6 +218,7 @@ func AssembleWithOperational(ctx context.Context, store *cache.Store, self strin
 			CodeBacked:   c.GeneratedTool != "" && c.SourceDigest != "",
 		})
 	}
+	limitContractVersionDetails(d.Contracts)
 
 	// Exchange is an active-work surface. The ordinary inbox query also
 	// contains terminal history by protocol design, so use the explicitly open
@@ -206,6 +246,7 @@ func AssembleWithOperational(ctx context.Context, store *cache.Store, self strin
 	}
 	d.Threads = threads
 	d.ThreadViews = threadViews
+	d.WorkReports = collectWorkReports(threadViews)
 
 	for _, it := range inItems {
 		d.Inbox = append(d.Inbox, toItem(it, now, self, openItems))
@@ -306,6 +347,432 @@ func AssembleWithOperational(ctx context.Context, store *cache.Store, self strin
 	)
 
 	return d, nil
+}
+
+func resolveContractVersionDetails(
+	ctx context.Context,
+	mirrors map[string]cache.SpaceMirror,
+	info cache.ContractInfo,
+	edges []ContractEdge,
+	validator space.ContractHistoryDocumentValidator,
+) (map[string]*ContractVersionDetail, error) {
+	details := make(map[string]*ContractVersionDetail, len(info.Versions))
+	setUnavailable := func(reason string) {
+		for _, version := range info.Versions {
+			details[version.Version] = unavailableContractVersionDetail(reason)
+		}
+	}
+	if validator == nil {
+		setUnavailable("The canonical historical package validator is unavailable for this snapshot.")
+		return details, nil
+	}
+	mirror, ok := mirrors[info.Space]
+	if !ok {
+		setUnavailable("The synchronized mirror for this contract's space is unavailable or ambiguous.")
+		return details, nil
+	}
+	requested := make([]string, 0, len(info.Versions))
+	versions := make(map[string]cache.ContractVersion, len(info.Versions))
+	for _, version := range info.Versions {
+		requested = append(requested, version.Version)
+		versions[version.Version] = version
+	}
+	err := space.VisitContractVersions(ctx, mirror.Dir, info.ID, requested, validator, func(resolution *space.HistoricalResolution) error {
+		projectContractResolution(details, versions, edges, info, resolution)
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("html: resolve contract versions %s:%s: %w", info.Space, info.ID, err)
+		}
+		setUnavailable(contractVersionUnavailableReason(err))
+		return details, nil
+	}
+	for _, version := range info.Versions {
+		if details[version.Version] == nil {
+			details[version.Version] = unavailableContractVersionDetail("The exact historical package for this contract version was not returned by the canonical resolver.")
+		}
+	}
+	return details, nil
+}
+
+func projectContractResolution(
+	details map[string]*ContractVersionDetail,
+	versions map[string]cache.ContractVersion,
+	edges []ContractEdge,
+	info cache.ContractInfo,
+	resolution *space.HistoricalResolution,
+) {
+	version, expected := versions[resolution.Version]
+	if !expected {
+		return
+	}
+	if resolution.Err != nil {
+		details[resolution.Version] = unavailableContractVersionDetail(contractVersionUnavailableReason(resolution.Err))
+		return
+	}
+	if resolution.Snapshot.ContractID != info.ID || resolution.Snapshot.Version != resolution.Version {
+		details[resolution.Version] = unavailableContractVersionDetail("Historical resolution returned a different contract version, so no package facts were used.")
+		return
+	}
+	detail, err := projectContractVersionDetail(resolution.Snapshot, contractVersionConsumerPins(edges, info.Space, info.ID, resolution.Version), version)
+	if err != nil {
+		details[resolution.Version] = unavailableContractVersionDetail("Historical publication evidence for this exact version could not be projected without mixing package facts.")
+		return
+	}
+	details[resolution.Version] = detail
+}
+
+func unavailableContractVersionDetail(reason string) *ContractVersionDetail {
+	return &ContractVersionDetail{Status: ContractVersionDetailUnavailable, UnavailableReason: reason}
+}
+
+func contractVersionUnavailableReason(err error) string {
+	switch {
+	case errors.Is(err, space.ErrContractNotPublished):
+		return "No verified publication was found for this exact contract version on the synchronized authoritative history."
+	case errors.Is(err, space.ErrContractObjectUnavailable):
+		return "The exact Git objects required for this contract version are unavailable in the synchronized mirror."
+	case errors.Is(err, space.ErrContractHistoryInvalid), errors.Is(err, space.ErrContractDigestMismatch):
+		return "Historical publication evidence for this exact contract version did not pass canonical validation and digest verification."
+	default:
+		return "The exact historical package for this contract version could not be verified from the synchronized mirror."
+	}
+}
+
+type contractVersionDescriptorProjection struct {
+	ID            string `yaml:"id"`
+	Version       string `yaml:"version"`
+	SchemaFormat  string `yaml:"schema_format"`
+	CompatPolicy  string `yaml:"compat_policy"`
+	GeneratedFrom struct {
+		Tool         string `yaml:"tool"`
+		SourceDigest string `yaml:"source_digest"`
+	} `yaml:"generated_from"`
+}
+
+type contractVersionPublishProjection struct {
+	Event      string `yaml:"event"`
+	Subject    string `yaml:"subject"`
+	Transition string `yaml:"transition"`
+	Version    string `yaml:"version"`
+	At         string `yaml:"at"`
+	Actor      struct {
+		Name   string `yaml:"name"`
+		System string `yaml:"system"`
+	} `yaml:"actor"`
+}
+
+func projectContractVersionDetail(snapshot space.HistoricalSnapshot, pins []ContractVersionConsumerPin, version cache.ContractVersion) (*ContractVersionDetail, error) {
+	descriptorRaw, ok := snapshot.CarriedSet.Bytes[contract.DescriptorPath]
+	if !ok && snapshot.DigestProfile == contract.ProfileContractTreeV1 {
+		for _, file := range snapshot.Files {
+			if file.Path == contract.DescriptorPath {
+				descriptorRaw = file.Raw
+				ok = true
+				break
+			}
+		}
+	}
+	if !ok {
+		return nil, fmt.Errorf("historical descriptor bytes are missing")
+	}
+	frontmatter, err := artifact.ParseFrontmatter(descriptorRaw)
+	if err != nil {
+		return nil, fmt.Errorf("parse historical descriptor: %w", err)
+	}
+	var descriptor contractVersionDescriptorProjection
+	if err := yaml.Unmarshal(frontmatter.YAML, &descriptor); err != nil {
+		return nil, fmt.Errorf("decode historical descriptor: %w", err)
+	}
+	if descriptor.ID != snapshot.ContractID || descriptor.Version != snapshot.Version {
+		return nil, fmt.Errorf("historical descriptor identity does not match resolved version")
+	}
+	var published contractVersionPublishProjection
+	if err := yaml.Unmarshal(snapshot.PublishEventRaw, &published); err != nil {
+		return nil, fmt.Errorf("decode historical publish event: %w", err)
+	}
+	if published.Subject != snapshot.ContractID || published.Version != snapshot.Version || published.Transition != "publish" || published.Event == "" {
+		return nil, fmt.Errorf("historical publish event identity does not match resolved version")
+	}
+	publishedBy := published.Actor.System
+	if publishedBy == "" {
+		publishedBy = published.Actor.Name
+	}
+	descriptorDigest := snapshot.CarriedSet.PerFileDigest[contract.DescriptorPath]
+	if descriptorDigest == "" {
+		descriptorDigest = artifact.Digest(descriptorRaw)
+	}
+	documents := make([]ContractVersionDocument, 0, len(snapshot.CarriedSet.Entries)+1)
+	documents = append(documents, ContractVersionDocument{
+		Path: contract.DescriptorPath, Role: "descriptor", Normative: true,
+		MediaType: "text/markdown", Digest: descriptorDigest,
+		SizeBytes: int64(len(descriptorRaw)), Preview: contractVersionPreview(descriptorRaw), PreviewLanguage: "markdown",
+	})
+	if snapshot.DigestProfile == contract.ProfileContractSetV2 && descriptorDigest != snapshot.CarriedSet.PerFileDigest[contract.DescriptorPath] {
+		return nil, fmt.Errorf("historical contract-set-v2 descriptor lacks exact digest")
+	}
+	for _, entry := range snapshot.CarriedSet.Entries {
+		raw, exists := snapshot.CarriedSet.Bytes[entry.Path]
+		digest := snapshot.CarriedSet.PerFileDigest[entry.Path]
+		if !exists || digest == "" {
+			return nil, fmt.Errorf("historical carried file %q lacks exact bytes or digest", entry.Path)
+		}
+		role, normative := contractVersionDocumentRole(snapshot.DigestProfile, entry)
+		documents = append(documents, ContractVersionDocument{
+			Path: entry.Path, Role: role, Normative: normative,
+			MediaType: entry.MediaType, ConformsTo: entry.ConformsTo,
+			Digest: digest, SizeBytes: int64(len(raw)), Preview: contractVersionPreview(raw),
+			PreviewLanguage: contractVersionPreviewLanguage(entry.Path, entry.MediaType),
+		})
+	}
+	sort.Slice(documents, func(i, j int) bool { return documents[i].Path < documents[j].Path })
+	provenance := &ContractVersionProvenance{
+		Profile: string(snapshot.DigestProfile), CommitSHA: snapshot.CommitSHA, TreeObjectID: snapshot.TreeObjectID,
+		DescriptorPath: snapshot.DescriptorPath, PublishEventPath: snapshot.PublishEventPath,
+		EventSchema: snapshot.EventSchema, DigestProfile: string(snapshot.DigestProfile),
+		PublishedDigest: snapshot.PublishedDigest, AggregateVerification: snapshot.AggregateVerification,
+		DescriptorVerification: snapshot.DescriptorVerification,
+		GeneratedTool:          descriptor.GeneratedFrom.Tool, SourceDigest: descriptor.GeneratedFrom.SourceDigest,
+	}
+	return &ContractVersionDetail{
+		Status: ContractVersionDetailAvailable, Description: strings.TrimSpace(contractVersionPreview(frontmatter.Body)),
+		SchemaFormat: descriptor.SchemaFormat, CompatPolicy: descriptor.CompatPolicy,
+		PublishedAt: published.At, PublishedBy: publishedBy, ConsumerPins: pins,
+		Documents: documents, History: contractVersionHistory(published, version), Provenance: provenance,
+	}, nil
+}
+
+func contractVersionHistory(published contractVersionPublishProjection, version cache.ContractVersion) []ContractVersionHistory {
+	publishedBy := published.Actor.System
+	if publishedBy == "" {
+		publishedBy = published.Actor.Name
+	}
+	history := []ContractVersionHistory{{
+		EventID: published.Event, Transition: "publish", State: "published", Actor: publishedBy, At: published.At,
+	}}
+	// cache.ContractVersion is the canonical fold projection of committed
+	// lifecycle events, but it intentionally does not expose their actor/time.
+	// Preserve only the state transitions its final state proves; blank evidence
+	// fields are deliberate and must never be filled from another version.
+	if version.State == "deprecated" || version.State == "retired" {
+		history = append(history, ContractVersionHistory{Transition: "deprecate", State: "deprecated"})
+	}
+	if version.State == "retired" {
+		history = append(history, ContractVersionHistory{Transition: "retire", State: "retired"})
+	}
+	return history
+}
+
+func contractVersionDocumentRole(profile contract.DigestProfile, entry contract.Entry) (string, bool) {
+	if profile != contract.ProfileContractTreeV1 {
+		return string(entry.Role), entry.Normative
+	}
+	switch {
+	case strings.HasPrefix(entry.Path, "schema/"):
+		return string(contract.RoleSchema), true
+	case strings.HasPrefix(entry.Path, "fixtures/valid/"):
+		return string(contract.RoleValidFixture), true
+	case strings.HasPrefix(entry.Path, "fixtures/invalid/"):
+		return string(contract.RoleInvalidFixture), true
+	default:
+		return "", false
+	}
+}
+
+func contractVersionPreview(raw []byte) string {
+	const maximum = 2048
+	if len(raw) > maximum {
+		raw = raw[:maximum]
+	}
+	for len(raw) > 0 && !utf8.Valid(raw) {
+		raw = raw[:len(raw)-1]
+	}
+	return string(raw)
+}
+
+const (
+	maximumEmbeddedContractDocuments         = 1024
+	maximumEmbeddedContractDocumentJSONBytes = 768 << 10
+	maximumEmbeddedContractPreviewJSONBytes  = 256 << 10
+)
+
+type contractVersionDocumentRef struct {
+	key        string
+	descriptor bool
+	owner      *ContractVersionDetail
+	document   ContractVersionDocument
+}
+
+type contractVersionPreviewRef struct {
+	key   string
+	value *string
+}
+
+// limitContractVersionDetails applies one bounded projection across every
+// historical package in the dashboard. The exact total remains explicit on
+// each version while only a deterministic subset of document metadata enters
+// the 4 MiB a2a serve shell. A shown document keeps its exact digest and other
+// metadata; omitted documents are counted, never presented as an empty set.
+func limitContractVersionDetails(contracts []Contract) {
+	documents := make([]contractVersionDocumentRef, 0)
+	for contractIndex := range contracts {
+		contractValue := &contracts[contractIndex]
+		for versionIndex := range contractValue.Versions {
+			versionValue := &contractValue.Versions[versionIndex]
+			if versionValue.Detail == nil || versionValue.Detail.Status != ContractVersionDetailAvailable {
+				continue
+			}
+			detail := versionValue.Detail
+			observedTotal := len(detail.Documents) + detail.OmittedDocumentCount
+			if observedTotal > detail.TotalDocumentCount {
+				detail.TotalDocumentCount = observedTotal
+			}
+			if detail.TotalDocumentCount < len(detail.Documents) {
+				detail.TotalDocumentCount = len(detail.Documents)
+			}
+			detail.OmittedDocumentCount = detail.TotalDocumentCount
+			prefix := contractValue.Space + "\x00" + contractValue.ID + "\x00" + versionValue.Version + "\x00"
+			for _, document := range detail.Documents {
+				documents = append(documents, contractVersionDocumentRef{
+					key: prefix + document.Path, descriptor: document.Path == contract.DescriptorPath,
+					owner: detail, document: document,
+				})
+			}
+			detail.Documents = nil
+		}
+	}
+	sort.SliceStable(documents, func(i, j int) bool {
+		if documents[i].descriptor != documents[j].descriptor {
+			return documents[i].descriptor
+		}
+		return documents[i].key < documents[j].key
+	})
+	remainingDocumentBytes := maximumEmbeddedContractDocumentJSONBytes
+	retainedDocuments := 0
+	for _, candidate := range documents {
+		if retainedDocuments >= maximumEmbeddedContractDocuments {
+			break
+		}
+		cost := contractVersionDocumentJSONBytes(candidate.document)
+		if cost > remainingDocumentBytes {
+			continue
+		}
+		candidate.owner.Documents = append(candidate.owner.Documents, candidate.document)
+		candidate.owner.OmittedDocumentCount--
+		retainedDocuments++
+		remainingDocumentBytes -= cost
+	}
+	for contractIndex := range contracts {
+		for versionIndex := range contracts[contractIndex].Versions {
+			detail := contracts[contractIndex].Versions[versionIndex].Detail
+			if detail == nil || detail.Status != ContractVersionDetailAvailable {
+				continue
+			}
+			sort.Slice(detail.Documents, func(i, j int) bool { return detail.Documents[i].Path < detail.Documents[j].Path })
+		}
+	}
+	limitContractVersionPreviews(contracts)
+}
+
+func contractVersionDocumentJSONBytes(document ContractVersionDocument) int {
+	document.Preview = ""
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		return maximumEmbeddedContractDocumentJSONBytes + 1
+	}
+	// Render uses indented JSON several levels deep. Reserve more whitespace
+	// than this fixed-field object can add so the compact cost never rounds down.
+	return len(encoded) + 256
+}
+
+func limitContractVersionPreviews(contracts []Contract) {
+	refs := make([]contractVersionPreviewRef, 0)
+	for contractIndex := range contracts {
+		contractValue := &contracts[contractIndex]
+		for versionIndex := range contractValue.Versions {
+			versionValue := &contractValue.Versions[versionIndex]
+			if versionValue.Detail == nil || versionValue.Detail.Status != ContractVersionDetailAvailable {
+				continue
+			}
+			prefix := contractValue.Space + "\x00" + contractValue.ID + "\x00" + versionValue.Version + "\x00"
+			refs = append(refs, contractVersionPreviewRef{key: prefix + "\x00description", value: &versionValue.Detail.Description})
+			for documentIndex := range versionValue.Detail.Documents {
+				document := &versionValue.Detail.Documents[documentIndex]
+				refs = append(refs, contractVersionPreviewRef{key: prefix + document.Path, value: &document.Preview})
+			}
+		}
+	}
+	sort.SliceStable(refs, func(i, j int) bool { return refs[i].key < refs[j].key })
+	remaining := maximumEmbeddedContractPreviewJSONBytes
+	for _, ref := range refs {
+		bounded := contractVersionPreview([]byte(*ref.value))
+		*ref.value = contractVersionPreviewWithinJSONBudget(bounded, &remaining)
+	}
+}
+
+func contractVersionPreviewWithinJSONBudget(preview string, remaining *int) string {
+	if preview == "" || remaining == nil || *remaining <= 0 {
+		return ""
+	}
+	end := 0
+	for offset, char := range preview {
+		cost := contractVersionPreviewRuneJSONBytes(char)
+		if cost > *remaining {
+			break
+		}
+		*remaining -= cost
+		end = offset + utf8.RuneLen(char)
+	}
+	return preview[:end]
+}
+
+func contractVersionPreviewRuneJSONBytes(char rune) int {
+	switch char {
+	case '\b', '\t', '\n', '\f', '\r', '"', '\\':
+		return 2
+	case '<', '>', '&', '\u2028', '\u2029':
+		return 6
+	default:
+		if char < 0x20 {
+			return 6
+		}
+		return utf8.RuneLen(char)
+	}
+}
+
+func contractVersionPreviewLanguage(name, mediaType string) string {
+	extension := strings.ToLower(filepath.Ext(name))
+	switch {
+	case extension == ".json" || strings.Contains(mediaType, "json"):
+		return "json"
+	case extension == ".yaml" || extension == ".yml" || strings.Contains(mediaType, "yaml"):
+		return "yaml"
+	case extension == ".md" || extension == ".markdown" || mediaType == "text/markdown":
+		return "markdown"
+	default:
+		return ""
+	}
+}
+
+func contractVersionConsumerPins(edges []ContractEdge, spaceID, contractID, version string) []ContractVersionConsumerPin {
+	var pins []ContractVersionConsumerPin
+	for _, edge := range edges {
+		if edge.Space != spaceID || edge.Contract != contractID || edge.PinnedVersion != version {
+			continue
+		}
+		pins = append(pins, ContractVersionConsumerPin{
+			System: edge.From, Space: edge.Space, PinnedMajor: edge.PinnedMajor,
+			PinnedVersion: edge.PinnedVersion, PinnedState: edge.PinnedState, Drift: edge.Drift,
+		})
+	}
+	sort.Slice(pins, func(i, j int) bool {
+		if pins[i].Space != pins[j].Space {
+			return pins[i].Space < pins[j].Space
+		}
+		return pins[i].System < pins[j].System
+	})
+	return pins
 }
 
 // buildThreads discovers every non-empty thread by grouping
@@ -411,6 +878,9 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 		row := ThreadTranscriptRow{Seq: entry.Seq, Kind: entry.Kind, At: entry.At.UTC().Format(time.RFC3339)}
 		if entry.Artifact != nil {
 			row.Artifact = &TranscriptArtifact{ID: entry.Artifact.ID, Type: entry.Artifact.Type, From: entry.Artifact.From, To: entry.Artifact.To, Title: entry.Artifact.Title}
+			if entry.Artifact.Work != nil {
+				row.Artifact.Work = toHTMLWorkReport(result.Space, result.Thread, entry.Artifact.Work)
+			}
 		}
 		if entry.Event != nil {
 			actor := map[string]any{
@@ -468,6 +938,62 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 		view.Unresolved = append(view.Unresolved, ThreadUnresolvedRef{ID: unresolved.ID, Kind: unresolved.Kind})
 	}
 	return view
+}
+
+func toHTMLWorkReport(spaceID, threadID string, report *cache.TranscriptWorkReport) *WorkReport {
+	if report == nil {
+		return nil
+	}
+	waits := make([]WorkReportWait, 0, len(report.WaitingOn))
+	for _, wait := range report.WaitingOn {
+		waits = append(waits, WorkReportWait{Kind: string(wait.Kind), ID: wait.ID, Summary: wait.Summary})
+	}
+	validUntil := ""
+	if !report.ValidUntil.IsZero() {
+		validUntil = report.ValidUntil.UTC().Format(time.RFC3339Nano)
+	}
+	return &WorkReport{
+		Space: spaceID, Thread: threadID, ArtifactID: report.ArtifactID,
+		WorkID: report.WorkID, SubjectRef: report.SubjectRef, Mode: string(report.Mode), Summary: report.Summary,
+		Actor: WorkReportActor{
+			Kind: report.Actor.Kind, Name: report.Actor.Name, System: report.Actor.System,
+			Model: report.Actor.Model, Session: report.Actor.Session,
+		},
+		WaitingOn: waits, ReportedAt: report.ReportedAt.UTC().Format(time.RFC3339Nano),
+		ValidUntil: validUntil, CommitSequence: report.CommitSequence,
+	}
+}
+
+func collectWorkReports(views []ThreadView) []WorkReport {
+	reports := make([]WorkReport, 0)
+	seen := make(map[string]bool)
+	for _, view := range views {
+		for _, row := range view.Transcript {
+			if row.Artifact == nil || row.Artifact.Work == nil {
+				continue
+			}
+			report := *row.Artifact.Work
+			key := report.Space + "\x00" + report.ArtifactID
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			reports = append(reports, report)
+		}
+	}
+	sort.SliceStable(reports, func(i, j int) bool {
+		if reports[i].Space != reports[j].Space {
+			return reports[i].Space < reports[j].Space
+		}
+		if reports[i].Thread != reports[j].Thread {
+			return reports[i].Thread < reports[j].Thread
+		}
+		if reports[i].CommitSequence != reports[j].CommitSequence {
+			return reports[i].CommitSequence < reports[j].CommitSequence
+		}
+		return reports[i].ArtifactID < reports[j].ArtifactID
+	})
+	return reports
 }
 
 // toThread projects one cache.ThreadResult into the dashboard's Thread shape

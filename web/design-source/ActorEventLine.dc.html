@@ -45,7 +45,7 @@
 // an attached document card can stay on the same timeline segment.
 const SIZES = {
   compact: { avatar:28, gap:9, title:14, meta:12, mono:10, min:30 },
-  regular: { avatar:40, gap:14, title:16, meta:14, mono:11, min:42 },
+  regular: { avatar:40, gap:14, title:16, meta:"var(--font-meta)", mono:11, min:42 },
   large:   { avatar:48, gap:15, title:17, meta:15, mono:12, min:50 }
 };
 class Component extends DCLogic {
@@ -88,12 +88,12 @@ class Component extends DCLogic {
       signalTone: row.signalTone || "neutral",
       signalLabel: row.signalLabel || "",
       hasSignal: row.hasSignal !== false && !!row.signalLabel,
-      shellStyle: "position:relative; min-width:0; display:grid; grid-template-columns:" + (rail ? "minmax(0,1fr)" : s.avatar + "px minmax(0,1fr)") + (row.hasSignal !== false && row.signalLabel ? " 20px" : "") + "; align-items:center; gap:" + s.gap + "px; min-height:" + s.min + "px; transition:opacity .18s ease;" + (dim ? " opacity:.62;" : ""),
+      shellStyle: "position:relative; min-width:0; display:grid; grid-template-columns:" + (rail ? "minmax(0,1fr)" : s.avatar + "px minmax(0,1fr)") + (row.hasSignal !== false && row.signalLabel ? " 20px" : "") + "; align-items:center; gap:" + s.gap + "px; min-height:" + s.min + "px;",
       avatarShellStyle: avatarBase + (rail ? " position:absolute; left:-" + (railOffset + Math.round(s.avatar / 2)) + "px; top:1px;" : " position:relative;"),
       avatarImageStyle: "width:100%; height:100%; border-radius:99px; display:block; object-fit:cover; image-rendering:auto;",
       avatarFallbackStyle: "width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:" + s.mono + "px; line-height:1; font-weight:600;",
       titleStyle: "font-size:" + s.title + "px; line-height:1.45; color:var(--text); overflow-wrap:anywhere;",
-      metaStyle: "margin-top:1px; font-size:" + s.meta + "px; line-height:1.4; color:var(--muted); overflow-wrap:anywhere;",
+      metaStyle: "margin-top:1px; font-size:" + s.meta + (typeof s.meta === "number" ? "px" : "") + "; line-height:var(--line-meta); color:var(--muted); overflow-wrap:anywhere;",
       subjectLinkStyle: row.subjectLinkStyle || "display:inline; border:0; padding:0; background:transparent; color:var(--teal-ink); font:inherit; font-weight:400; cursor:pointer; text-decoration:underline dashed 2px; text-underline-offset:5px;",
       noteLinkStyle: row.noteLinkStyle || "display:inline; border:0; padding:0; background:transparent; color:var(--teal-ink); font:inherit; font-weight:400; cursor:pointer; text-decoration:underline solid 1.5px; text-underline-offset:5px;",
       plainSubjectStyle: row.plainSubjectStyle || "font-weight:400; color:var(--body);"

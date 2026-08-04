@@ -91,7 +91,7 @@ html[data-theme="dark"] {
   --on-inverse-faint: #A8A08A;
   --on-dark: #FAF7F0;
   --on-solid: #0E0D09;
-  --teal-solid: #2A8395;
+  --teal-solid: #3594A7;
   --teal-ink: #8FD0DB;
   --teal-ink-hover: #B4E2EA;
   --teal-tint: #123039;
@@ -104,7 +104,7 @@ html[data-theme="dark"] {
   --attention-ink: #E8C579;
   --attention-strong: #F4DDAA;
   --attention-line: #6B5320;
-  --red: #D6584A;
+  --red: #E8786C;
   --blocking-tint: #3C1E19;
   --blocking-ink: #F0A79A;
   --blocking-strong: #F7C9C1;
@@ -131,6 +131,33 @@ a:hover { color:var(--teal-ink-hover); }
 a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 ::selection { background:var(--selection); }
 
+.dashboard-panel {
+  border-radius: var(--radius-panel);
+  padding: var(--padding-panel-block) var(--padding-panel-inline);
+}
+.dashboard-card {
+  border-radius: var(--radius-card);
+  padding: var(--padding-card-block) var(--padding-card-inline);
+}
+.dashboard-list-card {
+  border-radius: var(--radius-card);
+  padding: var(--padding-list-card-block) var(--padding-list-card-inline);
+}
+.dashboard-nested {
+  border-radius: var(--radius-nested);
+  padding: var(--padding-nested-block) var(--padding-nested-inline);
+}
+.dashboard-card-title {
+  font-size: var(--font-card-title-md);
+  line-height: var(--line-card-title-md);
+  font-weight: 600;
+}
+.dashboard-section-title {
+  font-size: var(--font-section-title);
+  line-height: var(--line-section-title);
+  font-weight: 600;
+}
+
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 </style>
 </helmet>
@@ -138,7 +165,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
 <div data-screen-label="Public dashboard example v4" style="min-height:100vh;">
   <div style="position:sticky; top:0; z-index:80;"><dc-import name="SiteHeader" active="dashboard" md="dashboard.md" md-text="{{ mdText }}" hint-size="100%,66px"></dc-import></div>
 
-  <div style="background:var(--attention-tint);">
+  <div role="region" aria-label="Synthetic demo notice" style="background:var(--attention-tint);">
     <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:12px 0; display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:16px; color:var(--attention-ink);">
       <dc-import name="StatusPill" text="Synthetic demo data — no live services" tone="attention" hint-size="290px,26px"></dc-import>
       <span>Read-only projection · no network requests · nothing here can be approved, merged or retired from a browser.</span>
@@ -156,16 +183,16 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
     </div>
 
     <sc-if value="{{ hasError }}" hint-placeholder-val="{{ false }}">
-      <div style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 3px rgba(33,30,23,.08); max-width:660px; margin-bottom:20px;">
-        <h2 style="margin:0 0 8px; font-size:22px; font-weight:600; color:var(--blocking-ink);">The demo fixture could not be read</h2>
+      <div class="dashboard-panel" style="background:var(--surface); box-shadow:0 1px 3px rgba(33,30,23,.08); max-width:660px; margin-bottom:20px;">
+        <h2 class="dashboard-section-title" style="margin:0 0 8px; color:var(--blocking-ink);">The demo fixture could not be read</h2>
         <p style="margin:0; font-size:17px; line-height:1.6; color:var(--body);">{{ errorText }}</p>
       </div>
     </sc-if>
 
-    <section style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:16px;">
+    <section class="dashboard-panel" style="background:var(--surface); box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:16px;">
       <div style="display:flex; align-items:flex-start; gap:12px; flex-wrap:nowrap; margin-bottom:14px;">
         <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:12px; flex-wrap:wrap; row-gap:6px;">
-          <h2 style="margin:0; font-size:24px; font-weight:600;">Context before numbers</h2>
+          <h2 class="dashboard-section-title" style="margin:0;">Context before numbers</h2>
           <span style="font-size:15px; color:var(--muted);">every count below is scoped by these facts</span>
         </span>
         <span style="flex:0 0 auto; display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
@@ -174,15 +201,15 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
         </span>
       </div>
       <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:14px;">
-        <div style="background:var(--page); border-radius:14px; padding:16px 18px;">
+        <div class="dashboard-list-card" style="background:var(--page);">
           <div style="font-size:16px; font-weight:600; margin-bottom:8px;">Who and when</div>
           <dc-import name="FactTable" rows="{{ ctxWho }}" hint-size="100%,140px"></dc-import>
         </div>
-        <div style="background:var(--page); border-radius:14px; padding:16px 18px;">
+        <div class="dashboard-list-card" style="background:var(--page);">
           <div style="font-size:16px; font-weight:600; margin-bottom:8px;">Snapshot and record</div>
           <dc-import name="FactTable" rows="{{ ctxSnapshot }}" hint-size="100%,140px"></dc-import>
         </div>
-        <div style="background:var(--page); border-radius:14px; padding:16px 18px;">
+        <div class="dashboard-list-card" style="background:var(--page);">
           <div style="font-size:16px; font-weight:600; margin-bottom:8px;">Three separate compatibility axes</div>
           <dc-import name="FactTable" rows="{{ ctxVersions }}" hint-size="100%,140px"></dc-import>
         </div>
@@ -191,17 +218,17 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
 
     <section style="display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; margin-bottom:16px;">
       <sc-for list="{{ readingSteps }}" as="s" hint-placeholder-count="3">
-        <div style="background:var(--surface); border-radius:14px; padding:18px 20px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+        <div class="dashboard-card" style="background:var(--surface); box-shadow:0 1px 2px rgba(33,30,23,.06);">
           <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
-            <span style="font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:6px; padding:3px 10px;">{{ s.n }}</span>
-            <span style="font-size:18px; font-weight:600;">{{ s.title }}</span>
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:var(--font-badge-small); line-height:var(--line-badge); font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:var(--radius-badge); padding:var(--padding-badge-outline-block) var(--padding-badge-outline-inline);">{{ s.n }}</span>
+            <span class="dashboard-card-title">{{ s.title }}</span>
           </div>
           <div style="font-size:16px; line-height:1.6; color:var(--body);">{{ s.text }}</div>
         </div>
       </sc-for>
     </section>
 
-    <section style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5); margin-bottom:16px;">
+    <section class="dashboard-panel" style="background:var(--surface); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5); margin-bottom:16px;">
       <div style="display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; margin-bottom:6px;">
         <div style="flex:1 1 420px; min-width:0;">
           <h2 style="margin:0 0 6px; font-size:28px; font-weight:600; letter-spacing:-0.02em;">{{ actionBrief }}</h2>
@@ -219,19 +246,19 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
         </sc-for>
       </div>
 
-      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(420px,1fr)); gap:16px; align-items:start;">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr)); gap:16px; align-items:start;">
         <div style="min-width:0; display:flex; flex-direction:column; gap:10px;">
           <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-            <h3 style="margin:0; font-size:20px; font-weight:600;">Waiting on you</h3>
+            <h3 class="dashboard-card-title" style="margin:0;">Waiting on you</h3>
             <span style="font-size:15px; color:var(--muted);">sorted by consequence</span>
           </div>
           <sc-for list="{{ rows }}" as="r" hint-placeholder-count="3">
             <dc-import name="ArtifactRow" type="{{ r.type }}" title="{{ r.title }}" status="{{ r.status }}" tone="{{ r.tone }}" time="{{ r.time }}" from="{{ r.from }}" to="{{ r.to }}" from-code="{{ r.fromCode }}" to-code="{{ r.toCode }}" from-self="{{ r.fromSelf }}" to-self="{{ r.toSelf }}" meta="{{ r.meta }}" selected="{{ r.selected }}" on-select="{{ r.select }}" hint-size="100%,140px"></dc-import>
           </sc-for>
-          <div style="background:var(--sink); border-radius:14px; padding:14px 16px; font-size:16px; line-height:1.55; color:var(--body);">{{ moreLine }}</div>
+          <div class="dashboard-nested" style="background:var(--sink); font-size:16px; line-height:1.55; color:var(--body);">{{ moreLine }}</div>
         </div>
 
-        <div style="min-width:0; background:var(--page); border-radius:14px; padding:20px 22px;">
+        <div class="dashboard-card" style="min-width:0; background:var(--page);">
           <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:12px;">
             <span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
               <dc-import name="TypeBadge" type="{{ sel.type }}" hint-size="140px,26px"></dc-import>
@@ -239,12 +266,12 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
             </span>
             <span style="flex:0 1 auto; min-width:0; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); overflow-wrap:anywhere;">{{ sel.id }}</span>
           </div>
-          <h3 style="margin:0 0 10px; font-size:22px; line-height:1.3; font-weight:600; overflow-wrap:anywhere;">{{ sel.title }}</h3>
+          <h3 class="dashboard-card-title" style="margin:0 0 10px; overflow-wrap:anywhere;">{{ sel.title }}</h3>
           <p style="margin:0 0 14px; font-size:17px; line-height:1.6; color:var(--body);">{{ sel.consequence }}</p>
           <div style="font-size:16px; font-weight:600; margin-bottom:6px;">Evidence, verbatim from the record</div>
           <dc-import name="FactTable" rows="{{ sel.facts }}" hint-size="100%,220px"></dc-import>
           <sc-if value="{{ sel.hasFlag }}" hint-placeholder-val="{{ false }}">
-            <div style="margin-top:12px; background:var(--attention-tint); border-radius:11px; padding:13px 15px;">
+            <div class="dashboard-nested" style="margin-top:12px; background:var(--attention-tint);">
               <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:6px;">
                 <dc-import name="StatusPill" text="{{ sel.flagCode }}" tone="attention" mono="{{ true }}" size="small" hint-size="150px,24px"></dc-import>
               </div>
@@ -252,7 +279,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
             </div>
           </sc-if>
           <sc-if value="{{ sel.noDetail }}" hint-placeholder-val="{{ false }}">
-            <div style="margin-top:12px; background:var(--surface); border-radius:11px; padding:13px 15px; box-shadow:inset 0 0 0 1px var(--border); font-size:16px; line-height:1.55; color:var(--muted);">{{ sel.missingText }}</div>
+            <div class="dashboard-nested" style="margin-top:12px; background:var(--surface); box-shadow:inset 0 0 0 1px var(--border); font-size:16px; line-height:1.55; color:var(--muted);">{{ sel.missingText }}</div>
           </sc-if>
         </div>
       </div>
@@ -268,16 +295,16 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
       <dc-import name="NetworkMap" heading="Exchange map" hint-size="100%,1100px"></dc-import>
     </section>
 
-    <section style="display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:16px; margin-bottom:16px;">
-      <div style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+    <section style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(400px,100%),1fr)); gap:16px; margin-bottom:16px;">
+      <div class="dashboard-panel" style="background:var(--surface); box-shadow:0 1px 2px rgba(33,30,23,.06);">
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-          <h2 style="margin:0; font-size:24px; font-weight:600;">Contract lines off current</h2>
+          <h2 class="dashboard-section-title" style="margin:0;">Contract lines off current</h2>
           <dc-import name="StatusPill" text="{{ driftPill }}" tone="attention" size="small" hint-size="120px,24px"></dc-import>
         </div>
         <p style="margin:0 0 14px; font-size:16px; line-height:1.6; color:var(--body); max-width:34em;">Drift is a property of one consumer's pinned major line, never of the contract as a whole. A provider can be perfectly healthy while a consumer resolves nothing at all.</p>
         <div style="display:flex; flex-direction:column; gap:8px;">
           <sc-for list="{{ driftRows }}" as="e" hint-placeholder-count="5">
-            <div style="background:var(--page); border-radius:11px; padding:12px 14px;">
+            <div class="dashboard-nested" style="background:var(--page);">
               <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:5px;">
                 <span style="flex:1 1 auto; min-width:0; font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; overflow-wrap:anywhere;">{{ e.route }}</span>
                 <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="{{ e.drift }}" tone="{{ e.tone }}" size="small" hint-size="80px,24px"></dc-import></span>
@@ -288,12 +315,12 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
         </div>
       </div>
 
-      <div style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-        <h2 style="margin:0 0 10px; font-size:24px; font-weight:600;">What this snapshot cannot promise</h2>
+      <div class="dashboard-panel" style="background:var(--surface); box-shadow:0 1px 2px rgba(33,30,23,.06);">
+        <h2 class="dashboard-section-title" style="margin:0 0 10px;">What this snapshot cannot promise</h2>
         <p style="margin:0 0 14px; font-size:16px; line-height:1.6; color:var(--body); max-width:34em;">A static read cannot re-run the validation engine. Missing context is stated as unavailable — never as green, zero or blank.</p>
         <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
           <sc-for list="{{ unavailable }}" as="u" hint-placeholder-count="4">
-            <div style="background:var(--page); border-radius:11px; padding:13px 15px; box-shadow:inset 0 0 0 1px var(--border);">
+            <div class="dashboard-nested" style="background:var(--page); box-shadow:inset 0 0 0 1px var(--border);">
               <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:5px;">
                 <span style="flex:1 1 auto; min-width:0; font-size:16px; font-weight:600;">{{ u.title }}</span>
                 <span style="flex:0 0 auto;"><dc-import name="StatusPill" text="not evaluated" tone="outline" size="small" hint-size="110px,24px"></dc-import></span>
@@ -305,7 +332,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
         <div style="font-size:16px; font-weight:600; margin-bottom:8px;">Protocol and read flags in this snapshot</div>
         <div style="display:flex; flex-direction:column; gap:8px;">
           <sc-for list="{{ flags }}" as="f" hint-placeholder-count="4">
-            <div style="background:var(--attention-tint); border-radius:11px; padding:12px 14px;">
+            <div class="dashboard-nested" style="background:var(--attention-tint);">
               <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:5px;">
                 <span style="flex:1 1 auto; min-width:0;"><dc-import name="StatusPill" text="{{ f.code }}" tone="attention" mono="{{ true }}" size="small" hint-size="150px,24px"></dc-import></span>
                 <span style="flex:0 0 auto; text-align:right; font-size:15px; color:var(--attention-ink);">{{ f.where }}</span>
@@ -318,16 +345,16 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
     </section>
 
     <section style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px;">
-      <div style="background:var(--inverse); color:var(--on-inverse); border-radius:18px; padding:26px 28px;">
-        <h2 style="margin:0 0 12px; font-size:24px; font-weight:600; color:var(--on-solid);">This is one command, not a service</h2>
+      <div class="dashboard-panel" style="background:var(--inverse); color:var(--on-inverse);">
+        <h2 class="dashboard-section-title" style="margin:0 0 12px; color:var(--on-solid);">This is one command, not a service</h2>
         <p style="margin:0 0 14px; font-size:17px; line-height:1.6; color:var(--on-inverse-muted);"><span style="font-family:'IBM Plex Mono',monospace; font-size:16px; color:var(--teal-on-dark);">a2a html</span> writes one self-contained file from your local cache. There is no login, no hosted instance and no telemetry — and no write action anywhere in it.</p>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <a href="18-install-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--text); background:var(--on-inverse); border-radius:10px; padding:12px 18px; text-decoration:none;">Install a2a</a>
           <a href="16-docs-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--on-inverse); background:var(--inverse-3); border-radius:10px; padding:12px 18px; text-decoration:none;">How threads reconstruct</a>
         </div>
       </div>
-      <div style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-        <h2 style="margin:0 0 12px; font-size:24px; font-weight:600;">Where this data comes from</h2>
+      <div class="dashboard-panel" style="background:var(--surface); box-shadow:0 1px 2px rgba(33,30,23,.06);">
+        <h2 class="dashboard-section-title" style="margin:0 0 12px;">Where this data comes from</h2>
         <dc-import name="FactTable" rows="{{ provenance }}" hint-size="100%,200px"></dc-import>
       </div>
     </section>
@@ -339,7 +366,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1300,&quot;height&quot;:900}}">
 const DRIFT_TONE = { current: "healthy", behind: "attention", deprecated: "attention", retired: "neutral", missing: "blockingStrong", dangling: "outline" };
-const STATE_TONE = { published: "healthy", retired: "neutral", deprecated: "attention", disputed: "attention", submitted: "neutral", in_progress: "neutral", accepted: "neutral", acknowledged: "neutral", proposed: "attention", closed: "healthy" };
+const STATE_TONE = { published: "healthy", verified: "healthy", retired: "neutral", deprecated: "attention", disputed: "attention", submitted: "neutral", in_progress: "neutral", accepted: "neutral", acknowledged: "neutral", proposed: "attention", closed: "healthy" };
 function monoCodes(names) {
   const out = {}, used = new Set();
   names.slice().sort().forEach(n => {
@@ -370,8 +397,8 @@ class Component extends DCLogic {
 
   componentDidMount() {
     fetch("demo-data.json").then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(d => {
-      if (!d || !d.meta || d.meta.schema !== "a2a-design-demo/v3" || d.meta.synthetic !== true) {
-        this.setState({ error: "The fixture was found but does not declare meta.schema \"a2a-design-demo/v3\" with meta.synthetic: true. The inconsistency is reported instead of repaired." });
+      if (!d || !d.meta || d.meta.schema !== "a2a-design-demo/v4" || d.meta.synthetic !== true) {
+        this.setState({ error: "The fixture was found but does not declare meta.schema \"a2a-design-demo/v4\" with meta.synthetic: true. The inconsistency is reported instead of repaired." });
         return;
       }
       this.setState({ data: d });
@@ -390,11 +417,11 @@ class Component extends DCLogic {
   }
 
   measure(value, label, tone) {
-    const bg = tone === "bad" ? "#F8E9E5" : tone === "warn" ? "#FBF4E4" : tone === "good" ? "#E9F1E8" : "var(--hairline)";
-    const fg = tone === "bad" ? "#8C2B1F" : tone === "warn" ? "#7A5A14" : tone === "good" ? "#2F5E3A" : "#453F31";
+    const bg = tone === "bad" ? "var(--blocking-tint)" : tone === "warn" ? "var(--attention-tint)" : tone === "good" ? "var(--healthy-tint)" : "var(--hairline)";
+    const fg = tone === "bad" ? "var(--blocking-ink)" : tone === "warn" ? "var(--attention-ink)" : tone === "good" ? "var(--healthy-ink)" : "var(--body)";
     return {
       value, label,
-      cardStyle: "flex:1 1 170px; min-width:150px; border-radius:14px; padding:16px 18px; background:" + bg + "; color:" + fg + ";",
+      cardStyle: "flex:1 1 170px; min-width:150px; border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); background:" + bg + "; color:" + fg + ";",
       labelStyle: "font-size:15px; line-height:1.4; color:" + fg + ";"
     };
   }
@@ -522,7 +549,7 @@ class Component extends DCLogic {
       unavailable: (d.unavailable || []).map(u => ({ title: u.title, reason: u.reason })),
       flags: (d.flags || []).map(f => ({ code: f.code, message: f.message, where: f.space + " · " + f.system })),
       provenance: [
-        { label: "fixture", value: "demo-data.json · a2a-design-demo/v3", mono: true },
+        { label: "fixture", value: "demo-data.json · a2a-design-demo/v4", mono: true },
         { label: "canonical facts", value: "read verbatim from spaces, artifacts and events" },
         { label: "derived facts", value: "joined by the Go read model, with source fields named" },
         { label: "unavailable facts", value: "stated, never guessed — see the panel above" },

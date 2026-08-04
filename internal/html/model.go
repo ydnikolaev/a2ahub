@@ -38,6 +38,7 @@ type Data struct {
 	UpdateDetail    UpdateDetail         `json:"updateDetail"`
 	Focus           *Focus               `json:"focus,omitempty"`
 	ThreadViews     []ThreadView         `json:"threadViews,omitempty"`
+	WorkReports     []WorkReport         `json:"workReports"`
 	Operational     operational.Snapshot `json:"operational"`
 	ArtifactDetails []ArtifactDetail     `json:"artifactDetails,omitempty"`
 	Unavailable     []UnavailableFact    `json:"unavailable,omitempty"`
@@ -333,6 +334,98 @@ type ContractVersion struct {
 	Sunset        string `json:"sunset,omitempty"`
 	Successor     string `json:"successor,omitempty"`
 	DeprecationID string `json:"deprecationID,omitempty"`
+	// Detail is the optional version-scoped read model. It is additive so old
+	// snapshots remain readable; when present, every field belongs to this
+	// exact immutable version and must switch atomically with the selector.
+	Detail *ContractVersionDetail `json:"detail,omitempty"`
+}
+
+// ContractVersionDetailStatus says whether the version's immutable carried
+// set could be resolved. Unavailable is an honest result, never an empty
+// available package.
+type ContractVersionDetailStatus string
+
+const (
+	// ContractVersionDetailAvailable means the immutable carried set was resolved.
+	ContractVersionDetailAvailable ContractVersionDetailStatus = "available"
+	// ContractVersionDetailUnavailable preserves the reason the carried set could not be resolved.
+	ContractVersionDetailUnavailable ContractVersionDetailStatus = "unavailable"
+)
+
+// ContractVersionDetail is the strict, version-scoped dashboard projection.
+// Text fields and previews are untrusted DATA and are rendered textContent-only.
+type ContractVersionDetail struct {
+	Status            ContractVersionDetailStatus  `json:"status"`
+	UnavailableReason string                       `json:"unavailableReason,omitempty"`
+	Description       string                       `json:"description,omitempty"`
+	SchemaFormat      string                       `json:"schemaFormat,omitempty"`
+	CompatPolicy      string                       `json:"compatPolicy,omitempty"`
+	PublishedAt       string                       `json:"publishedAt,omitempty"`
+	PublishedBy       string                       `json:"publishedBy,omitempty"`
+	ChangeSummary     string                       `json:"changeSummary,omitempty"`
+	ConsumerPins      []ContractVersionConsumerPin `json:"consumerPins,omitempty"`
+	// TotalDocumentCount is the exact verified package inventory before the
+	// bounded dashboard projection. OmittedDocumentCount says how many of
+	// those files are not embedded in this static snapshot.
+	TotalDocumentCount   int                        `json:"totalDocumentCount"`
+	OmittedDocumentCount int                        `json:"omittedDocumentCount,omitempty"`
+	Documents            []ContractVersionDocument  `json:"documents,omitempty"`
+	History              []ContractVersionHistory   `json:"history,omitempty"`
+	Provenance           *ContractVersionProvenance `json:"provenance,omitempty"`
+}
+
+// ContractVersionConsumerPin is current observed consumer usage of this
+// version. It deliberately does not claim historical usage.
+type ContractVersionConsumerPin struct {
+	System        string `json:"system"`
+	Space         string `json:"space,omitempty"`
+	PinnedMajor   int    `json:"pinnedMajor,omitempty"`
+	PinnedVersion string `json:"pinnedVersion,omitempty"`
+	PinnedState   string `json:"pinnedState,omitempty"`
+	Drift         string `json:"drift,omitempty"`
+}
+
+// ContractVersionDocument is one carried file from the immutable version
+// package. Preview is optional bounded safe text, never executable markup.
+type ContractVersionDocument struct {
+	Path            string `json:"path"`
+	Role            string `json:"role"`
+	Normative       bool   `json:"normative"`
+	MediaType       string `json:"mediaType,omitempty"`
+	ConformsTo      string `json:"conformsTo,omitempty"`
+	Digest          string `json:"digest,omitempty"`
+	SizeBytes       int64  `json:"sizeBytes,omitempty"`
+	Preview         string `json:"preview,omitempty"`
+	PreviewLanguage string `json:"previewLanguage,omitempty"`
+}
+
+// ContractVersionHistory is a compact version-lifecycle fact. EventID, Actor,
+// and At are populated only when the exact committed event evidence is
+// available. A fold-proven lifecycle state may therefore intentionally omit
+// them; consumers must render that as unavailable evidence, never invent it.
+type ContractVersionHistory struct {
+	EventID    string `json:"eventID"`
+	Transition string `json:"transition"`
+	State      string `json:"state"`
+	Actor      string `json:"actor,omitempty"`
+	At         string `json:"at,omitempty"`
+}
+
+// ContractVersionProvenance identifies the exact Git objects and digest
+// verification evidence used to resolve one immutable version.
+type ContractVersionProvenance struct {
+	Profile                string `json:"profile,omitempty"`
+	CommitSHA              string `json:"commitSHA,omitempty"`
+	TreeObjectID           string `json:"treeObjectID,omitempty"`
+	DescriptorPath         string `json:"descriptorPath,omitempty"`
+	PublishEventPath       string `json:"publishEventPath,omitempty"`
+	EventSchema            string `json:"eventSchema,omitempty"`
+	DigestProfile          string `json:"digestProfile,omitempty"`
+	PublishedDigest        string `json:"publishedDigest,omitempty"`
+	AggregateVerification  string `json:"aggregateVerification,omitempty"`
+	DescriptorVerification string `json:"descriptorVerification,omitempty"`
+	GeneratedTool          string `json:"generatedTool,omitempty"`
+	SourceDigest           string `json:"sourceDigest,omitempty"`
 }
 
 // Flag is one read-health or committed protocol flag surfaced per
@@ -435,11 +528,46 @@ type ThreadTranscriptRow struct {
 
 // TranscriptArtifact carries the artifact fields shown in a transcript row.
 type TranscriptArtifact struct {
-	ID    string   `json:"id"`
-	Type  string   `json:"type"`
-	From  string   `json:"from"`
-	To    []string `json:"to,omitempty"`
-	Title string   `json:"title"`
+	ID    string      `json:"id"`
+	Type  string      `json:"type"`
+	From  string      `json:"from"`
+	To    []string    `json:"to,omitempty"`
+	Title string      `json:"title"`
+	Work  *WorkReport `json:"work,omitempty"`
+}
+
+// WorkReport is one durable semantic checkpoint from a committed status
+// announcement. It is history evidence, not current presence: local leases
+// remain exclusively in Operational.
+type WorkReport struct {
+	Space          string           `json:"space"`
+	Thread         string           `json:"thread"`
+	ArtifactID     string           `json:"artifact_id"`
+	WorkID         string           `json:"work_id"`
+	SubjectRef     string           `json:"subject_ref"`
+	Mode           string           `json:"mode"`
+	Summary        string           `json:"summary"`
+	Actor          WorkReportActor  `json:"actor"`
+	WaitingOn      []WorkReportWait `json:"waiting_on"`
+	ReportedAt     string           `json:"reported_at"`
+	ValidUntil     string           `json:"valid_until,omitempty"`
+	CommitSequence uint64           `json:"commit_sequence"`
+}
+
+// WorkReportActor is safe authored attribution for one committed report.
+type WorkReportActor struct {
+	Kind    string `json:"kind"`
+	Name    string `json:"name"`
+	System  string `json:"system"`
+	Model   string `json:"model,omitempty"`
+	Session string `json:"session,omitempty"`
+}
+
+// WorkReportWait names a dependency declared by the reporting actor.
+type WorkReportWait struct {
+	Kind    string `json:"kind"`
+	ID      string `json:"id"`
+	Summary string `json:"summary,omitempty"`
 }
 
 // TranscriptEvent carries the lifecycle fields shown in a transcript row.

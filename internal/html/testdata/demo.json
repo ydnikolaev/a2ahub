@@ -1,10 +1,14 @@
 {
   "meta": {
-    "schema": "a2a-design-demo/v3",
+    "schema": "a2a-design-demo/v4",
     "synthetic": true,
     "notice": "Synthetic demo data — no live services",
     "releaseNotesScope": "v0.16.3, v0.16.2 and v0.16.1 expanded; the complete published version index is in section 10",
-    "sourceClasses": ["canonical", "derived", "unavailable"]
+    "sourceClasses": [
+      "canonical",
+      "derived",
+      "unavailable"
+    ]
   },
   "generatedAt": "2026-07-30T17:05:00Z",
   "self": "atlas",
@@ -36,19 +40,6 @@
       "workflowRef": "ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@v0.16.2"
     },
     {
-      "id": "risk-payments",
-      "repoURL": "https://example.invalid/northstar/risk-payments-space",
-      "syncAge": "18m",
-      "stale": true,
-      "revision": "1b885a7e3c90d42f66cde247b6c5673a0aee9d18",
-      "participantCount": 5,
-      "readable": true,
-      "schemaVersion": "space/v1",
-      "minBinaryVersion": "0.16.0",
-      "workflowVersion": "0.16.0",
-      "workflowRef": "ydnikolaev/a2ahub/.github/workflows/a2a-validate-reusable.yml@v0.16.0"
-    },
-    {
       "id": "customer-ops",
       "repoURL": "https://example.invalid/northstar/customer-ops-space",
       "syncAge": "4h",
@@ -76,80 +67,88 @@
       "self": true,
       "org": "northstar",
       "status": "active",
-      "owners": ["maya", "platform"],
-      "spaces": ["checkout-core", "customer-ops", "risk-payments"]
-    },
-    {
-      "system": "billing",
-      "self": false,
-      "org": "northstar",
-      "status": "active",
-      "owners": ["noah"],
-      "spaces": ["risk-payments"]
+      "owners": [
+        "maya",
+        "platform"
+      ],
+      "spaces": [
+        "checkout-core",
+        "customer-ops"
+      ]
     },
     {
       "system": "catalog",
       "self": false,
       "org": "northstar",
       "status": "active",
-      "owners": ["leila"],
-      "spaces": ["checkout-core"]
+      "owners": [
+        "leila"
+      ],
+      "spaces": [
+        "checkout-core"
+      ]
     },
     {
       "system": "checkout",
       "self": false,
       "org": "northstar",
       "status": "active",
-      "owners": ["devon", "payments"],
-      "spaces": ["checkout-core", "risk-payments"]
+      "owners": [
+        "devon",
+        "payments"
+      ],
+      "spaces": [
+        "checkout-core"
+      ]
     },
     {
       "system": "comms",
       "self": false,
       "org": "northstar",
       "status": "active",
-      "owners": ["ren"],
-      "spaces": ["checkout-core", "customer-ops"]
+      "owners": [
+        "ren"
+      ],
+      "spaces": [
+        "checkout-core",
+        "customer-ops"
+      ]
     },
     {
       "system": "fulfillment",
       "self": false,
       "org": "northstar",
       "status": "active",
-      "owners": ["sasha"],
-      "spaces": ["checkout-core"]
-    },
-    {
-      "system": "ledger",
-      "self": false,
-      "org": "ledgerworks",
-      "status": "active",
-      "owners": ["finance-api"],
-      "spaces": ["risk-payments"]
+      "owners": [
+        "sasha"
+      ],
+      "spaces": [
+        "checkout-core"
+      ]
     },
     {
       "system": "legacycrm",
       "self": false,
       "org": "northstar",
       "status": "left",
-      "owners": ["archive"],
-      "spaces": ["customer-ops"]
-    },
-    {
-      "system": "risk",
-      "self": false,
-      "org": "shieldlabs",
-      "status": "active",
-      "owners": ["iris", "model-ops"],
-      "spaces": ["risk-payments"]
+      "owners": [
+        "archive"
+      ],
+      "spaces": [
+        "customer-ops"
+      ]
     },
     {
       "system": "support",
       "self": false,
       "org": "northstar",
       "status": "active",
-      "owners": ["customer-ops"],
-      "spaces": ["customer-ops"]
+      "owners": [
+        "customer-ops"
+      ],
+      "spaces": [
+        "customer-ops"
+      ]
     }
   ],
   "contractEdges": [
@@ -163,7 +162,10 @@
       "pinnedState": "published",
       "providerVersion": "2.2.0",
       "state": "published",
-      "availableMajors": [1, 2],
+      "availableMajors": [
+        1,
+        2
+      ],
       "drift": "current",
       "description": "Canonical order envelope emitted after checkout confirmation."
     },
@@ -177,7 +179,10 @@
       "pinnedState": "retired",
       "providerVersion": "2.2.0",
       "state": "published",
-      "availableMajors": [1, 2],
+      "availableMajors": [
+        1,
+        2
+      ],
       "drift": "retired",
       "successor": "XC-atlas-order-envelope@2.0.0",
       "description": "Canonical order envelope emitted after checkout confirmation."
@@ -192,7 +197,10 @@
       "pinnedState": "deprecated",
       "providerVersion": "4.0.0",
       "state": "published",
-      "availableMajors": [3, 4],
+      "availableMajors": [
+        3,
+        4
+      ],
       "drift": "deprecated",
       "sunset": "2026-09-01",
       "successor": "XC-catalog-product-feed@4.0.0",
@@ -208,7 +216,10 @@
       "pinnedState": "published",
       "providerVersion": "4.0.0",
       "state": "published",
-      "availableMajors": [3, 4],
+      "availableMajors": [
+        3,
+        4
+      ],
       "drift": "current",
       "description": "Incremental product and availability feed consumed by ordering systems."
     },
@@ -222,7 +233,9 @@
       "pinnedState": "published",
       "providerVersion": "1.6.1",
       "state": "published",
-      "availableMajors": [1],
+      "availableMajors": [
+        1
+      ],
       "drift": "current",
       "description": "Cart-created, cart-updated and checkout-confirmed event stream."
     },
@@ -231,13 +244,13 @@
       "to": "fulfillment",
       "space": "checkout-core",
       "contract": "XC-fulfillment-shipment-status",
-      "pinnedMajor": 2,
-      "pinnedVersion": "2.1.0",
-      "pinnedState": "published",
+      "pinnedMajor": 3,
       "providerVersion": "2.1.0",
       "state": "published",
-      "availableMajors": [2],
-      "drift": "current",
+      "availableMajors": [
+        2
+      ],
+      "drift": "missing",
       "description": "Shipment status vocabulary and event payload."
     },
     {
@@ -250,79 +263,12 @@
       "pinnedState": "published",
       "providerVersion": "2.0.0",
       "state": "published",
-      "availableMajors": [1, 2],
+      "availableMajors": [
+        1,
+        2
+      ],
       "drift": "behind",
       "description": "Request envelope for transactional customer notifications."
-    },
-    {
-      "from": "atlas",
-      "to": "risk",
-      "space": "risk-payments",
-      "contract": "XC-risk-score",
-      "pinnedMajor": 3,
-      "pinnedVersion": "3.2.0",
-      "pinnedState": "published",
-      "providerVersion": "3.2.0",
-      "state": "published",
-      "availableMajors": [2, 3],
-      "drift": "current",
-      "description": "Risk score, reason codes and evidence pointers for an order."
-    },
-    {
-      "from": "checkout",
-      "to": "risk",
-      "space": "risk-payments",
-      "contract": "XC-risk-score",
-      "pinnedMajor": 4,
-      "pinnedState": "missing",
-      "providerVersion": "3.2.0",
-      "state": "published",
-      "availableMajors": [2, 3],
-      "drift": "missing",
-      "description": "Risk score, reason codes and evidence pointers for an order."
-    },
-    {
-      "from": "atlas",
-      "to": "billing",
-      "space": "risk-payments",
-      "contract": "XC-billing-payment-events",
-      "pinnedMajor": 1,
-      "pinnedVersion": "1.8.0",
-      "pinnedState": "retired",
-      "providerVersion": "2.4.0",
-      "state": "published",
-      "availableMajors": [1, 2],
-      "drift": "retired",
-      "successor": "XC-billing-payment-events@2.0.0",
-      "description": "Authorized, captured, failed and refunded payment events."
-    },
-    {
-      "from": "billing",
-      "to": "ledger",
-      "space": "risk-payments",
-      "contract": "XC-ledger-journal-entry",
-      "pinnedMajor": 1,
-      "pinnedVersion": "1.9.0",
-      "pinnedState": "published",
-      "providerVersion": "1.9.0",
-      "state": "published",
-      "availableMajors": [1],
-      "drift": "current",
-      "description": "Double-entry journal request with idempotency and posting result."
-    },
-    {
-      "from": "risk",
-      "to": "atlas",
-      "space": "risk-payments",
-      "contract": "XC-atlas-fraud-case",
-      "pinnedMajor": 1,
-      "pinnedVersion": "1.1.0",
-      "pinnedState": "published",
-      "providerVersion": "1.1.0",
-      "state": "published",
-      "availableMajors": [1],
-      "drift": "current",
-      "description": "Case evidence envelope used when an automated risk decision is disputed."
     },
     {
       "from": "atlas",
@@ -334,7 +280,10 @@
       "pinnedState": "published",
       "providerVersion": "2.0.0",
       "state": "published",
-      "availableMajors": [1, 2],
+      "availableMajors": [
+        1,
+        2
+      ],
       "drift": "behind",
       "description": "Customer case updates and redacted conversation references."
     },
@@ -348,7 +297,10 @@
       "pinnedState": "deprecated",
       "providerVersion": "2.0.0",
       "state": "published",
-      "availableMajors": [1, 2],
+      "availableMajors": [
+        1,
+        2
+      ],
       "drift": "deprecated",
       "sunset": "2026-08-31",
       "successor": "XC-comms-customer-notice@2.0.0",
@@ -364,15 +316,6 @@
     }
   ],
   "exchangeEdges": [
-    {
-      "from": "atlas",
-      "to": "billing",
-      "space": "risk-payments",
-      "count": 1,
-      "maxPriority": "p2",
-      "blocking": true,
-      "maxStale": "4d"
-    },
     {
       "from": "atlas",
       "to": "catalog",
@@ -411,57 +354,12 @@
     },
     {
       "from": "atlas",
-      "to": "ledger",
-      "space": "risk-payments",
-      "count": 1,
-      "maxPriority": "p2",
-      "blocking": false,
-      "maxStale": "5h"
-    },
-    {
-      "from": "atlas",
-      "to": "risk",
-      "space": "risk-payments",
-      "count": 1,
-      "maxPriority": "p2",
-      "blocking": false,
-      "maxStale": "12h"
-    },
-    {
-      "from": "atlas",
       "to": "support",
       "space": "customer-ops",
       "count": 1,
       "maxPriority": "p2",
       "blocking": false,
       "maxStale": "1w"
-    },
-    {
-      "from": "billing",
-      "to": "atlas",
-      "space": "risk-payments",
-      "count": 2,
-      "maxPriority": "p2",
-      "blocking": false,
-      "maxStale": "1d"
-    },
-    {
-      "from": "billing",
-      "to": "ledger",
-      "space": "risk-payments",
-      "count": 1,
-      "maxPriority": "p2",
-      "blocking": false,
-      "maxStale": "23h"
-    },
-    {
-      "from": "billing",
-      "to": "risk",
-      "space": "risk-payments",
-      "count": 1,
-      "maxPriority": "p2",
-      "blocking": false,
-      "maxStale": "23h"
     },
     {
       "from": "catalog",
@@ -509,15 +407,6 @@
       "maxStale": "5h"
     },
     {
-      "from": "ledger",
-      "to": "atlas",
-      "space": "risk-payments",
-      "count": 1,
-      "maxPriority": "p3",
-      "blocking": false,
-      "maxStale": "6d"
-    },
-    {
       "from": "legacycrm",
       "to": "atlas",
       "space": "customer-ops",
@@ -525,15 +414,6 @@
       "maxPriority": "p2",
       "blocking": false,
       "maxStale": "3w"
-    },
-    {
-      "from": "risk",
-      "to": "atlas",
-      "space": "risk-payments",
-      "count": 1,
-      "maxPriority": "p2",
-      "blocking": false,
-      "maxStale": "8h"
     },
     {
       "from": "support",
@@ -549,7 +429,10 @@
     {
       "id": "thread:checkout-20260728-c3d4",
       "space": "checkout-core",
-      "participants": ["atlas", "checkout"],
+      "participants": [
+        "atlas",
+        "checkout"
+      ],
       "memberCount": 3,
       "openCount": 2,
       "lastActivity": "5h",
@@ -564,7 +447,9 @@
           "type": "work_request",
           "title": "Prevent duplicate payment capture after a worker retry",
           "from": "checkout",
-          "to": ["atlas"],
+          "to": [
+            "atlas"
+          ],
           "state": "in_progress",
           "seq": 101
         },
@@ -573,7 +458,9 @@
           "type": "response",
           "title": "First idempotency patch and replay evidence",
           "from": "atlas",
-          "to": ["checkout"],
+          "to": [
+            "checkout"
+          ],
           "state": "disputed",
           "seq": 106
         },
@@ -582,7 +469,9 @@
           "type": "question",
           "title": "Should a retry reuse the original capture idempotency key?",
           "from": "checkout",
-          "to": ["atlas"],
+          "to": [
+            "atlas"
+          ],
           "state": "submitted",
           "seq": 109
         }
@@ -603,7 +492,10 @@
     {
       "id": "thread:atlas-20260727-r7s8",
       "space": "checkout-core",
-      "participants": ["atlas", "catalog"],
+      "participants": [
+        "atlas",
+        "catalog"
+      ],
       "memberCount": 3,
       "openCount": 3,
       "lastActivity": "9h",
@@ -618,7 +510,9 @@
           "type": "requirement",
           "title": "Catalog must provide a product-feed v4 migration path",
           "from": "atlas",
-          "to": ["catalog"],
+          "to": [
+            "catalog"
+          ],
           "state": "acknowledged",
           "seq": 301
         },
@@ -627,7 +521,9 @@
           "type": "work_request",
           "title": "Migrate the catalog adapter to product feed v4",
           "from": "atlas",
-          "to": ["catalog"],
+          "to": [
+            "catalog"
+          ],
           "state": "responded",
           "seq": 306
         },
@@ -636,7 +532,9 @@
           "type": "response",
           "title": "Migration plan and compatibility fixtures",
           "from": "catalog",
-          "to": ["atlas"],
+          "to": [
+            "atlas"
+          ],
           "state": "submitted",
           "seq": 312
         }
@@ -655,49 +553,12 @@
       ]
     },
     {
-      "id": "thread:billing-20260729-e5f6",
-      "space": "risk-payments",
-      "participants": ["atlas", "billing", "ledger", "risk"],
-      "memberCount": 2,
-      "openCount": 2,
-      "lastActivity": "23h",
-      "opener": {
-        "id": "XR-billing-settlement-clock",
-        "title": "Settlement timestamps need one canonical source"
-      },
-      "yourMove": true,
-      "members": [
-        {
-          "id": "XR-billing-settlement-clock",
-          "type": "requirement",
-          "title": "Settlement timestamps need one canonical source",
-          "from": "billing",
-          "to": ["atlas", "ledger", "risk"],
-          "state": "acknowledged",
-          "seq": 201
-        },
-        {
-          "id": "XD-billing-20260729-e5f6",
-          "type": "decision",
-          "title": "Choose the source of truth for settlement timestamps",
-          "from": "billing",
-          "to": ["atlas", "ledger", "risk"],
-          "state": "proposed",
-          "seq": 205
-        }
-      ],
-      "links": [
-        {
-          "from": "XD-billing-20260729-e5f6",
-          "to": "XR-billing-settlement-clock",
-          "kind": "ref"
-        }
-      ]
-    },
-    {
       "id": "thread:support-20260729-q5n6",
       "space": "customer-ops",
-      "participants": ["atlas", "support"],
+      "participants": [
+        "atlas",
+        "support"
+      ],
       "memberCount": 4,
       "openCount": 1,
       "lastActivity": "1d",
@@ -712,7 +573,9 @@
           "type": "decision",
           "title": "Redact message bodies before case events leave Support",
           "from": "support",
-          "to": ["atlas"],
+          "to": [
+            "atlas"
+          ],
           "state": "approved",
           "seq": 401
         },
@@ -721,7 +584,9 @@
           "type": "question",
           "title": "Which fixture proves attachment names are redacted?",
           "from": "atlas",
-          "to": ["support"],
+          "to": [
+            "support"
+          ],
           "state": "closed",
           "seq": 406
         },
@@ -730,7 +595,9 @@
           "type": "response",
           "title": "Redaction fixture and expected digest",
           "from": "support",
-          "to": ["atlas"],
+          "to": [
+            "atlas"
+          ],
           "state": "verified",
           "seq": 409
         },
@@ -739,7 +606,9 @@
           "type": "handoff",
           "title": "PII-redacted support case stream v2",
           "from": "support",
-          "to": ["atlas"],
+          "to": [
+            "atlas"
+          ],
           "state": "acknowledged",
           "seq": 412
         }
@@ -763,63 +632,12 @@
       ]
     },
     {
-      "id": "thread:billing-20260727-m7p8",
-      "space": "risk-payments",
-      "participants": ["atlas", "billing"],
-      "memberCount": 3,
-      "openCount": 2,
-      "lastActivity": "1d",
-      "opener": {
-        "id": "XW-billing-20260727-m7p8",
-        "title": "Reconcile partial refunds against journal entries"
-      },
-      "yourMove": true,
-      "members": [
-        {
-          "id": "XW-billing-20260727-m7p8",
-          "type": "work_request",
-          "title": "Reconcile partial refunds against journal entries",
-          "from": "billing",
-          "to": ["atlas"],
-          "state": "in_progress",
-          "seq": 501
-        },
-        {
-          "id": "XS-atlas-20260728-v5w6",
-          "type": "response",
-          "title": "Initial journal matching rule",
-          "from": "atlas",
-          "to": ["billing"],
-          "state": "disputed",
-          "seq": 507
-        },
-        {
-          "id": "XQ-billing-20260729-x7y8",
-          "type": "question",
-          "title": "How are two partial refunds ordered inside one settlement batch?",
-          "from": "billing",
-          "to": ["atlas"],
-          "state": "submitted",
-          "seq": 511
-        }
-      ],
-      "links": [
-        {
-          "from": "XS-atlas-20260728-v5w6",
-          "to": "XW-billing-20260727-m7p8",
-          "kind": "parent"
-        },
-        {
-          "from": "XQ-billing-20260729-x7y8",
-          "to": "XW-billing-20260727-m7p8",
-          "kind": "ref"
-        }
-      ]
-    },
-    {
       "id": "thread:legacycrm-20260709-x3y4",
       "space": "customer-ops",
-      "participants": ["atlas", "legacycrm"],
+      "participants": [
+        "atlas",
+        "legacycrm"
+      ],
       "memberCount": 2,
       "openCount": 1,
       "lastActivity": "2w",
@@ -834,7 +652,9 @@
           "type": "handoff",
           "title": "</script><img src=x onerror=alert('rendering-test')>",
           "from": "legacycrm",
-          "to": ["atlas"],
+          "to": [
+            "atlas"
+          ],
           "state": "submitted",
           "seq": 601
         },
@@ -843,7 +663,9 @@
           "type": "decision",
           "title": "Archive the CRM export instead of adopting it",
           "from": "atlas",
-          "to": ["legacycrm"],
+          "to": [
+            "legacycrm"
+          ],
           "state": "superseded",
           "seq": 606
         }
@@ -859,7 +681,10 @@
     {
       "id": "thread:redaction-fixture-closed",
       "space": "customer-ops",
-      "participants": ["atlas", "support"],
+      "participants": [
+        "atlas",
+        "support"
+      ],
       "memberCount": 1,
       "openCount": 0,
       "lastActivity": "3d",
@@ -875,7 +700,9 @@
           "type": "question",
           "title": "Which fixture proves attachment names are redacted?",
           "from": "atlas",
-          "to": ["support"],
+          "to": [
+            "support"
+          ],
           "state": "closed",
           "seq": 701
         }
@@ -890,7 +717,9 @@
       "type": "question",
       "title": "Should a retry reuse the original capture idempotency key?",
       "from": "checkout",
-      "to": ["atlas"],
+      "to": [
+        "atlas"
+      ],
       "state": "submitted",
       "priority": "p2",
       "blocking": false,
@@ -900,7 +729,9 @@
       "neededBy": "2026-07-31",
       "new": true,
       "severity": "normal",
-      "reasons": ["addressed-no-ack"],
+      "reasons": [
+        "addressed-no-ack"
+      ],
       "pendingMerge": false,
       "syncStale": false,
       "description": "Checkout needs one stable retry rule before it can finish the duplicate-capture fix."
@@ -911,7 +742,9 @@
       "type": "work_request",
       "title": "Prevent duplicate payment capture after a worker retry",
       "from": "checkout",
-      "to": ["atlas"],
+      "to": [
+        "atlas"
+      ],
       "state": "in_progress",
       "priority": "p1",
       "blocking": true,
@@ -921,50 +754,13 @@
       "neededBy": "2026-07-29",
       "new": false,
       "severity": "blocking",
-      "reasons": ["p1-or-blocking-open", "overdue-on-me"],
+      "reasons": [
+        "p1-or-blocking-open",
+        "overdue-on-me"
+      ],
       "pendingMerge": false,
       "syncStale": false,
       "description": "A worker retry can issue a second capture after the first provider call succeeds but the acknowledgement is lost."
-    },
-    {
-      "space": "risk-payments",
-      "id": "XR-risk-fraud-evidence",
-      "type": "requirement",
-      "title": "Fraud decisions must expose reason codes and evidence refs",
-      "from": "risk",
-      "to": ["atlas"],
-      "state": "published",
-      "priority": "p2",
-      "blocking": false,
-      "gatePending": false,
-      "thread": "thread:risk-20260727-k9p1",
-      "age": "8h",
-      "new": true,
-      "severity": "attention",
-      "reasons": ["addressed-no-ack"],
-      "pendingMerge": false,
-      "syncStale": true,
-      "description": "Every automated decline needs stable reason codes and a reference to the evidence retained by Atlas."
-    },
-    {
-      "space": "risk-payments",
-      "id": "XD-billing-20260729-e5f6",
-      "type": "decision",
-      "title": "Choose the source of truth for settlement timestamps",
-      "from": "billing",
-      "to": ["atlas", "ledger", "risk"],
-      "state": "proposed",
-      "priority": "p2",
-      "blocking": false,
-      "gatePending": true,
-      "thread": "thread:billing-20260729-e5f6",
-      "age": "23h",
-      "new": true,
-      "severity": "blocking",
-      "reasons": ["gate-pending-on-me"],
-      "pendingMerge": false,
-      "syncStale": true,
-      "description": "Billing proposes provider-settled-at as canonical; Ledger and Atlas must approve before reconciliation changes."
     },
     {
       "space": "customer-ops",
@@ -972,7 +768,9 @@
       "type": "handoff",
       "title": "PII-redacted support case stream v2",
       "from": "support",
-      "to": ["atlas"],
+      "to": [
+        "atlas"
+      ],
       "state": "acknowledged",
       "priority": "p2",
       "blocking": true,
@@ -981,31 +779,12 @@
       "age": "1d",
       "new": false,
       "severity": "blocking",
-      "reasons": ["p1-or-blocking-open"],
+      "reasons": [
+        "p1-or-blocking-open"
+      ],
       "pendingMerge": false,
       "syncStale": true,
       "description": "Support has delivered the v2 schema, fixtures and redaction proof; Atlas must verify the handoff."
-    },
-    {
-      "space": "risk-payments",
-      "id": "XW-billing-20260727-m7p8",
-      "type": "work_request",
-      "title": "Reconcile partial refunds against journal entries",
-      "from": "billing",
-      "to": ["atlas"],
-      "state": "in_progress",
-      "priority": "p2",
-      "blocking": false,
-      "gatePending": false,
-      "thread": "thread:billing-20260727-m7p8",
-      "age": "1d",
-      "neededBy": "2026-08-01",
-      "new": false,
-      "severity": "attention",
-      "reasons": ["disputed-toward-me"],
-      "pendingMerge": false,
-      "syncStale": true,
-      "description": "Billing disputed the first response because two partial refunds can share a provider settlement batch."
     },
     {
       "space": "checkout-core",
@@ -1013,7 +792,10 @@
       "type": "announcement",
       "title": "Product feed v3 sunsets on 2026-09-01",
       "from": "catalog",
-      "to": ["atlas", "checkout"],
+      "to": [
+        "atlas",
+        "checkout"
+      ],
       "state": "published",
       "priority": "p2",
       "blocking": false,
@@ -1022,7 +804,9 @@
       "age": "2d",
       "new": true,
       "severity": "normal",
-      "reasons": ["addressed-no-ack"],
+      "reasons": [
+        "addressed-no-ack"
+      ],
       "pendingMerge": false,
       "syncStale": false,
       "description": "Registered v3 consumers must move to XC-catalog-product-feed@4.0.0 before the sunset date."
@@ -1033,7 +817,10 @@
       "type": "announcement",
       "title": "Delivery status — São Paulo ✓ · مرحبا · 東京",
       "from": "comms",
-      "to": ["atlas", "support"],
+      "to": [
+        "atlas",
+        "support"
+      ],
       "state": "published",
       "priority": "p4",
       "blocking": false,
@@ -1042,7 +829,9 @@
       "age": "5h",
       "new": true,
       "severity": "attention",
-      "reasons": ["addressed-no-ack"],
+      "reasons": [
+        "addressed-no-ack"
+      ],
       "pendingMerge": false,
       "syncStale": true,
       "description": "A routine liveness announcement with multilingual content for layout and escaping coverage."
@@ -1053,7 +842,9 @@
       "type": "contract",
       "title": "Support case stream",
       "from": "support",
-      "to": ["atlas"],
+      "to": [
+        "atlas"
+      ],
       "state": "published",
       "priority": "p3",
       "blocking": false,
@@ -1068,32 +859,14 @@
       "description": "Customer case updates and redacted conversation references."
     },
     {
-      "space": "risk-payments",
-      "id": "XQ-ledger-20260724-v9w2",
-      "type": "question",
-      "title": "Which order revision should a corrected journal entry reference when capture and settlement arrive out of order?",
-      "from": "ledger",
-      "to": ["atlas"],
-      "state": "submitted",
-      "priority": "p3",
-      "blocking": false,
-      "gatePending": false,
-      "thread": "thread:ledger-20260724-v9w2",
-      "age": "6d",
-      "new": false,
-      "severity": "attention",
-      "reasons": ["addressed-no-ack"],
-      "pendingMerge": false,
-      "syncStale": true,
-      "description": "The answer must distinguish the business order revision from the provider settlement revision."
-    },
-    {
       "space": "customer-ops",
       "id": "XH-legacycrm-20260709-x3y4",
       "type": "handoff",
       "title": "</script><img src=x onerror=alert('rendering-test')>",
       "from": "legacycrm",
-      "to": ["atlas"],
+      "to": [
+        "atlas"
+      ],
       "state": "submitted",
       "priority": "p2",
       "blocking": false,
@@ -1102,7 +875,9 @@
       "age": "3w",
       "new": false,
       "severity": "attention",
-      "reasons": ["addressed-no-ack"],
+      "reasons": [
+        "addressed-no-ack"
+      ],
       "pendingMerge": false,
       "syncStale": true,
       "description": "This literal hostile-looking title is data. It must render as text and never execute."
@@ -1115,7 +890,9 @@
       "type": "work_request",
       "title": "Migrate the catalog adapter to product feed v4",
       "from": "atlas",
-      "to": ["catalog"],
+      "to": [
+        "catalog"
+      ],
       "state": "responded",
       "priority": "p2",
       "blocking": false,
@@ -1125,30 +902,12 @@
       "neededBy": "2026-08-15",
       "new": true,
       "severity": "normal",
-      "reasons": ["state-changed-since-cursor"],
+      "reasons": [
+        "state-changed-since-cursor"
+      ],
       "pendingMerge": false,
       "syncStale": false,
       "description": "Catalog delivered a migration plan; Atlas must verify the attached response and close or dispute."
-    },
-    {
-      "space": "risk-payments",
-      "id": "XQ-atlas-20260730-t9v2",
-      "type": "question",
-      "title": "Can a journal correction retain the original idempotency key?",
-      "from": "atlas",
-      "to": ["ledger"],
-      "state": "submitted",
-      "priority": "p2",
-      "blocking": false,
-      "gatePending": false,
-      "thread": "thread:atlas-20260730-t9v2",
-      "age": "5h",
-      "new": true,
-      "severity": "attention",
-      "reasons": ["state-changed-since-cursor"],
-      "pendingMerge": true,
-      "syncStale": true,
-      "description": "Atlas is waiting for Ledger to define retry identity for correction entries."
     },
     {
       "space": "checkout-core",
@@ -1156,7 +915,10 @@
       "type": "decision",
       "title": "Adopt order envelope v2 as the default cross-system payload",
       "from": "atlas",
-      "to": ["checkout", "fulfillment"],
+      "to": [
+        "checkout",
+        "fulfillment"
+      ],
       "state": "proposed",
       "priority": "p3",
       "blocking": false,
@@ -1165,7 +927,9 @@
       "age": "1w",
       "new": false,
       "severity": "normal",
-      "reasons": ["state-changed-since-cursor"],
+      "reasons": [
+        "state-changed-since-cursor"
+      ],
       "pendingMerge": false,
       "syncStale": false,
       "description": "Checkout approved; Atlas is waiting for Fulfillment to complete the decision quorum."
@@ -1176,7 +940,9 @@
       "type": "requirement",
       "title": "Notification requests must carry an explicit locale",
       "from": "atlas",
-      "to": ["comms"],
+      "to": [
+        "comms"
+      ],
       "state": "acknowledged",
       "priority": "p3",
       "blocking": false,
@@ -1185,31 +951,12 @@
       "age": "1w",
       "new": false,
       "severity": "normal",
-      "reasons": ["stale-sla"],
+      "reasons": [
+        "stale-sla"
+      ],
       "pendingMerge": false,
       "syncStale": false,
       "description": "Comms acknowledged the requirement; Atlas is waiting for contract evidence before marking it satisfied."
-    },
-    {
-      "space": "risk-payments",
-      "id": "XW-atlas-20260726-b7c8",
-      "type": "work_request",
-      "title": "Publish payment-events v2 adoption guidance",
-      "from": "atlas",
-      "to": ["billing"],
-      "state": "accepted",
-      "priority": "p2",
-      "blocking": true,
-      "gatePending": false,
-      "thread": "thread:atlas-20260726-b7c8",
-      "age": "4d",
-      "neededBy": "2026-08-02",
-      "new": false,
-      "severity": "attention",
-      "reasons": ["state-changed-since-cursor"],
-      "pendingMerge": false,
-      "syncStale": true,
-      "description": "Billing accepted the request but has not started or responded."
     },
     {
       "space": "checkout-core",
@@ -1217,7 +964,12 @@
       "type": "announcement",
       "title": "Order envelope v2 rollout enters the observation window",
       "from": "atlas",
-      "to": ["catalog", "checkout", "comms", "fulfillment"],
+      "to": [
+        "catalog",
+        "checkout",
+        "comms",
+        "fulfillment"
+      ],
       "state": "published",
       "priority": "p3",
       "blocking": false,
@@ -1226,30 +978,12 @@
       "age": "4h",
       "new": true,
       "severity": "normal",
-      "reasons": ["state-changed-since-cursor"],
+      "reasons": [
+        "state-changed-since-cursor"
+      ],
       "pendingMerge": false,
       "syncStale": false,
       "description": "The v2 payload is now default; participating systems should report regressions in the linked thread."
-    },
-    {
-      "space": "risk-payments",
-      "id": "XH-atlas-20260729-f3g4",
-      "type": "handoff",
-      "title": "Fraud case evidence adapter",
-      "from": "atlas",
-      "to": ["risk"],
-      "state": "submitted",
-      "priority": "p2",
-      "blocking": false,
-      "gatePending": false,
-      "thread": "thread:atlas-20260729-f3g4",
-      "age": "12h",
-      "new": true,
-      "severity": "attention",
-      "reasons": ["state-changed-since-cursor"],
-      "pendingMerge": true,
-      "syncStale": true,
-      "description": "Risk must acknowledge and verify the adapter, schema and replay fixture."
     },
     {
       "space": "customer-ops",
@@ -1257,7 +991,9 @@
       "type": "question",
       "title": "Can closed support cases emit one final redacted transcript ref?",
       "from": "atlas",
-      "to": ["support"],
+      "to": [
+        "support"
+      ],
       "state": "acknowledged",
       "priority": "p2",
       "blocking": false,
@@ -1267,7 +1003,10 @@
       "neededBy": "2026-07-24",
       "new": false,
       "severity": "attention",
-      "reasons": ["stale-sla", "needed-by-passed"],
+      "reasons": [
+        "stale-sla",
+        "needed-by-passed"
+      ],
       "pendingMerge": false,
       "syncStale": true,
       "description": "Support acknowledged the question but has not attached an answer; the requested date has passed."
@@ -1280,7 +1019,9 @@
       "type": "question",
       "title": "Which fixture proves attachment names are redacted?",
       "from": "atlas",
-      "to": ["support"],
+      "to": [
+        "support"
+      ],
       "state": "closed",
       "priority": "p2",
       "blocking": false,
@@ -1302,7 +1043,9 @@
       "type": "work_request",
       "title": "Prepare a temporary CRM replay bridge",
       "from": "atlas",
-      "to": ["legacycrm"],
+      "to": [
+        "legacycrm"
+      ],
       "state": "cancelled",
       "priority": "p3",
       "blocking": false,
@@ -1332,18 +1075,283 @@
       "compatPolicy": "backward-compatible within a major",
       "generatedTool": "demo-schema-exporter",
       "sourceDigest": "1a4d0c2be8f69d1308ad0cccf5b6d77e0cb49c654e93a9060d51e7a937d8c101",
-      "consumers": ["checkout", "fulfillment"],
+      "consumers": [
+        "checkout",
+        "fulfillment"
+      ],
       "description": "Canonical order envelope emitted after checkout confirmation.",
       "versions": [
         {
           "version": "1.5.0",
           "state": "retired",
           "successor": "XC-atlas-order-envelope@2.0.0",
-          "deprecationID": "XA-atlas-20260701-a1b2"
+          "deprecationID": "XA-atlas-20260701-a1b2",
+          "detail": {
+            "status": "available",
+            "description": "Legacy order envelope retained for fulfillment replay and audit reads.",
+            "schemaFormat": "json-schema-draft-07",
+            "compatPolicy": "frozen; replacement required for changes",
+            "publishedAt": "2025-11-18T10:20:00Z",
+            "publishedBy": "atlas",
+            "changeSummary": "Final legacy line before the canonical v2 envelope replaced provider-specific fields.",
+            "consumerPins": [
+              {
+                "system": "fulfillment",
+                "space": "checkout-core",
+                "pinnedMajor": 1,
+                "pinnedVersion": "1.5.0",
+                "pinnedState": "retired",
+                "drift": "retired"
+              }
+            ],
+            "documents": [
+              {
+                "path": "contracts/XC-atlas-order-envelope/1.5.0/order-envelope.schema.json",
+                "role": "schema",
+                "normative": true,
+                "mediaType": "application/schema+json",
+                "conformsTo": "https://json-schema.org/draft-07/schema",
+                "digest": "15a00000000000000000000000000000000000000000000000000000000000a1",
+                "sizeBytes": 428,
+                "preview": "{\n  \"$schema\": \"http://json-schema.org/draft-07/schema#\",\n  \"title\": \"LegacyOrderEnvelope\",\n  \"required\": [\"order_id\", \"confirmed_at\"]\n}",
+                "previewLanguage": "json"
+              },
+              {
+                "path": "contracts/XC-atlas-order-envelope/1.5.0/retirement-guide.md",
+                "role": "migration-guide",
+                "normative": false,
+                "mediaType": "text/markdown",
+                "digest": "15b00000000000000000000000000000000000000000000000000000000000b2",
+                "sizeBytes": 311,
+                "preview": "# Leaving 1.5\n\nMap `order_id` to `order.id` and stop reading `provider_note`. Replay remains available for audit only.",
+                "previewLanguage": "markdown"
+              }
+            ],
+            "history": [
+              {
+                "eventID": "01JCL15PUBLISHED000000000001",
+                "transition": "publish",
+                "state": "published",
+                "actor": "atlas",
+                "at": "2025-11-18T10:20:00Z"
+              },
+              {
+                "eventID": "01K01L15DEPRECATED000000001",
+                "transition": "deprecate",
+                "state": "deprecated",
+                "actor": "atlas",
+                "at": "2026-07-01T09:00:00Z"
+              },
+              {
+                "eventID": "01K1L15RETIRED000000000001",
+                "transition": "retire",
+                "state": "retired",
+                "actor": "atlas",
+                "at": "2026-07-30T12:00:00Z"
+              }
+            ],
+            "provenance": {
+              "profile": "contract-tree-v1",
+              "commitSHA": "15aa11aa11aa11aa11aa11aa11aa11aa11aa11aa",
+              "treeObjectID": "15bb22bb22bb22bb22bb22bb22bb22bb22bb22bb",
+              "descriptorPath": "contracts/XC-atlas-order-envelope/1.5.0/contract.yaml",
+              "publishEventPath": "events/contracts/XC-atlas-order-envelope/1.5.0-published.json",
+              "eventSchema": "a2a-contract-event/v1",
+              "digestProfile": "contract-tree-v1",
+              "publishedDigest": "15c00000000000000000000000000000000000000000000000000000000000c3",
+              "aggregateVerification": "verified",
+              "descriptorVerification": "verified",
+              "sourceDigest": "15d00000000000000000000000000000000000000000000000000000000000d4"
+            }
+          }
         },
-        {"version": "2.0.0", "state": "published"},
-        {"version": "2.1.0", "state": "published"},
-        {"version": "2.2.0", "state": "published"}
+        {
+          "version": "2.0.0",
+          "state": "published",
+          "detail": {
+            "status": "available",
+            "description": "First canonical envelope with a stable order object and explicit producer metadata.",
+            "schemaFormat": "json-schema-2020-12",
+            "compatPolicy": "backward-compatible within major 2",
+            "publishedAt": "2026-01-20T11:15:00Z",
+            "publishedBy": "atlas",
+            "changeSummary": "Introduced the canonical order object and removed the legacy provider note.",
+            "documents": [
+              {
+                "path": "contracts/XC-atlas-order-envelope/2.0.0/order-envelope.schema.json",
+                "role": "schema",
+                "normative": true,
+                "mediaType": "application/schema+json",
+                "conformsTo": "https://json-schema.org/draft/2020-12/schema",
+                "digest": "20a00000000000000000000000000000000000000000000000000000000000a1",
+                "sizeBytes": 612,
+                "preview": "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"title\": \"OrderEnvelope\",\n  \"required\": [\"order\", \"producer\"]\n}",
+                "previewLanguage": "json"
+              },
+              {
+                "path": "contracts/XC-atlas-order-envelope/2.0.0/channel.yaml",
+                "role": "transport-binding",
+                "normative": false,
+                "mediaType": "application/yaml",
+                "digest": "20b00000000000000000000000000000000000000000000000000000000000b2",
+                "sizeBytes": 226,
+                "preview": "channel: orders.confirmed.v2\ndelivery: at-least-once\nkey: order.id\ncontentType: application/json\n",
+                "previewLanguage": "yaml"
+              }
+            ],
+            "history": [
+              {
+                "eventID": "01JZL20PUBLISHED000000000001",
+                "transition": "publish",
+                "state": "published",
+                "actor": "atlas",
+                "at": "2026-01-20T11:15:00Z"
+              }
+            ],
+            "provenance": {
+              "profile": "contract-set-v2",
+              "commitSHA": "20aa11aa11aa11aa11aa11aa11aa11aa11aa11aa",
+              "treeObjectID": "20bb22bb22bb22bb22bb22bb22bb22bb22bb22bb",
+              "descriptorPath": "contracts/XC-atlas-order-envelope/2.0.0/contract.yaml",
+              "publishEventPath": "events/contracts/XC-atlas-order-envelope/2.0.0-published.json",
+              "eventSchema": "a2a-contract-event/v2",
+              "digestProfile": "contract-set-v2",
+              "publishedDigest": "20c00000000000000000000000000000000000000000000000000000000000c3",
+              "aggregateVerification": "verified",
+              "descriptorVerification": "verified",
+              "generatedTool": "demo-schema-exporter@1.8.0",
+              "sourceDigest": "20d00000000000000000000000000000000000000000000000000000000000d4"
+            }
+          }
+        },
+        {
+          "version": "2.1.0",
+          "state": "published",
+          "detail": {
+            "status": "available",
+            "description": "Additive line carrying fulfillment routing without changing the confirmed-order channel.",
+            "schemaFormat": "json-schema-2020-12",
+            "compatPolicy": "backward-compatible within major 2",
+            "publishedAt": "2026-05-14T08:40:00Z",
+            "publishedBy": "atlas",
+            "changeSummary": "Added optional fulfillment routing and documented its fallback behavior.",
+            "documents": [
+              {
+                "path": "contracts/XC-atlas-order-envelope/2.1.0/order-envelope.schema.json",
+                "role": "schema",
+                "normative": true,
+                "mediaType": "application/schema+json",
+                "conformsTo": "https://json-schema.org/draft/2020-12/schema",
+                "digest": "21a00000000000000000000000000000000000000000000000000000000000a1",
+                "sizeBytes": 744,
+                "preview": "{\n  \"title\": \"OrderEnvelope\",\n  \"properties\": {\n    \"fulfillment_route\": {\"type\": \"string\"}\n  }\n}",
+                "previewLanguage": "json"
+              },
+              {
+                "path": "contracts/XC-atlas-order-envelope/2.1.0/routing-examples.yaml",
+                "role": "examples",
+                "normative": false,
+                "mediaType": "application/yaml",
+                "digest": "21b00000000000000000000000000000000000000000000000000000000000b2",
+                "sizeBytes": 318,
+                "preview": "examples:\n  - market: eu\n    fulfillment_route: eu-central\n  - market: us\n    fulfillment_route: us-east\n",
+                "previewLanguage": "yaml"
+              }
+            ],
+            "history": [
+              {
+                "eventID": "01K0L21PUBLISHED000000000001",
+                "transition": "publish",
+                "state": "published",
+                "actor": "atlas",
+                "at": "2026-05-14T08:40:00Z"
+              }
+            ],
+            "provenance": {
+              "profile": "contract-set-v2",
+              "commitSHA": "21aa11aa11aa11aa11aa11aa11aa11aa11aa11aa",
+              "treeObjectID": "21bb22bb22bb22bb22bb22bb22bb22bb22bb22bb",
+              "descriptorPath": "contracts/XC-atlas-order-envelope/2.1.0/contract.yaml",
+              "publishEventPath": "events/contracts/XC-atlas-order-envelope/2.1.0-published.json",
+              "eventSchema": "a2a-contract-event/v2",
+              "digestProfile": "contract-set-v2",
+              "publishedDigest": "21c00000000000000000000000000000000000000000000000000000000000c3",
+              "aggregateVerification": "verified",
+              "descriptorVerification": "verified",
+              "generatedTool": "demo-schema-exporter@2.0.0",
+              "sourceDigest": "21d00000000000000000000000000000000000000000000000000000000000d4"
+            }
+          }
+        },
+        {
+          "version": "2.2.0",
+          "state": "published",
+          "detail": {
+            "status": "available",
+            "description": "Current canonical order envelope with replay-safe event identity.",
+            "schemaFormat": "json-schema-2020-12",
+            "compatPolicy": "backward-compatible within major 2",
+            "publishedAt": "2026-07-22T13:05:00Z",
+            "publishedBy": "atlas",
+            "changeSummary": "Added event_id and retry metadata so consumers can deduplicate provider retries.",
+            "consumerPins": [
+              {
+                "system": "checkout",
+                "space": "checkout-core",
+                "pinnedMajor": 2,
+                "pinnedVersion": "2.2.0",
+                "pinnedState": "published",
+                "drift": "current"
+              }
+            ],
+            "documents": [
+              {
+                "path": "contracts/XC-atlas-order-envelope/2.2.0/order-envelope.schema.json",
+                "role": "schema",
+                "normative": true,
+                "mediaType": "application/schema+json",
+                "conformsTo": "https://json-schema.org/draft/2020-12/schema",
+                "digest": "22a00000000000000000000000000000000000000000000000000000000000a1",
+                "sizeBytes": 936,
+                "preview": "{\n  \"title\": \"OrderEnvelope\",\n  \"required\": [\"event_id\", \"order\", \"producer\"],\n  \"properties\": {\"event_id\": {\"type\": \"string\"}}\n}",
+                "previewLanguage": "json"
+              },
+              {
+                "path": "contracts/XC-atlas-order-envelope/2.2.0/replay-runbook.md",
+                "role": "runbook",
+                "normative": false,
+                "mediaType": "text/markdown",
+                "digest": "22b00000000000000000000000000000000000000000000000000000000000b2",
+                "sizeBytes": 402,
+                "preview": "# Replay safety\n\nPersist `event_id` before acknowledging delivery. A retry with the same identity returns the existing semantic result.",
+                "previewLanguage": "markdown"
+              }
+            ],
+            "history": [
+              {
+                "eventID": "01K1L22PUBLISHED000000000001",
+                "transition": "publish",
+                "state": "published",
+                "actor": "atlas",
+                "at": "2026-07-22T13:05:00Z"
+              }
+            ],
+            "provenance": {
+              "profile": "contract-set-v2",
+              "commitSHA": "22aa11aa11aa11aa11aa11aa11aa11aa11aa11aa",
+              "treeObjectID": "22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb",
+              "descriptorPath": "contracts/XC-atlas-order-envelope/2.2.0/contract.yaml",
+              "publishEventPath": "events/contracts/XC-atlas-order-envelope/2.2.0-published.json",
+              "eventSchema": "a2a-contract-event/v2",
+              "digestProfile": "contract-set-v2",
+              "publishedDigest": "22c00000000000000000000000000000000000000000000000000000000000c3",
+              "aggregateVerification": "verified",
+              "descriptorVerification": "verified",
+              "generatedTool": "demo-schema-exporter@2.2.0",
+              "sourceDigest": "22d00000000000000000000000000000000000000000000000000000000000d4"
+            }
+          }
+        }
       ]
     },
     {
@@ -1358,7 +1366,10 @@
       "compatPolicy": "additive changes within a major",
       "generatedTool": "demo-schema-exporter",
       "sourceDigest": "2b5e1d3cf9a70e2419be1dddf6c7e88f1dc50d765fa4ba171e62f8b048e9d202",
-      "consumers": ["atlas", "checkout"],
+      "consumers": [
+        "atlas",
+        "checkout"
+      ],
       "description": "Incremental product and availability feed consumed by ordering systems.",
       "versions": [
         {
@@ -1368,7 +1379,10 @@
           "successor": "XC-catalog-product-feed@4.0.0",
           "deprecationID": "XA-catalog-20260728-f6g7"
         },
-        {"version": "4.0.0", "state": "published"}
+        {
+          "version": "4.0.0",
+          "state": "published"
+        }
       ]
     },
     {
@@ -1383,12 +1397,23 @@
       "compatPolicy": "backward-compatible within a major",
       "generatedTool": "demo-schema-exporter",
       "sourceDigest": "3c6f2e4d0ab81f352acf2eeef7d8f9902ed61e8760b5cb282f7309c159fad303",
-      "consumers": ["atlas"],
+      "consumers": [
+        "atlas"
+      ],
       "description": "Cart-created, cart-updated and checkout-confirmed event stream.",
       "versions": [
-        {"version": "1.4.0", "state": "published"},
-        {"version": "1.6.0", "state": "published"},
-        {"version": "1.6.1", "state": "published"}
+        {
+          "version": "1.4.0",
+          "state": "published"
+        },
+        {
+          "version": "1.6.0",
+          "state": "published"
+        },
+        {
+          "version": "1.6.1",
+          "state": "published"
+        }
       ]
     },
     {
@@ -1401,11 +1426,23 @@
       "category": "vocabulary",
       "schemaFormat": "json-schema-2020-12",
       "compatPolicy": "additive status values require a minor version",
-      "consumers": ["checkout"],
+      "consumers": [
+        "checkout"
+      ],
       "description": "Shipment status vocabulary and event payload.",
       "versions": [
-        {"version": "2.0.0", "state": "published"},
-        {"version": "2.1.0", "state": "published"}
+        {
+          "version": "2.0.0",
+          "state": "published",
+          "detail": {
+            "status": "unavailable",
+            "unavailableReason": "This version was published before carried-set history was enabled; the contract summary is available, but its immutable file package cannot be reconstructed from this snapshot."
+          }
+        },
+        {
+          "version": "2.1.0",
+          "state": "published"
+        }
       ]
     },
     {
@@ -1418,90 +1455,19 @@
       "category": "api",
       "schemaFormat": "openapi-3.x",
       "compatPolicy": "backward-compatible within a major",
-      "consumers": ["atlas"],
+      "consumers": [
+        "atlas"
+      ],
       "description": "Request envelope for transactional customer notifications.",
       "versions": [
-        {"version": "1.3.0", "state": "published"},
-        {"version": "2.0.0", "state": "published"}
-      ]
-    },
-    {
-      "space": "risk-payments",
-      "id": "XC-risk-score",
-      "provider": "risk",
-      "version": "3.2.0",
-      "state": "published",
-      "codeBacked": true,
-      "category": "api",
-      "schemaFormat": "json-schema-2020-12",
-      "compatPolicy": "backward-compatible within a major",
-      "generatedTool": "demo-schema-exporter",
-      "sourceDigest": "4d703f5e1bc920463bd03fff08e901a13fe72f9871c6dc3930841ad26a0be404",
-      "consumers": ["atlas", "checkout"],
-      "description": "Risk score, reason codes and evidence pointers for an order.",
-      "versions": [
-        {"version": "2.8.0", "state": "retired"},
-        {"version": "3.0.0", "state": "published"},
-        {"version": "3.2.0", "state": "published"}
-      ]
-    },
-    {
-      "space": "risk-payments",
-      "id": "XC-billing-payment-events",
-      "provider": "billing",
-      "version": "2.4.0",
-      "state": "published",
-      "codeBacked": true,
-      "category": "event-feed",
-      "schemaFormat": "proto3",
-      "compatPolicy": "field numbers are never reused",
-      "generatedTool": "demo-proto-export",
-      "sourceDigest": "5e81406f2cda31574ce1400019fa12b240f830a982d7ed4a41952be37b1cf505",
-      "consumers": ["atlas"],
-      "description": "Authorized, captured, failed and refunded payment events.",
-      "versions": [
         {
-          "version": "1.8.0",
-          "state": "retired",
-          "successor": "XC-billing-payment-events@2.0.0",
-          "deprecationID": "XA-billing-20260712-h3j4"
+          "version": "1.3.0",
+          "state": "published"
         },
-        {"version": "2.0.0", "state": "published"},
-        {"version": "2.4.0", "state": "published"}
-      ]
-    },
-    {
-      "space": "risk-payments",
-      "id": "XC-ledger-journal-entry",
-      "provider": "ledger",
-      "version": "1.9.0",
-      "state": "published",
-      "codeBacked": false,
-      "category": "api",
-      "schemaFormat": "openapi-3.x",
-      "compatPolicy": "backward-compatible within a major",
-      "consumers": ["billing"],
-      "description": "Double-entry journal request with idempotency and posting result.",
-      "versions": [
-        {"version": "1.7.0", "state": "published"},
-        {"version": "1.9.0", "state": "published"}
-      ]
-    },
-    {
-      "space": "risk-payments",
-      "id": "XC-atlas-fraud-case",
-      "provider": "atlas",
-      "version": "1.1.0",
-      "state": "published",
-      "codeBacked": false,
-      "category": "data-feed",
-      "schemaFormat": "json-schema-2020-12",
-      "compatPolicy": "additive changes within a major",
-      "consumers": ["risk"],
-      "description": "Case evidence envelope used when an automated risk decision is disputed.",
-      "versions": [
-        {"version": "1.0.0", "state": "published"},
-        {"version": "1.1.0", "state": "published"}
+        {
+          "version": "2.0.0",
+          "state": "published"
+        }
       ]
     },
     {
@@ -1516,11 +1482,19 @@
       "compatPolicy": "backward-compatible within a major",
       "generatedTool": "demo-schema-exporter",
       "sourceDigest": "6f9251703deb42685df251112afb23c3510941ba93e8fe5b52a63cf48c2df606",
-      "consumers": ["atlas"],
+      "consumers": [
+        "atlas"
+      ],
       "description": "Customer case updates and redacted conversation references.",
       "versions": [
-        {"version": "1.4.0", "state": "published"},
-        {"version": "2.0.0", "state": "published"}
+        {
+          "version": "1.4.0",
+          "state": "published"
+        },
+        {
+          "version": "2.0.0",
+          "state": "published"
+        }
       ]
     },
     {
@@ -1533,7 +1507,9 @@
       "category": "api",
       "schemaFormat": "openapi-3.x",
       "compatPolicy": "backward-compatible within a major",
-      "consumers": ["support"],
+      "consumers": [
+        "support"
+      ],
       "description": "Customer notice request with locale and delivery policy.",
       "versions": [
         {
@@ -1543,7 +1519,10 @@
           "successor": "XC-comms-customer-notice@2.0.0",
           "deprecationID": "XA-comms-20260724-k5m6"
         },
-        {"version": "2.0.0", "state": "published"}
+        {
+          "version": "2.0.0",
+          "state": "published"
+        }
       ]
     },
     {
@@ -1556,10 +1535,15 @@
       "category": "data-feed",
       "schemaFormat": "other",
       "compatPolicy": "frozen",
-      "consumers": ["atlas"],
+      "consumers": [
+        "atlas"
+      ],
       "description": "Historical CRM export retained for audit reads only.",
       "versions": [
-        {"version": "1.0.0", "state": "retired"}
+        {
+          "version": "1.0.0",
+          "state": "retired"
+        }
       ]
     }
   ],
@@ -1591,16 +1575,6 @@
       "message": "support/exchanges/XA-support-20260712-a3b4.md (frontmatter-too-large)",
       "severity": "attention",
       "source": "cache-index"
-    },
-    {
-      "space": "risk-payments",
-      "system": "billing",
-      "code": "illegal-transition",
-      "message": "Committed event 01K5A2B3C4D5E6F7G8H9J0K1M6 attempted close from in_progress on XW-billing-20260727-m7p8.",
-      "severity": "attention",
-      "source": "fold",
-      "artifact": "XW-billing-20260727-m7p8",
-      "event": "01K5A2B3C4D5E6F7G8H9J0K1M6"
     }
   ],
   "releaseNotes": [
@@ -1615,12 +1589,20 @@
           "impact": "normal",
           "subject": "A stale statusline launches one durable refresh for the next render",
           "detail": "The prompt-facing statusline still reads local cache only and keeps its existing text, JSON, and exit-code contract. When that cache is stale, it now atomically claims a short-lived local lease and starts the canonical `a2a sync` command as a detached process. The refresh can finish after the one-shot statusline process exits, concurrent prompt renders do not start a herd of duplicate syncs even while recovering an expired lease, and the next render sees the refreshed mirror. The previous in-process goroutine could be terminated by normal CLI exit or race a test fixture's cleanup.",
-          "affects": ["statusline", "local cache", "sync"],
+          "affects": [
+            "statusline",
+            "local cache",
+            "sync"
+          ],
           "action": {
             "scope": "local",
             "why": "Update if statusline is embedded in a shell or agent prompt; no config change is required.",
-            "detect": ["a2a version"],
-            "run": ["a2a update --yes"]
+            "detect": [
+              "a2a version"
+            ],
+            "run": [
+              "a2a update --yes"
+            ]
           }
         },
         {
@@ -1629,7 +1611,11 @@
           "impact": "low",
           "subject": "The ordinary CI gate no longer depends on ambient Git identity or a cold duplicate Go cache",
           "detail": "Git-backed tests now receive a process-local fixture identity, the checkout-owned validation runner has a documented scoped-test entrypoint, GitHub's setup-go cache feeds the exact build cache consumed by `make check`, and workflow syntax validation fails closed with pinned actionlint. The public-only classification backstop no longer rejects the private source repository, and CodeQL has the read scope its analyze step needs under restrictive workflow permissions. CodeQL execution is scoped to the public repository where code scanning is enabled; private CI keeps its gosec, govulncheck, and gitleaks gates without spending minutes on an upload GitHub will refuse. Lifecycle wire parity retains every case while reusing one immutable repository fixture.",
-          "affects": ["contributors", "GitHub Actions", "make check"],
+          "affects": [
+            "contributors",
+            "GitHub Actions",
+            "make check"
+          ],
           "action": {
             "scope": "none",
             "why": "No user action is required; maintainers get faster and more trustworthy merge evidence."
@@ -1641,7 +1627,12 @@
           "impact": "normal",
           "subject": "Standing known issues no longer disappear on the next update",
           "detail": "Current limitations now live once in a schema-validated standing list instead of being copied into every version file. `a2a whatsnew`, its MCP twin, the HTML release view, and the authored GitHub Release body append that list independently of the selected version range, including when there are no newer change entries. The existing release-array machine shape remains unchanged, and a resolved issue is removed in one place.",
-          "affects": ["a2a whatsnew", "a2a_whatsnew", "release notes", "release workflow"],
+          "affects": [
+            "a2a whatsnew",
+            "a2a_whatsnew",
+            "release notes",
+            "release workflow"
+          ],
           "action": {
             "scope": "none",
             "why": "No user action is required; current limitations now remain visible until their fixes actually ship."
@@ -1653,7 +1644,10 @@
           "impact": "low",
           "subject": "The v0.16.3 runtime candidate passed all 50 declared live cells",
           "detail": "The immutable public runtime candidate d6418b926ec5363416ef8b42a572788e7e7e009a completed the full protected GitHub matrix with two independent identities: 50 pass, zero fail, zero timed-out, and zero not-run cells across CLI, MCP, lifecycle, contracts, authorization boundaries, failure recovery, thread reconstruction, and space migration. The audit observed 179 workflow runs; its two red runs were the expected and explicitly claimed cross-section boundary probes. The final tagged tree differs from that runtime candidate only by this evidence statement and the matching README baseline; local gates, release preflight, renderer checks, and the filtered-public leak proof are repeated on the exact tag candidate.",
-          "affects": ["release confidence", "GitHub live E2E"],
+          "affects": [
+            "release confidence",
+            "GitHub live E2E"
+          ],
           "action": {
             "scope": "none",
             "why": "No user action is required; this states the bounded evidence actually collected and does not claim every possible state was tested."
@@ -1665,7 +1659,10 @@
           "impact": "normal",
           "subject": "The macOS companion remains ad-hoc signed and may require manual approval",
           "detail": "The release cohort authenticates the exact macOS app and ad-hoc signing protects its bundle integrity, but the app is not identified or notarized through a paid Apple Developer account. A quarantined download may require one explicit System Settings → Privacy & Security → Open Anyway decision. Interactive Notification Center, Focus, Login Items, VS Code trust/profile, and remote-window checks remain release-environment evidence rather than claims inferred from hermetic tests.",
-          "affects": ["macOS notifications", "VS Code notifications"],
+          "affects": [
+            "macOS notifications",
+            "VS Code notifications"
+          ],
           "action": {
             "scope": "none",
             "why": "Keep Gatekeeper enabled and approve only the A2A Notifier version obtained through the verified a2a release cohort."
@@ -1693,8 +1690,12 @@
           "action": {
             "scope": "local",
             "why": "Use v0.16.2 rather than the incomplete v0.16.1 cohort, especially when installing the macOS or VS Code notification companion.",
-            "detect": ["a2a version"],
-            "run": ["a2a update --yes"]
+            "detect": [
+              "a2a version"
+            ],
+            "run": [
+              "a2a update --yes"
+            ]
           }
         },
         {
@@ -1703,7 +1704,10 @@
           "impact": "normal",
           "subject": "The macOS companion remains ad-hoc signed and may require manual approval",
           "detail": "The release cohort authenticates the exact macOS app and ad-hoc signing protects its bundle integrity, but the app is not identified or notarized through a paid Apple Developer account. A quarantined download may require one explicit System Settings → Privacy & Security → Open Anyway decision. Interactive Notification Center, Focus, Login Items, VS Code trust/profile, and remote-window checks remain release-environment evidence rather than claims inferred from hermetic tests.",
-          "affects": ["macOS notifications", "VS Code notifications"],
+          "affects": [
+            "macOS notifications",
+            "VS Code notifications"
+          ],
           "action": {
             "scope": "none",
             "why": "Keep Gatekeeper enabled and approve only the A2A Notifier version obtained through the verified a2a release cohort."
@@ -1738,7 +1742,11 @@
           "impact": "normal",
           "subject": "The project front door now explains the work a2ahub makes possible",
           "detail": "The README no longer opens with implementation vocabulary, copies a command catalogue, or carries two MCP limitations that the product already fixed. It now starts from the coordination failure a2ahub solves, then names the concrete capabilities: readable work chains, computed next moves, versioned consumer-aware contracts, the validated Git write funnel, the local dashboard, notifications, CLI, and MCP. A deterministic release gate keeps the file below its compact size ceiling, requires exits to the canonical documentation, and rejects the known retired guidance; release review still owns the human judgement about clarity and tone.",
-          "affects": ["README", "first-time evaluation", "release gate"],
+          "affects": [
+            "README",
+            "first-time evaluation",
+            "release gate"
+          ],
           "action": {
             "scope": "none",
             "why": "Existing users need no action. New readers can evaluate the project without learning its command surface first."
@@ -1750,7 +1758,11 @@
           "impact": "normal",
           "subject": "GitHub Releases now show the authored release notes instead of commit noise",
           "detail": "The release workflow now renders the same versioned YAML corpus used by `a2a whatsnew` into a concise GitHub Release page with changes, known issues, actions, install guidance, and verification links. GoReleaser receives that file through its canonical custom-release-notes option and replaces stale bodies on retry. A post-publish assertion byte-compares the visible GitHub body with the rendered SSOT. This removes the generic platform table, raw commit list, and unsafe quarantine-removal advice that previously obscured why a release mattered.",
-          "affects": ["GitHub Releases", "a2a whatsnew", "release workflow"],
+          "affects": [
+            "GitHub Releases",
+            "a2a whatsnew",
+            "release workflow"
+          ],
           "action": {
             "scope": "none",
             "why": "Release readers and updating agents now receive two projections of one authored source rather than unrelated summaries."
@@ -1762,7 +1774,11 @@
           "impact": "normal",
           "subject": "Release verification is selected by behavioral impact, not by the size of the version number",
           "detail": "Full GitHub live verification remains mandatory when an exact public candidate changes runtime, funnel, validator, lifecycle, contract constraints, or space behavior. A targeted cell remains a diagnostic rerun, not proof for a shared-core change. Presentation-only candidates may now omit GitHub live when the exact public diff proves that no executable or protocol behavior moved; they still require the full hermetic gate, release preflight, immutable candidate, and a written reason. v0.16.1 uses that presentation-only tier. The latest full baseline, v0.16.0, passed 50 of 50 declared live cells; that is complete coverage of the declared matrix, not every theoretically possible state.",
-          "affects": ["release runbook", "GitHub Actions usage", "release lead time"],
+          "affects": [
+            "release runbook",
+            "GitHub Actions usage",
+            "release lead time"
+          ],
           "action": {
             "scope": "none",
             "why": "This patch changes public explanation, release rendering, comments, schema annotations, and version pins, but no a2a runtime or space policy behavior exercised by the live matrix."
@@ -1774,7 +1790,10 @@
           "impact": "normal",
           "subject": "The macOS companion remains ad-hoc signed and may require manual approval",
           "detail": "The release cohort authenticates the exact macOS app and ad-hoc signing protects its bundle integrity, but the app is not identified or notarized through a paid Apple Developer account. A quarantined download may require one explicit System Settings → Privacy & Security → Open Anyway decision. Interactive Notification Center, Focus, Login Items, VS Code trust/profile, and remote-window checks remain release-environment evidence rather than claims inferred from hermetic tests.",
-          "affects": ["macOS notifications", "VS Code notifications"],
+          "affects": [
+            "macOS notifications",
+            "VS Code notifications"
+          ],
           "action": {
             "scope": "none",
             "why": "Keep Gatekeeper enabled and approve only the A2A Notifier version obtained through the verified a2a release cohort."
@@ -1793,7 +1812,9 @@
         "impact": "normal",
         "subject": "A stale statusline launches one durable refresh for the next render",
         "detail": "The prompt-facing statusline still reads local cache only and keeps its existing text, JSON, and exit-code contract. When that cache is stale, it now atomically claims a short-lived local lease and starts the canonical `a2a sync` command as a detached process. The refresh can finish after the one-shot statusline process exits, concurrent prompt renders do not start a herd of duplicate syncs even while recovering an expired lease, and the next render sees the refreshed mirror. The previous in-process goroutine could be terminated by normal CLI exit or race a test fixture's cleanup.",
-        "run": ["a2a update --yes"]
+        "run": [
+          "a2a update --yes"
+        ]
       },
       {
         "kind": "fix",
@@ -1831,14 +1852,19 @@
         "title": "Prevent duplicate payment capture after a worker retry",
         "from": "checkout"
       },
-      "participants": ["atlas", "checkout"],
+      "participants": [
+        "atlas",
+        "checkout"
+      ],
       "sync_stale": false,
       "artifacts": [
         {
           "id": "XW-checkout-20260728-c3d4",
           "type": "work_request",
           "from": "checkout",
-          "to": ["atlas"],
+          "to": [
+            "atlas"
+          ],
           "title": "Prevent duplicate payment capture after a worker retry",
           "state": "in_progress"
         },
@@ -1846,7 +1872,9 @@
           "id": "XS-atlas-20260729-j7k8",
           "type": "response",
           "from": "atlas",
-          "to": ["checkout"],
+          "to": [
+            "checkout"
+          ],
           "title": "First idempotency patch and replay evidence",
           "state": "disputed",
           "parent": "XW-checkout-20260728-c3d4"
@@ -1855,7 +1883,9 @@
           "id": "XQ-checkout-20260730-a1b2",
           "type": "question",
           "from": "checkout",
-          "to": ["atlas"],
+          "to": [
+            "atlas"
+          ],
           "title": "Should a retry reuse the original capture idempotency key?",
           "state": "submitted",
           "refs": [
@@ -1874,7 +1904,9 @@
             "id": "XW-checkout-20260728-c3d4",
             "type": "work_request",
             "from": "checkout",
-            "to": ["atlas"],
+            "to": [
+              "atlas"
+            ],
             "title": "Prevent duplicate payment capture after a worker retry"
           }
         },
@@ -1890,7 +1922,13 @@
             "actor": {
               "kind": "agent",
               "name": "checkout-agent",
-              "system": "checkout"
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-checkout"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -1906,7 +1944,13 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -1922,7 +1966,13 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -1938,7 +1988,13 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -1950,7 +2006,9 @@
             "id": "XS-atlas-20260729-j7k8",
             "type": "response",
             "from": "atlas",
-            "to": ["checkout"],
+            "to": [
+              "checkout"
+            ],
             "title": "First idempotency patch and replay evidence"
           }
         },
@@ -1966,9 +2024,38 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
             },
-            "response_id": "XS-atlas-20260729-j7k8"
+            "response_id": "XS-atlas-20260729-j7k8",
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            },
+            "consistency": {
+              "kind": "state-claim-mismatch",
+              "event_ulid": "01K1A2B3C4D5E6F7G8H9J0K1M7",
+              "subject": "XW-checkout-20260728-c3d4",
+              "scope": {
+                "kind": "artifact",
+                "subject": "XW-checkout-20260728-c3d4"
+              },
+              "actual": "responded",
+              "claimed": "in_progress",
+              "actor": {
+                "kind": "agent",
+                "name": "atlas-agent",
+                "system": "atlas",
+                "model": "gpt-5",
+                "session": "session:demo-atlas"
+              },
+              "producer": {
+                "tool": "a2a",
+                "version": "0.19.0"
+              },
+              "cause": "The producer receipt disagrees with the authoritative fold outcome"
+            }
           }
         },
         {
@@ -1983,7 +2070,13 @@
             "actor": {
               "kind": "agent",
               "name": "checkout-agent",
-              "system": "checkout"
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-checkout"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -1995,7 +2088,9 @@
             "id": "XQ-checkout-20260730-a1b2",
             "type": "question",
             "from": "checkout",
-            "to": ["atlas"],
+            "to": [
+              "atlas"
+            ],
             "title": "Should a retry reuse the original capture idempotency key?"
           }
         },
@@ -2011,7 +2106,13 @@
             "actor": {
               "kind": "agent",
               "name": "checkout-agent",
-              "system": "checkout"
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-checkout"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         }
@@ -2024,13 +2125,40 @@
           "blocking": true,
           "needed_by": "2026-07-29",
           "next_actions": [
-            {"transition": "decline", "by": ["atlas"]},
-            {"transition": "block", "by": ["atlas"]},
-            {"transition": "respond", "by": ["atlas"]},
-            {"transition": "cancel", "by": ["checkout"]},
-            {"transition": "supersede", "by": ["checkout"]}
+            {
+              "transition": "decline",
+              "by": [
+                "atlas"
+              ]
+            },
+            {
+              "transition": "block",
+              "by": [
+                "atlas"
+              ]
+            },
+            {
+              "transition": "respond",
+              "by": [
+                "atlas"
+              ]
+            },
+            {
+              "transition": "cancel",
+              "by": [
+                "checkout"
+              ]
+            },
+            {
+              "transition": "supersede",
+              "by": [
+                "checkout"
+              ]
+            }
           ],
-          "waiting_on": ["atlas"],
+          "waiting_on": [
+            "atlas"
+          ],
           "your_move": true
         },
         {
@@ -2040,12 +2168,34 @@
           "blocking": false,
           "needed_by": "2026-07-31",
           "next_actions": [
-            {"transition": "acknowledge", "by": ["atlas"]},
-            {"transition": "decline", "by": ["atlas"]},
-            {"transition": "cancel", "by": ["checkout"]},
-            {"transition": "supersede", "by": ["checkout"]}
+            {
+              "transition": "acknowledge",
+              "by": [
+                "atlas"
+              ]
+            },
+            {
+              "transition": "decline",
+              "by": [
+                "atlas"
+              ]
+            },
+            {
+              "transition": "cancel",
+              "by": [
+                "checkout"
+              ]
+            },
+            {
+              "transition": "supersede",
+              "by": [
+                "checkout"
+              ]
+            }
           ],
-          "waiting_on": ["atlas"],
+          "waiting_on": [
+            "atlas"
+          ],
           "your_move": true
         }
       ],
@@ -2067,37 +2217,52 @@
         "title": "Catalog must provide a product-feed v4 migration path",
         "from": "atlas"
       },
-      "participants": ["atlas", "catalog"],
+      "participants": [
+        "atlas",
+        "catalog"
+      ],
       "sync_stale": false,
       "artifacts": [
         {
           "id": "XR-atlas-catalog-v4",
           "type": "requirement",
           "from": "atlas",
-          "to": ["catalog"],
+          "to": [
+            "catalog"
+          ],
           "title": "Catalog must provide a product-feed v4 migration path",
           "state": "acknowledged",
           "refs": [
-            {"ref": "XC-catalog-product-feed@4.0.0"}
+            {
+              "ref": "XC-catalog-product-feed@4.0.0"
+            }
           ]
         },
         {
           "id": "XW-atlas-20260727-r7s8",
           "type": "work_request",
           "from": "atlas",
-          "to": ["catalog"],
+          "to": [
+            "catalog"
+          ],
           "title": "Migrate the catalog adapter to product feed v4",
           "state": "responded",
           "refs": [
-            {"ref": "XR-atlas-catalog-v4"},
-            {"ref": "XC-catalog-product-feed@4.0.0"}
+            {
+              "ref": "XR-atlas-catalog-v4"
+            },
+            {
+              "ref": "XC-catalog-product-feed@4.0.0"
+            }
           ]
         },
         {
           "id": "XS-catalog-20260730-m9n2",
           "type": "response",
           "from": "catalog",
-          "to": ["atlas"],
+          "to": [
+            "atlas"
+          ],
           "title": "Migration plan and compatibility fixtures",
           "state": "submitted",
           "parent": "XW-atlas-20260727-r7s8"
@@ -2112,7 +2277,9 @@
             "id": "XR-atlas-catalog-v4",
             "type": "requirement",
             "from": "atlas",
-            "to": ["catalog"],
+            "to": [
+              "catalog"
+            ],
             "title": "Catalog must provide a product-feed v4 migration path"
           }
         },
@@ -2128,7 +2295,13 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -2144,7 +2317,13 @@
             "actor": {
               "kind": "agent",
               "name": "catalog-agent",
-              "system": "catalog"
+              "system": "catalog",
+              "model": "gpt-5",
+              "session": "session:demo-catalog"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -2156,7 +2335,9 @@
             "id": "XW-atlas-20260727-r7s8",
             "type": "work_request",
             "from": "atlas",
-            "to": ["catalog"],
+            "to": [
+              "catalog"
+            ],
             "title": "Migrate the catalog adapter to product feed v4"
           }
         },
@@ -2172,7 +2353,13 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -2188,7 +2375,13 @@
             "actor": {
               "kind": "agent",
               "name": "catalog-agent",
-              "system": "catalog"
+              "system": "catalog",
+              "model": "gpt-5",
+              "session": "session:demo-catalog"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -2204,7 +2397,13 @@
             "actor": {
               "kind": "agent",
               "name": "catalog-agent",
-              "system": "catalog"
+              "system": "catalog",
+              "model": "gpt-5",
+              "session": "session:demo-catalog"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -2220,7 +2419,13 @@
             "actor": {
               "kind": "agent",
               "name": "catalog-agent",
-              "system": "catalog"
+              "system": "catalog",
+              "model": "gpt-5",
+              "session": "session:demo-catalog"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -2232,7 +2437,9 @@
             "id": "XS-catalog-20260730-m9n2",
             "type": "response",
             "from": "catalog",
-            "to": ["atlas"],
+            "to": [
+              "atlas"
+            ],
             "title": "Migration plan and compatibility fixtures"
           }
         },
@@ -2248,9 +2455,15 @@
             "actor": {
               "kind": "agent",
               "name": "catalog-agent",
-              "system": "catalog"
+              "system": "catalog",
+              "model": "gpt-5",
+              "session": "session:demo-catalog"
             },
-            "response_id": "XS-catalog-20260730-m9n2"
+            "response_id": "XS-catalog-20260730-m9n2",
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
           }
         }
       ],
@@ -2261,12 +2474,35 @@
           "state": "acknowledged",
           "blocking": false,
           "next_actions": [
-            {"transition": "satisfy", "by": ["atlas"]},
-            {"transition": "decline", "by": ["catalog"]},
-            {"transition": "withdraw", "by": ["atlas"]},
-            {"transition": "supersede", "by": ["atlas"]}
+            {
+              "transition": "satisfy",
+              "by": [
+                "atlas"
+              ]
+            },
+            {
+              "transition": "decline",
+              "by": [
+                "catalog"
+              ]
+            },
+            {
+              "transition": "withdraw",
+              "by": [
+                "atlas"
+              ]
+            },
+            {
+              "transition": "supersede",
+              "by": [
+                "atlas"
+              ]
+            }
           ],
-          "waiting_on": ["atlas", "catalog"],
+          "waiting_on": [
+            "atlas",
+            "catalog"
+          ],
           "your_move": true
         },
         {
@@ -2276,11 +2512,29 @@
           "blocking": false,
           "needed_by": "2026-08-15",
           "next_actions": [
-            {"transition": "respond", "by": ["catalog"]},
-            {"transition": "close", "by": ["atlas"]},
-            {"transition": "supersede", "by": ["atlas"]}
+            {
+              "transition": "respond",
+              "by": [
+                "catalog"
+              ]
+            },
+            {
+              "transition": "close",
+              "by": [
+                "atlas"
+              ]
+            },
+            {
+              "transition": "supersede",
+              "by": [
+                "atlas"
+              ]
+            }
           ],
-          "waiting_on": ["atlas", "catalog"],
+          "waiting_on": [
+            "atlas",
+            "catalog"
+          ],
           "your_move": true
         },
         {
@@ -2289,163 +2543,22 @@
           "state": "submitted",
           "blocking": false,
           "next_actions": [
-            {"transition": "verify", "by": ["atlas"]},
-            {"transition": "dispute", "by": ["atlas"]}
+            {
+              "transition": "verify",
+              "by": [
+                "atlas"
+              ]
+            },
+            {
+              "transition": "dispute",
+              "by": [
+                "atlas"
+              ]
+            }
           ],
-          "waiting_on": ["atlas"],
-          "your_move": true
-        }
-      ],
-      "flags": [],
-      "unresolved": []
-    },
-    {
-      "thread": "thread:billing-20260729-e5f6",
-      "space": "risk-payments",
-      "order": "committed",
-      "opener": {
-        "id": "XR-billing-settlement-clock",
-        "title": "Settlement timestamps need one canonical source",
-        "from": "billing"
-      },
-      "participants": ["atlas", "billing", "ledger", "risk"],
-      "sync_stale": true,
-      "artifacts": [
-        {
-          "id": "XR-billing-settlement-clock",
-          "type": "requirement",
-          "from": "billing",
-          "to": ["atlas", "ledger", "risk"],
-          "title": "Settlement timestamps need one canonical source",
-          "state": "acknowledged"
-        },
-        {
-          "id": "XD-billing-20260729-e5f6",
-          "type": "decision",
-          "from": "billing",
-          "to": ["atlas", "ledger", "risk"],
-          "title": "Choose the source of truth for settlement timestamps",
-          "state": "proposed",
-          "refs": [
-            {"ref": "XR-billing-settlement-clock"}
-          ]
-        }
-      ],
-      "transcript": [
-        {
-          "seq": 201,
-          "kind": "artifact",
-          "at": "2026-07-28T17:00:00Z",
-          "artifact": {
-            "id": "XR-billing-settlement-clock",
-            "type": "requirement",
-            "from": "billing",
-            "to": ["atlas", "ledger", "risk"],
-            "title": "Settlement timestamps need one canonical source"
-          }
-        },
-        {
-          "seq": 202,
-          "kind": "event",
-          "at": "2026-07-28T17:01:00Z",
-          "event": {
-            "ulid": "01K2A2B3C4D5E6F7G8H9J0K1M2",
-            "subject": "XR-billing-settlement-clock",
-            "transition": "publish",
-            "claimed_state": "published",
-            "actor": {
-              "kind": "agent",
-              "name": "billing-agent",
-              "system": "billing"
-            }
-          }
-        },
-        {
-          "seq": 203,
-          "kind": "event",
-          "at": "2026-07-28T18:10:00Z",
-          "event": {
-            "ulid": "01K2A2B3C4D5E6F7G8H9J0K1M3",
-            "subject": "XR-billing-settlement-clock",
-            "transition": "acknowledge",
-            "claimed_state": "acknowledged",
-            "actor": {
-              "kind": "agent",
-              "name": "ledger-agent",
-              "system": "ledger"
-            }
-          }
-        },
-        {
-          "seq": 205,
-          "kind": "artifact",
-          "at": "2026-07-29T17:00:00Z",
-          "artifact": {
-            "id": "XD-billing-20260729-e5f6",
-            "type": "decision",
-            "from": "billing",
-            "to": ["atlas", "ledger", "risk"],
-            "title": "Choose the source of truth for settlement timestamps"
-          }
-        },
-        {
-          "seq": 206,
-          "kind": "event",
-          "at": "2026-07-29T17:01:00Z",
-          "event": {
-            "ulid": "01K2A2B3C4D5E6F7G8H9J0K1M6",
-            "subject": "XD-billing-20260729-e5f6",
-            "transition": "propose",
-            "claimed_state": "proposed",
-            "actor": {
-              "kind": "agent",
-              "name": "billing-agent",
-              "system": "billing"
-            }
-          }
-        },
-        {
-          "seq": 207,
-          "kind": "event",
-          "at": "2026-07-29T17:20:00Z",
-          "event": {
-            "ulid": "01K2A2B3C4D5E6F7G8H9J0K1M7",
-            "subject": "XD-billing-20260729-e5f6",
-            "transition": "approve",
-            "claimed_state": "proposed",
-            "actor": {
-              "kind": "human",
-              "name": "risk-owner",
-              "system": "risk"
-            }
-          }
-        }
-      ],
-      "open_items": [
-        {
-          "id": "XR-billing-settlement-clock",
-          "type": "requirement",
-          "state": "acknowledged",
-          "blocking": false,
-          "next_actions": [
-            {"transition": "satisfy", "by": ["billing"]},
-            {"transition": "decline", "by": ["atlas", "ledger", "risk"]},
-            {"transition": "withdraw", "by": ["billing"]},
-            {"transition": "supersede", "by": ["billing"]}
+          "waiting_on": [
+            "atlas"
           ],
-          "waiting_on": ["atlas", "billing", "ledger", "risk"],
-          "your_move": true
-        },
-        {
-          "id": "XD-billing-20260729-e5f6",
-          "type": "decision",
-          "state": "proposed",
-          "blocking": false,
-          "next_actions": [
-            {"transition": "approve", "by": ["atlas", "ledger", "risk"]},
-            {"transition": "reject", "by": ["atlas", "ledger", "risk"]}
-          ],
-          "waiting_on": ["atlas", "ledger", "risk"],
           "your_move": true
         }
       ],
@@ -2461,14 +2574,19 @@
         "title": "Redact message bodies before case events leave Support",
         "from": "support"
       },
-      "participants": ["atlas", "support"],
+      "participants": [
+        "atlas",
+        "support"
+      ],
       "sync_stale": true,
       "artifacts": [
         {
           "id": "XD-support-20260725-s3t4",
           "type": "decision",
           "from": "support",
-          "to": ["atlas"],
+          "to": [
+            "atlas"
+          ],
           "title": "Redact message bodies before case events leave Support",
           "state": "approved"
         },
@@ -2476,18 +2594,24 @@
           "id": "XQ-atlas-20260726-t5v6",
           "type": "question",
           "from": "atlas",
-          "to": ["support"],
+          "to": [
+            "support"
+          ],
           "title": "Which fixture proves attachment names are redacted?",
           "state": "closed",
           "refs": [
-            {"ref": "XD-support-20260725-s3t4"}
+            {
+              "ref": "XD-support-20260725-s3t4"
+            }
           ]
         },
         {
           "id": "XS-support-20260727-w7x8",
           "type": "response",
           "from": "support",
-          "to": ["atlas"],
+          "to": [
+            "atlas"
+          ],
           "title": "Redaction fixture and expected digest",
           "state": "verified",
           "parent": "XQ-atlas-20260726-t5v6"
@@ -2496,12 +2620,18 @@
           "id": "XH-support-20260729-q5n6",
           "type": "handoff",
           "from": "support",
-          "to": ["atlas"],
+          "to": [
+            "atlas"
+          ],
           "title": "PII-redacted support case stream v2",
           "state": "acknowledged",
           "refs": [
-            {"ref": "XD-support-20260725-s3t4"},
-            {"ref": "XC-support-case-stream@2.0.0"}
+            {
+              "ref": "XD-support-20260725-s3t4"
+            },
+            {
+              "ref": "XC-support-case-stream@2.0.0"
+            }
           ]
         }
       ],
@@ -2514,7 +2644,9 @@
             "id": "XD-support-20260725-s3t4",
             "type": "decision",
             "from": "support",
-            "to": ["atlas"],
+            "to": [
+              "atlas"
+            ],
             "title": "Redact message bodies before case events leave Support"
           }
         },
@@ -2530,7 +2662,13 @@
             "actor": {
               "kind": "agent",
               "name": "support-agent",
-              "system": "support"
+              "system": "support",
+              "model": "gpt-5",
+              "session": "session:demo-support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -2546,7 +2684,13 @@
             "actor": {
               "kind": "human",
               "name": "atlas-owner",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -2558,7 +2702,9 @@
             "id": "XQ-atlas-20260726-t5v6",
             "type": "question",
             "from": "atlas",
-            "to": ["support"],
+            "to": [
+              "support"
+            ],
             "title": "Which fixture proves attachment names are redacted?"
           }
         },
@@ -2574,7 +2720,13 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -2590,7 +2742,13 @@
             "actor": {
               "kind": "agent",
               "name": "support-agent",
-              "system": "support"
+              "system": "support",
+              "model": "gpt-5",
+              "session": "session:demo-support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -2602,7 +2760,9 @@
             "id": "XS-support-20260727-w7x8",
             "type": "response",
             "from": "support",
-            "to": ["atlas"],
+            "to": [
+              "atlas"
+            ],
             "title": "Redaction fixture and expected digest"
           }
         },
@@ -2618,9 +2778,15 @@
             "actor": {
               "kind": "agent",
               "name": "support-agent",
-              "system": "support"
+              "system": "support",
+              "model": "gpt-5",
+              "session": "session:demo-support"
             },
-            "response_id": "XS-support-20260727-w7x8"
+            "response_id": "XS-support-20260727-w7x8",
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            }
           }
         },
         {
@@ -2635,7 +2801,13 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -2651,7 +2823,13 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -2663,7 +2841,9 @@
             "id": "XH-support-20260729-q5n6",
             "type": "handoff",
             "from": "support",
-            "to": ["atlas"],
+            "to": [
+              "atlas"
+            ],
             "title": "PII-redacted support case stream v2"
           }
         },
@@ -2679,7 +2859,13 @@
             "actor": {
               "kind": "agent",
               "name": "support-agent",
-              "system": "support"
+              "system": "support",
+              "model": "gpt-5",
+              "session": "session:demo-support"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -2695,7 +2881,13 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         }
@@ -2707,263 +2899,26 @@
           "state": "acknowledged",
           "blocking": true,
           "next_actions": [
-            {"transition": "verify-pass", "by": ["atlas"]},
-            {"transition": "verify-fail", "by": ["atlas"]}
+            {
+              "transition": "verify-pass",
+              "by": [
+                "atlas"
+              ]
+            },
+            {
+              "transition": "verify-fail",
+              "by": [
+                "atlas"
+              ]
+            }
           ],
-          "waiting_on": ["atlas"],
+          "waiting_on": [
+            "atlas"
+          ],
           "your_move": true
         }
       ],
       "flags": [],
-      "unresolved": []
-    },
-    {
-      "thread": "thread:billing-20260727-m7p8",
-      "space": "risk-payments",
-      "order": "committed",
-      "opener": {
-        "id": "XW-billing-20260727-m7p8",
-        "title": "Reconcile partial refunds against journal entries",
-        "from": "billing"
-      },
-      "participants": ["atlas", "billing"],
-      "sync_stale": true,
-      "artifacts": [
-        {
-          "id": "XW-billing-20260727-m7p8",
-          "type": "work_request",
-          "from": "billing",
-          "to": ["atlas"],
-          "title": "Reconcile partial refunds against journal entries",
-          "state": "in_progress"
-        },
-        {
-          "id": "XS-atlas-20260728-v5w6",
-          "type": "response",
-          "from": "atlas",
-          "to": ["billing"],
-          "title": "Initial journal matching rule",
-          "state": "disputed",
-          "parent": "XW-billing-20260727-m7p8"
-        },
-        {
-          "id": "XQ-billing-20260729-x7y8",
-          "type": "question",
-          "from": "billing",
-          "to": ["atlas"],
-          "title": "How are two partial refunds ordered inside one settlement batch?",
-          "state": "submitted",
-          "refs": [
-            {"ref": "XW-billing-20260727-m7p8"}
-          ]
-        }
-      ],
-      "transcript": [
-        {
-          "seq": 501,
-          "kind": "artifact",
-          "at": "2026-07-27T07:00:00Z",
-          "artifact": {
-            "id": "XW-billing-20260727-m7p8",
-            "type": "work_request",
-            "from": "billing",
-            "to": ["atlas"],
-            "title": "Reconcile partial refunds against journal entries"
-          }
-        },
-        {
-          "seq": 502,
-          "kind": "event",
-          "at": "2026-07-27T07:01:00Z",
-          "event": {
-            "ulid": "01K5A2B3C4D5E6F7G8H9J0K1M2",
-            "subject": "XW-billing-20260727-m7p8",
-            "transition": "submit",
-            "claimed_state": "submitted",
-            "actor": {
-              "kind": "agent",
-              "name": "billing-agent",
-              "system": "billing"
-            }
-          }
-        },
-        {
-          "seq": 503,
-          "kind": "event",
-          "at": "2026-07-27T07:15:00Z",
-          "event": {
-            "ulid": "01K5A2B3C4D5E6F7G8H9J0K1M3",
-            "subject": "XW-billing-20260727-m7p8",
-            "transition": "acknowledge",
-            "claimed_state": "acknowledged",
-            "actor": {
-              "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas"
-            }
-          }
-        },
-        {
-          "seq": 504,
-          "kind": "event",
-          "at": "2026-07-27T07:16:00Z",
-          "event": {
-            "ulid": "01K5A2B3C4D5E6F7G8H9J0K1M4",
-            "subject": "XW-billing-20260727-m7p8",
-            "transition": "accept",
-            "claimed_state": "accepted",
-            "actor": {
-              "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas"
-            }
-          }
-        },
-        {
-          "seq": 505,
-          "kind": "event",
-          "at": "2026-07-27T07:17:00Z",
-          "event": {
-            "ulid": "01K5A2B3C4D5E6F7G8H9J0K1M5",
-            "subject": "XW-billing-20260727-m7p8",
-            "transition": "start",
-            "claimed_state": "in_progress",
-            "actor": {
-              "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas"
-            }
-          }
-        },
-        {
-          "seq": 506,
-          "kind": "event",
-          "at": "2026-07-27T08:00:00Z",
-          "event": {
-            "ulid": "01K5A2B3C4D5E6F7G8H9J0K1M6",
-            "subject": "XW-billing-20260727-m7p8",
-            "transition": "close",
-            "claimed_state": "closed",
-            "actor": {
-              "kind": "agent",
-              "name": "billing-agent",
-              "system": "billing"
-            }
-          }
-        },
-        {
-          "seq": 507,
-          "kind": "artifact",
-          "at": "2026-07-28T08:00:00Z",
-          "artifact": {
-            "id": "XS-atlas-20260728-v5w6",
-            "type": "response",
-            "from": "atlas",
-            "to": ["billing"],
-            "title": "Initial journal matching rule"
-          }
-        },
-        {
-          "seq": 508,
-          "kind": "event",
-          "at": "2026-07-28T08:01:00Z",
-          "event": {
-            "ulid": "01K5A2B3C4D5E6F7G8H9J0K1M8",
-            "subject": "XW-billing-20260727-m7p8",
-            "transition": "respond",
-            "claimed_state": "responded",
-            "actor": {
-              "kind": "agent",
-              "name": "atlas-agent",
-              "system": "atlas"
-            },
-            "response_id": "XS-atlas-20260728-v5w6"
-          }
-        },
-        {
-          "seq": 509,
-          "kind": "event",
-          "at": "2026-07-28T09:00:00Z",
-          "event": {
-            "ulid": "01K5A2B3C4D5E6F7G8H9J0K1M9",
-            "subject": "XS-atlas-20260728-v5w6",
-            "transition": "dispute",
-            "claimed_state": "disputed",
-            "actor": {
-              "kind": "agent",
-              "name": "billing-agent",
-              "system": "billing"
-            }
-          }
-        },
-        {
-          "seq": 511,
-          "kind": "artifact",
-          "at": "2026-07-29T10:00:00Z",
-          "artifact": {
-            "id": "XQ-billing-20260729-x7y8",
-            "type": "question",
-            "from": "billing",
-            "to": ["atlas"],
-            "title": "How are two partial refunds ordered inside one settlement batch?"
-          }
-        },
-        {
-          "seq": 512,
-          "kind": "event",
-          "at": "2026-07-29T10:01:00Z",
-          "event": {
-            "ulid": "01K5A2B3C4D5E6F7G8H9J0K1MC",
-            "subject": "XQ-billing-20260729-x7y8",
-            "transition": "submit",
-            "claimed_state": "submitted",
-            "actor": {
-              "kind": "agent",
-              "name": "billing-agent",
-              "system": "billing"
-            }
-          }
-        }
-      ],
-      "open_items": [
-        {
-          "id": "XW-billing-20260727-m7p8",
-          "type": "work_request",
-          "state": "in_progress",
-          "blocking": false,
-          "needed_by": "2026-08-01",
-          "next_actions": [
-            {"transition": "decline", "by": ["atlas"]},
-            {"transition": "block", "by": ["atlas"]},
-            {"transition": "respond", "by": ["atlas"]},
-            {"transition": "cancel", "by": ["billing"]},
-            {"transition": "supersede", "by": ["billing"]}
-          ],
-          "waiting_on": ["atlas"],
-          "your_move": true
-        },
-        {
-          "id": "XQ-billing-20260729-x7y8",
-          "type": "question",
-          "state": "submitted",
-          "blocking": false,
-          "next_actions": [
-            {"transition": "acknowledge", "by": ["atlas"]},
-            {"transition": "decline", "by": ["atlas"]},
-            {"transition": "cancel", "by": ["billing"]},
-            {"transition": "supersede", "by": ["billing"]}
-          ],
-          "waiting_on": ["atlas"],
-          "your_move": true
-        }
-      ],
-      "flags": [
-        {
-          "kind": "illegal-transition",
-          "subject": "XW-billing-20260727-m7p8",
-          "event_ulid": "01K5A2B3C4D5E6F7G8H9J0K1M6"
-        }
-      ],
       "unresolved": []
     },
     {
@@ -2975,14 +2930,19 @@
         "title": "</script><img src=x onerror=alert('rendering-test')>",
         "from": "legacycrm"
       },
-      "participants": ["atlas", "legacycrm"],
+      "participants": [
+        "atlas",
+        "legacycrm"
+      ],
       "sync_stale": true,
       "artifacts": [
         {
           "id": "XH-legacycrm-20260709-x3y4",
           "type": "handoff",
           "from": "legacycrm",
-          "to": ["atlas"],
+          "to": [
+            "atlas"
+          ],
           "title": "</script><img src=x onerror=alert('rendering-test')>",
           "state": "submitted"
         },
@@ -2990,11 +2950,15 @@
           "id": "XD-atlas-20260710-z9a2",
           "type": "decision",
           "from": "atlas",
-          "to": ["legacycrm"],
+          "to": [
+            "legacycrm"
+          ],
           "title": "Archive the CRM export instead of adopting it",
           "state": "superseded",
           "refs": [
-            {"ref": "XH-legacycrm-20260709-x3y4"}
+            {
+              "ref": "XH-legacycrm-20260709-x3y4"
+            }
           ]
         }
       ],
@@ -3007,7 +2971,9 @@
             "id": "XH-legacycrm-20260709-x3y4",
             "type": "handoff",
             "from": "legacycrm",
-            "to": ["atlas"],
+            "to": [
+              "atlas"
+            ],
             "title": "</script><img src=x onerror=alert('rendering-test')>"
           }
         },
@@ -3023,7 +2989,13 @@
             "actor": {
               "kind": "agent",
               "name": "legacy-agent",
-              "system": "legacycrm"
+              "system": "legacycrm",
+              "model": "gpt-5",
+              "session": "session:demo-legacycrm"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -3039,7 +3011,13 @@
             "actor": {
               "kind": "agent",
               "name": "unrelated-agent",
-              "system": "comms"
+              "system": "comms",
+              "model": "gpt-5",
+              "session": "session:demo-comms"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -3054,7 +3032,13 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -3066,7 +3050,9 @@
             "id": "XD-atlas-20260710-z9a2",
             "type": "decision",
             "from": "atlas",
-            "to": ["legacycrm"],
+            "to": [
+              "legacycrm"
+            ],
             "title": "Archive the CRM export instead of adopting it"
           }
         },
@@ -3082,7 +3068,13 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -3098,7 +3090,13 @@
             "actor": {
               "kind": "human",
               "name": "legacy-owner",
-              "system": "legacycrm"
+              "system": "legacycrm",
+              "model": "gpt-5",
+              "session": "session:demo-legacycrm"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -3114,7 +3112,13 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         }
@@ -3126,9 +3130,16 @@
           "state": "submitted",
           "blocking": false,
           "next_actions": [
-            {"transition": "acknowledge", "by": ["atlas"]}
+            {
+              "transition": "acknowledge",
+              "by": [
+                "atlas"
+              ]
+            }
           ],
-          "waiting_on": ["atlas"],
+          "waiting_on": [
+            "atlas"
+          ],
           "your_move": true
         }
       ],
@@ -3155,7 +3166,10 @@
         "title": "Which fixture proves attachment names are redacted?",
         "from": "atlas"
       },
-      "participants": ["atlas", "support"],
+      "participants": [
+        "atlas",
+        "support"
+      ],
       "sync_stale": true,
       "settled": true,
       "artifacts": [
@@ -3163,7 +3177,9 @@
           "id": "XQ-atlas-20260726-t5v6",
           "type": "question",
           "from": "atlas",
-          "to": ["support"],
+          "to": [
+            "support"
+          ],
           "title": "Which fixture proves attachment names are redacted?",
           "state": "closed"
         }
@@ -3177,7 +3193,9 @@
             "id": "XQ-atlas-20260726-t5v6",
             "type": "question",
             "from": "atlas",
-            "to": ["support"],
+            "to": [
+              "support"
+            ],
             "title": "Which fixture proves attachment names are redacted?"
           }
         },
@@ -3193,7 +3211,13 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         },
@@ -3209,7 +3233,13 @@
             "actor": {
               "kind": "agent",
               "name": "atlas-agent",
-              "system": "atlas"
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "produced_by": {
+              "tool": "a2a",
+              "version": "0.19.0"
             }
           }
         }
@@ -3227,7 +3257,10 @@
       "type": "contract",
       "title": "Catalog product feed",
       "from": "catalog",
-      "to": ["atlas", "checkout"],
+      "to": [
+        "atlas",
+        "checkout"
+      ],
       "state": "published",
       "thread": "thread:catalog-20260725-p3q4",
       "envelope": {
@@ -3237,7 +3270,10 @@
         "title": "Catalog product feed",
         "space": "checkout-core",
         "from": "catalog",
-        "to": ["atlas", "checkout"],
+        "to": [
+          "atlas",
+          "checkout"
+        ],
         "actor": {
           "kind": "agent",
           "name": "catalog-agent",
@@ -3268,7 +3304,14 @@
           "claimed_state": "published",
           "actor": "catalog-agent",
           "actor_system": "catalog",
-          "at": "2026-07-25T08:01:00Z"
+          "at": "2026-07-25T08:01:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-catalog",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         }
       ],
       "flags": [],
@@ -3278,86 +3321,14 @@
     },
     {
       "sourceClass": "canonical",
-      "space": "risk-payments",
-      "id": "XR-risk-fraud-evidence",
-      "type": "requirement",
-      "title": "Fraud decisions must expose reason codes and evidence refs",
-      "from": "risk",
-      "to": ["atlas"],
-      "state": "published",
-      "thread": "thread:risk-20260727-k9p1",
-      "envelope": {
-        "schema": "envelope/v1",
-        "id": "XR-risk-fraud-evidence",
-        "type": "requirement",
-        "title": "Fraud decisions must expose reason codes and evidence refs",
-        "space": "risk-payments",
-        "from": "risk",
-        "to": ["atlas"],
-        "actor": {
-          "kind": "agent",
-          "name": "risk-agent",
-          "model": "demo-agent-model"
-        },
-        "created": "2026-07-30T09:00:00Z",
-        "priority": "p2",
-        "blocking": false,
-        "expected_response": {
-          "shape": "Acknowledgement plus a linked contract version",
-          "by": "2026-08-03"
-        },
-        "acceptance_criteria": [
-          "Every decline contains at least one stable reason code",
-          "Evidence refs resolve to a retained fraud case",
-          "The reason-code vocabulary is versioned"
-        ],
-        "thread": "thread:risk-20260727-k9p1",
-        "refs": [
-          {
-            "ref": "XC-atlas-fraud-case@1.1.0",
-            "note": "Evidence envelope consumed by Risk"
-          }
-        ],
-        "classification": "restricted",
-        "category": "quality",
-        "target_contract": "XC-atlas-fraud-case"
-      },
-      "body": "Risk needs an auditable explanation for every automated decline. A score alone is insufficient for a customer-facing dispute.",
-      "digest": "82a3b4c5d6e7f8091a2b3c4d5e6f708192b3c4d5e6f708192a3b4c5d6e7f8092",
-      "events": [
-        {
-          "ulid": "01K8A2B3C4D5E6F7G8H9J0K1M2",
-          "subject": "XR-risk-fraud-evidence",
-          "transition": "publish",
-          "claimed_state": "published",
-          "actor": "risk-agent",
-          "actor_system": "risk",
-          "at": "2026-07-30T09:01:00Z"
-        }
-      ],
-      "flags": [],
-      "refs": [
-        {
-          "ref": "XC-atlas-fraud-case@1.1.0",
-          "id": "XC-atlas-fraud-case",
-          "version": "1.1.0",
-          "pinned_digest": "4cb1c807d81fbe8fb1f49c0f90b7f026578a285fc1d229b1a8d0f2ef1ad62c90",
-          "resolved_digest": "4cb1c807d81fbe8fb1f49c0f90b7f026578a285fc1d229b1a8d0f2ef1ad62c90",
-          "resolved": true,
-          "digest_mismatch": false
-        }
-      ],
-      "sync_stale": true,
-      "sync_age": "18m"
-    },
-    {
-      "sourceClass": "canonical",
       "space": "checkout-core",
       "id": "XQ-checkout-20260730-a1b2",
       "type": "question",
       "title": "Should a retry reuse the original capture idempotency key?",
       "from": "checkout",
-      "to": ["atlas"],
+      "to": [
+        "atlas"
+      ],
       "state": "submitted",
       "thread": "thread:checkout-20260728-c3d4",
       "envelope": {
@@ -3367,7 +3338,9 @@
         "title": "Should a retry reuse the original capture idempotency key?",
         "space": "checkout-core",
         "from": "checkout",
-        "to": ["atlas"],
+        "to": [
+          "atlas"
+        ],
         "actor": {
           "kind": "agent",
           "name": "checkout-agent",
@@ -3405,7 +3378,14 @@
           "claimed_state": "submitted",
           "actor": "checkout-agent",
           "actor_system": "checkout",
-          "at": "2026-07-30T11:57:00Z"
+          "at": "2026-07-30T11:57:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-checkout",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         }
       ],
       "flags": [],
@@ -3436,7 +3416,9 @@
       "type": "work_request",
       "title": "Prevent duplicate payment capture after a worker retry",
       "from": "checkout",
-      "to": ["atlas"],
+      "to": [
+        "atlas"
+      ],
       "state": "in_progress",
       "thread": "thread:checkout-20260728-c3d4",
       "envelope": {
@@ -3446,7 +3428,9 @@
         "title": "Prevent duplicate payment capture after a worker retry",
         "space": "checkout-core",
         "from": "checkout",
-        "to": ["atlas"],
+        "to": [
+          "atlas"
+        ],
         "actor": {
           "kind": "agent",
           "name": "checkout-agent",
@@ -3489,7 +3473,14 @@
           "claimed_state": "submitted",
           "actor": "checkout-agent",
           "actor_system": "checkout",
-          "at": "2026-07-28T09:01:00Z"
+          "at": "2026-07-28T09:01:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-checkout",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         },
         {
           "ulid": "01K1A2B3C4D5E6F7G8H9J0K1M5",
@@ -3498,7 +3489,14 @@
           "claimed_state": "in_progress",
           "actor": "atlas-agent",
           "actor_system": "atlas",
-          "at": "2026-07-28T09:22:00Z"
+          "at": "2026-07-28T09:22:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         },
         {
           "ulid": "01K1A2B3C4D5E6F7G8H9J0K1M7",
@@ -3507,10 +3505,42 @@
           "claimed_state": "in_progress",
           "actor": "atlas-agent",
           "actor_system": "atlas",
-          "at": "2026-07-29T14:01:00Z"
+          "at": "2026-07-29T14:01:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          },
+          "consistency": {
+            "kind": "state-claim-mismatch",
+            "event_ulid": "01K1A2B3C4D5E6F7G8H9J0K1M7",
+            "subject": "XW-checkout-20260728-c3d4",
+            "scope": {
+              "kind": "artifact",
+              "subject": "XW-checkout-20260728-c3d4"
+            },
+            "actual": "responded",
+            "claimed": "in_progress",
+            "actor": {
+              "kind": "agent",
+              "name": "atlas-agent",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "producer": {
+              "tool": "a2a",
+              "version": "0.19.0"
+            },
+            "cause": "The producer receipt disagrees with the authoritative fold outcome"
+          }
         }
       ],
-      "flags": ["state-claim-mismatch"],
+      "flags": [
+        "state-claim-mismatch"
+      ],
       "refs": [
         {
           "ref": "XC-billing-payment-events@2.4.0",
@@ -3527,91 +3557,14 @@
     },
     {
       "sourceClass": "canonical",
-      "space": "risk-payments",
-      "id": "XD-billing-20260729-e5f6",
-      "type": "decision",
-      "title": "Choose the source of truth for settlement timestamps",
-      "from": "billing",
-      "to": ["atlas", "ledger", "risk"],
-      "state": "proposed",
-      "thread": "thread:billing-20260729-e5f6",
-      "envelope": {
-        "schema": "envelope/v1",
-        "id": "XD-billing-20260729-e5f6",
-        "type": "decision",
-        "title": "Choose the source of truth for settlement timestamps",
-        "space": "risk-payments",
-        "from": "billing",
-        "to": ["atlas", "ledger", "risk"],
-        "actor": {
-          "kind": "human",
-          "name": "billing-owner"
-        },
-        "created": "2026-07-29T17:00:00Z",
-        "priority": "p2",
-        "blocking": false,
-        "expected_response": {
-          "shape": "Approve or reject with one reason",
-          "by": "2026-08-01"
-        },
-        "thread": "thread:billing-20260729-e5f6",
-        "refs": [
-          {
-            "ref": "XR-billing-settlement-clock",
-            "note": "The requirement this decision binds"
-          }
-        ],
-        "classification": "restricted",
-        "required_approvers": ["atlas", "ledger", "risk"],
-        "context": "Provider capture time, settlement time and ledger posting time can differ. Reconciliation needs one canonical settlement timestamp.",
-        "options_considered": [
-          "Provider settled_at",
-          "Billing ingestion time",
-          "Ledger posting time"
-        ]
-      },
-      "body": "Billing proposes provider `settled_at` as canonical, with ingestion time retained only as operational metadata.",
-      "digest": "55d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708195a500",
-      "events": [
-        {
-          "ulid": "01K2A2B3C4D5E6F7G8H9J0K1M6",
-          "subject": "XD-billing-20260729-e5f6",
-          "transition": "propose",
-          "claimed_state": "proposed",
-          "actor": "billing-owner",
-          "actor_system": "billing",
-          "at": "2026-07-29T17:01:00Z"
-        },
-        {
-          "ulid": "01K2A2B3C4D5E6F7G8H9J0K1M7",
-          "subject": "XD-billing-20260729-e5f6",
-          "transition": "approve",
-          "claimed_state": "proposed",
-          "actor": "risk-owner",
-          "actor_system": "risk",
-          "at": "2026-07-29T17:20:00Z"
-        }
-      ],
-      "flags": [],
-      "refs": [
-        {
-          "ref": "XR-billing-settlement-clock",
-          "id": "XR-billing-settlement-clock",
-          "resolved": true,
-          "digest_mismatch": false
-        }
-      ],
-      "sync_stale": true,
-      "sync_age": "18m"
-    },
-    {
-      "sourceClass": "canonical",
       "space": "customer-ops",
       "id": "XH-support-20260729-q5n6",
       "type": "handoff",
       "title": "PII-redacted support case stream v2",
       "from": "support",
-      "to": ["atlas"],
+      "to": [
+        "atlas"
+      ],
       "state": "acknowledged",
       "thread": "thread:support-20260729-q5n6",
       "envelope": {
@@ -3621,7 +3574,9 @@
         "title": "PII-redacted support case stream v2",
         "space": "customer-ops",
         "from": "support",
-        "to": ["atlas"],
+        "to": [
+          "atlas"
+        ],
         "actor": {
           "kind": "agent",
           "name": "support-agent",
@@ -3669,7 +3624,9 @@
           "Historical v1 events are not rewritten",
           "The demo fixture proves shape, not production data retention"
         ],
-        "fulfills": ["XD-support-20260725-s3t4"],
+        "fulfills": [
+          "XD-support-20260725-s3t4"
+        ],
         "env_requirements": "a2a 0.16.0 or newer"
       },
       "body": "Support delivers the v2 schema, fixtures and a replay sample. Atlas has acknowledged receipt and must verify or reject the handoff.",
@@ -3682,7 +3639,14 @@
           "claimed_state": "submitted",
           "actor": "support-agent",
           "actor_system": "support",
-          "at": "2026-07-29T05:31:00Z"
+          "at": "2026-07-29T05:31:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-support",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         },
         {
           "ulid": "01K4A2B3C4D5E6F7G8H9J0K1MG",
@@ -3691,7 +3655,14 @@
           "claimed_state": "acknowledged",
           "actor": "atlas-agent",
           "actor_system": "atlas",
-          "at": "2026-07-29T05:45:00Z"
+          "at": "2026-07-29T05:45:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         }
       ],
       "flags": [],
@@ -3722,7 +3693,9 @@
       "type": "response",
       "title": "Migration plan and compatibility fixtures",
       "from": "catalog",
-      "to": ["atlas"],
+      "to": [
+        "atlas"
+      ],
       "state": "submitted",
       "thread": "thread:atlas-20260727-r7s8",
       "envelope": {
@@ -3732,7 +3705,9 @@
         "title": "Migration plan and compatibility fixtures",
         "space": "checkout-core",
         "from": "catalog",
-        "to": ["atlas"],
+        "to": [
+          "atlas"
+        ],
         "actor": {
           "kind": "agent",
           "name": "catalog-agent",
@@ -3762,7 +3737,14 @@
           "claimed_state": "responded",
           "actor": "catalog-agent",
           "actor_system": "catalog",
-          "at": "2026-07-30T07:56:00Z"
+          "at": "2026-07-30T07:56:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-catalog",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         }
       ],
       "flags": [],
@@ -3787,7 +3769,10 @@
       "type": "announcement",
       "title": "Product feed v3 sunsets on 2026-09-01",
       "from": "catalog",
-      "to": ["atlas", "checkout"],
+      "to": [
+        "atlas",
+        "checkout"
+      ],
       "state": "published",
       "thread": "thread:catalog-20260728-f6g7",
       "envelope": {
@@ -3797,7 +3782,10 @@
         "title": "Product feed v3 sunsets on 2026-09-01",
         "space": "checkout-core",
         "from": "catalog",
-        "to": ["atlas", "checkout"],
+        "to": [
+          "atlas",
+          "checkout"
+        ],
         "actor": {
           "kind": "agent",
           "name": "catalog-agent",
@@ -3829,7 +3817,14 @@
           "claimed_state": "published",
           "actor": "catalog-agent",
           "actor_system": "catalog",
-          "at": "2026-07-28T07:01:00Z"
+          "at": "2026-07-28T07:01:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-catalog",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         }
       ],
       "flags": [],
@@ -3854,7 +3849,9 @@
       "type": "handoff",
       "title": "</script><img src=x onerror=alert('rendering-test')>",
       "from": "legacycrm",
-      "to": ["atlas"],
+      "to": [
+        "atlas"
+      ],
       "state": "submitted",
       "thread": "thread:legacycrm-20260709-x3y4",
       "envelope": {
@@ -3864,7 +3861,9 @@
         "title": "</script><img src=x onerror=alert('rendering-test')>",
         "space": "customer-ops",
         "from": "legacycrm",
-        "to": ["atlas"],
+        "to": [
+          "atlas"
+        ],
         "actor": {
           "kind": "agent",
           "name": "legacy-agent",
@@ -3887,7 +3886,14 @@
           "claimed_state": "submitted",
           "actor": "legacy-agent",
           "actor_system": "legacycrm",
-          "at": "2026-07-09T10:01:00Z"
+          "at": "2026-07-09T10:01:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-legacycrm",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         },
         {
           "ulid": "01K6A2B3C4D5E6F7G8H9J0K1M3",
@@ -3896,10 +3902,19 @@
           "claimed_state": "acknowledged",
           "actor": "unrelated-agent",
           "actor_system": "comms",
-          "at": "2026-07-09T10:05:00Z"
+          "at": "2026-07-09T10:05:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-comms",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         }
       ],
-      "flags": ["unauthorized-actor"],
+      "flags": [
+        "unauthorized-actor"
+      ],
       "refs": [],
       "sync_stale": true,
       "sync_age": "4h"
@@ -3956,7 +3971,14 @@
           "claimed_state": "published",
           "actor": "atlas-agent",
           "actor_system": "atlas",
-          "at": "2026-07-30T13:05:00Z"
+          "at": "2026-07-30T13:05:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         }
       ],
       "flags": [],
@@ -3971,7 +3993,9 @@
       "type": "question",
       "title": "Which fixture proves attachment names are redacted?",
       "from": "atlas",
-      "to": ["support"],
+      "to": [
+        "support"
+      ],
       "state": "closed",
       "thread": "thread:redaction-fixture-closed",
       "envelope": {
@@ -3981,7 +4005,9 @@
         "title": "Which fixture proves attachment names are redacted?",
         "space": "customer-ops",
         "from": "atlas",
-        "to": ["support"],
+        "to": [
+          "support"
+        ],
         "actor": {
           "kind": "agent",
           "name": "atlas-agent",
@@ -4007,7 +4033,14 @@
           "claimed_state": "submitted",
           "actor": "atlas-agent",
           "actor_system": "atlas",
-          "at": "2026-07-26T09:01:00Z"
+          "at": "2026-07-26T09:01:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         },
         {
           "ulid": "01K4A2B3C4D5E6F7G8H9J0K1MN",
@@ -4016,7 +4049,14 @@
           "claimed_state": "closed",
           "actor": "atlas-agent",
           "actor_system": "atlas",
-          "at": "2026-07-27T11:30:00Z"
+          "at": "2026-07-27T11:30:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         }
       ],
       "flags": [],
@@ -4031,7 +4071,9 @@
       "type": "work_request",
       "title": "Prepare a temporary CRM replay bridge",
       "from": "atlas",
-      "to": ["legacycrm"],
+      "to": [
+        "legacycrm"
+      ],
       "state": "cancelled",
       "thread": "thread:legacycrm-20260709-x3y4",
       "envelope": {
@@ -4041,7 +4083,9 @@
         "title": "Prepare a temporary CRM replay bridge",
         "space": "customer-ops",
         "from": "atlas",
-        "to": ["legacycrm"],
+        "to": [
+          "legacycrm"
+        ],
         "actor": {
           "kind": "human",
           "name": "platform-owner"
@@ -4066,7 +4110,14 @@
           "claimed_state": "submitted",
           "actor": "platform-owner",
           "actor_system": "atlas",
-          "at": "2026-07-12T10:01:00Z"
+          "at": "2026-07-12T10:01:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         },
         {
           "ulid": "01K6A2B3C4D5E6F7G8H9J0K1P2",
@@ -4075,7 +4126,14 @@
           "claimed_state": "cancelled",
           "actor": "platform-owner",
           "actor_system": "atlas",
-          "at": "2026-07-16T14:00:00Z"
+          "at": "2026-07-16T14:00:00Z",
+          "actor_kind": "agent",
+          "actor_model": "gpt-5",
+          "actor_session": "session:demo-atlas",
+          "produced_by": {
+            "tool": "a2a",
+            "version": "0.19.0"
+          }
         }
       ],
       "flags": [],
@@ -4113,5 +4171,623 @@
       "reason": "The hosted Hub is a future architecture, not a shipped read surface.",
       "sourceClass": "unavailable"
     }
-  ]
+  ],
+  "workReports": [
+    {
+      "space": "checkout-core",
+      "thread": "thread:checkout-20260728-c3d4",
+      "artifact_id": "XA-atlas-20260803-a2b3",
+      "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYZ",
+      "subject_ref": "XW-checkout-20260728-c3d4",
+      "mode": "implementing",
+      "summary": "Implementing the idempotent capture fix and replay fixture",
+      "actor": {"kind": "agent", "name": "codex", "system": "atlas", "model": "gpt-5", "session": "session:demo-atlas"},
+      "waiting_on": [],
+      "reported_at": "2026-07-30T16:57:00Z",
+      "valid_until": "2026-07-30T17:25:00Z",
+      "commit_sequence": 14
+    },
+    {
+      "space": "checkout-core",
+      "thread": "thread:checkout-20260728-c3d4",
+      "artifact_id": "XA-checkout-20260803-b3c4",
+      "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYA",
+      "subject_ref": "XQ-checkout-20260730-a1b2",
+      "mode": "testing",
+      "summary": "Running provider replay and acknowledgement-loss fixtures",
+      "actor": {"kind": "agent", "name": "maya", "system": "checkout", "model": "gpt-5", "session": "session:demo-checkout"},
+      "waiting_on": [],
+      "reported_at": "2026-07-30T16:54:00Z",
+      "valid_until": "2026-07-30T17:29:00Z",
+      "commit_sequence": 15
+    },
+    {
+      "space": "checkout-core",
+      "thread": "thread:atlas-20260727-r7s8",
+      "artifact_id": "XA-catalog-20260803-c4d5",
+      "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYB",
+      "subject_ref": "XC-catalog-product-feed@4.0.0",
+      "mode": "planning",
+      "summary": "Planning the product-feed v4 migration and compatibility window",
+      "actor": {"kind": "agent", "name": "catalog-agent", "system": "catalog", "model": "gpt-5", "session": "session:demo-catalog-plan"},
+      "waiting_on": [],
+      "reported_at": "2026-07-30T16:47:00Z",
+      "valid_until": "2026-07-30T17:17:00Z",
+      "commit_sequence": 16
+    },
+    {
+      "space": "checkout-core",
+      "thread": "thread:atlas-20260727-r7s8",
+      "artifact_id": "XA-atlas-20260803-d5e6",
+      "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYC",
+      "subject_ref": "XS-catalog-20260730-m9n2",
+      "mode": "reviewing",
+      "summary": "Reviewing the migration response against the declared contract",
+      "actor": {"kind": "agent", "name": "review-bot", "system": "atlas", "model": "gpt-5", "session": "session:demo-review"},
+      "waiting_on": [],
+      "reported_at": "2026-07-30T17:10:00Z",
+      "valid_until": "2026-07-30T17:40:00Z",
+      "commit_sequence": 17
+    },
+    {
+      "space": "customer-ops",
+      "thread": "thread:legacycrm-20260709-x3y4",
+      "artifact_id": "XA-atlas-20260803-e6f7",
+      "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYD",
+      "subject_ref": "XH-legacycrm-20260709-x3y4",
+      "mode": "implementing",
+      "summary": "Replacing the legacy export adapter and preparing migration fixtures",
+      "actor": {"kind": "agent", "name": "codex", "system": "atlas", "model": "gpt-5", "session": "session:demo-legacy-atlas"},
+      "waiting_on": [],
+      "reported_at": "2026-07-30T16:56:00Z",
+      "valid_until": "2026-07-30T17:26:00Z",
+      "commit_sequence": 18
+    },
+    {
+      "space": "customer-ops",
+      "thread": "thread:legacycrm-20260709-x3y4",
+      "artifact_id": "XA-legacycrm-20260803-f7g8",
+      "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYE",
+      "subject_ref": "XC-legacycrm-export@1.0.0",
+      "mode": "waiting",
+      "summary": "Preparing the provider-side export after the replacement contract is ready",
+      "actor": {"kind": "agent", "name": "xpressmike", "system": "legacycrm", "model": "gpt-5", "session": "session:demo-mike"},
+      "waiting_on": [
+        {"kind": "system", "id": "atlas", "summary": "Replacement contract and final fixture bytes"},
+        {"kind": "human", "id": "product-owner", "summary": "Approve the legacy field-removal window"},
+        {"kind": "tool", "id": "github-actions", "summary": "Cross-repository fixture matrix"},
+        {"kind": "timer", "id": "migration-window", "summary": "Scheduled production cutover"},
+        {"kind": "external", "id": "crm-provider", "summary": "Export checksum from the vendor"}
+      ],
+      "reported_at": "2026-07-30T16:58:00Z",
+      "valid_until": "2026-07-30T17:28:00Z",
+      "commit_sequence": 19
+    },
+    {
+      "space": "customer-ops",
+      "thread": "thread:support-20260729-q5n6",
+      "artifact_id": "XA-support-20260803-g8h9",
+      "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYF",
+      "subject_ref": "XH-support-20260729-q5n6",
+      "mode": "paused",
+      "summary": "Paused the redaction rollout while legal reviews the attachment policy",
+      "actor": {"kind": "agent", "name": "support-agent", "system": "support", "model": "gpt-5", "session": "session:demo-support"},
+      "waiting_on": [],
+      "reported_at": "2026-07-30T14:05:00Z",
+      "valid_until": "2026-07-30T15:05:00Z",
+      "commit_sequence": 20
+    },
+    {
+      "space": "customer-ops",
+      "thread": "thread:redaction-fixture-closed",
+      "artifact_id": "XA-atlas-20260803-h9j0",
+      "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYG",
+      "subject_ref": "XQ-atlas-20260726-t5v6",
+      "mode": "finished",
+      "summary": "Published the redaction fixture and recorded verification evidence",
+      "actor": {"kind": "agent", "name": "maya", "system": "atlas", "model": "gpt-5", "session": "session:demo-redaction"},
+      "waiting_on": [],
+      "reported_at": "2026-07-30T16:35:00Z",
+      "commit_sequence": 21
+    }
+  ],
+  "operational": {
+    "schema_version": 1,
+    "generated_at": "2026-07-30T17:05:00Z",
+    "revision": "sha256:f23a292135383f998efbd070810637211291025617551f31368c2f509b42fbb6",
+    "sources": [
+      {
+        "kind": "local-work",
+        "revision": "sha256:demo-local-work",
+        "observed_at": "2026-07-30T17:05:00Z",
+        "freshness": "current"
+      },
+      {
+        "kind": "space",
+        "space": "archive-migration",
+        "revision": "unavailable",
+        "synced_at": "2026-07-29T17:05:00Z",
+        "observed_at": "2026-07-30T17:05:00Z",
+        "freshness": "unavailable"
+      },
+      {
+        "kind": "space",
+        "space": "checkout-core",
+        "revision": "demo-checkout-revision",
+        "synced_at": "2026-07-30T17:03:00Z",
+        "observed_at": "2026-07-30T17:05:00Z",
+        "freshness": "current"
+      },
+      {
+        "kind": "space",
+        "space": "customer-ops",
+        "revision": "demo-customer-ops-revision",
+        "synced_at": "2026-07-30T16:20:00Z",
+        "observed_at": "2026-07-30T17:05:00Z",
+        "freshness": "stale"
+      }
+    ],
+    "timeline": [
+      {
+        "space": "checkout-core",
+        "thread": "thread:checkout-20260728-c3d4",
+        "title": "Prevent duplicate payment capture after a worker retry",
+        "participants": [
+          "atlas",
+          "checkout"
+        ],
+        "protocol": {
+          "settled": false,
+          "open_count": 2,
+          "waiting_on": [
+            "atlas"
+          ],
+          "your_move": true,
+          "blocking_by": [
+            "atlas"
+          ]
+        },
+        "latest_milestone": {
+          "kind": "event",
+          "at": "2026-07-30T11:57:00Z",
+          "actor": {
+            "kind": "agent",
+            "name": "checkout-agent",
+            "system": "checkout",
+            "model": "gpt-5",
+            "session": "session:demo-checkout"
+          },
+          "transition": "submit",
+          "subject": "XQ-checkout-20260730-a1b2"
+        },
+        "work": [
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYZ",
+            "subject_ref": "XW-checkout-20260728-c3d4",
+            "mode": "implementing",
+            "summary": "Implementing the idempotent capture fix and replay fixture",
+            "actor": {
+              "kind": "agent",
+              "name": "codex",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-atlas"
+            },
+            "freshness": "local-current",
+            "current": true,
+            "reported_at": "2026-07-30T17:04:20Z",
+            "observed_at": "2026-07-30T17:04:40Z",
+            "valid_until": "2026-07-30T17:19:20Z",
+            "source": "local-lease",
+            "committed_checkpoint": {
+              "artifact_id": "XA-atlas-20260803-a2b3",
+              "reported_at": "2026-07-30T16:57:00Z",
+              "valid_until": "2026-07-30T17:25:00Z"
+            },
+            "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYA",
+            "subject_ref": "XQ-checkout-20260730-a1b2",
+            "mode": "testing",
+            "summary": "Running provider replay and acknowledgement-loss fixtures",
+            "actor": {
+              "kind": "agent",
+              "name": "maya",
+              "system": "checkout",
+              "model": "gpt-5",
+              "session": "session:demo-checkout"
+            },
+            "freshness": "committed-current",
+            "current": true,
+            "reported_at": "2026-07-30T16:54:00Z",
+            "valid_until": "2026-07-30T17:29:00Z",
+            "source": "committed-checkpoint",
+            "committed_checkpoint": {
+              "artifact_id": "XA-checkout-20260803-b3c4",
+              "reported_at": "2026-07-30T16:54:00Z",
+              "valid_until": "2026-07-30T17:29:00Z"
+            },
+            "waiting_on": []
+          }
+        ],
+        "work_window": {
+          "truncated": false,
+          "total": 2,
+          "shown": 2
+        },
+        "consistency": [],
+        "consistency_window": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        }
+      },
+      {
+        "space": "customer-ops",
+        "thread": "thread:legacycrm-20260709-x3y4",
+        "title": "</script><img src=x onerror=alert('rendering-test')>",
+        "participants": [
+          "atlas",
+          "legacycrm"
+        ],
+        "protocol": {
+          "settled": false,
+          "open_count": 1,
+          "waiting_on": [
+            "atlas"
+          ],
+          "your_move": true,
+          "blocking_by": []
+        },
+        "latest_milestone": {
+          "kind": "event",
+          "at": "2026-07-10T09:30:00Z",
+          "actor": {
+            "kind": "agent",
+            "name": "atlas-agent",
+            "system": "atlas",
+            "model": "gpt-5",
+            "session": "session:demo-atlas"
+          },
+          "transition": "supersede",
+          "subject": "XD-atlas-20260710-z9a2"
+        },
+        "work": [
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYE",
+            "subject_ref": "XC-legacycrm-export@1.0.0",
+            "mode": "waiting",
+            "summary": "Preparing the provider-side export after the replacement contract is ready",
+            "actor": {
+              "kind": "agent",
+              "name": "xpressmike",
+              "system": "legacycrm",
+              "model": "gpt-5",
+              "session": "session:demo-mike"
+            },
+            "freshness": "committed-current",
+            "current": true,
+            "reported_at": "2026-07-30T16:58:00Z",
+            "valid_until": "2026-07-30T17:28:00Z",
+            "source": "committed-checkpoint",
+            "committed_checkpoint": {
+              "artifact_id": "XA-legacycrm-20260803-f7g8",
+              "reported_at": "2026-07-30T16:58:00Z",
+              "valid_until": "2026-07-30T17:28:00Z"
+            },
+            "waiting_on": [
+              {
+                "kind": "external",
+                "id": "crm-provider",
+                "summary": "Export checksum from the vendor"
+              },
+              {
+                "kind": "human",
+                "id": "product-owner",
+                "summary": "Approve the legacy field-removal window"
+              },
+              {
+                "kind": "system",
+                "id": "atlas",
+                "summary": "Replacement contract and final fixture bytes"
+              },
+              {
+                "kind": "timer",
+                "id": "migration-window",
+                "summary": "Scheduled production cutover"
+              },
+              {
+                "kind": "tool",
+                "id": "github-actions",
+                "summary": "Cross-repository fixture matrix"
+              }
+            ]
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYD",
+            "subject_ref": "XH-legacycrm-20260709-x3y4",
+            "mode": "implementing",
+            "summary": "Replacing the legacy export adapter and preparing migration fixtures",
+            "actor": {
+              "kind": "agent",
+              "name": "codex",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-legacy-atlas"
+            },
+            "freshness": "committed-current",
+            "current": true,
+            "reported_at": "2026-07-30T16:56:00Z",
+            "valid_until": "2026-07-30T17:26:00Z",
+            "source": "committed-checkpoint",
+            "committed_checkpoint": {
+              "artifact_id": "XA-atlas-20260803-e6f7",
+              "reported_at": "2026-07-30T16:56:00Z",
+              "valid_until": "2026-07-30T17:26:00Z"
+            },
+            "waiting_on": []
+          }
+        ],
+        "work_window": {
+          "truncated": false,
+          "total": 2,
+          "shown": 2
+        },
+        "consistency": [],
+        "consistency_window": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        }
+      },
+      {
+        "space": "checkout-core",
+        "thread": "thread:atlas-20260727-r7s8",
+        "title": "Catalog must provide a product-feed v4 migration path",
+        "participants": [
+          "atlas",
+          "catalog"
+        ],
+        "protocol": {
+          "settled": false,
+          "open_count": 3,
+          "waiting_on": [
+            "atlas",
+            "catalog"
+          ],
+          "your_move": true,
+          "blocking_by": []
+        },
+        "latest_milestone": {
+          "kind": "event",
+          "at": "2026-07-30T07:56:00Z",
+          "actor": {
+            "kind": "agent",
+            "name": "catalog-agent",
+            "system": "catalog",
+            "model": "gpt-5",
+            "session": "session:demo-catalog"
+          },
+          "transition": "respond",
+          "subject": "XW-atlas-20260727-r7s8"
+        },
+        "work": [
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYB",
+            "subject_ref": "XC-catalog-product-feed@4.0.0",
+            "mode": "planning",
+            "summary": "Planning the product-feed v4 migration and compatibility window",
+            "actor": {
+              "kind": "agent",
+              "name": "catalog-agent",
+              "system": "catalog",
+              "model": "gpt-5",
+              "session": "session:demo-catalog-plan"
+            },
+            "freshness": "committed-current",
+            "current": true,
+            "reported_at": "2026-07-30T16:47:00Z",
+            "valid_until": "2026-07-30T17:17:00Z",
+            "source": "committed-checkpoint",
+            "committed_checkpoint": {
+              "artifact_id": "XA-catalog-20260803-c4d5",
+              "reported_at": "2026-07-30T16:47:00Z",
+              "valid_until": "2026-07-30T17:17:00Z"
+            },
+            "waiting_on": []
+          },
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYC",
+            "subject_ref": "XS-catalog-20260730-m9n2",
+            "mode": "reviewing",
+            "summary": "Reviewing the migration response against the declared contract",
+            "actor": {
+              "kind": "agent",
+              "name": "review-bot",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-review"
+            },
+            "freshness": "unknown",
+            "current": false,
+            "reported_at": "2026-07-30T17:10:00Z",
+            "valid_until": "2026-07-30T17:40:00Z",
+            "source": "committed-checkpoint",
+            "committed_checkpoint": {
+              "artifact_id": "XA-atlas-20260803-d5e6",
+              "reported_at": "2026-07-30T17:10:00Z",
+              "valid_until": "2026-07-30T17:40:00Z"
+            },
+            "waiting_on": []
+          }
+        ],
+        "work_window": {
+          "truncated": false,
+          "total": 2,
+          "shown": 2
+        },
+        "consistency": [
+          {
+            "code": "future-clock-anomaly",
+            "subject_ref": "XS-catalog-20260730-m9n2",
+            "severity": "warning",
+            "summary": "The latest committed report is dated in the future"
+          }
+        ],
+        "consistency_window": {
+          "truncated": false,
+          "total": 1,
+          "shown": 1
+        }
+      },
+      {
+        "space": "customer-ops",
+        "thread": "thread:support-20260729-q5n6",
+        "title": "Redact message bodies before case events leave Support",
+        "participants": [
+          "atlas",
+          "support"
+        ],
+        "protocol": {
+          "settled": false,
+          "open_count": 1,
+          "waiting_on": [
+            "atlas"
+          ],
+          "your_move": true,
+          "blocking_by": [
+            "atlas"
+          ]
+        },
+        "latest_milestone": {
+          "kind": "event",
+          "at": "2026-07-29T05:45:00Z",
+          "actor": {
+            "kind": "agent",
+            "name": "atlas-agent",
+            "system": "atlas",
+            "model": "gpt-5",
+            "session": "session:demo-atlas"
+          },
+          "transition": "acknowledge",
+          "subject": "XH-support-20260729-q5n6"
+        },
+        "work": [
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYF",
+            "subject_ref": "XH-support-20260729-q5n6",
+            "mode": "paused",
+            "summary": "Paused the redaction rollout while legal reviews the attachment policy",
+            "actor": {
+              "kind": "agent",
+              "name": "support-agent",
+              "system": "support",
+              "model": "gpt-5",
+              "session": "session:demo-support"
+            },
+            "freshness": "stale",
+            "current": false,
+            "reported_at": "2026-07-30T14:05:00Z",
+            "valid_until": "2026-07-30T15:05:00Z",
+            "source": "committed-checkpoint",
+            "committed_checkpoint": {
+              "artifact_id": "XA-support-20260803-g8h9",
+              "reported_at": "2026-07-30T14:05:00Z",
+              "valid_until": "2026-07-30T15:05:00Z"
+            },
+            "waiting_on": []
+          }
+        ],
+        "work_window": {
+          "truncated": false,
+          "total": 1,
+          "shown": 1
+        },
+        "consistency": [],
+        "consistency_window": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        }
+      },
+      {
+        "space": "customer-ops",
+        "thread": "thread:redaction-fixture-closed",
+        "title": "Which fixture proves attachment names are redacted?",
+        "participants": [
+          "atlas",
+          "support"
+        ],
+        "protocol": {
+          "settled": true,
+          "open_count": 0,
+          "waiting_on": [],
+          "your_move": false,
+          "blocking_by": []
+        },
+        "latest_milestone": {
+          "kind": "event",
+          "at": "2026-07-27T11:30:00Z",
+          "actor": {
+            "kind": "agent",
+            "name": "atlas-agent",
+            "system": "atlas",
+            "model": "gpt-5",
+            "session": "session:demo-atlas"
+          },
+          "transition": "close",
+          "subject": "XQ-atlas-20260726-t5v6"
+        },
+        "work": [
+          {
+            "work_id": "work:01K20ABCDEFHJKMNPQRSTVWXYG",
+            "subject_ref": "XQ-atlas-20260726-t5v6",
+            "mode": "finished",
+            "summary": "Published the redaction fixture and recorded verification evidence",
+            "actor": {
+              "kind": "agent",
+              "name": "maya",
+              "system": "atlas",
+              "model": "gpt-5",
+              "session": "session:demo-redaction"
+            },
+            "freshness": "finished",
+            "current": false,
+            "reported_at": "2026-07-30T16:35:00Z",
+            "source": "committed-checkpoint",
+            "committed_checkpoint": {
+              "artifact_id": "XA-atlas-20260803-h9j0",
+              "reported_at": "2026-07-30T16:35:00Z"
+            },
+            "waiting_on": []
+          }
+        ],
+        "work_window": {
+          "truncated": false,
+          "total": 1,
+          "shown": 1
+        },
+        "consistency": [],
+        "consistency_window": {
+          "truncated": false,
+          "total": 0,
+          "shown": 0
+        }
+      }
+    ],
+    "timeline_window": {
+      "truncated": false,
+      "total": 5,
+      "shown": 5
+    },
+    "unavailable": [
+      {
+        "source_kind": "space",
+        "space": "archive-migration",
+        "code": "space-index-unavailable",
+        "summary": "Committed operational evidence is unavailable for this space"
+      }
+    ]
+  }
 }

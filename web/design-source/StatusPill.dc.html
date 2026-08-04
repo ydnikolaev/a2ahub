@@ -101,9 +101,9 @@ class Component extends DCLogic {
       why,
       open: !!why && this.state.open,
       wrapStyle: "display:inline-flex; position:relative;" + (why ? " cursor:help;" : ""),
-      pillStyle: "display:inline-block; " + mono + "font-size:" + (this.props.size === "small" ? 13 : 14) + "px; font-weight:600; line-height:1.3; border-radius:6px; padding:" + (t.ring ? "3px 10px" : "4px 11px") + "; background:" + t.bg + "; color:" + t.fg + "; box-shadow:" + (t.ring || "none") + "; white-space:nowrap;" +
+      pillStyle: "display:inline-block; " + mono + "font-size:" + (this.props.size === "small" ? "var(--font-badge-small)" : "var(--font-badge-default)") + "; font-weight:600; line-height:var(--line-badge); border-radius:var(--radius-badge); padding:" + (t.ring ? "var(--padding-badge-outline-block) var(--padding-badge-outline-inline)" : "var(--padding-badge-solid-block) var(--padding-badge-solid-inline)") + "; background:" + t.bg + "; color:" + t.fg + "; box-shadow:" + (t.ring || "none") + "; white-space:nowrap;" +
         (why ? " text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px; text-decoration-color:currentColor;" : ""),
-      bubbleStyle: "position:fixed; z-index:950; " + this.state.pos + " width:min(320px, 76vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:12px; padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
+      bubbleStyle: "position:fixed; z-index:950; " + this.state.pos + " width:min(320px, 76vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:var(--radius-chip); padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
       enter: why ? (ev) => this.show(ev && ev.currentTarget) : (() => {}),
       leave: why ? () => this.setState({ open: false }) : (() => {}),
       // The pill sits inside the row button on most screens, so a tap must not

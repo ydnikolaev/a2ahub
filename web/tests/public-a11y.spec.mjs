@@ -11,6 +11,8 @@ const routes = [
   '/reliability.html',
   '/changelog.html',
   '/roadmap.html',
+  '/dashboard-example.html',
+  '/dashboard.html',
 ];
 const themes = ['light', 'dark'];
 const summarizeViolations = (violations) => violations.map((violation) => ({

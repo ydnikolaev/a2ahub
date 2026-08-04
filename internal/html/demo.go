@@ -47,9 +47,24 @@ func DemoData() (Data, error) {
 	d.ReleaseNotes = toReleaseNotes(releases)
 	deriveDemoOwnership(&d)
 	deriveDemoRowFacts(&d)
-	d.Operational, err = demoOperationalSnapshot(d.GeneratedAt)
+	authoredOperational := d.Operational
+	d.Operational, err = demoOperationalSnapshot(d)
 	if err != nil {
 		return Data{}, fmt.Errorf("html: demo operational snapshot: %w", err)
+	}
+	if authoredOperational.SchemaVersion == 0 {
+		return Data{}, fmt.Errorf("html: demo operational snapshot: fixture projection is missing")
+	}
+	authoredJSON, err := operational.CanonicalJSON(authoredOperational)
+	if err != nil {
+		return Data{}, fmt.Errorf("html: demo operational snapshot: encode fixture projection: %w", err)
+	}
+	projectedJSON, err := operational.CanonicalJSON(d.Operational)
+	if err != nil {
+		return Data{}, fmt.Errorf("html: demo operational snapshot: encode rebuilt projection: %w", err)
+	}
+	if !bytes.Equal(authoredJSON, projectedJSON) {
+		return Data{}, fmt.Errorf("html: demo operational snapshot: fixture projection drifted from demo evidence")
 	}
 	for i := range d.ArtifactDetails {
 		rendered, renderErr := renderArtifactMarkdown(d.ArtifactDetails[i].Body)
@@ -65,68 +80,167 @@ type demoOperationalClock struct{ now time.Time }
 
 func (clock demoOperationalClock) Now() time.Time { return clock.now }
 
-func demoOperationalSnapshot(now time.Time) (operational.Snapshot, error) {
-	now = now.UTC()
+func demoOperationalSnapshot(d Data) (operational.Snapshot, error) {
+	now := d.GeneratedAt.UTC()
 	syncedAt := now.Add(-2 * time.Minute)
-	thread := func(id, title string, protocol operational.Protocol, milestone *operational.Milestone) operational.ThreadEvidence {
-		return operational.ThreadEvidence{
-			Space: "customer-ops", Thread: id, Title: title,
-			Participants: []string{"atlas", "legacycrm"}, Protocol: protocol, LatestMilestone: milestone,
-		}
-	}
 	actor := func(name, system, session string) workreport.Actor {
 		return workreport.Actor{Kind: "agent", Name: name, System: system, Model: "gpt-5", Session: session}
 	}
+	threads := demoOperationalThreads(d)
+	committedWork, err := demoCommittedWork(d.WorkReports)
+	if err != nil {
+		return operational.Snapshot{}, fmt.Errorf("committed work reports: %w", err)
+	}
+	localLease := demoLocalLease(now, workreport.Identity{
+		LeaseKey:  "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+		ProjectID: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+		Space:     "checkout-core", Thread: "thread:checkout-20260728-c3d4",
+		WorkID: "work:01K20ABCDEFHJKMNPQRSTVWXYZ", Actor: actor("codex", "atlas", "session:demo-atlas"),
+	}, "XW-checkout-20260728-c3d4", workreport.ModeImplementing,
+		"Implementing the idempotent capture fix and replay fixture", nil)
 	input := operational.Input{
 		Sources: []operational.SourceEvidence{
-			{Kind: operational.SourceSpace, Space: "customer-ops", Revision: "demo-space-revision", SyncedAt: &syncedAt, ObservedAt: now, Freshness: operational.SourceCurrent},
+			{Kind: operational.SourceSpace, Space: "archive-migration", Revision: "unavailable", SyncedAt: timePointer(now.Add(-24 * time.Hour)), ObservedAt: now, Freshness: operational.SourceUnavailable},
+			{Kind: operational.SourceSpace, Space: "checkout-core", Revision: "demo-checkout-revision", SyncedAt: &syncedAt, ObservedAt: now, Freshness: operational.SourceCurrent},
+			{Kind: operational.SourceSpace, Space: "customer-ops", Revision: "demo-customer-ops-revision", SyncedAt: timePointer(now.Add(-45 * time.Minute)), ObservedAt: now, Freshness: operational.SourceStale},
 			{Kind: operational.SourceLocalWork, Revision: "sha256:demo-local-work", ObservedAt: now, Freshness: operational.SourceCurrent},
 		},
-		Threads: []operational.ThreadEvidence{
-			thread("thread:legacycrm-20260709-x3y4", "Replace the legacy CRM export safely", operational.Protocol{
-				Settled: false, OpenCount: 1, WaitingOn: []string{"legacycrm"}, BlockingBy: []string{"legacycrm"},
-			}, &operational.Milestone{
-				Kind: "event", At: now.Add(-8 * time.Minute), Actor: operational.Actor{Kind: "agent", Name: "codex", System: "atlas", Model: "gpt-5", Session: "session:demo-atlas"},
-				Transition: "respond", Subject: "XW-legacycrm-20260709-x3y4",
-			}),
-			thread("thread:ingest-20260803-a2b3", "Implement the agreed ingest contract", operational.Protocol{
-				Settled: true, OpenCount: 0, WaitingOn: []string{}, BlockingBy: []string{},
-			}, &operational.Milestone{
-				Kind: "event", At: now.Add(-25 * time.Minute), Actor: operational.Actor{Kind: "agent", Name: "xpressmike", System: "legacycrm", Model: "gpt-5", Session: "session:demo-mike"},
-				Transition: "verify", Subject: "XS-ingest-20260803-c4d5",
-			}),
-			thread("thread:support-20260729-q5n6", "Redact message bodies before case events leave Support", operational.Protocol{
-				Settled: false, OpenCount: 1, WaitingOn: []string{"atlas"}, YourMove: true, BlockingBy: []string{},
-			}, nil),
-		},
-		CommittedWork: []operational.CommittedWorkEvidence{
-			{
-				Space: "customer-ops", Thread: "thread:legacycrm-20260709-x3y4", WorkID: "work:01K20ABCDEFHJKMNPQRSTVWXYZ",
-				SubjectRef: "XC-legacycrm-export@2.0.0", Mode: workreport.ModeImplementing,
-				Summary: "Replacing the export adapter and preparing migration fixtures",
-				Actor:   actor("codex", "atlas", "session:demo-atlas"), ReportedAt: now.Add(-4 * time.Minute), ValidUntil: now.Add(20 * time.Minute),
-				ArtifactID: "XA-atlas-20260803-a2b3", CommitSequence: 14,
-			},
-			{
-				Space: "customer-ops", Thread: "thread:legacycrm-20260709-x3y4", WorkID: "work:01K20ABCDEFHJKMNPQRSTVWXYA",
-				SubjectRef: "XW-legacycrm-20260709-x3y4", Mode: workreport.ModeWaiting,
-				Summary:    "Preparing the provider-side export after the contract update",
-				Actor:      actor("xpressmike", "legacycrm", "session:demo-mike"),
-				WaitingOn:  []workreport.WaitingOn{{Kind: workreport.WaitSystem, ID: "atlas", Summary: "Final contract bytes"}},
-				ReportedAt: now.Add(-6 * time.Minute), ValidUntil: now.Add(18 * time.Minute),
-				ArtifactID: "XA-legacycrm-20260803-b3c4", CommitSequence: 15,
-			},
-			{
-				Space: "customer-ops", Thread: "thread:ingest-20260803-a2b3", WorkID: "work:01K20ABCDEFHJKMNPQRSTVWXYB",
-				SubjectRef: "XC-atlas-ingest@1.4.0", Mode: workreport.ModeTesting,
-				Summary: "Running the cross-system ingest fixture suite",
-				Actor:   actor("codex", "atlas", "session:demo-ingest"), ReportedAt: now.Add(-12 * time.Minute), ValidUntil: now.Add(30 * time.Minute),
-				ArtifactID: "XA-atlas-20260803-c4d5", CommitSequence: 16,
-			},
-		},
-		LocalLeases: []operational.LocalLeaseEvidence{}, Unavailable: []operational.Unavailable{},
+		Threads:       threads,
+		CommittedWork: committedWork,
+		LocalLeases:   []operational.LocalLeaseEvidence{{Lease: localLease, ObservedAt: now.Add(-20 * time.Second)}},
+		Unavailable: []operational.Unavailable{{
+			SourceKind: operational.SourceSpace, Space: "archive-migration", Code: "space-index-unavailable",
+			Summary: "Committed operational evidence is unavailable for this space",
+		}},
 	}
 	return operational.Build(input, demoOperationalClock{now: now}, operational.DefaultLimits())
+}
+
+// demoCommittedWork converts the fixture's durable history into the shared
+// operational projection input. WorkReports are the canonical authored demo
+// evidence; the operational snapshot must not repeat their semantic fields.
+func demoCommittedWork(reports []WorkReport) ([]operational.CommittedWorkEvidence, error) {
+	evidence := make([]operational.CommittedWorkEvidence, 0, len(reports))
+	for _, report := range reports {
+		reportedAt, err := time.Parse(time.RFC3339Nano, report.ReportedAt)
+		if err != nil {
+			return nil, fmt.Errorf("report %s reported_at %q: %w", report.ArtifactID, report.ReportedAt, err)
+		}
+		var validUntil time.Time
+		if report.ValidUntil != "" {
+			validUntil, err = time.Parse(time.RFC3339Nano, report.ValidUntil)
+			if err != nil {
+				return nil, fmt.Errorf("report %s valid_until %q: %w", report.ArtifactID, report.ValidUntil, err)
+			}
+		}
+		waitingOn := make([]workreport.WaitingOn, len(report.WaitingOn))
+		for i, waiting := range report.WaitingOn {
+			waitingOn[i] = workreport.WaitingOn{
+				Kind: workreport.WaitKind(waiting.Kind), ID: waiting.ID, Summary: waiting.Summary,
+			}
+		}
+		evidence = append(evidence, operational.CommittedWorkEvidence{
+			Space: report.Space, Thread: report.Thread, WorkID: report.WorkID, SubjectRef: report.SubjectRef,
+			Mode: workreport.Mode(report.Mode), Summary: report.Summary,
+			Actor: workreport.Actor{
+				Kind: report.Actor.Kind, Name: report.Actor.Name, System: report.Actor.System,
+				Model: report.Actor.Model, Session: report.Actor.Session,
+			},
+			WaitingOn: waitingOn, ReportedAt: reportedAt, ValidUntil: validUntil,
+			ArtifactID: report.ArtifactID, CommitSequence: report.CommitSequence,
+		})
+	}
+	return evidence, nil
+}
+
+func demoOperationalThreads(d Data) []operational.ThreadEvidence {
+	threads := make([]operational.ThreadEvidence, 0, len(d.ThreadViews))
+	for _, view := range d.ThreadViews {
+		waiting, blocking := []string{}, []string{}
+		openCount, yourMove := 0, false
+		for _, item := range view.OpenItems {
+			if len(item.WaitingOn) == 0 {
+				continue
+			}
+			openCount++
+			waiting = append(waiting, item.WaitingOn...)
+			yourMove = yourMove || item.YourMove
+			if item.Blocking {
+				blocking = append(blocking, item.WaitingOn...)
+			}
+		}
+		threads = append(threads, operational.ThreadEvidence{
+			Space: view.Space, Thread: view.Thread, Title: view.Opener.Title,
+			Participants: append([]string(nil), view.Participants...),
+			Protocol: operational.Protocol{
+				Settled: openCount == 0, OpenCount: openCount,
+				WaitingOn: sortedUnique(waiting), YourMove: yourMove, BlockingBy: sortedUnique(blocking),
+			},
+			LatestMilestone: demoLatestMilestone(view),
+		})
+	}
+	return threads
+}
+
+func demoLatestMilestone(view ThreadView) *operational.Milestone {
+	for index := len(view.Transcript) - 1; index >= 0; index-- {
+		row := view.Transcript[index]
+		if row.Kind != "event" || row.Event == nil || row.At == "" {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339, row.At)
+		if err != nil {
+			continue
+		}
+		actor := row.Event.Actor
+		name, _ := actor["name"].(string)
+		system, _ := actor["system"].(string)
+		kind, _ := actor["kind"].(string)
+		model, _ := actor["model"].(string)
+		session, _ := actor["session"].(string)
+		if kind == "" {
+			kind = "agent"
+		}
+		if name == "" || system == "" {
+			continue
+		}
+		if session == "" {
+			session = "session:demo-" + system
+		}
+		return &operational.Milestone{
+			Kind: "event", At: at.UTC(), Actor: operational.Actor{
+				Kind: kind, Name: name, System: system, Model: model, Session: session,
+			},
+			Transition: row.Event.Transition, Subject: row.Event.Subject,
+		}
+	}
+	return nil
+}
+
+func demoLocalLease(now time.Time, identity workreport.Identity, subject string, mode workreport.Mode, summary string, waiting []workreport.WaitingOn) workreport.Lease {
+	return workreport.Lease{
+		SchemaVersion: workreport.SchemaVersion, Identity: identity, SubjectRef: subject,
+		Mode: mode, Summary: summary, WaitingOn: waiting,
+		Recipients: []string{"all"}, Classification: workreport.DefaultClassification,
+		StartedAt: now.Add(-25 * time.Minute), RenewedAt: now.Add(-40 * time.Second), ExpiresAt: now.Add(14*time.Minute + 20*time.Second),
+		HeartbeatSequence: 4, SemanticSequence: 2,
+	}
+}
+
+func sortedUnique(values []string) []string {
+	sort.Strings(values)
+	out := values[:0]
+	for _, value := range values {
+		if len(out) == 0 || out[len(out)-1] != value {
+			out = append(out, value)
+		}
+	}
+	return append([]string(nil), out...)
+}
+
+func timePointer(value time.Time) *time.Time {
+	value = value.UTC()
+	return &value
 }
 
 // deriveDemoRowFacts fills the two row fields the live assembler computes but

@@ -288,9 +288,20 @@ func (s *Server) publish(ctx context.Context, snapshot operational.Snapshot) err
 	if len(body) > s.config.MaxSnapshotBytes {
 		return fmt.Errorf("%w: snapshot has %d bytes, maximum %d", ErrSnapshotUnavailable, len(body), s.config.MaxSnapshotBytes)
 	}
-	shell, err := s.renderer.Render(ctx, snapshot)
-	if err != nil {
-		return fmt.Errorf("localserver: render shell: %w", err)
+	// A semantic revision owns one coherent shell. Refreshes may advance only
+	// generated_at while the durable/local inputs remain unchanged; rebuilding
+	// the dashboard in that case would repeat every Git-backed projection on
+	// each poll for bytes the client cannot observe as a new generation.
+	var shell []byte
+	current := s.store.get()
+	currentShell := s.store.shell()
+	if current != nil && current.revision == snapshot.Revision && currentShell != nil {
+		shell = append([]byte(nil), currentShell.body...)
+	} else {
+		shell, err = s.renderer.Render(ctx, snapshot)
+		if err != nil {
+			return fmt.Errorf("localserver: render shell: %w", err)
+		}
 	}
 	if len(shell) > s.config.MaxShellBytes {
 		return fmt.Errorf("%w: shell has %d bytes, maximum %d", ErrSnapshotUnavailable, len(shell), s.config.MaxShellBytes)

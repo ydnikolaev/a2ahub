@@ -14,7 +14,7 @@
   <div style="{{ stickyStyle }}">
   <div style="{{ stickyInnerStyle }}">
   <div style="display:flex; align-items:center; gap:12px 16px; flex-wrap:wrap; min-height:38px;">
-    <h3 style="flex:1 1 260px; min-width:0; margin:0; font-size:22px; line-height:1.25; font-weight:600; letter-spacing:-0.01em;">{{ heading }}</h3>
+    <h3 style="flex:1 1 260px; min-width:0; margin:0; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; letter-spacing:-0.01em;">{{ heading }}</h3>
     <span style="flex:1 1 320px; min-width:0; max-width:100%; display:flex; align-items:center; justify-content:flex-end; gap:8px;">
       <span ref="{{ modeScrollRef }}" class="{{ modeScrollClass }}" style="flex:1 1 auto; min-width:0; max-width:100%; overflow-x:auto; overflow-y:hidden; white-space:nowrap; scrollbar-width:none;">
         <span style="display:flex; justify-content:flex-end; width:max-content; min-width:100%;">
@@ -49,12 +49,12 @@
        how to read the marks, and what can be done here. Keeping them as peers
        prevents a long dynamic explanation from swallowing the whole header. -->
   <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr)); gap:14px; align-items:stretch; margin:12px 0 var(--space-section);">
-    <div style="min-width:0; min-height:210px; box-sizing:border-box; display:flex; flex-direction:column; background:var(--surface-section); border-radius:12px; padding:15px 16px 7px; box-shadow:inset 0 0 0 1px var(--hairline);">
+    <div style="min-width:0; min-height:210px; box-sizing:border-box; display:flex; flex-direction:column; background:var(--surface-section); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline) 7px; box-shadow:inset 0 0 0 1px var(--hairline);">
       <div style="font-weight:600; color:var(--text); font-size:15px; margin-bottom:4px;">{{ overviewLabel }}</div>
       <dc-import name="FactTable" rows="{{ summaryRows }}" hint-size="100%,175px"></dc-import>
     </div>
 
-    <div style="min-width:0; min-height:210px; box-sizing:border-box; display:flex; flex-direction:column; gap:12px; padding:15px 16px; background:var(--surface-section); border-radius:12px; font-size:14px; color:var(--body); box-shadow:inset 0 0 0 1px var(--hairline);">
+    <div style="min-width:0; min-height:210px; box-sizing:border-box; display:flex; flex-direction:column; gap:var(--space-stack); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); border-radius:var(--radius-nested); font-size:14px; color:var(--body); box-shadow:inset 0 0 0 1px var(--hairline);">
       <div style="font-weight:600; color:var(--text); font-size:15px;">{{ legendLabel }}</div>
       <div style="min-width:0; margin-top:4px;">
       <div style="font-weight:600; color:var(--faint); font-size:12px; text-transform:uppercase; letter-spacing:.07em; margin-bottom:7px;">{{ contractLabel }}</div>
@@ -80,14 +80,14 @@
       </div>
     </div>
 
-    <div style="min-width:0; min-height:210px; box-sizing:border-box; display:flex; flex-direction:column; padding:15px 16px; background:var(--surface-section); border-radius:12px; box-shadow:inset 0 0 0 1px var(--hairline);">
+    <div style="min-width:0; min-height:210px; box-sizing:border-box; display:flex; flex-direction:column; padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface-section); border-radius:var(--radius-nested); box-shadow:inset 0 0 0 1px var(--hairline);">
       <div style="font-weight:600; color:var(--text); font-size:15px; margin-bottom:10px;">{{ introLabel }}</div>
       <p style="margin:0; font-size:15px; line-height:1.58; color:var(--body); text-wrap:pretty;">{{ intro }}</p>
     </div>
   </div>
 
   <div style="{{ bleedStyle }}">
-  <div ref="{{ boxRef }}" onScroll="{{ onCanvasScroll }}" style="background-color:var(--surface-workbench); background-image:radial-gradient(circle at 1px 1px,var(--map-grid) 1px,transparent 1.2px); background-size:18px 18px; border-radius:20px; padding:16px; overflow-x:auto; box-shadow:0 20px 44px -30px rgba(33,30,23,.55), 0 2px 6px -4px rgba(33,30,23,.3), inset 0 0 0 1px var(--border-strong);">
+  <div ref="{{ boxRef }}" onScroll="{{ onCanvasScroll }}" style="background-color:var(--surface-workbench); background-image:radial-gradient(circle at 1px 1px,var(--map-grid) 1px,transparent 1.2px); background-size:18px 18px; border-radius:var(--radius-card); padding:var(--padding-list-card-block); overflow-x:auto; box-shadow:0 20px 44px -30px rgba(33,30,23,.55), 0 2px 6px -4px rgba(33,30,23,.3), inset 0 0 0 1px var(--border-strong);">
     <div style="{{ canvasStyle }}">
       <svg viewBox="{{ viewBox }}" width="{{ canvasW }}" height="{{ canvasH }}" aria-hidden="true" style="position:absolute; left:0; top:0; z-index:2; overflow:visible; pointer-events:none;">
         <defs>
@@ -157,8 +157,8 @@
     <div role="tooltip" style="{{ tipStyle }}">{{ tipText }}</div>
   </sc-if>
   <sc-if value="{{ hasPop }}" hint-placeholder-val="{{ false }}">
-    <div onClick="{{ popDismiss }}" style="position:fixed; inset:0; z-index:700; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(33,30,23,.46); overflow:auto;">
-      <div onClick="{{ popStop }}" style="width:min(760px,100%); max-height:calc(100vh - 48px); overflow:auto; border-radius:16px;">
+    <div onClick="{{ popDismiss }}" style="position:fixed; inset:0; z-index:700; display:flex; align-items:center; justify-content:center; padding:var(--padding-modal-backdrop); background:rgba(33,30,23,.46); overflow:auto;">
+      <div role="dialog" aria-modal="true" aria-label="{{ pop.title }}" onClick="{{ popStop }}" style="width:min(760px,100%); max-height:calc(100vh - 2 * var(--padding-modal-backdrop)); overflow:auto; border-radius:var(--radius-panel);">
         <dc-import name="LinkDetail" det="{{ pop }}" hint-size="100%,260px"></dc-import>
       </div>
     </div>
@@ -174,7 +174,7 @@
   <sc-if value="{{ showExtras }}" hint-placeholder-val="{{ true }}">
   <div style="margin-top:16px;">
     <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:9px;">
-      <span style="font-size:16px; font-weight:600;">{{ linkTableTitle }}</span>
+      <span style="font-size:var(--font-subheading); line-height:var(--line-subheading); font-weight:600;">{{ linkTableTitle }}</span>
       <span style="font-size:14px; color:var(--muted);">{{ tableNote }}</span>
     </div>
     <div style="display:flex; align-items:center; gap:12px; padding:0 12px 7px; font-size:12px; font-weight:600; color:var(--faint); text-transform:uppercase; letter-spacing:.07em;">
@@ -198,9 +198,9 @@
   </div>
 
   <sc-if value="{{ showMatrix }}" hint-placeholder-val="{{ false }}">
-  <div style="background:var(--surface-section); border-radius:16px; padding:16px 18px 18px; margin-top:18px;">
+  <div style="background:var(--surface-section); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); margin-top:var(--space-grid);">
       <div style="margin-bottom:12px;">
-        <span style="display:block; font-size:17px; font-weight:600; margin-bottom:3px;">{{ matrixTitle }}</span>
+        <span style="display:block; font-size:var(--font-subheading); line-height:var(--line-subheading); font-weight:600; margin-bottom:3px;">{{ matrixTitle }}</span>
         <span style="display:block; font-size:15px; line-height:1.55; color:var(--muted); max-width:88ch;">{{ matrixNote }}</span>
       </div>
       <div style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; padding-bottom:9px; border-bottom:1px solid var(--border);">
@@ -240,7 +240,7 @@
 const DRIFT_TONE = { current: "healthy", behind: "attention", deprecated: "attention", retired: "neutral", missing: "blockingStrong", dangling: "outline" };
 const STATE_TONE = { published: "healthy", deprecated: "attention", retired: "neutral", draft: "outline" };
 const RISK = { missing: 5, dangling: 5, retired: 4, deprecated: 3, behind: 2, current: 0 };
-const CARD_BASE = "background:var(--surface-card); border-radius:18px; padding:20px 22px 22px; box-shadow:0 1px 2px rgba(33,30,23,.06); font-family:'Onest',sans-serif;";
+const CARD_BASE = "background:var(--surface-card); border-radius:var(--radius-panel); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:var(--shadow-card); font-family:'Onest',sans-serif;";
 // canvas geometry
 const SX = 16, SW = 244, SH = 122, SEX = SX + SW;
 const MH = 62, MG = 14, GH = 78, PT = 8, PB = 16, PGAP = 28, UNH = 124;
@@ -1089,7 +1089,7 @@ class Component extends DCLogic {
       go: () => this.setState({ mode: id, sel: null })
     }));
     const shell = {
-      shellStyle: expanded ? "position:fixed; inset:0; z-index:200; background:rgba(33,30,23,.42); padding:24px; overflow:auto; display:flex; align-items:flex-start;" : "",
+      shellStyle: expanded ? "position:fixed; inset:0; z-index:200; background:rgba(33,30,23,.42); padding:var(--padding-modal-backdrop); overflow:auto; display:flex; align-items:flex-start;" : "",
       cardStyle: expanded ? CARD_BASE + " width:100%; margin:auto; box-shadow:0 24px 60px -20px rgba(33,30,23,.5);" : CARD_BASE,
       isExpanded: expanded,
       expandLabel: expanded ? (ru ? "Свернуть карту" : "Exit full width") : (ru ? "Развернуть карту на всю ширину" : "Expand map to full width"),
@@ -1107,7 +1107,7 @@ class Component extends DCLogic {
       showExtras: this.props.collapseExtras !== true || this.state.extras === true,
       extrasExpanded: this.state.extras === true ? "true" : "false",
       extrasLabel: this.state.extras === true ? (ru ? "Скрыть таблицу связей и матрицу спейсов" : "Hide the link table and the space matrix") : (ru ? "Показать таблицу связей и матрицу спейсов" : "Expand the link table and the space matrix"),
-      extrasBtnStyle: "margin-top:14px; width:100%; box-sizing:border-box; display:flex; align-items:center; gap:12px; font-family:'Onest',sans-serif; font-size:16px; font-weight:600; color:var(--text); background:var(--surface-section); border:0; border-radius:12px; padding:14px 16px; cursor:pointer;",
+      extrasBtnStyle: "margin-top:var(--space-stack); width:100%; box-sizing:border-box; display:flex; align-items:center; gap:12px; font-family:'Onest',sans-serif; font-size:var(--font-subheading); line-height:var(--line-subheading); font-weight:600; color:var(--text); background:var(--surface-section); border:0; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); cursor:pointer;",
       toggleExtras: () => this.setState(x => ({ extras: !x.extras })),
       // the full-width strip only exists while the bar is actually pinned
       stickyStyle: expanded

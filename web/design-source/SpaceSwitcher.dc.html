@@ -8,7 +8,7 @@
 <body>
 <x-dc>
 <span style="position:relative; flex:0 0 auto; display:inline-flex;">
-  <button type="button" onClick="{{ toggle }}" aria-expanded="{{ expanded }}" aria-label="{{ ariaLabel }}" style="{{ buttonStyle }}">
+  <button type="button" onClick="{{ toggle }}" aria-expanded="{{ expanded }}" aria-label="{{ ariaLabel }}" style="{{ buttonStyle }}" style-hover="background:var(--surface-section); box-shadow:0 1px 2px rgba(33,30,23,.06), inset 0 0 0 1px var(--border-strong);">
     <sc-if value="{{ hasFaces }}" hint-placeholder-val="{{ true }}">
       <span style="display:flex; align-items:center; flex:0 0 auto;">
         <sc-for list="{{ faces }}" as="f" hint-placeholder-count="3">
@@ -16,6 +16,7 @@
         </sc-for>
       </span>
     </sc-if>
+    <sc-if value="{{ hasStatus }}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="{{ statusDotStyle }}"></span></sc-if>
     <span style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ currentLabel }}</span>
     <span style="flex:0 0 auto; color:var(--muted);"><dc-import name="DisclosureIcon" expanded="{{ expanded }}" hint-size="18px,18px"></dc-import></span>
   </button>
@@ -34,6 +35,7 @@
               </sc-for>
             </span>
           </sc-if>
+          <sc-if value="{{ o.hasStatus }}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="{{ o.statusDotStyle }}"></span></sc-if>
           <span style="flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ o.label }}</span>
           <sc-if value="{{ o.selected }}" hint-placeholder-val="{{ false }}">
             <span aria-hidden="true" style="flex:0 0 auto; color:var(--teal-ink);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
@@ -44,12 +46,14 @@
       <!-- Freshness is a property of the spaces listed above it, so the way in
            sits at the foot of the list that names them rather than as a second
            button competing with the switcher. -->
-      <span style="height:1px; background:var(--hairline); margin:6px 4px;"></span>
-      <button type="button" onClick="{{ openHealth }}" style="display:flex; align-items:center; gap:9px; width:100%; text-align:left; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--body); background:transparent; border:0; border-radius:9px; padding:9px 10px; cursor:pointer;">
-        <span style="{{ healthDotStyle }}"></span>
-        <span style="flex:1 1 auto; min-width:0;">{{ healthLabel }}</span>
-        <span aria-hidden="true" style="color:var(--muted);">→</span>
-      </button>
+      <sc-if value="{{ hasHealth }}" hint-placeholder-val="{{ true }}">
+        <span style="height:1px; background:var(--hairline); margin:6px 4px;"></span>
+        <button type="button" onClick="{{ openHealth }}" style="display:flex; align-items:center; gap:9px; width:100%; text-align:left; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--body); background:transparent; border:0; border-radius:9px; padding:9px 10px; cursor:pointer;">
+          <span style="{{ healthDotStyle }}"></span>
+          <span style="flex:1 1 auto; min-width:0;">{{ healthLabel }}</span>
+          <span aria-hidden="true" style="color:var(--muted);">→</span>
+        </button>
+      </sc-if>
     </span>
   </sc-if>
 </span>
@@ -91,13 +95,15 @@ class Component extends DCLogic {
     return {
       open: this.state.open,
       expanded: this.state.open ? "true" : "false",
-      ariaLabel: ru ? "Выбрать спейс" : "Choose a space",
-      currentLabel: cur.label || "",
+      ariaLabel: d.ariaLabel || (ru ? "Выбрать спейс" : "Choose a space"),
+      currentLabel: cur.shortLabel || cur.label || "",
       hasFaces: !!(cur.faces && cur.faces.length),
       faces: cur.faces || [],
+      hasStatus: !!cur.statusDotStyle,
+      statusDotStyle: cur.statusDotStyle || "",
       // Weight is constant across states here as everywhere else: an open
       // control that bolds itself re-measures its own text and nudges the row.
-      buttonStyle: "display:inline-flex; align-items:center; gap:9px; max-width:280px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--text); background:var(--surface); border:0; border-radius:10px; padding:9px 13px 9px 10px; cursor:pointer; box-shadow:0 1px 2px rgba(33,30,23,.06);" +
+      buttonStyle: "display:inline-flex; align-items:center; gap:9px; max-width:280px; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--text); background:var(--surface); border:0; border-radius:10px; padding:9px 13px 9px 10px; cursor:pointer; box-shadow:0 1px 2px rgba(33,30,23,.06), inset 0 0 0 1px var(--border); transition:background-color 140ms ease, box-shadow 140ms ease;" +
         (this.state.open ? " box-shadow:0 1px 2px rgba(33,30,23,.06), inset 0 0 0 1.5px var(--border-strong);" : ""),
       options: options.map(o => ({
         label: o.label,
@@ -105,10 +111,13 @@ class Component extends DCLogic {
         current: o.selected ? "true" : null,
         hasFaces: !!(o.faces && o.faces.length),
         faces: o.faces || [],
+        hasStatus: !!o.statusDotStyle,
+        statusDotStyle: o.statusDotStyle || "",
         style: "display:flex; align-items:center; gap:9px; width:100%; text-align:left; font-family:'Onest',sans-serif; font-size:15px; font-weight:600; border:0; border-radius:9px; padding:9px 10px; cursor:pointer; " +
           (o.selected ? "background:var(--teal-tint); color:var(--teal-ink);" : "background:transparent; color:var(--body);"),
         go: () => { this.setState({ open: false }); if (o.go) o.go(); }
       })),
+      hasHealth: !!d.healthLabel,
       healthLabel: d.healthLabel || "",
       healthDotStyle: d.healthDotStyle || "",
       openHealth: () => { this.setState({ open: false }); if (d.openHealth) d.openHealth(); },

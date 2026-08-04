@@ -8,7 +8,7 @@ export/
   README.md                 this file — what is here, what the stack is, where each page goes
   IMPLEMENTATION-NOTE.md    tokens, component inventory, shared vs surface-specific, data projections
   tokens.css                the semantic token layer (light + dark) + page shell + focus/motion rules
-  prototype/                the runnable design source: 10 pages, 9 components, the fixture
+  prototype/                the runnable design source: 10 pages, shared components, the fixture
 ```
 
 ## 1. Two implementation targets — do not blur them
@@ -28,11 +28,11 @@ export/
 | `16-docs-v4.dc.html` | `/a2ahub/docs.html`, `/a2ahub/docs/<section>.html` | section nav, search, TOC, anchors, source note; bodies the site does not own show the honest injection block |
 | `20-dashboard-example-v4.dc.html` | `/a2ahub/dashboard.html` | public framing, synthetic label, same components and same fixture as the local dashboard |
 | `17-security-reliability-v4.dc.html` | `/a2ahub/security.html` + `/a2ahub/reliability.html` | one prototype page, two routes, section boundaries preserved |
-| `15-changelog-v4.dc.html` | `/a2ahub/changelog.html` | projected from `releasenotes/*.yaml`; ends at published v0.16.3 |
+| `15-changelog-v4.dc.html` | `/a2ahub/changelog.html` | projected from the complete published `releasenotes/*.yaml` index |
 | `19-roadmap-v4.dc.html` | `/a2ahub/roadmap.html` | shipped / next proposal / exploring; P5 is proposal-only with its open gates visible |
 | `18-install-v4.dc.html` | `/a2ahub/install.html` | shell install, agent-led Sporo seed with copy / copied / failed / unavailable states |
 | `21-not-found-v4.dc.html` | `/a2ahub/404.html` | plus head and route conventions the build owns |
-| `14-local-dashboard-v4.dc.html` | output of `a2a html` | 9 views: Overview, Work, Threads, Contracts, Network, Spaces, Integrity, Versions, Guide |
+| `14-local-dashboard-v4.dc.html` | output of `a2a html` | 9 views: Overview, Exchange, Threads, Contracts, Map, Spaces, Versions, Docs, Guide |
 
 ## 3. How to read the prototype files
 
@@ -69,9 +69,9 @@ badge placement, hover and selection rules) in `buildCanvas()`.
 
 ## 5. Data
 
-`prototype/demo-data.json` is the required fixture (`meta.schema: "a2a-design-demo/v3"`,
-`meta.synthetic: true`, 4 spaces, 10 systems, 12 contracts, 15 contract edges, 20 exchange edges,
-6 threads, 11 inbox, 8 outbox, 4 flags, 6 thread views, 8 artifact details).
+`prototype/demo-data.json` is the required fixture (`meta.schema: "a2a-design-demo/v4"`,
+`meta.synthetic: true`, 3 spaces, 7 systems, 8 contracts, 10 contract edges, 12 exchange edges,
+5 threads, 7 inbox, 5 outbox, 3 flags, 5 thread views, 10 artifact details and 8 work reports).
 `prototype/demo-data.js` sets `window.A2A_DEMO` — that is the pattern the Go renderer must use.
 Pages try the JSON first and fall back to the embedded copy.
 

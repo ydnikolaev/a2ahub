@@ -16,6 +16,13 @@ mkdirSync(join(publicRoot, 'docs'), { recursive: true });
 mkdirSync(join(publicRoot, 'setup'), { recursive: true });
 
 const read = (path) => readFileSync(path, 'utf8');
+function designArray(file, name) {
+  const source = read(join(webRoot, 'design-source', file));
+  const match = source.match(new RegExp(`const ${name} = (\\[[\\s\\S]*?\\n\\]);`));
+  if (!match) throw new Error(`missing design-source array ${name} in ${file}`);
+  return JSON.parse(match[1]);
+}
+
 const manifest = JSON.parse(read(join(repoRoot, 'skill/a2ahub/docs-manifest.json')));
 const site = JSON.parse(read(join(webRoot, 'content/site.json')));
 const routeConfig = JSON.parse(read(join(webRoot, 'content/routes.json')));
@@ -74,6 +81,10 @@ const docs = manifest.sections.map((entry) => {
 });
 
 const releases = publishedReleases(repoRoot);
+const guideFeatures = designArray('14-local-dashboard-v4.dc.html', 'GUIDE_FEATURES_EN');
+const roadmapShipped = designArray('19-roadmap-v4.dc.html', 'SHIPPED');
+const roadmapGates = designArray('19-roadmap-v4.dc.html', 'GATES');
+const roadmapExploring = designArray('19-roadmap-v4.dc.html', 'EXPLORING');
 
 const currentIssuesPath = join(repoRoot, 'releasenotes/current/known-issues.yaml');
 let currentIssues = [];
@@ -153,6 +164,7 @@ const routeManifest = {
         markdown: interpolate(routeConfig.documentation.markdown_template, values),
         llms_section: routeConfig.documentation.llms_section,
         structured_data: routeConfig.documentation.structured_data,
+        html_budget_kib: routeConfig.documentation.html_budget_kib,
         docs_group: doc.group,
         change_sources: [`skill/${doc.file}`],
         lastmod: sourceLastModified([`skill/${doc.file}`]) ?? undefined
@@ -175,11 +187,11 @@ const routeURL = (id, surface = 'html') => {
 };
 
 const homeMD = `# ${site.home.title}\n\n${site.home.lead}\n\n${site.home.support}\n\n${site.home.sections.map((section) => `## ${section.title}\n\n${section.body}`).join('\n\n')}\n\n## Install\n\n\`\`\`sh\n${site.product.install}\n\`\`\`\n\n- [Documentation](${routeURL('documentation')})\n- [Guided dashboard example](${routeURL('dashboard-example')})\n- [GitHub](${site.product.github})\n`;
-const featuresMD = `# How a2ahub fits together\n\nThis page is the public projection of the dashboard Guide. The HTML surface is rendered from the exact same design source as the local dashboard, so its document types, lifecycle vocabulary, feature cards and reading model cannot drift into a second explanation.\n\n- Eight typed document families carry one intent per file.\n- Validated lifecycle events build state without overwriting history.\n- CLI and MCP expose the same workflow to autonomous agents.\n- The dashboard shows human decisions, causal threads, contract drift and snapshot limits without becoming a control plane.\n- Structured feedback lets an agent report bugs, friction and feature requests safely.\n\n[Open the full dashboard demo](${routeURL('dashboard-demo')}).\n`;
+const featuresMD = `# How a2ahub fits together\n\nThis page is the public projection of the dashboard Guide. Its feature catalogue below is generated from the exact same design-source array as the local Guide.\n\n${guideFeatures.map(([eyebrow, title, body]) => `## ${title}\n\n**${eyebrow}**\n\n${body}`).join('\n\n')}\n\n[Open the full dashboard demo](${routeURL('dashboard-demo')}).\n`;
 const changelogMD = `# Changelog\n\nPublished releases, newest first.\n\n${releases.map((release) => `## v${release.version} — ${release.released}\n\n${release.headline}\n\n${release.changes.map((change) => `### ${change.subject}\n\n**${change.kind} · ${change.impact}**\n\n${change.detail.trim()}${change.action?.scope && change.action.scope !== 'none' ? `\n\nAction scope: ${change.action.scope}. ${change.action.why ?? ''}` : ''}`).join('\n\n')}`).join('\n\n')}\n`;
 const reliabilityMD = `# Reliability\n\nReliability is a chain of bounded evidence, not a blanket badge.\n\n- Schemas validate document shape.\n- The fold validates lifecycle and authority.\n- Reference resolution validates causal links.\n- Git and pull requests preserve the inspectable record.\n- Release verification checks the binary and published evidence.\n- Missing scope is reported as unavailable, never green.\n\n## Latest release evidence\n\n${releases[0]?.headline ?? 'No published release was available at build time.'}\n\n${releases[0]?.changes?.map((change) => `- **${change.subject}:** ${change.detail.trim()}`).join('\n') ?? ''}\n`;
 const installMD = `# Install a2a\n\nThe installer resolves the current GitHub Releases \`latest\` channel and verifies the downloaded binary.\n\n\`\`\`sh\n${site.product.install}\n\`\`\`\n\nThen run:\n\n\`\`\`sh\na2a version\na2a init --system <system-id> --space <space-repo-url>\na2a connect <space-repo-url>\na2a doctor\n\`\`\`\n\nFor an agent-led setup, [download the Sporo seed](${canonical}/setup/a2a.md).\n`;
-const roadmapMD = `# Roadmap\n\n## Shipped\n\n${site.roadmap.shipped.map((item) => `- ${item}`).join('\n')}\n\n## Proposal — ${site.roadmap.proposal.title}\n\n${site.roadmap.proposal.body}\n\n${site.roadmap.proposal.labels.map((label) => `- ${label}`).join('\n')}\n\n## Exploring\n\n${site.roadmap.exploring.map((item) => `- ${item}`).join('\n')}\n`;
+const roadmapMD = `# Roadmap\n\n## Shipped\n\n${roadmapShipped.map(([title, body]) => `### ${title}\n\n${body}`).join('\n\n')}\n\n## Proposal — verified data transfer between agents and systems\n\nThis proposal remains gated; it has no release target.\n\n${roadmapGates.map(([title, body]) => `- **${title}:** ${body}`).join('\n')}\n\n## Exploring\n\n${roadmapExploring.map(([title, body]) => `### ${title}\n\n${body}`).join('\n\n')}\n`;
 const dashboardMD = `# Dashboard example\n\nSynthetic demo data — no live services. This public page is a read-only projection of the same canonical fixture used by \`a2a html --demo\`.\n\n[Open the interactive dashboard](${canonical}/dashboard.html).\n`;
 const dashboardExampleMD = `# How to read the a2ahub dashboard\n\nThe guided public example explains the same read-only components that a local \`a2a html\` build uses. Its data is synthetic: it demonstrates spaces, typed work, threads, contracts, versions and bounded freshness without connecting to a live service.\n\nThe dashboard is an explanation surface, not a control room. Agents continue the protocol through the CLI or MCP; people use the dashboard to understand current evidence, exceptions and history.\n\n- [Open the guided example](${canonical}/dashboard-example.html)\n- [Open the full synthetic demo](${canonical}/dashboard.html)\n- [Read the protocol overview](${canonical}/docs/overview.md)\n`;
 const notFoundMD = `# Not found\n\nThe requested route does not exist. Continue with the [product overview](${canonical}/), [documentation](${canonical}/docs.html), or the [dashboard demo](${canonical}/dashboard.html).\n`;

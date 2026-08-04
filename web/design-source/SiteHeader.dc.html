@@ -8,7 +8,7 @@
 <body>
 <x-dc>
 <header style="position:sticky; top:0; z-index:60; background:var(--header-bg); backdrop-filter:blur(8px); font-family:'Onest','Segoe UI',Helvetica,Arial,sans-serif;">
-  <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0; display:flex; align-items:center; gap:10px; flex-wrap:nowrap; min-height:66px;">
+  <div style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0; display:flex; align-items:center; gap:var(--space-inline); flex-wrap:nowrap; min-height:66px;">
     <a href="13-public-home-v4.dc.html" style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:19px; font-weight:600; color:var(--text); text-decoration:none; flex:0 0 auto;">a2a<span style="color:var(--logo-dim);">hub</span></a>
 
     <sc-if value="{{ isWide }}" hint-placeholder-val="{{ true }}">
@@ -22,7 +22,7 @@
       <span style="position:relative;">
         <button type="button" onClick="{{ toggleLang }}" aria-expanded="{{ langExpanded }}" aria-label="Interface language" style="{{ langBtnStyle }}">EN {{ langCaret }}</button>
         <sc-if value="{{ langOpen }}" hint-placeholder-val="{{ false }}">
-          <span style="position:absolute; top:calc(100% + 6px); right:0; z-index:90; min-width:250px; background:var(--surface); border-radius:12px; padding:8px; box-shadow:0 8px 24px rgba(0,0,0,.22); display:flex; flex-direction:column; gap:2px;">
+          <span style="position:absolute; top:calc(100% + 6px); right:0; z-index:90; min-width:250px; background:var(--surface); border-radius:var(--radius-card); padding:8px; box-shadow:0 8px 24px rgba(0,0,0,.22); display:flex; flex-direction:column; gap:2px;">
             <span style="display:flex; align-items:center; gap:9px; font-size:15px; font-weight:600; color:var(--text); padding:9px 10px; border-radius:8px; background:var(--canvas);">English<span style="margin-left:auto; color:var(--teal-ink);">✓</span></span>
             <button type="button" onClick="{{ pickRu }}" style="{{ ruStyle }}">Русский</button>
             <span style="font-size:14px; line-height:1.5; color:var(--muted); padding:6px 10px 4px;">{{ langNote }}</span>
@@ -35,7 +35,7 @@
       <span style="position:relative;">
         <button type="button" onClick="{{ toggleAsk }}" aria-expanded="{{ askExpanded }}" aria-label="Ask an agent" style="{{ askBtnStyle }}">Ask an agent {{ askCaret }}</button>
         <sc-if value="{{ askOpen }}" hint-placeholder-val="{{ false }}">
-          <span style="position:absolute; top:calc(100% + 6px); right:0; z-index:90; min-width:330px; background:var(--surface); border-radius:14px; padding:10px; box-shadow:0 8px 24px rgba(0,0,0,.22); display:flex; flex-direction:column; gap:3px;">
+          <span style="position:absolute; top:calc(100% + 6px); right:0; z-index:90; min-width:330px; background:var(--surface); border-radius:var(--radius-card); padding:var(--space-inline); box-shadow:0 8px 24px rgba(0,0,0,.22); display:flex; flex-direction:column; gap:3px;">
             <span style="font-size:14px; line-height:1.5; color:var(--muted); padding:6px 10px 8px;">This page has a Markdown twin at <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--text);">{{ md }}</span>. Hand it to an agent, or take the text yourself.</span>
             <button type="button" onClick="{{ copyMd }}" style="{{ copyMdStyle }}">{{ copyMdLabel }}</button>
             <a href="{{ mdUrl }}" style="font-size:15px; color:var(--text); text-decoration:none; padding:9px 10px; border-radius:8px;" style-hover="background:var(--canvas);">View Markdown</a>
@@ -88,7 +88,7 @@
             <button type="button" onClick="{{ toggleTheme }}" aria-pressed="{{ themePressed }}" style="{{ themeSheetStyle }}">{{ themeLabel }}</button>
           </div>
           <sc-if value="{{ ruPicked }}" hint-placeholder-val="{{ false }}">
-            <div style="font-size:15px; line-height:1.55; color:var(--attention-ink); background:var(--attention-tint); border-radius:11px; padding:12px 14px;">{{ langNote }}</div>
+            <div style="font-size:15px; line-height:1.55; color:var(--attention-ink); background:var(--attention-tint); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline);">{{ langNote }}</div>
           </sc-if>
         </div>
 
@@ -166,11 +166,11 @@ class Component extends DCLogic {
 
   sheetItem(state) {
     const tone = state === "ok" ? "background:var(--healthy-tint); color:var(--healthy-ink);" : state === "err" ? "background:var(--blocking-tint); color:var(--blocking-ink);" : "background:var(--canvas); color:var(--text);";
-    return "display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; font-size:16px; font-weight:500; text-decoration:none; border:0; border-radius:11px; padding:14px 15px; cursor:pointer; " + tone;
+    return "display:block; width:100%; box-sizing:border-box; text-align:left; font-family:'Onest',sans-serif; font-size:16px; font-weight:500; text-decoration:none; border:0; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); cursor:pointer; " + tone;
   }
 
   chip(open) {
-    return "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--text); background:var(--surface); border:0; border-radius:10px; padding:10px 14px; cursor:pointer; white-space:nowrap;" + (open ? " box-shadow:0 0 0 2px var(--focus);" : "");
+    return "font-family:'Onest',sans-serif; font-size:15px; font-weight:600; color:var(--text); background:var(--surface); border:0; border-radius:var(--radius-control); padding:10px 14px; cursor:pointer; white-space:nowrap;" + (open ? " box-shadow:0 0 0 2px var(--focus);" : "");
   }
 
   renderVals() {

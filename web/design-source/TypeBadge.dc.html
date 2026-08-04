@@ -70,7 +70,7 @@ class Component extends DCLogic {
 
   renderVals() {
     const t = TYPES[this.props.type] || { word: this.props.type || "unknown type", prefix: "??", bg: "var(--hairline)", fg: "var(--body)", ring: "inset 0 0 0 1px var(--border-strong)" };
-    const size = this.props.size === "small" ? 13 : 14;
+    const size = this.props.size === "small" ? "var(--font-badge-small)" : "var(--font-badge-default)";
     const lang = document.documentElement.lang === "ru" ? "ru" : "en";
     const glossary = globalThis.A2A_GLOSSARY;
     const entry = glossary && glossary.entry ? glossary.entry("types", this.props.type, lang) : null;
@@ -82,9 +82,9 @@ class Component extends DCLogic {
       why,
       open: !!why && this.state.open,
       wrapStyle: "display:inline-flex; position:relative;" + (why ? " cursor:help;" : ""),
-      badgeStyle: "display:inline-flex; align-items:center; gap:6px; font-family:'Onest',sans-serif; font-size:" + size + "px; font-weight:600; line-height:1.2; border-radius:6px; padding:" + (t.ring ? "3px 10px" : "4px 11px") + "; background:" + t.bg + "; color:" + t.fg + "; box-shadow:" + (t.ring || "none") + "; white-space:nowrap;",
+      badgeStyle: "display:inline-flex; align-items:center; gap:6px; font-family:'Onest',sans-serif; font-size:" + size + "; font-weight:600; line-height:var(--line-badge); border-radius:var(--radius-badge); padding:" + (t.ring ? "var(--padding-badge-outline-block) var(--padding-badge-outline-inline)" : "var(--padding-badge-solid-block) var(--padding-badge-solid-inline)") + "; background:" + t.bg + "; color:" + t.fg + "; box-shadow:" + (t.ring || "none") + "; white-space:nowrap;",
       prefixStyle: "font-family:'IBM Plex Mono',ui-monospace,monospace; opacity:1;",
-      bubbleStyle: "position:fixed; z-index:500; " + this.state.pos + " width:min(320px,76vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:12px; padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
+      bubbleStyle: "position:fixed; z-index:500; " + this.state.pos + " width:min(320px,76vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:var(--radius-chip); padding:12px 14px; font-family:'Onest',sans-serif; font-size:14px; line-height:1.55; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
       enter: why ? (ev) => this.show(ev && ev.currentTarget) : (() => {}),
       leave: why ? () => this.setState({ open: false }) : (() => {}),
       tap: why ? (ev) => {
