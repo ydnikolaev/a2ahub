@@ -154,7 +154,7 @@ func TestDataToolClosedActionsRejectOtherActionsFields(t *testing.T) {
 	for _, input := range []DataInput{
 		{Action: "pack", Contract: "XC-a@1.0.0", From: "d", Profile: "synthetic", Format: "json", PackageID: "DP-a-20260804-aaaa"},
 		{Action: "deliver", StagingRoot: "s", Fulfills: "XW-a-20260804-aaaa", To: "d"},
-		{Action: "fetch", PackageID: "DP-a-20260804-aaaa", To: "d", Pass: true},
+		{Action: "fetch", PackageID: "DP-a-20260804-aaaa", To: "d", Record: true},
 		{Action: "verify", PackageID: "DP-a-20260804-aaaa", To: "d"},
 	} {
 		backend := &fakeMCPDataBackend{}
@@ -250,7 +250,13 @@ func TestDataToolDeliverAndFetchCarryWriteAndOutcome(t *testing.T) {
 	}
 }
 
-func TestDataToolVerifyForwardsPassAndActor(t *testing.T) {
+// TestDataToolVerifyForwardsRecordAndActor is this wave's replacement for
+// the old "Pass" assertion (spec 05a's own design invariant, cmd_data.go's
+// doc comment: --record's write DIRECTION is derived from the report's own
+// result by the core, so a forged pass must be UNREPRESENTABLE, not merely
+// refused). It proves `record` — not a caller-declared verdict — is what
+// reaches the backend, alongside the actor.
+func TestDataToolVerifyForwardsRecordAndActor(t *testing.T) {
 	t.Parallel()
 	record := int64(4108)
 	report, err := datapackage.NewReport(
@@ -269,16 +275,33 @@ func TestDataToolVerifyForwardsPassAndActor(t *testing.T) {
 	backend := &fakeMCPDataBackend{result: DataResult{Report: &report}}
 	spec := testDataTool(t, backend)
 	_, body, callErr := callDataTool(t, spec, DataInput{
-		Action: "verify", PackageID: "DP-axon-20260804-ab12", Pass: true,
+		Action: "verify", PackageID: "DP-axon-20260804-ab12", Record: true,
 		Actor: ActorInput{Kind: "agent", Name: "beta-bot"},
 	})
 	if callErr != nil {
 		t.Fatalf("verify: %v", callErr)
 	}
-	if !backend.verifyReq.Pass || backend.verifyReq.Actor.Name != "beta-bot" {
+	if !backend.verifyReq.Record || backend.verifyReq.Actor.Name != "beta-bot" {
 		t.Fatalf("verify request not forwarded: %+v", backend.verifyReq)
 	}
 	if !strings.Contains(body, "fail") {
 		t.Fatalf("verify summary missing verdict: %q", body)
+	}
+}
+
+// TestDataToolVerifyHasNoPassField is AC-5/D-12's negative half on the MCP
+// surface: DataInput carries no Pass field at all, so a caller-declared
+// verdict is unrepresentable in the wire schema, not merely refused at
+// runtime. decodeDataInput's DisallowUnknownFields (tools_data.go) turns a
+// raw `"pass"` key into a hard decode error rather than silently accepting
+// or ignoring it — proving there is no input, forged or otherwise, that can
+// choose verify's transition direction through this tool.
+func TestDataToolVerifyHasNoPassField(t *testing.T) {
+	t.Parallel()
+	backend := &fakeMCPDataBackend{}
+	spec := testDataTool(t, backend)
+	raw := json.RawMessage(`{"action":"verify","package_id":"DP-axon-20260804-ab12","pass":true}`)
+	if _, _, err := spec.Handler(context.Background(), raw); err == nil || len(backend.calls) != 0 {
+		t.Fatalf("a raw \"pass\" field must be rejected (unknown field), got err=%v calls=%v", err, backend.calls)
 	}
 }

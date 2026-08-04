@@ -34,6 +34,9 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -45,6 +48,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
@@ -668,4 +672,66 @@ func findResponseFilePath(t *testing.T, mirror, branch string) string {
 	}
 	t.Fatalf("findResponseFilePath: no beta/exchanges/XS-*.md under origin/%s; ls-tree:\n%s", branch, out)
 	return ""
+}
+
+// TestWireMCPDataToolIsNotDegraded is the production-registry receipt for
+// this wave's own defect: `a2a_data` was registered DEGRADED in production
+// (BuildRegistryWithContractOperations, internal/mcp/tools.go, hardcoded
+// DataToolDeps{} — every action refused "service is not configured") because
+// nothing wired a production DataOperations implementation into the MCP
+// server. buildMCPServer (wire.go) is the exact function `a2a mcp`'s own
+// dispatch entry runs; this test drives ONE real tools/call for a2a_data
+// through the real Server.Serve JSON-RPC loop — the same path a real client
+// takes — over a project wired by newWireFixture exactly like every other
+// wire-tier case in this file.
+//
+// Seeded-red receipt: change buildMCPServer's else-branch back to
+//
+//	srv, err = mcp.NewServerFromConfigWithContractOperations(ctx, p, binaryVersion, workDeps, newMCPContractOperationsFactory(mainPaths, cfg, machine))
+//
+// (dropping the data factory argument, the pre-wave-05a shape) and this test
+// fails: the response text becomes exactly "a2a_data fetch: service is not
+// configured", which is the assertion below.
+func TestWireMCPDataToolIsNotDegraded(t *testing.T) {
+	newWireFixture(t, "axon", "beta")
+
+	ctx := context.Background()
+	p, err := mcp.ResolvePaths()
+	if err != nil {
+		t.Fatalf("mcp.ResolvePaths: %v", err)
+	}
+	srv, err := buildMCPServer(ctx, p, "0.1.0-wire-tier")
+	if err != nil {
+		t.Fatalf("buildMCPServer: %v", err)
+	}
+
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"a2a_data","arguments":{"action":"fetch","package_id":"DP-axon-20260101-aaaa","to":"` + t.TempDir() + `"}}}` + "\n"
+	var out bytes.Buffer
+	if err := srv.Serve(ctx, strings.NewReader(request), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+
+	var resp struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("decode tools/call response: %v\nraw: %s", err, out.String())
+	}
+	if resp.Error != nil {
+		t.Fatalf("tools/call itself failed (not a handler-level refusal): %+v\nraw: %s", resp.Error, out.String())
+	}
+	if !resp.Result.IsError || len(resp.Result.Content) == 0 {
+		t.Fatalf("expected a handler-level refusal (no such package DP-axon-20260101-aaaa, from a REAL dataCore), got: %s", out.String())
+	}
+	if strings.Contains(resp.Result.Content[0].Text, "service is not configured") {
+		t.Fatalf("a2a_data is registered DEGRADED in production: %s", resp.Result.Content[0].Text)
+	}
 }

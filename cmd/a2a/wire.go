@@ -409,25 +409,7 @@ func buildCommands() map[string]command {
 		if err != nil {
 			return fail(stderr, err)
 		}
-		cfg, cfgErr := space.LoadProjectConfig(p.ProjectConfig)
-		if cfgErr != nil {
-			return failf(stderr, "a2a mcp: %v", cfgErr)
-		}
-		machine, machineErr := space.LoadMachineConfig(p.MachineConfig)
-		if machineErr != nil && !errors.Is(machineErr, os.ErrNotExist) {
-			return failf(stderr, "a2a mcp: %v", machineErr)
-		}
-		var srv *mcp.Server
-		if len(cfg.Spaces) == 0 {
-			srv, err = mcp.NewServerFromConfig(ctx, p, version)
-		} else {
-			mainPaths := paths{projectConfig: p.ProjectConfig, machineConfig: p.MachineConfig, projectRoot: p.ProjectRoot, staging: p.Staging}
-			workDeps, workErr := buildMCPWorkDeps(mainPaths, cfg, machine)
-			if workErr != nil {
-				return failf(stderr, "a2a mcp: %v", workErr)
-			}
-			srv, err = mcp.NewServerFromConfigWithContractOperations(ctx, p, version, workDeps, newMCPContractOperationsFactory(mainPaths, cfg, machine))
-		}
+		srv, err := buildMCPServer(ctx, p, version)
 		if err != nil {
 			return failf(stderr, "a2a mcp: %v", err)
 		}
@@ -438,6 +420,36 @@ func buildCommands() map[string]command {
 	}
 
 	return m
+}
+
+// buildMCPServer is `a2a mcp`'s own production composition step, extracted
+// from the m["mcp"] closure above so it is directly callable by a test that
+// wants the REAL production registry (not a hand-built one) without
+// blocking on srv.Serve's own os.Stdin read. It loads config exactly as the
+// closure did, and — for a connected space — threads BOTH the contract and
+// the data operations factories through
+// mcp.NewServerFromConfigWithOperations, so a revert of either factory
+// argument here is what a production-registry test is exercising.
+func buildMCPServer(ctx context.Context, p mcp.Paths, binaryVersion string) (*mcp.Server, error) {
+	cfg, cfgErr := space.LoadProjectConfig(p.ProjectConfig)
+	if cfgErr != nil {
+		return nil, cfgErr
+	}
+	machine, machineErr := space.LoadMachineConfig(p.MachineConfig)
+	if machineErr != nil && !errors.Is(machineErr, os.ErrNotExist) {
+		return nil, machineErr
+	}
+	if len(cfg.Spaces) == 0 {
+		return mcp.NewServerFromConfig(ctx, p, binaryVersion)
+	}
+	mainPaths := paths{projectConfig: p.ProjectConfig, machineConfig: p.MachineConfig, projectRoot: p.ProjectRoot, staging: p.Staging}
+	workDeps, workErr := buildMCPWorkDeps(mainPaths, cfg, machine)
+	if workErr != nil {
+		return nil, workErr
+	}
+	return mcp.NewServerFromConfigWithOperations(ctx, p, binaryVersion, workDeps,
+		newMCPContractOperationsFactory(mainPaths, cfg, machine),
+		newMCPDataOperationsFactory(mainPaths, cfg, machine))
 }
 
 func htmlDemoRequested(args []string) bool {
@@ -882,7 +894,7 @@ func runData(args []string, stdout, stderr io.Writer) int {
 // <XC-id>@<version>, so syncMirror is also false (mirrors contract
 // preflight/publish's own "read/preflight operations never fetch at all").
 // `deliver` and `verify` can each drive a write (deliver always; verify
-// only under --pass, decided too late for this earlier per-verb policy
+// only under --record, decided too late for this earlier per-verb policy
 // pass, so the safe upper bound is chosen) — both sync the mirror and
 // resolve a credential, exactly like the plain OP-211 lifecycle verbs
 // (resolveLifecycleDeps's own default). `fetch` is read-only but wants a

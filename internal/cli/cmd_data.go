@@ -153,7 +153,7 @@ func (c *DataCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 var _ Command = (*DataCommand)(nil)
 
-// defaultPackExpiry is how long a packed attempt stays fetchable when the
+// DefaultDataPackExpiry is how long a packed attempt stays fetchable when the
 // caller does not say.
 //
 // It is not zero, and that is the whole point: `expires_at` is stamped as
@@ -163,7 +163,13 @@ var _ Command = (*DataCommand)(nil)
 // counterpart could never fetch, and the failure would surface on the OTHER
 // side of a long feedback cycle. A week comfortably outlives a review round
 // without keeping a payload fetchable indefinitely.
-const defaultPackExpiry = 168 * time.Hour
+//
+// Exported so cmd/a2a's dataCore.pack (the one production core BOTH the CLI
+// and MCP surfaces call) can apply the SAME floor when the MCP surface omits
+// --expires entirely — the CLI's own flag default below never lets a zero
+// value reach the core, but MCP has no flag layer to apply a default before
+// the request is built, so the core is the only place both surfaces share.
+const DefaultDataPackExpiry = 168 * time.Hour
 
 // runPack implements `a2a data pack --contract <XC-id>@<version> --from
 // <dir> --profile synthetic|sanitized --format json|ndjson [--expires
@@ -188,7 +194,7 @@ func (c *DataCommand) runPack(ctx context.Context, args []string, stdio IO) int 
 	from := fs.String("from", "", "local source directory")
 	profile := fs.String("profile", "", "synthetic|sanitized")
 	format := fs.String("format", "", "json|ndjson")
-	expires := fs.Duration("expires", defaultPackExpiry, "how long the packed attempt remains fetchable")
+	expires := fs.Duration("expires", DefaultDataPackExpiry, "how long the packed attempt remains fetchable")
 	fulfills := fs.String("fulfills", "", "the work_request this delivery will answer")
 	supersedes := fs.String("supersedes", "", "prior package id this attempt supersedes, empty for a first attempt")
 	maxAttempts := fs.Int("max-attempts", 0, "attempt ceiling; 0 = unset, nothing refused (L-1)")

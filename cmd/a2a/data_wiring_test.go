@@ -13,6 +13,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
@@ -147,6 +148,69 @@ func TestDataCorePackEndToEnd(t *testing.T) {
 	}
 	if string(payloadRaw) != `{"ok":true}` {
 		t.Fatalf("staged payload = %q", payloadRaw)
+	}
+}
+
+// TestMCPDataAdapterPackAppliesDefaultExpiryWhenOmitted proves change #3
+// (spec 05a's own delivery-loop wave): cli.DefaultDataPackExpiry's one-week
+// floor lives in dataCore.pack — the ONE production core BOTH surfaces
+// call — so an MCP `pack` that omits `expires` (mcp.DataPackRequest's own
+// zero time.Duration, tools_data.go's dataDuration returning 0 for an empty
+// string) mints a manifest whose expires_at is a week past its creation
+// instant, not equal to it. Driven through mcpDataAdapter.Pack (not
+// dataCore.pack directly) so the assertion covers the actual MCP-facing
+// seam, not just the core it delegates to.
+func TestMCPDataAdapterPackAppliesDefaultExpiryWhenOmitted(t *testing.T) {
+	t.Parallel()
+
+	from := t.TempDir()
+	if err := os.WriteFile(filepath.Join(from, "orders.json"), []byte(`{"ok":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	schemas := map[string][]byte{dataWiringTestSchemaPath: []byte(dataWiringTestSchema)}
+	core := &dataCore{
+		ownSystem:  "axon",
+		stagingDir: t.TempDir(),
+		now:        func() time.Time { return now },
+		entropy:    rand.Reader,
+		resolveContractSchemas: func(context.Context, string) (map[string][]byte, string, error) {
+			return schemas, "XC-axon-widget@1.0.0#deadbeef", nil
+		},
+	}
+	adapter := mcpDataAdapter{core: core}
+
+	result, err := adapter.Pack(context.Background(), mcp.DataPackRequest{
+		ContractRef: "XC-axon-widget@1.0.0", From: from,
+		Profile: datapackage.DataProfileSynthetic, Format: datapackage.FormatJSON,
+		// Expires deliberately omitted (zero value) — the MCP surface's own
+		// "the caller said nothing" shape.
+	})
+	if err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+	if result.Manifest == nil {
+		t.Fatalf("Manifest = nil")
+	}
+	if result.Manifest.CreatedAt == result.Manifest.ExpiresAt {
+		t.Fatalf("expires_at (%s) equals created_at (%s): the package would be expired at its own creation instant",
+			result.Manifest.ExpiresAt, result.Manifest.CreatedAt)
+	}
+	wantExpiresAt := now.Add(cli.DefaultDataPackExpiry).UTC().Format(time.RFC3339)
+	if result.Manifest.ExpiresAt != wantExpiresAt {
+		t.Fatalf("expires_at = %q, want %q (created_at + DefaultDataPackExpiry)", result.Manifest.ExpiresAt, wantExpiresAt)
+	}
+}
+
+// TestDataPackExpiryFloorRefusesNonPositive is dataPackExpiryFloor's own
+// negative-duration half: an MCP caller CAN express a negative Go duration
+// string (e.g. "-24h", unlike the CLI's flag.Duration usage layer, which
+// refuses it before a request is ever built) — the floor is the only guard
+// standing between that input and a manifest expired before it exists.
+func TestDataPackExpiryFloorRefusesNonPositive(t *testing.T) {
+	t.Parallel()
+	if _, err := dataPackExpiryFloor(-1 * time.Hour); err == nil {
+		t.Fatal("dataPackExpiryFloor(-1h): got nil error, want a refusal")
 	}
 }
 
@@ -380,6 +444,48 @@ func TestDataCoreVerifyRecordDrivesVerifyFailOnAFailingReport(t *testing.T) {
 	}
 	if committed.Result() == datapackage.ResultPass {
 		t.Fatalf("committed report result = %q, want a non-passing result", committed.Result())
+	}
+}
+
+// TestMCPDataAdapterVerifyRecordDrivesVerifyFailOnAFailingReport is this
+// wave's change #2 acceptance line, driven through the ACTUAL MCP-facing
+// seam rather than dataCore.verify directly: with a FAILING report,
+// mcpDataAdapter.Verify(ctx, mcp.DataVerifyRequest{Record: true, ...})
+// results in a committed verify-fail transition. mcp.DataVerifyRequest has
+// no Pass/verdict field at all — record is the only input that can drive a
+// write, and its direction is derived from the report inside dataCore.verify
+// (untouched by this translation layer) — so there is structurally no input
+// through this adapter that can produce verify-pass on a failing report. The
+// companion proof that the wire schema itself carries no such field is
+// internal/mcp's own TestDataToolVerifyHasNoPassField (a raw "pass" key is a
+// hard decode error, DisallowUnknownFields).
+//
+// This test's own distinct property — over dataCore.verify's existing
+// TestDataCoreVerifyRecordDrivesVerifyFailOnAFailingReport receipt (removing
+// datapackage.VerifyPass, which that test already covers) — is the
+// TRANSLATION layer this file adds. Seeded-red receipt: in
+// mcpDataAdapter.Verify, hardcode `Record: false` instead of forwarding
+// `req.Record` — this test then fails with "record did not drive a write",
+// proving the adapter (not just the core) actually threads the caller's
+// record flag through.
+func TestMCPDataAdapterVerifyRecordDrivesVerifyFailOnAFailingReport(t *testing.T) {
+	t.Parallel()
+
+	core, doc, fake := newRecordTestDataCore(t, []byte(`{"ok":false}`))
+	adapter := mcpDataAdapter{core: core}
+
+	result, err := adapter.Verify(context.Background(), mcp.DataVerifyRequest{PackageID: doc.ID, Record: true})
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if result.Report == nil || result.Report.Result() == datapackage.ResultPass {
+		t.Fatalf("report = %+v, want a non-passing report", result.Report)
+	}
+	if result.Write == nil || len(fake.Pushes) != 1 || len(fake.Opens) != 1 {
+		t.Fatalf("record did not drive a write for a failing report: Write=%+v pushes=%d opens=%d", result.Write, len(fake.Pushes), len(fake.Opens))
+	}
+	if got := dataWiringCommittedEventTransition(t, core.mirrorDir, result.Write.Branch); got != "verify-fail" {
+		t.Fatalf("committed event transition = %q, want verify-fail (never verify-pass — the direction is derived from the report, not chosen)", got)
 	}
 }
 

@@ -137,7 +137,7 @@ func dataTargetFlagGrammar(action string) (valueFlags, booleanFlags map[string]b
 	case "fetch":
 		return values("to"), booleans("json"), true
 	case "verify":
-		return values(actorFlags...), booleans("pass", "json"), true
+		return values(actorFlags...), booleans("record", "json"), true
 	default:
 		return nil, nil, false
 	}

@@ -68,8 +68,16 @@ type DataFetchRequest struct {
 type DataVerifyRequest struct {
 	Space     string
 	PackageID string
-	Pass      bool
-	Actor     ActorInput
+	// Record performs ONE funnel write carrying the verification-report/v1
+	// document AND the lifecycle event on the handoff. Its DIRECTION
+	// (verify-pass or verify-fail) is derived from the report's own result
+	// by the core — there is no field here to choose it (mirrors
+	// cli.DataVerifyRequest's own Record, spec 05a plan D-12): a forged
+	// pass must be unrepresentable, not merely refused. There is
+	// deliberately no Pass field: alone, verify judges and prints, writing
+	// nothing.
+	Record bool
+	Actor  ActorInput
 }
 
 // DataResult mirrors cli.DataResult's own wire shape field-for-field —
@@ -80,6 +88,11 @@ type DataResult struct {
 	Outcome   string                `json:"outcome,omitempty"`
 	Write     *space.WriteResult    `json:"write,omitempty"`
 	HandoffID string                `json:"handoff_id,omitempty"`
+	// StagingRoot is pack's own output — the exact argument action=deliver
+	// takes next (mirrors cli.DataResult's own StagingRoot doc comment):
+	// without it an MCP caller that packed a delivery would have no way to
+	// name the staging root deliver requires, ever again.
+	StagingRoot string `json:"staging_root,omitempty"`
 }
 
 // DataOperations is the whole data surface behind one interface — the MCP
@@ -130,7 +143,7 @@ type DataInput struct {
 	ExpectPack  string     `json:"expect_pack,omitempty"`
 	PackageID   string     `json:"package_id,omitempty"`
 	To          string     `json:"to,omitempty"`
-	Pass        bool       `json:"pass,omitempty"`
+	Record      bool       `json:"record,omitempty"`
 	Actor       ActorInput `json:"actor,omitempty"`
 }
 
@@ -149,7 +162,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 
 		switch in.Action {
 		case "pack":
-			if err := dataForbidInput(in, "staging_root", "expect_pack", "package_id", "to", "pass"); err != nil {
+			if err := dataForbidInput(in, "staging_root", "expect_pack", "package_id", "to", "record"); err != nil {
 				return nil, "", err
 			}
 			if in.Contract == "" || in.From == "" || in.Profile == "" || in.Format == "" {
@@ -165,7 +178,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			})
 			return result, dataSummary("pack", result), callErr
 		case "deliver":
-			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "max_attempts", "package_id", "to", "pass"); err != nil {
+			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "max_attempts", "package_id", "to", "record"); err != nil {
 				return nil, "", err
 			}
 			if in.StagingRoot == "" || in.Fulfills == "" {
@@ -177,7 +190,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			})
 			return result, dataSummary("deliver", result), callErr
 		case "fetch":
-			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "pass", "actor"); err != nil {
+			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "record", "actor"); err != nil {
 				return nil, "", err
 			}
 			if in.PackageID == "" || in.To == "" {
@@ -192,7 +205,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			if in.PackageID == "" {
 				return nil, "", fmt.Errorf("a2a_data verify: package_id is required")
 			}
-			result, callErr := deps.Operations.Verify(ctx, DataVerifyRequest{Space: in.Space, PackageID: in.PackageID, Pass: in.Pass, Actor: in.Actor})
+			result, callErr := deps.Operations.Verify(ctx, DataVerifyRequest{Space: in.Space, PackageID: in.PackageID, Record: in.Record, Actor: in.Actor})
 			return result, dataSummary("verify", result), callErr
 		default:
 			panic("unreachable closed a2a_data action")
@@ -232,8 +245,8 @@ func dataForbidInput(in DataInput, fields ...string) error {
 			present = in.PackageID != ""
 		case "to":
 			present = in.To != ""
-		case "pass":
-			present = in.Pass
+		case "record":
+			present = in.Record
 		case "actor":
 			present = in.Actor != (ActorInput{})
 		default:
@@ -318,6 +331,6 @@ func dataToolSchema() json.RawMessage {
 		"space": "string", "contract": "string", "from": "string", "profile": "string",
 		"format": "string", "expires": "string", "fulfills": "string", "supersedes": "string",
 		"max_attempts": "integer", "staging_root": "string", "expect_pack": "string",
-		"package_id": "string", "to": "string", "pass": "boolean", "actor": "object",
+		"package_id": "string", "to": "string", "record": "boolean", "actor": "object",
 	})
 }
