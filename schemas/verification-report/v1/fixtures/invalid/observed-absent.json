@@ -1,0 +1,22 @@
+{
+  "schema": "verification-report/v1",
+  "id": "VR-seomatrix-20260804-q7w2",
+  "thread": "thread:axon-20260721-k3f9",
+  "package": {
+    "id": "DP-axon-20260804-k3f9",
+    "aggregate_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "contract": "XC-axon-order-api@2.3.0#sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "consumer": "seomatrix",
+  "checks": [
+    {
+      "id": "CHK-orders-schema",
+      "path": "data/orders.json",
+      "status": "pass",
+      "violations": []
+    }
+  ],
+  "result": "pass",
+  "started_at": "2026-08-04T13:00:00Z",
+  "finished_at": "2026-08-04T13:00:01Z"
+}

@@ -1,0 +1,41 @@
+{
+  "schema": "data-package/v1",
+  "id": "DP-axon-20260805-m7q2",
+  "thread": "thread:axon-20260721-k3f9",
+  "contract": "XC-axon-order-api@2.3.0#sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "mode": "snapshot",
+  "classification": "restricted",
+  "data_profile": "sanitized",
+  "format": "ndjson",
+  "transport_driver": "space-git",
+  "locator": "checkout-core/deliveries/DP-axon-20260805-m7q2",
+  "entries": [
+    {
+      "path": "data/orders.ndjson",
+      "role": "dataset",
+      "media_type": "application/x-ndjson",
+      "conforms_to": "schema/order.schema.json",
+      "size_bytes": 8192,
+      "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "record_count": 0
+    },
+    {
+      "path": "data/index.json",
+      "role": "index",
+      "media_type": "application/json",
+      "size_bytes": 64,
+      "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  ],
+  "aggregate_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "size_bytes": 8256,
+  "record_count": 0,
+  "created_at": "2026-08-05T09:00:00Z",
+  "expires_at": "2026-09-05T09:00:00Z",
+  "supersedes": "DP-axon-20260804-k3f9",
+  "attempt": 2,
+  "provenance": {
+    "origin_system": "axon-orders-db",
+    "extracted_at": "2026-08-05T08:59:30Z"
+  }
+}

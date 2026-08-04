@@ -64,7 +64,7 @@ var allProfiles = []string{
 	"export-source-v1",
 }
 
-const publishedV1ManifestDigest = "fbf7b01a7e024e2431c2104422df28c5d74595d509fe61cd6a03a0d9fd59a599"
+const publishedV1ManifestDigest = "38b833f3b57c35029ba94f75566714f690a96658eba1a4fd2d9b79ef62f5fa93"
 
 var canonicalBuilderFunctions = map[string]bool{
 	"BuildCarriedSet":      true,
@@ -75,16 +75,29 @@ var canonicalBuilderFunctions = map[string]bool{
 	"digestBytes":          true,
 }
 
+// combineDigestAllowlist names every file permitted to compose an aggregate
+// digest from per-file digests. The rule this enforces is "one aggregate
+// implementation", not "one caller of it": a second CALLER of the single
+// shipped function is exactly what keeps a second implementation from being
+// written, which is why internal/datapackage/entryset.go is here. A data
+// package and a contract carried set are hashed by the same function on
+// purpose (spec 05a §5, plan D-3) — a verdict must be able to name bytes the
+// other side can reproduce, and two aggregate algorithms is precisely how
+// that stops being true.
 var combineDigestAllowlist = map[string]bool{
-	"internal/artifact/digesttree.go":         true,
-	"internal/contract/set.go":                true,
-	"internal/contract/publication_plan.go":   true,
+	"internal/artifact/digesttree.go":       true,
+	"internal/contract/set.go":              true,
+	"internal/contract/publication_plan.go": true,
+	"internal/datapackage/entryset.go":      true,
 }
 
 var combineDigestCallCeiling = map[string]int{
 	"internal/artifact/digesttree.go":       1,
 	"internal/contract/set.go":              3,
 	"internal/contract/publication_plan.go": 1,
+	// BuildEntrySet composes the aggregate for a fresh pack; VerifyEntrySet
+	// recomputes it from entries already verified one by one (L-3's ordering).
+	"internal/datapackage/entryset.go": 2,
 }
 
 var legacySubtreeAllowlist = map[string]bool{}

@@ -18,19 +18,23 @@ var envelopeTypes = []string{
 }
 
 const (
-	familyConsumes     = "consumes"
-	familyEnvelope     = "envelope"
-	familyEvent        = "event"
-	familyKnownIssues  = "known-issues"
-	familyManifest     = "manifest"
-	familyReleaseNotes = "release-notes"
+	familyConsumes           = "consumes"
+	familyDataPackage        = "data-package"
+	familyEnvelope           = "envelope"
+	familyEvent              = "event"
+	familyKnownIssues        = "known-issues"
+	familyManifest           = "manifest"
+	familyReleaseNotes       = "release-notes"
+	familyVerificationReport = "verification-report"
 
-	typeBase         = "base"
-	typeConsumes     = "consumes"
-	typeEvent        = "event"
-	typeKnownIssues  = "known-issues"
-	typeReleaseNotes = "release-notes"
-	typeSpace        = "space"
+	typeBase               = "base"
+	typeConsumes           = "consumes"
+	typeDataPackage        = "data-package"
+	typeEvent              = "event"
+	typeKnownIssues        = "known-issues"
+	typeReleaseNotes       = "release-notes"
+	typeSpace              = "space"
+	typeVerificationReport = "verification-report"
 )
 
 // corpusKey is the complete identity of one shipped product schema. Family
@@ -72,6 +76,8 @@ var corpusDefinitions = []corpusDefinition{
 	{key: corpusKey{family: familyConsumes, version: 1, typ: typeConsumes}, path: "consumes/v1/consumes.schema.json"},
 	{key: corpusKey{family: familyReleaseNotes, version: 1, typ: typeReleaseNotes}, path: "release-notes/v1/release-notes.schema.json"},
 	{key: corpusKey{family: familyKnownIssues, version: 1, typ: typeKnownIssues}, path: "known-issues/v1/known-issues.schema.json"},
+	{key: corpusKey{family: familyDataPackage, version: 1, typ: typeDataPackage}, path: "data-package/v1/data-package.schema.json"},
+	{key: corpusKey{family: familyVerificationReport, version: 1, typ: typeVerificationReport}, path: "verification-report/v1/verification-report.schema.json"},
 }
 
 // resourceURLPrefix is a synthetic, non-dereferenced URI namespace used
@@ -331,6 +337,27 @@ func (c *Corpus) ValidateReleaseNotes(instance any) ([]FieldViolation, error) {
 // ValidateKnownIssues validates the single current known-issues document.
 func (c *Corpus) ValidateKnownIssues(instance any) ([]FieldViolation, error) {
 	sch, _ := c.schemaFor(corpusKey{family: familyKnownIssues, version: 1, typ: typeKnownIssues})
+	return extractFieldViolations(sch.Validate(instance), nil), nil
+}
+
+// ValidateDataPackage validates instance against the data-package/v1
+// schema (spec 05a §T2.1). Same shape as ValidateReleaseNotes/
+// ValidateKnownIssues: a flat, non-envelope wire document with no
+// version-overlap window — "data-package/v1" is the schema field's own
+// literal const, not a per-instance version selector.
+func (c *Corpus) ValidateDataPackage(instance any) ([]FieldViolation, error) {
+	sch, _ := c.schemaFor(corpusKey{family: familyDataPackage, version: 1, typ: typeDataPackage})
+	return extractFieldViolations(sch.Validate(instance), nil), nil
+}
+
+// ValidateVerificationReport validates instance against the
+// verification-report/v1 schema (spec 05a §T2.3), including its
+// result-derivation conditional: a report whose result contradicts its own
+// checks[] is rejected here, not merely by Go-side construction discipline
+// (internal/datapackage.NewReport) — see that package's report.go for why
+// both layers exist.
+func (c *Corpus) ValidateVerificationReport(instance any) ([]FieldViolation, error) {
+	sch, _ := c.schemaFor(corpusKey{family: familyVerificationReport, version: 1, typ: typeVerificationReport})
 	return extractFieldViolations(sch.Validate(instance), nil), nil
 }
 

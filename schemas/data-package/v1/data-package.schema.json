@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "data-package/v1/data-package.schema.json",
+  "title": "Data package (v1) — one immutable delivery attempt",
+  "description": "Spec 05a §T2.1/§T2.2. A carried document, not a ninth envelope type: it has no lifecycle of its own and enters the space through the handoff that carries it. Its id takes the exchange-broadcast shape (date + rand4), deliberately outside the X- namespace — every attempt is a new immutable document, never a standing artifact that accrues versions (plan D-1).",
+  "type": "object",
+  "properties": {
+    "schema": { "const": "data-package/v1" },
+    "id": {
+      "$ref": "#/$defs/packageId",
+      "description": "DP-<system>-<YYYYMMDD>-<rand4>. Not an X- prefix: XD- is already the live, closed prefix for `decision` (plan D-1) and a package minted with it would silently route as one."
+    },
+    "thread": {
+      "$ref": "#/$defs/threadId",
+      "description": "The same thread as the handoff that carries this package."
+    },
+    "contract": {
+      "$ref": "#/$defs/pinnedContractRef",
+      "description": "The exact contract version this package was packed and verified against: <XC-id>@<version>#<digest>."
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["snapshot"],
+      "description": "snapshot only in this phase; live is reserved for the remainder (CONFIRM-5) and is deliberately not a member yet."
+    },
+    "classification": {
+      "type": "string",
+      "enum": ["public", "internal", "restricted"],
+      "description": "Must satisfy the space's own policy."
+    },
+    "data_profile": {
+      "type": "string",
+      "enum": ["synthetic", "sanitized"],
+      "description": "production is not a member: refused structurally here as well as by the pack-time refusal (§T2.4)."
+    },
+    "format": {
+      "type": "string",
+      "enum": ["json", "ndjson"],
+      "description": "Closed set, extended by amendment only."
+    },
+    "transport_driver": {
+      "type": "string",
+      "enum": ["space-git"],
+      "description": "space-git is the only driver this phase ships."
+    },
+    "locator": {
+      "$ref": "#/$defs/cleanRelativePath",
+      "description": "Driver-scoped; for space-git the package root relative to the space. The clean-relative-path shape structurally excludes a credential, a token or an absolute local path (no leading '/', no ':', no '@', no '\\\\')."
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "aggregate_digest": {
+      "$ref": "#/$defs/sha256",
+      "description": "Digest over the canonical entry set; what a verdict names."
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Sum of entry sizes; bounded before fetch."
+    },
+    "record_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Producer's honest claim; the consumer re-counts and records both."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Producer clock; never a protocol ordering key."
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "After this instant a fetch is refused."
+    },
+    "supersedes": {
+      "$ref": "#/$defs/packageId",
+      "description": "The prior attempt this replaces."
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1 for the first delivery on this request; supersedes.attempt + 1 thereafter."
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance",
+      "description": "Sanitized source description: origin system, cursor/watermark, extraction time."
+    }
+  },
+  "required": [
+    "schema", "id", "thread", "contract", "mode", "classification",
+    "data_profile", "format", "transport_driver", "locator", "entries",
+    "aggregate_digest", "size_bytes", "record_count", "created_at",
+    "expires_at", "attempt", "provenance"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "description": "attempt and supersedes must agree: the first attempt on a request carries no supersedes, and every later attempt must name the one it replaces.",
+      "if": {
+        "properties": { "attempt": { "const": 1 } },
+        "required": ["attempt"]
+      },
+      "then": { "not": { "required": ["supersedes"] } },
+      "else": { "required": ["supersedes"] }
+    }
+  ],
+  "$defs": {
+    "packageId": {
+      "type": "string",
+      "pattern": "^DP-[a-z0-9]+-[0-9]{8}-[0-9abcdefghjkmnpqrstvwxyz]{4}$"
+    },
+    "threadId": {
+      "type": "string",
+      "pattern": "^thread:[a-z0-9]+-[0-9]{8}-[0-9abcdefghjkmnpqrstvwxyz]{4}$"
+    },
+    "pinnedContractRef": {
+      "type": "string",
+      "pattern": "^XC-[a-z0-9]+-[A-Za-z0-9]+(-[A-Za-z0-9]+)*@(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)#sha256:[a-f0-9]{64}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "cleanRelativePath": {
+      "type": "string",
+      "description": "Package-root-relative, contained, no traversal, no absolute path, no credential shape: a leading '/', a drive letter, '\\\\', ':' or '@' cannot match this pattern.",
+      "pattern": "^(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,})(?:/(?:[A-Za-z0-9._-]*[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.{3,}))*$"
+    },
+    "mediaType": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9!#$&^_.+*-]*/[a-z0-9][a-z0-9!#$&^_.+*-]*$"
+    },
+    "entry": {
+      "type": "object",
+      "description": "Deliberately the same shape a contract's carried set already uses (§T2.2).",
+      "properties": {
+        "path": { "$ref": "#/$defs/cleanRelativePath" },
+        "role": { "type": "string", "enum": ["dataset", "index", "readme"] },
+        "media_type": { "$ref": "#/$defs/mediaType" },
+        "conforms_to": {
+          "$ref": "#/$defs/cleanRelativePath",
+          "description": "The contract schema entry this file is checked against. Required on dataset entries, and only those."
+        },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "record_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Per-file claim, required on dataset entries."
+        }
+      },
+      "required": ["path", "role", "media_type", "size_bytes", "digest"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "role": { "const": "dataset" } },
+            "required": ["role"]
+          },
+          "then": { "required": ["conforms_to", "record_count"] },
+          "else": { "properties": { "conforms_to": false } }
+        }
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "origin_system": { "type": "string", "minLength": 1 },
+        "cursor": { "type": "string" },
+        "extracted_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["origin_system", "extracted_at"],
+      "additionalProperties": false
+    }
+  }
+}

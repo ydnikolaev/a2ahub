@@ -1,0 +1,1313 @@
+{
+  "schema": "verification-report/v1",
+  "id": "VR-seomatrix-20260804-q7w2",
+  "thread": "thread:axon-20260721-k3f9",
+  "package": {
+    "id": "DP-axon-20260804-k3f9",
+    "aggregate_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "contract": "XC-axon-order-api@2.3.0#sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "consumer": "seomatrix",
+  "checks": [
+    {
+      "id": "CHK-orders-schema",
+      "path": "data/orders.json",
+      "status": "fail",
+      "violations": [
+        {
+          "instance_pointer": "/0/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/1/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/2/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/3/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/4/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/5/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/6/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/7/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/8/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/9/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/10/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/11/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/12/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/13/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/14/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/15/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/16/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/17/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/18/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/19/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/20/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/21/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/22/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/23/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/24/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/25/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/26/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/27/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/28/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/29/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/30/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/31/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/32/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/33/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/34/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/35/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/36/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/37/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/38/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/39/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/40/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/41/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/42/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/43/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/44/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/45/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/46/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/47/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/48/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/49/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/50/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/51/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/52/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/53/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/54/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/55/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/56/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/57/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/58/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/59/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/60/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/61/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/62/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/63/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/64/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/65/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/66/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/67/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/68/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/69/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/70/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/71/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/72/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/73/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/74/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/75/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/76/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/77/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/78/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/79/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/80/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/81/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/82/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/83/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/84/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/85/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/86/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/87/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/88/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/89/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/90/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/91/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/92/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/93/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/94/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/95/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/96/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/97/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/98/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/99/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/100/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/101/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/102/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/103/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/104/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/105/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/106/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/107/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/108/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/109/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/110/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/111/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/112/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/113/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/114/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/115/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/116/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/117/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/118/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/119/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/120/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/121/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/122/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/123/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/124/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/125/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/126/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/127/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/128/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/129/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/130/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/131/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/132/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/133/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/134/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/135/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/136/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/137/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/138/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/139/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/140/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/141/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/142/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/143/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/144/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/145/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/146/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/147/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/148/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/149/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/150/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/151/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/152/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/153/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/154/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/155/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/156/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/157/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/158/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/159/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/160/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/161/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/162/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/163/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/164/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/165/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/166/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/167/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/168/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/169/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/170/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/171/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/172/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/173/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/174/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/175/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/176/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/177/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/178/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/179/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/180/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/181/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/182/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/183/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/184/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/185/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/186/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/187/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/188/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/189/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/190/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/191/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/192/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/193/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/194/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/195/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/196/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/197/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/198/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/199/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/200/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/201/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/202/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/203/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/204/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/205/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/206/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/207/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/208/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/209/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/210/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/211/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/212/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/213/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/214/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/215/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/216/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/217/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/218/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/219/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/220/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/221/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/222/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/223/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/224/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/225/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/226/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/227/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/228/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/229/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/230/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/231/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/232/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/233/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/234/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/235/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/236/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/237/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/238/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/239/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/240/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/241/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/242/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/243/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/244/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/245/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/246/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/247/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/248/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/249/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/250/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/251/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/252/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/253/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/254/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/255/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        },
+        {
+          "instance_pointer": "/256/order_id",
+          "schema_pointer": "/properties/order_id/type",
+          "message": "expected string, got integer"
+        }
+      ]
+    }
+  ],
+  "observed": {
+    "record_count": 12,
+    "size_bytes": 4096,
+    "duration_ms": 340
+  },
+  "result": "fail",
+  "started_at": "2026-08-04T13:00:00Z",
+  "finished_at": "2026-08-04T13:00:01Z"
+}
