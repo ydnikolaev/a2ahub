@@ -19,6 +19,18 @@ type liveContractPaths struct {
 	ValidFixtureKey string
 }
 
+// contractPublishVersionArgs keeps the two honest publication sources
+// explicit. An empty staging path publishes the already-landed contract; a
+// non-empty path selects a complete materialized candidate (including its own
+// contract.md), never contract-new's transient sidecar directory by accident.
+func contractPublishVersionArgs(contractID, version, staging string) []string {
+	args := []string{"contract", "publish", contractID, "--version", version}
+	if staging != "" {
+		args = append(args, "--staging", staging)
+	}
+	return args
+}
+
 func contractPathsForID(contractID string) (liveContractPaths, error) {
 	parsed, err := artifact.ParseID(contractID)
 	if err != nil {

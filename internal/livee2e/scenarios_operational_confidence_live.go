@@ -678,7 +678,7 @@ func operationalStaticServer(ctx context.Context, oc *operationalConfidenceRun) 
 		return proof, VerdictFail, fmt.Errorf("SSE was not revision-only: %w: %q", err, sseBlock)
 	}
 	proof.Pass("sse-revision-only")
-	if err := operationalAwaitConditionalSnapshot(ctx, baseURL+"/api/v1/snapshot", initial.Revision, "server checkpoint committed"); err != nil {
+	if err := operationalAwaitConditionalSnapshot(ctx, baseURL+"/api/v1/snapshot", initial.Revision, "server proof complete"); err != nil {
 		return proof, VerdictFail, err
 	}
 	proof.Pass("conditional-snapshot")
@@ -696,6 +696,15 @@ func operationalContractPublish(ctx context.Context, oc *operationalConfidenceRu
 	if err := operationalWriteContractCandidate(stage, id, "0.0.0", false); err != nil {
 		return proof, VerdictFail, err
 	}
+	draftDescriptor, err := readBoundedRuntimeFile(filepath.Join(stage, "contract.md"), maxEvidenceBytes)
+	if err != nil {
+		return proof, VerdictFail, fmt.Errorf("read standing contract draft: %w", err)
+	}
+	flatDraft := filepath.Join(oc.h.A.Dir, ".a2a", "staging", id+".md")
+	if err := os.WriteFile(flatDraft, draftDescriptor, 0o644); err != nil {
+		return proof, VerdictFail, fmt.Errorf("write standing contract draft: %w", err)
+	}
+	oc.cleanup.Register(owner, func(context.Context) error { return ignoreNotExist(os.Remove(flatDraft)) })
 	oc.cleanup.Register(owner, func(context.Context) error { return os.RemoveAll(stage) })
 	oc.contractID, oc.contractStage = id, stageRel
 	submitted, err := oc.h.submitDrafted(ctx, oc.h.A, id)
@@ -707,6 +716,9 @@ func operationalContractPublish(ctx context.Context, oc *operationalConfidenceRu
 	proof.artifacts = append(proof.artifacts, id)
 	if err := happyLandAndSync(ctx, oc.h, oc.h.A, submitted.PRNumber); err != nil {
 		return proof, VerdictFail, err
+	}
+	if err := operationalWriteContractCandidate(stage, id, "0.0.0", false); err != nil {
+		return proof, VerdictFail, fmt.Errorf("rebuild complete staging candidate after submit cleanup: %w", err)
 	}
 	beforePulls, err := oc.h.runPulls(ctx)
 	if err != nil {
