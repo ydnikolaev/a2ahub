@@ -142,6 +142,10 @@
     "description_template": "a2ahub agent documentation: {title}.",
     "llms_section": "Operate the protocol",
     "structured_data": "tech-article",
-    "html_budget_kib": 36
+    "html_budget_kib": 36,
+    "html_budget_kib_note": "36 is the ceiling for every documentation page; html_budget_kib_by_id tunes the ones that legitimately carry more, the same way the top-level routes above do.",
+    "html_budget_kib_by_id": {
+      "work-loops": 38
+    }
   }
 }
