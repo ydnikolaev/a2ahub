@@ -41,6 +41,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
@@ -464,7 +465,40 @@ func (c *dataCore) buildHandoffDraft(handoffID string, actor template.Actor, wrE
 // Refusing the ambiguous flat-root case is the point, not a gap: a pack
 // that silently picked one of several schemas would produce a package whose
 // verdict means nothing (spec 05a §T2.3.5's own framing).
+// dataPackExpiryFloor applies the SAME one-week default and non-positive
+// refusal cli.DataCommand.runPack's own --expires flag already enforces
+// (internal/cli/cmd_data.go), moved into the one production core BOTH
+// surfaces call. The CLI's flag default means req.Expires can never be 0 by
+// the time it reaches here (an explicit --expires 0 is refused at the CLI's
+// own usage layer first), so this floor is a no-op on that path; the MCP
+// surface has no flag layer, so an omitted `expires` field decodes to a zero
+// time.Duration (dataDuration's own doc comment) and would otherwise mint a
+// manifest expired at its own creation instant — exactly the failure
+// DefaultDataPackExpiry's own doc comment exists to prevent. The CLI's own
+// refusal stays in place too (cmd_data.go:200-205): it can tell "typed a
+// non-positive value" from "omitted the flag" and its message is more
+// specific, so it fires first; this is the floor that catches every caller,
+// including MCP, which has no equivalent usage-layer guard.
+func dataPackExpiryFloor(expires time.Duration) (time.Duration, error) {
+	switch {
+	case expires == 0:
+		return cli.DefaultDataPackExpiry, nil
+	case expires < 0:
+		return 0, fmt.Errorf(
+			"data: pack: expires must be positive (got %s): expires_at is stamped as now + this duration, and `a2a data fetch` refuses an expired package, so a non-positive value produces an attempt the consumer can never fetch",
+			expires)
+	default:
+		return expires, nil
+	}
+}
+
 func (c *dataCore) pack(ctx context.Context, req cli.DataPackRequest) (cli.DataResult, error) {
+	expires, err := dataPackExpiryFloor(req.Expires)
+	if err != nil {
+		return cli.DataResult{}, err
+	}
+	req.Expires = expires
+
 	schemas, pinnedRef, err := c.resolveContractSchemas(ctx, req.ContractRef)
 	if err != nil {
 		return cli.DataResult{}, err
@@ -1211,3 +1245,159 @@ func (a cliDataAdapter) Verify(ctx context.Context, req cli.DataVerifyRequest) (
 }
 
 var _ cli.DataOperations = cliDataAdapter{}
+
+// --- mcp.DataOperations adapter -------------------------------------------
+
+type mcpDataAdapter struct{ core *dataCore }
+
+func (a mcpDataAdapter) Pack(ctx context.Context, req mcp.DataPackRequest) (mcp.DataResult, error) {
+	result, err := a.core.pack(ctx, cli.DataPackRequest{
+		ContractRef: req.ContractRef, From: req.From, Profile: req.Profile, Format: req.Format,
+		Expires: req.Expires, Fulfills: req.Fulfills, Supersedes: req.Supersedes, MaxAttempts: req.MaxAttempts,
+	})
+	return mcpDataResultOf(result), err
+}
+
+func (a mcpDataAdapter) Deliver(ctx context.Context, req mcp.DataDeliverRequest) (mcp.DataResult, error) {
+	result, err := a.core.deliver(ctx, cli.DataDeliverRequest{
+		StagingRoot: req.StagingRoot, Fulfills: req.Fulfills, Supersedes: req.Supersedes, ExpectPack: req.ExpectPack,
+		Actor: cli.ActorFlags{Kind: req.Actor.Kind, Name: req.Actor.Name, Model: req.Actor.Model},
+	})
+	return mcpDataResultOf(result), err
+}
+
+func (a mcpDataAdapter) Fetch(ctx context.Context, req mcp.DataFetchRequest) (mcp.DataResult, error) {
+	result, err := a.core.fetch(ctx, cli.DataFetchRequest{PackageID: req.PackageID, Destination: req.Destination})
+	return mcpDataResultOf(result), err
+}
+
+func (a mcpDataAdapter) Verify(ctx context.Context, req mcp.DataVerifyRequest) (mcp.DataResult, error) {
+	result, err := a.core.verify(ctx, cli.DataVerifyRequest{
+		PackageID: req.PackageID, Record: req.Record,
+		Actor: cli.ActorFlags{Kind: req.Actor.Kind, Name: req.Actor.Name, Model: req.Actor.Model},
+	})
+	return mcpDataResultOf(result), err
+}
+
+// mcpDataResultOf translates cli.DataResult to mcp.DataResult — the two
+// types carry the identical field set (internal/datapackage.Document/Report
+// and space.WriteResult reused verbatim on both sides of the ADR-001
+// boundary, exactly as cli.DataResult's own doc comment describes), so this
+// is a field-for-field copy, never a re-derivation.
+func mcpDataResultOf(result cli.DataResult) mcp.DataResult {
+	return mcp.DataResult{
+		Manifest: result.Manifest, Report: result.Report, Outcome: result.Outcome,
+		Write: result.Write, HandoffID: result.HandoffID, StagingRoot: result.StagingRoot,
+	}
+}
+
+var _ mcp.DataOperations = mcpDataAdapter{}
+
+// mcpDataRouter dispatches a2a_data by request.Space across one *dataCore
+// per configured space — mirrors mcpContractP6Router's own fail-closed
+// selection exactly (contract_p6_wiring.go): an empty Space resolves when
+// exactly one space is configured; an empty Space with several connected
+// spaces refuses, naming the ambiguity, rather than silently picking one.
+type mcpDataRouter struct {
+	bySpace map[string]*dataCore
+}
+
+func (r mcpDataRouter) coreFor(spaceID string) (*dataCore, error) {
+	if spaceID != "" {
+		core, ok := r.bySpace[spaceID]
+		if !ok {
+			return nil, fmt.Errorf("a2a_data: space %q is not connected", spaceID)
+		}
+		return core, nil
+	}
+	if len(r.bySpace) == 0 {
+		return nil, fmt.Errorf("a2a_data: no connected space")
+	}
+	if len(r.bySpace) > 1 {
+		return nil, fmt.Errorf("a2a_data: space is required when multiple spaces are connected")
+	}
+	for _, core := range r.bySpace {
+		return core, nil
+	}
+	return nil, fmt.Errorf("a2a_data: no connected space")
+}
+
+func (r mcpDataRouter) adapter(spaceID string) (mcpDataAdapter, error) {
+	core, err := r.coreFor(spaceID)
+	return mcpDataAdapter{core: core}, err
+}
+
+func (r mcpDataRouter) Pack(ctx context.Context, req mcp.DataPackRequest) (mcp.DataResult, error) {
+	adapter, err := r.adapter(req.Space)
+	if err != nil {
+		return mcp.DataResult{}, err
+	}
+	return adapter.Pack(ctx, req)
+}
+
+func (r mcpDataRouter) Deliver(ctx context.Context, req mcp.DataDeliverRequest) (mcp.DataResult, error) {
+	adapter, err := r.adapter(req.Space)
+	if err != nil {
+		return mcp.DataResult{}, err
+	}
+	return adapter.Deliver(ctx, req)
+}
+
+func (r mcpDataRouter) Fetch(ctx context.Context, req mcp.DataFetchRequest) (mcp.DataResult, error) {
+	adapter, err := r.adapter(req.Space)
+	if err != nil {
+		return mcp.DataResult{}, err
+	}
+	return adapter.Fetch(ctx, req)
+}
+
+func (r mcpDataRouter) Verify(ctx context.Context, req mcp.DataVerifyRequest) (mcp.DataResult, error) {
+	adapter, err := r.adapter(req.Space)
+	if err != nil {
+		return mcp.DataResult{}, err
+	}
+	return adapter.Verify(ctx, req)
+}
+
+var _ mcp.DataOperations = mcpDataRouter{}
+
+// newMCPDataOperationsFactory builds mcp.DataOperationsFactory — cmd/a2a's
+// production composition seam for a2a_data, mirroring
+// newMCPContractOperationsFactory's own per-space core map + router shape
+// exactly (contract_p6_wiring.go): one *dataCore per configured space, keyed
+// by space id, wrapped in the router above. resolveMCPActor is injected by
+// internal/mcp/wire.go's own newServerFromConfig (this package's factory
+// signature, DataOperationsFactory, is byte-identical in shape to
+// ContractOperationsFactory) and adapted to dataCore's own
+// func(kind, name, model string) (template.Actor, error) seam exactly as
+// the contract factory adapts it.
+func newMCPDataOperationsFactory(p paths, cfg space.ProjectConfig, machine space.MachineConfig) mcp.DataOperationsFactory {
+	return func(resolveMCPActor mcp.ActorResolver) (mcp.DataToolDeps, error) {
+		engine, err := newEngine()
+		if err != nil {
+			return mcp.DataToolDeps{}, err
+		}
+		cores := make(map[string]*dataCore, len(cfg.Spaces))
+		github := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
+		for _, ref := range cfg.Spaces {
+			owner, name, parseErr := parseGitHubRepo(ref.RepoURL)
+			if parseErr != nil {
+				return mcp.DataToolDeps{}, parseErr
+			}
+			core, coreErr := newDataCore(
+				p.projectRoot, space.ResolveMirrorLocation(p.projectRoot, ref, machine), p.staging, ref.RepoURL, ref.ID, cfg.System,
+				host.Repo{Owner: owner, Name: name}, cfg.System, cfg.System+"@a2a.local", funnelBinaryVersion(),
+				engine, github,
+				func(kind, name, model string) (template.Actor, error) {
+					return resolveMCPActor(mcp.ActorInput{Kind: kind, Name: name, Model: model})
+				},
+				func(ctx context.Context) (host.Credential, error) { return resolveCredential(ctx, ref.ID, machine) },
+			)
+			if coreErr != nil {
+				return mcp.DataToolDeps{}, coreErr
+			}
+			cores[ref.ID] = core
+		}
+		return mcp.DataToolDeps{Operations: mcpDataRouter{bySpace: cores}}, nil
+	}
+}

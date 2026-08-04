@@ -87,7 +87,7 @@ func cacheDirOf(p Paths) string { return filepath.Join(p.ProjectRoot, ".a2a", "c
 // multi-space call; MCP never composes or silently selects a space itself.
 // The result is a ready-to-Serve Server with the full §7.7 tool set.
 func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string, injectedWork ...WorkToolDeps) (*Server, error) {
-	return newServerFromConfig(ctx, p, binaryVersion, nil, injectedWork...)
+	return newServerFromConfig(ctx, p, binaryVersion, nil, nil, injectedWork...)
 }
 
 // ContractOperationsFactory is cmd/a2a's production composition seam. It is
@@ -95,17 +95,43 @@ func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string, inj
 // an unreachable space retains this constructor's read-only degradation.
 type ContractOperationsFactory func(ActorResolver) (ContractToolOperations, error)
 
+// DataOperationsFactory is cmd/a2a's production composition seam for
+// a2a_data — the exact same shape as ContractOperationsFactory (an injected
+// ActorResolver so cmd/a2a's factory can resolve §7.4 identity without this
+// package exporting its own unexported resolveActor), invoked the same way
+// (newServerFromConfig calls it with this package's own resolveActor,
+// mirroring buildContractOperations(resolveActor) exactly). It differs only
+// in what a nil/failing factory costs: contract operations are a hard
+// dependency of the P6 grouped tool, so a failing factory there IS a
+// startup failure, while a2a_data already has a shipped, named degraded
+// path (DataToolDeps{}'s zero value, NewDataTool's own doc comment) — a nil
+// or failing data factory therefore never fails the session, it only keeps
+// a2a_data degraded. See newServerFromConfig's own handling.
+type DataOperationsFactory func(ActorResolver) (DataToolDeps, error)
+
 // NewServerFromConfigWithContractOperations is the production constructor
-// used by cmd/a2a. P6 filesystem/Git/domain adapters are composed at cmd/a2a
-// and injected here; internal/mcp owns only transport registration.
+// used by cmd/a2a for callers not yet supplying data operations. P6
+// filesystem/Git/domain adapters are composed at cmd/a2a and injected here;
+// internal/mcp owns only transport registration. It delegates to
+// NewServerFromConfigWithOperations with a nil data factory, so a2a_data
+// stays degraded exactly as it did before that constructor existed.
 func NewServerFromConfigWithContractOperations(ctx context.Context, p Paths, binaryVersion string, work WorkToolDeps, buildContractOperations ContractOperationsFactory) (*Server, error) {
+	return NewServerFromConfigWithOperations(ctx, p, binaryVersion, work, buildContractOperations, nil)
+}
+
+// NewServerFromConfigWithOperations is the production constructor used by
+// cmd/a2a once a data operations factory is available, threading BOTH
+// contract and data dependencies. P6/data filesystem/Git/domain adapters are
+// composed at cmd/a2a and injected here; internal/mcp owns only transport
+// registration.
+func NewServerFromConfigWithOperations(ctx context.Context, p Paths, binaryVersion string, work WorkToolDeps, buildContractOperations ContractOperationsFactory, buildDataOperations DataOperationsFactory) (*Server, error) {
 	if buildContractOperations == nil {
 		return nil, fmt.Errorf("mcp: production contract dependency factory must be injected by cmd/a2a")
 	}
-	return newServerFromConfig(ctx, p, binaryVersion, buildContractOperations, work)
+	return newServerFromConfig(ctx, p, binaryVersion, buildContractOperations, buildDataOperations, work)
 }
 
-func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, buildContractOperations ContractOperationsFactory, injectedWork ...WorkToolDeps) (*Server, error) {
+func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, buildContractOperations ContractOperationsFactory, buildDataOperations DataOperationsFactory, injectedWork ...WorkToolDeps) (*Server, error) {
 	cfg, err := space.LoadProjectConfig(p.ProjectConfig)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: load project config: %w", err)
@@ -148,6 +174,19 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 			return nil, fmt.Errorf("mcp: production contract dependencies are incomplete")
 		}
 	}
+	var dataOperations DataToolDeps
+	if buildDataOperations != nil {
+		dataOperations, err = buildDataOperations(resolveActor)
+		if err != nil {
+			// Unlike contract operations above, a2a_data has a shipped,
+			// named degraded path (DataOperationsFactory's own doc
+			// comment): the error is reported to stderr and swallowed
+			// rather than failing the whole session.
+			fmt.Fprintf(os.Stderr,
+				"a2a mcp: a2a_data unavailable — could not build data dependencies (%v); serving it degraded.\n", err)
+			dataOperations = DataToolDeps{}
+		}
+	}
 
 	write, submitDeps, newDeps, err := buildWriteDeps(ctx, cfg, machine, p, binaryVersion)
 	if err != nil {
@@ -188,7 +227,7 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 		}
 		return NewServer(registry, "a2a-mcp", binaryVersion, nil), nil
 	}
-	registry = BuildRegistryWithContractOperations(store, write, submitDeps.StagingDir, submitDeps.Legality, newDeps, contractOperations, workDeps)
+	registry = BuildRegistryWithOperations(store, write, submitDeps.StagingDir, submitDeps.Legality, newDeps, contractOperations, dataOperations, workDeps)
 	srv := NewServer(registry, "a2a-mcp", binaryVersion, nil)
 
 	// The session refreshes its mirror before every non-contract write/read
