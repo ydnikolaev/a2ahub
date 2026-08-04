@@ -91,7 +91,7 @@ html[data-theme="dark"] {
   --on-inverse-faint: #A8A08A;
   --on-dark: #FAF7F0;
   --on-solid: #0E0D09;
-  --teal-solid: #2A8395;
+  --teal-solid: #3594A7;
   --teal-ink: #8FD0DB;
   --teal-ink-hover: #B4E2EA;
   --teal-tint: #123039;
@@ -104,7 +104,7 @@ html[data-theme="dark"] {
   --attention-ink: #E8C579;
   --attention-strong: #F4DDAA;
   --attention-line: #6B5320;
-  --red: #D6584A;
+  --red: #E8786C;
   --blocking-tint: #3C1E19;
   --blocking-ink: #F0A79A;
   --blocking-strong: #F7C9C1;
@@ -142,21 +142,21 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
 
     <div style="display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; margin-bottom:28px;">
       <div style="flex:1 1 540px; min-width:0;">
-        <span style="display:inline-block; font-size:15px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:8px; padding:7px 14px; margin-bottom:20px;">Install · macOS and Linux · amd64 and arm64</span>
+        <span style="display:inline-block; font-size:var(--font-badge-default); line-height:var(--line-badge); font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:var(--radius-badge); padding:var(--padding-badge-solid-block) var(--padding-badge-solid-inline); margin-bottom:20px;">Install · macOS and Linux · amd64 and arm64</span>
         <h1 style="margin:0 0 16px; font-size:52px; line-height:1.05; font-weight:600; letter-spacing:-0.03em; max-width:660px; text-wrap:balance;">One binary for the machine. One skill for the agent.</h1>
         <p style="margin:0; font-size:19px; line-height:1.6; color:var(--body); max-width:680px; text-wrap:pretty;">Choose the direct shell path or hand the setup to an agent with the exported Sporo seed. Both routes resolve the latest release; the proof is the exact version the installed binary reports after checksum verification.</p>
       </div>
     </div>
 
-    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr)); gap:16px; align-items:start; margin-bottom:20px;">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr)); gap:var(--space-grid); align-items:start; margin-bottom:var(--space-section);">
 
-      <section style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+      <section style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-          <h2 style="margin:0; font-size:26px; font-weight:600; letter-spacing:-0.02em;">Direct shell install</h2>
+          <h2 style="margin:0; font-size:var(--font-detail-title); line-height:var(--line-detail-title); font-weight:600; letter-spacing:var(--tracking-detail-title);">Direct shell install</h2>
           <dc-import name="StatusPill" text="POSIX shell" tone="neutral" size="small" hint-size="90px,24px"></dc-import>
         </div>
         <p style="margin:0 0 16px; font-size:17px; line-height:1.6; color:var(--body); max-width:34em;">One command. It resolves the latest GitHub release, downloads the platform binary with its checksums, and refuses to continue if they disagree.</p>
-        <div style="background:var(--inverse); border-radius:11px; padding:14px 16px; margin-bottom:14px;">
+        <div style="background:var(--inverse); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); margin-bottom:var(--space-stack);">
           <div style="display:flex; align-items:center; gap:12px; margin-bottom:9px;">
             <span style="font-size:14px; color:var(--on-inverse-faint); font-family:'IBM Plex Mono',monospace;">install.sh</span>
             <button type="button" onClick="{{ shell.copy }}" style="{{ shell.style }}">{{ shell.label }}</button>
@@ -171,19 +171,19 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
             </sc-for>
           </tbody>
         </table>
-        <div style="margin-top:14px; background:var(--attention-tint); border-radius:11px; padding:13px 15px; font-size:16px; line-height:1.6; color:var(--attention-ink);">Windows uses the release archive and the manual path, not this POSIX shell command.</div>
+        <div style="margin-top:var(--space-stack); background:var(--attention-tint); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); font-size:16px; line-height:1.6; color:var(--attention-ink);">Windows uses the release archive and the manual path, not this POSIX shell command.</div>
       </section>
 
-      <section style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+      <section style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-          <h2 style="margin:0; font-size:26px; font-weight:600; letter-spacing:-0.02em;">Set up with an agent</h2>
+          <h2 style="margin:0; font-size:var(--font-detail-title); line-height:var(--line-detail-title); font-weight:600; letter-spacing:var(--tracking-detail-title);">Set up with an agent</h2>
           <dc-import name="StatusPill" text="{{ seedPillText }}" tone="{{ seedPillTone }}" size="small" hint-size="120px,24px"></dc-import>
         </div>
         <p style="margin:0 0 16px; font-size:17px; line-height:1.6; color:var(--body); max-width:34em;">Give your agent a self-contained, verified install seed. It detects an existing copy, installs or updates to latest, proves the binary runs, initializes the repository and links the embedded a2a skill.</p>
 
-        <div style="background:var(--page); border-radius:14px; padding:16px 18px; margin-bottom:14px;">
+        <div style="background:var(--page); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); margin-bottom:var(--space-stack);">
           <div style="font-size:15px; color:var(--muted); margin-bottom:8px;">The prompt you paste into the agent</div>
-          <div style="font-size:16px; line-height:1.6; color:var(--text); background:var(--surface); border-radius:11px; padding:13px 15px; margin-bottom:12px; overflow-wrap:anywhere;">{{ promptText }}</div>
+          <div style="font-size:16px; line-height:1.6; color:var(--text); background:var(--surface); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); margin-bottom:12px; overflow-wrap:anywhere;">{{ promptText }}</div>
           <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
             <button type="button" onClick="{{ prompt.copy }}" style="{{ prompt.style }}">{{ prompt.label }}</button>
             <a href="https://ydnikolaev.github.io/a2ahub/setup/a2a.md" download="a2a.md" style="font-size:16px; font-weight:600; color:var(--text); background:var(--canvas); border-radius:10px; padding:12px 18px; text-decoration:none;">Download Sporo seed (.md)</a>
@@ -192,7 +192,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
 
         <button type="button" onClick="{{ toggleDisclosure }}" aria-expanded="{{ disclosureExpanded }}" style="{{ disclosureStyle }}">{{ disclosureLabel }}</button>
         <sc-if value="{{ disclosureOpen }}" hint-placeholder-val="{{ false }}">
-          <div style="margin-top:12px; background:var(--page); border-radius:14px; padding:16px 18px;">
+          <div style="margin-top:12px; background:var(--page); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline);">
             <table style="width:100%; border-collapse:collapse; font-size:16px;">
               <tbody>
                 <sc-for list="{{ agentChanges }}" as="c" hint-placeholder-count="5">
@@ -211,10 +211,10 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
       </section>
     </div>
 
-    <section style="background:var(--surface); border-radius:18px; padding:28px 30px; box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:20px;">
-      <h2 style="margin:0 0 12px; font-size:30px; font-weight:600; letter-spacing:-0.02em;">Works with any agent that can call a CLI or stdio MCP</h2>
+    <section style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:var(--space-section);">
+      <h2 style="margin:0 0 12px; font-size:var(--font-detail-title); line-height:var(--line-detail-title); font-weight:600; letter-spacing:var(--tracking-detail-title);">Works with any agent that can call a CLI or stdio MCP</h2>
       <p style="margin:0 0 20px; font-size:18px; line-height:1.6; color:var(--body); max-width:38em;"><span style="font-family:'IBM Plex Mono',monospace; font-size:17px;">a2a init</span> is the one-time wiring step: the embedded skill and the generated reference are installed, then linked into the agent surfaces the repository already exposes. After that, the agent action goes straight to the shared validator.</p>
-      <div style="background:var(--page); border-radius:14px; padding:20px; margin-bottom:18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:16px;">
+      <div style="background:var(--page); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); margin-bottom:var(--space-grid); display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:16px;">
         <span style="background:var(--attention-tint); color:var(--attention-ink); border-radius:10px; padding:12px 15px; font-weight:600;">embedded skill + generated reference</span>
         <span style="color:var(--logo-dim); font-family:'IBM Plex Mono',monospace;">→</span>
         <span style="background:var(--surface); border-radius:10px; padding:12px 15px; font-weight:600;">detected agent surface</span>
@@ -225,9 +225,9 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
       </div>
       <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px;">
         <sc-for list="{{ surfaces }}" as="s" hint-placeholder-count="3">
-          <div style="background:var(--page); border-radius:14px; padding:16px 18px;">
+          <div style="background:var(--page); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline);">
             <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:7px;">
-              <span style="font-size:18px; font-weight:600;">{{ s.name }}</span>
+              <span style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600;">{{ s.name }}</span>
               <dc-import name="StatusPill" text="{{ s.pill }}" tone="{{ s.tone }}" size="small" hint-size="100px,24px"></dc-import>
             </div>
             <div style="font-size:16px; line-height:1.55; color:var(--body);">{{ s.text }}</div>
@@ -237,14 +237,14 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
       <p style="margin:16px 0 0; font-size:15px; line-height:1.6; color:var(--muted); max-width:38em;">Vendor names above are examples of agent surfaces the binary can detect. They are not official integrations and imply no endorsement.</p>
     </section>
 
-    <section style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px;">
-      <div style="background:var(--inverse); color:var(--on-inverse); border-radius:18px; padding:26px 28px;">
-        <h2 style="margin:0 0 12px; font-size:24px; font-weight:600; color:var(--on-solid);">Verify before you trust the download</h2>
+    <section style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:var(--space-grid);">
+      <div style="background:var(--inverse); color:var(--on-inverse); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline);">
+        <h2 style="margin:0 0 12px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; color:var(--on-solid);">Verify before you trust the download</h2>
         <p style="margin:0 0 16px; font-size:17px; line-height:1.6; color:var(--on-inverse-muted);">Release assets carry SHA256SUMS, per-asset keyless cosign bundles, provenance and SBOMs. The installer and updater fail closed on a mismatch or a missing checksum entry.</p>
         <a href="17-security-reliability-v4.dc.html" style="display:inline-block; font-size:16px; font-weight:600; color:var(--text); background:var(--on-inverse); border-radius:10px; padding:12px 18px; text-decoration:none;">The three verification commands →</a>
       </div>
-      <div style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-        <h2 style="margin:0 0 12px; font-size:24px; font-weight:600;">Then wire the agents once</h2>
+      <div style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 2px rgba(33,30,23,.06);">
+        <h2 style="margin:0 0 12px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600;">Then wire the agents once</h2>
         <p style="margin:0 0 16px; font-size:17px; line-height:1.6; color:var(--body);">Routine exchange is agent-run from here. Open the dashboard when you need the explanation, the evidence or an exceptional approval.</p>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <a href="20-dashboard-example-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--on-primary); background:var(--primary); border-radius:10px; padding:12px 18px; text-decoration:none;">Open the synthetic dashboard</a>

@@ -200,9 +200,10 @@ func TestSyncErrorRequiresExplicitDegradedSnapshotAndPreservesCurrent(t *testing
 	}
 }
 
-func TestSameRevisionPublicationRefreshesBytesWithoutCancelingGeneration(t *testing.T) {
+func TestSameRevisionPublicationRefreshesSnapshotWithoutRebuildingShell(t *testing.T) {
 	t.Parallel()
-	server, err := New(DefaultConfig(), &fakeReader{}, nil, fakeRenderer{shell: []byte("first")}, newFakeTickerFactory())
+	renderer := &countingRenderer{shell: []byte("first")}
+	server, err := New(DefaultConfig(), &fakeReader{}, nil, renderer, newFakeTickerFactory())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -220,11 +221,17 @@ func TestSameRevisionPublicationRefreshesBytesWithoutCancelingGeneration(t *test
 	}
 	refreshedSnapshot := server.store.get()
 	refreshedShell := server.store.shell()
-	if refreshedSnapshot == servingSnapshot || refreshedShell == servingShell {
-		t.Fatal("same semantic revision retained stale response bytes")
+	if refreshedSnapshot == servingSnapshot {
+		t.Fatal("same semantic revision retained stale snapshot bytes")
 	}
 	if refreshedSnapshot.revision != servingSnapshot.revision || refreshedSnapshot.ctx != servingSnapshot.ctx || refreshedShell.ctx != servingShell.ctx {
 		t.Fatal("same semantic revision did not preserve one cancellation lifetime")
+	}
+	if !bytes.Equal(refreshedShell.body, servingShell.body) {
+		t.Fatal("same semantic revision changed its coherent shell bytes")
+	}
+	if calls := renderer.callCount(); calls != 1 {
+		t.Fatalf("same semantic revision render calls = %d, want 1", calls)
 	}
 	if bytes.Equal(refreshedSnapshot.body, servingSnapshot.body) {
 		t.Fatal("generated_at change did not refresh nonconditional snapshot body")

@@ -106,6 +106,8 @@ for (const route of manifest.routes) {
   const canonical = attribute(source, /<link\b[^>]*\brel=["']canonical["'][^>]*>/i, 'href');
   const title = source.match(/<title>([^<]+)<\/title>/i)?.[1]?.trim() ?? '';
   const description = attribute(source, /<meta\b[^>]*\bname=["']description["'][^>]*>/i, 'content');
+  const openGraphDescription = attribute(source, /<meta\b[^>]*\bproperty=["']og:description["'][^>]*>/i, 'content');
+  const twitterDescription = attribute(source, /<meta\b[^>]*\bname=["']twitter:description["'][^>]*>/i, 'content');
   const robots = attribute(source, /<meta\b[^>]*\bname=["']robots["'][^>]*>/i, 'content');
   const analyticsCount = source.match(/G-P4VH0QW93R/g)?.length ?? 0;
   const jsonBlocks = [...source.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
@@ -113,6 +115,8 @@ for (const route of manifest.routes) {
   if (canonical !== expectedCanonical) failures.push(`${name}: canonical ${canonical || 'missing'} does not match ${expectedCanonical}`);
   if (!title) failures.push(`${name}: missing title`);
   if (!description) failures.push(`${name}: missing description`);
+  if (openGraphDescription !== description) failures.push(`${name}: Open Graph description drifted from the route description`);
+  if (twitterDescription !== description) failures.push(`${name}: Twitter description drifted from the route description`);
   if (route.indexable) {
     if (!robots.startsWith('index, follow')) failures.push(`${name}: indexable route lacks index/follow robots policy`);
     if (analyticsCount !== 2) failures.push(`${name}: GA4 tag must be configured exactly once`);
@@ -126,6 +130,8 @@ for (const route of manifest.routes) {
         if (value['@context'] !== 'https://schema.org' || !Array.isArray(value['@graph']) || value['@graph'].length < 3) {
           failures.push(`${name}: incomplete JSON-LD graph`);
         }
+        const page = value['@graph']?.find((entry) => entry['@id'] === `${expectedCanonical}#webpage`);
+        if (page?.description !== description) failures.push(`${name}: JSON-LD description drifted from the route description`);
       } catch (error) {
         failures.push(`${name}: invalid JSON-LD (${error.message})`);
       }
@@ -144,6 +150,10 @@ for (const route of manifest.routes) {
     if (!robots.startsWith('noindex, follow')) failures.push(`${name}: non-indexable route lacks noindex/follow`);
     if (analyticsCount !== 0) failures.push(`${name}: analytics must stay disabled`);
     if (sitemapURLs.includes(expectedCanonical)) failures.push(`${name}: noindex route appears in sitemap`);
+  }
+  if (route.id === 'features') {
+    if (!/explicit agent runs/i.test(description)) failures.push(`${name}: Features metadata does not name the explicit-run boundary`);
+    if (/autonomous workflows/i.test(source)) failures.push(`${name}: stale autonomous-workflows claim returned in built metadata`);
   }
   if (route.markdown) {
     const alternate = attribute(source, /<link\b[^>]*\brel=["']alternate["'][^>]*\btype=["']text\/markdown["'][^>]*>/i, 'href');

@@ -109,7 +109,8 @@ container width:
 * No hosted service, database, public endpoint or purchasable tier presented as current.
 * Contract drift is computed on the consumer's pinned major line; code-backed metadata is never
   called verified or current; missing validation context is unavailable, not green.
-* v0.16.3 owns the 50/50 live-matrix claim, with its coverage qualifier attached.
+* A release owns only the live-matrix claim recorded by its retained candidate
+  evidence; the public projection never rounds partial coverage up to complete.
 * Every graph edge explains why it exists; every thread exposes causal order and whose move it is;
   every contract exposes its rolling window and the consumer pin.
 * Priority, blocking, lifecycle state, human gate, deadline and stale snapshot never collapse into

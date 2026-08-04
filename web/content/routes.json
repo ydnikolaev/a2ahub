@@ -29,7 +29,7 @@
       "path": "/features.html",
       "astro_path": "/features",
       "title": "a2ahub features — how the protocol fits together",
-      "description": "The exact Guide surface from the a2ahub dashboard: typed documents, lifecycle states, autonomous workflows and the dashboard reading model.",
+      "description": "The exact Guide surface from the a2ahub dashboard: typed documents, lifecycle states, workflows performed during explicit agent runs and the dashboard reading model.",
       "indexable": true,
       "markdown": "/features.md",
       "llms_section": "Start here",
@@ -71,7 +71,7 @@
       "markdown": "/changelog.md",
       "llms_section": "Trust and verification",
       "structured_data": "collection",
-      "html_budget_kib": 40,
+      "html_budget_kib": 41,
       "change_sources": ["releasenotes", "web/src/pages/changelog.astro"]
     },
     {
@@ -120,7 +120,7 @@
       "markdown": "/roadmap.md",
       "llms_section": "Optional",
       "structured_data": "collection",
-      "change_sources": ["web/content/site.json", "web/src/pages/roadmap.astro"]
+      "change_sources": ["web/design-source/19-roadmap-v4.dc.html", "web/src/pages/roadmap.astro"]
     },
     {
       "id": "not-found",
@@ -141,6 +141,7 @@
     "title_template": "{title} — a2ahub docs",
     "description_template": "a2ahub agent documentation: {title}.",
     "llms_section": "Operate the protocol",
-    "structured_data": "tech-article"
+    "structured_data": "tech-article",
+    "html_budget_kib": 36
   }
 }

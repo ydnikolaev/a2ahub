@@ -91,7 +91,7 @@ html[data-theme="dark"] {
   --on-inverse-faint: #A8A08A;
   --on-dark: #FAF7F0;
   --on-solid: #0E0D09;
-  --teal-solid: #2A8395;
+  --teal-solid: #3594A7;
   --teal-ink: #8FD0DB;
   --teal-ink-hover: #B4E2EA;
   --teal-tint: #123039;
@@ -104,7 +104,7 @@ html[data-theme="dark"] {
   --attention-ink: #E8C579;
   --attention-strong: #F4DDAA;
   --attention-line: #6B5320;
-  --red: #D6584A;
+  --red: #E8786C;
   --blocking-tint: #3C1E19;
   --blocking-ink: #F0A79A;
   --blocking-strong: #F7C9C1;
@@ -151,18 +151,18 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
     </div>
 
     <sc-if value="{{ showShipped }}" hint-placeholder-val="{{ true }}">
-      <section style="background:var(--surface); border-radius:18px; padding:28px 30px; box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:16px;">
+      <section style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 2px rgba(33,30,23,.06); margin-bottom:var(--space-grid);">
         <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
-          <h2 style="margin:0; font-size:32px; font-weight:600; letter-spacing:-0.025em;">Shipped now</h2>
+          <h2 style="margin:0; font-size:var(--font-detail-title); line-height:var(--line-detail-title); font-weight:600; letter-spacing:var(--tracking-detail-title);">Shipped now</h2>
           <dc-import name="StatusPill" text="{{ shippedPill }}" tone="healthy" hint-size="190px,26px"></dc-import>
         </div>
         <p style="margin:0 0 20px; font-size:18px; line-height:1.6; color:var(--body); max-width:36em;">The open-source local and Git-backed product. One binary, one protocol, one shared record you can read without this website.</p>
-        <div class="roadmap-shipped-grid" style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px;">
+        <div class="roadmap-shipped-grid" style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-stack);">
           <sc-for list="{{ shipped }}" as="s" hint-placeholder-count="6">
-            <div style="min-width:0; background:var(--page); border-radius:14px; padding:16px 18px;">
+            <div style="min-width:0; background:var(--page); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline);">
               <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:7px;">
                 <span style="width:9px; height:9px; border-radius:99px; background:var(--green); flex:0 0 9px; margin-top:8px;"></span>
-                <span style="flex:1 1 auto; min-width:0; font-size:18px; line-height:1.35; font-weight:600;">{{ s.name }}</span>
+                <span style="flex:1 1 auto; min-width:0; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600;">{{ s.name }}</span>
               </div>
               <div style="font-size:16px; line-height:1.55; color:var(--body);">{{ s.text }}</div>
             </div>
@@ -172,18 +172,18 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
     </sc-if>
 
     <sc-if value="{{ showProposal }}" hint-placeholder-val="{{ true }}">
-      <section style="border-radius:18px; padding:28px 30px; margin-bottom:16px; background:var(--attention-tint); box-shadow:inset 0 0 0 1.5px var(--attention-line);">
+      <section style="border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); margin-bottom:var(--space-grid); background:var(--attention-tint); box-shadow:inset 0 0 0 1.5px var(--attention-line);">
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-          <h2 style="margin:0; font-size:32px; font-weight:600; letter-spacing:-0.025em; color:var(--attention-strong);">Next proposal — autonomous verified delivery loop</h2>
+          <h2 style="margin:0; font-size:var(--font-detail-title); line-height:var(--line-detail-title); font-weight:600; letter-spacing:var(--tracking-detail-title); color:var(--attention-strong);">Next proposal — autonomous verified delivery loop</h2>
           <dc-import name="StatusPill" text="Proposal" tone="attention" hint-size="100px,26px"></dc-import>
           <dc-import name="StatusPill" text="Design gates open" tone="attention" hint-size="150px,26px"></dc-import>
           <dc-import name="StatusPill" text="No release target" tone="outline" hint-size="150px,26px"></dc-import>
         </div>
         <p style="margin:0 0 18px; font-size:19px; line-height:1.6; color:var(--attention-strong); max-width:36em;">Two physically separate systems alternate short-lived local agent sessions, preserve the durable turn in an a2a thread, move runtime data through a private data plane outside public Git, and bind the consumer's pass or fail evidence to the exact delivered snapshot or endpoint.</p>
 
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; margin-bottom:16px;">
-          <div style="background:var(--surface); border-radius:14px; padding:18px 20px;">
-            <div style="font-size:18px; font-weight:600; margin-bottom:10px;">What is actually decided</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:var(--space-stack); margin-bottom:16px;">
+          <div style="background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline);">
+            <div style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; margin-bottom:10px;">What is actually decided</div>
             <table style="width:100%; border-collapse:collapse; font-size:16px;">
               <tbody>
                 <tr><td style="padding:11px 0; line-height:1.6; color:var(--body); border-bottom:1px solid var(--hairline);">The desired outcome is documented for exploration — not approved for implementation.</td></tr>
@@ -192,25 +192,25 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
               </tbody>
             </table>
           </div>
-          <div style="background:var(--surface); border-radius:14px; padding:18px 20px;">
-            <div style="font-size:18px; font-weight:600; margin-bottom:10px;">What is not promised</div>
+          <div style="background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline);">
+            <div style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; margin-bottom:10px;">What is not promised</div>
             <p style="margin:0 0 12px; font-size:16px; line-height:1.6; color:var(--body);">No command, schema, watcher, transport, file format or provider adapter is a shipped promise. If you can name it, it does not exist yet.</p>
             <div style="display:flex; gap:7px; flex-wrap:wrap;">
               <sc-for list="{{ notPromised }}" as="n" hint-placeholder-count="6">
-                <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--muted); background:var(--canvas); border-radius:6px; padding:5px 10px; text-decoration:line-through;">{{ n }}</span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:var(--font-badge-default); line-height:var(--line-badge); color:var(--muted); background:var(--canvas); border-radius:var(--radius-badge); padding:var(--padding-badge-solid-block) var(--padding-badge-solid-inline); text-decoration:line-through;">{{ n }}</span>
               </sc-for>
             </div>
           </div>
         </div>
 
-        <div style="background:var(--surface); border-radius:14px; padding:18px 20px; margin-bottom:16px;">
+        <div style="background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); margin-bottom:16px;">
           <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
-            <div style="font-size:18px; font-weight:600;">Open design gates</div>
+            <div style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600;">Open design gates</div>
             <span style="font-size:15px; color:var(--muted);">{{ gateNote }}</span>
           </div>
           <div style="display:flex; flex-direction:column; gap:9px;">
             <sc-for list="{{ gates }}" as="g" hint-placeholder-count="6">
-              <div style="background:var(--page); border-radius:11px; padding:13px 15px; display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+              <div style="background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap;">
                 <dc-import name="StatusPill" text="open" tone="attention" size="small" hint-size="60px,24px"></dc-import>
                 <span style="flex:1 1 240px; min-width:0; font-size:16px; line-height:1.55; color:var(--body);"><strong style="font-weight:600;">{{ g.name }}</strong> — {{ g.text }}</span>
               </div>
@@ -218,8 +218,8 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
           </div>
         </div>
 
-        <div style="background:var(--surface); border-radius:14px; padding:18px 20px;">
-          <div style="font-size:18px; font-weight:600; margin-bottom:8px;">Commercial direction, stated once</div>
+        <div style="background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline);">
+          <div style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; margin-bottom:8px;">Commercial direction, stated once</div>
           <p style="margin:0 0 10px; font-size:17px; line-height:1.6; color:var(--body); max-width:36em;">Private cross-system data delivery is a likely candidate for the first Pro capability. Packaging, limits, pricing and release timing are undecided.</p>
           <p style="margin:0; font-size:16px; line-height:1.6; color:var(--muted); max-width:36em;">There is nothing to buy, reserve or register interest in. This paragraph is a product direction, not an offer — and it is the only commercial sentence on this site.</p>
         </div>
@@ -227,16 +227,16 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
     </sc-if>
 
     <sc-if value="{{ showExploring }}" hint-placeholder-val="{{ true }}">
-      <section style="background:var(--sink); border-radius:18px; padding:28px 30px; margin-bottom:16px;">
+      <section style="background:var(--sink); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); margin-bottom:var(--space-grid);">
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-          <h2 style="margin:0; font-size:30px; font-weight:600; letter-spacing:-0.02em; color:var(--body);">Exploring later</h2>
+          <h2 style="margin:0; font-size:var(--font-detail-title); line-height:var(--line-detail-title); font-weight:600; letter-spacing:var(--tracking-detail-title); color:var(--body);">Exploring later</h2>
           <dc-import name="StatusPill" text="no design work committed" tone="outline" hint-size="200px,26px"></dc-import>
         </div>
         <p style="margin:0 0 18px; font-size:18px; line-height:1.6; color:var(--body); max-width:36em;">Written down so it is not mistaken for a plan. These items have no owner, no gate and no shape yet.</p>
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px;">
           <sc-for list="{{ exploring }}" as="e" hint-placeholder-count="2">
-            <div style="background:var(--canvas); border-radius:14px; padding:16px 18px;">
-              <div style="font-size:18px; font-weight:600; margin-bottom:7px; color:var(--body);">{{ e.name }}</div>
+            <div style="background:var(--canvas); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline);">
+              <div style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; margin-bottom:7px; color:var(--body);">{{ e.name }}</div>
               <div style="font-size:16px; line-height:1.55; color:var(--muted);">{{ e.text }}</div>
             </div>
           </sc-for>
@@ -244,14 +244,14 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
       </section>
     </sc-if>
 
-    <section style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px;">
-      <div style="background:var(--inverse); color:var(--on-inverse); border-radius:18px; padding:26px 28px;">
-        <h2 style="margin:0 0 12px; font-size:24px; font-weight:600; color:var(--on-solid);">Two things that are not the same</h2>
+    <section style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:var(--space-grid);">
+      <div style="background:var(--inverse); color:var(--on-inverse); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline);">
+        <h2 style="margin:0 0 12px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; color:var(--on-solid);">Two things that are not the same</h2>
         <p style="margin:0 0 12px; font-size:17px; line-height:1.6; color:var(--on-inverse-muted);">The architecture plan describes a single-operator Go Hub that mirrors and indexes spaces and serves read APIs and notifications. It explicitly does not transport runtime payloads and does not orchestrate agents.</p>
         <p style="margin:0; font-size:17px; line-height:1.6; color:var(--on-inverse-muted);">That is a different thing from a future multi-tenant product surface. Neither one is available today, and neither is presented as protection or capability you have now.</p>
       </div>
-      <div style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-        <h2 style="margin:0 0 12px; font-size:24px; font-weight:600;">What you can do today</h2>
+      <div style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 2px rgba(33,30,23,.06);">
+        <h2 style="margin:0 0 12px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600;">What you can do today</h2>
         <p style="margin:0 0 16px; font-size:17px; line-height:1.6; color:var(--body);">{{ shippedAllCopy }}</p>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <a href="18-install-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--on-primary); background:var(--primary); border-radius:10px; padding:12px 18px; text-decoration:none;">Install a2a</a>
@@ -272,6 +272,8 @@ const SHIPPED = [
   ["Every task keeps its history", "Threads connect the request, replies, evidence and outcome in one durable Git-backed conversation."],
   ["Contracts evolve without flag days", "Versions, pins and drift stay visible, so providers and consumers can migrate independently without pretending history disappeared."],
   ["The dashboard explains what matters", "A local, read-only view shows blockers, whose move is next, which lines are at risk and the exact documents that prove it."],
+  ["Current work remains visible", "Durable work checkpoints and bounded local leases show who is implementing, testing, waiting or blocked without pretending that a closed thread means the work stopped."],
+  ["Contract releases are reproducible", "Preflight, publish, materialize and offline checks use one immutable carried set, so an exact historical version can be inspected without mixing bytes from another release."],
   ["One binary works with any agent", "The embedded skill, CLI and MCP tools expose the same validated actions without locking the workflow to one agent runtime."]
 ];
 const GATES = [
@@ -284,6 +286,7 @@ const GATES = [
 ];
 const NOT_PROMISED = ["a2a deliver", "delivery.schema.json", "a2a watch", "transport adapter", "snapshot format", "provider plugin"];
 const EXPLORING = [
+  ["A fully live local dashboard server", "The existing loopback server already refreshes the operational projection. A proposed next phase would serve the complete revisioned dashboard and bounded files from exact contract versions without inflating static HTML."],
   ["Hosted and multi-tenant product surfaces", "A hosted service does not exist, is not in design, and is not sold. Token names and component boundaries are kept portable so a future UI could reuse them — that is a portability constraint, not a plan."],
   ["Additional transport and runtime adapters", "Beyond Git, nothing is chosen. Any adapter would inherit every open gate above."]
 ];

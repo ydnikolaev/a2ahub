@@ -56,6 +56,17 @@
   --healthy-ink: #2F5E3A;
   --healthy-strong: #24492D;
   --plum: #7A3B62;
+  /* One semantic accent per document family. Lifecycle rendering, causal
+   * links and badges all consume these aliases instead of redefining colours
+   * on each surface. */
+  --type-work-request-accent: var(--teal-solid);
+  --type-question-accent: var(--attention-strong);
+  --type-decision-accent: var(--plum);
+  --type-handoff-accent: var(--green);
+  --type-requirement-accent: var(--body);
+  --type-response-accent: var(--teal-ink);
+  --type-announcement-accent: var(--body);
+  --type-contract-accent: var(--teal-ink);
   --selection: #D7E8EA;
   --attn-bg: #33291A;
   --attn-ink: #E2A33C;
@@ -69,6 +80,10 @@
   --radius-control: 10px;
   --radius-chip: 12px;
   --radius-inner: 8px;
+  --radius-badge: 6px;
+  --radius-nested: 11px;
+  --radius-card: 14px;
+  --radius-panel: 18px;
   /* Semantic surface and rhythm roles. Components use these aliases instead
    * of inventing nearby beige/white shades or one-off section gaps. */
   --surface-card: var(--surface);
@@ -76,16 +91,63 @@
   --surface-workbench: var(--map-canvas);
   --space-section: 24px;
   --space-section-strong: 30px;
+  --space-grid: 18px;
+  --space-stack: 14px;
+  --space-inline: 10px;
   --space-after-section-heading: 16px;
   --space-card-tags-to-author: 16px;
   --space-card-author-to-title: 15px;
   --space-card-title-to-content: 18px;
+  /* The selected record must be obvious in a dense master/detail list without
+   * reducing the contrast of its contents. Inactive cards step onto the page
+   * surface and keep a strong inset boundary; hover and keyboard focus restore
+   * the normal card surface and shadow. */
+  --surface-inactive-card: var(--page);
+  --border-inactive-card: var(--border-strong);
+  --shadow-inactive-card: inset 0 0 0 1px var(--border-inactive-card);
+  /* Shared container insets. Block and inline values stay separate so a
+   * responsive component can change its layout without re-declaring the
+   * design scale. */
+  --padding-panel-block: 26px;
+  --padding-panel-inline: 28px;
+  --padding-card-block: 20px;
+  --padding-card-inline: 22px;
+  --padding-list-card-block: 16px;
+  --padding-list-card-inline: 18px;
+  --padding-nested-block: 13px;
+  --padding-nested-inline: 15px;
+  --padding-modal-backdrop: 24px;
   /* One display scale for the title of the selected thing in every
    * master/detail surface. A thread, document, contract or map detail is the
    * same level in the reading hierarchy even when its container differs. */
   --font-detail-title: 28px;
   --line-detail-title: 1.25;
   --tracking-detail-title: -0.015em;
+  /* Card hierarchy has three deliberate tiers: selected detail, normal list
+   * card and compact attention teaser. Section headings sit between a page
+   * title and a card title and never introduce a fourth card tier. */
+  --font-card-title-md: 19px;
+  --line-card-title-md: 1.35;
+  --font-card-title-sm: 17px;
+  --line-card-title-sm: 1.35;
+  --font-section-title: 22px;
+  --line-section-title: 1.3;
+  --font-section-subtitle: 15px;
+  --line-section-subtitle: 1.5;
+  --font-subheading: 16px;
+  --line-subheading: 1.35;
+  --font-meta: 14px;
+  --line-meta: 1.45;
+  /* TypeBadge and StatusPill share one geometry contract. Outlined variants
+   * lose one pixel of padding on every edge because their inset ring occupies
+   * that space, keeping the outer box identical to a solid badge. */
+  --font-badge-default: 14px;
+  --font-badge-small: 13px;
+  --line-badge: 1.3;
+  --padding-badge-solid-block: 4px;
+  --padding-badge-solid-inline: 11px;
+  --padding-badge-outline-block: 3px;
+  --padding-badge-outline-inline: 10px;
   /* Diagram field: deliberately distinct from both the page canvas and the
    * white component surface, without introducing another semantic hue. */
   --map-canvas: #EAE6DC;
@@ -103,7 +165,7 @@ html[data-theme="dark"] {
   --body: #DAD3C0;
   --muted: #ADA48C;
   --faint: #918973;
-  --logo-dim: #8F8770;
+  --logo-dim: #948C75;
   --inverse: #0E0D09;
   --inverse-2: #1A1812;
   --inverse-3: #2E2A21;
@@ -114,7 +176,7 @@ html[data-theme="dark"] {
   --on-inverse-faint: #A8A08A;
   --on-dark: #FAF7F0;
   --on-solid: #0E0D09;
-  --teal-solid: #2C8598;
+  --teal-solid: #3594A7;
   --teal-ink: #8FD0DB;
   --teal-ink-hover: #B4E2EA;
   --teal-tint: #123039;
@@ -127,7 +189,7 @@ html[data-theme="dark"] {
   --attention-ink: #E8C579;
   --attention-strong: #F4DDAA;
   --attention-line: #6B5320;
-  --red: #D6584A;
+  --red: #E8786C;
   --blocking-tint: #3C1E19;
   --blocking-ink: #F0A79A;
   --blocking-strong: #F7C9C1;
@@ -190,15 +252,19 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
   50% { transform: scaleX(-1) translateY(-3px); }
 }
 
-/* A pickable row in a master/detail list. The open row is at full strength and
- * the rest step back; the open one used to wear a 2px ring on top of a type
- * badge, a state pill, a bold title and a participant line, which is one
- * emphasis too many on a card that is already loud. Hover restores a stepped-
- * back row so it stays readable before it is clicked, and the strength comes
- * from a custom property so the stylesheet's :hover can win over the inline
- * value the renderer writes. */
-.a2a-pick { opacity: var(--a2a-pick, 1); transition: opacity .13s ease-out; }
-.a2a-pick:hover, .a2a-pick:focus-visible { opacity: 1; }
+/* A pickable row in a master/detail list. Inactive rows step back through their
+ * container surface and boundary, never by blending text, badges or avatars.
+ * The component supplies the selected/inactive custom properties; direct
+ * background and shadow declarations here let hover/focus restore emphasis. */
+.a2a-pick {
+  background: var(--a2a-pick-surface, var(--surface));
+  box-shadow: var(--a2a-pick-shadow, var(--shadow-card));
+  transition: background-color .13s ease-out, box-shadow .13s ease-out;
+}
+.a2a-pick:hover, .a2a-pick:focus-visible {
+  background: var(--surface);
+  box-shadow: var(--a2a-pick-active-shadow, var(--shadow-card));
+}
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }

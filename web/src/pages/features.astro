@@ -4,11 +4,12 @@ import DesignRuntimePage from '../components/DesignRuntimePage.astro';
 import PublicPageHeader from '../components/PublicPageHeader.astro';
 ---
 <BaseLayout
+  lang="en"
   markdown="/features.md"
   current="/features.html"
   slotOwnsMain
   title="a2ahub features — how the protocol fits together"
-  description="The exact Guide surface from the a2ahub dashboard: typed documents, lifecycle states, autonomous workflows and the dashboard reading model."
+  description="The exact Guide surface from the a2ahub dashboard: typed documents, lifecycle states, explicit agent workflows and the dashboard reading model."
 >
   <script is:inline>
     globalThis.A2A_DASHBOARD_START_VIEW = 'guide';

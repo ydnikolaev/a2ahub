@@ -91,7 +91,7 @@ html[data-theme="dark"] {
   --on-inverse-faint: #A8A08A;
   --on-dark: #FAF7F0;
   --on-solid: #0E0D09;
-  --teal-solid: #2A8395;
+  --teal-solid: #3594A7;
   --teal-ink: #8FD0DB;
   --teal-ink-hover: #B4E2EA;
   --teal-tint: #123039;
@@ -104,7 +104,7 @@ html[data-theme="dark"] {
   --attention-ink: #E8C579;
   --attention-strong: #F4DDAA;
   --attention-line: #6B5320;
-  --red: #D6584A;
+  --red: #E8786C;
   --blocking-tint: #3C1E19;
   --blocking-ink: #F0A79A;
   --blocking-strong: #F7C9C1;
@@ -141,13 +141,13 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
   <main>
     <section style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0 20px;">
 
-      <div style="display:flex; flex-wrap:wrap; gap:20px; align-items:flex-start;">
-        <div style="flex:3 1 420px; min-width:0; display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; flex-wrap:wrap; gap:var(--space-grid); align-items:flex-start;">
+        <div style="flex:3 1 420px; min-width:0; display:flex; flex-direction:column; gap:var(--space-stack);">
           <sc-for list="{{ boundaries }}" as="b" hint-placeholder-count="5">
-            <section style="background:var(--surface); border-radius:18px; padding:24px 26px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+            <section style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 2px rgba(33,30,23,.06);">
               <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
-                <span style="font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:6px; padding:4px 10px;">{{ b.n }}</span>
-                <h2 style="margin:0; font-size:24px; font-weight:600; letter-spacing:-0.015em;">{{ b.title }}</h2>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:var(--font-badge-default); line-height:var(--line-badge); font-weight:600; color:var(--teal-ink); background:var(--teal-tint); border-radius:var(--radius-badge); padding:var(--padding-badge-solid-block) var(--padding-badge-solid-inline);">{{ b.n }}</span>
+                <h2 style="margin:0; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; letter-spacing:-0.015em;">{{ b.title }}</h2>
               </div>
               <p style="margin:0 0 14px; font-size:17px; line-height:1.6; color:var(--body); max-width:34em;">{{ b.lead }}</p>
               <table style="width:100%; border-collapse:collapse; font-size:16px;">
@@ -158,21 +158,21 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
                 </tbody>
               </table>
               <sc-if value="{{ b.hasCaveat }}" hint-placeholder-val="{{ false }}">
-                <div style="margin-top:14px; background:var(--attention-tint); border-radius:11px; padding:13px 15px; font-size:16px; line-height:1.6; color:var(--attention-ink);">{{ b.caveat }}</div>
+                <div style="margin-top:var(--space-stack); background:var(--attention-tint); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); font-size:16px; line-height:1.6; color:var(--attention-ink);">{{ b.caveat }}</div>
               </sc-if>
             </section>
           </sc-for>
         </div>
 
-        <aside style="flex:1 1 320px; min-width:0; display:flex; flex-direction:column; gap:12px;">
-          <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+        <aside style="flex:1 1 320px; min-width:0; display:flex; flex-direction:column; gap:var(--space-stack);">
+          <div style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
             <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
-              <h2 style="margin:0; font-size:20px; font-weight:600;">Verify a release yourself</h2>
+              <h2 style="margin:0; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600;">Verify a release yourself</h2>
               <button type="button" onClick="{{ copyAll.copy }}" style="{{ copyAll.style }}">{{ copyAll.label }}</button>
             </div>
             <div style="display:flex; flex-direction:column; gap:10px;">
               <sc-for list="{{ commands }}" as="c" hint-placeholder-count="3">
-                <div style="background:var(--inverse); border-radius:11px; padding:13px 15px;">
+                <div style="background:var(--inverse); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline);">
                   <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
                     <span style="font-size:14px; color:var(--on-inverse-faint);">{{ c.role }}</span>
                     <button type="button" onClick="{{ c.copy }}" style="{{ c.style }}">{{ c.label }}</button>
@@ -184,14 +184,14 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
             <p style="margin:14px 0 0; font-size:15px; line-height:1.6; color:var(--muted);">The installer and the updater fail closed: a missing checksum entry or a mismatch stops the install, and an invalid present signature is a hard stop.</p>
           </div>
 
-          <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-            <h2 style="margin:0 0 10px; font-size:20px; font-weight:600;">Report a vulnerability</h2>
+          <div style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:0 1px 2px rgba(33,30,23,.06);">
+            <h2 style="margin:0 0 10px; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600;">Report a vulnerability</h2>
             <p style="margin:0 0 14px; font-size:16px; line-height:1.6; color:var(--body);">Use a private GitHub security advisory — never a public issue.</p>
             <a href="https://github.com/ydnikolaev/a2ahub/security/advisories/new" style="display:block; font-family:'IBM Plex Mono',monospace; font-size:14px; background:var(--teal-tint); border-radius:10px; padding:12px 14px; text-decoration:none; overflow-wrap:anywhere; margin-bottom:14px;">github.com/ydnikolaev/a2ahub/security/advisories/new ↗</a>
             <dc-import name="FactTable" rows="{{ responseRows }}" hint-size="100%,120px"></dc-import>
           </div>
 
-          <div style="background:var(--surface); border-radius:18px; padding:22px 24px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <div style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:0 1px 2px rgba(33,30,23,.06);">
             <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
               <dc-import name="StatusPill" text="known limitation" tone="attention" size="small" hint-size="130px,24px"></dc-import>
             </div>
@@ -211,7 +211,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
               <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
                 <span style="{{ l.tagStyle }}">{{ l.tag }}</span>
                 <sc-if value="{{ l.notShipped }}" hint-placeholder-val="{{ false }}">
-                  <span style="font-size:13px; font-weight:600; color:var(--attn-ink); background:var(--attn-bg); border-radius:6px; padding:3px 9px;">not shipped</span>
+                  <span style="font-size:var(--font-badge-small); line-height:var(--line-badge); font-weight:600; color:var(--attn-ink); background:var(--attn-bg); border-radius:var(--radius-badge); padding:var(--padding-badge-outline-block) var(--padding-badge-outline-inline);">not shipped</span>
                 </sc-if>
               </div>
               <div style="{{ l.textStyle }}">{{ l.text }}</div>
@@ -219,9 +219,9 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
           </sc-for>
         </div>
 
-        <div style="background:var(--inverse-2); border-radius:18px; padding:22px 26px 20px;">
+        <div style="background:var(--inverse-2); border-radius:var(--radius-panel); padding:var(--padding-card-block) var(--padding-card-inline);">
           <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
-            <h3 style="margin:0; font-size:22px; font-weight:600; color:var(--on-inverse);">What the validator checks</h3>
+            <h3 style="margin:0; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; color:var(--on-inverse);">What the validator checks</h3>
             <button type="button" onClick="{{ toggleCodes }}" aria-expanded="{{ codesExpanded }}" style="{{ codesBtnStyle }}">{{ codesLabel }}</button>
           </div>
           <table style="width:100%; border-collapse:collapse; font-size:16px;">
@@ -236,10 +236,10 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
             <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--inverse-line);">
               <div style="font-size:16px; color:var(--on-inverse-muted); margin-bottom:10px;">Stable machine vocabulary — for correlation, not as the human explanation:</div>
               <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
-                <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--teal-on-dark); background:var(--code-chip); border-radius:6px; padding:5px 10px;">illegal-transition</span>
-                <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--teal-on-dark); background:var(--code-chip); border-radius:6px; padding:5px 10px;">unauthorized-actor</span>
-                <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--teal-on-dark); background:var(--code-chip); border-radius:6px; padding:5px 10px;">state-claim-mismatch</span>
-                <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--attn-ink); background:var(--attn-bg); border-radius:6px; padding:5px 10px;">read-index-skip</span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:var(--font-badge-default); line-height:var(--line-badge); color:var(--teal-on-dark); background:var(--code-chip); border-radius:var(--radius-badge); padding:var(--padding-badge-solid-block) var(--padding-badge-solid-inline);">illegal-transition</span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:var(--font-badge-default); line-height:var(--line-badge); color:var(--teal-on-dark); background:var(--code-chip); border-radius:var(--radius-badge); padding:var(--padding-badge-solid-block) var(--padding-badge-solid-inline);">unauthorized-actor</span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:var(--font-badge-default); line-height:var(--line-badge); color:var(--teal-on-dark); background:var(--code-chip); border-radius:var(--radius-badge); padding:var(--padding-badge-solid-block) var(--padding-badge-solid-inline);">state-claim-mismatch</span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:var(--font-badge-default); line-height:var(--line-badge); color:var(--attn-ink); background:var(--attn-bg); border-radius:var(--radius-badge); padding:var(--padding-badge-solid-block) var(--padding-badge-solid-inline);">read-index-skip</span>
               </div>
               <div style="font-size:16px; line-height:1.6; color:var(--faint);">The first three are fold flags on an artifact. <span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">read-index-skip</span> is a cache and read-health flag, not a validation code.</div>
             </div>
@@ -250,20 +250,20 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline
 
     <section style="width:min(1240px, 100% - 56px); margin:0 auto; padding:56px 0 70px;">
       <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:20px; align-items:start;">
-        <div style="background:var(--surface); border-radius:18px; padding:28px 30px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+        <div style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
           <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
-            <h2 style="margin:0; font-size:30px; font-weight:600; letter-spacing:-0.02em;">Release confidence</h2>
+            <h2 style="margin:0; font-size:var(--font-detail-title); line-height:var(--line-detail-title); font-weight:600; letter-spacing:var(--tracking-detail-title);">Release confidence</h2>
             <dc-import name="StatusPill" text="{{ releaseVersion }}" tone="agent" mono="{{ true }}" hint-size="90px,26px"></dc-import>
           </div>
           <p style="margin:0 0 16px; font-size:19px; line-height:1.6; color:var(--body); max-width:34em;">{{ releaseConfidence }}</p>
-          <div style="background:var(--page); border-radius:12px; padding:14px 16px; margin-bottom:14px;">
+          <div style="background:var(--page); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); margin-bottom:var(--space-stack);">
             <div style="font-size:15px; color:var(--muted); margin-bottom:5px;">published release</div>
             <div style="font-family:'IBM Plex Mono',monospace; font-size:15px; overflow-wrap:anywhere;">{{ releaseVersion }} · {{ releaseDate }}</div>
           </div>
-          <div style="background:var(--attention-tint); border-radius:12px; padding:14px 16px; font-size:16px; line-height:1.6; color:var(--attention-ink);">This is coverage of the declared release matrix, not a claim that every possible state has been tested. The claim belongs to this exact candidate — it is not a standing badge and not an uptime statement.</div>
+          <div style="background:var(--attention-tint); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); font-size:16px; line-height:1.6; color:var(--attention-ink);">This is coverage of the declared release matrix, not a claim that every possible state has been tested. The claim belongs to this exact candidate — it is not a standing badge and not an uptime statement.</div>
         </div>
-        <div style="background:var(--surface); border-radius:18px; padding:26px 28px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
-          <h2 style="margin:0 0 12px; font-size:22px; font-weight:600;">Evidence with named scopes</h2>
+        <div style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 2px rgba(33,30,23,.06);">
+          <h2 style="margin:0 0 12px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600;">Evidence with named scopes</h2>
           <dc-import name="FactTable" rows="{{ evidenceRows }}" hint-size="100%,240px"></dc-import>
           <p style="margin:16px 0 0; font-size:16px; line-height:1.6; color:var(--muted);">These are checks with declared schedules and surfaces. They are evidence, not certifications, and this page states no compliance claim of any kind.</p>
         </div>
@@ -358,7 +358,7 @@ class Component extends DCLogic {
       })),
       layers: LAYERS.map(([tag, text, notShipped]) => ({
         tag, text, notShipped,
-        cardStyle: "border-radius:14px; padding:18px 20px; " + (notShipped ? "background:transparent; box-shadow:inset 0 0 0 1px var(--inverse-line);" : "background:var(--inverse-2);"),
+        cardStyle: "border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); " + (notShipped ? "background:transparent; box-shadow:inset 0 0 0 1px var(--inverse-line);" : "background:var(--inverse-2);"),
         tagStyle: "font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; " + (notShipped ? "color:var(--on-inverse-faint);" : "color:var(--teal-on-dark);"),
         textStyle: "font-size:16px; line-height:1.55; " + (notShipped ? "color:var(--on-inverse-faint);" : "color:var(--on-inverse-2);")
       })),

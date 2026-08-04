@@ -4,9 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	contractcore "github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/operational"
+	"github.com/ydnikolaev/a2ahub/internal/workreport"
 )
 
 // TestDemoFixtureParses verifies the design demo fixture
@@ -33,15 +39,41 @@ func TestDemoFixtureParses(t *testing.T) {
 	if len(data.Nodes) < 5 {
 		t.Errorf("len(Nodes) = %d, want >= 5", len(data.Nodes))
 	}
-	if data.Meta.Schema != "a2a-design-demo/v3" || !data.Meta.Synthetic {
-		t.Fatalf("demo metadata = %+v, want admitted synthetic v3 contract", data.Meta)
+	if data.Meta.Schema != "a2a-design-demo/v4" || !data.Meta.Synthetic {
+		t.Fatalf("demo metadata = %+v, want admitted synthetic v4 contract", data.Meta)
+	}
+	if data.Operational.SchemaVersion != 1 || len(data.Operational.Timeline) == 0 {
+		t.Fatalf("raw demo fixture lacks its generated operational projection: %+v", data.Operational)
 	}
 	wantCounts := map[string][2]int{
-		"spaces": {len(data.Spaces), 4}, "nodes": {len(data.Nodes), 10},
-		"contracts": {len(data.Contracts), 12}, "contractEdges": {len(data.ContractEdges), 15},
-		"exchangeEdges": {len(data.ExchangeEdges), 20}, "inbox": {len(data.Inbox), 11},
-		"outbox": {len(data.Outbox), 8}, "threadViews": {len(data.ThreadViews), 7},
-		"artifactDetails": {len(data.ArtifactDetails), 12}, "unavailable": {len(data.Unavailable), 4},
+		"spaces": {len(data.Spaces), 3}, "nodes": {len(data.Nodes), 7},
+		"contracts": {len(data.Contracts), 8}, "contractEdges": {len(data.ContractEdges), 10},
+		"exchangeEdges": {len(data.ExchangeEdges), 12}, "inbox": {len(data.Inbox), 7},
+		"outbox": {len(data.Outbox), 5}, "threadViews": {len(data.ThreadViews), 5}, "workReports": {len(data.WorkReports), 8},
+		"artifactDetails": {len(data.ArtifactDetails), 10}, "unavailable": {len(data.Unavailable), 4},
+	}
+
+	durableByArtifact := make(map[string]WorkReport, len(data.WorkReports))
+	for _, report := range data.WorkReports {
+		if report.Space == "" || report.Thread == "" || report.ArtifactID == "" || report.SubjectRef == "" || report.ReportedAt == "" {
+			t.Errorf("demo work report lacks durable identity: %+v", report)
+		}
+		durableByArtifact[report.ArtifactID] = report
+	}
+	for _, row := range data.Operational.Timeline {
+		for _, work := range row.Work {
+			if work.CommittedCheckpoint == nil {
+				continue
+			}
+			report, ok := durableByArtifact[work.CommittedCheckpoint.ArtifactID]
+			if !ok {
+				t.Errorf("committed checkpoint %s has no durable demo history row", work.CommittedCheckpoint.ArtifactID)
+				continue
+			}
+			if report.ReportedAt != work.CommittedCheckpoint.ReportedAt.UTC().Format(time.RFC3339Nano) {
+				t.Errorf("durable report %s time = %s, checkpoint = %s; local observation may have leaked into history", report.ArtifactID, report.ReportedAt, work.CommittedCheckpoint.ReportedAt.UTC().Format(time.RFC3339Nano))
+			}
+		}
 	}
 	for name, gotWant := range wantCounts {
 		if gotWant[0] != gotWant[1] {
@@ -51,7 +83,7 @@ func TestDemoFixtureParses(t *testing.T) {
 
 	wantDrifts := map[string]bool{
 		"current": false, "behind": false, "deprecated": false,
-		"retired": false, "dangling": false,
+		"retired": false, "missing": false, "dangling": false,
 	}
 	for _, e := range data.ContractEdges {
 		if _, ok := wantDrifts[e.Drift]; ok {
@@ -104,6 +136,43 @@ func TestDemoFixtureParses(t *testing.T) {
 			t.Errorf("demo flag %q has unsupported source %q", flag.Code, flag.Source)
 		}
 	}
+
+	matchingReceipt, mismatchReceipt, attributed := false, false, false
+	for _, view := range data.ThreadViews {
+		for _, row := range view.Transcript {
+			if row.Event == nil {
+				continue
+			}
+			if row.Event.ProducedBy.Tool != "" && row.Event.ProducedBy.Version != "" {
+				attributed = true
+			}
+			if row.Event.ClaimedState != "" && row.Event.Consistency == nil {
+				matchingReceipt = true
+			}
+			if row.Event.Consistency != nil && row.Event.Consistency.Kind == "state-claim-mismatch" &&
+				row.Event.Consistency.Actual != "" && row.Event.Consistency.Claimed != "" {
+				mismatchReceipt = true
+			}
+		}
+	}
+	if !matchingReceipt || !mismatchReceipt || !attributed {
+		t.Errorf("receipt demo coverage: matching=%v mismatch=%v attributed=%v", matchingReceipt, mismatchReceipt, attributed)
+	}
+}
+
+func TestDemoPublishedCopyMatchesCanonicalFixture(t *testing.T) {
+	t.Parallel()
+	canonical, err := os.ReadFile("testdata/demo.json")
+	if err != nil {
+		t.Fatalf("read canonical demo fixture: %v", err)
+	}
+	published, err := os.ReadFile("demo-data.json")
+	if err != nil {
+		t.Fatalf("read published demo copy: %v", err)
+	}
+	if !bytes.Equal(canonical, published) {
+		t.Fatal("internal/html/demo-data.json drifted from testdata/demo.json")
+	}
 }
 
 func TestDemoOperationalSnapshotUsesSharedProjection(t *testing.T) {
@@ -116,6 +185,15 @@ func TestDemoOperationalSnapshotUsesSharedProjection(t *testing.T) {
 		t.Fatalf("operational snapshot is not a canonical shared projection: %#v", d.Operational)
 	}
 	foundConcurrentWork := false
+	wantModes := map[string]bool{
+		"planning": false, "implementing": false, "testing": false, "reviewing": false,
+		"waiting": false, "paused": false, "finished": false,
+	}
+	wantFreshness := map[string]bool{
+		"local-current": false, "committed-current": false, "stale": false,
+		"finished": false, "unknown": false,
+	}
+	foundExplainedWait := false
 	for _, row := range d.Operational.Timeline {
 		if row.Space == "" || row.Thread == "" || row.Title == "" {
 			t.Fatalf("operational row lacks qualified process identity: %+v", row)
@@ -123,9 +201,220 @@ func TestDemoOperationalSnapshotUsesSharedProjection(t *testing.T) {
 		if len(row.Work) > 1 {
 			foundConcurrentWork = true
 		}
+		for _, work := range row.Work {
+			wantModes[string(work.Mode)] = true
+			wantFreshness[string(work.Freshness)] = true
+			for _, wait := range work.WaitingOn {
+				if wait.ID != "" && wait.Kind != "" && wait.Summary != "" {
+					foundExplainedWait = true
+				}
+			}
+		}
 	}
 	if !foundConcurrentWork {
 		t.Fatal("demo snapshot does not exercise simultaneous work on one process")
+	}
+	for mode, seen := range wantModes {
+		if !seen {
+			t.Errorf("demo operational snapshot does not exercise work mode %q", mode)
+		}
+	}
+	for freshness, seen := range wantFreshness {
+		if !seen {
+			t.Errorf("demo operational snapshot does not exercise work freshness %q", freshness)
+		}
+	}
+	if !foundExplainedWait {
+		t.Error("demo work wait has no typed, human-readable reason")
+	}
+}
+
+func TestDemoCommittedWorkEvidenceComesFromWorkReports(t *testing.T) {
+	t.Parallel()
+
+	d, err := DemoData()
+	if err != nil {
+		t.Fatalf("DemoData: %v", err)
+	}
+	evidence, err := demoCommittedWork(d.WorkReports)
+	if err != nil {
+		t.Fatalf("demoCommittedWork: %v", err)
+	}
+	if len(evidence) != len(d.WorkReports) {
+		t.Fatalf("committed work evidence count = %d, want %d", len(evidence), len(d.WorkReports))
+	}
+
+	type qualifiedArtifact struct{ space, artifactID string }
+	projected := make(map[qualifiedArtifact]struct {
+		space, thread string
+		work          operational.Work
+	})
+	for _, row := range d.Operational.Timeline {
+		for _, work := range row.Work {
+			if work.CommittedCheckpoint != nil {
+				projected[qualifiedArtifact{row.Space, work.CommittedCheckpoint.ArtifactID}] = struct {
+					space, thread string
+					work          operational.Work
+				}{space: row.Space, thread: row.Thread, work: work}
+			}
+		}
+	}
+
+	for index, report := range d.WorkReports {
+		gotEvidence := evidence[index]
+		wantActor := workreport.Actor{Kind: report.Actor.Kind, Name: report.Actor.Name, System: report.Actor.System, Model: report.Actor.Model, Session: report.Actor.Session}
+		wantWaiting := make([]workreport.WaitingOn, len(report.WaitingOn))
+		for i, waiting := range report.WaitingOn {
+			wantWaiting[i] = workreport.WaitingOn{Kind: workreport.WaitKind(waiting.Kind), ID: waiting.ID, Summary: waiting.Summary}
+		}
+		wantProjectedWaiting := append([]workreport.WaitingOn{}, wantWaiting...)
+		sort.Slice(wantProjectedWaiting, func(i, j int) bool {
+			if wantProjectedWaiting[i].Kind != wantProjectedWaiting[j].Kind {
+				return wantProjectedWaiting[i].Kind < wantProjectedWaiting[j].Kind
+			}
+			if wantProjectedWaiting[i].ID != wantProjectedWaiting[j].ID {
+				return wantProjectedWaiting[i].ID < wantProjectedWaiting[j].ID
+			}
+			return wantProjectedWaiting[i].Summary < wantProjectedWaiting[j].Summary
+		})
+		wantReportedAt, parseErr := time.Parse(time.RFC3339Nano, report.ReportedAt)
+		if parseErr != nil {
+			t.Fatalf("report %s reported_at %q: %v", report.ArtifactID, report.ReportedAt, parseErr)
+		}
+		var wantValidUntil time.Time
+		if report.ValidUntil != "" {
+			wantValidUntil, parseErr = time.Parse(time.RFC3339Nano, report.ValidUntil)
+			if parseErr != nil {
+				t.Fatalf("report %s valid_until %q: %v", report.ArtifactID, report.ValidUntil, parseErr)
+			}
+		}
+
+		if gotEvidence.Space != report.Space || gotEvidence.Thread != report.Thread ||
+			gotEvidence.WorkID != report.WorkID || gotEvidence.SubjectRef != report.SubjectRef ||
+			gotEvidence.Mode != workreport.Mode(report.Mode) || gotEvidence.Summary != report.Summary ||
+			gotEvidence.ArtifactID != report.ArtifactID || gotEvidence.CommitSequence != report.CommitSequence ||
+			!gotEvidence.ReportedAt.Equal(wantReportedAt) || !gotEvidence.ValidUntil.Equal(wantValidUntil) ||
+			gotEvidence.Actor != wantActor || !reflect.DeepEqual(gotEvidence.WaitingOn, wantWaiting) {
+			t.Errorf("report %s was not converted to complete committed evidence: got %+v", report.ArtifactID, gotEvidence)
+		}
+
+		got, ok := projected[qualifiedArtifact{report.Space, report.ArtifactID}]
+		if !ok {
+			t.Errorf("report %s has no operational checkpoint", report.ArtifactID)
+			continue
+		}
+		if got.space != report.Space || got.thread != report.Thread ||
+			got.work.CommittedCheckpoint.ArtifactID != report.ArtifactID ||
+			!got.work.CommittedCheckpoint.ReportedAt.Equal(wantReportedAt) ||
+			!equalTimePointer(got.work.CommittedCheckpoint.ValidUntil, wantValidUntil) {
+			t.Errorf("report %s has an incomplete operational checkpoint: %+v", report.ArtifactID, got.work)
+		}
+		if got.work.Source == "local-lease" {
+			continue // The current local lease deliberately supersedes this committed checkpoint.
+		}
+		if got.work.Source != "committed-checkpoint" {
+			t.Errorf("report %s projection source = %q, want committed checkpoint or superseding local lease", report.ArtifactID, got.work.Source)
+			continue
+		}
+		if got.work.WorkID != report.WorkID ||
+			got.work.SubjectRef != report.SubjectRef || got.work.Mode != workreport.Mode(report.Mode) ||
+			got.work.Summary != report.Summary || got.work.Actor.Kind != report.Actor.Kind ||
+			got.work.Actor.Name != report.Actor.Name || got.work.Actor.System != report.Actor.System ||
+			got.work.Actor.Model != report.Actor.Model || got.work.Actor.Session != report.Actor.Session ||
+			!reflect.DeepEqual(got.work.WaitingOn, wantProjectedWaiting) {
+			t.Errorf("report %s was not projected with complete committed-work semantics: %+v", report.ArtifactID, got.work)
+		}
+	}
+}
+
+func equalTimePointer(got *time.Time, want time.Time) bool {
+	return (got == nil && want.IsZero()) || (got != nil && got.Equal(want))
+}
+
+func TestDemoIsTwoFullSpacesPlusOneHonestUnavailableSpace(t *testing.T) {
+	t.Parallel()
+	d, err := DemoData()
+	if err != nil {
+		t.Fatalf("DemoData: %v", err)
+	}
+
+	readable, limited := map[string]bool{}, map[string]bool{}
+	for _, space := range d.Spaces {
+		if space.Readable {
+			readable[space.ID] = true
+		} else {
+			limited[space.ID] = true
+		}
+	}
+	if len(readable) != 2 || !readable["checkout-core"] || !readable["customer-ops"] {
+		t.Fatalf("readable demo spaces = %v, want checkout-core and customer-ops", readable)
+	}
+	if len(limited) != 1 || !limited["archive-migration"] {
+		t.Fatalf("limited demo spaces = %v, want archive-migration", limited)
+	}
+
+	rowsBySpace := map[string]int{}
+	for _, row := range d.Operational.Timeline {
+		rowsBySpace[row.Space]++
+	}
+	for space := range readable {
+		if rowsBySpace[space] == 0 {
+			t.Errorf("readable space %q has no operational row", space)
+		}
+	}
+	if rowsBySpace["archive-migration"] != 0 {
+		t.Errorf("limited space has %d fabricated operational rows", rowsBySpace["archive-migration"])
+	}
+
+	limitedSourceUnavailable, limitedReason := false, false
+	for _, source := range d.Operational.Sources {
+		if source.Kind == "space" && source.Space == "archive-migration" && source.Freshness == "unavailable" {
+			limitedSourceUnavailable = true
+		}
+	}
+	for _, unavailable := range d.Operational.Unavailable {
+		if unavailable.Space == "archive-migration" {
+			limitedReason = true
+		}
+	}
+	if !limitedSourceUnavailable || !limitedReason {
+		t.Fatalf("limited space explanation: source unavailable=%v reason=%v", limitedSourceUnavailable, limitedReason)
+	}
+}
+
+func TestDemoOperationalEvidenceResolvesWithinItsSpace(t *testing.T) {
+	t.Parallel()
+	d, err := DemoData()
+	if err != nil {
+		t.Fatalf("DemoData: %v", err)
+	}
+
+	type qualified struct{ space, id string }
+	views := map[qualified]bool{}
+	subjects := map[qualified]bool{}
+	for _, view := range d.ThreadViews {
+		views[qualified{view.Space, view.Thread}] = true
+		for _, artifact := range view.Artifacts {
+			subjects[qualified{view.Space, artifact.ID}] = true
+		}
+	}
+	for _, detail := range d.ArtifactDetails {
+		subjects[qualified{detail.Space, detail.ID}] = true
+	}
+	for _, contract := range d.Contracts {
+		subjects[qualified{contract.Space, contract.ID}] = true
+	}
+
+	for _, row := range d.Operational.Timeline {
+		if !views[qualified{row.Space, row.Thread}] {
+			t.Errorf("phantom operational thread %s/%s", row.Space, row.Thread)
+		}
+		for _, work := range row.Work {
+			id := strings.SplitN(work.SubjectRef, "@", 2)[0]
+			if !subjects[qualified{row.Space, id}] {
+				t.Errorf("work %s subject %q does not resolve in %s", work.WorkID, work.SubjectRef, row.Space)
+			}
+		}
 	}
 }
 
@@ -237,6 +526,175 @@ func TestDemoCarriesARollingWindow(t *testing.T) {
 		t.Errorf("no contract CONSUMED by the demo's own system (%q) has a version window — that is the "+
 			"dependency row, and it is where a consumer reads which of the provider's lines exist beside "+
 			"their own pinned one", d.Self)
+	}
+}
+
+func TestContractVersionDetailStrictDecode(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`{"version":"9.9.9","state":"published","detail":{"status":"available","invented":true}}`)
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	var version ContractVersion
+	if err := dec.Decode(&version); err == nil || !strings.Contains(err.Error(), "invented") {
+		t.Fatalf("unknown nested detail field decoded without a useful error: %v", err)
+	}
+}
+
+func TestDemoContractVersionDetailsAreVersionScoped(t *testing.T) {
+	t.Parallel()
+
+	d, err := DemoData()
+	if err != nil {
+		t.Fatalf("DemoData: %v", err)
+	}
+
+	var atlas *Contract
+	unavailable := 0
+	documentDigests := map[string]string{}
+	historyEvents := map[string]string{}
+	provenanceSentinels := map[string]string{}
+	previewLanguages := map[string]bool{}
+
+	for ci := range d.Contracts {
+		contract := &d.Contracts[ci]
+		if contract.ID == "XC-atlas-order-envelope" {
+			atlas = contract
+		}
+		for _, version := range contract.Versions {
+			detail := version.Detail
+			if detail == nil {
+				continue
+			}
+			owner := contract.ID + "@" + version.Version
+			switch detail.Status {
+			case ContractVersionDetailUnavailable:
+				unavailable++
+				if strings.TrimSpace(detail.UnavailableReason) == "" {
+					t.Errorf("%s unavailable detail has no reason", owner)
+				}
+			case ContractVersionDetailAvailable:
+				if detail.UnavailableReason != "" {
+					t.Errorf("%s available detail carries unavailableReason %q", owner, detail.UnavailableReason)
+				}
+				if detail.Description == "" || detail.SchemaFormat == "" || detail.CompatPolicy == "" ||
+					detail.PublishedAt == "" || detail.PublishedBy == "" || detail.ChangeSummary == "" {
+					t.Errorf("%s available detail lacks human or publication context: %+v", owner, detail)
+				}
+				if _, parseErr := time.Parse(time.RFC3339, detail.PublishedAt); parseErr != nil {
+					t.Errorf("%s publishedAt = %q: %v", owner, detail.PublishedAt, parseErr)
+				}
+				if len(detail.Documents) < 2 {
+					t.Errorf("%s has %d documents, want a package with normative and supporting evidence", owner, len(detail.Documents))
+				}
+				normative, supporting := false, false
+				for _, document := range detail.Documents {
+					if document.Path == "" || document.Role == "" || document.Digest == "" || document.SizeBytes <= 0 {
+						t.Errorf("%s has incomplete document metadata: %+v", owner, document)
+					}
+					if document.Normative {
+						normative = true
+					} else {
+						supporting = true
+					}
+					if document.Preview == "" || len(document.Preview) > 2048 {
+						t.Errorf("%s document %q preview length = %d, want bounded non-empty safe text", owner, document.Path, len(document.Preview))
+					}
+					previewLanguages[document.PreviewLanguage] = true
+					if previous, exists := documentDigests[document.Digest]; exists {
+						t.Errorf("document digest %q reused across %s and %s", document.Digest, previous, owner)
+					}
+					documentDigests[document.Digest] = owner
+				}
+				if !normative || !supporting {
+					t.Errorf("%s package categories: normative=%v supporting=%v", owner, normative, supporting)
+				}
+				if len(detail.History) == 0 {
+					t.Errorf("%s has no version lifecycle history", owner)
+				}
+				for _, event := range detail.History {
+					if event.EventID == "" || event.Transition == "" || event.State == "" || event.Actor == "" {
+						t.Errorf("%s has incomplete lifecycle event: %+v", owner, event)
+					}
+					if previous, exists := historyEvents[event.EventID]; exists {
+						t.Errorf("history event %q reused across %s and %s", event.EventID, previous, owner)
+					}
+					historyEvents[event.EventID] = owner
+				}
+				if detail.Provenance == nil || detail.Provenance.Profile == "" || detail.Provenance.CommitSHA == "" ||
+					detail.Provenance.TreeObjectID == "" || detail.Provenance.PublishedDigest == "" {
+					t.Errorf("%s has incomplete immutable provenance: %+v", owner, detail.Provenance)
+					break
+				}
+				profile := contractcore.DigestProfile(detail.Provenance.Profile)
+				if profile != contractcore.ProfileContractTreeV1 && profile != contractcore.ProfileContractSetV2 {
+					t.Errorf("%s uses non-canonical contract profile %q", owner, detail.Provenance.Profile)
+				}
+				if detail.Provenance.DigestProfile != detail.Provenance.Profile {
+					t.Errorf("%s profile %q and digestProfile %q diverge", owner, detail.Provenance.Profile, detail.Provenance.DigestProfile)
+				}
+				for label, sentinel := range map[string]string{
+					"commitSHA":       detail.Provenance.CommitSHA,
+					"treeObjectID":    detail.Provenance.TreeObjectID,
+					"publishedDigest": detail.Provenance.PublishedDigest,
+				} {
+					key := label + ":" + sentinel
+					if previous, exists := provenanceSentinels[key]; exists {
+						t.Errorf("provenance %s %q reused across %s and %s", label, sentinel, previous, owner)
+					}
+					provenanceSentinels[key] = owner
+				}
+			default:
+				t.Errorf("%s has unknown detail status %q", owner, detail.Status)
+			}
+		}
+	}
+
+	if unavailable == 0 {
+		t.Fatal("demo has no honest unavailable version detail with a reason")
+	}
+	if atlas == nil {
+		t.Fatal("demo lacks XC-atlas-order-envelope")
+	}
+	wantVersions := map[string]bool{"1.5.0": false, "2.0.0": false, "2.1.0": false, "2.2.0": false}
+	packages := map[string]string{}
+	currentPin, retiredPin, legacyProfile := false, false, false
+	for _, version := range atlas.Versions {
+		if _, ok := wantVersions[version.Version]; !ok {
+			continue
+		}
+		wantVersions[version.Version] = true
+		if version.Detail == nil || version.Detail.Status != ContractVersionDetailAvailable {
+			t.Fatalf("XC-atlas-order-envelope@%s has no available detail", version.Version)
+		}
+		paths := make([]string, 0, len(version.Detail.Documents))
+		for _, document := range version.Detail.Documents {
+			paths = append(paths, document.Path)
+		}
+		packages[version.Version] = strings.Join(paths, "|")
+		for _, pin := range version.Detail.ConsumerPins {
+			currentPin = currentPin || (version.Version == "2.2.0" && pin.System == "checkout" && pin.Drift == "current")
+			retiredPin = retiredPin || (version.Version == "1.5.0" && pin.System == "fulfillment" && pin.Drift == "retired")
+		}
+		legacyProfile = legacyProfile || (version.Version == "1.5.0" &&
+			version.Detail.Provenance.Profile == "contract-tree-v1" &&
+			version.Detail.Provenance.DigestProfile == "contract-tree-v1")
+	}
+	for version, seen := range wantVersions {
+		if !seen {
+			t.Errorf("XC-atlas-order-envelope lacks required version %s", version)
+		}
+	}
+	if packages["1.5.0"] == packages["2.1.0"] || packages["2.1.0"] == packages["2.2.0"] || packages["1.5.0"] == packages["2.2.0"] {
+		t.Errorf("materially distinct version packages collapsed: %+v", packages)
+	}
+	if !currentPin || !retiredPin || !legacyProfile {
+		t.Errorf("version-specific evidence: currentPin=%v retiredPin=%v legacyProfile=%v", currentPin, retiredPin, legacyProfile)
+	}
+	for _, language := range []string{"json", "yaml", "markdown"} {
+		if !previewLanguages[language] {
+			t.Errorf("demo contract packages do not exercise %s previews", language)
+		}
 	}
 }
 

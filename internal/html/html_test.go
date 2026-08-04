@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/workreport"
 )
 
 func TestProviderOf(t *testing.T) {
@@ -51,6 +52,33 @@ func TestNoteProjectionReachesThreadAndArtifactDetail(t *testing.T) {
 	}
 	if got := detail.Events[0].Note; got != note {
 		t.Fatalf("artifact note = %q, want %q", got, note)
+	}
+}
+
+func TestCommittedWorkProjectionReachesThreadAndHistoryCollection(t *testing.T) {
+	t.Parallel()
+	reportedAt := time.Date(2026, 8, 4, 9, 30, 0, 0, time.UTC)
+	thread := toThreadView(cache.ThreadResult{
+		Thread: "thread:test", Space: "space", Order: cache.ThreadOrderCommitted,
+		Transcript: []cache.TranscriptEntry{{
+			Seq: 7, Kind: "artifact", At: reportedAt,
+			Artifact: &cache.TranscriptArtifact{
+				ID: "XA-test-status", Type: "announcement", From: "axon", Title: "Checkpoint",
+				Work: &cache.TranscriptWorkReport{
+					ArtifactID: "XA-test-status", WorkID: "work:01K20ABCDEFHJKMNPQRSTVWXYZ",
+					SubjectRef: "XW-test", Mode: workreport.ModeImplementing, Summary: "Implementing the fix",
+					Actor:      cache.TranscriptEventActor{Kind: "agent", Name: "codex", System: "axon"},
+					ReportedAt: reportedAt, ValidUntil: reportedAt.Add(30 * time.Minute), CommitSequence: 7,
+				},
+			},
+		}},
+	}, "axon")
+	if thread.Transcript[0].Artifact == nil || thread.Transcript[0].Artifact.Work == nil {
+		t.Fatalf("thread lost committed work report: %+v", thread.Transcript)
+	}
+	reports := collectWorkReports([]ThreadView{thread})
+	if len(reports) != 1 || reports[0].SubjectRef != "XW-test" || reports[0].ReportedAt != reportedAt.Format(time.RFC3339Nano) {
+		t.Fatalf("collected work reports = %+v", reports)
 	}
 }
 
@@ -350,6 +378,9 @@ func TestDefaultTemplate_DetailHierarchyAndGuideStayConsistent(t *testing.T) {
 		`data-guide-feedback`,
 		`data-guide-feedback-robot`,
 		`right:-64px; bottom:-82px`,
+		`<dc-import name="EmptyState" title="{{ feedbackTitle }}" text="{{ feedbackText }}" size="panel"`,
+		`data-guide-status-card="true"`,
+		`data-guide-reading-card="true"`,
 		`data-guide-reference`,
 		`Как устроен a2ahub`,
 		`Есть идея? Давайте сделаем a2ahub лучше`,
@@ -438,6 +469,7 @@ func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 		`calloutParts`,
 		`SectionHeading`,
 		`data-artifact-section`,
+		`data-work-report-history`,
 	} {
 		if !strings.Contains(detail, required) {
 			t.Errorf("ArtifactDetail is missing %q", required)
@@ -502,6 +534,48 @@ func TestDefaultTemplate_ArtifactPreviewAndDeadlineHierarchy(t *testing.T) {
 	}
 }
 
+func TestDefaultTemplate_WorkReportsUseDurableHistoryAndCollapseTechnicalPublish(t *testing.T) {
+	t.Parallel()
+	tmpl := string(DefaultTemplate())
+	for _, required := range []string{
+		`"workReports"`,
+		`const workEvents = (d.workReports || []).filter`,
+		`subjectID === a.id`,
+		`report.space === a.space`,
+		`report.thread === a.thread`,
+		`en.event.transition === "publish" && reportByArtifact.has(en.event.subject)`,
+		`Отчёт о работе · не меняет состояние документа`,
+		`committed in Git · valid until`,
+	} {
+		if !strings.Contains(tmpl, required) {
+			t.Errorf("dashboard work-report history is missing %q", required)
+		}
+	}
+}
+
+func TestDashboardDesignSource_WorkReportAndThreadSelectionSemantics(t *testing.T) {
+	t.Parallel()
+	sourceBytes, err := os.ReadFile("../../web/design-source/14-local-dashboard-v4.dc.html")
+	if err != nil {
+		t.Fatalf("read dashboard design source: %v", err)
+	}
+	source := string(sourceBytes)
+	for _, required := range []string{
+		`report.artifact_id === a.id || subjectID === a.id`,
+		`Number(right.commit_sequence || 0) - Number(left.commit_sequence || 0)`,
+		`String(left.artifact_id || "").localeCompare(String(right.artifact_id || ""))`,
+		`threadSpace: ""`,
+		`v.space === threadSpace && v.thread === threadSel`,
+		`threadSpace === t.space && threadSel === t.id`,
+		`threadSpace: t.space`,
+		`data-thread-space="{{ t.space }}"`,
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("dashboard release semantic contract is missing %q", required)
+		}
+	}
+}
+
 func TestDefaultTemplate_HumanFacingDashboardLabelsStayActionable(t *testing.T) {
 	t.Parallel()
 	tmpl := string(DefaultTemplate())
@@ -558,9 +632,38 @@ func TestDefaultTemplate_HumanFacingDashboardLabelsStayActionable(t *testing.T) 
 		`freshnessOpen`,
 		`operational.timeline`,
 		`Где мы сейчас`,
-		`Отсутствие отчёта означает «неизвестно»`,
-		`Сейчас в работе: `,
-		`По протоколу открытых обязательств нет`,
+		`a2a-overview-command-grid`,
+		`a2a-overview-command-heading`,
+		`a2a-overview-operational-heading`,
+		`grid-template-areas:"operational kpis" "operational inventory" "operational attention"`,
+		`a2a-overview-snapshot`,
+		`--space-grid: 18px`,
+		`--font-section-title: 22px`,
+		`--overview-columns:minmax(0,3fr) minmax(320px,2fr)`,
+		`gap:var(--space-grid)`,
+		`a2a-overview-section-title`,
+		`a2a-overview-section-subtitle`,
+		`a2a-overview-operational-scroll`,
+		`a2a-overview-operational-list`,
+		`a2a-overview-process-card`,
+		`background:var(--teal-tint)`,
+		`a2a-overview-attention`,
+		`position:sticky; top:84px`,
+		`data-overview-attention="true"`,
+		`Open in Exchange:`,
+		`Данные в снимке`,
+		`Документы по типам`,
+		`Требуют вашего внимания`,
+		`const inventoryRows = [`,
+		`Кто сейчас работает, кто ждёт и где остались протокольные обязательства.`,
+		`ActorEventLine" row="{{ r.event }}"`,
+		`railOffset: 34`,
+		`subjectLabel: latestSubjectLabel`,
+		`Текущие рабочие потоки`,
+		`Протокольные обязательства`,
+		`Ваш ход`,
+		`Ждём от`,
+		`Блокирует`,
 		`Open the full thread`,
 	} {
 		if !strings.Contains(tmpl, want) {
@@ -579,6 +682,10 @@ func TestDefaultTemplate_HumanFacingDashboardLabelsStayActionable(t *testing.T) 
 		`вшито в этот файл`,
 		`⌄`,
 		`background:var(--green); flex:0 0 9px;`,
+		`overviewLayoutTuner`,
+		`overviewRatio`,
+		`a2a-overview-operational-list::before`,
+		`a2a-overview-process::before`,
 	} {
 		if strings.Contains(tmpl, removed) {
 			t.Errorf("dashboard still carries noisy or ambiguous copy %q", removed)
@@ -588,6 +695,107 @@ func TestDefaultTemplate_HumanFacingDashboardLabelsStayActionable(t *testing.T) 
 	threadTitle := strings.Index(tmpl, `>{{ tvTitle }}</h2>`)
 	if threadMeta < 0 || threadTitle < 0 || threadMeta > threadTitle {
 		t.Error("thread participants and space are not rendered above the thread title")
+	}
+}
+
+func TestDashboardDesignSource_OperationalRowsKeepEvidenceLayersSeparate(t *testing.T) {
+	t.Parallel()
+	sourceBytes, err := os.ReadFile("../../web/design-source/14-local-dashboard-v4.dc.html")
+	if err != nil {
+		t.Fatalf("read dashboard design source: %v", err)
+	}
+	source := string(sourceBytes)
+
+	heading := strings.Index(source, `<div class="a2a-overview-command-heading">`)
+	snapshot := strings.Index(source, `<div class="a2a-overview-snapshot">`)
+	grid := strings.Index(source, `<div class="a2a-overview-command-grid">`)
+	operationalSection := strings.Index(source, `<section class="a2a-overview-operational"`)
+	if heading < 0 || snapshot < 0 || grid < 0 || operationalSection < 0 || heading >= snapshot || snapshot >= grid || grid >= operationalSection {
+		t.Fatalf("heading and snapshot must share the aligned row above the widget grid: heading=%d snapshot=%d grid=%d section=%d", heading, snapshot, grid, operationalSection)
+	}
+	if strings.Contains(source[heading:grid], `a2a-overview-command-meta`) {
+		t.Fatal("snapshot must not be separated from the Overview heading by a standalone meta row")
+	}
+
+	identity := strings.Index(source, `data-operational-process-identity`)
+	currentWork := strings.Index(source, `data-operational-current-work`)
+	protocol := strings.Index(source, `data-operational-protocol`)
+	latestEvent := strings.Index(source, `data-operational-latest-event`)
+	if identity < 0 || currentWork < 0 || protocol < 0 || latestEvent < 0 {
+		t.Fatalf("operational process layers are incomplete: identity=%d current=%d protocol=%d latest=%d", identity, currentWork, protocol, latestEvent)
+	}
+	if identity >= currentWork || currentWork >= protocol || protocol >= latestEvent {
+		t.Fatalf("operational process layers are out of order: identity=%d current=%d protocol=%d latest=%d", identity, currentWork, protocol, latestEvent)
+	}
+
+	for _, required := range []string{
+		`const operationalSource = operationalAll;`,
+		`const operationalShown = operationalSource;`,
+		`const operationalRows = operationalShown.map(o =>`,
+		`const workRows = work.map(w =>`,
+		`data-operational-work-history`,
+		`ActorEventLine" row="{{ w.actorEvent }}"`,
+		`ActorEventLine" row="{{ r.event }}"`,
+		`Current work status is unknown`,
+		`kind: waitKindText(dep.kind)`,
+		`id: dep.id || ""`,
+		`summary: dep.summary || ""`,
+		`yourMove: protocol.your_move === true`,
+		`const waitingOn = listNames(protocol.waiting_on || [], ru)`,
+		`const blockingBy = listNames(protocol.blocking_by || [], ru)`,
+		`const latestName = String(latestActor.name || latestActor.system`,
+		`current.operational = snapshot`,
+		`ovRows: needsYou.map(it => this.rowFor(it, "", "", () => this.go("work"`,
+		`Who is working now, who is waiting, and where protocol obligations remain.`,
+		`<span style="position:absolute; top:14px; right:14px;"><dc-import name="HintDot"`,
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("operational source is missing render contract %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		`const operationalActive =`,
+		`latestOwner || String(latestActor.name`,
+		`critical path`,
+		`exact next verb`,
+		`overviewLayoutTuner`,
+		`overviewRatio`,
+		`a2a-overview-operational-list::before`,
+		`a2a-overview-process::before`,
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("operational source still carries forbidden inference %q", forbidden)
+		}
+	}
+}
+
+func TestDashboardDesignSource_SelectedSpaceOperationalEmptyStatesUseSnapshotEvidence(t *testing.T) {
+	t.Parallel()
+	sourceBytes, err := os.ReadFile("../../web/design-source/14-local-dashboard-v4.dc.html")
+	if err != nil {
+		t.Fatalf("read dashboard design source: %v", err)
+	}
+	source := string(sourceBytes)
+
+	for _, required := range []string{
+		`data-overview-operational-empty="true"`,
+		`<dc-import name="EmptyState" title="{{ operationalEmptyTitle }}" text="{{ operationalEmptyText }}" size="panel"`,
+		`operational.timeline_window || {}`,
+		`operational.unavailable || []`,
+		`selectedSpaceSource.freshness === "unavailable"`,
+		`operationalEmptyKind = "unavailable"`,
+		`operationalEmptyKind = "truncated"`,
+		`operationalEmptyKind = "readable-no-rows"`,
+		`operationalEmptyKind = "no-source"`,
+		`selectedSpaceUnavailable.summary`,
+		`The selected space is unavailable in this snapshot`,
+		`The operational timeline was truncated before a row for the selected space appeared`,
+		`The selected space was readable, but this snapshot contains no operational rows for it`,
+		`This snapshot has no operational source for the selected space`,
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("selected-space empty-state contract is missing %q", required)
+		}
 	}
 }
 
@@ -603,7 +811,8 @@ func TestDefaultTemplate_ThreadCardsShareRhythmAndOpenByTitle(t *testing.T) {
 		`onClick="{{ o.openDocument }}"`,
 		`{{ o.title }}`,
 		`const title = artifact.title || o.id`,
-		`padding:18px 20px`,
+		`border-radius:var(--radius-card)`,
+		`padding:var(--padding-list-card-block) var(--padding-list-card-inline)`,
 		`[].concat(d.inbox || [], d.outbox || [], d.archive || [])`,
 		`const threadArtifact = (d.threadViews || [])`,
 		`|| threadArtifact`,
@@ -656,7 +865,8 @@ func TestDefaultTemplate_ContractRiskNamesActorsVersionsAndSuccessor(t *testing.
 		`Сейчас использует`,
 		`Поставщик публикует`,
 		`Дата снятия`,
-		`Перейти к контракту `,
+		`Открыть версию `,
+		`openContractRef`,
 		`n.openContract`,
 		`n.contractAria`,
 	} {
@@ -668,6 +878,40 @@ func TestDefaultTemplate_ContractRiskNamesActorsVersionsAndSuccessor(t *testing.
 		if strings.Contains(tmpl, removed) {
 			t.Errorf("contract risk UI still carries the unstructured field %q", removed)
 		}
+	}
+}
+
+func TestDefaultTemplate_ContractVersionPackageIsSelectableAndTextOnly(t *testing.T) {
+	t.Parallel()
+	tmpl := string(DefaultTemplate())
+	for _, want := range []string{
+		`contractVersionSwitcher`,
+		`shortLabel`,
+		`Contract overview`,
+		`Обзор контракта`,
+		`Version package`,
+		`Комплект версии`,
+		`data-contract-file-key`,
+		`contractFilePreview`,
+		`Historical package unavailable`,
+		`Исторический комплект недоступен`,
+		`selectedConVersion.detail`,
+		`data-contract-version`,
+		`data-contract-documents-omitted`,
+		`cdVersionDocumentsOmittedText`,
+		`totalDocumentCount`,
+		`omittedDocumentCount`,
+		`dashboard-wide bound`,
+		`не встроено из-за общего лимита дашборда`,
+		`toggleCdVersionProvenance`,
+		`DisclosureIcon`,
+	} {
+		if !strings.Contains(tmpl, want) {
+			t.Errorf("contract version package UI is missing %q", want)
+		}
+	}
+	if strings.Contains(tmpl, `contractFileHTML`) {
+		t.Fatal("contract version file preview gained an HTML projection; carried bytes must remain text-only")
 	}
 }
 

@@ -72,6 +72,26 @@ func (f fakeRenderer) Render(context.Context, operational.Snapshot) ([]byte, err
 	return append([]byte(nil), f.shell...), f.err
 }
 
+type countingRenderer struct {
+	mu    sync.Mutex
+	shell []byte
+	err   error
+	calls int
+}
+
+func (r *countingRenderer) Render(context.Context, operational.Snapshot) ([]byte, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls++
+	return append([]byte(nil), r.shell...), r.err
+}
+
+func (r *countingRenderer) callCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.calls
+}
+
 type fakeTicker struct{ channel chan time.Time }
 
 func (f *fakeTicker) C() <-chan time.Time { return f.channel }

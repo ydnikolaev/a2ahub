@@ -91,7 +91,7 @@ html[data-theme="dark"] {
   --on-inverse-faint: #A8A08A;
   --on-dark: #FAF7F0;
   --on-solid: #0E0D09;
-  --teal-solid: #2A8395;
+  --teal-solid: #3594A7;
   --teal-ink: #8FD0DB;
   --teal-ink-hover: #B4E2EA;
   --teal-tint: #123039;
@@ -104,7 +104,7 @@ html[data-theme="dark"] {
   --attention-ink: #E8C579;
   --attention-strong: #F4DDAA;
   --attention-line: #6B5320;
-  --red: #D6584A;
+  --red: #E8786C;
   --blocking-tint: #3C1E19;
   --blocking-ink: #F0A79A;
   --blocking-strong: #F7C9C1;
@@ -147,15 +147,15 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
 
   <main style="width:min(1240px, 100% - 56px); margin:0 auto; padding:0 0 90px;">
 
-    <div style="display:flex; flex-wrap:wrap; gap:26px; align-items:flex-start;">
+    <div style="display:flex; flex-wrap:wrap; gap:var(--space-section); align-items:flex-start;">
 
       <aside aria-label="Documentation navigation" data-rail style="flex:1 1 240px; min-width:240px; display:flex; flex-direction:column; gap:12px;">
-        <div style="background:var(--surface); border-radius:14px; padding:14px 16px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+        <div style="background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-nested-block) var(--padding-nested-inline); box-shadow:0 1px 2px rgba(33,30,23,.06);">
           <label for="docsearch" style="display:block; font-size:15px; font-weight:600; margin-bottom:8px;">Search the docs</label>
           <input id="docsearch" type="search" value="{{ query }}" onInput="{{ onQuery }}" placeholder="thread, contract, retire…" style="width:100%; box-sizing:border-box; font-family:'Onest',sans-serif; font-size:16px; color:var(--text); background:var(--canvas); border:0; border-radius:9px; padding:11px 13px;">
           <div style="margin-top:8px; font-size:15px; color:var(--muted);">{{ searchNote }}</div>
         </div>
-        <nav aria-label="Documentation" style="background:var(--surface); border-radius:14px; padding:8px 10px 12px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+        <nav aria-label="Documentation" style="background:var(--surface); border-radius:var(--radius-card); padding:8px 10px 12px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
           <sc-for list="{{ groups }}" as="g" hint-placeholder-count="5">
             <div style="padding:10px 6px 4px;">
               <div style="font-size:15px; font-weight:600; color:var(--muted); padding:0 6px 6px;">{{ g.name }}</div>
@@ -173,7 +173,7 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
       </aside>
 
       <article data-rail-article style="flex:4 1 420px; min-width:0;">
-        <div style="background:var(--surface); border-radius:18px; padding:30px 34px 34px; box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
+        <div style="background:var(--surface); border-radius:var(--radius-panel); padding:var(--padding-panel-block) var(--padding-panel-inline); box-shadow:0 1px 3px rgba(33,30,23,.08), 0 18px 40px -28px rgba(33,30,23,.5);">
           <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:14px;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
             <dc-import name="StatusPill" text="{{ docGroup }}" tone="agent" size="small" hint-size="90px,24px"></dc-import>
             <dc-import name="StatusPill" text="{{ docSourcePill }}" tone="outline" size="small" hint-size="140px,24px"></dc-import>
@@ -184,7 +184,7 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
           <p style="margin:0 0 22px; font-size:19px; line-height:1.6; color:var(--body); max-width:34em; text-wrap:pretty;">{{ docLead }}</p>
 
           <sc-if value="{{ isPlaceholder }}" hint-placeholder-val="{{ false }}">
-            <div style="background:var(--page); border-radius:14px; padding:20px 22px; box-shadow:inset 0 0 0 1px var(--border);">
+            <div style="background:var(--page); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:inset 0 0 0 1px var(--border);">
               <div style="font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--body); margin-bottom:10px;">[SSOT document body is injected here at build time]</div>
               <p style="margin:0 0 12px; font-size:16px; line-height:1.6; color:var(--muted); max-width:34em;">This prototype does not paraphrase documentation it does not own. At build time the Astro route and its Markdown twin are generated from the same canonical value below, and the static search index is built from that same text.</p>
               <dc-import name="FactTable" rows="{{ docFacts }}" hint-size="100%,150px"></dc-import>
@@ -193,33 +193,33 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
 
           <sc-if value="{{ isThreads }}" hint-placeholder-val="{{ true }}">
             <section>
-              <h3 id="what-a-thread-is" style="margin:0 0 10px; font-size:24px; font-weight:600; scroll-margin-top:90px;"><a href="#what-a-thread-is" style="text-decoration:none; color:var(--text);">What a thread is</a></h3>
+              <h3 id="what-a-thread-is" style="margin:0 0 10px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; scroll-margin-top:90px;"><a href="#what-a-thread-is" style="text-decoration:none; color:var(--text);">What a thread is</a></h3>
               <p style="margin:0 0 14px; font-size:17px; line-height:1.7; color:var(--body); max-width:34em;">A thread is one intent. The request that opened it, every acknowledgement, the response that answered it, the evidence attached to that response, the verification and any decision taken along the way all carry the same <span style="font-family:'IBM Plex Mono',monospace; font-size:16px;">thread</span> id. Nothing is grouped by guesswork: the id is a required envelope field on every artifact.</p>
               <p style="margin:0 0 20px; font-size:17px; line-height:1.7; color:var(--body); max-width:34em;">Threads are not chat. The unit is a durable document or a lifecycle event, and the record is the repository, not this view.</p>
 
-              <h3 id="reconstruct" style="margin:0 0 10px; font-size:24px; font-weight:600; scroll-margin-top:90px;"><a href="#reconstruct" style="text-decoration:none; color:var(--text);">Reconstructing one</a></h3>
+              <h3 id="reconstruct" style="margin:0 0 10px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; scroll-margin-top:90px;"><a href="#reconstruct" style="text-decoration:none; color:var(--text);">Reconstructing one</a></h3>
               <p style="margin:0 0 12px; font-size:17px; line-height:1.7; color:var(--body); max-width:34em;"><span style="font-family:'IBM Plex Mono',monospace; font-size:16px;">a2a thread</span> rebuilds artifacts and lifecycle events in causal order, names the open items, and shows which systems may act next. An agent reaches the same read model through the MCP tool <span style="font-family:'IBM Plex Mono',monospace; font-size:16px;">a2a_read</span>.</p>
-              <div style="background:var(--inverse); border-radius:11px; padding:14px 16px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:20px;">
+              <div style="background:var(--inverse); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); display:flex; align-items:center; gap:var(--space-stack); flex-wrap:wrap; margin-bottom:20px;">
                 <span style="font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--on-inverse-2); overflow-wrap:anywhere;">{{ blocks.thread.text }}</span>
                 <button type="button" onClick="{{ blocks.thread.copy }}" style="{{ blocks.thread.style }}">{{ blocks.thread.label }}</button>
               </div>
 
-              <h3 id="order-strength" style="margin:0 0 10px; font-size:24px; font-weight:600; scroll-margin-top:90px;"><a href="#order-strength" style="text-decoration:none; color:var(--text);">Order strength: committed beats declared</a></h3>
+              <h3 id="order-strength" style="margin:0 0 10px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; scroll-margin-top:90px;"><a href="#order-strength" style="text-decoration:none; color:var(--text);">Order strength: committed beats declared</a></h3>
               <p style="margin:0 0 14px; font-size:17px; line-height:1.7; color:var(--body); max-width:34em;">Commit order is shown as strong evidence. If Git history is unavailable, declared timestamps are shown as a weaker fallback — explicitly, never silently. A reader always knows which of the two ordered the transcript they are looking at.</p>
               <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:22px;">
-                <div style="flex:1 1 240px; background:var(--healthy-tint); border-radius:12px; padding:14px 16px;">
+                <div style="flex:1 1 240px; background:var(--healthy-tint); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline);">
                   <div style="font-size:16px; font-weight:600; color:var(--healthy-ink); margin-bottom:5px;">committed order</div>
                   <div style="font-size:16px; line-height:1.55; color:var(--healthy-ink);">Derived from Git history. Two systems cannot disagree about it.</div>
                 </div>
-                <div style="flex:1 1 240px; background:var(--attention-tint); border-radius:12px; padding:14px 16px;">
+                <div style="flex:1 1 240px; background:var(--attention-tint); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline);">
                   <div style="font-size:16px; font-weight:600; color:var(--attention-ink); margin-bottom:5px;">declared order</div>
                   <div style="font-size:16px; line-height:1.55; color:var(--attention-ink);">Author timestamps only. Labelled as the weaker fallback wherever it is used.</div>
                 </div>
               </div>
 
-              <h3 id="whose-move" style="margin:0 0 10px; font-size:24px; font-weight:600; scroll-margin-top:90px;"><a href="#whose-move" style="text-decoration:none; color:var(--text);">Whose move is it</a></h3>
+              <h3 id="whose-move" style="margin:0 0 10px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; scroll-margin-top:90px;"><a href="#whose-move" style="text-decoration:none; color:var(--text);">Whose move is it</a></h3>
               <p style="margin:0 0 14px; font-size:17px; line-height:1.7; color:var(--body); max-width:34em;">The next move is not an opinion. It is folded from the immutable event list: the current state of each open artifact, the transitions that state legally allows, and the exact system ids authorized to perform them. A question or work request walks this path:</p>
-              <div style="background:var(--page); border-radius:14px; padding:18px 20px; margin-bottom:14px;">
+              <div style="background:var(--page); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); margin-bottom:var(--space-stack);">
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:10px; font-size:15px;">
                   <span style="background:var(--surface); border-radius:8px; padding:7px 12px; font-weight:600;">draft</span>
                   <span style="color:var(--logo-dim); font-family:'IBM Plex Mono',monospace; font-size:14px;">— submit →</span>
@@ -239,14 +239,14 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
               </div>
               <p style="margin:0 0 22px; font-size:16px; line-height:1.65; color:var(--muted); max-width:34em;">A transition the folded state does not allow, or an actor not authorized for that exact transition, fails at the pre-write check and again in the space gate. The failure is a named flag — <span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">illegal-transition</span>, <span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">unauthorized-actor</span>, <span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">state-claim-mismatch</span> — not a silent drop.</p>
 
-              <h3 id="unresolved" style="margin:0 0 10px; font-size:24px; font-weight:600; scroll-margin-top:90px;"><a href="#unresolved" style="text-decoration:none; color:var(--text);">Unresolved references stay visible</a></h3>
+              <h3 id="unresolved" style="margin:0 0 10px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; scroll-margin-top:90px;"><a href="#unresolved" style="text-decoration:none; color:var(--text);">Unresolved references stay visible</a></h3>
               <p style="margin:0 0 14px; font-size:17px; line-height:1.7; color:var(--body); max-width:34em;">A thread view can name a subject it cannot show — an artifact outside the readable set, a reference whose target is absent, a file the read model could not decode. Those are reported as unresolved facts on the thread. They are never removed to make the transcript look complete.</p>
-              <div style="background:var(--blocking-tint); border-radius:12px; padding:15px 17px; margin-bottom:22px;">
+              <div style="background:var(--blocking-tint); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); margin-bottom:22px;">
                 <div style="font-size:16px; font-weight:600; color:var(--blocking-ink); margin-bottom:5px;">Read the dashboard the same way</div>
                 <div style="font-size:16px; line-height:1.6; color:var(--blocking-strong);">An unreadable space does not contain zero work; it contains work you cannot currently see. The dashboard says exactly that.</div>
               </div>
 
-              <h3 id="see-it" style="margin:0 0 10px; font-size:24px; font-weight:600; scroll-margin-top:90px;"><a href="#see-it" style="text-decoration:none; color:var(--text);">See it on real records</a></h3>
+              <h3 id="see-it" style="margin:0 0 10px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; scroll-margin-top:90px;"><a href="#see-it" style="text-decoration:none; color:var(--text);">See it on real records</a></h3>
               <p style="margin:0 0 14px; font-size:17px; line-height:1.7; color:var(--body); max-width:34em;">The Threads view of the local dashboard renders exactly this model: causal transcript, one current state per artifact, a single “whose move and why” panel, the legal next transitions with the system ids allowed to perform them, and the order-strength label.</p>
               <div style="display:flex; gap:10px; flex-wrap:wrap;">
                 <a href="20-dashboard-example-v4.dc.html" style="font-size:16px; font-weight:600; color:var(--on-primary); background:var(--primary); border-radius:10px; padding:12px 18px; text-decoration:none;">Open a thread in the example dashboard</a>
@@ -257,15 +257,15 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
 
           <sc-if value="{{ isCommands }}" hint-placeholder-val="{{ false }}">
             <section>
-              <div style="background:var(--attention-tint); border-radius:12px; padding:14px 16px; font-size:16px; line-height:1.6; color:var(--attention-ink); margin-bottom:22px;">
+              <div style="background:var(--attention-tint); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); font-size:16px; line-height:1.6; color:var(--attention-ink); margin-bottom:22px;">
                 Generated from the binary into <span style="font-family:'IBM Plex Mono',monospace; font-size:15px;">skill/a2ahub/reference/commands.md</span>. The site never hand-maintains a second command list, so this page cannot drift from the binary it documents.
               </div>
-              <h3 id="cli" style="margin:0 0 12px; font-size:24px; font-weight:600; scroll-margin-top:90px;"><a href="#cli" style="text-decoration:none; color:var(--text);">Command groups</a></h3>
+              <h3 id="cli" style="margin:0 0 12px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; scroll-margin-top:90px;"><a href="#cli" style="text-decoration:none; color:var(--text);">Command groups</a></h3>
               <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:24px;">
                 <sc-for list="{{ cmdGroups }}" as="g" hint-placeholder-count="6">
-                  <div style="background:var(--page); border-radius:14px; padding:16px 18px;">
+                  <div style="background:var(--page); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline);">
                     <div style="display:flex; align-items:flex-start; gap:10px; flex-wrap:nowrap; margin-bottom:5px;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:6px;">
-                      <span style="font-size:18px; font-weight:600;">{{ g.name }}</span>
+                      <span style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600;">{{ g.name }}</span>
                       </span><span style="flex:0 0 auto; font-size:15px; color:var(--muted);">{{ g.count }}</span>
                     </div>
                     <div style="font-size:16px; line-height:1.6; color:var(--muted); margin-bottom:10px; max-width:34em;">{{ g.note }}</div>
@@ -278,7 +278,7 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
                 </sc-for>
               </div>
 
-              <h3 id="mcp" style="margin:0 0 10px; font-size:24px; font-weight:600; scroll-margin-top:90px;"><a href="#mcp" style="text-decoration:none; color:var(--text);">Seven stdio MCP tools</a></h3>
+              <h3 id="mcp" style="margin:0 0 10px; font-size:var(--font-section-title); line-height:var(--line-section-title); font-weight:600; scroll-margin-top:90px;"><a href="#mcp" style="text-decoration:none; color:var(--text);">Seven stdio MCP tools</a></h3>
               <p style="margin:0 0 14px; font-size:17px; line-height:1.7; color:var(--body); max-width:34em;">Local stdio only — not a remote server and not a public endpoint. Both machine surfaces reach the same validation, lifecycle, cache and write funnel.</p>
               <div style="overflow-x:auto; margin-bottom:22px;">
                 <table style="width:100%; border-collapse:collapse; font-size:16px; min-width:520px;">
@@ -292,7 +292,7 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
                   </tbody>
                 </table>
               </div>
-              <div style="background:var(--inverse); border-radius:11px; padding:14px 16px; display:flex; align-items:flex-start; gap:14px; flex-wrap:wrap;">
+              <div style="background:var(--inverse); border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); display:flex; align-items:flex-start; gap:var(--space-stack); flex-wrap:wrap;">
                 <span style="font-family:'IBM Plex Mono',monospace; font-size:15px; line-height:1.9; color:var(--on-inverse-2); overflow-wrap:anywhere;">{{ blocks.cli.text }}</span>
                 <button type="button" onClick="{{ blocks.cli.copy }}" style="{{ blocks.cli.style }}">{{ blocks.cli.label }}</button>
               </div>
@@ -309,7 +309,7 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
       </article>
 
       <aside aria-label="On this page" data-rail data-rail-toc style="flex:1 1 200px; min-width:200px; display:flex; flex-direction:column; gap:12px;">
-        <div style="background:var(--surface); border-radius:14px; padding:16px 18px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+        <div style="background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); box-shadow:0 1px 2px rgba(33,30,23,.06);">
           <div style="font-size:15px; font-weight:600; margin-bottom:10px;">On this page</div>
           <sc-if value="{{ hasToc }}" hint-placeholder-val="{{ true }}">
             <div style="display:flex; flex-direction:column; gap:8px;">
@@ -322,7 +322,7 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
             <div style="font-size:15px; line-height:1.55; color:var(--muted);">Headings come from the injected document, so this list is built at the same time as the body.</div>
           </sc-if>
         </div>
-        <div style="background:var(--surface); border-radius:14px; padding:16px 18px; box-shadow:0 1px 2px rgba(33,30,23,.06);">
+        <div style="background:var(--surface); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); box-shadow:0 1px 2px rgba(33,30,23,.06);">
           <div style="font-size:15px; font-weight:600; margin-bottom:8px;">For agents</div>
           <div style="display:flex; flex-direction:column; gap:7px; font-size:15px;">
             <a href="https://ydnikolaev.github.io/a2ahub/llms.txt" style="text-decoration:none; font-family:'IBM Plex Mono',monospace; font-size:14px;">llms.txt</a>

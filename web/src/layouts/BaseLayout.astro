@@ -30,7 +30,7 @@ const lang = props.lang ?? 'en';
 const robots = props.robots ?? (route?.indexable === false
   ? 'noindex, follow'
   : 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1');
-const analytics = props.analytics ?? (route?.indexable !== false);
+const analytics = import.meta.env.PROD && (props.analytics ?? (route?.indexable !== false));
 const canonicalPath = route?.canonical_path ?? (requestPath === '/' ? '/' : requestPath);
 const canonical = new URL(canonicalPath, Astro.site).toString();
 const socialImage = new URL(content.site.product.socialImage, Astro.site).toString();

@@ -8,7 +8,7 @@
 <body>
 <x-dc>
 <span data-freshness-dot style="position:relative; display:inline-flex; align-items:center; gap:7px; flex:0 0 auto;">
-  <button type="button" onMouseEnter="{{ openHint }}" onMouseLeave="{{ closeHint }}" onFocus="{{ openHint }}" onBlur="{{ closeHint }}" onClick="{{ clickHint }}" aria-label="{{ hint }}" aria-expanded="{{ expanded }}" title="{{ hint }}" style="{{ dotStyle }}"></button>
+  <button type="button" onMouseEnter="{{ openHint }}" onMouseLeave="{{ closeHint }}" onFocus="{{ openHint }}" onBlur="{{ closeHint }}" aria-label="{{ hint }}" aria-expanded="{{ expanded }}" style="{{ dotStyle }}"></button>
   <sc-if value="{{ verbose }}" hint-placeholder-val="{{ false }}"><span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; line-height:1.5; color:var(--attention-ink);">{{ verboseText }}</span></sc-if>
   <sc-if value="{{ open }}" hint-placeholder-val="{{ false }}">
     <span role="tooltip" style="{{ bubbleStyle }}">{{ hint }}</span>
@@ -18,9 +18,9 @@
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:340,&quot;height&quot;:150},&quot;stale&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;age&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;только что&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;hint&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;compact&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
 // One freshness grammar everywhere an exchange is shown. Current snapshots
-// stay quiet until asked; stale snapshots name the warning in text. Hover is a
-// convenience, while click/focus keep the same fact reachable on touch and by
-// keyboard.
+// stay quiet until asked; stale snapshots name the warning in text. Hover and
+// keyboard focus expose the same explanation without turning the signal into
+// a click action.
 class Component extends DCLogic {
   state = { open: false, pos: "" };
 
@@ -75,12 +75,7 @@ class Component extends DCLogic {
         const btn = ev && ev.currentTarget;
         this.show(btn);
       },
-      closeHint: () => this.setState({ open: false }),
-      clickHint: (ev) => {
-        if (ev && ev.stopPropagation) ev.stopPropagation();
-        const btn = ev && ev.currentTarget;
-        this.show(btn);
-      }
+      closeHint: () => this.setState({ open: false })
     };
   }
 }

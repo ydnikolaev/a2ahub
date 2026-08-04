@@ -63,8 +63,8 @@ const root = preserveDynamicTables(productionLinks(dashboard.slice(open, close +
 // fixture that claims the demo schema wrongly.
 const logic = must(
   productionLinks(dashboard.slice(scriptBody, scriptClose)),
-  'if (!d || !d.meta || d.meta.schema !== "a2a-design-demo/v3" || d.meta.synthetic !== true)',
-  'if (!d || (d.meta && d.meta.schema && (d.meta.schema !== "a2a-design-demo/v3" || d.meta.synthetic !== true)))'
+  'if (!d || !d.meta || d.meta.schema !== "a2a-design-demo/v4" || d.meta.synthetic !== true)',
+  'if (!d || (d.meta && d.meta.schema && (d.meta.schema !== "a2a-design-demo/v4" || d.meta.synthetic !== true)))'
 );
 
 // Which components to inline is derived, not listed: walk `dc-import name="X"`

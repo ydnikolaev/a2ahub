@@ -7,10 +7,10 @@
 </head>
 <body>
 <x-dc>
-<div data-section-heading="true" style="display:flex; align-items:baseline; justify-content:space-between; gap:6px 14px; flex-wrap:wrap; margin-bottom:10px;">
-  <div style="min-width:0; font-size:16px; line-height:1.35; font-weight:600; color:var(--text); text-wrap:balance;">{{ title }}</div>
+<div data-section-heading="true" style="display:flex; align-items:baseline; justify-content:space-between; gap:6px 14px; flex-wrap:wrap; margin-bottom:var(--space-after-section-heading, 16px);">
+  <div style="min-width:0; font-size:var(--font-subheading); line-height:var(--line-subheading); font-weight:600; color:var(--text); text-wrap:balance;">{{ title }}</div>
   <sc-if value="{{ hasHint }}" hint-placeholder-val="{{ false }}">
-    <div style="font-size:14px; line-height:1.45; color:var(--muted);">{{ hint }}</div>
+    <div style="font-size:var(--font-meta); line-height:var(--line-meta); color:var(--muted);">{{ hint }}</div>
   </sc-if>
 </div>
 </x-dc>

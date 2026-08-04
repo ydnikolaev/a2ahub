@@ -16,6 +16,13 @@ function mustAll(source: string, pairs: [string, string][]) {
   return pairs.reduce((acc, [from, to]) => must(acc, from, to), source);
 }
 
+function mustSlice(source: string, from: string, to: string) {
+  const start = source.indexOf(from);
+  const end = source.indexOf(to, start);
+  if (start < 0 || end < 0) throw new Error(`design source: projection bounds no longer present:\n${from}\n${to}`);
+  return source.slice(start, end);
+}
+
 const routes: Record<string, string> = {
   '13-public-home-v4.dc.html': '/',
   '14-local-dashboard-v4.dc.html': '/dashboard.html',
@@ -92,10 +99,16 @@ export function runtimeDesignPage(file: string, variant?: 'guide') {
       // must not ship the dashboard's other eight screens and their complete
       // controller. Keep the shared Guide vocabulary/data declarations and a
       // purpose-built projection whose values match the dashboard render.
-      const sharedStart = logic.indexOf('const DASHBOARD_I18N = {');
-      const sharedEnd = logic.indexOf('const VIEW_IDS = ', sharedStart);
-      if (sharedStart < 0 || sharedEnd < 0) throw new Error('approved dashboard Guide logic is incomplete');
-      logic = `${logic.slice(sharedStart, sharedEnd)}
+      const dashboardEN = mustSlice(logic, 'const DASHBOARD_EN = {', 'const DASHBOARD_RU = {');
+      const glossaryEN = mustSlice(logic, 'const A2A_GLOSSARY_EN = {', 'const A2A_GLOSSARY_RU = {');
+      const guideSupport = mustSlice(logic, 'const A2A_TYPE_GUIDE = ', 'const GUIDE_DOCS = ');
+      const guideFeaturesEN = mustSlice(logic, 'const GUIDE_FEATURES_EN = [', 'const GUIDE_RU = {');
+      logic = `${dashboardEN}
+const DASHBOARD_I18N = { en: DASHBOARD_EN };
+${glossaryEN}
+const A2A_GLOSSARY = { en: A2A_GLOSSARY_EN };
+${guideSupport}
+${guideFeaturesEN}
 class Component extends DCLogic {
   renderVals() {
     const c = DASHBOARD_I18N.en;
@@ -116,16 +129,10 @@ class Component extends DCLogic {
       statusGuide: A2A_STATUS_GUIDE.map((key) => ({
         key,
         description: A2A_GLOSSARY.en.statuses[key].description,
-        tone: key === "blocking" ? "blocking" : (["blocked", "your approval pending", "overdue", "disputed", "cancelled", "withdrawn", "space stale"].includes(key) ? "attention" : (["verified", "closed"].includes(key) ? "healthy" : "neutral"))
+        tone: stateTone(key)
       })),
       readingGuideTitle: c.readingGuide,
-      readOnlyLabel: c.readOnly,
-      guideReadingRows: c.readingRows.map((row, index) => ({
-        label: row[0],
-        text: row[1],
-        labelStyle: "padding:13px 20px 13px 0; width:210px; vertical-align:top; font-weight:600;" + (index < c.readingRows.length - 1 ? " border-bottom:1px solid var(--hairline);" : ""),
-        textStyle: "padding:13px 0; line-height:1.6; color:var(--body);" + (index < c.readingRows.length - 1 ? " border-bottom:1px solid var(--hairline);" : "")
-      }))
+      guideReadingRows: c.readingRows.map((row) => ({ label: row[0], text: row[1] }))
     };
   }
 }
@@ -139,7 +146,7 @@ class Component extends DCLogic {
       ['<sc-if value="{{ isPlaceholder }}" hint-placeholder-val="{{ false }}">', '<sc-if value="{{ hasDocBody }}" hint-placeholder-val="{{ true }}">'],
       ['<sc-if value="{{ isThreads }}" hint-placeholder-val="{{ true }}">', '<sc-if value="{{ renderCustomDocs }}" hint-placeholder-val="{{ false }}">'],
       ['<sc-if value="{{ isCommands }}" hint-placeholder-val="{{ false }}">', '<sc-if value="{{ renderCustomDocs }}" hint-placeholder-val="{{ false }}">'],
-      ['<div style="background:var(--page); border-radius:14px; padding:20px 22px; box-shadow:inset 0 0 0 1px var(--border);">', '<div data-doc-placeholder data-doc-id="{{ docId }}" style="background:var(--page); border-radius:14px; padding:20px 22px; box-shadow:inset 0 0 0 1px var(--border);">'],
+      ['<div style="background:var(--page); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:inset 0 0 0 1px var(--border);">', '<div data-doc-placeholder data-doc-id="{{ docId }}" style="background:var(--page); border-radius:var(--radius-card); padding:var(--padding-card-block) var(--padding-card-inline); box-shadow:inset 0 0 0 1px var(--border);">'],
       ['<div style="font-size:15px; font-weight:600; margin-bottom:10px;">On this page</div>', '<div data-doc-toc><div style="font-size:15px; font-weight:600; margin-bottom:10px;">On this page</div>'],
       [
         '<sc-if value="{{ noToc }}" hint-placeholder-val="{{ false }}">\n            <div style="font-size:15px; line-height:1.55; color:var(--muted);">Headings come from the injected document, so this list is built at the same time as the body.</div>\n          </sc-if>\n        </div>',
