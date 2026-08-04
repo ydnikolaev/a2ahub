@@ -122,13 +122,22 @@ func dataLoopPack(ctx context.Context, c *checkout, contractRef, from, fulfills,
 	return result, nil
 }
 
-// dataLoopStagingRoot is dataCore.writeStagedPackage's own deterministic
-// convention (cmd/a2a/data_wiring.go): `a2a data pack` has no --to/--stage
-// flag, so the staging root a delivered package lives at is derived from the
-// checkout's own project root and the minted package id, never printed and
-// re-parsed.
-func dataLoopStagingRoot(c *checkout, packageID string) string {
-	return filepath.Join(c.Dir, ".a2a", "staging", "data", packageID)
+// dataLoopStagingRoot reads the staging root `a2a data pack` itself reports
+// (cli.DataResult.StagingRoot, the `staging_root` field of `pack --json`) —
+// the exact argument `a2a data deliver` takes next.
+//
+// It is READ, never rebuilt from the minted package id. This file used to
+// derive it from dataCore.writeStagedPackage's own path convention, which
+// worked but coupled the live tier to an internal layout AND contradicted
+// what reference/data-exchange.md tells every agent to do ("use the path it
+// printed; do not reconstruct it from the minted id"). Consuming the field
+// instead makes this row the only place that proves it end to end against
+// real GitHub — nothing else does.
+func dataLoopStagingRoot(result cli.DataResult, attempt string) (string, error) {
+	if result.StagingRoot == "" {
+		return "", fmt.Errorf("data pack (%s) reported no staging_root; `a2a data deliver` has no argument to take", attempt)
+	}
+	return result.StagingRoot, nil
 }
 
 // dataLoopCorruptRecordCount declares a record_count that disagrees with
@@ -338,7 +347,10 @@ func dataLoopFailSupersedePass(ctx context.Context, h *harness) Result {
 	if err != nil {
 		return dataLoopResultFromErr("pack-attempt-1", err, "`a2a data pack` stages attempt 1 against the pinned contract")
 	}
-	staging1 := dataLoopStagingRoot(b, pack1.Manifest.ID)
+	staging1, err := dataLoopStagingRoot(pack1, "attempt 1")
+	if err != nil {
+		return dataLoopResultFromErr("pack-attempt-1", err, "`a2a data pack` reports the staging root `a2a data deliver` takes next")
+	}
 	if err := dataLoopCorruptRecordCount(staging1, "payload.json", 1); err != nil {
 		return dataLoopResultFromErr("corrupt-attempt-1", err, "attempt 1's staged manifest declares a record_count the digest-verified payload does not have")
 	}
@@ -409,7 +421,10 @@ func dataLoopFailSupersedePass(ctx context.Context, h *harness) Result {
 	if pack2.Manifest.Supersedes == "" {
 		return dataLoopFail("pack-attempt-2", "supersedes=\"\"", "attempt 2's manifest carries a non-empty supersedes reference to attempt 1", "")
 	}
-	staging2 := dataLoopStagingRoot(b, pack2.Manifest.ID)
+	staging2, err := dataLoopStagingRoot(pack2, "attempt 2")
+	if err != nil {
+		return dataLoopResultFromErr("pack-attempt-2", err, "`a2a data pack` reports the staging root `a2a data deliver` takes next")
+	}
 	deliver2, deliver2Pull, err := dataLoopOperationPull(ctx, h, b, []string{"data", "deliver", staging2, "--fulfills", wr.ID})
 	if err != nil {
 		return dataLoopResultFromErr("deliver-attempt-2", err, "`a2a data deliver` accepts attempt 2 and opens its own PR — a DIFFERENT branch from attempt 1's (the operation key is minted from the package id, which differs per attempt)")
