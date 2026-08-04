@@ -103,6 +103,9 @@ const (
 // as a deviation in this wave's report.
 type DeliveryVerdictStatus string
 
+// The four verdict states a delivery can be in. `unverified` is a state of
+// its own and never a synonym for anything else: a delivery nobody has
+// judged yet must not read as one that passed.
 const (
 	DeliveryVerdictPass       DeliveryVerdictStatus = "pass"
 	DeliveryVerdictFail       DeliveryVerdictStatus = "fail"

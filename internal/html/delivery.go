@@ -21,6 +21,9 @@ import "github.com/ydnikolaev/a2ahub/internal/cache"
 // could be resolved — the render-layer mirror of cache.DeliveryStatus.
 type DeliveryResolution string
 
+// A manifest either resolved or it did not; an unresolved delivery is
+// rendered as unresolved rather than omitted, so a reader is never shown a
+// thread that silently lost an attempt.
 const (
 	DeliveryResolved   DeliveryResolution = "resolved"
 	DeliveryUnresolved DeliveryResolution = "unresolved"
@@ -34,6 +37,7 @@ const (
 // branch here is named for that reason.
 type DeliveryVerdict string
 
+// One non-empty string per state, including the unverified one.
 const (
 	DeliveryVerdictPassed     DeliveryVerdict = "passed"
 	DeliveryVerdictFailed     DeliveryVerdict = "failed"

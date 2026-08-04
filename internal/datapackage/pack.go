@@ -103,7 +103,7 @@ func Pack(ctx context.Context, req PackRequest) (Document, error) {
 		}
 		count, err := CountRecords(req.Format, f.Bytes)
 		if err != nil {
-			return Document{}, fmt.Errorf("datapackage: Pack: %w: entry %q: %v", ErrEntryNonConforming, f.RelPath, err)
+			return Document{}, fmt.Errorf("datapackage: Pack: %w: entry %q: %w", ErrEntryNonConforming, f.RelPath, err)
 		}
 		recordCounts[f.RelPath] = count
 		totalRecords += count
