@@ -17,6 +17,9 @@ func TestContractPathsFollowReturnedRunScopedID(t *testing.T) {
 	if want := "alpha/provides/ac973-registered-consumer-run-1669/schema/ac973-registered-consumer-run-1669.schema.json"; got.SchemaFile != want {
 		t.Fatalf("SchemaFile = %q, want %q", got.SchemaFile, want)
 	}
+	if want := ".a2a/staging/alpha/provides/ac973-registered-consumer-run-1669"; got.StagingRoot != want {
+		t.Fatalf("StagingRoot = %q, want %q", got.StagingRoot, want)
+	}
 	if want := "fixtures/valid/ac973-registered-consumer-run-1669.json"; got.ValidFixtureKey != want {
 		t.Fatalf("ValidFixtureKey = %q, want %q", got.ValidFixtureKey, want)
 	}

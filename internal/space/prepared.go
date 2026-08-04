@@ -489,7 +489,7 @@ func validatePreparationFloors(binaryVersion string, preparation PreparationCont
 			return err
 		}
 		if older {
-			return ErrStaleBinaryVersion
+			return fmt.Errorf("%w: current binary %s; space requires min_binary_version %s; update a2a before retrying the write", ErrStaleBinaryVersion, binaryVersion, preparation.ObservedSpaceFloor)
 		}
 	}
 	data := preparedSubmissionData{

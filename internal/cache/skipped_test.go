@@ -347,6 +347,7 @@ func TestWalkArtifacts_InfrastructureIsNotASkippedArtifact(t *testing.T) {
 		}
 	}
 	write("BRANCH-PROTECTION.md", "# Space setup\n")
+	write("README.md", "# Space overview\n")
 	write(".github/README.md", "# Workflow notes\n")
 	write("axon/README.md", "# Participant prose\n")
 

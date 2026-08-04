@@ -374,16 +374,32 @@ type operationalWorkOutput struct {
 		State string `json:"state"`
 	} `json:"local"`
 	Shared struct {
-		Attempted   bool              `json:"attempted"`
-		WriteResult space.WriteResult `json:"write_result"`
+		Attempted      bool              `json:"attempted"`
+		WriteResultRaw json.RawMessage   `json:"write_result"`
+		WriteResult    space.WriteResult `json:"-"`
 	} `json:"shared"`
+}
+
+func decodeOperationalWorkOutput(raw []byte) (operationalWorkOutput, error) {
+	var output operationalWorkOutput
+	if err := json.Unmarshal(raw, &output); err != nil {
+		return output, err
+	}
+	if output.Shared.Attempted {
+		result, err := space.DecodeWriteResultJournal(output.Shared.WriteResultRaw)
+		if err != nil {
+			return output, fmt.Errorf("decode shared write result journal: %w", err)
+		}
+		output.Shared.WriteResult = result
+	}
+	return output, nil
 }
 
 func operationalWorkCommand(ctx context.Context, oc *operationalConfidenceRun, c *checkout, args ...string) (operationalWorkOutput, error) {
 	args = append(args, "--json")
 	stdout, stderr, err := c.Run(ctx, args...)
-	var output operationalWorkOutput
-	if decodeErr := json.Unmarshal([]byte(stdout), &output); decodeErr != nil {
+	output, decodeErr := decodeOperationalWorkOutput([]byte(stdout))
+	if decodeErr != nil {
 		return output, fmt.Errorf("%s: decode JSON: %w (stderr=%s)", strings.Join(args, " "), decodeErr, strings.TrimSpace(stderr))
 	}
 	if err != nil {
@@ -432,17 +448,16 @@ func operationalWorkCheckpoints(ctx context.Context, oc *operationalConfidenceRu
 		return proof, VerdictFail, err
 	}
 	operationalCollectWorkRef(oc, owner, &proof, waitB)
+	checkpointB, err := operationalWorkCommand(ctx, oc, oc.h.B, "work", "checkpoint", "--work-id", oc.workB.ID, "--session", oc.workB.Session, "--mode", "reviewing", "--summary", "bravo prepared server proof", "--report-valid-for", "30m")
+	if err != nil {
+		return proof, VerdictFail, err
+	}
+	operationalCollectWorkRef(oc, owner, &proof, checkpointB)
 	stopA, err := operationalWorkCommand(ctx, oc, oc.h.A, "work", "stop", "--work-id", oc.workA.ID, "--session", oc.workA.Session, "--result", "paused", "--summary", "alpha paused for server proof", "--report-valid-for", "30m")
 	if err != nil {
 		return proof, VerdictFail, err
 	}
 	operationalCollectWorkRef(oc, owner, &proof, stopA)
-	stopB, err := operationalWorkCommand(ctx, oc, oc.h.B, "work", "stop", "--work-id", oc.workB.ID, "--session", oc.workB.Session, "--result", "paused", "--summary", "bravo paused for server proof", "--report-valid-for", "30m")
-	if err != nil {
-		return proof, VerdictFail, err
-	}
-	operationalCollectWorkRef(oc, owner, &proof, stopB)
-
 	if _, stderr, err := oc.h.A.Run(ctx, "sync"); err != nil {
 		return proof, VerdictFail, fmt.Errorf("sync A: %w: %s", err, stderr)
 	}
@@ -645,11 +660,6 @@ func operationalStaticServer(ctx context.Context, oc *operationalConfidenceRun) 
 		return proof, VerdictFail, err
 	}
 	defer func() { _ = sseResponse.Body.Close() }()
-	resume, err := operationalWorkCommand(ctx, oc, oc.h.B, "work", "resume", "--work-id", oc.workB.ID, "--session", oc.workB.Session)
-	if err != nil {
-		return proof, VerdictFail, err
-	}
-	operationalCollectWorkRef(oc, owner, &proof, resume)
 	checkpoint, err := operationalWorkCommand(ctx, oc, oc.h.B, "work", "checkpoint", "--work-id", oc.workB.ID, "--session", oc.workB.Session, "--mode", "reviewing", "--summary", "server checkpoint committed", "--report-valid-for", "30m")
 	if err != nil {
 		return proof, VerdictFail, err
@@ -679,13 +689,25 @@ func operationalStaticServer(ctx context.Context, oc *operationalConfidenceRun) 
 func operationalContractPublish(ctx context.Context, oc *operationalConfidenceRun) (operationalProof, Verdict, error) {
 	const owner = "LE-OC-06/baseline"
 	proof := newOperationalProof("a2a contract publish")
-	stage := filepath.Join(oc.h.A.Dir, "oc-p7-contract")
 	id := "XC-" + systemAlpha + "-" + liveRunSlug("oc-p7-contract", oc.h.PRFloor)
+	slug := strings.TrimPrefix(id, "XC-"+systemAlpha+"-")
+	stageRel := filepath.ToSlash(filepath.Join(".a2a", "staging", systemAlpha, "provides", slug))
+	stage := filepath.Join(oc.h.A.Dir, filepath.FromSlash(stageRel))
 	if err := operationalWriteContractCandidate(stage, id, "0.0.0", false); err != nil {
 		return proof, VerdictFail, err
 	}
 	oc.cleanup.Register(owner, func(context.Context) error { return os.RemoveAll(stage) })
-	oc.contractID, oc.contractStage = id, "oc-p7-contract"
+	oc.contractID, oc.contractStage = id, stageRel
+	submitted, err := oc.h.submitDrafted(ctx, oc.h.A, id)
+	if err != nil {
+		return proof, VerdictFail, fmt.Errorf("submit standing contract before version publication: %w", err)
+	}
+	operationalRegisterBranch(oc, owner, submitted.Branch)
+	proof.prs = append(proof.prs, operationalPR(oc.h, submitted.PRNumber))
+	proof.artifacts = append(proof.artifacts, id)
+	if err := happyLandAndSync(ctx, oc.h, oc.h.A, submitted.PRNumber); err != nil {
+		return proof, VerdictFail, err
+	}
 	beforePulls, err := oc.h.runPulls(ctx)
 	if err != nil {
 		return proof, VerdictFail, err
@@ -739,7 +761,6 @@ func operationalContractPublish(ctx context.Context, oc *operationalConfidenceRu
 		return proof, VerdictFail, fmt.Errorf("publish returned no PR: %+v", published.Write)
 	}
 	proof.prs = append(proof.prs, operationalPR(oc.h, published.Write.PRNumber))
-	proof.artifacts = append(proof.artifacts, id)
 	if err := happyLandAndSync(ctx, oc.h, oc.h.A, published.Write.PRNumber); err != nil {
 		return proof, VerdictFail, err
 	}
@@ -819,7 +840,8 @@ func operationalHistoricalMaterialize(ctx context.Context, oc *operationalConfid
 	if oc.contractID == "" {
 		return proof, VerdictFail, errors.New("LE-OC-06 did not publish the baseline contract")
 	}
-	if err := operationalWriteContractCandidate(filepath.Join(oc.h.A.Dir, oc.contractStage), oc.contractID, "0.0.0", true); err != nil {
+	stage := filepath.Join(oc.h.A.Dir, filepath.FromSlash(oc.contractStage))
+	if err := operationalWriteContractCandidate(stage, oc.contractID, "0.0.0", true); err != nil {
 		return proof, VerdictFail, err
 	}
 	preflightRaw, stderr, err := oc.h.A.Run(ctx, "contract", "preflight", oc.contractID, "--version", "2.0.0", "--staging", oc.contractStage, "--json")

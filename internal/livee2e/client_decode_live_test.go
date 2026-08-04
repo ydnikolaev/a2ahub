@@ -4,6 +4,7 @@ package livee2e
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,7 +12,73 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/internal/space"
 )
+
+func TestOperationalWorkOutputDecodesCanonicalWriteJournal(t *testing.T) {
+	t.Parallel()
+
+	want := space.WriteResult{
+		ArtifactIDs: []string{"XA-alpha-20260804-abcd"}, Branch: "a2a/alpha/work/op-v1-test",
+		PRNumber: 42, PRURL: "https://example.test/pulls/42",
+		Stage: space.WriteStageAutoMergeArmed, State: space.WriteStatePendingMerge,
+		RemainingAction: space.RemainingActionWaitForGates,
+	}
+	journal, err := space.EncodeWriteResultJournal(want)
+	if err != nil {
+		t.Fatalf("EncodeWriteResultJournal: %v", err)
+	}
+	raw, err := json.Marshal(map[string]any{
+		"work_id": "work:01KTEST", "session": "session-test", "semantic_sequence": 1,
+		"local":  map[string]any{"state": "active"},
+		"shared": map[string]any{"attempted": true, "write_result": json.RawMessage(journal)},
+	})
+	if err != nil {
+		t.Fatalf("marshal output: %v", err)
+	}
+	got, err := decodeOperationalWorkOutput(raw)
+	if err != nil {
+		t.Fatalf("decodeOperationalWorkOutput: %v", err)
+	}
+	if got.Shared.WriteResult.PRNumber != want.PRNumber || got.Shared.WriteResult.Branch != want.Branch {
+		t.Fatalf("decoded write result = %+v, want PR/branch from canonical journal %+v", got.Shared.WriteResult, want)
+	}
+}
+
+func TestDeleteRefTreatsProviderAutoDeletionAsIdempotentOnlyAfterReread(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		branches string
+		wantErr  bool
+	}{
+		{name: "already absent", branches: `[]`},
+		{name: "still present", branches: `[{"name":"a2a/alpha/work/test"}]`, wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					w.WriteHeader(http.StatusUnprocessableEntity)
+					_, _ = w.Write([]byte(`{"message":"Reference does not exist"}`))
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(tc.branches))
+			}))
+			defer srv.Close()
+
+			client := &ghClient{Token: "t", APIRoot: srv.URL}
+			err := client.DeleteRef(context.Background(), "o", "r", "heads/a2a/alpha/work/test")
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("DeleteRef error = %v, wantErr=%t", err, tc.wantErr)
+			}
+		})
+	}
+}
 
 // The 2026-07-25 run is why these exist. GitHub answered `GET /pulls` with a
 // 200 and a truncated body; the client returned the decode error straight
