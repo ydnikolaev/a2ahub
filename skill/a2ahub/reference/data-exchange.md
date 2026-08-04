@@ -66,6 +66,23 @@ acknowledged (fold table: `verify-pass`/`verify-fail` are only legal from
 illegal transition. Judge-only `a2a data verify` (no `--record`) has no such
 requirement; it never touches the handoff at all.
 
+### `kind: data` on a hand-authored handoff means something specific
+
+A handoff's `deliverables[]` entry with `kind: data` is read as a **packed
+data package**: the dashboard parses its `ref` as a `DP-` package id and looks
+up that package's manifest and verification report. A ref that is not exactly
+a `DP-` id — a file path, a URL, a bare dataset name — resolves to nothing,
+and the thread renders that deliverable as *"package not found in the local
+mirror"*, which is not what you meant if you were only pointing at a dataset
+that lives elsewhere.
+
+So: if the bytes are packed and delivered by `a2a data deliver`, the ref is
+the `DP-` id and it is filled in for you — never hand-author it. If you are
+merely REFERRING to data that lives somewhere else and nothing here is going
+to verify it, use a different `kind` (`doc` is usually right) so the thread
+does not advertise a missing package. `kind: data` is a claim that a verdict
+exists or is coming.
+
 **Verifying the handoff is not the same as closing the work_request.**
 `data verify --record` only ever moves the *handoff*. The `work_request` the
 delivery answers still goes through the ordinary loop once the accepted
