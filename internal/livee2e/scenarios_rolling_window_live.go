@@ -352,6 +352,19 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	if pathErr != nil {
 		return rwResultFromErr("contract-still-operable-after-retire", pathErr, "the current contract id resolves to its contained staging root")
 	}
+	// Restore the 2.x line's own schema before publishing on it. Step 5
+	// overwrote the staging tree with the WIDENED schema for the 1.2.0
+	// maintenance publish, where `example` is a string; 2.0.0 narrowed it to
+	// an integer. Publishing 2.1.0 from the leftover tree would therefore
+	// declare a string-over-integer change as a MINOR — precisely what
+	// `contract publish` now refuses before it writes anything (POL-007).
+	// The row would then red on `contract-still-operable-after-retire` and
+	// report a terminal-state product defect that had not happened: the
+	// cause would be this harness's own stale staging tree. Publishing the
+	// unchanged 2.x schema is the honest operability proof.
+	if err := rwWriteSchema(a, sub.ID, rwSchemaNarrowedToInteger); err != nil {
+		return rwResultFromErr("stage-2.1.0-schema", err, "the 2.x line's own schema is restored before publishing on it")
+	}
 	_, stillOperablePR, err := contractPublishPull(ctx, h, a,
 		contractPublishVersionArgs(sub.ID, "2.1.0", contractPaths.StagingRoot))
 	if err != nil {

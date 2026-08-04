@@ -416,6 +416,16 @@ func ac973ContractIntegrity(ctx context.Context, h *harness) Result {
 	if err != nil {
 		return ac973ResultFromErr("retire-succeeds", err, "contract retire's own branch has an open PR")
 	}
+	// Land it. A command that exits zero and opens a pull request is not
+	// proof the retirement is legal — the merge gate runs the same checks,
+	// and this project has already shipped a defect of exactly that shape,
+	// where a refused publication still opened a PR and the contradiction
+	// surfaced minutes later on a branch the agent had left behind. Every
+	// other terminal step in this family lands and syncs; without this one
+	// the row's final assertion cannot fail.
+	if err := happyLandAndSync(ctx, h, a, retirePR.Number); err != nil {
+		return ac973ResultFromErr("retire-land-sync", err, "the retirement lands on main and reaches A's mirror")
+	}
 
 	return Result{
 		Scenario: ac973Scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
