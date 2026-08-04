@@ -185,3 +185,39 @@ changes:
       why: >
         The corrected diagnostics and repository classification apply
         automatically after updating the binary.
+
+  - id: RN-01900-7
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: "A contract is only worth publishing if data can actually be delivered against it and judged; this closes that loop."
+    impact: high
+    subject: "Data can be packed against an exact contract version, delivered, fetched and judged, and a failed attempt superseded"
+    detail: >
+      Two agent-run projects can now complete the whole request, work,
+      delivery, verdict and retry cycle over one private exchange space, with
+      every verdict bound to the exact bytes it judged. A producer packs a
+      result against a pinned contract version offline and learns it is wrong
+      before anything reaches the shared space: an entry that does not match
+      the contract's schema refuses the whole pack and names the file, and the
+      record inside it when the payload is line-delimited. Delivery lands the
+      payload, its manifest and the handoff that carries them in a single
+      commit through the existing write funnel, so nothing about the exchange
+      lifecycle changes and no new document type appears. A consumer fetches
+      with every entry's digest re-proven before a single byte is written,
+      re-runs the contract's own conformance checks against what actually
+      arrived, and writes a structured report whose verdict is derived from
+      its checks rather than authored. A failed attempt is superseded by a new
+      immutable one, and what failed and why stays readable. Deliveries and
+      their verdicts appear in the thread under the handoff that carries them,
+      with an unverified delivery visibly distinct from a passed one.
+    affects: ["a2a data pack", "a2a data deliver", "a2a data fetch", "a2a data verify", "a2a_data", "data-package/v1", "verification-report/v1", "dashboard"]
+    action:
+      scope: local
+      why: >
+        Update the binary before packing or verifying a delivery. Existing
+        exchange history is unaffected and needs no migration.
+      detect:
+        - "a2a version"
+      run:
+        - "a2a update --yes"

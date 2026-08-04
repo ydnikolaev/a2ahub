@@ -46,13 +46,9 @@ type Bounds struct {
 	MaxEntries int
 
 	// MaxRecords bounds the sum of every entry's record_count — the
-	// producer's honest claim, re-counted by the consumer at verify. This
-	// field has no caller in this package: record counting happens while
-	// parsing json/ndjson content record-by-record, which is
-	// internal/datapackage/entryset.go's job (lead-reserved, spec 05a plan
-	// wave W2) and is not part of the filesystem walker or installer this
-	// brief ships. The bound and its check exist now so entryset.go adopts
-	// a configured ceiling rather than inventing its own.
+	// producer's honest claim, re-counted by the consumer at verify with
+	// the same rule (records.go), so the two sides can never disagree
+	// about a delivery this package itself produced.
 	MaxRecords int
 }
 
@@ -124,8 +120,9 @@ func (b Bounds) CheckEntryCount(count int) error {
 }
 
 // CheckRecordCount refuses count if it is negative or exceeds MaxRecords.
-// Same inclusive-limit convention as CheckEntryBytes. No production caller
-// exists in this package yet — see MaxRecords's doc comment.
+// Same inclusive-limit convention as CheckEntryBytes. Called by pack once
+// every entry's records have been counted with the single rule in
+// records.go.
 func (b Bounds) CheckRecordCount(count int) error {
 	if count < 0 || count > b.MaxRecords {
 		return fmt.Errorf("%w: package has %d records, exceeds the %d record bound", ErrBoundExceeded, count, b.MaxRecords)

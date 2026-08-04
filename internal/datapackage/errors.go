@@ -85,6 +85,15 @@ var (
 	// caller relies on for the appearance of portability.
 	ErrAtomicNoReplaceUnsupported = errors.New("datapackage: atomic no-replace directory install is unsupported on this platform")
 
+	// ErrContractRefMismatch refuses a verification whose caller resolved a
+	// different contract version than the manifest pins. This package cannot
+	// resolve a contract itself, so the schemas a checker was built from are
+	// the caller's word; without this check a caller bug would judge a
+	// delivery against a version it never agreed to and the report would
+	// look entirely normal. L-2 at the boundary where it can actually be
+	// enforced.
+	ErrContractRefMismatch = errors.New("datapackage: resolved contract ref does not match the contract pinned in the manifest")
+
 	// ErrDestinationDiverged refuses a fetch into a destination that already
 	// holds different bytes, leaving it untouched. A destination holding
 	// byte-identical content is NOT an error: a re-fetch that finds exactly

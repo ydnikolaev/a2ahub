@@ -1,0 +1,80 @@
+[
+  {
+    "handoff_id": "XH-beta-20260101-aaaa",
+    "name": "sample dataset, attempt 1",
+    "ref": "DP-beta-20260101-aaaa",
+    "status": "available",
+    "package_id": "DP-beta-20260101-aaaa",
+    "attempt": 1,
+    "verdict": "fail",
+    "report_id": "VR-alpha-20260101-aaaa",
+    "failures": [
+      {
+        "entry_path": "dataset/records.ndjson",
+        "rule": "chk-schema",
+        "record": 4108
+      }
+    ],
+    "chain": [
+      {
+        "package_id": "DP-beta-20260101-aaaa",
+        "attempt": 1,
+        "status": "available",
+        "verdict": "fail",
+        "report_id": "VR-alpha-20260101-aaaa"
+      }
+    ]
+  },
+  {
+    "handoff_id": "XH-beta-20260102-bbbb",
+    "name": "sample dataset, attempt 2",
+    "ref": "DP-beta-20260102-bbbb",
+    "status": "available",
+    "package_id": "DP-beta-20260102-bbbb",
+    "attempt": 2,
+    "supersedes": "DP-beta-20260101-aaaa",
+    "verdict": "pass",
+    "report_id": "VR-alpha-20260102-bbbb",
+    "chain": [
+      {
+        "package_id": "DP-beta-20260101-aaaa",
+        "attempt": 1,
+        "status": "available",
+        "verdict": "fail",
+        "report_id": "VR-alpha-20260101-aaaa"
+      },
+      {
+        "package_id": "DP-beta-20260102-bbbb",
+        "attempt": 2,
+        "status": "available",
+        "verdict": "pass",
+        "report_id": "VR-alpha-20260102-bbbb"
+      }
+    ]
+  },
+  {
+    "handoff_id": "XH-beta-20260103-cccc",
+    "name": "second dataset, attempt 1",
+    "ref": "DP-beta-20260103-cccc",
+    "status": "available",
+    "package_id": "DP-beta-20260103-cccc",
+    "attempt": 1,
+    "verdict": "unverified",
+    "chain": [
+      {
+        "package_id": "DP-beta-20260103-cccc",
+        "attempt": 1,
+        "status": "available",
+        "verdict": "unverified"
+      }
+    ]
+  },
+  {
+    "handoff_id": "XH-beta-20260104-dddd",
+    "name": "third dataset, delivered but manifest unreadable",
+    "ref": "DP-beta-20260104-dddd",
+    "status": "unavailable",
+    "unavailable_reason": "data package \"DP-beta-20260104-dddd\" referenced by handoff \"XH-beta-20260104-dddd\"'s deliverable \"third dataset, delivered but manifest unreadable\" could not be resolved",
+    "chain": []
+  }
+]
