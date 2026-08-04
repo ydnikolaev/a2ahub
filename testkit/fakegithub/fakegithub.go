@@ -237,6 +237,15 @@ func (s *Server) handleFindPR(w http.ResponseWriter, r *http.Request) {
 			out = append(out, map[string]any{
 				"number": pr.Number, "html_url": s.prURL(pr.Number),
 				"state": prAPIState(pr), "merged": pr.Merged,
+				// body is what the write funnel's operation-key retry reads
+				// back to confirm a found branch belongs to the same
+				// operation before repairing its pull request. Real GitHub
+				// returns it from the list endpoint; omitting it here made
+				// EVERY keyed retry refuse with "operation branch metadata
+				// does not match" in every hermetic test, so the
+				// repair-rather-than-duplicate property was unprovable
+				// locally and could only ever have been discovered live.
+				"body": pr.Body,
 			})
 		}
 	}

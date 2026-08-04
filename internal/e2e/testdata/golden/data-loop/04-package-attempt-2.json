@@ -1,0 +1,34 @@
+{
+  "schema": "data-package/v1",
+  "id": "DP-axon-REDACTED-0002",
+  "thread": "thread:axon-20260804-g001",
+  "contract": "XC-axon-goldenexport@1.0.0#sha256:f5678dc75bcd99f7236e0aa8a139359f8df2b9242b6870c075ef0bb6799d7da4",
+  "mode": "snapshot",
+  "classification": "internal",
+  "data_profile": "synthetic",
+  "format": "json",
+  "transport_driver": "space-git",
+  "locator": "axon/data/DP-axon-REDACTED-0002",
+  "entries": [
+    {
+      "path": "orders.json",
+      "role": "dataset",
+      "media_type": "application/json",
+      "conforms_to": "schema/goldenexport.schema.json",
+      "size_bytes": 23,
+      "digest": "sha256:f3261e30d6f603397bc7403b0a0813e0d0f710265f34b912030f62dab733bf31",
+      "record_count": 1
+    }
+  ],
+  "aggregate_digest": "sha256:ee08560fb4eb722231a3374c6b4a7bc27f645aa7fee851e7a03085117330f97e",
+  "size_bytes": 23,
+  "record_count": 1,
+  "created_at": "REDACTED-TIMESTAMP",
+  "expires_at": "REDACTED-TIMESTAMP",
+  "supersedes": "DP-axon-REDACTED-0001",
+  "attempt": 2,
+  "provenance": {
+    "origin_system": "axon",
+    "extracted_at": "REDACTED-TIMESTAMP"
+  }
+}

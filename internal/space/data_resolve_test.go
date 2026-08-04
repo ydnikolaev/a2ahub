@@ -156,21 +156,34 @@ contract
 	return descriptor, files, digest
 }
 
-func TestResolveDataContractSchemasRefusesALegacyContractWithNoSchemaRole(t *testing.T) {
+// TestResolveDataContractSchemasResolvesALegacyContract is the tooth for the
+// second defect the two-party e2e found.
+//
+// A legacy contract-tree-v1 carried set never populates Entry.Role
+// (buildLegacySet, set.go), so a role-only filter finds ZERO schemas in it
+// and reports the contract as having none. That is not a legacy edge case —
+// it is every contract published before the v2 profile, and it made the data
+// loop unusable against all of them. The shipped conformance core already
+// solved this by classifying on the path prefix under the legacy profile
+// (conformanceSchemas, conformance.go); the data resolver now does the same.
+//
+// An earlier revision of this test asserted the broken behaviour as though it
+// were the specification.
+func TestResolveDataContractSchemasResolvesALegacyContract(t *testing.T) {
 	t.Parallel()
 
-	// A legacy contract-tree-v1 carried set never populates Entry.Role
-	// (buildLegacySet, set.go) — proving the "no schema entries" refusal
-	// actually fires, rather than silently returning an empty, unusable
-	// map, is this test's seeded-red receipt: with the len(schemas)==0
-	// guard removed, this exact case would return (map[string][]byte{},
-	// pinnedRef, nil) instead of ErrDataContractNoSchemas.
 	repo := newContractHistoryRepo(t)
 	commitLegacyContractVersionForTest(t, repo, "1.0.0", "legacy schema\n")
 
-	_, _, err := ResolveDataContractSchemas(t.Context(), repo, contractTestID+"@1.0.0", contractHistoryValidator(t))
-	if !errors.Is(err, ErrDataContractNoSchemas) {
-		t.Fatalf("error = %v, want ErrDataContractNoSchemas", err)
+	schemas, _, err := ResolveDataContractSchemas(t.Context(), repo, contractTestID+"@1.0.0", contractHistoryValidator(t))
+	if err != nil {
+		t.Fatalf("ResolveDataContractSchemas(legacy contract) = %v, want nil", err)
+	}
+	if len(schemas) != 1 {
+		t.Fatalf("schemas = %d entries, want the one schema/ entry: %v", len(schemas), schemas)
+	}
+	if string(schemas["schema/main.schema.json"]) != "legacy schema\n" {
+		t.Fatalf("schema bytes = %q", schemas["schema/main.schema.json"])
 	}
 }
 
@@ -181,10 +194,36 @@ func TestSplitDataContractReferenceRefusesNonCanonicalForms(t *testing.T) {
 		"", "XC-axon-widget", "XC-axon-widget@", "@1.0.0",
 		"XC-axon-widget@v1.0.0", "XC-axon-widget@1.0", "XR-axon-widget@1.0.0",
 		"XC-axon-widget@1.0.0@extra",
+		"XC-axon-widget@1.0.0#", // a "#" with nothing after it pins nothing
 	} {
-		if _, _, err := splitDataContractReference(ref); !errors.Is(err, ErrContractInvalidReference) {
+		if _, _, _, err := splitDataContractReference(ref); !errors.Is(err, ErrContractInvalidReference) {
 			t.Fatalf("splitDataContractReference(%q) error = %v, want ErrContractInvalidReference", ref, err)
 		}
+	}
+}
+
+// TestSplitDataContractReferenceRoundTripsItsOwnPinnedForm is the tooth for
+// the defect the two-party e2e found: ResolveDataContractSchemas emits
+// "<id>@<version>#<digest>", pack stores it as the manifest's contract
+// field exactly as T2.1 requires, and verify hands it straight back — so a
+// parser that refused the digest suffix made `data verify` fail against
+// every package `data pack` had ever produced.
+func TestSplitDataContractReferenceRoundTripsItsOwnPinnedForm(t *testing.T) {
+	t.Parallel()
+
+	const digest = "sha256:635aca57fdb66474eb5b4d52df0500f855d5aed06162cb4366da170b3cae5382"
+	id, canonical, pinned, err := splitDataContractReference("XC-axon-widget@1.0.0#" + digest)
+	if err != nil {
+		t.Fatalf("splitDataContractReference(pinned form) = %v, want nil", err)
+	}
+	if id != "XC-axon-widget" || canonical != "1.0.0" || pinned != digest {
+		t.Fatalf("= (%q, %q, %q), want (XC-axon-widget, 1.0.0, %s)", id, canonical, pinned, digest)
+	}
+
+	// The digest-free form stays valid: that is what a human types.
+	id, canonical, pinned, err = splitDataContractReference("XC-axon-widget@1.0.0")
+	if err != nil || id != "XC-axon-widget" || canonical != "1.0.0" || pinned != "" {
+		t.Fatalf("= (%q, %q, %q, %v), want (XC-axon-widget, 1.0.0, \"\", nil)", id, canonical, pinned, err)
 	}
 }
 
