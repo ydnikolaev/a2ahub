@@ -73,7 +73,13 @@ func TestContractIntegrityPathsAreWiredToReturnedIDs(t *testing.T) {
 		{"scenarios_contract_integrity_live.go", "ac973BreakSchema", "contractPathsForID", "id", 1},
 		{"scenarios_contract_integrity_live.go", "ac973ContractIntegrity", "contractPathsForID", "sub.ID", 1},
 		{"scenarios_rolling_window_live.go", "rwWriteSchema", "contractPathsForID", "contractID", 1},
-		{"scenarios_rolling_window_live.go", "rwRollingWindow", "rwWriteSchema", "sub.ID", 2},
+		// Three, not two, since the 2026-08-04 pre-run audit: the row now
+		// restores the 2.x line's own schema before publishing 2.1.0, because
+		// the staging tree still held the widened 1.2.0 schema and publishing
+		// it as a minor over 2.0.0 is a breaking change that `contract publish`
+		// refuses outright. Every one of the three still goes through sub.ID,
+		// which is the property this tooth exists to hold.
+		{"scenarios_rolling_window_live.go", "rwRollingWindow", "rwWriteSchema", "sub.ID", 3},
 	} {
 		t.Run(tc.function, func(t *testing.T) {
 			t.Parallel()
