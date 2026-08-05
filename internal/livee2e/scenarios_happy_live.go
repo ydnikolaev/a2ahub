@@ -482,6 +482,13 @@ func happyLifecycleTransitions(ctx context.Context, h *harness, system string, c
 // space never ran `a2a contract adopt`), CheckRetirePrecondition returns
 // (nil, nil) before SunsetPassed is even consulted (internal/validate/
 // policy_retire.go) — retire is expected to succeed ungated, no --override.
+// happyDeprecatedVersion is the version this row deprecates and retires. The
+// row's "publish" is a plain `a2a submit`, so the contract has no published
+// version and the value is the row's own declaration rather than a fact about
+// history — which is precisely why it must be PASSED to every command that
+// consumes it instead of being left to the descriptor.
+const happyDeprecatedVersion = "1.0.0"
+
 func happyContractLifecycle(ctx context.Context, h *harness, system string, c *checkout) Result {
 	const scenario = "contract-publish-deprecate-retire"
 
@@ -503,9 +510,20 @@ func happyContractLifecycle(ctx context.Context, h *harness, system string, c *c
 
 	successor := sub.ID + "-successor@2.0.0"
 	deprecateKey, deprecateBranch := contractDeprecateOperation(
-		c.System, sub.ID, "1.0.0", successor, "2020-01-01",
+		c.System, sub.ID, happyDeprecatedVersion, successor, "2020-01-01",
 	)
-	deprecateStdout, stderr, err := c.Run(ctx, "contract", "deprecate", sub.ID, "--successor", successor, "--sunset", "2020-01-01")
+	// `--version` is passed, not inherited. The row derives the operation key
+	// from five inputs and used to hand the command only four, letting the CLI
+	// resolve the fifth from the descriptor — so the derived branch was right
+	// only while the shipped template happened to draft the same version this
+	// call hardcodes. Changing the template to 0.0.0 (4b04317) made the CLI
+	// resolve 0.0.0, the derived branch stop existing, and both CLI cells of
+	// this row time out looking for a pull request the command had already
+	// reported by number. The MCP cells never noticed, because they do not
+	// derive the branch. Same class as 6bb7949, which repaired exactly this
+	// for `contract publish` and left `deprecate` behind.
+	deprecateStdout, stderr, err := c.Run(ctx, "contract", "deprecate", sub.ID,
+		"--version", happyDeprecatedVersion, "--successor", successor, "--sunset", "2020-01-01")
 	if err != nil {
 		return happyResultFromErr(scenario, system, fmt.Errorf("a2a contract deprecate %s: %w: %s", sub.ID, err, stderr),
 			"contract deprecate opens its own, distinct PR")
@@ -529,7 +547,10 @@ func happyContractLifecycle(ctx context.Context, h *harness, system string, c *c
 			"the deprecation lands on main and reaches the mirror before retire reads it (retire needs a prior deprecate)")
 	}
 
-	retireStdout, stderr, err := c.Run(ctx, "contract", "retire", sub.ID)
+	// Same version, stated the same way. retire's precondition is "this
+	// version was deprecated", so letting it default while deprecate is
+	// explicit would aim the two verbs at different versions.
+	retireStdout, stderr, err := c.Run(ctx, "contract", "retire", sub.ID, "--version", happyDeprecatedVersion)
 	if err != nil {
 		return happyResultFromErr(scenario, system, fmt.Errorf("a2a contract retire %s: %w: %s", sub.ID, err, stderr),
 			"contract retire opens its own, distinct PR (no registered consumers, so it succeeds ungated)")
