@@ -42,7 +42,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions provider-tier-deferral readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
+.PHONY: check test check-validators _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -53,7 +53,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions provider-tier-deferral
+REPO_GATES := classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline-check
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -142,6 +142,12 @@ roadmap-release-decisions: ## Every feature in the newest release notes is expli
 provider-tier-deferral: ## A 3rd consecutive logic-proven, provider-deferred release without an intervening live-e2e run refuses to ship.
 	@bash scripts/check-provider-tier-deferral.sh
 
+space-template-baseline-check: ## The space template's write floor and its workflow pins name one published release (release runbook Phase 4 step 15).
+	@bash scripts/bump-space-template.sh --check
+
+space-template-baseline: ## Move the space template's floor AND workflow pins to the release just tagged, from one derived version. Refuses an unpublished tag.
+	@bash scripts/bump-space-template.sh
+
 epic-drift: ## An epic's committed docs (status.md stamp, receipts) must match its tracker (private harness gate, presence-gated).
 	@if [ -f .agents/scripts/epic_docs_drift.sh ]; then \
 	  bash .agents/scripts/epic_docs_drift.sh; \
@@ -177,6 +183,7 @@ _harness-check:
 	@bash scripts/check-release-notes-freshness.sh --teeth
 	@bash scripts/check-roadmap-release-decisions.sh --teeth
 	@bash scripts/check-provider-tier-deferral.sh --teeth
+	@bash scripts/bump-space-template.sh --teeth
 	@bash scripts/check-readme.sh --teeth
 	@bash scripts/dashboard-template-drift.sh --teeth
 	@if [ -f docs/runbooks/publish-to-public.sh ]; then \
