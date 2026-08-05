@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/operation"
@@ -180,6 +181,56 @@ func TestContractPublicationPreflightIsLocalAndUsesTheSharedPlanner(t *testing.T
 	}
 	if got := strings.Join(order, ","); got != "candidate,plan-context" {
 		t.Fatalf("preflight order = %q", got)
+	}
+}
+
+// TestContractPublicationRefusesAPlanThatWouldNotChangeTheDescriptorOnMain
+// guards the live-run 2026-08-05 defect at the surface that can still stop it.
+// The planner baselines against the PUBLISHED prior, so on a first publication
+// it emits a descriptor write no matter what main already carries; only the
+// space knows main. Without this refusal the publication lands, exits zero,
+// and the version can never be resolved afterwards.
+func TestContractPublicationRefusesAPlanThatWouldNotChangeTheDescriptorOnMain(t *testing.T) {
+	t.Parallel()
+
+	// First establish what the finalized descriptor will be, by planning
+	// against a main that carries no descriptor at all.
+	reader, source := publicationDeclaredCandidate(nil, false)
+	planning := &publicationPlanningFake{context: publicationPlanningContext("", "0.19.0")}
+	request := ContractPublicationRequest{
+		System: "atlas", ContractID: "XC-atlas-demo", Selector: "auto:major",
+		Candidate: reader, CandidateSource: source,
+	}
+	planned, err := mustPreflightService(t, planning).Preflight(t.Context(), request)
+	if err != nil {
+		t.Fatalf("Preflight against an empty main: %v", err)
+	}
+	finalized, ok := planned.Plan.PlannedBytes()[contract.DescriptorPath]
+	if !ok {
+		t.Fatal("plan carries no finalized descriptor")
+	}
+
+	// Now main already carries exactly those bytes — the state `a2a new` at
+	// version 1.0.0 plus submit used to produce.
+	identical := publicationPlanningContext("", "0.19.0")
+	identical.CurrentDescriptorDigest = artifact.Digest(finalized)
+	reader, source = publicationDeclaredCandidate(nil, false)
+	request.Candidate, request.CandidateSource = reader, source
+	_, err = mustPreflightService(t, &publicationPlanningFake{context: identical}).Preflight(t.Context(), request)
+	if !errors.Is(err, ErrContractPublicationNotEstablishing) {
+		t.Fatalf("identical-descriptor error = %v, want ErrContractPublicationNotEstablishing", err)
+	}
+	if !strings.Contains(err.Error(), "1.0.0") {
+		t.Fatalf("refusal does not name the target version: %v", err)
+	}
+
+	// A main whose descriptor differs — the ordinary case — still plans.
+	differs := publicationPlanningContext("", "0.19.0")
+	differs.CurrentDescriptorDigest = artifact.Digest(append([]byte("version: 0.0.0\n"), finalized...))
+	reader, source = publicationDeclaredCandidate(nil, false)
+	request.Candidate, request.CandidateSource = reader, source
+	if _, err := mustPreflightService(t, &publicationPlanningFake{context: differs}).Preflight(t.Context(), request); err != nil {
+		t.Fatalf("Preflight against a differing main: %v", err)
 	}
 }
 
