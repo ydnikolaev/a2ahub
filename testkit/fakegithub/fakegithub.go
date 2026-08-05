@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -42,6 +43,23 @@ type PR struct {
 	Body   string
 	State  string // "open" | "merged"
 	Merged bool
+	// MergeCommitSHA is recorded ONCE, at merge time, from the base branch's
+	// tip immediately after this PR's own merge lands. It must not be
+	// re-resolved later: the base moves on with every subsequent merge onto
+	// it, and re-resolving at read time would hand a caller a LATER PR's
+	// merge commit under this PR's number.
+	MergeCommitSHA string
+	// AutoMergeArmed tracks whether enablePullRequestAutoMerge actually
+	// armed THIS PR — set inside handleGraphQL, on both the arming path and
+	// the AutoMergeAlreadyClean refusal path (which must leave it false: a
+	// refusal is "not armed", and getting that backwards would make the
+	// refusal untestable through host.ListOpenPRs' own AutoMergeArmed
+	// field). It drives the `auto_merge` field in pullPayload — GitHub
+	// reports that field as an object when armed and null otherwise, and
+	// internal/host.ListOpenPRs' AutoMergeArmed is exactly `auto_merge !=
+	// nil`, so an omitted/always-null field here would make every open PR
+	// look like auto-merge was never armed, regardless of the truth.
+	AutoMergeArmed bool
 }
 
 // Server is the fake host. Construct with New, point A2A_GITHUB_API at
@@ -92,6 +110,11 @@ type Server struct {
 	// than only inside internal/host's own httptest-server unit tests.
 	// False (default) preserves every existing test's behaviour.
 	AutoMergeAlreadyClean bool
+	// MergeableState is what a PR's list/get payload reports as
+	// `mergeable_state`. Defaults to "clean" (GitHub's steady-state value for
+	// a PR with no conflicts); set it to drive a different value in a test
+	// that exercises a caller's handling of, e.g., "dirty" or "blocked".
+	MergeableState string
 
 	t    testing.TB
 	mu   sync.Mutex
@@ -121,6 +144,7 @@ func New(t testing.TB, originDir string) *Server {
 		AllowMergeCommit: true,
 		AllowSquashMerge: true,
 		AllowRebaseMerge: true,
+		MergeableState:   "clean",
 		t:                t,
 		forks:            make(map[string]string),
 	}
@@ -178,6 +202,26 @@ func (s *Server) ForkDir(login string) string {
 // ForkLogin is the account EnsureFork forks as.
 const ForkLogin = "consumer"
 
+// Forbidden by design — do NOT add routes for these. Each is a decision only
+// a real provider can make (branch protection state, repo settings, Actions
+// execution, an org's repo-creation policy…), and a fake that invented an
+// answer would let a provider-only scenario pass against a verdict this fake
+// made up — strictly worse than the 404 the switch's default case already
+// gives them, because the resulting report would read as complete rather
+// than as "not exercised here":
+//
+//   - PUT/DELETE /repos/{o}/{n}/branches/{b}/protection  (branch protection)
+//   - PATCH      /repos/{o}/{n}                          (repo settings)
+//   - POST       /orgs/{org}/repos                       (repo creation)
+//   - GET        /repos/{o}/{n}/actions/runs
+//     POST       /repos/{o}/{n}/actions/runs/{id}/rerun
+//     GET        /repos/{o}/{n}/actions/runs/{id}/jobs   (Actions runs)
+//   - PUT        /repos/{o}/{n}/pulls/{num}/update-branch
+//   - GET        /repos/{o}/{n}/check-runs/{id}/annotations
+//   - PATCH      /repos/{o}/{n}/pulls/{num}
+//
+// If a scenario needs one of these, it needs a real provider, not a bigger
+// fake.
 func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.requests = append(s.requests, r.Method+" "+r.URL.Path)
@@ -216,37 +260,76 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			"allow_squash_merge": s.AllowSquashMerge,
 			"allow_rebase_merge": s.AllowRebaseMerge,
 		})
+	case len(parts) == 4 && parts[0] == "repos" && parts[3] == "branches" && r.Method == http.MethodGet:
+		s.handleBranches(w, r)
+	case len(parts) >= 6 && parts[0] == "repos" && parts[3] == "git" && parts[4] == "refs" && r.Method == http.MethodDelete:
+		s.handleDeleteRef(w, parts)
+	case len(parts) == 5 && parts[0] == "repos" && parts[3] == "codeowners" && parts[4] == "errors" && r.Method == http.MethodGet:
+		s.writeJSON(w, map[string]any{"errors": []any{}})
+	case len(parts) == 1 && parts[0] == "rate_limit" && r.Method == http.MethodGet:
+		// TokenScopes (internal/host/github.go) reads this endpoint only for
+		// its X-OAuth-Scopes response HEADER, never its body — real GitHub
+		// documents /rate_limit as not counting against the rate limit, which
+		// is the whole reason it is the probe used there. This fake sets no
+		// such header, the faithful answer for a fine-grained PAT / App
+		// installation token (the case TokenScopes calls "reported=false").
+		// The body below is shaped like GitHub's real response purely so a
+		// caller that DOES decode it (none does today) sees something sane.
+		s.writeJSON(w, map[string]any{
+			"resources": map[string]any{
+				"core": map[string]any{"limit": 5000, "remaining": 4999, "reset": 0},
+			},
+			"rate": map[string]any{"limit": 5000, "remaining": 4999, "reset": 0},
+		})
+	case len(parts) == 2 && parts[0] == "users" && r.Method == http.MethodGet:
+		// FetchAvatar (internal/host/avatar.go) resolves a login here only to
+		// read avatar_url; an empty string is a faithful "no avatar source"
+		// answer a test can override by pre-seeding a source URL instead.
+		s.writeJSON(w, map[string]any{"login": parts[1], "avatar_url": ""})
 	default:
 		http.Error(w, "fakegithub: unhandled "+r.Method+" "+r.URL.Path, http.StatusNotFound)
 	}
 }
 
-// handleFindPR serves the list-with-head-filter — the write funnel's
-// idempotency lookup.
+// handleFindPR serves the unfiltered/filtered pull listing — both the write
+// funnel's head-keyed idempotency lookup (`head=` set) AND
+// internal/livee2e's ghClient.ListPulls (`head` absent, `state=all`, paged).
+//
+// `head` absent means "every PR", matching real GitHub: this fake used to
+// treat an absent `head` the same as an EMPTY one, which matched nothing —
+// silently returning `[]` to a caller that asked for the whole list.
 func (s *Server) handleFindPR(w http.ResponseWriter, r *http.Request) {
 	head := r.URL.Query().Get("head")
+	state := r.URL.Query().Get("state")
+	if state == "" {
+		state = "open" // GitHub's own default when the param is absent
+	}
+	page := pageParam(r)
+
 	// GitHub's filter is `<owner>:<branch>`; a same-repo PR is recorded
-	// under the bare branch, so match either shape.
-	_, branch := splitHead(head)
+	// under the bare branch, so match either shape. Only applied when head
+	// was actually asked for — see the func doc above.
+	var branch string
+	if head != "" {
+		_, branch = splitHead(head)
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := []map[string]any{}
-	for _, pr := range s.prs {
-		if pr.Head == head || pr.Head == branch {
-			out = append(out, map[string]any{
-				"number": pr.Number, "html_url": s.prURL(pr.Number),
-				"state": prAPIState(pr), "merged": pr.Merged,
-				// body is what the write funnel's operation-key retry reads
-				// back to confirm a found branch belongs to the same
-				// operation before repairing its pull request. Real GitHub
-				// returns it from the list endpoint; omitting it here made
-				// EVERY keyed retry refuse with "operation branch metadata
-				// does not match" in every hermetic test, so the
-				// repair-rather-than-duplicate property was unprovable
-				// locally and could only ever have been discovered live.
-				"body": pr.Body,
-			})
+	// A page past the first is always empty: every PR this fake will ever
+	// have fits on page 1, and ListPulls/ListBranches (internal/livee2e) both
+	// treat a short page as the last page, so this terminates their
+	// pagination loop correctly without this fake inventing a row cap.
+	if page == 1 {
+		for _, pr := range s.prs {
+			if head != "" && pr.Head != head && pr.Head != branch {
+				continue
+			}
+			if state != "all" && prAPIState(pr) != state {
+				continue
+			}
+			out = append(out, s.pullPayload(pr))
 		}
 	}
 	s.writeJSON(w, out)
@@ -264,20 +347,73 @@ func (s *Server) handleGetPR(w http.ResponseWriter, _ *http.Request, numStr stri
 		if pr.Number != number {
 			continue
 		}
-		sha := s.revParse(headRef(pr))
-		s.writeJSON(w, map[string]any{
-			"number": pr.Number, "html_url": s.prURL(pr.Number),
-			// node_id is what host.EnableAutoMerge resolves before it can
-			// run the GraphQL mutation — the funnel's retry path re-arms
-			// auto-merge on an existing PR, and without this the fake would
-			// make that path untestable.
-			"node_id": fmt.Sprintf("PR_%d", pr.Number),
-			"state":   prAPIState(pr), "merged": pr.Merged,
-			"head": map[string]any{"sha": sha},
-		})
+		s.writeJSON(w, s.pullPayload(pr))
 		return
 	}
 	http.Error(w, "fakegithub: no such pr", http.StatusNotFound)
+}
+
+// pullPayload builds ONE pull request's wire shape — the single builder both
+// handleFindPR (list) and handleGetPR (single) route through, so the two
+// answers cannot diverge in what a PR "looks like" the way mergeByNumber is
+// the one merge implementation both merge paths route through. Callers must
+// already hold s.mu; this does not lock (it calls s.revParse, itself
+// lock-free, the same way handleGetPR always has).
+func (s *Server) pullPayload(pr *PR) map[string]any {
+	// head.ref is the bare branch even for a cross-fork PR — real GitHub
+	// reports the branch name alone there, while pr.Head (and hence the
+	// idempotency match above) keeps the `owner:branch` form. Conflating the
+	// two would make a caller matching on HeadRef see a fork owner prefix
+	// that GitHub itself never sends.
+	_, branch := splitHead(pr.Head)
+	// auto_merge is null (Go: untyped nil, which encoding/json renders as
+	// `null`) when never armed or refused, an object when armed —
+	// host.ListOpenPRs' AutoMergeArmed is EXACTLY `auto_merge != nil`, and
+	// the "stuck green PRs" doctor probe (internal/cli/cmd_doctor.go) skips
+	// every PR that field reports as armed. A fake that always answered
+	// null here would make that probe see "nobody armed auto-merge" as a
+	// FACT it invented rather than the truth — the same failure class the
+	// forbidden-endpoint comment on route exists to prevent, one layer in
+	// rather than at the router.
+	var autoMerge any
+	if pr.AutoMergeArmed {
+		autoMerge = map[string]any{"enabled_by": map[string]any{"login": "fakegithub"}}
+	}
+	return map[string]any{
+		"number": pr.Number, "html_url": s.prURL(pr.Number),
+		// node_id is what host.EnableAutoMerge resolves before it can run
+		// the GraphQL mutation — the funnel's retry path re-arms auto-merge
+		// on an existing PR, and without this the fake would make that path
+		// untestable.
+		"node_id": fmt.Sprintf("PR_%d", pr.Number),
+		"state":   prAPIState(pr), "merged": pr.Merged,
+		// body is what the write funnel's operation-key retry reads back to
+		// confirm a found branch belongs to the same operation before
+		// repairing its pull request. Real GitHub returns it from the list
+		// endpoint; omitting it here made EVERY keyed retry refuse with
+		// "operation branch metadata does not match" in every hermetic
+		// test, so the repair-rather-than-duplicate property was unprovable
+		// locally and could only ever have been discovered live.
+		"body":             pr.Body,
+		"head":             map[string]any{"ref": branch, "sha": s.revParse(headRef(pr))},
+		"merge_commit_sha": pr.MergeCommitSHA,
+		"mergeable_state":  s.MergeableState,
+		"auto_merge":       autoMerge,
+	}
+}
+
+// pageParam reads GitHub's `page` query param, defaulting to 1 the way a
+// missing param does on the real API.
+func pageParam(r *http.Request) int {
+	raw := r.URL.Query().Get("page")
+	if raw == "" {
+		return 1
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
 }
 
 func (s *Server) handleOpenPR(w http.ResponseWriter, r *http.Request) {
@@ -323,7 +459,12 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.Contains(body.Query, "enablePullRequestAutoMerge") {
+		nodeID, _ := body.Variables["id"].(string)
 		if s.AutoMergeAlreadyClean {
+			// The mutation is REFUSED — nothing gets armed. Set this
+			// explicitly rather than leaving whatever the PR's flag already
+			// was, so a refusal always wins over an earlier successful arm.
+			s.setAutoMergeArmed(nodeID, false)
 			s.writeJSON(w, map[string]any{
 				"data": map[string]any{"enablePullRequestAutoMerge": nil},
 				"errors": []map[string]any{
@@ -332,12 +473,35 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		// The mutation itself SUCCEEDS here regardless of s.AutoMerge — that
+		// flag only controls whether this fake also fast-forwards the base
+		// immediately (its stand-in for "the space's own CI already passed").
+		// With AutoMerge=false the PR is armed but stays open (the
+		// pending-merge case), and armed is exactly what it must report.
+		s.setAutoMergeArmed(nodeID, true)
 		if s.AutoMerge {
-			nodeID, _ := body.Variables["id"].(string)
 			s.mergeByNodeID(nodeID)
 		}
 	}
 	s.writeJSON(w, map[string]any{"data": map[string]any{}})
+}
+
+// setAutoMergeArmed records whether enablePullRequestAutoMerge armed the PR
+// nodeID identifies — the one field host.ListOpenPRs' AutoMergeArmed reads
+// (`auto_merge != nil`), which pullPayload emits from this flag.
+func (s *Server) setAutoMergeArmed(nodeID string, armed bool) {
+	var number int
+	if _, err := fmt.Sscanf(nodeID, "PR_%d", &number); err != nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, pr := range s.prs {
+		if pr.Number == number {
+			pr.AutoMergeArmed = armed
+			return
+		}
+	}
 }
 
 func (s *Server) handleFork(w http.ResponseWriter, _ *http.Request, name string) {
@@ -359,6 +523,62 @@ func (s *Server) handleFork(w http.ResponseWriter, _ *http.Request, name string)
 		"name": name, "clone_url": dir,
 		"owner": map[string]any{"login": ForkLogin},
 	})
+}
+
+// handleBranches serves GET /repos/{owner}/{name}/branches — REAL git, not a
+// canned answer, so a branch this fake's own merge/delete-ref path
+// creates or removes is reflected immediately. Caller: ghClient.ListBranches
+// (internal/livee2e).
+func (s *Server) handleBranches(w http.ResponseWriter, r *http.Request) {
+	page := pageParam(r)
+	s.mu.Lock()
+	out, err := s.gitOutput(s.OriginDir, "for-each-ref", "--format=%(refname:short)", "refs/heads/")
+	s.mu.Unlock()
+	if err != nil {
+		http.Error(w, "fakegithub: list branches: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	resp := []map[string]any{}
+	// Same pagination tolerance as handleFindPR: everything on page 1, an
+	// empty page thereafter — every branch this fake will ever have fits on
+	// page 1, and the caller treats a short page as the last one.
+	if page == 1 {
+		for _, name := range strings.Split(out, "\n") {
+			if name == "" {
+				continue
+			}
+			resp = append(resp, map[string]any{"name": name})
+		}
+	}
+	s.writeJSON(w, resp)
+}
+
+// handleDeleteRef serves DELETE /repos/{owner}/{name}/git/refs/{ref...},
+// where {ref...} is everything after ".../git/refs/" verbatim — this
+// project's branch names contain slashes (e.g. "heads/a2a/alpha/submit/
+// XQ-1"), so the ref cannot be assumed to be a fixed number of path
+// segments. parts is route's own split of the request path; parts[5:] is
+// the ref.
+//
+// `git update-ref -d` exits 0 even when the ref does not exist (verified:
+// it is NOT an error there), so a real existence check comes first —
+// ghClient.DeleteRef (internal/livee2e) treats 404 specifically as a no-op,
+// and a wrong 204/500 here would hide that contract.
+func (s *Server) handleDeleteRef(w http.ResponseWriter, parts []string) {
+	ref := strings.Join(parts[5:], "/")
+	full := "refs/" + ref
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.revParse(full) == "" {
+		http.Error(w, "fakegithub: no such ref "+full, http.StatusNotFound)
+		return
+	}
+	if err := s.git(s.OriginDir, "update-ref", "-d", full); err != nil {
+		http.Error(w, "fakegithub: delete ref: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // mergeByNodeID fast-forwards the base branch to the PR's head — what
@@ -431,6 +651,11 @@ func (s *Server) mergeByNumber(number int) error {
 		if err := s.merge(headRepo, branch, pr.Base); err != nil {
 			return fmt.Errorf("fakegithub: merge PR %d: %w", pr.Number, err)
 		}
+		// Recorded HERE, immediately after the push to origin lands, and
+		// never re-resolved later: pr.Base's tip moves on with every
+		// subsequent merge onto it, so resolving this lazily at read time
+		// would hand out a LATER PR's merge commit under this PR's number.
+		pr.MergeCommitSHA = s.revParse("refs/heads/" + pr.Base)
 		pr.State, pr.Merged = "merged", true
 		return nil
 	}
@@ -566,6 +791,23 @@ func (s *Server) git(dir string, args ...string) error {
 		return fmt.Errorf("git %v: %w: %s", full, err, out)
 	}
 	return nil
+}
+
+// gitOutput is s.git's read counterpart: it returns the command's trimmed
+// stdout instead of only an error. Left as its own function rather than
+// folding into s.git so the merge/push paths (which want CombinedOutput's
+// stderr-on-failure diagnostics) are untouched.
+func (s *Server) gitOutput(dir string, args ...string) (string, error) {
+	full := args
+	if dir != "" {
+		full = append([]string{"-C", dir}, args...)
+	}
+	cmd := exec.Command("git", gitfixture.Args(full...)...)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git %v: %w", full, err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func (s *Server) writeJSON(w http.ResponseWriter, payload any) {
