@@ -333,10 +333,12 @@ func TestHygiene_R1_EveryGitExecSiteIsGuarded(t *testing.T) {
 	root := repoRoot(t)
 
 	var violations []string
+	scanned := 0
 	walkGoFiles(t, root, func(rel, source string) {
 		if !r1Applies(rel) {
 			return
 		}
+		scanned++
 		v, err := r1Violations(rel, source)
 		if err != nil {
 			t.Fatalf("hygiene R1: %v", err)
@@ -344,8 +346,16 @@ func TestHygiene_R1_EveryGitExecSiteIsGuarded(t *testing.T) {
 		violations = append(violations, v...)
 	})
 
+	// Without this, the gate reports green when it inspected NOTHING — and it
+	// selects its inputs by path convention (r1Applies), so a directory move
+	// empties it silently. "No violations found" and "no files examined" are
+	// indistinguishable in the output that matters.
+	if scanned == 0 {
+		t.Fatal("R1 examined no files — r1Applies matched nothing, so this gate would pass vacuously")
+	}
+
 	if len(violations) > 0 {
-		t.Fatalf("R1: git exec site(s) not routed through gitfixture.Args:\n%s", strings.Join(violations, "\n"))
+		t.Fatalf("R1: git exec site(s) not routed through gitfixture.Args (%d file(s) examined):\n%s", scanned, strings.Join(violations, "\n"))
 	}
 }
 
