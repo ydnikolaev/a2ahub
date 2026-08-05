@@ -150,6 +150,16 @@ const rwFixtureForIntegerSchema = `{
 }
 `
 
+// rwFixtureForWidenedSchema is the 1.x line's own fixture: the scaffolded
+// string shape, which rwSchemaWidened accepts and rwSchemaNarrowedToInteger
+// does not. Keeping it explicit rather than relying on whatever the staging
+// tree happens to hold is the point — the two lines each carry the fixture
+// their own schema admits.
+const rwFixtureForWidenedSchema = `{
+  "example": "replace-me"
+}
+`
+
 // rwSchemaNarrowedToInteger breaks the scaffolded fixture
 // (`{"example": "replace-me"}`) by narrowing `example` from string to
 // integer — a real breaking change against any line whose fixture is the
@@ -257,8 +267,19 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	if _, stderr, err := a.Run(ctx, "contract", "materialize", sub.ID+"@1.1.0", "--to", contractPaths.StagingRoot); err != nil {
 		return rwResultFromErr("stage-2.0.0-schema", fmt.Errorf("%w: %s", err, stderr), "the exact 1.1.0 baseline materializes before the 2.0.0 edit")
 	}
+	// The 2.x line is published SELF-CONSISTENT: narrowed schema and a
+	// fixture that satisfies it. The compatibility check evaluates the
+	// BASELINE's published fixtures against the new version's schemas
+	// (validate/compat.go reads in.PriorFixtures), so whatever 2.0.0 carries
+	// here is what every later 2.x minor will be judged against. Publishing
+	// the 1.x string fixture beside this integer schema — which a major is
+	// allowed to do, since majors are not compat-checked (D-B) — is what made
+	// 2.1.0 refuse itself for a fixture this step left behind.
 	if err := rwWriteSchema(a, sub.ID, rwSchemaNarrowedToInteger); err != nil {
 		return rwResultFromErr("stage-2.0.0-schema", err, "the contract's staged schema can be narrowed for the 2.x line")
+	}
+	if err := rwWriteValidFixture(a, sub.ID, rwFixtureForIntegerSchema); err != nil {
+		return rwResultFromErr("stage-2.0.0-schema", err, "the 2.x line's fixture is staged beside its own narrowed schema")
 	}
 	v200PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "2.0.0", "publish-2.0.0", true)
 	if err != nil {
@@ -345,8 +366,17 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	// fixture, so a correct baseline lets the compat check RUN and pass;
 	// under the old globally-highest rule the jump 2.0.0 -> 1.2.0 reads as
 	// a major and the check is skipped entirely. ---
+	// Same rule, the other line: 1.2.0 is published with the 1.x string
+	// fixture beside its widened schema, so the 1.x line stays
+	// self-consistent too. Its own check is against 1.1.0's published string
+	// fixture, which the widened schema accepts — that is the assertion this
+	// step exists for, and it must pass because the baseline is 1.1.0 rather
+	// than because the fixture was left over from somewhere.
 	if err := rwWriteSchema(a, sub.ID, rwSchemaWidened); err != nil {
 		return rwResultFromErr("stage-1.2.0-schema", err, "the contract's staged schema can be widened for the maintenance line")
+	}
+	if err := rwWriteValidFixture(a, sub.ID, rwFixtureForWidenedSchema); err != nil {
+		return rwResultFromErr("stage-1.2.0-schema", err, "the 1.x line's fixture is staged beside its own widened schema")
 	}
 	v120PR, err := rwPublishAndLand(ctx, h, a, sub.ID, "1.2.0", "publish-1.2.0-maintenance", true)
 	if err != nil {
