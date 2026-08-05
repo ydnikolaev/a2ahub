@@ -119,6 +119,12 @@ func TestD6LiveConsumersNeverUseCompositeBranchLookup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("glob live scenarios: %v", err)
 	}
+	// A structural gate that scans nothing passes forever. This one is a glob
+	// over a filename convention, so a rename — `scenarios_x_live.go` to
+	// anything else — silently empties it while it keeps reporting green.
+	if len(files) == 0 {
+		t.Fatal("the scan matched no scenarios_*_live.go files — this gate would pass vacuously; fix the glob or the naming convention it assumes")
+	}
 	fset := token.NewFileSet()
 	for _, path := range files {
 		file, err := parser.ParseFile(fset, path, nil, 0)
