@@ -114,6 +114,11 @@ func TestGitHubSource_Latest_404(t *testing.T) {
 // TestResolveToken_EnvOrder asserts the T3 token order
 // A2A_UPDATE_TOKEN -> GH_TOKEN -> GITHUB_TOKEN -> "". Runs non-parallel
 // (t.Setenv panics under t.Parallel).
+//
+// "none set" stays "" on purpose: this value selects the asset DOWNLOAD route
+// (empty = public CDN, non-empty = private release-asset API), so it must not
+// pick up an ambient gh login. The rate-limit fallback lives in
+// GitHubSource.apiToken and is covered in resolvetoken_test.go.
 func TestResolveToken_EnvOrder(t *testing.T) {
 	cases := []struct {
 		name                            string

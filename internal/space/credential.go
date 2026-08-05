@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/ydnikolaev/a2ahub/internal/ghauth"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 )
 
@@ -57,16 +58,15 @@ func DefaultCredentialReference(ctx context.Context, spaceID string) string {
 }
 
 // ghAuthTokenAvailable reports whether `gh auth token` is installed and
-// currently yields a token. It runs the same explicit-argv command
-// ResolveCredential's cmd path would run (never sh -c) and discards the
-// output — the token itself is never returned, logged, or persisted here.
+// currently yields a token, discarding the token itself.
+//
+// The probe moved to internal/ghauth when internal/release turned out to need
+// the same fact — and to have shipped without it, leaving every release read
+// on GitHub's anonymous per-IP budget while a working gh login sat unused.
+// Two layers needing one fact, neither able to import the other, is what that
+// leaf package is for.
 func ghAuthTokenAvailable(ctx context.Context) bool {
-	path, err := exec.LookPath("gh")
-	if err != nil {
-		return false
-	}
-	out, err := exec.CommandContext(ctx, path, "auth", "token").Output()
-	return err == nil && strings.TrimSpace(string(out)) != ""
+	return ghauth.Available(ctx)
 }
 
 // ResolveCredential resolves a write credential per the Open Q1 RESOLVED
