@@ -141,9 +141,20 @@ func structDeclaresField(structType *ast.StructType, fieldName string) bool {
 	return false
 }
 
-// fieldIsPopulated reports whether file sets fieldName somewhere: either as
-// a composite-literal key (`resolveCredential: ...`) or as an assignment to
-// a selector (`c.resolveCredential = ...`).
+// fieldIsPopulated reports whether file sets fieldName to something OTHER
+// than nil: either as a composite-literal key (`resolveCredential: x`) or as
+// an assignment to a selector (`c.resolveCredential = x`).
+//
+// Rejecting a literal nil is the whole point, and this function did not do it
+// at first. Matching the field NAME alone made `resolveCredential: nil` count
+// as populated — a value whose runtime behaviour is identical to never setting
+// the field at all, since mirrorCredential returns the empty credential for a
+// nil resolver. The gate therefore passed the exact state its own doc comment
+// says it exists to catch: a mirror refresh that authenticates with nothing,
+// works against every public space, and 404s only once a space goes private.
+//
+// It is the same shape as the defects this whole change set is about — a check
+// that covers every state except the one its subject is in.
 func fieldIsPopulated(file *ast.File, fieldName string) bool {
 	found := false
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -152,12 +163,19 @@ func fieldIsPopulated(file *ast.File, fieldName string) bool {
 		}
 		switch node := n.(type) {
 		case *ast.KeyValueExpr:
-			if ident, ok := node.Key.(*ast.Ident); ok && ident.Name == fieldName {
+			if ident, ok := node.Key.(*ast.Ident); ok && ident.Name == fieldName && !isNilLiteral(node.Value) {
 				found = true
 			}
 		case *ast.AssignStmt:
-			for _, lhs := range node.Lhs {
-				if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == fieldName {
+			for i, lhs := range node.Lhs {
+				sel, ok := lhs.(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != fieldName {
+					continue
+				}
+				// A multi-value assignment (`a, b = f()`) has one RHS for
+				// several LHS; there is no per-target expression to judge, so
+				// treat it as a real assignment rather than guessing.
+				if len(node.Rhs) != len(node.Lhs) || !isNilLiteral(node.Rhs[i]) {
 					found = true
 				}
 			}
@@ -165,4 +183,10 @@ func fieldIsPopulated(file *ast.File, fieldName string) bool {
 		return true
 	})
 	return found
+}
+
+// isNilLiteral reports whether expr is the untyped identifier `nil`.
+func isNilLiteral(expr ast.Expr) bool {
+	ident, ok := expr.(*ast.Ident)
+	return ok && ident.Name == "nil"
 }
