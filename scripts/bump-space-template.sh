@@ -98,16 +98,51 @@ bump() {
   floor="$(floor_now)"
   pins="$(pins_now)"
 
-  if [ "$floor" = "$version" ] && [ "$pins" = "$tag" ]; then
-    echo "bump-space-template: ok — template already targets $tag (floor $floor, $WORKFLOW_REF_COUNT pin(s) at $tag)."
+  if [ "$mode" = "check" ]; then
+    # The invariant is NOT "template == newest authored note". The runbook
+    # requires them to DIFFER for the whole of a release: the note is authored
+    # in Phase 1 while the template must keep naming the previous, PUBLISHED
+    # release until Phase 4, because a floor naming an unpublished tag is the
+    # 2026-07-26 outage. Asserting equality here reds `make check` from the
+    # moment a release starts until it ends — which is exactly when the gate is
+    # most in the way and least right.
+    #
+    # What must hold at ALL times, and is checkable offline:
+    #   1. the floor and every workflow pin name ONE version (they move as a
+    #      pair or the pair is broken), and
+    #   2. that version is not AHEAD of the newest authored note (ahead means
+    #      it names something nobody has even written notes for).
+    # "Is it published?" needs the network and belongs to release-preflight and
+    # to the write path below, not to the static lane.
+    if [ -z "$floor" ] || [ -z "$pins" ]; then
+      echo "bump-space-template: FAIL — could not read the template's floor and/or workflow pins." >&2
+      echo "  floor: ${floor:-<unreadable>}   pins: ${pins:-<unreadable>}" >&2
+      return 1
+    fi
+    if [ "$(printf '%s\n' "$pins" | wc -l | tr -d ' ')" -ne 1 ] || [ "$pins" != "v$floor" ]; then
+      echo "bump-space-template: FAIL — the template's floor and workflow pin(s) disagree." >&2
+      echo "  floor: $floor   pins: $(printf '%s ' $pins)" >&2
+      echo "They are one decision — the release this template targets — and a space scaffolded from a" >&2
+      echo "split pair validates with a different binary than its own floor demands." >&2
+      echo "Run 'make space-template-baseline' (release runbook Phase 4 step 15)." >&2
+      return 1
+    fi
+    if [ "$(printf '%s\n%s\n' "$floor" "$version" | sort -V | tail -1)" = "$floor" ] && [ "$floor" != "$version" ]; then
+      echo "bump-space-template: FAIL — the template targets $floor, ahead of the newest authored release notes ($version)." >&2
+      echo "A template cannot target a release nobody has written notes for." >&2
+      return 1
+    fi
+    if [ "$floor" = "$version" ]; then
+      echo "bump-space-template: ok — template targets v$floor, the newest authored release."
+    else
+      echo "bump-space-template: ok — template targets v$floor, published; v$version is authored and not yet tagged (expected mid-release)."
+    fi
     return 0
   fi
 
-  if [ "$mode" = "check" ]; then
-    echo "bump-space-template: FAIL — template does not target $tag." >&2
-    echo "  floor: ${floor:-<unreadable>}   pins: $(echo "$pins" | tr '\n' ' ')" >&2
-    echo "Run 'make space-template-baseline' (release runbook Phase 4 step 15)." >&2
-    return 1
+  if [ "$floor" = "$version" ] && [ "$pins" = "$tag" ]; then
+    echo "bump-space-template: ok — template already targets $tag (floor $floor, $WORKFLOW_REF_COUNT pin(s) at $tag)."
+    return 0
   fi
 
   if [ "$allow_unpublished" != "yes" ] && ! tag_is_published "$tag"; then
@@ -180,12 +215,40 @@ teeth() {
   (cd "$tmp" && bump write yes >/dev/null) || {
     echo "bump-space-template --teeth: FAILED — a second run errored instead of no-opping" >&2; exit 1; }
 
-  # Case 4: --check agrees with the state, both ways.
+  # Case 4: --check agrees with the state.
   (cd "$tmp" && bump check no >/dev/null) || {
     echo "bump-space-template --teeth: FAILED — --check went red on an in-sync template" >&2; exit 1; }
+
+  # Case 4b: MID-RELEASE is green — the template one release behind the newest
+  # AUTHORED note. This is the state the runbook mandates from Phase 1 until
+  # Phase 4 (the template must keep naming a PUBLISHED tag), so a --check that
+  # demanded equality would red `make check` for the entire duration of every
+  # release. It did, on the first release after the gate landed; the gate had
+  # never been run in the state its subject occupies during a release.
   seed "$tmp" 0.1.0 v0.1.0 0.2.0
+  if ! out="$(cd "$tmp" && bump check no 2>&1)"; then
+    echo "bump-space-template --teeth: FAILED — --check reds mid-release, when the template legitimately trails the newest authored note" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'expected mid-release' || {
+    echo "bump-space-template --teeth: FAILED — mid-release green did not say why the two differ" >&2
+    exit 1
+  }
+
+  # Case 4c: a SPLIT pair reds — floor and pin naming different versions is the
+  # actual defect this gate exists to catch, at any point in the cycle.
+  seed "$tmp" 0.1.0 v0.2.0 0.2.0
   if (cd "$tmp" && bump check no >/dev/null 2>&1); then
-    echo "bump-space-template --teeth: FAILED — --check stayed green on an out-of-sync template" >&2; exit 1
+    echo "bump-space-template --teeth: FAILED — --check stayed green on a floor and pin that disagree" >&2; exit 1
+  fi
+
+  # Case 4d: a template AHEAD of every authored note reds — it targets a
+  # release nobody has written notes for, which is how the unpublished-tag
+  # outage begins.
+  seed "$tmp" 0.9.0 v0.9.0 0.2.0
+  if (cd "$tmp" && bump check no >/dev/null 2>&1); then
+    echo "bump-space-template --teeth: FAILED — --check stayed green on a template ahead of the newest authored note" >&2; exit 1
   fi
 
   # Case 5: a template whose shape changed REFUSES rather than silently
