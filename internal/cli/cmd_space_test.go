@@ -454,7 +454,14 @@ func TestSpaceUpdateDryRunWritesNothing(t *testing.T) {
 	// Directive text asserted verbatim (AC-952.1): a2a prints the exact
 	// admin-only commands, never runs them.
 	wantDirectives := []string{
-		"scope: space directive — prerequisite (spec 35 §T3: this PR cannot merge until protection stops requiring the old flat context)",
+		// Phrased as a CONDITION. a2a calls no admin API, so it cannot observe
+		// which context protection requires and prints this every time; stating
+		// "this PR cannot merge" as fact was therefore a claim beyond what the
+		// code knows, and false for every already-migrated space — it told an
+		// operator whose protection was already compound to go fix it, and
+		// would repeat that on every future `space update`.
+		"scope: space directive — prerequisite (spec 35 §T3: IF protection still requires the old flat context, this PR cannot merge until that is changed)",
+		"  skip if: your required check is already \"a2a-validate / validate\" — a2a calls no admin API, so it cannot check this for you",
 		// Must stay byte-identical to the runbook's own command.
 		`  run: gh api -X PUT repos/acme/getvisa/branches/main/protection/required_status_checks -f 'checks[][context]=a2a-validate / validate'`,
 		"scope: space directive — cleanup (optional: P33 removed the need for this secret)",
