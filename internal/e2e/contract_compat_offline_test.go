@@ -56,23 +56,15 @@ func contractCompatOverlayDescriptor(system, id string) string {
 		"---\n# Export\n\nWhat this contract covers.\n"
 }
 
-// pruneMergedContractPublishBranch deletes a contract-publish operation's
-// now-merged head branch straight from the fixture origin — a throwaway
-// clone + `git push --delete`, the same "arrange state directly, outside
-// any `a2a` verb" idiom this package's own gitRun/mergeBranchToMain already
-// use for state the CLI has no verb to reach.
-//
-// This exists ONLY because of a genuine wall this investigation found (see
-// TestContractCompatOfflinePOL007RollingWindow's own doc comment): no `a2a`
-// verb prunes a completed publication's branch, and leaving it in place
-// blocks EVERY subsequent `contract publish` call outright, for a reason
-// that has nothing to do with compatibility. `a2a sync` does not touch
-// remote branches at all — it only fast-forwards the local mirror.
-func pruneMergedContractPublishBranch(t *testing.T, r *hostRig, branch string) {
+// remoteBranchExists reports whether the fixture origin still carries a ref.
+// Used to assert the merged publish branch is GONE — which is what keeps the
+// next publish reachable at all; see the wall recorded below.
+func remoteBranchExists(t *testing.T, remoteURL, branch string) bool {
 	t.Helper()
-	dir := t.TempDir()
-	gitRun(t, "", "clone", r.fx.RemoteURL(), dir)
-	gitRun(t, dir, "push", "origin", "--delete", branch)
+	return strings.Contains(
+		gitOutput(t, remoteURL, "for-each-ref", "--format=%(refname:short)", "refs/heads/"),
+		branch,
+	)
 }
 
 // TestContractCompatOfflinePOL007RollingWindow drives spec 05a/§5.4b's
@@ -160,19 +152,27 @@ func pruneMergedContractPublishBranch(t *testing.T, r *hostRig, branch string) {
 //     reproduces with zero schema involvement, not far enough to name the
 //     exact byte/field that disagrees. That is the next investigation, not
 //     this one's claim.
-//   - workaround used here: pruneMergedContractPublishBranch (below)
-//     deletes the 1.0.0 publish's own head branch from the fixture origin,
-//     via a throwaway clone + `git push --delete` — never a product verb,
-//     because none exists; never a change to internal/space, which is off
-//     this brief's allowlist.
-//   - what would have to change: either `a2a contract publish` (or the
-//     underlying WriteFunnel) deletes/closes its own head branch once the
-//     PR is merged, or ProbeContractPublicationHeads skips a branch whose
-//     recorded target version is already resolvable in main's own
-//     published history (it already trusts history for the EXPLICIT-target
-//     fast path a few lines earlier in Publish() — the probe just never
-//     asks the same question) instead of unconditionally re-verifying
-//     every historical branch it happens to still see.
+//   - what keeps this test moving: nothing in the product. testkit/fakegithub
+//     now prunes a merged same-repo head branch, because that is what a real
+//     space does — internal/livee2e/protection.go's RepoSettingsBody applies
+//     `delete_branch_on_merge: true`, so GitHub removes the branch before the
+//     next publish ever looks. An earlier revision of this test hand-deleted
+//     the ref instead, which was the right diagnosis and the wrong home for
+//     the fix: the fake was modelling a repository configuration nobody runs.
+//     The assertion below now proves the prune happened rather than causing
+//     it.
+//   - what this therefore MASKS, deliberately and with the receipt filed:
+//     the refusal itself is untouched. A space with pruning off, a prune that
+//     is merely slow, or a publish that races one, all still land on it — and
+//     the live matrix can never find that, because the settings it provisions
+//     are exactly the ones that hide it. Filed in docs/backlog.md under
+//     "contract publication".
+//   - what would have to change to fix it: ProbeContractPublicationHeads
+//     could skip a branch whose recorded target version is already resolvable
+//     in main's own published history. Publish() already trusts history that
+//     way for its EXPLICIT-target fast path a few lines earlier; the probe
+//     just never asks the same question, and instead re-verifies every
+//     historical branch it happens to still see.
 func TestContractCompatOfflinePOL007RollingWindow(t *testing.T) {
 	t.Parallel()
 
@@ -193,10 +193,13 @@ func TestContractCompatOfflinePOL007RollingWindow(t *testing.T) {
 	provider.mustRun("contract", "publish", "--version", "1.0.0", id)
 	provider.mustRun("sync")
 
-	// WALL WORKAROUND (see this test's own doc comment): prune the 1.0.0
-	// publish's own now-merged branch so the NEXT `contract publish` call
-	// (whatever its outcome) is not blocked by an unrelated remote-recovery
-	// refusal before it ever reaches the compatibility check.
+	// THE PRECONDITION EVERYTHING BELOW RESTS ON (see this test's own doc
+	// comment): the 1.0.0 publish's own branch must be GONE before the next
+	// publish looks, or the head probe refuses over it and no `contract
+	// publish` call — whatever its schemas — reaches the compatibility check
+	// at all. A real space prunes it on merge; so does the fake. Asserted
+	// rather than assumed, because if the prune ever stops happening the
+	// symptom is a refusal that reads like a compatibility verdict and is not.
 	var publishBranch string
 	for _, pr := range provider.gh.PRs() {
 		if strings.Contains(pr.Head, "/contract-publish/") {
@@ -206,7 +209,9 @@ func TestContractCompatOfflinePOL007RollingWindow(t *testing.T) {
 	if publishBranch == "" {
 		t.Fatalf("no contract-publish PR observed after publishing 1.0.0 (host calls: %v)", provider.gh.Requests())
 	}
-	pruneMergedContractPublishBranch(t, provider, publishBranch)
+	if remoteBranchExists(t, provider.fx.RemoteURL(), publishBranch) {
+		t.Fatalf("the merged 1.0.0 publish branch %s is still on the origin — the head probe will refuse every later publish over it, and this test would then report an unrelated refusal as a compatibility verdict", publishBranch)
+	}
 
 	bodyStart := time.Now()
 
