@@ -51,6 +51,16 @@ type CandidateAttestation struct {
 	BuildRevision  string
 	BuildModified  bool
 	BinaryStamp    string
+	// LogicTierRowsSHA256 is the retained check log's own
+	// LOGIC_TIER_ROWS_SHA256 marker value (spec 09 D-7) — the digest the
+	// logic lane claims for the catalogue rows it judged this run.
+	// candidateCheckAttestation only parses and format-validates it (a
+	// well-formed "sha256:...", exactly one occurrence): whether the claim
+	// is actually CORRECT against Catalogue() is a release-evidence
+	// question, checked by evidence.go's verifyCandidateCheckLog, not here —
+	// the same separation candidateCheckAttestation already keeps for every
+	// other field, none of which are compared against package-global state.
+	LogicTierRowsSHA256 string
 }
 
 // candidateCheckAttestation parses the retained verification-checkout
@@ -68,7 +78,14 @@ func candidateCheckAttestation(raw []byte, checkLog string, want CandidateExpect
 		"WORKTREE_CLEAN":    "true",
 		"UNTRACKED_CLEAN":   "true",
 		"WEB_DEPS_READY":    "true",
-		"EXIT":              "0",
+		// LOGIC_TIER_ROWS_SHA256 (spec 09 D-7) has no fixed expected string
+		// here — like CHECKOUT_ROOT, it carries a value only the caller can
+		// judge (evidence.go recomputes the catalogue's own logic-row digest
+		// at validation time and compares there). This function only
+		// enforces the shared exactly-one discipline plus the format check
+		// below.
+		"LOGIC_TIER_ROWS_SHA256": "",
+		"EXIT":                   "0",
 	}
 	markerOrder := []string{
 		"CHECKOUT_ROOT",
@@ -80,6 +97,7 @@ func candidateCheckAttestation(raw []byte, checkLog string, want CandidateExpect
 		"WORKTREE_CLEAN",
 		"UNTRACKED_CLEAN",
 		"WEB_DEPS_READY",
+		"LOGIC_TIER_ROWS_SHA256",
 		"EXIT",
 	}
 	parsed := make(map[string]string, len(values))
@@ -108,17 +126,22 @@ func candidateCheckAttestation(raw []byte, checkLog string, want CandidateExpect
 	if !filepath.IsAbs(root) || filepath.Clean(root) != root {
 		return CandidateAttestation{}, fmt.Errorf("retained check log CHECKOUT_ROOT=%q must be an absolute clean path", root)
 	}
+	logicTierRows := parsed["LOGIC_TIER_ROWS_SHA256"]
+	if !digestPattern.MatchString(logicTierRows) {
+		return CandidateAttestation{}, fmt.Errorf("retained check log LOGIC_TIER_ROWS_SHA256=%q must be a full lowercase sha256 digest", logicTierRows)
+	}
 	return CandidateAttestation{
-		SourceRoot:     root,
-		SourceSHA:      parsed["CANDIDATE_SHA"],
-		SourceTree:     parsed["CANDIDATE_TREE"],
-		SourceDetached: true,
-		IndexClean:     true,
-		WorktreeClean:  true,
-		UntrackedClean: true,
-		IntendedTag:    parsed["CANDIDATE_TAG"],
-		TemplateFloor:  want.Floor,
-		CheckLog:       checkLog,
+		SourceRoot:          root,
+		SourceSHA:           parsed["CANDIDATE_SHA"],
+		SourceTree:          parsed["CANDIDATE_TREE"],
+		SourceDetached:      true,
+		IndexClean:          true,
+		WorktreeClean:       true,
+		UntrackedClean:      true,
+		IntendedTag:         parsed["CANDIDATE_TAG"],
+		TemplateFloor:       want.Floor,
+		CheckLog:            checkLog,
+		LogicTierRowsSHA256: logicTierRows,
 	}, nil
 }
 
