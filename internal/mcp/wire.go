@@ -141,7 +141,7 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 		return nil, fmt.Errorf("mcp: load machine config: %w", err)
 	}
 
-	store, err := buildStore(cfg, machine, p, binaryVersion)
+	store, err := buildStore(ctx, cfg, machine, p, binaryVersion)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
@@ -244,16 +244,17 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 	// nest (internal/space/mirrorlock.go's budget doc spells out why that
 	// matters).
 	refreshDir, refreshURL := write.MirrorDir, write.RepoURL
+	refreshCredential := write.HostCfg.Credential
 	srv.SetPreCall(func(ctx context.Context, tool string) error {
 		if tool == WorkToolName || tool == "a2a_contract" {
 			return nil
 		}
-		return space.CloneOrFetch(ctx, refreshDir, refreshURL)
+		return space.CloneOrFetch(ctx, refreshDir, refreshURL, refreshCredential)
 	})
 	return srv, nil
 }
 
-func buildStore(cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string) (*cache.Store, error) {
+func buildStore(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string) (*cache.Store, error) {
 	mirrors := make([]cache.SpaceMirror, 0, len(cfg.Spaces))
 	for _, ref := range cfg.Spaces {
 		dir := space.ResolveMirrorLocation(p.ProjectRoot, ref, machine)
@@ -263,7 +264,10 @@ func buildStore(cfg space.ProjectConfig, machine space.MachineConfig, p Paths, b
 				manifest = m
 			}
 		}
-		mirrors = append(mirrors, cache.SpaceMirror{SpaceID: ref.ID, Dir: dir, RepoURL: ref.RepoURL, Manifest: manifest})
+		mirrors = append(mirrors, cache.SpaceMirror{
+			SpaceID: ref.ID, Dir: dir, RepoURL: ref.RepoURL,
+			Credential: readMirrorCredential(ctx, ref.ID, machine), Manifest: manifest,
+		})
 	}
 	store := cache.NewStore(cfg.System, cacheDirOf(p), mirrors, time.Now, 0)
 	// P19: a2a_read surfaces the update advisory on its text body from this
@@ -281,7 +285,7 @@ func buildStore(cfg space.ProjectConfig, machine space.MachineConfig, p Paths, b
 func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string) (WriteDeps, SubmitDeps, NewDeps, error) {
 	ref := cfg.Spaces[0]
 	mirrorDir := space.ResolveMirrorLocation(p.ProjectRoot, ref, machine)
-	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL); err != nil {
+	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL, readMirrorCredential(ctx, ref.ID, machine)); err != nil {
 		return WriteDeps{}, SubmitDeps{}, NewDeps{}, fmt.Errorf("mirror sync failed: %w", err)
 	}
 	manifestRaw, err := os.ReadFile(filepath.Join(mirrorDir, "space.yaml"))
@@ -356,4 +360,29 @@ func parseGitHubRepo(url string) (owner, name string, err error) {
 		return "", "", fmt.Errorf("cannot parse owner/name from repo URL %q", url)
 	}
 	return parts[len(parts)-2], parts[len(parts)-1], nil
+}
+
+// readMirrorCredential resolves the credential a MIRROR REFRESH should carry
+// for spaceID, degrading to the empty credential when none resolves.
+//
+// It is deliberately the lenient sibling of buildWriteDeps' own
+// space.ResolveCredential call, which returns its error: a write with no
+// credential cannot work, while a read with no credential works against every
+// public space and must keep doing so. The private case is what the
+// credential buys, and its absence surfaces as git's own error rather than as
+// a refusal to start the session.
+func readMirrorCredential(ctx context.Context, spaceID string, machine space.MachineConfig) host.Credential {
+	var ref space.CredentialReference
+	if raw, ok := machine.Credentials[spaceID]; ok {
+		parsed, err := space.ParseCredentialReference(raw)
+		if err != nil {
+			return host.Credential{}
+		}
+		ref = parsed
+	}
+	credential, err := space.ResolveCredential(ctx, space.CredentialEnvVar(spaceID), ref)
+	if err != nil {
+		return host.Credential{}
+	}
+	return credential
 }

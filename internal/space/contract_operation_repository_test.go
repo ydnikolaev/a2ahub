@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+
+	"github.com/ydnikolaev/a2ahub/internal/host"
 )
 
 type acceptingPublicationManifestValidator struct{}
@@ -31,7 +33,7 @@ func TestContractPublicationRepositoryPinsMainAndServesPlanningAndCompletion(t *
 	commitContractPublication(t, repo, descriptor, files, contractEventV2("1.0.0", digest))
 
 	remote := strings.TrimSpace(contractTestGitOutput(t, repo, "remote", "get-url", "origin"))
-	adapter, err := NewContractPublicationRepository(repo, remote, acceptingPublicationManifestValidator{}, contractHistoryValidator(t))
+	adapter, err := NewContractPublicationRepository(repo, remote, host.Credential{}, acceptingPublicationManifestValidator{}, contractHistoryValidator(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +82,7 @@ func TestContractPublicationRepositoryRefusesAnchorChange(t *testing.T) {
 	contractTestGit(t, repo, "commit", "--allow-empty", "-q", "-m", "seed")
 	contractTestGit(t, repo, "push", "-q", "-u", "origin", "main")
 	remote := strings.TrimSpace(contractTestGitOutput(t, repo, "remote", "get-url", "origin"))
-	adapter, err := NewContractPublicationRepository(repo, remote, acceptingPublicationManifestValidator{}, contractHistoryValidator(t))
+	adapter, err := NewContractPublicationRepository(repo, remote, host.Credential{}, acceptingPublicationManifestValidator{}, contractHistoryValidator(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +112,7 @@ func TestContractPublicationHistoryIgnoresVersionlessLifecyclePublish(t *testing
 	descriptor, files, digest := contractV2Publication(t, "1.0.0", `{"type":"object"}`)
 	commitContractPublication(t, repo, descriptor, files, contractEventV2("1.0.0", digest))
 	remote := strings.TrimSpace(contractTestGitOutput(t, repo, "remote", "get-url", "origin"))
-	adapter, err := NewContractPublicationRepository(repo, remote, acceptingPublicationManifestValidator{}, contractHistoryValidator(t))
+	adapter, err := NewContractPublicationRepository(repo, remote, host.Credential{}, acceptingPublicationManifestValidator{}, contractHistoryValidator(t))
 	if err != nil {
 		t.Fatal(err)
 	}

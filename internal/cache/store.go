@@ -12,6 +12,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/avatar"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"gopkg.in/yaml.v3"
@@ -23,10 +24,20 @@ import (
 // (lead, post-wave) builds one of these per space.ProjectConfig.Spaces
 // entry.
 type SpaceMirror struct {
-	SpaceID  string
-	Dir      string
-	RepoURL  string
-	Manifest space.Manifest
+	SpaceID string
+	Dir     string
+	RepoURL string
+	// Credential authenticates THIS space's mirror refresh. It is per-space
+	// because credentials are per-space (A2A_TOKEN_<SPACE_ID>, or this
+	// machine's config reference for the id), and the read path had no way to
+	// carry one until a private space made that fatal. Empty means "refresh
+	// tokenless", which every public space needs and gets.
+	//
+	// It is a resolved secret, so it inherits host.Credential's rules: never
+	// logged, never persisted, never placed in anything that serializes —
+	// which is why SpaceMirror itself carries no struct tags.
+	Credential host.Credential
+	Manifest   space.Manifest
 }
 
 // Store is this package's facade: every P7 read verb (inbox/outbox/
@@ -49,7 +60,7 @@ type Store struct {
 	// overrides it (same test-only DI convention as
 	// feedback.Submitter.SetCloneOrFetchForTest /
 	// cli.SyncCommand's own cloneOrFetch field).
-	cloneOrFetch func(ctx context.Context, dir, repoURL string) error
+	cloneOrFetch func(ctx context.Context, dir, repoURL string, credential host.Credential) error
 
 	// update.go's T3/T4 fields — all zero-value until EnableUpdateNotice
 	// is called (never by NewStore itself, so every existing caller's
@@ -86,7 +97,7 @@ func NewStore(ownSystem, cacheDir string, spaces []SpaceMirror, now Clock, ttl t
 // feedback.Submitter.SetCloneOrFetchForTest). Production always uses
 // NewStore's own space.CloneOrFetch default; refresh_test.go uses this to
 // inject a call-counting / failing fake without a real network fetch.
-func (s *Store) SetCloneOrFetchForTest(f func(ctx context.Context, dir, repoURL string) error) {
+func (s *Store) SetCloneOrFetchForTest(f func(ctx context.Context, dir, repoURL string, credential host.Credential) error) {
 	s.cloneOrFetch = f
 }
 

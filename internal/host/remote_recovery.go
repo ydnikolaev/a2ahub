@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -73,7 +72,7 @@ func (h *GitHubHost) ReadRemoteRecoveryCommit(
 		return Repo{}, "", "", "", "", "", "", nil, false, recoveryRequestError(op)
 	}
 
-	authArgs := recoveryGitAuthArgs(credential)
+	authArgs := GitAuthArgs(credential)
 	lsArgs := append([]string{"-C", repoDir}, authArgs...)
 	lsArgs = append(lsArgs, "ls-remote", "--exit-code", "--heads", remoteURL, remoteRef)
 	ls := runRecoveryGit(ctx, 4096, lsArgs...)
@@ -305,14 +304,6 @@ func recoveryPrivateRef() (string, error) {
 		return "", err
 	}
 	return "refs/a2a/recovery/" + hex.EncodeToString(entropy[:]), nil
-}
-
-func recoveryGitAuthArgs(credential Credential) []string {
-	if credential.Token == "" {
-		return nil
-	}
-	basicAuth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + credential.Token))
-	return []string{"-c", "http.extraheader=AUTHORIZATION: basic " + basicAuth}
 }
 
 type boundedRecoveryBuffer struct {

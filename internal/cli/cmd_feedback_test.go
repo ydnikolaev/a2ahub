@@ -54,7 +54,7 @@ func TestFeedbackSubmit_JSONValidationBatchIsCompleteAndDeterministic(t *testing
 		feedback.SubmitConfig{RemoteURL: fx.RemoteURL(), Repo: host.Repo{Owner: "a2ahub", Name: "a2ahub"}, BaseBranch: "main"},
 	)
 	submitter.SetMirrorDirForTest(func(string, string) string { return fx.Clone("feedback") })
-	submitter.SetCloneOrFetchForTest(func(context.Context, string, string) error { return nil })
+	submitter.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error { return nil })
 	cmd := cli.NewFeedbackCommand(nil, submitter, ledgerPath, "", nil)
 
 	first := filepath.Join(t.TempDir(), "a-valid.yaml")
@@ -301,7 +301,7 @@ func TestFeedbackSubmit_FakeHostRoundTrip(t *testing.T) {
 	})
 	mirrorDir := fx.Clone("feedback")
 	submitter.SetMirrorDirForTest(func(string, string) string { return mirrorDir })
-	submitter.SetCloneOrFetchForTest(func(context.Context, string, string) error { return nil })
+	submitter.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error { return nil })
 
 	cmd := cli.NewFeedbackCommand(nil, submitter, ledgerPath, "", nil)
 
@@ -394,7 +394,7 @@ func TestFeedbackSubmit_MultipleFilesAndAllKeepOnePRPerItem(t *testing.T) {
 		RemoteURL: fx.RemoteURL(), Repo: host.Repo{Owner: "a2ahub", Name: "a2ahub"}, BaseBranch: "main",
 	})
 	submitter.SetMirrorDirForTest(func(string, string) string { return fx.Clone("feedback") })
-	submitter.SetCloneOrFetchForTest(func(context.Context, string, string) error { return nil })
+	submitter.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error { return nil })
 	cmd := cli.NewFeedbackCommand(nil, submitter, ledgerPath, "", nil)
 
 	first := filepath.Join(feedbackDir, "fb-20260728-aaa111.yaml")
@@ -465,7 +465,7 @@ func TestFeedbackSubmit_ValidatesWholeBatchBeforeFirstWrite(t *testing.T) {
 		feedback.SubmitConfig{RemoteURL: fx.RemoteURL(), Repo: host.Repo{Owner: "a2ahub", Name: "a2ahub"}, BaseBranch: "main"},
 	)
 	submitter.SetMirrorDirForTest(func(string, string) string { return fx.Clone("feedback") })
-	submitter.SetCloneOrFetchForTest(func(context.Context, string, string) error { return nil })
+	submitter.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error { return nil })
 	cmd := cli.NewFeedbackCommand(nil, submitter, ledgerPath, "", nil)
 
 	valid := filepath.Join(t.TempDir(), "fb-20260728-ddd444.yaml")

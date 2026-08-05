@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
+
+	"github.com/ydnikolaev/a2ahub/internal/host"
 )
 
 // seedMirrorForLockTest clones a throwaway fixture space and returns its
@@ -20,7 +22,7 @@ func seedMirrorForLockTest(t *testing.T) (dir, gitDir string) {
 	t.Helper()
 	fx := spacefixture.New(t, "axon")
 	dir = filepath.Join(t.TempDir(), "mirror")
-	if err := CloneOrFetch(context.Background(), dir, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), dir, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("seed clone: %v", err)
 	}
 	gd, err := resolveGitDir(dir)

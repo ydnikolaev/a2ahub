@@ -125,7 +125,7 @@ func TestProductionOperationalSnapshotRefreshesFromSecondCloneOverSSE(t *testing
 	clock := fixedOperationalClock{now: now}
 	fixture := spacefixture.New(t, "atlas", "beta")
 	seedAttentionFixture(t, fixture.Clone("beta"), itemID, threadID)
-	if err := space.CloneOrFetch(t.Context(), fixture.Clone("atlas"), fixture.RemoteURL()); err != nil {
+	if err := space.CloneOrFetch(t.Context(), fixture.Clone("atlas"), fixture.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("initial CloneOrFetch: %v", err)
 	}
 

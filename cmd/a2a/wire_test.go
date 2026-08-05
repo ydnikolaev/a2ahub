@@ -210,7 +210,7 @@ func TestBuildStoreConfigTolerance(t *testing.T) {
 
 	t.Run("absent config is tolerated (empty store, no error)", func(t *testing.T) {
 		t.Parallel()
-		store, err := buildStore(pathsIn(t.TempDir()))
+		store, err := buildStore(t.Context(), pathsIn(t.TempDir()))
 		if err != nil {
 			t.Fatalf("buildStore(absent): unexpected error %v", err)
 		}
@@ -230,7 +230,7 @@ func TestBuildStoreConfigTolerance(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, ".a2a", "config.yaml"), []byte("system: [axon\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := buildStore(pathsIn(dir)); err == nil {
+		if _, err := buildStore(t.Context(), pathsIn(dir)); err == nil {
 			t.Error("buildStore(malformed project config): want error, got nil")
 		}
 	})
@@ -244,7 +244,7 @@ func TestBuildStoreConfigTolerance(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "machine.yaml"), []byte("credentials:\n  getvisa: \"literal-secret-not-a-ref\"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := buildStore(pathsIn(dir)); err == nil {
+		if _, err := buildStore(t.Context(), pathsIn(dir)); err == nil {
 			t.Error("buildStore(malformed machine config): want error, got nil")
 		}
 	})

@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ydnikolaev/a2ahub/internal/host"
 )
 
 // ageMirror backdates dir's own sync-age markers (.git/FETCH_HEAD and/or
@@ -403,7 +405,7 @@ func TestSyncIfStale_FreshMirrorTriggersNoRefresh(t *testing.T) {
 	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, RepoURL: fx.dir, Manifest: mustManifest(t, fx)}}, time.Now, time.Hour)
 
 	var calls int
-	store.SetCloneOrFetchForTest(func(context.Context, string, string) error {
+	store.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error {
 		calls++
 		return nil
 	})
@@ -467,7 +469,7 @@ func TestSyncIfStale_SkipsMissingMirror_NeverFirstClones(t *testing.T) {
 	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: dir, RepoURL: "https://example.invalid/repo.git"}}, time.Now, time.Hour)
 
 	var calls int
-	store.SetCloneOrFetchForTest(func(context.Context, string, string) error {
+	store.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error {
 		calls++
 		return nil
 	})
@@ -498,7 +500,7 @@ func TestSyncIfStale_SkipsNonGitMirror_LeavesDirUntouched(t *testing.T) {
 	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: dir, RepoURL: "https://example.invalid/repo.git"}}, time.Now, time.Hour)
 
 	var calls int
-	store.SetCloneOrFetchForTest(func(context.Context, string, string) error {
+	store.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error {
 		calls++
 		return nil
 	})
@@ -536,7 +538,7 @@ func TestSyncIfStale_BudgetExhaustion_NamesUnattemptedMirrors(t *testing.T) {
 	}
 
 	store := NewStore("axon", t.TempDir(), mirrors, time.Now, time.Hour)
-	store.SetCloneOrFetchForTest(func(ctx context.Context, dir, repoURL string) error {
+	store.SetCloneOrFetchForTest(func(ctx context.Context, dir, repoURL string, _ host.Credential) error {
 		<-ctx.Done() // models a hung/unreachable fetch: only gives up when its own per-mirror timeout fires
 		return ctx.Err()
 	})
@@ -624,7 +626,7 @@ func TestSyncIfStaleResultsAttributesFailureWithoutStringParsing(t *testing.T) {
 		SpaceID: "northstar", Dir: fx.dir, RepoURL: fx.dir, Manifest: mustManifest(t, fx),
 	}}, time.Now, time.Hour)
 	ageMirror(t, fx.dir, 2*time.Hour)
-	store.SetCloneOrFetchForTest(func(context.Context, string, string) error {
+	store.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error {
 		return errors.New("provider detail that callers must not parse")
 	})
 

@@ -105,7 +105,7 @@ type Submitter struct {
 	now          func() time.Time
 	readFile     func(path string) ([]byte, error)
 	appendLedger func(path string, item LedgerItem) error
-	cloneOrFetch func(ctx context.Context, dir, repoURL string) error
+	cloneOrFetch func(ctx context.Context, dir, repoURL string, credential host.Credential) error
 	mirrorDir    func(projectRoot, slug string) string
 }
 
@@ -134,7 +134,7 @@ func defaultMirrorDir(projectRoot, slug string) string {
 
 // SetCloneOrFetchForTest overrides the injected mirror-refresh seam
 // (test-only DI, rails anti-pattern #10 convention).
-func (s *Submitter) SetCloneOrFetchForTest(f func(ctx context.Context, dir, repoURL string) error) {
+func (s *Submitter) SetCloneOrFetchForTest(f func(ctx context.Context, dir, repoURL string, credential host.Credential) error) {
 	s.cloneOrFetch = f
 }
 
@@ -182,7 +182,7 @@ func (s *Submitter) Submit(ctx context.Context, path string) (SubmitResult, erro
 	}
 
 	dir := s.mirrorDir(s.projectRoot, s.slug)
-	if err := s.cloneOrFetch(ctx, dir, s.cfg.RemoteURL); err != nil {
+	if err := s.cloneOrFetch(ctx, dir, s.cfg.RemoteURL, s.cfg.Credential); err != nil {
 		return SubmitResult{}, fmt.Errorf("feedback: %s: %w", op, err)
 	}
 

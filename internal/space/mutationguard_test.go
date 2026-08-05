@@ -35,6 +35,8 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
+
+	"github.com/ydnikolaev/a2ahub/internal/host"
 )
 
 func TestMutateTreeRefusesANilLock(t *testing.T) {
@@ -53,7 +55,7 @@ func TestMutateTreeRefusesALockForADifferentMirror(t *testing.T) {
 	held := filepath.Join(t.TempDir(), "held")
 	other := filepath.Join(t.TempDir(), "other")
 	for _, dir := range []string{held, other} {
-		if err := CloneOrFetch(context.Background(), dir, fx.RemoteURL()); err != nil {
+		if err := CloneOrFetch(context.Background(), dir, fx.RemoteURL(), host.Credential{}); err != nil {
 			t.Fatalf("seed clone %s: %v", dir, err)
 		}
 	}
@@ -85,7 +87,7 @@ func TestCommitOneRefusesWithoutTheMirrorsOwnLock(t *testing.T) {
 
 	fx := spacefixture.New(t, "axon")
 	dir := filepath.Join(t.TempDir(), "mirror")
-	if err := CloneOrFetch(context.Background(), dir, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), dir, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("seed clone: %v", err)
 	}
 

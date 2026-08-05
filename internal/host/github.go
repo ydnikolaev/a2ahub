@@ -3,7 +3,6 @@ package host
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -85,11 +84,7 @@ func (h *GitHubHost) PushBranch(ctx context.Context, req PushBranchRequest) (Pus
 		return PushBranchResult{}, &Error{Op: op, Err: ErrInvalidRequest}
 	}
 
-	args := []string{"-C", req.RepoDir}
-	if req.Credential.Token != "" {
-		basicAuth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + req.Credential.Token))
-		args = append(args, "-c", "http.extraheader=AUTHORIZATION: basic "+basicAuth)
-	}
+	args := append([]string{"-C", req.RepoDir}, GitAuthArgs(req.Credential)...)
 	args = append(args, "push")
 	if req.ForceWithLeaseSHA != "" {
 		args = append(args, "--force-with-lease=refs/heads/"+req.Branch+":"+req.ForceWithLeaseSHA)
@@ -126,11 +121,7 @@ func (h *GitHubHost) ReadRemoteBranch(ctx context.Context, req RemoteBranchReque
 	if req.RepoDir == "" || req.RemoteURL == "" || req.Branch == "" {
 		return RemoteBranchHead{}, &Error{Op: op, Err: ErrInvalidRequest}
 	}
-	args := []string{"-C", req.RepoDir}
-	if req.Credential.Token != "" {
-		basicAuth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + req.Credential.Token))
-		args = append(args, "-c", "http.extraheader=AUTHORIZATION: basic "+basicAuth)
-	}
+	args := append([]string{"-C", req.RepoDir}, GitAuthArgs(req.Credential)...)
 	args = append(args, "ls-remote", "--heads", req.RemoteURL, "refs/heads/"+req.Branch)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	var stdout, stderr bytes.Buffer

@@ -182,6 +182,6 @@ func newDoctorVisibilityRunCommand(t *testing.T, summary DoctorClassificationSum
 	}
 	cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
 	cmd.lookupGit = func() error { return nil }
-	cmd.cloneOrFetch = func(context.Context, string, string) error { return nil }
+	cmd.cloneOrFetch = func(context.Context, string, string, host.Credential) error { return nil }
 	return cmd
 }
