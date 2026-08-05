@@ -44,6 +44,18 @@ type harness struct {
 	Pre       Preflight
 	Org, Repo string
 	SpaceSlug string
+	// Tier names which tier this harness IS, so a scenario body can ask
+	// AssertionJudgeableBy (tier.go) before asserting something its own
+	// catalogue row declared provider-decided. The ZERO VALUE is the live
+	// tier — Run.Tier's own convention, and the direction that leaves every
+	// live path untouched.
+	//
+	// A scenario reads this ONLY through AssertionJudgeableBy, never by
+	// comparing it directly: a body that branched on the tier itself would
+	// be free to invent a second, private rule about what the logic tier may
+	// see, and the whole point of the catalogue declaration is that there is
+	// one such rule and it is diffable.
+	Tier Tier
 	// Seam is where this run's host actually lives — the API root, git
 	// remote and web root every scenario family reads instead of rebuilding
 	// them from Org/Repo (hostseam.go). newHarness sets it to the live seam

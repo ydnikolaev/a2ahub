@@ -299,7 +299,20 @@ run_logic_tests() {
   # surface -race exists for, at a cost of seconds. `check` promises a raced
   # Go suite; a lane inside it that quietly opted out would be the promise
   # narrowing without anyone deciding to narrow it.
-  go test ./internal/livee2e/... -tags=livee2e -race -run '^(TestLogicMatrix|TestLogicTierWritesNothingOutsideItsOwnTempDirs|TestNewLogicHarnessLeavesExecutionCandidateZero|TestProvisionLocalSpaceScaffoldsCleanSpace)$' -count=1 -timeout 5m
+  #
+  # -v and the timeout are BOTH load-bearing, and neither is a style choice.
+  # `go test` discards a passing package's stdout unless -v is set (verified
+  # directly), and spec 09 D-7's LOGIC_TIER_ROWS_SHA256 marker reaches the
+  # release-evidence contract only by being IN this transcript. Without -v the
+  # marker is emitted and thrown away, and the release gate reds with no
+  # explanation an operator could act on.
+  #
+  # The timeout is sized from the measured full matrix (~5m for 30 judged
+  # rows, each spawning real `a2a` subprocesses over real git), with room for
+  # a slower machine. It is a CEILING against a hang, not a budget: if this
+  # lane ever legitimately approaches it, the answer is to make the tier
+  # faster, not to raise the number again.
+  go test ./internal/livee2e/... -tags=livee2e -race -v -run '^(TestLogicMatrix|TestLogicTierWritesNothingOutsideItsOwnTempDirs|TestNewLogicHarnessLeavesExecutionCandidateZero|TestProvisionLocalSpaceScaffoldsCleanSpace)$' -count=1 -timeout 20m
 }
 
 run_teeth() {
