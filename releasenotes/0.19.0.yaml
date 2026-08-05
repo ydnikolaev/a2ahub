@@ -194,6 +194,32 @@ changes:
       run:
         - "a2a update --yes"
 
+  - id: RN-01900-9
+    kind: fix
+    impact: high
+    subject: "A maintenance release on an older version line is possible again"
+    detail: >
+      Publishing a maintenance version while a newer major was live always
+      failed. The publication computed which files it was replacing, and the
+      exact bytes it expected to find, from the version it was checking
+      compatibility against — not from the version whose files are actually
+      on the branch. With 1.0.0, 1.1.0 and 2.0.0 published in that order, a
+      1.2.0 release prepared from the 1.1.0 baseline described a tree that
+      was not there, and the write was refused every time with a mismatched
+      precondition on the contract descriptor.
+      The two are now separate: compatibility is still checked against the
+      highest published version below the one being released, while the write
+      is described against whatever the most recent publication left on the
+      branch. Publishing on the newest line is unaffected — there the two
+      answers were always the same, which is why nothing caught this until a
+      contract with three live lines was exercised end to end.
+    affects: ["a2a contract publish", "contract versioning"]
+    action:
+      scope: none
+      why: >
+        A publication that already worked behaves identically. A maintenance
+        release that could not be made before now succeeds.
+
   - id: RN-01900-4
     kind: fix
     impact: normal
