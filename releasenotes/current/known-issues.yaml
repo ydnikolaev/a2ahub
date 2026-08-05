@@ -1,5 +1,35 @@
 schema: known-issues/v1
 issues:
+  - id: KI-01900-PROVIDER-TIER-DEFERRED
+    kind: known-issue
+    impact: normal
+    subject: "v0.19.0 shipped with its provider-tier verification deferred, by explicit operator authorization"
+    detail: >
+      This release's scenario LOGIC is fully verified: the whole catalogue runs
+      locally against a faithful host stand-in over real git repositories, and
+      every row that tier may judge passed on the exact candidate. What it does
+      not carry is a full live GitHub matrix, which was deferred deliberately
+      because a counterparty was blocked on the contract-publication path this
+      release fixes, and waiting was itself the larger risk.
+      The rows therefore unverified for this candidate are the ones only a real
+      provider can decide: branch protection blocking a merge until the required
+      check is green, enforce_admins binding a participant while skipping an
+      admin, a cross-section authorization decision surviving a privileged
+      re-trigger, GitHub serving a check computed against a stale ref, a direct
+      push to main being refused, the shipped Actions workflow actually running
+      `a2a validate --ci`, compound check-run name resolution, and the space's
+      own CI carrying no unexplained failures. The last full matrix that did
+      prove them ran on 2026-08-05 against an EARLIER tree, before this
+      release's publication-baseline and fixture corrections.
+      A provider-tier run is scheduled against this exact tag, and anything it
+      finds ships as a patch release.
+    affects: ["a2a submit", "a2a contract publish", "branch protection", "space CI"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. Report anything that misbehaves through `a2a feedback`
+        — that channel is what turns a deferred verification into a finding
+        rather than a silence.
   - id: KI-MACOS-ADHOC-SIGNING
     kind: known-issue
     impact: normal
