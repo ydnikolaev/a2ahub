@@ -601,7 +601,7 @@ func operationalStaticServer(ctx context.Context, oc *operationalConfidenceRun) 
 	serverCtx, cancelServer := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(serverCtx, oc.h.B.Bin, "serve", "--listen", address, "--refresh", "250ms", "--sync-every", "15s") //nolint:gosec // reason: binary is the attested candidate and argv contains only the loopback listener allocated above.
 	cmd.Dir = oc.h.B.Dir
-	cmd.Env = checkoutEnv(oc.h.B.Token, oc.h.B.SpaceSlug, oc.h.B.APIRoot)
+	cmd.Env = oc.h.B.env()
 	// os/exec copies the child's pipes from goroutines that only Wait reaps,
 	// and this buffer is read on the startup-failure path BEFORE Wait — a
 	// plain strings.Builder is a data race there. The live tier runs without

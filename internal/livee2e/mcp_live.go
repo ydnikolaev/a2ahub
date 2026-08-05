@@ -45,7 +45,7 @@ type mcpToolResult struct {
 func startMCPSession(ctx context.Context, c *checkout) (*mcpSession, error) {
 	cmd := exec.CommandContext(ctx, c.Bin, "mcp") //nolint:gosec // reason: c.Bin is the exact attested candidate binary and the subcommand is fixed.
 	cmd.Dir = c.Dir
-	cmd.Env = checkoutEnv(c.Token, c.SpaceSlug, c.APIRoot)
+	cmd.Env = c.env()
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
