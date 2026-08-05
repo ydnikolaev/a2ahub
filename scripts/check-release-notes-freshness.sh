@@ -58,16 +58,29 @@ run_check() {
       uncovered+="${commit}"$'\t'"${subject}"$'\n'
     fi
   done < <(
-    # internal/livee2e is the live TEST tier, not a user-visible surface: it
-    # ships in the public tree but its only consumer is `make live-e2e`. A
-    # `fix(livee2e)` commit repairs a scenario, never behaviour a release note
-    # could describe, and demanding one taught exactly the wrong reflex —
-    # invent a note, or reword an unrelated entry to re-anchor the gate. The
-    # teeth below pin BOTH halves: a livee2e-only commit stays green, and a
-    # commit that also touches real product code still reds.
+    # Two exclusions, both saying the same thing: a release note describes
+    # behaviour a USER can observe, and neither of these ships any.
+    #
+    # `_test.go` is the stronger of the two, because it is true by
+    # construction rather than by convention: the Go toolchain does not put a
+    # test file in the binary, so a commit touching only test files cannot
+    # have changed what anyone runs. Demanding a note for one teaches exactly
+    # the wrong reflex — invent a note, or reword an unrelated entry to
+    # re-anchor the gate.
+    #
+    # internal/livee2e is the live TEST tier: it ships in the public tree, but
+    # its only consumer is `make live-e2e` and most of its files are NOT
+    # `_test.go` (they are `//go:build livee2e` scenario bodies), so the rule
+    # above does not reach them. A `fix(livee2e)` commit repairs a scenario,
+    # never behaviour a note could describe.
+    #
+    # The teeth below pin every half: a test-only commit stays green, a
+    # livee2e-only commit stays green, and a commit that ALSO touches real
+    # product code still reds in both cases.
     git -C "$ROOT" log "$anchor..HEAD" --format='%H%x09%s' -- \
       internal/ cmd/ schemas/ space-template/ skill/ \
-      ':(exclude)internal/livee2e/'
+      ':(exclude)internal/livee2e/' \
+      ':(exclude,glob)**/*_test.go'
   )
 
   if [ -n "$uncovered" ]; then
@@ -177,7 +190,41 @@ run_teeth() {
     exit 1
   fi
 
-  echo "release-notes-freshness --teeth: uncovered fix reds with id; notes touch greens; docs/chore stay green; breaking commit reds; livee2e-only greens; livee2e+product reds."
+  # Re-anchor again: the assertion above deliberately left the fixture red, and
+  # the two below are about what a TEST-ONLY commit does to a GREEN gate.
+  printf '%s\n' 'version: "0.4.0"' >"$tmp/releasenotes/0.4.0.yaml"
+  git -C "$tmp" add releasenotes/0.4.0.yaml
+  git -C "$tmp" commit -q -m 'docs: author 0.4.0 release notes'
+  if ! ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check >/dev/null; then
+    echo "release-notes-freshness --teeth: FAILED — the second re-anchor did not green the gate." >&2
+    exit 1
+  fi
+
+  # A _test.go file cannot ship user-visible behaviour: the Go toolchain does
+  # not put it in the binary. Note this one sits under internal/widget, NOT
+  # under the internal/livee2e path the earlier exclusion covers — so it can
+  # only stay green through the *_test.go rule itself.
+  printf '%s\n' 'package widget' 'func TestFixed(t *testing.T) {}' >"$tmp/internal/widget/widget_test.go"
+  git -C "$tmp" add internal/widget/widget_test.go
+  git -C "$tmp" commit -q -m 'fix(widget): cover the repaired behaviour'
+  if ! ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check >/dev/null; then
+    echo "release-notes-freshness --teeth: FAILED — a test-only fix demanded release notes." >&2
+    exit 1
+  fi
+
+  printf '%s\n' 'package widget' 'func TestFixed(t *testing.T) {}' 'func TestMore(t *testing.T) {}' >"$tmp/internal/widget/widget_test.go"
+  printf '%s\n' 'package widget' 'const Fixed = true' 'const Metadata = true' 'const Breaking = true' 'const AlsoProduct = true' 'const AndAgain = true' >"$tmp/internal/widget/widget.go"
+  git -C "$tmp" add internal/widget/widget_test.go internal/widget/widget.go
+  git -C "$tmp" commit -q -m 'fix(widget): repair behaviour, and cover it'
+  out="$(ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check 2>&1)"
+  rc=$?
+  if [ "$rc" -eq 0 ] || ! grep -q 'fix(widget): repair behaviour, and cover it' <<<"$out"; then
+    echo "release-notes-freshness --teeth: FAILED — a commit touching product AND its test stayed green:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+
+  echo "release-notes-freshness --teeth: uncovered fix reds with id; notes touch greens; docs/chore stay green; breaking commit reds; livee2e-only greens; livee2e+product reds; test-only greens; test+product reds."
 }
 
 case "${1:-check}" in

@@ -806,3 +806,44 @@ func TestForbiddenEndpointStill404s(t *testing.T) {
 		t.Fatalf("PATCH /repos/%s/%s = %d, want 404 (repo settings are a provider-only decision this fake must refuse, not fabricate)", testOwner, testRepo, status)
 	}
 }
+
+// TestValidRefPathAdmitsRealBranchesAndRefusesTheRest pins the one validation
+// standing between a request path and a git argv. handleDeleteRef is the only
+// endpoint in this fake whose input a caller controls, and the branch names
+// this project uses carry slashes — so "reject anything with a slash" was
+// never available, and the rule has to be precise instead.
+func TestValidRefPathAdmitsRealBranchesAndRefusesTheRest(t *testing.T) {
+	t.Parallel()
+
+	for _, ref := range []string{
+		"heads/main",
+		"heads/a2a/alpha/submit/XQ-alpha-20260805-a001",
+		"heads/a2a/axon/contract-publish/op-v1-237b8840bbf5b01f",
+		"heads/release-1.2.0",
+		"fork/feature_branch",
+	} {
+		if !validRefPath(ref) {
+			t.Errorf("validRefPath(%q) = false, want true — this is a shape the project really uses", ref)
+		}
+	}
+
+	for name, ref := range map[string]string{
+		"empty":            "",
+		"traversal":        "heads/../../etc/passwd",
+		"leading dash":     "-upload-pack=touch",
+		"dash after slash": "heads/-x",
+		"shell metachar":   "heads/main;rm -rf /",
+		"backtick":         "heads/`whoami`",
+		"space":            "heads/two words",
+		"trailing slash":   "heads/main/",
+		"double slash":     "heads//main",
+		"leading slash":    "/heads/main",
+		"newline":          "heads/main\nheads/other",
+		"dollar expansion": "heads/$HOME",
+		"glob":             "heads/*",
+	} {
+		if validRefPath(ref) {
+			t.Errorf("validRefPath(%q) = true for the %s case, want false", ref, name)
+		}
+	}
+}
