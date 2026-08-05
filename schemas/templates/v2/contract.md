@@ -12,7 +12,7 @@ category: <api|data-feed|vocabulary|event-feed|other>
 priority: p3
 blocking: false
 classification: internal
-version: 0.0.0                       # unpublished — `a2a contract publish` establishes the first real version. Leave it; a draft that already reads the version you publish has no establishing commit and can never be resolved afterwards.
+version: 0.0.0                       # set by `a2a contract publish`, never by hand — see the note at the bottom
 schema_format: json-schema-2020-12
 compat_policy: default
 # generated_from:                    # include only for a code-generated contract
