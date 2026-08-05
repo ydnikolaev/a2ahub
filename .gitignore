@@ -45,6 +45,7 @@ scripts/*
 !scripts/check-release-notes-freshness.sh
 !scripts/check-roadmap-release-decisions.sh
 !scripts/check-provider-tier-deferral.sh
+!scripts/bump-space-template.sh
 !scripts/check-gosec-scope.sh
 !scripts/check-readme.sh
 !scripts/dashboard-template-drift.sh
