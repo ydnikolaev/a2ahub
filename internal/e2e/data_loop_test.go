@@ -95,21 +95,21 @@
 //     itself calls, never hand-computed) — the same arrangement technique
 //     helpers_test.go's own fixOriginManifest/seedOriginExtras already use
 //     in this package.
-//  4. `testkit/fakegithub`'s handleFindPR (fakegithub.go) responds with
-//     `{"number","html_url","state","merged"}` — omitting `body`, which
-//     real GitHub's `GET /pulls?head=...` includes. `internal/space`'s
-//     WriteFunnel OperationKey retry short-circuit
-//     (submitPreparedRequest, funnel.go) reads the operation key back out
-//     of exactly that field (`ParseOperationMetadata(existing.Body)`) to
-//     confirm a found branch is the SAME operation before repairing its
-//     PR — with body always "", that check always fails and the funnel
-//     refuses ("operation branch metadata does not match the requested
-//     intent") instead of repairing, for every OperationKey-based write
-//     against this harness: data-deliver, data-verify --record, and by
-//     the identical mechanism contract-publish/preflight's own retry
-//     path. TestDataLoopDeliverRerunIsIdempotent documents this exactly
-//     (see its own doc comment) rather than asserting an unreachable
-//     "repairs successfully" outcome.
+//  4. RESOLVED, and left here because the shape of the finding is worth
+//     more than its absence: `testkit/fakegithub`'s handleFindPR once
+//     omitted `body` from its listing, which real GitHub's
+//     `GET /pulls?head=...` includes. `internal/space`'s WriteFunnel
+//     OperationKey retry short-circuit (submitPreparedRequest, funnel.go)
+//     reads the operation key back out of exactly that field
+//     (`ParseOperationMetadata(existing.Body)`) to confirm a found branch
+//     is the SAME operation before repairing its PR — so with body always
+//     "", every OperationKey-based write refused ("operation branch
+//     metadata does not match the requested intent") instead of repairing,
+//     and TestDataLoopDeliverRerunIsIdempotent asserted that refusal as
+//     though it were the specification. The fake now returns `body`, and
+//     that test asserts the repair. The lesson it cost: a gap in a test
+//     double does not read as a gap — it reads as a product behaviour, and
+//     the test written against it makes the wrong behaviour permanent.
 //  2. `cmd/a2a`'s dataCore.verify never computes or sets
 //     ContractSupersededBy on its datapackage.VerifyRequest, so
 //     `Observed.ContractSupersededBy` would never be populated even if
@@ -572,27 +572,20 @@ func TestDataLoopPackDeliverOneCommit(t *testing.T) {
 // a re-run of `a2a data deliver` against the same staging root repairs its
 // own pull request — no second PR, no second commit.
 //
-// PRODUCT DEFECT (found proving this suite, reported not fixed — outside
-// this file's allowlist, testkit/fakegithub/fakegithub.go's own
-// handleFindPR): `internal/space.WriteFunnel`'s OperationKey retry
-// short-circuit (submitPreparedRequest, funnel.go) finds the existing PR
-// via `FindPRByHeadBranch`, then reads the operation key it recorded back
-// out of that PR's own BODY (`ParseOperationMetadata(existing.Body)`) to
-// prove the found branch is really the same operation, not a name
-// collision — real GitHub's `GET /pulls?head=...` includes `body` in
-// every returned object. testkit/fakegithub's own handleFindPR response
-// (`{"number","html_url","state","merged"}`) omits it, so `existing.Body`
-// is ALWAYS "" through this exact lookup, `ParseOperationMetadata` always
-// fails to parse a key out of it, and the funnel refuses with
-// ErrOperationMismatch ("operation branch metadata does not match the
-// requested intent") instead of repairing — for EVERY OperationKey-based
-// write against this harness (data-deliver, data-verify --record,
-// contract-publish/preflight's own retry path), not only this one. The
-// deterministic branch/operation-key half of D-6's own property IS
-// verified below (both calls target the identical branch); the "repairs
-// rather than refuses" half is unprovable through a real second exec
-// against this harness until the fake is fixed, and this test documents
-// exactly that rather than asserting an unreachable success.
+// Both halves of D-6's property are verified below: the two calls target
+// the identical deterministic branch, AND the second one repairs that
+// branch's pull request instead of refusing.
+//
+// The second half was unreachable for a while, and how it came back is the
+// part worth remembering. `internal/space.WriteFunnel`'s OperationKey retry
+// short-circuit (submitPreparedRequest, funnel.go) finds the existing PR via
+// `FindPRByHeadBranch`, then reads the operation key it recorded back out of
+// that PR's own BODY (`ParseOperationMetadata(existing.Body)`) to prove the
+// found branch is really the same operation and not a name collision. Real
+// GitHub returns `body` from that listing; testkit/fakegithub did not, so
+// `existing.Body` was always "" and the funnel always refused with
+// ErrOperationMismatch. An earlier revision of this test asserted that
+// refusal — a gap in the double, written down as though it were the product.
 func TestDataLoopDeliverRerunIsIdempotent(t *testing.T) {
 	t.Parallel()
 	axon, beta, contractRef, wrID := setupDataLoop(t)
