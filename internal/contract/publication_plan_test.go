@@ -346,8 +346,9 @@ func TestPlanPublicationEmitsSortedWriteDeleteMetadataOnly(t *testing.T) {
 	plan, issues := PlanPublication(PublicationInput{
 		System: "atlas", ContractID: "XC-atlas-demo", Selector: "explicit:1.1.0",
 		AuthoringFloor: "0.19.0", Candidate: desired, Published: []PublishedContract{prior},
-		CandidateSource: CandidateSource{Kind: CandidateSourceStaging, Location: "staging/demo", Fingerprint: "sha256:" + strings.Repeat("5", 64)},
-		ContractRoot:    "contracts/atlas/demo",
+		MutationBaseline: prior,
+		CandidateSource:  CandidateSource{Kind: CandidateSourceStaging, Location: "staging/demo", Fingerprint: "sha256:" + strings.Repeat("5", 64)},
+		ContractRoot:     "contracts/atlas/demo",
 	}, &recordingCompatibilityChecker{result: CompatibilityResult{Verdict: CompatibilityCompatible}})
 	assertNoIssues(t, issues)
 
@@ -400,7 +401,8 @@ func TestPlanPublicationPreservesExecutableModeAndRefusesUnknownPriorMode(t *tes
 	input := PublicationInput{
 		System: "atlas", ContractID: "XC-atlas-demo", Selector: "explicit:1.1.0", AuthoringFloor: "0.19.0",
 		Candidate: desired, Published: []PublishedContract{prior}, ContractRoot: "contracts/atlas/demo",
-		CandidateSource: CandidateSource{Kind: CandidateSourceMirror, Location: "tree", Fingerprint: "sha256:" + strings.Repeat("7", 64)},
+		MutationBaseline: prior,
+		CandidateSource:  CandidateSource{Kind: CandidateSourceMirror, Location: "tree", Fingerprint: "sha256:" + strings.Repeat("7", 64)},
 	}
 	plan, issues := PlanPublication(input, &recordingCompatibilityChecker{result: CompatibilityResult{Verdict: CompatibilityCompatible}})
 	assertNoIssues(t, issues)
@@ -640,4 +642,65 @@ func TestPlanPublicationRejectsMismatchedSourceDigestAssertion(t *testing.T) {
 		t.Fatalf("mismatched source assertion produced plan %q", plan.PlanDigest)
 	}
 	assertIssue(t, issues, IssueDigestMismatch)
+}
+
+// TestPlanPublicationOverwritesTheTreeOnMainNotTheCompatibilityBaseline pins
+// the two questions apart. "Which published version do I check compatibility
+// against" and "whose bytes am I about to overwrite" used to share one answer,
+// derived here as the semver-highest published version unless one matched the
+// candidate's own current version.
+//
+// Live run 2026-08-05 found the shape where the two diverge: 1.0.0, 1.1.0 and
+// 2.0.0 published in that order, so main carries 2.0.0's tree, and a
+// maintenance 1.2.0 prepared from a candidate materialized at 1.1.0. The old
+// derivation picked 1.1.0's snapshot, so the write set was computed against
+// bytes that are not on main and the precondition named a digest main does not
+// have. The funnel refused it every time — a maintenance release on an older
+// line was impossible once a newer major existed.
+//
+// The baseline is now supplied by the space, which is the only layer that can
+// see main. The compatibility baseline stays 1.1.0, and this test asserts both
+// so the pair cannot silently collapse back into one value.
+func TestPlanPublicationOverwritesTheTreeOnMainNotTheCompatibilityBaseline(t *testing.T) {
+	t.Parallel()
+
+	candidate := mustCandidateIntent(t, plannerDeclaredSnapshot("XC-atlas-demo", "1.1.0", "json-schema-2020-12", nil))
+	oneOne := publishedDeclared(t, "1.1.0", plannerDeclaredSnapshot("XC-atlas-demo", "1.1.0", "json-schema-2020-12", nil))
+	twoZero := publishedDeclared(t, "2.0.0", plannerDeclaredSnapshot("XC-atlas-demo", "2.0.0", "json-schema-2020-12", nil))
+
+	plan, issues := PlanPublication(PublicationInput{
+		System: "atlas", ContractID: "XC-atlas-demo", Selector: "explicit:1.2.0",
+		AuthoringFloor: "0.19.0", Candidate: candidate,
+		Published:        []PublishedContract{oneOne, twoZero},
+		MutationBaseline: twoZero,
+		CandidateSource:  CandidateSource{Kind: CandidateSourceStaging, Location: "staging/contracts/atlas/demo", Fingerprint: "sha256:" + strings.Repeat("3", 64)},
+		ContractRoot:     "contracts/atlas/demo",
+	}, &recordingCompatibilityChecker{result: CompatibilityResult{Verdict: CompatibilityCompatible}})
+	assertNoIssues(t, issues)
+
+	if plan.BaselineVersion != "1.1.0" {
+		t.Fatalf("compatibility baseline = %q, want the highest published version BELOW the target", plan.BaselineVersion)
+	}
+
+	wantBefore := artifact.Digest(twoZero.DescriptorRaw)
+	notWant := artifact.Digest(oneOne.DescriptorRaw)
+	if wantBefore == notWant {
+		t.Fatal("fixture is degenerate: the two prior descriptors must differ for this test to mean anything")
+	}
+	found := false
+	for _, mutation := range plan.Mutations {
+		if mutation.Path != DescriptorPath {
+			continue
+		}
+		found = true
+		if mutation.BeforeDigest == notWant {
+			t.Fatalf("descriptor precondition names the COMPATIBILITY baseline (1.1.0); main carries 2.0.0's tree, so the funnel would refuse this write")
+		}
+		if mutation.BeforeDigest != wantBefore {
+			t.Fatalf("descriptor precondition = %q, want main's current descriptor %q", mutation.BeforeDigest, wantBefore)
+		}
+	}
+	if !found {
+		t.Fatal("plan carries no descriptor mutation")
+	}
 }

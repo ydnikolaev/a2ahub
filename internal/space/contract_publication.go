@@ -418,6 +418,12 @@ type ContractPublicationPlanningContext struct {
 	// PriorDeclaredSidecars is exact evidence re-read from the selected prior
 	// descriptor/profile. Keys are plan-relative paths (schema/..., etc.).
 	PriorDeclaredSidecars map[string]MutationPrecondition
+	// MutationBaseline is the publication whose tree authoritative main
+	// carries at BaseCommitSHA — what a new publication is about to
+	// overwrite. It travels to the planner as PublicationInput's own
+	// MutationBaseline so that the write set, its preconditions and this
+	// package's PriorDeclaredSidecars all describe ONE tree.
+	MutationBaseline contract.PublishedContract
 	// CurrentDescriptorDigest is the digest of the descriptor as it stands on
 	// authoritative main at BaseCommitSHA, or "" when main carries none. It is
 	// deliberately NOT the prior PUBLISHED descriptor (PriorDeclaredSidecars):
@@ -820,6 +826,7 @@ func (s *ContractPublicationService) plan(ctx context.Context, request ContractP
 		Published: planning.Published, CandidateSource: request.CandidateSource,
 		ContractRoot: planning.ContractRoot, SourceDigestAssertion: planning.SourceDigestAssertion,
 		Warnings: planning.Warnings, Violations: planning.Violations,
+		MutationBaseline: planning.MutationBaseline,
 	}
 	plan, issues := contract.PlanPublication(input, s.checker)
 	if len(issues) != 0 {

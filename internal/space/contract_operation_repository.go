@@ -147,9 +147,11 @@ func (r *ContractPublicationRepository) ReadContractPublicationPlanningContext(c
 	if err != nil {
 		return ContractPublicationPlanningContext{}, err
 	}
-	prior := selectPublicationMutationBaseline(history, request.Candidate.CurrentVersion())
+	prior := selectPublicationMutationBaseline(history)
 	preconditions := make(map[string]MutationPrecondition)
+	mutationBaseline := contract.PublishedContract{}
 	if prior != nil {
+		mutationBaseline = historicalPublishedContract(*prior)
 		descriptor := prior.file(contract.DescriptorPath)
 		if descriptor.Path == "" || !validContractPublicationGitMode(descriptor.Mode) || len(descriptor.Raw) == 0 {
 			return ContractPublicationPlanningContext{}, fmt.Errorf("%w: prior descriptor precondition is invalid", ErrContractHistoryInvalid)
@@ -175,7 +177,7 @@ func (r *ContractPublicationRepository) ReadContractPublicationPlanningContext(c
 		AuthoringFloor: manifest.MinBinaryVersion, ContractRoot: root, BaseCommitSHA: anchor,
 		Published: published, SourceDigestAssertion: assertion,
 		Warnings: []contract.Finding{}, Violations: []contract.Finding{}, PriorDeclaredSidecars: preconditions,
-		CurrentDescriptorDigest: currentDescriptor,
+		MutationBaseline: mutationBaseline, CurrentDescriptorDigest: currentDescriptor,
 	}, nil
 }
 
@@ -547,25 +549,24 @@ func historicalPublishedContract(snapshot HistoricalSnapshot) contract.Published
 	}
 }
 
-func selectPublicationMutationBaseline(history []HistoricalSnapshot, currentVersion string) *HistoricalSnapshot {
-	var selected *HistoricalSnapshot
-	for index := range history {
-		if history[index].Version == currentVersion {
-			copy := history[index]
-			return &copy
-		}
-		if selected == nil {
-			copy := history[index]
-			selected = &copy
-			continue
-		}
-		older, err := version.OlderThan(selected.Version, history[index].Version)
-		if err == nil && older {
-			copy := history[index]
-			selected = &copy
-		}
+// selectPublicationMutationBaseline returns the publication whose tree main
+// actually carries: the LAST-ESTABLISHED one. publicationHistoryAt walks
+// `git log --first-parent --reverse`, so history is ordered oldest first and
+// the final entry is the most recent publication — whatever it wrote is what
+// a new publication is about to overwrite.
+//
+// It used to prefer the snapshot matching the candidate's current version and
+// otherwise the semver-highest. Both are the same answer while every
+// publication is on the newest line, and both are wrong the moment one is not:
+// see the derivation in PlanPublication, and live run 2026-08-05, where
+// publishing 1.2.0 after 2.0.0 could not produce a write the funnel would
+// accept. The precondition is about bytes, not about semver order.
+func selectPublicationMutationBaseline(history []HistoricalSnapshot) *HistoricalSnapshot {
+	if len(history) == 0 {
+		return nil
 	}
-	return selected
+	selected := history[len(history)-1]
+	return &selected
 }
 
 var _ ContractPublicationMain = (*ContractPublicationRepository)(nil)

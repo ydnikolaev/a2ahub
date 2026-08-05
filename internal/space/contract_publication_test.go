@@ -704,6 +704,10 @@ func TestContractPublicationDeletePermitRequiresAcceptedPlanAndPriorDeclaration(
 	planningContext.Published = []contract.PublishedContract{{
 		Version: "0.0.0", DescriptorRaw: append([]byte(nil), priorCore.Descriptor.Raw...), Set: priorSet, Modes: modes,
 	}}
+	// The tree this publication overwrites. The planner no longer derives it
+	// from Published — "which versions exist" and "whose bytes are on main"
+	// are different questions, and only the space can answer the second.
+	planningContext.MutationBaseline = planningContext.Published[0]
 	planning := &publicationPlanningFake{context: planningContext}
 	reader, source := publicationDeclaredCandidate(nil, false)
 	funnel := NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0")

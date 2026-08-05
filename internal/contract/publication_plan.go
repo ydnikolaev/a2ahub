@@ -200,8 +200,16 @@ type PublicationInput struct {
 	// CandidateModes binds every desired regular file to the exact canonical
 	// Git mode frozen with the candidate. Nil retains the legacy pure-core test
 	// default (new files are 100644; replacements preserve their prior mode).
-	CandidateModes        map[string]string
-	Published             []PublishedContract
+	CandidateModes map[string]string
+	Published      []PublishedContract
+	// MutationBaseline is the publication whose tree the write actually lands
+	// on — what authoritative main carries right now. It is supplied rather
+	// than derived because only the space can know it: Published answers
+	// "which versions exist", never "which one's bytes are on main", and the
+	// two differ the moment a version is published on anything but the newest
+	// line. Zero value means main carries no prior publication (first
+	// publish). See the derivation at its use below.
+	MutationBaseline      PublishedContract
 	CandidateSource       CandidateSource
 	ContractRoot          string
 	SourceDigestAssertion string
@@ -438,13 +446,25 @@ func PlanPublication(input PublicationInput, checker CompatibilityChecker) (Publ
 		gate = GateG2
 	}
 
-	mutationBaseline := PublishedContract{}
-	if len(publishedVersions) != 0 {
-		mutationBaseline = publishedByVersion[highestVersion(publishedVersions)]
-		if current, exists := publishedByVersion[input.Candidate.CurrentVersion()]; exists {
-			mutationBaseline = current
-		}
-	}
+	// The mutation baseline answers "what am I about to overwrite", which is a
+	// question about the TREE ON MAIN — never about which version is the
+	// compatibility baseline, and never about which version the candidate was
+	// materialized from. This core cannot see main, so the space supplies it.
+	//
+	// It used to be derived here, as the semver-highest published version
+	// unless one matched the candidate's own current version. Both answers are
+	// right only while every publication is on the newest line. Live run
+	// 2026-08-05 found the case where it is not: with 1.0.0, 1.1.0 and 2.0.0
+	// published in that order, main holds 2.0.0's tree, but publishing the
+	// maintenance version 1.2.0 from a candidate materialized at 1.1.0
+	// selected 1.1.0's snapshot — so the write set was computed against bytes
+	// that are not there and the precondition named a digest main does not
+	// have. The funnel refused every attempt:
+	//   "mutation precondition does not match the current file:
+	//    alpha/provides/<contract>/contract.md"
+	// A maintenance release on an older line was therefore impossible once a
+	// newer major existed.
+	mutationBaseline := clonePublishedContract(input.MutationBaseline)
 	desiredBytes := cloneBytesByPath(set.Bytes)
 	desiredBytes[DescriptorPath] = bytes.Clone(finalRaw)
 	mutations, mutationIssues := publicationMutations(profile, desiredBytes, input.CandidateModes, mutationBaseline, input.ContractRoot)
