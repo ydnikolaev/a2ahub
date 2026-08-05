@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/ydnikolaev/a2ahub/internal/ghauth"
 )
 
 const (
@@ -25,6 +27,28 @@ const (
 )
 
 var githubLoginPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
+
+// lookupGitHubCLIToken is ghauth.Token behind a package var so tests drive
+// both branches without a `gh` binary, a login, or a network — and so no test
+// can accidentally read the operator's real token and print it in a failure
+// message, which is how a live credential once reached a log.
+var lookupGitHubCLIToken = ghauth.Token
+
+// avatarAPICredential is the credential the login-resolution call carries.
+//
+// FetchAvatar takes no credential parameter and cannot grow one cheaply: it is
+// passed by value to avatar.NewCache, so its signature is a callback contract
+// shared with internal/avatar. Reading the machine's own gh login here keeps
+// that contract intact and is the right authority anyway — this call reads
+// PUBLIC user data and needs a token only to leave the anonymous rate-limit
+// budget, which is exactly what a machine-level identity is for. It is not a
+// space credential and must never become one: nothing here is space-scoped.
+func avatarAPICredential(ctx context.Context) Credential {
+	if token, ok := lookupGitHubCLIToken(ctx); ok {
+		return Credential{Token: token}
+	}
+	return Credential{}
+}
 
 // FetchAvatar resolves a GitHub login once and then conditionally refreshes
 // the returned image URL with ETag. It is deliberately an optional structural
@@ -42,7 +66,23 @@ func (h *GitHubHost) FetchAvatar(ctx context.Context, login, sourceURL, etag str
 		var user struct {
 			AvatarURL string `json:"avatar_url"`
 		}
-		if err := h.restCall(ctx, op, http.MethodGet, "/users/"+url.PathEscape(login), Credential{}, nil, &user); err != nil {
+		// Authenticated, and only this call. It hits api.github.com, whose
+		// ANONYMOUS budget is 60/hour per IP shared with everything else on
+		// that address — so on a machine that had done any ordinary GitHub
+		// work, resolving a login 403'd and the avatar never arrived.
+		//
+		// That was survivable while it only meant a stale image. It stopped
+		// being survivable when the cache record schema moved to v3: every
+		// avatar written by an older binary is now rejected as invalid, which
+		// is correct for a disposable cache ONLY because a refresh repopulates
+		// it. An unauthenticated refresh cannot, so two individually
+		// reasonable decisions combined into permanently empty avatars with
+		// nothing but a doctor advisory to say why.
+		//
+		// The image fetch below deliberately stays anonymous: it goes to
+		// avatars.githubusercontent.com, a CDN that neither needs the token
+		// nor should be handed one.
+		if err := h.restCall(ctx, op, http.MethodGet, "/users/"+url.PathEscape(login), avatarAPICredential(ctx), nil, &user); err != nil {
 			return nil, "", "", "", false, err
 		}
 		sourceURL = user.AvatarURL
