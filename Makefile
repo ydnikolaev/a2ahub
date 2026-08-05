@@ -24,6 +24,12 @@
 #                         GitHub space (spec 36). Network + two credentials +
 #                         immutable public candidate SHA + Actions latency:
 #                         NEVER in `check`, never a merge gate.
+# make logic-e2e          THE LOGIC LANE inner loop — TestLogicMatrix and its
+#                         three siblings (spec 09), local bare git repo + an
+#                         in-process host stand-in, no credentials, no
+#                         network, no candidate. `make check` already reaches
+#                         these same entry points; this target is the fast
+#                         narrower path for iterating on one scenario.
 # make install           put a dev `a2a` on your PATH that always runs THIS source tree.
 #
 # Recipes are POSIX sh — no bashisms — even though the gate scripts they call
@@ -36,7 +42,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence install
+.PHONY: check test check-validators _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -106,6 +112,9 @@ live-e2e: ## THE LIVE TIER: exact public candidate against real GitHub. Launch v
 live-e2e-evidence: ## VG-OC-24 release gate. Usage: make live-e2e-evidence EVIDENCE=path/to/evidence.json
 	@test -n "$(EVIDENCE)" || { echo "live-e2e-evidence: set EVIDENCE to the exact candidate's manifest"; exit 2; }
 	@bash scripts/check_live_e2e_evidence.sh "$(EVIDENCE)"
+
+logic-e2e: ## THE LOGIC LANE inner loop: TestLogicMatrix + its 3 siblings (spec 09) — no credentials, no network, no candidate. Also runs inside `make check`; use this to iterate on one scenario without the whole ceiling.
+	@bash scripts/verify.sh logic-e2e
 
 install: ## Put a dev `a2a` on your PATH that always runs THIS source tree (rebuilds when changed).
 	@sh scripts/dev-install.sh

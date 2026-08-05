@@ -278,6 +278,30 @@ run_live_tests() {
   go test ./internal/livee2e/... -tags=livee2e -count=1 -v -timeout 210m
 }
 
+run_logic_tests() {
+  if [ ! -f go.mod ]; then
+    echo "logic-e2e: no go.mod — nothing to run." >&2
+    return 2
+  fi
+  # spec 09 §5a / plan D-5: TestLogicMatrix and its three siblings never call
+  # LoadConfig and never read an A2A_LIVE_E2E_* variable — they stand a space
+  # up on a local bare git repo and an in-process host stand-in, so unlike
+  # TestLiveMatrix they need no credentials, no network and no candidate.
+  # That is why this lane runs INSIDE `full` rather than being fenced away
+  # from it like `live-e2e`. -run is scoped to exactly these four names —
+  # widening it is how `full` would end up running the live matrix instead.
+  #
+  # -race, unlike the live lane. run_live_tests omits it for two reasons this
+  # lane has neither of: a multi-hour instrumented run is genuinely expensive,
+  # and that tier is network-bound anyway. Here the harness drives an
+  # in-process HTTP host whose handlers run concurrently with the test, and
+  # the harness's own scenario code uses goroutines — so this is exactly the
+  # surface -race exists for, at a cost of seconds. `check` promises a raced
+  # Go suite; a lane inside it that quietly opted out would be the promise
+  # narrowing without anyone deciding to narrow it.
+  go test ./internal/livee2e/... -tags=livee2e -race -run '^(TestLogicMatrix|TestLogicTierWritesNothingOutsideItsOwnTempDirs|TestNewLogicHarnessLeavesExecutionCandidateZero|TestProvisionLocalSpaceScaffoldsCleanSpace)$' -count=1 -timeout 5m
+}
+
 run_teeth() {
   local tmp="$1" fixture_root foreign out rc
   mkdir -p "$tmp/project/scripts"
@@ -414,10 +438,10 @@ if [ "$MODE" = "--teeth" ]; then
 fi
 
 case "$MODE" in
-  full|validators|coverage|harness|live) ;;
+  full|validators|coverage|harness|live|logic-e2e) ;;
   test) validate_scoped_packages ;;
   *)
-    echo "usage: $0 [full|validators|coverage|harness|live|test ./pkg...|--teeth]" >&2
+    echo "usage: $0 [full|validators|coverage|harness|live|logic-e2e|test ./pkg...|--teeth]" >&2
     exit 2
     ;;
 esac
@@ -431,12 +455,20 @@ if [ "$MODE" = test ]; then
   exit 0
 fi
 
-if [ "$MODE" != live ]; then
+if [ "$MODE" != live ] && [ "$MODE" != logic-e2e ]; then
   run_phase build-cli build_cli
 fi
 
 if [ "$MODE" = live ]; then
   run_phase live-e2e run_live_tests
+  exit 0
+fi
+
+if [ "$MODE" = logic-e2e ]; then
+  # The inner loop: someone iterating on a scenario runs just this lane
+  # instead of the whole ceiling. Same entry points `full` runs, same
+  # -run scope — never a second, wider invocation.
+  run_phase logic-e2e run_logic_tests
   exit 0
 fi
 
@@ -463,6 +495,11 @@ run_phase go-test run_go_tests
 run_phase coverage-policy go run internal/coveragepolicy/covercheck.go coverage.out
 
 if [ "$MODE" = full ]; then
+  # After the Go tests, not before: a broken package fails on the cheaper
+  # untagged signal first. This is the logic tier's own lane inside the
+  # merge gate (spec 09 §5a) — it needs no credentials and no network, so
+  # unlike `live-e2e` it belongs here rather than fenced away from `check`.
+  run_phase logic-e2e run_logic_tests
   echo "check: repo gates + Go gates green (coverage floor met)."
 else
   echo "coverage: Go race suite green (coverage floor met)."
