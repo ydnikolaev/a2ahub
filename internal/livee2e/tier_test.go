@@ -276,7 +276,7 @@ func TestEveryCarveOutIsConsultedBySomeScenarioBody(t *testing.T) {
 	}
 	var corpus strings.Builder
 	for _, path := range sources {
-		raw, readErr := os.ReadFile(path) //nolint:gosec // reason: path comes from this package's own source glob.
+		raw, readErr := os.ReadFile(path)
 		if readErr != nil {
 			t.Fatalf("read %s: %v", path, readErr)
 		}
