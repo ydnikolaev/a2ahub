@@ -1,5 +1,7 @@
 package livee2e
 
+import "strings"
+
 // draftFieldArgs is the live matrix's scenario data expressed only through
 // the shipped authoring interface. Values are YAML where the template node is
 // structured; dotted keys address nested mappings. Adding a new artifact kind
@@ -72,4 +74,36 @@ func draftFieldArgs(artifactType, spaceID, me, peer string) ([]string, bool) {
 		args = append(args, "--actor-kind", "agent", "--actor-name", "live-e2e")
 	}
 	return args, true
+}
+
+// standingDraftTypes mirrors internal/cli's ClassStanding branch: `a2a new`
+// mints a standing id from the slug and REFUSES without one
+// ("--slug (or --field slug=<slug>) is required for standing types"). The
+// mirror is small and deliberate — newTypePrefix is unexported, and the cost
+// of getting this wrong is measured in hours.
+//
+// It is written down because the tier learned it the expensive way. The
+// data-loop family shipped `DraftAndSubmit(ctx, a, "contract")` with no slug
+// while all four sibling scenarios passed one. Its only prior live run died
+// on an earlier step, so nothing ever executed that line — and the release's
+// headline feature turned out to have an impossible FIRST authoring step,
+// discovered 2h19m into a live matrix against real GitHub. checkout.Draft
+// refuses it in microseconds instead.
+var standingDraftTypes = map[string]bool{"contract": true, "requirement": true}
+
+// hasSlugArg reports whether extra carries a slug in either shape `a2a new`
+// accepts: the `--slug <value>` flag or `--field slug=<value>`.
+func hasSlugArg(extra []string) bool {
+	for index, arg := range extra {
+		if arg == "--slug" && index+1 < len(extra) {
+			return true
+		}
+		if strings.HasPrefix(arg, "--slug=") {
+			return true
+		}
+		if strings.HasPrefix(arg, "slug=") {
+			return true
+		}
+	}
+	return false
 }
