@@ -275,6 +275,13 @@ func TestListPulls_UnfilteredReturnsEveryPRWithFullShape(t *testing.T) {
 	}
 
 	alpha := findWirePull(t, list, numAlpha)
+	// alpha's head branch is a same-repo head, pruned by DeleteBranchOnMerge's
+	// default (true) as part of this merge — but head.sha must still equal
+	// what it was merged FROM: real GitHub keeps reporting a merged PR's
+	// head commit forever, branch or no branch, and pullPayload's own
+	// captured-at-merge-time fallback (PR.HeadSHA) is what makes that true
+	// here too (see TestHeadSHASurvivesPruneWhileBranchGenuinelyDisappears
+	// for the property named directly, alongside the branch listing).
 	if alpha.Head.Ref != "feature/alpha" || alpha.Head.SHA != shaAlpha {
 		t.Errorf("alpha.head = %+v, want ref=feature/alpha sha=%s", alpha.Head, shaAlpha)
 	}
@@ -500,6 +507,146 @@ func TestCrossForkHeadRefIsBareBranchWhilePRHeadKeepsOwnerPrefix(t *testing.T) {
 	if got.Head.Ref != "feature/gamma" {
 		t.Errorf("head.ref = %q, want the bare branch %q (real GitHub never reports the fork owner prefix there)", got.Head.Ref, "feature/gamma")
 	}
+}
+
+// TestDeleteBranchOnMerge_PrunesSameRepoHeadByDefault pins the default this
+// wave introduced: a real space runs `delete_branch_on_merge: true`
+// (internal/livee2e's RepoSettingsBody), so the fake must too, or every
+// scenario after a first merge fails for a reason production does not have
+// (ProbeContractPublicationHeads' plan-digest recheck over a stale branch
+// being the exact case that surfaced this).
+func TestDeleteBranchOnMerge_PrunesSameRepoHeadByDefault(t *testing.T) {
+	t.Parallel()
+	origin := newSeededOrigin(t)
+	gh := New(t, origin)
+	pushBranch(t, origin, "feature/alpha", "alpha.txt", "alpha\n")
+	number := openPR(t, gh, "alpha", "feature/alpha", "main", "")
+
+	if names := listBranchNames(t, gh, ""); !containsName(names, "feature/alpha") {
+		t.Fatalf("branches before merge = %v, want feature/alpha present", names)
+	}
+
+	mergePR(t, gh, number)
+
+	if names := listBranchNames(t, gh, ""); containsName(names, "feature/alpha") {
+		t.Fatalf("branches after merge = %v, still names the merged head (DeleteBranchOnMerge defaults true)", names)
+	}
+}
+
+// TestHeadSHASurvivesPruneWhileBranchGenuinelyDisappears names the exact
+// property this wave's fix depends on, directly: a merged, pruned PR's
+// head.sha does NOT go empty (host.CheckStatus/prHeadSHA and
+// internal/livee2e's WaitForRequiredCheck both read it for an
+// already-merged PR — AutoMerge defaults true, so every one of them would
+// resolve nothing without this), while the branch it names is, at the same
+// time, genuinely gone from the branch listing (the whole point of
+// DeleteBranchOnMerge existing at all). Both facts must hold together, not
+// just one or the other.
+func TestHeadSHASurvivesPruneWhileBranchGenuinelyDisappears(t *testing.T) {
+	t.Parallel()
+	origin := newSeededOrigin(t)
+	gh := New(t, origin) // AutoMerge and DeleteBranchOnMerge both default true
+
+	sha := pushBranch(t, origin, "feature/alpha", "alpha.txt", "alpha\n")
+	number := openPR(t, gh, "alpha", "feature/alpha", "main", "")
+	mergePR(t, gh, number)
+
+	got := getPull(t, gh, number)
+	if got.Head.SHA != sha {
+		t.Errorf("head.sha after merge+prune = %q, want the pre-merge SHA %q (real GitHub keeps reporting it)", got.Head.SHA, sha)
+	}
+	if names := listBranchNames(t, gh, ""); containsName(names, "feature/alpha") {
+		t.Errorf("branches after merge = %v, still names feature/alpha — the branch must be genuinely gone", names)
+	}
+}
+
+// TestDeleteBranchOnMerge_FalseLeavesHeadPresent pins that the knob works in
+// BOTH directions: a test that wants the un-pruned shape can still have it.
+func TestDeleteBranchOnMerge_FalseLeavesHeadPresent(t *testing.T) {
+	t.Parallel()
+	origin := newSeededOrigin(t)
+	gh := New(t, origin)
+	gh.DeleteBranchOnMerge = false // set before any request reaches the server
+
+	pushBranch(t, origin, "feature/alpha", "alpha.txt", "alpha\n")
+	number := openPR(t, gh, "alpha", "feature/alpha", "main", "")
+	mergePR(t, gh, number)
+
+	if names := listBranchNames(t, gh, ""); !containsName(names, "feature/alpha") {
+		t.Fatalf("branches after merge = %v, want feature/alpha still present (DeleteBranchOnMerge=false)", names)
+	}
+}
+
+// TestDeleteBranchOnMerge_LeavesForkBranchAloneAndKeepsHeadSHAResolvable
+// pins the fork carve-out: a cross-fork PR's head lives in the FORK, not the
+// origin, and real GitHub never deletes a fork's own branch on merge. It
+// also pins that the refs/fork/<branch> copy mergeByNumber fetches into the
+// origin for SHA resolution survives pruning — it is not the head branch.
+func TestDeleteBranchOnMerge_LeavesForkBranchAloneAndKeepsHeadSHAResolvable(t *testing.T) {
+	t.Parallel()
+	origin := newSeededOrigin(t)
+	gh := New(t, origin) // DeleteBranchOnMerge defaults true
+
+	forkURL := fmt.Sprintf("%s/repos/%s/%s/forks", gh.URL, testOwner, testRepo)
+	if status, raw := httpJSON(t, http.MethodPost, forkURL, nil, nil); status != http.StatusOK {
+		t.Fatalf("create fork: status %d: %s", status, raw)
+	}
+	forkDir := gh.ForkDir(ForkLogin)
+	forkSHA := pushBranch(t, forkDir, "feature/gamma", "gamma.txt", "gamma\n")
+	number := openPR(t, gh, "gamma", ForkLogin+":feature/gamma", "main", "")
+
+	mergePR(t, gh, number)
+
+	// The fork's own branch must survive — pruning is same-repo only.
+	if got := runGit(t, forkDir, "rev-parse", "refs/heads/feature/gamma"); got != forkSHA {
+		t.Fatalf("fork branch after merge = %q, want untouched at %q", got, forkSHA)
+	}
+
+	// The SHA resolution path (refs/fork/<branch> inside the origin) must
+	// still answer — pruning must never have touched that ref.
+	got := getPull(t, gh, number)
+	if got.Head.SHA != forkSHA {
+		t.Fatalf("head.sha after merge = %q, want %q (refs/fork/<branch> must survive pruning)", got.Head.SHA, forkSHA)
+	}
+}
+
+// TestRepoSettings_ReportsDeleteBranchOnMerge pins that GET /repos/{o}/{n}
+// answers the flag alongside the other allow_* settings, in both directions.
+func TestRepoSettings_ReportsDeleteBranchOnMerge(t *testing.T) {
+	t.Parallel()
+
+	t.Run("default true", func(t *testing.T) {
+		t.Parallel()
+		gh := New(t, t.TempDir())
+		var settings struct {
+			DeleteBranchOnMerge bool `json:"delete_branch_on_merge"`
+		}
+		url := fmt.Sprintf("%s/repos/%s/%s", gh.URL, testOwner, testRepo)
+		status, raw := httpJSON(t, http.MethodGet, url, nil, &settings)
+		if status != http.StatusOK {
+			t.Fatalf("GET /repos/%s/%s: status %d: %s", testOwner, testRepo, status, raw)
+		}
+		if !settings.DeleteBranchOnMerge {
+			t.Fatalf("delete_branch_on_merge = %v, want true (the default)", settings.DeleteBranchOnMerge)
+		}
+	})
+
+	t.Run("driven false", func(t *testing.T) {
+		t.Parallel()
+		gh := New(t, t.TempDir())
+		gh.DeleteBranchOnMerge = false
+		var settings struct {
+			DeleteBranchOnMerge bool `json:"delete_branch_on_merge"`
+		}
+		url := fmt.Sprintf("%s/repos/%s/%s", gh.URL, testOwner, testRepo)
+		status, raw := httpJSON(t, http.MethodGet, url, nil, &settings)
+		if status != http.StatusOK {
+			t.Fatalf("GET /repos/%s/%s: status %d: %s", testOwner, testRepo, status, raw)
+		}
+		if settings.DeleteBranchOnMerge {
+			t.Fatalf("delete_branch_on_merge = %v, want the driven false", settings.DeleteBranchOnMerge)
+		}
+	})
 }
 
 // TestBranchListingReflectsRealRefsAndDeleteRef pins Gap 3.1 + 3.2 together:

@@ -49,6 +49,17 @@ type PR struct {
 	// it, and re-resolving at read time would hand a caller a LATER PR's
 	// merge commit under this PR's number.
 	MergeCommitSHA string
+	// HeadSHA is captured ONCE, at merge time, before any prune — the same
+	// discipline MergeCommitSHA already uses, for the same reason: real
+	// GitHub keeps reporting a merged PR's head commit forever, even after
+	// its branch is deleted (host.CheckStatus/prHeadSHA and
+	// internal/livee2e's WaitForRequiredCheck both read a MERGED PR's
+	// head.sha this way), so a fake that only resolved the live ref would
+	// invent an absence DeleteBranchOnMerge's own pruning would otherwise
+	// cause. pullPayload uses this as a fallback when the live ref no
+	// longer resolves; an OPEN PR is never frozen this way — its head
+	// genuinely moves as the branch is pushed to.
+	HeadSHA string
 	// AutoMergeArmed tracks whether enablePullRequestAutoMerge actually
 	// armed THIS PR — set inside handleGraphQL, on both the arming path and
 	// the AutoMergeAlreadyClean refusal path (which must leave it false: a
@@ -115,6 +126,31 @@ type Server struct {
 	// a PR with no conflicts); set it to drive a different value in a test
 	// that exercises a caller's handling of, e.g., "dirty" or "blocked".
 	MergeableState string
+	// DeleteBranchOnMerge models GET /repos/{owner}/{name}'s own
+	// `delete_branch_on_merge` setting AND the pruning it causes. Defaults to
+	// true — the same reasoning ProtectionBody's own doc gives for mirroring
+	// production rather than being maximally strict (spec 36 §T6-a):
+	// internal/livee2e's RepoSettingsBody turns this on for every space this
+	// project operates, so a rig that modelled it off would model a
+	// configuration no space we run actually uses, and every scenario after
+	// a first merge would fail for a reason production does not have (a
+	// stale head branch defeating ProbeContractPublicationHeads' plan-digest
+	// check being the exact case that surfaced this). Set false when a test
+	// wants the un-pruned shape.
+	//
+	// When true, mergeByNumber deletes a SAME-REPO PR's head branch from
+	// OriginDir the instant its own merge lands — never a cross-fork PR's
+	// head (it lives in the fork; real GitHub does not touch a fork's own
+	// branch) and never the refs/fork/<branch> copy mergeByNumber keeps for
+	// SHA resolution.
+	//
+	// This models WHETHER a space prunes, never HOW LONG pruning takes. Real
+	// GitHub prunes ASYNCHRONOUSLY — a branch listing can differ between two
+	// reads that straddle the deletion, a timing fact spec 09 §3 names and
+	// that broke a live row once. This fake's deletion is synchronous (gone
+	// the instant the merge call returns); a scenario asserting on that async
+	// window is a provider fact and belongs in the live tier, not here.
+	DeleteBranchOnMerge bool
 
 	t    testing.TB
 	mu   sync.Mutex
@@ -135,18 +171,19 @@ type Server struct {
 func New(t testing.TB, originDir string) *Server {
 	t.Helper()
 	s := &Server{
-		OriginDir:        originDir,
-		AutoMerge:        true,
-		CheckState:       "completed",
-		CheckConclusion:  "success",
-		CheckName:        "a2a-validate / validate",
-		AllowAutoMerge:   true,
-		AllowMergeCommit: true,
-		AllowSquashMerge: true,
-		AllowRebaseMerge: true,
-		MergeableState:   "clean",
-		t:                t,
-		forks:            make(map[string]string),
+		OriginDir:           originDir,
+		AutoMerge:           true,
+		CheckState:          "completed",
+		CheckConclusion:     "success",
+		CheckName:           "a2a-validate / validate",
+		AllowAutoMerge:      true,
+		AllowMergeCommit:    true,
+		AllowSquashMerge:    true,
+		AllowRebaseMerge:    true,
+		MergeableState:      "clean",
+		DeleteBranchOnMerge: true,
+		t:                   t,
+		forks:               make(map[string]string),
 	}
 	s.srv = httptest.NewServer(http.HandlerFunc(s.route))
 	s.URL = s.srv.URL
@@ -256,9 +293,10 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	case len(parts) == 3 && parts[0] == "repos" && r.Method == http.MethodGet:
 		s.writeJSON(w, map[string]any{
 			"name": parts[2], "allow_auto_merge": s.AllowAutoMerge,
-			"allow_merge_commit": s.AllowMergeCommit,
-			"allow_squash_merge": s.AllowSquashMerge,
-			"allow_rebase_merge": s.AllowRebaseMerge,
+			"allow_merge_commit":     s.AllowMergeCommit,
+			"allow_squash_merge":     s.AllowSquashMerge,
+			"allow_rebase_merge":     s.AllowRebaseMerge,
+			"delete_branch_on_merge": s.DeleteBranchOnMerge,
 		})
 	case len(parts) == 4 && parts[0] == "repos" && parts[3] == "branches" && r.Method == http.MethodGet:
 		s.handleBranches(w, r)
@@ -365,7 +403,23 @@ func (s *Server) pullPayload(pr *PR) map[string]any {
 	// idempotency match above) keeps the `owner:branch` form. Conflating the
 	// two would make a caller matching on HeadRef see a fork owner prefix
 	// that GitHub itself never sends.
+	//
 	_, branch := splitHead(pr.Head)
+	// head.sha tries the live ref first — an OPEN PR's head genuinely moves
+	// as its branch is pushed to, so freezing it would be the opposite
+	// error — and falls back to the value mergeByNumber captured at merge
+	// time only when the live ref no longer resolves (a same-repo PR whose
+	// branch DeleteBranchOnMerge pruned). Real GitHub keeps reporting a
+	// merged PR's head commit from the PR object itself forever, even after
+	// the branch is gone; host.CheckStatus/prHeadSHA and
+	// internal/livee2e's WaitForRequiredCheck both read exactly this field
+	// for an already-merged PR, so serving "" there would not be a cosmetic
+	// gap — every one of those callers would look up check-runs for
+	// nothing.
+	headSHA := s.revParse(headRef(pr))
+	if headSHA == "" {
+		headSHA = pr.HeadSHA
+	}
 	// auto_merge is null (Go: untyped nil, which encoding/json renders as
 	// `null`) when never armed or refused, an object when armed —
 	// host.ListOpenPRs' AutoMergeArmed is EXACTLY `auto_merge != nil`, and
@@ -395,7 +449,7 @@ func (s *Server) pullPayload(pr *PR) map[string]any {
 		// test, so the repair-rather-than-duplicate property was unprovable
 		// locally and could only ever have been discovered live.
 		"body":             pr.Body,
-		"head":             map[string]any{"ref": branch, "sha": s.revParse(headRef(pr))},
+		"head":             map[string]any{"ref": branch, "sha": headSHA},
 		"merge_commit_sha": pr.MergeCommitSHA,
 		"mergeable_state":  s.MergeableState,
 		"auto_merge":       autoMerge,
@@ -656,7 +710,22 @@ func (s *Server) mergeByNumber(number int) error {
 		// subsequent merge onto it, so resolving this lazily at read time
 		// would hand out a LATER PR's merge commit under this PR's number.
 		pr.MergeCommitSHA = s.revParse("refs/heads/" + pr.Base)
+		// HeadSHA is captured here too, BEFORE any prune below — the ref is
+		// still live at this point regardless of owner, so this is the last
+		// moment a plain live lookup is guaranteed to work.
+		pr.HeadSHA = s.revParse(headRef(pr))
 		pr.State, pr.Merged = "merged", true
+		// Prune the head branch AFTER MergeCommitSHA/HeadSHA are recorded,
+		// and only for a same-repo PR (owner == "" here) — a fork's head
+		// lives in the fork's own repo, and real GitHub never deletes a
+		// fork's branch on merge. This never touches refs/fork/<branch>
+		// (fetched above, separately, for SHA resolution) — only
+		// refs/heads/<branch>.
+		if s.DeleteBranchOnMerge && owner == "" {
+			if err := s.git(s.OriginDir, "update-ref", "-d", "refs/heads/"+branch); err != nil {
+				return fmt.Errorf("fakegithub: prune merged head %q: %w", branch, err)
+			}
+		}
 		return nil
 	}
 	return fmt.Errorf("fakegithub: no such pr %d", number)
