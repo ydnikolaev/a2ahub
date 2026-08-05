@@ -1,0 +1,92 @@
+schema: release-notes/v1
+version: "0.19.3"
+released: "2026-08-06"
+headline: "Commands that read GitHub stop running out of anonymous requests"
+changes:
+  - id: RN-01903-0
+    kind: fix
+    impact: high
+    subject: "`a2a update` no longer fails with a rate-limit error while you are signed in to GitHub"
+    detail: >
+      Checking for a release read GitHub's API without identifying itself, even
+      on a machine already signed in through the GitHub CLI. Unidentified
+      requests share a budget of 60 per hour for the whole IP address, with
+      everything else on it, so an ordinary day of GitHub work could exhaust
+      the budget and then `a2a update` answered
+      "403 API rate limit exceeded" — with no way to tell from the message that
+      the fix was simply to be identified.
+      That read now uses the GitHub CLI's own login when no update token is
+      configured, which raises the same budget to 5000 per hour. It is the
+      login already on the machine: nothing to create, nothing to configure.
+      Four other commands read releases the same way and are fixed by the same
+      change — the update notice behind the status line, `a2a sync`'s update
+      check, and the notification companion installer.
+      Downloading the release itself deliberately did not change. It goes
+      through the public download URL, which is unmetered, and it switches to
+      the authenticated path only when an update token is explicitly exported
+      — because that is an operator choosing an identity, while a CLI login
+      that merely exists is not that choice.
+    affects: ["a2a update", "a2a sync", "status line", "a2a notifications install"]
+    action:
+      scope: none
+      why: >
+        Nothing to configure if `gh auth login` has been run on this machine.
+        Otherwise `A2A_UPDATE_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN` still work
+        as before, and an unidentified check still works until the shared
+        budget runs out.
+
+  - id: RN-01903-1
+    kind: fix
+    impact: high
+    subject: "Participant avatars come back and stay"
+    detail: >
+      Avatars could vanish from the dashboard while their images sat in the
+      local cache, and no amount of syncing brought them back.
+      Two separate things combined. The cache record format had moved on, so
+      images stored by an older version were correctly ignored — that is safe
+      on its own, because the cache is disposable and a refresh refills it. But
+      the refresh resolved each GitHub account without identifying itself, on
+      the same 60-per-hour shared budget as above, so on a busy machine it was
+      refused and there was nothing to refill with. Discarded, and
+      unrecoverable. The only sign was one advisory line in `a2a doctor`, which
+      is not where anyone looks while staring at a dashboard that lost its
+      faces.
+      Account resolution is now identified the same way the release check is.
+      Downloading the image itself stays unidentified on purpose: it comes from
+      a content network that does not need a token and should not be given one.
+    affects: ["a2a html", "a2a serve", "a2a sync", "dashboard", "a2a doctor"]
+    action:
+      scope: local
+      why: >
+        Run `a2a sync` once after updating to refill the cache in the current
+        format; the dashboard shows the images again on its next build. Until
+        then every surface keeps the participant's initials, as it already did.
+      detect:
+        - "a2a doctor"
+      run:
+        - "a2a update --yes"
+        - "a2a sync"
+
+  - id: RN-01903-2
+    kind: fix
+    impact: normal
+    subject: "`a2a space update` stops telling you to change a setting you already changed"
+    detail: >
+      The command prints a prerequisite about renaming the space's required
+      status check, and stated it as a fact: that the pull request it just
+      opened cannot merge until that rename happens. It cannot know that. a2a
+      never calls repository administration APIs — there is deliberately no
+      branch-protection capability anywhere in it — so the line is printed
+      every time regardless of how the space is configured.
+      For a space that was migrated long ago the sentence was simply wrong, and
+      it would have said the same thing on every future run. A prerequisite
+      that is wrong for most readers is one they learn to skip past, including
+      on the occasion it is right.
+      It now reads as a condition, and says plainly that a2a cannot check it
+      for you.
+    affects: ["a2a space update"]
+    action:
+      scope: none
+      why: >
+        Wording only; the command does the same work and still changes no
+        repository setting.
