@@ -46,15 +46,23 @@ not drifted from the plan wording it quotes.
 - **Date:** `2026-08-04`
 - [x] Every prose row above is ticked, or an un-ticked row has a written reason
       and a follow-up filed.
-- [ ] The `skill-drift` CI job is green on the exact release candidate tree
+- [x] The `skill-drift` CI job is green on the exact release candidate tree
       under `make check` (confirms the generated
       `reference/**` tree matches the binary/schemas — separate from this
       prose review).
 
-The exact-candidate checkbox intentionally remains open: the private-tree
-review and local gates do not prove the filtered public SHA. Tick it only after
-`candidate.sh` records `WEB_DEPS_READY=true` and `EXIT=0` exactly once for that
-candidate's retained `make check` transcript.
+Ticked on 2026-08-05 for candidate `610680b8f481`, whose retained transcript
+carries `WEB_DEPS_READY=true` and `EXIT=0` exactly once each
+(`docs/features/active/operational-confidence-2026-08/audits/`).
+
+It is ticked AFTER the tag, and structurally has to be: `skill/` ships in the
+public projection, so ticking it inside a candidate would change the candidate
+it describes. The box can never be true in its own release.
+
+Why it stays open by default: the private-tree review and local gates do not
+prove the filtered public SHA — and on this release they demonstrably did not.
+The FIRST candidate reddened its own `make check` while the private tree was
+green.
 
 **What this review was, exactly.** A delta review against `v0.18.2`, then a
 second, deeper pass on 2026-08-04 after the first one was found to have

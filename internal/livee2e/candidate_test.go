@@ -99,7 +99,16 @@ func TestCandidateRunbookEmitsParserMarkersWhenReleaseControlIsPresent(t *testin
 		// A public projection must not accidentally retain a private runbook.
 		t.Fatalf("candidate runbook exists without private release-control rail: %v", err)
 	}
-	text := string(raw)
+	// Every assertion below reads the script's CODE, never its prose. A
+	// comment that happens to spell `make check` — and the --check-only flag's
+	// own doc comment does, because explaining the flag requires naming what
+	// it runs — otherwise lands earlier in the file than the real invocation
+	// and inverts the ordering check below. That is a guard failing on an
+	// explanation of the thing it guards, and the only lesson it can teach is
+	// to stop explaining. Stripping is deliberately crude (a `#` opening a
+	// trimmed line): this file has no trailing-comment convention, and a
+	// cleverer parser here would be its own thing to get wrong.
+	text := shellCodeOnly(string(raw))
 	if strings.Count(text, `echo "CHECKOUT_ROOT=$VERIFY_ROOT"`) != 1 {
 		t.Fatalf("candidate runbook must emit exactly one CHECKOUT_ROOT marker")
 	}
@@ -122,7 +131,7 @@ func TestCandidateRunbookEmitsParserMarkersWhenReleaseControlIsPresent(t *testin
 	if err != nil {
 		t.Fatalf("read detached runbook: %v", err)
 	}
-	if strings.Count(string(detachedRaw), `"WEB_DEPS_READY=true"`) != 1 {
+	if strings.Count(shellCodeOnly(string(detachedRaw)), `"WEB_DEPS_READY=true"`) != 1 {
 		t.Fatalf("detached runbook must require exactly one successful web-dependency marker")
 	}
 }
@@ -340,4 +349,19 @@ func TestAttestCandidateBinaryRefusesEveryStampAndBuildInfoMismatch(t *testing.T
 			}
 		})
 	}
+}
+
+// shellCodeOnly drops whole-line shell comments so a runbook assertion reads
+// what the script DOES, not what it says about itself. See its call sites for
+// the failure it exists to prevent.
+func shellCodeOnly(script string) string {
+	lines := strings.Split(script, "\n")
+	out := lines[:0]
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
 }
