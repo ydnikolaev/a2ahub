@@ -272,7 +272,10 @@ run_live_tests() {
     echo "live-e2e: no go.mod — nothing to run." >&2
     return 2
   fi
-  go test ./internal/livee2e/... -tags=livee2e -count=1 -v -timeout 125m
+  # Must stay above liveRunCeiling (runner_live_test.go) — the run's own
+  # deadline has to expire first so the report still renders. Guarded by
+  # TestLiveTimeoutCoversTheRunCeiling.
+  go test ./internal/livee2e/... -tags=livee2e -count=1 -v -timeout 210m
 }
 
 run_teeth() {

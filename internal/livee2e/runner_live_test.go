@@ -32,8 +32,21 @@ const DefaultReportName = "report.txt"
 // liveRunCeiling bounds the entire matrix. `make live-e2e` must pass a
 // -timeout at least this large, or `go test`'s own 10-minute default kills the
 // run first and the report never renders — the one failure mode that costs a
-// full matrix's Actions latency and returns nothing.
-const liveRunCeiling = 110 * time.Minute
+// full matrix's Actions latency and returns nothing. The value itself lives in
+// the untagged build (runceiling.go) so TestLiveTimeoutCoversTheRunCeiling can
+// hold that relationship under `make check` instead of under the live run it
+// protects; the 2026-08-05 run is what made writing the gate non-optional.
+//
+// Sized from that run's measured throughput, not guessed. The matrix is
+// serialized on pull-request round trips: 64 consecutive PRs (#2153–#2217)
+// took 85.3 minutes, a steady ~80s each, and the run reached only 45 of 60
+// declared cells before the previous 110-minute ceiling expired mid
+// failure-recovery — taking thread-chain, data-loop, boundary, refusal and
+// space with it, including this release's headline feature. The ~38 remaining
+// round trips are ~51 minutes, putting a complete matrix near 160. 195 leaves
+// real headroom for Actions latency without pretending the tier is cheaper
+// than it is.
+const liveRunCeiling = LiveRunCeiling
 
 // TestLiveMatrix is the live tier's ONLY entry point, reachable solely
 // through `make live-e2e` (which supplies -tags=livee2e). It exists in the
