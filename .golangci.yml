@@ -74,7 +74,12 @@ linters:
       # explicit cmd:<argv> credential feature. Exact file paths keep a new
       # execution site anywhere else red; scripts/check-gosec-scope.sh has the
       # outside-allowlist teeth.
-      - path: ^(cmd/a2a/notifications_platform\.go|internal/cache/mirror\.go|internal/cli/(cmd_contract|cmd_html|cmd_statusline|cmd_update|cmd_validate_ci|contract_git)\.go|internal/host/github\.go|internal/mcp/tools_contract\.go|internal/release/selfcheck\.go|internal/space/(credential|mirror)\.go)$
+      # internal/ghauth/ghauth.go: the `gh auth token` probe, moved here from
+      # internal/space/credential.go when internal/release turned out to need
+      # the same token and neither layer could import the other. Same seam,
+      # same fixed argv (`gh auth token`, resolved via exec.LookPath, never a
+      # shell) — only its address changed.
+      - path: ^(cmd/a2a/notifications_platform\.go|internal/cache/mirror\.go|internal/cli/(cmd_contract|cmd_html|cmd_statusline|cmd_update|cmd_validate_ci|contract_git)\.go|internal/ghauth/ghauth\.go|internal/host/github\.go|internal/mcp/tools_contract\.go|internal/release/selfcheck\.go|internal/space/(credential|mirror)\.go)$
         text: "G204:"
         linters: [gosec]
       # Test support binaries shell only to the fixture's own git repositories.
