@@ -262,6 +262,10 @@ func dataLoopOperationPull(ctx context.Context, h *harness, c *checkout, args []
 	return result, pull, err
 }
 
+// dataLoopContractSlug is the base of the standing id this row's contract is
+// minted from; liveRunSlug scopes it to the current destructive generation.
+const dataLoopContractSlug = "dl-data-exchange"
+
 // dataLoopFailSupersedePass is this family's MANDATORY row: the whole loop,
 // on one thread, ending with the ORIGINAL work_request reaching a closed
 // state — not merely a second package reaching verify-pass. A loop that
@@ -279,7 +283,12 @@ func dataLoopFailSupersedePass(ctx context.Context, h *harness) Result {
 
 	// --- 1. A publishes a JSON-Schema contract (schema + valid fixture,
 	// D-D scaffolded) that the loop's own packages will pin. ---
-	sub, err := h.DraftAndSubmit(ctx, a, "contract")
+	// The slug is REQUIRED and run-scoped, exactly as every other standing
+	// draft in this tier is. `a2a new` refuses a standing type without one,
+	// so the version of this line that omitted it could never have reached
+	// GitHub; and an unscoped slug would collide with the previous
+	// destructive generation's merged pull requests (see liveRunSlug).
+	sub, err := h.DraftAndSubmit(ctx, a, "contract", "--slug", liveRunSlug(dataLoopContractSlug, h.PRFloor))
 	if err != nil {
 		return dataLoopResultFromErr("draft-submit-contract", err, "draft+submit a JSON-Schema contract (schema+valid fixture scaffolded) opens its own PR")
 	}

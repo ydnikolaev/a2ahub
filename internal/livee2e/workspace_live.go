@@ -322,6 +322,10 @@ func (c *checkout) Draft(ctx context.Context, artifactType string, extra ...stri
 	if !ok {
 		return "", nil, fmt.Errorf("livee2e: no public authoring fields for artifact type %q", artifactType)
 	}
+	if standingDraftTypes[artifactType] && !hasSlugArg(extra) {
+		return "", nil, fmt.Errorf("livee2e: a2a new %s is a standing type and cannot be drafted without --slug; "+
+			"scope it with liveRunSlug(<base>, h.PRFloor) as every other standing draft in this tier does", artifactType)
+	}
 	args := append([]string{"new", artifactType}, fields...)
 	args = append(args, extra...)
 	stdout, stderr, runErr := c.Run(ctx, args...)
