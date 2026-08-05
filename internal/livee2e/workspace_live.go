@@ -135,6 +135,13 @@ type checkout struct {
 	SpaceSlug string
 	// Peer is the OTHER local system's id, needed to fill DraftContext.Peer.
 	Peer string
+	// APIRoot is checkoutEnv's own puncture, held per-checkout: empty means
+	// exactly what it always has (A2A_GITHUB_API stripped from every child
+	// process this checkout spawns); a non-empty value is a deliberate,
+	// explicit redirection — see checkoutEnv's own doc comment for why that
+	// is a different thing from an ambient variable leaking in. newHarness
+	// leaves this empty for both checkouts, so live behaviour is unchanged.
+	APIRoot string
 }
 
 // checkoutEnv builds the child process environment for a checkout's exec:
@@ -144,16 +151,32 @@ type checkout struct {
 // construction, filtering it here is the second, cheaper half of "assert,
 // don't assume" for any process spawned from this checkout), PLUS the
 // per-space credential override run.sh itself exports.
-func checkoutEnv(token, spaceSlug string) []string {
+//
+// apiRoot extends that: an EMPTY apiRoot still means exactly what it always
+// has — A2A_GITHUB_API stripped, full stop, so a live run's child processes
+// see the seam at its default. A NON-EMPTY apiRoot is a deliberate,
+// explicit redirection a caller had to ask for by passing a value in, which
+// is a different thing entirely from an ambient variable leaking in from
+// the parent shell: the whole point of stripping the ambient one is that
+// nobody chose it for this run, while a supplied apiRoot is chosen, by this
+// call, for this run. RunWithAPIRoot's own doc comment below is the existing
+// precedent for a narrow, documented puncture of this kind; this parameter
+// is the same shape, made a property of the checkout rather than a single
+// call.
+func checkoutEnv(token, spaceSlug, apiRoot string) []string {
 	base := os.Environ()
-	out := make([]string, 0, len(base)+1)
+	out := make([]string, 0, len(base)+2)
 	for _, kv := range base {
 		if strings.HasPrefix(kv, githubAPIEnv+"=") {
 			continue
 		}
 		out = append(out, kv)
 	}
-	return append(out, space.CredentialEnvVar(spaceSlug)+"="+token)
+	out = append(out, space.CredentialEnvVar(spaceSlug)+"="+token)
+	if apiRoot != "" {
+		out = append(out, githubAPIEnv+"="+apiRoot)
+	}
+	return out
 }
 
 // Run execs the a2a binary in this checkout's directory with args, returning
@@ -176,7 +199,7 @@ func (c *checkout) Run(ctx context.Context, args ...string) (stdout, stderr stri
 func (c *checkout) RunIn(ctx context.Context, dir string, args ...string) (stdout, stderr string, err error) {
 	cmd := exec.CommandContext(ctx, c.Bin, args...) //nolint:gosec // reason: c.Bin is the attested candidate and argv is supplied only by closed live scenario code.
 	cmd.Dir = dir
-	cmd.Env = checkoutEnv(c.Token, c.SpaceSlug)
+	cmd.Env = checkoutEnv(c.Token, c.SpaceSlug, c.APIRoot)
 	var out, errBuf strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
@@ -196,8 +219,9 @@ func (c *checkout) MainContains(ctx context.Context, sha string) (bool, error) {
 // RunWithAPIRoot execs the a2a binary exactly like Run, except A2A_GITHUB_API
 // is set to apiRoot for THIS ONE invocation only — the seam spec 38's Layer
 // 3 fault-injection row uses to point a single real write at a proxy in
-// front of production GitHub (spec 38 §6-Q1, plan D-G) instead of letting
-// checkoutEnv filter the seam back to its documented default.
+// front of production GitHub (spec 38 §6-Q1, plan D-G), passed straight
+// through to checkoutEnv rather than the checkout's own (empty, live) APIRoot
+// field.
 //
 // This is a deliberate, narrow puncture of checkoutEnv's own "the seam sits
 // at its default, asserted rather than assumed" invariant (checkoutEnv's own
@@ -205,11 +229,12 @@ func (c *checkout) MainContains(ctx context.Context, sha string) (bool, error) {
 // safe only because the one caller (scenarios_failure_recovery_live.go) is a
 // row the report labels a DISTINCT evidence class (Result.EvidenceClass,
 // report.go): every other call in this package still goes through Run/RunIn,
-// which checkoutEnv still filters unconditionally.
+// which passes the checkout's own APIRoot field — empty for every live
+// checkout, so checkoutEnv still filters the seam back to its default there.
 func (c *checkout) RunWithAPIRoot(ctx context.Context, apiRoot string, args ...string) (stdout, stderr string, err error) {
 	cmd := exec.CommandContext(ctx, c.Bin, args...) //nolint:gosec // reason: c.Bin is the attested candidate and argv is supplied only by closed live scenario code.
 	cmd.Dir = c.Dir
-	cmd.Env = append(checkoutEnv(c.Token, c.SpaceSlug), githubAPIEnv+"="+apiRoot)
+	cmd.Env = checkoutEnv(c.Token, c.SpaceSlug, apiRoot)
 	var out, errBuf strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf

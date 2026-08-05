@@ -40,10 +40,15 @@ const harnessSpaceSlug = "livee2e"
 // local checkouts, and the one seam (WaitForRequiredCheck) every family
 // needs and that four independent agents must not each reinvent.
 type harness struct {
-	Cfg                   Config
-	Pre                   Preflight
-	Org, Repo             string
-	SpaceSlug             string
+	Cfg       Config
+	Pre       Preflight
+	Org, Repo string
+	SpaceSlug string
+	// Seam is where this run's host actually lives — the API root, git
+	// remote and web root every scenario family reads instead of rebuilding
+	// them from Org/Repo (hostseam.go). newHarness sets it to the live seam
+	// and validates it before anything else happens.
+	Seam                  HostSeam
 	Bin                   string
 	VerificationCandidate CandidateAttestation
 	ExecutionCandidate    CandidateAttestation
@@ -146,7 +151,7 @@ var ErrProvisionFailed = errors.New("livee2e: provisioning the test space failed
 // §"Constraints a faithful port would get wrong": "row 7 ... must go
 // THROUGH the real host.CheckStatus, not a curl").
 func (h *harness) WaitForRequiredCheck(ctx context.Context, prNumber int, token string) (host.CheckStatusResult, error) {
-	hc := host.NewGitHubHost(newBoundedGitHubHTTPClient(), defaultAPIRoot)
+	hc := host.NewGitHubHost(newBoundedGitHubHTTPClient(), h.Seam.APIRoot)
 	deadline := time.Now().Add(requiredCheckWaitCeiling)
 	req := host.StatusRequest{
 		Repo:       host.Repo{Owner: h.Org, Name: h.Repo},
@@ -437,6 +442,11 @@ func newHarness(ctx context.Context, cfg Config, pre Preflight) (*harness, func(
 		return nil, noop, err
 	}
 
+	seam := NewLiveHostSeam(cfg.Org, DefaultRepo)
+	if err := seam.Validate(); err != nil {
+		return nil, noop, fmt.Errorf("livee2e: newHarness: %w", err)
+	}
+
 	work, err := os.MkdirTemp("", "livee2e-harness-*")
 	if err != nil {
 		return nil, noop, fmt.Errorf("livee2e: newHarness: %w", err)
@@ -459,6 +469,7 @@ func newHarness(ctx context.Context, cfg Config, pre Preflight) (*harness, func(
 		Org:                   cfg.Org,
 		Repo:                  DefaultRepo,
 		SpaceSlug:             harnessSpaceSlug,
+		Seam:                  seam,
 		Bin:                   bin,
 		VerificationCandidate: verificationCandidate,
 		ExecutionCandidate:    executionCandidate,
@@ -481,7 +492,7 @@ func newHarness(ctx context.Context, cfg Config, pre Preflight) (*harness, func(
 		Bin: bin, SpaceSlug: harnessSpaceSlug, Peer: systemAlpha,
 	}
 
-	spaceURL := "https://github.com/" + h.Org + "/" + h.Repo
+	spaceURL := h.Seam.WebRoot
 	if err := setupCheckout(ctx, h.A, spaceURL); err != nil {
 		return h, cleanup, fmt.Errorf("livee2e: newHarness: checkout A: %w", err)
 	}

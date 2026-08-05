@@ -129,11 +129,13 @@ func spaceLiveSetFloor(raw []byte, floor string) []byte {
 	return spaceLiveMinVersionLine.ReplaceAll(raw, []byte("${1}"+floor))
 }
 
-// spaceLiveRemoteURL is the space repo's authenticated git remote — the same
-// shape newHarness/ResetSpace build (harness_live.go, provision_live.go), not
-// re-derived from anything guessed.
+// spaceLiveRemoteURL is the space repo's git remote — h.Seam.CloneURL(), the
+// same ".git"-suffixed URL ResetSpace force-pushes to (provision_live.go),
+// not re-derived from anything guessed. NOT the same string newHarness hands
+// `a2a init --space`: that one is h.Seam.WebRoot, with no ".git" suffix —
+// see HostSeam's own doc comment (hostseam.go) for why the two differ.
 func spaceLiveRemoteURL(h *harness) string {
-	return "https://github.com/" + h.Org + "/" + h.Repo + ".git"
+	return h.Seam.CloneURL()
 }
 
 // spaceLiveCloneSpace clones a SCRATCH copy of the live space's main branch —

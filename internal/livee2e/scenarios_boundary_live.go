@@ -389,7 +389,7 @@ func boundaryCheckRunCount(ctx context.Context, h *harness, headSHA string) (int
 // observe the check LEAVING "completed" — the one signal a re-trigger
 // actually produces.
 func boundaryCheckStatusOnce(ctx context.Context, h *harness, c *checkout, prNumber int) (host.CheckStatusResult, error) {
-	hc := host.NewGitHubHost(nil, defaultAPIRoot)
+	hc := host.NewGitHubHost(nil, h.Seam.APIRoot)
 	return hc.CheckStatus(ctx, host.StatusRequest{
 		Repo:       host.Repo{Owner: h.Org, Name: h.Repo},
 		PRNumber:   prNumber,
@@ -482,7 +482,7 @@ func boundaryCrossSectionRetriggerStaysRed(ctx context.Context, h *harness) Resu
 	defer func() { _ = os.RemoveAll(work) }()
 	dir := filepath.Join(work, "raw")
 
-	remoteURL := "https://github.com/" + h.Org + "/" + h.Repo + ".git"
+	remoteURL := h.Seam.CloneURL()
 	// The test space is PUBLIC (spec 36 §9.5.1), so the clone itself needs
 	// no credential — only the push below does.
 	if err := runCmd(ctx, "git", "clone", "-q", remoteURL, dir); err != nil {
@@ -720,7 +720,7 @@ func boundaryMoveMainDirect(ctx context.Context, h *harness) error {
 	defer func() { _ = os.RemoveAll(work) }()
 	dir := filepath.Join(work, "raw")
 
-	remoteURL := "https://github.com/" + h.Org + "/" + h.Repo + ".git"
+	remoteURL := h.Seam.CloneURL()
 	if err := runCmd(ctx, "git", "clone", "-q", remoteURL, dir); err != nil {
 		return fmt.Errorf("clone: %w", err)
 	}
@@ -753,7 +753,7 @@ func boundaryMoveMainDirect(ctx context.Context, h *harness) error {
 // raw Git clone. The cross-section row still pushes that alpha path as B;
 // only the transport bypasses the funnel, never the document authoring API.
 func boundaryDraftProbe(ctx context.Context, h *harness, dir string) (string, string, error) {
-	remoteURL := "https://github.com/" + h.Org + "/" + h.Repo + ".git"
+	remoteURL := h.Seam.CloneURL()
 	c := &checkout{
 		Dir: dir, System: systemAlpha, Peer: systemBravo,
 		Bin: h.Bin, SpaceSlug: h.SpaceSlug,
