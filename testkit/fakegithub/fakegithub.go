@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -622,6 +623,16 @@ func (s *Server) handleDeleteRef(w http.ResponseWriter, parts []string) {
 	ref := strings.Join(parts[5:], "/")
 	full := "refs/" + ref
 
+	// This is the ONE endpoint whose request path reaches a git argv, so it
+	// is the one place a ref has to be proven well-formed rather than assumed
+	// to be. Real GitHub refuses a malformed ref too, so validating here is
+	// fidelity as much as hygiene — and it is what keeps the exec helpers
+	// below reachable only by names git itself would accept.
+	if !validRefPath(ref) {
+		http.Error(w, "fakegithub: malformed ref "+full, http.StatusUnprocessableEntity)
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.revParse(full) == "" {
@@ -840,7 +851,27 @@ func prAPIState(pr *PR) string {
 	return "open"
 }
 
+// refPathPattern is what a ref this fake will hand to git may look like:
+// slash-separated segments of unreserved ref characters. It admits the branch
+// shapes this project actually uses (`heads/a2a/alpha/submit/XQ-1`) and
+// nothing that could be read as an option, a path traversal, or a shell
+// construct.
+var refPathPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$`)
+
+// validRefPath reports whether ref is safe to hand to git as a ref name.
+// Anchored, so a match means the WHOLE string is well-formed; ".." is refused
+// explicitly because the pattern above would otherwise admit it inside a
+// segment, and git resolves it.
+func validRefPath(ref string) bool {
+	return ref != "" && !strings.Contains(ref, "..") && refPathPattern.MatchString(ref)
+}
+
+// revParse resolves a ref inside the origin, returning "" when it does not
+// exist. ref reaches this from two places: this fake's own PR bookkeeping,
+// and handleDeleteRef — which validates it with validRefPath first, since a
+// request path is the only caller-controlled input in this package.
 func (s *Server) revParse(ref string) string {
+	//nolint:gosec // reason: argv is a fixed literal list plus a ref that is either this fake's own bookkeeping or validRefPath-checked at the one caller-controlled entry (handleDeleteRef).
 	cmd := exec.Command("git", gitfixture.Args("-C", s.OriginDir, "rev-parse", ref)...)
 	out, err := cmd.Output()
 	if err != nil {
@@ -849,11 +880,16 @@ func (s *Server) revParse(ref string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// git runs a git command inside dir. Every argv this package builds is a
+// fixed literal list, a path this fake created itself, or a ref that
+// validRefPath has already accepted — handleDeleteRef being the only entry
+// where any of it comes from a request.
 func (s *Server) git(dir string, args ...string) error {
 	full := args
 	if dir != "" {
 		full = append([]string{"-C", dir}, args...)
 	}
+	//nolint:gosec // reason: see this function's own doc — fixed literals, fake-created paths, or a validRefPath-checked ref.
 	cmd := exec.Command("git", gitfixture.Args(full...)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

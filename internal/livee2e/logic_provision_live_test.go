@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 // provisionLocalSpace brings a brand-new local space to the same clean,
@@ -94,9 +96,14 @@ func provisionLocalSpace(ctx context.Context, bin, work string, pre Preflight) (
 // not need a running fake to verify the scaffold.
 func gitShowLogic(t *testing.T, dir, ref string) string {
 	t.Helper()
+	// Through gitfixture.Args like every other git exec in this tree: it
+	// disables git's own background gc/maintenance, which otherwise races
+	// t.TempDir()'s cleanup and fails an unrelated test with
+	// "unlinkat .git/objects: directory not empty". A hygiene gate enforces
+	// this, and it caught these two sites.
 	// #nosec G204 -- dir/ref are test-owned values (a temp-dir bare repo this
 	// same test created, and a literal ref string), never artifact text.
-	cmd := exec.Command("git", "-C", dir, "show", ref)
+	cmd := exec.Command("git", gitfixture.Args("-C", dir, "show", ref)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git -C %s show %s: %v: %s", dir, ref, err, out)
@@ -147,7 +154,7 @@ func TestProvisionLocalSpaceScaffoldsCleanSpace(t *testing.T) {
 	}
 
 	// #nosec G204 -- origin is this test's own freshly-cloned temp-dir repo.
-	branchesOut, err := exec.Command("git", "-C", origin, "for-each-ref", "--format=%(refname:short)", "refs/heads/").CombinedOutput()
+	branchesOut, err := exec.Command("git", gitfixture.Args("-C", origin, "for-each-ref", "--format=%(refname:short)", "refs/heads/")...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("list branches: %v: %s", err, branchesOut)
 	}
