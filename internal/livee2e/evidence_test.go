@@ -31,7 +31,30 @@ func TestEvidenceManifestRejectsReleaseEvidenceDrift(t *testing.T) {
 		{"wrong built source", func(m *EvidenceManifest) { m.Candidate.BuiltSourceSHA = strings.Repeat("b", 40) }, "built_source_sha must equal"},
 		{"modified binary", func(m *EvidenceManifest) { m.Candidate.Binary.BuildInfo.Modified = boolPointer(true) }, "modified must be false"},
 		{"floor mismatch", func(m *EvidenceManifest) { m.Scenarios[0].LiveManifestFloor = "0.18.0" }, "live_manifest_floor"},
-		{"missing mandatory row", func(m *EvidenceManifest) { m.Scenarios = m.Scenarios[1:] }, "mandatory PASS row LE-OC-01/baseline"},
+		{"missing mandatory row", func(m *EvidenceManifest) {
+			// LE-OC-03/baseline (index 2) is live-required under D-7: it is
+			// TierLogic but carries the "sse-revision-only" ProviderAssertions
+			// carve-out, so its OWN row still needs a live pass in the bundle
+			// (unlike LE-OC-01/baseline, index 0, which D-7 removed from this
+			// requirement entirely — its proof is now the logic-tier marker,
+			// not a bundle row).
+			m.Scenarios = append(append([]ScenarioEvidence(nil), m.Scenarios[:2]...), m.Scenarios[3:]...)
+		}, "mandatory PASS row LE-OC-03/baseline"},
+		{"missing provider row", func(m *EvidenceManifest) {
+			// LE-OC-04/provider-setting (index 3) is TierProvider outright.
+			// Unlike a mandatory row it may read "unverified" — but it must
+			// still be PRESENT; dropping it entirely is still a release
+			// blocker.
+			m.Scenarios = append(append([]ScenarioEvidence(nil), m.Scenarios[:3]...), m.Scenarios[4:]...)
+		}, "scenarios must include LE-OC-04/provider-setting as pass or explicitly unverified"},
+		{"missing carve-out assertion", func(m *EvidenceManifest) {
+			// LE-OC-03/baseline's row is present and otherwise passing, but
+			// its ONE provider-owned assertion ("sse-revision-only",
+			// operational_catalogue.go) never proves anything — the exact
+			// shape a shrunken live tier would produce if it quietly stopped
+			// exercising the one fact only GitHub can decide.
+			m.Scenarios[2].Assertions = passingAssertions([]string{"snapshot-revision-equal", "operational-rows-equal", "conditional-snapshot"})
+		}, "assertions must include sse-revision-only"},
 		{"mandatory unverified", func(m *EvidenceManifest) {
 			m.Scenarios[1].Outcome = "unverified"
 			m.Scenarios[1].Limitations = []string{"provider unavailable"}
@@ -113,6 +136,22 @@ func TestValidateEvidenceFileVerifiesCandidateCheckLog(t *testing.T) {
 			return bytes.Replace(raw, []byte("EXIT=0"), []byte("EXIT=1"), 1)
 		}, want: "EXIT"},
 		{name: "over bound", writeLog: true, mutate: func([]byte) []byte { return make([]byte, maxCandidateCheckLogBytes+1) }, want: "no larger than"},
+		{name: "no logic tier marker", writeLog: true, mutate: func(raw []byte) []byte {
+			return bytes.Replace(raw, []byte("LOGIC_TIER_ROWS_SHA256="+logicTierRowsDigest(logicTierRowKeys(Catalogue()))+"\n"), []byte(""), 1)
+		}, want: "exactly one LOGIC_TIER_ROWS_SHA256 marker"},
+		{name: "logic tier marker shrunk below the catalogue", writeLog: true, mutate: func(raw []byte) []byte {
+			// The exact shrunken-lane defect this marker exists to catch: the
+			// logic lane's own dispatch table silently drops one row the
+			// catalogue still declares TierLogic (spec 46 postmortem).
+			keys := logicTierRowKeys(Catalogue())
+			shrunk := logicTierRowsDigest(keys[1:])
+			return bytes.Replace(raw, []byte("LOGIC_TIER_ROWS_SHA256="+logicTierRowsDigest(keys)), []byte("LOGIC_TIER_ROWS_SHA256="+shrunk), 1)
+		}, want: "does not match the catalogue's own logic-tier row set"},
+		{name: "logic tier marker claims an undeclared row", writeLog: true, mutate: func(raw []byte) []byte {
+			keys := logicTierRowKeys(Catalogue())
+			widened := logicTierRowsDigest(append(append([]string(nil), keys...), "not-a-catalogue-row/baseline"))
+			return bytes.Replace(raw, []byte("LOGIC_TIER_ROWS_SHA256="+logicTierRowsDigest(keys)), []byte("LOGIC_TIER_ROWS_SHA256="+widened), 1)
+		}, want: "does not match the catalogue's own logic-tier row set"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -274,6 +313,23 @@ func TestEvidenceFileGate(t *testing.T) {
 	if _, err := ValidateEvidenceFile(file); err != nil {
 		t.Fatalf("live-e2e-evidence: FAIL — %v", err)
 	}
+}
+
+// TestLogicTierRowsDigestBridge is the narrow runtime bridge
+// scripts/tests/check_live_e2e_evidence_test.sh uses to obtain the exact
+// LOGIC_TIER_ROWS_SHA256 value a fixture transcript must carry to satisfy
+// verifyCandidateCheckLog (evidence.go) — the SAME canonical digest that
+// function independently recomputes from Catalogue() at validation time.
+// Printing only when asked, matching TestEvidenceFileGate's own convention
+// immediately above, keeps this a no-op during every ordinary
+// `go test ./...` and `make check` run: the real marker is emitted exactly
+// once, by the logic lane itself (TestLogicMatrix), never by this bridge.
+func TestLogicTierRowsDigestBridge(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("A2A_LIVE_E2E_PRINT_LOGIC_TIER_DIGEST") == "" {
+		return
+	}
+	fmt.Println(logicTierRowsDigest(logicTierRowKeys(Catalogue())))
 }
 
 func validEvidenceJSON(t *testing.T) []byte {

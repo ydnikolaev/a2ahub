@@ -162,14 +162,79 @@ var requiredAssertions = map[string][]string{
 	"LE-OC-08/unsupported-provider": {"unsupported-reported"},
 }
 
-var mandatoryScenarioKeys = map[string]bool{
-	"LE-OC-01/baseline": true,
-	"LE-OC-02/baseline": true,
-	"LE-OC-03/baseline": true,
-	"LE-OC-05/baseline": true,
-	"LE-OC-06/baseline": true,
-	"LE-OC-07/baseline": true,
-	"LE-OC-08/baseline": true,
+// liveRequiredRows is spec 09 D-7's own release-contract rule, recomputed
+// from the catalogue at validation time rather than hand-copied: a row's
+// evidence-bundle entry must carry a genuine LIVE pass exactly when GitHub
+// itself must decide part of its verdict — every TierProvider row, and every
+// TierLogic row carrying a ProviderAssertions carve-out (plan D-2's
+// "progression is not judgement": LE-OC-03/baseline's "sse-revision-only"
+// and LE-OC-05/baseline's "visibility-public" are each GitHub's own fact
+// inside an otherwise-logic row). Every OTHER operational-confidence row —
+// LE-OC-01/02/06/07/08-baseline — is logic-tier territory: this function no
+// longer names it as bundle-required at all, because its truth is proven
+// elsewhere now (logicTierRowKeys below, checked against the candidate check
+// transcript's own marker), not asserted here. A row that appears anyway
+// (belt-and-suspenders, per tier.go's own TierLogic doc) is still validated
+// structurally by validateScenario; it is simply no longer load-bearing for
+// release.
+//
+// Scoped to FamilyOperationalConfidence because that is the only family the
+// evidence bundle's own ScenarioEvidence.ScenarioID contract accepts
+// (validateScenario checks membership in requiredAssertions, whose keys are
+// exactly the operational-confidence rows) — every other Catalogue() family
+// is a different release gate's concern, not this manifest's.
+func liveRequiredRows(scenarios []Scenario) map[string]Scenario {
+	rows := make(map[string]Scenario)
+	for _, s := range scenarios {
+		if s.Family != FamilyOperationalConfidence {
+			continue
+		}
+		if s.Tier == TierProvider || len(s.ProviderAssertions) > 0 {
+			rows[scenarioRowKey(s)] = s
+		}
+	}
+	return rows
+}
+
+// logicTierRowKeys is the exact set the logic-tier marker
+// (LOGIC_TIER_ROWS_SHA256, candidate.go's candidateCheckAttestation) must
+// claim: every row across the WHOLE catalogue that TierLogic may judge —
+// not only the operational-confidence rows the evidence bundle itself
+// carries. LE-OC-03/baseline and LE-OC-05/baseline belong here too: their
+// ProviderAssertions carve-out narrows which ASSERTION needs a live pass,
+// not which tier judges the row's own verdict — report.go's own
+// VerdictSkippedProvider guard refuses that verdict on a TierLogic row for
+// exactly this reason. TestLogicMatrix drives the full catalogue (spec 09
+// §5a), so a row silently dropped from its own dispatch table — the spec 46
+// postmortem defect this marker exists to catch — is caught only by
+// comparing against this FULL set, never a narrower one.
+func logicTierRowKeys(scenarios []Scenario) []string {
+	keys := make([]string, 0, len(scenarios))
+	for _, s := range scenarios {
+		if s.Tier == TierLogic {
+			keys = append(keys, scenarioRowKey(s))
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// logicTierRowsDigest canonicalizes a row-key set into the exact value the
+// LOGIC_TIER_ROWS_SHA256 marker carries: the sha256 of the sorted keys, one
+// per line, with a trailing newline. Both the logic lane — which must
+// compute it from the rows it actually drove to a passing verdict this run,
+// never from a static Catalogue() read, or the marker would prove nothing —
+// and verifyCandidateCheckLog below — which recomputes it from Catalogue()
+// itself, independent of any run — call this exact function, so the two can
+// only disagree over an actual coverage gap, never over formatting.
+func logicTierRowsDigest(keys []string) string {
+	sorted := append([]string(nil), keys...)
+	sort.Strings(sorted)
+	joined := strings.Join(sorted, "\n")
+	if joined != "" {
+		joined += "\n"
+	}
+	return runtimeDigest([]byte(joined))
 }
 
 // DecodeEvidenceManifest strictly decodes and validates a persisted P7 live
@@ -257,6 +322,20 @@ func verifyCandidateCheckLog(evidenceDir string, check CandidateCheck, candidate
 	}
 	if checkoutEvidenceID(attestation.SourceRoot) != candidate.VerificationCheckout.ID {
 		return fmt.Errorf("candidate_check.log_path CHECKOUT_ROOT does not bind candidate.verification_checkout.id")
+	}
+	// spec 09 D-7: recompute, never trust. The logic lane's own claim (the
+	// transcript's LOGIC_TIER_ROWS_SHA256 marker) is checked against the
+	// catalogue's CURRENT logic-row set, not against whatever the marker
+	// happened to say — a row silently dropped from the logic lane's
+	// dispatch table changes this digest and reds the release gate, exactly
+	// the property the whole marker exists to buy.
+	wantLogicKeys := logicTierRowKeys(Catalogue())
+	wantLogicDigest := logicTierRowsDigest(wantLogicKeys)
+	if attestation.LogicTierRowsSHA256 != wantLogicDigest {
+		return fmt.Errorf(
+			"candidate_check.log_path LOGIC_TIER_ROWS_SHA256=%s does not match the catalogue's own logic-tier row set (want %s, covering: %s)",
+			attestation.LogicTierRowsSHA256, wantLogicDigest, strings.Join(wantLogicKeys, ", "),
+		)
 	}
 	return nil
 }
@@ -374,18 +453,28 @@ func ValidateEvidenceManifest(manifest EvidenceManifest) error {
 		add("candidate_check.passed must be true for release evidence")
 	}
 
+	liveRequired := liveRequiredRows(Catalogue())
 	seen := make(map[string]bool)
 	seenLogPaths := make(map[string]bool)
 	for index, scenario := range manifest.Scenarios {
-		validateScenario(&issues, index, scenario, manifest.CandidateCheck.LogPath, seen, seenLogPaths)
+		validateScenario(&issues, index, scenario, manifest.CandidateCheck.LogPath, liveRequired, seen, seenLogPaths)
 	}
-	for key := range mandatoryScenarioKeys {
-		if !seen[key] {
+	// D-7: presence is required for every live-required row regardless of
+	// Optional — only the OUTCOME leniency (pass vs explicitly-unverified)
+	// differs, and that is validateScenario's own call via
+	// operationalOptionalBranch (report.go). A row this loop does not find
+	// in liveRequired (every other operational-confidence row) is proven by
+	// the logic-tier marker instead (verifyCandidateCheckLog), not asserted
+	// here at all.
+	for key, row := range liveRequired {
+		if seen[key] {
+			continue
+		}
+		if row.Optional {
+			add("scenarios must include %s as pass or explicitly unverified", key)
+		} else {
 			add("scenarios must include mandatory PASS row %s", key)
 		}
-	}
-	if !seen["LE-OC-04/provider-setting"] {
-		add("scenarios must include LE-OC-04/provider-setting as pass or explicitly unverified")
 	}
 
 	if len(issues) != 0 {
@@ -418,29 +507,28 @@ func validateCheckout(issues *[]string, field string, checkout CheckoutEvidence,
 	requireTrue("untracked_clean", checkout.UntrackedClean)
 }
 
-func validateScenario(issues *[]string, index int, scenario ScenarioEvidence, candidateCheckLogPath string, seen, seenLogPaths map[string]bool) {
+func validateScenario(issues *[]string, index int, scenario ScenarioEvidence, candidateCheckLogPath string, liveRequired map[string]Scenario, seen, seenLogPaths map[string]bool) {
 	field := fmt.Sprintf("scenarios[%d]", index)
 	key := scenario.ScenarioID + "/" + scenario.Branch
-	validBranch := false
-	switch scenario.ScenarioID {
-	case "LE-OC-01", "LE-OC-02", "LE-OC-03", "LE-OC-05", "LE-OC-06", "LE-OC-07":
-		validBranch = scenario.Branch == "baseline"
-	case "LE-OC-04":
-		validBranch = scenario.Branch == "provider-setting"
-	case "LE-OC-08":
-		validBranch = scenario.Branch == "baseline" || scenario.Branch == "unsupported-provider"
-	default:
-		*issues = append(*issues, field+".scenario_id must be LE-OC-01 through LE-OC-08")
-	}
-	if !validBranch {
-		*issues = append(*issues, field+".branch is not valid for "+scenario.ScenarioID)
+	// requiredAssertions' keys ARE the declared operational-confidence rows
+	// (TestOperationalConfidenceCatalogueMatchesEvidenceContract,
+	// operational_runtime_test.go, cross-checks this against
+	// OperationalConfidenceCatalogue() itself) — reusing that membership
+	// here instead of a second hand-typed ID/branch switch means a row
+	// renamed or removed from the catalogue cannot silently leave a stale
+	// literal behind.
+	if _, ok := requiredAssertions[key]; !ok {
+		*issues = append(*issues, field+".scenario_id/branch is not a declared operational-confidence row")
 	}
 	if seen[key] {
 		*issues = append(*issues, field+" duplicates "+key)
 	}
 	seen[key] = true
 
-	optionalUnverified := key == "LE-OC-04/provider-setting" || key == "LE-OC-08/unsupported-provider"
+	// operationalOptionalBranch (report.go) is the SAME fact report.go's own
+	// verdict recording already uses for "may this row read unverified" —
+	// reused here rather than restated, so the two can never drift apart.
+	optionalUnverified := operationalOptionalBranch(scenario.ScenarioID, scenario.Branch)
 	switch scenario.Outcome {
 	case "pass":
 	case "unverified":
@@ -455,7 +543,7 @@ func validateScenario(issues *[]string, index int, scenario ScenarioEvidence, ca
 	default:
 		*issues = append(*issues, field+".outcome must be pass, fail, or unverified")
 	}
-	if mandatoryScenarioKeys[key] && scenario.Outcome != "pass" {
+	if row, ok := liveRequired[key]; ok && !row.Optional && scenario.Outcome != "pass" {
 		*issues = append(*issues, field+" is mandatory and must have outcome pass")
 	}
 

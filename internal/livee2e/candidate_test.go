@@ -49,6 +49,15 @@ func newCandidateSourceFixture(t *testing.T) candidateSourceFixture {
 	}
 }
 
+// candidateCheckLog builds a fixture retained-check-log transcript. The
+// LOGIC_TIER_ROWS_SHA256 marker is always the CORRECT digest for the real,
+// current Catalogue() — computed the same way verifyCandidateCheckLog
+// (evidence.go) recomputes it at validation time — so every existing caller
+// of this five-parameter helper (including operational_runtime_test.go,
+// which this wave does not touch) keeps producing an honest, currently-valid
+// transcript with no signature change here. A test that wants to prove the
+// MISMATCH path mutates the returned bytes with bytes.Replace, matching the
+// existing precedent for every other marker (see e.g. "wrong check sha").
 func candidateCheckLog(root, sha, tree, tag, exit string) []byte {
 	return []byte("CHECKOUT_ROOT=" + root + "\n" +
 		"CANDIDATE_SHA=" + sha + "\n" +
@@ -59,6 +68,7 @@ func candidateCheckLog(root, sha, tree, tag, exit string) []byte {
 		"WORKTREE_CLEAN=true\n" +
 		"UNTRACKED_CLEAN=true\n" +
 		"WEB_DEPS_READY=true\n" +
+		"LOGIC_TIER_ROWS_SHA256=" + logicTierRowsDigest(logicTierRowKeys(Catalogue())) + "\n" +
 		"EXIT=" + exit + "\n")
 }
 
@@ -226,6 +236,15 @@ func TestAttestCandidateSourceRefusesEveryCandidateMismatch(t *testing.T) {
 		{"ambiguous web dependencies marker", func(f *candidateSourceFixture) {
 			f.files[f.want.CheckLog] = append(candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "0"), []byte("WEB_DEPS_READY=true\n")...)
 		}, "exactly one WEB_DEPS_READY marker"},
+		{"missing logic tier rows marker", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = []byte(strings.Replace(string(candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "0")), "LOGIC_TIER_ROWS_SHA256="+logicTierRowsDigest(logicTierRowKeys(Catalogue()))+"\n", "", 1))
+		}, "exactly one LOGIC_TIER_ROWS_SHA256 marker"},
+		{"ambiguous logic tier rows marker", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = append(candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "0"), []byte("LOGIC_TIER_ROWS_SHA256="+logicTierRowsDigest(logicTierRowKeys(Catalogue()))+"\n")...)
+		}, "exactly one LOGIC_TIER_ROWS_SHA256 marker"},
+		{"malformed logic tier rows marker", func(f *candidateSourceFixture) {
+			f.files[f.want.CheckLog] = []byte(strings.Replace(string(candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "0")), "LOGIC_TIER_ROWS_SHA256="+logicTierRowsDigest(logicTierRowKeys(Catalogue())), "LOGIC_TIER_ROWS_SHA256=not-a-digest", 1))
+		}, "must be a full lowercase sha256 digest"},
 		{"failed check", func(f *candidateSourceFixture) {
 			f.files[f.want.CheckLog] = candidateCheckLog(t.TempDir(), f.want.SHA, f.want.Tree, f.want.Tag, "1")
 		}, "retained check log EXIT"},

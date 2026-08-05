@@ -34,6 +34,21 @@ VALID="$WORK/valid.json"
 mkdir -p "$WORK/logs"
 VERIFY_ROOT="$WORK/verification-checkout"
 VERIFY_ID="checkout-$(printf '%s' "$VERIFY_ROOT" | shasum -a 256 | awk '{print substr($1,1,24)}')"
+
+# spec 09 D-7: the retained transcript's own LOGIC_TIER_ROWS_SHA256 marker —
+# the digest of every catalogue row the logic tier judged. Obtained from Go
+# (TestLogicTierRowsDigestBridge, evidence_test.go) rather than recomputed in
+# bash: it is the SAME function verifyCandidateCheckLog (evidence.go) uses to
+# recompute the expected value at validation time, so this fixture can only
+# ever be as correct as the real gate's own arithmetic — never a second,
+# independently-typed copy that could silently drift from it.
+LOGIC_TIER_DIGEST="$(
+  cd "$ROOT" && A2A_LIVE_E2E_PRINT_LOGIC_TIER_DIGEST=1 \
+    go test ./internal/livee2e/ -run '^TestLogicTierRowsDigestBridge$' -count=1 -v |
+    grep -E '^sha256:[0-9a-f]{64}$'
+)"
+[ -n "$LOGIC_TIER_DIGEST" ] || fail "could not obtain LOGIC_TIER_ROWS_SHA256 from TestLogicTierRowsDigestBridge"
+
 cat >"$WORK/logs/make-check.log" <<EOF
 CHECKOUT_ROOT=$VERIFY_ROOT
 CANDIDATE_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -44,6 +59,7 @@ INDEX_CLEAN=true
 WORKTREE_CLEAN=true
 UNTRACKED_CLEAN=true
 WEB_DEPS_READY=true
+LOGIC_TIER_ROWS_SHA256=$LOGIC_TIER_DIGEST
 EXIT=0
 EOF
 CHECK_DIGEST="sha256:$(shasum -a 256 "$WORK/logs/make-check.log" | awk '{print $1}')"
@@ -113,8 +129,43 @@ make --no-print-directory -C "$ROOT" live-e2e-evidence EVIDENCE="$VALID" >/dev/n
 
 missing_row="$WORK/missing-row.json"
 cp "$VALID" "$missing_row"
-perl -0pi -e 's/    \{"scenario_id":"LE-OC-02".*?\},\n//' "$missing_row"
-expect_red "$missing_row" "mandatory PASS row LE-OC-02/baseline" "missing mandatory row"
+# LE-OC-03/baseline is live-required under D-7 (TierLogic with the
+# "sse-revision-only" ProviderAssertions carve-out — plan D-2's "progression
+# is not judgement"), unlike LE-OC-02/baseline, whose proof is now the
+# logic-tier marker below, not a bundle row.
+perl -0pi -e 's/    \{"scenario_id":"LE-OC-03".*?\},\n//' "$missing_row"
+expect_red "$missing_row" "mandatory PASS row LE-OC-03/baseline" "missing mandatory row"
+
+missing_provider_row="$WORK/missing-provider-row.json"
+cp "$VALID" "$missing_provider_row"
+perl -0pi -e 's/    \{"scenario_id":"LE-OC-04".*?\},\n//' "$missing_provider_row"
+expect_red "$missing_provider_row" "scenarios must include LE-OC-04/provider-setting as pass or explicitly unverified" "missing provider row"
+
+missing_carveout_assertion="$WORK/missing-carveout-assertion.json"
+cp "$VALID" "$missing_carveout_assertion"
+perl -0pi -e 's/\{"id":"sse-revision-only","outcome":"pass"\},//' "$missing_carveout_assertion"
+expect_red "$missing_carveout_assertion" "assertions must include sse-revision-only" "missing carve-out assertion"
+
+no_logic_marker="$WORK/no-logic-marker"
+copy_bundle "$no_logic_marker"
+no_logic_marker_log="$no_logic_marker/logs/make-check.log"
+no_logic_marker_old="sha256:$(shasum -a 256 "$no_logic_marker_log" | awk '{print $1}')"
+perl -0pi -e 's/^LOGIC_TIER_ROWS_SHA256=.*\n//m' "$no_logic_marker_log"
+no_logic_marker_new="sha256:$(shasum -a 256 "$no_logic_marker_log" | awk '{print $1}')"
+perl -0pi -e "s/$no_logic_marker_old/$no_logic_marker_new/" "$no_logic_marker/manifest.json"
+expect_red "$no_logic_marker/manifest.json" "exactly one LOGIC_TIER_ROWS_SHA256 marker" "missing logic tier marker"
+
+shrunk_logic_marker="$WORK/shrunk-logic-marker"
+copy_bundle "$shrunk_logic_marker"
+shrunk_logic_marker_log="$shrunk_logic_marker/logs/make-check.log"
+shrunk_logic_marker_old="sha256:$(shasum -a 256 "$shrunk_logic_marker_log" | awk '{print $1}')"
+# A well-formed but WRONG digest — the shape a logic lane whose dispatch
+# table silently drops a catalogue row (spec 46 postmortem) would produce.
+bogus_digest="sha256:$(printf '%064d' 0)"
+perl -0pi -e "s/^LOGIC_TIER_ROWS_SHA256=.*\$/LOGIC_TIER_ROWS_SHA256=$bogus_digest/m" "$shrunk_logic_marker_log"
+shrunk_logic_marker_new="sha256:$(shasum -a 256 "$shrunk_logic_marker_log" | awk '{print $1}')"
+perl -0pi -e "s/$shrunk_logic_marker_old/$shrunk_logic_marker_new/" "$shrunk_logic_marker/manifest.json"
+expect_red "$shrunk_logic_marker/manifest.json" "does not match the catalogue's own logic-tier row set" "logic tier marker mismatch"
 
 missing_cleanup="$WORK/missing-cleanup.json"
 cp "$VALID" "$missing_cleanup"
@@ -197,4 +248,4 @@ printf 'tampered\n' >"$tampered_log_dir/logs/make-check.log"
 expect_red "$tampered_log_dir/manifest.json" "log_sha256 does not match" "tampered candidate check log"
 
 bash "$GATE" "$VALID" >/dev/null || fail "control manifest did not return to green"
-echo "live-e2e-evidence-test: ok — manifest drift plus missing, tampered, oversized, traversing, duplicate, mismatched, and unproven scenario evidence all red; complete bound bundle greens"
+echo "live-e2e-evidence-test: ok — manifest drift plus missing, tampered, oversized, traversing, duplicate, mismatched, and unproven scenario evidence all red, including a missing/incomplete provider row, a missing carve-out assertion, and a missing/shrunk logic-tier marker (spec 09 D-7); complete bound bundle greens"
