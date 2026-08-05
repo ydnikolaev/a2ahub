@@ -75,7 +75,13 @@ on the green `a2a-validate / validate` check — never a hand-edit in the space.
 Guide the participant through these steps in order:
 
 1. **Machine account + credential.** The new team's org creates the system's
-   machine account and issues its fine-grained PAT (scopes per §10.5).
+   machine account and issues its fine-grained PAT (scopes per §10.5). On a
+   **private** space — which is what §9.1's `gh repo create --private` makes,
+   so normally all of them — this credential gates READS as well as writes:
+   without one that resolves, `a2a doctor`, `html`, `serve` and `space update`
+   all fail on the mirror fetch, because GitHub answers an unauthenticated
+   request for a private repo with the same `Repository not found` it gives for
+   one that does not exist. Configure it before step 3, not after.
 2. **Manifest PR (G4 gate).** The space admin opens a PR adding the participant
    to `space.yaml` — including the github-login → system-id mapping for the
    machine account and the human owners — plus the section scaffold and a
