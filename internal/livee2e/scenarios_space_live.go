@@ -271,6 +271,16 @@ func spaceLiveUpdateScenario(ctx context.Context, h *harness) (res Result) {
 
 	stdout, stderr, runErr := h.A.Run(ctx, "space", "update", "--dry-run")
 	if runErr != nil {
+		// The shared mapper decides first, for the same reason its sibling
+		// row above does: a dead run context kills the command before it
+		// prints anything, and "the plan lines are missing" is not evidence
+		// about `space update` when the command never ran. Only an error the
+		// mapper declines to classify is a product outcome.
+		if verdict, mapped := verdictForError(runErr); mapped {
+			res.Verdict = verdict
+			res.Observed = fmt.Sprintf("a2a space update --dry-run (%s) could not be driven to a verdict: %v", h.A.System, runErr)
+			return res
+		}
 		res.Verdict = VerdictFail
 		res.Observed = fmt.Sprintf("a2a space update --dry-run (%s) failed: %v", h.A.System, runErr)
 		res.Detail = fmt.Sprintf("stdout: %q | stderr: %q", strings.TrimSpace(stdout), strings.TrimSpace(stderr))

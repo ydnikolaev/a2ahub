@@ -108,6 +108,48 @@ func rwWriteSchema(a *checkout, contractID, body string) error {
 	return os.WriteFile(schemaPath, []byte(body), 0o644)
 }
 
+// rwWriteValidFixture is rwWriteSchema's missing twin. A contract's schema
+// and its declared valid fixture are ONE fact: the compatibility check
+// validates the fixture against the schema, so rewriting either alone leaves
+// the carried set self-contradictory.
+//
+// Live run 2026-08-05 is why this exists. The row rewrote the schema three
+// times and the fixture never, so the 2.x line published a schema demanding
+// an integer beside `a2a contract new`'s scaffolded `{"example":
+// "replace-me"}`. A MAJOR is not compatibility-checked (D-B), so 2.0.0 landed
+// with the contradiction inside it — and every later MINOR on that line was
+// then refused by POL-007 for a fixture the row itself had left behind:
+//
+//	declared minor bump (2.0.0 -> 2.1.0) contradicts computed compatibility:
+//	fixtures/valid/<slug>.json no longer validate against the new version's schemas
+//
+// The step had never executed before, so nothing had ever discovered that the
+// row's own final assertion was unreachable.
+func rwWriteValidFixture(a *checkout, contractID, body string) error {
+	paths, err := contractPathsForID(contractID)
+	if err != nil {
+		return err
+	}
+	fixturePath := filepath.Join(a.Dir, filepath.FromSlash(paths.StagingRoot), filepath.FromSlash(paths.ValidFixtureKey))
+	if _, statErr := os.Stat(fixturePath); statErr != nil {
+		// Same reason rwWriteSchema refuses to create: a fixture this helper
+		// invented would still be picked up by the publish overlay, and the
+		// row would go green while no longer publishing what it names.
+		return fmt.Errorf("livee2e: expected `a2a contract new`'s staged valid fixture at %s: %w", fixturePath, statErr)
+	}
+	return os.WriteFile(fixturePath, []byte(body), 0o644)
+}
+
+// rwFixtureForIntegerSchema is the valid fixture the 2.x line needs beside
+// rwSchemaNarrowedToInteger. It exists so the 2.x carried set can be made
+// SELF-CONSISTENT before a minor is published on it; the 1.x line keeps the
+// scaffolded string fixture, and that asymmetry is what the maintenance
+// 1.2.0 publish depends on.
+const rwFixtureForIntegerSchema = `{
+  "example": 1
+}
+`
+
 // rwSchemaNarrowedToInteger breaks the scaffolded fixture
 // (`{"example": "replace-me"}`) by narrowing `example` from string to
 // integer — a real breaking change against any line whose fixture is the
@@ -362,8 +404,16 @@ func rwRollingWindow(ctx context.Context, h *harness) Result {
 	// report a terminal-state product defect that had not happened: the
 	// cause would be this harness's own stale staging tree. Publishing the
 	// unchanged 2.x schema is the honest operability proof.
+	// Restore the PAIR, not just the schema. 2.1.0 is a minor, so unlike
+	// 2.0.0 it IS compatibility-checked, and the check validates the declared
+	// valid fixture against the declared schema. Leaving the 1.x line's
+	// string fixture next to the 2.x integer schema is precisely what made
+	// this step refuse itself.
 	if err := rwWriteSchema(a, sub.ID, rwSchemaNarrowedToInteger); err != nil {
 		return rwResultFromErr("stage-2.1.0-schema", err, "the 2.x line's own schema is restored before publishing on it")
+	}
+	if err := rwWriteValidFixture(a, sub.ID, rwFixtureForIntegerSchema); err != nil {
+		return rwResultFromErr("stage-2.1.0-schema", err, "the 2.x line's own valid fixture is restored beside its schema")
 	}
 	_, stillOperablePR, err := contractPublishPull(ctx, h, a,
 		contractPublishVersionArgs(sub.ID, "2.1.0", contractPaths.StagingRoot))
