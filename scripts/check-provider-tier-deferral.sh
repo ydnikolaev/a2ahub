@@ -16,7 +16,11 @@ set -euo pipefail
 # authorization — one file a later reader opens, not two. The count is part of
 # the marker on purpose: "3rd" cannot be written once and inherited silently by
 # a 4th, because the gate compares it to the number it actually counted.
-OVERRIDE_MARKER_RE='^consecutive-deferral-acknowledged:[[:space:]]*[0-9]+[[:space:]]'
+# The trailing context is OPTIONAL: a line ending immediately after the
+# number is a signature too, and requiring whitespace after the digits made
+# the gate refuse a correctly-signed record for a reason it did not name.
+# Fail-closed, but wrong-reason — the class this gate exists to end.
+OVERRIDE_MARKER_RE='^consecutive-deferral-acknowledged:[[:space:]]*[0-9]+([[:space:]]|$)'
 OVERRIDE_MARKER_EXAMPLE='consecutive-deferral-acknowledged: <N> — <who authorized shipping the Nth in a row, and why waiting was judged the larger risk>'
 
 # The unix timestamp a path was first ADDED to git, or empty if the path has
@@ -146,8 +150,12 @@ teeth() {
   # trap), and it fires from the top-level script after this function has
   # already returned — a `local` variable would already be unbound by then,
   # silently turning `rm -rf` into a no-op and leaking every temp dir.
-  tmp1="" tmp2="" tmp3="" tmp4=""
-  trap 'rm -rf "${tmp1:-}" "${tmp2:-}" "${tmp3:-}" "${tmp4:-}"' EXIT
+  # Every tmp the cases below create must appear in BOTH lines. Cases 5, 5b
+  # and 6 were added later and their dirs were in neither, so each
+  # `make harness-check` leaked two temp git repos — in a trap whose own
+  # comment explains this exact hazard for the vars it did cover.
+  tmp1="" tmp2="" tmp3="" tmp4="" tmp5="" tmp6=""
+  trap 'rm -rf "${tmp1:-}" "${tmp2:-}" "${tmp3:-}" "${tmp4:-}" "${tmp5:-}" "${tmp6:-}"' EXIT
 
   init_repo() {
     local dir="$1"
