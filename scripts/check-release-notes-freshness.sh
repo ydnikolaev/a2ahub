@@ -58,8 +58,16 @@ run_check() {
       uncovered+="${commit}"$'\t'"${subject}"$'\n'
     fi
   done < <(
+    # internal/livee2e is the live TEST tier, not a user-visible surface: it
+    # ships in the public tree but its only consumer is `make live-e2e`. A
+    # `fix(livee2e)` commit repairs a scenario, never behaviour a release note
+    # could describe, and demanding one taught exactly the wrong reflex —
+    # invent a note, or reword an unrelated entry to re-anchor the gate. The
+    # teeth below pin BOTH halves: a livee2e-only commit stays green, and a
+    # commit that also touches real product code still reds.
     git -C "$ROOT" log "$anchor..HEAD" --format='%H%x09%s' -- \
-      internal/ cmd/ schemas/ space-template/ skill/
+      internal/ cmd/ schemas/ space-template/ skill/ \
+      ':(exclude)internal/livee2e/'
   )
 
   if [ -n "$uncovered" ]; then
@@ -135,7 +143,41 @@ run_teeth() {
     exit 1
   fi
 
-  echo "release-notes-freshness --teeth: uncovered fix reds with id; notes touch greens; docs/chore stay green; breaking commit reds."
+  # Re-anchor: the breaking commit above deliberately left the fixture red, and
+  # the next two assertions are about what a livee2e commit does to a GREEN
+  # gate. Without this they would inherit that red and pass for the wrong
+  # reason — which is how a teeth test stops testing anything.
+  printf '%s\n' 'version: "0.3.0"' >"$tmp/releasenotes/0.3.0.yaml"
+  git -C "$tmp" add releasenotes/0.3.0.yaml
+  git -C "$tmp" commit -q -m 'docs: author 0.3.0 release notes'
+  if ! ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check >/dev/null; then
+    echo "release-notes-freshness --teeth: FAILED — re-anchor did not green the gate." >&2
+    exit 1
+  fi
+
+  # The live test tier is excluded from the product surface — but only alone.
+  mkdir -p "$tmp/internal/livee2e"
+  printf '%s\n' 'package livee2e' >"$tmp/internal/livee2e/scenario.go"
+  git -C "$tmp" add internal/livee2e/scenario.go
+  git -C "$tmp" commit -q -m 'fix(livee2e): repair a scenario step'
+  if ! ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check >/dev/null; then
+    echo "release-notes-freshness --teeth: FAILED — a livee2e-only fix demanded release notes." >&2
+    exit 1
+  fi
+
+  printf '%s\n' 'package livee2e' 'const Touched = true' >"$tmp/internal/livee2e/scenario.go"
+  printf '%s\n' 'package widget' 'const Fixed = true' 'const Metadata = true' 'const Breaking = true' 'const AlsoProduct = true' >"$tmp/internal/widget/widget.go"
+  git -C "$tmp" add internal/livee2e/scenario.go internal/widget/widget.go
+  git -C "$tmp" commit -q -m 'fix(widget): repair behaviour, and its live row'
+  out="$(ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check 2>&1)"
+  rc=$?
+  if [ "$rc" -eq 0 ] || ! grep -q 'fix(widget): repair behaviour' <<<"$out"; then
+    echo "release-notes-freshness --teeth: FAILED — a commit touching product AND livee2e stayed green:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+
+  echo "release-notes-freshness --teeth: uncovered fix reds with id; notes touch greens; docs/chore stay green; breaking commit reds; livee2e-only greens; livee2e+product reds."
 }
 
 case "${1:-check}" in
