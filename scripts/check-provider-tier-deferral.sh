@@ -45,6 +45,7 @@ find_live_e2e_artifacts() {
 check_provider_tier_deferral() {
   local artifact rec ts newest_live=0
   local -a uncleared=()
+  local -a uncleared_paths=()
 
   # Find the most recently ADDED live-e2e evidence artifact. An untracked
   # artifact (no git add-date) is treated as though it does not exist yet
@@ -71,10 +72,15 @@ check_provider_tier_deferral() {
   # about to ship on is exactly the case "refusable by a machine" has to
   # catch — waiting for git history here would make the gate a lagging
   # indicator instead of a refusal.
+  # Two arrays, deliberately: `uncleared` carries DISPLAY strings (which may
+  # be annotated "(uncommitted)") and `uncleared_paths` carries the real
+  # paths. They must not be one array — the override lookup below opens the
+  # newest record as a FILE, and an annotated display string is not a path.
   while IFS= read -r rec; do
     [ -n "$rec" ] || continue
     ts="$(added_at "$rec")"
     if [ -z "$ts" ] || [ "$ts" -gt "$newest_live" ]; then
+      uncleared_paths+=("$rec")
       if [ -z "$ts" ]; then
         uncleared+=("$rec (uncommitted)")
       else
@@ -96,12 +102,17 @@ check_provider_tier_deferral() {
     # owner does not hold is a gate that gets deleted the first time it fires —
     # the same failure mode as prose, with more ceremony. Overridable-but-
     # recorded is the version that survives contact with the person it binds.
-    local newest="${uncleared[${#uncleared[@]}-1]}"
+    local newest="${uncleared_paths[${#uncleared_paths[@]}-1]}"
     local signed
-    signed="$(grep -oE "$OVERRIDE_MARKER_RE" "$newest" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+    # `|| true` is load-bearing under `set -e`: an unsigned record makes both
+    # greps exit non-zero, and a failing command substitution in an assignment
+    # kills the script — which presents as an EMPTY refusal, the one output a
+    # gate must never produce. A gate that dies silently reads as a gate that
+    # refused for reasons it declined to give.
+    signed="$(grep -oE "$OVERRIDE_MARKER_RE" "$newest" 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)"
     if [ -n "$signed" ]; then
       if [ "$signed" -eq "$count" ]; then
-        echo "provider-tier-deferral: ok — $count outstanding, and $newest acknowledges being the ${count}th in a row."
+        echo "provider-tier-deferral: ok — $count outstanding, and $newest acknowledges the streak of ${count}."
         return 0
       fi
       # A marker naming a DIFFERENT count is a signature carried forward from an
@@ -275,9 +286,53 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'acknowledges being the 3th in a row' || {
+  printf '%s' "$out" | grep -q 'acknowledges the streak of 3' || {
     echo "provider-tier-deferral --teeth: FAILED — green did not report that the streak was acknowledged" >&2
     echo "$out" >&2
+    exit 1
+  }
+
+  # Case 5b: the signed record is UNTRACKED — which is the normal state at the
+  # moment a release authors it, and therefore the case that matters most.
+  #
+  # This is a regression test for a real defect in this gate, caught by
+  # running it against the actual v0.19.2 record rather than a fixture: the
+  # outstanding list carried DISPLAY strings, so an untracked entry read
+  # "<path> (uncommitted)", and the override lookup opened that annotated
+  # string as a filename. It found nothing, the grep failed, and `set -e`
+  # killed the script mid-refusal — producing exit 1 with NO output at all.
+  # A gate that dies silently is worse than one that never ran: it reads as a
+  # refusal whose reasons were withheld. Cases 1-5 all used committed
+  # fixtures, where the display string happens to equal the path, so none of
+  # them could see it.
+  tmp6="$(mktemp -d)"
+  init_repo "$tmp6"
+  echo r1 >"$tmp6/docs/features/x/audits/v0.1.0-provider-tier-deferral.md"
+  commit_at "$tmp6" 100 "add v0.1.0 deferral"
+  echo r2 >"$tmp6/docs/features/x/audits/v0.2.0-provider-tier-deferral.md"
+  commit_at "$tmp6" 200 "add v0.2.0 deferral"
+  printf 'r3\nconsecutive-deferral-acknowledged: 3 — signed before the record was committed\n' \
+    >"$tmp6/docs/features/x/audits/v0.3.0-provider-tier-deferral.md"   # deliberately NOT committed
+
+  if ! out="$(cd "$tmp6" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — a signed but uncommitted 3rd record must ship" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+  printf '%s' "$out" | grep -q 'acknowledges the streak of 3' || {
+    echo "provider-tier-deferral --teeth: FAILED — the override was not read from an untracked record" >&2
+    echo "$out" >&2
+    exit 1
+  }
+
+  # ...and unsigned-and-untracked must refuse WITH a message, never die mute.
+  echo r3 >"$tmp6/docs/features/x/audits/v0.3.0-provider-tier-deferral.md"
+  if out="$(cd "$tmp6" && check_provider_tier_deferral 2>&1)"; then
+    echo "provider-tier-deferral --teeth: FAILED — an unsigned 3rd record shipped" >&2
+    exit 1
+  fi
+  [ -n "$out" ] || {
+    echo "provider-tier-deferral --teeth: FAILED — the refusal produced NO output; a mute gate reads as one that withheld its reasons" >&2
     exit 1
   }
 
