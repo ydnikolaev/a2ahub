@@ -1,0 +1,57 @@
+schema: release-notes/v1
+version: "0.19.2"
+released: "2026-08-05"
+headline: "Configuring a private space needs no new token, and doctor stops asking for one repeatedly"
+changes:
+  - id: RN-01902-0
+    kind: fix
+    impact: normal
+    subject: "A space's credential is resolved once per command instead of once per check"
+    detail: >
+      Every command resolved its credential separately at each place that
+      needed one. `a2a doctor` needs one at seven points — the credentials
+      check, the mirror fetch, the visibility, auto-merge, stuck-PR and
+      CODEOWNERS reads, and the scaffolding comparison — and each ran inside a
+      loop over connected spaces, so a project with two spaces resolved
+      fourteen times per run.
+      That was invisible with an `env:` credential, which is a variable read.
+      It is not invisible with a `cmd:` credential, which runs a command: with
+      the common `cmd:gh auth token` entry, one `a2a doctor` launched `gh`
+      fourteen times.
+      Resolution is now memoised for the lifetime of a command, keyed so that
+      different spaces still resolve to different credentials — a space's
+      credential is its own, and only asking the same space twice was waste. A
+      credential that fails to resolve is also remembered, so an unusable
+      configuration produces one failed attempt rather than seven. The
+      credential is held in memory for that command only and is never written
+      anywhere.
+    affects: ["a2a doctor", "a2a sync", "a2a connect", "a2a serve", "a2a html"]
+    action:
+      scope: none
+      why: >
+        Nothing to configure. A command that already worked behaves the same
+        and does less work.
+
+  - id: RN-01902-1
+    kind: fix
+    impact: normal
+    subject: "A private space can be configured with the GitHub login you already have"
+    detail: >
+      When a space needs a credential, `a2a doctor` and the setup
+      documentation asked for a `credentials:` entry in the machine config
+      without showing what one looks like — so a reader with `gh` already
+      authenticated would reasonably conclude they had to create a new
+      personal access token.
+      They do not. A credential entry may be `cmd:gh auth token`, which runs
+      that command and uses its output, reusing the GitHub login already on
+      the machine; `env:<VARIABLE>` reads a token from the environment
+      instead. Both forms are now named where the question actually arises:
+      in doctor's own message when no credential resolves, in the
+      troubleshooting page's `credentials` row, and in the participant
+      onboarding step where the credential is first configured.
+    affects: ["a2a doctor", "machine config", "agent skill"]
+    action:
+      scope: none
+      why: >
+        A space that already resolves a credential is unaffected. A space that
+        does not now gets told the form that requires nothing new.

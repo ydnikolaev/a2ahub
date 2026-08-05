@@ -59,7 +59,7 @@ on:
         # is opt-in and out-of-band, and an opt-in gate is one somebody skips.
         # releasenotes/refdefault_test.go holds this value equal to the newest
         # authored release-notes version on every `make check`, offline.
-        default: "v0.19.1"
+        default: "v0.19.2"
       space-path:
         description: "Working directory of the space content to validate (default: repo root)."
         required: false
