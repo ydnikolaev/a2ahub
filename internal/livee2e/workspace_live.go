@@ -142,6 +142,22 @@ type checkout struct {
 	// is a different thing from an ambient variable leaking in. newHarness
 	// leaves this empty for both checkouts, so live behaviour is unchanged.
 	APIRoot string
+	// Home is APIRoot's own sibling puncture, one HOME per checkout instead
+	// of one per machine: empty means exactly what it always has (the
+	// ambient HOME every child process this checkout spawns already
+	// inherits via checkoutEnv's os.Environ() base — the behaviour a LIVE
+	// run must keep, machineConfigPath's own doc explains why: an
+	// operator's real ~/.config/a2a/config.yaml mirror_root is meant to
+	// apply). A non-empty value is a deliberate, explicit redirection a
+	// caller had to ask for, the same "empty means today, non-empty is
+	// chosen" contract APIRoot documents above — added so a tier with no
+	// real GitHub, and therefore no reason to share ANY machine state, can
+	// give each run its own HOME instead of writing into the operator's
+	// real mirror cache. MirrorDir must consult this field too (its own
+	// doc comment explains why: reading a different config than the child
+	// binary reads is exactly the two-homes-for-one-rule scar it warns
+	// about).
+	Home string
 }
 
 // checkoutEnv builds the child process environment for a checkout's exec:
@@ -163,11 +179,29 @@ type checkout struct {
 // precedent for a narrow, documented puncture of this kind; this parameter
 // is the same shape, made a property of the checkout rather than a single
 // call.
-func checkoutEnv(token, spaceSlug, apiRoot string) []string {
+//
+// home is APIRoot's own sibling puncture (checkout.Home's own doc): empty
+// leaves the parent's HOME — and therefore the ambient ~/.config/a2a and
+// ~/.cache/a2a a real machine carries — untouched in base, which is what a
+// LIVE run must keep doing; non-empty STRIPS whatever HOME base carried and
+// replaces it, the same override shape apiRoot already gets below.
+//
+// Every spawn site reaches this through (*checkout).env() rather than
+// calling it with four positional strings. That is deliberate: this package
+// spawns child processes from four places, and the failure mode of the
+// positional form is a site that quietly passes the wrong field — or, worse,
+// keeps compiling against an older arity and inherits a default nobody chose.
+// A logic run that reached the operator's real HOME from one forgotten spawn
+// site would still pass, while writing into a cache shared with real spaces.
+// It already did exactly that, from two sites, before this was a method.
+func checkoutEnv(token, spaceSlug, apiRoot, home string) []string {
 	base := os.Environ()
 	out := make([]string, 0, len(base)+2)
 	for _, kv := range base {
 		if strings.HasPrefix(kv, githubAPIEnv+"=") {
+			continue
+		}
+		if home != "" && strings.HasPrefix(kv, "HOME=") {
 			continue
 		}
 		out = append(out, kv)
@@ -176,7 +210,21 @@ func checkoutEnv(token, spaceSlug, apiRoot string) []string {
 	if apiRoot != "" {
 		out = append(out, githubAPIEnv+"="+apiRoot)
 	}
+	if home != "" {
+		out = append(out, "HOME="+home)
+	}
 	return out
+}
+
+// env is the ONE way this package builds a child process's environment. Every
+// spawn site — RunIn, the MCP session, the read-only server subprocess —
+// calls it, so a checkout's seam fields cannot be applied at one site and
+// forgotten at another. That is not hypothetical: two sites were left calling
+// a home-less variant when per-checkout HOME landed, and the symptom would
+// have been a "hermetic" run quietly writing into the operator's real mirror
+// cache, still green.
+func (c *checkout) env() []string {
+	return checkoutEnv(c.Token, c.SpaceSlug, c.APIRoot, c.Home)
 }
 
 // Run execs the a2a binary in this checkout's directory with args, returning
@@ -199,7 +247,7 @@ func (c *checkout) Run(ctx context.Context, args ...string) (stdout, stderr stri
 func (c *checkout) RunIn(ctx context.Context, dir string, args ...string) (stdout, stderr string, err error) {
 	cmd := exec.CommandContext(ctx, c.Bin, args...) //nolint:gosec // reason: c.Bin is the attested candidate and argv is supplied only by closed live scenario code.
 	cmd.Dir = dir
-	cmd.Env = checkoutEnv(c.Token, c.SpaceSlug, c.APIRoot)
+	cmd.Env = c.env()
 	var out, errBuf strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
@@ -234,7 +282,7 @@ func (c *checkout) MainContains(ctx context.Context, sha string) (bool, error) {
 func (c *checkout) RunWithAPIRoot(ctx context.Context, apiRoot string, args ...string) (stdout, stderr string, err error) {
 	cmd := exec.CommandContext(ctx, c.Bin, args...) //nolint:gosec // reason: c.Bin is the attested candidate and argv is supplied only by closed live scenario code.
 	cmd.Dir = c.Dir
-	cmd.Env = checkoutEnv(c.Token, c.SpaceSlug, apiRoot)
+	cmd.Env = checkoutEnv(c.Token, c.SpaceSlug, apiRoot, c.Home)
 	var out, errBuf strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
@@ -288,7 +336,15 @@ func (c *checkout) MirrorDir() string {
 	// and the fallback ref below reproduces the pre-fix, project-local/
 	// id-keyed default in that case.
 	cfg, _ := space.LoadProjectConfig(projectConfigPath)
-	machine, _ := space.LoadMachineConfig(machineConfigPath())
+	// machineConfigPathFor(c.Home), not the bare machineConfigPath() this
+	// method used before checkout.Home existed: with a per-checkout HOME
+	// override the harness would otherwise read the PROCESS's own machine
+	// config while the child `a2a` binary it just ran reads c.Home's —
+	// exactly the two-homes-for-one-rule scar this method's own doc comment
+	// above already warns about, one field over. c.Home empty (every live
+	// checkout) resolves to machineConfigPath()'s own process-home answer,
+	// unchanged.
+	machine, _ := space.LoadMachineConfig(machineConfigPathFor(c.Home))
 
 	// The config's space id is the MANIFEST id `connect` repairs the ref to
 	// (harnessSpaceSlug, "livee2e" — matched to c.SpaceSlug, not the URL id
@@ -321,6 +377,24 @@ func machineConfigPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
+	}
+	return filepath.Join(home, ".config", "a2a", "config.yaml")
+}
+
+// machineConfigPathFor resolves the machine config path for home when home
+// is non-empty (a per-checkout HOME override, checkout.Home's own doc), and
+// falls back to machineConfigPath()'s own process-home resolution otherwise
+// — the same "empty means today's behaviour exactly, non-empty is a
+// deliberate redirection" contract APIRoot/Home already share (checkoutEnv's
+// own doc comment).
+//
+// Kept SEPARATE from machineConfigPath rather than widening that function's
+// signature: workspace_test.go calls machineConfigPath() with no arguments,
+// and MirrorDir is the only caller that ever needs the per-checkout
+// override.
+func machineConfigPathFor(home string) string {
+	if home == "" {
+		return machineConfigPath()
 	}
 	return filepath.Join(home, ".config", "a2a", "config.yaml")
 }
