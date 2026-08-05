@@ -177,6 +177,10 @@ changes:
       contract rendered from the frozen v1 template, which still carries
       1.0.0 and cannot be changed without breaking the reproducibility of
       everything already published under it.
+      The template's note on that field states who owns it rather than what
+      state it is in, because publishing rewrites the value and leaves the
+      comment: anything phrased as "unpublished" would have shipped inside
+      every published descriptor, contradicting the version beside it.
     affects: ["a2a contract publish", "a2a contract materialize", "a2a new", "contract templates"]
     action:
       scope: local
