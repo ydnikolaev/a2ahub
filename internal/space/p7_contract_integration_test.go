@@ -243,6 +243,9 @@ func TestP7IT07PreflightRenameAndV2LostACKCollision(t *testing.T) {
 	planningContext.Published = []contract.PublishedContract{{
 		Version: "0.0.0", DescriptorRaw: bytes.Clone(priorCore.Descriptor.Raw), Set: priorSet, Modes: priorModes,
 	}}
+	// The tree this publication overwrites — supplied, not derived; see
+	// PublicationInput.MutationBaseline.
+	planningContext.MutationBaseline = planningContext.Published[0]
 
 	renameReader, renameSource := publicationRenamedSidecarCandidate()
 	main := &publicationMainFake{
