@@ -81,7 +81,7 @@ Guide the participant through these steps in order:
    without one that resolves, `a2a doctor`, `html`, `serve` and `space update`
    all fail on the mirror fetch, because GitHub answers an unauthenticated
    request for a private repo with the same `Repository not found` it gives for
-   one that does not exist. Configure it before step 3, not after.
+   one that does not exist. Configure it before step 3, not after. In `~/.config/a2a/config.yaml`, add a `credentials:` entry with `cmd:gh auth token` to reuse your existing `gh` login, or `env:<VAR>` to read the token from an environment variable.
 2. **Manifest PR (G4 gate).** The space admin opens a PR adding the participant
    to `space.yaml` — including the github-login → system-id mapping for the
    machine account and the human owners — plus the section scaffold and a
