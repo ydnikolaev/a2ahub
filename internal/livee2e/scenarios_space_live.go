@@ -74,6 +74,16 @@ func spaceLiveUpdateScopePreflightScenario(ctx context.Context, h *harness) Resu
 			res.Detail += fmt.Sprintf("; command then exited non-zero (%v) — the advisory still printed first, which is the amended AC-961.5 shape, not a regression", runErr)
 		}
 	case runErr != nil:
+		// The run ceiling expiring kills the command before it prints
+		// anything, and "no advisory on empty output" is not evidence about
+		// AC-961.5. The 2026-08-05 matrix rendered exactly that as a product
+		// defect — the same class repaired in 6bb7949 — so the shared mapper
+		// decides first and only a genuine product outcome reaches VerdictFail.
+		if verdict, mapped := verdictForError(runErr); mapped {
+			res.Verdict = verdict
+			res.Observed = fmt.Sprintf("a2a space update (%s) could not be driven to a verdict: %v", h.B.System, runErr)
+			break
+		}
 		res.Verdict = VerdictFail
 		res.Observed = fmt.Sprintf("a2a space update (%s) exited %v WITHOUT the advisory as its first line", h.B.System, runErr)
 		res.Detail = fmt.Sprintf("stdout: %q | stderr: %q", strings.TrimSpace(stdout), strings.TrimSpace(stderr))

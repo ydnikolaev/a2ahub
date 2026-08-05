@@ -2,8 +2,11 @@ package livee2e
 
 import (
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // makefilePath is repo-relative from this package's directory.
@@ -166,3 +169,36 @@ func TestLiveTierIsNotAMergeGate(t *testing.T) {
 		}
 	}
 }
+
+// TestLiveTimeoutCoversTheRunCeiling holds the one relationship that used to
+// exist only as prose: `go test -timeout` must outlast LiveRunCeiling. If it
+// does not, the go-test harness kills the process before the run's own
+// deadline fires, and the report — the entire product of an hours-long matrix
+// against real GitHub — never renders. It runs untagged, under `make check`,
+// because a guard that only runs with -tags=livee2e fires at the start of the
+// very run it protects, when the window has already been committed.
+func TestLiveTimeoutCoversTheRunCeiling(t *testing.T) {
+	t.Parallel()
+
+	raw, err := os.ReadFile(verifyScriptPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", verifyScriptPath, err)
+	}
+	match := liveTimeoutFlag.FindStringSubmatch(string(raw))
+	if match == nil {
+		t.Fatalf("no `-timeout <n>m` on the livee2e go test line in %s", verifyScriptPath)
+	}
+	minutes, err := strconv.Atoi(match[1])
+	if err != nil {
+		t.Fatalf("timeout %q is not an integer count of minutes: %v", match[1], err)
+	}
+	timeout := time.Duration(minutes) * time.Minute
+	if timeout <= LiveRunCeiling {
+		t.Fatalf("verify.sh -timeout %s does not outlast LiveRunCeiling %s: go test would kill the run before its own deadline and the report would never render",
+			timeout, LiveRunCeiling)
+	}
+}
+
+// liveTimeoutFlag captures the minute count from the livee2e invocation only,
+// so an unrelated `-timeout` elsewhere in verify.sh cannot satisfy this guard.
+var liveTimeoutFlag = regexp.MustCompile(`go test \./internal/livee2e/\.\.\.[^\n]*-timeout (\d+)m`)
