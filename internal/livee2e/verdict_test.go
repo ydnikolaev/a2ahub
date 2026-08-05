@@ -33,6 +33,7 @@ func TestOnlyPassCountsAsGreen(t *testing.T) {
 		{VerdictFail, "fail", false},
 		{VerdictTimedOut, "timed-out", false},
 		{VerdictRefused, "refused", false},
+		{VerdictSkippedProvider, "skipped-provider", false},
 	} {
 		if got := tc.v.String(); got != tc.want {
 			t.Errorf("Verdict(%d).String() = %q, want %q", tc.v, got, tc.want)
@@ -40,6 +41,24 @@ func TestOnlyPassCountsAsGreen(t *testing.T) {
 		if got := tc.v.IsPass(); got != tc.pass {
 			t.Errorf("Verdict(%q).IsPass() = %v, want %v", tc.want, got, tc.pass)
 		}
+	}
+}
+
+// TestSkippedProviderIsNeverAPass is spec 09 §5's own guard on the verdict
+// itself: a logic run that could not judge a provider row must never render
+// as green. Appended after VerdictUnverified deliberately — see
+// VerdictSkippedProvider's own doc comment — so this test also pins that no
+// EARLIER verdict's int value shifted.
+func TestSkippedProviderIsNeverAPass(t *testing.T) {
+	t.Parallel()
+	if VerdictSkippedProvider != 6 {
+		t.Fatalf("VerdictSkippedProvider = %d, want 6 (appended after VerdictUnverified=5 without shifting any existing verdict)", VerdictSkippedProvider)
+	}
+	if got := VerdictSkippedProvider.String(); got != "skipped-provider" {
+		t.Fatalf("VerdictSkippedProvider.String() = %q, want %q", got, "skipped-provider")
+	}
+	if VerdictSkippedProvider.IsPass() {
+		t.Fatal("VerdictSkippedProvider counts as a pass — a logic tier that could not judge a provider row would report green")
 	}
 }
 

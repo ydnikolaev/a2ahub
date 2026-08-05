@@ -38,6 +38,16 @@ const (
 	// VerdictUnverified is reserved for the two optional P7 provider branches.
 	// It is evidence of a named provider limitation, never a pass.
 	VerdictUnverified
+	// VerdictSkippedProvider marks a TierProvider row (or, in a future wave,
+	// a TierLogic row's own ProviderAssertions carve-out) that the LOGIC
+	// tier declined to judge, because the assertion is GitHub's own to
+	// decide and a fake would have invented the answer (spec 09 §5, plan
+	// D-2). Never a pass — IsPass() stays false — and it is what lets the
+	// logic tier report a complete, honest run without ever claiming to
+	// have judged what only the live tier may. Appended after
+	// VerdictUnverified so no existing verdict's int value shifts: report
+	// tokens are compared by golden fixtures.
+	VerdictSkippedProvider
 )
 
 // String renders the verdict for the report. Values are stable report tokens
@@ -57,6 +67,8 @@ func (v Verdict) String() string {
 		return "refused"
 	case VerdictUnverified:
 		return "unverified"
+	case VerdictSkippedProvider:
+		return "skipped-provider"
 	default:
 		// An out-of-range Verdict is a programming error, and the
 		// fail-closed reading of "I do not recognise this" is NOT "pass".
