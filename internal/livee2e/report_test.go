@@ -319,6 +319,159 @@ func TestRenderPrintsEvidenceForAClaimingPass(t *testing.T) {
 	}
 }
 
+// TestRecordRefusesPassOnAProviderRowInALogicRun is spec 09 §5's own point,
+// made impossible to record rather than merely discouraged: a logic run
+// recording a pass for a TierProvider row would be a fake deciding an
+// answer only a provider can give.
+func TestRecordRefusesPassOnAProviderRowInALogicRun(t *testing.T) {
+	t.Parallel()
+	run := NewRunFor("org", "repo", []Scenario{
+		{Name: "provider-row", Tier: TierProvider, Systems: []string{SystemA}, Surfaces: cliOnly()},
+	})
+	run.Tier = TierLogic
+
+	err := run.Record(Result{Scenario: "provider-row", System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass})
+	if err == nil {
+		t.Fatal("logic run recorded a pass for a provider-tier row")
+	}
+}
+
+// TestRecordAllowsPassOnAProviderRowInALiveRun proves the refusal above is
+// specific to the logic tier: recording a real pass for a provider-tier row
+// is the ordinary, intended live-tier outcome and must stay unaffected.
+func TestRecordAllowsPassOnAProviderRowInALiveRun(t *testing.T) {
+	t.Parallel()
+	run := NewRunFor("org", "repo", []Scenario{
+		{Name: "provider-row", Tier: TierProvider, Systems: []string{SystemA}, Surfaces: cliOnly()},
+	})
+	// run.Tier left at its zero value — the live tier.
+
+	if err := run.Record(Result{Scenario: "provider-row", System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+}
+
+// TestRecordRefusesSkippedProviderOnALogicRow is spec 09 §5's other
+// direction: a logic-tier row dodging judgement in the logic tier is the
+// same lie pointing the other way, and it is incoherent in ANY run — not
+// conditioned on run.Tier.
+func TestRecordRefusesSkippedProviderOnALogicRow(t *testing.T) {
+	t.Parallel()
+	run := NewRunFor("org", "repo", []Scenario{
+		{Name: "logic-row", Tier: TierLogic, Systems: []string{SystemA}, Surfaces: cliOnly()},
+	})
+
+	err := run.Record(Result{Scenario: "logic-row", System: SystemA, Surface: SurfaceCLI, Verdict: VerdictSkippedProvider})
+	if err == nil {
+		t.Fatal("recorded skipped-provider for a logic-tier row")
+	}
+}
+
+// TestRecordAllowsSkippedProviderOnAProviderRowInALogicRun is the one
+// coherent use of VerdictSkippedProvider: the logic tier declining to judge
+// a row only the provider tier may judge.
+func TestRecordAllowsSkippedProviderOnAProviderRowInALogicRun(t *testing.T) {
+	t.Parallel()
+	run := NewRunFor("org", "repo", []Scenario{
+		{Name: "provider-row", Tier: TierProvider, Systems: []string{SystemA}, Surfaces: cliOnly()},
+	})
+	run.Tier = TierLogic
+
+	if err := run.Record(Result{Scenario: "provider-row", System: SystemA, Surface: SurfaceCLI, Verdict: VerdictSkippedProvider}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+}
+
+// TestLogicRunExitsZeroWithProviderRowsSkipped is the wave's central design
+// problem (report.go:ExitCode doc): a logic run must be able to be green
+// inside `make check` even though its provider rows are never judged there.
+func TestLogicRunExitsZeroWithProviderRowsSkipped(t *testing.T) {
+	t.Parallel()
+	run := NewRunFor("org", "repo", []Scenario{
+		{Name: "logic-row", Tier: TierLogic, Systems: []string{SystemA}, Surfaces: cliOnly()},
+		{Name: "provider-row", Tier: TierProvider, Systems: []string{SystemA}, Surfaces: cliOnly()},
+	})
+	run.Tier = TierLogic
+
+	if err := run.Record(Result{Scenario: "logic-row", System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass}); err != nil {
+		t.Fatalf("Record logic-row: %v", err)
+	}
+	if err := run.Record(Result{Scenario: "provider-row", System: SystemA, Surface: SurfaceCLI, Verdict: VerdictSkippedProvider}); err != nil {
+		t.Fatalf("Record provider-row: %v", err)
+	}
+
+	if code := run.Report().ExitCode(); code != 0 {
+		t.Fatalf("ExitCode = %d, want 0 — a logic run must be able to be green inside make check", code)
+	}
+}
+
+// TestExitCodeNeverTolerartesASkippedLogicRow is ExitCode's OWN rule proven
+// directly against a hand-built Report, independent of Record's guard —
+// belt and suspenders: even if a logic row's verdict were somehow forced to
+// skipped-provider, ExitCode itself must never treat that as tolerated.
+func TestExitCodeNeverToleratesASkippedLogicRow(t *testing.T) {
+	t.Parallel()
+	report := Report{
+		Tier: TierLogic,
+		Results: []Result{
+			{Scenario: "logic-row", System: SystemA, Surface: SurfaceCLI, Verdict: VerdictSkippedProvider, Tier: TierLogic},
+		},
+	}
+	if code := report.ExitCode(); code != 1 {
+		t.Fatalf("ExitCode = %d, want 1 — a logic row skipped-provider must never be tolerated", code)
+	}
+}
+
+// TestExitCodeTreatsSkippedProviderAsFailureInALiveReport is ExitCode's
+// other guard: a LIVE report (Tier at its zero value) must never tolerate a
+// skipped-provider row, even one declared TierProvider — the live tier must
+// actually judge it.
+func TestExitCodeTreatsSkippedProviderAsFailureInALiveReport(t *testing.T) {
+	t.Parallel()
+	report := Report{
+		Results: []Result{
+			{Scenario: "provider-row", System: SystemA, Surface: SurfaceCLI, Verdict: VerdictSkippedProvider, Tier: TierProvider},
+		},
+	}
+	if code := report.ExitCode(); code != 1 {
+		t.Fatalf("ExitCode = %d, want 1 — a live report must never tolerate a skipped-provider row", code)
+	}
+}
+
+// TestExitCodeTreatsSkippedProviderAsGreenOnlyInALogicReportForAProviderRow
+// is the exact tolerated combination, proven directly against ExitCode.
+func TestExitCodeTreatsSkippedProviderAsGreenOnlyInALogicReportForAProviderRow(t *testing.T) {
+	t.Parallel()
+	report := Report{
+		Tier: TierLogic,
+		Results: []Result{
+			{Scenario: "provider-row", System: SystemA, Surface: SurfaceCLI, Verdict: VerdictSkippedProvider, Tier: TierProvider},
+		},
+	}
+	if code := report.ExitCode(); code != 0 {
+		t.Fatalf("ExitCode = %d, want 0", code)
+	}
+}
+
+// TestRenderShowsSkippedProviderRowVisibly is the D-2/D-3 report contract:
+// a skipped-provider row must show up on its face, the same way a not-run
+// row already does — never silently, never as absent.
+func TestRenderShowsSkippedProviderRowVisibly(t *testing.T) {
+	t.Parallel()
+	run := NewRunFor("a2ahub-live-e2e", "space", []Scenario{
+		{Name: "provider-row", Tier: TierProvider, Systems: []string{SystemA}, Surfaces: cliOnly()},
+	})
+	run.Tier = TierLogic
+	if err := run.Record(Result{Scenario: "provider-row", System: SystemA, Surface: SurfaceCLI, Verdict: VerdictSkippedProvider}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+
+	rendered := run.Report().Render()
+	if !strings.Contains(rendered, "skipped-provider") {
+		t.Fatalf("skipped-provider row is not visible in the rendered report:\n%s", rendered)
+	}
+}
+
 // TestRenderStaysQuietForAnOrdinaryPass is the other half: a pass with no claim
 // prints nothing extra. Without this, "print the evidence" could be satisfied by
 // printing something for every row, which is the failure mode the suppression

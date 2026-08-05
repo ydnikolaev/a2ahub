@@ -28,6 +28,23 @@ type Scenario struct {
 	// provider-setting branch of LE-OC-04 and unsupported-provider branch of
 	// LE-OC-08 may set it.
 	Optional bool
+	// Tier declares which internal/livee2e tier may judge this row's own
+	// verdict (spec 09 §5, tier.go). The ZERO VALUE IS INVALID — every row
+	// must declare TierLogic or TierProvider explicitly, because a row that
+	// forgets to declare must read as a gate failure, never as a silent
+	// default of "logic" (the direction that would let a fake decide an
+	// answer only a provider can give).
+	Tier Tier
+	// ProviderAssertions names the subset of Assertions that only the live
+	// tier may judge, on an otherwise TierLogic row (plan D-2: "progression
+	// is not judgement" — a row that merely progresses through a real merge
+	// stays logic even though one of its named assertions is GitHub's own to
+	// decide). Non-empty only on a TierLogic row: a TierProvider row's
+	// assertions are ALL provider, so naming a subset here would be
+	// incoherent and tier.go's own gate refuses it. Every entry must also
+	// appear in this row's own Assertions — naming one the row does not have
+	// would be a typo that silently exempts nothing.
+	ProviderAssertions []string
 	// Assertions is the complete assertion set this scenario must prove. P7
 	// runtime evidence is accepted only when each named assertion has an
 	// explicit outcome; old matrix rows leave it nil.
@@ -113,38 +130,60 @@ func Catalogue() []Scenario {
 		// AC-960.1 — the rig provisions and scaffolds its own space. No
 		// envelope kind: this row asserts the SPACE exists, not any
 		// artifact's lifecycle.
-		{Name: "space-init", Systems: []string{SystemA}, Surfaces: cliOnly(), Family: "happy"},
-		// AC-960.2 — the ordinary happy path, both systems.
-		{Name: "submit-gate-merge", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"announcement"}, Family: "happy"},
-		{Name: "lifecycle-transitions", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"requirement"}, Family: "happy"},
-		{Name: "contract-publish-deprecate-retire", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"contract"}, Family: "happy"},
-		{Name: "cross-system-visibility", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"announcement"}, Family: "happy"},
-		{Name: "validate-ci-both-modes", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "happy"},
+		//
+		// TierProvider is PROVISIONAL here, not a considered verdict: this
+		// row's decisive assertion is product logic (the space scaffolds
+		// correctly); only its gate progression is provider. It cannot be
+		// expressed as TierLogic + a ProviderAssertions carve-out today
+		// because it is a legacy row carrying no Assertions list to carve
+		// from — provider is the fail-closed placeholder until W7 populates
+		// that list (spec 09 two-tier plan, wave W5 brief §3).
+		{Name: "space-init", Systems: []string{SystemA}, Surfaces: cliOnly(), Family: "happy", Tier: TierProvider},
+		// AC-960.2 — the ordinary happy path, both systems. The gate's own
+		// conclusion (submit -> gate -> merge) is GitHub's own to decide.
+		{Name: "submit-gate-merge", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"announcement"}, Family: "happy", Tier: TierProvider},
+		// TierProvider is PROVISIONAL here — see space-init's own comment
+		// above; the same legacy-row-with-no-Assertions reasoning applies.
+		{Name: "lifecycle-transitions", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"requirement"}, Family: "happy", Tier: TierProvider},
+		// TierProvider is PROVISIONAL here — see space-init's own comment
+		// above; the same legacy-row-with-no-Assertions reasoning applies.
+		{Name: "contract-publish-deprecate-retire", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"contract"}, Family: "happy", Tier: TierProvider},
+		// TierProvider is PROVISIONAL here — see space-init's own comment
+		// above; the same legacy-row-with-no-Assertions reasoning applies.
+		{Name: "cross-system-visibility", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"announcement"}, Family: "happy", Tier: TierProvider},
+		{Name: "validate-ci-both-modes", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "happy", Tier: TierLogic},
 
 		// AC-961.1 — host.CheckStatus resolves the REAL compound context
-		// `a2a-validate / validate` (the P34 defect class).
-		{Name: "checkstatus-compound-context", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "happy"},
+		// `a2a-validate / validate` (the P34 defect class). GitHub's own
+		// check-context naming is decisive here, not merely progression.
+		{Name: "checkstatus-compound-context", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "happy", Tier: TierProvider},
 
 		// AC-961.2 — protection blocks until green; a direct push is rejected.
-		// SystemB only: the provisioner would sail through both.
-		{Name: "protection-blocks-until-green", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary"},
+		// SystemB only: the provisioner would sail through both. Branch
+		// protection is GitHub's own to enforce.
+		{Name: "protection-blocks-until-green", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary", Tier: TierProvider},
 		// direct-push-refused writes a raw marker file straight to main,
-		// never an envelope artifact — no Kinds entry.
-		{Name: "direct-push-refused", Systems: []string{SystemB}, Surfaces: cliOnly(), Family: "refusal"},
+		// never an envelope artifact — no Kinds entry. GitHub's own
+		// protection is what refuses the push.
+		{Name: "direct-push-refused", Systems: []string{SystemB}, Surfaces: cliOnly(), Family: "refusal", Tier: TierProvider},
 
 		// AC-961.3 — THE row: a cross-section PR from B stays RED after the
 		// provisioner re-triggers the run (the v0.6.4 authorization bypass).
-		{Name: "cross-section-retrigger-stays-red", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary"},
+		// Re-trigger semantics are GitHub's own.
+		{Name: "cross-section-retrigger-stays-red", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary", Tier: TierProvider},
 
 		// AC-961.4 — protection's reach, asserted in both directions.
-		{Name: "protection-binds-participant", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary"},
-		{Name: "protection-skips-provisioner", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary"},
+		// enforce_admins is GitHub's own to enforce.
+		{Name: "protection-binds-participant", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary", Tier: TierProvider},
+		{Name: "protection-skips-provisioner", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary", Tier: TierProvider},
 
 		// AC-961.5 — a scopeless credential is refused at pre-flight, not by
 		// a push rejection (the v0.6.3 class). Both rows are about the
-		// SPACE's own config, not an envelope kind.
-		{Name: "space-update-scope-preflight", Systems: []string{SystemB}, Surfaces: cliOnly(), Family: "space"},
-		{Name: "space-update", Systems: []string{SystemA}, Surfaces: cliOnly(), Family: "space"},
+		// SPACE's own config, not an envelope kind. Token-scope reporting is
+		// GitHub's own; space-update's own progression through a real
+		// scoped write is logic.
+		{Name: "space-update-scope-preflight", Systems: []string{SystemB}, Surfaces: cliOnly(), Family: "space", Tier: TierProvider},
+		{Name: "space-update", Systems: []string{SystemA}, Surfaces: cliOnly(), Family: "space", Tier: TierLogic},
 
 		// The tier's own blind spot, made a row. Every other cell asserts a
 		// check this matrix deliberately caused; NOTHING looked at the rest
@@ -159,22 +198,24 @@ func Catalogue() []Scenario {
 		// cell TestLiveMatrix (runner_live_test.go) records directly,
 		// deliberately AFTER driveFamilies returns, rather than through
 		// driveFamilies' own per-family dispatch loop.
-		{Name: "space-ci-has-no-unexplained-failures", Systems: []string{SystemA}, Surfaces: cliOnly(), Family: FamilySpaceCIHealth},
+		{Name: "space-ci-has-no-unexplained-failures", Systems: []string{SystemA}, Surfaces: cliOnly(), Family: FamilySpaceCIHealth, Tier: TierProvider},
 
 		// AC-960.5 — a re-trigger after main moved must assert WHICH ref ran,
-		// because GitHub can serve a stale merge commit (§T6-b).
-		{Name: "executed-ref-not-stale", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary"},
+		// because GitHub can serve a stale merge commit (§T6-b) — stale-ref
+		// serving is GitHub's own to exercise.
+		{Name: "executed-ref-not-stale", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "boundary", Tier: TierProvider},
 
-		// Refusal paths that are cheap to keep honest live.
-		{Name: "out-of-section-write-refused", Systems: []string{SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"announcement"}, Family: "refusal"},
-		{Name: "stale-write-floor-refused", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "refusal"},
+		// Refusal paths that are cheap to keep honest live. Both are the
+		// write funnel's own local refusal, decided before any PR opens.
+		{Name: "out-of-section-write-refused", Systems: []string{SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"announcement"}, Family: "refusal", Tier: TierLogic},
+		{Name: "stale-write-floor-refused", Systems: []string{SystemB}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "refusal", Tier: TierLogic},
 
 		// AC-973.1 (spec 37) — the full producer<->consumer contract-
 		// integrity story, both systems (A publishes/deprecates/retires, B
 		// adopts/acks). Filed under SystemA: it is the one row this
 		// scenario family produces, and A is the producer whose writes the
 		// row's own narrative follows.
-		{Name: "contract-integrity-registered-consumer", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "contract-integrity"},
+		{Name: "contract-integrity-registered-consumer", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "contract-integrity", Tier: TierLogic},
 
 		// P4 (agent-ops-2026-07, spec 04) — the ROLLING WINDOW: several
 		// version lines of one contract live at once, a consumer who
@@ -189,7 +230,7 @@ func Catalogue() []Scenario {
 		// adopter), CI on a maintenance-line publish whose baseline is not
 		// the globally-highest version, and a retire succeeding against
 		// real branch protection while other versions are published.
-		{Name: "contract-rolling-window", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "contract-integrity"},
+		{Name: "contract-rolling-window", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "contract-integrity", Tier: TierLogic},
 
 		// Spec 05a — the contract data exchange loop, against real
 		// GitHub: A publishes a contract and a work_request, B packs and
@@ -203,7 +244,7 @@ func Catalogue() []Scenario {
 		// narrative follows, and a second declaration under SystemB
 		// would double the Actions spend to re-observe the same
 		// exchange from the producer's own end.
-		{Name: "data-loop-fail-supersede-pass", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"work_request", "handoff"}, Family: "data-loop"},
+		{Name: "data-loop-fail-supersede-pass", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"work_request", "handoff"}, Family: "data-loop", Tier: TierLogic},
 
 		// AC-980.1 (spec 38 wave F) — Layer-1 rows for the five envelope
 		// kinds nothing else in this matrix drives: the whole legal
@@ -214,11 +255,11 @@ func Catalogue() []Scenario {
 		// KIND, not per (kind x system)" — a second row in the other
 		// direction would double the Actions spend to re-observe the
 		// same fact).
-		{Name: "question-lifecycle-to-closed", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"question"}, Family: "submitted-family"},
-		{Name: "work-request-lifecycle-to-closed", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"work_request"}, Family: "submitted-family"},
-		{Name: "handoff-lifecycle-to-accepted", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"handoff"}, Family: "submitted-family"},
-		{Name: "response-lifecycle-to-verified", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"response"}, Family: "submitted-family"},
-		{Name: "decision-lifecycle-to-approved", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"decision"}, Family: "draft-family"},
+		{Name: "question-lifecycle-to-closed", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"question"}, Family: "submitted-family", Tier: TierLogic},
+		{Name: "work-request-lifecycle-to-closed", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"work_request"}, Family: "submitted-family", Tier: TierLogic},
+		{Name: "handoff-lifecycle-to-accepted", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"handoff"}, Family: "submitted-family", Tier: TierLogic},
+		{Name: "response-lifecycle-to-verified", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"response"}, Family: "submitted-family", Tier: TierLogic},
+		{Name: "decision-lifecycle-to-approved", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"decision"}, Family: "draft-family", Tier: TierLogic},
 
 		// AC-981.1 (spec 38 wave G, §T2 Layer 2) — one illegal transition
 		// (or, for response, the unauthorized-actor case the brief itself
@@ -230,14 +271,14 @@ func Catalogue() []Scenario {
 		// deterministic branch (plus the run-wide PR count) did not grow.
 		// Filed under SystemA, matching every Layer-1 row's own convention
 		// above (scenarios_illegal_live.go).
-		{Name: "contract-retire-without-deprecation-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "illegal-transitions"},
-		{Name: "requirement-satisfy-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"requirement"}, Family: "illegal-transitions"},
-		{Name: "question-accept-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"question"}, Family: "illegal-transitions"},
-		{Name: "work-request-accept-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"work_request"}, Family: "illegal-transitions"},
-		{Name: "decision-close-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"decision"}, Family: "illegal-transitions"},
-		{Name: "handoff-verify-pass-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"handoff"}, Family: "illegal-transitions"},
-		{Name: "announcement-accept-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "illegal-transitions"},
-		{Name: "response-dispute-by-non-owner-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"response"}, Family: "illegal-transitions"},
+		{Name: "contract-retire-without-deprecation-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"contract"}, Family: "illegal-transitions", Tier: TierLogic},
+		{Name: "requirement-satisfy-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"requirement"}, Family: "illegal-transitions", Tier: TierLogic},
+		{Name: "question-accept-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"question"}, Family: "illegal-transitions", Tier: TierLogic},
+		{Name: "work-request-accept-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"work_request"}, Family: "illegal-transitions", Tier: TierLogic},
+		{Name: "decision-close-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"decision"}, Family: "illegal-transitions", Tier: TierLogic},
+		{Name: "handoff-verify-pass-before-ack-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"handoff"}, Family: "illegal-transitions", Tier: TierLogic},
+		{Name: "announcement-accept-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "illegal-transitions", Tier: TierLogic},
+		{Name: "response-dispute-by-non-owner-refused", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"response"}, Family: "illegal-transitions", Tier: TierLogic},
 
 		// AC-982.1/982.2/982.3 (spec 38 wave H, §T2 Layer 3) — failure and
 		// recovery: the layer an automated fleet actually lives in. Filed
@@ -251,9 +292,12 @@ func Catalogue() []Scenario {
 		// unscheduled failure directly. Declared here exactly like every
 		// other row: the DISTINCT-evidence-class labelling lives in the
 		// rendered report, not in a second catalogue shape.
-		{Name: "five-xx-mid-write-injected-unknown-then-recovered", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "failure-recovery"},
-		{Name: "interrupted-submit-retried-one-pr", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "failure-recovery"},
-		{Name: "concurrent-writes-no-lost-write", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "failure-recovery"},
+		{Name: "five-xx-mid-write-injected-unknown-then-recovered", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "failure-recovery", Tier: TierLogic},
+		{Name: "interrupted-submit-retried-one-pr", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "failure-recovery", Tier: TierLogic},
+		// concurrent-writes-no-lost-write asserts the write funnel never
+		// loses a write under a REAL concurrent PR/merge race — real
+		// workflow-run history and merge ordering are GitHub's own to serve.
+		{Name: "concurrent-writes-no-lost-write", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "failure-recovery", Tier: TierProvider},
 
 		// P46 (spec 46 §T3/§T4, OP-210) — `a2a thread` read back from BOTH
 		// real participants after a full question/response chain. The
@@ -270,6 +314,6 @@ func Catalogue() []Scenario {
 		// Actions spend to re-observe the exact same conversation from the
 		// other end, which is the coverage this row's own name already
 		// claims.
-		{Name: "thread-chain-reads-identically-from-both-sides", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"question", "response"}, Family: "thread-chain"},
+		{Name: "thread-chain-reads-identically-from-both-sides", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"question", "response"}, Family: "thread-chain", Tier: TierLogic},
 	}, OperationalConfidenceCatalogue()...)
 }

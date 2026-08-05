@@ -90,6 +90,16 @@ type Result struct {
 	// publish-safe facts required to produce the candidate-bound scenario log
 	// and manifest row; provider payloads and credentials have no field here.
 	OperationalEvidence *OperationalEvidence
+
+	// Tier is this row's OWN declared tier (Scenario.Tier), not the tier of
+	// the run that produced the result. It is set once, by Run itself, when
+	// the matrix is declared (NewRunFor) and preserved by Record across
+	// every subsequent write — scenario/driver code never sets it directly,
+	// the same way it never sets Scenario/Branch/System/Surface to anything
+	// but the cell's own declared identity. ExitCode and Record both read it
+	// to decide whether a VerdictSkippedProvider is an honest logic-tier
+	// report or an incoherent one (spec 09 §5).
+	Tier Tier
 }
 
 // OperationalEvidence is the runtime-owned half of ScenarioEvidence. Exact
@@ -134,6 +144,15 @@ type cellKey struct {
 type Run struct {
 	Org  string
 	Repo string
+	// Tier names which tier this run IS — TierLogic for the local/offline
+	// entry point. Existing callers construct a Run without ever setting
+	// this field (it did not exist before spec 09 §5), and the live path
+	// must behave exactly as it did before this field existed — so the ZERO
+	// VALUE, not TierProvider, is what "the live tier" means here. Every
+	// check against it (Record, Report.ExitCode) therefore tests
+	// `== TierLogic` specifically and treats everything else, including the
+	// zero value, as the live/provider tier's strict behaviour.
+	Tier Tier
 	// Preflight names the identities every boundary assertion rests on. A
 	// report that does not state them cannot be audited after the fact.
 	Preflight Preflight
@@ -186,6 +205,7 @@ func NewRunFor(org, repo string, scenarios []Scenario) *Run {
 					System:   system,
 					Surface:  surface,
 					Verdict:  VerdictNotRun,
+					Tier:     scenario.Tier,
 				}
 			}
 		}
@@ -197,6 +217,15 @@ func NewRunFor(org, repo string, scenarios []Scenario) *Run {
 // scenario that ran must say what happened, and silently leaving a cell at
 // not-run would hide the one state the report cannot distinguish from
 // "never dispatched".
+//
+// Two further refusals are spec 09 §5's own gate, made impossible to record
+// rather than merely discouraged:
+//
+//   - VerdictPass on a TierProvider row, when this Run itself is the logic
+//     tier: that is a fake deciding an answer only a provider can give.
+//   - VerdictSkippedProvider on a TierLogic row, in ANY run: a logic row
+//     dodging judgement in the logic tier is the same lie pointing the
+//     other way, and it is incoherent regardless of which tier recorded it.
 func (r *Run) Record(res Result) error {
 	key := cellKey{scenario: res.Scenario, branch: res.Branch, system: res.System, surface: res.Surface}
 	cell, ok := r.results[key]
@@ -210,6 +239,19 @@ func (r *Run) Record(res Result) error {
 	if res.Verdict == VerdictUnverified && !operationalOptionalBranch(res.Scenario, res.Branch) {
 		return fmt.Errorf("livee2e: %s/%s is mandatory and cannot be unverified", res.Scenario, res.Branch)
 	}
+	if res.Verdict == VerdictPass && cell.Tier == TierProvider && r.Tier == TierLogic {
+		return fmt.Errorf("livee2e: %s/%s/%s/%s is a provider-tier row — the logic tier cannot record it as a pass (spec 09 §5)",
+			res.Scenario, res.Branch, res.System, res.Surface)
+	}
+	if res.Verdict == VerdictSkippedProvider && cell.Tier == TierLogic {
+		return fmt.Errorf("livee2e: %s/%s/%s/%s is a logic-tier row — it cannot be recorded skipped-provider",
+			res.Scenario, res.Branch, res.System, res.Surface)
+	}
+	// Tier is the cell's own declared identity, set once by NewRunFor —
+	// never supplied by scenario/driver code — so it is preserved across
+	// this overwrite exactly like the key fields (Scenario/Branch/System/
+	// Surface) the caller already repeats faithfully.
+	res.Tier = cell.Tier
 	*cell = res
 	return nil
 }
@@ -235,6 +277,7 @@ func (r *Run) Report() Report {
 	out := Report{
 		Org:                   r.Org,
 		Repo:                  r.Repo,
+		Tier:                  r.Tier,
 		Preflight:             r.Preflight,
 		VerificationCandidate: r.VerificationCandidate,
 		ExecutionCandidate:    r.ExecutionCandidate,
@@ -249,8 +292,12 @@ func (r *Run) Report() Report {
 
 // Report is a rendered-ready snapshot of a run.
 type Report struct {
-	Org                   string
-	Repo                  string
+	Org  string
+	Repo string
+	// Tier names which tier produced this report. The ZERO VALUE means the
+	// live tier — see Run.Tier's own doc comment for why that is the
+	// direction that keeps the existing live path byte-for-byte unchanged.
+	Tier                  Tier
 	Preflight             Preflight
 	VerificationCandidate CandidateAttestation
 	ExecutionCandidate    CandidateAttestation
@@ -269,8 +316,10 @@ func (r Report) Tally() map[Verdict]int {
 
 // ExitCode classifies the run:
 //
-//	0 — every declared cell ran; mandatory cells passed and only the two
-//	    explicitly optional provider branches may be unverified
+//	0 — every declared cell ran; mandatory cells passed, only the two
+//	    explicitly optional provider branches may be unverified, and — in a
+//	    LOGIC report only — a TierProvider row may be skipped-provider
+//	    rather than passed
 //	1 — the run happened and at least one cell did not pass
 //	2 — the run did not happen (not configured, aborted, or an empty matrix)
 //
@@ -279,6 +328,18 @@ func (r Report) Tally() map[Verdict]int {
 // would teach us to read a red exit as a known-flaky nuisance. Zero is
 // unreachable without at least one cell, so an empty matrix can never exit
 // green (AC-962.2).
+//
+// The skipped-provider tolerance is spec 09 §5's own design problem: a
+// PROVIDER-tier row's own verdict must never be forced through the logic
+// tier (Record already refuses that), so a logic run that reaches every row
+// it declared MUST be able to exit 0 while its provider rows sit at
+// VerdictSkippedProvider — otherwise the logic lane could never be green
+// inside `make check`, which is the whole point of this wave. The tolerance
+// is narrow on purpose: it fires only when BOTH r.Tier == TierLogic (this
+// report is the logic tier's own) AND the row's OWN declared tier is
+// TierProvider. A live report (r.Tier != TierLogic, which includes its zero
+// value — see Report.Tier's own doc comment) or a row declared TierLogic
+// stays a failure, exactly as today.
 //
 // NOTE on the process status: the live entry point is a `go test` target, and
 // `go test` has only pass/fail, so `make live-e2e` reliably exits NON-ZERO on
@@ -290,10 +351,18 @@ func (r Report) ExitCode() int {
 	if r.NotRunReason != "" || len(r.Results) == 0 {
 		return 2
 	}
+	logicReport := r.Tier == TierLogic
 	for _, res := range r.Results {
-		if !res.Verdict.IsPass() && (res.Verdict != VerdictUnverified || !operationalOptionalBranch(res.Scenario, res.Branch)) {
-			return 1
+		if res.Verdict.IsPass() {
+			continue
 		}
+		if res.Verdict == VerdictUnverified && operationalOptionalBranch(res.Scenario, res.Branch) {
+			continue
+		}
+		if res.Verdict == VerdictSkippedProvider && logicReport && res.Tier == TierProvider {
+			continue
+		}
+		return 1
 	}
 	return 0
 }
