@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ydnikolaev/a2ahub/internal/host"
 )
 
 // indexLockPollInterval is how long runGitRetryLocked sleeps between
@@ -40,7 +42,23 @@ const indexLockWaitBudget = 2 * time.Second
 // never overwrites unrelated content. Git plumbing is os/exec with
 // explicit argv (never sh -c); no network happens in this package's own
 // tests (testkit/spacefixture's bare-repo fixtures are local paths).
-func CloneOrFetch(ctx context.Context, dir, repoURL string) error {
+//
+// credential authenticates the two calls that reach the remote. It is a
+// REQUIRED parameter carrying an optional value, and the distinction is the
+// whole point — the same argument mutateTree makes for the mirror lock, made
+// for the mirror's credential.
+//
+// Until August 2026 this function took no credential at all and was the only
+// network git in the product that did not, which nothing noticed for as long
+// as every space repository was public: GitHub serves a public repo to an
+// anonymous clone. The moment a space went private the whole read surface
+// died at once — doctor, sync, html, submit, `space update` — behind GitHub's
+// deliberately ambiguous 404 ("Repository not found"), which says the same
+// thing for "does not exist" and "you are not allowed to know". Passing
+// host.Credential{} still means "run git tokenless", which a public space
+// legitimately needs; what changed is that it is now a decision a caller
+// makes and a reviewer can see, not a default nobody chose.
+func CloneOrFetch(ctx context.Context, dir, repoURL string, credential host.Credential) error {
 	const op = "CloneOrFetch"
 
 	empty, err := dirIsEmptyOrAbsent(dir)
@@ -52,7 +70,7 @@ func CloneOrFetch(ctx context.Context, dir, repoURL string) error {
 		if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 			return &Error{Op: op, Input: dir, Err: err}
 		}
-		if err := runGit(ctx, "", "clone", repoURL, dir); err != nil {
+		if err := runNetworkGit(ctx, "", credential, "clone", repoURL, dir); err != nil {
 			return &Error{Op: op, Input: dir, Err: err}
 		}
 		return nil
@@ -84,7 +102,7 @@ func CloneOrFetch(ctx context.Context, dir, repoURL string) error {
 	}
 	defer func() { _ = lock.Release() }()
 
-	if err := runGit(ctx, dir, "fetch", "origin"); err != nil {
+	if err := runNetworkGit(ctx, dir, credential, "fetch", "origin"); err != nil {
 		return &Error{Op: op, Input: dir, Err: err}
 	}
 	if err := checkoutRemoteHead(ctx, lock, dir); err != nil {
@@ -370,8 +388,36 @@ func isGitRepo(dir string) bool {
 
 // runGit runs `git <args...>` with cwd=dir (dir=="" uses the process's
 // own cwd) via explicit argv, returning the combined output on failure.
+//
+// LOCAL git only. Anything that contacts a remote goes through
+// runNetworkGit instead, and TestNetworkGitVerbsRouteThroughRunNetworkGit
+// fails the build if a network verb appears anywhere else in this package.
 func runGit(ctx context.Context, dir string, args ...string) error {
 	_, err := runGitOutput(ctx, dir, nil, args...)
+	return err
+}
+
+// networkGitVerbs are the git subcommands that contact a remote. The
+// package-level source gate reads this list, so adding a verb here is what
+// brings it under the credential rule — there is no second place to update.
+var networkGitVerbs = []string{"clone", "fetch", "pull", "push", "ls-remote", "remote"}
+
+// runNetworkGit is the ONLY function in this package that may run a git
+// command against a REMOTE, and the only reason it exists separately from
+// runGit is to make that a countable, gate-checkable fact rather than a
+// convention.
+//
+// It prepends the credential's args BEFORE the subcommand, which is not a
+// style choice. `git clone -c http.extraheader=...` — the flag AFTER the
+// subcommand — persists that config into the newly created repository, so the
+// token would be written verbatim into <mirror>/.git/config. A mirror is
+// machine-level shared state (mirror_root puts every project's clone of a
+// space in one directory), so that file is readable by every project on the
+// machine and survives the process by design. `git -c ... clone` applies the
+// override to this invocation only. Embedding the token in the URL is worse
+// still for the same reason: git writes it to remote.origin.url.
+func runNetworkGit(ctx context.Context, dir string, credential host.Credential, args ...string) error {
+	_, err := runGitOutput(ctx, dir, nil, append(host.GitAuthArgs(credential), args...)...)
 	return err
 }
 

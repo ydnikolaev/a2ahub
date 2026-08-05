@@ -197,7 +197,7 @@ func (s *Store) SyncIfStaleResults(ctx context.Context) []SpaceSyncResult {
 		}
 		sm := spaces[idx]
 		mctx, cancel := context.WithTimeout(ctx, perMirrorTimeout)
-		err := s.cloneOrFetch(mctx, sm.Dir, sm.RepoURL)
+		err := s.cloneOrFetch(mctx, sm.Dir, sm.RepoURL, sm.Credential)
 		cancel()
 		if err != nil {
 			results = append(results, SpaceSyncResult{

@@ -228,7 +228,7 @@ func TestDoctorRunNonZeroExitAndActionableMessageOnFailure(t *testing.T) {
 	}
 	cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
 	cmd.lookupGit = func() error { return nil }
-	cmd.cloneOrFetch = func(context.Context, string, string) error { return errors.New("boom") }
+	cmd.cloneOrFetch = func(context.Context, string, string, host.Credential) error { return errors.New("boom") }
 	cmd.readFile = func(string) ([]byte, error) { return nil, os.ErrNotExist }
 
 	var stdout, stderr bytes.Buffer
@@ -422,7 +422,7 @@ func TestDoctorCheckSpaceAccess(t *testing.T) {
 	t.Run("pass", func(t *testing.T) {
 		t.Parallel()
 		cmd := newTestDoctorCommand()
-		cmd.cloneOrFetch = func(context.Context, string, string) error { return nil }
+		cmd.cloneOrFetch = func(context.Context, string, string, host.Credential) error { return nil }
 		ok, detail := cmd.doctorCheckSpaceAccess(context.Background(), cfg, space.MachineConfig{})
 		if !ok {
 			t.Fatalf("want pass, got fail: %s", detail)
@@ -432,7 +432,7 @@ func TestDoctorCheckSpaceAccess(t *testing.T) {
 	t.Run("fail unreachable mirror", func(t *testing.T) {
 		t.Parallel()
 		cmd := newTestDoctorCommand()
-		cmd.cloneOrFetch = func(context.Context, string, string) error { return errors.New("connection refused") }
+		cmd.cloneOrFetch = func(context.Context, string, string, host.Credential) error { return errors.New("connection refused") }
 		ok, detail := cmd.doctorCheckSpaceAccess(context.Background(), cfg, space.MachineConfig{})
 		if ok {
 			t.Fatal("want fail, got pass")
@@ -1961,7 +1961,7 @@ func TestDoctorCheckSkippedFiles(t *testing.T) {
 		}
 		cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
 		cmd.lookupGit = func() error { return nil }
-		cmd.cloneOrFetch = func(context.Context, string, string) error { return nil }
+		cmd.cloneOrFetch = func(context.Context, string, string, host.Credential) error { return nil }
 
 		var stdout, stderr bytes.Buffer
 		code := cmd.Run(context.Background(), nil, IO{Stdout: &stdout, Stderr: &stderr})

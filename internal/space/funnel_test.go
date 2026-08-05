@@ -710,7 +710,7 @@ func TestDirectGitNoHub(t *testing.T) {
 	machine := MachineConfig{}
 
 	mirrorDir := ResolveMirrorLocation(t.TempDir(), proj.Spaces[0], machine)
-	if err := CloneOrFetch(context.Background(), mirrorDir, proj.Spaces[0].RepoURL); err != nil {
+	if err := CloneOrFetch(context.Background(), mirrorDir, proj.Spaces[0].RepoURL, host.Credential{}); err != nil {
 		t.Fatalf("CloneOrFetch: %v", err)
 	}
 
@@ -1586,7 +1586,7 @@ func TestFunnelConcurrentSubmitsOneMirrorNoCrossedWrite(t *testing.T) {
 
 	fx := spacefixture.New(t, "alpha", "bravo")
 	shared := filepath.Join(t.TempDir(), "shared-mirror")
-	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("seed shared mirror: %v", err)
 	}
 
@@ -1635,7 +1635,7 @@ func TestFunnelSequentialSubmitsOneMirrorNoInheritedFiles(t *testing.T) {
 
 	fx := spacefixture.New(t, "alpha", "bravo")
 	shared := filepath.Join(t.TempDir(), "shared-mirror")
-	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("seed shared mirror: %v", err)
 	}
 
@@ -1743,7 +1743,7 @@ func TestFunnelLeavesTheMirrorOnBaseNotOnTheWriteBranch(t *testing.T) {
 
 	fx := spacefixture.New(t, "alpha", "bravo")
 	shared := filepath.Join(t.TempDir(), "shared-mirror")
-	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("seed shared mirror: %v", err)
 	}
 
@@ -1877,7 +1877,7 @@ func TestSubmitRefusesANestingArtifactIDBeforeAnyGitAction(t *testing.T) {
 
 	fx := spacefixture.New(t, "axon")
 	mirror := filepath.Join(t.TempDir(), "mirror")
-	if err := CloneOrFetch(context.Background(), mirror, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), mirror, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("seed clone: %v", err)
 	}
 
@@ -1944,7 +1944,7 @@ func TestFunnelConcurrentSubmitsSameSystemNoCrossedWrite(t *testing.T) {
 
 	fx := spacefixture.New(t, "alpha", "bravo")
 	shared := filepath.Join(t.TempDir(), "shared-mirror")
-	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("seed shared mirror: %v", err)
 	}
 
@@ -2016,7 +2016,7 @@ func TestFunnelWriteConcurrentWithReadRefreshLeavesBothIntact(t *testing.T) {
 
 	fx := spacefixture.New(t, "alpha", "bravo")
 	shared := filepath.Join(t.TempDir(), "shared-mirror")
-	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("seed shared mirror: %v", err)
 	}
 
@@ -2046,7 +2046,7 @@ func TestFunnelWriteConcurrentWithReadRefreshLeavesBothIntact(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			readErrs[i] = CloneOrFetch(context.Background(), shared, fx.RemoteURL())
+			readErrs[i] = CloneOrFetch(context.Background(), shared, fx.RemoteURL(), host.Credential{})
 		}(i)
 	}
 	close(start)
@@ -2076,7 +2076,7 @@ func TestFunnelWriteConcurrentWithReadRefreshLeavesBothIntact(t *testing.T) {
 	}
 
 	// And the mirror is still usable by the next caller either way.
-	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("mirror unusable after the race: %v", err)
 	}
 }
@@ -2090,7 +2090,7 @@ func TestFunnelThreeSystemsOneMirrorNoCrossedWrite(t *testing.T) {
 
 	fx := spacefixture.New(t, "alpha", "bravo", "gamma")
 	shared := filepath.Join(t.TempDir(), "shared-mirror")
-	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), shared, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("seed shared mirror: %v", err)
 	}
 

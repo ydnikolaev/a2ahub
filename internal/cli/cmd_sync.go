@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
@@ -43,7 +44,8 @@ type SyncCommand struct {
 	loadProjectConfig func(path string) (space.ProjectConfig, error)
 	loadMachineConfig func(path string) (space.MachineConfig, error)
 	resolveMirror     func(projectRoot string, ref space.Ref, machine space.MachineConfig) string
-	cloneOrFetch      func(ctx context.Context, dir, repoURL string) error
+	cloneOrFetch      func(ctx context.Context, dir, repoURL string, credential host.Credential) error
+	resolveCredential credentialResolver
 	// refreshUpdate is the spec 19 T3(b) consented-network-verb seam: `a2a
 	// sync` is already the consented network verb, so it refreshes the T3
 	// update-check cache synchronously (best-effort — never fails sync).
@@ -70,6 +72,7 @@ func NewSyncCommand(projectConfigPath, machineConfigPath, projectRoot string, pe
 		loadMachineConfig: space.LoadMachineConfig,
 		resolveMirror:     space.ResolveMirrorLocation,
 		cloneOrFetch:      space.CloneOrFetch,
+		resolveCredential: space.ResolveCredential,
 		refreshUpdate:     defaultRefreshUpdate(machineConfigPath),
 		refreshAvatars:    func(context.Context) error { return nil },
 	}
@@ -164,7 +167,8 @@ func (c *SyncCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	allOK := true
 	for _, ref := range cfg.Spaces {
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
-		if err := c.cloneOrFetch(ctx, dir, ref.RepoURL); err != nil {
+		credential := mirrorCredential(ctx, c.resolveCredential, ref.ID, machine)
+		if err := c.cloneOrFetch(ctx, dir, ref.RepoURL, credential); err != nil {
 			allOK = false
 			_, _ = fmt.Fprintf(stdio.Stderr, "sync: %s: %v\n", ref.ID, err)
 			continue

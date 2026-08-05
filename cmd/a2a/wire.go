@@ -257,7 +257,7 @@ func buildCommands() map[string]command {
 		// the full stamp made `a2a doctor` report `versions: FAIL` against
 		// every space that pins min_binary_version (P10 e2e surfaced it).
 		cmd := cli.NewDoctorCommand(h, version, p.projectConfig, p.machineConfig, p.projectRoot)
-		if store, storeErr := buildStore(p); storeErr == nil {
+		if store, storeErr := buildStore(context.Background(), p); storeErr == nil {
 			cmd.ClassificationSummaryReader = doctorClassificationReader{store: store}
 		}
 		// The "space scaffolding current" row compares the connected space's
@@ -343,7 +343,7 @@ func buildCommands() map[string]command {
 			if err != nil {
 				return fail(stderr, err)
 			}
-			store, err := buildStore(p)
+			store, err := buildStore(ctx, p)
 			if err != nil {
 				return failf(stderr, "a2a: %v", err)
 			}
@@ -577,7 +577,7 @@ func readVerbs() map[string]func(*cache.Store) cli.Command {
 // empty while the user has real spaces and a typo, an undiagnosable failure
 // the no-swallowed-errors rail exists to prevent. Only os.ErrNotExist (the
 // file genuinely absent) is swallowed.
-func buildStore(p paths) (*cache.Store, error) {
+func buildStore(ctx context.Context, p paths) (*cache.Store, error) {
 	cfg, err := space.LoadProjectConfig(p.projectConfig)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("load project config: %w", err)
@@ -594,7 +594,8 @@ func buildStore(p paths) (*cache.Store, error) {
 			manifest = m
 		} // a not-yet-cloned mirror yields a zero manifest; the store copes
 		mirrors = append(mirrors, cache.SpaceMirror{
-			SpaceID: ref.ID, Dir: dir, RepoURL: ref.RepoURL, Manifest: manifest,
+			SpaceID: ref.ID, Dir: dir, RepoURL: ref.RepoURL,
+			Credential: readCredential(ctx, ref.ID, machine), Manifest: manifest,
 		})
 	}
 	store := cache.NewStore(cfg.System, cacheDirOf(p), mirrors, time.Now, 0)
@@ -615,7 +616,7 @@ func newProjectAvatarRefresher(p paths) (func(context.Context) error, error) {
 		return nil, fmt.Errorf("configure avatar cache: %w", err)
 	}
 	return func(ctx context.Context) error {
-		store, err := buildStore(p)
+		store, err := buildStore(ctx, p)
 		if err != nil {
 			return fmt.Errorf("read refreshed space manifests: %w", err)
 		}
@@ -961,7 +962,7 @@ func awaitResolver(p paths) cli.AwaitResolver {
 			Branch: selected.marker.Branch,
 			Repo:   host.Repo{Owner: owner, Name: name}, Credential: cred,
 			Refresh: func(refreshCtx context.Context) error {
-				return space.CloneOrFetch(refreshCtx, mirrorDir, selected.ref.RepoURL)
+				return space.CloneOrFetch(refreshCtx, mirrorDir, selected.ref.RepoURL, cred)
 			},
 			Clear: func() error {
 				return cache.RemoveMarker(cacheDirOf(p), selected.ref.ID, artifactID)
@@ -1040,7 +1041,7 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 	ref := resolveTargetSpaceRef(cfg, machine, p.projectRoot, firstArtifactID(args))
 	mirrorDir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
 	if syncMirror {
-		if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL); err != nil {
+		if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL, readCredential(ctx, ref.ID, machine)); err != nil {
 			return lifecycleDeps{}, failf(stderr, "a2a: mirror sync failed: %v", err)
 		}
 	}
@@ -1216,7 +1217,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	}
 
 	mirrorDir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
-	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL); err != nil {
+	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL, readCredential(ctx, ref.ID, machine)); err != nil {
 		return failf(stderr, "a2a submit: mirror sync failed: %v", err)
 	}
 	manifest, err := loadManifest(mirrorDir)
@@ -1431,7 +1432,7 @@ func wireSpaceUpdate(ctx context.Context, cmd *cli.SpaceCommand, args []string) 
 		return fmt.Errorf("a2a space update: unreadable machine config (%s): %w", p.machineConfig, err)
 	}
 	mirrorDir := space.ResolveMirrorLocation(p.projectRoot, ref, machine)
-	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL); err != nil {
+	if err := space.CloneOrFetch(ctx, mirrorDir, ref.RepoURL, readCredential(ctx, ref.ID, machine)); err != nil {
 		return fmt.Errorf("a2a space update: mirror sync failed: %w", err)
 	}
 	cred, err := resolveCredential(ctx, ref.ID, machine)
@@ -1529,6 +1530,26 @@ func resolveCredential(ctx context.Context, spaceID string, machine space.Machin
 		ref = parsed
 	}
 	return space.ResolveCredential(ctx, space.CredentialEnvVar(spaceID), ref)
+}
+
+// readCredential is resolveCredential for a MIRROR REFRESH: same precedence,
+// but an unresolvable credential yields the empty one instead of an error.
+//
+// Every read verb in this binary works today against a public space with no
+// credential configured at all, so a refresh that REQUIRED one would turn a
+// working setup into a broken one to buy nothing. The credential is what makes
+// a PRIVATE space readable; where it is absent, git says so in the remote's
+// own words and `a2a doctor` translates that into the actionable sentence.
+//
+// Every write path keeps calling resolveCredential and keeps failing loudly —
+// a write with no credential cannot succeed, and pretending otherwise would
+// only move the error somewhere less informative.
+func readCredential(ctx context.Context, spaceID string, machine space.MachineConfig) host.Credential {
+	credential, err := resolveCredential(ctx, spaceID, machine)
+	if err != nil {
+		return host.Credential{}
+	}
+	return credential
 }
 
 // parseGitHubRepo extracts owner/name from a GitHub remote URL

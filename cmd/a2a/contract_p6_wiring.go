@@ -140,7 +140,11 @@ func (c *contractP6Core) preflight(ctx context.Context, input contractP6Publicat
 	if err != nil {
 		return space.ContractPublicationResult{}, err
 	}
-	repository, err := c.publicationRepository()
+	// The REQUEST stays credential-free — preflight performs no write and must
+	// not imply one. The REPOSITORY still needs a credential, because its
+	// refresh fetches origin/main, and against a private space an unauthenticated
+	// fetch cannot even see the branch it is asked to pin.
+	repository, err := c.publicationRepository(c.readCredential(ctx))
 	if err != nil {
 		return space.ContractPublicationResult{}, err
 	}
@@ -164,7 +168,7 @@ func (c *contractP6Core) publish(ctx context.Context, input contractP6Publicatio
 	if err != nil {
 		return space.ContractPublicationResult{}, err
 	}
-	repository, err := c.publicationRepository()
+	repository, err := c.publicationRepository(credential)
 	if err != nil {
 		return space.ContractPublicationResult{}, err
 	}
@@ -192,11 +196,24 @@ func (c *contractP6Core) publish(ctx context.Context, input contractP6Publicatio
 	return service.Publish(ctx, request)
 }
 
-func (c *contractP6Core) publicationRepository() (*space.ContractPublicationRepository, error) {
+func (c *contractP6Core) publicationRepository(credential host.Credential) (*space.ContractPublicationRepository, error) {
 	return space.NewContractPublicationRepository(
-		c.mirrorDir, c.remoteURL,
+		c.mirrorDir, c.remoteURL, credential,
 		contractManifestEngine{engine: c.engine}, contractHistoryDocumentEngine{engine: c.engine},
 	)
+}
+
+// readCredential resolves this space's credential for a REFRESH, degrading to
+// the empty credential when none resolves — the same lenient sibling of
+// resolveCredential that wire.go carries, and for the same reason. Preflight
+// in particular must keep working against a public space with no credential
+// configured, while still being able to reach a private one.
+func (c *contractP6Core) readCredential(ctx context.Context) host.Credential {
+	credential, err := c.resolveCredential(ctx)
+	if err != nil {
+		return host.Credential{}
+	}
+	return credential
 }
 
 func (c *contractP6Core) publicationRequest(ctx context.Context, input contractP6PublicationInput, credential host.Credential, publishing bool) (space.ContractPublicationRequest, error) {

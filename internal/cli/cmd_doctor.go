@@ -66,7 +66,7 @@ type DoctorCommand struct {
 	loadProjectConfig func(path string) (space.ProjectConfig, error)
 	loadMachineConfig func(path string) (space.MachineConfig, error)
 	resolveMirror     func(projectRoot string, ref space.Ref, machine space.MachineConfig) string
-	cloneOrFetch      func(ctx context.Context, dir, repoURL string) error
+	cloneOrFetch      func(ctx context.Context, dir, repoURL string, credential host.Credential) error
 	resolveCredential func(ctx context.Context, explicitEnvVar string, ref space.CredentialReference) (host.Credential, error)
 	readFile          func(path string) ([]byte, error)
 	lookupGit         func() error
@@ -459,12 +459,98 @@ func (c *DoctorCommand) doctorCheckSpaceAccess(ctx context.Context, cfg space.Pr
 	var failures []string
 	for _, ref := range cfg.Spaces {
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
-		if err := c.cloneOrFetch(ctx, dir, ref.RepoURL); err != nil {
-			ok = false
-			failures = append(failures, fmt.Sprintf("%s: %v", ref.ID, err))
+		credential := mirrorCredential(ctx, c.resolveCredential, ref.ID, machine)
+		err := c.cloneOrFetch(ctx, dir, ref.RepoURL, credential)
+		if err == nil {
+			continue
 		}
+		ok = false
+		failure := fmt.Sprintf("%s: %v", ref.ID, err)
+		if hint := c.doctorPrivateRepoHint(ctx, ref, credential, err); hint != "" {
+			failure += " — " + hint
+		}
+		failures = append(failures, failure)
 	}
 	return ok, strings.Join(failures, "; ")
+}
+
+// gitRepositoryNotFound reports whether a failed git fetch/clone carries
+// GitHub's not-found answer.
+//
+// It matches the SERVER's line ("remote: Repository not found.") rather than
+// git's own "fatal: repository '<url>' not found", because git's is one of its
+// translated die() strings and would stop matching under a non-C locale, while
+// the remote: line is relayed verbatim from GitHub in English.
+//
+// The reason this string is worth naming at all: GitHub answers "does not
+// exist" and "exists, and you may not know that" identically and on purpose,
+// so the message alone can never tell an operator which one happened. That is
+// exactly the question doctor is in a position to answer, because it can ask
+// the API with a credential the git call did not have.
+func gitRepositoryNotFound(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "repository not found")
+}
+
+// doctorPrivateRepoHint turns GitHub's ambiguous 404 into the sentence the
+// operator can act on, or returns "" when it has nothing certain to add.
+//
+// This exists because of a real half-hour of confusion: after a space was made
+// private, `a2a doctor` printed `space access: FAIL: ... Repository not found`
+// and, four rows later, `repository visibility [getvisa]: PASS`. Both were
+// accurate. The visibility row reads the API, which is authenticated; the
+// access row runs git, which was not. Doctor already knew the repository
+// existed and was private, and still relayed a 404 that reads as "your URL is
+// wrong". Every check it needs is already wired here, so the only thing
+// missing was asking.
+//
+// It reports only what it verified. A repository the API confirms is public
+// gets no hint at all: the 404 then means something else (a typo'd URL, a
+// deleted repo) and inventing a privacy explanation would send the operator
+// down the wrong path.
+func (c *DoctorCommand) doctorPrivateRepoHint(
+	ctx context.Context,
+	ref space.Ref,
+	credential host.Credential,
+	err error,
+) string {
+	if !gitRepositoryNotFound(err) {
+		return ""
+	}
+	if credential.Token == "" {
+		// Nothing was authenticated — neither the fetch that just failed nor
+		// the API probe that would classify it. That absence IS the finding:
+		// an unauthenticated fetch of a private repository produces precisely
+		// this error, so name the possibility and the fix without asserting it.
+		return fmt.Sprintf("no credential resolved for %s, so the mirror fetch ran unauthenticated; "+
+			"GitHub answers an unauthenticated fetch of a PRIVATE repository with exactly this 404 — "+
+			"if the space is private, set %s or a `credentials:` entry for it in %s",
+			ref.ID, space.CredentialEnvVar(ref.ID), c.machineConfigPath)
+	}
+	reader, canRead := c.h.(host.RepoVisibilityReader)
+	if !canRead {
+		return ""
+	}
+	owner, name, parseErr := doctorRepoOwnerName(ref.RepoURL)
+	if parseErr != nil {
+		return ""
+	}
+	visibility, visibilityErr := reader.RepoVisibility(ctx, host.RepoSettingsRequest{
+		Repo: host.Repo{Owner: owner, Name: name}, Credential: credential,
+	})
+	if visibilityErr != nil {
+		return ""
+	}
+	switch visibility {
+	case host.RepositoryVisibilityPrivate, host.RepositoryVisibilityInternal:
+		return fmt.Sprintf("the repository EXISTS and is %s (the API says so, with this same credential) — "+
+			"git could not read it, so the credential this space resolves lacks read access to it; "+
+			"check that the token is authorized for the owning org and has repository read scope",
+			visibility)
+	default:
+		// Public and reachable by the API, yet git got a 404: the repository
+		// is not the problem, so stay silent rather than mis-explain the URL.
+		return ""
+	}
 }
 
 // doctorCheckSpaceIdentity verifies that every connected space's

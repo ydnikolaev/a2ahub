@@ -144,7 +144,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
-	store, err := buildStore(p)
+	store, err := buildStore(context.Background(), p)
 	if err != nil {
 		return failf(stderr, "a2a serve: %v", err)
 	}

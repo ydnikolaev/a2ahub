@@ -79,7 +79,7 @@ func newNotificationController(p paths) (*notification.Controller, error) {
 		projectPaths.projectRoot = project.Root
 		projectPaths.projectConfig = filepath.Join(project.Root, ".a2a", "config.yaml")
 		projectPaths.staging = filepath.Join(project.Root, ".a2a", "staging")
-		return buildStore(projectPaths)
+		return buildStore(context.Background(), projectPaths)
 	}
 	return &notification.Controller{
 		Service: service, Components: manager, OpenRoute: openNotificationRoute,

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
+
+	"github.com/ydnikolaev/a2ahub/internal/host"
 )
 
 func TestCloneOrFetchFreshClone(t *testing.T) {
@@ -18,7 +20,7 @@ func TestCloneOrFetchFreshClone(t *testing.T) {
 	fx := spacefixture.New(t, "axon")
 	dest := filepath.Join(t.TempDir(), "mirror")
 
-	if err := CloneOrFetch(context.Background(), dest, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), dest, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("CloneOrFetch: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dest, "space.yaml")); err != nil {
@@ -32,7 +34,7 @@ func TestCloneOrFetchRerunIsFetchNotReClone(t *testing.T) {
 	fx := spacefixture.New(t, "axon")
 	dest := filepath.Join(t.TempDir(), "mirror")
 
-	if err := CloneOrFetch(context.Background(), dest, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), dest, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("first CloneOrFetch: %v", err)
 	}
 	// Mark the working tree with a sentinel file a re-clone would wipe;
@@ -42,7 +44,7 @@ func TestCloneOrFetchRerunIsFetchNotReClone(t *testing.T) {
 		t.Fatalf("write sentinel: %v", err)
 	}
 
-	if err := CloneOrFetch(context.Background(), dest, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), dest, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("second CloneOrFetch: %v", err)
 	}
 	if _, err := os.Stat(sentinel); err != nil {
@@ -59,7 +61,7 @@ func TestCloneOrFetchNonGitNonEmptyTargetRejected(t *testing.T) {
 		t.Fatalf("seed unrelated file: %v", err)
 	}
 
-	err := CloneOrFetch(context.Background(), dest, fx.RemoteURL())
+	err := CloneOrFetch(context.Background(), dest, fx.RemoteURL(), host.Credential{})
 	if !errors.Is(err, ErrNonGitTarget) {
 		t.Fatalf("CloneOrFetch error = %v, want ErrNonGitTarget", err)
 	}
@@ -76,7 +78,7 @@ func TestCloneOrFetchConcurrentWritersNoLostWrite(t *testing.T) {
 
 	fx := spacefixture.New(t, "axon")
 	dest := filepath.Join(t.TempDir(), "mirror")
-	if err := CloneOrFetch(context.Background(), dest, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), dest, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("seed clone: %v", err)
 	}
 
@@ -89,7 +91,7 @@ func TestCloneOrFetchConcurrentWritersNoLostWrite(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			errs[i] = CloneOrFetch(context.Background(), dest, fx.RemoteURL())
+			errs[i] = CloneOrFetch(context.Background(), dest, fx.RemoteURL(), host.Credential{})
 		}(i)
 	}
 	close(start)
@@ -151,7 +153,7 @@ func TestCheckoutRemoteHeadLockNeverReleasedReturnsBoundedTypedError(t *testing.
 
 	fx := spacefixture.New(t, "axon")
 	dest := filepath.Join(t.TempDir(), "mirror")
-	if err := CloneOrFetch(context.Background(), dest, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), dest, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("seed clone: %v", err)
 	}
 
@@ -197,7 +199,7 @@ func TestCheckoutRemoteHeadCtxCancelWhileWaitingReturnsPromptly(t *testing.T) {
 
 	fx := spacefixture.New(t, "axon")
 	dest := filepath.Join(t.TempDir(), "mirror")
-	if err := CloneOrFetch(context.Background(), dest, fx.RemoteURL()); err != nil {
+	if err := CloneOrFetch(context.Background(), dest, fx.RemoteURL(), host.Credential{}); err != nil {
 		t.Fatalf("seed clone: %v", err)
 	}
 

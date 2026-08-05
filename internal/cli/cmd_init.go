@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/surface"
 	"gopkg.in/yaml.v3"
@@ -538,7 +539,8 @@ type ConnectCommand struct {
 	loadProjectConfig func(path string) (space.ProjectConfig, error)
 	loadMachineConfig func(path string) (space.MachineConfig, error)
 	resolveMirror     func(projectRoot string, ref space.Ref, machine space.MachineConfig) string
-	cloneOrFetch      func(ctx context.Context, dir, repoURL string) error
+	cloneOrFetch      func(ctx context.Context, dir, repoURL string, credential host.Credential) error
+	resolveCredential credentialResolver
 	writeFile         func(path string, data []byte, perm os.FileMode) error
 	readFile          func(path string) ([]byte, error)
 
@@ -563,6 +565,7 @@ func NewConnectCommand(projectConfigPath, machineConfigPath, projectRoot string)
 		loadMachineConfig: space.LoadMachineConfig,
 		resolveMirror:     space.ResolveMirrorLocation,
 		cloneOrFetch:      space.CloneOrFetch,
+		resolveCredential: space.ResolveCredential,
 		writeFile:         os.WriteFile,
 		readFile:          os.ReadFile,
 	}
@@ -611,7 +614,16 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// time). Pinning MirrorLocation is the existing space.Ref seam for
 	// exactly "location key ≠ id".
 	dir := c.resolveMirror(c.projectRoot, space.Ref{ID: urlID, MirrorLocation: urlID}, machine)
-	if err := c.cloneOrFetch(ctx, dir, repoURL); err != nil {
+	// The credential is keyed by urlID for the same chicken/egg reason the
+	// mirror path is: the authoritative id lives in the space.yaml this clone
+	// is about to fetch. urlID is the right key anyway — `a2a init` seeds its
+	// credential entry under exactly that URL-derived guess, and
+	// A2A_TOKEN_<urlID> is what an operator connecting to a private space has
+	// to export before this line can succeed. If the manifest later disagrees
+	// about the id, ensureCredentialEntry below re-keys the entry; the clone
+	// has already happened by then and only ever needed read access.
+	credential := mirrorCredential(ctx, c.resolveCredential, urlID, machine)
+	if err := c.cloneOrFetch(ctx, dir, repoURL, credential); err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "connect: cannot establish mirror for %s: %v\n", urlID, err)
 		return 1
 	}

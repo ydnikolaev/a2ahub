@@ -11,6 +11,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
 )
@@ -22,8 +23,12 @@ const maxContractPublicationEstablishments = 256
 // that publication invocation proves the ref still names that object.
 // ContractPublicationRepository is part of the public package API.
 type ContractPublicationRepository struct {
-	repoDir           string
-	remoteURL         string
+	repoDir   string
+	remoteURL string
+	// credential authenticates RefreshContractPublicationMain's fetch. Empty
+	// is legitimate (a public space refreshes tokenless) but no longer
+	// accidental — see CloneOrFetch's own doc.
+	credential        host.Credential
 	manifestValidator ManifestValidator
 	historyValidator  ContractHistoryDocumentValidator
 
@@ -32,12 +37,12 @@ type ContractPublicationRepository struct {
 }
 
 // NewContractPublicationRepository is part of the public package API.
-func NewContractPublicationRepository(repoDir, remoteURL string, manifestValidator ManifestValidator, historyValidator ContractHistoryDocumentValidator) (*ContractPublicationRepository, error) {
+func NewContractPublicationRepository(repoDir, remoteURL string, credential host.Credential, manifestValidator ManifestValidator, historyValidator ContractHistoryDocumentValidator) (*ContractPublicationRepository, error) {
 	if strings.TrimSpace(repoDir) == "" || strings.TrimSpace(remoteURL) == "" || manifestValidator == nil || historyValidator == nil {
 		return nil, fmt.Errorf("%w: repository, remote and validators are required", ErrContractPublicationInvalid)
 	}
 	return &ContractPublicationRepository{
-		repoDir: repoDir, remoteURL: remoteURL,
+		repoDir: repoDir, remoteURL: remoteURL, credential: credential,
 		manifestValidator: manifestValidator, historyValidator: historyValidator,
 	}, nil
 }
@@ -47,7 +52,7 @@ func (r *ContractPublicationRepository) RefreshContractPublicationMain(ctx conte
 	if r == nil {
 		return "", ErrContractPublicationInvalid
 	}
-	if err := CloneOrFetch(ctx, r.repoDir, r.remoteURL); err != nil {
+	if err := CloneOrFetch(ctx, r.repoDir, r.remoteURL, r.credential); err != nil {
 		return "", err
 	}
 	commit, err := contractGitResolveCommit(ctx, r.repoDir, contractAuthoritativeMainRef)

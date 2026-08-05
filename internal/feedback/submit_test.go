@@ -62,7 +62,7 @@ func newTestSubmitter(t *testing.T, fx *spacefixture.Fixture, fakeHost *host.Fak
 	// internal/e2e's own TestT3Submit idiom (mirrorDir = fx.Clone(...)).
 	mirrorDir := fx.Clone("feedback")
 	sub.SetMirrorDirForTest(func(string, string) string { return mirrorDir })
-	sub.SetCloneOrFetchForTest(func(context.Context, string, string) error { return nil })
+	sub.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error { return nil })
 	sub.SetClockForTest(func() time.Time { return time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC) })
 	return sub
 }
@@ -190,7 +190,7 @@ func TestSubmit_GitHubWithoutCredentialRefusesBeforeGit(t *testing.T) {
 		},
 	)
 	cloneCalls := 0
-	sub.SetCloneOrFetchForTest(func(context.Context, string, string) error {
+	sub.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error {
 		cloneCalls++
 		return nil
 	})
@@ -226,7 +226,7 @@ func TestSubmit_PreservesPartialPRAndRecordsLedger(t *testing.T) {
 	sub := NewSubmitter(submitFunnelFunc(func(context.Context, space.SubmitRequest) (space.WriteResult, error) {
 		return partial, wantErr
 	}), ledgerPath, t.TempDir(), "test-repo", SubmitConfig{RemoteURL: t.TempDir()})
-	sub.SetCloneOrFetchForTest(func(context.Context, string, string) error { return nil })
+	sub.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error { return nil })
 	path := filepath.Join(t.TempDir(), "fb-20260723-abc123.yaml")
 	if err := os.WriteFile(path, []byte(validFeedbackYAML), 0o644); err != nil {
 		t.Fatal(err)
@@ -257,7 +257,7 @@ func TestSubmit_DoesNotLedgerUnconfirmedOutcome(t *testing.T) {
 			State: space.WriteStateOutcomeUnknown, RemainingAction: space.RemainingActionObserveProviderOutcome,
 		}, wantErr
 	}), ledgerPath, t.TempDir(), "test-repo", SubmitConfig{RemoteURL: t.TempDir()})
-	sub.SetCloneOrFetchForTest(func(context.Context, string, string) error { return nil })
+	sub.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error { return nil })
 	path := filepath.Join(t.TempDir(), "fb-20260723-abc123.yaml")
 	if err := os.WriteFile(path, []byte(validFeedbackYAML), 0o644); err != nil {
 		t.Fatal(err)
@@ -286,7 +286,7 @@ func TestSubmit_LedgerFailureReturnsConfirmedPROutcome(t *testing.T) {
 	sub := NewSubmitter(submitFunnelFunc(func(context.Context, space.SubmitRequest) (space.WriteResult, error) {
 		return confirmed, nil
 	}), filepath.Join(t.TempDir(), "ledger.yaml"), t.TempDir(), "test-repo", SubmitConfig{RemoteURL: t.TempDir()})
-	sub.SetCloneOrFetchForTest(func(context.Context, string, string) error { return nil })
+	sub.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error { return nil })
 	sub.SetAppendLedgerForTest(func(string, LedgerItem) error { return ledgerErr })
 	path := filepath.Join(t.TempDir(), "fb-20260723-abc123.yaml")
 	if err := os.WriteFile(path, []byte(validFeedbackYAML), 0o644); err != nil {

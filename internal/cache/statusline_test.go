@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/release"
+
+	"github.com/ydnikolaev/a2ahub/internal/host"
 )
 
 // TestStatusline_ZeroNoiseSilence is AC row 2: given nothing actionable,
@@ -106,7 +108,7 @@ func TestStatusline_NoHubSymbol(t *testing.T) {
 	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"})
 	var refreshCalls int
 	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, RepoURL: fx.dir, Manifest: mustManifest(t, fx)}}, time.Now, time.Nanosecond)
-	store.SetCloneOrFetchForTest(func(context.Context, string, string) error {
+	store.SetCloneOrFetchForTest(func(context.Context, string, string, host.Credential) error {
 		refreshCalls++
 		return nil
 	})

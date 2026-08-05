@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
@@ -12,9 +13,12 @@ import (
 
 const workDefaultBaseBranch = "main"
 
-// WorkCredentialResolver resolves an invocation-local credential. Keeping it
-// behind this consumer-side seam lets heartbeat and status remain completely
-// local: neither operation calls WorkRuntime.SubmissionRuntime.
+// WorkCredentialResolver resolves an invocation-local credential. It is called
+// at most once: the result is memoised after the first call (whether that
+// happens during mirror refresh or inside SubmissionRuntime) so that
+// heartbeat and status operations never pay more than one credential round-trip
+// across the lifetime of the runtime, and SubmissionRuntime re-uses the cached
+// value rather than re-resolving.
 type WorkCredentialResolver func(context.Context) (host.Credential, error)
 
 // WorkRuntime lazily resolves the authoritative space facts used by durable
@@ -31,6 +35,12 @@ type WorkRuntime struct {
 	baseBranch string
 	credential WorkCredentialResolver
 	manifest   ManifestValidator
+
+	// credMu serialises the single resolver invocation.
+	credMu        sync.Mutex
+	credResolved  bool
+	cachedCred    host.Credential
+	cachedCredErr error
 }
 
 // NewWorkRuntime binds one configured space without contacting it.
@@ -99,13 +109,16 @@ func (r *WorkRuntime) ResolveWorkPreparation(ctx context.Context) (WorkPreparati
 }
 
 // SubmissionRuntime implements WorkSubmissionRuntimeProvider. Credential
-// resolution is deliberately last, after the current target/floor is known.
+// resolution is deferred until after the current target/floor is known. The
+// resolved credential is memoised: if the mirror refresh already called
+// resolveOnce, SubmissionRuntime returns the cached value without a second
+// invocation of the resolver.
 func (r *WorkRuntime) SubmissionRuntime(ctx context.Context) (SubmissionRuntime, error) {
 	manifest, _, err := r.refresh(ctx)
 	if err != nil {
 		return SubmissionRuntime{}, err
 	}
-	credential, err := r.credential(ctx)
+	credential, err := r.resolveOnce(ctx)
 	if err != nil {
 		return SubmissionRuntime{}, fmt.Errorf("space: resolve work credential: %w", err)
 	}
@@ -115,8 +128,41 @@ func (r *WorkRuntime) SubmissionRuntime(ctx context.Context) (SubmissionRuntime,
 	}, nil
 }
 
+// resolveOnce resolves the credential exactly once across the lifetime of the
+// runtime; all callers after the first receive the memoised result.
+//
+// The context passed by the FIRST caller wins. Credential resolution reads
+// from environment variables or the machine config file — not from the
+// network — so the context matters only for deadline propagation, and the
+// memoised value stays valid for the runtime's lifetime.
+func (r *WorkRuntime) resolveOnce(ctx context.Context) (host.Credential, error) {
+	r.credMu.Lock()
+	defer r.credMu.Unlock()
+	if !r.credResolved {
+		r.cachedCred, r.cachedCredErr = r.credential(ctx)
+		r.credResolved = true
+	}
+	return r.cachedCred, r.cachedCredErr
+}
+
+// readCredential resolves the space credential for a READ, degrading to the
+// empty credential when none resolves.
+//
+// The asymmetry with SubmissionRuntime — which returns the resolution error —
+// is the point, and it is the same asymmetry CloneOrFetch documents. A write
+// with no credential cannot succeed, so failing loudly is the only honest
+// answer. A read with no credential succeeds against every public space, and
+// has to keep succeeding: making the mirror refresh depend on a resolvable
+// token would break tokenless read verbs and CI in exchange for nothing. What
+// a missing credential costs is exactly the private case, and that failure
+// arrives from git itself, with the remote's own words.
+func (r *WorkRuntime) readCredential(ctx context.Context) host.Credential {
+	credential, _ := r.resolveOnce(ctx)
+	return credential
+}
+
 func (r *WorkRuntime) refresh(ctx context.Context) (Manifest, string, error) {
-	if err := CloneOrFetch(ctx, r.mirrorDir, r.remoteURL); err != nil {
+	if err := CloneOrFetch(ctx, r.mirrorDir, r.remoteURL, r.readCredential(ctx)); err != nil {
 		return Manifest{}, "", fmt.Errorf("space: refresh work mirror: %w", err)
 	}
 	raw, err := readBounded(filepath.Join(r.mirrorDir, "space.yaml"))

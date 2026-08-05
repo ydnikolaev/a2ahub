@@ -344,7 +344,7 @@ func contractLifecyclePublish(
 	}
 
 	repository, err := space.NewContractPublicationRepository(
-		mirrorDir, remoteURL, contractManifestEngine{engine: engine}, contractHistoryDocumentEngine{engine: engine},
+		mirrorDir, remoteURL, host.Credential{}, contractManifestEngine{engine: engine}, contractHistoryDocumentEngine{engine: engine},
 	)
 	if err != nil {
 		t.Fatalf("NewContractPublicationRepository: %v", err)

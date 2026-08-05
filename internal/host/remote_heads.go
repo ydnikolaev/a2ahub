@@ -48,7 +48,7 @@ func (h *GitHubHost) ListContractPublishHeads(
 		return RemoteHeadListing{}, recoveryRequestError(op)
 	}
 
-	authArgs := recoveryGitAuthArgs(credential)
+	authArgs := GitAuthArgs(credential)
 	args := append([]string{"-C", repoDir}, authArgs...)
 	args = append(args, "ls-remote", "--heads", remoteURL, "refs/heads/"+namespacePrefix+"*")
 	result := runRecoveryGit(ctx, maxRecoveryGitOutput, args...)
