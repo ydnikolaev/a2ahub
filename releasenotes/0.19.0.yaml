@@ -213,6 +213,10 @@ changes:
       branch. Publishing on the newest line is unaffected — there the two
       answers were always the same, which is why nothing caught this until a
       contract with three live lines was exercised end to end.
+      That path is now covered against a real provider: a contract carrying
+      1.0.0, 1.1.0, 2.0.0 and a maintenance 1.2.0 at once, deprecated and
+      retired mid-window, with a consumer that registered after the
+      deprecation was announced.
     affects: ["a2a contract publish", "contract versioning"]
     action:
       scope: none
