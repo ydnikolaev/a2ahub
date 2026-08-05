@@ -12,7 +12,7 @@ category: <api|data-feed|vocabulary|event-feed|other>
 priority: p3
 blocking: false
 classification: internal
-version: 1.0.0
+version: 0.0.0                       # unpublished — `a2a contract publish` establishes the first real version. Leave it; a draft that already reads the version you publish has no establishing commit and can never be resolved afterwards.
 schema_format: json-schema-2020-12
 compat_policy: default
 # generated_from:                    # include only for a code-generated contract
@@ -63,3 +63,17 @@ artifacts:
 ## Owner and support
 
 <Who owns this contract and where consumers can ask for help.>
+
+<!-- THE VERSION FIELD IS NOT YOURS TO SET. Leave it at 0.0.0.
+     `a2a contract publish` finalizes this descriptor with the version you are
+     publishing, and its commit — the one where the version FLIPS — is what
+     makes that version resolvable ever after. `a2a contract materialize`
+     depends on it, and so does every later version, which resolves the
+     earlier one as its compatibility baseline.
+
+     Set this to the version you intend to publish and there is nothing left
+     to flip: publish writes byte-identical bytes, its commit carries only the
+     publish event, and no commit establishes the version. `publish` refuses
+     that up front — "publication-would-not-establish" — while it is still a
+     one-line fix here. Bump by publishing (`--version 1.1.0`, or
+     `--bump minor`), never by editing this field. -->

@@ -27,6 +27,18 @@ var (
 	ErrContractPublicationInProgress = errors.New("space: publication-in-progress")
 	// ErrContractPublicationExplicitVersion is part of the public package API.
 	ErrContractPublicationExplicitVersion = errors.New("space: explicit-version-required")
+	// ErrContractPublicationNotEstablishing is returned when the finalized
+	// descriptor is byte-identical to the one already on authoritative main,
+	// so the publication's own commit would not change the descriptor.
+	// Resolution defines the establishing commit as the one where the
+	// descriptor's version flips to the published version
+	// (validateHistoricalContractEstablishment), so such a publication is
+	// unresolvable the moment it lands: `contract materialize` fails and every
+	// later version fails while resolving its baseline. Refused here, before
+	// the write funnel, rather than exiting zero on a pull request that
+	// permanently breaks the contract.
+	// ErrContractPublicationNotEstablishing is part of the public package API.
+	ErrContractPublicationNotEstablishing = errors.New("space: publication-would-not-establish")
 )
 
 // ContractPublicationStatus is part of the public package API.
@@ -406,6 +418,13 @@ type ContractPublicationPlanningContext struct {
 	// PriorDeclaredSidecars is exact evidence re-read from the selected prior
 	// descriptor/profile. Keys are plan-relative paths (schema/..., etc.).
 	PriorDeclaredSidecars map[string]MutationPrecondition
+	// CurrentDescriptorDigest is the digest of the descriptor as it stands on
+	// authoritative main at BaseCommitSHA, or "" when main carries none. It is
+	// deliberately NOT the prior PUBLISHED descriptor (PriorDeclaredSidecars):
+	// a first publication has no published prior while main already carries
+	// the drafted descriptor that submit landed, and that is exactly the case
+	// ErrContractPublicationNotEstablishing has to catch.
+	CurrentDescriptorDigest string
 }
 
 // ContractPublicationHeadProof is produced only after a remote adapter has
@@ -806,7 +825,33 @@ func (s *ContractPublicationService) plan(ctx context.Context, request ContractP
 	if len(issues) != 0 {
 		return contract.PublicationPlan{}, ContractPublicationPlanningContext{}, fmt.Errorf("planner refused: %w", newContractPublicationPlanningError(issues))
 	}
+	if err := refuseNonEstablishingPublication(plan, planning); err != nil {
+		return contract.PublicationPlan{}, ContractPublicationPlanningContext{}, err
+	}
 	return plan, planning, nil
+}
+
+// refuseNonEstablishingPublication rejects a publication whose own commit
+// would leave the descriptor untouched. The planner cannot see this: it
+// baselines against the PUBLISHED prior, and on a first publication there is
+// none, so it emits a descriptor write regardless of what main already
+// carries. Only the space knows main, so the decision is taken here — before
+// the write funnel, in the same spirit as the POL-007 refusal, because a
+// pull request that lands is read as success and the contradiction surfaces
+// later, on work the agent has already left behind.
+func refuseNonEstablishingPublication(plan contract.PublicationPlan, planning ContractPublicationPlanningContext) error {
+	if planning.CurrentDescriptorDigest == "" {
+		return nil
+	}
+	finalized, ok := plan.PlannedBytes()[contract.DescriptorPath]
+	if !ok {
+		return fmt.Errorf("%w: plan carries no finalized descriptor", ErrOperationConflict)
+	}
+	if artifact.Digest(finalized) != planning.CurrentDescriptorDigest {
+		return nil
+	}
+	return fmt.Errorf("%w: publishing %s@%s would not change the descriptor already on main, so no commit establishes that version and it could never be resolved afterwards; the drafted descriptor must not already read the version being published (an unpublished contract stays at 0.0.0)",
+		ErrContractPublicationNotEstablishing, plan.Contract, plan.TargetVersion)
 }
 
 func (s *ContractPublicationService) verifyCompletion(request ContractPublicationRequest, candidate contract.CandidateIntentSnapshot, modes map[string]string, completion ContractPublicationCompletion) (contract.PublicationPlan, error) {

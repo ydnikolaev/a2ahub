@@ -60,6 +60,33 @@ Two properties worth relying on:
   read exactly what it agreed to. Retirement is a statement about support, not
   a deletion.
 
+## The descriptor's `version:` is not yours to set
+
+Leave a drafted contract at `version: 0.0.0`. `a2a contract publish` finalizes
+the descriptor with the version you are publishing, and its commit — the one
+where the version FLIPS — is what makes that version resolvable ever after.
+`a2a contract materialize` reads it, and so does every later version, which
+resolves the earlier one as its compatibility baseline.
+
+Author the draft at the version you intend to publish and there is nothing
+left to flip: publish writes byte-identical bytes, its commit carries only the
+publish event, and no commit establishes the version. `publish` refuses that
+before it writes anything:
+
+```
+contract publish: space: publication-would-not-establish: publishing
+XC-<system>-<slug>@1.0.0 would not change the descriptor already on main …
+```
+
+Fix it in the draft — set `version: 0.0.0`, submit that, then publish. The v2
+contract template already drafts `0.0.0`; the frozen v1 template (what a
+non-JSON-Schema contract still renders from) does not, so a contract drafted
+there needs the field corrected by hand before its first publish.
+
+Bump by publishing, never by editing: `--version 1.1.0`, or `--bump minor`.
+Editing the field in a landed descriptor changes nothing about what is
+published.
+
 ## Publishing on an older line
 
 Publishing `1.6.2` while `2.0` exists is the normal act during a sunset, and it

@@ -285,6 +285,46 @@ func TestResolveContractVersionRejectsLaterEventOnlyDuplicate(t *testing.T) {
 	}
 }
 
+// TestResolveContractVersionRejectsAPublishThatNeverChangedTheDescriptor
+// reproduces the live-run 2026-08-05 failure exactly. The shipped v2 contract
+// template drafted `version: 1.0.0`, so `a2a new` → submit landed a descriptor
+// already reading the version, and `contract publish --version 1.0.0` then
+// wrote byte-identical bytes: its commit carried the publish event and nothing
+// else. Resolution defines the establishing commit as the one where the
+// descriptor's version flips, so the contract became permanently unresolvable
+// while publish itself exited zero. Proven against
+// a2ahub-live-e2e/live-e2e-space: the descriptor of
+// XC-alpha-rw-rolling-window-run-2152 was changed by the submit merge alone,
+// and the publish merge's whole stat was one event file.
+func TestResolveContractVersionRejectsAPublishThatNeverChangedTheDescriptor(t *testing.T) {
+	t.Parallel()
+
+	repo := newContractHistoryRepo(t)
+	descriptor, files, digest := contractV2Publication(t, "1.0.0", "schema\n")
+
+	// Commit 1 — submit: the descriptor lands already reading 1.0.0.
+	writeContractCandidateFile(t, repo, contractTestRoot+"/contract.md", descriptor)
+	for name, raw := range files {
+		writeContractCandidateFile(t, repo, contractTestRoot+"/"+name, raw)
+	}
+	contractTestGit(t, repo, "add", "--", contractTestRoot)
+	contractTestGit(t, repo, "commit", "-q", "-m", "submit the drafted contract")
+
+	// Commit 2 — publish: identical descriptor bytes, so only the event lands.
+	writeContractCandidateFile(t, repo, contractTestEventPath, contractEventV2("1.0.0", digest))
+	contractTestGit(t, repo, "add", "--", contractTestEventPath)
+	contractTestGit(t, repo, "commit", "-q", "-m", "publish 1.0.0")
+	contractTestGit(t, repo, "push", "-q", "-u", "origin", "main")
+
+	_, err := ResolveContractVersion(t.Context(), repo, contractTestID, "1.0.0", contractHistoryValidator(t))
+	if !errors.Is(err, ErrContractHistoryInvalid) {
+		t.Fatalf("non-establishing publish error = %v, want ErrContractHistoryInvalid", err)
+	}
+	if !strings.Contains(err.Error(), "does not change descriptor") {
+		t.Fatalf("error does not name the cause: %v", err)
+	}
+}
+
 func TestResolveContractVersionRequiresCanonicalDocumentsAndExactIdentity(t *testing.T) {
 	t.Parallel()
 

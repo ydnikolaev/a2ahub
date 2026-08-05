@@ -152,6 +152,44 @@ changes:
         contradicted its own version number now fails at the command instead of
         at the merge gate.
 
+  - id: RN-01900-8
+    kind: fix
+    impact: high
+    subject: "A contract's first publication is resolvable again"
+    detail: >
+      A contract drafted from the shipped template carried `version: 1.0.0`
+      before it was published anything. Publishing 1.0.0 then wrote a
+      descriptor identical to the one already on the branch, so the
+      publication's own commit carried nothing but its event — and a version
+      is resolvable only from the commit where the descriptor's version
+      changes. The publication succeeded, opened a pull request and merged,
+      and the contract was unresolvable from that moment: materializing that
+      version failed, and so did every later version, which has to resolve
+      the first one as its compatibility baseline. Nothing said so at the
+      time.
+      A drafted contract now starts at `0.0.0`, which is what an unpublished
+      contract has always meant everywhere else in the product, and
+      publishing sets the real version. Where a descriptor was already
+      authored at the version being published, `a2a contract publish` refuses
+      before it writes, naming the contract, the version and what to change,
+      instead of landing a publication that can never be read back. That
+      refusal is what covers a contract drafted before this release, and a
+      contract rendered from the frozen v1 template, which still carries
+      1.0.0 and cannot be changed without breaking the reproducibility of
+      everything already published under it.
+    affects: ["a2a contract publish", "a2a contract materialize", "a2a new", "contract templates"]
+    action:
+      scope: local
+      why: >
+        Contracts drafted with an earlier binary still read `version: 1.0.0`.
+        Publishing one is now refused rather than silently broken: set the
+        descriptor's version to 0.0.0 in a follow-up submit, then publish.
+        Contracts already published correctly are unaffected.
+      detect:
+        - "a2a contract preflight <XC-id> --version 1.0.0"
+      run:
+        - "a2a update --yes"
+
   - id: RN-01900-4
     kind: fix
     impact: normal

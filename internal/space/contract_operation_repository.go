@@ -167,11 +167,36 @@ func (r *ContractPublicationRepository) ReadContractPublicationPlanningContext(c
 	if generated := request.Candidate.Descriptor().GeneratedFrom; generated != nil {
 		assertion = generated.SourceDigest
 	}
+	currentDescriptor, err := contractDescriptorDigestAt(ctx, r.repoDir, anchor, path.Join(root, contract.DescriptorPath))
+	if err != nil {
+		return ContractPublicationPlanningContext{}, err
+	}
 	return ContractPublicationPlanningContext{
 		AuthoringFloor: manifest.MinBinaryVersion, ContractRoot: root, BaseCommitSHA: anchor,
 		Published: published, SourceDigestAssertion: assertion,
 		Warnings: []contract.Finding{}, Violations: []contract.Finding{}, PriorDeclaredSidecars: preconditions,
+		CurrentDescriptorDigest: currentDescriptor,
 	}, nil
+}
+
+// contractDescriptorDigestAt reads the descriptor as authoritative main
+// carries it, returning "" when main has none. Absence is a legitimate state
+// (nothing has landed at the contract root yet), so it is reported rather than
+// raised — unlike contractGitReadPath, which treats a missing path as invalid
+// history because every caller there is walking a commit that must have one.
+func contractDescriptorDigestAt(ctx context.Context, repoDir, commit, name string) (string, error) {
+	entry, found, err := contractGitExactTreeEntry(ctx, repoDir, commit, name)
+	if err != nil || !found {
+		return "", err
+	}
+	if contractGitCandidateKind(entry) != contract.CandidateRegular {
+		return "", fmt.Errorf("%w: %q on main is not a regular file", ErrContractUnsafeEntry, name)
+	}
+	raw, err := contractGitReadBlob(ctx, repoDir, entry, contract.MaxFileBytes)
+	if err != nil {
+		return "", err
+	}
+	return artifact.Digest(raw), nil
 }
 
 func (r *ContractPublicationRepository) authoritativeAnchor(ctx context.Context) (string, error) {
