@@ -258,6 +258,10 @@ func operationalVisibility(ctx context.Context, oc *operationalConfidenceRun) (o
 	const owner = "LE-OC-05/baseline"
 	proof := newOperationalProof("a2a doctor")
 	oc.cleanup.Register(owner, nil)
+	// This row is TierProvider in full (operational_catalogue.go's own note):
+	// its visibility read AND the doctor WARN below both rest on the same
+	// provider fact, so the logic tier never enters it and there is nothing
+	// here to guard with AssertionJudgeableBy.
 	var settings struct {
 		Visibility string `json:"visibility"`
 	}
@@ -705,13 +709,26 @@ func operationalStaticServer(ctx context.Context, oc *operationalConfidenceRun) 
 	if _, stderr, err := oc.h.B.Run(ctx, "sync"); err != nil {
 		return proof, VerdictFail, fmt.Errorf("sync checkpoint for server: %w: %s", err, stderr)
 	}
-	readBudget := time.AfterFunc(3*time.Minute, cancelSSE)
-	defer readBudget.Stop()
-	sseBlock, err := sseEvents.readUntilRevision()
-	if err != nil || !strings.Contains(sseBlock, "event: revision") || strings.Contains(sseBlock, "timeline") {
-		return proof, VerdictFail, fmt.Errorf("SSE was not revision-only: %w: %q", err, sseBlock)
+	// sse-revision-only is this row's declared carve-out (catalogue.go), and
+	// it is the more instructive of the two. The assertion guards a read
+	// deadline that real provider latency consumed once — two intervening
+	// pull-request landings ate the three minutes below. Against the local
+	// fake, which merges instantly, that failure condition CANNOT occur, so
+	// the assertion would pass every time while proving nothing. A carve-out
+	// that reads as green is worse than one that reads as red.
+	if AssertionJudgeableBy(Catalogue(), "LE-OC-03", "baseline", "sse-revision-only", oc.h.Tier) {
+		readBudget := time.AfterFunc(3*time.Minute, cancelSSE)
+		defer readBudget.Stop()
+		sseBlock, err := sseEvents.readUntilRevision()
+		if err != nil || !strings.Contains(sseBlock, "event: revision") || strings.Contains(sseBlock, "timeline") {
+			return proof, VerdictFail, fmt.Errorf("SSE was not revision-only: %w: %q", err, sseBlock)
+		}
+		proof.Pass("sse-revision-only")
+	} else {
+		cancelSSE()
+		proof.Unverified("sse-revision-only")
+		proof.limitations = append(proof.limitations, "sse-revision-only is provider-decided (spec 09 §5): its read deadline can only be consumed by real merge latency, and was not judged by the logic tier")
 	}
-	proof.Pass("sse-revision-only")
 	if err := operationalAwaitConditionalSnapshot(ctx, baseURL+"/api/v1/snapshot", initial.Revision, "server proof complete"); err != nil {
 		return proof, VerdictFail, err
 	}

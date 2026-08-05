@@ -174,10 +174,17 @@ func newLogicHarness(ctx context.Context, t *testing.T) (*harness, func() error,
 		Org:       logicOrg,
 		Repo:      logicRepo,
 		SpaceSlug: harnessSpaceSlug,
-		Seam:      seam,
-		Bin:       bin,
-		Prov:      &ghClient{Token: logicProvisionerCredential, APIRoot: fake.URL},
-		Part:      &ghClient{Token: logicParticipantCredential, APIRoot: fake.URL},
+		// Tier is what lets a scenario body ask AssertionJudgeableBy before
+		// asserting something its own catalogue row declared provider-decided.
+		// Without it every carve-out is declared and unconsulted, which shows
+		// up as either a row failing against a fact the fake does not have, or
+		// — worse — a row passing because the condition its assertion guards
+		// cannot occur locally at all.
+		Tier: TierLogic,
+		Seam: seam,
+		Bin:  bin,
+		Prov: &ghClient{Token: logicProvisionerCredential, APIRoot: fake.URL},
+		Part: &ghClient{Token: logicParticipantCredential, APIRoot: fake.URL},
 		// VerificationCandidate/ExecutionCandidate are deliberately left
 		// unset (zero value) — see TestNewLogicHarnessLeavesExecutionCandidateZero.
 	}

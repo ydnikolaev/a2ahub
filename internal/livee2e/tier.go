@@ -156,3 +156,45 @@ func FilterJudgeableBy(scenarios []Scenario, t Tier) []Scenario {
 	}
 	return out
 }
+
+// AssertionJudgeableBy reports whether tier may JUDGE one named assertion of
+// one catalogue row — the runtime half of the ProviderAssertions carve-out
+// D-2 introduced.
+//
+// Declaring the carve-out was never enough on its own, and the gap was found
+// the only way it could be: by running the matrix. LE-OC-05 declares
+// `visibility-public` as provider-decided and the logic tier still asserted
+// it, against a fake that has no repository visibility at all — the row
+// failed every run for a reason that was never the product's. Its sibling
+// LE-OC-03 declares `sse-revision-only`, and that one PASSED locally, which
+// is worse: the fake merges instantly, so the read deadline the assertion
+// guards can never be consumed, and the assertion passed because its own
+// failure condition cannot occur here. A carve-out nothing consults produces
+// exactly one of those two outcomes per row, and neither is evidence.
+//
+// A row's OTHER assertions stay judgeable — that is the whole reason the tag
+// is per assertion rather than per row (D-2): sending the whole row to the
+// provider tier over one assertion would cost the local tier the rest of it.
+//
+// The live tier judges everything, so an empty/live tier always answers true.
+func AssertionJudgeableBy(scenarios []Scenario, name, branch, assertion string, tier Tier) bool {
+	if tier != TierLogic {
+		return true
+	}
+	for _, s := range scenarios {
+		if s.Name != name || s.Branch != branch {
+			continue
+		}
+		for _, carved := range s.ProviderAssertions {
+			if carved == assertion {
+				return false
+			}
+		}
+		return true
+	}
+	// A row the catalogue does not declare cannot be judged into existence
+	// here. Answering true keeps this function's own failure mode "the
+	// scenario asserts as usual" rather than "an unknown row silently
+	// exempts itself", which is the direction a caller can debug.
+	return true
+}

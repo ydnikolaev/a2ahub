@@ -297,13 +297,59 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 			EnvFamilies, strings.Join(sortedKeys(selected), ", "))
 	}
 
+	// rowTiers indexes Catalogue()'s OWN declared Tier by (scenario, branch) —
+	// reused rather than re-declared, for the identical reason `declared`
+	// above is checked against CanonicalFamilies() instead of trusted by
+	// hand: a second, hand-maintained tier table would drift from
+	// catalogue.go's own Tier column exactly the way a second dispatch table
+	// once let a whole family drift out of driveFamilies (spec 46
+	// postmortem). Built once, outside the loop below, from the full
+	// (unfiltered by EnvFamilies/EnvCells) catalogue — tier is a property of
+	// the ROW, never of which cells this particular run selected.
+	rowTiers := scenarioRowTiers(Catalogue())
+
 	for _, family := range families {
 		if !selected[family.name] {
 			t.Logf("=== family %s SKIPPED (%s) — its rows stay not-run ===", family.name, EnvFamilies)
 			continue
 		}
+		// Tier narrowing, logic runs only (plan D-5/D-7's own "the live
+		// tier's behaviour is unchanged: it may judge everything" — gated on
+		// run.Tier == TierLogic so a live run, whose Tier is the zero value,
+		// never takes this branch and keeps entering every family exactly as
+		// it does today).
+		//
+		// A family every one of whose OWN catalogue rows is TierProvider is
+		// not entered at all: dispatching it would drive real writes against
+		// the local fake only to produce results Record already refuses to
+		// accept as a pass, for an answer only a provider may give in the
+		// first place (spec 09 §5) — pure cost, no judgement. Its cells are
+		// never left silently not-run, though: the completion sweep below,
+		// run once after this loop, backfills every remaining not-run
+		// TierProvider cell — this family's included — as skipped-provider.
+		// A MIXED family (this run's own "happy"/"refusal"/"space"/
+		// "failure-recovery"/"operational-confidence") is entered in full:
+		// its TierLogic rows are exactly what this run exists to judge, and
+		// splitting the family function itself by row is not a seam any of
+		// these files expose today. Its provider rows still execute against
+		// the fake as a side effect of that, but their RESULTS are
+		// overridden to skipped-provider immediately below, before Record
+		// ever sees them — never recorded as a pass (Record already refuses
+		// that) and never recorded as a fail either, which Record would
+		// otherwise accept and which would misreport a route the fake
+		// deliberately 404s (D-6) as a genuine product defect.
+		if run.Tier == TierLogic && !familyOwnsAnyLogicRow(Catalogue(), family.name) {
+			t.Logf("=== family %s SKIPPED (every row is provider-tier; not entered by the logic tier — backfilled skipped-provider below) ===", family.name)
+			continue
+		}
 		t.Logf("=== family %s ===", family.name)
 		for _, res := range runFamily(ctx, t, family.name, family.fn, h) {
+			if run.Tier == TierLogic {
+				if tier, ok := rowTiers[scenarioRowID{scenario: res.Scenario, branch: res.Branch}]; ok && tier == TierProvider {
+					res = skippedProviderResult(res,
+						"row's own Tier is provider (spec 09 §5); the logic tier discards its own observation against the local fake rather than reporting it as a pass or a fail")
+				}
+			}
 			if err := run.Record(res); err != nil {
 				// An undeclared cell or a zero verdict is a family/catalogue
 				// mismatch. Surfaced loudly: silently dropping it would leave
@@ -315,6 +361,92 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 			t.Logf("  %-34s %-2s %s", res.Scenario, res.System, res.Verdict)
 		}
 	}
+
+	// Completion sweep, logic runs only: whatever the loop above left at
+	// VerdictNotRun on a TierProvider cell — a family skipped outright above,
+	// a mixed family that (like "happy"'s bothSurfaces() cross product) never
+	// drives every declared provider cell, a family's own runFamily recovering
+	// a panic and losing every cell it would have returned, or
+	// FamilySpaceCIHealth's one row, which is not in `families` at all and is
+	// never dispatched by this loop even on the live tier (familyset.go's own
+	// documented exception; TestLiveMatrix instead calls runSpaceCIHealth
+	// directly, after this function returns) — is backfilled here as
+	// skipped-provider. This is the ONE place that guarantees "never left
+	// not-run, never silently absent" regardless of WHY a provider cell never
+	// got a Result: run.Report() is a snapshot copy (Run.Report, report.go),
+	// so reading it and then calling Record in the same loop cannot race with
+	// itself. A not-run TierLogic cell is deliberately left alone — sweeping
+	// THAT into a skip would be exactly the "green matrix that lowered its
+	// own bar" failure this whole design exists to refuse, and Record's own
+	// gate (report.go) already refuses to accept it as skipped-provider.
+	if run.Tier == TierLogic {
+		for _, res := range run.Report().Results {
+			if res.Verdict != VerdictNotRun || res.Tier != TierProvider {
+				continue
+			}
+			skip := skippedProviderResult(res,
+				"row's own Tier is provider (spec 09 §5); no family dispatched by the logic tier reached this cell")
+			if err := run.Record(skip); err != nil {
+				t.Errorf("record completion-sweep skip for %s/%s/%s: %v", skip.Scenario, skip.System, skip.Surface, err)
+				continue
+			}
+			t.Logf("  %-34s %-2s %s", skip.Scenario, skip.System, skip.Verdict)
+		}
+	}
+}
+
+// scenarioRowID identifies one catalogue ROW — a (scenario, branch) pair,
+// matching tier.go's own scenarioRowKey convention (name, or name/branch for
+// a P7 branch) — as distinct from a matrix CELL (cellKey, report.go), which
+// additionally varies by system and surface. Tier is declared per ROW
+// (catalogue.go's own Scenario.Tier doc), so this is the key the tier lookup
+// below actually needs.
+type scenarioRowID struct {
+	scenario string
+	branch   string
+}
+
+// scenarioRowTiers indexes scenarios by their own (Name, Branch) identity —
+// built FROM the real catalogue rather than re-declared here, so this lookup
+// can never itself become the second, drifting table the spec 46 postmortem
+// is about (see rowTiers' own call-site comment above).
+func scenarioRowTiers(scenarios []Scenario) map[scenarioRowID]Tier {
+	out := make(map[scenarioRowID]Tier, len(scenarios))
+	for _, s := range scenarios {
+		out[scenarioRowID{scenario: s.Name, branch: s.Branch}] = s.Tier
+	}
+	return out
+}
+
+// familyOwnsAnyLogicRow reports whether at least one of scenarios' rows
+// declares both this family and TierLogic — the test driveFamilies applies,
+// logic runs only, to decide whether a family is worth entering at all.
+func familyOwnsAnyLogicRow(scenarios []Scenario, family string) bool {
+	for _, s := range scenarios {
+		if s.Family == family && s.Tier == TierLogic {
+			return true
+		}
+	}
+	return false
+}
+
+// skippedProviderResult converts res — a cell whose own row is TierProvider —
+// into an honest skipped-provider Result carrying reason as its Detail.
+// Expected/Observed/PassEvidence/OperationalEvidence are all cleared rather
+// than kept alongside the overridden verdict: every one of them is either a
+// claim about what the fake observed (which this function exists to refuse
+// to report) or, for OperationalEvidence, a payload
+// WriteEvidenceBundle/operationalOutcome (report.go) can only persist for
+// VerdictPass/Fail/Unverified — never for VerdictSkippedProvider — and the
+// logic tier cannot write an evidence bundle in any case (D-4).
+func skippedProviderResult(res Result, reason string) Result {
+	res.Verdict = VerdictSkippedProvider
+	res.Expected = ""
+	res.Observed = ""
+	res.PassEvidence = ""
+	res.OperationalEvidence = nil
+	res.Detail = reason
+	return res
 }
 
 func sortedCellKeys(cells map[cellKey]bool) []string {

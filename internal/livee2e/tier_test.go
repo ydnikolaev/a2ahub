@@ -1,6 +1,9 @@
 package livee2e
 
 import (
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -198,11 +201,18 @@ func TestRealCatalogueDeclaresEveryTierCoherently(t *testing.T) {
 		}
 	}
 	t.Logf("tier split: logic=%d provider=%d total=%d", logic, provider, len(catalogue))
-	if logic != 30 {
-		t.Errorf("logic rows = %d, want 30", logic)
+	// 29/18, not the 30/17 this test first pinned. LE-OC-05 was declared
+	// TierLogic with a carve-out on "visibility-public", and the FIRST full
+	// local matrix run showed that wrong: its other assertion,
+	// "visibility-higher-classification", waits on a doctor WARN that doctor
+	// only reaches once it has DETERMINED the repository is public. Both rest
+	// on the same provider fact, so the whole row is provider. The number
+	// moved because running the thing beat reasoning about it again.
+	if logic != 29 {
+		t.Errorf("logic rows = %d, want 29", logic)
 	}
-	if provider != 17 {
-		t.Errorf("provider rows = %d, want 17", provider)
+	if provider != 18 {
+		t.Errorf("provider rows = %d, want 18", provider)
 	}
 	if logic+provider != len(catalogue) {
 		t.Errorf("logic(%d) + provider(%d) = %d, want %d (every row must declare exactly one of the two)", logic, provider, logic+provider, len(catalogue))
@@ -212,10 +222,82 @@ func TestRealCatalogueDeclaresEveryTierCoherently(t *testing.T) {
 	// actually dispatch the logic runner on, so it must agree with the
 	// tally above against the REAL 47 rows, not just the synthetic slices
 	// TestFilterJudgeableByKeepsDeclarationOrder already covers.
-	if got := len(FilterJudgeableBy(catalogue, TierLogic)); got != 30 {
-		t.Errorf("FilterJudgeableBy(catalogue, TierLogic) = %d rows, want 30", got)
+	if got := len(FilterJudgeableBy(catalogue, TierLogic)); got != 29 {
+		t.Errorf("FilterJudgeableBy(catalogue, TierLogic) = %d rows, want 29", got)
 	}
 	if got := len(FilterJudgeableBy(catalogue, TierProvider)); got != 47 {
 		t.Errorf("FilterJudgeableBy(catalogue, TierProvider) = %d rows, want 47 (the provider tier may judge every row)", got)
+	}
+}
+
+func TestAssertionJudgeableByHonoursTheCarveOutOnlyForTheLogicTier(t *testing.T) {
+	t.Parallel()
+
+	rows := []Scenario{
+		{
+			Name: "LE-OC-05", Branch: "baseline", Tier: TierLogic,
+			Assertions:         []string{"visibility-public", "visibility-higher-classification"},
+			ProviderAssertions: []string{"visibility-public"},
+		},
+		{Name: "plain-row", Tier: TierLogic, Assertions: []string{"a", "b"}},
+	}
+
+	if AssertionJudgeableBy(rows, "LE-OC-05", "baseline", "visibility-public", TierLogic) {
+		t.Error("the logic tier may not judge a carved-out assertion — declaring the carve-out and then asserting it anyway is how LE-OC-05 failed every local run for a reason that was never the product's")
+	}
+	if !AssertionJudgeableBy(rows, "LE-OC-05", "baseline", "visibility-higher-classification", TierLogic) {
+		t.Error("a row's OTHER assertions stay judgeable — sending the whole row away over one assertion is what the per-assertion tag exists to avoid")
+	}
+	if !AssertionJudgeableBy(rows, "LE-OC-05", "baseline", "visibility-public", TierProvider) {
+		t.Error("the provider tier judges everything, including carved-out assertions — that is what a carve-out MEANS")
+	}
+	if !AssertionJudgeableBy(rows, "LE-OC-05", "baseline", "visibility-public", "") {
+		t.Error("the zero tier is the live tier (report.go's own convention) and must judge everything")
+	}
+	if !AssertionJudgeableBy(rows, "plain-row", "", "a", TierLogic) {
+		t.Error("a row with no carve-out has every assertion judgeable in either tier")
+	}
+	if !AssertionJudgeableBy(rows, "no-such-row", "", "a", TierLogic) {
+		t.Error("an undeclared row must fall back to asserting as usual, not to exempting itself")
+	}
+}
+
+// TestEveryCarveOutIsConsultedBySomeScenarioBody is the gate that stops a
+// carve-out from being declared and then ignored — the exact gap that made
+// LE-OC-05 fail locally and LE-OC-03 pass locally for the wrong reason. It
+// walks the scenario sources for AssertionJudgeableBy call sites and requires
+// each declared ProviderAssertions entry to appear in one.
+func TestEveryCarveOutIsConsultedBySomeScenarioBody(t *testing.T) {
+	t.Parallel()
+
+	sources, err := filepath.Glob("scenarios_*_live.go")
+	if err != nil || len(sources) == 0 {
+		t.Fatalf("glob scenarios_*_live.go: %v (found %d)", err, len(sources))
+	}
+	var corpus strings.Builder
+	for _, path := range sources {
+		raw, readErr := os.ReadFile(path) //nolint:gosec // reason: path comes from this package's own source glob.
+		if readErr != nil {
+			t.Fatalf("read %s: %v", path, readErr)
+		}
+		corpus.Write(raw)
+	}
+	body := corpus.String()
+
+	var declared int
+	for _, s := range Catalogue() {
+		for _, assertion := range s.ProviderAssertions {
+			declared++
+			if !strings.Contains(body, strconv.Quote(assertion)) {
+				t.Errorf("%s/%s declares provider assertion %q, but no scenario body mentions it — a carve-out nothing consults either fails the row against a fake that lacks the fact, or passes it because the condition it guards cannot occur here",
+					s.Name, s.Branch, assertion)
+			}
+		}
+	}
+	if declared == 0 {
+		t.Fatal("no ProviderAssertions declared anywhere — this gate would hold vacuously; if the last carve-out was removed on purpose, remove this test with it")
+	}
+	if !strings.Contains(body, "AssertionJudgeableBy") {
+		t.Error("no scenario body calls AssertionJudgeableBy — the carve-outs are declared and unconsulted, which is the state this gate exists to refuse")
 	}
 }
