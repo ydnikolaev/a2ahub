@@ -473,19 +473,43 @@ func TestProductionServeStalledRootWriteHitsDeadlineAndReleasesBudget(t *testing
 	if _, err := fmt.Fprintf(connection, "GET / HTTP/1.1\r\nHost: localhost:%s\r\nConnection: close\r\n\r\n", port); err != nil {
 		t.Fatalf("write request error = %v", err)
 	}
+	// Both spin loops below are bounded by the SAME budget, and that symmetry
+	// is the point. The first one used to have no bound of its own — it
+	// leaned on t.Context(), which is cancelled only when the whole test
+	// BINARY is torn down. So a slot that was merely slow to be acquired did
+	// not fail this test; it spun until the package's own 10-minute timeout
+	// killed every test in internal/localserver and took a release candidate's
+	// `make check` down with it. That is what happened on 2026-08-05, on the
+	// exact-candidate verification for v0.19.0, and never once in ~20 local
+	// runs including under deliberate CPU contention.
+	//
+	// The budget is deliberately enormous relative to what is being measured
+	// (a 25ms write deadline, 600x over). It is not a timing assertion — the
+	// second loop makes the timing assertion. It exists so that a genuine
+	// product hang fails in seconds, naming what it was waiting for, instead
+	// of presenting as an unrelated package-wide timeout in a log nobody
+	// associates with this test.
+	const spinBudget = 15 * time.Second
+
+	acquired := time.NewTimer(spinBudget)
+	defer acquired.Stop()
 	for len(server.writerSlots) == 0 {
 		select {
+		case <-acquired.C:
+			t.Fatalf("stalled writer never acquired a bounded slot within %s", spinBudget)
 		case <-t.Context().Done():
 			t.Fatal("stalled writer never acquired a bounded slot")
 		default:
 			runtime.Gosched()
 		}
 	}
-	deadline := time.NewTimer(2 * time.Second)
+	deadline := time.NewTimer(spinBudget)
 	defer deadline.Stop()
 	for len(server.writerSlots) != 0 || server.LastError() == nil {
 		select {
 		case <-deadline.C:
+			t.Fatalf("stalled writer did not hit its deadline within %s: slots=%d error=%v", spinBudget, len(server.writerSlots), server.LastError())
+		case <-t.Context().Done():
 			t.Fatalf("stalled writer did not hit its deadline: slots=%d error=%v", len(server.writerSlots), server.LastError())
 		default:
 			runtime.Gosched()
