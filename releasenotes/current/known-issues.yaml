@@ -3,27 +3,32 @@ issues:
   - id: KI-01900-PROVIDER-TIER-DEFERRED
     kind: known-issue
     impact: normal
-    subject: "v0.19.0 shipped with its provider-tier verification deferred, by explicit operator authorization"
+    subject: "The current releases shipped with their provider-tier verification deferred, by explicit operator authorization"
     detail: >
-      This release's scenario LOGIC is fully verified: the whole catalogue runs
-      locally against a faithful host stand-in over real git repositories, and
-      every row that tier may judge passed on the exact candidate. What it does
-      not carry is a full live GitHub matrix, which was deferred deliberately
-      because a counterparty was blocked on the contract-publication path this
-      release fixes, and waiting was itself the larger risk.
-      The rows therefore unverified for this candidate are the ones only a real
-      provider can decide: branch protection blocking a merge until the required
-      check is green, enforce_admins binding a participant while skipping an
-      admin, a cross-section authorization decision surviving a privileged
-      re-trigger, GitHub serving a check computed against a stale ref, a direct
-      push to main being refused, the shipped Actions workflow actually running
-      `a2a validate --ci`, compound check-run name resolution, and the space's
-      own CI carrying no unexplained failures. The last full matrix that did
-      prove them ran on 2026-08-05 against an EARLIER tree, before this
-      release's publication-baseline and fixture corrections.
-      A provider-tier run is scheduled against this exact tag, and anything it
-      finds ships as a patch release.
-    affects: ["a2a submit", "a2a contract publish", "branch protection", "space CI"]
+      Both v0.19.0 and v0.19.1 shipped this way, each authorized separately for
+      its own candidate. Their scenario LOGIC is fully verified: the whole
+      catalogue runs locally against a faithful host stand-in over real git
+      repositories, and every row that tier may judge passed on the exact
+      published candidate. What neither carries is a full live GitHub matrix.
+      The rows therefore unverified are the ones only a real provider can
+      decide: branch protection blocking a merge until the required check is
+      green, enforce_admins binding a participant while skipping an admin, a
+      cross-section authorization decision surviving a privileged re-trigger,
+      GitHub serving a check computed against a stale ref, a direct push to
+      main being refused, the shipped Actions workflow actually running
+      `a2a validate --ci`, compound check-run name resolution, a fine-grained
+      token's scope non-reporting driving the preflight path, real concurrent
+      writes losing nothing, and the space's own CI carrying no unexplained
+      failures. The last full matrix that did prove them ran on 2026-08-05,
+      against a tree earlier than either release.
+      Read the cost concretely rather than as a formality. v0.19.0 changed the
+      contract publication path; v0.19.1 changes the git authentication used by
+      every remote call in the write funnel. In both cases the deferred rows
+      sit over the surfaces that changed — which the runbook names as the worst
+      case for this tier, and it was chosen with that visible.
+      A provider-tier run is scheduled against the newest of these tags, and
+      anything it finds ships as a patch release.
+    affects: ["a2a submit", "a2a contract publish", "space mirror", "branch protection", "space CI"]
     action:
       scope: none
       why: >

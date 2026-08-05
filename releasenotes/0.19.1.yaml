@@ -1,0 +1,54 @@
+schema: release-notes/v1
+version: "0.19.1"
+released: "2026-08-05"
+headline: "A private space is readable again"
+changes:
+  - id: RN-01901-0
+    kind: fix
+    impact: high
+    subject: "Every command works against a private space again, and a 404 says which kind it was"
+    detail: >
+      Making a space private broke every command that reads it. `a2a doctor`,
+      `a2a html`, `a2a serve` and `a2a space update` all failed with GitHub's
+      `Repository not found`, and the same `doctor` run reported the
+      repository's visibility correctly on the line above — because that check
+      asks the authenticated API while the mirror sync ran git with no
+      credential at all. Both lines were honest; together they were nonsense.
+      The mirror sync never took a credential. That cost nothing while every
+      space was public, which is why it survived: a tokenless fetch of a public
+      repository succeeds, and the whole local test corpus runs against local
+      repositories where authentication is meaningless. Nothing could observe
+      the missing argument until a real space went private.
+      Every git call that contacts a remote now carries the resolved
+      credential, built in one place, and the mirror sync refuses to be the
+      exception: a source gate holds every remote-contacting verb inside the
+      one function that takes a credential, so the next such call cannot be
+      added without one. Reads degrade rather than fail when no credential
+      resolves — a public space and a first `a2a connect` still work with
+      nothing configured — while a write with no credential fails loudly, as
+      it always did.
+      A fetch that still 404s is no longer relayed verbatim. GitHub answers
+      "does not exist" and "you may not see it" with the same words, so
+      `a2a doctor` now names which one it was, using the fact it already had:
+      when the API can read the repository with the same credential, the
+      report says the repository EXISTS and is private or internal; when no
+      credential resolved at all, it names that, the `A2A_TOKEN_<SPACE>`
+      variable and the machine config file to put one in. A public repository
+      gets no explanation invented for it — there the 404 means something else,
+      such as a mistyped URL.
+      The credential is resolved at most once per command and is never written
+      to disk: the per-invocation authorization header is passed ahead of the
+      git subcommand precisely so git cannot persist it into the mirror's own
+      config, which is machine-shared across every project.
+    affects: ["a2a doctor", "a2a html", "a2a serve", "a2a space update", "a2a connect", "a2a sync", "space mirror", "MCP"]
+    action:
+      scope: local
+      why: >
+        Update the binary. A private space additionally needs a credential the
+        binary can resolve: either `A2A_TOKEN_<SPACE>` in the environment or a
+        `credentials:` entry for that space in the machine config. `a2a doctor`
+        names both when it cannot find one.
+      detect:
+        - "a2a doctor"
+      run:
+        - "a2a update --yes"
