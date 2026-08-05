@@ -749,8 +749,19 @@ func (c *SpaceCommand) spaceUpdateWired() error {
 func spaceUpdateDirectiveLines(owner, name, baseBranch string) []string {
 	repo := owner + "/" + name
 	return []string{
-		"scope: space directive — prerequisite (spec 35 §T3: this PR cannot merge until protection stops requiring the old flat context)",
+		// Stated as a CONDITION, not as a fact about this repo. a2a calls no
+		// admin API — internal/host exposes no branch-protection primitive at
+		// all — so this command cannot know which context protection requires
+		// and prints the directive unconditionally. Asserting "this PR cannot
+		// merge" is therefore a claim beyond what the code observed, and it is
+		// false for every already-migrated space: it told an operator whose
+		// protection was already on the compound context to go fix it, and
+		// would say so again on every future `space update`, forever. A
+		// directive that is wrong for the migrated majority is one people learn
+		// to skip — including the time it is right.
+		"scope: space directive — prerequisite (spec 35 §T3: IF protection still requires the old flat context, this PR cannot merge until that is changed)",
 		"  why: the reusable-workflow caller (spec 33 §11) surfaces the compound context \"a2a-validate / validate\", never the old flat \"a2a-validate\"",
+		"  skip if: your required check is already \"a2a-validate / validate\" — a2a calls no admin API, so it cannot check this for you",
 		// Byte-identical to docs/runbooks/space-bootstrap.md's "P33
 		// migration" step — that runbook is the SSOT an operator already
 		// follows, and two different commands for one job is how a
@@ -769,7 +780,7 @@ func spaceUpdateDirectiveLines(owner, name, baseBranch string) []string {
 func spaceUpdatePRBody(owner, name, baseBranch string) string {
 	var b strings.Builder
 	b.WriteString("a2a space update: sync this space's scaffolding with the current embedded template.\n\n")
-	b.WriteString("Prerequisite (spec 35 §T3): this PR cannot merge until branch protection's required status check is renamed from the flat `a2a-validate` to the compound `a2a-validate / validate` — the reusable-workflow caller shape (spec 33 §11) never reports the old flat context, so the PR will otherwise hang \"Expected — waiting for status to be reported\".\n\n")
+	b.WriteString("Prerequisite (spec 35 §T3): IF branch protection's required status check is still the flat `a2a-validate`, this PR cannot merge until it is renamed to the compound `a2a-validate / validate` — the reusable-workflow caller shape (spec 33 §11) never reports the old flat context, so the PR would otherwise hang \"Expected — waiting for status to be reported\". Already on the compound context? Nothing to do; a2a calls no admin API and cannot check this for you.\n\n")
 	for _, line := range spaceUpdateDirectiveLines(owner, name, baseBranch) {
 		b.WriteString(line)
 		b.WriteString("\n")
