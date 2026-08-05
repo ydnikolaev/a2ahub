@@ -64,12 +64,21 @@ func TestMirrorCredentialFollowsTheWritePrecedenceAndDegrades(t *testing.T) {
 	})
 }
 
-// TestMirrorRefreshingCommandsCarryACredentialResolver is the guard against
-// the quiet way this repair could be undone: mirrorCredential returns the
-// empty credential when its resolver is nil, so a command whose constructor
-// forgets to wire one compiles, runs, passes every existing test, and silently
-// fetches tokenless forever — which is precisely the state this whole change
+// TestMirrorRefreshingCommandsCarryACredentialResolver names the three
+// commands that refresh a mirror today and asserts each wires a resolver.
+// mirrorCredential returns the empty credential when its resolver is nil, so a
+// command that forgets to wire one compiles, runs, passes every existing test,
+// and silently fetches tokenless forever — precisely the state this repair
 // exists to leave behind.
+//
+// It is NOT the guard, despite once claiming to be: this list is
+// hand-maintained, so a FOURTH command never joins it. That is the hole
+// TestMirrorRefreshingStructsWireACredentialResolver
+// (mirrorcredential_ast_test.go) closes, by discovering the same invariant
+// from the package's own sources. This test survives it as the readable
+// statement of which commands exist and what each is for — the AST gate can
+// say "every struct with cloneOrFetch", but it cannot say "sync, connect and
+// doctor, and here is why each one refreshes a mirror".
 func TestMirrorRefreshingCommandsCarryACredentialResolver(t *testing.T) {
 	t.Parallel()
 
