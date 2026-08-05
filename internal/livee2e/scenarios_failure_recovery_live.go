@@ -139,7 +139,7 @@ func layer3FiveXXInjected(ctx context.Context, h *harness) Result {
 		return layer3InjectedResultFromErr("draft", err, "draft+fill an announcement locally, before any write")
 	}
 
-	proxy, err := newInjectingProxy(defaultAPIRoot, injectOnCreatePR, http.StatusGatewayTimeout)
+	proxy, err := newInjectingProxy(h.Seam.APIRoot, injectOnCreatePR, http.StatusGatewayTimeout)
 	if err != nil {
 		return layer3InjectedResultFromErr("proxy-setup", err, "the fault-injecting proxy starts in front of the real GitHub API")
 	}

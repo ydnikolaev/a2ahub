@@ -173,7 +173,7 @@ func refusalLooksLikeTransportFailure(errText string) bool {
 func refusalDirectPushScenario(ctx context.Context, h *harness) Result {
 	res := Result{Scenario: refusalScenarioDirectPushRefused, System: SystemB, Surface: SurfaceCLI}
 
-	remoteURL := "https://github.com/" + h.Org + "/" + h.Repo + ".git"
+	remoteURL := h.Seam.CloneURL()
 
 	before, err := refusalBranchHead(ctx, h.Prov, h.Org, h.Repo, "main")
 	if err != nil {
@@ -207,7 +207,7 @@ func refusalDirectPushScenario(ctx context.Context, h *harness) Result {
 		}
 	}
 
-	hc := host.NewGitHubHost(nil, defaultAPIRoot)
+	hc := host.NewGitHubHost(nil, h.Seam.APIRoot)
 	_, pushErr := hc.PushBranch(ctx, host.PushBranchRequest{
 		RepoDir: cloneDir, LocalRef: "HEAD", Branch: "main", RemoteURL: remoteURL,
 		Credential: host.Credential{Token: h.B.Token},
@@ -470,8 +470,8 @@ func refusalRestoreMinBinaryVersion(ctx context.Context, hc *host.GitHubHost, di
 func refusalStaleWriteFloorScenario(ctx context.Context, h *harness) (res Result) {
 	res = Result{Scenario: refusalScenarioStaleWriteFloorRefused, System: SystemB, Surface: SurfaceCLI}
 
-	remoteURL := "https://github.com/" + h.Org + "/" + h.Repo + ".git"
-	hc := host.NewGitHubHost(nil, defaultAPIRoot)
+	remoteURL := h.Seam.CloneURL()
+	hc := host.NewGitHubHost(nil, h.Seam.APIRoot)
 
 	work, err := os.MkdirTemp("", "livee2e-stale-floor-*")
 	if err != nil {

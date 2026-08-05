@@ -93,7 +93,7 @@ func (h *harness) ResetSpace(ctx context.Context) (retErr error) {
 		return fmt.Errorf("livee2e: ResetSpace: delete protection: %w", err)
 	}
 
-	remoteURL := "https://github.com/" + h.Org + "/" + h.Repo + ".git"
+	remoteURL := h.Seam.CloneURL()
 	if err := gitForcePush(ctx, spaceDir, remoteURL, h.Cfg.ProvisionerToken, "HEAD", "main"); err != nil {
 		return fmt.Errorf("livee2e: ResetSpace: force-push main: %w", err)
 	}
