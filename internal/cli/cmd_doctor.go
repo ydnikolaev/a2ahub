@@ -112,7 +112,13 @@ func NewDoctorCommand(h host.Host, binaryVersion, projectConfigPath, machineConf
 		loadMachineConfig: space.LoadMachineConfig,
 		resolveMirror:     space.ResolveMirrorLocation,
 		cloneOrFetch:      space.CloneOrFetch,
-		resolveCredential: space.ResolveCredential,
+		// Memoised: several of doctor's checks (see credentialmemo.go's doc
+		// comment) each resolve the same connected space's credential
+		// independently inside their own loop, and a `cmd:` machine-config
+		// reference resolves through a subprocess — without this wrapper
+		// one `a2a doctor` run spawns that subprocess once per check per
+		// space instead of once per space.
+		resolveCredential: memoizeCredentialResolver(space.ResolveCredential),
 		readFile:          os.ReadFile,
 		lookupGit:         func() error { _, err := exec.LookPath("git"); return err },
 		cachePath:         release.CachePath,
@@ -523,8 +529,9 @@ func (c *DoctorCommand) doctorPrivateRepoHint(
 		// this error, so name the possibility and the fix without asserting it.
 		return fmt.Sprintf("no credential resolved for %s, so the mirror fetch ran unauthenticated; "+
 			"GitHub answers an unauthenticated fetch of a PRIVATE repository with exactly this 404 — "+
-			"if the space is private, set %s or a `credentials:` entry for it in %s",
-			ref.ID, space.CredentialEnvVar(ref.ID), c.machineConfigPath)
+			"if the space is private, set %s, or add `%s: cmd:gh auth token` under `credentials:` in %s "+
+			"(reuses your existing `gh` login — nothing new to mint)",
+			ref.ID, space.CredentialEnvVar(ref.ID), ref.ID, c.machineConfigPath)
 	}
 	reader, canRead := c.h.(host.RepoVisibilityReader)
 	if !canRead {
