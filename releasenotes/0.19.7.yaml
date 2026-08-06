@@ -1,0 +1,130 @@
+schema: release-notes/v1
+version: "0.19.7"
+released: "2026-08-06"
+headline: "A same-day fix for a v0.19.6 regression, plus three more places the same defect was hiding"
+changes:
+  - id: RN-01907-0
+    kind: fix
+    impact: high
+    subject: "`a2a template list` prints one type per line again"
+    detail: >
+      v0.19.6 added a second, tab-separated column to `a2a template list`
+      naming each type's envelope generation. It read well to a human and broke
+      every machine that consumes the listing: `for t in $(a2a template list)`
+      word-splits on whitespace, so the loop ran `a2a template show
+      envelope/v1` and failed. a2ahub's own `skill-drift` CI job does exactly
+      that, and went red on the release commit itself.
+      The bare listing is a machine surface, and its contract is one type per
+      line whether or not anything had written that down. It is restored, and
+      a test now refuses any listing line carrying interior whitespace —
+      running `template show` on every line, so a word-split cannot pass.
+      The generation is still available, in a representation nothing splits:
+      `a2a template list --json` emits one row per type with its `type` and
+      `envelope_schema`. That is where a field belongs when the plain output
+      already has consumers.
+      This was our regression, shipped and taken back the same day. It is
+      exactly the class v0.19.6 existed to fix — an output surface changing
+      under a consumer that could not see it coming.
+    affects: ["a2a template list"]
+    action:
+      scope: local
+      why: >
+        If you scripted against v0.19.6's two-column output, switch to
+        `a2a template list --json`; the plain listing is one column again, as
+        it was through v0.19.5.
+      run: ["a2a update"]
+  - id: RN-01907-1
+    kind: fix
+    impact: normal
+    subject: "`a2a contract preflight` no longer plans a publication `publish` will refuse"
+    detail: >
+      On a space whose `min_binary_version` is below 0.19.0, `a2a contract
+      preflight <id> --bump minor` printed a target version and a plan digest,
+      and `a2a contract publish` with the identical arguments refused
+      immediately — below that floor there is no published history to bump from
+      safely, so the version has to be named explicitly. The rule lived only
+      inside `publish`, even though it is a pure function of two values both
+      commands already read the same way.
+      It now lives in one place both call, so the verb whose stated purpose is
+      to preview the exact publication plan cannot preview one that will not
+      execute. A test asserts the two AGREE rather than checking each
+      separately, because each was individually defensible and only their
+      disagreement was wrong.
+    affects: ["a2a contract preflight", "a2a contract publish"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. If preflight now refuses where it used to plan, publish
+        was always going to refuse — pass `--version <semver>` instead of
+        `--bump`.
+  - id: RN-01907-2
+    kind: fix
+    impact: normal
+    subject: "Every space write uses the GitHub CLI login, not just `a2a feedback`"
+    detail: >
+      v0.19.6 taught `a2a feedback submit` to fall back to the machine's `gh`
+      login. Every REAL space write kept refusing on the same machine, which is
+      worse than not having fixed either: it makes the remaining refusal look
+      like a problem with that particular space.
+      `a2a connect` seeds `cmd:gh auth token` into the machine config only ONCE,
+      at connect time. A space connected before `gh` was set up — or a config
+      hand-authored or copied between machines — carries a plain
+      `env:A2A_TOKEN_<ID>` reference and never sees the login. The seed happens
+      once; the resolve happens on every write, and only the resolve knows what
+      the machine looks like now.
+      Both surfaces now resolve through one function, and a test pins them to
+      agree on the same machine rather than checking each alone. An explicit
+      token still wins over the login, everywhere.
+    affects: ["a2a submit", "a2a contract publish", "every space write", "a2a mcp"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. `gh auth login` is now enough for a space write too;
+        existing tokens keep working and keep precedence.
+  - id: RN-01907-3
+    kind: fix
+    impact: low
+    subject: "A refused schema version says which value is accepted and what to do"
+    detail: >
+      Three checks — on `space.yaml`, on `consumes.yaml`, and on every artifact
+      envelope — refused with "schema version is outside the one-cycle overlap
+      window this binary understands". That named neither the accepted value
+      nor a remedy, and those words appeared in zero lines of the shipped manual
+      or the published docs. It also collapsed two opposite causes into one
+      sentence: a value that does not parse at all is a typo the author fixes in
+      place, while a version this build does not accept usually means the
+      document was written by a newer a2a and the READER should update.
+      Both now name the accepted `schema:` value — rendered from the same source
+      the check itself uses, so the message cannot claim a window the check does
+      not enforce — and the correct remedy for that cause.
+      This came out of a sweep for the same defect shape the previous release
+      fixed: a refusal naming a precondition with no reachable means of
+      satisfaction.
+    affects: ["a2a validate", "a2a submit", "a2a validate --ci"]
+    action:
+      scope: none
+      why: >
+        Nothing to do; the refusals are the same refusals, better worded.
+  - id: RN-01907-4
+    kind: fix
+    impact: low
+    subject: "One publication floor, not two literals that had to match by convention"
+    detail: >
+      The submit-time carried-set check compared against one `0.19.0` constant
+      and the publication planner against a different one. They were equal, and
+      nothing derived either from the other — so a release bumping one and not
+      the other would have reopened precisely the class of bug the pair exists
+      to prevent: an early gate accepting a shape the planner refuses after the
+      merge. The planner's constant now aliases the release-wide floor.
+      Also removes `internal/html/docs/` — 21 committed Markdown files that no
+      code, script or workflow read. The dashboard's Documentation tab and
+      a2ahub.dev both render from the embedded `skill/` tree through one
+      manifest, and have for some time; the leftover copy had already gone
+      stale, missing a whole section of the contract-versions page. Verified by
+      deleting it and rendering the dashboard, not by reading imports.
+    affects: ["a2a html", "space CI"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The documentation an agent reads is unchanged and comes
+        from the same place it already did.
