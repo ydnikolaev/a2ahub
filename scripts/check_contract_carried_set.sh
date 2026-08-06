@@ -12,6 +12,13 @@
 #   schemas/**/v1/**
 #   internal/**/*.go
 #   !internal/**/*_test.go
+# lane-reads-opaque: this gate writes a complete Go analyzer into
+#   "$ANALYZER_DIR/main.go" (a mktemp -d, so the path exists only at run time)
+#   and `go run`s it. The classifier cannot follow that, and the heredoc body is
+#   excluded from shell scanning by design — so what the analyzer reads is
+#   declared above from having READ the body: it walks internal/ for a second
+#   digest builder, and reads schemas/published-v1.sha256 plus every v1 path the
+#   manifest lists.
 set -euo pipefail
 
 ROOT="${CONTRACT_CARRIED_SET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
