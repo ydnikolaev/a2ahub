@@ -99,16 +99,6 @@ func (e envelopeProbe) deprecatedContractID() string {
 	return e.Deprecates
 }
 
-// to0 returns the exchange's single target system (D-027), or "" if
-// none/broadcast.
-func (e envelopeProbe) to0() string {
-	s := normalizeTo(e.To)
-	if len(s) == 0 {
-		return ""
-	}
-	return s[0]
-}
-
 // isBroadcast reports whether the envelope's `to` is the literal "all"
 // broadcast form (base.schema.json's oneOf).
 func (e envelopeProbe) isBroadcast() bool {
