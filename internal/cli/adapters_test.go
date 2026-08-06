@@ -651,3 +651,31 @@ func TestErrNoActorNameNamesBothRemedies(t *testing.T) {
 // represents a document this product can produce — it would only exercise the
 // refusal path, which has its own dedicated tests.
 const cliFixtureThread = "thread:axon-20260721-k3f9"
+
+// TestSubmitValidatorCarriesCompanionArtifacts is the end-to-end half of
+// fb-20260806-c6ad38. Fixing space.ContractForPath alone would be a fix to a
+// helper; what actually broke was THIS dispatch, which ran
+// artifact.ParseFrontmatter over a JSON companion and refused the whole write
+// with "missing or malformed frontmatter delimiters" — at
+// `a2a contract publish`, after validate and preflight had both passed.
+//
+// It asserts the dispatch classifies a companion as carried baseline data
+// rather than an envelope draft, which is the exact decision that failed.
+func TestSubmitValidatorCarriesCompanionArtifacts(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{
+		"axon/provides/widget/artifacts/errors.yaml",
+		"axon/provides/widget/artifacts/fixture-manifest.json",
+		"axon/provides/widget/artifacts/nested/changelog.md",
+	} {
+		if !space.IsContractBaselinePath(path) {
+			t.Errorf("%q is not classified as contract baseline data, so the submit "+
+				"dispatch will parse it as an envelope draft and refuse the whole write", path)
+		}
+	}
+	// The descriptor is NOT baseline data — it is the artifact itself.
+	if space.IsContractBaselinePath("axon/provides/widget/contract.md") {
+		t.Error("the descriptor must stay an envelope artifact, not carried baseline data")
+	}
+}

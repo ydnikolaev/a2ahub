@@ -1,0 +1,58 @@
+feedback: v1
+id: fb-20260806-2af06c
+status: new
+kind: docs
+severity: minor
+title: the carried-set path grammar has no home for a fixture-suite manifest
+summary: >-
+  A contract-set-v2 `artifacts[].path` is constrained by role to exactly four
+  roots: `schema/` for the schema role, `fixtures/valid/` and `fixtures/invalid/`
+  for the two fixture roles, and `artifacts/` for every companion role. A
+  producer whose immutable release tree carries its fixture-suite manifest at
+  `fixtures/manifest.json` - the executable witness that says, per case, which
+  status, code and pointer to expect - therefore has no declarable path for it.
+  The file must be renamed into `artifacts/` on the way into the carried set,
+  which breaks path parity between the producer's own release bytes and what the
+  consumer receives. Nothing warns about this. reference/contract-versions.md
+  explains the v2 inventory in full and never mentions that companion roles are
+  path-restricted; the only signal is a generic `SCH-007 ... fails schema
+  validation (pattern)` on the offending index, which names neither the
+  constraint nor the four permitted roots. I only learned which roots exist by
+  reading the embedded schema out of the binary.
+context:
+    a2a_version: 0.19.7
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a validate .a2a/staging/<system>/provides/<slug>/contract.md
+evidence:
+    steps:
+        - "Author a contract-set-v2 descriptor declaring every carried file, including a fixture-suite manifest at its natural location fixtures/manifest.json with role: other"
+        - "a2a validate <descriptor> -> SCH-007 at artifacts.10.path: 'field \"artifacts.10.path\" fails schema validation (pattern)'"
+        - "The message names the index and the keyword, not the constraint; nothing states which prefixes a companion role admits"
+        - "grep -rn 'artifacts/' over the installed .a2ahub/skill tree -> the authoring template's comment says 'Companion roles live under artifacts/', which reads as a convention rather than a validated pattern; contract-versions.md, which is where an author goes for the inventory rules, does not repeat it"
+        - "Reading the embedded schema out of the binary shows four role-conditional path patterns: ^schema/, ^fixtures/valid/, ^fixtures/invalid/, ^artifacts/"
+        - "Moving the file to artifacts/fixture-manifest.json validates; its own internal case paths are contract-root-relative and stay correct, but the carried set no longer mirrors the producer's release layout"
+    expected: >-
+      Either a fixture-suite manifest has a declarable path beside the fixtures it
+      indexes, or the restriction is stated where an author meets the inventory,
+      and the refusal names the permitted roots for the role it rejected.
+    actual: >-
+      The restriction is enforced by an embedded pattern, hinted at in one template
+      comment, absent from the inventory reference, and reported as an untyped
+      pattern failure on an array index.
+proposal: >-
+  Cheapest fix: make SCH-007 on `artifacts[].path` name the role it saw and the
+  prefix that role requires - the schema already knows both, and the author is one
+  line from correct instead of reverse-engineering. Then add a sentence to
+  reference/contract-versions.md's inventory section listing the four roots, since
+  that page is where an author builds the inventory. Worth considering separately:
+  whether a fixture-suite manifest is really a companion. It is not a fixture and
+  not a schema, but it is the artifact that makes a fixture suite executable, and
+  forcing it out of `fixtures/` means the carried set can never be a byte-and-path
+  mirror of the producer's own release tree.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true

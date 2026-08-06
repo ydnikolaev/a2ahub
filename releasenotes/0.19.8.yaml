@@ -1,0 +1,102 @@
+schema: release-notes/v1
+version: "0.19.8"
+released: "2026-08-06"
+headline: "The companion half of a contract can be published, and a first release can prove its own provenance"
+changes:
+  - id: RN-01908-0
+    kind: fix
+    impact: high
+    subject: "A contract that declares a companion artifact can be published"
+    detail: >
+      contract-set-v2 requires every companion role — errors, vocabulary,
+      limits, changelog, example, other — to live under `artifacts/`, and the
+      envelope schema enforces that with a role-conditional path pattern, so a
+      companion has no other legal location. Two other surfaces of that same
+      rule did not know the directory exists.
+      The space path layout recognised the descriptor, `schema/**` and
+      `fixtures/valid|invalid/**` and nothing else, so a companion was not
+      classified as carried contract data. The submit validator then treated it
+      as an envelope draft and tried to parse frontmatter out of a JSON file,
+      and `a2a contract publish` died with "missing or malformed frontmatter
+      delimiters" naming the companion — while `a2a validate` and
+      `a2a contract preflight` had both passed. The whole companion half of the
+      profile was unpublishable, and only the irreversible verb said so.
+      There was a second half: with no forward constructor for the directory,
+      the collector `a2a submit` uses to carry a staged contract's files had no
+      `artifacts/` arm either, so a declared companion was staged, declared, and
+      then simply not carried — the descriptor naming a file the space never
+      received.
+      Both directions are fixed together, in the one file that holds them,
+      because a directory must not be legal in one direction and unknown in the
+      other. Reported as fb-20260806-c6ad38 from a real first publication.
+    affects: ["a2a contract publish", "a2a submit", "space layout"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. If you removed a companion to get a contract published,
+        you can declare it again on the next version.
+  - id: RN-01908-1
+    kind: feat
+    impact: normal
+    subject: "`a2a contract verify-export` computes the export-source-v1 digest before the first publish"
+    detail: >
+      A code-generated contract asserts its provenance in
+      `generated_from.source_digest`, and that value must be the export-source-v1
+      digest. Nothing computed it for a candidate that was not published yet:
+      the only verb that could resolved a published version first, so it was
+      unreachable for exactly the case that needs it — a producer's FIRST
+      release.
+      The remaining path was to attempt publication, read the computed value out
+      of the refusal, and paste it back. That makes the assertion
+      self-fulfilling: the field exists so a producer can prove the published
+      export matches their code, and a number copied from a2a's own computation
+      proves only that a2a agrees with itself. The sanction was backwards too —
+      omit `generated_from` and publication proceeds; only the author honest
+      enough to declare a code-generated contract was stopped.
+      `a2a contract verify-export --local <dir> <XC-id>`, with no version, now
+      computes the digest over a local candidate and reports it against whatever
+      the descriptor asserts. The `<XC-id>@<version>` form is unchanged.
+      This is deliberately a CHECK rather than a source, so the documentation
+      carries the load-bearing half: `reference/contract-versions.md` now defines
+      the profile — declared schema and fixture entries only, descriptor and
+      `artifacts/` companions excluded, path-to-digest pairs combined — so a
+      producer can implement it in their own generator and have something
+      independent to compare. Reported as fb-20260806-eb224e.
+    affects: ["a2a contract verify-export", "skill manual"]
+    roadmap:
+      visibility: shipped
+      why: >
+        It closes a reported major on the first-publication path rather than
+        opening a new capability area; the surface is one existing verb learning
+        the local form of a question it already answers.
+    action:
+      scope: local
+      why: >
+        If you generate contracts, implement export-source-v1 in your generator
+        from the definition now in reference/contract-versions.md, and use this
+        command to check the two agree before publishing.
+      run: ["a2a contract verify-export --local <dir> <XC-id>"]
+  - id: RN-01908-2
+    kind: fix
+    impact: low
+    subject: "The carried set's four path roots are documented where the inventory is built"
+    detail: >
+      Each `artifacts:` role admits exactly one root — `schema/` for schema,
+      `fixtures/valid/` and `fixtures/invalid/` for the two fixture roles, and
+      `artifacts/` for every companion. The restriction was enforced by an
+      embedded schema pattern, hinted at in one template comment, absent from
+      the page where an author actually builds the inventory, and reported as an
+      untyped pattern failure on an array index that named neither the role nor
+      the root it required.
+      `reference/contract-versions.md` now states the four pairs as a table, and
+      says plainly that a file living elsewhere in a producer's release tree — a
+      fixture-suite manifest at `fixtures/manifest.json` is the case that comes
+      up — has to move, so the published set is not always a path-for-path
+      mirror of the tree that generated it. Reported as fb-20260806-2af06c.
+    affects: ["skill manual", "a2ahub.dev docs"]
+    action:
+      scope: local
+      why: >
+        Re-run `a2a skill install` (or `a2a skill link`) to pick up the roots
+        table and the export-source-v1 definition.
+      run: ["a2a skill install"]

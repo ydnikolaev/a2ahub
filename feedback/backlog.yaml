@@ -64,3 +64,30 @@ items:
       refs:
         - docs/features/active/operational-confidence-2026-08/README.md
       date: "2026-08-06"
+    - id: fb-20260806-c6ad38
+      kind: bug
+      severity: blocker
+      title: no contract declaring a companion artifact can be published
+      verdict: accepted
+      route: quick-fix
+      refs:
+        - docs/features/active/operational-confidence-2026-08/README.md
+      date: "2026-08-06"
+    - id: fb-20260806-eb224e
+      kind: bug
+      severity: major
+      title: export-source-v1 digest cannot be computed before the first publish
+      verdict: accepted
+      route: quick-fix
+      refs:
+        - docs/features/active/operational-confidence-2026-08/README.md
+      date: "2026-08-06"
+    - id: fb-20260806-2af06c
+      kind: docs
+      severity: minor
+      title: the carried-set path grammar has no home for a fixture-suite manifest
+      verdict: accepted
+      route: quick-fix
+      refs:
+        - docs/features/active/operational-confidence-2026-08/README.md
+      date: "2026-08-06"
