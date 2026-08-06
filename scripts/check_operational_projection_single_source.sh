@@ -6,6 +6,15 @@
 #   internal/**/*.go
 #   !internal/**/*_test.go
 #   web/design-source/14-local-dashboard-v4.dc.html
+# lane-reads-opaque: every grep target is a $ROOT-prefixed variable, not a
+#   literal. Lines 18-22 bind $model/$static/$renderer/$source/$browser to
+#   "$ROOT/internal/html/model.go", "$ROOT/internal/cli/cmd_html.go",
+#   "$ROOT/internal/html/dashboard_renderer.go",
+#   "$ROOT/internal/operationalsource/source.go" and
+#   "$ROOT/web/design-source/14-local-dashboard-v4.dc.html" respectively —
+#   each already covered by the internal/**/*.go or the literal
+#   web/design-source/... entry above. The `find "$ROOT/internal" -type f
+#   -name '*.go' ...` at line 47 walks the same internal/**/*.go tree.
 set -euo pipefail
 
 ROOT="${OPERATIONAL_PROJECTION_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
