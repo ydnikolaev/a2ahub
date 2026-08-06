@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -622,21 +623,62 @@ func TestTemplateShowExplicitGeneration(t *testing.T) {
 	}
 }
 
-// TestTemplateListNamesEachTypesGeneration: the list is the surface an author
-// consults before `show`, so it has to say WHICH generation each type
-// authors at — the fact whose absence let the reported defect stay invisible.
-func TestTemplateListNamesEachTypesGeneration(t *testing.T) {
+// TestTemplateListStaysOneColumn is the regression for a defect this session
+// SHIPPED and then had to take back: v0.19.6 added a tab-separated generation
+// column to `template list`, which reads fine to a human and broke the
+// skill-drift CI job on the release commit — `for t in $(a2a template list)`
+// word-splits, so it ran `a2a template show envelope/v1`.
+//
+// The bare listing is a machine surface consumed by `$(...)`. Its contract is
+// one type per line, whether or not anything had written that down.
+func TestTemplateListStaysOneColumn(t *testing.T) {
 	t.Parallel()
 	cmd := cli.NewTemplateCommand()
 	io, out, _ := newIO()
 	if code := cmd.Run(context.Background(), []string{"list"}, io); code != 0 {
 		t.Fatalf("template list: code = %d", code)
 	}
-	listed := out.String()
-	if !strings.Contains(listed, "contract\tenvelope/v2") {
-		t.Fatalf("expected contract to be listed at envelope/v2; got:\n%s", listed)
+	listed := strings.TrimSpace(out.String())
+	if listed == "" {
+		t.Fatal("template list printed nothing")
 	}
-	if !strings.Contains(listed, "question\tenvelope/v1") {
-		t.Fatalf("expected question to be listed at envelope/v1; got:\n%s", listed)
+	for _, line := range strings.Split(listed, "\n") {
+		if strings.ContainsAny(line, " \t") {
+			t.Fatalf("a listing line carries whitespace, so `for t in $(a2a template list)` will split it: %q", line)
+		}
+		// The word-split failure this pins is not hypothetical: every field of
+		// every line must be a type `template show` accepts.
+		showIO, _, showErr := newIO()
+		if code := cmd.Run(context.Background(), []string{"show", line}, showIO); code != 0 {
+			t.Fatalf("template show %q: code = %d; stderr=%s", line, code, showErr.String())
+		}
+	}
+}
+
+// TestTemplateListJSONCarriesTheGeneration: the generation each type authors at
+// is still reachable — in a representation nothing splits on whitespace.
+func TestTemplateListJSONCarriesTheGeneration(t *testing.T) {
+	t.Parallel()
+	cmd := cli.NewTemplateCommand()
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{"list", "--json"}, io); code != 0 {
+		t.Fatalf("template list --json: code = %d; stderr=%s", code, errOut.String())
+	}
+	var rows []struct {
+		Type           string `json:"type"`
+		EnvelopeSchema string `json:"envelope_schema"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &rows); err != nil {
+		t.Fatalf("decode template list --json: %v\noutput: %s", err, out.String())
+	}
+	seen := map[string]string{}
+	for _, row := range rows {
+		seen[row.Type] = row.EnvelopeSchema
+	}
+	if seen["contract"] != "envelope/v2" {
+		t.Fatalf("contract authors at %q, want envelope/v2; rows=%+v", seen["contract"], rows)
+	}
+	if seen["question"] != "envelope/v1" {
+		t.Fatalf("question authors at %q, want envelope/v1; rows=%+v", seen["question"], rows)
 	}
 }

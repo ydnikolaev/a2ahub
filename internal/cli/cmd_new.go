@@ -10,6 +10,7 @@ package cli
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -324,7 +325,7 @@ func (c *TemplateCommand) Name() string { return "template" }
 
 // Synopsis implements cli.Command.
 func (c *TemplateCommand) Synopsis() string {
-	return "inspect canonical templates: list | show <type> [--envelope-schema envelope/v1|envelope/v2]"
+	return "inspect canonical templates: list [--json] | show <type> [--envelope-schema envelope/v1|envelope/v2]"
 }
 
 // templateShowUsage is the one usage line both the arity and the flag
@@ -341,22 +342,37 @@ const templateShowUsage = "usage: a2a template show <type> [--envelope-schema en
 // merged, unpublishable contract that cost.
 func (c *TemplateCommand) Run(_ context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a template list | %s\n", strings.TrimPrefix(templateShowUsage, "usage: "))
+		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a template list [--json] | %s\n", strings.TrimPrefix(templateShowUsage, "usage: "))
 		return 2
 	}
+	rest, asJSON := splitTemplateJSONFlag(args[1:])
 	switch args[0] {
 	case "list":
+		// ONE type per line, nothing else. This output is a machine surface:
+		// `for t in $(a2a template list)` is how the skill-drift CI job — and
+		// any operator script — iterates the types, and word splitting makes a
+		// second column indistinguishable from a second type.
+		//
+		// Learned the expensive way on 2026-08-06: v0.19.6 added a tab-separated
+		// generation column here, which read fine to a human and turned that
+		// loop into `a2a template show envelope/v1`. The job went red on the
+		// release commit itself. A verb whose output is consumed by `$(...)` has
+		// a one-column contract whether or not anything writes it down, and the
+		// place to add a field is a NEW representation, not this one — hence
+		// --json below.
+		if asJSON {
+			return templateListJSON(stdio)
+		}
 		for _, t := range template.Types() {
-			generation, err := template.AuthoringEnvelopeSchema(t, validate.IsJSONSchemaFormat)
-			if err != nil {
-				_, _ = fmt.Fprintf(stdio.Stderr, "template list: %v\n", err)
-				return 1
-			}
-			_, _ = fmt.Fprintf(stdio.Stdout, "%s\t%s\n", t, generation)
+			_, _ = fmt.Fprintln(stdio.Stdout, t)
 		}
 		return 0
 	case "show":
-		typ, generation, ok := parseTemplateShowArgs(args[1:])
+		if asJSON {
+			_, _ = fmt.Fprintln(stdio.Stderr, "template show: --json is only valid for `template list`; show prints the template bytes")
+			return 2
+		}
+		typ, generation, ok := parseTemplateShowArgs(rest)
 		if !ok {
 			_, _ = fmt.Fprintln(stdio.Stderr, templateShowUsage)
 			return 2
@@ -372,6 +388,48 @@ func (c *TemplateCommand) Run(_ context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintf(stdio.Stderr, "template: unknown subcommand %q (want list|show)\n", args[0])
 		return 2
 	}
+}
+
+// splitTemplateJSONFlag peels --json off the tail so `list` can offer a
+// machine representation without the bare `list` output ever growing a column.
+func splitTemplateJSONFlag(args []string) (rest []string, asJSON bool) {
+	rest = make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg == "--json" {
+			asJSON = true
+			continue
+		}
+		rest = append(rest, arg)
+	}
+	return rest, asJSON
+}
+
+// templateListJSON is where the authoring generation per type lives now: a
+// representation nothing splits on whitespace. Each row names the type and the
+// envelope generation `a2a new <type>` renders for the template's own defaults,
+// so a caller can see WHICH shape it is about to author against without the
+// plain listing having to carry it.
+func templateListJSON(stdio IO) int {
+	type templateRow struct {
+		Type           string `json:"type"`
+		EnvelopeSchema string `json:"envelope_schema"`
+	}
+	rows := make([]templateRow, 0, len(template.Types()))
+	for _, t := range template.Types() {
+		generation, err := template.AuthoringEnvelopeSchema(t, validate.IsJSONSchemaFormat)
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "template list: %v\n", err)
+			return 1
+		}
+		rows = append(rows, templateRow{Type: t, EnvelopeSchema: generation})
+	}
+	enc := json.NewEncoder(stdio.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(rows); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "template list: cannot encode JSON output: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 // parseTemplateShowArgs splits `show`'s tail into the type and an optional
