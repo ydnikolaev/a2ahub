@@ -793,6 +793,26 @@ func (c *contractP6Core) diff(ctx context.Context, id, v1, v2 string) (contractI
 }
 
 func (c *contractP6Core) verifyExport(ctx context.Context, local, ref string) (contractVerifyResult, error) {
+	// A bare `<XC-id>`, with no @version, asks the LOCAL question: what is the
+	// export-source-v1 digest of the candidate in `local`?
+	//
+	// It exists because `generated_from.source_digest` must assert that digest
+	// and nothing computed it for an unpublished candidate. The only verb that
+	// could resolves a PUBLISHED version first, so it was unreachable for
+	// exactly the case that needs it — a producer's FIRST release. The remaining
+	// path was to run publish, read the value out of the refusal, and paste it
+	// back, which makes the assertion self-fulfilling: the field exists so a
+	// producer can prove the published export matches their code, and a number
+	// copied from a2a's own computation proves only that a2a agrees with itself.
+	// Reported as fb-20260806-eb224e.
+	//
+	// This is deliberately a CHECK, not a source. The digest a producer asserts
+	// should come from their own generator implementing the profile — which
+	// reference/contract-versions.md now defines — and this prints what a2a
+	// computes so the two can be compared before the irreversible verb.
+	if !strings.Contains(ref, "@") {
+		return c.verifyExportLocalDigest(ctx, local, ref)
+	}
 	historical, err := c.resolveHistorical(ctx, ref)
 	if err != nil {
 		return contractVerifyResult{}, err
@@ -807,6 +827,42 @@ func (c *contractP6Core) verifyExport(ctx context.Context, local, ref string) (c
 	return contractVerifyResult{
 		id: historical.ContractID, matches: matches, localDigest: localDigest,
 		wantDigest: historical.PublishedDigest, diff: diff,
+	}, nil
+}
+
+// verifyExportLocalDigest computes export-source-v1 over a local candidate and
+// compares it against whatever the descriptor asserts, without needing any
+// published history. wantDigest is the descriptor's own assertion, empty when
+// the candidate declares no `generated_from` at all.
+func (c *contractP6Core) verifyExportLocalDigest(ctx context.Context, local, ref string) (contractVerifyResult, error) {
+	parsed, err := artifact.ParseID(ref)
+	if err != nil || parsed.Prefix != "XC" || parsed.Class != artifact.ClassStanding {
+		return contractVerifyResult{}, fmt.Errorf("contract reference %q must be an XC-id, or an exact XC-id@canonical-version to compare against published bytes", ref)
+	}
+	snapshot, err := space.ReadContractCandidate(ctx, c.projectRoot, space.ContractCandidateLocation{Path: local, Source: space.ContractCandidateSourceStaging})
+	if err != nil {
+		return contractVerifyResult{}, err
+	}
+	core := snapshot.CoreSnapshot()
+	descriptor, err := contract.ParseDescriptor(core.Descriptor.Raw)
+	if err != nil {
+		return contractVerifyResult{}, fmt.Errorf("candidate descriptor at %s cannot be decoded: %w", local, err)
+	}
+	set, issues := contract.BuildCarriedSet(contract.ProfileContractSetV2, core.Descriptor.Raw, descriptor, core.Files)
+	if len(issues) != 0 {
+		return contractVerifyResult{}, fmt.Errorf("candidate at %s is not a valid declared carried set: %s", local, issues[0].Detail)
+	}
+	projection, err := set.ExportSource()
+	if err != nil {
+		return contractVerifyResult{}, err
+	}
+	want := ""
+	if descriptor.GeneratedFrom != nil {
+		want = descriptor.GeneratedFrom.SourceDigest
+	}
+	return contractVerifyResult{
+		id: ref, matches: want != "" && want == projection.Digest,
+		localDigest: projection.Digest, wantDigest: want,
 	}, nil
 }
 

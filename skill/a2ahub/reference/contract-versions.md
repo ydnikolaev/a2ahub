@@ -120,9 +120,48 @@ carried silently.
 Each `artifacts:` entry carries a `path`, a `role`, `normative`, a
 `media_type`, and — on `valid-fixture` and `invalid-fixture` entries only — a
 `conforms_to` naming the declared schema entry it validates against. The three
-roles `schema`, `valid-fixture` and `invalid-fixture` are **required**;
-companion roles (`errors`, `vocabulary`, `limits`, `changelog`, `example`,
-`other`) live under `artifacts/` and are declared the same way.
+roles `schema`, `valid-fixture` and `invalid-fixture` are **required**.
+
+**A role decides the path, not the other way round.** Each role admits exactly
+one root, and the envelope schema enforces it as a pattern — so a file in the
+wrong place is not a style problem, it is undeclarable:
+
+| Role | Required root |
+|---|---|
+| `schema` | `schema/` |
+| `valid-fixture` | `fixtures/valid/` |
+| `invalid-fixture` | `fixtures/invalid/` |
+| `errors`, `vocabulary`, `limits`, `changelog`, `example`, `other` | `artifacts/` |
+
+There is no fifth root. A file that sits anywhere else in your release tree — a
+fixture-suite manifest at `fixtures/manifest.json` is the case that comes up —
+has to move under one of these on the way into the carried set, which means the
+published set is not always a path-for-path mirror of the tree you generate.
+That is a real cost and it is stated here rather than discovered at `validate`.
+
+## Proving a generated contract came from your code
+
+`generated_from.source_digest` asserts the **export-source-v1** digest of the
+contract you are publishing. The profile is defined here so you can compute it
+in your own generator, which is the only way the field means anything: a value
+copied out of a2a's own refusal proves only that a2a agrees with itself.
+
+export-source-v1 is the combined digest of the DECLARED `schema` and fixture
+entries — nothing else:
+
+- **In scope**: every `artifacts:` entry whose role is `schema`,
+  `valid-fixture` or `invalid-fixture`.
+- **Out of scope**: the descriptor itself, and every companion under
+  `artifacts/`. Editing your changelog does not change the digest; editing a
+  fixture does.
+- Each in-scope entry contributes `path → sha256(file bytes)`; the pairs are
+  combined into one digest, so the result is stable under reordering the
+  inventory and changes if any declared path or any byte moves.
+
+Emit that value from your generator, and let publication check the agreement.
+`a2a contract verify-export --local <dir> <XC-id>` prints the digest a2a
+computes for a local candidate, which is for CHECKING your implementation —
+not for filling the field in from.
 
 ## The descriptor's `version:` is not yours to set
 
