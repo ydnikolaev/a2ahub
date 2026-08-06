@@ -464,15 +464,27 @@ trap finish EXIT
 cd "$ROOT"
 
 if [ "$MODE" = test ]; then
+  # lane-inputs: NEVER
+  # lane-reason: parameterised by the caller (`make test PKG=…`). The derivation
+  #   emits `go-test-scoped:<pkg>` from a package's OWN doc.go lane-inputs block;
+  #   this bare phase is that mechanism's implementation, never a selectable one.
   run_phase go-test-scoped run_scoped_tests
   exit 0
 fi
 
 if [ "$MODE" != live ] && [ "$MODE" != logic-e2e ]; then
+  # lane-inputs: ALWAYS
+  # lane-reason: a prerequisite, not a verdict — the binary-backed static gates
+  #   (skill-citations runs `a2a __catalog`, localserver-readonly-routes probes the
+  #   built router) need it whatever the diff touched. ~405 ms median, n=53.
   run_phase build-cli build_cli
 fi
 
 if [ "$MODE" = live ]; then
+  # lane-inputs: NEVER
+  # lane-reason: two credentials, network, and a real throwaway GitHub space with
+  #   Actions latency (Makefile:109 — "NEVER in `check`, never a merge gate"). No
+  #   diff may select it; `make live-e2e` is its only entry.
   run_phase live-e2e run_live_tests
   exit 0
 fi
@@ -481,11 +493,33 @@ if [ "$MODE" = logic-e2e ]; then
   # The inner loop: someone iterating on a scenario runs just this lane
   # instead of the whole ceiling. Same entry points `full` runs, same
   # -run scope — never a second, wider invocation.
+  #
+  # This is `logic-e2e`'s canonical declaration; the phase is invoked from a
+  # second call site inside `full` below, and one declaration covers both
+  # (P12 plan D-2 — dedup by phase name).
+  #
+  # 338 s median (n=29) — 78% of the ceiling, so this is the single phase the
+  # derivation exists to keep out of a lane that cannot reach it (spec 12 §3.4).
+  # The Go tree is declared whole rather than as `go list -deps ./internal/livee2e`:
+  # an honest over-approximation, because narrowing it is a tiering decision and
+  # J4 forbids a tier without its own before/after numbers. Filed in
+  # docs/backlog.md; the win this phase banks is on every NON-Go change.
+  # lane-inputs:
+  #   **/*.go
+  #   go.mod
+  #   go.sum
+  #   schemas/**
+  #   space-template/**
   run_phase logic-e2e run_logic_tests
   exit 0
 fi
 
 if [ "$MODE" = harness ]; then
+  # lane-inputs:
+  #   scripts/**
+  #   .agents/scripts/**
+  #   Makefile
+  #   docs/runbooks/publish-to-public.sh
   run_phase harness-teeth make --no-print-directory _harness-check
   exit 0
 fi
@@ -497,14 +531,36 @@ fi
 
 if [ "$MODE" = full ]; then
   run_repo_gates
+  # lane-inputs:
+  #   **/*.go
   run_phase gofmt check_gofmt
   # The tagged tree is a strict superset: this repository has no !livee2e
   # production file, so one vet invocation covers both ordinary and live code.
+  # lane-inputs:
+  #   **/*.go
+  #   go.mod
+  #   go.sum
   run_phase vet go vet -tags=livee2e ./...
+  # lane-inputs:
+  #   **/*.go
+  #   go.mod
+  #   go.sum
+  #   .golangci.yml
   run_phase golangci-lint check_lint
 fi
 
+# lane-inputs:
+#   **/*.go
+#   go.mod
+#   go.sum
 run_phase go-test run_go_tests
+# Reads the coverage.out this run just produced plus its own policy source; the
+# aggregate floor is a function of the whole Go tree, so it is declared as such
+# rather than as the one package that holds the thresholds.
+# lane-inputs:
+#   **/*.go
+#   go.mod
+#   go.sum
 run_phase coverage-policy go run internal/coveragepolicy/covercheck.go coverage.out
 
 if [ "$MODE" = full ]; then

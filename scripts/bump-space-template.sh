@@ -23,6 +23,11 @@
 # drift, and adds the guard no human performs: it REFUSES to write a version
 # whose tag is not published yet. That inverts the 2026-07-26 failure from
 # "possible if you forget the order" to "impossible without --force".
+#
+# lane-inputs:
+#   space-template/space.yaml
+#   space-template/.github/workflows/a2a-validate.yml
+#   releasenotes/*.yaml
 set -euo pipefail
 
 MANIFEST="space-template/space.yaml"

@@ -3,6 +3,15 @@
 # template and internal/contract must agree on one closed role/profile model;
 # published v1 bytes stay immutable; no second carried-set/digest builder may
 # grow in a transport or adapter.
+#
+# lane-inputs:
+#   schemas/envelope/v2/contract.schema.json
+#   schemas/templates/v2/contract.md
+#   schemas/event/v2/event.schema.json
+#   schemas/published-v1.sha256
+#   schemas/**/v1/**
+#   internal/**/*.go
+#   !internal/**/*_test.go
 set -euo pipefail
 
 ROOT="${CONTRACT_CARRIED_SET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"

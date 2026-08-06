@@ -2,6 +2,9 @@
 # Every feature in the release being cut must make an explicit public-roadmap
 # decision. This prevents a new capability from silently missing Shipped now,
 # while `omit` keeps the page curated rather than turning it into a changelog.
+#
+# lane-inputs:
+#   releasenotes/*.yaml
 set -euo pipefail
 
 check_one() {

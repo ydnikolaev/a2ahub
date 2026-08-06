@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Guard P3's single-source invariant: production HTML and the loopback server
 # consume the frozen operational snapshot; only operationalsource derives it.
+#
+# lane-inputs:
+#   internal/**/*.go
+#   !internal/**/*_test.go
+#   web/design-source/14-local-dashboard-v4.dc.html
 set -euo pipefail
 
 ROOT="${OPERATIONAL_PROJECTION_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"

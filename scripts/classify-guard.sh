@@ -21,6 +21,9 @@
 # Honest limit: this guards new top-level entries and known globs. It does NOT
 # catch a private note buried inside a public dir — that residual rests on the
 # "planning goes in docs/" convention plus a secret scanner.
+
+# lane-inputs: ALWAYS
+# lane-reason: check 1 reads `git ls-files` over the whole tracked set (line 114) and check 2 globs every top-level working-tree entry with `for e in *` (line 123) — any newly tracked or newly appearing top-level path can flip the verdict
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"

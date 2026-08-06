@@ -3,6 +3,12 @@
 # parser rather than line counts: every typed event constructor must source its
 # serialized receipt from the canonical fold candidate evaluation, and no
 # public writer input may expose a caller-authored state.
+#
+# lane-inputs:
+#   internal/cli/*.go
+#   internal/mcp/*.go
+#   !internal/cli/*_test.go
+#   !internal/mcp/*_test.go
 set -euo pipefail
 
 ROOT="${EVENT_WRITER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"

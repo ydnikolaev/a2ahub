@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Guards the pre-P5 trust-boundary decision: G204/G304 may be suppressed only
 # by the exact path rules in .golangci.yml, never globally.
+#
+# lane-inputs:
+#   .golangci.yml
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
