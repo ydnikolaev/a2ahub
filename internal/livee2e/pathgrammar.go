@@ -60,6 +60,23 @@ type Path struct {
 	// EARLIER path in the Precondition chain are never repeated here —
 	// the runner replays them; this path names only what IT adds.
 	Steps []Step
+	// RequiredApprovers is the quorum set a fold.KindDecision `approve`
+	// step in THIS path's own Steps resolves against (row-labels,
+	// livee2e.SystemA/SystemB — never a real system id, same namespace
+	// Step.Actor lives in). Declared here, on the Path, because the
+	// grammar has no other source for a decision's own required_approvers
+	// set — resolveApprove (below) refuses an approve step on a path that
+	// leaves this empty rather than inferring the quorum from which
+	// actors happen to drive the steps present (§11.4's own "no bare
+	// supersets" spirit: inferring the set from step order would silently
+	// under-declare a quorum a real draft names explicitly,
+	// draftfields.go's own `required_approvers=[me,peer]`). Empty for
+	// every path that declares no decision-approve step — never
+	// threaded through a Precondition chain (resolveApprove's own walk-
+	// local approvals record, mirroring preBlock's own doc comment): no
+	// declared path today needs a decision's approvals recovered across a
+	// chain boundary.
+	RequiredApprovers []string
 }
 
 // Step is one path leg: an actor drives one (Kind, Transition) forward,
@@ -78,6 +95,30 @@ type Path struct {
 // LegalNext table via ResolveStep. This is plan D3: a path cannot assert
 // a transition the domain does not admit, and a table change surfaces as
 // a failing path rather than as two documents quietly disagreeing.
+//
+// `unblock` and fold.KindDecision's own `approve` are the TWO dynamic-row
+// (fold.StateDynamic) transitions this grammar resolves for itself rather
+// than refusing (ResolveStep's own doc comment still refuses every
+// StateDynamic row it is ever handed — walkSteps intercepts both BEFORE
+// calling it, the same pattern for each). walkSteps special-cases
+// fold.TUnblock, recovering the state its own EARLIER fold.TBlock step
+// (same Kind, same walk) recorded as the pre-block state, mirroring
+// fold.go's applyUnblock exactly (recomputed from the event sequence,
+// never a second interpretation of the rule). This is deliberately
+// narrow: a path may only `unblock` a Kind it `block`ed in its OWN Steps
+// — pre-block state does NOT cross a Precondition boundary
+// (chainEndStates discards it), so a path that blocks in its
+// precondition and unblocks in its own Steps gets a named grammar error,
+// not a silently wrong recovered state. No declared path needs the
+// cross-boundary form today; widening it is a real future change, not an
+// oversight.
+//
+// walkSteps ALSO special-cases (fold.KindDecision, fold.TApprove),
+// mirroring fold.go's own applyApprove/quorumReached: quorum arithmetic
+// against the path's own declared RequiredApprovers (Path's own doc
+// comment), recorded per-approving-actor in a walk-local record (never
+// crossing a Precondition boundary, same rule as pre-block state) — see
+// resolveApprove below.
 //
 // A domain act that has NO fold transition at all — contract adoption
 // (03-domain.md §10.5: "the closed transition enum has no `adopt`"), or
@@ -280,7 +321,12 @@ func NotActionable(system, artifact string) Predicate {
 // arithmetic) is ALSO refused, by name, rather than handed back as the
 // sentinel: a path step cannot derive its own resulting state for a row
 // dedicated fold.go logic resolves at apply time, and returning the
-// sentinel silently would be a dropped guard, not a resolution.
+// sentinel silently would be a dropped guard, not a resolution. This
+// function is never the place that resolves `unblock` or decision
+// `approve` for real — see resolveUnblock/resolveApprove and walkSteps'
+// own doc comments for the two narrow exceptions this grammar makes;
+// every OTHER StateDynamic row (there are none today besides these two)
+// still refuses here exactly as before.
 func ResolveStep(kind fold.Kind, from fold.State, transition string) (fold.State, error) {
 	for _, move := range fold.LegalNext(kind, from) {
 		if move.Transition != transition {
@@ -292,6 +338,91 @@ func ResolveStep(kind fold.Kind, from fold.State, transition string) (fold.State
 		return move.To, nil
 	}
 	return "", fmt.Errorf("livee2e: no transition row for (kind=%s, from=%q, transition=%q)", kind, from, transition)
+}
+
+// resolveUnblock resolves an `unblock` step's dynamic target — the state
+// that held immediately before the matching `block` — from THIS walk's
+// own preBlock map, never independently of fold's own table and never by
+// re-deriving the rule: fold.go's applyUnblock recovers Result.PreBlockState
+// (itself recomputed from the event sequence, "never externally stored");
+// this is the grammar-level mirror of that exact recovery, sourced from
+// the SAME walk's own earlier TBlock step (see walkSteps).
+//
+// Two checks, both required, deliberately not collapsed into one:
+//  1. fold.LegalNext(kind, from) must still contain a TUnblock row — this
+//     stays a real check on fold's own table (never invented independent
+//     of it) rather than a coincidence-of-today shortcut; today the only
+//     From with an unblock row is StateBlocked, but that is a fact about
+//     the current table, not a grammar invariant this function may lean
+//     on without checking.
+//  2. preBlock must actually hold a recorded value for kind — a path may
+//     only unblock a Kind it blocked in its OWN Steps (Step's own doc
+//     comment); a miss here is a genuine grammar error (unblock declared
+//     with no matching block earlier in the SAME walk), not a fold
+//     refusal, so it is reported distinctly.
+func resolveUnblock(kind fold.Kind, from fold.State, preBlock map[fold.Kind]fold.State) (fold.State, error) {
+	found := false
+	for _, move := range fold.LegalNext(kind, from) {
+		if move.Transition == fold.TUnblock {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return "", fmt.Errorf("livee2e: no transition row for (kind=%s, from=%q, transition=%q)", kind, from, fold.TUnblock)
+	}
+	pre, ok := preBlock[kind]
+	if !ok {
+		return "", fmt.Errorf("livee2e: (kind=%s, from=%q, transition=%q): no recorded pre-block state for this Kind earlier in the SAME walk — a path may only unblock a Kind it blocked in its OWN Steps, never across a Precondition boundary", kind, from, fold.TUnblock)
+	}
+	return pre, nil
+}
+
+// resolveApprove resolves a fold.KindDecision `approve` step's dynamic
+// target — quorum arithmetic mirrored from fold.go's own applyApprove/
+// quorumReached, never re-derived independently of it: the decision stays
+// at fold.StateProposed until every entry in requiredApprovers (Path's own
+// RequiredApprovers, declared data — never inferred from step order, see
+// Path's own doc comment) has approved within THIS walk, at which point it
+// moves to fold.StateApproved.
+//
+// approvals is this walk's OWN record of which row-labels (livee2e.SystemA/
+// SystemB) have approved so far, for this Kind — mirrors preBlock's own
+// doc comment: local to one walkSteps call, never threaded through
+// chainEndStates/PathTransitions's own precondition-chain recursion (no
+// declared path today needs a decision's approvals recovered across a
+// chain boundary).
+//
+// Two checks, both required, deliberately not collapsed into one (same
+// shape as resolveUnblock):
+//  1. fold.LegalNext(kind, from) must still contain a TApprove row — a
+//     real check on fold's own table, never a coincidence-of-today
+//     shortcut.
+//  2. requiredApprovers must be non-empty — an approve step on a path that
+//     declares no RequiredApprovers is a genuine grammar error (the walk
+//     has no quorum to arithmetic against), not a fold refusal, so it is
+//     reported distinctly.
+func resolveApprove(kind fold.Kind, from fold.State, requiredApprovers []string, approvals map[string]bool, actor string) (fold.State, error) {
+	found := false
+	for _, move := range fold.LegalNext(kind, from) {
+		if move.Transition == fold.TApprove {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return "", fmt.Errorf("livee2e: no transition row for (kind=%s, from=%q, transition=%q)", kind, from, fold.TApprove)
+	}
+	if len(requiredApprovers) == 0 {
+		return "", fmt.Errorf("livee2e: (kind=%s, from=%q, transition=%q): no RequiredApprovers declared on this path — an approve step needs the quorum set named on Path.RequiredApprovers, never inferred from step order", kind, from, fold.TApprove)
+	}
+	approvals[actor] = true
+	for _, required := range requiredApprovers {
+		if !approvals[required] {
+			return fold.StateProposed, nil
+		}
+	}
+	return fold.StateApproved, nil
 }
 
 // walkSteps resolves steps in order against states (a per-Kind "current
@@ -310,8 +441,26 @@ func ResolveStep(kind fold.Kind, from fold.State, transition string) (fold.State
 // 2), states[step.Kind] is left exactly as it was (the walk does not
 // advance), and no triple is appended for it (consequence 3 — no
 // transition-coverage credit for an act the product refused).
-func walkSteps(steps []Step, states map[fold.Kind]fold.State) ([]fold.TransitionKey, error) {
+//
+// preBlock is this walk's OWN per-Kind pre-block-state record (Step's
+// own doc comment on the unblock exception): a landed fold.TBlock step
+// records `from` under its Kind; a landed fold.TUnblock step resolves
+// via resolveUnblock instead of ResolveStep, using that same record. It
+// is local to one walkSteps call and is NOT threaded through
+// chainEndStates/PathTransitions's own precondition-chain recursion —
+// deliberately, per Step's own doc comment: no declared path needs a
+// block in one path's Steps recovered by an unblock in another.
+//
+// requiredApprovers is the CALLING Path's own RequiredApprovers (Path's
+// own doc comment) — walkSteps never reads a Path directly (it only ever
+// sees a []Step), so this is threaded in as a parameter by both call
+// sites (chainEndStates, PathTransitions) exactly as they already thread
+// states. approvals mirrors preBlock's own per-walk, per-Kind shape (see
+// resolveApprove's own doc comment).
+func walkSteps(steps []Step, requiredApprovers []string, states map[fold.Kind]fold.State) ([]fold.TransitionKey, error) {
 	out := make([]fold.TransitionKey, 0, len(steps))
+	preBlock := map[fold.Kind]fold.State{}
+	approvals := map[fold.Kind]map[string]bool{}
 	for i, step := range steps {
 		if step.Refused != nil {
 			continue
@@ -320,7 +469,23 @@ func walkSteps(steps []Step, states map[fold.Kind]fold.State) ([]fold.Transition
 		if step.Transition != fold.TCreate {
 			from = states[step.Kind]
 		}
-		to, err := ResolveStep(step.Kind, from, step.Transition)
+
+		var to fold.State
+		var err error
+		switch {
+		case step.Transition == fold.TUnblock:
+			to, err = resolveUnblock(step.Kind, from, preBlock)
+		case step.Kind == fold.KindDecision && step.Transition == fold.TApprove:
+			if approvals[step.Kind] == nil {
+				approvals[step.Kind] = map[string]bool{}
+			}
+			to, err = resolveApprove(step.Kind, from, requiredApprovers, approvals[step.Kind], step.Actor)
+		default:
+			to, err = ResolveStep(step.Kind, from, step.Transition)
+			if err == nil && step.Transition == fold.TBlock {
+				preBlock[step.Kind] = from
+			}
+		}
 		if err != nil {
 			return nil, fmt.Errorf("step %d (actor=%s kind=%s transition=%s): %w", i, step.Actor, step.Kind, step.Transition, err)
 		}
@@ -354,7 +519,7 @@ func chainEndStates(byID map[string]Path, id string, visiting map[string]bool) (
 		}
 		states = inherited
 	}
-	if _, err := walkSteps(path.Steps, states); err != nil {
+	if _, err := walkSteps(path.Steps, path.RequiredApprovers, states); err != nil {
 		return nil, fmt.Errorf("livee2e: path %q: %w", id, err)
 	}
 	return states, nil
@@ -384,7 +549,7 @@ func PathTransitions(byID map[string]Path, id string) ([]fold.TransitionKey, err
 		states = inherited
 	}
 
-	triples, err := walkSteps(path.Steps, states)
+	triples, err := walkSteps(path.Steps, path.RequiredApprovers, states)
 	if err != nil {
 		return nil, fmt.Errorf("livee2e: path %q: %w", id, err)
 	}

@@ -29,6 +29,9 @@ func ConformancePaths() []Path {
 	out = append(out, workRequestPaths()...)
 	out = append(out, dataLoopPaths()...)
 	out = append(out, retirementPaths()...)
+	out = append(out, nonCooperativeCounterpartyPaths()...)
+	out = append(out, requirementPaths()...)
+	out = append(out, decisionPaths()...)
 	return out
 }
 
@@ -734,4 +737,481 @@ func retirementPaths() []Path {
 			},
 		},
 	}
+}
+
+// --- Family 7 — the non-cooperative counterparty (P11 W3c): the two
+// behavioural branches the system has never once seen, where the target
+// does NOT engage the way every path above narrates. Every one of the
+// six families above narrates the target engaging (acknowledge/accept/
+// respond/verify); none refuses outright and none blocks in flight. ------
+
+// nonCooperativeCounterpartyPaths declares the decline pair (W3c
+// DELIVERABLE 1) and the block/unblock path (W3c DELIVERABLE 2).
+func nonCooperativeCounterpartyPaths() []Path {
+	questionDeclinedAfterAcknowledge := Path{
+		ID:           "question-declined-after-acknowledge",
+		Precondition: "question-lifecycle-acknowledged",
+		Intent: "the TARGET declines outright after acknowledging, instead of engaging " +
+			"(accept/respond) — a real, landed `decline` transition (exchangeRows(): " +
+			"acknowledged -> decline -> declined, Role Target), never a refusal. " +
+			"question-lifecycle-acknowledged's own last step already establishes the " +
+			"paired POSITIVE control this path's own negative rests on: PendingOn(question, " +
+			"SystemB) and ExpectedTransition(question, TRespond), asserted moments earlier in " +
+			"the SAME run, on the SAME artifact — the target genuinely owed a move before this " +
+			"step, and this step is the assertion that the debt is gone, not merely renamed. " +
+			"`declined` is NOT in openExchangeStates (internal/cache/types.go's own openStates " +
+			"allowlist), so the debt does not just move (contrast the data loop's own rejected-" +
+			"handoff finding, where AbsentFromOpenItems on `a2a thread` hid an owed supersede) " +
+			"— here AbsentFromOpenItems is the CORRECT reading: the exchange is over, full stop, " +
+			"which is exactly the brief's own 'a declined that still nags somebody is exactly " +
+			"the defect class this epic started from'. Checked on BOTH parties' actionable " +
+			"lists, not just the declining target's: internal/pendency's table carries no row " +
+			"at all for (Question, StateDeclined) — a lookup miss — so actionableReasons treats " +
+			"it as an empty verdict for EVERY system, never a re-derived local fallback " +
+			"(internal/cache/inbox.go's own doc comment). This is a REAL negative for A too, " +
+			"not a vacuous one: questions default to `blocking: true` " +
+			"(schemas/templates/v1/question.md), so actionableReasons' own condition 4 " +
+			"(p1-or-blocking-open) makes A actionable for THIS SAME question while it is still " +
+			"`acknowledged` (open, blocking, A is the sender) — the paired positive control for " +
+			"A's own negative, distinct from B's (driveDeclineFullySync, pathdriver_live.go, " +
+			"reads both checkouts only AFTER a full sync past the decline, precisely because a " +
+			"stale, pre-sync read of A's checkout would still show that same true-before-decline " +
+			"positive and wrongly look like a passing negative).",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TDecline,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateDeclined),
+					AbsentFromOpenItems("question"),
+					NotActionable(SystemA, "question"),
+					NotActionable(SystemB, "question"),
+				},
+			},
+		},
+	}
+
+	workRequestDeclinedFromSubmitted := Path{
+		ID: "work-request-declined-from-submitted",
+		Intent: "the TARGET declines straight from `submitted`, WITHOUT ever acknowledging — " +
+			"exchangeRows() gives decline its own row from submitted directly (Role Target), " +
+			"so a target may refuse before ever conceding receipt. The paired positive control " +
+			"is this path's own submit step, moments earlier: PendingOn(work-request, SystemB) " +
+			"and ExpectedTransition(work-request, TAcknowledge) — the target genuinely owed " +
+			"`acknowledge` (the same is-owed fact question-declined-after-acknowledge's own " +
+			"acknowledge-owed control rests on, one state earlier). Same AbsentFromOpenItems / " +
+			"NotActionable-on-both-parties reasoning as that path: `declined` carries no " +
+			"internal/pendency row and is not in cache's own openStates allowlist for " +
+			"work_request either — the exchange is over for both parties, not merely handed " +
+			"back and forth. Unlike the question path's own condition-4 wrinkle " +
+			"(schemas/templates/v1/question.md defaults `blocking: true`), work_request.md " +
+			"defaults `blocking: false`, so this artifact is never actionable for A via " +
+			"p1-or-blocking-open at any point on this path — A's own negative here is trivially " +
+			"true throughout, not merely post-decline, which is why this path needs no " +
+			"analogous 'the driver must read past a stale positive' caveat.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("work-request", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TSubmit,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TAcknowledge),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TDecline,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateDeclined),
+					AbsentFromOpenItems("work-request"),
+					NotActionable(SystemA, "work-request"),
+					NotActionable(SystemB, "work-request"),
+				},
+			},
+		},
+	}
+
+	questionBlockThenUnblock := Path{
+		ID:           "question-block-then-unblock-restores-accepted",
+		Precondition: "question-lifecycle-acknowledged",
+		Intent: "the TARGET blocks an in-flight question on a blocker, then later unblocks " +
+			"it — the second real behavioural branch this catalogue has never seen. Block is " +
+			"driven deliberately from `accepted` (accept first, from the inherited " +
+			"`acknowledged`), not straight from acknowledged/in_progress, so unblock's own " +
+			"dynamic recovery (fold.StateDynamic, table.go: 'one dynamic row per possible " +
+			"pre-block state') has more than one candidate to prove it picked the RIGHT one " +
+			"from — the assertion this path exists to make is that unblock restores `accepted` " +
+			"specifically, NOT `acknowledged` (the state before accept) and NOT `in_progress` " +
+			"(a state this path never even reaches). fold.go's applyUnblock recovers " +
+			"Result.PreBlockState, recomputed from the event sequence, never a second " +
+			"interpretation of the rule — pathgrammar.go's own walkSteps mirrors that exactly " +
+			"at the grammar level (resolveUnblock), from THIS path's own recorded pre-block " +
+			"state, so PathTransitions resolves this path without the StateDynamic refusal " +
+			"ResolveStep still gives every OTHER caller. Pendency through the whole arc, per " +
+			"the shipped table (internal/pendency's own StateBlocked row): the debt stays on " +
+			"the TARGET while blocked (`domain 3.4.3 makes unblock the target's own event; the " +
+			"referenced blocker is a separate artifact carrying its own pendency`) — asserted " +
+			"here as PendingOn(question, SystemB) + ExpectedTransition(question, TUnblock) " +
+			"while blocked, then PendingOn(question, SystemB) + ExpectedTransition(question, " +
+			"TRespond) once unblocked and accepted-again — never AbsentFromOpenItems at any " +
+			"point in this arc, because the exchange never stops being live. The blocker " +
+			"itself is a throwaway local draft handoff (never submitted, so it never enters " +
+			"the committed mirror) — same `--refs` pattern data-loop-attempt-one-fails already " +
+			"established: fold/the CLI validate no cross-artifact existence for `--refs`.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TBlock,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateBlocked),
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TUnblock),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TUnblock,
+				Predicates: []Predicate{
+					// The load-bearing assertion: restored to `accepted` — the
+					// state that held IMMEDIATELY BEFORE block — not
+					// `acknowledged` (before accept) and not `in_progress`
+					// (never reached on this path).
+					FoldedState("question", fold.StateAccepted),
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TRespond),
+				},
+			},
+		},
+	}
+
+	return []Path{questionDeclinedAfterAcknowledge, workRequestDeclinedFromSubmitted, questionBlockThenUnblock}
+}
+
+// --- Family 8 — requirement (P11 W3c DELIVERABLE 1): the standing
+// artifact type with no path at all, and the control for the pendency fix
+// spec §15 records: `requirement/acknowledged` split into BEFORE (the
+// target owes work that is not a requirement transition — Owners
+// non-empty, Expected "") and AFTER a fulfilling response lands (the
+// REQUESTER owes `satisfy`, 03-domain.md §3.4.2's own actor column:
+// "target publishes, requester verifies — satisfy event is requester's").
+// The shipped table once named the TARGET as owing `satisfy` — a move
+// `fold` refuses from it — and this family's first path is the control
+// that would have caught it, asserting the BEFORE half explicitly rather
+// than the weaker "somebody is pending".
+//
+// The AFTER half is NOT declared here. `hasFulfillingResponse` (internal/
+// cache/inbox.go) reads fold.Result.Responses, populated ONLY by a
+// fold.TRespond event landing on the SAME artifact (fold.go:174, and
+// RespondCommand.Run's own doc comment: "Result.Responses is seeded to
+// `submitted` entirely by the PARENT's own `respond` event ... independent
+// of any response-owned event"). requirementRows() (table.go) carries no
+// TRespond row for fold.KindRequirement — `a2a respond <XR-id>` therefore
+// refuses illegal-transition unconditionally, for every state, and no
+// other shipped verb authors a TRespond event. HasFulfillingResponse can
+// never become true for a requirement through any shipped surface today.
+// This is reported as a finding (this wave's own report), not worked
+// around here: I9 forbids asserting a predicate no shipped surface can be
+// driven to demonstrate, and the fix (a verb that attaches a response to a
+// requirement) is outside this file's own edit scope (internal/fold,
+// internal/cli are off limits this wave).
+//
+// draft is unobservable for a REQUIREMENT for the same reason it is for
+// every other standing/exchange kind (spec §16: "`a2a new` writes to the
+// local staging... `a2a submit` commits the artifact already
+// [published]") — the create step's own FoldedState(draft) predicate is
+// logged and skipped (checkFoldedState's own I9 handling), same as every
+// other kind's create step in this file.
+func requirementPaths() []Path {
+	publishedAcknowledged := Path{
+		ID: "requirement-lifecycle-published-acknowledged",
+		Intent: "requirement draft -> published -> acknowledged — the shared prefix every " +
+			"other declared requirement path below continues from, and the control for " +
+			"spec §15's just-fixed pendency row. The BEFORE half of the acknowledged " +
+			"split, asserted explicitly: PendingOn(requirement, SystemB) (the target " +
+			"genuinely owes something) PLUS ExpectedTransition(requirement, \"\") (that " +
+			"something is not a requirement transition — 03-domain.md §3.4.2: the target's " +
+			"owed work is publishing a contract version and submitting a response, neither " +
+			"of which is a move on THIS artifact). The published step's own " +
+			"ExpectedTransition(requirement, TAcknowledge) is the paired positive control " +
+			"the empty-string assertion needs — expected_transition is `omitempty` " +
+			"(cache.OpenItem), so \"\" is also what an undecoded/absent field would read; " +
+			"without the published step naming a REAL transition moments earlier on the " +
+			"SAME artifact, the acknowledged step's empty read would not distinguish " +
+			"'genuinely no named transition' from 'the surface silently returned nothing'.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("requirement", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TPublish,
+				Predicates: []Predicate{
+					PendingOn("requirement", SystemB),
+					ExpectedTransition("requirement", fold.TAcknowledge),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindRequirement, Transition: fold.TAcknowledge,
+				Predicates: []Predicate{
+					PendingOn("requirement", SystemB),
+					// The load-bearing assertion (this family's own Intent):
+					// the target owes SOMETHING (non-empty waiting_on above)
+					// that is NOT a requirement transition (empty expected
+					// here) — the third verdict shape spec §15 forced,
+					// distinct from both "nobody owes anything" and "X owes
+					// a named transition".
+					ExpectedTransition("requirement", ""),
+				},
+			},
+		},
+	}
+
+	satisfied := Path{
+		ID:           "requirement-satisfied",
+		Precondition: publishedAcknowledged.ID,
+		Intent: "the OWNER satisfies the requirement — `satisfy` is legal from `acknowledged` " +
+			"for RoleOwner at the fold layer with NO precondition on HasFulfillingResponse " +
+			"(that fact gates only the PENDENCY relation's rendering, a strictly separate " +
+			"mechanism from fold's own legality — table.go's requirementRows() row carries " +
+			"no such gate), so this triple is coverable even though the AFTER-response " +
+			"pendency row this family's own package doc reports is not. `satisfied` is not " +
+			"in cache's own openStates allowlist for requirement (types.go) — settled, not " +
+			"merely handed back.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TSatisfy,
+				Predicates: []Predicate{
+					FoldedState("requirement", fold.StateSatisfied),
+					AbsentFromOpenItems("requirement"),
+				},
+			},
+		},
+	}
+
+	declinedFromPublished := Path{
+		ID: "requirement-declined-from-published",
+		Intent: "the TARGET declines straight from `published`, without ever acknowledging — " +
+			"requirementRows() gives decline its own row from BOTH published and acknowledged " +
+			"(Role Target); this path exercises the published one, a fresh standalone " +
+			"instance (a `create` step always starts a genuinely new artifact, Step's own " +
+			"doc comment) rather than a precondition-chained continuation, mirroring " +
+			"work-request-declined-from-submitted's own shape for the exchange kinds. " +
+			"`declined` is not in requirement's own openStates allowlist — settled.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("requirement", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TPublish,
+				Predicates: []Predicate{
+					PendingOn("requirement", SystemB),
+					ExpectedTransition("requirement", fold.TAcknowledge),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindRequirement, Transition: fold.TDecline,
+				Predicates: []Predicate{
+					FoldedState("requirement", fold.StateDeclined),
+					AbsentFromOpenItems("requirement"),
+				},
+			},
+		},
+	}
+
+	declinedFromAcknowledged := Path{
+		ID:           "requirement-declined-from-acknowledged",
+		Precondition: publishedAcknowledged.ID,
+		Intent: "the TARGET declines from `acknowledged` instead of ever fulfilling the " +
+			"requirement — the second of requirementRows()'s two decline rows, continuing " +
+			"from the SAME acknowledged prefix the family's own control path establishes.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindRequirement, Transition: fold.TDecline,
+				Predicates: []Predicate{
+					FoldedState("requirement", fold.StateDeclined),
+					AbsentFromOpenItems("requirement"),
+				},
+			},
+		},
+	}
+
+	withdrawnFromPublished := Path{
+		ID: "requirement-withdrawn-from-published",
+		Intent: "the REQUESTER withdraws its own published requirement before the target " +
+			"acts — `withdraw` is Role Owner (requirementRows()), the requester's own " +
+			"uncooperative branch (contrast decline, the target's own). A fresh standalone " +
+			"instance, same reasoning as requirement-declined-from-published.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("requirement", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TPublish,
+				Predicates: []Predicate{
+					PendingOn("requirement", SystemB),
+					ExpectedTransition("requirement", fold.TAcknowledge),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TWithdraw,
+				Predicates: []Predicate{
+					FoldedState("requirement", fold.StateWithdrawn),
+					AbsentFromOpenItems("requirement"),
+				},
+			},
+		},
+	}
+
+	withdrawnFromAcknowledged := Path{
+		ID:           "requirement-withdrawn-from-acknowledged",
+		Precondition: publishedAcknowledged.ID,
+		Intent: "the REQUESTER withdraws after the target has already acknowledged — " +
+			"requirementRows()'s third withdraw row, continuing from the family's own " +
+			"acknowledged prefix.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TWithdraw,
+				Predicates: []Predicate{
+					FoldedState("requirement", fold.StateWithdrawn),
+					AbsentFromOpenItems("requirement"),
+				},
+			},
+		},
+	}
+
+	return []Path{
+		publishedAcknowledged, satisfied,
+		declinedFromPublished, declinedFromAcknowledged,
+		withdrawnFromPublished, withdrawnFromAcknowledged,
+	}
+}
+
+// --- Family 9 — decision (P11 W3c DELIVERABLE 2): propose -> approve by
+// each required approver -> approved on quorum, and separately -> reject.
+// `approve` is a DYNAMIC row (fold.StateDynamic — fold detects quorum);
+// pathgrammar.go's own resolveApprove resolves it from THIS path's own
+// declared RequiredApprovers, mirroring fold.go's applyApprove exactly. ---
+
+func decisionPaths() []Path {
+	partialQuorumThenApproved := Path{
+		ID: "decision-lifecycle-partial-quorum-then-approved",
+		Intent: "propose lists BOTH required approvers (draftfields.go's own " +
+			"`required_approvers=[me,peer]`, RequiredApprovers below names the same pair); " +
+			"B approves first — quorum 1 of 2 — and the load-bearing assertion is that the " +
+			"decision is STILL `proposed` afterwards, with the REMAINING approver (A) still " +
+			"owing `approve`: a decision that looked approved on the first vote would be a " +
+			"serious defect and nothing else in this catalogue tests it. A approves second — " +
+			"quorum 2 of 2 — and the decision flips to `approved`, terminal (decisionRows() " +
+			"carries no ordinary transition out of `approved` besides the exceptional " +
+			"`supersede`), owing nobody: `approved` is not in decision's own openStates " +
+			"allowlist (types.go).",
+		RequiredApprovers: []string{SystemA, SystemB},
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("decision", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TPropose,
+				Predicates: []Predicate{
+					PendingOn("decision", SystemA, SystemB),
+					ExpectedTransition("decision", fold.TApprove),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindDecision, Transition: fold.TApprove,
+				Predicates: []Predicate{
+					// The load-bearing assertion: quorum 1 of 2 does NOT
+					// approve the decision. MUTATION PROOF (this wave's own
+					// report): flipping this to StateApproved must red.
+					FoldedState("decision", fold.StateProposed),
+					PendingOn("decision", SystemA),
+					ExpectedTransition("decision", fold.TApprove),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TApprove,
+				Predicates: []Predicate{
+					FoldedState("decision", fold.StateApproved),
+					AbsentFromOpenItems("decision"),
+				},
+			},
+		},
+	}
+
+	approvedSuperseded := Path{
+		ID:           "decision-approved-superseded",
+		Precondition: partialQuorumThenApproved.ID,
+		Intent: "supersede is decisionRows()'s own escape hatch from `approved` (Role Any — " +
+			"fold cannot verify successor-authorship from the predecessor's own envelope " +
+			"facts alone, table.go's own documented deviation).",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("decision", fold.StateSuperseded),
+					AbsentFromOpenItems("decision"),
+				},
+			},
+		},
+	}
+
+	rejected := Path{
+		ID: "decision-lifecycle-rejected",
+		Intent: "reject is Role Approver with NO quorum gate (decisionRows(): a single " +
+			"approver's reject moves `proposed` straight to `rejected`, unlike approve's " +
+			"own dynamic quorum row) — a fresh standalone instance (a `create` step always " +
+			"starts a genuinely new artifact) rather than a continuation of the " +
+			"partial-quorum path above, since propose/reject and propose/approve are " +
+			"mutually exclusive branches from the SAME `proposed` state.",
+		RequiredApprovers: []string{SystemA, SystemB},
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("decision", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TPropose,
+				Predicates: []Predicate{
+					PendingOn("decision", SystemA, SystemB),
+					ExpectedTransition("decision", fold.TApprove),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindDecision, Transition: fold.TReject,
+				Predicates: []Predicate{
+					FoldedState("decision", fold.StateRejected),
+					AbsentFromOpenItems("decision"),
+				},
+			},
+		},
+	}
+
+	rejectedSuperseded := Path{
+		ID:           "decision-rejected-superseded",
+		Precondition: rejected.ID,
+		Intent: "supersede is decisionRows()'s own escape hatch from `rejected` too (Role " +
+			"Any, same documented deviation as the approved branch) — the revision is a " +
+			"NEW XD superseding this one, per internal/pendency's own " +
+			"`rejected: settled; the revision is a NEW XD on the thread` row.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("decision", fold.StateSuperseded),
+					AbsentFromOpenItems("decision"),
+				},
+			},
+		},
+	}
+
+	return []Path{partialQuorumThenApproved, approvedSuperseded, rejected, rejectedSuperseded}
 }
