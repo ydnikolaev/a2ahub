@@ -566,3 +566,77 @@ func TestTemplateShowUnknownType(t *testing.T) {
 		t.Fatalf("code = %d, want 1 (unknown type)", code)
 	}
 }
+
+// TestTemplateShowPrintsTheAuthoringGeneration is the CLI half of the
+// fb-20260806-3539ac regression: `a2a template show contract` must print the
+// declared-v2 shape `a2a new contract` writes and the publication planner
+// requires, not the historical envelope/v1 template.
+func TestTemplateShowPrintsTheAuthoringGeneration(t *testing.T) {
+	t.Parallel()
+	cmd := cli.NewTemplateCommand()
+
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{"show", "contract"}, io); code != 0 {
+		t.Fatalf("template show contract: code = %d; stderr=%s", code, errOut.String())
+	}
+	shown := out.String()
+	if !strings.Contains(shown, "schema: envelope/v2") {
+		t.Fatalf("expected the envelope/v2 contract template; got:\n%s", shown)
+	}
+	if !strings.Contains(shown, "\nartifacts:\n") {
+		t.Fatalf("the shown template declares no top-level artifacts inventory, which is the shape publication requires; got:\n%s", shown)
+	}
+}
+
+// TestTemplateShowExplicitGeneration keeps the older shape reachable for a
+// space still below the publication floor, and refuses an unknown one rather
+// than falling back silently.
+func TestTemplateShowExplicitGeneration(t *testing.T) {
+	t.Parallel()
+	cmd := cli.NewTemplateCommand()
+
+	io, out, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{"show", "contract", "--envelope-schema", "envelope/v1"}, io); code != 0 {
+		t.Fatalf("template show contract --envelope-schema envelope/v1: code = %d", code)
+	}
+	if !strings.Contains(out.String(), "schema: envelope/v1") {
+		t.Fatalf("expected the envelope/v1 contract template; got:\n%s", out.String())
+	}
+
+	io2, out2, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{"show", "contract", "--envelope-schema=envelope/v2"}, io2); code != 0 {
+		t.Fatalf("--envelope-schema=<value> form: code = %d", code)
+	}
+	if !strings.Contains(out2.String(), "schema: envelope/v2") {
+		t.Fatalf("expected the envelope/v2 contract template; got:\n%s", out2.String())
+	}
+
+	io3, _, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{"show", "contract", "--envelope-schema", "envelope/v9"}, io3); code != 1 {
+		t.Fatalf("unknown generation: code = %d, want 1", code)
+	}
+
+	io4, _, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{"show", "contract", "--bogus"}, io4); code != 2 {
+		t.Fatalf("unknown flag: code = %d, want 2 (never silently ignored)", code)
+	}
+}
+
+// TestTemplateListNamesEachTypesGeneration: the list is the surface an author
+// consults before `show`, so it has to say WHICH generation each type
+// authors at — the fact whose absence let the reported defect stay invisible.
+func TestTemplateListNamesEachTypesGeneration(t *testing.T) {
+	t.Parallel()
+	cmd := cli.NewTemplateCommand()
+	io, out, _ := newIO()
+	if code := cmd.Run(context.Background(), []string{"list"}, io); code != 0 {
+		t.Fatalf("template list: code = %d", code)
+	}
+	listed := out.String()
+	if !strings.Contains(listed, "contract\tenvelope/v2") {
+		t.Fatalf("expected contract to be listed at envelope/v2; got:\n%s", listed)
+	}
+	if !strings.Contains(listed, "question\tenvelope/v1") {
+		t.Fatalf("expected question to be listed at envelope/v1; got:\n%s", listed)
+	}
+}

@@ -5,6 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"gopkg.in/yaml.v3"
 )
 
 // The staging half of the D-D scaffold moved here from internal/cli so
@@ -273,5 +277,97 @@ func TestContractDraftSchemaFormat(t *testing.T) {
 				t.Fatalf("got %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestFreshContractDeclaresExactlyWhatItScaffolds is the composition check the
+// reported defect was actually made of. Each piece looked right on its own:
+// the v2 template declares three artifact paths, the scaffold writes three
+// files, and nothing compared the two lists. A single mismatched path makes a
+// FRESH contract — one nobody hand-edited — refused at publication as
+// "staged file is removed or undeclared", which reads as an authoring mistake
+// and is not one.
+func TestFreshContractDeclaresExactlyWhatItScaffolds(t *testing.T) {
+	t.Parallel()
+
+	const slug = "probe-feed"
+	draft, err := RenderNew(Input{
+		Type:    "contract",
+		ID:      "XC-axon-" + slug,
+		Actor:   Actor{Kind: "agent", Name: "test-bot"},
+		Created: time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC),
+	}, func(f string) bool { return strings.HasPrefix(f, "json-schema") })
+	if err != nil {
+		t.Fatalf("RenderNew(contract): %v", err)
+	}
+
+	var descriptor struct {
+		Schema    string `yaml:"schema"`
+		Artifacts []struct {
+			Path       string `yaml:"path"`
+			Role       string `yaml:"role"`
+			ConformsTo string `yaml:"conforms_to"`
+		} `yaml:"artifacts"`
+	}
+	fm, err := artifact.ParseFrontmatter(draft)
+	if err != nil {
+		t.Fatalf("ParseFrontmatter: %v", err)
+	}
+	if err := yaml.Unmarshal(fm.YAML, &descriptor); err != nil {
+		t.Fatalf("unmarshal descriptor: %v", err)
+	}
+	if descriptor.Schema != "envelope/v2" {
+		t.Fatalf("a fresh JSON-Schema contract renders %q, want envelope/v2", descriptor.Schema)
+	}
+
+	staging := t.TempDir()
+	written, err := ScaffoldContractCandidateInStaging(staging, "axon", slug, draft, os.WriteFile)
+	if err != nil {
+		t.Fatalf("ScaffoldContractCandidateInStaging: %v", err)
+	}
+
+	// The candidate root is <staging>/axon/provides/<slug>/; the declared
+	// paths are relative to it, which is exactly how the publication planner
+	// resolves them.
+	root := filepath.Join(staging, "axon", "provides", slug)
+	scaffolded := map[string]bool{}
+	for _, p := range written {
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			t.Fatalf("scaffolded %s is outside the candidate root %s", p, root)
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == "contract.md" {
+			continue // the descriptor is implicit and must not be declared
+		}
+		scaffolded[rel] = true
+	}
+
+	declared := map[string]bool{}
+	for _, entry := range descriptor.Artifacts {
+		declared[entry.Path] = true
+		if _, ok := scaffolded[entry.Path]; !ok {
+			t.Errorf("the descriptor declares %q but the scaffold writes no such file — publication refuses a declared path with no bytes", entry.Path)
+		}
+		// A fixture's conforms_to must name a DECLARED schema entry, not just
+		// a file that happens to exist.
+		if entry.Role == "valid-fixture" || entry.Role == "invalid-fixture" {
+			if entry.ConformsTo == "" {
+				t.Errorf("fixture entry %q declares no conforms_to", entry.Path)
+			}
+		}
+	}
+	for path := range scaffolded {
+		if !declared[path] {
+			t.Errorf("the scaffold writes %q but the descriptor declares it nowhere — publication refuses an undeclared staged file", path)
+		}
+	}
+	for _, entry := range descriptor.Artifacts {
+		if entry.ConformsTo != "" && !declared[entry.ConformsTo] {
+			t.Errorf("entry %q conforms_to %q, which is not a declared entry", entry.Path, entry.ConformsTo)
+		}
+	}
+	if len(declared) == 0 {
+		t.Fatal("the fresh descriptor declared nothing — this test would be guarding nothing")
 	}
 }
