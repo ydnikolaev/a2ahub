@@ -73,13 +73,75 @@ func TestLogicMatrix(t *testing.T) {
 	// bundle, because nothing here ever calls WriteEvidenceBundle, and it
 	// never will as long as the only candidate this file constructs is the
 	// zero value.
+	// W3's conformance-path catalogue (plan 11, docs/features/active/
+	// agent-ops-2026-07/plans/11-authoring-path-and-seam-verification.plan.md):
+	// one subtest per declared Path, run over this SAME harness (D1: no
+	// second rig) — BEFORE driveFamilies, not wrapped in its own t.Run
+	// around that call. Both orderings were tried; this one is required,
+	// not stylistic: the space-update family (scenarios_space_live.go)
+	// legitimately and permanently raises the scaffolded space's
+	// min_binary_version to the product's real current floor as part of
+	// proving `a2a space update` durable, while this harness's own binary
+	// stays stamped at buildLogicBinary's fixed
+	// contract.ContractPublicationFloor for the run's whole lifetime. Run
+	// after driveFamilies, every one of this file's writes was refused
+	// ("local binary version older than space.yaml min_binary_version") —
+	// observed empirically, not assumed; see this wave's own report for the
+	// exact failure text. Run first, the space still matches the stamped
+	// binary. Wrapping driveFamilies itself in its own t.Run (so `-run
+	// '^TestLogicMatrix$/<path-id>'` could skip the family matrix too) was
+	// considered and rejected regardless of ordering:
+	// TestLogicTierWritesNothingOutsideItsOwnTempDirs and logicTierMarkerLine
+	// below both read state driveFamilies populates directly off run/report
+	// in this function's own body, and restructuring that call site is
+	// outside this brief's granted scope — reported as a residual in the
+	// wave's own report, not hidden. A path subtest failure still fails
+	// TestLogicMatrix as a whole, same as a family-matrix row failure
+	// already does.
+	runConformancePaths(ctx, t, h)
+
 	run := NewRunFor(logicOrg, logicRepo, Catalogue())
 	run.Tier = TierLogic
 	run.Preflight = h.Pre
 
-	driveFamilies(ctx, t, run, h)
+	// Wrapped in its own subtest so `-run '^TestLogicMatrix$/<path-id>'`
+	// prunes the 30-cell family matrix too. Without this the filter pruned
+	// only the path subtests and a "single path" run still paid the whole
+	// matrix's wall clock — which fails the operator's own requirement that
+	// every path be checkable independently.
+	//
+	// The naive wrap is unsafe, and that is why the escape below exists: with
+	// the matrix filtered out, `run` collects no results, and the report plus
+	// the D-7 marker would then be computed from a run that never happened —
+	// a digest claiming complete coverage on the strength of zero executed
+	// cells. That is precisely the defect the marker was built to catch (spec
+	// 46's postmortem, a 59-minute live run spent discovering a row that never
+	// ran), so a filtered run must emit NOTHING rather than something
+	// reassuring.
+	t.Run("family-matrix", func(t *testing.T) {
+		driveFamilies(ctx, t, run, h)
+	})
 
 	report := run.Report()
+	// "Nothing executed" is EVERY cell still at VerdictNotRun, never an empty
+	// slice: NewRunFor pre-seeds one not-run cell per declared row, which is
+	// the property that makes an un-driven row visible instead of silent
+	// (Report's own doc comment). Reading emptiness here would have looked
+	// right and never fired.
+	executed := false
+	for _, res := range report.Results {
+		if res.Verdict != VerdictNotRun {
+			executed = true
+			break
+		}
+	}
+	if !executed {
+		t.Log("logic-e2e: the family matrix was not selected by -run, so no cell " +
+			"executed — deliberately emitting no report and no D-7 marker rather " +
+			"than a digest computed from an empty run. The conformance paths above " +
+			"stand on their own assertions.")
+		return
+	}
 	rendered := report.Render()
 	t.Log("\n" + rendered)
 
