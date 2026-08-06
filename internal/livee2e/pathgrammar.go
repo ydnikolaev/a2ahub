@@ -95,11 +95,58 @@ type Step struct {
 	// Kind is the fold.Kind this step's transition acts on.
 	Kind fold.Kind
 	// Transition is the fold transition name (fold.TCreate, fold.TPublish,
-	// ... — table.go's own consts).
+	// ... — table.go's own consts) this step ATTEMPTS. For an ordinary
+	// step this transition lands; for a step whose Refused is non-nil, it
+	// is the transition the actor attempts and the product REFUSES (see
+	// Refused's own doc comment) — never a transition that landed under a
+	// different name.
 	Transition string
+	// Refused declares this step a REFUSAL rather than a landed
+	// transition: the actor attempts (Kind, Transition) through the real
+	// binary and the product MUST refuse it, naming Refused.Code. nil for
+	// every ordinary step (the ONLY value before this field existed).
+	//
+	// A refused step is not an ordinary Step with a different ending
+	// state — it performs NO transition at all, which has three
+	// consequences a driver/grammar reader must hold together:
+	//
+	//  1. The act is attempted through the real binary and MUST fail — a
+	//     non-zero exit whose combined output names Refused.Code. A
+	//     refusal with the WRONG code is a failure, not a pass: "it
+	//     refused for some reason" is exactly the confusion this
+	//     catalogue exists to remove.
+	//  2. State resolution INVERTS: because no transition landed, the
+	//     state after this step is the state BEFORE it — walkSteps skips
+	//     ResolveStep entirely for a refused step (there is no resulting
+	//     state to resolve) and leaves the per-Kind state machine
+	//     unadvanced, so every LATER step in the path still resolves
+	//     against the state that actually obtains.
+	//  3. The step earns NO transition-coverage credit: walkSteps does not
+	//     append a refused step's (Kind, From, Transition) to the triples
+	//     PathTransitions returns. Crediting it would let the coverage
+	//     number grow by adding things the product refuses to do — worse
+	//     than not counting them at all.
+	//
+	// A refused step's own Predicates are still checked normally (they
+	// assert what a fresh read shows AFTER the refusal — typically that
+	// nothing moved), unaffected by any of the above.
+	Refused *Refusal
 	// Predicates are asserted, in order, once this step's transition has
-	// landed and the runner has re-read the affected surface(s).
+	// landed (or, for a refused step, once the refusal itself has been
+	// confirmed) and the runner has re-read the affected surface(s).
 	Predicates []Predicate
+}
+
+// Refusal is the payload of a refused Step (Step.Refused's own doc
+// comment) — the ONE fact a refusal declares beyond "this must not land":
+// the refusal code the real binary's combined output must name.
+type Refusal struct {
+	// Code is the expected refusal code (e.g. "POL-006", "LFC-001",
+	// "LFC-002") — matched against the driver's own captured stdout+stderr
+	// via a plain substring check (same idiom as internal/e2e's own
+	// POL-006 assertions, e.g. contract_cov_test.go:50). A refusal that
+	// fires for the WRONG code is a failure, not a pass.
+	Code string
 }
 
 // PredicateKind is the CLOSED set of assertions a Step's Predicates may
@@ -249,16 +296,26 @@ func ResolveStep(kind fold.Kind, from fold.State, transition string) (fold.State
 
 // walkSteps resolves steps in order against states (a per-Kind "current
 // state" map, mutated in place as each step lands), returning the
-// resolved (Kind, From, Transition) triple for each — a fold.TCreate
-// step always resolves From as fold.StateNone regardless of what states
-// currently holds for that Kind (a new instance; see Step's own doc
-// comment), any other step resolves From from states[step.Kind]
+// resolved (Kind, From, Transition) triple for each LANDED step — a
+// fold.TCreate step always resolves From as fold.StateNone regardless of
+// what states currently holds for that Kind (a new instance; see Step's
+// own doc comment), any other step resolves From from states[step.Kind]
 // (fold.StateNone, Go's own zero value, if that Kind has not appeared
 // yet in this walk — which ResolveStep then correctly refuses unless the
 // step itself is a create).
+//
+// A step whose Refused is non-nil is skipped entirely rather than
+// resolved: ResolveStep is never called (there is no resulting state to
+// resolve — the act never lands, Refused's own doc comment consequence
+// 2), states[step.Kind] is left exactly as it was (the walk does not
+// advance), and no triple is appended for it (consequence 3 — no
+// transition-coverage credit for an act the product refused).
 func walkSteps(steps []Step, states map[fold.Kind]fold.State) ([]fold.TransitionKey, error) {
 	out := make([]fold.TransitionKey, 0, len(steps))
 	for i, step := range steps {
+		if step.Refused != nil {
+			continue
+		}
 		from := fold.StateNone
 		if step.Transition != fold.TCreate {
 			from = states[step.Kind]
