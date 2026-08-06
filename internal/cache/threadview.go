@@ -807,6 +807,19 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 			Acks: fa.Result.Acks, Approvals: fa.Result.Approvals,
 			RequiredApprovers:  fa.Env.RequiredApprovers,
 			ActiveParticipants: activeParticipants(manifest, fa.Env.From),
+			// P4 Edge 3, handed in exactly as inbox.go's call site hands it
+			// in. Both call sites MUST supply this: the moment one of them
+			// omits it, the two disagree about who a frozen `to:` addresses,
+			// which is this wave's own defect in miniature.
+			//
+			// It names only ownSystem, because mirror.go resolved
+			// DeprecatesMyDependency from this system's own consumes.yaml —
+			// so this view answers "who owes an ack" completely for me and
+			// narrowly for everybody else. That gap is in the FACT, not the
+			// rule (pendency.Input.ExtraAddressees' own doc comment); W2 must
+			// not render this as authoritative for another system until a
+			// caller can read every participant's registry.
+			ExtraAddressees: extraAddressees(fa, ownSystem),
 		}
 		if fa.kind() == fold.KindResponse {
 			in.ParentFrom = authEnv.From
