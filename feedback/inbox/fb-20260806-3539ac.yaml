@@ -1,0 +1,31 @@
+feedback: v1
+id: fb-20260806-3539ac
+kind: bug
+severity: blocker
+title: contract publish planner refuses every contract the shipped template scaffolds
+summary: >-
+  The publication planner requires a "declared-v2 candidate inventory" that no
+  shipped surface can produce and no installed doc mentions. `a2a template list`
+  offers exactly one contract template; `a2a template show contract` emits a v1
+  descriptor. Authoring from that template, following the documented 0.0.0
+  submit-then-publish sequence, produces a contract that validates, submits, passes
+  the space's own `a2a validate --ci` in CI, merges to main, and is then refused at
+  preflight. The strings `declared-v2`, `candidate inventory` and `authoring floor`
+  appear in zero lines of the installed skill manual, which `a2a doctor` reports as
+  current for this binary (v0.19.5). No flag on `contract new`, `new contract` or
+  `contract publish` selects a v2 shape. So a first contract publication has no
+  path at all: the tool's own scaffolding produces an artifact its own planner
+  rejects, naming a precondition with no documented means of satisfaction.
+  `a2a whatsnew` states that v0.19.0 changed the contract publication path, and
+  its KNOWN ISSUE records provider-tier verification deferred across four
+  consecutive releases over exactly those changed surfaces.
+context:
+    a2a_version: 0.19.5
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a contract preflight <XC-id> --version 1.0.0
+evidence:
+    steps:
+        - "a2a template list  -> a single `contract` template; a2a template show contract -> descriptor with `version: 1.0.0` (the v1 shape)"
+        - "Author a json-schema-2020-12 contract from that template, with schema/contract.schema.json and 20 valid+invalid fixtures under provides/<slug>/"
+... more files changed
