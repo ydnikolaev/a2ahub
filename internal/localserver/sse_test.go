@@ -13,12 +13,17 @@ import (
 )
 
 type streamWriter struct {
-	mu        sync.Mutex
-	header    http.Header
-	status    int
-	body      bytes.Buffer
-	flushes   chan string
-	deadlines int
+	mu      sync.Mutex
+	header  http.Header
+	status  int
+	body    bytes.Buffer
+	flushes chan string
+	// armed and cleared are counted separately rather than as one call
+	// tally, so a test can assert the BRACKETING withWriteDeadline
+	// promises (every arm gets its clear) instead of a magic minimum
+	// that happens to equal twice the flush count.
+	armed   int
+	cleared int
 }
 
 func newStreamWriter() *streamWriter {
@@ -46,9 +51,13 @@ func (w *streamWriter) Flush() {
 	w.mu.Unlock()
 	w.flushes <- snapshot
 }
-func (w *streamWriter) SetWriteDeadline(time.Time) error {
+func (w *streamWriter) SetWriteDeadline(deadline time.Time) error {
 	w.mu.Lock()
-	w.deadlines++
+	if deadline.IsZero() {
+		w.cleared++
+	} else {
+		w.armed++
+	}
 	w.mu.Unlock()
 	return nil
 }
@@ -144,14 +153,30 @@ func TestSSEKeepaliveIsTransportOnly(t *testing.T) {
 	if !strings.Contains(flush, ": keepalive") || strings.Count(flush, "event: revision") != 1 {
 		t.Fatalf("keepalive = %q", flush)
 	}
-	writer.mu.Lock()
-	deadlineCalls := writer.deadlines
-	writer.mu.Unlock()
-	if deadlineCalls < 6 {
-		t.Fatalf("rolling write deadline was not armed and cleared per flush: calls=%d", deadlineCalls)
-	}
 	cancel()
 	awaitDone(t, done)
+
+	// Read the counters only after the handler goroutine has returned.
+	// withWriteDeadline arms, writes, and clears in that order, and the
+	// write is what publishes the snapshot to flushes — so a read taken
+	// straight after awaitFlush observes the arm of the last flush but
+	// races its clear. That is a real happens-before gap, not slowness:
+	// it passed locally for as long as the goroutine happened to reach
+	// the clear first, and failed on a loaded CI runner at calls=5.
+	// awaitDone is the only point where every deadline call this handler
+	// will ever make has happened.
+	writer.mu.Lock()
+	armed, cleared := writer.armed, writer.cleared
+	writer.mu.Unlock()
+	if armed != cleared {
+		t.Fatalf("write deadline was not cleared for every arm: armed=%d cleared=%d", armed, cleared)
+	}
+	// One arm for requireBoundedWriter's support probe, one for the
+	// initial revision flush, one for the keepalive flush. Asserting the
+	// arms rather than the total is what makes this count readable.
+	if armed < 3 {
+		t.Fatalf("rolling write deadline was not armed per flush: armed=%d", armed)
+	}
 }
 
 func TestBrokerReplacesBackpressuredRevisionAndClosesClients(t *testing.T) {
