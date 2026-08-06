@@ -1,0 +1,109 @@
+# lane-ungated.txt — P12 (docs/features/active/agent-ops-2026-07) D-3/D-6.
+#
+# The explicit list of repo paths NO declared gate claims, on purpose. A
+# path lands here only after checking every real declaration and finding
+# none reads it — never as a way to silence a refusal that just hasn't been
+# investigated yet.
+#
+# `go run internal/lane/lanecheck.go --verify` (wrapped by
+# scripts/check-lane-declarations.sh) reads this file relative to LANE_ROOT
+# (default: repo root). Its absence is NOT an error — an empty ungated list
+# is the correct starting point, not a missing dependency (see
+# lanecheck.go's readUngatedList).
+#
+# Format: one repo-relative glob per line (the same grammar
+# internal/lane/glob.go's Match uses — "**" crosses path separators,
+# everything else is single-segment). "#" starts a comment; blank lines are
+# ignored. Every entry REQUIRES a reason: put it as a "#" comment on the
+# line directly ABOVE the glob it explains, e.g.:
+#
+#   # Swift package; no gate in this repo's make-ABI reads it.
+#   integrations/macos-notifier/**
+#
+# This file intentionally ships EMPTY at the end of P12/W2. The lead
+# adjudicates the coverage residue inline (plan D-6) before populating it —
+# an agent filling this in on day one is how the gate goes toothless on
+# arrival, which is explicitly not this session's call to make.
+
+# ── Adjudicated 2026-08-06, P12/W2 lead pass. 318 refusals, by root. ──
+#
+# The test applied to every entry below: is there a gate inside `make check`
+# that reads this path? Not "could there be one" — is there. Where the answer
+# was "no, and there should be", the row went to docs/validator-backlog.md
+# instead of here (see feedback/** below).
+
+# Authored prose. feature-lint reads only the README/tracker shape of an epic
+# directory and declares exactly that; specs, plans and audits are judgement
+# nothing mechanical can check.
+docs/features/README.md
+docs/features/**/specs/**
+docs/features/**/plans/**
+docs/features/**/audits/**
+docs/features/**/plan.md
+docs/features/**/design-handoff.md
+
+# Two integrations with their own toolchains — a Swift package and a VS Code
+# extension with its own npm test suite. Nothing in this repo's make-ABI can
+# build or judge either; `make check` never enters this tree.
+integrations/**
+
+# The harness the agents LOAD — skills, rules, doctrines, lock files, provider
+# surfaces. Delivered by `mate fleet pull`, never committed here (see
+# .gitignore's DENY block), and no gate inside `check` reads it.
+# .agents/scripts/** is the exception and is claimed by harness-teeth.
+.claude/**
+.mate/**
+.codex/**
+.sporo/**
+.agents/skills/**
+.agents/rules/**
+.agents/doctrine/**
+
+# Archived audit records and inbox prose under the architecture plan. The
+# LIVE plan corpus — docs/the-plan/plan/** — is claimed by
+# operational-confidence-guard and skill-citations; these two are history.
+docs/the-plan/audit-*/**
+docs/the-plan/inbox/**
+
+# Operator prose. publish-to-public.sh is the exception, claimed by
+# harness-teeth, because it carries its own --teeth self-test.
+docs/runbooks/**
+
+# Inbound notes, generated reports, doc templates and the two backlogs. Read
+# by people and by skills, never by a gate.
+docs/inbox/**
+docs/reports/**
+docs/_templates/**
+docs/backlog.md
+docs/validator-backlog.md
+docs/handoff-*.md
+
+# Repo furniture and release/scan configuration. `.goreleaser.yaml`,
+# `.gitleaks.toml` and `.govulncheck-allow.txt` are consumed by tools that run
+# OUTSIDE `check` (goreleaser at tag time, gitleaks in CI, `make vulncheck`
+# which needs the network and is deliberately not in the ceiling).
+SECURITY.md
+NOTICE
+LICENSE
+.gitignore
+.gitleaks.toml
+.goreleaser.yaml
+.govulncheck-allow.txt
+.github/dependabot.yml
+
+# A single seed document for other repositories to install this project's
+# skill; nothing here reads it.
+seeds/a2a.md
+
+# The repo's own feedback ledger — authored YAML and a generated digest. NO
+# gate inside `check` reads this copy: internal/feedback's tests exercise
+# fixtures under t.TempDir(), never these files. That is a real hole, not a
+# property of the data, and it is filed as a row in docs/validator-backlog.md
+# rather than hidden here. This entry is the honest interim: the coverage
+# refusal found the gap, the backlog owns closing it, and the day a gate
+# claims these paths this entry gets deleted.
+feedback/**
+
+# macOS Finder droppings. Not repo content; appears only in the private
+# harness roots the universe walks because they are untracked by design.
+**/.DS_Store

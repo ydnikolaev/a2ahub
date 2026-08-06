@@ -7,11 +7,25 @@
 # exist; a third one added without an intervening live-e2e run in between
 # would make that promise — and the known-issue text that repeats it — false.
 # This gate makes the promise machine-refusable instead of just written down.
+#
+# The deferral-record glob below is `audits/**/` , not `audits/*` : the honesty
+# check derives what find_deferral_records() (line ~41) can actually return by
+# intersecting its walk root with its own `-path '*/audits/*' -name
+# '*-provider-tier-deferral.md'` filters, and that intersection reaches records
+# nested deeper than one level under an audits/ directory. An earlier revision
+# instead declared the bare walk roots ("docs/features" and ".") to satisfy the
+# checker; that was a declaration bent to fit a tool, which is the failure this
+# phase exists to stop. The extractor was made precise instead.
 
 # lane-inputs:
-#   docs/features/**/audits/*-provider-tier-deferral.md
+#   docs/features/**/audits/**/*-provider-tier-deferral.md
 #   **/audits/live-e2e-*
 #   **/audits/live-e2e-*/**
+# lane-reads-opaque: find_live_e2e_artifacts() (line ~49) walks the repo root
+#   with `\( -path './.git' -o -name node_modules \) -prune -o -path '*/audits/*'
+#   … -name 'live-e2e-*'`. That expression MIXES exclusion with selection, and
+#   the classifier will not guess which arms select — the two globs above are
+#   what it can actually return, verified by reading the invocation.
 set -euo pipefail
 
 # The override a third-or-later consecutive deferral must carry to ship.

@@ -48,6 +48,23 @@ func MatchingInput(inputs []string, name string) (matched bool, pattern string) 
 	return matched, pattern
 }
 
+// MatchesAnyGlob reports whether path matches any pattern in list — no "!"
+// exclusion semantics (that is MatchInputs' job for a declaration's own
+// Inputs), just "does at least one glob claim this path". This is the
+// lane-ungated.txt shape (D-3/D-6): a flat OR-list of globs, not a
+// declaration's ordered include/exclude walk. Both Coverage (this package)
+// and lanecheck.go's runDerive (package main, hence exported) use it for
+// the same reason — an exact-string ungatedSet silently matches none of a
+// root-shaped adjudication entry like "integrations/macos-notifier/**".
+func MatchesAnyGlob(list []string, path string) bool {
+	for _, pat := range list {
+		if Match(pat, path) {
+			return true
+		}
+	}
+	return false
+}
+
 func splitSegments(s string) []string {
 	s = strings.Trim(s, "/")
 	if s == "" {

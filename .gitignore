@@ -58,6 +58,16 @@ scripts/*
 !scripts/check_localserver_readonly_routes.sh
 !scripts/check_operational_projection_single_source.sh
 !scripts/check_work_checkpoint_schema.sh
+!scripts/check-lane-declarations.sh
+# The lane deriver's ungated list (P12). Public for the same reason internal/lane
+# is: a public checkout that has the derivation but not the file recording which
+# paths are deliberately outside it would refuse on every one of them. Same
+# directory trap as scripts/installsh below — `scripts/*` excludes the DIRECTORY
+# scripts/lib, so the directory must be re-included and its contents re-excluded
+# before a single file can be named. gate-lib.sh deliberately stays private.
+!scripts/lib/
+scripts/lib/*
+!scripts/lib/lane-ungated.txt
 !scripts/tests/
 scripts/tests/*
 !scripts/tests/check_contract_carried_set_test.sh

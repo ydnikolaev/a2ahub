@@ -485,6 +485,11 @@ if [ "$MODE" = live ]; then
   # lane-reason: two credentials, network, and a real throwaway GitHub space with
   #   Actions latency (Makefile:109 — "NEVER in `check`, never a merge gate"). No
   #   diff may select it; `make live-e2e` is its only entry.
+  # lane-reads-opaque: trim_telemetry (line ~156) rotates
+  #   "$VERIFY_ROOT"/telemetry.jsonl through "$tmp". Both are inside
+  #   .a2a/cache/, this runner's own accelerator cache — not repo content, and
+  #   nothing a diff can contain. It is flagged because the classifier resolves
+  #   literals, not because the read is a lane input.
   run_phase live-e2e run_live_tests
   exit 0
 fi
@@ -510,6 +515,11 @@ if [ "$MODE" = logic-e2e ]; then
   #   go.sum
   #   schemas/**
   #   space-template/**
+  # lane-reads-opaque: trim_telemetry (line ~156) rotates
+  #   "$VERIFY_ROOT"/telemetry.jsonl through "$tmp". Both are inside
+  #   .a2a/cache/, this runner's own accelerator cache — not repo content, and
+  #   nothing a diff can contain. It is flagged because the classifier resolves
+  #   literals, not because the read is a lane input.
   run_phase logic-e2e run_logic_tests
   exit 0
 fi

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -111,6 +112,32 @@ func corpusFromMakefile(root string) ([]Phase, *makefileDoc, error) {
 		}
 		phases = append(phases, Phase{Name: name, Source: fmt.Sprintf("Makefile:%d", t.HeaderIdx+1)})
 	}
+	// Every OTHER real target is an optional phase. A declaration may name
+	// one (web-quality does) and is then reconciled against a target that
+	// demonstrably exists; a target without a declaration is simply not a
+	// lane phase and is never refused for it. Admitting them by existence
+	// rather than by a second hand-kept list is the same rule D-2 applies
+	// everywhere else in this package.
+	required := map[string]bool{}
+	for _, p := range phases {
+		required[p.Name] = true
+	}
+	names := make([]string, 0, len(doc.Targets))
+	for name := range doc.Targets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if required[name] {
+			continue
+		}
+		t := doc.Targets[name]
+		phases = append(phases, Phase{
+			Name:     name,
+			Source:   fmt.Sprintf("Makefile:%d", t.HeaderIdx+1),
+			Optional: true,
+		})
+	}
 	return phases, doc, nil
 }
 
@@ -128,6 +155,18 @@ func corpusFromMakefile(root string) ([]Phase, *makefileDoc, error) {
 func scriptToPhase(doc *makefileDoc, corpusPhases []Phase) map[string]string {
 	m := map[string]string{}
 	for _, p := range corpusPhases {
+		// OPTIONAL phases are excluded on purpose. Corpus() admits every real
+		// Makefile target as an opt-in phase, and mapping across all of them
+		// reintroduces exactly the ambiguity this function was written to
+		// avoid: space-template-baseline invokes the same script as
+		// space-template-baseline-check, and _harness-check re-invokes ~20 gate
+		// scripts with --teeth. Widening this map silently cost
+		// roadmap-release-decisions and space-template-baseline-check their
+		// script->phase resolution, which then read as "phase has no
+		// declaration" — a confident, specific, wrong refusal.
+		if p.Optional {
+			continue
+		}
 		t, ok := doc.Targets[p.Name]
 		if !ok {
 			continue
