@@ -34,6 +34,8 @@ cd "$(git rev-parse --show-toplevel)"
 # gitignored (see docs/ above) until they graduate to DENY.
 ALLOW_DIRS=( .github cmd integrations internal schemas skill space-template testkit seeds feedback web ui releasenotes )
 PUBLIC_VALIDATOR_FILES=(
+  scripts/check-lane-declarations.sh
+  scripts/lib/lane-ungated.txt
   scripts/check_contract_carried_set.sh
   scripts/check_event_writer_receipts.sh
   scripts/check_live_e2e_evidence.sh

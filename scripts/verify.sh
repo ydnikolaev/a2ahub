@@ -451,10 +451,10 @@ if [ "$MODE" = "--teeth" ]; then
 fi
 
 case "$MODE" in
-  full|validators|coverage|harness|live|logic-e2e) ;;
+  full|validators|coverage|harness|live|logic-e2e|lane|lane-run) ;;
   test) validate_scoped_packages ;;
   *)
-    echo "usage: $0 [full|validators|coverage|harness|live|logic-e2e|test ./pkg...|--teeth]" >&2
+    echo "usage: $0 [full|validators|coverage|harness|live|logic-e2e|lane|lane-run|test ./pkg...|--teeth]" >&2
     exit 2
     ;;
 esac
@@ -462,6 +462,96 @@ esac
 prepare_cache_root
 trap finish EXIT
 cd "$ROOT"
+
+changed_paths() {
+  # What THIS working tree has changed against HEAD: staged, unstaged and
+  # untracked, which is exactly the set a session is about to ask a gate to
+  # judge. `--porcelain` is used over `diff --name-only` on purpose — the
+  # latter cannot see an untracked file, and a brand-new file is precisely
+  # the case the hand-maintained map used to classify wrongly.
+  #
+  # Explicit paths win when given (`make lane FILES="a b"`), so the incident
+  # in the spec can be replayed against a clean tree.
+  if [ -n "${LANE_FILES:-}" ]; then
+    printf '%s\n' $LANE_FILES
+    return 0
+  fi
+  git -C "$ROOT" status --porcelain=v1 -z --untracked-files=all |
+    tr '\0' '\n' |
+    sed -e 's/^...//' -e '/^$/d'
+}
+
+# run_derived_phase maps ONE derived phase name to the thing that runs it.
+# The mapping lives here because verify.sh is already the one place that
+# knows how each phase is invoked; a second table would be the copy problem
+# this whole phase exists to remove.
+run_derived_phase() {
+  local pkg
+  case "$1" in
+    build-cli)       run_phase build-cli build_cli ;;
+    gofmt)           run_phase gofmt check_gofmt ;;
+    vet)             run_phase vet go vet -tags=livee2e ./... ;;
+    golangci-lint)   run_phase golangci-lint check_lint ;;
+    go-test)         run_phase go-test run_go_tests ;;
+    coverage-policy) run_phase coverage-policy go run internal/coveragepolicy/covercheck.go coverage.out ;;
+    logic-e2e)       run_phase logic-e2e run_logic_tests ;;
+    harness-teeth)   run_phase harness-teeth make --no-print-directory _harness-check ;;
+    live-e2e)
+      fail "live-e2e is declared NEVER and must not be reachable from a derived lane"
+      return 1
+      ;;
+    go-test-scoped:*)
+      pkg="${1#go-test-scoped:}"
+      run_phase "go-test-scoped $pkg" go test "$pkg" -race -count=1
+      ;;
+    *)
+      # Everything else is a Makefile target: the REPO_GATES entries and the
+      # opt-in ones (web-quality).
+      run_phase "$1" make --no-print-directory "$1"
+      ;;
+  esac
+}
+
+if [ "$MODE" = lane ] || [ "$MODE" = lane-run ]; then
+  paths="$(changed_paths)"
+  if [ -z "$paths" ]; then
+    echo "lane: nothing changed against HEAD — no lane to derive." >&2
+    echo '      Pass LANE_FILES="a b c" to derive for an explicit set.' >&2
+    exit 0
+  fi
+  if [ "$MODE" = lane ]; then
+    printf '%s\n' "$paths" | go run internal/lane/lanecheck.go --derive
+    exit $?
+  fi
+  # lane-run: derive first, and let a REFUSAL stop the run. Deriving a lane
+  # the tool does not fully understand and running the part it does is the
+  # silent-hole shape this phase removes (spec 12 J2).
+  if ! phases="$(printf '%s\n' "$paths" | go run internal/lane/lanecheck.go --phases)"; then
+    echo "lane: refusing to run a lane the derivation could not settle (see above)." >&2
+    exit 1
+  fi
+  # A canonical ORDER, filtered by membership: build-cli feeds the
+  # binary-backed static gates, and coverage-policy reads the profile
+  # go-test writes. Running the derived set in declaration order would break
+  # both couplings for a reason nobody could see from the output.
+  ordered="build-cli $(make --no-print-directory -s _print-repo-gates) web-quality gofmt vet golangci-lint go-test coverage-policy logic-e2e harness-teeth"
+  ran=0
+  for phase in $ordered; do
+    if printf '%s\n' "$phases" | grep -qxF "$phase"; then
+      run_derived_phase "$phase"
+      ran=$((ran + 1))
+    fi
+  done
+  # Scoped package tests are not in the canonical order (their names carry a
+  # package path); run them last, after the whole-module phases they narrow.
+  for phase in $phases; do
+    case "$phase" in
+      go-test-scoped:*) run_derived_phase "$phase"; ran=$((ran + 1)) ;;
+    esac
+  done
+  echo "lane: $ran derived phase(s) green. This is NOT the ceiling — a release runs 'make check' (spec 12 J5)."
+  exit 0
+fi
 
 if [ "$MODE" = test ]; then
   # lane-inputs: NEVER
