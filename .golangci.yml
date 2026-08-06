@@ -86,6 +86,19 @@ linters:
       - path: ^testkit/(fakegithub/fakegithub|spacefixture/spacefixture)\.go$
         text: "G204:"
         linters: [gosec]
+      # internal/lane is the P12 lane deriver: harness-only, never linked into
+      # cmd/a2a, and it reads ONLY this repository's own gate scripts, Makefile,
+      # verify.sh and telemetry to answer "which validation phases can this diff
+      # reach". Its filesystem reads and its one `git ls-files` (fixed argv, no
+      # shell) are deliberately funnelled through the single file below so this
+      # allowlist grows by ONE reviewed path instead of the six call sites the
+      # reads are spread across — see fsread.go's own header for why that seam
+      # exists and why its two-line `path := …; os.ReadFile(path)` shape is
+      # load-bearing (collapsing it to one line makes gosec silent, which is a
+      # blind spot dressed up as compliance, not a fix).
+      - path: ^internal/lane/fsread\.go$
+        text: "G(204|304):"
+        linters: [gosec]
       # G304 accepted file seams. These functions receive paths already rooted
       # in project config, a mirror/staging checkout, a release cache, or an
       # explicitly selected local input. This is deliberately an exact-file

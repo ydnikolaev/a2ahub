@@ -13,6 +13,15 @@
 #
 # --teeth runs the gate's own self-test: mutate the committed file, prove the
 # gate goes red, restore it.
+#
+# lane-inputs:
+#   internal/html/template.html
+#   web/design-source/*.dc.html
+#   web/scripts/build-local-dashboard.mjs
+#   web/scripts/design-runtime-entry.js
+#   web/scripts/design-runtime-globals.js
+#   web/src/design-runtime/support.js
+#   web/package.json
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

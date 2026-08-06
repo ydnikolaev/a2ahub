@@ -7,6 +7,16 @@
 # filtered repository and may not exist in this checkout. Every later
 # feat/fix/perf or breaking-marked conventional commit that touches a product
 # surface must be covered by a newer notes commit.
+
+# lane-inputs:
+#   releasenotes/*.yaml
+#   internal/**
+#   cmd/**
+#   schemas/**
+#   space-template/**
+#   skill/**
+#   !internal/livee2e/**
+#   !**/*_test.go
 set -uo pipefail
 
 SCRIPT_ABS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"

@@ -14,4 +14,9 @@
 // internal/schema's ValidateReleaseNotes and ValidateKnownIssues, consumed here
 // only by this package's own tests as corpus-integrity gates: every embedded
 // document must validate, or the gate reds before it ever ships.
+//
+// lane-inputs:
+//
+//	releasenotes/*.yaml
+//	releasenotes/current/*.yaml
 package notes

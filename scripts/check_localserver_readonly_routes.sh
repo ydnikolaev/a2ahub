@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Guard P3's frozen read-only loopback HTTP surface.
+#
+# lane-inputs:
+#   internal/localserver/*.go
+#   internal/localserver/**/*.go
 set -euo pipefail
 
 ROOT="${LOCALSERVER_READONLY_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"

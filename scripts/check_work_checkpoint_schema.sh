@@ -2,6 +2,13 @@
 # Guard P2's durable work vocabulary. The announcement schema, authoring
 # template, pure lease core, contextual validator and normative authoring
 # contract must carry the same closed mode and wait-kind enum.
+#
+# lane-inputs:
+#   schemas/envelope/v2/announcement.schema.json
+#   schemas/templates/v2/announcement.md
+#   internal/workreport/types.go
+#   internal/validate/work_checkpoint.go
+#   docs/features/active/operational-confidence-2026-08/specs/02-reported-work-checkpoints.md
 set -euo pipefail
 
 ROOT="${WORK_CHECKPOINT_SCHEMA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"

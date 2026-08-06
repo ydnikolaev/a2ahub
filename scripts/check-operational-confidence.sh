@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 # P0/W0 static guard: normative IDs, mandatory dispatch edges, stable error
 # history, published-v1 immutability and the approved package/I/O boundary.
+
+# lane-inputs:
+#   schemas/errors/v1/history.tsv
+#   schemas/errors/v1/registry.yaml
+#   schemas/published-v1.sha256
+#   schemas/**/v1/*.schema.json
+#   schemas/templates/v1/*.md
+#   internal/validate/**/*.go
+#   internal/cli/**/*.go
+#   !**/*_test.go
+#   docs/the-plan/plan/**
+#   docs/features/active/operational-confidence-2026-08/**
+#   docs/decisions.md
+#   AGENTS.md
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"

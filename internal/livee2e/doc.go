@@ -43,4 +43,12 @@
 // never executed cannot default to anything more optimistic. Missing
 // configuration is a refusal with a non-zero exit, never a skip that reports
 // green (AC-962.2).
+//
+// lane-inputs:
+//
+//	internal/livee2e/testdata/**
+//	space-template/**
+//	schemas/**
+//	Makefile
+//	scripts/verify.sh
 package livee2e

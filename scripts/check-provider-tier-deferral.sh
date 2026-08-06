@@ -7,6 +7,11 @@
 # exist; a third one added without an intervening live-e2e run in between
 # would make that promise — and the known-issue text that repeats it — false.
 # This gate makes the promise machine-refusable instead of just written down.
+
+# lane-inputs:
+#   docs/features/**/audits/*-provider-tier-deferral.md
+#   **/audits/live-e2e-*
+#   **/audits/live-e2e-*/**
 set -euo pipefail
 
 # The override a third-or-later consecutive deferral must carry to ship.
