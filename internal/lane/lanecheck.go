@@ -63,7 +63,14 @@ func main() {
 	case "--verify":
 		os.Exit(runVerify(root))
 	case "--derive":
-		os.Exit(runDerive(root, os.Args[2:]))
+		os.Exit(runDerive(root, os.Args[2:], false))
+	case "--phases":
+		// The machine-readable half of --derive: phase names only, one per
+		// line, so `verify.sh lane` can execute the derived set. Same
+		// derivation, same refusals, same exit code — a second code path
+		// that could disagree with the human-readable one is the copy
+		// problem this package exists to remove.
+		os.Exit(runDerive(root, os.Args[2:], true))
 	default:
 		usage()
 		os.Exit(2)
@@ -73,6 +80,7 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: go run internal/lane/lanecheck.go --verify")
 	fmt.Fprintln(os.Stderr, "       go run internal/lane/lanecheck.go --derive <path>...")
+	fmt.Fprintln(os.Stderr, "       go run internal/lane/lanecheck.go --phases <path>...   # names only, for scripts")
 	fmt.Fprintln(os.Stderr, "       <changed paths on stdin> | go run internal/lane/lanecheck.go --derive")
 }
 
@@ -121,7 +129,7 @@ func runVerify(root string) int {
 	return 1
 }
 
-func runDerive(root string, args []string) int {
+func runDerive(root string, args []string, namesOnly bool) int {
 	changed := args
 	if len(changed) == 0 {
 		changed = readStdinPaths()
@@ -159,6 +167,10 @@ func runDerive(root string, args []string) int {
 		return sel.Phases[i].Declaration.Phase < sel.Phases[j].Declaration.Phase
 	})
 	for _, p := range sel.Phases {
+		if namesOnly {
+			fmt.Println(p.Declaration.Phase)
+			continue
+		}
 		est := lane.EstimateFor(telemetry[p.Declaration.Phase])
 		switch p.Declaration.Kind {
 		case lane.KindAlways:

@@ -4,6 +4,13 @@
 #
 # make check             THE CEILING — one outer runner owns cache/artifact,
 #                         repo gates, then Go gates (gofmt/vet/lint/test).
+# make lane              PRINT the lane this diff can reach — every phase whose
+#                         declared inputs intersect it, with the reason it was
+#                         selected and its measured median. Derived, never
+#                         looked up in a table (spec 12).
+# make lane-run          RUN that lane. NOT the ceiling: `make check` stays the
+#                         release gate, and this makes the cheap lane CORRECT,
+#                         not the expensive one optional.
 # make check-validators  THE STATIC LANE — repo gates only, no tests. The inner
 #                         loop when the diff is docs/scripts and no Go changed.
 # make classify-guard    publish-boundary gate: no private (harness) path tracked.
@@ -42,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators lane-declarations web-quality _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
+.PHONY: check test check-validators lane lane-run lane-declarations web-quality _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -60,6 +67,12 @@ _print-repo-gates:
 
 check-validators: ## Repo gates only; one shared CLI build feeds binary-backed static gates.
 	@bash scripts/verify.sh validators
+
+lane: ## PRINT the lane this working tree's changes can actually reach, with each phase's reason and measured median. Optional: LANE_FILES="a b c".
+	@bash scripts/verify.sh lane
+
+lane-run: ## RUN that derived lane. NOT the ceiling — a release still runs `make check` (spec 12 J5). Optional: LANE_FILES="a b c".
+	@bash scripts/verify.sh lane-run
 
 check: ## THE CEILING — project-owned cache + one CLI artifact + static and Go gates.
 	@bash scripts/verify.sh full
