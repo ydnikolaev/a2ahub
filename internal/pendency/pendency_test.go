@@ -136,9 +136,23 @@ func TestResolveRows(t *testing.T) {
 			wantExpected: fold.TAcknowledge,
 		},
 		{
-			name:         "requirement/acknowledged: target owes satisfy",
-			in:           Input{Kind: fold.KindRequirement, State: fold.StateAcknowledged, From: "sys-a", To: []string{"sys-b"}},
-			wantOwners:   []string{"sys-b"},
+			// The domain splits here, and collapsing it is how this table
+			// once told the target to emit an event fold refuses from it
+			// (03-domain.md §3.4.2: "satisfy event is requester's").
+			// Before a fulfilling response exists the TARGET owes the work
+			// — and no requirement transition names that work, so Expected
+			// is deliberately empty (Verdict's own doc comment).
+			name:       "requirement/acknowledged, no response yet: target owes work no transition names",
+			in:         Input{Kind: fold.KindRequirement, State: fold.StateAcknowledged, From: "sys-a", To: []string{"sys-b"}},
+			wantOwners: []string{"sys-b"},
+		},
+		{
+			name: "requirement/acknowledged, response landed: the REQUESTER owes satisfy",
+			in: Input{
+				Kind: fold.KindRequirement, State: fold.StateAcknowledged,
+				From: "sys-a", To: []string{"sys-b"}, HasFulfillingResponse: true,
+			},
+			wantOwners:   []string{"sys-a"},
 			wantExpected: fold.TSatisfy,
 		},
 		{name: "requirement/satisfied: nobody (positive control above is requirement/draft)",
