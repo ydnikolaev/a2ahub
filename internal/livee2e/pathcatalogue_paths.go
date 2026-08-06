@@ -1,7 +1,3 @@
-package livee2e
-
-import "github.com/ydnikolaev/a2ahub/internal/fold"
-
 // pathcatalogue_paths.go declares the six path families the plan's own
 // "Paths, in the order of what they would have caught" section lists
 // (docs/features/active/agent-ops-2026-07/plans/11-*.plan.md, W3). DATA
@@ -18,7 +14,11 @@ import "github.com/ydnikolaev/a2ahub/internal/fold"
 //     comment: "acknowledge on an announcement carries NO row").
 //
 // Both are named in the owning path's own Intent rather than modeled.
-//
+
+package livee2e
+
+import "github.com/ydnikolaev/a2ahub/internal/fold"
+
 // ConformancePaths returns every declared path, in declaration order.
 // Coverage (pathcoverage_test.go) unions PathTransitions over every
 // entry here against fold.TransitionRows().
@@ -537,9 +537,13 @@ func retirementPaths() []Path {
 				"to registered consumers; B acknowledges it (transition-free per D-025 — not " +
 				"a Step, see this file's own package doc); A retires the contract. Retire is " +
 				"legal only once BOTH acks are in AND the sunset has passed (W0's C1 " +
-				"decision) — this path therefore needs an injected clock to run for real; " +
-				"declared here as data only, the clock injection is the next stage's own " +
-				"concern.",
+				"decision). This path IS driven end to end — no clock injection was needed, " +
+				"because a sunset in the past is a fixed literal and needs no clock to have " +
+				"passed. Read what it therefore proves, and what it does not: the sequence " +
+				"EXECUTES with the preconditions satisfied, so the gate is exercised rather " +
+				"than vacuously met (an `adopt` step puts a real consumer in the registry). " +
+				"It has NOT been watched REFUSING — a second path retiring before the ack " +
+				"lands is what would prove the gate bites, and it does not exist yet.",
 			Steps: []Step{
 				{
 					Actor: SystemA, Kind: fold.KindContract, Transition: fold.TDeprecate,
