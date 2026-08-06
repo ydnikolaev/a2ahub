@@ -48,3 +48,28 @@ changes:
         Nothing to do. Threads you had been watching sit open for no reason
         should settle by themselves on the next read; if one still names a
         system you think is done, its `why` now says which rule put it there.
+  - id: RN-01909-1
+    kind: fix
+    impact: normal
+    subject: "A rejected handoff tells its producer to resubmit, instead of disappearing"
+    detail: >
+      When a receiver rejects a handoff, the protocol puts the producer on the
+      hook: resubmit as a new handoff superseding the rejected one. That move
+      was never reported. The thread view decided which artifacts to consider
+      before it asked whose move it was, and its list of live states for a
+      handoff stopped at `acknowledged` — so a rejected handoff was dropped from
+      open items entirely, and the system that owed the resubmission was simply
+      never told.
+      The rule was always right; nothing ever asked it. A rejected handoff now
+      appears as an open item pending on its producer, with `supersede` as the
+      transition owed.
+      Found by a new conformance path that drives a real rejection and then asks
+      whose move it is. It could not have been found by testing the rejection
+      transition on its own, because the transition was never the broken part.
+    affects: ["a2a thread", "a2a inbox --actionable", "a2a html"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. If a handoff of yours was rejected and then went quiet,
+        it will reappear as yours to answer on the next read — the record kept
+        it the whole time, only the reminder was missing.
