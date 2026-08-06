@@ -58,6 +58,20 @@ func extraAddressees(fa foldedArtifact, me string) []string {
 	return []string{me}
 }
 
+// hasFulfillingResponse reports whether a response artifact naming this one
+// as its parent has been submitted — the fact internal/pendency's requirement
+// row splits on, resolved here for the same reason extraAddressees is: the
+// evidence lives on a DIFFERENT artifact, and that package answers about one
+// at a time.
+//
+// fold already folds a response into its PARENT's Result.Responses (keyed by
+// the response id), so this is a read of a fact this package holds, never a
+// second traversal. Meaningful only for a requirement; every other kind's row
+// ignores it.
+func hasFulfillingResponse(fa foldedArtifact) bool {
+	return len(fa.Result.Responses) > 0
+}
+
 // actionableReasons evaluates every one of OP-207's 5 normative
 // `--actionable` conditions (quoted verbatim in spec 07 §T1) against fa
 // for system me, returning the subset that matched (nil if none). This
@@ -102,7 +116,8 @@ func actionableReasons(fa foldedArtifact, me string, manifest space.Manifest) []
 		// deprecates, so it is addressed even though the frozen `to:`
 		// predates its adoption. pendency owns what that MEANS; this call
 		// site owns only the registry read.
-		ExtraAddressees: extraAddressees(fa, me),
+		ExtraAddressees:       extraAddressees(fa, me),
+		HasFulfillingResponse: hasFulfillingResponse(fa),
 	})
 	if err != nil {
 		// A lookup miss means fa's own (kind, state) is not one of the

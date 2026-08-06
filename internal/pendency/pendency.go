@@ -63,6 +63,21 @@ type Input struct {
 	// full set without any change here.
 	ExtraAddressees []string
 
+	// HasFulfillingResponse says a response artifact naming this artifact as
+	// its parent has been submitted. It is set only for a requirement, and it
+	// is a caller-resolved FACT for the same reason ExtraAddressees is: the
+	// evidence lives on a DIFFERENT artifact, and this package answers about
+	// one at a time.
+	//
+	// The requirement's acknowledged state is the only row that needs it, and
+	// it needs it because the domain splits there (03-domain.md §3.4.2, actor
+	// column: "target publishes, requester verifies — satisfy event is
+	// requester's"). Before a response exists the target owes the work; after
+	// it exists the requester owes `satisfy`. Collapsing the two is how this
+	// table shipped a row telling the target to emit an event fold refuses
+	// from it.
+	HasFulfillingResponse bool
+
 	// ParentFrom is the PARENT envelope's `from`, populated only when
 	// Kind is fold.KindResponse — verify/dispute resolve against the
 	// parent's envelope, never the response's own (domain 3.4.6).
@@ -73,6 +88,15 @@ type Input struct {
 // owed by, what transition they owe, and why. An empty Owners set means
 // nobody owes anything — Why is still populated, because "settled" is a
 // claim that must be justified, never a fall-through.
+//
+// Owners MAY be non-empty while Expected is "": somebody owes something the
+// §3.4 tables cannot name as a transition of THIS artifact. The requirement's
+// acknowledged state is the shipped case — the target owes a published
+// contract version and a response, and neither is a requirement transition
+// (from `acknowledged` the table offers the target only `decline`). Naming
+// nobody there would hide a real debt; naming a transition would name a move
+// the tool refuses. Saying "you, but the act is not a move on this artifact"
+// is the only honest third answer.
 type Verdict struct {
 	Owners   []string // systems the next move is owed by; nil/empty means nobody
 	Expected string   // the transition owed; "" when Owners is empty
@@ -100,7 +124,14 @@ func Resolve(in Input) (Verdict, error) {
 		}
 		return Verdict{Owners: nil, Expected: "", Why: why}, nil
 	}
-	return Verdict{Owners: owners, Expected: r.expected, Why: r.why}, nil
+	expected, why := r.expected, r.why
+	if r.expectedFor != nil {
+		expected = r.expectedFor(in)
+	}
+	if r.whyFor != nil {
+		why = r.whyFor(in)
+	}
+	return Verdict{Owners: owners, Expected: expected, Why: why}, nil
 }
 
 // key is the table's lookup key: one (kind, fromState) subject, exactly
@@ -120,6 +151,13 @@ type row struct {
 	expected string
 	why      string
 	onEmpty  func(Input) string // nil for rows that are unconditionally "nobody"
+
+	// expectedFor/whyFor override expected/why for a row whose answer
+	// genuinely depends on a fact rather than only on (kind, state). Only
+	// the requirement's acknowledged row needs them today; keeping them nil
+	// everywhere else means the table still reads as a table.
+	expectedFor func(Input) string
+	whyFor      func(Input) string
 }
 
 // resolver is one of the six named resolvers this package uses — no
@@ -321,8 +359,35 @@ func buildTable() map[key]row {
 		"unpublished demand")
 	m[key{fold.KindRequirement, fold.StatePublished}] = targetRow(fold.TAcknowledge,
 		`domain 3.4.2: the target owes "seen"; decline is the same owed turn, refused`)
-	m[key{fold.KindRequirement, fold.StateAcknowledged}] = targetRow(fold.TSatisfy,
-		"the target owes the contract+response, or a declared decline")
+	m[key{fold.KindRequirement, fold.StateAcknowledged}] = row{
+		who: func(in Input) []string {
+			if in.HasFulfillingResponse {
+				return owner(in)
+			}
+			return target(in)
+		},
+		expectedFor: func(in Input) string {
+			if in.HasFulfillingResponse {
+				return fold.TSatisfy
+			}
+			// Deliberately none: publishing a contract version and
+			// submitting a response are acts on OTHER artifacts. See
+			// Verdict's own doc comment.
+			return ""
+		},
+		whyFor: func(in Input) string {
+			if in.HasFulfillingResponse {
+				return "a fulfilling response has landed, and `satisfy` is the REQUESTER's own event " +
+					"(03-domain.md §3.4.2: \"target publishes, requester verifies — satisfy event is requester's\")"
+			}
+			return "the target owes a published contract version and a response; neither is a transition " +
+				"of this requirement, so no move on THIS artifact is named — declining is the only " +
+				"requirement row the target has from here, and it is a refusal, not the owed act"
+		},
+		onEmpty: func(Input) string {
+			return "neither party could be attributed from this envelope"
+		},
+	}
 	m[key{fold.KindRequirement, fold.StateSatisfied}] = nobodyRow(
 		"settled; supersede is the owner's escape hatch")
 	m[key{fold.KindRequirement, fold.StateDeclined}] = nobodyRow(
