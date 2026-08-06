@@ -93,6 +93,106 @@ func contractPaths() []Path {
 // verified -> closed, and the same disputed (plan W3 "Paths" #3). ------
 
 func questionPaths() []Path {
+	acknowledged := Path{
+		ID: "question-lifecycle-acknowledged",
+		Intent: "question submitted -> acknowledged, the shared prefix the two refusal " +
+			"controls below (question-close-before-responded-refused, " +
+			"question-respond-by-the-asker-refused) continue from — the SAME three steps " +
+			"toResponded's own prefix declares below, kept as their own standalone path " +
+			"rather than a partial reference into toResponded's chain (a Precondition " +
+			"names another path's FULL end state, D4/Path's own doc comment — there is no " +
+			"'first half of toResponded' to point at) so each refusal control reaches its " +
+			"illegal moment by the SAME kind of composition every other path in this file " +
+			"uses: real actors driving real acts through the real binary, never a seeded " +
+			"raw prior.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("question", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TSubmit,
+				Predicates: []Predicate{
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TAcknowledge),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TAcknowledge,
+				Predicates: []Predicate{
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TRespond),
+				},
+			},
+		},
+	}
+
+	closeBeforeRespondedRefused := Path{
+		ID:           "question-close-before-responded-refused",
+		Precondition: acknowledged.ID,
+		Intent: "the paired NEGATIVE control for the target-engages narrative every other " +
+			"declared path narrates: the ASKER (sender, RoleOwner) attempts `close` while " +
+			"the question sits at `acknowledged`, never responded to. `close`'s own Role is " +
+			"RoleOwner (table.go) — A IS the right actor for this transition, same as A's " +
+			"own already-legal create/submit steps above, so the ONLY possible refusal cause " +
+			"is the STATE: exchangeRows() carries no (question, acknowledged, close) row at " +
+			"all, `close` is legal ONLY from `responded` — refused illegal-transition, " +
+			"LFC-001, before the write funnel is ever reached. Deliberately the mirror image " +
+			"of question-respond-by-the-asker-refused below (right actor/wrong state here, " +
+			"right state/wrong actor there) so the pair isolates each LFC- code cleanly. " +
+			"Without this control, LFC-001's own gate could be broken open, permitting " +
+			"everything, and every OTHER declared path would stay green regardless (none of " +
+			"them ever watches the product REFUSE anything). The question must still be " +
+			"`acknowledged` and still pending on B (the responder) afterwards — a refusal " +
+			"that silently corrupted the fold would otherwise pass unnoticed.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TClose,
+				Refused: &Refusal{Code: "LFC-001"},
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateAcknowledged),
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TRespond),
+				},
+			},
+		},
+	}
+
+	respondByAskerRefused := Path{
+		ID:           "question-respond-by-the-asker-refused",
+		Precondition: acknowledged.ID,
+		Intent: "the paired NEGATIVE control for `respond`'s own Role, mirroring " +
+			"question-close-before-responded-refused above (that one right actor/wrong " +
+			"state, this one right state/wrong actor): exchangeRows() gives `respond` Role " +
+			"RoleTarget (03-domain.md §3.4.3 — respond is the TARGET's move), resolved " +
+			"against the envelope's own `to:` (fold/fold.go roleAuthorizes), never the " +
+			"sender. The ASKER (A, RoleOwner/env.From) attempts `respond` on its OWN " +
+			"question while it sits at `acknowledged` — a state respond's own table row DOES " +
+			"admit (the acknowledged->respond shortcut question-lifecycle-to-responded's own " +
+			"family exercises), so this refusal is about the ACTOR, not the state. Legal-" +
+			"ROLE, not legal-MEMBERSHIP, is what is on trial: legalRole (fold/fold.go) " +
+			"refuses unauthorized-actor for EITHER a non-member OR a member holding the " +
+			"wrong role, and both collapse to the identical LFC-002 string, so a bare pass " +
+			"here would not by itself prove which one fired. This path's own precondition " +
+			"(question-lifecycle-acknowledged) already has A drive `create` and `submit` " +
+			"legally on this SAME question, through the SAME legality check, moments " +
+			"earlier in the SAME run — A is provably a manifest member; the only variable " +
+			"left standing at this step is role. State and pendency must be unchanged " +
+			"afterwards — a product that let the asker answer its own question would be a " +
+			"defect this control exists to surface, not to paper over.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TRespond,
+				Refused: &Refusal{Code: "LFC-002"},
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateAcknowledged),
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TRespond),
+				},
+			},
+		},
+	}
+
 	toResponded := Path{
 		ID: "question-lifecycle-to-responded",
 		Intent: "question submitted -> acknowledged -> responded, the shared prefix both " +
@@ -191,7 +291,7 @@ func questionPaths() []Path {
 		},
 	}
 
-	return []Path{toResponded, verifiedClosed, disputed}
+	return []Path{acknowledged, closeBeforeRespondedRefused, respondByAskerRefused, toResponded, verifiedClosed, disputed}
 }
 
 // --- Family 4 — work_request through accept -> start -> respond ->
@@ -541,6 +641,53 @@ func dataLoopPaths() []Path {
 func retirementPaths() []Path {
 	return []Path{
 		{
+			ID:           "contract-retire-refused-without-ack",
+			Precondition: "contract-successor-compatible-publish",
+			Intent: "the paired NEGATIVE control for contract-deprecate-retire-after-sunset " +
+				"(W0's C1 decision, the one decision the operator personally made: acks AND a " +
+				"passed sunset are BOTH required). Same shape as that path — A deprecates the " +
+				"contract, B becomes a registered consumer (`a2a contract adopt`, no fold " +
+				"transition, 03-domain.md §10.5, same as that path's own comment) — EXCEPT B " +
+				"never acknowledges the deprecation announcement. A's retire attempt must then " +
+				"be REFUSED naming POL-006 (internal/validate/policy_retire.go), and the " +
+				"contract must still be `deprecated` afterwards: without this control, the " +
+				"retire gate could be broken open, permitting everything, and " +
+				"contract-deprecate-retire-after-sunset's own pass would stay green regardless.",
+			Steps: []Step{
+				{
+					Actor: SystemA, Kind: fold.KindContract, Transition: fold.TDeprecate,
+					Predicates: []Predicate{
+						FoldedState("contract", fold.StateDeprecated),
+						PendingOn("contract"), // the contract itself owes nobody — the debt is the announcement's
+					},
+				},
+				{
+					Actor: SystemA, Kind: fold.KindAnnouncement, Transition: fold.TCreate,
+					Predicates: []Predicate{FoldedState("deprecation-notice", fold.StateDraft)},
+				},
+				{
+					Actor: SystemA, Kind: fold.KindAnnouncement, Transition: fold.TPublish,
+					Predicates: []Predicate{
+						FoldedState("deprecation-notice", fold.StatePublished),
+						PendingOn("deprecation-notice", SystemB),
+						ExpectedTransition("deprecation-notice", fold.TAcknowledge),
+					},
+				},
+				{
+					// B never acks (contrast with contract-deprecate-retire-
+					// after-sunset's own sequence) — this attempt MUST be
+					// refused, naming POL-006, and it performs NO transition
+					// at all (Step.Refused's own doc comment): the contract
+					// stays deprecated, not retired.
+					Actor: SystemA, Kind: fold.KindContract, Transition: fold.TRetire,
+					Refused: &Refusal{Code: "POL-006"},
+					Predicates: []Predicate{
+						FoldedState("contract", fold.StateDeprecated),
+					},
+				},
+			},
+		},
+		{
 			ID:           "contract-deprecate-retire-after-sunset",
 			Precondition: "contract-successor-compatible-publish",
 			Intent: "A deprecates the (now two-version) contract, which emits a deprecation " +
@@ -553,8 +700,9 @@ func retirementPaths() []Path {
 				"passed. Read what it therefore proves, and what it does not: the sequence " +
 				"EXECUTES with the preconditions satisfied, so the gate is exercised rather " +
 				"than vacuously met (an `adopt` step puts a real consumer in the registry). " +
-				"It has NOT been watched REFUSING — a second path retiring before the ack " +
-				"lands is what would prove the gate bites, and it does not exist yet.",
+				"contract-retire-refused-without-ack (this file, same precondition) is the " +
+				"paired NEGATIVE control that watches the gate REFUSE: same shape, minus the " +
+				"ack, and the retire attempt MUST be refused naming POL-006.",
 			Steps: []Step{
 				{
 					Actor: SystemA, Kind: fold.KindContract, Transition: fold.TDeprecate,
