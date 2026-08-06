@@ -388,11 +388,25 @@ func PlanPublication(input PublicationInput, checker CompatibilityChecker) (Publ
 	if belowFloor {
 		descriptorSchema, eventSchema, profile = "envelope/v1", "event/v1", ProfileContractTreeV1
 	}
+	// Both refusals below name the concrete descriptor shape and the command
+	// that produces it, never the internal mode name alone.
+	//
+	// Found on 2026-08-06 by an external report: the message was "authoring
+	// floor requires declared-v2 candidate inventory", and the strings
+	// `declared-v2`, `candidate inventory` and `authoring floor` appeared in
+	// zero lines of the shipped skill manual. A refusal that names a
+	// precondition with no reachable means of satisfaction leaves the operator
+	// with a merged contract and no next command — which is exactly what
+	// happened. A refusal is only actionable if it names its own remedy.
 	if profile == ProfileContractSetV2 && input.Candidate.InventoryMode() != InventoryDeclaredV2 {
-		return PublicationPlan{}, []Issue{{Kind: IssueInvalidPublication, Path: "artifacts", Detail: "authoring floor requires declared-v2 candidate inventory"}}
+		return PublicationPlan{}, []Issue{{Kind: IssueInvalidPublication, Path: "artifacts", Detail: fmt.Sprintf(
+			"this space's authoring floor is %s, at or above %s, so a contract publishes as %s: its %s must be `schema: envelope/v2` and declare every carried file exactly once under a top-level `artifacts:` key. This candidate declares none, so it can never publish as authored. `a2a template show contract` prints the exact shape. Correct the descriptor in your own staged candidate and re-run with `--staging <project-relative-dir>`; that overlays the corrected descriptor onto the landed one, so a contract that already merged is fixed without a second submit.",
+			input.AuthoringFloor, ContractPublicationFloor, ProfileContractSetV2, DescriptorPath)}}
 	}
 	if profile == ProfileContractTreeV1 && input.Candidate.InventoryMode() != InventoryLegacyFixedV1 {
-		return PublicationPlan{}, []Issue{{Kind: IssueInvalidPublication, Path: "artifacts", Detail: "authoring floor requires legacy-fixed-v1 candidate inventory"}}
+		return PublicationPlan{}, []Issue{{Kind: IssueInvalidPublication, Path: "artifacts", Detail: fmt.Sprintf(
+			"this space's authoring floor is %s, below %s, so a contract publishes as %s over the fixed schema/** + fixtures/** tree and its %s must NOT carry a top-level `artifacts:` key. Remove it, or raise the space's min_binary_version to %s to publish the declared set instead. Run `a2a template show contract --envelope-schema envelope/v1` for the shape this floor expects.",
+			input.AuthoringFloor, ContractPublicationFloor, ProfileContractTreeV1, DescriptorPath, ContractPublicationFloor)}}
 	}
 
 	sourceProfile, sourceDigest, sourceIssues := publicationSourceDigest(input.Candidate, input.SourceDigestAssertion)

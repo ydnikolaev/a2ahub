@@ -1978,3 +1978,138 @@ func ciReportHasViolation(report ciReport, path, code string) bool {
 	}
 	return false
 }
+
+// declaredV2Contract is validContract's envelope/v2 sibling: the shape
+// `a2a new contract` renders and the publication planner requires once a
+// space's floor reaches contract.ContractPublicationFloor.
+func declaredV2Contract(from, slug string) string {
+	return "---\n" +
+		"schema: envelope/v2\n" +
+		"id: XC-" + from + "-" + slug + "\n" +
+		"type: contract\n" +
+		"title: Test contract\n" +
+		"space: getvisa\n" +
+		"from: " + from + "\n" +
+		"to: [seomatrix]\n" +
+		"thread: " + cliFixtureThread + "\n" +
+		"actor: {kind: agent, name: claude, model: claude-fable-5}\n" +
+		"created: 2026-07-30T14:02:00Z\n" +
+		"category: data-feed\n" +
+		"priority: p2\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: \"0.0.0\"\n" +
+		"schema_format: json-schema-2020-12\n" +
+		"compat_policy: default\n" +
+		"artifacts:\n" +
+		"  - {path: schema/" + slug + ".schema.json, role: schema, normative: true, media_type: application/schema+json}\n" +
+		"  - {path: fixtures/valid/" + slug + ".json, role: valid-fixture, normative: true, media_type: application/json, conforms_to: schema/" + slug + ".schema.json}\n" +
+		"  - {path: fixtures/invalid/" + slug + ".json, role: invalid-fixture, normative: true, media_type: application/json, conforms_to: schema/" + slug + ".schema.json}\n" +
+		"---\nBody.\n"
+}
+
+// contractShapeSidecars is the schema/fixture trio every publishable
+// JSON-Schema contract carries, keyed at the paths the descriptor declares.
+func contractShapeSidecars(slug string) map[string]string {
+	dir := "axon/provides/" + slug + "/"
+	return map[string]string{
+		dir + "schema/" + slug + ".schema.json":    `{"type":"object"}`,
+		dir + "fixtures/valid/" + slug + ".json":   `{}`,
+		dir + "fixtures/invalid/" + slug + ".json": `null`,
+	}
+}
+
+// TestValidateCI_ContractV1DescriptorAboveFloorRed is the regression for
+// fb-20260806-3539ac: an envelope/v1 descriptor in a space whose floor has
+// reached the contract-set-v2 profile can NEVER publish, so the merge gate
+// must refuse it here rather than let it merge and strand the author at
+// `a2a contract preflight`.
+func TestValidateCI_ContractV1DescriptorAboveFloorRed(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "axon/provides/content-feed/contract.md"
+	files := contractShapeSidecars("content-feed")
+	files[rel] = validContract("axon", "content-feed")
+	root := ciRepo(t, ciManifestWithFloor("0.19.3"), files)
+	contractGitRun(t, root, "init", "-q", "-b", "main")
+	contractGitRun(t, root, "add", "-A")
+	contractGitRun(t, root, "commit", "-q", "-m", "author content-feed")
+	base := contractGitRevParse(t, root, "HEAD")
+
+	code, rep, _ := runCI(t, engine, root, fakeGit(rel), "v3-pr", base, "ydnikolaev")
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 (a v1 descriptor above the floor can never publish); report=%+v", code, rep)
+	}
+	var refusal string
+	for _, a := range rep.Artifacts {
+		if a.Result == nil {
+			continue
+		}
+		for _, v := range a.Result.Violations {
+			if v.Code == "POL-013" && v.Path == "artifacts" {
+				refusal = v.Message
+			}
+		}
+	}
+	if refusal == "" {
+		t.Fatalf("expected a POL-013 artifacts refusal naming the declared-v2 requirement, got %+v", rep.Artifacts)
+	}
+	// The refusal has to carry its own remedy — that absence is what the
+	// external report was actually about.
+	for _, want := range []string{"envelope/v2", "artifacts:", "a2a template show contract"} {
+		if !strings.Contains(refusal, want) {
+			t.Fatalf("refusal does not name %q, so it is not actionable: %s", want, refusal)
+		}
+	}
+}
+
+// TestValidateCI_ContractDeclaredV2AboveFloorClean is the other half: the
+// shape the tool itself renders must pass the gate that refuses the old one.
+func TestValidateCI_ContractDeclaredV2AboveFloorClean(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "axon/provides/content-feed/contract.md"
+	files := contractShapeSidecars("content-feed")
+	files[rel] = declaredV2Contract("axon", "content-feed")
+	root := ciRepo(t, ciManifestWithFloor("0.19.3"), files)
+	contractGitRun(t, root, "init", "-q", "-b", "main")
+	contractGitRun(t, root, "add", "-A")
+	contractGitRun(t, root, "commit", "-q", "-m", "author content-feed")
+	base := contractGitRevParse(t, root, "HEAD")
+
+	code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", base, "ydnikolaev")
+	for _, a := range rep.Artifacts {
+		if a.Result == nil {
+			continue
+		}
+		for _, v := range a.Result.Violations {
+			if v.Code == "POL-013" {
+				t.Fatalf("a declared-v2 descriptor above the floor must not be refused for its shape: %s", v.Message)
+			}
+		}
+	}
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr=%s; report=%+v", code, errOut, rep)
+	}
+}
+
+// TestValidateCI_ContractV1DescriptorBelowFloorClean pins the migration
+// guarantee: a space that has NOT raised its floor keeps publishing the
+// legacy fixed tree, and this gate must not redden it.
+func TestValidateCI_ContractV1DescriptorBelowFloorClean(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+	rel := "axon/provides/content-feed/contract.md"
+	files := contractShapeSidecars("content-feed")
+	files[rel] = validContract("axon", "content-feed")
+	root := ciRepo(t, ciManifestWithFloor("0.18.0"), files)
+	contractGitRun(t, root, "init", "-q", "-b", "main")
+	contractGitRun(t, root, "add", "-A")
+	contractGitRun(t, root, "commit", "-q", "-m", "author content-feed")
+	base := contractGitRevParse(t, root, "HEAD")
+
+	code, rep, errOut := runCI(t, engine, root, fakeGit(rel), "v3-pr", base, "ydnikolaev")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (below the floor the v1 tree is still the publishable shape); stderr=%s; report=%+v", code, errOut, rep)
+	}
+}

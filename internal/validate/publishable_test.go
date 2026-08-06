@@ -112,3 +112,154 @@ func TestCheckContractPublishable(t *testing.T) {
 		})
 	}
 }
+
+// TestCheckContractDescriptorShape covers the fb-20260806-3539ac defect from
+// both sides of the floor. The rule is not "v2 is better": it is that the
+// space's floor SELECTS one publication profile, and the descriptor that does
+// not match the selected one can never publish in that space at all.
+func TestCheckContractDescriptorShape(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		in       DescriptorShapeInput
+		wantRed  bool
+		wantSays []string
+	}{
+		{
+			name: "above floor, envelope/v1 with no inventory — the reported defect",
+			in: DescriptorShapeInput{
+				SpaceMinBinaryVersion: "0.19.3", ContractID: "XC-axon-ingest",
+				DescriptorSchema: "envelope/v1", DeclaresArtifacts: false, SchemaFormat: "json-schema-2020-12",
+			},
+			wantRed:  true,
+			wantSays: []string{"envelope/v2", "artifacts:", "a2a template show contract"},
+		},
+		{
+			name: "above floor, envelope/v2 but no inventory",
+			in: DescriptorShapeInput{
+				SpaceMinBinaryVersion: "0.19.3", ContractID: "XC-axon-ingest",
+				DescriptorSchema: "envelope/v2", DeclaresArtifacts: false, SchemaFormat: "json-schema-2020-12",
+			},
+			wantRed:  true,
+			wantSays: []string{"declares no top-level `artifacts:` inventory"},
+		},
+		{
+			name: "above floor, declared v2 — the shape the tool renders",
+			in: DescriptorShapeInput{
+				SpaceMinBinaryVersion: "0.19.3", ContractID: "XC-axon-ingest",
+				DescriptorSchema: "envelope/v2", DeclaresArtifacts: true, SchemaFormat: "json-schema-2020-12",
+			},
+		},
+		{
+			name: "exactly at the floor is AT or above, not below",
+			in: DescriptorShapeInput{
+				SpaceMinBinaryVersion: "0.19.0", ContractID: "XC-axon-ingest",
+				DescriptorSchema: "envelope/v1", DeclaresArtifacts: false, SchemaFormat: "json-schema-2020-12",
+			},
+			wantRed:  true,
+			wantSays: []string{"0.19.0"},
+		},
+		{
+			name: "below floor, legacy v1 tree stays publishable",
+			in: DescriptorShapeInput{
+				SpaceMinBinaryVersion: "0.18.0", ContractID: "XC-axon-ingest",
+				DescriptorSchema: "envelope/v1", DeclaresArtifacts: false, SchemaFormat: "json-schema-2020-12",
+			},
+		},
+		{
+			name: "below floor, a declared inventory the legacy profile refuses",
+			in: DescriptorShapeInput{
+				SpaceMinBinaryVersion: "0.18.0", ContractID: "XC-axon-ingest",
+				DescriptorSchema: "envelope/v2", DeclaresArtifacts: true, SchemaFormat: "json-schema-2020-12",
+			},
+			wantRed:  true,
+			wantSays: []string{"contract-tree-v1", "min_binary_version"},
+		},
+		{
+			name: "an unknown floor is not checked at all — never an invented one",
+			in: DescriptorShapeInput{
+				SpaceMinBinaryVersion: "", ContractID: "XC-axon-ingest",
+				DescriptorSchema: "envelope/v1", DeclaresArtifacts: false, SchemaFormat: "json-schema-2020-12",
+			},
+		},
+		{
+			name: "an uncomparable floor degrades to no verdict, not a refusal",
+			in: DescriptorShapeInput{
+				SpaceMinBinaryVersion: "not-a-version", ContractID: "XC-axon-ingest",
+				DescriptorSchema: "envelope/v1", DeclaresArtifacts: false, SchemaFormat: "json-schema-2020-12",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := CheckContractDescriptorShape(tc.in)
+			if !tc.wantRed {
+				if got != nil {
+					t.Fatalf("expected no violation, got %+v", *got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("expected a violation, got nil")
+			}
+			if got.Code != "POL-013" || got.Severity != SeverityReject || got.Path != "artifacts" {
+				t.Fatalf("violation shape = %+v, want POL-013/reject/artifacts", *got)
+			}
+			// Every refusal must carry its own remedy — the absence of one is
+			// what the external report was actually about.
+			if !strings.Contains(got.Message, tc.in.ContractID) {
+				t.Fatalf("refusal does not name the contract: %s", got.Message)
+			}
+			for _, want := range tc.wantSays {
+				if !strings.Contains(got.Message, want) {
+					t.Fatalf("refusal does not say %q: %s", want, got.Message)
+				}
+			}
+		})
+	}
+}
+
+// TestCheckContractDescriptorShapeNonJSONSchemaNamesTheLimit: the whole point
+// of this check is that a refusal must name a reachable remedy. A contract
+// that carries no JSON Schema cannot supply the three roles contract-set-v2
+// requires, so telling its author to "declare every carried file" would
+// reproduce the reported defect one layer in. The refusal has to say the
+// format has no publishable shape at this floor.
+func TestCheckContractDescriptorShapeNonJSONSchemaNamesTheLimit(t *testing.T) {
+	t.Parallel()
+
+	for _, format := range []string{"openapi-3.1", "proto3", "other"} {
+		t.Run(format, func(t *testing.T) {
+			t.Parallel()
+			got := CheckContractDescriptorShape(DescriptorShapeInput{
+				SpaceMinBinaryVersion: "0.19.3", ContractID: "XC-axon-ingest",
+				DescriptorSchema: "envelope/v1", DeclaresArtifacts: false, SchemaFormat: format,
+			})
+			if got == nil {
+				t.Fatal("expected a refusal: this format cannot publish at this floor")
+			}
+			if got.Path != "schema_format" {
+				t.Fatalf("path = %q, want schema_format — the format is the blocker, not the inventory", got.Path)
+			}
+			if strings.Contains(got.Message, "a2a template show contract") {
+				t.Fatalf("the refusal points at a remedy this format cannot reach: %s", got.Message)
+			}
+			for _, want := range []string{format, "no publishable shape"} {
+				if !strings.Contains(got.Message, want) {
+					t.Fatalf("refusal does not say %q: %s", want, got.Message)
+				}
+			}
+		})
+	}
+
+	// Below the floor these formats still publish the legacy tree, unchanged.
+	if got := CheckContractDescriptorShape(DescriptorShapeInput{
+		SpaceMinBinaryVersion: "0.18.0", ContractID: "XC-axon-ingest",
+		DescriptorSchema: "envelope/v1", DeclaresArtifacts: false, SchemaFormat: "openapi-3.1",
+	}); got != nil {
+		t.Fatalf("below the floor an openapi contract must stay publishable, got %+v", *got)
+	}
+}
