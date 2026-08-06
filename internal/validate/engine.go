@@ -174,7 +174,7 @@ func (e *Engine) runCommonEnvelope(d Draft) (violations []Violation, artifactID 
 			Code:     "POL-005",
 			Class:    ClassPolicy,
 			Path:     "schema",
-			Message:  "envelope schema version is outside the one-cycle overlap window this binary understands",
+			Message:  unreadableOrUnacceptedSchemaMessage("this artifact", "envelope", env.Schema),
 			CCRef:    "CC-005",
 			Severity: SeverityReject,
 		})

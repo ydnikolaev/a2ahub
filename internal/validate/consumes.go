@@ -51,7 +51,7 @@ func (e *Engine) ValidateConsumes(raw []byte) (Result, error) {
 				Code:     "POL-005",
 				Class:    ClassPolicy,
 				Path:     "schema",
-				Message:  "consumes.yaml schema version is outside the one-cycle overlap window this binary understands",
+				Message:  unreadableOrUnacceptedSchemaMessage("consumes.yaml", "consumes", probe.Schema),
 				CCRef:    "CC-005",
 				Severity: SeverityReject,
 			}}), nil
