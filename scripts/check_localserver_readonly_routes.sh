@@ -4,6 +4,15 @@
 # lane-inputs:
 #   internal/localserver/*.go
 #   internal/localserver/**/*.go
+# lane-reads-opaque: $ROUTER (line 10, "$ROOT/internal/localserver/router.go")
+#   and $SERVER_ROOT (line 11, "$ROOT/internal/localserver") drive every
+#   sed/grep read here — both resolve, at run time, to paths the
+#   internal/localserver/*.go and internal/localserver/**/*.go entries above
+#   already cover. Separately, line 41 delegates a real read to a Go test
+#   ("make -s -C "$ROOT" test PKG=./internal/localserver/..." running
+#   TestRouterExactRouteAndMethodInventory) rather than reading the router
+#   source itself — that test's own package is internal/localserver, also
+#   already covered.
 set -euo pipefail
 
 ROOT="${LOCALSERVER_READONLY_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"

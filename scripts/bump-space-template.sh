@@ -28,6 +28,11 @@
 #   space-template/space.yaml
 #   space-template/.github/workflows/a2a-validate.yml
 #   releasenotes/*.yaml
+# lane-reads-opaque: rewrite()'s own `$file` parameter (line 77) backs the
+#   `sed -E "s|$pattern|$replacement|" "$file" >"$tmp"` read/write at line
+#   86 — the caller passes literal $MANIFEST ("space-template/space.yaml")
+#   or $WORKFLOW ("space-template/.github/workflows/a2a-validate.yml") at
+#   the two call sites (lines ~162, ~165), both already declared above.
 set -euo pipefail
 
 MANIFEST="space-template/space.yaml"
