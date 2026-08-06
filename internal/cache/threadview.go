@@ -820,6 +820,10 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 			// not render this as authoritative for another system until a
 			// caller can read every participant's registry.
 			ExtraAddressees: extraAddressees(fa, ownSystem),
+			// The requirement row splits on this (pendency.Input's own doc):
+			// before a fulfilling response lands the target owes the work,
+			// after it lands the requester owes `satisfy`.
+			HasFulfillingResponse: hasFulfillingResponse(fa),
 		}
 		if fa.kind() == fold.KindResponse {
 			in.ParentFrom = authEnv.From

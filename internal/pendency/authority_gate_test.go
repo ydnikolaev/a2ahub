@@ -1,0 +1,122 @@
+package pendency
+
+import (
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/ydnikolaev/a2ahub/internal/fold"
+)
+
+// TestEveryRowNamesAMoveItsOwnerMayActuallyMake is the authority gate: for
+// every row in the table, the transition it says is owed must be (a) legal
+// from that state at all, and (b) authorised for the very system the row
+// names.
+//
+// Without it, a row can name a move the tool will then refuse — which is the
+// one thing `skill/a2ahub/reference/threads.md` promises can never happen
+// ("the computation comes from the same lifecycle engine the write verbs
+// enforce, so the view can never name a move the tool would then refuse").
+//
+// It was written because that promise had already been broken. The
+// requirement/acknowledged row said the TARGET owes `satisfy`. Both
+// 03-domain.md §3.4.2 ("satisfy event is requester's") and fold's own row
+// (Role: RoleOwner) say it is the REQUESTER's. So `a2a inbox --actionable`
+// would have told the target to perform an event fold refuses from it. A
+// human reading of the table missed it; this asks fold directly.
+//
+// The check composes two things fold already exports and adds no rule of its
+// own: LegalNext for "is this transition available from this state, and under
+// which role", and RoleAuthorizes for "does that role resolve to this system".
+//
+// Deliberately NOT checked here: rows that answer "nobody" (there is no move
+// to authorise), and the announcement acknowledge (D-025 is transition-free
+// and carries no table row at all — fold/legalnext.go's own doc comment).
+func TestEveryRowNamesAMoveItsOwnerMayActuallyMake(t *testing.T) {
+	t.Parallel()
+
+	const ownerSys, targetSys, approverSys, parentOwnerSys = "owner-sys", "target-sys", "approver-sys", "parent-owner-sys"
+
+	// One envelope shape for every probe: `from` is the artifact's own
+	// author, `to` its single addressee. RoleAuthorizes resolves against
+	// exactly these, so a row naming a system that is neither reads as
+	// unauthorised — which is the failure this gate is for.
+	env := fold.Envelope{
+		From:              ownerSys,
+		To:                []string{targetSys},
+		RequiredApprovers: []string{approverSys},
+	}
+
+	var problems []string
+	checked := 0
+
+	for _, p := range fold.SubjectStates() {
+		verdict, err := Resolve(Input{
+			Kind: p.Kind, State: p.State,
+			From: ownerSys, To: []string{targetSys},
+			AckRequested:       true,
+			RequiredApprovers:  []string{approverSys},
+			ActiveParticipants: []string{ownerSys, targetSys},
+			ParentFrom:         parentOwnerSys,
+		})
+		if err != nil || len(verdict.Owners) == 0 {
+			continue
+		}
+		// Owners with no Expected is the legal third answer (Verdict's own
+		// doc): somebody owes an act the §3.4 tables cannot name as a
+		// transition of this artifact. There is no role to authorise, so
+		// there is nothing for this gate to check — and demanding a
+		// transition here would push the table back toward naming a move
+		// the tool refuses, which is what it exists to prevent.
+		if verdict.Expected == "" {
+			continue
+		}
+		if p.Kind == fold.KindAnnouncement {
+			// D-025's per-recipient ack has no table row to check against.
+			continue
+		}
+		checked++
+
+		where := string(p.Kind) + "/" + string(p.State)
+
+		var move *fold.NextMove
+		for _, mv := range fold.LegalNext(p.Kind, p.State) {
+			if mv.Transition == verdict.Expected {
+				m := mv
+				move = &m
+				break
+			}
+		}
+		if move == nil {
+			problems = append(problems, where+": says "+verdict.Expected+
+				" is owed, but fold.LegalNext admits no such transition from this state")
+			continue
+		}
+
+		// A response's verify/dispute resolves against the PARENT's envelope,
+		// never its own (fold/legality.go's documented response-scoped trap),
+		// so the probe envelope has to match what the row is talking about.
+		probe := env
+		if p.Kind == fold.KindResponse {
+			probe.From = parentOwnerSys
+		}
+
+		for _, sys := range verdict.Owners {
+			if !fold.RoleAuthorizes(move.Role, probe, sys) {
+				problems = append(problems, where+": says "+sys+" owes "+verdict.Expected+
+					", but that transition's role ("+string(move.Role)+
+					") does not authorise "+sys+" — the surface would name a move the tool refuses")
+			}
+		}
+	}
+
+	if checked == 0 {
+		t.Fatal("no row with an owed move was checked — the probe inputs or the table are broken, and a green result here would mean nothing")
+	}
+
+	if len(problems) > 0 {
+		sort.Strings(problems)
+		t.Fatalf("%d pendency row(s) name a move their owner cannot make (%d row(s) checked):\n  %s",
+			len(problems), checked, strings.Join(problems, "\n  "))
+	}
+}
