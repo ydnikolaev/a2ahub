@@ -42,6 +42,15 @@ jobs:
             | sh -s -- -b "$(go env GOPATH)/bin" v2.12.2
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          # ripgrep: scripts/check-operational-confidence.sh is written against
+          # it and a bare GitHub runner does not ship it. Undeclared, its absence
+          # was SILENT — the gate reported twenty-seven normative ids as
+          # undefined, about a plan file that was present and correct, and this
+          # workflow was red on it for forty consecutive runs while releases
+          # were cut straight through. The gate now refuses up front when rg is
+          # missing; this line is the other half, so it is not missing.
+          sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+          rg --version | head -1
 
       - name: Resolve module inputs
         run: go mod download
