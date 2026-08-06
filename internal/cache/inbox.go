@@ -64,12 +64,13 @@ func extraAddressees(fa foldedArtifact, me string) []string {
 // evidence lives on a DIFFERENT artifact, and that package answers about one
 // at a time.
 //
-// fold already folds a response into its PARENT's Result.Responses (keyed by
-// the response id), so this is a read of a fact this package holds, never a
-// second traversal. Meaningful only for a requirement; every other kind's row
-// ignores it.
+// It reads mirror.go's own `parent`-field pass, NOT fold's Result.Responses.
+// The latter was the first attempt and is permanently empty for a requirement: fold
+// populates that map only from a `respond` event's ResponseID, and
+// requirementRows carries no respond row. Meaningful only for a requirement;
+// every other kind's row ignores it.
 func hasFulfillingResponse(fa foldedArtifact) bool {
-	return len(fa.Result.Responses) > 0
+	return fa.FulfillingResponse
 }
 
 // actionableReasons evaluates every one of OP-207's 5 normative

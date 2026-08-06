@@ -136,6 +136,22 @@ type foldedArtifact struct {
 	// copies. This package has paid for one rule read in two places
 	// enough times (see broadcastAckPermitted and contractVersionVerdict).
 	DeprecatesMyDependency bool
+
+	// FulfillingResponse is true when some response artifact in this space
+	// names this one as its `parent`. internal/pendency's requirement row
+	// splits on it (Input.HasFulfillingResponse), and it is resolved HERE
+	// because the evidence lives on a different artifact.
+	//
+	// It deliberately does NOT read fold's Result.Responses, which was the
+	// first attempt and could never work: fold populates that map only from
+	// a `respond` event's ResponseID (fold.go's own respond branch), and
+	// requirementRows carries no respond row — so a requirement's Responses
+	// map is empty no matter how many responses actually name it. The split
+	// the domain draws (§3.4.2: before a response the target owes the work,
+	// after it the requester owes `satisfy`) was therefore unreachable in
+	// production and lived only in a unit test. The `parent` field is the
+	// fact; this reads the fact.
+	FulfillingResponse bool
 }
 
 func (f foldedArtifact) kind() fold.Kind { return fold.Kind(f.Env.Type) }
@@ -199,9 +215,15 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 	// resolves best-effort (first response ID, deterministically sorted)
 	// — see v1-min spec 07 §11.
 	responsesBySeqAndParent := map[int64]map[string][]string{}
+	// hasParentedResponse is parentOf read the other way round: "does any
+	// response name ME". It is the requirement row's own split fact
+	// (foldedArtifact.FulfillingResponse), built in the same pass rather than
+	// by a second traversal.
+	hasParentedResponse := map[string]bool{}
 	for _, a := range artifacts {
 		if fold.Kind(a.Env.Type) == fold.KindResponse && a.Env.Parent != "" {
 			parentOf[a.Env.ID] = a.Env.Parent
+			hasParentedResponse[a.Env.Parent] = true
 			s := seq[a.RelPath]
 			if responsesBySeqAndParent[s] == nil {
 				responsesBySeqAndParent[s] = map[string][]string{}
@@ -321,6 +343,7 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			// this false for every artifact, which is exactly today's
 			// behaviour for such a system.
 			DeprecatesMyDependency: myDependencies[a.Env.deprecatedContractID()],
+			FulfillingResponse:     hasParentedResponse[a.Env.ID],
 		})
 	}
 
@@ -469,9 +492,32 @@ func gatherEvents(id string, parentOf map[string]string, eventsBySubject map[str
 		own = filtered
 	}
 	out := append([]fold.Event(nil), own...)
+	// Only the RESPONSE-SCOPED events cross over, which is the exact mirror
+	// image of the filter above: verify/dispute leave the response's own
+	// stream and join the parent's, and nothing else does. A response's own
+	// create/submit belong to the response alone.
+	//
+	// Handing the parent everything was a real defect, and the one kind it
+	// bit is the one kind with no `respond` verb. For a question or a
+	// work_request, `a2a respond` authors the PARENT's own respond event and
+	// no response-subject event at all, so the unfiltered append happened to
+	// carry nothing extra. A requirement has no respond row (requirementRows
+	// carries none), so its only shipped fulfilment path is
+	// `a2a new response --field parent=<XR-id>` + `a2a submit` — and that
+	// submit event, keyed on the response, was being applied against the
+	// REQUIREMENT, which has no (requirement, *, submit) row. Result: a
+	// permanent illegal-transition flag on the requirement's own thread, so
+	// the domain's only prescribed way to fulfil a requirement left its
+	// thread unable to render clean forever (spec 46's own promise, quoted
+	// above). Found by W3c's requirement conformance path.
 	for respID, parentID := range parentOf {
-		if parentID == id {
-			out = append(out, eventsBySubject[respID]...)
+		if parentID != id {
+			continue
+		}
+		for _, ev := range eventsBySubject[respID] {
+			if ev.Transition == fold.TVerify || ev.Transition == fold.TDispute {
+				out = append(out, ev)
+			}
 		}
 	}
 	return out
