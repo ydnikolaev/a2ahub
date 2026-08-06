@@ -618,3 +618,141 @@ func TestRenderDottedActorFieldWinsOverTheResolvedActor(t *testing.T) {
 		t.Errorf("rendered draft still carries in.Actor's resolved name %q alongside the explicit override:\n%s", "test-bot", got)
 	}
 }
+
+// isJSONSchemaFixture mirrors validate.IsJSONSchemaFormat's dialect-prefix
+// rule without importing internal/validate — this package deliberately never
+// depends on it (§9 "Coupling: soft"), which is exactly why the classifier is
+// a caller-supplied function in the first place.
+func isJSONSchemaFixture(format string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(format)), "json-schema")
+}
+
+// TestShowGenerationMatchesWhatFreshAuthoringRenders is the regression for
+// fb-20260806-3539ac. `a2a template show contract` returned the envelope/v1
+// template while `a2a new contract` wrote envelope/v2, so a hand-authored
+// contract carried no `artifacts:` inventory, merged, and could never
+// publish. The inspection surface must show the bytes the authoring surface
+// writes — for EVERY type, not just the one that was reported.
+func TestShowGenerationMatchesWhatFreshAuthoringRenders(t *testing.T) {
+	t.Parallel()
+	for _, typ := range template.Types() {
+		t.Run(typ, func(t *testing.T) {
+			t.Parallel()
+			shown, err := template.ShowGeneration(typ, "", isJSONSchemaFixture)
+			if err != nil {
+				t.Fatalf("ShowGeneration(%q): %v", typ, err)
+			}
+			rendered, err := template.RenderNew(fixedInput(typ, idFor(typ)), isJSONSchemaFixture)
+			if err != nil {
+				t.Fatalf("RenderNew(%q): %v", typ, err)
+			}
+			shownSchema, renderedSchema := envelopeSchemaOf(t, shown), envelopeSchemaOf(t, rendered)
+			if shownSchema != renderedSchema {
+				t.Fatalf("template show %s prints %s but a fresh draft is %s — an author following the shown template writes a shape the tool itself does not",
+					typ, shownSchema, renderedSchema)
+			}
+		})
+	}
+}
+
+// TestShowGenerationContractIsDeclaredV2 pins the specific shape the
+// publication planner requires at or above contract.ContractPublicationFloor:
+// envelope/v2 with a top-level `artifacts:` inventory. Presence of the key is
+// what selects declared-v2 in contract.BuildCandidateIntent, so its absence
+// here is the whole defect.
+func TestShowGenerationContractIsDeclaredV2(t *testing.T) {
+	t.Parallel()
+	shown, err := template.ShowGeneration("contract", "", isJSONSchemaFixture)
+	if err != nil {
+		t.Fatalf("ShowGeneration(contract): %v", err)
+	}
+	if got := envelopeSchemaOf(t, shown); got != "envelope/v2" {
+		t.Fatalf("schema = %q, want envelope/v2", got)
+	}
+	if !strings.Contains(string(shown), "\nartifacts:\n") {
+		t.Fatalf("the shown contract template declares no top-level artifacts inventory:\n%s", shown)
+	}
+}
+
+// TestShowGenerationExplicitV1 keeps the older shape reachable on purpose: a
+// space below the floor still publishes the fixed v1 tree, and an author
+// there has to be able to see the template that space accepts.
+func TestShowGenerationExplicitV1(t *testing.T) {
+	t.Parallel()
+	shown, err := template.ShowGeneration("contract", "envelope/v1", isJSONSchemaFixture)
+	if err != nil {
+		t.Fatalf("ShowGeneration(contract, envelope/v1): %v", err)
+	}
+	if got := envelopeSchemaOf(t, shown); got != "envelope/v1" {
+		t.Fatalf("schema = %q, want envelope/v1", got)
+	}
+	if strings.Contains(string(shown), "\nartifacts:\n") {
+		t.Fatalf("the v1 template must NOT declare an artifacts inventory — the legacy profile refuses one:\n%s", shown)
+	}
+}
+
+// TestShowGenerationUnknownGenerationRefused: an unknown generation is an
+// error, never a silent fall back to v1.
+func TestShowGenerationUnknownGenerationRefused(t *testing.T) {
+	t.Parallel()
+	if _, err := template.ShowGeneration("contract", "envelope/v9", isJSONSchemaFixture); err == nil {
+		t.Fatal("expected an error for an unknown envelope generation, got nil")
+	}
+}
+
+// TestAuthoringEnvelopeSchemaKnowsEveryType proves the reported answer is
+// never empty — a caller (the `template list` column, the drift gate) that
+// got "" would print a blank generation and prove nothing.
+func TestAuthoringEnvelopeSchemaKnowsEveryType(t *testing.T) {
+	t.Parallel()
+	for _, typ := range template.Types() {
+		got, err := template.AuthoringEnvelopeSchema(typ, isJSONSchemaFixture)
+		if err != nil {
+			t.Fatalf("AuthoringEnvelopeSchema(%q): %v", typ, err)
+		}
+		if got != "envelope/v1" && got != "envelope/v2" {
+			t.Fatalf("AuthoringEnvelopeSchema(%q) = %q, want a known generation", typ, got)
+		}
+	}
+}
+
+// envelopeSchemaOf decodes a draft or template's own `schema:` field.
+func envelopeSchemaOf(t *testing.T, raw []byte) string {
+	t.Helper()
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		t.Fatalf("ParseFrontmatter: %v", err)
+	}
+	var probe struct {
+		Schema string `yaml:"schema"`
+	}
+	if err := yaml.Unmarshal(fm.YAML, &probe); err != nil {
+		t.Fatalf("unmarshal frontmatter: %v", err)
+	}
+	return probe.Schema
+}
+
+// idFor is the same per-type minted-ID table the type-coverage test above
+// uses, lifted to a helper so the two tests cannot disagree about which id
+// grammar a type takes.
+func idFor(typ string) string {
+	switch typ {
+	case "contract":
+		return "XC-axon-ingest"
+	case "requirement":
+		return "XR-axon-ingest"
+	case "question":
+		return "XQ-axon-20260721-k3f9"
+	case "work_request":
+		return "XW-axon-20260721-k3f9"
+	case "decision":
+		return "XD-axon-20260721-k3f9"
+	case "response":
+		return "XS-axon-20260721-k3f9"
+	case "handoff":
+		return "XH-axon-20260721-k3f9"
+	case "announcement":
+		return "XA-axon-20260721-k3f9"
+	}
+	return ""
+}

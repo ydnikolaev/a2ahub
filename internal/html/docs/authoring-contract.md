@@ -1,5 +1,5 @@
 ---
-schema: envelope/v1
+schema: envelope/v2
 id: XC-<system>-<slug>              # e.g. XC-axon-ingest — standing ID grammar §3.3
 type: contract
 title: <human/agent-scannable title, <=120 chars>
@@ -8,62 +8,72 @@ from: <owning-system>
 to: [<consumer-system>]              # standing type: any length, no cardinality rule
 actor: {kind: agent, name: <agent-name>, model: <model-id>}   # kind: human|agent
 created: <RFC-3339 UTC, e.g. 2026-07-28T10:00:00Z>
-category: <api|data-feed|vocabulary|event-feed|other>   # closed enum, §5.2.1
-priority: p3                         # p1|p2|p3|p4, default p3
+category: <api|data-feed|vocabulary|event-feed|other>
+priority: p3
 blocking: false
-classification: internal             # public|internal|restricted, default internal
-version: 1.0.0                       # semver — required
-schema_format: json-schema-2020-12   # json-schema-2020-12|openapi-3.x|proto3|other — required
-compat_policy: default               # §5.4 — required
-# generated_from:                    # optional — REQUIRED only if this contract is code-generated (§5.3)
-#   tool: "<free text>"
-#   source_digest: "sha256:<hex>"
-thread: <thread:system-YYYYMMDD-rand4 — the conversation this belongs to; a2a new mints it>
-# refs:                              # optional — pin dependencies as id@version
+classification: internal
+version: 0.0.0                       # set by `a2a contract publish`, never by hand — see the note at the bottom
+schema_format: json-schema-2020-12
+compat_policy: default
+# generated_from:                    # include only for a code-generated contract
+#   tool: "<generator name and version>"
+#   source_digest: "sha256:<export-source-v1 digest>"
+thread: <thread:system-YYYYMMDD-rand4 — a2a new mints this>
+# refs:
 #   - {ref: "<XC-id>@<version>", note: "<why>"}
+artifacts:
+  - path: schema/<slug>.schema.json
+    role: schema
+    normative: true
+    media_type: application/schema+json
+  - path: fixtures/valid/<slug>.json
+    role: valid-fixture
+    normative: true
+    media_type: application/json
+    conforms_to: schema/<slug>.schema.json
+  - path: fixtures/invalid/<slug>.json
+    role: invalid-fixture
+    normative: true
+    media_type: application/json
+    conforms_to: schema/<slug>.schema.json
+# Declare every other regular carried file exactly once. Companion roles live
+# under artifacts/: errors, vocabulary, limits, changelog, example, or other.
+# `conforms_to` is required only on valid-fixture and invalid-fixture entries.
+#  - path: artifacts/errors.yaml
+#    role: errors
+#    normative: true
+#    media_type: application/yaml
 ---
 # <Contract name>
 
-<One paragraph: what this contract is for, in the consumer's terms. Not how it
-is implemented.>
+<One paragraph describing the contract in the consumer's terms.>
 
 ## What it covers
 
-<The operations, feeds or vocabulary in scope — and, just as usefully, what is
-deliberately OUT of scope so a consumer does not build on something you never
-promised. `provides/<slug>/schema/` holds the machine schemas;
-`fixtures/valid|invalid/` the golden examples.>
+<The operations, feeds, or vocabulary in scope, plus deliberate exclusions.>
 
 ## Error shape
 
-<How failures are reported: the shape, the codes or statuses, and which of them
-a consumer is expected to handle rather than treat as fatal. The JSON Schema
-cannot say this, and it is the first thing a consumer needs.>
+<How failures are represented and which codes or statuses consumers handle.>
 
 ## Compatibility intent
 
-<What you consider a breaking change here, beyond what `compat_policy` and the
-computed check enforce. Which fields may gain values, which are frozen, how much
-notice you intend to give. The machine check computes SCHEMA SHAPE; intent about
-meaning lives here or nowhere.>
+<What is breaking beyond the computed schema-shape check, and what may grow.>
 
 ## Owner and support
 
-<Who to ask, and where. A contract outlives the conversation that produced it,
-and a consumer reading it in six months has only this file.>
+<Who owns this contract and where consumers can ask for help.>
 
-<!-- These four headings are the CONVENTION, not a schema rule: nothing rejects
-     a contract that renames or drops them. They are here because what a
-     consumer's code depends on — the JSON Schema — IS machine-checked,
-     including breaking-change computation, while everything the schema cannot
-     express is prose that had no agreed shape at all. Keep the headings and a
-     reader knows where to look; drop them and each contract has to be read
-     from the top to find out whether it says anything about errors.
+<!-- THE VERSION FIELD IS NOT YOURS TO SET. Leave it at 0.0.0.
+     `a2a contract publish` finalizes this descriptor with the version you are
+     publishing, and its commit — the one where the version FLIPS — is what
+     makes that version resolvable ever after. `a2a contract materialize`
+     depends on it, and so does every later version, which resolves the
+     earlier one as its compatibility baseline.
 
-     On a json-schema-* contract the schema and fixtures are REQUIRED, not
-     optional: `publish` refuses without a schema and at least one valid
-     fixture, because §5.4b's compatibility check has nothing to compute
-     against otherwise. `a2a contract new` scaffolds a starter pair; keep the
-     fixtures honest and they become the baseline the next version is checked
-     against. Other schema_format values are exempt — deep compatibility for
-     those is your own CI's job. -->
+     Set this to the version you intend to publish and there is nothing left
+     to flip: publish writes byte-identical bytes, its commit carries only the
+     publish event, and no commit establishes the version. `publish` refuses
+     that up front — "publication-would-not-establish" — while it is still a
+     one-line fix here. Bump by publishing (`--version 1.1.0`, or
+     `--bump minor`), never by editing this field. -->

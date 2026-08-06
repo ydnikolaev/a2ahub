@@ -323,27 +323,45 @@ func NewTemplateCommand() *TemplateCommand { return &TemplateCommand{} }
 func (c *TemplateCommand) Name() string { return "template" }
 
 // Synopsis implements cli.Command.
-func (c *TemplateCommand) Synopsis() string { return "inspect canonical templates: list | show <type>" }
+func (c *TemplateCommand) Synopsis() string {
+	return "inspect canonical templates: list | show <type> [--envelope-schema envelope/v1|envelope/v2]"
+}
 
-// Run implements cli.Command. Exit codes: 2 = usage; 1 = unknown type
-// (show); 0 = success.
+// templateShowUsage is the one usage line both the arity and the flag
+// refusals print, so a reader is never told two different things about the
+// same verb.
+const templateShowUsage = "usage: a2a template show <type> [--envelope-schema envelope/v1|envelope/v2]"
+
+// Run implements cli.Command. Exit codes: 2 = usage; 1 = unknown type or
+// unknown generation (show); 0 = success.
+//
+// `show` prints the generation FRESH AUTHORING renders (template.
+// ShowGeneration with an empty generation), not the historical envelope/v1
+// template unconditionally — see ShowGeneration's own doc comment for the
+// merged, unpublishable contract that cost.
 func (c *TemplateCommand) Run(_ context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a template list | a2a template show <type>")
+		_, _ = fmt.Fprintf(stdio.Stderr, "usage: a2a template list | %s\n", strings.TrimPrefix(templateShowUsage, "usage: "))
 		return 2
 	}
 	switch args[0] {
 	case "list":
 		for _, t := range template.Types() {
-			_, _ = fmt.Fprintln(stdio.Stdout, t)
+			generation, err := template.AuthoringEnvelopeSchema(t, validate.IsJSONSchemaFormat)
+			if err != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "template list: %v\n", err)
+				return 1
+			}
+			_, _ = fmt.Fprintf(stdio.Stdout, "%s\t%s\n", t, generation)
 		}
 		return 0
 	case "show":
-		if len(args) != 2 || args[1] == "" {
-			_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a template show <type>")
+		typ, generation, ok := parseTemplateShowArgs(args[1:])
+		if !ok {
+			_, _ = fmt.Fprintln(stdio.Stderr, templateShowUsage)
 			return 2
 		}
-		raw, err := template.Show(args[1])
+		raw, err := template.ShowGeneration(typ, generation, validate.IsJSONSchemaFormat)
 		if err != nil {
 			_, _ = fmt.Fprintf(stdio.Stderr, "template show: %v\n", err)
 			return 1
@@ -354,6 +372,38 @@ func (c *TemplateCommand) Run(_ context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintf(stdio.Stderr, "template: unknown subcommand %q (want list|show)\n", args[0])
 		return 2
 	}
+}
+
+// parseTemplateShowArgs splits `show`'s tail into the type and an optional
+// explicit generation. Hand-parsed rather than flag.NewFlagSet because the
+// type is a positional that may appear on either side of the flag and this
+// verb has exactly one flag; the parse refuses anything it does not
+// understand rather than ignoring it (the silence rail: an unapplied flag is
+// the defect this whole command was reported for).
+func parseTemplateShowArgs(args []string) (typ, generation string, ok bool) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--envelope-schema":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return "", "", false
+			}
+			i++
+			generation = args[i]
+		case strings.HasPrefix(arg, "--envelope-schema="):
+			if generation = strings.TrimPrefix(arg, "--envelope-schema="); generation == "" {
+				return "", "", false
+			}
+		case strings.HasPrefix(arg, "-"):
+			return "", "", false
+		default:
+			if typ != "" {
+				return "", "", false
+			}
+			typ = arg
+		}
+	}
+	return typ, generation, typ != ""
 }
 
 var _ Command = (*TemplateCommand)(nil)

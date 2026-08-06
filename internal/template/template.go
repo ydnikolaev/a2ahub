@@ -71,11 +71,73 @@ func Types() []string {
 }
 
 // Show returns typ's canonical embedded template's raw bytes, UNRENDERED —
-// what `a2a template show <type>` prints: read-only inspection of the same
-// template Render fills.
+// read-only inspection of the same template Render fills for the historical
+// envelope/v1 generation.
+//
+// This is NOT what `a2a template show <type>` prints; ShowGeneration is. See
+// that function's doc comment for why the distinction cost a merged, forever
+// unpublishable contract.
 func Show(typ string) ([]byte, error) {
 	const op = "Show"
 	raw, err := rawTemplate(typ, "")
+	if err != nil {
+		return nil, &Error{Op: op, Input: typ, Err: err}
+	}
+	return raw, nil
+}
+
+// AuthoringEnvelopeSchema reports the envelope generation FRESH authoring
+// renders for typ — the same selection RenderNew makes, resolved off the
+// template's OWN default `schema_format` rather than a rendered draft's
+// overrides, because a caller inspecting a template has no draft yet.
+//
+// Only `contract` has a second generation to select between today; every
+// other type has exactly the historical envelope/v1 template, and saying so
+// through one function keeps the caller from re-deriving the rule.
+func AuthoringEnvelopeSchema(typ string, isJSONSchema func(string) bool) (string, error) {
+	const op = "AuthoringEnvelopeSchema"
+	raw, err := rawTemplate(typ, "")
+	if err != nil {
+		return "", &Error{Op: op, Input: typ, Err: err}
+	}
+	if typ != "contract" || isJSONSchema == nil {
+		return "envelope/v1", nil
+	}
+	format, err := ContractDraftSchemaFormat(raw)
+	if err != nil {
+		return "", &Error{Op: op, Input: typ, Err: err}
+	}
+	if !isJSONSchema(format) {
+		return "envelope/v1", nil
+	}
+	return "envelope/v2", nil
+}
+
+// ShowGeneration returns typ's canonical embedded template for one explicit
+// envelope generation, UNRENDERED. An empty generation means "whatever fresh
+// authoring would render" (AuthoringEnvelopeSchema), which is what
+// `a2a template show <type>` prints.
+//
+// Found on 2026-08-06 by an external report: `a2a template show contract`
+// returned the envelope/v1 template unconditionally while `a2a new contract`
+// rendered envelope/v2 for the very same default schema_format. An author who
+// hand-wrote a contract from the SHOWN template got a descriptor with no
+// top-level `artifacts:` inventory, which validated, submitted, passed the
+// space's own CI and merged — and was then refused at
+// `a2a contract preflight` with "authoring floor requires declared-v2
+// candidate inventory", a shape no shipped surface offered. The inspection
+// verb must show the generation the authoring verb writes, or it is not
+// inspecting the same product.
+func ShowGeneration(typ, generation string, isJSONSchema func(string) bool) ([]byte, error) {
+	const op = "ShowGeneration"
+	if generation == "" {
+		resolved, err := AuthoringEnvelopeSchema(typ, isJSONSchema)
+		if err != nil {
+			return nil, err
+		}
+		generation = resolved
+	}
+	raw, err := rawTemplate(typ, generation)
 	if err != nil {
 		return nil, &Error{Op: op, Input: typ, Err: err}
 	}

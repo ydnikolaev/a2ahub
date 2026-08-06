@@ -75,8 +75,8 @@ func TestSkillReferenceIsByteCurrent(t *testing.T) {
 }
 
 // TestAuthoringPagesMatchTheTemplatesTheyDocument closes a drift channel that
-// nothing watched: `schemas/templates/v1/<type>.md` is what `a2a new` renders,
-// and `skill/a2ahub/reference/authoring/<type>.md` is a BYTE COPY of it that an
+// nothing watched: the canonical template is what `a2a new` renders, and
+// `skill/a2ahub/reference/authoring/<type>.md` is a BYTE COPY of it that an
 // agent reads. Two files, one document, nothing comparing them.
 //
 // Both have to ship — the templates are embedded for rendering, the skill tree
@@ -95,42 +95,68 @@ func TestSkillReferenceIsByteCurrent(t *testing.T) {
 // makes drift unmergeable, which is the actual requirement. The cost it imposes —
 // editing two files together — is the cost of the two files existing, not of
 // checking them.
+//
+// # Why the BINARY, and not schemas/templates/v1/, is the comparand
+//
+// It used to read `schemas/templates/v1/<type>.md` directly, and that hard-coded
+// directory is how this gate stayed green through the exact drift it exists to
+// catch. On 2026-08-06 an external report (fb-20260806-3539ac) showed the
+// shipped `contract` authoring page still documenting the envelope/v1 shape —
+// no top-level `artifacts:` inventory — while `a2a new contract` had moved to
+// envelope/v2. The page and templates/v1 agreed perfectly; they were simply no
+// longer the document the tool renders. An author followed the page, and their
+// contract validated, submitted, passed the space's own CI, merged to main, and
+// could then never publish.
+//
+// WHICH GENERATION a type authors at is a decision the binary makes
+// (internal/template.AuthoringEnvelopeSchema), so a gate that names a directory
+// is asserting something it is not entitled to assert. Asking
+// `a2a template show <type>` asks the product, which is the only comparand that
+// cannot silently fall behind the product.
 func TestAuthoringPagesMatchTheTemplatesTheyDocument(t *testing.T) {
 	t.Parallel()
 
 	root := repoRootForTest(t)
-	tplDir := filepath.Join(root, "schemas", "templates", "v1")
-	entries, err := os.ReadDir(tplDir)
+	bin := filepath.Join(binDir, "a2a")
+
+	// The type list comes from the binary too, so a NEW envelope type cannot
+	// ship without an authoring page: a hard-coded list would simply not know
+	// to look for it.
+	listCmd := exec.Command(bin, "template", "list")
+	listCmd.Dir = root
+	listed, err := listCmd.Output()
 	if err != nil {
-		t.Fatalf("read %s: %v", tplDir, err)
+		t.Fatalf("a2a template list: %v", err)
 	}
 
 	var checked int
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+	for _, line := range strings.Split(strings.TrimSpace(string(listed)), "\n") {
+		typ, generation, _ := strings.Cut(strings.TrimSpace(line), "\t")
+		if typ == "" {
 			continue
 		}
-		tplPath := filepath.Join(tplDir, e.Name())
-		guidePath := filepath.Join(root, "skill", "a2ahub", "reference", "authoring", e.Name())
-
-		tpl, err := os.ReadFile(tplPath)
+		showCmd := exec.Command(bin, "template", "show", typ)
+		showCmd.Dir = root
+		tpl, err := showCmd.Output()
 		if err != nil {
-			t.Errorf("read %s: %v", tplPath, err)
+			t.Errorf("a2a template show %s: %v", typ, err)
 			continue
 		}
+		guidePath := filepath.Join(root, "skill", "a2ahub", "reference", "authoring", typ+".md")
 		guide, err := os.ReadFile(guidePath)
 		if err != nil {
-			t.Errorf("template %s has no authoring page at %s: %v — every artifact type an agent can "+
-				"draft needs the page that documents it", e.Name(), guidePath, err)
+			t.Errorf("type %s has no authoring page at %s: %v — every artifact type an agent can "+
+				"draft needs the page that documents it", typ, guidePath, err)
 			continue
 		}
 		checked++
 		if !bytes.Equal(tpl, guide) {
-			t.Errorf("skill/a2ahub/reference/authoring/%s has drifted from schemas/templates/v1/%s.\n"+
-				"They are the same document: one is rendered by `a2a new`, the other is read by an agent. "+
-				"Copy the template over the page:\n"+
-				"    cp schemas/templates/v1/%s skill/a2ahub/reference/authoring/%s",
-				e.Name(), e.Name(), e.Name(), e.Name())
+			t.Errorf("skill/a2ahub/reference/authoring/%s.md has drifted from what `a2a template show %s` "+
+				"renders (%s).\nThey are the same document: one is rendered by `a2a new`, the other is read "+
+				"by an agent, and an agent that follows a stale page writes an artifact the tool refuses.\n"+
+				"Re-sync it from the BINARY, never from a fixed templates directory:\n"+
+				"    go run ./cmd/a2a template show %s > skill/a2ahub/reference/authoring/%s.md",
+				typ, typ, generation, typ, typ)
 		}
 	}
 
