@@ -55,3 +55,12 @@ items:
       refs:
         - docs/features/active/contract-confidence-loop-2026-08/README.md
       date: "2026-08-02"
+    - id: fb-20260806-3539ac
+      kind: bug
+      severity: blocker
+      title: contract publish planner refuses every contract the shipped template scaffolds
+      verdict: accepted
+      route: quick-fix
+      refs:
+        - docs/features/active/operational-confidence-2026-08/README.md
+      date: "2026-08-06"

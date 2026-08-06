@@ -60,6 +60,70 @@ Two properties worth relying on:
   read exactly what it agreed to. Retirement is a statement about support, not
   a deletion.
 
+## The descriptor declares every file it carries
+
+A contract publishes a **carried set** — the descriptor plus every schema,
+fixture and companion file that travels with it — and the space's write floor
+decides how that set is named.
+
+| Space `min_binary_version` | Publication profile | The descriptor must |
+|---|---|---|
+| **≥ 0.19.0** | `contract-set-v2` | be `schema: envelope/v2` and declare every carried file exactly once under a top-level `artifacts:` key |
+| **< 0.19.0** | `contract-tree-v1` | be `schema: envelope/v1` and carry **no** `artifacts:` key — the set is the fixed `schema/**` + `fixtures/**` tree |
+
+`a2a new contract` renders the right shape for you, and `a2a template show
+contract` prints it — for a `json-schema-*` contract, which is what the
+template defaults to, those are the same document. Use
+`--envelope-schema envelope/v1` to see the older shape deliberately.
+
+The mismatch is terminal for a candidate. A descriptor with no `artifacts:`
+inventory in a space at floor 0.19.0 or above validates locally, submits, and
+merges — and is then refused at preflight, with nothing left to fix except the
+descriptor itself:
+
+```
+contract preflight: planner refused: … artifacts: this space's authoring floor
+is 0.19.3, at or above 0.19.0, so a contract publishes as contract-set-v2: its
+contract.md must be `schema: envelope/v2` and declare every carried file
+exactly once under a top-level `artifacts:` key …
+```
+
+Since 0.19.6 the space's own `a2a validate --ci` refuses that shape at the PR
+instead, so the correction happens before the merge rather than after it. On a
+space whose CI pin is older, the first thing that tells you is preflight.
+
+A contract whose `schema_format` is not a JSON-Schema dialect is a deliberate
+exception, and the limit is stated rather than discovered: `a2a new contract`
+still authors openapi and proto3 at envelope/v1, because contract-set-v2
+requires the `schema`, `valid-fixture` and `invalid-fixture` roles those
+formats have no way to supply. Such a contract therefore has **no publishable
+shape** in a space at floor 0.19.0 or above. Publish it from a space still
+below the floor, or carry the interface as a `json-schema-2020-12` contract,
+until the declared carried set admits other formats.
+
+**A descriptor that already merged is fixed without a second submit.** Correct
+it in your own staged candidate — `.a2a/staging/<system>/provides/<slug>/contract.md`,
+beside the schema and fixtures — and pass that directory to preflight and
+publish:
+
+```sh
+a2a contract preflight <XC-id> --version 1.0.0 \
+  --staging .a2a/staging/<system>/provides/<slug>
+```
+
+The staged descriptor overlays the landed one, and publish writes the corrected
+bytes as part of the version it establishes. Every path the staged descriptor
+declares must have bytes — staged, or already carried by the landed version —
+and a staged file the descriptor does NOT declare is refused rather than
+carried silently.
+
+Each `artifacts:` entry carries a `path`, a `role`, `normative`, a
+`media_type`, and — on `valid-fixture` and `invalid-fixture` entries only — a
+`conforms_to` naming the declared schema entry it validates against. The three
+roles `schema`, `valid-fixture` and `invalid-fixture` are **required**;
+companion roles (`errors`, `vocabulary`, `limits`, `changelog`, `example`,
+`other`) live under `artifacts/` and are declared the same way.
+
 ## The descriptor's `version:` is not yours to set
 
 Leave a drafted contract at `version: 0.0.0`. `a2a contract publish` finalizes
