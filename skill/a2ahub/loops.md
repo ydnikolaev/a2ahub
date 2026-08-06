@@ -360,12 +360,13 @@ contract does. Every guarantee below turns on the one prerequisite in step 1
    the SAME contract id — nothing requires that) and re-`adopt` once you
    have moved. **The `valid_until` sunset is the deadline this whole loop is
    built around — not a suggestion.**
-4. **If you do nothing: you block the producer's retire for as long as you
-   stay un-acked, and no longer.** `a2a contract retire` refuses (POL-006)
-   while ANY currently-member registered consumer of that version has not
-   acked — the sunset date does not matter on this branch, acking alone
-   clears it. A departed (`left`) consumer is excluded from the count
-   entirely and never blocks. Staying silent past sunset is not a permanent
+4. **If you do nothing you block the producer's retire — but acking does not
+   hand them the line early.** `a2a contract retire` refuses (POL-006) while
+   ANY currently-member registered consumer of that version has not acked, AND
+   until the sunset has passed. Both conditions, not either: your ack says
+   "seen", not "already migrated", so answering fast never shortens the window
+   you were promised to migrate in. A departed (`left`) consumer is excluded
+   from the count entirely and never blocks. Staying silent past sunset is not a permanent
    veto: a human may `--override`, which additionally requires the sunset to
    have passed AND a reminder (`a2a note`) to be on record — that path still
    succeeds, and the retire event records `retired-unacked: <you>` naming
