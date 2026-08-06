@@ -60,38 +60,34 @@ func uncoveredTransitions() []uncoveredTransition {
 	var out []uncoveredTransition
 
 	out = append(out, uncoveredClass(
-		"no declared family narrates a standing requirement's lifecycle — "+
-			"none of the plan's six families (contract, question, work_request, "+
-			"handoff/response via the data loop) is a requirement path. A "+
-			"requirement path is a real gap, not a padding candidate; forcing "+
-			"one of the six existing families to cover it would misrepresent "+
-			"what that family actually proves.",
-		tk(fold.KindRequirement, fold.StateNone, fold.TCreate),
-		tk(fold.KindRequirement, fold.StateDraft, fold.TPublish),
-		tk(fold.KindRequirement, fold.StateDraft, fold.TSupersede),
+		"P11 W3c added the requirement family (requirement-lifecycle-published-"+
+			"acknowledged and its four descendants), which structurally CANNOT reach "+
+			"these two: `draft` is unobservable in the committed mirror for a "+
+			"requirement, same root cause as the create-row gap spec §16 records "+
+			"('a2a new' writes to local staging only, 'a2a submit' commits the "+
+			"artifact already published) — withdraw/supersede both load their "+
+			"target from the mirror (lifecycleLoadEnvelope, cmd_lifecycle.go), so "+
+			"no CLI invocation could ever find a requirement whose folded state is "+
+			"`draft` to act on. Two MORE rows than spec §16's own count of 8 "+
+			"structurally-unreachable triples (create only, one per kind) — flagged "+
+			"here rather than silently reconciled, since these are the first "+
+			"non-create rows discovered to share the defect.",
 		tk(fold.KindRequirement, fold.StateDraft, fold.TWithdraw),
-		tk(fold.KindRequirement, fold.StatePublished, fold.TAcknowledge),
-		tk(fold.KindRequirement, fold.StatePublished, fold.TDecline),
-		tk(fold.KindRequirement, fold.StatePublished, fold.TSupersede),
-		tk(fold.KindRequirement, fold.StatePublished, fold.TWithdraw),
-		tk(fold.KindRequirement, fold.StateAcknowledged, fold.TDecline),
-		tk(fold.KindRequirement, fold.StateAcknowledged, fold.TSatisfy),
-		tk(fold.KindRequirement, fold.StateAcknowledged, fold.TSupersede),
-		tk(fold.KindRequirement, fold.StateAcknowledged, fold.TWithdraw),
-		tk(fold.KindRequirement, fold.StateSatisfied, fold.TSupersede),
-		tk(fold.KindRequirement, fold.StateDeclined, fold.TSupersede),
-		tk(fold.KindRequirement, fold.StateWithdrawn, fold.TSupersede),
+		tk(fold.KindRequirement, fold.StateDraft, fold.TSupersede),
 	)...)
 
 	out = append(out, uncoveredClass(
-		"no declared family narrates a decision's propose/approve/reject "+
-			"lifecycle — the same gap as requirement's, for the same reason.",
-		tk(fold.KindDecision, fold.StateNone, fold.TCreate),
-		tk(fold.KindDecision, fold.StateDraft, fold.TPropose),
-		tk(fold.KindDecision, fold.StateProposed, fold.TApprove),
-		tk(fold.KindDecision, fold.StateProposed, fold.TReject),
-		tk(fold.KindDecision, fold.StateRejected, fold.TSupersede),
-		tk(fold.KindDecision, fold.StateApproved, fold.TSupersede),
+		"`supersede` is requirement's own escape hatch (the requester abandoning "+
+			"an open or already-settled requirement for a fresh one) — none of "+
+			"P11 W3c's five requirement paths supersedes one; not written yet, not "+
+			"structurally unreachable (unlike the draft-fromState rows above, "+
+			"`a2a supersede` is a shipped verb from every state listed here, same "+
+			"pattern as the exchange kinds' own uncovered supersede class below).",
+		tk(fold.KindRequirement, fold.StatePublished, fold.TSupersede),
+		tk(fold.KindRequirement, fold.StateAcknowledged, fold.TSupersede),
+		tk(fold.KindRequirement, fold.StateSatisfied, fold.TSupersede),
+		tk(fold.KindRequirement, fold.StateDeclined, fold.TSupersede),
+		tk(fold.KindRequirement, fold.StateWithdrawn, fold.TSupersede),
 	)...)
 
 	out = append(out, uncoveredClass(
@@ -120,15 +116,15 @@ func uncoveredTransitions() []uncoveredTransition {
 	)...)
 
 	out = append(out, uncoveredClass(
-		"`decline` is the target's refusal branch; every one of the six "+
-			"families narrates the target ENGAGING (acknowledge/accept/respond), "+
-			"never refusing outright — a refusal path is a real gap, not "+
-			"exercised by a continuity story.",
+		"`decline` is the target's refusal branch. P11 W3c added two dedicated "+
+			"paths that exercise it for real (question-declined-after-acknowledge, "+
+			"work-request-declined-from-submitted) — the remaining (kind, state) "+
+			"pairs below are not written yet, not structurally unreachable: `a2a "+
+			"decline` is a shipped verb from every state listed here too, same as "+
+			"the two now covered.",
 		tk(fold.KindQuestion, fold.StateSubmitted, fold.TDecline),
-		tk(fold.KindQuestion, fold.StateAcknowledged, fold.TDecline),
 		tk(fold.KindQuestion, fold.StateAccepted, fold.TDecline),
 		tk(fold.KindQuestion, fold.StateInProgress, fold.TDecline),
-		tk(fold.KindWorkRequest, fold.StateSubmitted, fold.TDecline),
 		tk(fold.KindWorkRequest, fold.StateAcknowledged, fold.TDecline),
 		tk(fold.KindWorkRequest, fold.StateAccepted, fold.TDecline),
 		tk(fold.KindWorkRequest, fold.StateInProgress, fold.TDecline),
@@ -150,13 +146,15 @@ func uncoveredTransitions() []uncoveredTransition {
 	)...)
 
 	out = append(out, uncoveredClass(
-		"the blocked side-branch (`block`/`unblock`) is a real path none of "+
-			"the six families narrates — every declared exchange proceeds "+
-			"without ever blocking.",
+		"the blocked side-branch (`block`/`unblock`) now has a dedicated path "+
+			"(P11 W3c: question-block-then-unblock-restores-accepted), which "+
+			"blocks from `accepted` and proves unblock's dynamic recovery lands "+
+			"back on `accepted` specifically, not `acknowledged` or `in_progress` "+
+			"— the remaining (kind, state) pairs below are not written yet, not "+
+			"structurally unreachable: same shipped `a2a block`/`a2a unblock` "+
+			"verbs, a different starting state or kind.",
 		tk(fold.KindQuestion, fold.StateAcknowledged, fold.TBlock),
-		tk(fold.KindQuestion, fold.StateAccepted, fold.TBlock),
 		tk(fold.KindQuestion, fold.StateInProgress, fold.TBlock),
-		tk(fold.KindQuestion, fold.StateBlocked, fold.TUnblock),
 		tk(fold.KindWorkRequest, fold.StateAcknowledged, fold.TBlock),
 		tk(fold.KindWorkRequest, fold.StateAccepted, fold.TBlock),
 		tk(fold.KindWorkRequest, fold.StateInProgress, fold.TBlock),
@@ -170,10 +168,13 @@ func uncoveredTransitions() []uncoveredTransition {
 			"admits acknowledged directly'); work-request-lifecycle-accept-"+
 			"start-respond-verify-close takes the full accept->start->respond "+
 			"route, but for its OWN kind — each transition row is per-Kind, so "+
-			"question's own accept/start/direct-respond-from-accepted/in_progress "+
-			"rows stay uncovered even though the identical SHAPE is covered for "+
-			"work_request.",
-		tk(fold.KindQuestion, fold.StateAcknowledged, fold.TAccept),
+			"question's own start/direct-respond-from-accepted/in_progress rows "+
+			"stay uncovered even though the identical SHAPE is covered for "+
+			"work_request. question/acknowledged/accept itself is now covered "+
+			"separately (P11 W3c's question-block-then-unblock-restores-accepted "+
+			"drives accept to reach `accepted` before blocking) — a different "+
+			"path than this family's own respond-shortcut narrative, not a "+
+			"repeat of it.",
 		tk(fold.KindQuestion, fold.StateAccepted, fold.TStart),
 		tk(fold.KindQuestion, fold.StateAccepted, fold.TRespond),
 		tk(fold.KindQuestion, fold.StateInProgress, fold.TRespond),

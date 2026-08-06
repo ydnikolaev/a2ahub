@@ -366,6 +366,9 @@ var simpleVerbForTransition = map[string]string{
 	fold.TDecline:     "decline",
 	fold.TBlock:       "block",
 	fold.TUnblock:     "unblock",
+	fold.TSatisfy:     "satisfy",
+	fold.TApprove:     "approve",
+	fold.TReject:      "reject",
 }
 
 // driveCreateAndFirstTransition realizes a path's own (Kind,TCreate) step
@@ -1039,6 +1042,284 @@ func runPathContractRetireRefusedWithoutAck(ctx context.Context, t *testing.T, h
 	return ids
 }
 
+// --- Family 7 — the non-cooperative counterparty (P11 W3c) --------------
+
+// driveDeclineFullySync drives `a2a decline --reason <text> <targetID>`
+// and checks stepIdx's own Predicates ONLY after a full syncBoth — never
+// via driveSimpleVerb's own single-actor happyLandAndSync, which syncs
+// the ACTING checkout alone. This matters here specifically: decline's
+// own Predicates assert NotActionable for BOTH parties (the brief's own
+// "leaves both parties' actionable lists" requirement), and every
+// question/work_request TEMPLATE defaults to `blocking: true`
+// (schemas/templates/v1/question.md, work_request.md) — actionableReasons'
+// own condition 4 (p1-or-blocking-open, internal/cache/inbox.go) fires
+// for EITHER party while the artifact is still OPEN, regardless of who
+// owes the next transition. Checking the NON-acting party's own
+// NotActionable predicate before ITS checkout has synced past this
+// decline reads the PRE-decline (still-open, still-blocking) truth and
+// wrongly reports present=true — confirmed empirically: an earlier
+// version of this driver did exactly that (checked the non-acting
+// party's predicates via a checkout driveSimpleVerb's own single sync
+// never reached), and it failed with "predicate actionable(question):
+// got present=true, want present=false" — a driver staleness artifact,
+// not a product defect, and it disappeared once both checkouts were
+// synced BEFORE the one and only predicate check.
+func driveDeclineFullySync(ctx context.Context, t *testing.T, h *harness, actor *checkout, path Path, stepIdx int, targetID, reason string, ids pathIDs) {
+	t.Helper()
+	if _, stderr, err := actor.Run(ctx, "decline", "--reason", reason, targetID); err != nil {
+		t.Fatalf("path %s step %d: a2a decline %s (%s): %v: %s", path.ID, stepIdx, targetID, actor.System, err, strings.TrimSpace(stderr))
+	}
+	pr, err := h.pullForBranch(ctx, space.BranchName(actor.System, "decline", targetID))
+	if err != nil {
+		t.Fatalf("path %s step %d: resolve decline PR for %s: %v", path.ID, stepIdx, targetID, err)
+	}
+	if err := happyLandAndSync(ctx, h, actor, pr.Number); err != nil {
+		t.Fatalf("path %s step %d: land+sync decline PR #%d: %v", path.ID, stepIdx, pr.Number, err)
+	}
+	syncBoth(ctx, t, h)
+	checkStepPredicates(ctx, t, h, actor, path.ID, stepIdx, path.Steps[stepIdx], ids)
+}
+
+// runPathQuestionDeclinedAfterAcknowledge drives DELIVERABLE 1a: the
+// target declines outright after acknowledging.
+func runPathQuestionDeclinedAfterAcknowledge(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-declined-after-acknowledge")
+	ids := runPathQuestionAcknowledged(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveDeclineFullySync(ctx, t, h, b, path, 0, ids["question"],
+		"path driver: counterparty declines outright (W3c)", ids)
+	return ids
+}
+
+// runPathWorkRequestDeclinedFromSubmitted drives DELIVERABLE 1b: the
+// target declines straight from `submitted`, without ever acknowledging.
+func runPathWorkRequestDeclinedFromSubmitted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-declined-from-submitted")
+	ids := pathIDs{}
+	a, b := h.A, h.B
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "work_request", "work-request", ids)
+
+	syncBoth(ctx, t, h)
+	driveDeclineFullySync(ctx, t, h, b, path, 2, sub.ID,
+		"path driver: counterparty declines without acknowledging (W3c)", ids)
+	return ids
+}
+
+// runPathQuestionBlockThenUnblock drives DELIVERABLE 2: the target blocks
+// an in-flight question from `accepted`, then unblocks it — the load-
+// bearing assertion (path's own Intent) is that unblock restores
+// `accepted` specifically, not `acknowledged` or `in_progress`. The
+// blocker is a throwaway LOCAL draft handoff (never submitted), the same
+// `--refs` pattern runPathDataLoopAttemptOneFails already established
+// (fold/the CLI validate no cross-artifact existence for `--refs`).
+func runPathQuestionBlockThenUnblock(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-block-then-unblock-restores-accepted")
+	ids := runPathQuestionAcknowledged(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["question"], ids)
+
+	placeholderBlockerID, _, err := b.Draft(ctx, "handoff")
+	if err != nil {
+		t.Fatalf("path %s step 1: mint a placeholder blocker handoff draft (%s): %v", path.ID, b.System, err)
+	}
+	driveSimpleVerb(ctx, t, h, b, path, 1, fold.TBlock, ids["question"], ids, "--refs", placeholderBlockerID)
+
+	driveSimpleVerb(ctx, t, h, b, path, 2, fold.TUnblock, ids["question"], ids)
+	return ids
+}
+
+// --- Family 8 — requirement (P11 W3c DELIVERABLE 1) ---------------------
+
+// runPathRequirementPublishedAcknowledged drives the shared prefix every
+// other requirement path below continues from — the control for spec §15's
+// pendency fix (requirementPaths' own doc comment, pathcatalogue_paths.go).
+func runPathRequirementPublishedAcknowledged(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "requirement-lifecycle-published-acknowledged")
+	ids := pathIDs{}
+	a, b := h.A, h.B
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	slug := liveRunSlug(runTag+"-requirement", h.PRFloor)
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "requirement", "requirement", ids, "--slug", slug)
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 2, fold.TAcknowledge, sub.ID, ids)
+	return ids
+}
+
+// runPathRequirementDeclinedFromPublished drives the TARGET declining a
+// requirement straight from `published`, without ever acknowledging — a
+// fresh standalone instance (a `create` step always starts a genuinely new
+// artifact).
+func runPathRequirementDeclinedFromPublished(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "requirement-declined-from-published")
+	ids := pathIDs{}
+	a, b := h.A, h.B
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	slug := liveRunSlug(runTag+"-requirement", h.PRFloor)
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "requirement", "requirement", ids, "--slug", slug)
+
+	syncBoth(ctx, t, h)
+	driveDeclineFullySync(ctx, t, h, b, path, 2, sub.ID,
+		"path driver: target declines a requirement outright (W3c)", ids)
+	return ids
+}
+
+// runPathRequirementDeclinedFromAcknowledged drives the TARGET declining
+// after already acknowledging, continuing from the family's own shared
+// prefix.
+func runPathRequirementDeclinedFromAcknowledged(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "requirement-declined-from-acknowledged")
+	ids := runPathRequirementPublishedAcknowledged(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveDeclineFullySync(ctx, t, h, b, path, 0, ids["requirement"],
+		"path driver: target declines a requirement after acknowledging (W3c)", ids)
+	return ids
+}
+
+// runPathRequirementWithdrawnFromPublished drives the REQUESTER withdrawing
+// its own published requirement before the target acts — Role Owner
+// (requirementRows()), the requester's own uncooperative branch (contrast
+// decline, the target's own). A fresh standalone instance, same reasoning
+// as runPathRequirementDeclinedFromPublished.
+func runPathRequirementWithdrawnFromPublished(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "requirement-withdrawn-from-published")
+	ids := pathIDs{}
+	a := h.A
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	slug := liveRunSlug(runTag+"-requirement", h.PRFloor)
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "requirement", "requirement", ids, "--slug", slug)
+
+	driveSimpleVerb(ctx, t, h, a, path, 2, fold.TWithdraw, sub.ID, ids)
+	return ids
+}
+
+// runPathRequirementWithdrawnFromAcknowledged drives the REQUESTER
+// withdrawing after the target has already acknowledged, continuing from
+// the family's own shared prefix.
+func runPathRequirementWithdrawnFromAcknowledged(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "requirement-withdrawn-from-acknowledged")
+	ids := runPathRequirementPublishedAcknowledged(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, a, path, 0, fold.TWithdraw, ids["requirement"], ids)
+	return ids
+}
+
+// --- Family 9 — decision (P11 W3c DELIVERABLE 2) -------------------------
+
+// runPathDecisionPartialQuorumThenApproved drives DELIVERABLE 2's own
+// load-bearing assertion: B approves first (quorum 1 of 2 — the decision
+// must still be `proposed`, A still owing `approve`), then A approves
+// second (quorum 2 of 2 — `approved`, terminal).
+func runPathDecisionPartialQuorumThenApproved(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "decision-lifecycle-partial-quorum-then-approved")
+	ids := pathIDs{}
+	a, b := h.A, h.B
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "decision", "decision", ids)
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 2, fold.TApprove, sub.ID, ids)
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, a, path, 3, fold.TApprove, sub.ID, ids)
+	return ids
+}
+
+// runPathDecisionApprovedSuperseded drives decisionRows()'s own escape
+// hatch from `approved` (Role Any — table.go's own documented
+// successor-authorship-unverifiable deviation). refs is a well-formed
+// placeholder successor id only — fold/the CLI validate no cross-artifact
+// existence for `--refs` (same pattern as the data loop's own
+// successor/blocker placeholders).
+func runPathDecisionApprovedSuperseded(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "decision-approved-superseded")
+	ids := runPathDecisionPartialQuorumThenApproved(ctx, t, h, runTag)
+	a, b := h.A, h.B
+
+	syncBoth(ctx, t, h)
+	placeholderSuccessorID, _, err := b.Draft(ctx, "decision")
+	if err != nil {
+		t.Fatalf("path %s step 0: mint a placeholder successor decision draft for --refs (%s): %v", path.ID, b.System, err)
+	}
+	driveSimpleVerb(ctx, t, h, a, path, 0, fold.TSupersede, ids["decision"], ids, "--refs", placeholderSuccessorID)
+	return ids
+}
+
+// runPathDecisionRejected drives reject — Role Approver with NO quorum
+// gate (decisionRows(): a single approver's reject moves `proposed`
+// straight to `rejected`, unlike approve's own dynamic quorum row) — a
+// fresh standalone instance (propose/reject and propose/approve are
+// mutually exclusive branches from the SAME `proposed` state).
+func runPathDecisionRejected(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "decision-lifecycle-rejected")
+	ids := pathIDs{}
+	a, b := h.A, h.B
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "decision", "decision", ids)
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 2, fold.TReject, sub.ID, ids,
+		"--reason", "path driver: this decision no longer applies (W3c)")
+	return ids
+}
+
+// runPathDecisionRejectedSuperseded drives decisionRows()'s own escape
+// hatch from `rejected` (Role Any, same documented deviation as the
+// approved branch) — internal/pendency's own row: "settled; the revision
+// is a NEW XD on the thread, not a move owed on this one".
+func runPathDecisionRejectedSuperseded(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "decision-rejected-superseded")
+	ids := runPathDecisionRejected(ctx, t, h, runTag)
+	a, b := h.A, h.B
+
+	syncBoth(ctx, t, h)
+	placeholderSuccessorID, _, err := b.Draft(ctx, "decision")
+	if err != nil {
+		t.Fatalf("path %s step 0: mint a placeholder successor decision draft for --refs (%s): %v", path.ID, b.System, err)
+	}
+	driveSimpleVerb(ctx, t, h, a, path, 0, fold.TSupersede, ids["decision"], ids, "--refs", placeholderSuccessorID)
+	return ids
+}
+
 // driverForPath maps a drivenPathIDs() entry to the function that drives it
 // STANDALONE (its own runTag == its own path id). A path missing here would
 // panic runConformancePaths rather than silently not run — deliberate: this
@@ -1047,12 +1328,14 @@ func runPathContractRetireRefusedWithoutAck(ctx context.Context, t *testing.T, h
 // the panic is this file's own half of that guarantee.
 // driverForPath deliberately keeps an entry for every path this file
 // implements a driver for, whether or not pathdrivability.go currently
-// drives it. undrivablePaths() is empty today — the declaration defect that
-// briefly parked five paths there (every non-question (Kind,TSubmit) step
-// declared the transition owed AFTER acknowledge instead of acknowledge
-// itself, contradicting both the pendency table and the real
-// `a2a thread --json`) has been fixed. Keeping the map total means parking a
-// path again is a one-line move of its id, never a driver rewrite.
+// drives it. undrivablePaths() carried five parked paths once (the
+// declaration defect where every non-question (Kind,TSubmit) step declared
+// the transition owed AFTER acknowledge instead of acknowledge itself,
+// contradicting both the pendency table and the real `a2a thread --json`)
+// and was empty from that fix until P11 W3c, which parked one path there
+// again for a real reason (requirement-satisfied — see undrivablePaths()'
+// own entry). Keeping the map total means parking a path is a one-line
+// move of its id, never a driver rewrite.
 var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs{
 	"contract-baseline-published-settled":                      runPathContractBaseline,
 	"contract-successor-compatible-publish":                    runPathContractSuccessor,
@@ -1069,6 +1352,18 @@ var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harnes
 	"data-loop-request-answered-closed":                        runPathDataLoopRequestClosed,
 	"contract-deprecate-retire-after-sunset":                   runPathContractDeprecateRetire,
 	"contract-retire-refused-without-ack":                      runPathContractRetireRefusedWithoutAck,
+	"question-declined-after-acknowledge":                      runPathQuestionDeclinedAfterAcknowledge,
+	"work-request-declined-from-submitted":                     runPathWorkRequestDeclinedFromSubmitted,
+	"question-block-then-unblock-restores-accepted":            runPathQuestionBlockThenUnblock,
+	"requirement-lifecycle-published-acknowledged":             runPathRequirementPublishedAcknowledged,
+	"requirement-declined-from-published":                      runPathRequirementDeclinedFromPublished,
+	"requirement-declined-from-acknowledged":                   runPathRequirementDeclinedFromAcknowledged,
+	"requirement-withdrawn-from-published":                     runPathRequirementWithdrawnFromPublished,
+	"requirement-withdrawn-from-acknowledged":                  runPathRequirementWithdrawnFromAcknowledged,
+	"decision-lifecycle-partial-quorum-then-approved":          runPathDecisionPartialQuorumThenApproved,
+	"decision-approved-superseded":                             runPathDecisionApprovedSuperseded,
+	"decision-lifecycle-rejected":                              runPathDecisionRejected,
+	"decision-rejected-superseded":                             runPathDecisionRejectedSuperseded,
 }
 
 // runConformancePaths drives every drivenPathIDs() entry as its own t.Run
