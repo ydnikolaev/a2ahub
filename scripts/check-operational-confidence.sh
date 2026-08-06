@@ -15,6 +15,15 @@
 #   docs/features/active/operational-confidence-2026-08/**
 #   docs/decisions.md
 #   AGENTS.md
+# lane-reads-opaque: every real read is behind a function-parameter variable,
+#   not a literal path. `check_history()` (line ~83) takes $history/$registry
+#   and greps/awks them — run_all (line ~159) calls it with
+#   "$ROOT/schemas/errors/v1/history.tsv" and "$ROOT/schemas/errors/v1/
+#   registry.yaml". `check_hashes()` (line ~111) takes $manifest, called with
+#   "$ROOT/schemas/published-v1.sha256". `check_dispatch()` (line ~133)
+#   builds $tracker as "$root/docs/features/active/operational-confidence-
+#   2026-08/tracker.yaml" and greps/seds it. Each resolves, at call time, to
+#   a path the lane-inputs above already declare.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
