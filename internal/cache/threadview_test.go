@@ -478,6 +478,88 @@ func TestThreadView_ContractRollingWindowNextActions(t *testing.T) {
 	if len(by) != 1 || by[0] != "axon" {
 		t.Fatalf("deprecate.by = %v, want exactly [axon] (RoleOwner resolves to the contract's own from)", by)
 	}
+
+	// P11 W1's own required assertion: a published (alive) contract is
+	// pending on NOBODY — internal/pendency's own explicit "nobody" row —
+	// even though publish/deprecate both still render above in
+	// next_actions. WaitingOn/ExpectedTransition source from the
+	// relation; Why is ALWAYS populated (a settled claim must be
+	// justified, never a fall-through), even though nothing is owed.
+	if len(item.WaitingOn) != 0 {
+		t.Fatalf("waiting_on = %v, want empty (a live, published contract is settled — see pendency's own contract/published row)", item.WaitingOn)
+	}
+	if item.YourMove {
+		t.Fatalf("your_move = true on a settled contract, want false")
+	}
+	if item.ExpectedTransition != "" {
+		t.Fatalf("expected_transition = %q, want empty (nothing is owed)", item.ExpectedTransition)
+	}
+	if item.Why == "" {
+		t.Fatalf("why must always be populated, even (especially) when nothing is owed")
+	}
+}
+
+// TestThreadView_DraftAnnouncementOffersPublishExactlyOnce is a
+// regression pin for a defect caught during this wave's own review, not
+// by the scoped test suite: buildOpenItems' D-025 announcement-acknowledge
+// branch used to gate on `len(verdict.Owners) > 0` alone. A DRAFT
+// announcement's own pendency row is ownerRow(TPublish) — Owners is
+// [from], non-empty — so that gate alone appended a SECOND, duplicate
+// `publish` NextAction on top of the one fold.LegalNextFor already
+// emitted. The branch must additionally check
+// `verdict.Expected == fold.TAcknowledge`, which only a PUBLISHED
+// announcement's unackedTargets row ever answers.
+func TestThreadView_DraftAnnouncementOffersPublishExactlyOnce(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	threadID := "thread:axon-20260801-draftannounce"
+	announcementID := "XA-axon-20260801-draft"
+	base := time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC)
+
+	fx.commitArtifact("axon/announcements/"+announcementID+".md", map[string]any{
+		"schema": "envelope/v1", "id": announcementID, "type": "announcement", "title": "draft announcement",
+		"space": "fixture-space", "from": "axon", "to": []string{"seomatrix"}, "thread": threadID,
+		"actor": map[string]any{"kind": "agent", "name": "axon-bot"}, "created": fxAt(base),
+		"priority": "p2", "blocking": false, "ack_requested": true, "classification": "internal",
+	}, "draft body")
+	// A `create` event with no accompanying `publish` is what keeps this
+	// artifact genuinely in StateDraft: fold's own zero-events fallback
+	// (postSubmissionState, fold.go) treats an artifact committed with NO
+	// events at all as ALREADY published (03-domain.md §3.4's "the
+	// submit/publish event travels in the same PR" — draft never survives
+	// to a committed read on its own), so a bare fixture with no events
+	// would NOT reproduce the bug this test pins.
+	fx.commitEvent("axon", fxULID(1), evt(announcementID, "create", "axon", base))
+
+	store := newThreadStore(t, fx, "sp1")
+	result, err := store.ThreadView(context.Background(), threadID, "")
+	if err != nil {
+		t.Fatalf("ThreadView: %v", err)
+	}
+
+	var item *OpenItem
+	for i := range result.OpenItems {
+		if result.OpenItems[i].ID == announcementID {
+			item = &result.OpenItems[i]
+		}
+	}
+	if item == nil {
+		t.Fatalf("no open item for announcement %s: %+v", announcementID, result.OpenItems)
+	}
+
+	publishCount := 0
+	for _, a := range item.NextActions {
+		if a.Transition == "publish" {
+			publishCount++
+		}
+	}
+	if publishCount != 1 {
+		t.Fatalf("next_actions carries %d `publish` entries, want exactly 1: %+v", publishCount, item.NextActions)
+	}
+	if item.ExpectedTransition != "publish" || len(item.WaitingOn) != 1 || item.WaitingOn[0] != "axon" {
+		t.Fatalf("a draft announcement's owner still owes publish: expected_transition=%q waiting_on=%v",
+			item.ExpectedTransition, item.WaitingOn)
+	}
 }
 
 // TestThreadView_TwoSpacesAmbiguity is CC-073/T4: the same thread ID

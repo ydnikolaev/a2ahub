@@ -378,3 +378,66 @@ func TestOperationalThreadFromViewSkipsStatusCheckpointPublishMilestone(t *testi
 		t.Fatalf("status checkpoint polluted protocol truth: %#v", thread)
 	}
 }
+
+// TestOperationalEvidenceSettlesPublishedAdoptedContract is P11 W1's own
+// required demonstration (11-authoring-path-and-seam-verification.plan.md
+// §W1 acceptance: "Settled/OpenCount/WaitingOn in operational.go carry the
+// fix without an edit, shown by a test"). operationalThreadFromView
+// (unedited by this wave) already drops any OpenItem whose WaitingOn is
+// empty before counting — so once threadview.go's buildOpenItems sources
+// WaitingOn from internal/pendency.Resolve instead of the old
+// isOpen×fold.LegalNextFor composition, Settled/OpenCount fall out of
+// that re-sourcing at ZERO additional cost here.
+//
+// A published contract is pendency's own explicit "nobody" row (alive and
+// settled: the owner MAY publish a successor or deprecate, but neither is
+// a move anyone waits for). "Adopted" — a consumer's own `a2a contract
+// adopt`, recorded in ITS consumes.yaml — is deliberately irrelevant to
+// that row: pendency reads no registry (its own package doc comment), so
+// a live consumer changes nothing about who owes the next move on the
+// contract itself; this test's single participant pair stands in for
+// that consumer without needing a real consumes.yaml fixture.
+//
+// Mutation discipline (this wave's own §6 lesson): this assertion was
+// watched FAILING first against today's buildOpenItems, before
+// threadview.go changed — see this brief's Deviations report for the
+// exact failure text observed (`thread.Settled = false, OpenCount = 1`,
+// because the old composition treated the owner's still-legal
+// publish/deprecate as something the owner was "waiting on" itself).
+func TestOperationalEvidenceSettlesPublishedAdoptedContract(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	threadID := "thread:axon-20260801-settledcontract"
+	contractID := "XC-axon-settledcontract"
+	base := time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC)
+
+	fx.commitArtifact("axon/provides/settledcontract/contract.md", map[string]any{
+		"schema": "envelope/v1", "id": contractID, "type": "contract", "title": "settled contract",
+		"space": "fixture-space", "from": "axon", "to": []string{"seomatrix"}, "thread": threadID,
+		"actor": map[string]any{"kind": "agent", "name": "axon-bot"}, "created": fxAt(base),
+		"priority": "p2", "blocking": false, "classification": "internal",
+	}, "contract body")
+
+	publish := evt(contractID, "publish", "axon", base.Add(time.Minute))
+	publish["version"] = "1.0.0"
+	fx.commitEvent("axon", fxULID(1), publish)
+
+	store := newThreadStore(t, fx, "sp1")
+	evidence, err := store.OperationalEvidence(context.Background())
+	if err != nil {
+		t.Fatalf("OperationalEvidence: %v", err)
+	}
+
+	var thread *OperationalThread
+	for i := range evidence.Threads {
+		if evidence.Threads[i].Thread == threadID {
+			thread = &evidence.Threads[i]
+		}
+	}
+	if thread == nil {
+		t.Fatalf("thread %s not found in evidence: %+v", threadID, evidence.Threads)
+	}
+	if !thread.Settled || thread.OpenCount != 0 || len(thread.WaitingOn) != 0 {
+		t.Fatalf("published, adopted, settled contract must be pending on nobody: %#v", *thread)
+	}
+}

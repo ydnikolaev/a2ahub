@@ -73,9 +73,10 @@ func (s *Store) Statusline(ctx context.Context) (StatuslineResult, error) {
 		reasons []string
 	}
 	var actionable []actionableEntry
-	for _, artifacts := range idx {
+	for spaceID, artifacts := range idx {
+		manifest := s.manifestFor(spaceID)
 		for _, fa := range artifacts {
-			if reasons := actionableReasons(fa, s.ownSystem); len(reasons) > 0 {
+			if reasons := actionableReasons(fa, s.ownSystem, manifest); len(reasons) > 0 {
 				actionable = append(actionable, actionableEntry{fa: fa, reasons: reasons})
 			}
 		}

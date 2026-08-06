@@ -30,8 +30,9 @@ func (s *Store) NotificationItems(ctx context.Context) ([]Item, error) {
 		markers, _ := ReadMarkers(s.cacheDir, spaceID)
 		pending := markerSet(markers)
 		sla := s.slaFor(spaceID)
+		manifest := s.manifestFor(spaceID)
 		for _, fa := range artifacts {
-			reasons := actionableReasons(fa, s.ownSystem)
+			reasons := actionableReasons(fa, s.ownSystem, manifest)
 			if ownedByMe(fa, s.ownSystem) {
 				// Notification delivery must not derive transition state from
 				// the human inbox cursor. Keep only current, independently

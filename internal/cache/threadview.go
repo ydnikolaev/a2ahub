@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
+	"github.com/ydnikolaev/a2ahub/internal/pendency"
 	"github.com/ydnikolaev/a2ahub/internal/provenance"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
@@ -150,7 +151,11 @@ type NextAction struct {
 }
 
 // OpenItem answers "whose move is it" from facts for one non-terminal
-// thread member (§T3).
+// thread member (§T3). WaitingOn/YourMove/ExpectedTransition/Why are
+// sourced from internal/pendency.Resolve — I7's one relation over
+// (artifact, system) — never re-derived here; NextActions stays the
+// SEPARATE, broader "possible moves" list (see buildOpenItems' own doc
+// comment for why the two do not collapse into one).
 type OpenItem struct {
 	ID          string       `json:"id"`
 	Type        string       `json:"type"`
@@ -160,6 +165,15 @@ type OpenItem struct {
 	NextActions []NextAction `json:"next_actions"`
 	WaitingOn   []string     `json:"waiting_on"`
 	YourMove    bool         `json:"your_move"`
+	// ExpectedTransition is the pendency relation's own `expected` for
+	// this item's WaitingOn — "" (and omitted) when WaitingOn is empty,
+	// since nothing is owed.
+	ExpectedTransition string `json:"expected_transition,omitempty"`
+	// Why is the pendency relation's own rationale — ALWAYS populated
+	// (internal/pendency.Verdict's own contract: "settled" is a claim
+	// that must be justified, never a fall-through), including when
+	// WaitingOn is empty.
+	Why string `json:"why"`
 }
 
 // ThreadFlag is one fold.Flag attributable to a thread member, rendered
@@ -242,22 +256,6 @@ type ThreadResult struct {
 	// deliverables must produce byte-identical output to before this
 	// field existed, not a stray `"deliveries":[]`.
 	Deliveries []Delivery `json:"deliveries,omitempty"`
-}
-
-// escapeHatchTransitions are always available to an artifact's owner and
-// must never, by themselves, make `your_move` permanently true (§T3's
-// `open_items` bullet: "a small explicit classification ... escape
-// hatches like cancel/withdraw/supersede are always available to the
-// owner"). internal/fold carries no such classification exported (and is
-// off limits to this wave's allowlist) — this is cache's own display-only
-// categorization over fold's exported transition-name constants, never a
-// second reading of WHICH (kind,state,transition) triples are legal (that
-// remains fold.LegalNext + fold.CheckLegality's job, composed over below).
-// See v1-min spec 46 §11.
-var escapeHatchTransitions = map[string]bool{
-	fold.TCancel:    true,
-	fold.TWithdraw:  true,
-	fold.TSupersede: true,
 }
 
 // ThreadView computes `a2a thread <thread-id | any-member-artifact-id>
@@ -681,16 +679,36 @@ func envelopeFrom(fa foldedArtifact) fold.Envelope {
 	}
 }
 
-// buildOpenItems answers "whose move is it" for every non-terminal
-// member (§T3). For each legal next transition (fold.LegalNextFor, a pure
-// filter over fold's own table — never re-derived here), the candidate
-// `by` system set is computed by calling fold.CheckCandidate once per
-// manifest participant with a CONSTANT fold.MembershipMember status — the
-// spec's own documented V1 imprecision ("a suspended participant can
-// still be listed as waiting_on"), and the only way to resolve a Role to
-// concrete system ids without either a second copy of roleAuthorizes
-// (unexported, and internal/fold is outside this wave's allowlist) or
-// re-deriving the rule by hand.
+// buildOpenItems answers TWO deliberately separate questions for every
+// non-terminal member (§T3), and does not let either one compute the
+// other's answer (P11 W1, I7):
+//
+//   - "Whose move is it" — WaitingOn/YourMove/ExpectedTransition/Why — is
+//     sourced ENTIRELY from internal/pendency.Resolve, the one relation
+//     over (artifact, system) every surface asks (I7). This function
+//     builds pendency.Input from the same facts it already has (envelope,
+//     folded Result, manifest, and — for a response — the PARENT's own
+//     `from`) and renders the Verdict unmodified. It does not re-derive
+//     "is this a settled/alive state" or "who is still owed an ack" by
+//     hand; that would be a second implementation of the same question,
+//     which is this wave's own definition of the defect.
+//   - "What COULD still happen here" — NextActions — stays the full,
+//     unfiltered list of legal moves and the systems that may make them,
+//     unrelated to whether anyone is presently owed one of them. This is
+//     the operator's own principle: nothing disappears from the record,
+//     it only stops being counted as a debt. A settled, published
+//     contract still renders `publish`/`deprecate` in next_actions with
+//     an EMPTY WaitingOn.
+//
+// For each legal next transition (fold.LegalNextFor, a pure filter over
+// fold's own table — never re-derived here), the candidate `by` system set
+// is computed by calling fold.CheckCandidate once per manifest participant
+// with a CONSTANT fold.MembershipMember status — the spec's own documented
+// V1 imprecision ("a suspended participant can still be listed as
+// waiting_on"), and the only way to resolve a Role to concrete system ids
+// without either a second copy of roleAuthorizes (unexported, and
+// internal/fold is outside this wave's allowlist) or re-deriving the rule
+// by hand.
 //
 // P4 (04-per-version-lifecycle.plan.md): this view is one OpenItem per
 // ARTIFACT, not per version, so it asks fold.LegalNextFor/CheckCandidate
@@ -720,7 +738,11 @@ func envelopeFrom(fa foldedArtifact) fold.Envelope {
 // keys on KindResponse regardless of the `kind` argument and resolves
 // RoleOwner against the supplied `env` — which MUST be the PARENT's
 // envelope (its `from`), never the response's own (legality.go:20-45).
-// This function resolves authEnv accordingly.
+// This function resolves authEnv accordingly, for NextActions' role
+// checks; the SAME resolved `From` is handed to pendency.Input.ParentFrom
+// below, so WaitingOn inherits the identical degradation (see there) when
+// the parent cannot be resolved, instead of a second, differently-shaped
+// fallback.
 //
 // One transition is deliberately dropped from a NON-response member's own
 // next_actions: `dispute`. table.go's exchangeRows() gives the parent
@@ -729,20 +751,20 @@ func envelopeFrom(fa foldedArtifact) fold.Envelope {
 // authorize firing "dispute" against the PARENT's own subject (its
 // verify/dispute branch is hardcoded response-scoped no matter what kind
 // is passed), so every candidate would legitimately fail and `by` would
-// always render empty. Since dispute is not an escape hatch, an empty
-// `by` would also silently exclude it from waiting_on either way — no
-// information is lost by omitting it outright, and the response's OWN
-// open item already carries `dispute` with its correct `by`. See
-// legalnext.go:43-56's own doc comment ("LegalNext reports both,
-// unmodified" — a caller-side choice, not a table bug) and v1-min spec 46
-// §11.
+// always render empty. No information is lost by omitting it outright,
+// and the response's OWN open item already carries `dispute` with its
+// correct `by`. See legalnext.go:43-56's own doc comment ("LegalNext
+// reports both, unmodified" — a caller-side choice, not a table bug) and
+// v1-min spec 46 §11.
 //
-// D-025's transition-free broadcast-acknowledge carries NO row in
-// fold's table (legalnext.go:57-69's own doc comment: "A caller
-// presenting 'whose move is it' for an announcement must add that case
-// itself") — handled below via Result.Acks directly, membership-only
-// (broadcastAckPermitted's own rule, fold.go), never a re-derived
-// authorization check.
+// D-025's transition-free broadcast-acknowledge carries NO row in fold's
+// table (legalnext.go:57-69's own doc comment: "A caller presenting
+// 'whose move is it' for an announcement must add that case itself") —
+// NextActions still needs an explicit `acknowledge` entry for this case
+// (nothing else produces one), so it is built from pendency's own Verdict
+// for this same item rather than a second, locally re-derived scan of
+// Result.Acks — pendency's unackedTargets resolver IS that scan now, in
+// its one home.
 func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, manifest space.Manifest, ownSystem string) []OpenItem {
 	var out []OpenItem
 	for _, fa := range sorted {
@@ -757,14 +779,15 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 			// buildOpenItems' own doc comment). If the parent cannot be
 			// resolved (already recorded in ThreadResult.Unresolved),
 			// degrade to the response's own envelope — a best-effort
-			// answer rather than no answer at all.
+			// answer rather than no answer at all. pendency.Input.ParentFrom
+			// below reuses authEnv.From, so WaitingOn inherits this exact
+			// same degradation.
 			if parent, ok := byID[fa.Env.Parent]; ok {
 				authEnv = envelopeFrom(parent)
 			}
 		}
 
 		var actions []NextAction
-		var waiting []string
 		for _, mv := range fold.LegalNextFor(fa.kind(), fa.Result, "") {
 			if fa.kind() != fold.KindResponse && mv.Transition == fold.TDispute {
 				// Non-actionable duplicate — see buildOpenItems' own doc
@@ -775,42 +798,52 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 			}
 			by := legalSystems(mv, authEnv, manifest)
 			actions = append(actions, NextAction{Transition: mv.Transition, By: by})
-			if !escapeHatchTransitions[mv.Transition] {
-				waiting = append(waiting, by...)
-			}
+		}
+
+		in := pendency.Input{
+			Kind: fa.kind(), State: fa.Result.State,
+			From: fa.Env.From, To: normalizeTo(fa.Env.To),
+			Broadcast: fa.Env.isBroadcast(), AckRequested: fa.Env.AckRequested,
+			Acks: fa.Result.Acks, Approvals: fa.Result.Approvals,
+			RequiredApprovers:  fa.Env.RequiredApprovers,
+			ActiveParticipants: activeParticipants(manifest, fa.Env.From),
+		}
+		if fa.kind() == fold.KindResponse {
+			in.ParentFrom = authEnv.From
+		}
+		verdict, err := pendency.Resolve(in)
+		if err != nil {
+			// isOpen(fa.kind(), fa.Result.State) above already filtered to
+			// exactly the (kind,state) pairs the pendency table carries a
+			// row for (I8's totality gate over fold.SubjectStates,
+			// mirrored 1:1 by this package's own openStates allowlist —
+			// see types.go's own doc comment). Reaching here would mean
+			// the two tables have drifted apart; degrade to "nobody"
+			// rather than lose the whole thread render over one item —
+			// but Why still names the degradation rather than silently
+			// rendering an empty string (OpenItem.Why's own "ALWAYS
+			// populated" contract).
+			verdict = pendency.Verdict{Why: "pendency carries no row for (" + string(fa.kind()) + ", " + string(fa.Result.State) + "); this should be unreachable — see buildOpenItems' own doc comment"}
 		}
 
 		// D-025's transition-free broadcast-acknowledge: no table row
-		// exists (legalnext.go's own doc comment), so a NOT-YET-ACKED
-		// participant is this function's own explicit case, membership
-		// only (broadcastAckPermitted's rule, never re-derived here).
-		if fa.kind() == fold.KindAnnouncement && fa.Env.AckRequested {
-			var pending []string
-			targets := normalizeTo(fa.Env.To)
-			if fa.Env.isBroadcast() {
-				targets = targets[:0]
-				for _, p := range manifest.Participants {
-					if p.Status == "active" && p.System != fa.Env.From {
-						targets = append(targets, p.System)
-					}
-				}
-			}
-			for _, target := range targets {
-				if target != "all" && target != fa.Env.From && !fa.Result.Acks[target] {
-					pending = append(pending, target)
-				}
-			}
-			sort.Strings(pending)
-			if len(pending) > 0 {
-				actions = append(actions, NextAction{Transition: fold.TAcknowledge, By: pending})
-				waiting = append(waiting, pending...)
-			}
+		// exists in fold (legalnext.go's own doc comment), so NextActions
+		// needs an explicit `acknowledge` entry built here — from the
+		// SAME Verdict WaitingOn already carries, never a second scan.
+		// Gated on verdict.Expected == TAcknowledge specifically (not
+		// merely len(Owners) > 0): a DRAFT announcement's row is
+		// ownerRow(TPublish), which fold.LegalNextFor above ALREADY
+		// emitted as its own `publish` NextAction — without this gate
+		// this branch would append a second, duplicate `publish` entry
+		// for every draft announcement.
+		if fa.kind() == fold.KindAnnouncement && verdict.Expected == fold.TAcknowledge && len(verdict.Owners) > 0 {
+			actions = append(actions, NextAction{Transition: verdict.Expected, By: verdict.Owners})
 		}
 
-		waiting = dedupSorted(waiting)
 		if actions == nil {
 			actions = []NextAction{}
 		}
+		waiting := verdict.Owners
 		if waiting == nil {
 			waiting = []string{}
 		}
@@ -819,8 +852,24 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 			ID: fa.Env.ID, Type: fa.Env.Type, State: string(fa.Result.State),
 			Blocking: fa.Env.Blocking, NeededBy: fa.Env.NeededBy,
 			NextActions: actions, WaitingOn: waiting,
-			YourMove: containsString(waiting, ownSystem),
+			YourMove:           containsString(waiting, ownSystem),
+			ExpectedTransition: verdict.Expected,
+			Why:                verdict.Why,
 		})
+	}
+	return out
+}
+
+// activeParticipants returns manifest's own ACTIVE participant systems,
+// excluding exclude (the envelope's own `from`) — the broadcast-expansion
+// set both pendency.Input.ActiveParticipants (unackedTargets' resolver)
+// and, historically, this file's own now-deleted local ack scan used.
+func activeParticipants(manifest space.Manifest, exclude string) []string {
+	var out []string
+	for _, p := range manifest.Participants {
+		if p.Status == "active" && p.System != exclude {
+			out = append(out, p.System)
+		}
 	}
 	return out
 }
