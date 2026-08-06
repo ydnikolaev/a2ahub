@@ -15,4 +15,14 @@
 // silently-empty result (testkit/contractroots is the idiom this package
 // copies, not literally imports: internal/lane may import no other
 // internal/ package — it is harness, not product).
+//
+// The declaration below is this mechanism applied to itself, and it exists
+// because removing internal/lane from release-notes-freshness's product
+// pathspec left these fixtures with no claimant at all — the whole-module Go
+// phases claim **/*.go, and a fixture tree is shell, Makefiles and prose. The
+// gate said so within seconds of the change, which is the entire point of it.
+//
+// lane-inputs:
+//
+//	internal/lane/testdata/**
 package lane
