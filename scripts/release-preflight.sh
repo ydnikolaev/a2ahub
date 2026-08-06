@@ -138,6 +138,65 @@ assert_ref_default_matches() { # $1 = repo, $2 = version (vX.Y.Z)
   ok "release-preflight: reusable a2a-ref default $got matches $want"
 }
 
+# judge_pages_conclusion decides, from the last Pages run's conclusion alone,
+# whether a release may be cut. Split out from the network call so `--teeth`
+# can exercise the decision offline.
+judge_pages_conclusion() { # $1 = conclusion ("" when unknown)
+  case "$1" in
+    success) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# assert_site_publishes: the website's own deploy workflow must be GREEN on
+# main before a release is cut.
+#
+# This gate exists because its absence cost four releases. `pages.yml` builds
+# and publishes the public site; it runs `npm run check` first and had been
+# failing on every push to main since 2026-08-01, when a commit added a
+# TypeScript import to two test files that `node --test` could not load. So
+# v0.19.0, v0.19.1, v0.19.2 and v0.19.3 were all tagged, built, and published
+# as GitHub Releases while the site stayed frozen at 0.18.2 — announcing none
+# of them.
+#
+# Nothing noticed, and the reasons are worth naming because each is a separate
+# hole: `make check` does not run the web lane at all (it is a hand-run
+# convention), the runbook's post-tag verification looked at the RELEASE —
+# assets, latest, body — and never at the site, and the tag-triggered Pages run
+# is cancelled by concurrency in favour of the main run that was failing.
+#
+# Checked BEFORE the tag on purpose. A red site pipeline means the release you
+# are about to cut cannot reach the site, and that is knowable in advance.
+assert_site_publishes() { # $1 = repo (for gh --repo), unused when gh is absent
+  local slug conclusion
+  slug="${A2A_PUBLIC_SLUG:-ydnikolaev/a2ahub}"
+
+  if ! command -v gh >/dev/null 2>&1; then
+    fail "release-preflight: gh is not installed, so the site's deploy status cannot be read.
+    The public site is published by pages.yml; a release cut while that workflow is red is
+    a release the site never announces. Install gh, or set A2A_SKIP_PAGES_CHECK=1 to state
+    deliberately that you are cutting without that assurance."
+    return 1
+  fi
+
+  conclusion="$(gh run list --repo "$slug" --workflow=pages.yml --branch main \
+    --limit 1 --json conclusion --jq '.[0].conclusion // ""' 2>/dev/null || true)"
+
+  if judge_pages_conclusion "$conclusion"; then
+    ok "release-preflight: the site's deploy workflow is green on main"
+    return 0
+  fi
+
+  fail "release-preflight: the site's deploy workflow (pages.yml on main) last concluded
+    '${conclusion:-unknown}'.
+    Cutting now produces a tag and a GitHub Release that the public site never announces —
+    it keeps serving whatever last deployed successfully. That is not hypothetical: four
+    consecutive releases shipped that way while the site sat at 0.18.2.
+    Fix the site build first (\`npm --prefix web run check\` reproduces it locally), or set
+    A2A_SKIP_PAGES_CHECK=1 to record that you are cutting without it."
+  return 1
+}
+
 # ── teeth: the gate must go RED on a violating fixture (offline) ──────────────
 
 teeth() {
@@ -268,6 +327,23 @@ teeth() {
   fi
   ok "teeth 12: a2a-ref input with no default at all → RED"
 
+  # The site-deploy decision, exercised offline through judge_pages_conclusion.
+  # Every non-success conclusion must refuse — including the empty one. "The
+  # workflow's status could not be read" is not evidence that the site is fine,
+  # and treating unknown as green would reproduce the exact silence this gate
+  # exists to end: four releases published while the site stayed at 0.18.2 and
+  # nothing said so.
+  judge_pages_conclusion success || {
+    echo "release-preflight --teeth: FAILED — a green pages run was refused" >&2
+    exit 1
+  }
+  for bad in failure cancelled startup_failure timed_out skipped "" action_required; do
+    if judge_pages_conclusion "$bad"; then
+      echo "release-preflight --teeth: FAILED — pages conclusion '${bad:-<empty>}' was accepted as publishable" >&2
+      exit 1
+    fi
+  done
+
   echo "release-preflight --teeth: all teeth bite."
 }
 
@@ -300,6 +376,11 @@ assert_version_free "$ROOT" "$VERSION" || rc=1
 assert_pins_resolve "$ROOT" || rc=1
 assert_floor_not_ahead "$ROOT" "$VERSION" || rc=1
 assert_ref_default_matches "$ROOT" "$VERSION" || rc=1
+if [ "${A2A_SKIP_PAGES_CHECK:-}" = "1" ]; then
+  echo "release-preflight: SKIPPING the site-deploy check (A2A_SKIP_PAGES_CHECK=1) — the site may not announce $VERSION."
+else
+  assert_site_publishes "$ROOT" || rc=1
+fi
 
 if [ "$rc" -ne 0 ]; then
   echo "release-preflight: FAIL — do not cut $VERSION until the above is fixed." >&2
