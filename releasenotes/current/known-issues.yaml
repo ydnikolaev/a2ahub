@@ -5,7 +5,7 @@ issues:
     impact: normal
     subject: "The current releases shipped with their provider-tier verification deferred, by explicit operator authorization"
     detail: >
-      v0.19.0 through v0.19.3 and now v0.19.6 and v0.19.7 shipped this way, each authorized
+      v0.19.0 through v0.19.3 and now v0.19.6, v0.19.7 and v0.19.8 shipped this way, each authorized
       separately for its own candidate, and the count is now machine-refused
       unless the newest record signs for its own position in the streak. Their scenario LOGIC is fully verified: the whole
       catalogue runs locally against a faithful host stand-in over real git
@@ -21,7 +21,7 @@ issues:
       token's scope non-reporting driving the preflight path, real concurrent
       writes losing nothing, and the space's own CI carrying no unexplained
       failures. The last full matrix that did prove them ran on 2026-08-05,
-      against a tree earlier than all six of these releases.
+      against a tree earlier than all seven of these releases.
       Read the cost concretely rather than as a formality. v0.19.0 changed the
       contract publication path; v0.19.1 changed the git authentication used by
       every remote call in the write funnel; v0.19.2 and v0.19.3 changed how
@@ -33,7 +33,7 @@ issues:
       actually running `a2a validate --ci`" is one of the unproven rows, and
       that command is what this release changed.
       A provider-tier run is scheduled against the newest of these tags, and
-      anything it finds ships as a patch release. Six consecutive deferrals
+      anything it finds ships as a patch release. Seven consecutive deferrals
       over the same surfaces is not improving with repetition; the signed count
       in the newest deferral record is the honest measure of how long this has
       been outstanding.
