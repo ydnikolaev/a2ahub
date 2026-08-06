@@ -358,12 +358,23 @@ func dataLoopPaths() []Path {
 				Actor: SystemA, Kind: fold.KindHandoff, Transition: fold.TVerifyFail,
 				Predicates: []Predicate{
 					FoldedState("delivery-1", fold.StateRejected),
-					AbsentFromOpenItems("delivery-1"),
-					// The debt stops being counted as owed on A the moment
-					// the attempt is rejected, corroborating this path's own
-					// Intent (rejected is filtered out of open_items before
-					// pendency is asked) on the SEPARATE inbox surface —
-					// data_loop_test.go's own step 3 ("rejected -> {}").
+					// The debt MOVES to the producer, it does not vanish:
+					// §3.4.5 has B resubmit as a new XH superseding this one.
+					//
+					// This step originally declared AbsentFromOpenItems here,
+					// and that was not a wrong reading of the domain — it was
+					// an accurate reading of the SHIPPED BEHAVIOUR, which was
+					// wrong. cache.openStates did not list handoff/rejected as
+					// live, so buildOpenItems dropped the artifact before ever
+					// asking pendency, and the producer was never told. The
+					// path is what surfaced it (72e773c). Now that the surface
+					// answers, the path asserts what the protocol actually
+					// says. Left as a marker of how the two diverged, because
+					// "the path matched the product" is exactly the failure
+					// mode this catalogue exists to prevent.
+					PendingOn("delivery-1", SystemB),
+					ExpectedTransition("delivery-1", fold.TSupersede),
+					// And it is A's move no longer — the receiver has ruled.
 					NotActionable(SystemA, "delivery-1"),
 				},
 			},

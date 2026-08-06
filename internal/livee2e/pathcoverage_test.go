@@ -46,6 +46,16 @@ func tk(kind fold.Kind, from fold.State, transition string) fold.TransitionKey {
 // ConformancePaths() actually reaches (TestPathCatalogueTransitionsAreHonest
 // below pins this against the real computed set), not from what would be
 // convenient to claim.
+//
+// Read "covered" as EXERCISED, not as ASSERTED, because the two diverge and
+// this gate cannot tell them apart. A triple counts as covered when some path
+// step drives that transition; whether an observable predicate then judged the
+// outcome is a separate question. The live divergence is `draft`: no shipped
+// surface reads an uncommitted draft (`a2a show` refuses — it is built from the
+// committed mirror), so every `folded_state == draft` predicate is logged and
+// skipped at run time while its step still counts here. Widening the gate to
+// demand an assertion per triple would be the right next move; it needs a
+// predicate-level record the driver does not emit yet.
 func uncoveredTransitions() []uncoveredTransition {
 	var out []uncoveredTransition
 
