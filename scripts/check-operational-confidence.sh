@@ -8,13 +8,45 @@ ERRORS=0
 
 fail() { echo "operational-confidence-guard: FAIL — $*" >&2; ERRORS=$((ERRORS + 1)); }
 
+# This gate is written against ripgrep, and ripgrep is NOT part of a bare
+# GitHub-hosted runner. Without this preflight the absence was silent: every
+# `rg -q ... || fail` fired, and `definition_ids` swallowed the "command not
+# found" through its own `2>/dev/null`, so the gate reported that each of
+# twenty-seven normative ids "must have exactly one normative definition (found
+# 0)". Twenty-seven confident, specific, wrong findings — about a plan file that
+# was present and correct.
+#
+# That is worse than a crash: it accuses the documents. The private repository's
+# CI was red on it for forty consecutive runs across two days, and releases were
+# cut straight through, because the failure looked like a documentation problem
+# nobody had time for rather than a missing binary.
+#
+# A gate states its own preconditions or it cannot be trusted when it speaks.
+if ! command -v rg > /dev/null 2>&1; then
+  echo "operational-confidence-guard: FAIL — ripgrep (rg) is required and not on PATH." >&2
+  echo "  Install it: brew install ripgrep · apt-get install -y ripgrep" >&2
+  echo "  This gate reads the normative plan with rg; without it every check below" >&2
+  echo "  would report a missing definition for a document that is present." >&2
+  exit 1
+fi
+
 definition_ids() {
-  rg --no-filename -o '^\| (R|D|OP|CC)-[0-9]+ |^\*\*US-[0-9]+\*\*|^- AC-[0-9]+\.[0-9]+' "$1" 2>/dev/null \
+  rg --no-filename -o '^\| (R|D|OP|CC)-[0-9]+ |^\*\*US-[0-9]+\*\*|^- AC-[0-9]+\.[0-9]+' "$1" \
     | sed -E 's/^\| //; s/ \|$//; s/^\*\*//; s/\*\*$//; s/^- //; s/[[:space:]]+$//'
 }
 
 check_ids() {
-  local plan_root="$1" id count duplicates
+  local plan_root="$1" id count duplicates total
+  # A gate that scans nothing must FAIL, not pass — and must say so as one
+  # finding about the scan rather than N findings about the documents. The
+  # per-id loop below is only meaningful once the extractor has produced
+  # something; when it produces nothing, every id "found 0" and the twenty-seven
+  # resulting messages all point at the plan instead of at the extractor.
+  total="$(definition_ids "$plan_root" | grep -c . || true)"
+  if [ "$total" -eq 0 ]; then
+    fail "the id extractor produced NOTHING from $plan_root — the plan is not the suspect here, the scan is"
+    return
+  fi
   duplicates="$(definition_ids "$plan_root" | sort | uniq -d)"
   [ -z "$duplicates" ] || fail "duplicate normative definition id(s): $(printf '%s' "$duplicates" | tr '\n' ' ')"
 
