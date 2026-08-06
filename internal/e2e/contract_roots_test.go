@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,7 +10,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
-	"github.com/ydnikolaev/a2ahub/schemas"
+	"github.com/ydnikolaev/a2ahub/testkit/contractroots"
 )
 
 // P11 Tier B, gate B1 — a path root the descriptor grammar DECLARES must be a
@@ -36,155 +35,20 @@ import (
 // exactly the drift it exists to catch. Nothing below names a root literally;
 // grep this file for "artifacts" and you will find it only in prose.
 //
-// The schema is read through schemas.FS, the embedded corpus that ships in the
-// binary, and NOT through a repo-relative path. That is defect #8's class: a
-// test that walks up to find a tree marker is a test that decides on ambient
-// state. There is no root discovery here at all.
+// The derivation lives in testkit/contractroots, not here, for the same reason:
+// internal/contract keeps a THIRD opinion about the same map (rootForRole) and
+// gates it in its own package, so both consumers read one extractor and a schema
+// change reaches both or neither.
 
 const (
 	rootsProbeSystem = "acme"
 	rootsProbeSlug   = "widget"
 )
 
-// declaredRoot is one role→path-root pair the envelope schema imposes.
-type declaredRoot struct {
-	root  string   // e.g. "schema", "fixtures/valid"
-	roles []string // the roles that arm constrains
-}
-
-// contractRootsFromSchema extracts the role→path-root pairs from
-// envelope/v2's artifactEntry definition, and reports the full set of roles the
-// entry's own enum admits so the caller can check the two agree.
-//
-// It fails the test rather than returning an empty result on every shape it does
-// not understand. A structural extractor that quietly yields nothing is the
-// most expensive kind of green: `check-operational-confidence.sh` shipped
-// without a vacuity guard the same day and produced twenty-seven confident wrong
-// findings about a file that was present and correct.
-func contractRootsFromSchema(t *testing.T) (roots []declaredRoot, declaredRoles []string) {
-	t.Helper()
-
-	raw, err := schemas.FS.ReadFile("envelope/v2/contract.schema.json")
-	if err != nil {
-		t.Fatalf("read embedded contract descriptor schema: %v", err)
-	}
-
-	var doc struct {
-		Defs map[string]struct {
-			Properties struct {
-				Role struct {
-					Enum []string `json:"enum"`
-				} `json:"role"`
-			} `json:"properties"`
-			AllOf []struct {
-				If struct {
-					Properties struct {
-						Role struct {
-							Const string   `json:"const"`
-							Enum  []string `json:"enum"`
-						} `json:"role"`
-					} `json:"properties"`
-				} `json:"if"`
-				Then struct {
-					Properties struct {
-						Path struct {
-							Pattern string `json:"pattern"`
-						} `json:"path"`
-					} `json:"properties"`
-				} `json:"then"`
-			} `json:"allOf"`
-		} `json:"$defs"`
-	}
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		t.Fatalf("parse embedded contract descriptor schema: %v", err)
-	}
-
-	// Scope the walk to $defs/artifactEntry explicitly. The document ALSO
-	// carries role conditionals at its top level (the inventory-mode
-	// constraints), and silently folding those in would make the derived set
-	// depend on which block happened to be walked.
-	entry, ok := doc.Defs["artifactEntry"]
-	if !ok {
-		t.Fatal("envelope/v2 contract schema has no $defs/artifactEntry: the extractor is reading the wrong subject, which is the defect class this gate guards")
-	}
-	declaredRoles = append([]string(nil), entry.Properties.Role.Enum...)
-	if len(declaredRoles) == 0 {
-		t.Fatal("$defs/artifactEntry declares no role enum: nothing to derive roots for")
-	}
-	if len(entry.AllOf) == 0 {
-		t.Fatal("$defs/artifactEntry has no allOf conditionals: no role→path rule to derive")
-	}
-
-	skipped := 0
-	for i, arm := range entry.AllOf {
-		// Arms that constrain something other than path (conforms_to, for the
-		// two fixture roles) are legitimately not root rules. Count them, so
-		// "every arm was skipped" cannot read as a pass.
-		if arm.Then.Properties.Path.Pattern == "" {
-			skipped++
-			continue
-		}
-		armRoles := arm.If.Properties.Role.Enum
-		if c := arm.If.Properties.Role.Const; c != "" {
-			armRoles = append(armRoles, c)
-		}
-		if len(armRoles) == 0 {
-			t.Fatalf("$defs/artifactEntry/allOf[%d] constrains path but names no role", i)
-		}
-		roots = append(roots, declaredRoot{
-			root:  rootFromPathPattern(t, i, arm.Then.Properties.Path.Pattern),
-			roles: armRoles,
-		})
-	}
-	if len(roots) == 0 {
-		t.Fatalf("derived no path roots from %d allOf arms (%d carried no path pattern): the extractor no longer understands the schema's shape", len(entry.AllOf), skipped)
-	}
-
-	// Completeness, derived rather than counted: every role the entry admits
-	// must be constrained to a root by some arm. A role added with no path rule
-	// is sub-class (B) itself — a declared structure with no home — and this is
-	// the only check here that catches it before an author uses it.
-	constrained := map[string]bool{}
-	for _, r := range roots {
-		for _, role := range r.roles {
-			constrained[role] = true
-		}
-	}
-	var uncovered []string
-	for _, role := range declaredRoles {
-		if !constrained[role] {
-			uncovered = append(uncovered, role)
-		}
-	}
-	if len(uncovered) > 0 {
-		sort.Strings(uncovered)
-		t.Fatalf("roles admitted by $defs/artifactEntry with no path-root rule: %v — a declared role with no legal directory has no publishable shape", uncovered)
-	}
-	return roots, declaredRoles
-}
-
-// rootFromPathPattern reduces an anchored path pattern to the literal directory
-// prefix it pins — "^schema/(?:…" to "schema", "^fixtures/valid/(?:…" to
-// "fixtures/valid".
-func rootFromPathPattern(t *testing.T, arm int, pattern string) string {
-	t.Helper()
-	if !strings.HasPrefix(pattern, "^") {
-		t.Fatalf("allOf[%d] path pattern %q is not anchored: it does not pin a root at all", arm, pattern)
-	}
-	literal := strings.TrimPrefix(pattern, "^")
-	if cut := strings.IndexAny(literal, `(){}[]|*+?.\$^`); cut >= 0 {
-		literal = literal[:cut]
-	}
-	if !strings.HasSuffix(literal, "/") {
-		t.Fatalf("allOf[%d] path pattern %q has no literal directory prefix: derived %q", arm, pattern, literal)
-	}
-	return strings.TrimSuffix(literal, "/")
-}
-
 // TestDeclaredContractRootsAreCreatedAndRecognised is B1 itself.
 func TestDeclaredContractRootsAreCreatedAndRecognised(t *testing.T) {
 	t.Parallel()
-	roots, _ := contractRootsFromSchema(t)
+	roots, _ := contractroots.Declared(t)
 
 	layout, err := space.NewLayout(rootsProbeSystem)
 	if err != nil {
@@ -203,7 +67,7 @@ func TestDeclaredContractRootsAreCreatedAndRecognised(t *testing.T) {
 	want := map[string]bool{}
 	for _, r := range roots {
 		for _, name := range []string{"probe.json", "PROBE.md"} {
-			spacePath := sectionPrefix + r.root + "/" + name
+			spacePath := sectionPrefix + r.Root + "/" + name
 			want[spacePath] = false
 
 			// Recognised: the reverse mapping must resolve this path to its own
@@ -212,7 +76,7 @@ func TestDeclaredContractRootsAreCreatedAndRecognised(t *testing.T) {
 			// validator's file dispatch consults.
 			id, gotDescriptor, ok := space.ContractForPath(spacePath)
 			if !ok {
-				t.Errorf("ContractForPath(%q) not recognised, but the descriptor grammar requires role(s) %v to live there", spacePath, r.roles)
+				t.Errorf("ContractForPath(%q) not recognised, but the descriptor grammar requires role(s) %v to live there", spacePath, r.Roles)
 				continue
 			}
 			if gotDescriptor != descriptor {
@@ -268,11 +132,11 @@ func TestDeclaredContractRootsAreCreatedAndRecognised(t *testing.T) {
 // protect.
 func TestContractPathRootsRefuseWhatTheGrammarDoesNotAdmit(t *testing.T) {
 	t.Parallel()
-	roots, _ := contractRootsFromSchema(t)
+	roots, _ := contractroots.Declared(t)
 
 	admitted := map[string]bool{}
 	for _, r := range roots {
-		admitted[r.root] = true
+		admitted[r.Root] = true
 	}
 
 	// Derived near-misses: the parent of every multi-segment root that is not
@@ -316,11 +180,11 @@ func TestContractPathRootsRefuseWhatTheGrammarDoesNotAdmit(t *testing.T) {
 // and this one only stops the set from growing silently.
 func TestContractRootConstructorsMatchTheGrammar(t *testing.T) {
 	t.Parallel()
-	roots, _ := contractRootsFromSchema(t)
+	roots, _ := contractroots.Declared(t)
 
 	admitted := map[string]bool{}
 	for _, r := range roots {
-		admitted[r.root] = true
+		admitted[r.Root] = true
 	}
 
 	layout, err := space.NewLayout(rootsProbeSystem)
