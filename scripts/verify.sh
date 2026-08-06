@@ -473,12 +473,34 @@ changed_paths() {
   # Explicit paths win when given (`make lane FILES="a b"`), so the incident
   # in the spec can be replayed against a clean tree.
   if [ -n "${LANE_FILES:-}" ]; then
+    # Whitespace-separated, and therefore SPACE-HOSTILE by construction: this
+    # is the ergonomic escape hatch for replaying a diff by hand, not the
+    # general input. A path containing a space goes through the derivation's
+    # own stdin form instead
+    # (`printf '%s\n' "a path" | go run internal/lane/lanecheck.go --derive`).
+    # Stated rather than silently mangled.
+    # shellcheck disable=SC2086
     printf '%s\n' $LANE_FILES
     return 0
   fi
+  # `--porcelain=v1 -z` emits a RENAME/COPY as two NUL-terminated tokens:
+  # "XY <newpath>\0<origpath>\0" — and the ORIGINAL path carries NO "XY "
+  # prefix. A blanket `sed 's/^...//'` over every token therefore eats three
+  # characters off it (verified: `git mv original.txt renamed.txt` yielded
+  # "ginal.txt"), and the deriver then either refuses a path that does not
+  # exist or, worse, matches a mangled fragment against some unrelated glob.
+  # Both halves of a rename are real inputs — the old path stops existing and
+  # the new one starts — so both are reported.
   git -C "$ROOT" status --porcelain=v1 -z --untracked-files=all |
-    tr '\0' '\n' |
-    sed -e 's/^...//' -e '/^$/d'
+    while IFS= read -r -d '' record; do
+      printf '%s\n' "${record:3}"
+      case "${record:0:2}" in
+        [RC]*|?[RC])
+          IFS= read -r -d '' original || break
+          printf '%s\n' "$original"
+          ;;
+      esac
+    done
 }
 
 # run_derived_phase maps ONE derived phase name to the thing that runs it.

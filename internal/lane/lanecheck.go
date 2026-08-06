@@ -119,7 +119,12 @@ func runVerify(root string) int {
 		return 1
 	}
 	refusals = append(refusals, honestyRefusals...)
-	fmt.Println("lane:", opaqueCount, "script(s) declare lane-reads-opaque.")
+	// PHASES, not scripts. HonestyCheck counts one per phase whose backing
+	// window carries the directive, and scripts/verify.sh backs several
+	// phases — so this number has always been phase-instances while the label
+	// said "script(s)". A debt metric that misnames its own unit invites the
+	// wrong conclusion from whoever tries to shrink it.
+	fmt.Println("lane:", opaqueCount, "phase(s) declare lane-reads-opaque.")
 
 	if len(refusals) == 0 {
 		fmt.Println("lane: OK —", len(corpus), "corpus phase(s),", len(decls), "declaration(s), universe covered.")

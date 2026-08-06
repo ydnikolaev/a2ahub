@@ -82,7 +82,11 @@ var (
 		"wc": true, "head": true, "tail": true, "sed": true, "awk": true,
 	}
 
-	goRunFileRe         = regexp.MustCompile(`\bgo run (\S+\.go)\b`)
+	goRunFileRe = regexp.MustCompile(`\bgo run (\S+\.go)\b`)
+	// A `go run` target that is not a plain literal path — it contains a shell
+	// variable or a command substitution, so the file it runs does not exist
+	// until run time and this scanner can never read it.
+	goRunNonLiteralRe   = regexp.MustCompile(`\bgo run\s+\S*[$` + "`" + `]\S*\.go`)
 	goReadFileLiteralRe = regexp.MustCompile(`os\.(?:ReadFile|Open)\(\s*"((?:[^"\\]|\\.)*)"\s*\)`)
 	goReadFileCallRe    = regexp.MustCompile(`os\.(?:ReadFile|Open)\(`)
 )
@@ -416,6 +420,20 @@ func scanLineForReads(line string, lineNo int) (reads []ReadRef, unresolved []Un
 	// the truncated argument list is the honest reading: the exclusion arms are
 	// right there in the source even when the tokenizer cannot hand them over.
 	if findExpressionRe.MatchString(trimmed) && unmodellableFindLine(trimmed) {
+		return nil, []UnresolvedRead{{Line: lineNo, Text: trimmed}}
+	}
+
+	// `go run <non-literal>.go` hands the whole question to a program this
+	// scanner cannot see. Three REPO_GATES scripts do exactly that: they
+	// `cat > "$ANALYZER_DIR/main.go" <<'GO' … GO` a complete Go analyzer and
+	// run it, and that analyzer really does os.ReadFile and filepath.WalkDir
+	// over the repo. heredocBodyLines correctly stops the SHELL scanner from
+	// misreading the embedded Go as shell — but nothing then read it as Go, so
+	// those three gates reported zero reads AND zero opaque flags: invisible,
+	// not even debt-tracked. Flagging the invocation converts an invisible
+	// hole into a counted one, which is the whole contract (D-11). Found by
+	// the phase's own audit, not by a test.
+	if goRunNonLiteralRe.MatchString(trimmed) {
 		return nil, []UnresolvedRead{{Line: lineNo, Text: trimmed}}
 	}
 
