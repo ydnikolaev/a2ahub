@@ -72,6 +72,27 @@ func candidateCheckLog(root, sha, tree, tag, exit string) []byte {
 		"EXIT=" + exit + "\n")
 }
 
+// privateReleaseControlRail names the file whose presence means "this checkout
+// is the private source", for the pairing above.
+//
+// It must be a TRACKED private-only path. It used to be AGENTS.md, and AGENTS.md
+// is in .gitignore — it exists in a working copy and in no checkout of either
+// repository. So the pairing could never hold on a clean clone: the private
+// repo's CI found the runbook present and the rail absent and concluded, in its
+// own words, that a public projection had retained a private runbook. Confident,
+// specific, and about the opposite of what was true. It was red for forty
+// consecutive runs while passing on the one machine where the untracked file
+// happened to sit on disk.
+//
+// docs/runbooks/release.md is the honest marker: tracked in the private source,
+// stripped from every public projection alongside the rest of docs/, and the
+// document that actually governs release control. A test that decides WHICH TREE
+// it is in must ask git-visible state, never the ambient contents of somebody's
+// working directory.
+func privateReleaseControlRail(repoRoot string) string {
+	return filepath.Join(repoRoot, "docs", "runbooks", "release.md")
+}
+
 func TestCandidateRunbookEmitsParserMarkersWhenReleaseControlIsPresent(t *testing.T) {
 	t.Parallel()
 	_, sourceFile, _, ok := runtime.Caller(0)
@@ -85,17 +106,18 @@ func TestCandidateRunbookEmitsParserMarkersWhenReleaseControlIsPresent(t *testin
 		if !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("read candidate runbook: %v", err)
 		}
-		// docs/ and AGENTS.md are both private release-control surfaces removed
-		// from every public projection. Missing runbooks remain a hard failure in
-		// the private source; their deliberate joint absence is the public shape.
-		if _, railErr := os.Stat(filepath.Join(repoRoot, "AGENTS.md")); railErr == nil {
+		// The runbook and the rail below are both private release-control
+		// surfaces removed from every public projection. A missing runbook stays
+		// a hard failure in the private source; their deliberate JOINT absence is
+		// the public shape.
+		if _, railErr := os.Stat(privateReleaseControlRail(repoRoot)); railErr == nil {
 			t.Fatalf("private release-control rail exists but candidate runbook is missing: %v", err)
 		} else if !errors.Is(railErr, os.ErrNotExist) {
 			t.Fatalf("stat private release-control rail: %v", railErr)
 		}
 		return
 	}
-	if _, err := os.Stat(filepath.Join(repoRoot, "AGENTS.md")); err != nil {
+	if _, err := os.Stat(privateReleaseControlRail(repoRoot)); err != nil {
 		// A public projection must not accidentally retain a private runbook.
 		t.Fatalf("candidate runbook exists without private release-control rail: %v", err)
 	}
