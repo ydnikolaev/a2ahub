@@ -52,8 +52,28 @@ func TestResolveFeedbackCredentialPrecedence(t *testing.T) {
 		}
 	})
 
+	t.Run("a gh login is the last fallback, ahead of refusing", func(t *testing.T) {
+		clear(t)
+		withGHLogin(t, "gh-cli-secret", true)
+		got, err := resolveFeedbackCredential(context.Background(), space.MachineConfig{})
+		if err != nil || got.Token != "gh-cli-secret" {
+			t.Fatalf("credential = %#v, err=%v; want the gh login fallback", got, err)
+		}
+	})
+
+	t.Run("an env token still wins over the gh login", func(t *testing.T) {
+		clear(t)
+		withGHLogin(t, "gh-cli-secret", true)
+		t.Setenv("A2A_FEEDBACK_TOKEN", "explicit-secret")
+		got, err := resolveFeedbackCredential(context.Background(), space.MachineConfig{})
+		if err != nil || got.Token != "explicit-secret" {
+			t.Fatalf("credential = %#v, err=%v; want the explicit override", got, err)
+		}
+	})
+
 	t.Run("missing result names every checked seam", func(t *testing.T) {
 		clear(t)
+		withGHLogin(t, "", false)
 		_, err := resolveFeedbackCredential(context.Background(), space.MachineConfig{
 			Credentials: map[string]string{"feedback": "env:A2A_CONFIGURED_FEEDBACK"},
 		})
@@ -66,6 +86,18 @@ func TestResolveFeedbackCredentialPrecedence(t *testing.T) {
 			}
 		}
 	})
+}
+
+// withGHLogin states which machine a subtest is describing: one with a logged
+// in GitHub CLI, or one without. Every developer machine has the former and
+// every CI runner the latter, so a test that reads the real `gh` would pass in
+// one place and fail in the other for reasons that have nothing to do with the
+// code under test.
+func withGHLogin(t *testing.T, token string, available bool) {
+	t.Helper()
+	previous := feedbackGHLoginToken
+	feedbackGHLoginToken = func(context.Context) (string, bool) { return token, available }
+	t.Cleanup(func() { feedbackGHLoginToken = previous })
 }
 
 func TestFeedbackCredentialBoundary(t *testing.T) {
