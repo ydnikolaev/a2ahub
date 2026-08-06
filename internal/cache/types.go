@@ -277,12 +277,19 @@ type SearchFilters struct {
 // this stays correct if a kind's terminal-state set ever grows
 // asymmetrically.
 var openStates = map[fold.Kind]map[fold.State]bool{
-	fold.KindContract:     {fold.StateDraft: true, fold.StatePublished: true, fold.StateDeprecated: true},
-	fold.KindRequirement:  {fold.StateDraft: true, fold.StatePublished: true, fold.StateAcknowledged: true},
-	fold.KindQuestion:     openExchangeStates,
-	fold.KindWorkRequest:  openExchangeStates,
-	fold.KindDecision:     {fold.StateDraft: true, fold.StateProposed: true},
-	fold.KindHandoff:      {fold.StateDraft: true, fold.StateSubmitted: true, fold.StateAcknowledged: true},
+	fold.KindContract:    {fold.StateDraft: true, fold.StatePublished: true, fold.StateDeprecated: true},
+	fold.KindRequirement: {fold.StateDraft: true, fold.StatePublished: true, fold.StateAcknowledged: true},
+	fold.KindQuestion:    openExchangeStates,
+	fold.KindWorkRequest: openExchangeStates,
+	fold.KindDecision:    {fold.StateDraft: true, fold.StateProposed: true},
+	// `rejected` is live, and its omission was a real defect: §3.4.5 puts the
+	// PRODUCER on the hook from there (resubmit as a new XH superseding this
+	// one) and internal/pendency's table says so, but with the state missing
+	// here buildOpenItems filtered the handoff out before ever asking — so the
+	// producer was never told they owed the resubmission. Found by W3's
+	// data-loop conformance path; guarded by
+	// TestOpenStatesReachesEveryStateSomebodyOwesAMoveFrom.
+	fold.KindHandoff:      {fold.StateDraft: true, fold.StateSubmitted: true, fold.StateAcknowledged: true, fold.StateRejected: true},
 	fold.KindResponse:     {fold.StateDraft: true, fold.StateSubmitted: true},
 	fold.KindAnnouncement: {fold.StateDraft: true, fold.StatePublished: true},
 }

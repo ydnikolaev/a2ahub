@@ -61,8 +61,14 @@ func TestLifecycleProjectionOpenStates(t *testing.T) {
 		{
 			name: "handoff",
 			kind: fold.KindHandoff,
-			open: []fold.State{fold.StateDraft, fold.StateSubmitted, fold.StateAcknowledged},
-			done: []fold.State{fold.StateNone, fold.StateAccepted, fold.StateRejected, fold.StateSuperseded},
+			// `rejected` moved from done to open, and the old placement was
+			// the defect rather than a judgement call: §3.4.5 has the producer
+			// resubmit a rejected handoff as a new XH superseding this one, so
+			// the state is non-terminal and somebody owes a move from it.
+			// Listed as done, it never reached open items and the producer was
+			// never told. See TestOpenStatesReachesEveryStateSomebodyOwesAMoveFrom.
+			open: []fold.State{fold.StateDraft, fold.StateSubmitted, fold.StateAcknowledged, fold.StateRejected},
+			done: []fold.State{fold.StateNone, fold.StateAccepted, fold.StateSuperseded},
 		},
 		{
 			name: "response",
