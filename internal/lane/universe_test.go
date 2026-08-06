@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 func TestDenyDirsReadsFromClassifyGuardScript(t *testing.T) {
@@ -35,7 +37,7 @@ func TestUniverseUnionsTrackedAndPresentDenyDirs(t *testing.T) {
 	root := t.TempDir()
 	run := func(args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		cmd := exec.Command("git", gitfixture.Args(append([]string{"-C", root}, args...)...)...)
 		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
