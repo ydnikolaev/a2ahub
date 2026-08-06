@@ -16,8 +16,22 @@ import (
 )
 
 const (
+	// ContractPublicationFloor is the space floor at or above which a contract
+	// publishes as contract-set-v2 with a declared `artifacts:` inventory.
+	//
+	// It ALIASES version.OperationalConfidenceFloor rather than restating
+	// "0.19.0", because two gates read these two names for the same decision:
+	// internal/validate's V2 carried-set profile check compares against the
+	// version constant, while this planner and the V3 descriptor-shape check
+	// compare against this one. Two literals that must be equal and are only
+	// equal by convention is how a release bumps one and reopens the exact
+	// class of bug the pair exists to prevent — V2 saying yes to a shape the
+	// planner refuses. That is not hypothetical here: a release script's
+	// hand-carried `0.19.0` pattern already drifted from its own derived floor
+	// variable and refused a correctly-projected release.
+	//
 	// ContractPublicationFloor is part of the public package API.
-	ContractPublicationFloor = "0.19.0"
+	ContractPublicationFloor = version.OperationalConfidenceFloor
 	// ContractSidecarDeleteDomain is part of the public package API.
 	ContractSidecarDeleteDomain = "contract-sidecar-v1"
 )
