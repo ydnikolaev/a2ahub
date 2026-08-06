@@ -1,0 +1,39 @@
+schema: release-notes/v1
+version: "0.19.5"
+released: "2026-08-06"
+headline: "The website publishes again, and a broken site now fails before the tag"
+changes:
+  - id: RN-01905-0
+    kind: fix
+    impact: normal
+    subject: "a2ahub.dev is current again after five days on an old release"
+    detail: >
+      The public site had been serving the 0.18.2 release since 2026-08-01.
+      Five releases were tagged and published in between, each with its own
+      GitHub Release page, and the site announced none of them.
+      The site is rebuilt by a workflow that runs the web test suite first, and
+      that suite had two independent faults. One was an import the test runner
+      could not load, added on 2026-08-04. The other was older and quieter:
+      two tests read a file that the build generates, but the suite ran before
+      anything generated it — so the tests passed for anyone whose working copy
+      still held the file from a previous build, and failed on every clean
+      checkout, which is what continuous integration always is.
+      Both are fixed, and the release process no longer finds out afterwards.
+      Cutting a release refuses to start while the site's publish workflow is
+      failing, and the candidate that gets promoted now runs the site's own
+      build first — the same command the publish workflow runs, against the
+      same clean shape. A site that cannot build now stops a release instead of
+      quietly not updating.
+      No product behaviour changed. This release exists to move the website.
+      Verified as presentation-only rather than assumed: the exact published
+      difference against 0.19.4 is release prose, version pins and a build
+      script — no non-test Go source. It therefore ran no live GitHub matrix,
+      which for this content could observe nothing; the last full matrix ran on
+      2026-08-05, and the provider rows it covers remain as described in the
+      standing known issue.
+    affects: ["a2ahub.dev", "release process"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The binary is identical in behaviour to 0.19.3; update
+        only if you skipped it.
