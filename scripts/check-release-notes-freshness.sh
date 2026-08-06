@@ -16,6 +16,7 @@
 #   space-template/**
 #   skill/**
 #   !internal/livee2e/**
+#   !internal/lane/**
 #   !**/*_test.go
 set -uo pipefail
 
@@ -84,12 +85,22 @@ run_check() {
     # above does not reach them. A `fix(livee2e)` commit repairs a scenario,
     # never behaviour a note could describe.
     #
+    # internal/lane is excluded on the same principle as internal/livee2e and
+    # for a reason that is checkable rather than asserted: it is the P12 lane
+    # deriver, imported by NOTHING in the module (only its own //go:build
+    # ignore runner), so it is never linked into cmd/a2a and cannot reach a
+    # user. A release note about it would not be missing information — it would
+    # be false, telling a reader about something that does not exist for them.
+    # The exclusion holds ONLY ALONE, exactly like livee2e's: a commit that
+    # also touches real product code still reds.
+    #
     # The teeth below pin every half: a test-only commit stays green, a
-    # livee2e-only commit stays green, and a commit that ALSO touches real
-    # product code still reds in both cases.
+    # livee2e-only commit stays green, a lane-only commit stays green, and a
+    # commit that ALSO touches real product code still reds in every case.
     git -C "$ROOT" log "$anchor..HEAD" --format='%H%x09%s' -- \
       internal/ cmd/ schemas/ space-template/ skill/ \
       ':(exclude)internal/livee2e/' \
+      ':(exclude)internal/lane/' \
       ':(exclude,glob)**/*_test.go'
   )
 
@@ -188,6 +199,28 @@ run_teeth() {
     exit 1
   fi
 
+  mkdir -p "$tmp/internal/lane"
+  printf '%s\n' 'package lane' >"$tmp/internal/lane/derive.go"
+  git -C "$tmp" add internal/lane/derive.go
+  git -C "$tmp" commit -q -m 'fix(agent-ops): repair the lane deriver'
+  if ! ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check >/dev/null; then
+    echo "release-notes-freshness --teeth: FAILED — a lane-only fix demanded release notes." >&2
+    exit 1
+  fi
+
+  printf '%s\n' 'package lane' 'const Touched = true' >"$tmp/internal/lane/derive.go"
+  mkdir -p "$tmp/internal/gadget"
+  printf '%s\n' 'package gadget' 'const Fixed = true' >"$tmp/internal/gadget/gadget.go"
+  git -C "$tmp" add internal/lane/derive.go internal/gadget/gadget.go
+  git -C "$tmp" commit -q -m 'fix(gadget): repair behaviour, and the lane that selects it'
+  out="$(ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check 2>&1)"
+  rc=$?
+  if [ "$rc" -eq 0 ] || ! grep -q 'fix(gadget): repair behaviour' <<<"$out"; then
+    echo "release-notes-freshness --teeth: FAILED — a commit touching product AND lane stayed green:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+
   printf '%s\n' 'package livee2e' 'const Touched = true' >"$tmp/internal/livee2e/scenario.go"
   printf '%s\n' 'package widget' 'const Fixed = true' 'const Metadata = true' 'const Breaking = true' 'const AlsoProduct = true' >"$tmp/internal/widget/widget.go"
   git -C "$tmp" add internal/livee2e/scenario.go internal/widget/widget.go
@@ -234,7 +267,7 @@ run_teeth() {
     exit 1
   fi
 
-  echo "release-notes-freshness --teeth: uncovered fix reds with id; notes touch greens; docs/chore stay green; breaking commit reds; livee2e-only greens; livee2e+product reds; test-only greens; test+product reds."
+  echo "release-notes-freshness --teeth: uncovered fix reds with id; notes touch greens; docs/chore stay green; breaking commit reds; livee2e-only greens; livee2e+product reds; lane-only greens; lane+product reds; test-only greens; test+product reds."
 }
 
 case "${1:-check}" in
