@@ -316,7 +316,7 @@ func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.
 		}
 		credRef = parsed
 	}
-	cred, err := space.ResolveCredential(ctx, space.CredentialEnvVar(ref.ID), credRef)
+	cred, err := space.ResolveWriteCredential(ctx, space.CredentialEnvVar(ref.ID), credRef)
 	if err != nil {
 		return WriteDeps{}, SubmitDeps{}, NewDeps{}, err
 	}

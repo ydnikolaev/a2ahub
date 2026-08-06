@@ -89,15 +89,31 @@ func TestResolveFeedbackCredentialPrecedence(t *testing.T) {
 }
 
 // withGHLogin states which machine a subtest is describing: one with a logged
-// in GitHub CLI, or one without. Every developer machine has the former and
-// every CI runner the latter, so a test that reads the real `gh` would pass in
-// one place and fail in the other for reasons that have nothing to do with the
-// code under test.
+// in GitHub CLI, or one without.
+//
+// It works by putting a fake `gh` on PATH (or emptying PATH), NOT by swapping a
+// package var. Both surfaces reach the login through internal/ghauth's real
+// exec.LookPath + `gh auth token`, so this exercises the actual code path and
+// needs no test-only seam in production API — and there is nothing for a second
+// seam to drift away from.
+//
+// Without this, the refusal cases are untestable anywhere `gh` happens to be
+// logged in: that is every developer machine and no CI runner, the exact split
+// that lets a test pass in CI and fail on the desk of whoever has to fix it.
 func withGHLogin(t *testing.T, token string, available bool) {
 	t.Helper()
-	previous := feedbackGHLoginToken
-	feedbackGHLoginToken = func(context.Context) (string, bool) { return token, available }
-	t.Cleanup(func() { feedbackGHLoginToken = previous })
+	dir := t.TempDir()
+	if !available {
+		// An empty directory as the whole PATH: exec.LookPath("gh") fails, which
+		// internal/ghauth treats as an ordinary "no token available".
+		t.Setenv("PATH", dir)
+		return
+	}
+	script := "#!/bin/sh\nif [ \"$1\" = auth ] && [ \"$2\" = token ]; then echo " + token + "; exit 0; fi\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake gh: %v", err)
+	}
+	t.Setenv("PATH", dir)
 }
 
 func TestFeedbackCredentialBoundary(t *testing.T) {
@@ -278,6 +294,80 @@ func TestBuildStoreConfigTolerance(t *testing.T) {
 		}
 		if _, err := buildStore(t.Context(), pathsIn(dir)); err == nil {
 			t.Error("buildStore(malformed machine config): want error, got nil")
+		}
+	})
+}
+
+// TestResolveCredentialAndFeedbackShareTheGHLoginFallback pins the two chains
+// to one behaviour on one machine state.
+//
+// They had drifted: `a2a feedback submit` gained the gh-login fallback while
+// every REAL space write kept refusing on a machine that was perfectly well
+// authenticated. `cmd:gh auth token` is seeded into the machine config ONCE, at
+// connect time, so a space connected before gh existed — or a config copied
+// between machines — carries a plain env reference and never sees the login.
+// Fixing the smaller surface and leaving the larger one is worse than fixing
+// neither: it makes the remaining refusal look space-specific.
+func TestResolveCredentialAndFeedbackShareTheGHLoginFallback(t *testing.T) {
+	clear := func(t *testing.T) {
+		t.Helper()
+		for _, name := range []string{"A2A_FEEDBACK_TOKEN", "GITHUB_TOKEN", "GH_TOKEN", "A2A_TOKEN_GETVISA"} {
+			t.Setenv(name, "")
+		}
+	}
+
+	t.Run("a space write falls through to the gh login", func(t *testing.T) {
+		clear(t)
+		withGHLogin(t, "gh-cli-secret", true)
+		// The machine config names the documented env var rather than
+		// `cmd:gh auth token` — the shape a space connected before gh was set
+		// up actually has on disk.
+		got, err := resolveCredential(context.Background(), "getvisa", space.MachineConfig{
+			Credentials: map[string]string{"getvisa": "env:A2A_TOKEN_GETVISA"},
+		})
+		if err != nil || got.Token != "gh-cli-secret" {
+			t.Fatalf("credential = %#v, err=%v; want the gh login fallback", got, err)
+		}
+	})
+
+	t.Run("the explicit per-space override still wins", func(t *testing.T) {
+		clear(t)
+		withGHLogin(t, "gh-cli-secret", true)
+		t.Setenv("A2A_TOKEN_GETVISA", "space-secret")
+		got, err := resolveCredential(context.Background(), "getvisa", space.MachineConfig{})
+		if err != nil || got.Token != "space-secret" {
+			t.Fatalf("credential = %#v, err=%v; want the explicit per-space override", got, err)
+		}
+	})
+
+	t.Run("without a gh login the refusal still names what it checked", func(t *testing.T) {
+		clear(t)
+		withGHLogin(t, "", false)
+		_, err := resolveCredential(context.Background(), "getvisa", space.MachineConfig{
+			Credentials: map[string]string{"getvisa": "env:A2A_TOKEN_GETVISA"},
+		})
+		if err == nil {
+			t.Fatal("a space write with no credential anywhere succeeded")
+		}
+		if !strings.Contains(err.Error(), "A2A_TOKEN_GETVISA") {
+			t.Errorf("refusal does not name the checked env var: %v", err)
+		}
+	})
+
+	// The two surfaces must agree on the SAME machine, which is the property
+	// that actually broke — each being individually correct is not enough.
+	t.Run("both surfaces agree on one machine", func(t *testing.T) {
+		clear(t)
+		withGHLogin(t, "gh-cli-secret", true)
+		space1, err1 := resolveCredential(context.Background(), "getvisa", space.MachineConfig{
+			Credentials: map[string]string{"getvisa": "env:A2A_TOKEN_GETVISA"},
+		})
+		feedback, err2 := resolveFeedbackCredential(context.Background(), space.MachineConfig{})
+		if err1 != nil || err2 != nil {
+			t.Fatalf("one surface refused where the other resolved: space=%v feedback=%v", err1, err2)
+		}
+		if space1.Token != feedback.Token {
+			t.Fatalf("surfaces disagree on the same machine: space=%q feedback=%q", space1.Token, feedback.Token)
 		}
 	})
 }
