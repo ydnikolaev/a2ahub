@@ -169,7 +169,7 @@ run_teeth() {
     echo "$out" >&2
     exit 1
   fi
-  if ! grep -Fq "lane: 0 script(s) declare lane-reads-opaque." <<<"$out"; then
+  if ! grep -Fq "lane: 0 phase(s) declare lane-reads-opaque." <<<"$out"; then
     echo "check-lane-declarations --teeth: FAIL — receipt (d) no-opaque should report an opaque count of 0:" >&2
     echo "$out" >&2
     exit 1
@@ -187,7 +187,7 @@ run_teeth() {
     echo "$out" >&2
     exit 1
   fi
-  if ! grep -Fq "lane: 1 script(s) declare lane-reads-opaque." <<<"$out"; then
+  if ! grep -Fq "lane: 1 phase(s) declare lane-reads-opaque." <<<"$out"; then
     echo "check-lane-declarations --teeth: FAIL — receipt (d) opaque count did not move 0 -> 1:" >&2
     echo "$out" >&2
     exit 1

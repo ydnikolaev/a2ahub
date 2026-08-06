@@ -9,6 +9,11 @@
 #   internal/mcp/*.go
 #   !internal/cli/*_test.go
 #   !internal/mcp/*_test.go
+# lane-reads-opaque: the gate writes its Go analyzer into "$ANALYZER_DIR/main.go"
+#   (mktemp -d) and `go run`s it, so the classifier cannot follow the read. The
+#   analyzer's own reads are the two non-recursive os.ReadDir walks over
+#   internal/cli and internal/mcp declared above, verified by reading the
+#   heredoc body rather than inferred from the gate's name.
 set -euo pipefail
 
 ROOT="${EVENT_WRITER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"

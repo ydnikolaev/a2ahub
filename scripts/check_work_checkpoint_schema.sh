@@ -9,6 +9,10 @@
 #   internal/workreport/types.go
 #   internal/validate/work_checkpoint.go
 #   docs/features/active/operational-confidence-2026-08/specs/02-reported-work-checkpoints.md
+# lane-reads-opaque: the gate writes its Go analyzer into "$ANALYZER_DIR/main.go"
+#   (mktemp -d) and `go run`s it. The four unconditional reads and the one
+#   presence-gated docs read declared above come from reading that heredoc body;
+#   the temp path itself can never be a lane input.
 set -euo pipefail
 
 ROOT="${WORK_CHECKPOINT_SCHEMA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
