@@ -40,10 +40,18 @@ stdout 'event\tgamma\tacknowledge\tXQ-beta-20260722-q1a2'
 stdout 'event\tgamma\trespond\tXQ-beta-20260722-q1a2'
 stdout 'event\tbeta\tverify\tXS-gamma-20260722-r3b4'
 
-# OPEN names BOTH parties actually able to act next: beta (close/supersede —
-# the question's own owner) and gamma (respond again — table.go's D-017
-# multi-response allowance keeps `respond` legal even from `responded`).
-stdout 'XQ-beta-20260722-q1a2\tresponded\twaiting_on=beta,gamma\tnext=respond:gamma;close:beta;supersede:beta'
+# OPEN names who OWES the next move, which is beta alone: gamma has already
+# answered, and the ball is with the sender to verify and close (or dispute).
+#
+# This line used to read `waiting_on=beta,gamma`, justified as "both parties
+# actually able to act next". That is the liveness predicate, not the pendency
+# one — gamma's "respond again" (D-017's multi-response allowance) stays LEGAL
+# from `responded` and is still listed in `next=` below, but nobody is waiting
+# for it. P11 W1 separated the two, and this fixture had encoded the
+# conflation. If a dispute reopens the exchange, gamma owes again and this line
+# changes with it. Do not "restore" the second name: next= is where every legal
+# move remains visible.
+stdout 'XQ-beta-20260722-q1a2\tresponded\twaiting_on=beta\tnext=respond:gamma;close:beta;supersede:beta'
 
 # US-6/D6: a member artifact id resolves to the SAME thread as the thread id
 # itself — --json makes the exact field values unambiguous.

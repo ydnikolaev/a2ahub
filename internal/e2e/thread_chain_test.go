@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -230,9 +231,15 @@ func TestThreadChainFixtureOrdersQuestionBeforeResponse(t *testing.T) {
 		t.Fatalf("open_items = %+v, want exactly the question (the verified response is terminal)", result.OpenItems)
 	}
 	oi := result.OpenItems[0]
-	wantWaiting := []string{"beta", "gamma"}
-	if len(oi.WaitingOn) != len(wantWaiting) || oi.WaitingOn[0] != wantWaiting[0] || oi.WaitingOn[1] != wantWaiting[1] {
-		t.Fatalf("waiting_on = %+v, want %+v (beta: close/supersede; gamma: respond again, D-017's multi-response allowance)", oi.WaitingOn, wantWaiting)
+	// waiting_on names who OWES the next move, not who MAY make one. gamma
+	// has answered; the sender owes verify-then-close (or a dispute, which
+	// would put the debt back on gamma). gamma's still-legal "respond again"
+	// (D-017's multi-response allowance) lives in NextActions, which this
+	// assertion deliberately does not touch — P11 W1 separated the two
+	// predicates, and this test previously asserted the conflated one.
+	wantWaiting := []string{"beta"}
+	if !reflect.DeepEqual(oi.WaitingOn, wantWaiting) {
+		t.Fatalf("waiting_on = %+v, want %+v (the sender owes close; gamma's respond-again is legal but owed by nobody)", oi.WaitingOn, wantWaiting)
 	}
 
 	byRef, err := store.ThreadView(context.Background(), threadChainResponseID, "")

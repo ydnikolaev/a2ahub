@@ -270,20 +270,6 @@ type SearchFilters struct {
 	Thread string
 }
 
-// preAckState is the kind's own "not yet acknowledged" state — the exact
-// value fold's own table (internal/fold/table.go) assigns as fromState
-// for that kind's `acknowledge` row. KindAnnouncement is deliberately
-// absent: every announcement (broadcast or single-target) uses D-025's
-// transition-free per-recipient ack set (fold.go's own kind-only switch
-// guard), never a State transition, so its "acked by me" fact reads
-// Result.Acks, not State.
-var preAckState = map[fold.Kind]fold.State{
-	fold.KindRequirement: fold.StatePublished,
-	fold.KindQuestion:    fold.StateSubmitted,
-	fold.KindWorkRequest: fold.StateSubmitted,
-	fold.KindHandoff:     fold.StateSubmitted,
-}
-
 // openStates enumerates, per kind, every State internal/fold/table.go's
 // own rows treat as non-terminal ("any open state", OP-207 condition 4 /
 // OP-208's own base "open items" scope) — a deliberate per-kind

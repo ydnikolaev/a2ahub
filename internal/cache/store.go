@@ -449,7 +449,7 @@ func (s *Store) inbox(ctx context.Context, actionableOnly, advance, annotate, ex
 			}
 			var reasons []string
 			if actionableOnly {
-				reasons = actionableReasons(fa, s.ownSystem)
+				reasons = actionableReasons(fa, s.ownSystem, manifest)
 				if len(reasons) == 0 {
 					continue
 				}
@@ -458,7 +458,7 @@ func (s *Store) inbox(ctx context.Context, actionableOnly, advance, annotate, ex
 					continue
 				}
 				if annotate {
-					reasons = actionableReasons(fa, s.ownSystem)
+					reasons = actionableReasons(fa, s.ownSystem, manifest)
 				}
 			}
 			item := toItem(fa, stale, pending[fa.Env.ID])

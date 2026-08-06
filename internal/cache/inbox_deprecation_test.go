@@ -9,8 +9,12 @@ import (
 
 // deprecationAnnouncement builds the envelope `contract deprecate` writes
 // on both surfaces — the shape that matters here is `deprecates`, the
-// machine-readable `<XC-id>@<version>` field, and a `to:` that names
-// someone else.
+// machine-readable `<XC-id>@<version>` field, a `to:` that names someone
+// else, and `ack_requested: true` — `contract deprecate` sets it on every
+// announcement it emits (internal/mcp/tools_contract.go:426, pinned by
+// internal/cli/cmd_contract_test.go:287), and P11 W1 makes
+// `--actionable`'s condition 1 read that flag through internal/pendency,
+// so a fixture omitting it no longer matches production shape.
 func deprecationAnnouncement(id, from, deprecates string, to []string) map[string]any {
 	return map[string]any{
 		"schema": "envelope/v1", "id": id, "type": "announcement",
@@ -20,6 +24,7 @@ func deprecationAnnouncement(id, from, deprecates string, to []string) map[strin
 		"created":        "2026-07-01T08:00:00Z",
 		"priority":       "p2",
 		"blocking":       false,
+		"ack_requested":  true,
 		"classification": "internal",
 		"thread":         id,
 		"category":       "deprecation",
