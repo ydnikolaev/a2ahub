@@ -122,6 +122,10 @@ func TestAuthoringPagesMatchTheTemplatesTheyDocument(t *testing.T) {
 	// The type list comes from the binary too, so a NEW envelope type cannot
 	// ship without an authoring page: a hard-coded list would simply not know
 	// to look for it.
+	//
+	// One type per line, nothing else — the same contract the skill-drift CI
+	// job's `for t in $(a2a template list)` depends on, and which a
+	// tab-separated second column broke on 2026-08-06.
 	listCmd := exec.Command(bin, "template", "list")
 	listCmd.Dir = root
 	listed, err := listCmd.Output()
@@ -131,7 +135,7 @@ func TestAuthoringPagesMatchTheTemplatesTheyDocument(t *testing.T) {
 
 	var checked int
 	for _, line := range strings.Split(strings.TrimSpace(string(listed)), "\n") {
-		typ, generation, _ := strings.Cut(strings.TrimSpace(line), "\t")
+		typ := strings.TrimSpace(line)
 		if typ == "" {
 			continue
 		}
@@ -152,11 +156,11 @@ func TestAuthoringPagesMatchTheTemplatesTheyDocument(t *testing.T) {
 		checked++
 		if !bytes.Equal(tpl, guide) {
 			t.Errorf("skill/a2ahub/reference/authoring/%s.md has drifted from what `a2a template show %s` "+
-				"renders (%s).\nThey are the same document: one is rendered by `a2a new`, the other is read "+
+				"renders.\nThey are the same document: one is rendered by `a2a new`, the other is read "+
 				"by an agent, and an agent that follows a stale page writes an artifact the tool refuses.\n"+
 				"Re-sync it from the BINARY, never from a fixed templates directory:\n"+
 				"    go run ./cmd/a2a template show %s > skill/a2ahub/reference/authoring/%s.md",
-				typ, typ, generation, typ, typ)
+				typ, typ, typ, typ)
 		}
 	}
 
