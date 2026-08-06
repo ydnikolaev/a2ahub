@@ -571,6 +571,132 @@ func driveContractRetire(ctx context.Context, t *testing.T, h *harness, actor *c
 	checkStepPredicates(ctx, t, h, actor, path.ID, stepIdx, path.Steps[stepIdx], ids)
 }
 
+// driveRefusedContractRetire attempts `a2a contract retire <id> --version <v>`
+// and asserts the REAL binary REFUSES it — the paired negative control for
+// driveContractRetire: same CLI shape, opposite outcome (Step.Refused's own
+// doc comment, pathgrammar.go). stepIdx's own Step MUST carry a non-nil
+// Refused; t.Fatalf's immediately if it does not, so a mis-wired call is
+// caught at the point of use rather than silently checking the wrong thing.
+//
+// Consequence 1 (Refused's own doc comment): a non-zero exit whose combined
+// stdout+stderr names step.Refused.Code. A wrong-code refusal is a FAILURE,
+// not a pass — checked with the same plain substring idiom internal/e2e's
+// own POL-006 assertions use (contract_cov_test.go:50), never a weaker "any
+// non-zero exit" check.
+//
+// Unlike driveContractRetire, this never calls h.pullForBranch or
+// happyLandAndSync — a refused act opens no PR to pull (the funnel/host is
+// never reached, same fact TestT3ContractRetireBlockedUnackedConsumer proves
+// at the internal/e2e layer via fakeHost.Opens). stepIdx's own Predicates are
+// checked immediately after the refusal is confirmed, against whatever state
+// the refusal LEFT UNCHANGED (pathgrammar.go's own walkSteps non-advance).
+func driveRefusedContractRetire(ctx context.Context, t *testing.T, h *harness, actor *checkout, path Path, stepIdx int, contractID, version string, ids pathIDs) {
+	t.Helper()
+	step := path.Steps[stepIdx]
+	if step.Refused == nil {
+		t.Fatalf("path %s step %d: driveRefusedContractRetire called on a step with no Refused expectation", path.ID, stepIdx)
+	}
+	if step.Refused.Code == "" {
+		// An empty Code would make the check below (strings.Contains(combined,
+		// "")) vacuously true for ANY non-zero exit — exactly the failure
+		// mode MUTATION PROOF (a) demonstrated is dangerous, reachable here
+		// without touching this function at all. Refused loudly rather than
+		// silently accepting whatever the binary said.
+		t.Fatalf("path %s step %d: declared Refused.Code is empty — a refusal must name the exact expected code", path.ID, stepIdx)
+	}
+	stdout, stderr, err := actor.Run(ctx, "contract", "retire", contractID, "--version", version)
+	if err == nil {
+		t.Fatalf("path %s step %d: a2a contract retire %s (%s): expected a REFUSAL naming %s, got success: stdout=%s", path.ID, stepIdx, contractID, actor.System, step.Refused.Code, stdout)
+	}
+	combined := stdout + stderr
+	if !strings.Contains(combined, step.Refused.Code) {
+		t.Fatalf("path %s step %d: a2a contract retire %s (%s): refused as expected but combined output does not name %s: %s", path.ID, stepIdx, contractID, actor.System, step.Refused.Code, combined)
+	}
+	checkStepPredicates(ctx, t, h, actor, path.ID, stepIdx, step, ids)
+}
+
+// driveRefusedSimpleVerb attempts one of driveSimpleVerb's own OP-211 batch
+// verbs and asserts the REAL binary REFUSES it — the paired negative control
+// for driveSimpleVerb, same CLI shape (simpleVerbForTransition's own mapping,
+// `<verb> [extraArgs] <targetID>`), opposite outcome (Step.Refused's own doc
+// comment, pathgrammar.go). Same shape/consequences as
+// driveRefusedContractRetire (this file), generalized off the contract-only
+// `contract retire` CLI form to any simple verb this file already knows how
+// to drive: stepIdx's own Step MUST carry a non-nil Refused (t.Fatalf's
+// immediately if not); a non-zero exit whose combined stdout+stderr names
+// step.Refused.Code is the ONLY pass (a wrong-code refusal is a FAILURE, not
+// a pass — internal/e2e's own POL-006/LFC- substring idiom); no PR is ever
+// pulled (a refused act never reaches the write funnel — same fact
+// driveRefusedContractRetire's own doc comment cites for retire, true here
+// for the exact same pre-write legality-check ordering every lifecycle verb
+// command shares, cmd_lifecycle.go).
+//
+// Deliberately NOT the stronger form scenarios_illegal_live.go's own
+// illegalfamRefusalStep uses (before/after h.countPRsForBranch, asserting
+// the refused branch's own PR count never moved): same scope choice
+// driveRefusedContractRetire already made — asserted here is the code plus
+// the post-refusal state/pendency the brief asks for, not the no-PR-opened
+// property, which is a real, narrower guarantee than illegalfamRefusalStep's
+// own two-part check.
+func driveRefusedSimpleVerb(ctx context.Context, t *testing.T, h *harness, actor *checkout, path Path, stepIdx int, transition, targetID string, ids pathIDs, extraArgs ...string) {
+	t.Helper()
+	step := path.Steps[stepIdx]
+	if step.Refused == nil {
+		t.Fatalf("path %s step %d: driveRefusedSimpleVerb called on a step with no Refused expectation", path.ID, stepIdx)
+	}
+	if step.Refused.Code == "" {
+		t.Fatalf("path %s step %d: declared Refused.Code is empty — a refusal must name the exact expected code", path.ID, stepIdx)
+	}
+	verb, ok := simpleVerbForTransition[transition]
+	if !ok {
+		t.Fatalf("path %s step %d: no simple-verb mapping for transition %q", path.ID, stepIdx, transition)
+	}
+	args := append([]string{verb}, extraArgs...)
+	args = append(args, targetID)
+	stdout, stderr, err := actor.Run(ctx, args...)
+	if err == nil {
+		t.Fatalf("path %s step %d: a2a %s %s (%s): expected a REFUSAL naming %s, got success: stdout=%s", path.ID, stepIdx, verb, targetID, actor.System, step.Refused.Code, stdout)
+	}
+	combined := stdout + stderr
+	if !strings.Contains(combined, step.Refused.Code) {
+		t.Fatalf("path %s step %d: a2a %s %s (%s): refused as expected but combined output does not name %s: %s", path.ID, stepIdx, verb, targetID, actor.System, step.Refused.Code, combined)
+	}
+	checkStepPredicates(ctx, t, h, actor, path.ID, stepIdx, step, ids)
+}
+
+// driveRefusedRespond attempts `a2a respond --result <result> <parentID>`
+// and asserts the REAL binary REFUSES it — the paired negative control for
+// driveRespondBundle, same CLI shape (respondCommandArgs, operationpull.go),
+// opposite outcome. Same consequences as driveRefusedSimpleVerb/
+// driveRefusedContractRetire: stepIdx's own Step must carry a non-nil
+// Refused with a non-empty Code, a non-zero exit whose combined stdout+
+// stderr names it is the ONLY pass, and no PR is ever pulled — RespondCommand.Run
+// (cmd_lifecycle.go) evaluates fold's own legality verdict strictly before
+// minting the response id's draft write or calling the funnel, same
+// pre-write ordering every other lifecycle verb shares. Same scope choice
+// as driveRefusedSimpleVerb's own doc comment: no no-PR-opened assertion
+// (illegalfamRefusalStep's own stronger form) — code plus post-refusal
+// state/pendency only.
+func driveRefusedRespond(ctx context.Context, t *testing.T, h *harness, actor *checkout, path Path, stepIdx int, parentID, result string, ids pathIDs) {
+	t.Helper()
+	step := path.Steps[stepIdx]
+	if step.Refused == nil {
+		t.Fatalf("path %s step %d: driveRefusedRespond called on a step with no Refused expectation", path.ID, stepIdx)
+	}
+	if step.Refused.Code == "" {
+		t.Fatalf("path %s step %d: declared Refused.Code is empty — a refusal must name the exact expected code", path.ID, stepIdx)
+	}
+	stdout, stderr, err := actor.Run(ctx, respondCommandArgs(parentID, result)...)
+	if err == nil {
+		t.Fatalf("path %s step %d: a2a respond --result %s %s (%s): expected a REFUSAL naming %s, got success: stdout=%s", path.ID, stepIdx, result, parentID, actor.System, step.Refused.Code, stdout)
+	}
+	combined := stdout + stderr
+	if !strings.Contains(combined, step.Refused.Code) {
+		t.Fatalf("path %s step %d: a2a respond --result %s %s (%s): refused as expected but combined output does not name %s: %s", path.ID, stepIdx, result, parentID, actor.System, step.Refused.Code, combined)
+	}
+	checkStepPredicates(ctx, t, h, actor, path.ID, stepIdx, step, ids)
+}
+
 // syncBoth syncs both checkouts — used between an actor switch so the NEXT
 // actor's own read/write sees what the PREVIOUS actor just landed.
 func syncBoth(ctx context.Context, t *testing.T, h *harness) {
@@ -614,6 +740,61 @@ func runPathContractSuccessor(ctx context.Context, t *testing.T, h *harness, run
 	a := h.A
 
 	ids["contract-version"] = driveContractRepublish(ctx, t, h, a, path, 0, ids["contract"], "minor", ids)
+	return ids
+}
+
+// runPathQuestionAcknowledged drives the shared create->submit->acknowledge
+// prefix (pathcatalogue_paths.go's own "question-lifecycle-acknowledged")
+// the two refusal controls below continue from — the SAME three real acts
+// question-lifecycle-to-responded's own prefix performs, kept as their own
+// standalone driver so a chained refusal path never has to slice into
+// runPathQuestionToResponded's own steps (D4: a chained path replays its
+// precondition by calling THAT path's own driver function directly).
+func runPathQuestionAcknowledged(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-lifecycle-acknowledged")
+	ids := pathIDs{}
+	a, b := h.A, h.B
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "question", "question", ids)
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 2, fold.TAcknowledge, sub.ID, ids)
+	return ids
+}
+
+// runPathQuestionCloseBeforeRespondedRefused drives the paired NEGATIVE
+// control for `close`'s own table row: A (the asker) attempts `close` while
+// the question sits at `acknowledged`, never responded to — refused
+// illegal-transition (LFC-001), reached by COMPOSITION (real create/submit/
+// acknowledge acts through the real binary), not by seeding a raw prior.
+func runPathQuestionCloseBeforeRespondedRefused(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-close-before-responded-refused")
+	ids := runPathQuestionAcknowledged(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	driveRefusedSimpleVerb(ctx, t, h, a, path, 0, fold.TClose, ids["question"], ids)
+	return ids
+}
+
+// runPathQuestionRespondByAskerRefused drives the paired NEGATIVE control
+// for `respond`'s own Role: A (the asker, RoleOwner) attempts `respond` on
+// its OWN question while it sits at `acknowledged` (a state respond's table
+// row DOES admit) — refused unauthorized-actor (LFC-002), because Role
+// resolution is about the ACTOR here, not the state.
+func runPathQuestionRespondByAskerRefused(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-respond-by-the-asker-refused")
+	ids := runPathQuestionAcknowledged(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	driveRefusedRespond(ctx, t, h, a, path, 0, ids["question"], "answered", ids)
 	return ids
 }
 
@@ -813,6 +994,51 @@ func runPathContractDeprecateRetire(ctx context.Context, t *testing.T, h *harnes
 	return ids
 }
 
+// runPathContractRetireRefusedWithoutAck is the paired negative control for
+// runPathContractDeprecateRetire (W0's C1 decision: acks AND a passed
+// sunset are BOTH required) — same shape EXCEPT B never acknowledges the
+// deprecation announcement, so A's retire attempt must be REFUSED naming
+// POL-006 and the contract must still be `deprecated` afterwards.
+func runPathContractRetireRefusedWithoutAck(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "contract-retire-refused-without-ack")
+	ids := runPathContractSuccessor(ctx, t, h, runTag)
+	a, b := h.A, h.B
+	contractID := ids["contract"]
+
+	// B becomes a REGISTERED consumer BEFORE deprecate, same reasoning as
+	// runPathContractDeprecateRetire's own comment: a registered consumer
+	// who never acks is what makes the refusal POL-006 specifically —
+	// zero registered consumers would let retire proceed regardless of
+	// this control's own missing ack, proving nothing about the gate.
+	syncBoth(ctx, t, h)
+	if _, stderr, err := b.Run(ctx, "contract", "adopt", contractID); err != nil {
+		t.Fatalf("path %s: a2a contract adopt %s (%s): %v: %s", path.ID, contractID, b.System, err, strings.TrimSpace(stderr))
+	}
+	adoptPR, err := h.pullForBranch(ctx, space.BranchName(b.System, "contract-adopt", contractID))
+	if err != nil {
+		t.Fatalf("path %s: resolve contract-adopt PR for %s: %v", path.ID, contractID, err)
+	}
+	if err := happyLandAndSync(ctx, h, b, adoptPR.Number); err != nil {
+		t.Fatalf("path %s: land+sync contract-adopt PR #%d: %v", path.ID, adoptPR.Number, err)
+	}
+
+	syncBoth(ctx, t, h)
+	successor := contractID + "-successor@2.0.0"
+	// A past sunset, same as runPathContractDeprecateRetire — this control
+	// isolates the MISSING ACK as the refusal's cause, not an unpassed
+	// sunset.
+	const sunset = "2020-01-01"
+	driveDeprecateBundle(ctx, t, h, a, path, 0, 1, 2, contractID, ids["contract-version"], successor, sunset, "deprecation-notice", ids)
+
+	// B deliberately never acks the deprecation announcement — the ONE
+	// difference from runPathContractDeprecateRetire's own sequence, and
+	// the whole point of this control.
+	syncBoth(ctx, t, h)
+	driveRefusedContractRetire(ctx, t, h, a, path, 3, contractID, ids["contract-version"], ids)
+	return ids
+}
+
 // driverForPath maps a drivenPathIDs() entry to the function that drives it
 // STANDALONE (its own runTag == its own path id). A path missing here would
 // panic runConformancePaths rather than silently not run — deliberate: this
@@ -830,6 +1056,9 @@ func runPathContractDeprecateRetire(ctx context.Context, t *testing.T, h *harnes
 var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs{
 	"contract-baseline-published-settled":                      runPathContractBaseline,
 	"contract-successor-compatible-publish":                    runPathContractSuccessor,
+	"question-lifecycle-acknowledged":                          runPathQuestionAcknowledged,
+	"question-close-before-responded-refused":                  runPathQuestionCloseBeforeRespondedRefused,
+	"question-respond-by-the-asker-refused":                    runPathQuestionRespondByAskerRefused,
 	"question-lifecycle-to-responded":                          runPathQuestionToResponded,
 	"question-lifecycle-verified-closed":                       runPathQuestionVerifiedClosed,
 	"question-lifecycle-disputed-responder-owes":               runPathQuestionDisputed,
@@ -839,6 +1068,7 @@ var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harnes
 	"data-loop-attempt-two-passes":                             runPathDataLoopAttemptTwoPasses,
 	"data-loop-request-answered-closed":                        runPathDataLoopRequestClosed,
 	"contract-deprecate-retire-after-sunset":                   runPathContractDeprecateRetire,
+	"contract-retire-refused-without-ack":                      runPathContractRetireRefusedWithoutAck,
 }
 
 // runConformancePaths drives every drivenPathIDs() entry as its own t.Run

@@ -328,6 +328,105 @@ func TestConformancePathsUseOnlyDeclaredActors(t *testing.T) {
 	}
 }
 
+// TestRefusedStepDoesNotCountTowardCoverage pins consequences 2 AND 3 of a
+// refused Step (pathgrammar.go's own Step.Refused doc comment) together, in
+// a shape that actually EXERCISES the bug each guards against rather than
+// only checking the degenerate (refused-step-is-last) position:
+//
+//   - consequence 3 (no coverage credit): the refused TRetire contributes
+//     NO triple.
+//   - consequence 2 (state resolution inverts, the walk does not advance):
+//     a REAL TRetire follows the refused one, on the SAME Kind. If the
+//     refused step had wrongly advanced states[KindContract] to
+//     StateRetired, this second step would resolve From=StateRetired —
+//     which fold has no outgoing TRetire row for (Retired is terminal) —
+//     and PathTransitions would ERROR. Only a genuinely unadvanced walk
+//     (From=StateDeprecated, the state the refusal left in place) lets the
+//     second step resolve at all, so this shape fails loudly on a
+//     regression to either consequence instead of passing vacuously.
+func TestRefusedStepDoesNotCountTowardCoverage(t *testing.T) {
+	base := Path{
+		ID: "test-refused-coverage-base",
+		Steps: []Step{
+			{Actor: SystemA, Kind: fold.KindContract, Transition: fold.TCreate},
+			{Actor: SystemA, Kind: fold.KindContract, Transition: fold.TPublish},
+			{Actor: SystemA, Kind: fold.KindContract, Transition: fold.TDeprecate},
+		},
+	}
+	withRefusal := Path{
+		ID:           "test-refused-coverage-with-refusal",
+		Precondition: base.ID,
+		Steps: []Step{
+			{
+				// Refused — must contribute nothing and must not advance
+				// the walk.
+				Actor: SystemA, Kind: fold.KindContract, Transition: fold.TRetire,
+				Refused: &Refusal{Code: "POL-006"},
+			},
+			{
+				// Real — only resolves at all if the step above left
+				// Contract's state at StateDeprecated, unadvanced.
+				Actor: SystemA, Kind: fold.KindContract, Transition: fold.TRetire,
+			},
+		},
+	}
+
+	byID, err := pathsByID([]Path{base, withRefusal})
+	if err != nil {
+		t.Fatalf("pathsByID: %v", err)
+	}
+
+	baseTriples, err := PathTransitions(byID, base.ID)
+	if err != nil {
+		t.Fatalf("PathTransitions(base): %v", err)
+	}
+	refusedTriples, err := PathTransitions(byID, withRefusal.ID)
+	if err != nil {
+		t.Fatalf("PathTransitions(withRefusal): %v", err)
+	}
+
+	want := fold.TransitionKey{Kind: fold.KindContract, From: fold.StateDeprecated, Transition: fold.TRetire}
+	if len(refusedTriples) != 1 || refusedTriples[0] != want {
+		t.Fatalf("PathTransitions(withRefusal) = %v, want exactly [%v] — the refused step must contribute nothing and the real step following it must resolve from the UNADVANCED state", refusedTriples, want)
+	}
+
+	// The covered SET (unioned across paths, TestPathCatalogueCoversEveryTransition's
+	// own shape) gains only the real second step's own triple — never one
+	// for the refused first step.
+	withoutRefusalCovered := map[fold.TransitionKey]bool{}
+	for _, triple := range baseTriples {
+		withoutRefusalCovered[triple] = true
+	}
+	withRefusalCovered := map[fold.TransitionKey]bool{}
+	for _, triple := range baseTriples {
+		withRefusalCovered[triple] = true
+	}
+	for _, triple := range refusedTriples {
+		withRefusalCovered[triple] = true
+	}
+	if got, want := len(withRefusalCovered), len(withoutRefusalCovered)+1; got != want {
+		t.Fatalf("covered set grew by %d triple(s) after adding [refused, real] TRetire, want exactly 1 (the real step only)", got-len(withoutRefusalCovered))
+	}
+}
+
+// TestRefusedStepsDeclareANonEmptyCode pins the OTHER half of a wrong-code
+// refusal being a failure, not a pass: strings.Contains(combined, "") is
+// vacuously true for ANY non-zero exit (MUTATION PROOF (a), the brief's own
+// required proof for pathdriver_live.go's driveRefusedContractRetire) — so a
+// declared Step.Refused with an empty Code would disable the check without
+// touching the driver at all. Same shape as TestUncoveredTransitionsNamesOnlyRealTriples's
+// own empty-reason guard and TestPathDrivabilityCoversEveryPath's own
+// empty-Reason guard.
+func TestRefusedStepsDeclareANonEmptyCode(t *testing.T) {
+	for _, p := range ConformancePaths() {
+		for i, step := range p.Steps {
+			if step.Refused != nil && step.Refused.Code == "" {
+				t.Errorf("path %q step %d: Refused.Code is empty — a refusal must name the exact expected code", p.ID, i)
+			}
+		}
+	}
+}
+
 func joinLines(lines []string) string {
 	out := ""
 	for i, l := range lines {
