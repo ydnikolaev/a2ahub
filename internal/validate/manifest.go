@@ -65,7 +65,7 @@ func (e *Engine) ValidateManifest(raw []byte) (Result, error) {
 				Code:     "POL-005",
 				Class:    ClassPolicy,
 				Path:     "schema",
-				Message:  "space.yaml schema version is outside the one-cycle overlap window this binary understands",
+				Message:  unreadableOrUnacceptedSchemaMessage("space.yaml", "space", probe.Schema),
 				CCRef:    "CC-005",
 				Severity: SeverityReject,
 			}}), nil

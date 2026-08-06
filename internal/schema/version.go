@@ -101,3 +101,37 @@ func AcceptsConsumesVersion(v int) bool {
 func CurrentConsumesSchema() string {
 	return "consumes/v" + strconv.Itoa(currentConsumesVersion)
 }
+
+// AcceptedVersions renders the authoring-overlap window for one family as the
+// `schema:` values an author may actually write — e.g. "space/v1", or
+// "envelope/v1 or envelope/v2".
+//
+// It exists so a refusal can NAME the accepted value instead of describing the
+// window abstractly. "schema version is outside the one-cycle overlap window
+// this binary understands" told an operator neither what is accepted nor what
+// to do, and those three strings had zero hits in the shipped manual — a
+// precondition with no reachable means of satisfaction, which is the exact
+// defect class fb-20260806-3539ac was filed for.
+//
+// Rendered from the SAME acceptedWindow the Accepts* predicates use, so the
+// message can never claim a window the checks do not enforce.
+func AcceptedVersions(family string) string {
+	var current int
+	switch family {
+	case "envelope":
+		current = currentEnvelopeVersion
+	case "event":
+		current = currentEventVersion
+	case "space":
+		current = currentManifestVersion
+	case "consumes":
+		current = currentConsumesVersion
+	default:
+		return ""
+	}
+	min, max := acceptedWindow(current)
+	if min == max {
+		return family + "/v" + strconv.Itoa(max)
+	}
+	return family + "/v" + strconv.Itoa(min) + " or " + family + "/v" + strconv.Itoa(max)
+}
