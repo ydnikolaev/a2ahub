@@ -625,7 +625,43 @@ func (s *ContractPublicationService) Preflight(ctx context.Context, request Cont
 	if err != nil {
 		return ContractPublicationResult{}, err
 	}
+	if err := refuseAutoBumpBelowFloor(plan, request); err != nil {
+		return ContractPublicationResult{}, err
+	}
 	return ContractPublicationResult{Status: ContractPublicationPlanned, Plan: plan}, nil
+}
+
+// refuseAutoBumpBelowFloor is the explicit-version rule, in ONE place so
+// Preflight and Publish cannot answer it differently.
+//
+// It used to live only inside Publish's body. Preflight therefore printed
+// `Status: Planned` with a target version and plan digest for a `--bump`
+// selector that Publish then refused outright, before any network call — on a
+// space whose floor is below ContractPublicationFloor. That is the same defect
+// shape as `a2a template show` printing a template `a2a contract publish`
+// rejects: the verb whose whole stated purpose is "preview the exact immutable
+// publication plan" previewed one that could not be executed.
+//
+// It belongs beside the plan rather than inside it because it is not a property
+// of the plan — the plan is valid — but of how the TARGET VERSION was chosen.
+// Below the floor there is no published history to bump from safely, so the
+// operator has to name the version. It is a pure function of two values both
+// paths already read identically, so nothing about Preflight's deliberately
+// narrower scope (no main refresh, no remote probe) excuses skipping it.
+// An UNCOMPARABLE floor is deliberately not this rule's finding: it yields
+// belowFloor=false and this rule abstains. A non-canonical authoring floor is
+// already refused upstream by the planner's own input validation
+// (contract.validatePublicationInput's "authoring_floor" issue), so both paths
+// error out of s.plan() before ever reaching here — and a second opinion here
+// could only duplicate that refusal or, worse, refuse for a different reason.
+// This is exactly the discard the pre-existing Publish code made, preserved
+// rather than quietly changed while the rule was being moved.
+func refuseAutoBumpBelowFloor(plan contract.PublicationPlan, request ContractPublicationRequest) error {
+	belowFloor, _ := version.OlderThan(plan.AuthoringFloor, contract.ContractPublicationFloor)
+	if belowFloor && !strings.HasPrefix(request.Selector, "explicit:") {
+		return ErrContractPublicationExplicitVersion
+	}
+	return nil
 }
 
 // Publish performs completion/recovery probes before reading mutable planning
@@ -726,9 +762,8 @@ func (s *ContractPublicationService) Publish(ctx context.Context, request Contra
 	if len(plan.Violations) != 0 {
 		return ContractPublicationResult{Plan: plan}, &ContractPublicationViolationError{Violations: plan.Violations}
 	}
-	belowFloor, _ := version.OlderThan(plan.AuthoringFloor, contract.ContractPublicationFloor)
-	if belowFloor && !strings.HasPrefix(request.Selector, "explicit:") {
-		return ContractPublicationResult{}, ErrContractPublicationExplicitVersion
+	if err := refuseAutoBumpBelowFloor(plan, request); err != nil {
+		return ContractPublicationResult{}, err
 	}
 	if request.ExpectPlan != "" && request.ExpectPlan != plan.PlanDigest {
 		return ContractPublicationResult{}, ErrContractPublicationPlanChanged

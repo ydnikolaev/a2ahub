@@ -1040,3 +1040,68 @@ func TestContractPublicationPlanningErrorNamesEveryIssue(t *testing.T) {
 		t.Fatalf("planner refusal lost its classification: %v", err)
 	}
 }
+
+// TestContractPublicationPreflightAndPublishAgreeOnTheExplicitVersionRule is
+// the parity test the pair never had.
+//
+// The explicit-version rule lived only in Publish's body, so on a space below
+// ContractPublicationFloor `a2a contract preflight <id> --bump major` returned
+// Status: Planned with a target version and a plan digest, and
+// `a2a contract publish` with the identical arguments refused immediately.
+// A verb whose stated purpose is "preview the exact immutable publication plan"
+// previewed one that could not be executed — the same shape as the template
+// defect this release exists for, one layer over.
+//
+// It asserts AGREEMENT rather than each half separately, because each half was
+// individually defensible and it was only their disagreement that was wrong.
+func TestContractPublicationPreflightAndPublishAgreeOnTheExplicitVersionRule(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		floor      string
+		selector   string
+		wantRefuse bool
+	}{
+		{name: "below floor, auto bump — both must refuse", floor: "0.18.0", selector: "auto:major", wantRefuse: true},
+		{name: "below floor, explicit version — both must proceed", floor: "0.18.0", selector: "explicit:1.0.0"},
+		{name: "at the floor, auto bump — both must proceed", floor: "0.19.0", selector: "auto:major"},
+	}
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			newService := func() *ContractPublicationService {
+				main := &publicationMainFake{
+					commit: strings.Repeat("a", 40),
+					lookup: ContractPublicationIntentLookup{Matches: []ContractPublicationCompletion{}, Exhaustive: true},
+				}
+				remote := &publicationRemoteFake{listing: ContractPublicationHeadListing{Heads: []ContractPublicationHeadProof{}, Exhaustive: true}}
+				planning := &publicationPlanningFake{context: publicationPlanningContext(strings.Repeat("a", 40), test.floor)}
+				return mustPublicationService(t, main, planning, remote, &publicationEventBuilder{},
+					NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0"))
+			}
+			request := func() ContractPublicationRequest {
+				reader, source := publicationLegacyCandidate(nil)
+				return ContractPublicationRequest{
+					System: "atlas", ContractID: "XC-atlas-demo", Selector: test.selector,
+					Candidate: reader, CandidateSource: source,
+				}
+			}
+
+			_, preflightErr := newService().Preflight(t.Context(), request())
+			_, publishErr := newService().Publish(t.Context(), request())
+
+			preflightRefused := errors.Is(preflightErr, ErrContractPublicationExplicitVersion)
+			publishRefused := errors.Is(publishErr, ErrContractPublicationExplicitVersion)
+			if preflightRefused != publishRefused {
+				t.Fatalf("preflight and publish disagree: preflight refused=%v (%v), publish refused=%v (%v)",
+					preflightRefused, preflightErr, publishRefused, publishErr)
+			}
+			if preflightRefused != test.wantRefuse {
+				t.Fatalf("refused=%v, want %v (preflight=%v publish=%v)", preflightRefused, test.wantRefuse, preflightErr, publishErr)
+			}
+		})
+	}
+}
