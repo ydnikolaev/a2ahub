@@ -34,11 +34,23 @@ and falls back to the declared `created` timestamps, rather than pretending the
 guarantee still holds.
 
 **"Whose move is it" is computed, not remembered.** Alongside the transcript,
-a thread reports its OPEN ITEMS: for each artifact that is not in a terminal
-state, which transitions are legal from here and which system may make them.
-That comes from the same lifecycle engine the write verbs enforce, so the view
-can never offer a move the tool would then refuse — and neither side has to
-keep a private to-do list that drifts from the record.
+a thread reports its OPEN ITEMS: every artifact on which the protocol is
+waiting for some system to act, naming that system and the act it owes.
+
+Read that definition precisely, because the distinction it draws is the one
+that makes the view useful. An artifact can be **live** — still existing, still
+able to move — without anything being *pending* on anyone. A published contract
+is the standing case: it is alive for as long as it is published, its owner may
+always publish a successor or deprecate it, and none of that is a move anyone
+is waiting for. Open items are the second thing, never the first. A settled
+exchange and a healthy contract both drop off the list, and neither has
+disappeared: the transcript keeps every artifact and every event forever, and
+`a2a thread <id>` still shows the moves that remain legal — just not as
+something owed.
+
+The computation comes from the same lifecycle engine the write verbs enforce,
+so the view can never name a move the tool would then refuse — and neither side
+has to keep a private to-do list that drifts from the record.
 
 **A cold start costs nothing.** An agent that has never seen this work before
 reads one command and has the same picture as the agent that has been on it for
@@ -60,8 +72,8 @@ open: XW-axon-20260721-abcd  work_request  responded
 That reads: the exchange has been responded to, and the only two moves left
 belong to `axon`, who asked. If your own system is not named in any `by`, the
 thread is waiting on the other side and there is nothing for you to do but
-watch it — which `a2a inbox --actionable` will also tell you, from the same
-computation.
+watch it — which `a2a inbox --actionable` will also tell you, because that
+listing is this same computation projected onto your own system's inbox.
 
 ## Where it shows up
 
