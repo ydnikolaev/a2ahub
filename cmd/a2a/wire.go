@@ -18,6 +18,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/feedback"
+	"github.com/ydnikolaev/a2ahub/internal/ghauth"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/notification"
@@ -1262,8 +1263,20 @@ const canonicalFeedbackRepo = "https://github.com/ydnikolaev/a2ahub"
 
 // resolveFeedbackCredential keeps feedback on the canonical credential seam:
 // its explicit override wins, then the machine-local `credentials.feedback`
-// reference, then the two compatibility env names used by earlier releases.
-// All values are resolved transiently by space.ResolveCredential.
+// reference, then the two compatibility env names used by earlier releases,
+// and finally the GitHub CLI login the machine already has.
+//
+// That last step is not a convenience. `a2a init` seeds a SPACE's credential
+// as `cmd:gh auth token` whenever a gh login is available, so on a machine
+// with working `gh` every space write authenticates itself and only feedback
+// refused — reported on 2026-08-06 as "the token for the feedback repository
+// is not configured in the machine config", with the operator hand-exporting
+// `A2A_FEEDBACK_TOKEN="$(gh auth token)"` to submit at all. Feedback targets a
+// fixed public repo and has no `a2a init` of its own to seed the reference
+// during, so the seam that spaces get at init time has to be applied here at
+// resolve time instead. internal/ghauth is the same probe that seam uses; a
+// missing or logged-out gh stays an ordinary "no token" and falls through to
+// the joined refusal below.
 func resolveFeedbackCredential(ctx context.Context, machine space.MachineConfig) (host.Credential, error) {
 	var configured space.CredentialReference
 	if raw, ok := machine.Credentials["feedback"]; ok {
@@ -1281,8 +1294,18 @@ func resolveFeedbackCredential(ctx context.Context, machine space.MachineConfig)
 	if fallbackErr == nil {
 		return credential, nil
 	}
+	if token, ok := feedbackGHLoginToken(ctx); ok {
+		return host.Credential{Token: token}, nil
+	}
 	return host.Credential{}, errors.Join(configuredErr, fallbackErr)
 }
+
+// feedbackGHLoginToken is the gh-login seam, a var so a test can state which
+// machine it is describing. Without it this resolver's refusal path is
+// untestable anywhere `gh` happens to be logged in — which is every developer
+// machine and no CI runner, the exact split that lets a test pass in CI and
+// fail on the desk of the person who has to fix it.
+var feedbackGHLoginToken = ghauth.Token
 
 // runFeedback wires `a2a feedback <new|validate|submit|status|triage>`. Unlike
 // submit it targets a FIXED product repo (canonicalFeedbackRepo, or the

@@ -279,7 +279,7 @@ func (s *Submitter) validateRaw(raw []byte) error {
 	}
 	if githubRemote(s.cfg.RemoteURL) && s.cfg.Credential.Token == "" {
 		return fmt.Errorf(
-			"feedback: Submit: GitHub credential is required before any write; set A2A_FEEDBACK_TOKEN (or GITHUB_TOKEN / GH_TOKEN)",
+			"feedback: Submit: GitHub credential is required before any write; log in with `gh auth login`, or set A2A_FEEDBACK_TOKEN (or GITHUB_TOKEN / GH_TOKEN)",
 		)
 	}
 	return nil
