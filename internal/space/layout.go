@@ -68,15 +68,52 @@ func (l Layout) ProvidesFixturesInvalidDir(slug string) string {
 	return path.Join(l.System, "provides", slug, "fixtures", "invalid")
 }
 
+// ProvidesArtifactsDir returns <system>/provides/<slug>/artifacts/ — the ONLY
+// legal home contract-set-v2 gives a companion role (errors, vocabulary,
+// limits, changelog, example, other), enforced by the envelope schema's
+// role-conditional path pattern.
+//
+// It was missing entirely, and its absence was the second half of
+// fb-20260806-c6ad38: with no forward constructor, the sidecar collector that
+// `a2a submit` uses to carry a staged contract's files into the space had no
+// artifacts/ arm either, so a declared companion never travelled at all. The
+// reverse mapping (ContractForPath) and the forward constructors are kept in
+// one file precisely so a directory cannot be legal in one direction and
+// unknown in the other — this is the constructor that makes that true again.
+func (l Layout) ProvidesArtifactsDir(slug string) string {
+	return path.Join(l.System, "provides", slug, "artifacts")
+}
+
 // ContractForPath recognises the §4.2 path family owned by one contract:
 //
 //	<system>/provides/<slug>/contract.md
 //	<system>/provides/<slug>/schema/**
 //	<system>/provides/<slug>/fixtures/{valid,invalid}/**
+//	<system>/provides/<slug>/artifacts/**
 //
 // It returns the standing contract ID and descriptor path. Keeping this reverse
 // mapping beside Layout's forward constructors prevents CLI, MCP and CI from
 // growing different definitions of "contract baseline file".
+//
+// # Why artifacts/ is here, and what its absence cost
+//
+// contract-set-v2 requires every COMPANION role — errors, vocabulary, limits,
+// changelog, example, other — to live under artifacts/, and the envelope schema
+// enforces that with a role-conditional path pattern, so a companion has no
+// other legal location. This function did not know the directory existed.
+//
+// Everything downstream followed from that one gap: IsContractBaselinePath
+// returned false for every artifacts/** path, so the submit validator's
+// file-dispatch treated each companion as an ENVELOPE DRAFT and ran
+// artifact.ParseFrontmatter over it — which a JSON companion cannot satisfy.
+// `a2a contract publish` died in PrepareSubmission with "missing or malformed
+// frontmatter delimiters", naming the companion. `a2a validate` and
+// `a2a contract preflight` both passed, so the whole companion half of
+// contract-set-v2 was unpublishable and only the irreversible verb said so.
+//
+// Reported as fb-20260806-c6ad38 from a real first publication. Two surfaces of
+// one rule disagreed: the descriptor grammar mandated a directory the path
+// layout was never widened to admit.
 func ContractForPath(p string) (id, descriptorPath string, ok bool) {
 	parts := strings.Split(p, "/")
 	for _, part := range parts {
@@ -103,6 +140,7 @@ func ContractForPath(p string) (id, descriptorPath string, ok bool) {
 	case p == descriptorPath:
 	case len(parts) >= 5 && parts[3] == "schema":
 	case len(parts) >= 6 && parts[3] == "fixtures" && (parts[4] == "valid" || parts[4] == "invalid"):
+	case len(parts) >= 5 && parts[3] == "artifacts":
 	default:
 		return "", "", false
 	}

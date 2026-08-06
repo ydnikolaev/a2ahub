@@ -371,3 +371,51 @@ func TestFreshContractDeclaresExactlyWhatItScaffolds(t *testing.T) {
 		t.Fatal("the fresh descriptor declared nothing — this test would be guarding nothing")
 	}
 }
+
+// TestContractSidecarsCarryTheCompanionRoot: a declared companion must actually
+// travel. contract-set-v2 gives companion roles exactly one legal directory,
+// and for a while the collector `a2a submit` uses did not list it — so a
+// descriptor could name a file the space never received, and publish died on
+// it later (fb-20260806-c6ad38).
+func TestContractSidecarsCarryTheCompanionRoot(t *testing.T) {
+	t.Parallel()
+
+	const slug = "widget"
+	staging := t.TempDir()
+	dir := filepath.Join(staging, "axon", "provides", slug)
+	for rel, body := range map[string]string{
+		filepath.Join("schema", slug+".schema.json"):    `{"type":"object"}`,
+		filepath.Join("fixtures", "valid", "ok.json"):   `{}`,
+		filepath.Join("fixtures", "invalid", "no.json"): `null`,
+		filepath.Join("artifacts", "errors.yaml"):       "codes: []\n",
+		filepath.Join("artifacts", "nested", "cl.md"):   "# changelog\n",
+	} {
+		full := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	carried, err := ContractSidecarsFromStaging(staging, "axon", slug)
+	if err != nil {
+		t.Fatalf("ContractSidecarsFromStaging: %v", err)
+	}
+	got := map[string]bool{}
+	for _, w := range carried {
+		got[w.Path] = true
+	}
+	for _, want := range []string{
+		"axon/provides/widget/schema/widget.schema.json",
+		"axon/provides/widget/fixtures/valid/ok.json",
+		"axon/provides/widget/fixtures/invalid/no.json",
+		"axon/provides/widget/artifacts/errors.yaml",
+		"axon/provides/widget/artifacts/nested/cl.md",
+	} {
+		if !got[want] {
+			t.Errorf("staged sidecar %q was not carried; got %v", want, carried)
+		}
+	}
+}

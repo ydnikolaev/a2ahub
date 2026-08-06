@@ -62,7 +62,23 @@ func TestContractForPathOwnsDescriptorAndBaselineShape(t *testing.T) {
 		{path: "axon/provides/widget/schema/common/types.schema.json", ok: true, isBaseline: true},
 		{path: "axon/provides/widget/fixtures/valid/ok.json", ok: true, isBaseline: true},
 		{path: "axon/provides/widget/fixtures/invalid/bad.json", ok: true, isBaseline: true},
+		// contract-set-v2's companion root. The envelope schema gives every
+		// companion role (errors, vocabulary, limits, changelog, example, other)
+		// exactly this directory and no other legal location, so a layout that
+		// does not admit it makes the whole companion half of the profile
+		// unpublishable — the submit validator parses the companion as an
+		// envelope draft and `contract publish` dies on frontmatter delimiters,
+		// after `validate` and `preflight` have both passed (fb-20260806-c6ad38).
+		{path: "axon/provides/widget/artifacts/errors.yaml", ok: true, isBaseline: true},
+		{path: "axon/provides/widget/artifacts/fixture-manifest.json", ok: true, isBaseline: true},
+		{path: "axon/provides/widget/artifacts/nested/changelog.md", ok: true, isBaseline: true},
+		{path: "axon/provides/widget/artifacts"},
 		{path: "axon/provides/widget/fixtures/other/no.json"},
+		// fixtures/<file> — one level up from valid/invalid — stays OUT. A
+		// fixture-suite manifest at fixtures/manifest.json has no declarable
+		// role, so admitting the path here would let a file into the baseline
+		// that the descriptor grammar can never name (fb-20260806-2af06c).
+		{path: "axon/provides/widget/fixtures/manifest.json"},
 		{path: "axon/provides/widget/schema"},
 		{path: "axon/provides/widget/fixtures/valid"},
 		{path: "axon/provides/Bad/schema/x.json"},

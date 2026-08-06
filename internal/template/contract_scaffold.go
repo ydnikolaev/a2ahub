@@ -194,6 +194,10 @@ func contractSidecarDirs(layout space.Layout, slug string) []string {
 		layout.ProvidesSchemaDir(slug),
 		layout.ProvidesFixturesValidDir(slug),
 		layout.ProvidesFixturesInvalidDir(slug),
+		// contract-set-v2's companion root. Absent here, a declared companion
+		// was staged, declared, and then simply not carried by `a2a submit` —
+		// the descriptor named a file the space never received.
+		layout.ProvidesArtifactsDir(slug),
 	}
 }
 
