@@ -11,7 +11,7 @@
     "build:dashboard": "node scripts/build-local-dashboard.mjs",
     "sync:preview-tokens": "node scripts/sync-preview-tokens.mjs",
     "sync:home-copy": "node scripts/sync-home-copy.mjs",
-    "check": "npm run check:unit && npm run build && node scripts/check-dist.mjs",
+    "check": "npm run prebuild && npm run check:unit && npm run build && node scripts/check-dist.mjs",
     "check:unit": "node --test --experimental-strip-types tests/*.test.mjs",
     "check:a11y": "playwright test",
     "check:lighthouse": "node scripts/audit-lighthouse.mjs",
