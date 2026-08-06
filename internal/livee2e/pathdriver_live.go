@@ -820,16 +820,13 @@ func runPathContractDeprecateRetire(ctx context.Context, t *testing.T, h *harnes
 // (untagged) only proves the ID LIST is complete, not that this map is;
 // the panic is this file's own half of that guarantee.
 // driverForPath deliberately keeps an entry for every path this file
-// implements a driver for, INCLUDING the four pathdrivability.go currently
-// lists as undrivable (the four data-loop paths) — their gap is a
-// declared-predicate defect in pathcatalogue_paths.go's own dataLoopPaths()
-// (outside this brief's edit scope), not a driver defect: the CLI sequence
-// these functions drive is correct, only the ExpectedTransition assertion
-// they check is wrong today. A fix to that file needs only to move the id
-// from undrivablePaths() to drivenPathIDs(), no driver rewrite —
-// work-request-lifecycle-accept-start-respond-verify-close already made
-// exactly that move once its own copy of the same declaration defect was
-// fixed.
+// implements a driver for, whether or not pathdrivability.go currently
+// drives it. undrivablePaths() is empty today — the declaration defect that
+// briefly parked five paths there (every non-question (Kind,TSubmit) step
+// declared the transition owed AFTER acknowledge instead of acknowledge
+// itself, contradicting both the pendency table and the real
+// `a2a thread --json`) has been fixed. Keeping the map total means parking a
+// path again is a one-line move of its id, never a driver rewrite.
 var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs{
 	"contract-baseline-published-settled":                      runPathContractBaseline,
 	"contract-successor-compatible-publish":                    runPathContractSuccessor,
