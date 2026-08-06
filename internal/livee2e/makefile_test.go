@@ -269,7 +269,17 @@ func TestLiveTierIsNotAMergeGate(t *testing.T) {
 	if callSites := regexp.MustCompile(`\brun_live_tests\b`).FindAllString(strings.Join(codeOnly, "\n"), -1); len(callSites) != 2 {
 		t.Errorf("run_live_tests is referenced %d times in verify.sh's CODE (want exactly 2: its own definition plus one call site) — an extra reference is a second path to the live matrix's unfiltered invocation", len(callSites))
 	}
-	if !strings.Contains(verifyText, "if [ \"$MODE\" = live ]; then\n  run_phase live-e2e run_live_tests\n") {
+	// Asked of the comment-STRIPPED text, for the same reason the call-site
+	// count above is: P12's lane grammar puts a phase's `# lane-inputs:`
+	// declaration directly above the `run_phase` line it describes, which
+	// lands it between this `if` and this call. A comment there is not a
+	// second path to the live matrix — the property being guarded is that
+	// the sole call site sits inside the `live` branch, and that is exactly
+	// as true with an explanation above it. Matching raw text made the guard
+	// answer a question about formatting instead, and the fix for that is to
+	// ask the real question, never to drop the check.
+	codeOnlyText := strings.Join(codeOnly, "\n") + "\n"
+	if !strings.Contains(codeOnlyText, "if [ \"$MODE\" = live ]; then\n  run_phase live-e2e run_live_tests\n") {
 		t.Error("run_live_tests's one call site is not inside `if [ \"$MODE\" = live ]; then` — a rewritten guard that still calls it from elsewhere would defeat this test's purpose while every check above kept passing")
 	}
 
