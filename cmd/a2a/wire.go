@@ -18,7 +18,6 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/feedback"
-	"github.com/ydnikolaev/a2ahub/internal/ghauth"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 	"github.com/ydnikolaev/a2ahub/internal/notification"
@@ -1290,22 +1289,12 @@ func resolveFeedbackCredential(ctx context.Context, machine space.MachineConfig)
 	if configuredErr == nil {
 		return credential, nil
 	}
-	credential, fallbackErr := space.ResolveCredential(ctx, "GITHUB_TOKEN", space.CredentialReference{Kind: "env", Env: "GH_TOKEN"})
+	credential, fallbackErr := space.ResolveWriteCredential(ctx, "GITHUB_TOKEN", space.CredentialReference{Kind: "env", Env: "GH_TOKEN"})
 	if fallbackErr == nil {
 		return credential, nil
 	}
-	if token, ok := feedbackGHLoginToken(ctx); ok {
-		return host.Credential{Token: token}, nil
-	}
 	return host.Credential{}, errors.Join(configuredErr, fallbackErr)
 }
-
-// feedbackGHLoginToken is the gh-login seam, a var so a test can state which
-// machine it is describing. Without it this resolver's refusal path is
-// untestable anywhere `gh` happens to be logged in — which is every developer
-// machine and no CI runner, the exact split that lets a test pass in CI and
-// fail on the desk of the person who has to fix it.
-var feedbackGHLoginToken = ghauth.Token
 
 // runFeedback wires `a2a feedback <new|validate|submit|status|triage>`. Unlike
 // submit it targets a FIXED product repo (canonicalFeedbackRepo, or the
@@ -1535,9 +1524,10 @@ func loadManifest(mirrorDir string) (space.Manifest, error) {
 }
 
 // resolveCredential resolves the write credential for spaceID, honouring
-// space.ResolveCredential's FULL precedence: the explicit
+// space.ResolveWriteCredential's FULL precedence: the explicit
 // A2A_TOKEN_<SPACE_ID> override first, the machine-config reference
-// second, an actionable error naming both last. A missing (or unparseable)
+// second, the machine's own GitHub CLI login third, an actionable error
+// naming what was checked last. A missing (or unparseable)
 // machine-config entry is deliberately NOT an early return: exporting the
 // documented env var must be sufficient on its own, or the two halves of
 // the documented contract ("export this var" / "configure a reference")
@@ -1552,7 +1542,7 @@ func resolveCredential(ctx context.Context, spaceID string, machine space.Machin
 		}
 		ref = parsed
 	}
-	return space.ResolveCredential(ctx, space.CredentialEnvVar(spaceID), ref)
+	return space.ResolveWriteCredential(ctx, space.CredentialEnvVar(spaceID), ref)
 }
 
 // readCredential is resolveCredential for a MIRROR REFRESH: same precedence,

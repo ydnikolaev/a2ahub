@@ -110,6 +110,45 @@ func ResolveCredential(ctx context.Context, explicitEnvVar string, ref Credentia
 	}
 }
 
+// ResolveWriteCredential is ResolveCredential plus one final step: the GitHub
+// CLI login the machine already has.
+//
+// # Why this exists as a second function rather than a change to the first
+//
+// `a2a connect` seeds a space's credential reference as `cmd:gh auth token`
+// whenever a gh login is available (DefaultCredentialReference above), so on a
+// machine with working gh, a space connected TODAY writes fine. A space
+// connected BEFORE gh was set up — or one whose machine config was
+// hand-authored or copied between machines — carries a plain
+// `env:A2A_TOKEN_<ID>` reference instead, and refuses forever on a machine that
+// is perfectly well authenticated. The seed happens once, at connect time; the
+// resolve happens on every write, and only the resolve knows what the machine
+// looks like now.
+//
+// Found on 2026-08-06, immediately after the identical gap was closed for
+// `a2a feedback submit`: feedback started falling through to the gh login while
+// every REAL space write on the same machine still refused. Fixing the smaller
+// surface and leaving the larger one is worse than fixing neither, because it
+// makes the remaining refusal look like a space-specific problem.
+//
+// It is a separate function, and ResolveCredential is deliberately left as the
+// exact-named-sources primitive, because a caller that composes several
+// resolves needs the gh step to happen ONCE, at the end — folding it into the
+// primitive would let it win over a later, more specific source that the caller
+// had ordered ahead of it.
+//
+// ResolveWriteCredential is part of the public package API.
+func ResolveWriteCredential(ctx context.Context, explicitEnvVar string, ref CredentialReference) (host.Credential, error) {
+	credential, err := ResolveCredential(ctx, explicitEnvVar, ref)
+	if err == nil {
+		return credential, nil
+	}
+	if token, ok := ghauth.Token(ctx); ok {
+		return host.Credential{Token: token}, nil
+	}
+	return host.Credential{}, err
+}
+
 // describeChecked names exactly what ResolveCredential checked, for the
 // actionable-error requirement (Open Q1 RESOLVED: "an actionable error
 // naming exactly which credential is missing and which of (a)/(b) was
