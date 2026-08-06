@@ -1,0 +1,121 @@
+schema: release-notes/v1
+version: "0.19.6"
+released: "2026-08-06"
+headline: "A first contract can be published again: the template you are shown is the one publication accepts"
+changes:
+  - id: RN-01906-0
+    kind: fix
+    impact: high
+    subject: "`a2a template show contract` printed a shape `a2a contract publish` refuses"
+    detail: >
+      Publishing a first contract into a space running 0.19.x had no working
+      path at all, and every gate before the irreversible step said it did.
+      `a2a template show contract` returned the older envelope/v1 template,
+      while `a2a new contract` had moved to envelope/v2 — which carries a
+      top-level `artifacts:` block naming every schema and fixture the contract
+      publishes. An author who followed the SHOWN template wrote a descriptor
+      without that block. It validated clean, submitted, passed the space's own
+      CI, and auto-merged to main. Only then did `a2a contract preflight`
+      refuse it, permanently, with a message naming a requirement that appeared
+      in no shipped document and that no flag produced. The contract was in the
+      space's history and could not be published.
+      `template show` now prints the generation fresh authoring actually
+      renders, and `template list` names that generation per type, so a
+      json-schema contract — the format the template itself defaults to — is
+      inspected in the shape it will be written and published in.
+      `--envelope-schema envelope/v1` still prints the older template
+      deliberately, for a space that has not raised its floor.
+      The scope is stated because it is not total: an openapi or proto3
+      contract is still authored at envelope/v1, since the declared carried set
+      requires a schema and fixtures those formats cannot supply. Those formats
+      therefore have NO publishable shape in a space at floor 0.19.0 or above,
+      which is now said out loud by the refusal rather than discovered — the
+      open gap is tracked as fb-20260802-e6d436.
+      The gate that was supposed to catch this drift existed and was looking in
+      the wrong place: it compared the shipped authoring pages against a fixed
+      templates directory rather than against the binary, so it stayed green
+      while the pages documented a shape the tool no longer wrote. It now asks
+      `a2a template show`, which is the only comparand that cannot fall behind
+      the product.
+      Reported through `a2a feedback` as fb-20260806-3539ac, from a real first
+      publication.
+    affects: ["a2a template show", "a2a template list", "a2a new contract", "a2a contract publish"]
+    action:
+      scope: none
+      why: >
+        Nothing to do for an existing contract that already publishes. If you
+        have a contract stuck at preflight, see the next entry.
+  - id: RN-01906-1
+    kind: fix
+    impact: high
+    subject: "A contract that cannot be published is now refused at the pull request, not after the merge"
+    detail: >
+      A space's `min_binary_version` decides how a contract publishes: at 0.19.0
+      or above the descriptor must be `schema: envelope/v2` and declare every
+      carried file under `artifacts:`; below it, the older fixed
+      `schema/** + fixtures/**` tree is what travels and no `artifacts:` block
+      is allowed. Nothing checked the descriptor against its own space's floor
+      until publication, which is after the merge — so the one mismatch that can
+      never be recovered by retrying was also the one nothing warned about.
+      `a2a validate --ci` now refuses that mismatch on the pull request, in both
+      directions, naming the profile the floor selects and the exact correction.
+      A space still below the floor is unaffected: its existing contracts keep
+      publishing the tree they always did.
+      The publication refusal itself also changed. It used to name an internal
+      mode and stop; it now states which floor the space is on, which profile
+      that selects, what the descriptor must carry, and the command that
+      corrects a descriptor that has already merged.
+    affects: ["a2a validate --ci", "a2a contract preflight", "a2a contract publish", "space CI"]
+    action:
+      scope: space
+      why: >
+        If a contract is already merged and refused at preflight, correct the
+        descriptor in your own staged candidate
+        (`.a2a/staging/<system>/provides/<slug>/contract.md`) and pass that
+        directory: `a2a contract preflight <XC-id> --version <v> --staging
+        <dir>`. The staged descriptor overlays the landed one, so no second
+        submit is needed. This was verified against a real stuck contract as
+        far as preflight, which is the step that was refusing: preflight now
+        produces the publication plan. The publish that follows it was read
+        from the code path, not run against a live space in this release.
+        `reference/contract-versions.md` carries the full procedure.
+  - id: RN-01906-2
+    kind: fix
+    impact: normal
+    subject: "`a2a feedback submit` uses the GitHub CLI login every other command already uses"
+    detail: >
+      `a2a init` seeds a space's credential as `cmd:gh auth token` whenever a
+      `gh` login is available, so on a machine with working `gh` every space
+      write authenticates itself. Feedback was the one surface that did not:
+      it required `A2A_FEEDBACK_TOKEN`, `GITHUB_TOKEN` or `GH_TOKEN` and refused
+      otherwise, so filing a report meant exporting a token by hand on a machine
+      that was already logged in. Feedback has no `a2a init` of its own to seed
+      the reference during, so the login is now consulted at resolve time
+      instead, after the environment names and before refusing. An explicit
+      token still wins.
+    affects: ["a2a feedback submit"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. `gh auth login` is now enough to file feedback; existing
+        token environment variables keep working and keep precedence.
+  - id: RN-01906-3
+    kind: fix
+    impact: low
+    subject: "The shipped contract authoring page documents the contract the tool writes"
+    detail: >
+      `skill/a2ahub/reference/authoring/contract.md` still carried the
+      envelope/v1 shape, including `version: 1.0.0` — which
+      `reference/contract-versions.md` itself says publish refuses. It is now
+      the descriptor `a2a new contract` renders, and the same reference gained
+      the section that was missing entirely: what the `artifacts:` inventory is,
+      which roles are required, which profile a space's floor selects, and how
+      to correct a descriptor that already merged. The strings this release's
+      refusals use appeared in zero lines of the shipped manual before it.
+    affects: ["skill manual", "a2ahub.dev docs"]
+    action:
+      scope: local
+      why: >
+        Re-run `a2a skill install` (or `a2a skill link`) so the installed manual
+        carries the corrected contract page and the new authoring section.
+      run: ["a2a skill install"]
