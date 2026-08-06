@@ -1,0 +1,33 @@
+schema: release-notes/v1
+version: "0.19.4"
+released: "2026-08-06"
+headline: "The website publishes again"
+changes:
+  - id: RN-01904-0
+    kind: fix
+    impact: normal
+    subject: "a2ahub.dev shows the current release again after five days on an old one"
+    detail: >
+      The public site had been serving the 0.18.2 release since 2026-08-01.
+      Four releases were tagged, built and published in between, each with its
+      own GitHub Release page, and the site announced none of them — so anyone
+      reading a2ahub.dev saw a version list that ended a week ago and install
+      instructions to match.
+      The site is rebuilt and published by a workflow that runs the web test
+      suite first. A change on 2026-08-04 made two of those tests import a
+      TypeScript module that the test runner could not load, so the suite
+      failed on every subsequent build, deterministically. The failure was
+      loud in CI and invisible to the release process: nothing between cutting
+      a tag and announcing it ever looked at whether the site had actually
+      published.
+      Both are fixed. The test runner now handles that import, and cutting a
+      release refuses to start while the site's publish workflow is failing —
+      a release that cannot reach the site is now something you are told
+      before tagging, not something noticed days later.
+      No product behaviour changed. This release exists to move the website.
+    affects: ["a2ahub.dev", "release process"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The binary is identical in behaviour to 0.19.3; update
+        only if you skipped it.
