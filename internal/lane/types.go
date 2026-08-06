@@ -46,6 +46,14 @@ type Declaration struct {
 	Inputs []string
 	// Reason is required and non-empty for KindAlways and KindNever.
 	Reason string
+	// Claims is legal ONLY on a KindAlways declaration (D-10) — the paths
+	// an otherwise-universal gate genuinely reads (e.g. epic-drift reads
+	// docs/status.md in checks B/C, even though check A's bare `git log`
+	// is what makes the whole gate ALWAYS). Coverage() counts these paths
+	// as claimed; Derive() does NOT consult them — an ALWAYS declaration
+	// already runs in every lane regardless of what it claims, so Claims
+	// never selects the gate.
+	Claims []string
 	// Source is "path:line" — where the block was found.
 	Source string
 }
@@ -54,6 +62,14 @@ type Declaration struct {
 type Phase struct {
 	Name   string
 	Source string // "Makefile:REPO_GATES" or "scripts/verify.sh:507"
+	// Optional marks a phase that MAY carry a declaration but is not
+	// required to: a real Makefile target outside REPO_GATES, like
+	// web-quality. Those exist so a lane the repo genuinely has can be
+	// declared and derived without being forced into `make check` (spec 12
+	// J5 keeps the ceiling byte-identical). Required phases — REPO_GATES
+	// entries and verify.sh run_phase sites — are the ones a missing
+	// declaration refuses on.
+	Optional bool
 }
 
 // Refusal is the spec §3.3 shape: what is wrong, and what to do about it —

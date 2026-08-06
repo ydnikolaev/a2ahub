@@ -7,8 +7,17 @@ func TestCorpusUnionsMakefileAndVerify(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	// REQUIRED phases only. Corpus also admits every other real Makefile
+	// target as an Optional phase (web-quality's home) — those may carry a
+	// declaration but are never refused for lacking one, so counting them
+	// here would measure the fixture's Makefile, not the corpus contract.
 	names := map[string]bool{}
+	var required int
 	for _, p := range phases {
+		if p.Optional {
+			continue
+		}
+		required++
 		names[p.Name] = true
 	}
 	want := []string{"classify-guard", "readme-lint", "vet", "build-cli", "gofmt"}
@@ -20,7 +29,7 @@ func TestCorpusUnionsMakefileAndVerify(t *testing.T) {
 	if names["feature-lint"] {
 		t.Errorf("feature-lint should have been presence-gated out of the corpus")
 	}
-	if len(phases) != len(want) {
-		t.Errorf("got %d phases, want %d: %+v", len(phases), len(want), phases)
+	if required != len(want) {
+		t.Errorf("got %d required phases, want %d: %+v", required, len(want), phases)
 	}
 }

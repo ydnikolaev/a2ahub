@@ -7,9 +7,12 @@ import "strings"
 // on where the block lives (D-1's four homes), which is context this file
 // does not have.
 type rawBlock struct {
-	Kind      Kind
-	Inputs    []string
-	Reason    string
+	Kind   Kind
+	Inputs []string
+	Reason string
+	// Claims is non-empty only when a KindAlways block carries a
+	// `lane-claims:` sub-block (D-10) — see Declaration.Claims.
+	Claims    []string
 	StartLine int // 1-based, the "lane-inputs:" line itself
 	EndLine   int // 1-based, the last line the block consumed
 	// Following is the first non-blank line after the block ends, trimmed
@@ -82,7 +85,11 @@ func findLaneBlocks(lines []string, prefix string) ([]rawBlock, error) {
 					break
 				}
 				fullTrim := strings.TrimRight(c, " \t")
-				if fullTrim == "lane-inputs:" || fullTrim == "lane-inputs: ALWAYS" || fullTrim == "lane-inputs: NEVER" {
+				if fullTrim == "lane-inputs:" || fullTrim == "lane-inputs: ALWAYS" || fullTrim == "lane-inputs: NEVER" || fullTrim == "lane-claims:" {
+					// "lane-claims:" (D-10) is not part of the reason — it
+					// is its own sub-block, parsed below. Stopping the
+					// reason walk here keeps it out of Reason the same way
+					// the other three headers already do.
 					break
 				}
 				reasonParts = append(reasonParts, trimmedC)
@@ -93,7 +100,43 @@ func findLaneBlocks(lines []string, prefix string) ([]rawBlock, error) {
 				errs = append(errs, blockErr(i+1, "lane-reason: is present but empty"))
 				continue
 			}
-			b := rawBlock{Kind: kind, Reason: reason, StartLine: i + 1, EndLine: end + 1}
+
+			// D-10: a "lane-claims:" header immediately after the reason is
+			// legal ONLY on ALWAYS — an otherwise-universal gate that also
+			// genuinely reads specific paths (epic-drift / docs/status.md).
+			// NEVER declarations opt out entirely (live-e2e) and have
+			// nothing to claim; a scoped block already claims via Inputs
+			// and never reaches this branch — its own rejection lives in
+			// the "lane-inputs:" case below.
+			var claims []string
+			if end+1 < len(lines) {
+				if hc, isHeaderComment := commentContent(lines[end+1], prefix); isHeaderComment && strings.TrimRight(hc, " \t") == "lane-claims:" {
+					if kind != KindAlways {
+						errs = append(errs, blockErr(end+2, "lane-claims: is only legal on an ALWAYS block (this one is %s)", kind))
+						continue
+					}
+					k := end + 2
+					for k < len(lines) {
+						cc, isClaimComment := commentContent(lines[k], prefix)
+						if !isClaimComment {
+							break
+						}
+						cc = strings.TrimSpace(cc)
+						if cc == "" {
+							break
+						}
+						claims = append(claims, cc)
+						k++
+					}
+					if len(claims) == 0 {
+						errs = append(errs, blockErr(end+2, "lane-claims: header has no glob lines"))
+						continue
+					}
+					end = k - 1
+				}
+			}
+
+			b := rawBlock{Kind: kind, Reason: reason, Claims: claims, StartLine: i + 1, EndLine: end + 1}
 			b.Following = followingLine(lines, end+1)
 			blocks = append(blocks, b)
 			i = end
@@ -111,6 +154,7 @@ func findLaneBlocks(lines []string, prefix string) ([]rawBlock, error) {
 					j++
 				}
 			}
+			sawClaimsHeader := false
 			for j < len(lines) {
 				c, isComment := commentContent(lines[j], prefix)
 				if !isComment {
@@ -120,8 +164,19 @@ func findLaneBlocks(lines []string, prefix string) ([]rawBlock, error) {
 				if c == "" || strings.HasPrefix(c, "lane-reason:") {
 					break
 				}
+				if c == "lane-claims:" {
+					// D-10: lane-claims: is legal only on an ALWAYS block.
+					// This one is scoped — reject it rather than silently
+					// swallowing the header text as a glob pattern.
+					sawClaimsHeader = true
+					break
+				}
 				inputs = append(inputs, c)
 				j++
+			}
+			if sawClaimsHeader {
+				errs = append(errs, blockErr(j+1, "lane-claims: is only legal on an ALWAYS block (this one is scoped)"))
+				continue
 			}
 			if len(inputs) == 0 {
 				errs = append(errs, blockErr(i+1, "lane-inputs: block has no glob lines (and is not ALWAYS/NEVER)"))

@@ -5,14 +5,23 @@
 // derivation; this file is a thin `go run` wrapper around it, exactly the
 // internal/coveragepolicy/covercheck.go precedent.
 //
-// Two modes, run from the repo root:
+// Two modes, run from the repo root (a repo-relative `go run` path only
+// resolves from there):
 //
 //	go run internal/lane/lanecheck.go --verify
 //	go run internal/lane/lanecheck.go --derive <path>...
 //	git diff --name-only main... | go run internal/lane/lanecheck.go --derive
 //
-// It is NOT wired into the Makefile or verify.sh — that is a later wave's
-// (W2/W3) job; this file only has to run correctly when invoked by hand.
+// LANE_ROOT overrides the tree acted on (default "."), the same seam
+// check-readme.sh's README_PATH and epic_docs_drift.sh's FEATURES_DIR
+// already use — scripts/check-lane-declarations.sh --teeth points it at a
+// fixture under internal/lane/testdata/ so its receipts never touch the
+// live repo.
+//
+// It is NOT wired into REPO_GATES/verify.sh yet — the lead adjudicates the
+// coverage residue (scripts/lib/lane-ungated.txt) before that wiring
+// lands (plan D-6, the W2 sequencing constraint); scripts/check-lane-
+// declarations.sh already shells to --verify and is ready for that wiring.
 package main
 
 import (
@@ -26,17 +35,30 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/lane"
 )
 
-// ungatedListPath is W2's file — it does not exist yet in this wave, and
-// its absence is not an error: an empty ungated list is the correct
-// starting point, not a missing dependency.
+// ungatedListPath is W2's file (D-6: the LEAD adjudicates its entries, not
+// an agent). readUngatedList below already treats its absence as "nothing
+// ungated" rather than an error — the header-only file W2 ships keeps that
+// path exercised without pre-populating the residue.
 const ungatedListPath = "scripts/lib/lane-ungated.txt"
+
+// laneRoot resolves the tree --verify/--derive act on: LANE_ROOT when set
+// (scripts/check-lane-declarations.sh --teeth points this at a fixture
+// under internal/lane/testdata/, the same seam check-readme.sh's own
+// README_PATH and epic_docs_drift.sh's FEATURES_DIR already use), "."
+// otherwise — the real repo root when run from there directly.
+func laneRoot() string {
+	if r := os.Getenv("LANE_ROOT"); r != "" {
+		return r
+	}
+	return "."
+}
 
 func main() {
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(2)
 	}
-	root := "."
+	root := laneRoot()
 	switch os.Args[1] {
 	case "--verify":
 		os.Exit(runVerify(root))
@@ -79,6 +101,18 @@ func runVerify(root string) int {
 	refusals := lane.Reconcile(decls, corpus)
 	refusals = append(refusals, lane.Coverage(decls, universe, ungated)...)
 
+	// D-11: the honesty pass — does each declared script's actual reads
+	// match what it declared? opaqueCount is printed on every run
+	// regardless of pass/fail: "N scripts declare opaque reads" is a debt
+	// with a size, not a nicety to mention only when something is wrong.
+	honestyRefusals, opaqueCount, err := lane.HonestyCheck(root, decls)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "lane: FAIL — could not run the honesty pass:", err)
+		return 1
+	}
+	refusals = append(refusals, honestyRefusals...)
+	fmt.Println("lane:", opaqueCount, "script(s) declare lane-reads-opaque.")
+
 	if len(refusals) == 0 {
 		fmt.Println("lane: OK —", len(corpus), "corpus phase(s),", len(decls), "declaration(s), universe covered.")
 		return 0
@@ -108,15 +142,13 @@ func runDerive(root string, args []string) int {
 		fmt.Fprintln(os.Stderr, "lane: FAIL — could not read", ungatedListPath+":", err)
 		return 1
 	}
-	ungatedSet := map[string]bool{}
-	for _, p := range ungated {
-		ungatedSet[p] = true
-	}
 
 	refusals := lane.Reconcile(decls, corpus)
 	sel, deriveRefusals := lane.Derive(decls, changed)
 	for _, r := range deriveRefusals {
-		if ungatedSet[r.Subject] {
+		// Glob match, not exact string membership — lane.MatchesAnyGlob's
+		// own doc says why (lane-ungated.txt is root-shaped globs, D-6).
+		if lane.MatchesAnyGlob(ungated, r.Subject) {
 			continue
 		}
 		refusals = append(refusals, r)
@@ -143,9 +175,22 @@ func runDerive(root string, args []string) int {
 	return 0
 }
 
+// printRefusals prints every refusal's String() plus its Subject on its
+// own line. Refusal.String() (Problem + Fix) never carries Subject — it is
+// shared by every refusal kind (coverage_test.go, reconcile_test.go assert
+// its exact text) and most of them already repeat Subject inside Problem
+// (Coverage's "no gate claims docs/guide.md" IS docs/guide.md). But an
+// orphan-declaration refusal's Subject is a file:line no Problem text
+// carries, and D-11's honesty refusals are the same shape (Subject =
+// "script.sh:N", the exact site the operator needs) — so printing it
+// unconditionally is the one rule that names "the thing" for every kind,
+// not a per-kind special case that silently misses the next one.
 func printRefusals(refusals []lane.Refusal) {
 	for _, r := range refusals {
 		fmt.Fprintln(os.Stderr, r.String())
+		if r.Subject != "" {
+			fmt.Fprintln(os.Stderr, "  at", r.Subject)
+		}
 	}
 }
 

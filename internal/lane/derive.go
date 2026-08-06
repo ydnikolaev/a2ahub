@@ -49,6 +49,14 @@ func Derive(decls []Declaration, changed []string) (Selection, []Refusal) {
 				matched[d.Phase] = append(matched[d.Phase], MatchedPath{Path: path, Pattern: pattern})
 			}
 		}
+		// A KindAlways gate's lane-claims paths satisfy the claim without
+		// selecting anything — the gate is already in sel.Phases above,
+		// unconditionally. Coverage() honours these; so must Derive, or the
+		// user-facing lane refuses a path --verify accepts, which is a
+		// contradiction the operator has no way to resolve.
+		if !claimed {
+			claimed = claimedByAlways(decls, path)
+		}
 		if !claimed {
 			refusals = append(refusals, Refusal{
 				Subject: path,
@@ -68,4 +76,22 @@ func Derive(decls []Declaration, changed []string) (Selection, []Refusal) {
 		return sel.Phases[i].Declaration.Phase < sel.Phases[j].Declaration.Phase
 	})
 	return sel, refusals
+}
+
+// claimedByAlways reports whether any KindAlways declaration's lane-claims
+// list (D-10) covers path. Those paths count as claimed but select nothing —
+// the gate that claims them is universal and already in the lane. Coverage()
+// applies the same rule; Derive has to agree with it, because a path that
+// `--verify` accepts and `--derive` refuses is a contradiction with no
+// operator-visible resolution.
+func claimedByAlways(decls []Declaration, path string) bool {
+	for _, d := range decls {
+		if d.Kind != KindAlways || len(d.Claims) == 0 {
+			continue
+		}
+		if ok, _ := MatchingInput(d.Claims, path); ok {
+			return true
+		}
+	}
+	return false
 }
