@@ -25,6 +25,12 @@ changes:
       a release that cannot reach the site is now something you are told
       before tagging, not something noticed days later.
       No product behaviour changed. This release exists to move the website.
+      Verified as presentation-only rather than assumed: the exact published
+      difference against 0.19.3 is release prose, version pins, one test file,
+      one release-control script and a test-runner flag — no non-test Go source
+      at all. It therefore ran no live GitHub matrix, which for this content
+      could observe nothing; the last full matrix ran on 2026-08-05, and the
+      provider rows it covers remain as described in the standing known issue.
     affects: ["a2ahub.dev", "release process"]
     action:
       scope: none
