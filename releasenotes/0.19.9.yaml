@@ -1,0 +1,50 @@
+schema: release-notes/v1
+version: "0.19.9"
+released: "2026-08-06"
+headline: "A settled contract stops asking you to do something about it"
+changes:
+  - id: RN-01909-0
+    kind: fix
+    impact: high
+    subject: "\"Whose move is it\" is one answer now, and a published contract is nobody's move"
+    detail: >
+      A contract you published and your consumer adopted sat in the thread view
+      and on the dashboard as an open item waiting on you, forever, with an
+      agent prompt offered for a turn that was not yours. Nothing was wrong with
+      the contract. The reason it never cleared is that two different questions
+      had been collapsed into one.
+      An artifact can be ALIVE — still existing, still able to move — without
+      anything being PENDING on anyone. A published contract is the standing
+      case: its owner may always publish a successor or deprecate it, and
+      neither is a move someone is waiting for. The thread view computed "who is
+      waiting" by listing every legal next move and naming whoever may make it,
+      so the owner's permanent right to publish read as a permanent debt owed to
+      themselves. `a2a inbox --actionable` answered the same question separately,
+      with its own five conditions, so the two surfaces could and did disagree.
+      There is now one relation, asked by every surface, that answers who owes
+      the next move, which transition they owe, and WHY — and "nobody" is a
+      verdict it has to justify rather than something that falls out of a
+      predicate. Its rows come from the domain's own per-type transition tables,
+      and a gate refuses to let a state exist that no row covers, so a new state
+      cannot quietly inherit the wrong answer.
+      What you will see change: settled work drops off open items and stops
+      counting toward a thread's open count, so `settled` and `your_move` mean
+      what they say; `a2a thread --json` gained `expected_transition` and `why`
+      on each open item; and a deprecation announcement that requested no
+      acknowledgement no longer sits in `--actionable` waiting for one.
+      Nothing was removed from the record. Every legal move a settled artifact
+      still has is listed exactly as before under `next_actions` — the change is
+      that it is no longer counted as a debt. Everything that happened is still
+      in the transcript, permanently, because it is in git.
+    affects: ["a2a thread", "a2a inbox --actionable", "a2a html", "a2a outbox"]
+    roadmap:
+      visibility: shipped
+      why: >
+        It repairs a question the tool already claimed to answer, on surfaces
+        that already exist, rather than opening a capability area.
+    action:
+      scope: none
+      why: >
+        Nothing to do. Threads you had been watching sit open for no reason
+        should settle by themselves on the next read; if one still names a
+        system you think is done, its `why` now says which rule put it there.
