@@ -356,7 +356,7 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 	// a raw `git push` cannot bypass is specifically the PR check.
 	if mode == "v3-pr" {
 		for _, id := range contractIDs {
-			rep, ok := validateCIContract(ctx, root, base, id, contractDescPaths[id], stdio.Stderr)
+			rep, ok := validateCIContract(ctx, root, base, id, contractDescPaths[id], manifest.MinBinaryVersion, stdio.Stderr)
 			if rep == nil {
 				continue // deleted in this PR
 			}
@@ -808,7 +808,7 @@ func contractFixturesValidOnly(tree map[string][]byte) map[string][]byte {
 // bogus `--base` — the exact fail-open wave A closed for
 // contractReadTreeAtSHA itself (its own doc comment), reopened one layer
 // up if this function got the order backwards.
-func validateCIContract(ctx context.Context, root, base, id, descriptorPath string, stderr io.Writer) (*validateReport, bool) {
+func validateCIContract(ctx context.Context, root, base, id, descriptorPath, spaceFloor string, stderr io.Writer) (*validateReport, bool) {
 	_, probe, relPath, relDir, err := contractReadDescriptor(root, id)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -831,6 +831,20 @@ func validateCIContract(ctx context.Context, root, base, id, descriptorPath stri
 	}
 
 	var violations []validate.Violation
+	// The descriptor's SHAPE is checked first and from the space's own floor:
+	// a contract whose shape the publication planner will refuse can never be
+	// published no matter what its schemas and fixtures say, so saying that
+	// here — before the merge — is the whole point (see
+	// validate.CheckContractDescriptorShape for the report that added it).
+	if v := validate.CheckContractDescriptorShape(validate.DescriptorShapeInput{
+		SpaceMinBinaryVersion: spaceFloor,
+		ContractID:            id,
+		DescriptorSchema:      probe.Schema,
+		DeclaresArtifacts:     probe.Artifacts != nil,
+		SchemaFormat:          probe.SchemaFormat,
+	}); v != nil {
+		violations = append(violations, *v)
+	}
 	if v := validate.CheckContractPublishable(validate.PublishableInput{
 		SchemaFormat:    probe.SchemaFormat,
 		ContractID:      id,

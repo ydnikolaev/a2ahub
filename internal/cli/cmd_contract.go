@@ -80,13 +80,23 @@ func contractReceiptState(evaluation fold.CandidateEvaluation) string {
 // extensions) — a richer sibling of lifecycleEnvelopeProbe (which only
 // carries the base envelope fields every OP-211 verb needs).
 type contractDescriptorProbe struct {
-	ID            string   `yaml:"id"`
-	Space         string   `yaml:"space"`
-	From          string   `yaml:"from"`
-	To            []string `yaml:"to"`
-	Version       string   `yaml:"version"`
-	CompatPolicy  string   `yaml:"compat_policy"`
-	SchemaFormat  string   `yaml:"schema_format"`
+	ID string `yaml:"id"`
+	// Schema is the descriptor's own envelope generation. It selects the
+	// publication profile together with the space's floor, so a shape check
+	// that runs before the merge has to be able to read it.
+	Schema string `yaml:"schema"`
+	// Artifacts is a POINTER so its nil-ness distinguishes "no `artifacts:`
+	// key at all" from "an empty inventory" — exactly the distinction
+	// contract.BuildCandidateIntent makes when it selects declared-v2 versus
+	// legacy-fixed-v1. A plain slice would collapse both to len 0 and make
+	// the two refusals indistinguishable.
+	Artifacts     *[]yaml.Node `yaml:"artifacts"`
+	Space         string       `yaml:"space"`
+	From          string       `yaml:"from"`
+	To            []string     `yaml:"to"`
+	Version       string       `yaml:"version"`
+	CompatPolicy  string       `yaml:"compat_policy"`
+	SchemaFormat  string       `yaml:"schema_format"`
 	GeneratedFrom struct {
 		Tool         string `yaml:"tool"`
 		SourceDigest string `yaml:"source_digest"`
