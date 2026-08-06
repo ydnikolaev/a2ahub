@@ -1,0 +1,13 @@
+# teeth-base fixture: everything the two declared phases (readme-lint,
+# gofmt) don't themselves claim, so a clean run of this fixture is fully
+# covered — the receipts mutate ONE thing at a time against this known-good
+# baseline.
+#
+# Fixture scaffolding, not real gated content.
+Makefile
+# The gate script backing readme-lint (it declares README.md/docs/guide.md
+# as its OWN inputs, not its own path).
+scripts/classify-guard.sh
+scripts/check-readme.sh
+scripts/verify.sh
+scripts/lib/lane-ungated.txt

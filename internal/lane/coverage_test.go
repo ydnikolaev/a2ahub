@@ -27,6 +27,24 @@ func TestCoverageUngatedListSuppressesRefusal(t *testing.T) {
 	}
 }
 
+// TestCoverageUngatedListIsGlobNotExactString is the discriminating case
+// TestCoverageUngatedListSuppressesRefusal cannot be: that test passes the
+// SAME literal string as both the universe entry and the ungated entry, so
+// it stays green whether ungated is matched as a glob or as an exact-string
+// set. D-6's real adjudication is root-shaped ("integrations/macos-
+// notifier/**" covering 40 files in one line, lane-ungated.txt's own
+// documented grammar) — an exact-string set would silently match none of
+// them.
+func TestCoverageUngatedListIsGlobNotExactString(t *testing.T) {
+	decls := []Declaration{{Phase: "go-test", Kind: KindScoped, Inputs: []string{"**/*.go"}}}
+	refusals := Coverage(decls,
+		[]string{"integrations/macos-notifier/Package.swift", "integrations/macos-notifier/Sources/main.swift"},
+		[]string{"integrations/macos-notifier/**"})
+	if len(refusals) != 0 {
+		t.Fatalf("a glob ungated entry should cover every path under its root, got %+v", refusals)
+	}
+}
+
 func TestCoverageKindAlwaysClaimsNothing(t *testing.T) {
 	decls := []Declaration{
 		{Phase: "classify-guard", Kind: KindAlways, Reason: "reads the whole tracked set"},
@@ -34,6 +52,26 @@ func TestCoverageKindAlwaysClaimsNothing(t *testing.T) {
 	refusals := Coverage(decls, []string{"skill/a2ahub/loops.md"}, nil)
 	if len(refusals) != 1 {
 		t.Fatalf("KindAlways must not count as claiming — got %+v", refusals)
+	}
+}
+
+func TestCoverageAlwaysWithClaimsCoversThePath(t *testing.T) {
+	decls := []Declaration{
+		{Phase: "epic-drift", Kind: KindAlways, Reason: "check A runs git log with no pathspec", Claims: []string{"docs/status.md", "docs/features/**/tracker.yaml"}},
+	}
+	refusals := Coverage(decls, []string{"docs/status.md"}, nil)
+	if len(refusals) != 0 {
+		t.Fatalf("lane-claims: path should be covered, got %+v", refusals)
+	}
+}
+
+func TestCoverageAlwaysWithClaimsDoesNotCoverOtherPaths(t *testing.T) {
+	decls := []Declaration{
+		{Phase: "epic-drift", Kind: KindAlways, Reason: "check A runs git log with no pathspec", Claims: []string{"docs/status.md"}},
+	}
+	refusals := Coverage(decls, []string{"skill/a2ahub/loops.md"}, nil)
+	if len(refusals) != 1 {
+		t.Fatalf("lane-claims: is narrow — it must not cover an unrelated path, got %+v", refusals)
 	}
 }
 

@@ -107,3 +107,26 @@ func TestMatchInputsExclusionOrdering(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchesAnyGlob(t *testing.T) {
+	cases := []struct {
+		name string
+		list []string
+		path string
+		want bool
+	}{
+		{"empty list matches nothing", nil, "integrations/macos-notifier/Package.swift", false},
+		{"glob root covers a file under it", []string{"integrations/macos-notifier/**"}, "integrations/macos-notifier/Package.swift", true},
+		{"glob root does not cover an unrelated path", []string{"integrations/macos-notifier/**"}, "docs/backlog.md", false},
+		{"a literal entry matches only itself", []string{"NOTICE"}, "NOTICE", true},
+		{"a literal entry does not match a different path", []string{"NOTICE"}, "LICENSE", false},
+		{"second pattern matches when the first does not", []string{"NOTICE", "docs/inbox/**"}, "docs/inbox/x.md", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := MatchesAnyGlob(c.list, c.path); got != c.want {
+				t.Errorf("MatchesAnyGlob(%v, %q) = %v, want %v", c.list, c.path, got, c.want)
+			}
+		})
+	}
+}

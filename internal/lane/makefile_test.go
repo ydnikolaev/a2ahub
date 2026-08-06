@@ -11,7 +11,12 @@ func TestCorpusFromMakefileSkipsPresenceGatedAbsentScript(t *testing.T) {
 		t.Fatal("doc is nil")
 	}
 	names := map[string]bool{}
+	var required int
 	for _, p := range phases {
+		if p.Optional {
+			continue
+		}
+		required++
 		names[p.Name] = true
 	}
 	if names["feature-lint"] {
@@ -20,8 +25,8 @@ func TestCorpusFromMakefileSkipsPresenceGatedAbsentScript(t *testing.T) {
 	if !names["classify-guard"] || !names["readme-lint"] {
 		t.Errorf("classify-guard and readme-lint should be present, got %v", names)
 	}
-	if len(phases) != 2 {
-		t.Errorf("got %d phases, want 2 (classify-guard, readme-lint): %v", len(phases), phases)
+	if required != 2 {
+		t.Errorf("got %d required phases, want 2 (classify-guard, readme-lint): %v", required, phases)
 	}
 }
 

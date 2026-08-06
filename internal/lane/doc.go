@@ -4,10 +4,11 @@
 // intersect declared globs against a changed-file set, and estimate the
 // selected phases' duration from telemetry.
 //
-// It owns the DERIVATION only. Whether a gate script reads a path it did
-// not declare (the "honesty extractor") is a later phase and is out of
-// scope here — spec docs/features/active/agent-ops-2026-07/specs/12-lane-derivation.md
-// §3, plan .../plans/12-lane-derivation.plan.md D-1..D-9.
+// It owns the derivation AND the honesty pass that keeps its declarations
+// true: whether a gate script (or its Go backer) reads a path it did not
+// declare — reads.go, D-11 — spec
+// docs/features/active/agent-ops-2026-07/specs/12-lane-derivation.md §3,
+// plan .../plans/12-lane-derivation.plan.md D-1..D-11.
 //
 // Every extractor in this package refuses loudly — via a returned error or
 // a Refusal value — on a shape it does not understand. It never returns a

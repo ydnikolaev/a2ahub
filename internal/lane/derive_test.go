@@ -83,3 +83,34 @@ func TestDeriveMatchedPathsRecorded(t *testing.T) {
 		t.Fatalf("Matched = %+v", got)
 	}
 }
+
+// A lane-claims path must satisfy Derive's claim test WITHOUT the claiming
+// gate being selected by it — the gate is KindAlways and is in the lane
+// regardless. Discriminating: an ALWAYS gate with NO Claims must still refuse
+// the same path, so the test fails if claimedByAlways is deleted OR if it is
+// widened to "any ALWAYS declaration claims everything".
+func TestDeriveAlwaysClaimsSatisfyTheClaimWithoutSelecting(t *testing.T) {
+	withClaims := []Declaration{
+		{Phase: "epic-drift", Kind: KindAlways, Reason: "judges commit subjects", Claims: []string{"docs/status.md"}},
+		{Phase: "readme-lint", Kind: KindScoped, Inputs: []string{"README.md"}},
+	}
+	sel, refusals := Derive(withClaims, []string{"docs/status.md"})
+	if len(refusals) != 0 {
+		t.Fatalf("a lane-claims path must not be refused, got: %+v", refusals)
+	}
+	if len(sel.Phases) != 1 || sel.Phases[0].Declaration.Phase != "epic-drift" {
+		t.Fatalf("expected only the ALWAYS gate selected, got %+v", sel.Phases)
+	}
+	if len(sel.Phases[0].Matched) != 0 {
+		t.Fatalf("a claim must not register as a MATCH — that would read as though the path selected the gate: %+v", sel.Phases[0].Matched)
+	}
+
+	noClaims := []Declaration{
+		{Phase: "epic-drift", Kind: KindAlways, Reason: "judges commit subjects"},
+		{Phase: "readme-lint", Kind: KindScoped, Inputs: []string{"README.md"}},
+	}
+	_, refusals = Derive(noClaims, []string{"docs/status.md"})
+	if len(refusals) != 1 {
+		t.Fatalf("an ALWAYS gate with no Claims must still leave the path unclaimed, got %d refusals: %+v", len(refusals), refusals)
+	}
+}

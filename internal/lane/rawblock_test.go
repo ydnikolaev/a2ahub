@@ -183,6 +183,87 @@ localserver-readonly-routes:
 	}
 }
 
+func TestFindLaneBlocksAlwaysWithClaims(t *testing.T) {
+	src := `#!/usr/bin/env bash
+# lane-inputs: ALWAYS
+# lane-reason: check A runs git log with no pathspec, judging commit subjects
+# lane-claims:
+#   docs/status.md
+#   docs/features/**/tracker.yaml
+run_check() {
+`
+	blocks, err := findLaneBlocks(strings.Split(src, "\n"), "#")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("got %d blocks, want 1", len(blocks))
+	}
+	b := blocks[0]
+	if b.Kind != KindAlways {
+		t.Errorf("Kind = %v, want KindAlways", b.Kind)
+	}
+	if b.Reason == "" || strings.Contains(b.Reason, "lane-claims") {
+		t.Errorf("Reason = %q, must not swallow the lane-claims: header", b.Reason)
+	}
+	want := []string{"docs/status.md", "docs/features/**/tracker.yaml"}
+	if len(b.Claims) != len(want) {
+		t.Fatalf("Claims = %v, want %v", b.Claims, want)
+	}
+	for i := range want {
+		if b.Claims[i] != want[i] {
+			t.Errorf("Claims[%d] = %q, want %q", i, b.Claims[i], want[i])
+		}
+	}
+	if b.Following != "run_check() {" {
+		t.Errorf("Following = %q", b.Following)
+	}
+}
+
+func TestFindLaneBlocksClaimsIllegalOnNever(t *testing.T) {
+	src := `# lane-inputs: NEVER
+# lane-reason: needs two credentials, network and a real GitHub space
+# lane-claims:
+#   docs/status.md
+run_check() {
+`
+	_, err := findLaneBlocks(strings.Split(src, "\n"), "#")
+	if err == nil {
+		t.Fatal("expected an error: lane-claims: is illegal on a NEVER block")
+	}
+	if !strings.Contains(err.Error(), "lane-claims") {
+		t.Errorf("error does not name lane-claims: %v", err)
+	}
+}
+
+func TestFindLaneBlocksClaimsIllegalOnScoped(t *testing.T) {
+	src := `# lane-inputs:
+#   README.md
+# lane-claims:
+#   docs/status.md
+run_check() {
+`
+	_, err := findLaneBlocks(strings.Split(src, "\n"), "#")
+	if err == nil {
+		t.Fatal("expected an error: lane-claims: is illegal on a scoped block")
+	}
+	if !strings.Contains(err.Error(), "lane-claims") {
+		t.Errorf("error does not name lane-claims: %v", err)
+	}
+}
+
+func TestFindLaneBlocksClaimsHeaderWithNoGlobsIsAnError(t *testing.T) {
+	src := `# lane-inputs: ALWAYS
+# lane-reason: reads git ls-files over the whole tracked set
+# lane-claims:
+run_check() {
+`
+	_, err := findLaneBlocks(strings.Split(src, "\n"), "#")
+	if err == nil {
+		t.Fatal("expected an error: lane-claims: header with no glob lines")
+	}
+}
+
 func TestFindLaneBlocksNone(t *testing.T) {
 	src := `#!/usr/bin/env bash
 # an ordinary comment, no lane-inputs block here

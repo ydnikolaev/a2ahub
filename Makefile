@@ -42,7 +42,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
+.PHONY: check test check-validators lane-declarations web-quality _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -53,7 +53,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline-check
+REPO_GATES := lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline-check
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -67,6 +67,25 @@ check: ## THE CEILING — project-owned cache + one CLI artifact + static and Go
 test: ## Scoped race test through the owned environment. Optional: A2A_VERIFY_TEST_RUN=Regex A2A_VERIFY_TEST_COUNT=N.
 	@test -n "$(PKG)" || { echo "test: set PKG, e.g. make test PKG=./internal/cache/..."; exit 2; }
 	@bash scripts/verify.sh test $(PKG)
+
+# The web lane. Deliberately NOT in REPO_GATES: `make check` stays byte-identical
+# (spec 12 J5) and the npm suite keeps its own entry. It exists as a target so the
+# lane the repo already HAS gets one declared home the derivation can find —
+# without it, deleting check-convention.md's hand-maintained table would make this
+# lane vanish silently on the repo's second-largest tracked tree.
+# Presence-gated on web/node_modules exactly as dashboard-template-drift is.
+# lane-inputs:
+#   web/**
+#   ui/**
+web-quality: ## The web stack's own quality gate (npm). NOT part of `make check` — run when web/** or ui/** changed.
+	@if [ -d web/node_modules ]; then \
+	  npm --prefix web run check:quality; \
+	else \
+	  echo "web-quality: skip — web/node_modules absent (run 'npm --prefix web ci' first)."; \
+	fi
+
+lane-declarations: ## Every validation phase declares the inputs that can change its verdict, and reads only what it declared (P12).
+	@bash scripts/check-lane-declarations.sh
 
 classify-guard: ## Publish-boundary gate: no private (harness) path is tracked, DENY↔.gitignore agree.
 	@bash scripts/classify-guard.sh
@@ -209,6 +228,7 @@ _harness-check:
 		echo "harness-check: skip — scripts/check-skill-citations.sh absent (public checkout)."; \
 	fi
 	@bash scripts/check-operational-confidence.sh --teeth
+	@bash scripts/check-lane-declarations.sh --teeth
 	@bash scripts/tests/check_event_writer_receipts_test.sh
 	@bash scripts/tests/check_contract_carried_set_test.sh
 	@bash scripts/tests/check_work_checkpoint_schema_test.sh
