@@ -2,6 +2,9 @@
 # check-readme.sh — keep the repository's front door compact, current, and
 # useful. Tone still needs a human release review; this gate owns only the
 # deterministic floor that review should never have to remember.
+#
+# lane-inputs:
+#   README.md
 set -euo pipefail
 
 ROOT="${ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
