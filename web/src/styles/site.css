@@ -32,6 +32,15 @@ button { color: inherit; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .a2a-fade-scroll { display:block; min-width:0; max-width:100%; box-sizing:border-box; overflow-x:auto; overflow-y:hidden; overscroll-behavior-inline:contain; scrollbar-width:none; -ms-overflow-style:none; -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 12px,#000 calc(100% - 12px),transparent 100%); mask-image:linear-gradient(90deg,transparent 0,#000 12px,#000 calc(100% - 12px),transparent 100%); }
 .a2a-fade-scroll::-webkit-scrollbar { display:none; }
+/* An interpolated value is CONTENT the page does not control: a release note's
+   `action.why`, an artifact id, a space path. Normal wrapping breaks on spaces
+   only, so one long unbreakable token — `.a2a/staging/<system>/provides/<slug>/
+   contract.md` was the first — makes the DOCUMENT wider than the viewport, and
+   the page scrolls sideways on a phone. Found on 2026-08-06 when a release note
+   that documented a staging path reddened /changelog.html's 390px reflow check.
+   Guarding the interpolation seam fixes the whole class: the next note that
+   names a path does not have to remember. */
+.sc-interp { overflow-wrap: anywhere; }
 .skip-link { position: fixed; z-index: 1000; top: 8px; left: 8px; transform: translateY(-140%); background: var(--inverse); color: var(--on-inverse); padding: 10px 14px; border-radius: 8px; }
 .skip-link:focus { transform: translateY(0); }
 
