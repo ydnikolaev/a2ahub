@@ -47,6 +47,18 @@ func drivenPathIDs() []string {
 		"data-loop-attempt-one-fails",
 		"data-loop-attempt-two-passes",
 		"data-loop-request-answered-closed",
+		"question-declined-after-acknowledge",
+		"work-request-declined-from-submitted",
+		"question-block-then-unblock-restores-accepted",
+		"requirement-lifecycle-published-acknowledged",
+		"requirement-declined-from-published",
+		"requirement-declined-from-acknowledged",
+		"requirement-withdrawn-from-published",
+		"requirement-withdrawn-from-acknowledged",
+		"decision-lifecycle-partial-quorum-then-approved",
+		"decision-approved-superseded",
+		"decision-lifecycle-rejected",
+		"decision-rejected-superseded",
 	}
 }
 
@@ -55,5 +67,33 @@ func drivenPathIDs() []string {
 // building it — never padded to shrink the table (pathcoverage_test.go's
 // own precedent for this shape).
 func undrivablePaths() []undrivablePath {
-	return []undrivablePath{}
+	return []undrivablePath{
+		{
+			ID: "requirement-satisfied",
+			Reason: "`a2a satisfy <XR-id> --refs <XC-id>@<version>,<XS-id>` validates its own " +
+				"refs (lifecycleValidateSatisfyRefs, cmd_lifecycle.go): the XS ref must resolve " +
+				"to a REAL, committed response whose `parent` is this requirement AND whose " +
+				"folded state reaches `verified`. Building that response is only possible via " +
+				"a plain `a2a new response --field parent=<XR-id>` + `a2a submit` (never `a2a " +
+				"respond`, which refuses unconditionally for a requirement — requirementRows() " +
+				"carries no TRespond row). Confirmed empirically (throwaway probe, this wave's " +
+				"own report, removed before landing): submitting that response DOES land, but " +
+				"its own `submit` event (subject=the response's own id) gets folded a SECOND " +
+				"time under the REQUIREMENT's own subject (mirror.go's gatherEvents: every event " +
+				"whose subject is a response known via `parent` to attach to this id), through " +
+				"applyPrimaryScoped keyed on (KindRequirement, requirement's-current-state, " +
+				"TSubmit) — a row requirementRows() does not have — which flags illegal-" +
+				"transition, permanently, on the requirement's own thread (observed: `a2a thread " +
+				"<XR-id> --json` -> flags: [{kind: illegal-transition, subject: <XS-id>}]). The " +
+				"requirement's own open_item verdict is ALSO unchanged by the landed response " +
+				"(still reads the pre-response 'the target owes a published contract version " +
+				"and a response' why-text) — HasFulfillingResponse never becomes true through " +
+				"any shipped surface. This wave's own report files it as a finding; fixing it " +
+				"is outside this brief's granted scope (internal/fold, internal/cli are off " +
+				"limits). The transition itself (requirement, acknowledged, satisfy) IS legal " +
+				"at the fold layer with no precondition on HasFulfillingResponse — declared " +
+				"above (coverage credit stands) — only DRIVING it with real, validating refs " +
+				"is blocked.",
+		},
+	}
 }
