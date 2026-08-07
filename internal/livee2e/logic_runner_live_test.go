@@ -165,11 +165,19 @@ func TestLogicMatrix(t *testing.T) {
 	pathHarnesses := make([]*harness, 0, pathSpaces)
 	for i := 0; i < pathSpaces; i++ {
 		ph, phCleanup, phErr := newLogicHarness(ctx, t)
-		defer func(idx int, cleanup func() error) {
-			if cleanupErr := cleanup(); cleanupErr != nil {
-				t.Errorf("conformance-path harness %d cleanup failed: %v", idx+1, cleanupErr)
+		// t.Cleanup, NEVER defer, and the difference is not stylistic — it
+		// was a real red. A deferred call registered in this function runs
+		// when this function RETURNS, and Go releases parallel subtests only
+		// after that. So `defer cleanup()` deleted all four path workspaces
+		// BEFORE a single group ran, and the groups then failed with
+		// `chdir .../livee2e-logic-NNN/A: no such file or directory`.
+		// t.Cleanup runs after every subtest, parallel ones included, which
+		// is the only correct hook once anything below calls t.Parallel().
+		t.Cleanup(func() {
+			if cleanupErr := phCleanup(); cleanupErr != nil {
+				t.Errorf("conformance-path harness %d cleanup failed: %v", i+1, cleanupErr)
 			}
-		}(i, phCleanup)
+		})
 		if phErr != nil {
 			t.Fatalf("newLogicHarness (conformance paths, space %d): %v", i+1, phErr)
 		}
