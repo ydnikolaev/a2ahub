@@ -253,3 +253,44 @@ changes:
       why: >
         Nothing to do. The timeouts a2a actually enforces are unchanged; only
         the tests that prove them are cheaper to run.
+  - id: RN-01909-7
+    kind: fix
+    impact: high
+    subject: "The dashboard names the agent that acted, and stops calling a healthy contract unfinished work"
+    detail: >
+      Four things the local dashboard was saying that were not true, all found
+      by reading the rendered page against a real space rather than its JSON.
+      An act now shows BOTH identities. The system owner's face and name lead,
+      and the agent that performed the write sits as a badge on the avatar with
+      a popover naming it. Before this, one of the two was always hidden: the
+      thread view overwrote the recorded actor with the owner, so a publish by
+      an agent read as though a person had made it, while the overview card did
+      the opposite and printed a bare OS username.
+      Whether a badge appears depends on what the event recorded. Events written
+      before this release mostly carry an OS username, which names no agent and
+      gets no badge; every event written from now on records the detected agent,
+      so its badge follows automatically.
+      The network map no longer describes a published contract as unfinished
+      work. It had been aggregating everything still OPEN — which a published
+      contract is, since it can always be deprecated — and labelling that set
+      with the vocabulary of things somebody owes a move on. The same panel then
+      said «кого ждут: никого». Now the map says "live work", counts separately
+      how many of those documents actually owe a move, and colours only those.
+      A contract's thread shows who adopted it. `a2a contract adopt` writes the
+      consumer's registry and emits no event, so a counterparty's most
+      consequential act had no place in any chronology and a contract's thread
+      read as its owner talking to themselves. The row is derived from the
+      consumer's own registry and says so — it is not styled as an event,
+      because there is no event.
+      A contract version's package is now a collapsible tree with per-format
+      icons instead of two flat path lists, its prose folds through the same
+      disclosure component the rest of the dashboard uses, and an overview card
+      with nothing to report is short instead of four lines of "none".
+    affects: ["a2a html"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The dashboard is rendered fresh from your local cache
+        every time, so the next `a2a html` shows all of it. Agent badges appear
+        on events written by this release onward; older events keep whatever
+        actor they recorded, because the log is append-only.
