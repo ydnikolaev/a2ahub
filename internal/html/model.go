@@ -620,6 +620,30 @@ type ThreadOpenItem struct {
 	// announcement is the common one). Derived here, never re-derived in the
 	// browser, per the "compute nothing protocol-shaped client-side" rule.
 	Pending bool `json:"pending"`
+
+	// ExpectedTransition, Why and HumanGate are internal/pendency's own
+	// verdict, carried through rather than dropped.
+	//
+	// This projection used to stop at WaitingOn/YourMove, which meant the
+	// dashboard could say WHO owes a move but never WHICH move or WHY — and
+	// "why" is not decoration in this model: pendency's contract is that
+	// "nobody owes anything" is a CLAIM that must be justified, never a
+	// fall-through. A surface that shows the conclusion and withholds the
+	// justification republishes exactly the ambiguity the relation was built
+	// to remove. Found by auditing the real axon space against a HEAD binary
+	// (P11 W2 audit, plans/11-…plan.md).
+	//
+	// HumanGate is the sharpest of the three. Without it an agent reading this
+	// dashboard sees `your_move: true` with `expected_transition: approve` and
+	// no signal that approving a decision is G3 — a human gate whose event the
+	// fold IGNORES AND FLAGS when an agent emits it (CC-021). That is the one
+	// thing skill/a2ahub/reference/threads.md promises can never happen: a
+	// surface naming a move the tool would then refuse. Fixing the relation
+	// alone would not have fixed it, because the failure was always on the
+	// surface.
+	ExpectedTransition string `json:"expected_transition,omitempty"`
+	Why                string `json:"why"`
+	HumanGate          string `json:"human_gate,omitempty"`
 }
 
 // ThreadNextAction identifies an available transition and its allowed actors.
