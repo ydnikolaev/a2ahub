@@ -8,8 +8,8 @@ from: <announcing-system>
 to: [<recipient-system>]
 actor:
   kind: agent
-  name: <agent-name>
-  model: <model-id>
+  name: <filled by a2a>
+  model: <filled by a2a>
   session: <opaque-session-id>
 created: <RFC-3339 UTC>
 category: status

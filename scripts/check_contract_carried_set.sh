@@ -80,7 +80,17 @@ var allProfiles = []string{
 	"export-source-v1",
 }
 
-const publishedV1ManifestDigest = "fb4ae41dcdcebc645437ae726fb2abad6422635c72d92c11a639af584133d59d"
+// publishedV1ManifestDigest is the second lock on the ratchet: the byte
+// manifest pins the schemas, and this pins the MANIFEST, so a row cannot be
+// quietly removed to unfreeze a file.
+//
+// Updated 2026-08-07 when the eight schemas/templates/v1/*.md rows were
+// dropped. That was a deliberate scope correction, not an unfreeze: a schema
+// is a wire contract whose bytes decide the validity of documents already
+// committed to shared spaces, while a template is prose nothing validates
+// against. See check-operational-confidence.sh's check_hashes for the full
+// reasoning and the defect that forced it. All 18 schema rows stayed.
+const publishedV1ManifestDigest = "e1e6e48d47987a2207cf5e6422018cc1d3e45a1367f6ca5d9da918fc8f2c621f"
 
 var canonicalBuilderFunctions = map[string]bool{
 	"BuildCarriedSet":      true,

@@ -6,7 +6,7 @@ title: <human/agent-scannable title, <=120 chars>
 space: <space-id>
 from: <owning-system>
 to: [<consumer-system>]              # standing type: any length, no cardinality rule
-actor: {kind: agent, name: <agent-name>, model: <model-id>}   # kind: human|agent
+actor: {kind: agent, name: <filled by a2a>, model: <filled by a2a>}   # kind: human|agent
 created: <RFC-3339 UTC, e.g. 2026-07-28T10:00:00Z>
 category: <api|data-feed|vocabulary|event-feed|other>   # closed enum, §5.2.1
 priority: p3                         # p1|p2|p3|p4, default p3
