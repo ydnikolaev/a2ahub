@@ -36,10 +36,18 @@ changes:
       a consumer registered against the contract being deprecated still owes
       that acknowledgement, flag or no flag, because it is what unblocks the
       retire.)
+      The dashboard's agent prompt is gated on the same relation. It used to be
+      built from every move the protocol would ACCEPT, so a settled contract
+      handed an agent "publish, deprecate" as though one of them were due — and
+      the thread view and the exchange rows built it separately, so the same
+      artifact could prompt on one surface and stay quiet on the other. One gate
+      now answers for both, and it asks whether the move is owed, not whether it
+      is legal.
       Nothing was removed from the record. Every legal move a settled artifact
       still has is listed exactly as before under `next_actions` — the change is
-      that it is no longer counted as a debt. Everything that happened is still
-      in the transcript, permanently, because it is in git.
+      that it is no longer counted as a debt, and no longer read to an agent as
+      an instruction. Everything that happened is still in the transcript,
+      permanently, because it is in git.
     affects: ["a2a thread", "a2a inbox --actionable", "a2a html", "a2a outbox"]
     roadmap:
       visibility: shipped
