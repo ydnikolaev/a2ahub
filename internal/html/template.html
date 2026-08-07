@@ -2017,6 +2017,33 @@ function agentThreadPromptText(ctx) {
 // it.
 const FILTER_H = 38;
 
+// actorFace resolves one system's face fields from the node registry — the
+// avatar bytes the assembler already embedded, plus the GitHub profile of the
+// declared owner when that owner is a plausible login.
+//
+// It exists because the same four-line lookup had been written out four times
+// (the two feed card builders and identityOf), and TWO further card builders
+// had given up and hardcoded `avatar: ""` with an empty profile URL — the
+// operational work-progress rows and the source-freshness row. Those two
+// rendered a monogram beside every other surface's real face, on data that was
+// present the whole time: the axon node carries both an embedded avatar and
+// `owners: ["ydnikolaev"]`.
+//
+// Returns display-ready fields rather than the node, so a caller cannot
+// accidentally reach past it into node internals and grow a fifth variant.
+function actorFace(d, system, fallbackName) {
+  const node = (d.nodes || []).find(n => n.system === system);
+  const owner = node && node.owners && node.owners.length ? String(node.owners[0]) : "";
+  const name = String(fallbackName || owner || system || "");
+  const login = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(owner) ? owner : "";
+  return {
+    avatar: node && node.avatar ? node.avatar : "",
+    avatarMono: mono(name),
+    actorProfileURL: login ? "https://github.com/" + login : "",
+    actorProfileTitle: login ? "GitHub · " + login : ""
+  };
+}
+
 function avatar(isSelf, left) {
   return "width:" + (left ? 26 : 32) + "px; height:" + (left ? 26 : 32) + "px; border-radius:99px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:" + (left ? 10 : 11) + "px; font-weight:600; flex:0 0 auto; " +
     (isSelf === "left" ? "background:var(--surface); color:var(--muted); box-shadow:inset 0 0 0 1px var(--border-strong);" : isSelf ? "background:var(--teal-solid); color:var(--on-solid);" : "background:var(--border); color:var(--body);");
@@ -3183,10 +3210,7 @@ class Component extends DCLogic {
             actorName,
             actionText: workModeText(w.mode),
             meta: [actorSystem, freshness].filter(Boolean).join(" · "),
-            avatar: "",
-            avatarMono: mono(actorName),
-            actorProfileURL: "",
-            actorProfileTitle: "",
+            ...actorFace(d, actor.system, actorName),
             systemSelf: actor.system === d.self,
             hasSubjectLink: false,
             hasSignal: false
@@ -3243,10 +3267,7 @@ class Component extends DCLogic {
           actorName: latestName,
           actionText: TRANSITION_PAST(ru)[latest.transition] || latest.transition || (ru ? "зафиксировал процесс" : "recorded the process"),
           meta: [latestSystem, when(latest.at)].filter(Boolean).join(" · "),
-          avatar: "",
-          avatarMono: mono(latestName),
-          actorProfileURL: "",
-          actorProfileTitle: "",
+          ...actorFace(d, latestSystem, latestName),
           systemSelf: latestSystem === d.self,
           hasSubjectLink: hasLatestEvent && !!latestSubjectID,
           subjectLabel: latestSubjectLabel,
