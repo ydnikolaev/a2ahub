@@ -74,7 +74,15 @@ lane: ## PRINT the lane this working tree's changes can actually reach, with eac
 lane-run: ## RUN that derived lane. NOT the ceiling — a release still runs `make check` (spec 12 J5). Optional: LANE_FILES="a b c".
 	@bash scripts/verify.sh lane-run
 
+# The cost line is the point, not decoration. This is the COMMIT gate: it runs
+# once, on a tree you are done editing. Nothing used to say so at the moment it
+# mattered, and the ceiling was launched three times inside one wave — each run
+# invalidated by the next edit. The convention now carries the cadence
+# (.claude/rules/check-convention.md §"When to run which"); this line is that
+# rule delivered where the mistake is actually made, the same way the
+# lane-declaration refusal teaches its convention at the moment you need it.
 check: ## THE CEILING — project-owned cache + one CLI artifact + static and Go gates.
+	@echo "check: THE CEILING (~15 min) — the commit gate. Still editing? \`make lane-run\` runs only what your changes can reach."
 	@bash scripts/verify.sh full
 
 test: ## Scoped race test through the owned environment. Optional: A2A_VERIFY_TEST_RUN=Regex A2A_VERIFY_TEST_COUNT=N.
