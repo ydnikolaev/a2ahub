@@ -294,26 +294,55 @@ func happySpaceInit(ctx context.Context, h *harness) Result {
 		}
 	}
 
-	armed, err := happyRequiredCheckArmed(ctx, h)
-	if err != nil {
-		return Result{
-			Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictFail,
-			Expected: fmt.Sprintf("branch protection on main requires %q", requiredCheckContext),
-			Observed: "reading branch protection: " + err.Error(),
+	// `protection-armed` is this row's ONE provider-decided assertion (P9 W7).
+	// The other two — the manifest naming both participants, CODEOWNERS
+	// rooting on the provisioner — are read from the local mirror after
+	// `a2a sync`: real git content the product itself wrote, answerable
+	// against the fake and meaningful when they fail. This one is not.
+	// `testkit/fakegithub` refuses branch protection BY DESIGN, and refuses it
+	// by having no route at all: its own doc lists
+	// `PUT/DELETE /repos/{o}/{n}/branches/{b}/protection` among the calls it
+	// will not serve, and the router's default arm answers 404. So
+	// happyRequiredCheckArmed's GET does not merely return an unhelpful
+	// answer locally — it 404s.
+	//
+	// The guard passes `scenario`, not the cell-selection key. Those differ
+	// for this row and only this row: the cell is registered as
+	// "space-init-two-participants" while Result.Scenario and the catalogue
+	// Name are both "space-init". Passing the wrong one lands in
+	// AssertionJudgeableBy's unknown-row arm, which answers TRUE ("assert as
+	// usual") — so the mistake would red the logic tier on a 404 rather than
+	// silently exempt anything. Fail-loud, but still wrong; use the const.
+	if AssertionJudgeableBy(Catalogue(), scenario, "", "protection-armed", h.Tier) {
+		armed, err := happyRequiredCheckArmed(ctx, h)
+		if err != nil {
+			return Result{
+				Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictFail,
+				Expected: fmt.Sprintf("branch protection on main requires %q", requiredCheckContext),
+				Observed: "reading branch protection: " + err.Error(),
+			}
 		}
-	}
-	if !armed {
+		if !armed {
+			return Result{
+				Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictFail,
+				Expected: fmt.Sprintf("branch protection on main requires %q", requiredCheckContext),
+				Observed: "required check context not present in the live protection document",
+			}
+		}
 		return Result{
-			Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictFail,
-			Expected: fmt.Sprintf("branch protection on main requires %q", requiredCheckContext),
-			Observed: "required check context not present in the live protection document",
+			Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
+			Detail: fmt.Sprintf("main: space.yaml names %s(owner=%s)+%s(owner=%s), CODEOWNERS roots on %s, protection requires %q",
+				systemAlpha, h.Pre.ProvisionerLogin, systemBravo, h.Pre.ParticipantLogin, h.Pre.ProvisionerLogin, requiredCheckContext),
 		}
 	}
 
+	// The carve-out's own branch says WHAT it did not judge, in the Detail
+	// the report renders. A skipped assertion that reads identically to a
+	// judged one is how a carve-out becomes a false green.
 	return Result{
 		Scenario: scenario, System: SystemA, Surface: SurfaceCLI, Verdict: VerdictPass,
-		Detail: fmt.Sprintf("main: space.yaml names %s(owner=%s)+%s(owner=%s), CODEOWNERS roots on %s, protection requires %q",
-			systemAlpha, h.Pre.ProvisionerLogin, systemBravo, h.Pre.ParticipantLogin, h.Pre.ProvisionerLogin, requiredCheckContext),
+		Detail: fmt.Sprintf("main: space.yaml names %s(owner=%s)+%s(owner=%s), CODEOWNERS roots on %s; protection-armed NOT judged in this tier (provider-only)",
+			systemAlpha, h.Pre.ProvisionerLogin, systemBravo, h.Pre.ParticipantLogin, h.Pre.ProvisionerLogin),
 	}
 }
 
@@ -607,7 +636,25 @@ func happyCrossSystemVisibility(ctx context.Context, h *harness, system string, 
 		return happyResultFromErr(scenario, system, err,
 			fmt.Sprintf("PR #%d's required check reaches a terminal state", sub.PRNumber))
 	}
-	if res.Conclusion != "success" {
+	// `gate-concludes-success` is this row's ONE provider-decided assertion
+	// (P9 W7). It is the same assertion that makes submit-gate-merge a
+	// CONSIDERED TierProvider row — tier.go's canonical list names "the
+	// gate's own conclusion" first — which is why that row keeps this check
+	// unguarded and this one does not. Locally the answer is a constant:
+	// fakegithub.New seeds `CheckConclusion: "success"`, so asserting it here
+	// would pass every run while proving nothing, and the shipped carve-out
+	// at scenarios_operational_confidence_live.go:719 says in its own words
+	// that a carve-out reading green is worse than one reading red.
+	//
+	// The row's other four assertions keep their teeth, and that is precisely
+	// why this is a carve-out and not a whole-row TierProvider: `AutoMerge:
+	// true` fast-forwards the merge unconditionally once armed, regardless of
+	// any conclusion, so write-merges, sync-moves-worktree and
+	// inbox-lists-cross-system-write are all still genuinely exercised
+	// against the fake. This is NOT LE-OC-05's shape, where every assertion
+	// rested on the single provider fact and the whole row had to go.
+	if AssertionJudgeableBy(Catalogue(), scenario, "", "gate-concludes-success", h.Tier) &&
+		res.Conclusion != "success" {
 		return Result{
 			Scenario: scenario, System: system, Surface: SurfaceCLI, Verdict: VerdictFail,
 			Expected: "required check concludes success",
