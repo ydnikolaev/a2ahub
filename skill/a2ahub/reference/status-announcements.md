@@ -34,7 +34,7 @@ title: <feed name> feed — status for <run timestamp>
 space: <space-id>
 from: <producing-system>
 to: all                                # a status is a feed-level fact, not addressed to one consumer
-actor: {kind: agent, name: <agent-name>, model: <model-id>}
+actor: {kind: agent, name: <written by a2a — never hand-author>}
 created: <RFC-3339 UTC — the moment THIS run finished, not when the file was drafted>
 category: status
 priority: p4

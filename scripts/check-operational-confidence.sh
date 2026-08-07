@@ -7,7 +7,6 @@
 #   schemas/errors/v1/registry.yaml
 #   schemas/published-v1.sha256
 #   schemas/**/v1/*.schema.json
-#   schemas/templates/v1/*.md
 #   internal/validate/**/*.go
 #   internal/cli/**/*.go
 #   !**/*_test.go
@@ -126,9 +125,30 @@ check_hashes() {
     [ "$actual" = "$expected" ] || fail "published v1 bytes changed: $path"
   done < "$manifest"
 
-  current="$(find "$root/schemas" -type f \( -path '*/v1/*.schema.json' -o -path "$root/schemas/templates/v1/*.md" \) -print | sed "s#^$root/##" | sort)"
+  # The ratchet covers SCHEMAS, and deliberately not the authoring templates
+  # that live beside them.
+  #
+  # A schema is a wire contract: its bytes decide whether documents already
+  # committed to a shared space are valid, so changing them retroactively is a
+  # compatibility event and the freeze is exactly right.
+  #
+  # A template is prose with placeholders. Nothing validates against it, no
+  # contract digest covers it, and the one runtime dependence — submitIsPlaceholder
+  # in internal/cli/cmd_submit.go — matches the `<...>` SHAPE, never the text
+  # inside. Freezing it protected documentation with a wire-contract mechanism,
+  # and the bill came due: eight templates shipped the line
+  # `actor: {kind: agent, name: <agent-name>, ...}`, an agent filled in a name
+  # that was false, a live space recorded it permanently — and the fix was
+  # unreachable without minting an envelope/v2 for types that need no v2.
+  #
+  # What templates get instead is a STRONGER guard for what they actually risk.
+  # The byte freeze catches CHANGE, which for prose is the work, not the danger.
+  # TestAuthoringPagesMatchTheTemplatesTheyDocument (internal/e2e) catches
+  # DRIFT — the agent-facing page disagreeing with what the binary renders —
+  # which is the failure that actually costs something.
+  current="$(find "$root/schemas" -type f -path '*/v1/*.schema.json' -print | sed "s#^$root/##" | sort)"
   listed="$(awk '{print $2}' "$manifest" | sort)"
-  [ "$current" = "$listed" ] || fail "published-v1 manifest does not exactly cover every v1 schema/template"
+  [ "$current" = "$listed" ] || fail "published-v1 manifest does not exactly cover every v1 schema"
 }
 
 phase_record() {

@@ -6,7 +6,7 @@ title: <human/agent-scannable title, <=120 chars>
 space: <space-id>
 from: <announcing-system>
 to: [<recipient-system>]               # broadcast: array, or "all"
-actor: {kind: agent, name: <agent-name>, model: <model-id>}
+actor: {kind: agent, name: <filled by a2a>, model: <filled by a2a>}
 created: <RFC-3339 UTC>
 category: <release|deprecation|migration|incident|notice|status>   # closed enum, §5.2.1
 priority: p3

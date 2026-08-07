@@ -66,7 +66,7 @@ title: Retract <what> for <where> (<why, one clause>)
 space: <space-id>
 from: <producing-system>
 to: [<consumer-system>]                # the system whose surface renders the wrong datum
-actor: {kind: agent, name: <agent-name>, model: <model-id>}
+actor: {kind: agent, name: <written by a2a — never hand-author>}
 created: <RFC-3339 UTC>
 category: data                         # closest shipped category; the retraction lives in x_retraction below
 priority: p1                           # p1 + blocking:true = the reporter's "skip the queue"
