@@ -127,7 +127,21 @@ type TranscriptEvent struct {
 	// ResponseID is set only on a `respond` event (D-024's newly attached
 	// response id).
 	ResponseID string `json:"response_id,omitempty"`
-	Note       string `json:"note,omitempty"`
+	// Version is the event's own §5.2.2 `version` field, carried so a reader
+	// can tell one contract publication from the next.
+	//
+	// Without it, a contract with three `publish` events renders three
+	// IDENTICAL transcript rows — "published the contract", three times — and
+	// nothing on the surface says which version each one created, even though
+	// fold builds Result.Versions from precisely this field. Observed on a
+	// real space: XC-axon-getvisa-ingest carries three publishes and two
+	// recorded versions, rendered as three indistinguishable lines whose links
+	// all resolve to the version-less contract id.
+	//
+	// Empty on every transition that does not carry one, which is most of
+	// them — this is an envelope-version fact, not a lifecycle fact.
+	Version string `json:"version,omitempty"`
+	Note    string `json:"note,omitempty"`
 }
 
 // TranscriptEntry is ONE strictly seq-ordered transcript row — a
@@ -647,6 +661,7 @@ func buildTranscript(sorted []foldedArtifact, order string) ([]TranscriptEntry, 
 						ProducedBy:  evidence.Producer,
 						Consistency: receiptMismatchFor(fa, ev.ULID),
 						ResponseID:  ev.ResponseID,
+						Version:     ev.Version,
 						Note:        fa.EventNotes[ev.ULID],
 					},
 				},
