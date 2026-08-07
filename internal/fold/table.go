@@ -7,6 +7,20 @@ package fold
 // which (kind, fromState, transition) combinations are legal — exactly
 // the anti-duplication rule spec §5 calls for.
 const (
+	// TCreate names the schema's own create transition (schemas/event/v1's
+	// enum still carries it — §5.2.2 defines the enum as the union of
+	// every §3.4 transition name, and §3.4 lists `create` alongside
+	// committed events because the domain tables describe LOCAL authoring
+	// too). It carries NO row in this package's table (spec §18a,
+	// 2026-08-06 operator decision): Fold always starts a kind at
+	// NewResult(kind) = StateDraft, so a committed create event's own
+	// fromState (StateNone) is a state the fold never occupies — a
+	// committed create event is therefore ALREADY flagged
+	// illegal-transition by the generic "no row for this triple" path,
+	// with or without a dedicated row, and removing the row changes
+	// nothing observable. Kept as a constant only because the schema
+	// enum's own value must still be nameable by anything that reads a
+	// (schema-legal, fold-inert) create event off the wire.
 	TCreate      = "create"
 	TPublish     = "publish"
 	TDeprecate   = "deprecate"
@@ -74,7 +88,6 @@ func buildRows() []Row {
 // 3.4.1 contract
 func contractRows() []Row {
 	return []Row{
-		{Kind: KindContract, From: StateNone, Transition: TCreate, To: StateDraft, Role: RoleOwner},
 		{Kind: KindContract, From: StateDraft, Transition: TPublish, To: StatePublished, Role: RoleOwner, Scenario: "first-publish"},
 		{Kind: KindContract, From: StatePublished, Transition: TPublish, To: StatePublished, Role: RoleOwner, Scenario: "new-version-publish"},
 		{Kind: KindContract, From: StatePublished, Transition: TDeprecate, To: StateDeprecated, Role: RoleOwner},
@@ -86,7 +99,6 @@ func contractRows() []Row {
 func requirementRows() []Row {
 	var out []Row
 	out = append(out,
-		Row{Kind: KindRequirement, From: StateNone, Transition: TCreate, To: StateDraft, Role: RoleOwner},
 		Row{Kind: KindRequirement, From: StateDraft, Transition: TPublish, To: StatePublished, Role: RoleOwner},
 		Row{Kind: KindRequirement, From: StatePublished, Transition: TAcknowledge, To: StateAcknowledged, Role: RoleTarget},
 		Row{Kind: KindRequirement, From: StateAcknowledged, Transition: TSatisfy, To: StateSatisfied, Role: RoleOwner},
@@ -112,7 +124,6 @@ func requirementRows() []Row {
 func exchangeRows(kind Kind) []Row {
 	var out []Row
 	out = append(out,
-		Row{Kind: kind, From: StateNone, Transition: TCreate, To: StateDraft, Role: RoleOwner},
 		Row{Kind: kind, From: StateDraft, Transition: TSubmit, To: StateSubmitted, Role: RoleOwner},
 		Row{Kind: kind, From: StateSubmitted, Transition: TAcknowledge, To: StateAcknowledged, Role: RoleTarget},
 		Row{Kind: kind, From: StateAcknowledged, Transition: TAccept, To: StateAccepted, Role: RoleTarget},
@@ -161,7 +172,6 @@ func exchangeRows(kind Kind) []Row {
 // 3.4.4 decision
 func decisionRows() []Row {
 	return []Row{
-		{Kind: KindDecision, From: StateNone, Transition: TCreate, To: StateDraft, Role: RoleAny},
 		{Kind: KindDecision, From: StateDraft, Transition: TPropose, To: StateProposed, Role: RoleOwner},
 		{Kind: KindDecision, From: StateProposed, Transition: TApprove, To: StateDynamic, Role: RoleApprover, Scenario: "quorum-not-reached"},
 		{Kind: KindDecision, From: StateProposed, Transition: TApprove, To: StateDynamic, Role: RoleApprover, Scenario: "quorum-reached"},
@@ -179,7 +189,6 @@ func decisionRows() []Row {
 // 3.4.5 handoff
 func handoffRows() []Row {
 	return []Row{
-		{Kind: KindHandoff, From: StateNone, Transition: TCreate, To: StateDraft, Role: RoleOwner},
 		{Kind: KindHandoff, From: StateDraft, Transition: TSubmit, To: StateSubmitted, Role: RoleOwner},
 		{Kind: KindHandoff, From: StateSubmitted, Transition: TAcknowledge, To: StateAcknowledged, Role: RoleTarget},
 		{Kind: KindHandoff, From: StateAcknowledged, Transition: TVerifyPass, To: StateAccepted, Role: RoleTarget},
@@ -188,8 +197,9 @@ func handoffRows() []Row {
 	}
 }
 
-// 3.4.6 response (attached exchange) — its own minimal create/submit
-// lifecycle, plus the closure-model verify/dispute rows (D-024). Role on
+// 3.4.6 response (attached exchange) — its own minimal submit lifecycle
+// (no create row; see TCreate's own doc comment), plus the closure-model
+// verify/dispute rows (D-024). Role on
 // verify/dispute is documented as RoleOwner but is resolved specially
 // (against the PARENT's From, not a response's own From) by
 // applyResponseScoped — the one place fold's subject resolution branches
@@ -197,7 +207,6 @@ func handoffRows() []Row {
 // Role value.
 func responseRows() []Row {
 	return []Row{
-		{Kind: KindResponse, From: StateNone, Transition: TCreate, To: StateDraft, Role: RoleAny},
 		{Kind: KindResponse, From: StateDraft, Transition: TSubmit, To: StateSubmitted, Role: RoleAny},
 		{Kind: KindResponse, From: StateSubmitted, Transition: TVerify, To: StateVerified, Role: RoleOwner},
 		{Kind: KindResponse, From: StateSubmitted, Transition: TDispute, To: StateDisputed, Role: RoleOwner},
@@ -209,7 +218,6 @@ func responseRows() []Row {
 // `acknowledge`-on-announcement bypass in fold.go.
 func announcementRows() []Row {
 	return []Row{
-		{Kind: KindAnnouncement, From: StateNone, Transition: TCreate, To: StateDraft, Role: RoleOwner},
 		{Kind: KindAnnouncement, From: StateDraft, Transition: TPublish, To: StatePublished, Role: RoleOwner},
 		{Kind: KindAnnouncement, From: StatePublished, Transition: TSupersede, To: StateSuperseded, Role: RoleOwner},
 	}

@@ -47,15 +47,16 @@ func tk(kind fold.Kind, from fold.State, transition string) fold.TransitionKey {
 // below pins this against the real computed set), not from what would be
 // convenient to claim.
 //
-// Read "covered" as EXERCISED, not as ASSERTED, because the two diverge and
-// this gate cannot tell them apart. A triple counts as covered when some path
-// step drives that transition; whether an observable predicate then judged the
-// outcome is a separate question. The live divergence is `draft`: no shipped
-// surface reads an uncommitted draft (`a2a show` refuses — it is built from the
-// committed mirror), so every `folded_state == draft` predicate is logged and
-// skipped at run time while its step still counts here. Widening the gate to
-// demand an assertion per triple would be the right next move; it needs a
-// predicate-level record the driver does not emit yet.
+// Read "covered" here (and in TestPathCatalogueCoversEveryTransition below)
+// as EXERCISED — some path step drives the transition — never as ASSERTED.
+// The two used to diverge silently (a triple whose only predicate was
+// skipped at run time still counted as covered); plan W3d/spec §18a closes
+// that: TestPathCatalogueDrivenNotAsserted (below) reports the EXERCISED
+// set's own subset whose resolved outcome no shipped surface can read back
+// (today: `draft`, uniformly — see assertedTriple's own doc comment) as a
+// SEPARATE, pinned list, rather than silently folding it into "covered".
+// This function's own gap list is unaffected: it still names triples no
+// declared path drives AT ALL.
 func uncoveredTransitions() []uncoveredTransition {
 	var out []uncoveredTransition
 
@@ -63,143 +64,102 @@ func uncoveredTransitions() []uncoveredTransition {
 		"P11 W3c added the requirement family (requirement-lifecycle-published-"+
 			"acknowledged and its four descendants), which structurally CANNOT reach "+
 			"these two: `draft` is unobservable in the committed mirror for a "+
-			"requirement, same root cause as the create-row gap spec §16 records "+
-			"('a2a new' writes to local staging only, 'a2a submit' commits the "+
-			"artifact already published) — withdraw/supersede both load their "+
-			"target from the mirror (lifecycleLoadEnvelope, cmd_lifecycle.go), so "+
-			"no CLI invocation could ever find a requirement whose folded state is "+
-			"`draft` to act on. Two MORE rows than spec §16's own count of 8 "+
-			"structurally-unreachable triples (create only, one per kind) — flagged "+
-			"here rather than silently reconciled, since these are the first "+
-			"non-create rows discovered to share the defect.",
+			"requirement, same root cause D-1 names generally ('a2a new' writes to "+
+			"local staging only, 'a2a submit' commits the artifact already "+
+			"published) — withdraw/supersede both load their target from the "+
+			"mirror (lifecycleLoadEnvelope, cmd_lifecycle.go), so no CLI invocation "+
+			"could ever find a requirement whose folded state is `draft` to act on. "+
+			"Structurally unreachable — no path could ever drive these, unlike the "+
+			"eight `create` triples spec §18a removed from the universe entirely "+
+			"(W3d): those left TransitionRows() outright because their own row was "+
+			"deleted, where these two stay listed because requirementRows() still "+
+			"carries the (draft, withdraw)/(draft, supersede) rows — a requirement "+
+			"CAN legally be withdrawn/superseded from draft, no CLI path can ever "+
+			"observe one there to do it.",
 		tk(fold.KindRequirement, fold.StateDraft, fold.TWithdraw),
 		tk(fold.KindRequirement, fold.StateDraft, fold.TSupersede),
 	)...)
 
-	out = append(out, uncoveredClass(
-		"`supersede` is requirement's own escape hatch (the requester abandoning "+
-			"an open or already-settled requirement for a fresh one) — none of "+
-			"P11 W3c's five requirement paths supersedes one; not written yet, not "+
-			"structurally unreachable (unlike the draft-fromState rows above, "+
-			"`a2a supersede` is a shipped verb from every state listed here, same "+
-			"pattern as the exchange kinds' own uncovered supersede class below).",
-		tk(fold.KindRequirement, fold.StatePublished, fold.TSupersede),
-		tk(fold.KindRequirement, fold.StateAcknowledged, fold.TSupersede),
-		tk(fold.KindRequirement, fold.StateSatisfied, fold.TSupersede),
-		tk(fold.KindRequirement, fold.StateDeclined, fold.TSupersede),
-		tk(fold.KindRequirement, fold.StateWithdrawn, fold.TSupersede),
-	)...)
+	// P11 W3e (supersede family): all five requirement supersede rows above
+	// (published/acknowledged/satisfied/declined/withdrawn) are now covered
+	// by requirement-supersede-from-published/-acknowledged/-satisfied/
+	// -declined/-withdrawn (pathcatalogue_paths.go, Family 10) — the class
+	// that used to live here is gone outright, not reworded, because
+	// nothing in it remains uncovered.
 
 	out = append(out, uncoveredClass(
-		"`supersede` is an escape hatch available from almost every open "+
-			"exchange/announcement state (its own author abandoning it for a "+
-			"fresh one) — none of the six continuity narratives supersedes an "+
-			"in-flight exchange or a still-open announcement; supersede IS "+
-			"exercised exactly where a narrative calls for it (the contract's "+
-			"own successor publish, and the data loop's own failed-handoff "+
-			"supersede — both declared as covered, not here).",
+		"structurally unreachable, the SAME D-1 root cause the requirement pair "+
+			"above names, confirmed by the mechanism that pins D-1 precisely: "+
+			"postSubmissionState (fold/fold.go) returns StateSubmitted for both "+
+			"KindQuestion and KindWorkRequest, never StateDraft — so even a "+
+			"hypothetically committed bare envelope with zero events would fold to "+
+			"`submitted`, not `draft` (fold.RestingStates() agrees: neither "+
+			"{question,draft} nor {work_request,draft} is a member). `a2a new` "+
+			"writes to local staging only and `a2a submit` commits the artifact "+
+			"already `submitted` — no CLI invocation could ever find a question or "+
+			"work_request whose folded state is `draft` to supersede. P11 W3e found "+
+			"this while building the supersede family: spec §18c's own '15 live "+
+			"states' count included these two, which was imprecise — every OTHER "+
+			"live state in that count (submitted/acknowledged/accepted/in_progress/"+
+			"blocked/responded for both kinds, plus announcement/published) is now "+
+			"covered by Family 10 (pathcatalogue_paths.go).",
 		tk(fold.KindQuestion, fold.StateDraft, fold.TSupersede),
-		tk(fold.KindQuestion, fold.StateSubmitted, fold.TSupersede),
-		tk(fold.KindQuestion, fold.StateAcknowledged, fold.TSupersede),
-		tk(fold.KindQuestion, fold.StateAccepted, fold.TSupersede),
-		tk(fold.KindQuestion, fold.StateInProgress, fold.TSupersede),
-		tk(fold.KindQuestion, fold.StateBlocked, fold.TSupersede),
-		tk(fold.KindQuestion, fold.StateResponded, fold.TSupersede),
 		tk(fold.KindWorkRequest, fold.StateDraft, fold.TSupersede),
-		tk(fold.KindWorkRequest, fold.StateSubmitted, fold.TSupersede),
-		tk(fold.KindWorkRequest, fold.StateAcknowledged, fold.TSupersede),
-		tk(fold.KindWorkRequest, fold.StateAccepted, fold.TSupersede),
-		tk(fold.KindWorkRequest, fold.StateInProgress, fold.TSupersede),
-		tk(fold.KindWorkRequest, fold.StateBlocked, fold.TSupersede),
-		tk(fold.KindWorkRequest, fold.StateResponded, fold.TSupersede),
-		tk(fold.KindAnnouncement, fold.StatePublished, fold.TSupersede),
 	)...)
 
-	out = append(out, uncoveredClass(
-		"`decline` is the target's refusal branch. P11 W3c added two dedicated "+
-			"paths that exercise it for real (question-declined-after-acknowledge, "+
-			"work-request-declined-from-submitted) — the remaining (kind, state) "+
-			"pairs below are not written yet, not structurally unreachable: `a2a "+
-			"decline` is a shipped verb from every state listed here too, same as "+
-			"the two now covered.",
-		tk(fold.KindQuestion, fold.StateSubmitted, fold.TDecline),
-		tk(fold.KindQuestion, fold.StateAccepted, fold.TDecline),
-		tk(fold.KindQuestion, fold.StateInProgress, fold.TDecline),
-		tk(fold.KindWorkRequest, fold.StateAcknowledged, fold.TDecline),
-		tk(fold.KindWorkRequest, fold.StateAccepted, fold.TDecline),
-		tk(fold.KindWorkRequest, fold.StateInProgress, fold.TDecline),
-	)...)
+	// P11 W3e (cancel + decline family): all six remaining decline triples
+	// that used to live here (question submitted/accepted/in_progress,
+	// work_request acknowledged/accepted/in_progress) are now covered by
+	// question-declined-from-submitted/-accepted/-in-progress and
+	// work-request-declined-from-acknowledged/-accepted/-in-progress
+	// (pathcatalogue_paths.go, Family 12) — the class that used to live
+	// here is gone outright, not reworded, because nothing in it remains
+	// uncovered.
 
 	out = append(out, uncoveredClass(
-		"`cancel` is the SENDER's own abort of an exchange still in flight; "+
-			"none of the six families abandons what it starts.",
+		"P11 W3e drove `cancel` from every OTHER live from-state "+
+			"exchangeRows()'s cancel loop admits — submitted/acknowledged/"+
+			"accepted/in_progress, both kinds (question-cancel-from-submitted/"+
+			"-acknowledged/-accepted/-in-progress and work-request-cancel-from-"+
+			"submitted/-acknowledged/-accepted/-in-progress, "+
+			"pathcatalogue_paths.go, Family 11) — these two are the SAME D-1 "+
+			"root cause the exchange draft-supersede pair above names, not a "+
+			"fresh finding: `cancel` is an OP-211 generic verb exactly like "+
+			"`supersede` (cmd_lifecycle.go's lifecycleVerbTable), it loads its "+
+			"target via lifecycleLoadEnvelope (the committed mirror ONLY), and "+
+			"postSubmissionState (fold/fold.go) returns StateSubmitted for "+
+			"both KindQuestion and KindWorkRequest — never StateDraft — so "+
+			"fold.RestingStates() contains neither {question,draft} nor "+
+			"{work_request,draft} either: no CLI invocation could ever find a "+
+			"question or work_request AT REST in `draft` to cancel. "+
+			"Structurally unreachable, the identical derivation the pair "+
+			"above already rests on — P11 W3e's own brief ('CANCEL (10)') "+
+			"undercounted by these two, reported as a deviation.",
 		tk(fold.KindQuestion, fold.StateDraft, fold.TCancel),
-		tk(fold.KindQuestion, fold.StateSubmitted, fold.TCancel),
-		tk(fold.KindQuestion, fold.StateAcknowledged, fold.TCancel),
-		tk(fold.KindQuestion, fold.StateAccepted, fold.TCancel),
-		tk(fold.KindQuestion, fold.StateInProgress, fold.TCancel),
 		tk(fold.KindWorkRequest, fold.StateDraft, fold.TCancel),
-		tk(fold.KindWorkRequest, fold.StateSubmitted, fold.TCancel),
-		tk(fold.KindWorkRequest, fold.StateAcknowledged, fold.TCancel),
-		tk(fold.KindWorkRequest, fold.StateAccepted, fold.TCancel),
-		tk(fold.KindWorkRequest, fold.StateInProgress, fold.TCancel),
 	)...)
 
-	out = append(out, uncoveredClass(
-		"the blocked side-branch (`block`/`unblock`) now has a dedicated path "+
-			"(P11 W3c: question-block-then-unblock-restores-accepted), which "+
-			"blocks from `accepted` and proves unblock's dynamic recovery lands "+
-			"back on `accepted` specifically, not `acknowledged` or `in_progress` "+
-			"— the remaining (kind, state) pairs below are not written yet, not "+
-			"structurally unreachable: same shipped `a2a block`/`a2a unblock` "+
-			"verbs, a different starting state or kind.",
-		tk(fold.KindQuestion, fold.StateAcknowledged, fold.TBlock),
-		tk(fold.KindQuestion, fold.StateInProgress, fold.TBlock),
-		tk(fold.KindWorkRequest, fold.StateAcknowledged, fold.TBlock),
-		tk(fold.KindWorkRequest, fold.StateAccepted, fold.TBlock),
-		tk(fold.KindWorkRequest, fold.StateInProgress, fold.TBlock),
-		tk(fold.KindWorkRequest, fold.StateBlocked, fold.TUnblock),
-	)...)
+	// P11 W3d-W3f (block/unblock family): the remaining (kind, state) pairs
+	// that used to live here (question acknowledged/in_progress, work_request
+	// accepted/in_progress, work_request blocked/unblock) are now covered by
+	// question-block-then-unblock-restores-acknowledged/-in-progress and
+	// work-request-block-then-unblock-restores-acknowledged/-accepted/-in-
+	// progress (pathcatalogue_paths.go, Family 13), each pairing a real
+	// `block` with a real `unblock` and asserting the SPECIFIC pre-block
+	// state the dynamic row recovers — the class that used to live here is
+	// gone outright, not reworded, because nothing in it remains uncovered.
 
-	out = append(out, uncoveredClass(
-		"question-lifecycle-to-responded takes the acknowledged->respond "+
-			"shortcut the pendency table itself calls optional granularity "+
-			"('accept/start are optional granularity ... the respond row "+
-			"admits acknowledged directly'); work-request-lifecycle-accept-"+
-			"start-respond-verify-close takes the full accept->start->respond "+
-			"route, but for its OWN kind — each transition row is per-Kind, so "+
-			"question's own start/direct-respond-from-accepted/in_progress rows "+
-			"stay uncovered even though the identical SHAPE is covered for "+
-			"work_request. question/acknowledged/accept itself is now covered "+
-			"separately (P11 W3c's question-block-then-unblock-restores-accepted "+
-			"drives accept to reach `accepted` before blocking) — a different "+
-			"path than this family's own respond-shortcut narrative, not a "+
-			"repeat of it.",
-		tk(fold.KindQuestion, fold.StateAccepted, fold.TStart),
-		tk(fold.KindQuestion, fold.StateAccepted, fold.TRespond),
-		tk(fold.KindQuestion, fold.StateInProgress, fold.TRespond),
-	)...)
-
-	out = append(out, uncoveredClass(
-		"work-request-lifecycle-accept-start-respond-verify-close always "+
-			"passes through `start` before responding, so it never exercises "+
-			"the direct accepted->respond row; and no family disputes a "+
-			"work_request's response (only question's disputed branch does, "+
-			"plan Path #3) — the same asymmetry as question's own gap above, "+
-			"mirrored.",
-		tk(fold.KindWorkRequest, fold.StateAccepted, fold.TRespond),
-		tk(fold.KindWorkRequest, fold.StateResponded, fold.TDispute),
-	)...)
-
-	out = append(out, uncoveredClass(
-		"`responded -> respond -> responded` is the multi-response "+
-			"reconciliation row (table.go's own comment: a second response on "+
-			"an already-responded parent, the phase's documented reconciliation "+
-			"with 3.4.6's multi-response allowance) — none of the six families "+
-			"sends a second response to an already-answered exchange.",
-		tk(fold.KindQuestion, fold.StateResponded, fold.TRespond),
-		tk(fold.KindWorkRequest, fold.StateResponded, fold.TRespond),
-	)...)
+	// P11 W3d-W3f (granularity family): all seven triples that used to live
+	// here — question accepted/TStart, question accepted/TRespond, question
+	// in_progress/TRespond, work_request accepted/TRespond, work_request
+	// responded/TDispute, and the multi-response reconciliation row for both
+	// kinds — are now covered by question-lifecycle-accept-start-respond,
+	// question-lifecycle-accepted-respond-direct, work-request-accepted-
+	// respond-direct, work-request-lifecycle-disputed-sender-owes,
+	// question-multi-response-reconciliation and work-request-multi-response-
+	// reconciliation (pathcatalogue_paths.go, Family 14) — the class that
+	// used to live here is gone outright, not reworded, because nothing in
+	// it remains uncovered.
 
 	return out
 }
@@ -247,6 +207,121 @@ func TestPathCatalogueCoversEveryTransition(t *testing.T) {
 		sort.Strings(unexplained)
 		t.Fatalf("%d transition triple(s) are neither exercised by a declared path nor listed in uncoveredTransitions() with a reason:\n  %s",
 			len(unexplained), joinLines(unexplained))
+	}
+}
+
+// assertedTriple reports whether a covered triple's own resolved outcome
+// state is one some shipped `--json` surface could actually read back and
+// judge — plan W3d's coverage split (spec §16 D-2, §18a). The only gap
+// known today is `draft`, uniformly across every kind: checkFoldedState
+// (pathdriver_live.go) carries an unconditional skip branch for
+// `p.state == fold.StateDraft` and no branch for any other state, so a
+// FoldedState predicate wanting `draft` is ALWAYS logged and skipped at
+// run time, and every other resolved state is asserted for real (a hard
+// failure, not a skip, if it does not match).
+//
+// This is deliberately NOT fold.RestingStates() membership, even though
+// that enumerator exists precisely because of this split (spec §18a) and
+// even though it would look like the natural oracle. Two reasons, both
+// load-bearing, found while implementing this function rather than
+// assumed going in:
+//
+//  1. RestingStates() answers "can Fold ever compute this (kind, state)
+//     pair" — for decision, postSubmissionState(KindDecision) is
+//     StateDraft (a decision committed with zero events), so
+//     {decision, draft} IS in RestingStates(). But no CLI verb ever
+//     commits a decision with zero events (its own entry transition is
+//     `propose`, never a bare commit), and a create step's own resolved
+//     state (resolveCreate, fold.NewResult) describes a STAGED,
+//     uncommitted artifact regardless of kind — the same situation
+//     checkFoldedState skips for every OTHER kind too. Crediting
+//     decision's create step on RestingStates() membership would credit a
+//     predicate the driver's own code still unconditionally skips —
+//     trading the old lie (every triple "covered") for a new, narrower
+//     one. Reported as a deviation rather than silently avoided.
+//  2. RestingStates() would ALSO wrongly decredit
+//     (decision, proposed, approve) at quorum: table.go's own row for
+//     decision `approve` carries the fold.StateDynamic sentinel as its
+//     To (resolved for real by resolveApprove/quorum arithmetic, never a
+//     literal table value), so StateApproved never appears as a literal
+//     `To` anywhere in decisionRows() and RestingStates() (defined as
+//     "every To in the rows ∪ zero-events fallback") never contains
+//     {decision, approved} — even though
+//     pathcatalogue_paths.go's decision-lifecycle-partial-quorum-then-
+//     approved path asserts FoldedState("decision", fold.StateApproved)
+//     and checkFoldedState judges it unconditionally (no skip branch for
+//     `approved`). A RestingStates()-based oracle would call a
+//     demonstrably-asserted transition "driven, not asserted" — a false
+//     negative, which is exactly the kind of wrong number this wave
+//     exists to remove. Flagged for the lead: spec §18a's own literal
+//     definition of RestingStates() is imprecise for any transition whose
+//     ONLY row is StateDynamic-resolved (today: `unblock`, decision
+//     `approve`) — not something this deliverable patches, since D2's own
+//     test pins RestingStates() at exactly 43 pairs.
+func assertedTriple(to fold.State) bool {
+	return to != fold.StateDraft
+}
+
+// TestPathCatalogueDrivenNotAsserted is the coverage split's own reported
+// list (plan W3d: "a step whose predicates all skipped at run time...
+// counts as driven, not covered, and is reported in its own list"). Built
+// over the DRIVEN set (every triple some path actually exercises,
+// pathTransitionOutcomes), never over fold.TransitionRows() — the eight
+// `create` triples left that 93-triple universe outright when spec §18a's
+// rows were removed (W3d), so a list built by walking TransitionRows()
+// would find nothing to report here; this list is the other half of the
+// same split, over the set TestPathCatalogueCoversEveryTransition already
+// calls "covered".
+//
+// Pinned exactly at these eight, one `create` triple per kind (decision
+// included — see assertedTriple's own doc comment for why decision is NOT
+// an exception here): a regression (a triple silently added to or dropped
+// from this list) is a real signal — either a newly declared step resolves
+// to `draft` where none did before, or checkFoldedState grew a new skip
+// branch this list has not been told about.
+func TestPathCatalogueDrivenNotAsserted(t *testing.T) {
+	paths := ConformancePaths()
+	byID, err := pathsByID(paths)
+	if err != nil {
+		t.Fatalf("pathsByID: %v", err)
+	}
+
+	driven := map[fold.TransitionKey]fold.State{}
+	for _, p := range paths {
+		outcomes, err := pathTransitionOutcomes(byID, p.ID)
+		if err != nil {
+			t.Fatalf("pathTransitionOutcomes(%s): %v", p.ID, err)
+		}
+		for _, o := range outcomes {
+			driven[o.TransitionKey] = o.To
+		}
+	}
+
+	var drivenNotAsserted []string
+	for triple, to := range driven {
+		if !assertedTriple(to) {
+			drivenNotAsserted = append(drivenNotAsserted, string(triple.Kind)+"/"+string(triple.From)+"/"+triple.Transition)
+		}
+	}
+	sort.Strings(drivenNotAsserted)
+
+	want := []string{
+		"announcement//create",
+		"contract//create",
+		"decision//create",
+		"handoff//create",
+		"question//create",
+		"requirement//create",
+		"response//create",
+		"work_request//create",
+	}
+	if len(drivenNotAsserted) != len(want) {
+		t.Fatalf("driven-but-not-asserted triples: got %d %v, want %d %v", len(drivenNotAsserted), drivenNotAsserted, len(want), want)
+	}
+	for i := range want {
+		if drivenNotAsserted[i] != want[i] {
+			t.Fatalf("driven-but-not-asserted[%d] = %q, want %q (full got=%v want=%v)", i, drivenNotAsserted[i], want[i], drivenNotAsserted, want)
+		}
 	}
 }
 

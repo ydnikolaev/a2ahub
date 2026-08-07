@@ -28,13 +28,27 @@ const (
 // branch from those exact canonical inputs. Depending on ambient OS identity
 // here would let the command and observer compute different operation keys.
 func respondOperation(system, parentID, result string) (key, branch string) {
+	return respondOperationWithFields(system, parentID, result, nil)
+}
+
+// respondOperationWithFields generalizes respondOperation with an explicit
+// `fields` map — RespondCommand.Run's own operationKey (cmd_lifecycle.go)
+// threads `--field` overrides into operation.Respond's own key derivation,
+// so a harness call driving `a2a respond --field <k>=<v> ...` must mirror
+// the SAME fields here or resolve the wrong branch entirely. Needed for the
+// multi-response reconciliation paths (Family 14, pathcatalogue_paths.go):
+// a plain `--result`-only SECOND respond call on the same parent would mint
+// the IDENTICAL content-derived responseID as the first (RespondCommand.
+// Run's own HIGH-1 fix-wave doc comment) and collapse onto its dedup
+// branch instead of authoring a genuinely second response.
+func respondOperationWithFields(system, parentID, result string, fields map[string]string) (key, branch string) {
 	key = operation.Respond(
 		system,
 		liveRespondActorKind,
 		liveRespondActorName,
 		[]string{parentID},
 		result,
-		nil,
+		fields,
 		nil,
 	)
 	return key, space.BranchName(system, "respond", key)

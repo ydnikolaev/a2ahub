@@ -4,29 +4,40 @@ import "testing"
 
 // TestTransitionRowsUniverse pins the universe size the internal/livee2e
 // path-coverage gate (W3) is checked against — every distinct (Kind, From,
-// Transition) triple this package's rows admit, StateNone rows included
+// Transition) triple this package's rows admit
 // (docs/features/active/agent-ops-2026-07/plans/11-*.plan.md W3/D6). A
 // count drift here is a real signal (a table row added/removed/merged),
 // not test noise; the livee2e coverage gate is what should red on a drift
 // that changes the covered set, not this one silently tracking it.
+//
+// 93, not 101: spec §18a (2026-08-06 operator decision, W3d) removed the
+// eight per-Kind `create` rows (StateNone fromState) from table.go. They
+// were never reachable — Fold always starts a kind at NewResult(kind) =
+// StateDraft, so a committed create event's own fromState (StateNone) is
+// a state the fold never occupies, and the generic table lookup already
+// flagged it illegal-transition with or without a dedicated row (pinned
+// by a before/after probe in this phase's own report, not by a test here
+// — the row's removal is behaviour-identical by construction, so there is
+// nothing to regression-pin beyond this count).
 func TestTransitionRowsUniverse(t *testing.T) {
 	got := TransitionRows()
-	if len(got) != 101 {
-		t.Fatalf("TransitionRows(): want 101 triples, got %d: %+v", len(got), got)
+	if len(got) != 93 {
+		t.Fatalf("TransitionRows(): want 93 triples, got %d: %+v", len(got), got)
 	}
 }
 
-// TestTransitionRowsIncludesStateNone asserts the create-transition rows
-// (StateNone fromState) ARE present — the one deliberate difference from
-// SubjectStates' universe: a path can drive a create, so it must be in
-// scope for coverage.
-func TestTransitionRowsIncludesStateNone(t *testing.T) {
+// TestTransitionRowsExcludesStateNone asserts the create-transition rows
+// (StateNone fromState) are ABSENT — inverted from this test's own
+// pre-W3d shape (TestTransitionRowsIncludesStateNone) now that table.go
+// carries no StateNone row at all (spec §18a): TransitionRows() and
+// SubjectStates() agree on excluding StateNone for the first time, since
+// neither accessor has anything left to disagree about.
+func TestTransitionRowsExcludesStateNone(t *testing.T) {
 	for _, tk := range TransitionRows() {
 		if tk.From == StateNone {
-			return
+			t.Fatalf("TransitionRows() returned a StateNone triple: %+v — table.go should carry no create row (spec §18a)", tk)
 		}
 	}
-	t.Fatal("TransitionRows() excludes every StateNone row; create transitions must be covered")
 }
 
 // TestTransitionRowsDeduplicatedAndSorted asserts no triple repeats (a

@@ -59,6 +59,48 @@ func drivenPathIDs() []string {
 		"decision-approved-superseded",
 		"decision-lifecycle-rejected",
 		"decision-rejected-superseded",
+		"question-supersede-from-submitted",
+		"question-supersede-from-acknowledged",
+		"question-supersede-from-accepted",
+		"question-supersede-from-in-progress",
+		"question-supersede-from-blocked",
+		"question-supersede-from-responded",
+		"work-request-supersede-from-submitted",
+		"work-request-supersede-from-acknowledged",
+		"work-request-supersede-from-accepted",
+		"work-request-supersede-from-in-progress",
+		"work-request-supersede-from-blocked",
+		"work-request-supersede-from-responded",
+		"announcement-supersede-from-published",
+		"requirement-supersede-from-published",
+		"requirement-supersede-from-acknowledged",
+		"requirement-supersede-from-declined",
+		"requirement-supersede-from-withdrawn",
+		"question-cancel-from-submitted",
+		"question-cancel-from-acknowledged",
+		"question-cancel-from-accepted",
+		"question-cancel-from-in-progress",
+		"work-request-cancel-from-submitted",
+		"work-request-cancel-from-acknowledged",
+		"work-request-cancel-from-accepted",
+		"work-request-cancel-from-in-progress",
+		"question-declined-from-submitted",
+		"question-declined-from-accepted",
+		"question-declined-from-in-progress",
+		"work-request-declined-from-acknowledged",
+		"work-request-declined-from-accepted",
+		"work-request-declined-from-in-progress",
+		"question-block-then-unblock-restores-acknowledged",
+		"question-block-then-unblock-restores-in-progress",
+		"work-request-block-then-unblock-restores-acknowledged",
+		"work-request-block-then-unblock-restores-accepted",
+		"work-request-block-then-unblock-restores-in-progress",
+		"question-lifecycle-accept-start-respond",
+		"question-lifecycle-accepted-respond-direct",
+		"work-request-accepted-respond-direct",
+		"work-request-lifecycle-disputed-sender-owes",
+		"question-multi-response-reconciliation",
+		"work-request-multi-response-reconciliation",
 	}
 }
 
@@ -93,6 +135,20 @@ func undrivablePaths() []undrivablePath {
 				"limits). The transition itself (requirement, acknowledged, satisfy) IS legal " +
 				"at the fold layer with no precondition on HasFulfillingResponse — declared " +
 				"above (coverage credit stands) — only DRIVING it with real, validating refs " +
+				"is blocked.",
+		},
+		{
+			ID: "requirement-supersede-from-satisfied",
+			Reason: "chained on requirement-satisfied (its own Precondition), itself parked " +
+				"above for the same reason: `a2a satisfy`'s own refs validation cannot be " +
+				"driven through any shipped surface (see that entry's own Reason in full). A " +
+				"precondition this wave cannot drive for real leaves every path chained onto " +
+				"it equally undrivable, transitively — this is the ONE path P11 W3e's own " +
+				"supersede family chains onto it. The transition itself (requirement, " +
+				"satisfied, supersede) IS legal at the fold layer (requirementRows()'s own " +
+				"escape-hatch loop admits `satisfied`, Role Owner) and coverage credit stands " +
+				"(PathTransitions/pathTransitionOutcomes resolve the whole chain purely " +
+				"against fold's own table, never touching the real binary) — only DRIVING it " +
 				"is blocked.",
 		},
 	}
