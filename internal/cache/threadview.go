@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -33,6 +34,18 @@ const (
 	// author-supplied ordering, surfaced rather than silently substituted
 	// (§T3 "Degradation is designed, not silent").
 	ThreadOrderDeclared = "declared"
+
+	// TranscriptKindDerived marks a transcript row that is NOT a git-
+	// committed fact of THIS space — it is assembled from a counterparty's
+	// own consumes.yaml registry (a contract adoption). Every other kind
+	// ("artifact", "event") corresponds to something this space's own git
+	// history actually recorded; a "derived" row does not, and a reader
+	// checking the JSON `kind` field (not merely the surrounding page's
+	// styling) must be able to tell the two apart — see this const's own
+	// caller, buildTranscript, and the operator report that prompted it:
+	// a counterparty's adoption was otherwise invisible in the thread
+	// ("я как будто сам с собой разговариваю").
+	TranscriptKindDerived = "derived"
 )
 
 // ErrThreadNotFound is returned by ThreadView when threadID (whether
@@ -144,15 +157,35 @@ type TranscriptEvent struct {
 	Note    string `json:"note,omitempty"`
 }
 
+// TranscriptDerivedAdoption is a transcript entry's derived-kind payload: one
+// counterparty's registered adoption of a contract this thread carries,
+// read from THAT system's own committed consumes.yaml (never synthesised —
+// see TranscriptKindDerived). ContractID names which rendered thread member
+// was adopted, the same role Event.Subject plays for an event row.
+type TranscriptDerivedAdoption struct {
+	ContractID string `json:"contract_id"`
+	System     string `json:"system"`
+	Major      int    `json:"major"`
+	// Since is the adopting system's own consumes.yaml `since:` date,
+	// verbatim (YYYY-MM-DD). Omitted — never invented, never "now" — when
+	// that registry entry carries no `since:` at all; see buildTranscript's
+	// own doc comment for how such a row is still rendered, never dropped,
+	// and where it lands without a real ordering key.
+	Since string `json:"since,omitempty"`
+}
+
 // TranscriptEntry is ONE strictly seq-ordered transcript row — a
-// discriminated union (Kind = "artifact" | "event"), never two lists a
-// reader must interleave mentally (§T3).
+// discriminated union (Kind = "artifact" | "event" | "derived"), never two
+// lists a reader must interleave mentally (§T3). "derived" (see
+// TranscriptKindDerived) is the one kind that is not itself a fact this
+// space's own git history recorded.
 type TranscriptEntry struct {
-	Seq      int64               `json:"seq"`
-	Kind     string              `json:"kind"`
-	At       time.Time           `json:"at"`
-	Artifact *TranscriptArtifact `json:"artifact,omitempty"`
-	Event    *TranscriptEvent    `json:"event,omitempty"`
+	Seq      int64                      `json:"seq"`
+	Kind     string                     `json:"kind"`
+	At       time.Time                  `json:"at"`
+	Artifact *TranscriptArtifact        `json:"artifact,omitempty"`
+	Event    *TranscriptEvent           `json:"event,omitempty"`
+	Derived  *TranscriptDerivedAdoption `json:"derived,omitempty"`
 }
 
 // NextAction is one legal transition and the SYSTEM IDS (never role
@@ -407,7 +440,20 @@ func (s *Store) renderThread(threadID, resolvedFrom, spaceID string, members []f
 		}
 	}
 
-	transcript, unresolvedEvents := buildTranscript(sorted, order)
+	// Adoption facts, per contract member this thread actually renders —
+	// resolved ONCE here (never per-candidate inside buildTranscript) so
+	// the read stays a single mirror-wide glob per contract rather than
+	// one per transcript candidate.
+	adoptions := map[string][]adoptionFact{}
+	for _, fa := range sorted {
+		if fa.kind() != fold.KindContract {
+			continue
+		}
+		if facts := s.contractAdoptions(spaceID, fa.Env.ID); len(facts) > 0 {
+			adoptions[fa.Env.ID] = facts
+		}
+	}
+	transcript, unresolvedEvents := buildTranscript(sorted, order, adoptions)
 
 	var unresolved []UnresolvedFact
 	for _, fa := range sorted {
@@ -478,6 +524,66 @@ func (s *Store) renderThread(threadID, resolvedFrom, spaceID string, members []f
 		Artifacts: artifacts, Transcript: transcript, OpenItems: openItems,
 		Flags: flags, Unresolved: unresolved, Deliveries: deliveries,
 	}, nil
+}
+
+// adoptionFact is one OTHER system's own consumes.yaml dependency entry
+// naming a contract this thread renders — contractAdoptions' return unit,
+// carrying exactly the fields TranscriptDerivedAdoption needs and nothing
+// this package would have to re-derive.
+type adoptionFact struct {
+	System string
+	Major  int
+	// Since is the registry's own `since:` value, verbatim — possibly
+	// empty (see TranscriptDerivedAdoption.Since's own doc comment).
+	Since string
+}
+
+// contractAdoptions returns spaceID's own mirror-wide adoption facts for
+// contractID: one adoptionFact per OTHER system whose committed
+// consumes.yaml names it, read straight off the mirror's checked-out
+// working tree (glob mirror.Dir/*/consumes.yaml) — the SAME shape
+// registered_consumers.go's own findRegisteredConsumers walks for the
+// D-022 union, and the SAME parseConsumesStrict validation
+// myDependencyContracts (mirror.go) and findRegisteredConsumers both
+// already call, reused here rather than a second consumes.yaml parser.
+// This function differs from both only in what it keeps: they collapse
+// down to a bare system-id set; a thread transcript row needs the pinned
+// major and the declared `since` date as well, so this reads the same
+// files and keeps the extra fields.
+//
+// A missing mirror, an unreadable glob, or one participant's malformed
+// registry degrades to fewer facts (or none) rather than failing the
+// whole thread render — this file's own established convention
+// (buildDeliveries, buildOpenItems' response-parent fallback): a
+// counterparty's adoption is significant to SHOW, but its absence from one
+// broken file must never take down the rest of the transcript.
+func (s *Store) contractAdoptions(spaceID, contractID string) []adoptionFact {
+	mirror, ok := s.mirrorFor(spaceID)
+	if !ok {
+		return nil
+	}
+	matches, err := filepath.Glob(filepath.Join(mirror.Dir, "*", "consumes.yaml"))
+	if err != nil {
+		return nil
+	}
+	var out []adoptionFact
+	for _, m := range matches {
+		raw, rerr := readBounded(m, maxCacheReadBytes)
+		if rerr != nil {
+			continue
+		}
+		registry, cerr := parseConsumesStrict(raw, m)
+		if cerr != nil {
+			continue
+		}
+		for _, dep := range registry.Dependencies {
+			if dep.Contract != contractID {
+				continue
+			}
+			out = append(out, adoptionFact{System: registry.System, Major: dep.Major, Since: dep.Since})
+		}
+	}
+	return out
 }
 
 // mirrorFor returns spaceID's own connected-space mirror (dir + manifest),
@@ -582,26 +688,84 @@ func parseTimeField(s string) time.Time {
 	return t
 }
 
+// parseDateField parses a consumes.yaml `since:` value — the date-only
+// (YYYY-MM-DD) format `a2a contract adopt` writes (cmd_contract.go's own
+// `deps.now().UTC().Format("2006-01-02")`) — into a UTC midnight
+// time.Time. An empty or unparseable value degrades to the zero time, the
+// SAME "display metadata only, never a hard error" convention
+// parseTimeField already uses for RFC3339 fields — never invented, never
+// substituted with "now" (the honesty rule this function exists to keep:
+// a dated row that is WRONG is worse than one that is honestly undated).
+func parseDateField(s string) time.Time {
+	if s == "" {
+		return time.Time{}
+	}
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
 // transcriptCandidate is buildTranscript's own internal sort unit — one
-// artifact or one event, carrying whichever ordering key sortMembers'
-// `order` selects plus the artifact-before-event/id tie-break key.
+// artifact, one event, or one derived adoption row, carrying whichever
+// ordering key sortMembers' `order` selects plus the
+// artifact-before-event/id tie-break key.
 type transcriptCandidate struct {
 	entry   TranscriptEntry
 	seq     int64
 	at      time.Time
 	isEvent bool
-	tieID   string
+	// isDerived marks a TranscriptKindDerived candidate. Its seq is its
+	// OWN contract member's seq (see the derived-candidate loop below,
+	// buildTranscript's own doc comment) — never a real, independently
+	// earned commit position — so at an equal seq it is ranked AFTER the
+	// artifact/event candidates that share that position (candidateRank),
+	// never before: an adoption can never render as though it preceded
+	// the very contract it names.
+	isDerived bool
+	tieID     string
+}
+
+// candidateRank orders three candidates that land at the same seq/at
+// position: the contract's own artifact row first, then its lifecycle
+// events, then any derived adoption row naming it — never the reverse,
+// which would render "adopted" ahead of "exists".
+func candidateRank(c transcriptCandidate) int {
+	switch {
+	case c.isDerived:
+		return 2
+	case c.isEvent:
+		return 1
+	default:
+		return 0
+	}
 }
 
 // buildTranscript merges sorted's own artifacts with every DISTINCT event
 // (deduplicated by ULID — a verify/dispute event reaches the transcript
 // via both the parent's own gathered event set AND the response's own,
-// per mirror.go's gatherEvents doc) attached to any member, in ONE
-// strictly-ordered array (§T3). It also returns the "event subject not a
-// rendered member" half of ThreadResult.Unresolved (the other half,
-// unresolved parents, is computed by the caller against the same member
-// set).
-func buildTranscript(sorted []foldedArtifact, order string) ([]TranscriptEntry, []UnresolvedFact) {
+// per mirror.go's gatherEvents doc) attached to any member, PLUS one
+// TranscriptKindDerived row per (contract member, adopting system) pair in
+// adoptions, in ONE strictly-ordered array (§T3). It also returns the
+// "event subject not a rendered member" half of ThreadResult.Unresolved
+// (the other half, unresolved parents, is computed by the caller against
+// the same member set).
+//
+// A derived row whose consumes.yaml carried no `since:` (parseDateField's
+// zero-time case) is still emitted, never dropped — the honesty rule this
+// wave was built to keep cuts the OTHER way: inventing a date is worse
+// than an undated fact, but DROPPING the fact of adoption entirely would
+// recreate the exact defect this feature exists to fix. Such a row sorts
+// to the very END of the transcript, deliberately — NOT to the front the
+// way a naive "unparsed date degrades to the zero time, zero sorts first"
+// rule (parseTimeField's own established convention elsewhere in this
+// file) would place it. A missing date carries no ordering claim at all;
+// placing it first would assert "this adoption happened before anything
+// else in the thread", which is exactly as dishonest as inventing the
+// date itself — the same rule the brief states for the date applies to
+// the row's POSITION.
+func buildTranscript(sorted []foldedArtifact, order string, adoptions map[string][]adoptionFact) ([]TranscriptEntry, []UnresolvedFact) {
 	memberIDs := make(map[string]bool, len(sorted))
 	for _, fa := range sorted {
 		memberIDs[fa.Env.ID] = true
@@ -670,8 +834,49 @@ func buildTranscript(sorted []foldedArtifact, order string) ([]TranscriptEntry, 
 		}
 	}
 
+	for _, fa := range sorted {
+		if fa.kind() != fold.KindContract {
+			continue
+		}
+		for _, af := range adoptions[fa.Env.ID] {
+			at := parseDateField(af.Since)
+			candidates = append(candidates, transcriptCandidate{
+				entry: TranscriptEntry{
+					// Seq mirrors the NAMED CONTRACT's own seq — a derived
+					// row earns no independent commit position, but
+					// anchoring it to its contract's own position (rather
+					// than a bare, meaningless 0) keeps it from outranking
+					// facts that actually precede the contract in commit
+					// order, and tells a consumer sorting by Seq alone
+					// exactly what it is anchored to.
+					Seq: fa.Seq, Kind: TranscriptKindDerived, At: at,
+					Derived: &TranscriptDerivedAdoption{
+						ContractID: fa.Env.ID, System: af.System, Major: af.Major, Since: af.Since,
+					},
+				},
+				seq: fa.Seq, at: at, isDerived: true, tieID: fa.Env.ID + "|" + af.System,
+			})
+		}
+	}
+
 	sort.SliceStable(candidates, func(i, j int) bool {
 		a, b := candidates[i], candidates[j]
+
+		// An undated derived row (adoptionFact.Since carried no `since:`
+		// at all, parseDateField's zero-time case) makes NO ordering
+		// claim — see buildTranscript's own doc comment. It always sorts
+		// after every dated/committed candidate, regardless of order
+		// mode, rather than letting its degraded zero time win a
+		// chronological comparison it has no evidence for.
+		aUndated := a.isDerived && a.at.IsZero()
+		bUndated := b.isDerived && b.at.IsZero()
+		if aUndated != bUndated {
+			return !aUndated
+		}
+		if aUndated && bUndated {
+			return a.tieID < b.tieID
+		}
+
 		if order == ThreadOrderCommitted {
 			if a.seq != b.seq {
 				return a.seq < b.seq
@@ -679,8 +884,21 @@ func buildTranscript(sorted []foldedArtifact, order string) ([]TranscriptEntry, 
 		} else if !a.at.Equal(b.at) {
 			return a.at.Before(b.at)
 		}
-		if a.isEvent != b.isEvent {
-			return !a.isEvent // artifact before event, same commit/timestamp
+		// At an equal position, rank by kind (candidateRank) before
+		// falling through to a tie-break: an artifact sorts before its
+		// own lifecycle events, and both sort before a derived adoption
+		// row naming the same contract (never the reverse — "adopted"
+		// cannot precede "exists").
+		if ar, br := candidateRank(a), candidateRank(b); ar != br {
+			return ar < br
+		}
+		// Two dated derived rows for the SAME contract (same anchor seq)
+		// are ordered by their OWN `since` dates — the brief's own "order
+		// it into the transcript by that date" — even though the
+		// surrounding order mode's primary key (seq, above) is what
+		// placed them at this shared position.
+		if a.isDerived && b.isDerived && !a.at.Equal(b.at) {
+			return a.at.Before(b.at)
 		}
 		return a.tieID < b.tieID
 	})

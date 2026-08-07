@@ -77,6 +77,31 @@ type Item struct {
 	// shape remains unchanged while presentation code stops inferring action
 	// ownership from blocking/deadline labels.
 	YourMove bool `json:"-"`
+	// WaitingOn and ExpectedTransition mirror cache.OpenItem's own
+	// identically-named fields — the pendency relation's verdict.Owners
+	// and verdict.Expected for this artifact right now: WHO is owed a
+	// move, and which transition. They exist so a consumer aggregating
+	// many Items (the dashboard's exchange-overlay edges) can tell an
+	// artifact that is merely LIVE (isOpen) from one where somebody
+	// actually OWES the next move — Blocking above is a priority/gate
+	// flag on the envelope, never a pendency verdict, and conflating the
+	// two is the defect these fields exist to end (internal/pendency
+	// stays the one place that computes the verdict; I7).
+	//
+	// Neither is populated by this package's own Store methods today —
+	// internal/cache.toItem does not carry pendency, and doing so cheaply
+	// here would need a second per-artifact pendency.Resolve call at every
+	// inbox/outbox call site, which I7 forbids. The dashboard assembler
+	// (internal/html) already computes the SAME verdict once, for
+	// buildOpenItems' cache.OpenItem, and fills these in on its own copies
+	// of Item from that result before aggregating edges — never a second
+	// pendency computation, just a second field on an already-computed
+	// answer. A caller reading cache.Item straight from Store (the CLI's
+	// Go-typed callers) sees the zero value here, same as before these
+	// fields existed; `json:"-"` keeps that off `a2a inbox`/`outbox --json`
+	// exactly like YourMove.
+	WaitingOn          []string `json:"-"`
+	ExpectedTransition string   `json:"-"`
 }
 
 // SpaceSyncInfo is the mirror snapshot fact the dashboard needs per connected
