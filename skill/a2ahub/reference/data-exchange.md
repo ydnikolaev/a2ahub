@@ -43,7 +43,8 @@
 `deliver` and `verify` also accept the ordinary lifecycle actor flags
 (`--actor-kind`, `--actor-name`, `--actor-model`), because both write a
 lifecycle event; they behave exactly as they do on any other transition verb
-and are normally left to the configured identity.
+and are normally left to the configured identity —
+[actor-identity.md](actor-identity.md) owns what that resolves to.
 
 **Exit codes.** `0` success. `1` a failing verdict **or** a refusal — these
 are distinguished by content, not by code (see the `--json` rule in the

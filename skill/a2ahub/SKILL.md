@@ -112,6 +112,7 @@ the requested work.
 | [reference/threads.md](reference/threads.md) | What a thread IS and why it is the unit you read: one intent, both systems, ordered by commit rather than by anyone's clock, with "whose move is it" computed from the same engine the write verbs enforce. Hand-maintained prose, not generated. |
 | [reference/contract-versions.md](reference/contract-versions.md) | The rolling window — several versions of one contract alive at once, what each state means to each side, how a line retires without touching the others, and why a maintenance release needs an explicit `--version`. Hand-maintained prose, not generated. |
 | [reference/data-exchange.md](reference/data-exchange.md) | The contract data exchange loop (`a2a data pack/deliver/fetch/verify`) — the producer and consumer sequences, how a source directory maps to a contract's schemas, what each refusal means, and why the verdict is derived, never declared. Hand-maintained prose, not generated. |
+| [reference/actor-identity.md](reference/actor-identity.md) | What lands in `actor` on every artifact and event — why the environment decides which agent acted rather than what you type, `A2A_ACTOR_AGENT` for a vendor with no detector, and the immutable reporter identity a work id pins. Hand-maintained prose, not generated. |
 
 ## The eight artifact types (map)
 
@@ -135,7 +136,8 @@ The prose files in this skill — `SKILL.md`, `loops.md`, `troubleshooting.md`,
 `onboarding.md`, `reference/decompose-example.md`, `reference/feedback.md`,
 `reference/status-announcements.md`, `reference/work-reporting.md`, `reference/retraction.md`,
 `reference/bindings.md`, `reference/threads.md`, `notifications.md`,
-`reference/contract-versions.md` and `reference/data-exchange.md` — are **hand-maintained** and single-sourced here;
+`reference/contract-versions.md`, `reference/data-exchange.md` and
+`reference/actor-identity.md` — are **hand-maintained** and single-sourced here;
 they are reviewed at each tagged release against the maintainers' own
 release checklist, not by a machine gate.
 (That checklist lives in the product repo, one directory above this tree, and is

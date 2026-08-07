@@ -9,6 +9,7 @@
     {"id":"contract-versions","group":"Concepts","title":"Contract versions and sunsetting","file":"a2ahub/reference/contract-versions.md"},
     {"id":"commands","group":"Reference","title":"Command reference","file":"a2ahub/reference/commands.md"},
     {"id":"data-exchange","group":"Reference","title":"Data exchange: pack, deliver, fetch, verify","file":"a2ahub/reference/data-exchange.md"},
+    {"id":"actor-identity","group":"Reference","title":"Who gets recorded as the actor","file":"a2ahub/reference/actor-identity.md"},
     {"id":"work-reporting","group":"Reference","title":"Reporting operational work","file":"a2ahub/reference/work-reporting.md"},
     {"id":"notifications","group":"Reference","title":"Native and editor notifications","file":"a2ahub/notifications.md"},
     {"id":"decompose","group":"Reference","title":"Decompose example","file":"a2ahub/reference/decompose-example.md"},
