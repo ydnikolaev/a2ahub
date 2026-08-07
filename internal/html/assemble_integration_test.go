@@ -323,19 +323,36 @@ func TestAssemble_Threads(t *testing.T) {
 	if !ok {
 		t.Fatalf("the solo work request is on no exchange row: %+v", data.Outbox)
 	}
-	if solo.Prompt == nil || len(solo.Prompt.Moves) == 0 {
-		t.Fatalf("%s carries no prompt facts, so its thread's open items were never folded: %+v", soloID, solo)
+	// AMENDED 2026-08-07 — this assertion used to REQUIRE a prompt here, and
+	// the moves it accepted were `cancel, withdraw, supersede, close, note`.
+	//
+	// That is spec 11 §8.1's defect written as a test. The solo work request is
+	// SUBMITTED and unanswered: pendency puts the next move on seomatrix
+	// (`acknowledge`), and nobody is waiting for axon to withdraw or supersede
+	// anything. Offering those to an agent is exactly what the operator
+	// reported — "the dashboard still said it was the operator's turn and
+	// offered a prompt to hand to an agent. By the protocol nothing was pending
+	// on the operator."
+	//
+	// `next_actions` still lists every move the protocol would ACCEPT — that is
+	// not what changed. A PROMPT is an instruction, and it now appears only
+	// where the relation names this system as owing the next move.
+	if solo.Prompt != nil {
+		t.Fatalf("%s is submitted and its next move belongs to seomatrix, yet it offers an agent prompt: %+v",
+			soloID, solo.Prompt)
 	}
-	if solo.Prompt.Doc != "reference/authoring/work_request.md" {
-		t.Fatalf("%s points at %q, not at the work-request authoring doc", soloID, solo.Prompt.Doc)
+	// ...and the rule must not have simply killed every prompt. The response
+	// addressed TO us is one we owe a move on, so it keeps its facts.
+	owed, ok := byRowID[responseID]
+	if !ok {
+		t.Fatalf("the incoming response is on no exchange row: %+v", data.Inbox)
 	}
-	if !strings.Contains(solo.Prompt.Loop, "§8.2") {
-		t.Fatalf("%s is ours to send, so it belongs to the send loop; got %q", soloID, solo.Prompt.Loop)
+	if owed.Prompt == nil || len(owed.Prompt.Moves) == 0 {
+		t.Fatalf("%s is addressed to us and pendency puts the move on us, yet it carries no prompt: %+v",
+			responseID, owed)
 	}
-	for _, move := range solo.Prompt.Moves {
-		if !containsString([]string{"cancel", "withdraw", "supersede", "close", "note"}, move) {
-			t.Fatalf("%s is submitted and unanswered; %q is not a move its own sender holds", soloID, move)
-		}
+	if !strings.Contains(owed.Prompt.Loop, "§8.3") {
+		t.Fatalf("%s came to us, so it belongs to the receive loop; got %q", responseID, owed.Prompt.Loop)
 	}
 	// The label and the creation sort key are two formattings of one instant, so a row
 	// can never carry an age the exchange list cannot order it by. (These

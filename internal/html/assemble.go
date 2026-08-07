@@ -950,7 +950,13 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 			ExpectedTransition: item.ExpectedTransition,
 			Why:                item.Why,
 			HumanGate:          item.HumanGate,
-			Prompt:             agentPromptOf(actions, item.Type, self, outgoing),
+			// Gated on pendency, exactly as the exchange rows are (see
+			// agentPrompt's own doc comment). Both call sites must agree, or
+			// the same artifact offers a prompt in the thread and withholds
+			// one in Exchange — which is what shipped: the settled getvisa
+			// contract stopped prompting on its exchange row while its thread
+			// still handed an agent `publish, deprecate`.
+			Prompt: agentPromptFor(item.WaitingOn, self, actions, item.Type, outgoing),
 		})
 		if len(waiting) > 0 {
 			view.Settled = false

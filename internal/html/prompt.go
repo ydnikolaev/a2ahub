@@ -114,13 +114,44 @@ func agentPromptOf(actions []ThreadNextAction, artifactType, self string, outgoi
 }
 
 // agentPrompt is agentPromptOf over a cache open item, for the rows whose
-// thread never becomes a rendered conversation.
+// thread never becomes a rendered conversation — gated on PENDENCY, not on
+// legality.
+//
+// A prompt is an instruction to an agent. `next_actions` is the list of moves
+// the protocol would ACCEPT, and it stays exactly as it is: a published
+// contract's owner may always publish a successor or deprecate it, and the
+// dashboard is right to say so. But nobody is waiting for either, and turning
+// "you may" into "here is your move" is the same defect this phase exists to
+// end — a surface telling an agent to act where the relation says nothing is
+// owed.
+//
+// It was reachable on a real space: XC-axon-getvisa-ingest, published and
+// adopted and settled, carried `waiting_on: []` and no expected transition,
+// and still offered `publish, deprecate` to any agent reading the dashboard.
+//
+// So the prompt appears only where pendency names THIS system as owing the
+// next move. WaitingOn is the relation's own answer (internal/pendency), never
+// re-derived here.
 func agentPrompt(item cache.OpenItem, self string, outgoing bool) *AgentPrompt {
 	actions := make([]ThreadNextAction, 0, len(item.NextActions))
 	for _, action := range item.NextActions {
 		actions = append(actions, ThreadNextAction{Transition: action.Transition, By: action.By})
 	}
-	return agentPromptOf(actions, item.Type, self, outgoing)
+	return agentPromptFor(item.WaitingOn, self, actions, item.Type, outgoing)
+}
+
+// agentPromptFor is the ONE gate, so the thread view and the exchange rows
+// cannot answer differently for the same artifact. They already had: the
+// settled getvisa contract stopped prompting on its exchange row while its
+// thread still offered `publish, deprecate`.
+//
+// waitingOn is internal/pendency's own verdict, carried through cache and
+// never re-derived here.
+func agentPromptFor(waitingOn []string, self string, actions []ThreadNextAction, artifactType string, outgoing bool) *AgentPrompt {
+	if !containsString(waitingOn, self) {
+		return nil
+	}
+	return agentPromptOf(actions, artifactType, self, outgoing)
 }
 
 // openItemIndex is every open item the visible artifacts fold to, keyed by
