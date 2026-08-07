@@ -1,6 +1,6 @@
 schema: release-notes/v1
 version: "0.19.9"
-released: "2026-08-06"
+released: "2026-08-07"
 headline: "A settled contract stops asking you to do something about it"
 changes:
   - id: RN-01909-0
