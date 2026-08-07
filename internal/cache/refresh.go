@@ -185,7 +185,7 @@ func (s *Store) SyncIfStaleResults(ctx context.Context) []SpaceSyncResult {
 	start := time.Now()
 	var results []SpaceSyncResult
 	for i, idx := range staleIdx {
-		if time.Since(start) >= totalBudget {
+		if time.Since(start) >= s.totalSyncBudget() {
 			for _, restIdx := range staleIdx[i:] {
 				spaceID := spaces[restIdx].SpaceID
 				results = append(results, SpaceSyncResult{
@@ -196,7 +196,7 @@ func (s *Store) SyncIfStaleResults(ctx context.Context) []SpaceSyncResult {
 			break
 		}
 		sm := spaces[idx]
-		mctx, cancel := context.WithTimeout(ctx, perMirrorTimeout)
+		mctx, cancel := context.WithTimeout(ctx, s.perMirrorSyncTimeout())
 		err := s.cloneOrFetch(mctx, sm.Dir, sm.RepoURL, sm.Credential)
 		cancel()
 		if err != nil {
@@ -255,4 +255,35 @@ func (s *Store) refreshManifestAfterFetch(idx int) {
 func isRefreshableMirror(dir string) bool {
 	info, err := os.Stat(filepath.Join(dir, ".git"))
 	return err == nil && (info.IsDir() || info.Mode().IsRegular())
+}
+
+// totalSyncBudget and perMirrorSyncTimeout resolve the two wall-clock bounds,
+// falling back to the package constants whenever nothing overrode them.
+//
+// The fallback is what keeps this change invisible in production: NewStore
+// sets neither field, so every caller that existed before gets exactly the
+// constants it always got. Only a test that has deliberately shortened them
+// sees anything different — and what it sees is the same scheduling rule at a
+// price it can afford to assert.
+func (s *Store) totalSyncBudget() time.Duration {
+	if s.syncTotalBudget > 0 {
+		return s.syncTotalBudget
+	}
+	return totalBudget
+}
+
+func (s *Store) perMirrorSyncTimeout() time.Duration {
+	if s.syncPerMirrorTimeout > 0 {
+		return s.syncPerMirrorTimeout
+	}
+	return perMirrorTimeout
+}
+
+// SetSyncBudgetsForTest shortens the two bounds so a test can prove the budget
+// RULE without spending the budget. Same test-only DI convention as
+// SetCloneOrFetchForTest. A non-positive value leaves that bound at its
+// production constant.
+func (s *Store) SetSyncBudgetsForTest(total, perMirror time.Duration) {
+	s.syncTotalBudget = total
+	s.syncPerMirrorTimeout = perMirror
 }
