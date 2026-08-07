@@ -135,8 +135,13 @@ changes:
       emits it directly is ignored. The pending answer named the approver's
       system without saying any of that, so an agent reading it would try a move
       the tool refuses. Open items now carry `human_gate` when the move they
-      name is gated, so an agent can escalate instead of failing.
-    affects: ["a2a thread", "a2a inbox --actionable", "a2a html"]
+      name is gated, so an agent can escalate instead of failing — on `a2a
+      thread` and `a2a inbox --actionable`. NOT yet on `a2a html`: that surface
+      keeps its own projection of an open item and does not carry the field, so
+      an agent reading the dashboard still cannot see the gate. Named here
+      rather than left for a reader to discover, and tracked as the first item
+      of the dashboard work.
+    affects: ["a2a thread", "a2a inbox --actionable"]
     action:
       scope: none
       why: >
