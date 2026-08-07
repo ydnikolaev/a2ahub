@@ -923,7 +923,15 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 			ID: item.ID, Type: item.Type, State: item.State, Blocking: item.Blocking,
 			NeededBy: item.NeededBy, NextActions: actions, WaitingOn: waiting,
 			YourMove: item.YourMove, Pending: len(waiting) > 0,
-			Prompt: agentPromptOf(actions, item.Type, self, outgoing),
+			// The relation's own verdict, carried whole. Not recomputed here
+			// and not summarised: `why` in particular is the sentence that
+			// makes a "nobody owes anything" answer accountable, and a
+			// paraphrase of it would be this package's fifth opinion on a
+			// question that has one home.
+			ExpectedTransition: item.ExpectedTransition,
+			Why:                item.Why,
+			HumanGate:          item.HumanGate,
+			Prompt:             agentPromptOf(actions, item.Type, self, outgoing),
 		})
 		if len(waiting) > 0 {
 			view.Settled = false
