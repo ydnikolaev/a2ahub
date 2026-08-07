@@ -33,6 +33,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ydnikolaev/a2ahub/internal/agentid"
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
@@ -68,21 +69,57 @@ type ActorResolver func(ActorInput) (template.Actor, error)
 // explicit input > A2A_ACTOR_* env vars > OS user. MCP has no harness/config
 // actor defaults, so the OS user is its final honest fallback. actor.kind
 // defaults to "agent" when no source names one.
+// # Detection outranks the name a tool input can carry
+//
+// Same inversion as internal/cli's resolver, and the same reason: the getvisa
+// space records `kind: agent, name: codex` on a publish codex did not perform,
+// because a caller typed the name and nothing checked it. An agent asked to
+// name itself will sometimes name something else; an environment will not.
+//
+// This surface is where that matters MOST. Every write here is authored by a
+// model filling in a structured tool input, so `actor.name` is a field the
+// agent literally chooses — which is exactly how the false value got in.
+//
+// An explicit `kind: human` still suppresses detection.
 func resolveActor(in ActorInput) (template.Actor, error) {
 	return resolveActorFrom(in, ActorInput{
 		Kind:  os.Getenv(envActorKind),
 		Name:  os.Getenv(envActorName),
 		Model: os.Getenv(envActorModel),
-	}, osUsername())
+	}, osUsername(), os.Getenv)
 }
 
-func resolveActorFrom(in, env ActorInput, osUser string) (template.Actor, error) {
+func resolveActorFrom(in, env ActorInput, osUser string, lookup agentid.Lookup) (template.Actor, error) {
+	explicitKind := firstNonEmpty(in.Kind, env.Kind)
+	if !strings.EqualFold(explicitKind, "human") && lookup != nil {
+		if detected, ok := agentid.Detect(lookup); ok {
+			// Same boundary as internal/cli: the environment overrules a
+			// claim to be a DIFFERENT agent, and nothing else. A tool input
+			// naming a person, a service or a fixture is a different kind of
+			// claim and stands. See agentid.Contradicts for what a wider
+			// rule cost.
+			claimed := firstNonEmpty(in.Name, env.Name)
+			if claimed == "" || agentid.Contradicts(claimed, detected.ID) {
+				return template.Actor{
+					Kind:  "agent",
+					Name:  detected.ID,
+					Model: firstNonEmpty(in.Model, env.Model, detected.Model),
+				}, nil
+			}
+			return template.Actor{
+				Kind:  firstNonEmpty(explicitKind, "agent"),
+				Name:  claimed,
+				Model: firstNonEmpty(in.Model, env.Model, detected.Model),
+			}, nil
+		}
+	}
+
 	name := firstNonEmpty(in.Name, env.Name, osUser)
 	if name == "" {
 		return template.Actor{}, ErrNoActorName
 	}
 	return template.Actor{
-		Kind:  firstNonEmpty(in.Kind, env.Kind, "agent"),
+		Kind:  firstNonEmpty(explicitKind, "agent"),
 		Name:  name,
 		Model: firstNonEmpty(in.Model, env.Model),
 	}, nil
