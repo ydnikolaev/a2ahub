@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ydnikolaev/a2ahub/internal/agentid"
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
@@ -103,8 +104,35 @@ type ConfigActor struct {
 // operator's MCP fence costs nothing here. An earlier reading of this file
 // claimed every fix crossed into MCP; that was wrong, and it was wrong
 // because it was reasoned about rather than read.
+// # Detection now outranks every name a caller can type
+//
+// The §7.4 order above decides who acted only when internal/agentid CANNOT
+// identify the running agent. When it can, that verdict wins outright: kind
+// "agent", name the registry id.
+//
+// That inversion is deliberate and it is the point of the change. `actor.name`
+// is a single slot, and letting callers fill it produced two different
+// failures in the same space:
+//
+//   - `kind: agent, name: yuranikolaev` — the OS username, because it was the
+//     last fallback and nothing above it answered. A person's login recorded
+//     under a claim that a machine acted.
+//   - `kind: agent, name: codex` — an agent id that is FALSE. codex did not
+//     perform that publish. The name was typed at the command line, nothing
+//     checked it, and it is now permanent in an append-only log.
+//
+// An agent asked to name itself will sometimes name something else. An
+// environment will not. So the environment decides, and A2A_ACTOR_AGENT
+// remains for the vendor whose detector is not wired yet.
+//
+// An explicit `kind: human` still suppresses detection, because that is a
+// person claiming something about themselves rather than about the process.
+//
+// The human an agent acted FOR is not written here at all. It is derived at
+// read time from the space manifest's `owners` for the acting system — where
+// it already lives, and where it stays correct when the owner changes.
 func ResolveActor(flags ActorFlags, harness HarnessDefaults, cfg ConfigActor) (template.Actor, error) {
-	return resolveActorFrom(flags, harness, cfg, osUsername())
+	return resolveActorFrom(flags, harness, cfg, osUsername(), os.Getenv)
 }
 
 // resolveActorFrom is ResolveActor with the OS-user fallback passed IN rather
@@ -116,15 +144,59 @@ func ResolveActor(flags ActorFlags, harness HarnessDefaults, cfg ConfigActor) (t
 // is worse than no test: it reads as coverage. Taking the value as a parameter
 // makes the empty case an ordinary argument, deterministic and parallel-safe,
 // with no process environment involved.
-func resolveActorFrom(flags ActorFlags, harness HarnessDefaults, cfg ConfigActor, osUser string) (template.Actor, error) {
-	name := firstNonEmpty(flags.Name, os.Getenv(envActorName), harness.Name, cfg.Name, osUser)
+// It also takes the environment as a parameter for the same reason. The
+// detector below reads it, so with a package-level os.Getenv every test in
+// this package would silently inherit the developer's own agent session and
+// assert against whatever harness happened to be running the suite.
+func resolveActorFrom(flags ActorFlags, harness HarnessDefaults, cfg ConfigActor, osUser string, env agentid.Lookup) (template.Actor, error) {
+	// Only the EXPLICIT sources count here. `kind` falls back to "agent"
+	// below, and treating that default as a claim would make detection
+	// unreachable for everyone who never passed the flag — which is
+	// everyone.
+	explicitKind := firstNonEmpty(flags.Kind, env(envActorKind), harness.Kind, cfg.Kind)
+
+	// A person declaring `kind: human` is claiming something about
+	// themselves, not about the process. Detection stays out of it.
+	if !strings.EqualFold(explicitKind, "human") {
+		if detected, ok := agentid.Detect(env); ok {
+			claimed := firstNonEmpty(flags.Name, env(envActorName), harness.Name, cfg.Name)
+			if agentid.Contradicts(claimed, detected.ID) {
+				return template.Actor{
+					Kind: "agent",
+					Name: detected.ID,
+					// An explicitly passed model still wins: the environment
+					// names the product reliably and the model only
+					// sometimes, so a caller who knows it is adding
+					// information rather than contradicting any.
+					Model: firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model, detected.Model),
+				}, nil
+			}
+			if claimed == "" {
+				return template.Actor{
+					Kind:  "agent",
+					Name:  detected.ID,
+					Model: firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model, detected.Model),
+				}, nil
+			}
+			// The caller named something that is not a rival agent — a
+			// person, a service, a test fixture. That is a different kind
+			// of claim and it stands; detection only contributes the model.
+			return template.Actor{
+				Kind:  firstNonEmpty(explicitKind, "agent"),
+				Name:  claimed,
+				Model: firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model, detected.Model),
+			}, nil
+		}
+	}
+
+	name := firstNonEmpty(flags.Name, env(envActorName), harness.Name, cfg.Name, osUser)
 	if name == "" {
 		return template.Actor{}, ErrNoActorName
 	}
 	return template.Actor{
-		Kind:  firstNonEmpty(flags.Kind, os.Getenv(envActorKind), harness.Kind, cfg.Kind, "agent"),
+		Kind:  firstNonEmpty(explicitKind, "agent"),
 		Name:  name,
-		Model: firstNonEmpty(flags.Model, os.Getenv(envActorModel), harness.Model, cfg.Model),
+		Model: firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model),
 	}, nil
 }
 

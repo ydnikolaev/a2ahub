@@ -17,71 +17,16 @@ import (
 )
 
 // --- ResolveActor (§7.4 order) -------------------------------------------
-
-func TestResolveActorOrderExplicitFlagWins(t *testing.T) {
-	t.Parallel()
-	a, err := cli.ResolveActor(
-		cli.ActorFlags{Kind: "human", Name: "flag-name"},
-		cli.HarnessDefaults{Kind: "agent", Name: "harness-name"},
-		cli.ConfigActor{Kind: "agent", Name: "config-name"},
-	)
-	if err != nil {
-		t.Fatalf("ResolveActor: %v", err)
-	}
-	if a.Kind != "human" || a.Name != "flag-name" {
-		t.Fatalf("got %+v, want explicit flag values to win", a)
-	}
-}
-
-func TestResolveActorOrderEnvBeatsHarnessAndConfig(t *testing.T) {
-	// reason: mutates process env; not parallel-safe against sibling tests
-	// touching the same A2A_ACTOR_* variables.
-	t.Setenv("A2A_ACTOR_NAME", "env-name")
-	a, err := cli.ResolveActor(
-		cli.ActorFlags{},
-		cli.HarnessDefaults{Name: "harness-name"},
-		cli.ConfigActor{Name: "config-name"},
-	)
-	if err != nil {
-		t.Fatalf("ResolveActor: %v", err)
-	}
-	if a.Name != "env-name" {
-		t.Fatalf("Name = %q, want env-name", a.Name)
-	}
-}
-
-func TestResolveActorOrderHarnessBeatsConfig(t *testing.T) {
-	t.Parallel()
-	a, err := cli.ResolveActor(cli.ActorFlags{}, cli.HarnessDefaults{Name: "harness-name"}, cli.ConfigActor{Name: "config-name"})
-	if err != nil {
-		t.Fatalf("ResolveActor: %v", err)
-	}
-	if a.Name != "harness-name" {
-		t.Fatalf("Name = %q, want harness-name", a.Name)
-	}
-}
-
-func TestResolveActorOrderConfigFallback(t *testing.T) {
-	t.Parallel()
-	a, err := cli.ResolveActor(cli.ActorFlags{}, cli.HarnessDefaults{}, cli.ConfigActor{Name: "config-name"})
-	if err != nil {
-		t.Fatalf("ResolveActor: %v", err)
-	}
-	if a.Name != "config-name" {
-		t.Fatalf("Name = %q, want config-name", a.Name)
-	}
-}
-
-func TestResolveActorDefaultsKindToAgent(t *testing.T) {
-	t.Parallel()
-	a, err := cli.ResolveActor(cli.ActorFlags{}, cli.HarnessDefaults{}, cli.ConfigActor{})
-	if err != nil {
-		t.Fatalf("ResolveActor: %v", err)
-	}
-	if a.Kind != "agent" {
-		t.Fatalf("Kind = %q, want agent (default when no source names one)", a.Kind)
-	}
-}
+//
+// MOVED, 2026-08-07 → actorrefusal_test.go, inside `package cli`, where they
+// drive resolveActorFrom with an EXPLICIT environment.
+//
+// They failed here, and they were right to. Resolution now runs agent
+// detection and cli.ResolveActor reads the real process environment, so three
+// of them asserted a harness/config fallback while the suite itself ran inside
+// Claude Code, resolved `claude-code`, and failed. The defect was the tests'
+// dependence on whichever agent happened to run them — a suite that passes on
+// a bare shell and fails inside an agent is one whose green is worth nothing.
 
 // TestResolveActorNameFallsBackToOSUser is the HIGH-finding stopgap's
 // regression: with every §7.4 source empty (no flag, no env, no harness
