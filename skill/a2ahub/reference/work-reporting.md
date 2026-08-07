@@ -52,6 +52,14 @@ Several agents may report different work IDs on the same thread at the same
 time. A work stream is owned by its original system, actor name and session;
 another session cannot renew, continue or stop it.
 
+That ownership is enforced, not advisory: a continuation whose `actor.name`
+differs from the first checkpoint's is refused with `a work id cannot change
+reporter name`. Since v0.19.9 the actor is resolved from the environment rather
+than from what a caller types, so a stream opened before that release and
+continued after it can hit this. Finish it with `--actor-name <the original>`,
+or start a new work id — see
+[actor-identity.md](actor-identity.md) for what changed and why.
+
 ## What agents may put in a report
 
 Summaries and wait reasons are short, plain data for collaborators: what is
