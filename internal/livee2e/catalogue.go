@@ -131,26 +131,48 @@ func Catalogue() []Scenario {
 		// envelope kind: this row asserts the SPACE exists, not any
 		// artifact's lifecycle.
 		//
-		// TierProvider is PROVISIONAL here, not a considered verdict: this
-		// row's decisive assertion is product logic (the space scaffolds
-		// correctly); only its gate progression is provider. It cannot be
-		// expressed as TierLogic + a ProviderAssertions carve-out today
-		// because it is a legacy row carrying no Assertions list to carve
-		// from — provider is the fail-closed placeholder until W7 populates
-		// that list (spec 09 two-tier plan, wave W5 brief §3).
-		{Name: "space-init", Systems: []string{SystemA}, Surfaces: cliOnly(), Family: "happy", Tier: TierProvider},
+		// W7 populated the Assertions list this row was waiting for, so the
+		// fail-closed whole-row placeholder is gone. Two of the three
+		// assertions are read from the local mirror after `a2a sync` — real
+		// git content the product itself wrote — and fail meaningfully
+		// against the fake. The third cannot: `testkit/fakegithub` refuses
+		// branch protection BY DESIGN and refuses it by carrying no route at
+		// all, so happyRequiredCheckArmed's GET 404s locally (verified, not
+		// inferred from the doc comment). That is tier.go's own
+		// first-listed provider fact, carved out by name.
+		{Name: "space-init", Systems: []string{SystemA}, Surfaces: cliOnly(), Family: "happy", Tier: TierLogic,
+			Assertions:         []string{"participants-named", "codeowners-provisioner-root", "protection-armed"},
+			ProviderAssertions: []string{"protection-armed"}},
 		// AC-960.2 — the ordinary happy path, both systems. The gate's own
 		// conclusion (submit -> gate -> merge) is GitHub's own to decide.
 		{Name: "submit-gate-merge", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"announcement"}, Family: "happy", Tier: TierProvider},
-		// TierProvider is PROVISIONAL here — see space-init's own comment
-		// above; the same legacy-row-with-no-Assertions reasoning applies.
-		{Name: "lifecycle-transitions", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"requirement"}, Family: "happy", Tier: TierProvider},
-		// TierProvider is PROVISIONAL here — see space-init's own comment
-		// above; the same legacy-row-with-no-Assertions reasoning applies.
-		{Name: "contract-publish-deprecate-retire", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"contract"}, Family: "happy", Tier: TierProvider},
-		// TierProvider is PROVISIONAL here — see space-init's own comment
-		// above; the same legacy-row-with-no-Assertions reasoning applies.
-		{Name: "cross-system-visibility", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"announcement"}, Family: "happy", Tier: TierProvider},
+		// W7: TierLogic with NO carve-out, and the absence is the claim. Every
+		// assertion here is either our own CLI mechanics (submit opens a PR;
+		// withdraw opens a SECOND, DISTINCT PR — the P30(a) branch-naming
+		// defect this row exists to catch) or mechanical progression through
+		// a merge the fake performs deterministically. Nothing in this body
+		// inspects the check's CONCLUSION; happyLandAndSync's wait polls only
+		// for a terminal state. That is exactly plan D-2's "progression is not
+		// judgement", and it matches the already-shipped precedent of
+		// contract-integrity-registered-consumer and data-loop-fail-supersede-pass.
+		{Name: "lifecycle-transitions", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"requirement"}, Family: "happy", Tier: TierLogic,
+			Assertions: []string{"publish-opens-pr", "publish-lands", "withdraw-opens-pr", "distinct-verb-prs", "withdraw-lands"}},
+		// W7: same shape as lifecycle-transitions, one verb longer, plus one
+		// extra hermetic assertion — the deprecate PR's own body records the
+		// operation key the product itself wrote, which is string parsing of
+		// fake-served content, never a GitHub decision. No carve-out.
+		{Name: "contract-publish-deprecate-retire", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"contract"}, Family: "happy", Tier: TierLogic,
+			Assertions: []string{"publish-opens-pr", "publish-lands", "deprecate-opens-pr", "deprecate-pr-records-operation-key", "deprecate-lands", "retire-opens-pr", "distinct-verb-prs", "retire-lands"}},
+		// W7: the one row of the four with a standalone GitHub-conclusion
+		// assertion in its body, structurally identical to the check that
+		// keeps submit-gate-merge TierProvider. Carved out by name rather than
+		// failing the whole row, because the remaining four assertions keep
+		// their teeth: AutoMerge fast-forwards unconditionally, so the merge,
+		// the worktree move and the peer's inbox are all still exercised. Not
+		// LE-OC-05's shape, where every assertion rested on the one fact.
+		{Name: "cross-system-visibility", Systems: []string{SystemA, SystemB}, Surfaces: bothSurfaces(), Kinds: []string{"announcement"}, Family: "happy", Tier: TierLogic,
+			Assertions:         []string{"write-opens-pr", "gate-concludes-success", "write-merges", "sync-moves-worktree", "inbox-lists-cross-system-write"},
+			ProviderAssertions: []string{"gate-concludes-success"}},
 		{Name: "validate-ci-both-modes", Systems: []string{SystemA}, Surfaces: cliOnly(), Kinds: []string{"announcement"}, Family: "happy", Tier: TierLogic},
 
 		// AC-961.1 — host.CheckStatus resolves the REAL compound context
