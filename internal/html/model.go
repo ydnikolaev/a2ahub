@@ -529,6 +529,17 @@ type ThreadViewArtifact struct {
 	State  string           `json:"state"`
 	Parent string           `json:"parent,omitempty"`
 	Refs   []map[string]any `json:"refs,omitempty"`
+	// Adopters names the systems that have registered as consumers of this
+	// artifact, each with the version it pinned ("seomatrix · 1.0.1"). Set
+	// only for a contract; empty everywhere else.
+	//
+	// A counterparty adopting a contract is invisible in a thread otherwise,
+	// which is what the operator reported. It is deliberately NOT a transcript
+	// row: adoption is REGISTRY STATE — a `consumes.yaml` entry — not an event
+	// on this thread, and the transcript's promise is that everything in it
+	// happened and is in git. Synthesising an event to fill the gap would
+	// trade a missing fact for a false one. State belongs beside state.
+	Adopters []string `json:"adopters,omitempty"`
 }
 
 // ThreadTranscriptRow is one ordered artifact or lifecycle event in a thread.
