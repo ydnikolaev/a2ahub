@@ -144,9 +144,25 @@ const requiredCheckPollInterval = 10 * time.Second
 // auto-merged normally while the scenario had already reported a false
 // failure. Poll narrowly for that one provider-consistency gap instead of
 // rerunning a full matrix.
+//
+// The 5s interval buys real GitHub's consistency window and NOTHING else, so
+// it is charged to the seam that has one rather than to every run.
+//
+// A local seam (testkit/fakegithub, serving over loopback from in-process
+// state) has no such window by construction: a POST that returned is visible
+// to the next LIST, full stop. Paying 5s per attempt there bought a guarantee
+// the fake already gives for free — and it was not free. On 2026-08-07 a
+// broken lookup burned the full 18 × 5s per call and pushed the logic tier
+// from ~5 minutes past a 20-minute timeout; even when nothing is broken, every
+// legitimately-retried lookup in the offline tier paid the live host's tax.
+//
+// The local interval is small rather than zero on purpose. Zero would turn the
+// retry loop into a spin, and the loop's shape — poll, yield, poll — is what is
+// being reused; only its price changes.
 const (
-	prVisibilityAttempts     = 18
-	prVisibilityPollInterval = 5 * time.Second
+	prVisibilityAttempts          = 18
+	prVisibilityPollInterval      = 5 * time.Second
+	prVisibilityPollIntervalLocal = 10 * time.Millisecond
 )
 
 // ErrProvisionFailed wraps a ResetSpace failure surfaced through newHarness,
@@ -306,7 +322,7 @@ func (h *harness) pullForBranch(ctx context.Context, branch string) (PullState, 
 			return nil
 		},
 		func(err error) bool { return errors.Is(err, ErrNoPRForBranch) },
-		pauseForPRVisibility,
+		h.pauseForPRVisibility,
 	)
 	if err != nil {
 		return PullState{}, err
@@ -359,7 +375,7 @@ func (h *harness) pullForBranchContaining(ctx context.Context, system, verb, art
 			return fmt.Errorf("livee2e: pullForBranchContaining: matched PR #%d (%s) not found in the pulls list it was derived from", match.Number, match.HeadRef)
 		},
 		func(err error) bool { return errors.Is(err, ErrNoBranchMatch) },
-		pauseForPRVisibility,
+		h.pauseForPRVisibility,
 	)
 	if err != nil {
 		return PullState{}, err
@@ -367,13 +383,32 @@ func (h *harness) pullForBranchContaining(ctx context.Context, system, verb, art
 	return best, nil
 }
 
-func pauseForPRVisibility(ctx context.Context) error {
+// pauseForPRVisibility waits one poll interval, priced by the seam this
+// harness is actually driving.
+//
+// It reads the SEAM, not the tier. harness.Tier's own doc forbids scenario
+// bodies branching on the tier, and the reason generalizes: the tier says what
+// a run is allowed to ASSERT, while "does this host have a visibility window"
+// is a property of the host. Charging the wait to HostSeam.IsRealGitHub keeps
+// the two axes apart, and a future non-GitHub real host would get the right
+// answer from the same predicate rather than from a second rule.
+func (h *harness) pauseForPRVisibility(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(prVisibilityPollInterval):
+	case <-time.After(prVisibilityInterval(h.Seam)):
 		return nil
 	}
+}
+
+// prVisibilityInterval is the choice itself, pulled out of the wait so a test
+// can assert the pricing without standing up a harness or spending the
+// interval it is asserting about.
+func prVisibilityInterval(seam HostSeam) time.Duration {
+	if seam.IsRealGitHub() {
+		return prVisibilityPollInterval
+	}
+	return prVisibilityPollIntervalLocal
 }
 
 // countPRsForBranch counts every PR (open+closed) whose head is branch — the
