@@ -72,8 +72,21 @@ open: XW-axon-20260721-abcd  work_request  responded
 That reads: the exchange has been responded to, and the only two moves left
 belong to `axon`, who asked. If your own system is not named in any `by`, the
 thread is waiting on the other side and there is nothing for you to do but
-watch it — which `a2a inbox --actionable` will also tell you, because that
-listing is this same computation projected onto your own system's inbox.
+watch it.
+
+`a2a inbox --actionable` will usually agree, because both surfaces ask ONE
+relation — "whose move is it" has a single home, and neither re-derives it.
+They are **not the same computation**, and the difference is deliberate:
+`--actionable` also surfaces an item that is urgent (`p1` or `blocking`) and
+still open and yours to be a party to, even when the next move belongs to the
+other side. That is a priority filter over LIVENESS, not a claim that anything
+is owed by you.
+
+So a thread can be settled on you and still appear in `--actionable`. Read the
+open item's own `waiting_on` and `expected_transition` for who owes what; read
+`--actionable` for what deserves your attention now. An earlier version of this
+page called them one computation, and that sentence was the model defect in one
+line.
 
 ## Where it shows up
 
