@@ -442,15 +442,125 @@ func TestExtraAddresseesJoinTheUnackedSet(t *testing.T) {
 		t.Errorf("Owners = %v, want nobody once every addressee has acked", settled.Owners)
 	}
 
-	// And the qualifier still governs: no ack requested, nobody owes one,
-	// however the addressee was established.
+	// The qualifier governs P-m ONLY, and this pair is what says so.
+	//
+	// This assertion used to read "nobody owes one, however the addressee
+	// was established" — it pinned the defect §18e/J1 names, and it was
+	// written here in W1 as an intention rather than derived from the
+	// sources. P-m carries the `ack_requested` qualifier; P-n does not (it
+	// is registry-matched), and neither 03-domain.md:115 nor
+	// validate.CheckRetirePrecondition — the code that actually blocks the
+	// retire on this same fact — mentions the flag at all. A flagless
+	// deprecation used to resolve to "nobody owes anything" while POL-006
+	// refused its retire on the very consumer being told that.
 	noAck := late
 	noAck.AckRequested = false
 	quiet, err := Resolve(noAck)
 	if err != nil {
 		t.Fatalf("Resolve() returned error: %v", err)
 	}
-	if len(quiet.Owners) != 0 {
-		t.Errorf("Owners = %v, want nobody when ack_requested is false", quiet.Owners)
+	if !reflect.DeepEqual(quiet.Owners, []string{"lateadopter"}) {
+		t.Errorf("Owners = %v, want only the registry-matched consumer [lateadopter]: "+
+			"ack_requested gates the `to:`-matched half (P-m), never the registry-matched half (P-n)", quiet.Owners)
+	}
+	if quiet.Expected != fold.TAcknowledge {
+		t.Errorf("Expected = %q, want %q — the consumer POL-006 blocks the retire on owes the acknowledge that unblocks it",
+			quiet.Expected, fold.TAcknowledge)
+	}
+
+	// The paired control, without which the fix above would read as "the
+	// qualifier does nothing": a `to:`-matched recipient with NO registry
+	// match still owes nothing when the flag is false. That is domain
+	// 3.4.7 — delivery completes on publish — and it must survive.
+	plain := base
+	plain.AckRequested = false
+	settledPlain, err := Resolve(plain)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if len(settledPlain.Owners) != 0 {
+		t.Errorf("Owners = %v, want nobody: a plain announcement with no ack requested and no registry-matched consumer owes no acknowledge (domain 3.4.7)",
+			settledPlain.Owners)
+	}
+}
+
+// TestALeftCounterpartyTransfersPendencyToTheSender is CC-062's own gate.
+//
+// A system whose manifest status is `left` cannot write to the space, so a
+// debt named on it can be cleared by NO legal act — the row stays owed
+// forever, the surfaces show an owner with no move, and no agent has an
+// action that removes it. internal/validate already drew this exclusion for
+// the same reason (RegisteredConsumer.Left: "excluded from the ack set
+// entirely — they never block retire and are never counted as un-acked",
+// §5.4 bullet (a)), so before this the two halves of one binary disagreed
+// about the same consumer.
+//
+// The transfer, not merely the exclusion, is what spec 11 §18d's qualifier
+// asks for: pendency moves to the SENDER as a cancel/re-route decision, and
+// AC-102.2 wants such items flagged `orphaned-counterparty`. It uses
+// Verdict's documented third shape (owners, no Expected) because which
+// transition carries "cancel or re-route" differs by kind — naming one here
+// would be this table inventing a move again, the §15 defect exactly.
+func TestALeftCounterpartyTransfersPendencyToTheSender(t *testing.T) {
+	t.Parallel()
+
+	base := Input{
+		Kind: fold.KindQuestion, State: fold.StateSubmitted,
+		From: "alpha", To: []string{"departed"},
+		ActiveParticipants: []string{"alpha", "departed"},
+	}
+
+	// Control first: while the counterparty is a member, it owes the ack.
+	present, err := Resolve(base)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if !reflect.DeepEqual(present.Owners, []string{"departed"}) || present.Expected != fold.TAcknowledge {
+		t.Fatalf("control: Owners=%v Expected=%q, want [departed] owing %q — without this the orphan case below proves nothing",
+			present.Owners, present.Expected, fold.TAcknowledge)
+	}
+
+	gone := base
+	gone.LeftParticipants = []string{"departed"}
+	orphaned, err := Resolve(gone)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if !reflect.DeepEqual(orphaned.Owners, []string{"alpha"}) {
+		t.Errorf("Owners = %v, want [alpha]: the pendency transfers to the sender, it does not vanish and it does not stay on a system that cannot write",
+			orphaned.Owners)
+	}
+	if orphaned.Expected != "" {
+		t.Errorf("Expected = %q, want \"\": cancel-or-re-route is a judgement about the exchange, and naming one transition here would be the table inventing a move",
+			orphaned.Expected)
+	}
+	if !strings.Contains(orphaned.Why, "departed") || !strings.Contains(orphaned.Why, "CC-062") {
+		t.Errorf("Why = %q, want it to name the orphan and the rule — an agent that cannot see WHICH counterparty left has nothing to act on",
+			orphaned.Why)
+	}
+}
+
+// TestOnlyTheLeftOwnerIsDroppedWhenOthersRemain is the paired control for
+// the test above: with two addressees and one gone, the exchange is NOT
+// orphaned — the remaining member still owes the move, and the sender must
+// not be handed a cancel decision it does not need.
+func TestOnlyTheLeftOwnerIsDroppedWhenOthersRemain(t *testing.T) {
+	t.Parallel()
+
+	in := Input{
+		Kind: fold.KindQuestion, State: fold.StateSubmitted,
+		From: "alpha", To: []string{"departed", "present"},
+		ActiveParticipants: []string{"alpha", "present"},
+		LeftParticipants:   []string{"departed"},
+	}
+	got, err := Resolve(in)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if !reflect.DeepEqual(got.Owners, []string{"present"}) {
+		t.Errorf("Owners = %v, want [present]: only the departed system is dropped", got.Owners)
+	}
+	if got.Expected != fold.TAcknowledge {
+		t.Errorf("Expected = %q, want %q: the exchange is still live for the member who remains", got.Expected, fold.TAcknowledge)
 	}
 }
