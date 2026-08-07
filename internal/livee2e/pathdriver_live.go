@@ -2129,9 +2129,74 @@ var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harnes
 //
 // h is the SAME harness TestLogicMatrix already built via newLogicHarness —
 // no second rig (D1).
-func runConformancePaths(ctx context.Context, t *testing.T, h *harness) {
+func runConformancePaths(ctx context.Context, t *testing.T, harnesses []*harness) {
 	t.Helper()
-	for _, id := range drivenPathIDs() {
+	if len(harnesses) == 0 {
+		t.Fatal("runConformancePaths: no harness supplied — nothing could be driven, and a green result would mean nothing")
+	}
+
+	// The paths are split across the harnesses supplied, and each GROUP runs
+	// as one parallel subtest while the paths inside a group stay strictly
+	// sequential against their own space.
+	//
+	// Spec 10 §5 is the constraint this shape exists to satisfy:
+	// "Concurrency is a knob, and 1 must reproduce today exactly." With one
+	// harness there is one group, containing every path in drivenPathIDs()
+	// order, run by a single t.Parallel subtest — same order, same space,
+	// same verdicts as the serial version. That is what makes a regression
+	// reversible by one constant instead of a revert, and bisecting a flake
+	// possible at all.
+	//
+	// Groups, not per-path harnesses: setup is ~1s of provisioning plus a
+	// binary build, so 71 harnesses would spend more on setup than the
+	// serialisation costs. Contiguous blocks rather than round-robin, so a
+	// group's contents stay predictable from the declaration order when
+	// reading a failure.
+	groups := splitPathIDs(drivenPathIDs(), len(harnesses))
+	for i, ids := range groups {
+		if len(ids) == 0 {
+			continue
+		}
+		h := harnesses[i]
+		ids := ids
+		t.Run(fmt.Sprintf("group-%d", i+1), func(t *testing.T) {
+			t.Parallel()
+			runPathGroup(ctx, t, h, ids)
+		})
+	}
+}
+
+// splitPathIDs cuts ids into at most n contiguous groups, as evenly as the
+// count allows. n <= 1 returns exactly one group holding everything, which is
+// the identity case spec 10 §5 requires.
+func splitPathIDs(ids []string, n int) [][]string {
+	if n <= 1 || len(ids) == 0 {
+		return [][]string{ids}
+	}
+	if n > len(ids) {
+		n = len(ids)
+	}
+	out := make([][]string, 0, n)
+	base, extra := len(ids)/n, len(ids)%n
+	start := 0
+	for i := 0; i < n; i++ {
+		size := base
+		if i < extra {
+			size++
+		}
+		out = append(out, ids[start:start+size])
+		start += size
+	}
+	return out
+}
+
+// runPathGroup drives one group's paths in order against ONE harness. The
+// paths inside a group are never concurrent with each other: they share a
+// space and each resets both checkouts when it returns, which is exactly the
+// coupling P10 W1 removed BETWEEN suites and must not reintroduce WITHIN one.
+func runPathGroup(ctx context.Context, t *testing.T, h *harness, ids []string) {
+	t.Helper()
+	for _, id := range ids {
 		id := id
 		t.Run(id, func(t *testing.T) {
 			// Park both checkouts on a clean main when this subtest returns,
