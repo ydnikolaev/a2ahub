@@ -6,7 +6,7 @@ title: <human/agent-scannable title, <=120 chars>
 space: <space-id>
 from: <producing-system>
 to: [<receiving-system>]               # exchange type: EXACTLY one entry (§3.4.3)
-actor: {kind: agent, name: <agent-name>, model: <model-id>}
+actor: {kind: agent, name: <filled by a2a>, model: <filled by a2a>}
 created: <RFC-3339 UTC>
 # NOTE: handoff has NO `category` field (§5.2.1) — do not add one, it will be rejected.
 priority: p3

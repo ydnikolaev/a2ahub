@@ -6,7 +6,7 @@ title: <human/agent-scannable title, <=120 chars>
 space: <space-id>
 from: <requesting-system>
 to: [<target-system>]                 # exchange type: EXACTLY one entry (§3.4.3)
-actor: {kind: agent, name: <agent-name>, model: <model-id>}
+actor: {kind: agent, name: <filled by a2a>, model: <filled by a2a>}
 created: <RFC-3339 UTC>
 category: <data|feature|fix|investigation|contract-change|process-change|other>   # closed enum, §5.2.1
 priority: p3
