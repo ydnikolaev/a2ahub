@@ -4,10 +4,18 @@ import "sort"
 
 // TransitionKey identifies one (Kind, From, Transition) triple this
 // package's transition rows admit — TransitionRows' sole element type.
-// Unlike KindState, StateNone IS in scope here: a caller driving a path
-// (internal/livee2e, or the next one after it) can perform a `create`
-// transition, so the "artifact does not exist yet" fromState is a real,
-// coverable subject rather than the sentinel SubjectStates excludes.
+//
+// Before spec §18a (2026-08-06), StateNone was deliberately in scope here
+// (unlike KindState): a caller driving a path could name a `create`
+// transition, so the "artifact does not exist yet" fromState was treated
+// as a real, coverable subject. That reasoning did not survive contact
+// with the fold: Fold always starts a kind at NewResult(kind) =
+// StateDraft, so a committed create event's own fromState (StateNone) is
+// a state the fold never occupies, and every create row was therefore
+// dead weight — flagged illegal-transition by the generic "no row"
+// path with or without a dedicated row of its own. table.go carries no
+// StateNone row anymore, so this type's own StateNone case is now
+// unreachable in practice, same as KindState's.
 type TransitionKey struct {
 	Kind       Kind
 	From       State

@@ -90,28 +90,34 @@ type Path struct {
 // Precondition chain's end states for a chained path, and StateNone for
 // a fold.TCreate step regardless of what any OTHER instance of the same
 // Kind reached elsewhere in the chain (a `create` step always starts a
-// genuinely NEW artifact instance — table.go's own rows encode no other
-// (kind, StateNone) row). The resulting state comes from fold's own
-// LegalNext table via ResolveStep. This is plan D3: a path cannot assert
-// a transition the domain does not admit, and a table change surfaces as
-// a failing path rather than as two documents quietly disagreeing.
+// genuinely NEW artifact instance). The resulting state for an ordinary
+// step comes from fold's own LegalNext table via ResolveStep — this is
+// plan D3: a path cannot assert a transition the domain does not admit,
+// and a table change surfaces as a failing path rather than as two
+// documents quietly disagreeing. `create` is the one transition ResolveStep
+// is never asked to resolve (see resolveCreate below and table.go's own
+// TCreate doc comment, spec §18a, 2026-08-06): fold.table.go carries no
+// StateNone row for ANY kind, because a committed create event's own
+// fromState is a state Fold never occupies (Fold always starts a kind at
+// NewResult(kind) = draft) — so a create row would document a transition
+// the fold already refuses, and does not exist.
 //
-// `unblock` and fold.KindDecision's own `approve` are the TWO dynamic-row
-// (fold.StateDynamic) transitions this grammar resolves for itself rather
-// than refusing (ResolveStep's own doc comment still refuses every
-// StateDynamic row it is ever handed — walkSteps intercepts both BEFORE
-// calling it, the same pattern for each). walkSteps special-cases
-// fold.TUnblock, recovering the state its own EARLIER fold.TBlock step
-// (same Kind, same walk) recorded as the pre-block state, mirroring
-// fold.go's applyUnblock exactly (recomputed from the event sequence,
-// never a second interpretation of the rule). This is deliberately
-// narrow: a path may only `unblock` a Kind it `block`ed in its OWN Steps
-// — pre-block state does NOT cross a Precondition boundary
-// (chainEndStates discards it), so a path that blocks in its
-// precondition and unblocks in its own Steps gets a named grammar error,
-// not a silently wrong recovered state. No declared path needs the
-// cross-boundary form today; widening it is a real future change, not an
-// oversight.
+// `create`, `unblock` and fold.KindDecision's own `approve` are the THREE
+// transitions this grammar resolves for itself rather than asking
+// ResolveStep (ResolveStep's own doc comment still refuses every
+// StateDynamic row it is ever handed, and now has no create row to find
+// either — walkSteps intercepts all three BEFORE calling it, the same
+// pattern for each). walkSteps special-cases fold.TUnblock, recovering the
+// state its own EARLIER fold.TBlock step (same Kind, same walk) recorded
+// as the pre-block state, mirroring fold.go's applyUnblock exactly
+// (recomputed from the event sequence, never a second interpretation of
+// the rule). This is deliberately narrow: a path may only `unblock` a Kind
+// it `block`ed in its OWN Steps — pre-block state does NOT cross a
+// Precondition boundary (chainEndStates discards it), so a path that
+// blocks in its precondition and unblocks in its own Steps gets a named
+// grammar error, not a silently wrong recovered state. No declared path
+// needs the cross-boundary form today; widening it is a real future
+// change, not an oversight.
 //
 // walkSteps ALSO special-cases (fold.KindDecision, fold.TApprove),
 // mirroring fold.go's own applyApprove/quorumReached: quorum arithmetic
@@ -340,6 +346,21 @@ func ResolveStep(kind fold.Kind, from fold.State, transition string) (fold.State
 	return "", fmt.Errorf("livee2e: no transition row for (kind=%s, from=%q, transition=%q)", kind, from, transition)
 }
 
+// resolveCreate resolves a `create` step's resulting state directly from
+// fold.NewResult(kind) rather than a table row (table.go's own TCreate doc
+// comment, spec §18a): fold.table.go carries no StateNone row for ANY kind,
+// because a committed create event's own fromState is a state Fold never
+// occupies — Fold always starts a kind at NewResult(kind), and every kind's
+// NewResult is StateDraft today. Asking fold's own NewResult rather than
+// restating StateDraft here keeps this a real check on fold's own fact,
+// never an independently-maintained copy of it — the same discipline
+// resolveUnblock/resolveApprove already follow for their own two dynamic
+// rows, extended to the one transition that now has no row to check
+// against at all.
+func resolveCreate(kind fold.Kind) fold.State {
+	return fold.NewResult(kind).State
+}
+
 // resolveUnblock resolves an `unblock` step's dynamic target — the state
 // that held immediately before the matching `block` — from THIS walk's
 // own preBlock map, never independently of fold's own table and never by
@@ -425,15 +446,36 @@ func resolveApprove(kind fold.Kind, from fold.State, requiredApprovers []string,
 	return fold.StateApproved, nil
 }
 
+// transitionOutcome pairs one landed step's own (Kind, From, Transition)
+// triple (walkSteps' historical return element, still what PathTransitions
+// exposes) with the resulting state that step's own resolution produced.
+// The coverage split (plan W3d, spec §16 D-2) needs this second half: a
+// triple counts as genuinely ASSERTED, not merely driven, only when To is a
+// state some shipped `--json` surface could actually read back — the
+// untagged coverage gate checks To directly (pathcoverage_test.go's own
+// assertedTriple), never against a runtime record the tagged driver would
+// have to emit (this package's own drivability precedent: "a gate that
+// only runs during a 40-minute live run is a gate nobody runs",
+// pathdrivability.go). Deliberately NOT fold.RestingStates() membership —
+// see assertedTriple's own doc comment for the two concrete cases
+// (decision's create step, decision's quorum-reached approve) where that
+// would have given the wrong answer.
+type transitionOutcome struct {
+	fold.TransitionKey
+	To fold.State
+}
+
 // walkSteps resolves steps in order against states (a per-Kind "current
 // state" map, mutated in place as each step lands), returning the
-// resolved (Kind, From, Transition) triple for each LANDED step — a
-// fold.TCreate step always resolves From as fold.StateNone regardless of
-// what states currently holds for that Kind (a new instance; see Step's
-// own doc comment), any other step resolves From from states[step.Kind]
-// (fold.StateNone, Go's own zero value, if that Kind has not appeared
-// yet in this walk — which ResolveStep then correctly refuses unless the
-// step itself is a create).
+// resolved (Kind, From, Transition) triple AND resulting state for each
+// LANDED step — a fold.TCreate step always resolves From as
+// fold.StateNone regardless of what states currently holds for that Kind
+// (a new instance; see Step's own doc comment) and its own resulting
+// state via resolveCreate (fold.NewResult(kind), never a table row —
+// table.go carries none for create), any other step resolves From from
+// states[step.Kind] (fold.StateNone, Go's own zero value, if that Kind
+// has not appeared yet in this walk — which ResolveStep then correctly
+// refuses).
 //
 // A step whose Refused is non-nil is skipped entirely rather than
 // resolved: ResolveStep is never called (there is no resulting state to
@@ -457,8 +499,8 @@ func resolveApprove(kind fold.Kind, from fold.State, requiredApprovers []string,
 // sites (chainEndStates, PathTransitions) exactly as they already thread
 // states. approvals mirrors preBlock's own per-walk, per-Kind shape (see
 // resolveApprove's own doc comment).
-func walkSteps(steps []Step, requiredApprovers []string, states map[fold.Kind]fold.State) ([]fold.TransitionKey, error) {
-	out := make([]fold.TransitionKey, 0, len(steps))
+func walkSteps(steps []Step, requiredApprovers []string, states map[fold.Kind]fold.State) ([]transitionOutcome, error) {
+	out := make([]transitionOutcome, 0, len(steps))
 	preBlock := map[fold.Kind]fold.State{}
 	approvals := map[fold.Kind]map[string]bool{}
 	for i, step := range steps {
@@ -473,6 +515,8 @@ func walkSteps(steps []Step, requiredApprovers []string, states map[fold.Kind]fo
 		var to fold.State
 		var err error
 		switch {
+		case step.Transition == fold.TCreate:
+			to = resolveCreate(step.Kind)
 		case step.Transition == fold.TUnblock:
 			to, err = resolveUnblock(step.Kind, from, preBlock)
 		case step.Kind == fold.KindDecision && step.Transition == fold.TApprove:
@@ -490,7 +534,10 @@ func walkSteps(steps []Step, requiredApprovers []string, states map[fold.Kind]fo
 			return nil, fmt.Errorf("step %d (actor=%s kind=%s transition=%s): %w", i, step.Actor, step.Kind, step.Transition, err)
 		}
 		states[step.Kind] = to
-		out = append(out, fold.TransitionKey{Kind: step.Kind, From: from, Transition: step.Transition})
+		out = append(out, transitionOutcome{
+			TransitionKey: fold.TransitionKey{Kind: step.Kind, From: from, Transition: step.Transition},
+			To:            to,
+		})
 	}
 	return out, nil
 }
@@ -534,7 +581,28 @@ func chainEndStates(byID map[string]Path, id string, visiting map[string]bool) (
 // this package's own coverage gate (pathcoverage_test.go) calls it,
 // unioned across every declared path, to prove every fold.TransitionRows()
 // triple is reached or is a named, defensible gap.
+//
+// Triples only — the resulting-state half a caller wanting the D3 coverage
+// split needs is pathTransitionOutcomes' own job (below); PathTransitions
+// itself is unchanged in shape for its three existing callers.
 func PathTransitions(byID map[string]Path, id string) ([]fold.TransitionKey, error) {
+	outcomes, err := pathTransitionOutcomes(byID, id)
+	if err != nil {
+		return nil, err
+	}
+	triples := make([]fold.TransitionKey, len(outcomes))
+	for i, o := range outcomes {
+		triples[i] = o.TransitionKey
+	}
+	return triples, nil
+}
+
+// pathTransitionOutcomes is PathTransitions' own full-detail sibling: same
+// resolution, but keeping each triple's resulting state (transitionOutcome)
+// rather than discarding it. pathcoverage_test.go's coverage split
+// (D-2, spec §16) is the one caller that needs the resulting state — its
+// own assertedTriple judges it to tell "driven" from "asserted".
+func pathTransitionOutcomes(byID map[string]Path, id string) ([]transitionOutcome, error) {
 	path, ok := byID[id]
 	if !ok {
 		return nil, fmt.Errorf("livee2e: unknown path id %q", id)
@@ -549,11 +617,11 @@ func PathTransitions(byID map[string]Path, id string) ([]fold.TransitionKey, err
 		states = inherited
 	}
 
-	triples, err := walkSteps(path.Steps, path.RequiredApprovers, states)
+	outcomes, err := walkSteps(path.Steps, path.RequiredApprovers, states)
 	if err != nil {
 		return nil, fmt.Errorf("livee2e: path %q: %w", id, err)
 	}
-	return triples, nil
+	return outcomes, nil
 }
 
 // pathsByID indexes paths by their own ID — the map PathTransitions and

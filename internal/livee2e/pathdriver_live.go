@@ -456,6 +456,50 @@ func driveRespondBundle(ctx context.Context, t *testing.T, h *harness, actor *ch
 	return responseID
 }
 
+// driveSecondRespondBundle drives a SECOND `a2a respond --result <result>
+// --field title=<distinguishingTitle> <parentID>` call on a parent that
+// already has one landed response (3.4.6's multi-response allowance,
+// Family 14's own multi-response reconciliation paths,
+// pathcatalogue_paths.go). The plain `--result`-only form driveRespondBundle
+// uses would mint the IDENTICAL content-derived responseID as the FIRST
+// call (RespondCommand.Run's own HIGH-1 fix-wave doc comment: "a retry with
+// IDENTICAL inputs reproduces the IDENTICAL responseID"), landing on the
+// funnel's SAME dedup branch instead of authoring a genuinely second
+// response — confirmed by cmd_lifecycle_test.go's own
+// TestVerifyMultiResponseDoesNotAutoClose precedent ("Second response MUST
+// carry different content"). respondOperationWithFields (operationpull.go)
+// is the harness-side key derivation generalized to thread the SAME fields
+// map the real CLI call carries, so the resolved branch matches the
+// product's own operationKey exactly.
+func driveSecondRespondBundle(ctx context.Context, t *testing.T, h *harness, actor *checkout, path Path, idxCreate, idxSubmit, idxRespond int, parentID, result, distinguishingTitle, responseLocalName string, ids pathIDs) string {
+	t.Helper()
+	fields := map[string]string{"title": distinguishingTitle}
+	respondKey, respondBranch := respondOperationWithFields(actor.System, parentID, result, fields)
+	args := append([]string{}, respondCommandArgs(parentID, result)...)
+	// respondCommandArgs' own last element is parentID; insert --field
+	// before it so parentID stays the trailing positional argument.
+	args = append(args[:len(args)-1], "--field", "title="+distinguishingTitle, parentID)
+	if _, stderr, err := actor.Run(ctx, args...); err != nil {
+		t.Fatalf("path %s: a2a respond --result %s --field title=%q %s (%s): %v: %s", path.ID, result, distinguishingTitle, parentID, actor.System, err, strings.TrimSpace(stderr))
+	}
+	pr, err := h.pullForBranch(ctx, respondBranch)
+	if err != nil {
+		t.Fatalf("path %s: resolve second respond PR for %s: %v", path.ID, parentID, err)
+	}
+	responseID, err := operationArtifactID(pr.Body, respondKey, parentID, "XS-")
+	if err != nil {
+		t.Fatalf("path %s: resolve second response id from respond PR #%d: %v", path.ID, pr.Number, err)
+	}
+	ids[responseLocalName] = responseID
+	if err := subfamAwaitGreenAndLand(ctx, h, actor, pr.Number); err != nil {
+		t.Fatalf("path %s: land+sync second respond PR #%d: %v", path.ID, pr.Number, err)
+	}
+	checkStepPredicates(ctx, t, h, actor, path.ID, idxCreate, path.Steps[idxCreate], ids)
+	checkStepPredicates(ctx, t, h, actor, path.ID, idxSubmit, path.Steps[idxSubmit], ids)
+	checkStepPredicates(ctx, t, h, actor, path.ID, idxRespond, path.Steps[idxRespond], ids)
+	return responseID
+}
+
 // driveVerifyThenAutoClose drives `a2a verify <responseID>` — which, for a
 // single-response exchange, ALSO closes the parent in the SAME PR (D-024's
 // convenience, cmd_lifecycle.go VerifyCommand.Run: "len(result.Responses)
@@ -1320,6 +1364,664 @@ func runPathDecisionRejectedSuperseded(ctx context.Context, t *testing.T, h *har
 	return ids
 }
 
+// --- Family 10 — supersede (P11 W3e Deliverable 1) -----------------------
+
+// driveSupersedeWithPlaceholderRef drives `a2a supersede --refs <placeholder> <targetID>`
+// — supersede is REQUIRE-REFS (cmd_lifecycle.go's lifecycleVerbTable), and
+// fold/the CLI validate no cross-artifact existence for `--refs`
+// (runPathDataLoopAttemptOneFails' own comment, first established this
+// pattern), so a throwaway, never-submitted successor draft of the SAME
+// kind is enough to mint a well-formed ref — the same pattern
+// runPathDecisionApprovedSuperseded/runPathDecisionRejectedSuperseded (one
+// family up) already established inline, generalized here because Family
+// 10 has enough callers to earn it (rule of three, several times over).
+// slugArgs threads a `--slug <value>` for a standing successor draft
+// (requirement) — checkout.Draft's own standingDraftTypes refusal demands
+// one; omit slugArgs entirely for every non-standing kind this family
+// drives (question, work_request, announcement).
+func driveSupersedeWithPlaceholderRef(ctx context.Context, t *testing.T, h *harness, actor *checkout, path Path, stepIdx int, kind, targetID string, ids pathIDs, slugArgs ...string) {
+	t.Helper()
+	placeholderID, _, err := actor.Draft(ctx, kind, slugArgs...)
+	if err != nil {
+		t.Fatalf("path %s step %d: mint a placeholder successor %s draft for --refs (%s): %v", path.ID, stepIdx, kind, actor.System, err)
+	}
+	driveSimpleVerb(ctx, t, h, actor, path, stepIdx, fold.TSupersede, targetID, ids, "--refs", placeholderID)
+}
+
+func runPathQuestionSupersedeFromSubmitted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-supersede-from-submitted")
+	ids := pathIDs{}
+	a := h.A
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "question", "question", ids)
+
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 2, "question", sub.ID, ids)
+	return ids
+}
+
+func runPathQuestionSupersedeFromAcknowledged(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-supersede-from-acknowledged")
+	ids := runPathQuestionAcknowledged(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 0, "question", ids["question"], ids)
+	return ids
+}
+
+func runPathQuestionSupersedeFromAccepted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-supersede-from-accepted")
+	ids := runPathQuestionBlockThenUnblock(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 0, "question", ids["question"], ids)
+	return ids
+}
+
+func runPathQuestionSupersedeFromInProgress(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-supersede-from-in-progress")
+	ids := runPathQuestionDisputed(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 0, "question", ids["question"], ids)
+	return ids
+}
+
+func runPathQuestionSupersedeFromBlocked(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-supersede-from-blocked")
+	ids := runPathQuestionAcknowledged(ctx, t, h, runTag)
+	a, b := h.A, h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["question"], ids)
+
+	placeholderBlockerID, _, err := b.Draft(ctx, "handoff")
+	if err != nil {
+		t.Fatalf("path %s step 1: mint a placeholder blocker handoff draft (%s): %v", path.ID, b.System, err)
+	}
+	driveSimpleVerb(ctx, t, h, b, path, 1, fold.TBlock, ids["question"], ids, "--refs", placeholderBlockerID)
+
+	syncBoth(ctx, t, h)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 2, "question", ids["question"], ids)
+	return ids
+}
+
+func runPathQuestionSupersedeFromResponded(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-supersede-from-responded")
+	ids := runPathQuestionToResponded(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 0, "question", ids["question"], ids)
+	return ids
+}
+
+func runPathWorkRequestSupersedeFromSubmitted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-supersede-from-submitted")
+	ids := pathIDs{}
+	a := h.A
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "work_request", "work-request", ids)
+
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 2, "work_request", sub.ID, ids)
+	return ids
+}
+
+func runPathWorkRequestSupersedeFromAcknowledged(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-supersede-from-acknowledged")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 0, "work_request", ids["work-request"], ids)
+	return ids
+}
+
+func runPathWorkRequestSupersedeFromAccepted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-supersede-from-accepted")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	a, b := h.A, h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["work-request"], ids)
+
+	syncBoth(ctx, t, h)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 1, "work_request", ids["work-request"], ids)
+	return ids
+}
+
+func runPathWorkRequestSupersedeFromInProgress(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-supersede-from-in-progress")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	a, b := h.A, h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["work-request"], ids)
+	driveSimpleVerb(ctx, t, h, b, path, 1, fold.TStart, ids["work-request"], ids)
+
+	syncBoth(ctx, t, h)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 2, "work_request", ids["work-request"], ids)
+	return ids
+}
+
+func runPathWorkRequestSupersedeFromBlocked(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-supersede-from-blocked")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	a, b := h.A, h.B
+
+	syncBoth(ctx, t, h)
+	placeholderBlockerID, _, err := b.Draft(ctx, "handoff")
+	if err != nil {
+		t.Fatalf("path %s step 0: mint a placeholder blocker handoff draft (%s): %v", path.ID, b.System, err)
+	}
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TBlock, ids["work-request"], ids, "--refs", placeholderBlockerID)
+
+	syncBoth(ctx, t, h)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 1, "work_request", ids["work-request"], ids)
+	return ids
+}
+
+func runPathWorkRequestSupersedeFromResponded(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-supersede-from-responded")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	a, b := h.A, h.B
+
+	syncBoth(ctx, t, h)
+	driveRespondBundle(ctx, t, h, b, path, 0, 1, 2, ids["work-request"], "delivered", "response", ids)
+
+	syncBoth(ctx, t, h)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 3, "work_request", ids["work-request"], ids)
+	return ids
+}
+
+func runPathAnnouncementSupersedeFromPublished(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "announcement-supersede-from-published")
+	ids := pathIDs{}
+	a := h.A
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "announcement", "announcement", ids)
+
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 2, "announcement", sub.ID, ids)
+	return ids
+}
+
+func runPathRequirementSupersedeFromPublished(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "requirement-supersede-from-published")
+	ids := pathIDs{}
+	a := h.A
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	slug := liveRunSlug(runTag+"-requirement", h.PRFloor)
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "requirement", "requirement", ids, "--slug", slug)
+
+	successorSlug := liveRunSlug(runTag+"-requirement-successor", h.PRFloor)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 2, "requirement", sub.ID, ids, "--slug", successorSlug)
+	return ids
+}
+
+func runPathRequirementSupersedeFromAcknowledged(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "requirement-supersede-from-acknowledged")
+	ids := runPathRequirementPublishedAcknowledged(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	successorSlug := liveRunSlug(runTag+"-requirement-successor", h.PRFloor)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 0, "requirement", ids["requirement"], ids, "--slug", successorSlug)
+	return ids
+}
+
+func runPathRequirementSupersedeFromDeclined(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "requirement-supersede-from-declined")
+	ids := runPathRequirementDeclinedFromPublished(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	successorSlug := liveRunSlug(runTag+"-requirement-successor", h.PRFloor)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 0, "requirement", ids["requirement"], ids, "--slug", successorSlug)
+	return ids
+}
+
+func runPathRequirementSupersedeFromWithdrawn(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "requirement-supersede-from-withdrawn")
+	ids := runPathRequirementWithdrawnFromPublished(ctx, t, h, runTag)
+	a := h.A
+
+	successorSlug := liveRunSlug(runTag+"-requirement-successor", h.PRFloor)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, a, path, 0, "requirement", ids["requirement"], ids, "--slug", successorSlug)
+	return ids
+}
+
+// --- Family 11 — cancel (P11 W3e) ----------------------------------------
+
+// driveCancelFullySync drives `a2a cancel <targetID>` and checks stepIdx's
+// own Predicates ONLY after a full syncBoth — same reasoning as
+// driveDeclineFullySync's own doc comment (Family 7, above): cancel's own
+// Predicates ALSO assert NotActionable for BOTH parties (the brief's own
+// "assert the debt is gone from BOTH parties afterwards" requirement), and
+// question's own template defaults `blocking: true` — a stale, pre-sync
+// read of the non-acting party's own checkout would still show the
+// true-before-cancel positive (p1-or-blocking-open) and wrongly look like
+// a passing negative. `cancel` requires no `--reason`
+// (cmd_lifecycle.go's own lifecycleVerbTable) — the one difference from
+// driveDeclineFullySync's own call signature.
+func driveCancelFullySync(ctx context.Context, t *testing.T, h *harness, actor *checkout, path Path, stepIdx int, targetID string, ids pathIDs) {
+	t.Helper()
+	if _, stderr, err := actor.Run(ctx, "cancel", targetID); err != nil {
+		t.Fatalf("path %s step %d: a2a cancel %s (%s): %v: %s", path.ID, stepIdx, targetID, actor.System, err, strings.TrimSpace(stderr))
+	}
+	pr, err := h.pullForBranch(ctx, space.BranchName(actor.System, "cancel", targetID))
+	if err != nil {
+		t.Fatalf("path %s step %d: resolve cancel PR for %s: %v", path.ID, stepIdx, targetID, err)
+	}
+	if err := happyLandAndSync(ctx, h, actor, pr.Number); err != nil {
+		t.Fatalf("path %s step %d: land+sync cancel PR #%d: %v", path.ID, stepIdx, pr.Number, err)
+	}
+	syncBoth(ctx, t, h)
+	checkStepPredicates(ctx, t, h, actor, path.ID, stepIdx, path.Steps[stepIdx], ids)
+}
+
+func runPathQuestionCancelFromSubmitted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-cancel-from-submitted")
+	ids := pathIDs{}
+	a := h.A
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "question", "question", ids)
+
+	syncBoth(ctx, t, h)
+	driveCancelFullySync(ctx, t, h, a, path, 2, sub.ID, ids)
+	return ids
+}
+
+func runPathQuestionCancelFromAcknowledged(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-cancel-from-acknowledged")
+	ids := runPathQuestionAcknowledged(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	driveCancelFullySync(ctx, t, h, a, path, 0, ids["question"], ids)
+	return ids
+}
+
+func runPathQuestionCancelFromAccepted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-cancel-from-accepted")
+	ids := runPathQuestionBlockThenUnblock(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	driveCancelFullySync(ctx, t, h, a, path, 0, ids["question"], ids)
+	return ids
+}
+
+func runPathQuestionCancelFromInProgress(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-cancel-from-in-progress")
+	ids := runPathQuestionDisputed(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	driveCancelFullySync(ctx, t, h, a, path, 0, ids["question"], ids)
+	return ids
+}
+
+func runPathWorkRequestCancelFromSubmitted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-cancel-from-submitted")
+	ids := pathIDs{}
+	a := h.A
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "work_request", "work-request", ids)
+
+	syncBoth(ctx, t, h)
+	driveCancelFullySync(ctx, t, h, a, path, 2, sub.ID, ids)
+	return ids
+}
+
+func runPathWorkRequestCancelFromAcknowledged(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-cancel-from-acknowledged")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	a := h.A
+
+	syncBoth(ctx, t, h)
+	driveCancelFullySync(ctx, t, h, a, path, 0, ids["work-request"], ids)
+	return ids
+}
+
+func runPathWorkRequestCancelFromAccepted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-cancel-from-accepted")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	a, b := h.A, h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["work-request"], ids)
+
+	syncBoth(ctx, t, h)
+	driveCancelFullySync(ctx, t, h, a, path, 1, ids["work-request"], ids)
+	return ids
+}
+
+func runPathWorkRequestCancelFromInProgress(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-cancel-from-in-progress")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	a, b := h.A, h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["work-request"], ids)
+	driveSimpleVerb(ctx, t, h, b, path, 1, fold.TStart, ids["work-request"], ids)
+
+	syncBoth(ctx, t, h)
+	driveCancelFullySync(ctx, t, h, a, path, 2, ids["work-request"], ids)
+	return ids
+}
+
+// --- Family 12 — decline, the remaining from-states (P11 W3e) -----------
+
+func runPathQuestionDeclinedFromSubmitted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-declined-from-submitted")
+	ids := pathIDs{}
+	a, b := h.A, h.B
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "question", "question", ids)
+
+	syncBoth(ctx, t, h)
+	driveDeclineFullySync(ctx, t, h, b, path, 2, sub.ID,
+		"path driver: counterparty declines without acknowledging (W3e)", ids)
+	return ids
+}
+
+func runPathQuestionDeclinedFromAccepted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-declined-from-accepted")
+	ids := runPathQuestionBlockThenUnblock(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveDeclineFullySync(ctx, t, h, b, path, 0, ids["question"],
+		"path driver: counterparty declines after re-accepting (W3e)", ids)
+	return ids
+}
+
+func runPathQuestionDeclinedFromInProgress(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-declined-from-in-progress")
+	ids := runPathQuestionDisputed(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveDeclineFullySync(ctx, t, h, b, path, 0, ids["question"],
+		"path driver: counterparty declines after a dispute reopened the question (W3e)", ids)
+	return ids
+}
+
+func runPathWorkRequestDeclinedFromAcknowledged(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-declined-from-acknowledged")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveDeclineFullySync(ctx, t, h, b, path, 0, ids["work-request"],
+		"path driver: counterparty declines after acknowledging (W3e)", ids)
+	return ids
+}
+
+func runPathWorkRequestDeclinedFromAccepted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-declined-from-accepted")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["work-request"], ids)
+
+	syncBoth(ctx, t, h)
+	driveDeclineFullySync(ctx, t, h, b, path, 1, ids["work-request"],
+		"path driver: counterparty declines after accepting (W3e)", ids)
+	return ids
+}
+
+func runPathWorkRequestDeclinedFromInProgress(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-declined-from-in-progress")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["work-request"], ids)
+	driveSimpleVerb(ctx, t, h, b, path, 1, fold.TStart, ids["work-request"], ids)
+
+	syncBoth(ctx, t, h)
+	driveDeclineFullySync(ctx, t, h, b, path, 2, ids["work-request"],
+		"path driver: counterparty declines after starting (W3e)", ids)
+	return ids
+}
+
+// --- Family 13 — block/unblock, the remaining from-states (P11 W3d-W3f) ---
+
+func runPathQuestionBlockThenUnblockRestoresAcknowledged(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-block-then-unblock-restores-acknowledged")
+	ids := runPathQuestionAcknowledged(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	placeholderBlockerID, _, err := b.Draft(ctx, "handoff")
+	if err != nil {
+		t.Fatalf("path %s step 0: mint a placeholder blocker handoff draft (%s): %v", path.ID, b.System, err)
+	}
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TBlock, ids["question"], ids, "--refs", placeholderBlockerID)
+
+	driveSimpleVerb(ctx, t, h, b, path, 1, fold.TUnblock, ids["question"], ids)
+	return ids
+}
+
+func runPathQuestionBlockThenUnblockRestoresInProgress(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-block-then-unblock-restores-in-progress")
+	ids := runPathQuestionDisputed(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	placeholderBlockerID, _, err := b.Draft(ctx, "handoff")
+	if err != nil {
+		t.Fatalf("path %s step 0: mint a placeholder blocker handoff draft (%s): %v", path.ID, b.System, err)
+	}
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TBlock, ids["question"], ids, "--refs", placeholderBlockerID)
+
+	driveSimpleVerb(ctx, t, h, b, path, 1, fold.TUnblock, ids["question"], ids)
+	return ids
+}
+
+func runPathWorkRequestBlockThenUnblockRestoresAcknowledged(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-block-then-unblock-restores-acknowledged")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	placeholderBlockerID, _, err := b.Draft(ctx, "handoff")
+	if err != nil {
+		t.Fatalf("path %s step 0: mint a placeholder blocker handoff draft (%s): %v", path.ID, b.System, err)
+	}
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TBlock, ids["work-request"], ids, "--refs", placeholderBlockerID)
+
+	driveSimpleVerb(ctx, t, h, b, path, 1, fold.TUnblock, ids["work-request"], ids)
+	return ids
+}
+
+func runPathWorkRequestBlockThenUnblockRestoresAccepted(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-block-then-unblock-restores-accepted")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["work-request"], ids)
+
+	placeholderBlockerID, _, err := b.Draft(ctx, "handoff")
+	if err != nil {
+		t.Fatalf("path %s step 1: mint a placeholder blocker handoff draft (%s): %v", path.ID, b.System, err)
+	}
+	driveSimpleVerb(ctx, t, h, b, path, 1, fold.TBlock, ids["work-request"], ids, "--refs", placeholderBlockerID)
+
+	driveSimpleVerb(ctx, t, h, b, path, 2, fold.TUnblock, ids["work-request"], ids)
+	return ids
+}
+
+func runPathWorkRequestBlockThenUnblockRestoresInProgress(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-block-then-unblock-restores-in-progress")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["work-request"], ids)
+	driveSimpleVerb(ctx, t, h, b, path, 1, fold.TStart, ids["work-request"], ids)
+
+	placeholderBlockerID, _, err := b.Draft(ctx, "handoff")
+	if err != nil {
+		t.Fatalf("path %s step 2: mint a placeholder blocker handoff draft (%s): %v", path.ID, b.System, err)
+	}
+	driveSimpleVerb(ctx, t, h, b, path, 2, fold.TBlock, ids["work-request"], ids, "--refs", placeholderBlockerID)
+
+	driveSimpleVerb(ctx, t, h, b, path, 3, fold.TUnblock, ids["work-request"], ids)
+	return ids
+}
+
+// --- Family 14 — granularity variants (P11 W3d-W3f) ----------------------
+
+func runPathQuestionAcceptStartRespond(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-lifecycle-accept-start-respond")
+	ids := runPathQuestionAcknowledged(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["question"], ids)
+	driveSimpleVerb(ctx, t, h, b, path, 1, fold.TStart, ids["question"], ids)
+
+	driveRespondBundle(ctx, t, h, b, path, 2, 3, 4, ids["question"], "answered", "response", ids)
+	return ids
+}
+
+func runPathQuestionAcceptedRespondDirect(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-lifecycle-accepted-respond-direct")
+	ids := runPathQuestionAcknowledged(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["question"], ids)
+
+	driveRespondBundle(ctx, t, h, b, path, 1, 2, 3, ids["question"], "answered", "response", ids)
+	return ids
+}
+
+func runPathWorkRequestAcceptedRespondDirect(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-accepted-respond-direct")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["work-request"], ids)
+
+	driveRespondBundle(ctx, t, h, b, path, 1, 2, 3, ids["work-request"], "delivered", "response", ids)
+	return ids
+}
+
+func runPathWorkRequestDisputedSenderOwes(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-lifecycle-disputed-sender-owes")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	a, b := h.A, h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["work-request"], ids)
+	driveSimpleVerb(ctx, t, h, b, path, 1, fold.TStart, ids["work-request"], ids)
+
+	responseID := driveRespondBundle(ctx, t, h, b, path, 2, 3, 4, ids["work-request"], "delivered", "response", ids)
+
+	syncBoth(ctx, t, h)
+	driveDisputeBundle(ctx, t, h, a, path, 5, 6, responseID, ids)
+	return ids
+}
+
+func runPathQuestionMultiResponseReconciliation(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "question-multi-response-reconciliation")
+	ids := runPathQuestionToResponded(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveSecondRespondBundle(ctx, t, h, b, path, 0, 1, 2, ids["question"], "answered",
+		"second response (path driver, W3d-W3f multi-response reconciliation)", "response-2", ids)
+	return ids
+}
+
+func runPathWorkRequestMultiResponseReconciliation(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "work-request-multi-response-reconciliation")
+	ids := runPathDataLoopSetup(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, b, path, 0, fold.TAccept, ids["work-request"], ids)
+	driveSimpleVerb(ctx, t, h, b, path, 1, fold.TStart, ids["work-request"], ids)
+
+	driveRespondBundle(ctx, t, h, b, path, 2, 3, 4, ids["work-request"], "delivered", "response", ids)
+
+	syncBoth(ctx, t, h)
+	driveSecondRespondBundle(ctx, t, h, b, path, 5, 6, 7, ids["work-request"], "delivered",
+		"second response (path driver, W3d-W3f multi-response reconciliation)", "response-2", ids)
+	return ids
+}
+
 // driverForPath maps a drivenPathIDs() entry to the function that drives it
 // STANDALONE (its own runTag == its own path id). A path missing here would
 // panic runConformancePaths rather than silently not run — deliberate: this
@@ -1364,6 +2066,48 @@ var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harnes
 	"decision-approved-superseded":                             runPathDecisionApprovedSuperseded,
 	"decision-lifecycle-rejected":                              runPathDecisionRejected,
 	"decision-rejected-superseded":                             runPathDecisionRejectedSuperseded,
+	"question-supersede-from-submitted":                        runPathQuestionSupersedeFromSubmitted,
+	"question-supersede-from-acknowledged":                     runPathQuestionSupersedeFromAcknowledged,
+	"question-supersede-from-accepted":                         runPathQuestionSupersedeFromAccepted,
+	"question-supersede-from-in-progress":                      runPathQuestionSupersedeFromInProgress,
+	"question-supersede-from-blocked":                          runPathQuestionSupersedeFromBlocked,
+	"question-supersede-from-responded":                        runPathQuestionSupersedeFromResponded,
+	"work-request-supersede-from-submitted":                    runPathWorkRequestSupersedeFromSubmitted,
+	"work-request-supersede-from-acknowledged":                 runPathWorkRequestSupersedeFromAcknowledged,
+	"work-request-supersede-from-accepted":                     runPathWorkRequestSupersedeFromAccepted,
+	"work-request-supersede-from-in-progress":                  runPathWorkRequestSupersedeFromInProgress,
+	"work-request-supersede-from-blocked":                      runPathWorkRequestSupersedeFromBlocked,
+	"work-request-supersede-from-responded":                    runPathWorkRequestSupersedeFromResponded,
+	"announcement-supersede-from-published":                    runPathAnnouncementSupersedeFromPublished,
+	"requirement-supersede-from-published":                     runPathRequirementSupersedeFromPublished,
+	"requirement-supersede-from-acknowledged":                  runPathRequirementSupersedeFromAcknowledged,
+	"requirement-supersede-from-declined":                      runPathRequirementSupersedeFromDeclined,
+	"requirement-supersede-from-withdrawn":                     runPathRequirementSupersedeFromWithdrawn,
+	"question-cancel-from-submitted":                           runPathQuestionCancelFromSubmitted,
+	"question-cancel-from-acknowledged":                        runPathQuestionCancelFromAcknowledged,
+	"question-cancel-from-accepted":                            runPathQuestionCancelFromAccepted,
+	"question-cancel-from-in-progress":                         runPathQuestionCancelFromInProgress,
+	"work-request-cancel-from-submitted":                       runPathWorkRequestCancelFromSubmitted,
+	"work-request-cancel-from-acknowledged":                    runPathWorkRequestCancelFromAcknowledged,
+	"work-request-cancel-from-accepted":                        runPathWorkRequestCancelFromAccepted,
+	"work-request-cancel-from-in-progress":                     runPathWorkRequestCancelFromInProgress,
+	"question-declined-from-submitted":                         runPathQuestionDeclinedFromSubmitted,
+	"question-declined-from-accepted":                          runPathQuestionDeclinedFromAccepted,
+	"question-declined-from-in-progress":                       runPathQuestionDeclinedFromInProgress,
+	"work-request-declined-from-acknowledged":                  runPathWorkRequestDeclinedFromAcknowledged,
+	"work-request-declined-from-accepted":                      runPathWorkRequestDeclinedFromAccepted,
+	"work-request-declined-from-in-progress":                   runPathWorkRequestDeclinedFromInProgress,
+	"question-block-then-unblock-restores-acknowledged":        runPathQuestionBlockThenUnblockRestoresAcknowledged,
+	"question-block-then-unblock-restores-in-progress":         runPathQuestionBlockThenUnblockRestoresInProgress,
+	"work-request-block-then-unblock-restores-acknowledged":    runPathWorkRequestBlockThenUnblockRestoresAcknowledged,
+	"work-request-block-then-unblock-restores-accepted":        runPathWorkRequestBlockThenUnblockRestoresAccepted,
+	"work-request-block-then-unblock-restores-in-progress":     runPathWorkRequestBlockThenUnblockRestoresInProgress,
+	"question-lifecycle-accept-start-respond":                  runPathQuestionAcceptStartRespond,
+	"question-lifecycle-accepted-respond-direct":               runPathQuestionAcceptedRespondDirect,
+	"work-request-accepted-respond-direct":                     runPathWorkRequestAcceptedRespondDirect,
+	"work-request-lifecycle-disputed-sender-owes":              runPathWorkRequestDisputedSenderOwes,
+	"question-multi-response-reconciliation":                   runPathQuestionMultiResponseReconciliation,
+	"work-request-multi-response-reconciliation":               runPathWorkRequestMultiResponseReconciliation,
 }
 
 // runConformancePaths drives every drivenPathIDs() entry as its own t.Run
