@@ -182,3 +182,48 @@ changes:
       why: >
         Nothing to do. The dashboard is rendered fresh from your local cache
         every time, so the next `a2a html` shows all of it.
+  - id: RN-01909-5
+    kind: fix
+    impact: high
+    subject: "Who acted is now read from the environment, not typed in by the agent"
+    detail: >
+      Every artifact and event records an actor, permanently, in a log nobody
+      can rewrite. Until now that field was whatever the caller said it was,
+      and two different wrong answers were reaching it.
+      The first was a person's OS username recorded under a claim that a
+      machine acted — `kind: agent, name: yuranikolaev` — because the OS user
+      was the last fallback and nothing above it had answered. The second is
+      worse and was found in a live space: `kind: agent, name: codex` on a
+      contract publish that codex did not perform. The name had been typed at
+      the command line, nothing verified it, and the event carries no
+      provenance for it. The commit author is the synthetic identity the write
+      funnel always stamps, so git cannot settle it either.
+      The authoring templates invited exactly this. Eight of them shipped the
+      line `actor: {kind: agent, name: <agent-name>, ...}`, and an agent asked
+      to fill in its own name will sometimes fill in a different one.
+      So the order is inverted. When the environment identifies the coding
+      agent that is running, that verdict wins outright over any flag, env var,
+      harness default or config value — an agent can be talked into naming the
+      wrong tool, an environment cannot. Detection is wired only for vendors
+      whose environment has actually been read on a real machine; every other
+      vendor ships a recognized id with no detector, so `A2A_ACTOR_AGENT=<id>`
+      records it correctly today rather than a detector guessing wrongly.
+      An explicit `--actor-kind human` still suppresses detection, because a
+      person saying "this was me" is a claim about something else entirely.
+      The human an agent acted FOR is not written into the event at all. It is
+      derived when reading, from the space manifest's `owners` for the acting
+      system — where it already lives, and where it stays correct when the
+      owner changes.
+    affects: ["a2a new", "a2a submit", "a2a lifecycle verbs", "a2a contract", "a2a mcp"]
+    action:
+      scope: local
+      why: >
+        Nothing to do for most invocations — the next write simply records a
+        truer actor. Two cases are worth knowing about. If you keep a work
+        stream open across this upgrade, its reporter identity is immutable for
+        the life of that work id, so a checkpoint written after the upgrade can
+        be refused for changing the reporter name; pass `--actor-name <the
+        original>` to finish it, or start a new work id. And if you author
+        envelopes by hand, stop filling in `actor.name` — the templates no
+        longer ask you to, and a value you type there is exactly how the wrong
+        attribution above happened.

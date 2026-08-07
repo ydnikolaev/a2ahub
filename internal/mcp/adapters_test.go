@@ -28,7 +28,7 @@ var _ validate.ThreadResolver = (*MirrorResolver)(nil)
 func TestResolveActorFromRefusesAnonymousMCPWrites(t *testing.T) {
 	t.Parallel()
 
-	_, err := resolveActorFrom(ActorInput{}, ActorInput{}, "")
+	_, err := resolveActorFrom(ActorInput{}, ActorInput{}, "", noEnv)
 	if !errors.Is(err, ErrNoActorName) {
 		t.Fatalf("resolveActorFrom(empty) error = %v, want ErrNoActorName", err)
 	}
@@ -40,7 +40,7 @@ func TestResolveActorFromRefusesAnonymousMCPWrites(t *testing.T) {
 func TestResolveActorFromUsesOSUserAsFinalFallback(t *testing.T) {
 	t.Parallel()
 
-	got, err := resolveActorFrom(ActorInput{}, ActorInput{}, "local-user")
+	got, err := resolveActorFrom(ActorInput{}, ActorInput{}, "local-user", noEnv)
 	if err != nil {
 		t.Fatalf("resolveActorFrom(OS user): %v", err)
 	}
@@ -243,5 +243,61 @@ func TestSubmitValidatorAdapterAcceptsContractBaselineFiles(t *testing.T) {
 
 	if err := adapter.ValidateSubmit(context.Background(), files); err != nil {
 		t.Fatalf("ValidateSubmit with contract baseline: %v", err)
+	}
+}
+
+// noEnv is the empty environment the actor cases above state explicitly.
+// resolveActorFrom now runs agent detection, so reading the process
+// environment would make every one of them depend on whichever agent harness
+// ran the suite — green on a bare shell, red inside Claude Code.
+func noEnv(string) string { return "" }
+
+// TestMCPDetectionOutranksTheNameATooLInputCarries is the MCP half of the
+// inversion, and this surface is where it matters most: every write here is
+// authored by a model filling in a structured tool input, so `actor.name` is a
+// field the agent literally chooses.
+//
+// That is how `kind: agent, name: codex` reached the getvisa space on a
+// publish codex did not perform. With a detectable agent present, the typed
+// name must lose.
+func TestMCPDetectionOutranksTheNameATooLInputCarries(t *testing.T) {
+	t.Parallel()
+
+	env := func(k string) string {
+		if k == "CLAUDECODE" {
+			return "1"
+		}
+		return ""
+	}
+
+	got, err := resolveActorFrom(ActorInput{Name: "codex"}, ActorInput{Name: "codex"}, "yuranikolaev", env)
+	if err != nil {
+		t.Fatalf("resolveActorFrom: %v", err)
+	}
+	if got.Name != "claude-code" || got.Kind != "agent" {
+		t.Fatalf("resolved actor = %+v, want the DETECTED agent — a tool input must not be able to "+
+			"attribute the write to a vendor that did not perform it", got)
+	}
+}
+
+// TestMCPExplicitHumanSuppressesDetection keeps the escape hatch reachable
+// from this surface too: `kind: human` is a claim about a person, not about
+// which binary is running.
+func TestMCPExplicitHumanSuppressesDetection(t *testing.T) {
+	t.Parallel()
+
+	env := func(k string) string {
+		if k == "CLAUDECODE" {
+			return "1"
+		}
+		return ""
+	}
+
+	got, err := resolveActorFrom(ActorInput{Kind: "human", Name: "ydnikolaev"}, ActorInput{}, "yuranikolaev", env)
+	if err != nil {
+		t.Fatalf("resolveActorFrom: %v", err)
+	}
+	if got.Kind != "human" || got.Name != "ydnikolaev" {
+		t.Fatalf("resolved actor = %+v, want the declared human identity", got)
 	}
 }
