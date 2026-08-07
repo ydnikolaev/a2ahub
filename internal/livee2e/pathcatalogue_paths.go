@@ -32,6 +32,11 @@ func ConformancePaths() []Path {
 	out = append(out, nonCooperativeCounterpartyPaths()...)
 	out = append(out, requirementPaths()...)
 	out = append(out, decisionPaths()...)
+	out = append(out, supersedePaths()...)
+	out = append(out, cancelPaths()...)
+	out = append(out, remainingDeclinePaths()...)
+	out = append(out, remainingBlockUnblockPaths()...)
+	out = append(out, granularityPaths()...)
 	return out
 }
 
@@ -1214,4 +1219,1396 @@ func decisionPaths() []Path {
 	}
 
 	return []Path{partialQuorumThenApproved, approvedSuperseded, rejected, rejectedSuperseded}
+}
+
+// --- Family 10 — supersede (P11 W3e Deliverable 1): the author abandoning
+// an open exchange/broadcast artifact for a fresh one (15 live states named
+// by spec §18c — minus the two `draft` rows that turn out to be
+// STRUCTURALLY unreachable, not merely unwritten, the same D-1 root cause
+// requirementPaths' own package doc already names for requirement — see
+// this family's own comment on question-supersede-from-submitted's sibling
+// finding, and pathcoverage_test.go's own reworded class), and the
+// requester abandoning a requirement at every one of its own reachable
+// states (5, per spec §18c, `draft` again excluded).
+//
+// The assertion this wave's own brief names as mattering beyond the state
+// change: a superseded artifact must owe NOBODY, while REMAINING VISIBLE in
+// the record. `superseded` is in neither internal/cache's own openStates
+// allowlist (types.go) for ANY kind this family touches, nor
+// internal/pendency's own table (pendency.go carries no row keyed on
+// StateSuperseded at all) — so AbsentFromOpenItems is the correct
+// "owes nobody" predicate throughout (never PendingOn, which demands
+// PRESENCE in open_items — a superseded artifact never has that again),
+// the exact pattern decisionPaths' own approvedSuperseded/rejectedSuperseded
+// already established one family up; FoldedState(..., StateSuperseded) is
+// the "remains visible" half, read back through `a2a show` same as every
+// other terminal state this catalogue asserts.
+func supersedePaths() []Path {
+	questionSupersedeFromSubmitted := Path{
+		ID: "question-supersede-from-submitted",
+		Intent: "the SENDER abandons its own question moments after submitting it, before " +
+			"the target has even acknowledged — exchangeRows()'s supersede loop admits " +
+			"`submitted` (Role Owner). A fresh standalone instance (a `create` step always " +
+			"starts a genuinely new artifact), not a precondition-chained continuation: no " +
+			"other declared path leaves a question resting at bare `submitted`.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("question", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TSubmit,
+				Predicates: []Predicate{
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TAcknowledge),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateSuperseded),
+					AbsentFromOpenItems("question"),
+				},
+			},
+		},
+	}
+
+	questionSupersedeFromAcknowledged := Path{
+		ID:           "question-supersede-from-acknowledged",
+		Precondition: "question-lifecycle-acknowledged",
+		Intent: "the SENDER abandons its question once the target has acknowledged but before " +
+			"any further engagement — continuing the family's own shared acknowledged prefix " +
+			"(question-lifecycle-acknowledged), never a fresh instance, since that prefix " +
+			"already establishes the paired positive control (PendingOn/ExpectedTransition on " +
+			"the SAME artifact, moments earlier) this negative rests on.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateSuperseded),
+					AbsentFromOpenItems("question"),
+				},
+			},
+		},
+	}
+
+	questionSupersedeFromAccepted := Path{
+		ID:           "question-supersede-from-accepted",
+		Precondition: "question-block-then-unblock-restores-accepted",
+		Intent: "the SENDER abandons its question once the target has re-accepted after " +
+			"unblocking — chosen over a fresh accept-only instance specifically because " +
+			"question-block-then-unblock-restores-accepted already proves `accepted` here is " +
+			"the RECOVERED state, not merely a state that happens to also be reachable " +
+			"directly; superseding it is the same 'this artifact is genuinely done' " +
+			"assertion one state further down that same arc.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateSuperseded),
+					AbsentFromOpenItems("question"),
+				},
+			},
+		},
+	}
+
+	questionSupersedeFromInProgress := Path{
+		ID:           "question-supersede-from-in-progress",
+		Precondition: "question-lifecycle-disputed-responder-owes",
+		Intent: "the SENDER abandons its question after disputing the response and reopening " +
+			"it (D-024's own reopen side effect) — reusing that path's own end state rather " +
+			"than a fresh accept->start route, so this triple is exercised on the SAME " +
+			"in_progress a real dispute produced, not a synthetic stand-in for it.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateSuperseded),
+					AbsentFromOpenItems("question"),
+				},
+			},
+		},
+	}
+
+	questionSupersedeFromBlocked := Path{
+		ID:           "question-supersede-from-blocked",
+		Precondition: "question-lifecycle-acknowledged",
+		Intent: "the SENDER abandons its question WHILE it is still blocked, never letting " +
+			"the target unblock it — proves supersede's own Role (Owner/sender) is checked " +
+			"independently of who currently owes the NEXT move (the target, per the blocked " +
+			"row's own PendingOn/ExpectedTransition(unblock) below): the sender may still end " +
+			"the artifact outright even though it is not the sender's own turn. " +
+			"(question, accepted, block) is already covered by " +
+			"question-block-then-unblock-restores-accepted; reusing it here (own accept+block " +
+			"steps, never unblocking) needs no new exemption-table edit.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TBlock,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateBlocked),
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TUnblock),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateSuperseded),
+					AbsentFromOpenItems("question"),
+				},
+			},
+		},
+	}
+
+	questionSupersedeFromResponded := Path{
+		ID:           "question-supersede-from-responded",
+		Precondition: "question-lifecycle-to-responded",
+		Intent: "the SENDER abandons its question after the target has responded but before " +
+			"verifying or disputing — the third live branch off `responded` (contrast " +
+			"question-lifecycle-verified-closed and question-lifecycle-disputed-responder-" +
+			"owes, this file's own family 3): the sender simply moves on.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateSuperseded),
+					AbsentFromOpenItems("question"),
+				},
+			},
+		},
+	}
+
+	workRequestSupersedeFromSubmitted := Path{
+		ID: "work-request-supersede-from-submitted",
+		Intent: "the SENDER abandons its own work_request moments after submitting it, " +
+			"mirroring question-supersede-from-submitted for the sibling exchange kind — " +
+			"table rows are per-Kind (this file's own recurring note), so the identical " +
+			"shape does not carry coverage across kinds.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("work-request", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TSubmit,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TAcknowledge),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateSuperseded),
+					AbsentFromOpenItems("work-request"),
+				},
+			},
+		},
+	}
+
+	workRequestSupersedeFromAcknowledged := Path{
+		ID:           "work-request-supersede-from-acknowledged",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the SENDER abandons its work_request once the target has acknowledged it — " +
+			"continues the data loop's own shared setup (contract published, work_request " +
+			"acknowledged) rather than a fresh instance, reusing an existing, already-driven " +
+			"precondition instead of minting a redundant one.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateSuperseded),
+					AbsentFromOpenItems("work-request"),
+				},
+			},
+		},
+	}
+
+	workRequestSupersedeFromAccepted := Path{
+		ID:           "work-request-supersede-from-accepted",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the SENDER abandons its work_request once the target has accepted it but " +
+			"before starting — (work_request, acknowledged, accept) is already covered by " +
+			"work-request-lifecycle-accept-start-respond-verify-close; reusing it here needs " +
+			"no exemption-table edit.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateSuperseded),
+					AbsentFromOpenItems("work-request"),
+				},
+			},
+		},
+	}
+
+	workRequestSupersedeFromInProgress := Path{
+		ID:           "work-request-supersede-from-in-progress",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the SENDER abandons its work_request once the target has started it — " +
+			"(work_request, accepted, start) is already covered by " +
+			"work-request-lifecycle-accept-start-respond-verify-close; reusing it here needs " +
+			"no exemption-table edit.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TStart,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateSuperseded),
+					AbsentFromOpenItems("work-request"),
+				},
+			},
+		},
+	}
+
+	workRequestSupersedeFromBlocked := Path{
+		ID:           "work-request-supersede-from-blocked",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the SENDER abandons its work_request WHILE it is still blocked — the " +
+			"sibling-kind counterpart to question-supersede-from-blocked, and NEW coverage: " +
+			"unlike that path's own (question, accepted, block) reuse, no declared path drove " +
+			"ANY work_request block row before this one, so (work_request, acknowledged, " +
+			"block) is exercised here for the first time (blocking straight from the data " +
+			"loop's own acknowledged setup, the cheapest reachable block state) — " +
+			"pathcoverage_test.go's own block/unblock exemption class is edited to remove it " +
+			"and reworded accordingly, its remaining three rows are P11 W3e's third sibling's " +
+			"own scope (block/unblock + granularity), untouched here.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TBlock,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateBlocked),
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TUnblock),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateSuperseded),
+					AbsentFromOpenItems("work-request"),
+				},
+			},
+		},
+	}
+
+	workRequestSupersedeFromResponded := Path{
+		ID:           "work-request-supersede-from-responded",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the SENDER abandons its work_request after the target has responded but " +
+			"before verifying it — (work_request, acknowledged, respond) is already covered " +
+			"by data-loop-request-answered-closed; reusing it here needs no exemption-table " +
+			"edit.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TCreate,
+			},
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TSubmit,
+				Predicates: []Predicate{FoldedState("response", fold.StateSubmitted)},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TRespond,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemA),
+					ExpectedTransition("work-request", fold.TClose),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateSuperseded),
+					AbsentFromOpenItems("work-request"),
+				},
+			},
+		},
+	}
+
+	announcementSupersedeFromPublished := Path{
+		ID: "announcement-supersede-from-published",
+		Intent: "the AUTHOR supersedes its own still-published announcement with a fresh one " +
+			"— announcementRows()'s own second (and only other) row, Role Owner. Drafted with " +
+			"no `ack_requested` field (draftFieldArgs' own default), so " +
+			"internal/pendency's own unackedTargetsRow yields nobody unconditionally (domain " +
+			"3.4.7: 'delivery completes on publish, no acknowledgement is required') — the " +
+			"publish step's own PendingOn(announcement) with zero systems is the paired " +
+			"positive control the supersede step's own AbsentFromOpenItems needs: the " +
+			"announcement was genuinely PRESENT-but-owing-nobody moments earlier, then " +
+			"genuinely ABSENT once superseded, never merely 'never asked'.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindAnnouncement, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("announcement", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindAnnouncement, Transition: fold.TPublish,
+				Predicates: []Predicate{
+					FoldedState("announcement", fold.StatePublished),
+					PendingOn("announcement"), // ack_requested unset — pending on nobody
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindAnnouncement, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("announcement", fold.StateSuperseded),
+					AbsentFromOpenItems("announcement"),
+				},
+			},
+		},
+	}
+
+	requirementSupersedeFromPublished := Path{
+		ID: "requirement-supersede-from-published",
+		Intent: "the REQUESTER abandons its own just-published requirement before the target " +
+			"acts — requirementRows()'s supersede loop admits `published` (Role Owner). A " +
+			"fresh standalone instance, same reasoning as requirement-declined-from-published.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("requirement", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TPublish,
+				Predicates: []Predicate{
+					PendingOn("requirement", SystemB),
+					ExpectedTransition("requirement", fold.TAcknowledge),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("requirement", fold.StateSuperseded),
+					AbsentFromOpenItems("requirement"),
+				},
+			},
+		},
+	}
+
+	requirementSupersedeFromAcknowledged := Path{
+		ID:           "requirement-supersede-from-acknowledged",
+		Precondition: "requirement-lifecycle-published-acknowledged",
+		Intent: "the REQUESTER abandons its requirement once the target has acknowledged it " +
+			"but before either side moves further — continues the family's own control path " +
+			"(spec §15's just-fixed pendency split) rather than a fresh instance.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("requirement", fold.StateSuperseded),
+					AbsentFromOpenItems("requirement"),
+				},
+			},
+		},
+	}
+
+	// requirementSupersedeFromSatisfied chains onto requirement-satisfied,
+	// which pathdrivability.go's own undrivablePaths() already parks (`a2a
+	// satisfy`'s own refs validation cannot be driven through any shipped
+	// surface today). Coverage credit stands regardless — PathTransitions/
+	// pathTransitionOutcomes resolve the WHOLE chain purely against fold's
+	// own table, never touching the real binary (requirement-satisfied's
+	// own entry makes exactly this point) — but DRIVING this path for real
+	// is transitively blocked by the same precondition, so it is declared
+	// here for coverage and parked in undrivablePaths() too, never added to
+	// drivenPathIDs()/driverForPath.
+	requirementSupersedeFromSatisfied := Path{
+		ID:           "requirement-supersede-from-satisfied",
+		Precondition: "requirement-satisfied",
+		Intent: "the REQUESTER abandons its own already-satisfied requirement for a fresh " +
+			"one — requirementRows()'s supersede loop admits `satisfied` (Role Owner). " +
+			"Undrivable for real (see this file's own comment immediately above and " +
+			"pathdrivability.go's own undrivablePaths() entry), coverage credit stands.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("requirement", fold.StateSuperseded),
+					AbsentFromOpenItems("requirement"),
+				},
+			},
+		},
+	}
+
+	requirementSupersedeFromDeclined := Path{
+		ID:           "requirement-supersede-from-declined",
+		Precondition: "requirement-declined-from-published",
+		Intent: "the REQUESTER supersedes its own declined requirement with a fresh one — " +
+			"requirementRows()'s supersede loop admits `declined` (Role Owner): a decline " +
+			"does not end the REQUESTER's own ability to try again, only the target's debt.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("requirement", fold.StateSuperseded),
+					AbsentFromOpenItems("requirement"),
+				},
+			},
+		},
+	}
+
+	requirementSupersedeFromWithdrawn := Path{
+		ID:           "requirement-supersede-from-withdrawn",
+		Precondition: "requirement-withdrawn-from-published",
+		Intent: "the REQUESTER supersedes its own withdrawn requirement with a fresh one — " +
+			"requirementRows()'s supersede loop admits `withdrawn` (Role Owner): the " +
+			"requester's own two uncooperative-with-itself branches (withdraw, then " +
+			"supersede) compose, same as decisionPaths' own rejectedSuperseded chains a " +
+			"reject with a supersede.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindRequirement, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("requirement", fold.StateSuperseded),
+					AbsentFromOpenItems("requirement"),
+				},
+			},
+		},
+	}
+
+	return []Path{
+		questionSupersedeFromSubmitted, questionSupersedeFromAcknowledged,
+		questionSupersedeFromAccepted, questionSupersedeFromInProgress,
+		questionSupersedeFromBlocked, questionSupersedeFromResponded,
+		workRequestSupersedeFromSubmitted, workRequestSupersedeFromAcknowledged,
+		workRequestSupersedeFromAccepted, workRequestSupersedeFromInProgress,
+		workRequestSupersedeFromBlocked, workRequestSupersedeFromResponded,
+		announcementSupersedeFromPublished,
+		requirementSupersedeFromPublished, requirementSupersedeFromAcknowledged,
+		requirementSupersedeFromSatisfied, requirementSupersedeFromDeclined,
+		requirementSupersedeFromWithdrawn,
+	}
+}
+
+// --- Family 11 — cancel (P11 W3e): the SENDER aborting its own in-flight
+// exchange, RoleOwner, from every live from-state exchangeRows()'s own
+// cancel loop admits — draft...in_progress — EXCEPT `draft` itself.
+//
+// `draft` is deliberately NOT declared as a path here, and that is a
+// deviation from this wave's own brief ("CANCEL (10)"): the brief predates
+// checking `cancel` against the SAME D-1 root cause the requirement
+// withdraw/supersede-from-draft pair (pathcoverage_test.go's own first
+// uncoveredClass) and the exchange draft-supersede pair (its second) both
+// rest on. `cancel` is an OP-211 generic verb exactly like every other
+// lifecycle verb (cmd_lifecycle.go's lifecycleVerbTable): it loads its
+// target via lifecycleLoadEnvelope, the committed mirror ONLY, and
+// postSubmissionState (fold/fold.go) returns StateSubmitted for both
+// KindQuestion and KindWorkRequest — never StateDraft — so
+// fold.RestingStates() contains neither {question,draft} nor
+// {work_request,draft}: no CLI invocation could ever find a question or
+// work_request AT REST in `draft` to cancel, the identical derivation the
+// two pairs above already rest on. (question, draft, cancel) and
+// (work_request, draft, cancel) stay in pathcoverage_test.go's own
+// uncoveredTransitions(), reworded to name this rather than declared here.
+//
+// Every driven path below asserts the debt is gone from BOTH parties
+// afterwards (the brief's own requirement) — `cancelled` carries no
+// internal/pendency row and is not in cache's own openExchangeStates
+// allowlist for either kind (the same lookup-miss reasoning
+// question-declined-after-acknowledge already established for `declined`
+// — pathcatalogue_paths.go's own nonCooperativeCounterpartyPaths), so
+// AbsentFromOpenItems plus NotActionable on BOTH systems is the correct
+// "genuinely over, not merely renamed" assertion throughout, never
+// PendingOn (which demands presence).
+func cancelPaths() []Path {
+	questionCancelFromSubmitted := Path{
+		ID: "question-cancel-from-submitted",
+		Intent: "the SENDER cancels its own question moments after submitting it, before " +
+			"the target has even acknowledged — exchangeRows()'s cancel loop admits " +
+			"`submitted` (Role Owner). A fresh standalone instance, same reasoning as " +
+			"question-supersede-from-submitted: no other declared path leaves a question " +
+			"resting at bare `submitted`.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("question", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TSubmit,
+				Predicates: []Predicate{
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TAcknowledge),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TCancel,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateCancelled),
+					AbsentFromOpenItems("question"),
+					NotActionable(SystemA, "question"),
+					NotActionable(SystemB, "question"),
+				},
+			},
+		},
+	}
+
+	questionCancelFromAcknowledged := Path{
+		ID:           "question-cancel-from-acknowledged",
+		Precondition: "question-lifecycle-acknowledged",
+		Intent: "the SENDER cancels its question once the target has acknowledged but " +
+			"before any further engagement — continues the family's own shared " +
+			"acknowledged prefix, the SAME precondition question-supersede-from-" +
+			"acknowledged reuses, so this triple is exercised on the SAME genuinely-" +
+			"acknowledged artifact a real acknowledge produced.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TCancel,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateCancelled),
+					AbsentFromOpenItems("question"),
+					NotActionable(SystemA, "question"),
+					NotActionable(SystemB, "question"),
+				},
+			},
+		},
+	}
+
+	questionCancelFromAccepted := Path{
+		ID:           "question-cancel-from-accepted",
+		Precondition: "question-block-then-unblock-restores-accepted",
+		Intent: "the SENDER cancels its question once the target has re-accepted after " +
+			"unblocking — reuses the SAME recovered-accepted precondition " +
+			"question-supersede-from-accepted already established, so `accepted` here " +
+			"is proven the RECOVERED state, not merely a state that also happens to be " +
+			"reachable directly.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TCancel,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateCancelled),
+					AbsentFromOpenItems("question"),
+					NotActionable(SystemA, "question"),
+					NotActionable(SystemB, "question"),
+				},
+			},
+		},
+	}
+
+	questionCancelFromInProgress := Path{
+		ID:           "question-cancel-from-in-progress",
+		Precondition: "question-lifecycle-disputed-responder-owes",
+		Intent: "the SENDER cancels its question after disputing the response and " +
+			"reopening it (D-024's own reopen side effect) — reusing that path's own " +
+			"end state, same as question-supersede-from-in-progress, so this triple is " +
+			"exercised on the SAME in_progress a real dispute produced, never a " +
+			"synthetic accept->start stand-in.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TCancel,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateCancelled),
+					AbsentFromOpenItems("question"),
+					NotActionable(SystemA, "question"),
+					NotActionable(SystemB, "question"),
+				},
+			},
+		},
+	}
+
+	workRequestCancelFromSubmitted := Path{
+		ID: "work-request-cancel-from-submitted",
+		Intent: "the SENDER cancels its own work_request moments after submitting it, " +
+			"mirroring question-cancel-from-submitted for the sibling exchange kind — " +
+			"table rows are per-Kind, so the identical shape does not carry coverage " +
+			"across kinds.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("work-request", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TSubmit,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TAcknowledge),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TCancel,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateCancelled),
+					AbsentFromOpenItems("work-request"),
+					NotActionable(SystemA, "work-request"),
+					NotActionable(SystemB, "work-request"),
+				},
+			},
+		},
+	}
+
+	workRequestCancelFromAcknowledged := Path{
+		ID:           "work-request-cancel-from-acknowledged",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the SENDER cancels its work_request once the target has acknowledged " +
+			"it — continues the data loop's own shared setup, the SAME precondition " +
+			"work-request-supersede-from-acknowledged reuses, instead of minting a " +
+			"redundant one.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TCancel,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateCancelled),
+					AbsentFromOpenItems("work-request"),
+					NotActionable(SystemA, "work-request"),
+					NotActionable(SystemB, "work-request"),
+				},
+			},
+		},
+	}
+
+	workRequestCancelFromAccepted := Path{
+		ID:           "work-request-cancel-from-accepted",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the SENDER cancels its work_request once the target has accepted it " +
+			"but before starting — (work_request, acknowledged, accept) is already " +
+			"covered by work-request-lifecycle-accept-start-respond-verify-close; " +
+			"reusing it here needs no exemption-table edit.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TCancel,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateCancelled),
+					AbsentFromOpenItems("work-request"),
+					NotActionable(SystemA, "work-request"),
+					NotActionable(SystemB, "work-request"),
+				},
+			},
+		},
+	}
+
+	workRequestCancelFromInProgress := Path{
+		ID:           "work-request-cancel-from-in-progress",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the SENDER cancels its work_request once the target has started it — " +
+			"(work_request, accepted, start) is already covered by " +
+			"work-request-lifecycle-accept-start-respond-verify-close; reusing it here " +
+			"needs no exemption-table edit.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TStart,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TCancel,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateCancelled),
+					AbsentFromOpenItems("work-request"),
+					NotActionable(SystemA, "work-request"),
+					NotActionable(SystemB, "work-request"),
+				},
+			},
+		},
+	}
+
+	return []Path{
+		questionCancelFromSubmitted, questionCancelFromAcknowledged,
+		questionCancelFromAccepted, questionCancelFromInProgress,
+		workRequestCancelFromSubmitted, workRequestCancelFromAcknowledged,
+		workRequestCancelFromAccepted, workRequestCancelFromInProgress,
+	}
+}
+
+// --- Family 12 — decline, the remaining from-states (P11 W3e):
+// nonCooperativeCounterpartyPaths (Family 7, P11 W3c) already covers
+// (question, acknowledged, decline) and (work_request, submitted, decline)
+// — the shared prefix the sibling driveDeclineFullySync helper and its own
+// "checked on BOTH parties, after a full sync" discipline were built for.
+// This family drives every OTHER (kind, state) pair exchangeRows()'s
+// decline loop admits, reusing that same helper throughout rather than a
+// second interpretation of it.
+func remainingDeclinePaths() []Path {
+	questionDeclinedFromSubmitted := Path{
+		ID: "question-declined-from-submitted",
+		Intent: "the TARGET declines a question straight from `submitted`, WITHOUT " +
+			"ever acknowledging — mirrors work-request-declined-from-submitted for " +
+			"the sibling exchange kind (table rows are per-Kind, so the identical " +
+			"shape does not carry coverage across kinds). The paired positive control " +
+			"is this path's own submit step, moments earlier: PendingOn(question, " +
+			"SystemB) and ExpectedTransition(question, TAcknowledge). Question " +
+			"defaults `blocking: true` (schemas/templates/v1/question.md), so A's own " +
+			"negative here needs the SAME full-sync caveat question-declined-after-" +
+			"acknowledge's own Intent names — a stale, pre-sync read of A's checkout " +
+			"would still show the true-before-decline positive (p1-or-blocking-open) " +
+			"and wrongly look like a passing negative.",
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("question", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindQuestion, Transition: fold.TSubmit,
+				Predicates: []Predicate{
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TAcknowledge),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TDecline,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateDeclined),
+					AbsentFromOpenItems("question"),
+					NotActionable(SystemA, "question"),
+					NotActionable(SystemB, "question"),
+				},
+			},
+		},
+	}
+
+	questionDeclinedFromAccepted := Path{
+		ID:           "question-declined-from-accepted",
+		Precondition: "question-block-then-unblock-restores-accepted",
+		Intent: "the TARGET declines a question once it has re-accepted after " +
+			"unblocking — reuses the SAME recovered-accepted precondition " +
+			"question-supersede-from-accepted and question-cancel-from-accepted " +
+			"already establish. NotActionable on BOTH parties checked after a full " +
+			"sync (driveDeclineFullySync's own precedent), same reasoning as this " +
+			"family's other decline paths.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TDecline,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateDeclined),
+					AbsentFromOpenItems("question"),
+					NotActionable(SystemA, "question"),
+					NotActionable(SystemB, "question"),
+				},
+			},
+		},
+	}
+
+	questionDeclinedFromInProgress := Path{
+		ID:           "question-declined-from-in-progress",
+		Precondition: "question-lifecycle-disputed-responder-owes",
+		Intent: "the TARGET declines a question after disputing the response and " +
+			"reopening it — reusing that path's own end state, same as question-" +
+			"supersede-from-in-progress and question-cancel-from-in-progress, so " +
+			"this triple is exercised on the SAME in_progress a real dispute " +
+			"produced, never a synthetic accept->start stand-in.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TDecline,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateDeclined),
+					AbsentFromOpenItems("question"),
+					NotActionable(SystemA, "question"),
+					NotActionable(SystemB, "question"),
+				},
+			},
+		},
+	}
+
+	workRequestDeclinedFromAcknowledged := Path{
+		ID:           "work-request-declined-from-acknowledged",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the TARGET declines a work_request once it has acknowledged it — " +
+			"continues the data loop's own shared setup, the SAME precondition " +
+			"work-request-supersede-from-acknowledged and work-request-cancel-from-" +
+			"acknowledged reuse. work_request defaults `blocking: false` " +
+			"(schemas/templates/v1/work_request.md), so A's own negative here is " +
+			"trivially true throughout, not merely post-decline — no full-sync " +
+			"staleness caveat needed, the same asymmetry work-request-declined-from-" +
+			"submitted's own Intent already names.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TDecline,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateDeclined),
+					AbsentFromOpenItems("work-request"),
+					NotActionable(SystemA, "work-request"),
+					NotActionable(SystemB, "work-request"),
+				},
+			},
+		},
+	}
+
+	workRequestDeclinedFromAccepted := Path{
+		ID:           "work-request-declined-from-accepted",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the TARGET declines a work_request once it has accepted it but " +
+			"before starting — (work_request, acknowledged, accept) is already " +
+			"covered by work-request-lifecycle-accept-start-respond-verify-close; " +
+			"reusing it here needs no exemption-table edit.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TDecline,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateDeclined),
+					AbsentFromOpenItems("work-request"),
+					NotActionable(SystemA, "work-request"),
+					NotActionable(SystemB, "work-request"),
+				},
+			},
+		},
+	}
+
+	workRequestDeclinedFromInProgress := Path{
+		ID:           "work-request-declined-from-in-progress",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the TARGET declines a work_request once it has started it — " +
+			"(work_request, accepted, start) is already covered by " +
+			"work-request-lifecycle-accept-start-respond-verify-close; reusing it " +
+			"here needs no exemption-table edit.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TStart,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TDecline,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateDeclined),
+					AbsentFromOpenItems("work-request"),
+					NotActionable(SystemA, "work-request"),
+					NotActionable(SystemB, "work-request"),
+				},
+			},
+		},
+	}
+
+	return []Path{
+		questionDeclinedFromSubmitted, questionDeclinedFromAccepted, questionDeclinedFromInProgress,
+		workRequestDeclinedFromAcknowledged, workRequestDeclinedFromAccepted, workRequestDeclinedFromInProgress,
+	}
+}
+
+// --- Family 13 — block/unblock, the remaining from-states (P11 W3d-W3f):
+// question-block-then-unblock-restores-accepted (Family 7) already proves
+// the mechanism once, from `accepted`; work-request-supersede-from-blocked
+// (Family 10) already drives (work_request, acknowledged, block) as a side
+// effect of reaching `blocked` to supersede from there, but NEVER unblocks —
+// it supersedes instead, so it proves nothing about dynamic recovery. Every
+// path here both blocks AND unblocks the SAME artifact, in its OWN Steps
+// (never split across a Precondition boundary — pathgrammar.go's own
+// resolveUnblock doc comment: pre-block state is walk-local, "a path may
+// only unblock a Kind it blocked in its OWN Steps"), and each asserts the
+// SPECIFIC pre-block state comes back — the whole point of the dynamic row
+// (table.go: "one dynamic row per possible pre-block state").
+func remainingBlockUnblockPaths() []Path {
+	questionBlockThenUnblockRestoresAcknowledged := Path{
+		ID:           "question-block-then-unblock-restores-acknowledged",
+		Precondition: "question-lifecycle-acknowledged",
+		Intent: "the TARGET blocks the question straight from `acknowledged` (never accepting " +
+			"first), then unblocks it — the load-bearing assertion is that unblock restores " +
+			"`acknowledged` specifically, the state that held immediately before block, matching " +
+			"m[key{k, StateAcknowledged}]'s own owed transition (respond) once recovered. Pendency " +
+			"through the arc: PendingOn(question, SystemB) + ExpectedTransition(question, TUnblock) " +
+			"while blocked (internal/pendency's own StateBlocked row: the debt stays on the " +
+			"target), then PendingOn(question, SystemB) + ExpectedTransition(question, TRespond) " +
+			"once restored. The blocker is a throwaway local draft handoff, same `--refs` pattern " +
+			"question-block-then-unblock-restores-accepted already established.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TBlock,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateBlocked),
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TUnblock),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TUnblock,
+				Predicates: []Predicate{
+					// Restored to `acknowledged` — the state IMMEDIATELY
+					// BEFORE block, not `accepted` (a state this path never
+					// reaches) and not `in_progress`.
+					FoldedState("question", fold.StateAcknowledged),
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TRespond),
+				},
+			},
+		},
+	}
+
+	questionBlockThenUnblockRestoresInProgress := Path{
+		ID:           "question-block-then-unblock-restores-in-progress",
+		Precondition: "question-lifecycle-disputed-responder-owes",
+		Intent: "the TARGET blocks the question after a dispute reopened it (D-024's own side " +
+			"effect leaves it `in_progress`), then unblocks it — the load-bearing assertion is " +
+			"that unblock restores `in_progress` specifically, the THIRD distinct pre-block state " +
+			"this catalogue now proves the dynamic row picks correctly (accepted: question-block-" +
+			"then-unblock-restores-accepted; acknowledged: the sibling path immediately above; " +
+			"in_progress: here) — not `acknowledged` and not `accepted`, neither of which this " +
+			"path's own artifact ever revisits once disputed. Pendency: PendingOn(question, " +
+			"SystemB) + ExpectedTransition(question, TUnblock) while blocked, then PendingOn " +
+			"(question, SystemB) + ExpectedTransition(question, TRespond) once restored — the " +
+			"same shape every state in this family shares (internal/pendency's own StateBlocked " +
+			"row, then StateInProgress's own targetRow(TRespond, \"same, in flight\")).",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TBlock,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateBlocked),
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TUnblock),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TUnblock,
+				Predicates: []Predicate{
+					FoldedState("question", fold.StateInProgress),
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TRespond),
+				},
+			},
+		},
+	}
+
+	workRequestBlockThenUnblockRestoresAcknowledged := Path{
+		ID:           "work-request-block-then-unblock-restores-acknowledged",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the sibling-kind counterpart to question-block-then-unblock-restores-" +
+			"acknowledged: the TARGET blocks the work_request straight from `acknowledged`, then " +
+			"unblocks it. (work_request, acknowledged, block) is ALREADY exercised by work-" +
+			"request-supersede-from-blocked (Family 10), but that path never unblocks — it " +
+			"supersedes the blocked artifact instead, proving nothing about dynamic recovery. " +
+			"This path is the one that actually proves the recovery for work_request's own " +
+			"acknowledged pre-block state, table rows being per-Kind (this file's own recurring " +
+			"note — the question-side proof does not carry over).",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TBlock,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateBlocked),
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TUnblock),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TUnblock,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateAcknowledged),
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+		},
+	}
+
+	workRequestBlockThenUnblockRestoresAccepted := Path{
+		ID:           "work-request-block-then-unblock-restores-accepted",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the TARGET accepts the work_request, blocks it from `accepted`, then unblocks " +
+			"it — the recovery must land back on `accepted`, not `acknowledged` (the state before " +
+			"accept, which this path never revisits) and not `in_progress` (never reached here). " +
+			"New coverage: (work_request, accepted, block) is driven for the first time by ANY " +
+			"declared path.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TBlock,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateBlocked),
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TUnblock),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TUnblock,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateAccepted),
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+		},
+	}
+
+	workRequestBlockThenUnblockRestoresInProgress := Path{
+		ID:           "work-request-block-then-unblock-restores-in-progress",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the TARGET accepts, starts, blocks the work_request from `in_progress`, then " +
+			"unblocks it — the recovery must land back on `in_progress` specifically, the THIRD " +
+			"and last work_request pre-block state this family proves (acknowledged: the sibling " +
+			"path above; accepted: work-request-block-then-unblock-restores-accepted; in_progress: " +
+			"here), never `acknowledged` or `accepted`. This is ALSO the path that closes " +
+			"(work_request, blocked, unblock) — coverage-wise redundant with either sibling above " +
+			"(the triple carries no per-scenario distinction, table.go's own comment: \"one " +
+			"dynamic row per possible pre-block state, for test-scenario documentation\"), listed " +
+			"here for completeness of the arc rather than for a triple none of the siblings " +
+			"already close.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TStart,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TBlock,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateBlocked),
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TUnblock),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TUnblock,
+				Predicates: []Predicate{
+					// MUTATION PROOF (this wave's own report): flipping this
+					// to StateAccepted must red, naming both got and want.
+					FoldedState("work-request", fold.StateInProgress),
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+		},
+	}
+
+	return []Path{
+		questionBlockThenUnblockRestoresAcknowledged, questionBlockThenUnblockRestoresInProgress,
+		workRequestBlockThenUnblockRestoresAcknowledged, workRequestBlockThenUnblockRestoresAccepted,
+		workRequestBlockThenUnblockRestoresInProgress,
+	}
+}
+
+// --- Family 14 — granularity variants (P11 W3d-W3f, spec §18c's own "7"):
+// the direct accepted->respond row work-request-lifecycle-accept-start-
+// respond-verify-close skips by always passing through `start`; question's
+// own OWN full accept->start->respond route (never previously driven —
+// question-lifecycle-to-responded takes the acknowledged->respond shortcut
+// instead); a work_request response being disputed (only question's own
+// disputed branch existed before); and the multi-response reconciliation
+// row (`responded -> respond -> responded`, table.go's own comment: "one
+// parent MAY receive multiple responses", 3.4.6) for BOTH kinds.
+func granularityPaths() []Path {
+	questionAcceptStartRespond := Path{
+		ID:           "question-lifecycle-accept-start-respond",
+		Precondition: "question-lifecycle-acknowledged",
+		Intent: "the full granularity route for QUESTION (accept -> start -> respond) that no " +
+			"declared question path drives — question-lifecycle-to-responded takes the " +
+			"acknowledged->respond shortcut instead (the pendency table's own 'accept/start are " +
+			"optional granularity' note), and question-block-then-unblock-restores-accepted " +
+			"drives accept but never start. Covers (question, accepted, start) — driven for the " +
+			"first time by any declared path — and (question, in_progress, respond), the third " +
+			"live respond fromState for question (accepted and acknowledged are covered " +
+			"elsewhere; in_progress only by mirroring work_request's own shape here).",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TStart,
+				Predicates: []Predicate{
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TCreate,
+			},
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TSubmit,
+				Predicates: []Predicate{FoldedState("response", fold.StateSubmitted)},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TRespond,
+				Predicates: []Predicate{
+					PendingOn("question", SystemA),
+					ExpectedTransition("question", fold.TClose),
+				},
+			},
+		},
+	}
+
+	questionAcceptedRespondDirect := Path{
+		ID:           "question-lifecycle-accepted-respond-direct",
+		Precondition: "question-lifecycle-acknowledged",
+		Intent: "the TARGET accepts, then responds DIRECTLY from `accepted`, skipping `start` — " +
+			"the sibling granularity shortcut to questionAcceptStartRespond's own full route: " +
+			"exchangeRows()'s respond loop admits `accepted` directly (Role Target), same as it " +
+			"admits `acknowledged` and `in_progress`. Covers (question, accepted, respond).",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("question", SystemB),
+					ExpectedTransition("question", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TCreate,
+			},
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TSubmit,
+				Predicates: []Predicate{FoldedState("response", fold.StateSubmitted)},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TRespond,
+				Predicates: []Predicate{
+					PendingOn("question", SystemA),
+					ExpectedTransition("question", fold.TClose),
+				},
+			},
+		},
+	}
+
+	workRequestAcceptedRespondDirect := Path{
+		ID:           "work-request-accepted-respond-direct",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the sibling-kind counterpart to question-lifecycle-accepted-respond-direct: the " +
+			"TARGET accepts the work_request, then responds DIRECTLY from `accepted`, skipping " +
+			"`start` — the ONE row work-request-lifecycle-accept-start-respond-verify-close never " +
+			"reaches, because that path always passes through `start` before responding. Covers " +
+			"(work_request, accepted, respond).",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TCreate,
+			},
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TSubmit,
+				Predicates: []Predicate{FoldedState("response", fold.StateSubmitted)},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TRespond,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemA),
+					ExpectedTransition("work-request", fold.TClose),
+				},
+			},
+		},
+	}
+
+	workRequestDisputedSenderOwes := Path{
+		ID:           "work-request-lifecycle-disputed-sender-owes",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the sibling-kind counterpart to question-lifecycle-disputed-responder-owes: the " +
+			"SENDER disputes the response instead of closing — D-024's reopen side effect must " +
+			"put the owed transition back on the RESPONDER (target), not leave it looking settled " +
+			"or hand it back to the sender, same assertion as the question family's own disputed " +
+			"path, exercised here for work_request for the first time (table rows are per-Kind, " +
+			"so the question-side proof does not carry over). Covers (work_request, responded, " +
+			"dispute).",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TStart,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TCreate,
+			},
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TSubmit,
+				Predicates: []Predicate{FoldedState("response", fold.StateSubmitted)},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TRespond,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemA),
+					ExpectedTransition("work-request", fold.TClose),
+				},
+			},
+			{
+				// responseRows() gives the response its own submitted->disputed
+				// row (Role Owner, resolved against the PARENT's `from`).
+				Actor: SystemA, Kind: fold.KindResponse, Transition: fold.TDispute,
+				Predicates: []Predicate{FoldedState("response", fold.StateDisputed)},
+			},
+			{
+				// exchangeRows() SEPARATELY gives the parent work_request its
+				// own responded->in_progress row (D-024's reopen side effect).
+				Actor: SystemA, Kind: fold.KindWorkRequest, Transition: fold.TDispute,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateInProgress),
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+		},
+	}
+
+	questionMultiResponseReconciliation := Path{
+		ID:           "question-multi-response-reconciliation",
+		Precondition: "question-lifecycle-to-responded",
+		Intent: "the multi-response reconciliation row (table.go's own comment: a second " +
+			"response on an already-responded parent, 3.4.6's 'one parent MAY receive multiple " +
+			"responses' allowance) — the TARGET sends a SECOND, genuinely distinct response " +
+			"(a distinguishing --field, since responseID is content-derived — cmd_lifecycle.go's " +
+			"own HIGH-1 fix-wave doc comment: identical inputs would mint the IDENTICAL id and " +
+			"collapse onto the first response's own dedup branch instead of authoring a real " +
+			"second one, TestVerifyMultiResponseDoesNotAutoClose's own precedent) while the " +
+			"FIRST response still sits unverified. The load-bearing assertion this path exists " +
+			"for: whose move it is afterwards. internal/pendency's own row is keyed on the " +
+			"PARENT's folded state alone (m[key{k, StateResponded}] = senderRow(TClose, ...)), " +
+			"never on how many responses are attached — so the second response changes NOTHING " +
+			"about the parent's own owed transition: still the SENDER, still `close` (by way of " +
+			"verifying each response, P-d's own 'sender owes verification then close'), exactly " +
+			"as it was after the FIRST response landed (toResponded's own last step, moments " +
+			"earlier in the SAME run). Covers (question, responded, respond).",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TCreate,
+			},
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TSubmit,
+				Predicates: []Predicate{FoldedState("response-2", fold.StateSubmitted)},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindQuestion, Transition: fold.TRespond,
+				Predicates: []Predicate{
+					// Unchanged from the first response's own assertion —
+					// the second response does not hand the move to anybody
+					// new, and does not settle the thread either.
+					FoldedState("question", fold.StateResponded),
+					PendingOn("question", SystemA),
+					ExpectedTransition("question", fold.TClose),
+				},
+			},
+		},
+	}
+
+	workRequestMultiResponseReconciliation := Path{
+		ID:           "work-request-multi-response-reconciliation",
+		Precondition: "data-loop-contract-and-request",
+		Intent: "the sibling-kind counterpart to question-multi-response-reconciliation, driven " +
+			"fresh (no declared work_request path leaves one merely `responded` without also " +
+			"closing it in the same chain — data-loop-request-answered-closed auto-closes in one " +
+			"call, D-024's own convenience). Same reasoning throughout: the second response, " +
+			"distinguished the same way (a distinct --field), changes nothing about the parent's " +
+			"own owed transition. Covers (work_request, responded, respond).",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TAccept,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TStart,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemB),
+					ExpectedTransition("work-request", fold.TRespond),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TCreate,
+			},
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TSubmit,
+				Predicates: []Predicate{FoldedState("response", fold.StateSubmitted)},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TRespond,
+				Predicates: []Predicate{
+					PendingOn("work-request", SystemA),
+					ExpectedTransition("work-request", fold.TClose),
+				},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TCreate,
+			},
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TSubmit,
+				Predicates: []Predicate{FoldedState("response-2", fold.StateSubmitted)},
+			},
+			{
+				Actor: SystemB, Kind: fold.KindWorkRequest, Transition: fold.TRespond,
+				Predicates: []Predicate{
+					FoldedState("work-request", fold.StateResponded),
+					PendingOn("work-request", SystemA),
+					ExpectedTransition("work-request", fold.TClose),
+				},
+			},
+		},
+	}
+
+	return []Path{
+		questionAcceptStartRespond, questionAcceptedRespondDirect,
+		workRequestAcceptedRespondDirect, workRequestDisputedSenderOwes,
+		questionMultiResponseReconciliation, workRequestMultiResponseReconciliation,
+	}
 }

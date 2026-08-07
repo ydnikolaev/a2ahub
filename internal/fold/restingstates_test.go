@@ -1,0 +1,101 @@
+package fold
+
+import "testing"
+
+// TestRestingStatesUniverse pins the universe size the internal/livee2e
+// coverage split (W3d, exercised-vs-asserted) is checked against — 43
+// distinct (Kind, State) pairs today: every row's To (StateDynamic
+// excluded) unioned with postSubmissionState(kind) for all eight kinds. A
+// count drift here is a real signal (a table row's To changed, or a kind's
+// zero-events fallback changed), not test noise.
+func TestRestingStatesUniverse(t *testing.T) {
+	got := RestingStates()
+	if len(got) != 43 {
+		t.Fatalf("RestingStates(): want 43 pairs, got %d: %+v", len(got), got)
+	}
+}
+
+// TestRestingStatesExcludesDynamic asserts the StateDynamic sentinel never
+// appears — unblock's pre-block recovery and decision approve's quorum
+// arithmetic are resolved at apply time, never a state a subject is
+// literally found holding at rest.
+func TestRestingStatesExcludesDynamic(t *testing.T) {
+	for _, krs := range RestingStates() {
+		if krs.State == StateDynamic {
+			t.Fatalf("RestingStates() returned a StateDynamic pair: %+v", krs)
+		}
+	}
+}
+
+// TestRestingStatesDecisionDraftIsObservable is the derivation's own load-
+// bearing case (RestingStates' doc comment, spec §18a): a decision at rest
+// CAN be `draft` — postSubmissionState(KindDecision) is StateDraft, because
+// a decision's own first committed event is `propose`, not a submit/
+// publish entry transition. No OTHER kind's rows land a subject back on
+// `draft` (draft is a `From` for every kind's first row, never a `To`), so
+// a hand-written "every kind's draft is pre-commit and unobservable" list
+// would have gotten exactly this one wrong.
+func TestRestingStatesDecisionDraftIsObservable(t *testing.T) {
+	want := KindRestingState{Kind: KindDecision, State: StateDraft}
+	for _, krs := range RestingStates() {
+		if krs == want {
+			return
+		}
+	}
+	t.Fatalf("RestingStates() does not contain %+v — decision's zero-events fallback (postSubmissionState) is StateDraft, and RestingStates must union it in even though no decision row lands ON draft", want)
+}
+
+// TestRestingStatesOtherKindsDraftIsNotObservable is the negative half of
+// the decision case above: every OTHER kind's postSubmissionState is
+// published or submitted (fold.go), never draft, and no row of theirs lands
+// a subject on draft either — so draft must be genuinely absent from their
+// resting set, not merely absent from the test's own assertions.
+func TestRestingStatesOtherKindsDraftIsNotObservable(t *testing.T) {
+	for _, k := range kinds {
+		if k == KindDecision {
+			continue
+		}
+		for _, krs := range RestingStates() {
+			if krs.Kind == k && krs.State == StateDraft {
+				t.Fatalf("RestingStates() contains {%s draft} — only decision's zero-events fallback should ever produce a draft resting state", k)
+			}
+		}
+	}
+}
+
+// TestRestingStatesDeduplicatedAndSorted asserts no pair repeats and the
+// result is sorted (Kind, then State) — same determinism contract as
+// SubjectStates/TransitionRows.
+func TestRestingStatesDeduplicatedAndSorted(t *testing.T) {
+	got := RestingStates()
+	seen := make(map[KindRestingState]bool, len(got))
+	for i, krs := range got {
+		if seen[krs] {
+			t.Fatalf("RestingStates() returned a duplicate pair: %+v", krs)
+		}
+		seen[krs] = true
+		if i > 0 {
+			prev := got[i-1]
+			if krs.Kind < prev.Kind || (krs.Kind == prev.Kind && krs.State < prev.State) {
+				t.Fatalf("RestingStates() not sorted at index %d: %+v before %+v", i, prev, krs)
+			}
+		}
+	}
+}
+
+// TestRestingStatesFreshSlice asserts a caller mutating one returned slice
+// cannot corrupt what a later call returns.
+func TestRestingStatesFreshSlice(t *testing.T) {
+	first := RestingStates()
+	if len(first) == 0 {
+		t.Fatal("RestingStates() returned no pairs")
+	}
+	first[0] = KindRestingState{Kind: "corrupted", State: "corrupted"}
+
+	second := RestingStates()
+	for _, krs := range second {
+		if krs.Kind == "corrupted" {
+			t.Fatal("RestingStates() shares backing storage across calls")
+		}
+	}
+}
