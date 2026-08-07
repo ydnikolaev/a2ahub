@@ -291,7 +291,12 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 	}
 
 	// Exchange overlay: aggregate open items (inbox ∪ outbox) per from→to→space.
-	d.ExchangeEdges = exchangeEdges(append(append([]cache.Item{}, inItems...), outItems...), now)
+	// withOpenItemPendency carries the SAME verdict buildThreads already
+	// resolved (openItems, via buildOpenItems' single pendency.Resolve call)
+	// onto these copies' WaitingOn/ExpectedTransition, so exchangeEdges can
+	// tell a merely-live item from one somebody actually owes a move on
+	// without this package computing pendency a second time (I7).
+	d.ExchangeEdges = exchangeEdges(withOpenItemPendency(append(append([]cache.Item{}, inItems...), outItems...), openItems), now)
 
 	// Read-health facts: committed fold violations plus any mirror files the
 	// best-effort index could not decode. Both already exist in cache; the old
@@ -907,6 +912,12 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 				Consistency: entry.Event.Consistency,
 			}
 		}
+		if entry.Derived != nil {
+			row.Derived = &TranscriptDerived{
+				ContractID: entry.Derived.ContractID, System: entry.Derived.System,
+				Major: entry.Derived.Major, Since: entry.Derived.Since,
+			}
+		}
 		view.Transcript = append(view.Transcript, row)
 	}
 	for _, item := range result.OpenItems {
@@ -1303,7 +1314,35 @@ func severityOf(it cache.Item, gate bool) string {
 	return "normal"
 }
 
-// exchangeEdges aggregates open items into directed per-space edges.
+// withOpenItemPendency returns a copy of items with WaitingOn/
+// ExpectedTransition filled in from open — the SAME pendency verdict
+// buildThreads already resolved once per artifact via buildOpenItems,
+// never a second pendency.Resolve call (I7). open is keyed only by
+// threaded artifacts (assemble.go's own "threadless (pre-P46 /
+// non-conforming) artifacts never group into a pseudo-thread" comment on
+// buildThreads), so a miss here — a threadless item, or one whose thread's
+// store.ThreadView call errored — leaves WaitingOn empty: NOT owed rather
+// than an unknown treated as owed, which is the direction this whole
+// change exists to enforce (liveness must never over-assert pendency).
+func withOpenItemPendency(items []cache.Item, open openItemIndex) []cache.Item {
+	out := make([]cache.Item, len(items))
+	for i, it := range items {
+		if oi, ok := open.get(it.Space, it.ID); ok {
+			it.WaitingOn = oi.WaitingOn
+			it.ExpectedTransition = oi.ExpectedTransition
+		}
+		out[i] = it
+	}
+	return out
+}
+
+// exchangeEdges aggregates open items into directed per-space edges. Count
+// stays a pure LIVENESS tally (every aggregated item, per cache.Item's own
+// isOpen scope); OwedCount is the narrower PENDENCY tally — how many of
+// those items have somebody actually owing the next move
+// (cache.Item.WaitingOn non-empty) — so a caller can distinguish "alive"
+// from "alive AND somebody owes a move" instead of the map asserting the
+// stronger claim about every open document.
 func exchangeEdges(items []cache.Item, now time.Time) []ExchangeEdge {
 	type key struct{ from, to, space string }
 	agg := map[key]*ExchangeEdge{}
@@ -1317,6 +1356,9 @@ func exchangeEdges(items []cache.Item, now time.Time) []ExchangeEdge {
 				agg[k] = e
 			}
 			e.Count++
+			if len(it.WaitingOn) > 0 {
+				e.OwedCount++
+			}
 			if it.Blocking {
 				e.Blocking = true
 			}

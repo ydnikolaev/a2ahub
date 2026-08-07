@@ -144,12 +144,19 @@ type ContractEdge struct {
 }
 
 // ExchangeEdge is a TRANSIENT overlay edge: open exchanges aggregated per
-// (from, to, space) direction.
+// (from, to, space) direction. Count is a LIVENESS fact — how many
+// aggregated items are simply open (cache's own isOpen); OwedCount is the
+// narrower PENDENCY fact — how many of those items have somebody actually
+// owing the next move (cache.Item.WaitingOn non-empty). Liveness ⊋
+// pendency: an edge can be entirely live and have OwedCount == 0 (every
+// document sent, none of them owing anybody anything), and the map must be
+// able to say that rather than implying the opposite.
 type ExchangeEdge struct {
 	From        string `json:"from"`
 	To          string `json:"to"`
 	Space       string `json:"space"`
 	Count       int    `json:"count"`
+	OwedCount   int    `json:"owedCount,omitempty"`
 	MaxPriority string `json:"maxPriority,omitempty"`
 	Blocking    bool   `json:"blocking"`
 	MaxStale    string `json:"maxStale,omitempty"` // pre-formatted age of the oldest
@@ -542,13 +549,33 @@ type ThreadViewArtifact struct {
 	Adopters []string `json:"adopters,omitempty"`
 }
 
-// ThreadTranscriptRow is one ordered artifact or lifecycle event in a thread.
+// ThreadTranscriptRow is one ordered artifact, lifecycle event, or derived
+// fact in a thread. Kind = "artifact" | "event" | "derived" — a "derived"
+// row (Derived set, Artifact and Event both nil) is NOT an event this
+// space's own git history recorded; it is assembled from a counterparty's
+// own consumes.yaml (a contract adoption). The kind field itself carries
+// that distinction, in the data, not merely in how a page happens to style
+// the row — see cache.TranscriptKindDerived's own doc comment.
 type ThreadTranscriptRow struct {
 	Seq      int64               `json:"seq"`
 	Kind     string              `json:"kind"`
 	At       string              `json:"at"`
 	Artifact *TranscriptArtifact `json:"artifact,omitempty"`
 	Event    *TranscriptEvent    `json:"event,omitempty"`
+	Derived  *TranscriptDerived  `json:"derived,omitempty"`
+}
+
+// TranscriptDerived carries a transcript row's derived-kind payload — the
+// projection of cache.TranscriptDerivedAdoption for `a2a html --json`.
+type TranscriptDerived struct {
+	ContractID string `json:"contract_id"`
+	System     string `json:"system"`
+	Major      int    `json:"major"`
+	// Since is the adopting system's own consumes.yaml `since:` date,
+	// verbatim — omitted (never invented) when that registry entry
+	// carried none. See cache.TranscriptDerivedAdoption.Since's own doc
+	// comment for the honesty rule this preserves.
+	Since string `json:"since,omitempty"`
 }
 
 // TranscriptArtifact carries the artifact fields shown in a transcript row.
