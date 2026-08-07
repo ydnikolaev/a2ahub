@@ -362,7 +362,14 @@ class Component extends DCLogic {
         actorProfileURL: d.authorProfileURL || "",
         actorProfileTitle: d.authorProfileTitle || "",
         systemSelf: !!d.authorSystemSelf,
-        hasSignal: false
+        hasSignal: false,
+        // Carried through so this header shows the agent badge the thread and
+        // the feed already show. Without them the row rendered the agent's id
+        // as if it were the person's name, beside the person's photograph.
+        hasAgentBadge: !!d.authorHasAgentBadge,
+        agentID: d.authorAgentID || "",
+        agentLabel: d.authorAgentLabel || "",
+        agentModel: d.authorAgentModel || ""
       },
       title: d.title || "",
       hasCallout: !!d.calloutTitle,
