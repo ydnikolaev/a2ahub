@@ -538,6 +538,13 @@ func TestSyncIfStale_BudgetExhaustion_NamesUnattemptedMirrors(t *testing.T) {
 	}
 
 	store := NewStore("axon", t.TempDir(), mirrors, time.Now, time.Hour)
+	// The rule under test is a SCHEDULING fact — the budget is checked before
+	// each mirror, so the third is never attempted and is named. Proving it at
+	// the production 10s/5s meant spending 13s of wall clock on arithmetic
+	// nobody was asserting. Shortened by the same ratio (2:1), so the second
+	// attempt still exhausts the budget exactly as it does in production.
+	const testTotalBudget, testPerMirrorTimeout = 100 * time.Millisecond, 50 * time.Millisecond
+	store.SetSyncBudgetsForTest(testTotalBudget, testPerMirrorTimeout)
 	store.SetCloneOrFetchForTest(func(ctx context.Context, dir, repoURL string, _ host.Credential) error {
 		<-ctx.Done() // models a hung/unreachable fetch: only gives up when its own per-mirror timeout fires
 		return ctx.Err()
@@ -547,8 +554,8 @@ func TestSyncIfStale_BudgetExhaustion_NamesUnattemptedMirrors(t *testing.T) {
 	errs := store.SyncIfStale(context.Background())
 	elapsed := time.Since(start)
 
-	if elapsed < totalBudget {
-		t.Fatalf("SyncIfStale returned after %v, want >= totalBudget (%v)", elapsed, totalBudget)
+	if elapsed < testTotalBudget {
+		t.Fatalf("SyncIfStale returned after %v, want >= the budget (%v)", elapsed, testTotalBudget)
 	}
 	// Loose sanity ceiling only, not a precision assertion: SyncIfStale
 	// checks the remaining budget BEFORE starting a mirror (not mid-flight),
@@ -558,8 +565,20 @@ func TestSyncIfStale_BudgetExhaustion_NamesUnattemptedMirrors(t *testing.T) {
 	// scheduling contention as a flake risk for wall-clock assertions
 	// (see TestStatusline_P1Severity's own comment); widen generously
 	// rather than chase a tight bound.
-	if elapsed > totalBudget+perMirrorTimeout+5*time.Second {
-		t.Fatalf("SyncIfStale returned after %v, want roughly totalBudget+perMirrorTimeout (%v)", elapsed, totalBudget+perMirrorTimeout)
+	//
+	// The ceiling is based on the TEST's own budgets, not the production
+	// constants. Leaving it at totalBudget+perMirrorTimeout would have made it
+	// unreachable once the budgets were shortened — a 20s ceiling on a run
+	// that now finishes in half a second asserts nothing, which is exactly how
+	// a speed-up quietly becomes a coverage loss. The +5s slack is kept
+	// ABSOLUTE on purpose: it was chosen for scheduling contention, and
+	// contention does not shrink because the budget did. It still catches the
+	// regression that matters — a budget no longer honoured lets all three
+	// mirrors run their per-mirror timeout, and at production values that is
+	// 15s, well past this bound.
+	if elapsed > testTotalBudget+testPerMirrorTimeout+5*time.Second {
+		t.Fatalf("SyncIfStale returned after %v, want roughly the budget plus one per-mirror timeout (%v)",
+			elapsed, testTotalBudget+testPerMirrorTimeout)
 	}
 	if len(errs) != 3 {
 		t.Fatalf("errs = %v, want 3 (2 attempted timeouts + 1 budget-exhausted skip)", errs)

@@ -62,6 +62,21 @@ type Store struct {
 	// cli.SyncCommand's own cloneOrFetch field).
 	cloneOrFetch func(ctx context.Context, dir, repoURL string, credential host.Credential) error
 
+	// syncTotalBudget and syncPerMirrorTimeout are refresh.go's two wall-clock
+	// bounds. NewStore leaves them zero and refresh.go reads them through
+	// accessors that fall back to the package constants, so production
+	// behaviour is byte-identical and every existing caller is untouched.
+	//
+	// They exist because the tests that prove the BUDGET RULE had to spend the
+	// budget to prove it. TestSyncIfStale_BudgetExhaustion_NamesUnattemptedMirrors
+	// asserts a scheduling fact — the third mirror is never attempted and is
+	// named with ErrSyncBudgetExhausted — and burned 13s of real wall clock
+	// reaching it, because 10s+5s were compiled in. The assertion is about the
+	// rule, not about the number; injecting the number keeps the rule and
+	// stops paying for it.
+	syncTotalBudget      time.Duration
+	syncPerMirrorTimeout time.Duration
+
 	// update.go's T3/T4 fields — all zero-value until EnableUpdateNotice
 	// is called (never by NewStore itself, so every existing caller's
 	// Statusline output stays byte-unchanged until the lead wires the
