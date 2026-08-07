@@ -201,18 +201,38 @@ func TestRealCatalogueDeclaresEveryTierCoherently(t *testing.T) {
 		}
 	}
 	t.Logf("tier split: logic=%d provider=%d total=%d", logic, provider, len(catalogue))
-	// 29/18, not the 30/17 this test first pinned. LE-OC-05 was declared
-	// TierLogic with a carve-out on "visibility-public", and the FIRST full
-	// local matrix run showed that wrong: its other assertion,
+	// 33/14 as of P9 W7, from 29/18.
+	//
+	// The earlier note is kept because its lesson outlived its number: 29/18
+	// was itself a correction of 30/17. LE-OC-05 had been declared TierLogic
+	// with a carve-out on "visibility-public", and the FIRST full local matrix
+	// run showed that wrong — its other assertion,
 	// "visibility-higher-classification", waits on a doctor WARN that doctor
 	// only reaches once it has DETERMINED the repository is public. Both rest
-	// on the same provider fact, so the whole row is provider. The number
+	// on the same provider fact, so the whole row went provider. The number
 	// moved because running the thing beat reasoning about it again.
-	if logic != 29 {
-		t.Errorf("logic rows = %d, want 29", logic)
+	//
+	// W7 moved four happy rows the other way, and they are the four that had
+	// ADMITTED they were placeholders: space-init, lifecycle-transitions,
+	// contract-publish-deprecate-retire and cross-system-visibility each
+	// carried "TierProvider is PROVISIONAL here, not a considered verdict"
+	// because a legacy row with no Assertions list has nothing to carve a
+	// ProviderAssertions subset from. Populating that list is the whole of
+	// W7, and two of the four then needed a one-entry carve-out rather than
+	// a whole-row verdict (protection-armed, gate-concludes-success).
+	//
+	// This number falling is the direction that needs evidence, not the one
+	// that needs permission: every row that leaves the provider tier is a row
+	// a fake is now trusted to judge. Each of the four was decided from what
+	// its body actually asserts, and both carve-outs were verified against
+	// the fake's own behaviour rather than its documentation — fakegithub
+	// carries NO branch-protection route (its router's default arm 404s), and
+	// it seeds CheckConclusion: "success" as a constant.
+	if logic != 33 {
+		t.Errorf("logic rows = %d, want 33", logic)
 	}
-	if provider != 18 {
-		t.Errorf("provider rows = %d, want 18", provider)
+	if provider != 14 {
+		t.Errorf("provider rows = %d, want 14", provider)
 	}
 	if logic+provider != len(catalogue) {
 		t.Errorf("logic(%d) + provider(%d) = %d, want %d (every row must declare exactly one of the two)", logic, provider, logic+provider, len(catalogue))
@@ -222,8 +242,8 @@ func TestRealCatalogueDeclaresEveryTierCoherently(t *testing.T) {
 	// actually dispatch the logic runner on, so it must agree with the
 	// tally above against the REAL 47 rows, not just the synthetic slices
 	// TestFilterJudgeableByKeepsDeclarationOrder already covers.
-	if got := len(FilterJudgeableBy(catalogue, TierLogic)); got != 29 {
-		t.Errorf("FilterJudgeableBy(catalogue, TierLogic) = %d rows, want 29", got)
+	if got := len(FilterJudgeableBy(catalogue, TierLogic)); got != 33 {
+		t.Errorf("FilterJudgeableBy(catalogue, TierLogic) = %d rows, want 33", got)
 	}
 	if got := len(FilterJudgeableBy(catalogue, TierProvider)); got != 47 {
 		t.Errorf("FilterJudgeableBy(catalogue, TierProvider) = %d rows, want 47 (the provider tier may judge every row)", got)
