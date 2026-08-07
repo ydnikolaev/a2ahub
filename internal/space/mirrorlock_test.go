@@ -94,19 +94,31 @@ func TestAcquireMirrorLockLiveHolderWaitBudgetExpires(t *testing.T) {
 	})
 	t.Cleanup(func() { _ = os.Remove(path) })
 
+	// The assertion is the SHAPE of the wait — it ends, and it ends with the
+	// typed error rather than a hang — never the number 5. Proving it at the
+	// production budget cost 6.16s of wall clock; a short budget proves the
+	// same shape. The exported AcquireMirrorLock still hands the constant, so
+	// the production bound stays where it is and is unasserted here on
+	// purpose: a wall-clock test of "exactly 5 seconds" would be a flake, not
+	// coverage.
+	const testWaitBudget = 80 * time.Millisecond
+
 	start := time.Now()
-	_, err := AcquireMirrorLock(context.Background(), dir)
+	_, err := acquireMirrorLockWithin(context.Background(), dir, testWaitBudget)
 	elapsed := time.Since(start)
 
 	if !errors.Is(err, ErrMirrorLocked) {
 		t.Fatalf("AcquireMirrorLock error = %v, want ErrMirrorLocked", err)
 	}
-	if elapsed < mirrorLockWaitBudget {
-		t.Fatalf("returned before the wait budget elapsed: elapsed=%s want >= %s", elapsed, mirrorLockWaitBudget)
+	if elapsed < testWaitBudget {
+		t.Fatalf("returned before the wait budget elapsed: elapsed=%s want >= %s", elapsed, testWaitBudget)
 	}
-	// Bounded: well under 2x the budget, never "hangs".
-	if elapsed > 2*mirrorLockWaitBudget {
-		t.Fatalf("did not bound the wait: elapsed=%s want <= %s", elapsed, 2*mirrorLockWaitBudget)
+	// Bounded, never a hang. The slack is ABSOLUTE, not a multiple: the
+	// original 2x of 5s was 5s of headroom for scheduling noise, and that
+	// noise does not shrink because the budget did. A ratio here would make
+	// the ceiling 160ms and turn a loaded machine into a red suite.
+	if elapsed > testWaitBudget+2*time.Second {
+		t.Fatalf("did not bound the wait: elapsed=%s want <= %s", elapsed, testWaitBudget+2*time.Second)
 	}
 }
 

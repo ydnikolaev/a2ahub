@@ -173,19 +173,26 @@ func TestCheckoutRemoteHeadLockNeverReleasedReturnsBoundedTypedError(t *testing.
 	}
 	defer func() { _ = lock.Release() }()
 
+	// The claim is the SHAPE of the retry — it ends, and it ends with the
+	// typed contention error rather than git's raw exit code — never the
+	// number 2. checkoutRemoteHead still hands the production constant.
+	const testLockBudget = 80 * time.Millisecond
+
 	start := time.Now()
-	err = checkoutRemoteHead(context.Background(), lock, dest)
+	err = checkoutRemoteHeadWithin(context.Background(), lock, dest, testLockBudget)
 	elapsed := time.Since(start)
 
 	if !errors.Is(err, ErrMirrorLocked) {
 		t.Fatalf("checkoutRemoteHead error = %v, want ErrMirrorLocked", err)
 	}
-	if elapsed < indexLockWaitBudget {
-		t.Fatalf("returned before the wait budget elapsed: elapsed=%s want >= %s", elapsed, indexLockWaitBudget)
+	if elapsed < testLockBudget {
+		t.Fatalf("returned before the wait budget elapsed: elapsed=%s want >= %s", elapsed, testLockBudget)
 	}
-	// Bounded: well under 2x the budget, never "hangs".
-	if elapsed > 2*indexLockWaitBudget {
-		t.Fatalf("did not bound the wait: elapsed=%s want <= %s", elapsed, 2*indexLockWaitBudget)
+	// Bounded, never a hang. Absolute slack, not a multiple: the original 2x
+	// of 2s was 2s of headroom for scheduling noise and for the git processes
+	// this spawns, and neither shrinks because the budget did.
+	if elapsed > testLockBudget+2*time.Second {
+		t.Fatalf("did not bound the wait: elapsed=%s want <= %s", elapsed, testLockBudget+2*time.Second)
 	}
 }
 
