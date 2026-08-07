@@ -461,9 +461,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                     </button>
                   </div>
 
+                  <sc-if value="{{ r.hasCurrentWork }}" hint-placeholder-val="true">
                   <div data-operational-current-work="true" role="group" aria-label="{{ r.currentWorkLabel }}" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); background:var(--teal-tint);">
                     <h3 style="margin:0 0 var(--space-inline); color:var(--text); font-size:var(--font-meta); line-height:var(--line-meta); font-weight:600;">{{ r.currentWorkLabel }}</h3>
-                    <sc-if value="{{ r.hasCurrentWork }}" hint-placeholder-val="true">
                       <div style="display:flex; flex-direction:column; gap:9px;">
                         <sc-for list="{{ r.currentWork }}" as="w" hint-placeholder-count="2">
                           <div style="padding:var(--padding-nested-block) var(--padding-nested-inline); border:1px solid var(--border); border-radius:var(--radius-nested); background:var(--surface); font-size:14px; line-height:1.5; color:var(--muted);">
@@ -479,9 +479,17 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                           </div>
                         </sc-for>
                       </div>
-                    </sc-if>
-                    <sc-if value="{{ r.currentUnknown }}" hint-placeholder-val="false"><p style="margin:0; color:var(--muted); font-size:14px; line-height:1.5;">{{ r.currentUnknownText }}</p></sc-if>
                   </div>
+                  </sc-if>
+                  <!-- No current report is not the same shape as a report: a
+                       full teal-tinted section with its own heading claimed as
+                       much vertical space for "unknown" as a real report takes
+                       for real content. One muted line, still carrying the
+                       group's accessible name, says the same fact in the space
+                       the fact is worth. -->
+                  <sc-if value="{{ r.currentUnknown }}" hint-placeholder-val="false">
+                  <div data-operational-current-work="true" role="group" aria-label="{{ r.currentWorkLabel }}" style="padding:8px var(--padding-list-card-inline); border-top:1px solid var(--hairline); color:var(--faint); font-size:13px; line-height:1.4;">{{ r.currentUnknownText }}</div>
+                  </sc-if>
 
                   <sc-if value="{{ r.hasHistoricalWork }}" hint-placeholder-val="false">
                     <div data-operational-work-history="true" role="group" aria-label="{{ r.historicalWorkLabel }}" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline);">
@@ -505,11 +513,24 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                       <h3 style="margin:0; color:var(--text); font-size:var(--font-meta); line-height:var(--line-meta); font-weight:600;">{{ r.protocolLabel }}</h3>
                       <span style="color:var(--muted); font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:12px;">{{ r.protocolState }}</span>
                     </div>
-                    <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px;">
-                      <div style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><div style="color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.yourMoveLabel }}</div><div style="margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.yourMove }}</div></div>
-                      <div style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><div style="color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.waitingOnLabel }}</div><div style="margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.waitingOn }}</div></div>
-                      <div style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><div style="color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.blockingByLabel }}</div><div style="margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.blockingBy }}</div></div>
-                    </div>
+                    <!-- Nothing to move on, wait for or be blocked by is a real
+                         fact ("your move: no"), so it stays reachable behind a
+                         one-line toggle instead of a three-box grid printed
+                         even when every box says "no" or "not recorded". A
+                         card with a real move, a real wait or a real block
+                         keeps the grid open exactly as before. -->
+                    <sc-if value="{{ r.obligationsGridVisible }}" hint-placeholder-val="{{ true }}">
+                      <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px;">
+                        <div style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><div style="color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.yourMoveLabel }}</div><div style="margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.yourMove }}</div></div>
+                        <div style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><div style="color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.waitingOnLabel }}</div><div style="margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.waitingOn }}</div></div>
+                        <div style="min-width:0; padding:8px 9px; border-radius:var(--radius-inner); background:var(--canvas);"><div style="color:var(--faint); font-size:12px; line-height:1.35; font-weight:500;">{{ r.blockingByLabel }}</div><div style="margin-top:2px; color:var(--body); font-size:13px; overflow-wrap:anywhere;">{{ r.blockingBy }}</div></div>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ r.obligationsQuiet }}" hint-placeholder-val="{{ false }}">
+                      <button type="button" onClick="{{ r.toggleObligations }}" aria-expanded="{{ r.obligationsToggleAttr }}" aria-label="{{ r.obligationsToggleAria }}" style="display:inline-flex; align-items:center; gap:6px; margin-top:2px; padding:4px 6px; border:0; border-radius:8px; background:transparent; color:var(--teal-ink); cursor:pointer; font-family:'Onest',sans-serif; font-size:13px; font-weight:600;">
+                        <dc-import name="DisclosureIcon" expanded="{{ r.obligationsToggleAttr }}" hint-size="14px,14px"></dc-import><span>{{ r.obligationsToggleLabel }}</span>
+                      </button>
+                    </sc-if>
                   </div>
 
                   <div data-operational-latest-event="true" style="padding:var(--padding-list-card-block) var(--padding-list-card-inline); border-top:1px solid var(--hairline); color:var(--muted);">
@@ -847,6 +868,17 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                         <sc-if value="{{ e.hasAttachment }}" hint-placeholder-val="{{ false }}"><div style="margin-top:14px;"><dc-import name="TimelineArtifactCard" card="{{ e.attachment }}" hint-size="100%,190px"></dc-import></div></sc-if>
                       </div>
                     </sc-if>
+                    <!-- A DERIVED row: `a2a contract adopt` emits no event, so this is
+                         read from the consumer's own registry rather than from this
+                         thread. It reuses ActorEventLine so the reader's eye is not
+                         asked to learn a second shape, and it carries no artifact card
+                         and no event signal, because nothing happened here. Its own
+                         meta line names where the fact came from. -->
+                    <sc-if value="{{ e.isDerived }}" hint-placeholder-val="{{ false }}">
+                      <div style="{{ e.contentStyle }}">
+                        <dc-import name="ActorEventLine" row="{{ e }}" size="regular" layout="rail" hint-size="100%,44px"></dc-import>
+                      </div>
+                    </sc-if>
                     <sc-if value="{{ e.isWorkReport }}" hint-placeholder-val="{{ false }}">
                       <div id="{{ e.anchor }}" style="{{ e.contentStyle }}">
                         <dc-import name="ActorEventLine" row="{{ e }}" size="regular" layout="rail" hint-size="100%,44px"></dc-import>
@@ -953,7 +985,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
               <span style="flex:0 1 auto; min-width:0;"><dc-import name="SpaceSwitcher" det="{{ contractVersionSwitcher }}" hint-size="260px,42px"></dc-import></span>
             </div>
             <h2 class="a2a-detail-title" style="margin:0 0 8px; font-family:'IBM Plex Mono',monospace;">{{ cdId }}</h2>
-            <p style="margin:0 0 18px; font-size:18px; line-height:1.6; color:var(--body); max-width:720px;">{{ cdDescription }}</p>
+            <dc-import name="ProseDisclosure" text="{{ cdDescription }}" hint-size="100%,190px"></dc-import>
             <div aria-live="polite" style="position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap;">{{ cdVersionAnnouncement }}</div>
 
             <sc-if value="{{ cdIsOverview }}" hint-placeholder-val="{{ true }}">
@@ -1068,7 +1100,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                 <sc-if value="{{ cdVersionHasChange }}" hint-placeholder-val="{{ true }}">
                   <div style="background:var(--teal-tint); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); margin-bottom:var(--space-grid);">
                     <div style="font-size:15px; font-weight:600; color:var(--teal-strong-ink); margin-bottom:5px;">{{ cdVersionChangeTitle }}</div>
-                    <div style="font-size:16px; line-height:1.55; color:var(--teal-ink);">{{ cdVersionChange }}</div>
+                    <dc-import name="ProseDisclosure" text="{{ cdVersionChange }}" hint-size="100%,190px"></dc-import>
                   </div>
                 </sc-if>
 
@@ -1094,21 +1126,39 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                   <sc-if value="{{ cdVersionNoDocs }}" hint-placeholder-val="{{ false }}"><div style="margin-top:10px; color:var(--muted); font-size:15px;">{{ cdVersionNoDocsText }}</div></sc-if>
                   <sc-if value="{{ cdVersionHasNormativeDocs }}" hint-placeholder-val="{{ true }}">
                     <div style="margin-top:14px; font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em;">{{ cdVersionNormativeTitle }}</div>
-                    <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
-                      <sc-for list="{{ cdVersionNormativeDocs }}" as="f" hint-placeholder-count="3">
-                        <button type="button" data-contract-file-key="{{ f.key }}" onClick="{{ f.open }}" style="width:100%; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; border:0; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); text-align:left; cursor:pointer; background:var(--surface-section); color:var(--text); box-shadow:inset 0 0 0 1px var(--border);">
-                          <span style="min-width:0; flex:1 1 260px;"><strong style="display:block; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; overflow-wrap:anywhere;">{{ f.path }}</strong><span style="display:block; margin-top:4px; color:var(--muted); font-size:13px;">{{ f.role }} · {{ f.media }}</span></span><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted); font-size:12px;">{{ f.size }}</span>
-                        </button>
+                    <div style="display:flex; flex-direction:column; gap:4px; margin-top:8px;">
+                      <sc-for list="{{ cdVersionNormativeTree }}" as="row" hint-placeholder-count="3">
+                        <sc-if value="{{ row.isDir }}" hint-placeholder-val="{{ false }}">
+                          <button type="button" data-contract-tree-dir="{{ row.key }}" onClick="{{ row.toggle }}" aria-expanded="{{ row.expandedAttr }}" aria-label="{{ row.dirAriaLabel }}" style="{{ row.rowStyle }}">
+                            <dc-import name="DisclosureIcon" expanded="{{ row.expandedAttr }}" hint-size="16px,16px"></dc-import>
+                            <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; font-weight:600; overflow-wrap:anywhere;">{{ row.label }}</span>
+                          </button>
+                        </sc-if>
+                        <sc-if value="{{ row.isFile }}" hint-placeholder-val="{{ true }}">
+                          <button type="button" data-contract-file-key="{{ row.key }}" onClick="{{ row.open }}" style="{{ row.rowStyle }}">
+                            <span style="{{ row.iconStyle }}">{{ row.iconLabel }}</span>
+                            <span style="min-width:0; flex:1 1 260px;"><strong style="display:block; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; overflow-wrap:anywhere;">{{ row.label }}</strong><span style="display:block; margin-top:4px; color:var(--muted); font-size:13px;">{{ row.role }} · {{ row.media }}</span></span><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted); font-size:12px;">{{ row.size }}</span>
+                          </button>
+                        </sc-if>
                       </sc-for>
                     </div>
                   </sc-if>
                   <sc-if value="{{ cdVersionHasSupportingDocs }}" hint-placeholder-val="{{ true }}">
                     <div style="margin-top:16px; font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em;">{{ cdVersionSupportingTitle }}</div>
-                    <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
-                      <sc-for list="{{ cdVersionSupportingDocs }}" as="f" hint-placeholder-count="2">
-                        <button type="button" data-contract-file-key="{{ f.key }}" onClick="{{ f.open }}" style="width:100%; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; border:0; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline); text-align:left; cursor:pointer; background:var(--page); color:var(--text); box-shadow:inset 0 0 0 1px var(--hairline);">
-                          <span style="min-width:0; flex:1 1 260px;"><strong style="display:block; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; overflow-wrap:anywhere;">{{ f.path }}</strong><span style="display:block; margin-top:4px; color:var(--muted); font-size:13px;">{{ f.role }} · {{ f.media }}</span></span><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted); font-size:12px;">{{ f.size }}</span>
-                        </button>
+                    <div style="display:flex; flex-direction:column; gap:4px; margin-top:8px;">
+                      <sc-for list="{{ cdVersionSupportingTree }}" as="row" hint-placeholder-count="2">
+                        <sc-if value="{{ row.isDir }}" hint-placeholder-val="{{ false }}">
+                          <button type="button" data-contract-tree-dir="{{ row.key }}" onClick="{{ row.toggle }}" aria-expanded="{{ row.expandedAttr }}" aria-label="{{ row.dirAriaLabel }}" style="{{ row.rowStyle }}">
+                            <dc-import name="DisclosureIcon" expanded="{{ row.expandedAttr }}" hint-size="16px,16px"></dc-import>
+                            <span style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; font-weight:600; overflow-wrap:anywhere;">{{ row.label }}</span>
+                          </button>
+                        </sc-if>
+                        <sc-if value="{{ row.isFile }}" hint-placeholder-val="{{ true }}">
+                          <button type="button" data-contract-file-key="{{ row.key }}" onClick="{{ row.open }}" style="{{ row.rowStyle }}">
+                            <span style="{{ row.iconStyle }}">{{ row.iconLabel }}</span>
+                            <span style="min-width:0; flex:1 1 260px;"><strong style="display:block; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:14px; overflow-wrap:anywhere;">{{ row.label }}</strong><span style="display:block; margin-top:4px; color:var(--muted); font-size:13px;">{{ row.role }} · {{ row.media }}</span></span><span style="flex:0 0 auto; font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--muted); font-size:12px;">{{ row.size }}</span>
+                          </button>
+                        </sc-if>
                       </sc-for>
                     </div>
                   </sc-if>
@@ -2132,6 +2182,69 @@ function monoCodes(names) {
   return out;
 }
 function overdue(it) { return (it.reasons || []).some(r => r === "overdue-on-me" || r === "needed-by-passed"); }
+// A version package is a set of paths, not a set of rows: group by directory
+// so a 20-file manifest reads as a shape instead of a list. `files` already
+// carries { key, path, role, media, size, digest, open } from the flat
+// mapping; this only reshapes it into a nested { dirs:Map, files:[] } tree.
+function buildDocTree(files) {
+  const root = { dirs: new Map(), files: [], segPath: "" };
+  files.forEach(f => {
+    const parts = String(f.path || "").split("/").filter(Boolean);
+    const base = parts.pop() || f.path || f.key;
+    let node = root;
+    const segs = [];
+    parts.forEach(seg => {
+      segs.push(seg);
+      if (!node.dirs.has(seg)) node.dirs.set(seg, { dirs: new Map(), files: [], segPath: segs.join("/") });
+      node = node.dirs.get(seg);
+    });
+    node.files.push(Object.assign({}, f, { base }));
+  });
+  return root;
+}
+// VS Code's own "compact folders" behaviour: a chain of directories that
+// each hold exactly one entry, itself a directory, collapses into a single
+// row ("contracts/XC-.../1.5.0") instead of forcing three clicks to reach
+// the first real branch point. `keyOf` turns the tree-internal segment path
+// into the caller's expansion-state key; `isOpen` reads that state.
+function flattenDocTree(node, depth, keyOf, isOpen, out) {
+  const dirEntries = Array.from(node.dirs.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  dirEntries.forEach(([name, child]) => {
+    let label = name;
+    let cur = child;
+    while (cur.dirs.size === 1 && cur.files.length === 0) {
+      const [[childName, grandchild]] = Array.from(cur.dirs.entries());
+      label = label + "/" + childName;
+      cur = grandchild;
+    }
+    const dirKey = keyOf(cur.segPath);
+    const open = isOpen(dirKey);
+    out.push({ isDir: true, isFile: false, depth, key: dirKey, label, expanded: open });
+    if (open) flattenDocTree(cur, depth + 1, keyOf, isOpen, out);
+  });
+  node.files.slice().sort((a, b) => a.base.localeCompare(b.base)).forEach(f => {
+    out.push(Object.assign({ isDir: false, isFile: true, depth }, f));
+  });
+  return out;
+}
+// A small monogram per extension, not a vendor icon set: inline text on a
+// token-coloured tile, same grammar as TypeBadge's two-letter prefixes.
+function fileTypeIcon(name) {
+  const m = String(name || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  const ext = m ? m[1] : "";
+  const ICONS = {
+    json: { label: "{ }", bg: "var(--attention-tint)", fg: "var(--attention-ink)" },
+    yaml: { label: "YML", bg: "var(--teal-tint)", fg: "var(--teal-ink)" },
+    yml: { label: "YML", bg: "var(--teal-tint)", fg: "var(--teal-ink)" },
+    md: { label: "MD", bg: "var(--sink)", fg: "var(--body)" },
+    js: { label: "JS", bg: "var(--border-strong)", fg: "var(--text)" },
+    ts: { label: "TS", bg: "var(--border-strong)", fg: "var(--text)" },
+    html: { label: "<>", bg: "var(--plum)", fg: "var(--on-solid)" },
+    csv: { label: "CSV", bg: "var(--green)", fg: "var(--on-solid)" },
+    txt: { label: "TXT", bg: "var(--hairline)", fg: "var(--muted)" }
+  };
+  return ICONS[ext] || { label: ext ? ext.slice(0, 3).toUpperCase() : "•", bg: "var(--hairline)", fg: "var(--muted)" };
+}
 // One date format across the whole page: DD.MM.YYYY HH:MM, no timezone suffix.
 // The dashboard is a single-timezone read (everything is UTC by construction),
 // so stamping " UTC" on every row added noise without adding information — and
@@ -2142,6 +2255,19 @@ function when(iso) {
   if (isNaN(d)) return iso;
   const p = (n) => String(n).padStart(2, "0");
   return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear() + " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
+}
+// dayOnly renders a DATE that has no time of day, without inventing one.
+//
+// A consumer registry's `since:` is a calendar date. Passing it through when()
+// produced "06.08.2026 00:00" — a midnight the fact does not carry, stated with
+// a precision it never claimed, and one that also sorts the row before every
+// same-day event. Same shape as when(), minus the half it cannot know.
+function dayOnly(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const p = (n) => String(n).padStart(2, "0");
+  return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear();
 }
 // Ages arrive from Go in one compact vocabulary ("just now", "5m", "3h", "2d",
 // "4w"). Localising them HERE keeps the assembler locale-free and stops
@@ -2283,30 +2409,81 @@ function agentThreadPromptText(ctx) {
 // it.
 const FILTER_H = 38;
 
-// actorFace resolves one system's face fields from the node registry — the
-// avatar bytes the assembler already embedded, plus the GitHub profile of the
-// declared owner when that owner is a plausible login.
+// The closed set of coding-agent ids this dashboard can badge, transcribed
+// verbatim from AgentIcon.dc.html's own LABELS (which is itself keyed against
+// internal/agentid.IDs() — see that package's doc comment for why the
+// registry is closed and why a model vendor is never itself an id). Two
+// isolated dc-script scopes cannot share one JS module, so this is a literal
+// copy of AgentIcon's list, not a second decision about membership — keep it
+// in step with AgentIcon.dc.html's LABELS by hand.
+const AGENT_LABELS = {
+  "claude-code": "Claude Code",
+  "codex": "Codex",
+  "github-copilot": "GitHub Copilot",
+  "cursor": "Cursor",
+  "windsurf": "Windsurf",
+  "gemini-cli": "Gemini CLI",
+  "antigravity": "Antigravity",
+  "cline": "Cline",
+  "roo-code": "Roo Code",
+  "kilo-code": "Kilo Code",
+  "opencode": "OpenCode",
+  "aider": "Aider",
+  "continue": "Continue",
+  "amp": "Amp",
+  "goose": "Goose",
+  "devin": "Devin",
+  "zed": "Zed",
+  "jetbrains": "JetBrains AI",
+  "replit": "Replit Agent",
+  "warp": "Warp",
+  "trae": "Trae",
+  "augment": "Augment"
+};
+
+// actorIdentity resolves ONE event's whole "who acted" bag: the principal's
+// face (avatar bytes + monogram + GitHub profile — unchanged from this
+// function's earlier, avatar-only shape, actorFace) plus the agent badge,
+// when the event's own actor record claims one.
 //
-// It exists because the same four-line lookup had been written out four times
-// (the two feed card builders and identityOf), and TWO further card builders
-// had given up and hardcoded `avatar: ""` with an empty profile URL — the
-// operational work-progress rows and the source-freshness row. Those two
-// rendered a monogram beside every other surface's real face, on data that was
-// present the whole time: the axon node carries both an embedded avatar and
-// `owners: ["ydnikolaev"]`.
+// It exists because the same four-line node lookup (node find + owners[0] +
+// login test) had been written out four times — the two feed card builders
+// and identityOf — and two further card builders had given up and hardcoded
+// `avatar: ""` with an empty profile URL. actorFace unified the first two;
+// this replaces it to also own the second identity the operator asked for:
+// the agent that performed the act, as a badge, never as a replacement face.
 //
-// Returns display-ready fields rather than the node, so a caller cannot
-// accidentally reach past it into node internals and grow a fifth variant.
-function actorFace(d, system, fallbackName) {
-  const node = (d.nodes || []).find(n => n.system === system);
+// actorKind and recordedName come straight off the event's own actor record
+// (`{kind, name, system}`; see internal/agentid's doc comment for why
+// `kind: agent` is not itself proof of anything). When kind is "agent" and
+// the name exact-matches a registry id (case/whitespace folded, the same
+// folding agentid.Normalize applies, but never a prefix or alias — this
+// dashboard carries no alias table, on purpose, per AgentIcon.dc.html), THAT
+// is the agent: the badge carries it, and the returned face falls back to
+// the node's registered owner rather than the agent's self-reported name. A
+// miss, or a human kind, leaves the face formula exactly as actorFace's:
+// recordedName first, the registry owner as fallback.
+//
+// Deviation from a literal 3-arg signature: actorKind and actorModel are
+// required to gate the badge and to name the model in its popover, and
+// neither is derivable from (d, system, name) alone — see this wave's report.
+function actorIdentity(d, actorSystem, recordedName, actorKind, actorModel) {
+  const node = (d.nodes || []).find(n => n.system === actorSystem);
   const owner = node && node.owners && node.owners.length ? String(node.owners[0]) : "";
-  const name = String(fallbackName || owner || system || "");
+  const agentKey = String(recordedName || "").trim().toLowerCase();
+  const agentID = actorKind === "agent" && AGENT_LABELS[agentKey] ? agentKey : "";
+  const name = agentID ? String(owner || actorSystem || "") : String(recordedName || owner || actorSystem || "");
   const login = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(owner) ? owner : "";
   return {
+    actorName: name,
     avatar: node && node.avatar ? node.avatar : "",
     avatarMono: mono(name),
     actorProfileURL: login ? "https://github.com/" + login : "",
-    actorProfileTitle: login ? "GitHub · " + login : ""
+    actorProfileTitle: login ? "GitHub · " + login : "",
+    hasAgentBadge: !!agentID,
+    agentID,
+    agentLabel: AGENT_LABELS[agentID] || agentID,
+    agentModel: agentID ? String(actorModel || "") : ""
   };
 }
 
@@ -2332,7 +2509,7 @@ function normalizeDashboardData(input) {
 }
 
 class Component extends DCLogic {
-  state = { data: null, error: "", view: globalThis.A2A_DASHBOARD_START_VIEW || "overview", space: "all", ovSel: "", operationalOpen: "", workTab: "all", workState: "all", typeMenu: false, workDue: false, conRole: "all", conRisk: false, workSel: "", threadSel: "", threadSpace: "", conSel: "", conVersion: "", conFacts: false, contractFile: null, mapDocument: null, threadNote: null, doc: "overview", docQ: "", spaceModal: false, tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en" };
+  state = { data: null, error: "", view: globalThis.A2A_DASHBOARD_START_VIEW || "overview", space: "all", ovSel: "", operationalOpen: "", workTab: "all", workState: "all", typeMenu: false, workDue: false, conRole: "all", conRisk: false, workSel: "", threadSel: "", threadSpace: "", conSel: "", conVersion: "", conFacts: false, contractFile: null, mapDocument: null, threadNote: null, doc: "overview", docQ: "", spaceModal: false, tvFocus: "", workType: "all", verKind: "all", verAction: "all", copied: "", more: false, navW: 0, theme: "light", locale: "en", docTreeOpen: {} };
 
   componentDidMount() {
     // the primary nav shows as many views as fit and folds the rest into More
@@ -2925,11 +3102,13 @@ class Component extends DCLogic {
     }
     const e = a.envelope || {};
     const actor = e.actor && typeof e.actor === "object" ? e.actor : {};
-    const authorNode = (d.nodes || []).find(n => n.system === a.from);
-    const owner = authorNode && authorNode.owners && authorNode.owners.length ? String(authorNode.owners[0]) : "";
-    const authorName = owner || String(actor.name || a.from || "");
-    const authorLogin = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(owner) ? owner : "";
-    const authorMono = (authorName[0] + (authorName[1] || "")).toUpperCase();
+    // actor.kind is passed, and it matters for more than the badge: without
+    // it actorIdentity cannot tell an agent id from a person's login, so the
+    // header rendered "codex создал контракт" beside the OWNER's photograph —
+    // the name saying one thing and the face another, on the same line. With
+    // kind, the name resolves to the principal exactly as the thread does, and
+    // the badge fields below carry the agent to ArtifactDetail's authorRow.
+    const authorIdentity = actorIdentity(d, a.from, actor.name || a.from, actor.kind, actor.model);
     const pills = [];
     // The blocking pill carries its own explanation here, because this is the
     // one place with room for it: the list rows say who has to move and open
@@ -2955,24 +3134,17 @@ class Component extends DCLogic {
     const carriesWorkReport = (d.workReports || []).some(report => report.space === a.space && report.artifact_id === a.id);
     const lifecycleEvents = (a.events || []).filter(ev => !(carriesWorkReport && ev.transition === "publish")).map(ev => {
       const system = String(ev.actor_system || "");
-      const node = (d.nodes || []).find(n => n.system === system);
-      const eventOwner = node && node.owners && node.owners.length ? String(node.owners[0]) : "";
-      const eventName = eventOwner || String(ev.actor || system || (ru ? "неизвестный автор" : "unknown actor"));
-      const eventLogin = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(eventOwner) ? eventOwner : "";
+      const eventName = String(ev.actor || system || (ru ? "неизвестный автор" : "unknown actor"));
       const transition = String(ev.transition || "");
       const signal = EVENT_SIGNAL(transition, ru);
       const subjectLabel = transition === "respond" ? "" : (transition === "note" ? (ru ? "заметку" : "a note") : artifactWord);
       return {
         isLifecycle: true,
         isWorkReport: false,
-        actorName: eventName,
         actionText: transition === "note" ? (ru ? "добавил" : "added") : (TRANSITION_PAST(ru)[transition] || transition),
         subjectLabel,
         meta: system + (system ? " · " : "") + when(ev.at),
-        avatar: node && node.avatar ? node.avatar : "",
-        avatarMono: mono(eventName),
-        actorProfileURL: eventLogin ? "https://github.com/" + eventLogin : "",
-        actorProfileTitle: eventLogin ? "GitHub · " + eventLogin : "",
+        ...actorIdentity(d, system, eventName, ev.actor_kind, ev.actor_model),
         systemSelf: system === d.self,
         signalTone: signal.tone,
         signalLabel: signal.label,
@@ -2998,14 +3170,7 @@ class Component extends DCLogic {
     }).map(report => {
       const actor = report.actor || {};
       const system = String(actor.system || "");
-      const node = (d.nodes || []).find(n => n.system === system);
-      const eventOwner = node && node.owners && node.owners.length ? String(node.owners[0]) : "";
-      const authoredName = String(actor.name || "");
-      const eventName = authoredName || eventOwner || system || (ru ? "неизвестный исполнитель" : "unknown actor");
-      // A system owner and a reporting agent are not interchangeable people.
-      // Reuse the owner's GitHub identity only when the authored actor name
-      // actually names that owner; otherwise show the honest initials fallback.
-      const eventLogin = (!authoredName || authoredName === eventOwner) && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(eventOwner) ? eventOwner : "";
+      const eventName = actor.name || system || (ru ? "неизвестный исполнитель" : "unknown actor");
       const waits = (report.waiting_on || []).map(wait => ({
         label: WORK_WAIT_KIND(wait.kind, ru) + (wait.id ? " · " + wait.id : ""),
         summary: wait.summary || "",
@@ -3034,7 +3199,6 @@ class Component extends DCLogic {
       return {
         isLifecycle: false,
         isWorkReport: true,
-        actorName: eventName,
         actionText: ru ? "сообщил о работе над" : "reported work on",
         subjectLabel,
         subjectTitle: subjectIsThread
@@ -3043,10 +3207,7 @@ class Component extends DCLogic {
         hasSubjectLink,
         openSubject,
         meta: system + (system ? " · " : "") + when(report.reported_at),
-        avatar: eventLogin && node && node.avatar ? node.avatar : "",
-        avatarMono: mono(eventName),
-        actorProfileURL: eventLogin ? "https://github.com/" + eventLogin : "",
-        actorProfileTitle: eventLogin ? "GitHub · " + eventLogin : "",
+        ...actorIdentity(d, system, eventName, actor.kind, actor.model),
         systemSelf: system === d.self,
         signalTone: "neutral",
         signalLabel: ru ? "Отчёт о работе · не меняет состояние документа" : "Work report · does not change document state",
@@ -3139,13 +3300,21 @@ class Component extends DCLogic {
       sourceClass: a.sourceClass,
       syncStale: !!a.sync_stale,
       syncAge: age(a.sync_age),
-      authorName, authorMono, authorAvatar:authorNode && authorNode.avatar ? authorNode.avatar : "", authorFrom:a.from, authorTo:(a.to || []).join(", "),
+      authorName: authorIdentity.actorName, authorMono: authorIdentity.avatarMono, authorAvatar: authorIdentity.avatar, authorFrom:a.from, authorTo:(a.to || []).join(", "),
       authorAction: ru ? "создал" : "created",
       authorSubject: artifactWord,
       authorMeta: a.from + ((a.to || []).length ? " → " + (a.to || []).join(", ") : "") + (e.created ? " · " + when(e.created) : ""),
       authorSystemSelf: a.from === d.self,
-      authorProfileURL: authorLogin ? "https://github.com/" + authorLogin : "",
-      authorProfileTitle: authorLogin ? "GitHub · " + authorLogin : "",
+      authorProfileURL: authorIdentity.actorProfileURL,
+      // The badge fields ride alongside the face. ArtifactDetail hands its
+      // authorRow to ActorEventLine, which already knows how to draw them —
+      // so an agent-authored document names its principal and shows which
+      // agent acted, in the same shape as every other surface.
+      authorHasAgentBadge: authorIdentity.hasAgentBadge,
+      authorAgentID: authorIdentity.agentID,
+      authorAgentLabel: authorIdentity.agentLabel,
+      authorAgentModel: authorIdentity.agentModel,
+      authorProfileTitle: authorIdentity.actorProfileTitle,
       title: a.title, body: a.body || "", bodyHTML: a.bodyHTML || "",
       calloutTitle, calloutText, calloutTone, calloutSignalLabel, calloutParts,
       lists, metadataPrimary: metadata.primary, metadataRest: metadata.rest,
@@ -3422,7 +3591,13 @@ class Component extends DCLogic {
     const operationalRows = operationalShown.map(o => {
       const protocol = o.protocol || { settled:false, open_count:0, waiting_on:[], blocking_by:[] };
       const latest = o.latest_milestone || {};
-      const hasLatestEvent = !!o.latest_milestone;
+      // `note` is transition-free (D-025, internal/fold/table.go TNote): it
+      // never moves the protocol, so it is not a protocol event and does not
+      // belong in a slot that claims to be one. Excluded rather than
+      // relabelled — the fold's own definition decides this, not what is
+      // convenient to render. A space whose only latest_milestone is a note
+      // now correctly falls through to noLatestEventText below.
+      const hasLatestEvent = !!o.latest_milestone && latest.transition !== "note";
       const latestActor = latest.actor || {};
       const source = (operational.sources || []).find(s => s.kind === "space" && s.space === o.space) || {};
       const work = o.work || [];
@@ -3473,10 +3648,9 @@ class Component extends DCLogic {
         return {
           current: isCurrentWork(w),
           actorEvent: {
-            actorName,
             actionText: workModeText(w.mode),
             meta: [actorSystem, freshness].filter(Boolean).join(" · "),
-            ...actorFace(d, actor.system, actorName),
+            ...actorIdentity(d, actor.system, actorName, actor.kind, actor.model),
             systemSelf: actor.system === d.self,
             hasSubjectLink: false,
             hasSignal: false
@@ -3514,11 +3688,25 @@ class Component extends DCLogic {
       const latestSubject = exchangeAll.find(a => a.id === latestSubjectID && (!o.space || a.space === o.space)) || {};
       const latestSubjectType = String(TYPE_WORDS(ru)[latestSubject.type] || latestSubject.type || (ru ? "документ" : "document")).toLocaleLowerCase(ru ? "ru-RU" : "en-US");
       const latestSubjectHasDetail = (d.artifactDetails || []).some(a => a.id === latestSubjectID && (!o.space || a.space === o.space));
+      // "acknowledge" ("подтвердил получение …") already names its own verb
+      // object — получение ЧЕГО? — a genitive complement, never the nominative
+      // TYPE_WORDS label every other transition here happens to share with an
+      // inanimate accusative object ("опубликовал контракт" works by
+      // coincidence of Russian grammar; "подтвердил получение контракт" does
+      // not). Bounded, closed, eight entries — the same shape TYPE_WORDS
+      // already is, restricted to the one verb in this one slot that needs it.
+      const TYPE_GENITIVE_RU = {
+        contract: "контракта", requirement: "требования", question: "вопроса",
+        work_request: "запроса работы", decision: "решения", handoff: "передачи",
+        response: "ответа", announcement: "объявления"
+      };
       const latestSubjectLabel = latest.transition === "respond"
         ? (ru
           ? "на " + (latestSubject.type ? latestSubjectType : "«" + (o.title || o.thread) + "»")
           : "to " + (latestSubject.type ? latestSubjectType : "“" + (o.title || o.thread) + "”"))
-        : (latestSubject.type ? latestSubjectType : (o.title || o.thread));
+        : (ru && latest.transition === "acknowledge" && latestSubject.type && TYPE_GENITIVE_RU[latestSubject.type])
+          ? TYPE_GENITIVE_RU[latestSubject.type]
+          : (latestSubject.type ? latestSubjectType : (o.title || o.thread));
       const openCountText = ru
         ? ruPlural(protocol.open_count || 0, "открытое обязательство", "открытых обязательства", "открытых обязательств")
         : (protocol.open_count || 0) + ((protocol.open_count || 0) === 1 ? " open obligation" : " open obligations");
@@ -3528,12 +3716,20 @@ class Component extends DCLogic {
         degraded: ru ? "копия неполна" : "degraded copy",
         unavailable: ru ? "копия недоступна" : "copy unavailable"
       })[source.freshness] || (ru ? "актуальность копии неизвестна" : "copy freshness unknown");
+      // Absence is a fact ("your move: no") worth keeping reachable, not a
+      // reason to print three negatives on every quiet card. When there is
+      // nothing to move on, wait for or be blocked by, the grid collapses
+      // behind the same expand-key mechanic the version-package tree uses
+      // (contract@version|section|path there, obligations|space|thread here)
+      // so a reader who wants the granular "no" still gets it, one click away.
+      const obligationsQuiet = protocol.your_move !== true && !waitingOn && !blockingBy;
+      const obligationsKey = "obligations|" + (o.space || "") + "|" + (o.thread || "");
+      const obligationsOpen = !!(s.docTreeOpen || {})[obligationsKey];
       return {
         event: {
-          actorName: latestName,
           actionText: TRANSITION_PAST(ru)[latest.transition] || latest.transition || (ru ? "зафиксировал процесс" : "recorded the process"),
           meta: [latestSystem, when(latest.at)].filter(Boolean).join(" · "),
-          ...actorFace(d, latestSystem, latestName),
+          ...actorIdentity(d, latestSystem, latestName, latestActor.kind, latestActor.model),
           systemSelf: latestSystem === d.self,
           hasSubjectLink: hasLatestEvent && !!latestSubjectID,
           subjectLabel: latestSubjectLabel,
@@ -3565,6 +3761,13 @@ class Component extends DCLogic {
         waitingOn: waitingOn || (ru ? "не указано" : "none recorded"),
         blockingByLabel: ru ? "Блокирует" : "Blocked by",
         blockingBy: blockingBy || (ru ? "не указано" : "none recorded"),
+        obligationsQuiet,
+        obligationsGridVisible: !obligationsQuiet || obligationsOpen,
+        obligationsOpen,
+        obligationsToggleAttr: obligationsOpen ? "true" : "false",
+        obligationsToggleLabel: obligationsOpen ? (ru ? "Скрыть" : "Hide") : (ru ? "Показать" : "Show"),
+        obligationsToggleAria: (obligationsOpen ? (ru ? "Скрыть " : "Hide ") : (ru ? "Показать " : "Show ")) + (ru ? "протокольные обязательства" : "protocol obligations"),
+        toggleObligations: () => this.setState(x => ({ docTreeOpen: Object.assign({}, x.docTreeOpen, { [obligationsKey]: !((x.docTreeOpen || {})[obligationsKey]) }) })),
         latestEventLabel: ru ? "Последнее протокольное событие · история" : "Latest protocol event · history",
         noLatestEventText: ru ? "В снимке нет протокольного события для этого процесса." : "No protocol event is included for this process in the snapshot.",
         openThreadLabel: (ru ? "Открыть тред: " : "Open thread: ") + (o.title || o.thread),
@@ -3870,6 +4073,44 @@ class Component extends DCLogic {
       return Object.assign({}, r, { shown });
     }).filter(r => r.shown.length > 0);
 
+    // The version package as a VS-Code-style tree: directories collapsed by
+    // default, expanding on click, one flat row list per render (the template
+    // language has no recursion, so the recursion happens here). Expansion
+    // state is keyed by contract@version|section|dirPath — the same shape as
+    // the file-open key below — so switching versions leaves only harmless,
+    // unread stale keys behind rather than needing a reset at every nav site.
+    const docTreeOpenState = s.docTreeOpen || {};
+    const docTreeKeyPrefix = con && selectedConVersion ? con.id + "@" + selectedConVersion.version : "";
+    const toggleDocTreeDir = (key) => this.setState(x => ({ docTreeOpen: Object.assign({}, x.docTreeOpen, { [key]: !((x.docTreeOpen || {})[key]) }) }));
+    const mapDocRow = (f) => {
+      const key = con.id + "@" + selectedConVersion.version + "|" + f.path;
+      return { key, path:f.path, role:f.role, media:f.mediaType || (ru ? "тип не записан" : "media type not recorded"), size:f.sizeBytes ? f.sizeBytes + (ru ? " Б" : " B") : "", digest:f.digest || "", open:() => this.setState({ contractFile:Object.assign({}, f, { key, contractID:con.id, version:selectedConVersion.version }) }) };
+    };
+    const docTreeRows = (docs, section) => {
+      const tree = buildDocTree(docs.map(mapDocRow));
+      const keyOf = (segPath) => docTreeKeyPrefix + "|" + section + "|" + segPath;
+      const isOpen = (key) => !!docTreeOpenState[key];
+      return flattenDocTree(tree, 0, keyOf, isOpen, []).map(row => {
+        if (row.isDir) {
+          return {
+            isDir: true, isFile: false, depth: row.depth, key: row.key, label: row.label,
+            expandedAttr: row.expanded ? "true" : "false",
+            dirAriaLabel: (row.expanded ? (ru ? "Свернуть папку " : "Collapse folder ") : (ru ? "Развернуть папку " : "Expand folder ")) + row.label,
+            toggle: () => toggleDocTreeDir(row.key),
+            rowStyle: "width:100%; display:flex; align-items:center; gap:8px; border:0; border-radius:var(--radius-nested); padding:8px 10px 8px " + (10 + row.depth * 18) + "px; text-align:left; cursor:pointer; background:transparent; color:var(--text); font-family:'Onest',sans-serif;"
+          };
+        }
+        const icon = fileTypeIcon(row.base);
+        return {
+          isDir: false, isFile: true, depth: row.depth, key: row.key, label: row.base,
+          role: row.role, media: row.media, size: row.size, open: row.open,
+          iconLabel: icon.label,
+          iconStyle: "flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; min-width:30px; height:22px; padding:0 4px; border-radius:6px; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:10px; font-weight:700; background:" + icon.bg + "; color:" + icon.fg + ";",
+          rowStyle: "width:100%; display:flex; align-items:flex-start; gap:10px; border:0; border-radius:var(--radius-nested); padding:var(--padding-nested-block) var(--padding-nested-inline) var(--padding-nested-block) " + (10 + row.depth * 18) + "px; text-align:left; cursor:pointer; background:" + (section === "normative" ? "var(--surface-section)" : "var(--page)") + "; color:var(--text); box-shadow:inset 0 0 0 1px " + (section === "normative" ? "var(--border)" : "var(--hairline)") + ";"
+        };
+      });
+    };
+
     const vals = Object.assign(base, {
       overviewAria:c.views[0], workAria:c.views[1], threadsAria:c.views[2], contractsAria:c.views[3], networkAria:c.views[4],
       spacesAria:c.views[5], versionsAria:c.views[6], docsAria:c.views[7], guideAria:c.views[8],
@@ -4093,27 +4334,18 @@ class Component extends DCLogic {
         const reportByArtifact = new Map(reports.map(report => [report.artifact_id, report]));
         const titleOf = (id) => { const a = arts.find(x => x.id === id); return a && a.title ? a.title : id; };
         const anchorOf = (id) => "tv-" + String(id || "").replace(/[^A-Za-z0-9_-]/g, "_");
-        const identityOf = (system, fallback) => {
-          const node = (d.nodes || []).find(n => n.system === system);
-          const owner = node && node.owners && node.owners.length ? String(node.owners[0]) : "";
-          const name = owner || String(fallback || system || (ru ? "неизвестный автор" : "unknown actor"));
-          const login = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(owner) ? owner : "";
-          return {
-            name,
-            mono: mono(name),
-            system: system || "",
-            avatar: node && node.avatar ? node.avatar : "",
-            profile: login ? "https://github.com/" + login : ""
-          };
-        };
-        const avatarFields = (identity, top, dim) => ({
+        const avatarFields = (identity, top, dim, system) => ({
           hasAvatar: !!identity.avatar,
           lacksAvatar: !identity.avatar,
           avatar: identity.avatar,
-          avatarMono: identity.mono,
-          actorProfileURL: identity.profile,
-          actorProfileTitle: identity.profile ? "GitHub · " + identity.name : "",
-          systemSelf: identity.system === d.self,
+          avatarMono: identity.avatarMono,
+          actorProfileURL: identity.actorProfileURL,
+          actorProfileTitle: identity.actorProfileTitle,
+          hasAgentBadge: !!identity.hasAgentBadge,
+          agentID: identity.agentID || "",
+          agentLabel: identity.agentLabel || "",
+          agentModel: identity.agentModel || "",
+          systemSelf: system === d.self,
           dim,
           railOffset: 34
         });
@@ -4235,14 +4467,7 @@ class Component extends DCLogic {
           const report = en.kind === "work_report" ? en.work_report : (en.artifact && reportByArtifact.get(en.artifact.id));
           if (report) {
             const actor = report.actor || {};
-            const systemIdentity = identityOf(actor.system, actor.name || actor.system);
-            const authoredName = String(actor.name || "");
-            const identity = Object.assign({}, systemIdentity, {
-              name: authoredName || systemIdentity.name,
-              mono: mono(authoredName || systemIdentity.name),
-              avatar: !authoredName || authoredName === systemIdentity.name ? systemIdentity.avatar : "",
-              profile: !authoredName || authoredName === systemIdentity.name ? systemIdentity.profile : ""
-            });
+            const identity = actorIdentity(d, actor.system, actor.name || actor.system, actor.kind, actor.model);
             const subject = String(report.subject_ref || "");
             const subjectID = subject.split("@")[0];
             const subjectArtifact = arts.find(item => item.id === subjectID) || {};
@@ -4259,9 +4484,9 @@ class Component extends DCLogic {
             return Object.assign({
               isArtifact: false, isEvent: false, isWorkReport: true,
               id: report.artifact_id || report.work_id, anchor: anchorOf(report.artifact_id || report.work_id),
-              actorName: identity.name,
+              actorName: identity.actorName,
               actionText: ru ? "сообщил о работе над" : "reported work on",
-              meta: identity.system + (identity.system ? " · " : "") + when(report.reported_at),
+              meta: actor.system + (actor.system ? " · " : "") + when(report.reported_at),
               hasSubjectLink,
               subjectLabel,
               subjectTitle: subjectIsThread
@@ -4289,7 +4514,7 @@ class Component extends DCLogic {
                 : (ru ? "зафиксировано в Git · финальный отчёт" : "committed in Git · final report"),
               responseID: "", hasAttachment: false, attachment: {},
               cardStyle: "", title: "", route: "", when: "", hasParent: false, relations: [], opensChain: false, hasState: false, state: "", stateTone: "neutral", openDoc: () => {}
-            }, avatarFields(identity, 2, dim));
+            }, avatarFields(identity, 2, dim, actor.system));
           }
           if (en.kind === "artifact") {
             const a = en.artifact || {};
@@ -4297,7 +4522,8 @@ class Component extends DCLogic {
             const st = meta.state || "";
             const rels = relationsOf(meta);
             const dim = !!focus && focus !== a.id;
-            const identity = identityOf(a.from || meta.from, a.from || meta.from);
+            const identitySystem = a.from || meta.from;
+            const identity = actorIdentity(d, identitySystem, identitySystem);
             const card = artifactCard(a, meta, dim);
             const deliveries = deliveriesFor(a.id);
             // Registry state, not a transcript event: a contract's adopters
@@ -4334,11 +4560,66 @@ class Component extends DCLogic {
               adoptersTitle: ru ? "Кто принял" : "Adopted by",
               adopters,
               text: "", meta: card.route + " · " + when(en.at), hasSubject: false, subjectLabel: String(TYPE_WORDS(ru)[a.type] || a.type).toLocaleLowerCase(ru ? "ru-RU" : "en-US"), subjectStyle: "", subjectTitle: "", goSubject: () => {},
-              actorName: identity.name, actionText: ru ? "создал" : "created", hasSubjectLink: false, hasNoteLink: false,
+              actorName: identity.actorName, actionText: ru ? "создал" : "created", hasSubjectLink: false, hasNoteLink: false,
               hasAttachment: false, attachment: {}, responseID: "",
               signalTone: "neutral", signalLabel: ru ? "Информационное событие · создал" : "Informational event · created",
               contentStyle: ""
-            }, avatarFields(identity, 2, dim));
+            }, avatarFields(identity, 2, dim, identitySystem));
+          }
+          // A DERIVED row, and it must never be mistaken for an event.
+          //
+          // `a2a contract adopt` writes the consumer's consumes.yaml and emits
+          // NO event — internal/fold has no `adopt` transition at all. So the
+          // counterparty's most consequential act had no place in any
+          // chronology, and a contract's thread read as its owner talking to
+          // themselves. internal/cache/threadview.go now derives this row from
+          // the consumer's own registry (its `since:` date), and the Go side
+          // gives it its own transcript kind rather than dressing it as an
+          // event, so a reader of `a2a html --json` cannot conclude an event
+          // exists when none does.
+          //
+          // The rendering owes the same honesty: it says WHERE the fact comes
+          // from, and it carries no event signal, because nothing happened on
+          // this thread — a registry in another repository changed.
+          if (en.kind === "derived") {
+            const der = en.derived || {};
+            const derSystem = String(der.system || "");
+            const dim = !!focus && focus !== der.contract_id;
+            const identity = actorIdentity(d, derSystem, derSystem);
+            const major = der.major ? (ru ? "major " : "major ") + der.major : "";
+            // No `since:` means no date. Say so rather than inventing one or
+            // silently dropping the row — the fact of adoption is real either
+            // way, and threadview.go deliberately keeps an undated row.
+            const dated = String(der.since || "").trim();
+            return Object.assign({
+              isArtifact: false, isEvent: false, isWorkReport: false, isDerived: true,
+              type: "", id: "adopt:" + der.contract_id + ":" + derSystem, anchor: "",
+              actorName: identity.actorName,
+              // "приняла контракт" / "adopted the contract" — the verb agrees
+              // with its object in both languages. An earlier wording glued
+              // "потребитель" to "контракт" and produced the same
+              // case-agreement defect this wave fixed elsewhere.
+              actionText: ru ? "приняла" : "adopted",
+              // The manifest carries a DATE, not a timestamp. Running it through
+              // when() rendered "06.08.2026 00:00" — a midnight this fact does
+              // not have, and precision it never claimed. Show the date alone.
+              meta: [derSystem, major, dated ? dayOnly(dated) : (ru ? "дата не записана" : "no date recorded"),
+                     ru ? "по реестру потребителя, не событие" : "from the consumer's registry, not an event"]
+                .filter(Boolean).join(" · "),
+              hasSubjectLink: known(der.contract_id),
+              subjectLabel: ru ? "контракт" : "the contract",
+              subjectTitle: ru ? "Показать контракт в ленте" : "Focus the contract in the timeline",
+              openSubject: known(der.contract_id) ? goTo(der.contract_id) : () => {},
+              subjectLinkStyle: "display:inline; border:0; padding:0; background:transparent; color:var(--teal-ink); font:inherit; font-weight:400; cursor:pointer; text-decoration-line:underline; text-decoration-style:dotted; text-decoration-thickness:2px; text-underline-offset:5px;",
+              hasNoteLink: false, noteLinkLabel: "", noteTitle: "", noteLinkStyle: "", openNote: () => {},
+              contentStyle: "", responseID: "", eventWhen: dated ? dayOnly(dated) : "",
+              hasAttachment: false, attachment: {},
+              // Deliberately no signal: an event signal would assert that a
+              // protocol transition happened here, and none did.
+              signalTone: "neutral", signalLabel: ru ? "Запись реестра · не событие треда" : "Registry fact · not a thread event",
+              cardStyle: "",
+              title: "", route: "", when: "", hasParent: false, relations: [], opensChain: false, hasState: false, state: "", stateTone: "neutral", openDoc: () => {}
+            }, avatarFields(identity, 2, dim, derSystem));
           }
           const ev = en.event || {};
           const actor = ev.actor || {};
@@ -4346,7 +4627,7 @@ class Component extends DCLogic {
           const note = String(ev.note || "").trim();
           const subject = arts.find(x => x.id === ev.subject) || {};
           const subjectType = String(TYPE_WORDS(ru)[subject.type] || (ru ? "документ" : "document")).toLocaleLowerCase(ru ? "ru-RU" : "en-US");
-          const identity = identityOf(actor.system, actor.name || actor.system);
+          const identity = actorIdentity(d, actor.system, actor.name || actor.system, actor.kind, actor.model);
           // The event's own §5.2.2 version, appended when it carries one.
           // Without this a contract with three `publish` events rendered three
           // IDENTICAL rows — "published the contract", three times — with
@@ -4365,13 +4646,13 @@ class Component extends DCLogic {
             pills: [{ text: ru ? "заметка" : "note", tone: "outline" }],
             bodyKey: "thread-note-" + (ev.ulid || ev.subject || String(en.at || "")),
             hasFooter: false,
-            authorName: identity.name,
-            authorMono: identity.mono,
+            authorName: identity.actorName,
+            authorMono: identity.avatarMono,
             authorAvatar: identity.avatar,
-            authorFrom: identity.system,
+            authorFrom: actor.system,
             authorTo: subjectType,
-            authorProfileURL: identity.profile,
-            authorProfileTitle: identity.profile ? "GitHub · " + identity.name : "",
+            authorProfileURL: identity.actorProfileURL,
+            authorProfileTitle: identity.actorProfileTitle,
             title: ru ? "Заметка к «" + titleOf(ev.subject) + "»" : "Note on “" + titleOf(ev.subject) + "”",
             body: note,
             bodyHTML: "",
@@ -4379,16 +4660,16 @@ class Component extends DCLogic {
             metadataHint: ru ? "из истории событий" : "from the event history",
             metadataPrimary: [
               { label: ru ? "Добавлено" : "Added", value: when(en.at), mono: false },
-              { label: ru ? "Система" : "System", value: identity.system, mono: true },
+              { label: ru ? "Система" : "System", value: actor.system, mono: true },
               { label: ru ? "Документ" : "Document", value: subjectType, mono: false }
             ],
             metadataRest: [], lists: [], refs: [], events: [], flags: [], hasPrompt: false, hasThread: false
           } : null;
           return Object.assign({
             isArtifact: false, isEvent: true, isWorkReport: false, type: "", id: ev.ulid, anchor: "",
-            actorName: identity.name,
+            actorName: identity.actorName,
             actionText,
-            meta: identity.system + (identity.system ? " · " : "") + when(en.at),
+            meta: actor.system + (actor.system ? " · " : "") + when(en.at),
             hasSubjectLink: ev.transition !== "note" && known(ev.subject),
             // The version rides with the SUBJECT, not with the verb. Putting it
             // in the verb produced "опубликовал версию 1.0.1 контракт" — the
@@ -4414,7 +4695,7 @@ class Component extends DCLogic {
             signalLabel: signal.label,
             cardStyle: "",
             title: "", route: "", when: "", hasParent: false, relations: [], opensChain: false, hasState: false, state: "", stateTone: "neutral", openDoc: () => {}
-          }, avatarFields(identity, 2, dim));
+          }, avatarFields(identity, 2, dim, actor.system));
         }).reverse();
         const joined = [];
         for (let i = 0; i < rows.length; i++) {
@@ -4721,14 +5002,8 @@ class Component extends DCLogic {
       cdVersionNoDocsText: ru ? "В опубликованном манифесте нет переносимых файлов." : "The published manifest declares no carried files.",
       cdVersionNormativeTitle: ru ? "Определяют контракт" : "Define the contract",
       cdVersionSupportingTitle: ru ? "Помогают внедрить" : "Support implementation",
-      cdVersionNormativeDocs: selectedConDocuments.filter(f => f.normative).map(f => {
-        const key = con.id + "@" + selectedConVersion.version + "|" + f.path;
-        return { key, path:f.path, role:f.role, media:f.mediaType || (ru ? "тип не записан" : "media type not recorded"), size:f.sizeBytes ? f.sizeBytes + (ru ? " Б" : " B") : "", digest:f.digest || "", open:() => this.setState({ contractFile:Object.assign({}, f, { key, contractID:con.id, version:selectedConVersion.version }) }) };
-      }),
-      cdVersionSupportingDocs: selectedConDocuments.filter(f => !f.normative).map(f => {
-        const key = con.id + "@" + selectedConVersion.version + "|" + f.path;
-        return { key, path:f.path, role:f.role, media:f.mediaType || (ru ? "тип не записан" : "media type not recorded"), size:f.sizeBytes ? f.sizeBytes + (ru ? " Б" : " B") : "", digest:f.digest || "", open:() => this.setState({ contractFile:Object.assign({}, f, { key, contractID:con.id, version:selectedConVersion.version }) }) };
-      }),
+      cdVersionNormativeTree: docTreeRows(selectedConDocuments.filter(f => f.normative), "normative"),
+      cdVersionSupportingTree: docTreeRows(selectedConDocuments.filter(f => !f.normative), "supporting"),
       cdVersionHistoryTitle: ru ? "История версии" : "Version history",
       cdVersionHasHistory: !!(selectedConDetail && (selectedConDetail.history || []).length),
       cdVersionHistory: selectedConDetail ? (selectedConDetail.history || []).slice().reverse().map((h, i, all) => ({

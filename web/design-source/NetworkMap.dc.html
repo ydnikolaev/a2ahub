@@ -493,8 +493,8 @@ class Component extends DCLogic {
       ? e.from + " зависит от контракта " + e.contract + ", который предоставляет " + e.to + ". " + driftLine(e, true)
       : e.from + " depends on " + e.contract + " provided by " + e.to + ". " + driftLine(e, false);
     return ru
-      ? ruPlural(e.count, "открытый документ", "открытых документа", "открытых документов") + " от " + e.from + " к " + e.to + (e.blocking ? ". Один из них остановил автора до ответа получателя." : ". Работа продолжается, явной блокировки нет.")
-      : plural(e.count, "open document", "open documents") + " from " + e.from + " to " + e.to + (e.blocking ? ". One has stopped its author until the recipient answers." : ". Work is still moving; none is explicitly blocking.");
+      ? ruPlural(e.count, "живой документ", "живых документа", "живых документов") + " от " + e.from + " к " + e.to + (e.owedCount > 0 ? ". У части из них кто-то должен сделать следующий ход." : ". Работа продолжается, ходов никто не должен.")
+      : plural(e.count, "live document", "live documents") + " from " + e.from + " to " + e.to + (e.owedCount > 0 ? ". Some of them owe the next move." : ". Work is still moving; nobody owes a move.");
   }
   spaceTip(sp, fallback) {
     if (!sp || !sp.readable) return fallback || (this.ru() ? "Локальная копия спейса не читается; числа внутри неизвестны, а не равны нулю." : "The local space copy is unreadable; its numbers are unknown rather than zero.");
@@ -543,7 +543,7 @@ class Component extends DCLogic {
     out.sort((p, q) => this.relRisk(q) - this.relRisk(p));
     return out;
   }
-  relRisk(r) { return r.kind === "c" ? (RISK[r.e.drift] || 0) : (r.e.blocking ? 5 : 1); }
+  relRisk(r) { return r.kind === "c" ? (RISK[r.e.drift] || 0) : ((r.e.owedCount || 0) > 0 ? 5 : 1); }
   relKey(r) {
     return r.kind === "c" ? "c:" + r.e.contract + ":" + r.e.from + ">" + r.e.to + ":" + r.e.space
       : "x:" + r.e.from + ">" + r.e.to + ":" + r.e.space;
@@ -562,7 +562,7 @@ class Component extends DCLogic {
       if (dr !== "current") return { color: "var(--ochre)", marker: "url(#nmOchre)", dash: "0", tone: "warn" };
       return { color: "var(--teal-solid)", marker: "url(#nmTeal)", dash: "0", tone: "ok" };
     }
-    if (r.e.blocking) return { color: "var(--red)", marker: "url(#nmRed)", dash: "6 5", tone: "hard" };
+    if ((r.e.owedCount || 0) > 0) return { color: "var(--red)", marker: "url(#nmRed)", dash: "6 5", tone: "hard" };
     return { color: "var(--border-strong)", marker: "url(#nmGrey)", dash: "5 5", tone: "mute" };
   }
 
@@ -659,7 +659,7 @@ class Component extends DCLogic {
         rowsLabel: ru ? "Скользящее окно версий" : "Rolling version window",
         rows: c && c.versions ? c.versions.slice().reverse().map(v => this.versionRow(c, v)) : [],
         hasRows2: peers.length > 0 || items.length > 0,
-        rows2Label: peers.length ? (ru ? "Другие зарегистрированные потребители" : "Other registered consumers") : (ru ? "Открытая работа между этими системами" : "Open items between these two"),
+        rows2Label: peers.length ? (ru ? "Другие зарегистрированные потребители" : "Other registered consumers") : (ru ? "Живая работа между этими системами" : "Live work between these two"),
         rows2: peers.length ? peers.map(x => this.contractRow(x, x.space)) : items.map(it => this.itemRow(d, it)),
         close: this.close()
       };
@@ -667,30 +667,34 @@ class Component extends DCLogic {
     const e = r.e;
     const items = this.items(d, spaceId).filter(it => it.from === e.from && (it.to || []).indexOf(e.to) > -1);
     const lines = d.contractEdges.filter(x => x.space === spaceId && ((x.from === e.from && x.to === e.to) || (x.from === e.to && x.to === e.from)));
+    const owed = e.owedCount || 0;
     return {
       title: e.from + " → " + e.to,
-      kindLabel: ru ? "открытый обмен" : "open exchange",
+      kindLabel: ru ? "живая работа" : "live work",
       tags: [
-        { text: ru ? "открытый обмен" : "open exchange", tone: "outline" },
+        { text: ru ? "живая работа" : "live work", tone: "outline" },
         { text: spaceId, tone: "neutral" },
-        { text: e.blocking ? (ru ? "кто-то стоит" : "somebody stopped") : (ru ? "в работе" : "in flight"), tone: e.blocking ? "blocking" : "neutral" }
+        { text: owed > 0 ? (ru ? "ждут хода" : "awaiting a move") : (ru ? "в работе" : "in flight"), tone: owed > 0 ? "blocking" : "neutral" }
       ],
-      factsLabel: ru ? "Об открытом обмене" : "About this open exchange",
+      factsLabel: ru ? "О живой работе" : "About this live work",
+      // Liveness ⊋ pendency: every document counted here is still open
+      // (isOpen), never a claim that anybody owes anything — that claim is
+      // the separate, explicitly-gated sentence below.
       lead: ru
-        ? "Незавершённая работа, а не структурная зависимость: документы уже отправлены и ещё не дошли до конечного состояния."
-        : "Work in flight, not a structural dependency: documents already sent that have not yet reached a terminal state.",
+        ? "Живые документы между этими системами, а не структурная зависимость: они ещё открыты, а не обязательно кем-то не отвечены." + (owed > 0 ? " У части из них есть невыполненный шаг — кто-то должен сделать следующий ход." : " Сейчас никто из участников не должен сделать ход — работа просто продолжается.")
+        : "Live documents between these systems, not a structural dependency: they are still open, not necessarily unanswered by anybody." + (owed > 0 ? " Some of them have an outstanding step — somebody owes the next move." : " Right now nobody owes a move — the work is simply continuing."),
       hasFacts: true,
       facts: [
         { label: ru ? "автор" : "author", value: e.from, mono: true },
         { label: ru ? "получатель" : "recipient", value: e.to, mono: true },
         { label: ru ? "спейс" : "space", value: spaceId, mono: true },
-        { label: ru ? "открытых документов" : "open documents", value: String(e.count) },
+        { label: ru ? "живых документов" : "live documents", value: String(e.count) },
         { label: ru ? "наивысший приоритет" : "strongest priority", value: e.maxPriority || (ru ? "не записан" : "not recorded") },
-        { label: ru ? "кого ждут" : "blocked on", value: e.blocking ? blockedOn([e.to], d.self, ru) : (ru ? "никого, всё движется" : "nobody, nothing is stopped") }
+        { label: ru ? "кого ждут" : "blocked on", value: owed > 0 ? this.count(owed, "document owes a move", "documents owe a move", ["документ ждёт хода", "документа ждут хода", "документов ждут хода"]) : (ru ? "никого, всё движется" : "nobody, nothing is stopped") }
       ].concat(e.maxStale ? [{ label: ru ? "без движения дольше всех" : "longest without movement", value: age(e.maxStale) }] : []),
       hasNote: false, note: "",
       hasRows: items.length > 0,
-      rowsLabel: ru ? "Открытая работа на этой линии" : "Open items on this lane",
+      rowsLabel: ru ? "Живая работа на этой линии" : "Live work on this lane",
       rows: items.map(it => this.itemRow(d, it)),
       hasRows2: lines.length > 0,
       rows2Label: ru ? "Контрактные линии между этими системами" : "Contract lines between these two",
@@ -746,7 +750,7 @@ class Component extends DCLogic {
       rowsLabel: ru ? "Контрактные линии здесь" : "Contract lines here",
       rows: lines.map(e => this.contractRow(e, spaceId)),
       hasRows2: items.length > 0,
-      rows2Label: ru ? "Открытая работа с участием системы" : "Open items involving it",
+      rows2Label: ru ? "Живая работа с участием системы" : "Live work involving it",
       rows2: items.map(it => this.itemRow(d, it)),
       close: this.close()
     };
@@ -880,7 +884,7 @@ class Component extends DCLogic {
         const related = this.edgeLive(key, r.e.space, d.self, s.row.node.system);
         const badgeText = r.kind === "c"
           ? (r.e.drift === "current" ? "" : driftShort(r.e, ru))
-          : (r.e.blocking ? stoppedBadge(r.e.count, ru) : String(r.e.count));
+          : ((r.e.owedCount || 0) > 0 ? stoppedBadge(r.e.owedCount, ru) : String(r.e.count));
         let bx = Math.round((SEX + MX) / 2), by = Math.round((y0 + y1) / 2);
         if (badgeText) {
           const box = this.badgeBox(badgeText);
@@ -904,7 +908,7 @@ class Component extends DCLogic {
         });
         if (badgeText) badges.push({
           text: badgeText,
-          title: r.kind === "c" ? r.e.from + " → " + r.e.to + " · " + r.e.contract + " · " + driftShort(r.e, ru) : r.e.from + " → " + r.e.to + " · " + (ru ? this.count(r.e.count, "open item", "open items", ["открытый элемент", "открытых элемента", "открытых элементов"]) : plural(r.e.count, "open item", "open items")) + (r.e.blocking ? " · " + blockedOn([r.e.to], d.self, ru) : ""),
+          title: r.kind === "c" ? r.e.from + " → " + r.e.to + " · " + r.e.contract + " · " + driftShort(r.e, ru) : r.e.from + " → " + r.e.to + " · " + (ru ? this.count(r.e.count, "live item", "live items", ["живой элемент", "живых элемента", "живых элементов"]) : plural(r.e.count, "live item", "live items")) + ((r.e.owedCount || 0) > 0 ? " · " + this.count(r.e.owedCount, "awaiting a move", "awaiting a move", ["ждёт хода", "ждут хода", "ждут хода"]) : ""),
           go: () => this.pick("edge", key, bx, by),
           enter: this.hoverOn(key, tip), leave: this.hoverOff(key),
           style: this.badgeStyle(bx, by, p.tone, related ? 1 : 0.2)
@@ -937,7 +941,7 @@ class Component extends DCLogic {
             enter: this.hoverOn(key, tip), leave: this.hoverOff(key),
             label: r.e.from + " → " + r.e.to
           });
-          const badgeText = r.kind === "c" ? (r.e.drift === "current" ? "" : driftShort(r.e, ru)) : (r.e.blocking ? stoppedBadge(r.e.count, ru) : String(r.e.count));
+          const badgeText = r.kind === "c" ? (r.e.drift === "current" ? "" : driftShort(r.e, ru)) : ((r.e.owedCount || 0) > 0 ? stoppedBadge(r.e.owedCount, ru) : String(r.e.count));
           if (badgeText) {
             const box = this.badgeBox(badgeText);
             const mid = (ya + yb) / 2;
@@ -946,7 +950,7 @@ class Component extends DCLogic {
             const at = this.place(taken, cands, box);
             badges.push({
               text: badgeText,
-              title: r.e.from + " → " + r.e.to + (r.kind !== "c" && r.e.blocking ? " · " + blockedOn([r.e.to], d.self, ru) : ""),
+              title: r.e.from + " → " + r.e.to + (r.kind !== "c" && (r.e.owedCount || 0) > 0 ? " · " + this.count(r.e.owedCount, "awaiting a move", "awaiting a move", ["ждёт хода", "ждут хода", "ждут хода"]) : ""),
               go: () => this.pick("edge", key, at.x, at.y),
               enter: this.hoverOn(key, tip), leave: this.hoverOff(key),
               style: this.badgeStyle(at.x, at.y, p.tone, related ? 1 : 0.2)
@@ -1084,7 +1088,7 @@ class Component extends DCLogic {
     const scope = this.scope();
     const expanded = this.state.expanded;
     const ru = this.props.locale === "ru";
-    const emptyModes = [["both", ru ? "Всё" : "Everything"], ["contracts", ru ? "Контрактные линии" : "Contract lines"], ["exchanges", ru ? "Открытая работа" : "Open work"]].map(([id, label]) => ({
+    const emptyModes = [["both", ru ? "Всё" : "Everything"], ["contracts", ru ? "Контрактные линии" : "Contract lines"], ["exchanges", ru ? "Живая работа" : "Live work"]].map(([id, label]) => ({
       label, count: 0, pressed: this.mode() === id,
       go: () => this.setState({ mode: id, sel: null })
     }));
@@ -1141,7 +1145,7 @@ class Component extends DCLogic {
     const labels = {
       spaceLabel: ru ? "Спейс" : "Space", contractLabel: ru ? "контракт" : "contract",
       currentLabel: ru ? "актуален" : "current", driftingLabel: ru ? "расходится" : "drifting", missingLabel: ru ? "не найден" : "missing",
-      workLabel: ru ? "открытая работа" : "open work", flightLabel: ru ? "в работе" : "in flight", blockingLabel: ru ? "кто-то стоит" : "somebody stopped",
+      workLabel: ru ? "живая работа" : "live work", flightLabel: ru ? "в работе" : "in flight", blockingLabel: ru ? "ждут хода" : "awaiting a move",
       directionLabel: ru ? "направление" : "direction", directionText: ru ? "стрелка смотрит на поставщика или получателя" : "arrow ends at the provider or recipient",
       linkTableTitle:ru ? "Все связи в таблице" : "Every link, as a table", linkLabel:ru ? "связь" : "link", linkReasonLabel:ru ? "почему существует" : "why it exists", matrixTitle:ru ? "Участие систем в спейсах" : "Where each system participates", systemLabel:ru ? "система" : "system"
     };
@@ -1162,7 +1166,7 @@ class Component extends DCLogic {
     const shown = spacesInScope.filter(x => inScope(x.id));
     const contractCount = d.contractEdges.filter(e => inScope(e.space)).length;
     const exchangeCount = d.exchangeEdges.filter(e => inScope(e.space)).length;
-    const modes = [["both", ru ? "Всё" : "Everything", contractCount + exchangeCount], ["contracts", ru ? "Контрактные линии" : "Contract lines", contractCount], ["exchanges", ru ? "Открытая работа" : "Open work", exchangeCount]].map(([id, label, count]) => ({
+    const modes = [["both", ru ? "Всё" : "Everything", contractCount + exchangeCount], ["contracts", ru ? "Контрактные линии" : "Contract lines", contractCount], ["exchanges", ru ? "Живая работа" : "Live work", exchangeCount]].map(([id, label, count]) => ({
       label, count, pressed: this.mode() === id,
       go: () => this.setState({ mode: id, sel: null })
     }));
@@ -1224,7 +1228,7 @@ class Component extends DCLogic {
       key: "c:" + e.contract + ":" + e.from + ">" + e.to + ":" + e.space, kind: "c"
     })).concat(xAll.map(e => ({
       from: e.from, to: e.to, arrow: "⇢", space: e.space,
-      why: ru ? ruPlural(e.count, "открытый элемент", "открытых элемента", "открытых элементов") + " от " + e.from + " · наивысший приоритет " + e.maxPriority + (e.blocking ? " · из-за одного " + e.from + " стоит" : "") + (e.maxStale ? " · самый старый " + e.maxStale : "") : plural(e.count, "open item", "open items") + " authored by " + e.from + " · strongest " + e.maxPriority + (e.blocking ? " · one of them has " + e.from + " stopped" : "") + (e.maxStale ? " · oldest " + e.maxStale : ""),
+      why: ru ? ruPlural(e.count, "живой элемент", "живых элемента", "живых элементов") + " от " + e.from + " · наивысший приоритет " + e.maxPriority + ((e.owedCount || 0) > 0 ? " · " + this.count(e.owedCount, "awaiting a move", "awaiting a move", ["ждёт хода", "ждут хода", "ждут хода"]) : "") + (e.maxStale ? " · самый старый " + e.maxStale : "") : plural(e.count, "live item", "live items") + " authored by " + e.from + " · strongest " + e.maxPriority + ((e.owedCount || 0) > 0 ? " · " + this.count(e.owedCount, "awaiting a move", "awaiting a move", ["ждёт хода", "ждут хода", "ждут хода"]) : "") + (e.maxStale ? " · oldest " + e.maxStale : ""),
       key: "x:" + e.from + ">" + e.to + ":" + e.space, kind: "x"
     })));
     const selKey = this.state.sel && this.state.sel.kind === "edge" ? this.state.sel.key : "";

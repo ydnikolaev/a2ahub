@@ -8,16 +8,26 @@
 <body>
 <x-dc>
 <div data-actor-event-line style="{{ shellStyle }}">
-  <span style="{{ avatarShellStyle }}">
-    <sc-if value="{{ hasProfile }}" hint-placeholder-val="{{ false }}">
-      <a href="{{ profileURL }}" target="_blank" rel="noopener noreferrer" title="{{ profileTitle }}" style="display:flex; width:100%; height:100%; color:inherit; text-decoration:none;">
+  <span style="{{ avatarWrapStyle }}">
+    <span style="{{ avatarShellStyle }}">
+      <sc-if value="{{ hasProfile }}" hint-placeholder-val="{{ false }}">
+        <a href="{{ profileURL }}" target="_blank" rel="noopener noreferrer" title="{{ profileTitle }}" style="display:flex; width:100%; height:100%; color:inherit; text-decoration:none;">
+          <sc-if value="{{ hasAvatar }}" hint-placeholder-val="{{ false }}"><img src="{{ avatar }}" alt="" width="{{ avatarSize }}" height="{{ avatarSize }}" style="{{ avatarImageStyle }}"></sc-if>
+          <sc-if value="{{ lacksAvatar }}" hint-placeholder-val="{{ true }}"><span style="{{ avatarFallbackStyle }}">{{ avatarMono }}</span></sc-if>
+        </a>
+      </sc-if>
+      <sc-if value="{{ lacksProfile }}" hint-placeholder-val="{{ true }}">
         <sc-if value="{{ hasAvatar }}" hint-placeholder-val="{{ false }}"><img src="{{ avatar }}" alt="" width="{{ avatarSize }}" height="{{ avatarSize }}" style="{{ avatarImageStyle }}"></sc-if>
         <sc-if value="{{ lacksAvatar }}" hint-placeholder-val="{{ true }}"><span style="{{ avatarFallbackStyle }}">{{ avatarMono }}</span></sc-if>
-      </a>
-    </sc-if>
-    <sc-if value="{{ lacksProfile }}" hint-placeholder-val="{{ true }}">
-      <sc-if value="{{ hasAvatar }}" hint-placeholder-val="{{ false }}"><img src="{{ avatar }}" alt="" width="{{ avatarSize }}" height="{{ avatarSize }}" style="{{ avatarImageStyle }}"></sc-if>
-      <sc-if value="{{ lacksAvatar }}" hint-placeholder-val="{{ true }}"><span style="{{ avatarFallbackStyle }}">{{ avatarMono }}</span></sc-if>
+      </sc-if>
+    </span>
+    <sc-if value="{{ hasAgentBadge }}" hint-placeholder-val="{{ false }}">
+      <button type="button" onMouseEnter="{{ openAgentHint }}" onMouseLeave="{{ closeAgentHint }}" onFocus="{{ openAgentHint }}" onBlur="{{ closeAgentHint }}" aria-label="{{ agentBadgeAriaLabel }}" aria-expanded="{{ agentHintExpanded }}" style="{{ agentBadgeStyle }}">
+        <dc-import name="AgentIcon" id="{{ agentID }}" size="12" hint-size="12px,12px"></dc-import>
+      </button>
+      <sc-if value="{{ agentHintOpen }}" hint-placeholder-val="{{ false }}">
+        <span role="tooltip" style="{{ agentBubbleStyle }}">{{ agentHintText }}</span>
+      </sc-if>
     </sc-if>
   </span>
 
@@ -49,6 +59,26 @@ const SIZES = {
   large:   { avatar:48, gap:15, title:17, meta:15, mono:12, min:50 }
 };
 class Component extends DCLogic {
+  state = { agentHintOpen: false, agentHintPos: "" };
+
+  // Measures the badge button and flips the popover above it when there is
+  // not enough room below — the same fixed/measured approach as FreshnessDot
+  // and HintDot elsewhere in this file, so a badge inside a scrolling
+  // transcript rail is never clipped by an ancestor's overflow.
+  showAgentHint(btn) {
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    const width = Math.min(280, window.innerWidth * 0.74);
+    const left = Math.max(12, Math.min(r.left, window.innerWidth - width - 12));
+    const below = window.innerHeight - r.bottom > 130;
+    this.setState({
+      agentHintOpen: true,
+      agentHintPos: below
+        ? "left:" + Math.round(left) + "px; top:" + Math.round(r.bottom + 7) + "px;"
+        : "left:" + Math.round(left) + "px; bottom:" + Math.round(window.innerHeight - r.top + 7) + "px;"
+    });
+  }
+
   renderVals() {
     const row = this.props.row || {};
     const sizeName = SIZES[this.props.size] ? this.props.size : (SIZES[row.size] ? row.size : "regular");
@@ -63,6 +93,17 @@ class Component extends DCLogic {
     const systemSelf = !!row.systemSelf;
     const dim = !!row.dim;
     const avatarBase = "width:" + s.avatar + "px; height:" + s.avatar + "px; border-radius:99px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:" + (systemSelf ? "var(--teal-solid)" : "var(--attention-line)") + "; color:" + (systemSelf ? "var(--on-solid)" : "var(--attention-strong)") + "; box-shadow:0 0 0 " + (rail ? "4px var(--surface)" : "2px var(--surface-card)") + ", inset 0 0 0 1px var(--hairline);";
+    const ru = document.documentElement.lang === "ru";
+    const hasAgentBadge = !!row.hasAgentBadge && !!row.agentID;
+    const agentLabel = row.agentLabel || row.agentID || "";
+    const agentModel = row.agentModel || "";
+    // The event's own actor record is what claims this — not an independent
+    // check. See internal/agentid's doc comment: a hit means the record SAYS
+    // so, exactly the "codex" self-report the package's own doc names.
+    const agentClaimText = ru
+      ? "Так записано в событии; независимо не подтверждено."
+      : "As recorded in the event; not independently verified.";
+    const agentHintText = agentLabel + (agentModel ? (ru ? " · модель " : " · model ") + agentModel : "") + ". " + agentClaimText;
     return {
       actorName: row.actorName || "",
       actionText: row.actionText || "",
@@ -89,14 +130,32 @@ class Component extends DCLogic {
       signalLabel: row.signalLabel || "",
       hasSignal: row.hasSignal !== false && !!row.signalLabel,
       shellStyle: "position:relative; min-width:0; display:grid; grid-template-columns:" + (rail ? "minmax(0,1fr)" : s.avatar + "px minmax(0,1fr)") + (row.hasSignal !== false && row.signalLabel ? " 20px" : "") + "; align-items:center; gap:" + s.gap + "px; min-height:" + s.min + "px;",
-      avatarShellStyle: avatarBase + (rail ? " position:absolute; left:-" + (railOffset + Math.round(s.avatar / 2)) + "px; top:1px;" : " position:relative;"),
+      // The badge sits on this wrap, not inside the circle: the circle itself
+      // has overflow:hidden (it clips a non-square embedded avatar to round),
+      // and a badge positioned inside it would be clipped at the same edge it
+      // needs to sit on. The wrap carries whichever positioning (rail-offset
+      // absolute, or plain relative) the circle used to carry alone, so rail
+      // layout is unaffected — only the circle's own overflow:hidden no longer
+      // reaches the badge.
+      avatarWrapStyle: "display:inline-flex; line-height:0;" + (rail ? " position:absolute; left:-" + (railOffset + Math.round(s.avatar / 2)) + "px; top:1px;" : " position:relative;"),
+      avatarShellStyle: avatarBase,
       avatarImageStyle: "width:100%; height:100%; border-radius:99px; display:block; object-fit:cover; image-rendering:auto;",
       avatarFallbackStyle: "width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:" + s.mono + "px; line-height:1; font-weight:600;",
       titleStyle: "font-size:" + s.title + "px; line-height:1.45; color:var(--text); overflow-wrap:anywhere;",
       metaStyle: "margin-top:1px; font-size:" + s.meta + (typeof s.meta === "number" ? "px" : "") + "; line-height:var(--line-meta); color:var(--muted); overflow-wrap:anywhere;",
       subjectLinkStyle: row.subjectLinkStyle || "display:inline; border:0; padding:0; background:transparent; color:var(--teal-ink); font:inherit; font-weight:400; cursor:pointer; text-decoration:underline dashed 2px; text-underline-offset:5px;",
       noteLinkStyle: row.noteLinkStyle || "display:inline; border:0; padding:0; background:transparent; color:var(--teal-ink); font:inherit; font-weight:400; cursor:pointer; text-decoration:underline solid 1.5px; text-underline-offset:5px;",
-      plainSubjectStyle: row.plainSubjectStyle || "font-weight:400; color:var(--body);"
+      plainSubjectStyle: row.plainSubjectStyle || "font-weight:400; color:var(--body);",
+      hasAgentBadge,
+      agentID: row.agentID || "",
+      agentBadgeAriaLabel: (ru ? "Действие выполнил агент: " : "Action performed by agent: ") + agentLabel,
+      agentBadgeStyle: "position:absolute; right:-3px; bottom:-3px; width:18px; height:18px; border-radius:99px; display:flex; align-items:center; justify-content:center; padding:0; line-height:0; border:2px solid var(--surface-card); background:var(--surface); box-shadow:0 0 0 1px var(--border-strong); cursor:help;",
+      agentHintOpen: this.state.agentHintOpen,
+      agentHintExpanded: this.state.agentHintOpen ? "true" : "false",
+      agentHintText,
+      agentBubbleStyle: "position:fixed; z-index:960; " + this.state.agentHintPos + " width:min(280px,74vw); background:var(--inverse); color:var(--on-inverse-2); border-radius:10px; padding:10px 12px; font-family:'Onest',sans-serif; font-size:13px; line-height:1.5; font-weight:400; text-align:left; box-shadow:0 14px 34px rgba(33,30,23,.34); white-space:normal; pointer-events:none;",
+      openAgentHint: (ev) => this.showAgentHint(ev && ev.currentTarget),
+      closeAgentHint: () => this.setState({ agentHintOpen: false })
     };
   }
 }
