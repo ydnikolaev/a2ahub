@@ -183,6 +183,53 @@ if git check-ignore -q --no-index -- scripts/releasebody/main.go; then
   flag "scripts/releasebody/ must stay PUBLIC (it renders GitHub Release notes from the shipped SSOT)  → add '!scripts/releasebody/' to .gitignore"
 fi
 
+# ── check 4: the publisher's STRIP set may not delete a file this gate calls PUBLIC. ──
+#
+# The PRIVATE_ONLY_FILES comment above has always said the two must "stay in
+# sync with the STRIP set in docs/runbooks/publish-to-public.sh". Nothing
+# enforced it, and on 2026-08-06 they drifted: P12 added
+# `scripts/lib/lane-ungated.txt` — classified PUBLIC right here, in
+# PUBLIC_VALIDATOR_FILES — while the publisher went on stripping the whole of
+# `scripts/lib/`. So the public tree shipped `check-lane-declarations.sh`
+# without the list it reads, and `make check` refused on its first phase.
+#
+# It cost a full release cycle to find, because it is invisible from here: the
+# private tree is green by construction, and the ONLY thing that executes the
+# filtered tree is a candidate. None had been cut between P12 landing and
+# v0.19.9.
+#
+# The publisher lives under `docs/`, which is itself stripped, so this check is
+# guarded on its presence exactly like the Makefile guards the private gates.
+# On a public checkout there is nothing to compare against and skipping is the
+# honest answer, not a failure.
+PUBLISHER=docs/runbooks/publish-to-public.sh
+if [ -f "$PUBLISHER" ]; then
+  # The STRIP array as the publisher actually declares it: every `--path X`
+  # inside the STRIP=( ... ) block, read from the file rather than re-typed
+  # here — a copy would be the same drift one layer down.
+  strip_paths="$(awk '/^STRIP=\(/{inside=1} inside{print} inside&&/\)/{exit}' "$PUBLISHER" |
+    grep -oE -- '--path [^ )]+' | sed 's/^--path //')"
+  if [ -z "$strip_paths" ]; then
+    flag "$PUBLISHER — could not read its STRIP=( ) block; this check cannot vouch for the boundary"
+  fi
+  for public_file in "${ALLOW_FILES[@]}"; do
+    while IFS= read -r stripped; do
+      [ -n "$stripped" ] || continue
+      case "$stripped" in
+        */)
+          # a directory strip swallows everything beneath it
+          case "$public_file" in
+            "$stripped"*)
+              flag "$public_file is classified PUBLIC here but $PUBLISHER strips '$stripped' — it will be absent from every candidate" ;;
+          esac ;;
+        *)
+          [ "$public_file" = "$stripped" ] &&
+            flag "$public_file is classified PUBLIC here but $PUBLISHER strips it by name" ;;
+      esac
+    done <<< "$strip_paths"
+  done
+fi
+
 if [ "$fail" -ne 0 ]; then
   printf '\nclassify-guard: \033[31mFAIL\033[0m — public/private boundary violated (fixes above).\n' >&2
   exit 1
