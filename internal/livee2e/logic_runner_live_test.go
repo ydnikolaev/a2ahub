@@ -98,7 +98,55 @@ func TestLogicMatrix(t *testing.T) {
 	// wave's own report, not hidden. A path subtest failure still fails
 	// TestLogicMatrix as a whole, same as a family-matrix row failure
 	// already does.
-	runConformancePaths(ctx, t, h)
+	// P10 W1 — the paths get their OWN space. `h` above is the family
+	// matrix's; this is a second, independent one, and D1's "no second rig"
+	// is deliberately overturned here because the evidence that produced D1
+	// has been superseded by evidence against it.
+	//
+	// The shared space COUPLED two unrelated suites, in two directions, both
+	// observed rather than reasoned about:
+	//
+	//  1. The paragraph above records the first: the space-update family
+	//     permanently raises the scaffolded space's min_binary_version, so
+	//     every path write afterwards was refused. The fix was an ORDERING
+	//     constraint — paths first — which works only while nothing else ever
+	//     mutates the space durably.
+	//  2. The second was found on 2026-08-07 and ordering cannot fix it. The
+	//     71 paths leave hundreds of commits behind, and LE-OC-03/baseline's
+	//     fixed 20-second conditional-snapshot budget then expires against the
+	//     enlarged mirror — the loopback server answers 304 for the whole
+	//     window, its revision never recomputing. Isolated by experiment: that
+	//     cell passes with all eleven families and NO paths (exit 0, whole
+	//     matrix green), passes alone in 44s, and fails whenever the paths ran
+	//     first — on a quiet machine and a loaded one alike.
+	//
+	// Two suites that can break each other through shared state are not one
+	// suite; making them separate is what stops the next such coupling from
+	// being discovered as somebody else's red. It also retires the ordering
+	// constraint in (1): with separate spaces neither suite can reach the
+	// other's min_binary_version, so `paths first` is now a free choice rather
+	// than a load-bearing one.
+	//
+	// The second harness pays a second binary build (seconds, warm cache)
+	// against a tier that costs ~41 minutes. Sharing one build across both is
+	// a real optimisation and deliberately NOT taken here: this wave changes
+	// isolation only, so that a measurement of it measures isolation.
+	pathHarness, pathCleanup, err := newLogicHarness(ctx, t)
+	defer func() {
+		if cleanupErr := pathCleanup(); cleanupErr != nil {
+			t.Errorf("conformance-path harness cleanup failed: %v", cleanupErr)
+		}
+	}()
+	if err != nil {
+		t.Fatalf("newLogicHarness (conformance paths): %v", err)
+	}
+	if err := pathHarness.Seam.Validate(); err != nil {
+		t.Fatalf("conformance-path harness seam did not validate: %v", err)
+	}
+	if pathHarness.Seam.IsRealGitHub() {
+		t.Fatalf("conformance-path harness seam reports real GitHub — refusing to drive a write against it: %+v", pathHarness.Seam)
+	}
+	runConformancePaths(ctx, t, pathHarness)
 
 	run := NewRunFor(logicOrg, logicRepo, Catalogue())
 	run.Tier = TierLogic
