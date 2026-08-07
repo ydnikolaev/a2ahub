@@ -244,6 +244,13 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 	if err != nil {
 		return Data{}, fmt.Errorf("html: threads: %w", err)
 	}
+	// Adoption reaches the THREAD, where it was invisible. consumersOf and the
+	// edges are both resolved above, and toThreadView cannot see either — it
+	// takes a cache result and this system's id, nothing more — so the join
+	// happens here rather than by widening its signature for one field.
+	annotateThreadAdopters(threadViews, func(space, id string) []string {
+		return consumersOf[contractKey{space: space, id: id}]
+	}, d.ContractEdges)
 	d.Threads = threads
 	d.ThreadViews = threadViews
 	d.WorkReports = collectWorkReports(threadViews)
@@ -1572,5 +1579,52 @@ func humanizeAge(now, t time.Time) string {
 		return fmt.Sprintf("%dd", int(dur.Hours()/24))
 	default:
 		return fmt.Sprintf("%dw", int(dur.Hours()/(24*7)))
+	}
+}
+
+// annotateThreadAdopters attaches each contract artifact's registered
+// consumers, with the version each pinned, to the thread views.
+//
+// The pinned version comes from the dependency edge rather than the consumer
+// list alone, because "who depends on it" and "what they are actually on" are
+// different questions, and the second is the one that tells a reader whether a
+// deprecation still has anybody to wait for.
+// consumersFor is passed as a closure rather than the map itself because
+// contractKey is local to Assemble; hoisting a type to package scope so a
+// helper can name it would widen the surface for no gain.
+func annotateThreadAdopters(views []ThreadView, consumersFor func(space, id string) []string, edges []ContractEdge) {
+	if len(views) == 0 || consumersFor == nil {
+		return
+	}
+	for i := range views {
+		view := &views[i]
+		for j := range view.Artifacts {
+			artifact := &view.Artifacts[j]
+			if artifact.Type != "contract" {
+				continue
+			}
+			cons := consumersFor(view.Space, artifact.ID)
+			if len(cons) == 0 {
+				continue
+			}
+			sorted := append([]string(nil), cons...)
+			sort.Strings(sorted)
+			out := make([]string, 0, len(sorted))
+			for _, system := range sorted {
+				pinned := ""
+				for _, edge := range edges {
+					if edge.From == system && edge.Contract == artifact.ID && edge.Space == view.Space {
+						pinned = edge.PinnedVersion
+						break
+					}
+				}
+				if pinned != "" {
+					out = append(out, system+" · "+pinned)
+					continue
+				}
+				out = append(out, system)
+			}
+			artifact.Adopters = out
+		}
 	}
 }
