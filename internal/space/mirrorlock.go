@@ -115,6 +115,23 @@ func (l *MirrorLock) guards(dir string) bool {
 // waiting" apart from "was cancelled" can already do so via errors.Is
 // against each.
 func AcquireMirrorLock(ctx context.Context, dir string) (*MirrorLock, error) {
+	return acquireMirrorLockWithin(ctx, dir, mirrorLockWaitBudget)
+}
+
+// acquireMirrorLockWithin is AcquireMirrorLock with the wait budget passed in
+// rather than compiled in.
+//
+// The exported function is the only production caller and always hands it the
+// constant, so behaviour is unchanged. It exists because the test that proves
+// the BOUND had to spend the bound to prove it: "a live holder that never
+// releases makes a contender fail closed with ErrMirrorLocked rather than
+// hang" is a statement about the shape of the wait, not about the number 5,
+// and it cost 6.16s of wall clock to assert.
+//
+// A package-level var would have been the shorter change and the wrong one:
+// every test in this file runs t.Parallel(), so one mutating a shared budget
+// races every sibling. Passing it down keeps each case independent.
+func acquireMirrorLockWithin(ctx context.Context, dir string, budget time.Duration) (*MirrorLock, error) {
 	const op = "AcquireMirrorLock"
 
 	gitDir, err := resolveGitDir(dir)
@@ -122,7 +139,7 @@ func AcquireMirrorLock(ctx context.Context, dir string) (*MirrorLock, error) {
 		return nil, &Error{Op: op, Input: dir, Err: err}
 	}
 	lockPath := filepath.Join(gitDir, mirrorLockFileName)
-	deadline := time.Now().Add(mirrorLockWaitBudget)
+	deadline := time.Now().Add(budget)
 
 	for {
 		if err := ctx.Err(); err != nil {
