@@ -565,16 +565,16 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
           </div>
           <div style="min-width:0; display:flex; flex-direction:column; gap:var(--space-grid);">
             <sc-for list="{{ ovRows }}" as="r" hint-placeholder-count="3">
-              <button type="button" onClick="{{ r.select }}" aria-label="{{ r.openLabel }}" style="width:100%; min-width:0; display:block; border:1px solid var(--border); border-radius:var(--radius-card); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface); color:var(--text); font-family:'Onest',sans-serif; text-align:left; cursor:pointer; box-shadow:var(--shadow-card);" style-hover="border-color:var(--border-strong); box-shadow:0 5px 16px -8px rgba(33,30,23,.28); transform:translateY(-1px);">
+              <button type="button" onClick="{{ r.select }}" aria-label="{{ r.openLabel }}" style="width:100%; min-width:0; display:block; border:1px solid var(--border); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); background:var(--surface); color:var(--text); font-family:'Onest',sans-serif; text-align:left; cursor:pointer; box-shadow:var(--shadow-card);" style-hover="border-color:var(--border-strong); box-shadow:0 5px 16px -8px rgba(33,30,23,.28); transform:translateY(-1px);">
                 <span style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:8px;">
                   <span style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; min-width:0;">
                     <dc-import name="TypeBadge" type="{{ r.type }}" size="small" hint-size="130px,24px"></dc-import>
                     <dc-import name="StatusPill" text="{{ r.status }}" tone="{{ r.tone }}" why="{{ r.statusWhy }}" size="small" hint-size="110px,24px"></dc-import>
                   </span>
-                  <span style="flex:0 0 auto; font-size:13px; line-height:1.4; color:var(--muted); white-space:nowrap;">{{ r.time }}</span>
+                  <span style="flex:0 0 auto; font-size:15px; line-height:1.4; color:var(--muted); white-space:nowrap;">{{ r.time }}</span>
                 </span>
-                <span style="display:block; font-size:var(--font-card-title-sm); line-height:var(--line-card-title-sm); font-weight:600; overflow-wrap:anywhere;">{{ r.title }}</span>
-                <span style="display:block; margin-top:6px; font-size:13px; line-height:1.4; color:var(--muted); overflow-wrap:anywhere;">{{ r.from }} → {{ r.to }} · {{ r.meta }}</span>
+                <span style="display:block; margin-bottom:8px; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; overflow-wrap:anywhere;">{{ r.title }}</span>
+                <span style="display:block; font-size:15px; line-height:1.4; color:var(--muted); overflow-wrap:anywhere;">{{ r.from }} → {{ r.to }} · {{ r.meta }}</span>
               </button>
             </sc-for>
           </div>
@@ -759,6 +759,20 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                         <div style="margin-top:14px;">
                           <dc-import name="TimelineArtifactCard" card="{{ e.card }}" hint-size="100%,190px"></dc-import>
                         </div>
+                        <!-- Registry state, not an event: who has registered as a consumer
+                             of this contract and the version each pinned. Never rendered
+                             for anything but a contract with at least one adopter — no
+                             empty label for a contract nobody consumes yet. -->
+                        <sc-if value="{{ e.hasAdopters }}" hint-placeholder-val="{{ false }}">
+                          <div style="margin-top:14px;">
+                            <div style="font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;">{{ e.adoptersTitle }}</div>
+                            <div style="display:flex; flex-direction:column; gap:4px;">
+                              <sc-for list="{{ e.adopters }}" as="ad" hint-placeholder-count="1">
+                                <div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; color:var(--muted); overflow-wrap:anywhere;">{{ ad }}</div>
+                              </sc-for>
+                            </div>
+                          </div>
+                        </sc-if>
                         <!-- The handoff's own data deliverables (spec 05a AC-7): package,
                              attempt, verdict — unverified never reads like passed — the
                              failing entry/rule/record on failure, and the supersede chain
@@ -2269,6 +2283,33 @@ function agentThreadPromptText(ctx) {
 // it.
 const FILTER_H = 38;
 
+// actorFace resolves one system's face fields from the node registry — the
+// avatar bytes the assembler already embedded, plus the GitHub profile of the
+// declared owner when that owner is a plausible login.
+//
+// It exists because the same four-line lookup had been written out four times
+// (the two feed card builders and identityOf), and TWO further card builders
+// had given up and hardcoded `avatar: ""` with an empty profile URL — the
+// operational work-progress rows and the source-freshness row. Those two
+// rendered a monogram beside every other surface's real face, on data that was
+// present the whole time: the axon node carries both an embedded avatar and
+// `owners: ["ydnikolaev"]`.
+//
+// Returns display-ready fields rather than the node, so a caller cannot
+// accidentally reach past it into node internals and grow a fifth variant.
+function actorFace(d, system, fallbackName) {
+  const node = (d.nodes || []).find(n => n.system === system);
+  const owner = node && node.owners && node.owners.length ? String(node.owners[0]) : "";
+  const name = String(fallbackName || owner || system || "");
+  const login = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(owner) ? owner : "";
+  return {
+    avatar: node && node.avatar ? node.avatar : "",
+    avatarMono: mono(name),
+    actorProfileURL: login ? "https://github.com/" + login : "",
+    actorProfileTitle: login ? "GitHub · " + login : ""
+  };
+}
+
 function avatar(isSelf, left) {
   return "width:" + (left ? 26 : 32) + "px; height:" + (left ? 26 : 32) + "px; border-radius:99px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:" + (left ? 10 : 11) + "px; font-weight:600; flex:0 0 auto; " +
     (isSelf === "left" ? "background:var(--surface); color:var(--muted); box-shadow:inset 0 0 0 1px var(--border-strong);" : isSelf ? "background:var(--teal-solid); color:var(--on-solid);" : "background:var(--border); color:var(--body);");
@@ -3435,10 +3476,7 @@ class Component extends DCLogic {
             actorName,
             actionText: workModeText(w.mode),
             meta: [actorSystem, freshness].filter(Boolean).join(" · "),
-            avatar: "",
-            avatarMono: mono(actorName),
-            actorProfileURL: "",
-            actorProfileTitle: "",
+            ...actorFace(d, actor.system, actorName),
             systemSelf: actor.system === d.self,
             hasSubjectLink: false,
             hasSignal: false
@@ -3495,10 +3533,7 @@ class Component extends DCLogic {
           actorName: latestName,
           actionText: TRANSITION_PAST(ru)[latest.transition] || latest.transition || (ru ? "зафиксировал процесс" : "recorded the process"),
           meta: [latestSystem, when(latest.at)].filter(Boolean).join(" · "),
-          avatar: "",
-          avatarMono: mono(latestName),
-          actorProfileURL: "",
-          actorProfileTitle: "",
+          ...actorFace(d, latestSystem, latestName),
           systemSelf: latestSystem === d.self,
           hasSubjectLink: hasLatestEvent && !!latestSubjectID,
           subjectLabel: latestSubjectLabel,
@@ -4265,6 +4300,12 @@ class Component extends DCLogic {
             const identity = identityOf(a.from || meta.from, a.from || meta.from);
             const card = artifactCard(a, meta, dim);
             const deliveries = deliveriesFor(a.id);
+            // Registry state, not a transcript event: a contract's adopters
+            // come from consumers.yaml via annotateThreadAdopters (Go side),
+            // never from an event on this thread, so they render beside the
+            // card rather than as another timeline row (see
+            // ThreadViewArtifact.Adopters in internal/html/model.go).
+            const adopters = meta.adopters || [];
             return Object.assign({
               isArtifact: true, isEvent: false, isWorkReport: false, type: a.type, title: a.title, id: a.id,
               anchor: anchorOf(a.id),
@@ -4289,6 +4330,9 @@ class Component extends DCLogic {
                 ? (deliveries.length === 1 ? "Поставка данных" : "Поставки данных")
                 : (deliveries.length === 1 ? "Data delivery" : "Data deliveries"),
               deliveries,
+              hasAdopters: adopters.length > 0,
+              adoptersTitle: ru ? "Кто принял" : "Adopted by",
+              adopters,
               text: "", meta: card.route + " · " + when(en.at), hasSubject: false, subjectLabel: String(TYPE_WORDS(ru)[a.type] || a.type).toLocaleLowerCase(ru ? "ru-RU" : "en-US"), subjectStyle: "", subjectTitle: "", goSubject: () => {},
               actorName: identity.name, actionText: ru ? "создал" : "created", hasSubjectLink: false, hasNoteLink: false,
               hasAttachment: false, attachment: {}, responseID: "",
@@ -4303,6 +4347,15 @@ class Component extends DCLogic {
           const subject = arts.find(x => x.id === ev.subject) || {};
           const subjectType = String(TYPE_WORDS(ru)[subject.type] || (ru ? "документ" : "document")).toLocaleLowerCase(ru ? "ru-RU" : "en-US");
           const identity = identityOf(actor.system, actor.name || actor.system);
+          // The event's own §5.2.2 version, appended when it carries one.
+          // Without this a contract with three `publish` events rendered three
+          // IDENTICAL rows — "published the contract", three times — with
+          // nothing saying which version each created and every link resolving
+          // to the version-less contract id. Observed on a real space:
+          // XC-axon-getvisa-ingest carries a version-less publish (the
+          // contract itself) followed by 1.0.0 and 1.0.1, and read as one
+          // event repeated.
+          const evVersion = String(ev.version || "").trim();
           const actionText = ev.transition === "note" ? (ru ? "добавил" : "added") : (TRANSITION_PAST(ru)[ev.transition] || ev.transition);
           const signal = EVENT_SIGNAL(ev.transition, ru);
           const consistency = ev.consistency;
@@ -4337,7 +4390,13 @@ class Component extends DCLogic {
             actionText,
             meta: identity.system + (identity.system ? " · " : "") + when(en.at),
             hasSubjectLink: ev.transition !== "note" && known(ev.subject),
-            subjectLabel: subjectType,
+            // The version rides with the SUBJECT, not with the verb. Putting it
+            // in the verb produced "опубликовал версию 1.0.1 контракт" — the
+            // version wedged between a verb and the noun it does not agree
+            // with. Attached to the subject it reads correctly in both
+            // languages ("контракт 1.0.1" / "contract 1.0.1") and puts the
+            // version where a reader looks for it: on the thing versioned.
+            subjectLabel: evVersion ? subjectType + " " + evVersion : subjectType,
             subjectTitle: ru ? "Показать исходный документ в ленте" : "Focus the original document in the timeline",
             openSubject: known(ev.subject) ? goTo(ev.subject) : () => {},
             subjectLinkStyle: "display:inline; border:0; padding:0; background:transparent; color:" + (TYPE_LINK_ACCENT[subject.type] || "var(--teal-ink)") + "; font:inherit; font-weight:400; cursor:pointer; text-decoration-line:underline; text-decoration-style:dashed; text-decoration-thickness:2px; text-underline-offset:5px;",

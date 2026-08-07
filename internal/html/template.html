@@ -313,16 +313,16 @@
           </div>
           <div style="min-width:0; display:flex; flex-direction:column; gap:var(--space-grid);">
             <sc-for list="{{ ovRows }}" as="r" hint-placeholder-count="3">
-              <button type="button" onClick="{{ r.select }}" aria-label="{{ r.openLabel }}" style="width:100%; min-width:0; display:block; border:1px solid var(--border); border-radius:var(--radius-card); padding:var(--padding-nested-block) var(--padding-nested-inline); background:var(--surface); color:var(--text); font-family:'Onest',sans-serif; text-align:left; cursor:pointer; box-shadow:var(--shadow-card);" style-hover="border-color:var(--border-strong); box-shadow:0 5px 16px -8px rgba(33,30,23,.28); transform:translateY(-1px);">
+              <button type="button" onClick="{{ r.select }}" aria-label="{{ r.openLabel }}" style="width:100%; min-width:0; display:block; border:1px solid var(--border); border-radius:var(--radius-card); padding:var(--padding-list-card-block) var(--padding-list-card-inline); background:var(--surface); color:var(--text); font-family:'Onest',sans-serif; text-align:left; cursor:pointer; box-shadow:var(--shadow-card);" style-hover="border-color:var(--border-strong); box-shadow:0 5px 16px -8px rgba(33,30,23,.28); transform:translateY(-1px);">
                 <span style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:8px;">
                   <span style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; min-width:0;">
                     <dc-import name="TypeBadge" type="{{ r.type }}" size="small" hint-size="130px,24px"></dc-import>
                     <dc-import name="StatusPill" text="{{ r.status }}" tone="{{ r.tone }}" why="{{ r.statusWhy }}" size="small" hint-size="110px,24px"></dc-import>
                   </span>
-                  <span style="flex:0 0 auto; font-size:13px; line-height:1.4; color:var(--muted); white-space:nowrap;">{{ r.time }}</span>
+                  <span style="flex:0 0 auto; font-size:15px; line-height:1.4; color:var(--muted); white-space:nowrap;">{{ r.time }}</span>
                 </span>
-                <span style="display:block; font-size:var(--font-card-title-sm); line-height:var(--line-card-title-sm); font-weight:600; overflow-wrap:anywhere;">{{ r.title }}</span>
-                <span style="display:block; margin-top:6px; font-size:13px; line-height:1.4; color:var(--muted); overflow-wrap:anywhere;">{{ r.from }} → {{ r.to }} · {{ r.meta }}</span>
+                <span style="display:block; margin-bottom:8px; font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; overflow-wrap:anywhere;">{{ r.title }}</span>
+                <span style="display:block; font-size:15px; line-height:1.4; color:var(--muted); overflow-wrap:anywhere;">{{ r.from }} → {{ r.to }} · {{ r.meta }}</span>
               </button>
             </sc-for>
           </div>
@@ -507,6 +507,20 @@
                         <div style="margin-top:14px;">
                           <dc-import name="TimelineArtifactCard" card="{{ e.card }}" hint-size="100%,190px"></dc-import>
                         </div>
+                        <!-- Registry state, not an event: who has registered as a consumer
+                             of this contract and the version each pinned. Never rendered
+                             for anything but a contract with at least one adopter — no
+                             empty label for a contract nobody consumes yet. -->
+                        <sc-if value="{{ e.hasAdopters }}" hint-placeholder-val="{{ false }}">
+                          <div style="margin-top:14px;">
+                            <div style="font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;">{{ e.adoptersTitle }}</div>
+                            <div style="display:flex; flex-direction:column; gap:4px;">
+                              <sc-for list="{{ e.adopters }}" as="ad" hint-placeholder-count="1">
+                                <div style="font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:13px; color:var(--muted); overflow-wrap:anywhere;">{{ ad }}</div>
+                              </sc-for>
+                            </div>
+                          </div>
+                        </sc-if>
                         <!-- The handoff's own data deliverables (spec 05a AC-7): package,
                              attempt, verdict — unverified never reads like passed — the
                              failing entry/rule/record on failure, and the supersede chain
@@ -4034,6 +4048,12 @@ class Component extends DCLogic {
             const identity = identityOf(a.from || meta.from, a.from || meta.from);
             const card = artifactCard(a, meta, dim);
             const deliveries = deliveriesFor(a.id);
+            // Registry state, not a transcript event: a contract's adopters
+            // come from consumers.yaml via annotateThreadAdopters (Go side),
+            // never from an event on this thread, so they render beside the
+            // card rather than as another timeline row (see
+            // ThreadViewArtifact.Adopters in internal/html/model.go).
+            const adopters = meta.adopters || [];
             return Object.assign({
               isArtifact: true, isEvent: false, isWorkReport: false, type: a.type, title: a.title, id: a.id,
               anchor: anchorOf(a.id),
@@ -4058,6 +4078,9 @@ class Component extends DCLogic {
                 ? (deliveries.length === 1 ? "Поставка данных" : "Поставки данных")
                 : (deliveries.length === 1 ? "Data delivery" : "Data deliveries"),
               deliveries,
+              hasAdopters: adopters.length > 0,
+              adoptersTitle: ru ? "Кто принял" : "Adopted by",
+              adopters,
               text: "", meta: card.route + " · " + when(en.at), hasSubject: false, subjectLabel: String(TYPE_WORDS(ru)[a.type] || a.type).toLocaleLowerCase(ru ? "ru-RU" : "en-US"), subjectStyle: "", subjectTitle: "", goSubject: () => {},
               actorName: identity.name, actionText: ru ? "создал" : "created", hasSubjectLink: false, hasNoteLink: false,
               hasAttachment: false, attachment: {}, responseID: "",
