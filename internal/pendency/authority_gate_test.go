@@ -2,6 +2,7 @@ package pendency
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -118,5 +119,58 @@ func TestEveryRowNamesAMoveItsOwnerMayActuallyMake(t *testing.T) {
 		sort.Strings(problems)
 		t.Fatalf("%d pendency row(s) name a move their owner cannot make (%d row(s) checked):\n  %s",
 			len(problems), checked, strings.Join(problems, "\n  "))
+	}
+}
+
+// TestEveryHumanGatedMoveIsMarkedAsOne closes the hole that let §18e/J3
+// through.
+//
+// The authority gate above asks fold.RoleAuthorizes, which resolves a role
+// to a SYSTEM and never looks at actor KIND. G3 is a rule about actor kind:
+// 03-domain.md §3.7 requires the approve/reject event to arrive in a PR
+// authored by the human owner's own account, and CC-021 says an agent that
+// approves a decision is ignored and flagged by the fold. So a row could
+// name `approve` as owed, pass the authority gate cleanly, and still be
+// telling an AGENT to make a move the tool refuses — which is precisely
+// what shipped.
+//
+// The check is a bare implication and adds no rule of its own: whatever
+// fold.HumanGate says about the owed transition must appear on the verdict.
+func TestEveryHumanGatedMoveIsMarkedAsOne(t *testing.T) {
+	t.Parallel()
+
+	var problems []string
+	gated := 0
+
+	for _, p := range fold.SubjectStates() {
+		verdict, err := Resolve(Input{
+			Kind: p.Kind, State: p.State,
+			From: "owner-sys", To: []string{"target-sys"},
+			AckRequested:       true,
+			RequiredApprovers:  []string{"approver-sys"},
+			ActiveParticipants: []string{"owner-sys", "target-sys"},
+			ParentFrom:         "parent-owner-sys",
+		})
+		if err != nil || verdict.Expected == "" {
+			continue
+		}
+		want := fold.HumanGate(verdict.Expected)
+		if want != "" {
+			gated++
+		}
+		if verdict.HumanGate != want {
+			problems = append(problems, string(p.Kind)+"/"+string(p.State)+
+				": owes "+verdict.Expected+", HumanGate="+strconv.Quote(verdict.HumanGate)+
+				", want "+strconv.Quote(want))
+		}
+	}
+
+	if gated == 0 {
+		t.Fatal("no owed transition in the whole table is human-gated — either fold.HumanGate lost its rows or the probe stopped reaching decision/proposed, and a green result here would mean nothing")
+	}
+	if len(problems) > 0 {
+		sort.Strings(problems)
+		t.Fatalf("%d row(s) disagree with fold.HumanGate (%d gated row(s) found):\n  %s",
+			len(problems), gated, strings.Join(problems, "\n  "))
 	}
 }

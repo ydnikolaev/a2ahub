@@ -118,21 +118,27 @@ func undrivablePaths() []undrivablePath {
 				"folded state reaches `verified`. Building that response is only possible via " +
 				"a plain `a2a new response --field parent=<XR-id>` + `a2a submit` (never `a2a " +
 				"respond`, which refuses unconditionally for a requirement — requirementRows() " +
-				"carries no TRespond row). Confirmed empirically (throwaway probe, this wave's " +
-				"own report, removed before landing): submitting that response DOES land, but " +
-				"its own `submit` event (subject=the response's own id) gets folded a SECOND " +
-				"time under the REQUIREMENT's own subject (mirror.go's gatherEvents: every event " +
-				"whose subject is a response known via `parent` to attach to this id), through " +
-				"applyPrimaryScoped keyed on (KindRequirement, requirement's-current-state, " +
-				"TSubmit) — a row requirementRows() does not have — which flags illegal-" +
-				"transition, permanently, on the requirement's own thread (observed: `a2a thread " +
-				"<XR-id> --json` -> flags: [{kind: illegal-transition, subject: <XS-id>}]). The " +
-				"requirement's own open_item verdict is ALSO unchanged by the landed response " +
-				"(still reads the pre-response 'the target owes a published contract version " +
-				"and a response' why-text) — HasFulfillingResponse never becomes true through " +
-				"any shipped surface. This wave's own report files it as a finding; fixing it " +
-				"is outside this brief's granted scope (internal/fold, internal/cli are off " +
-				"limits). The transition itself (requirement, acknowledged, satisfy) IS legal " +
+				"carries no TRespond row). " +
+				"HISTORY, KEPT DELIBERATELY: this entry originally rested on two FURTHER " +
+				"blockers, and BOTH HAVE SINCE BEEN FIXED — by the very wave that discovered " +
+				"them. (1) The response's own `submit` used to be folded a second time under " +
+				"the REQUIREMENT's subject, flagging illegal-transition permanently on its " +
+				"thread; gatherEvents now lets ONLY verify/dispute cross from a response into " +
+				"its parent's stream (mirror.go, pinned by " +
+				"TestOnlyResponseScopedEventsReachTheParent). (2) HasFulfillingResponse used to " +
+				"read fold's Result.Responses, permanently empty for a requirement; it now " +
+				"reads mirror.go's own `parent` pass. Leaving those two written here as live " +
+				"blockers is how a fixed bug gets re-fixed, so they are recorded as closed " +
+				"rather than deleted. " +
+				"WHAT IS ACTUALLY OPEN, and it is one thing: lifecycleValidateSatisfyRefs " +
+				"seeds the response at `submitted` and replays its own events, demanding " +
+				"`verified`. Fold-side that is kind-agnostic (applyResponseScoped keys on " +
+				"{KindResponse, ...} whatever the parent is, authorising RoleOwner against the " +
+				"PARENT's envelope), so the open question is purely whether the CLI routes " +
+				"`a2a verify <XS-id>` when the parent is an XR. UNVERIFIED either way — if it " +
+				"does route, both entries in this list collapse and the covered count is an " +
+				"understatement. Spec 11 §18c D-5 carries the same statement. " +
+				"The transition itself (requirement, acknowledged, satisfy) IS legal " +
 				"at the fold layer with no precondition on HasFulfillingResponse — declared " +
 				"above (coverage credit stands) — only DRIVING it with real, validating refs " +
 				"is blocked.",

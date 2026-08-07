@@ -174,6 +174,17 @@ type OpenItem struct {
 	// that must be justified, never a fall-through), including when
 	// WaitingOn is empty.
 	Why string `json:"why"`
+	// HumanGate names the §3.7 gate ExpectedTransition sits behind ("G3"),
+	// omitted when the owed move is one an agent makes on its own.
+	//
+	// It is rendered because fixing the relation alone would not have fixed
+	// the defect (spec 11 §18e/J3): the whole failure was a SURFACE naming a
+	// move the tool then refuses. An agent reading this item and seeing
+	// `your_move: true` with `expected_transition: approve` and no further
+	// signal will try it, and CC-021 says the fold ignores and flags exactly
+	// that. The field is what lets it branch instead — escalate to the human
+	// owner rather than emit an event that cannot land.
+	HumanGate string `json:"human_gate,omitempty"`
 }
 
 // ThreadFlag is one fold.Flag attributable to a thread member, rendered
@@ -807,6 +818,7 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 			Acks: fa.Result.Acks, Approvals: fa.Result.Approvals,
 			RequiredApprovers:  fa.Env.RequiredApprovers,
 			ActiveParticipants: activeParticipants(manifest, fa.Env.From),
+			LeftParticipants:   leftParticipants(manifest),
 			// P4 Edge 3, handed in exactly as inbox.go's call site hands it
 			// in. Both call sites MUST supply this: the moment one of them
 			// omits it, the two disagree about who a frozen `to:` addresses,
@@ -872,6 +884,7 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 			YourMove:           containsString(waiting, ownSystem),
 			ExpectedTransition: verdict.Expected,
 			Why:                verdict.Why,
+			HumanGate:          verdict.HumanGate,
 		})
 	}
 	return out
@@ -885,6 +898,27 @@ func activeParticipants(manifest space.Manifest, exclude string) []string {
 	var out []string
 	for _, p := range manifest.Participants {
 		if p.Status == "active" && p.System != exclude {
+			out = append(out, p.System)
+		}
+	}
+	return out
+}
+
+// leftParticipants returns the manifest systems whose membership status is
+// `left` — the caller-resolved FACT behind pendency.Input.LeftParticipants
+// (CC-062). It is the same read internal/validate does when it builds
+// RegisteredConsumer.Left, drawn here because pendency reads no manifest.
+//
+// Deliberately keyed on `left` and nothing else, rather than on "not
+// active": a status this function has never heard of must not silently
+// orphan a live counterparty. Membership vocabulary is the manifest
+// schema's to widen, and widening it here — where the consequence is
+// "somebody's debt is transferred away" — is how a schema addition turns
+// into a wrong verdict nobody wrote.
+func leftParticipants(manifest space.Manifest) []string {
+	var out []string
+	for _, p := range manifest.Participants {
+		if p.Status == "left" {
 			out = append(out, p.System)
 		}
 	}

@@ -78,6 +78,27 @@ type Input struct {
 	// from it.
 	HasFulfillingResponse bool
 
+	// LeftParticipants are systems whose manifest membership status is
+	// `left` — a caller-resolved FACT for the same reason ExtraAddressees
+	// is (this package reads no manifest), and the input CC-062 needs.
+	//
+	// A `left` system cannot write to the space, so a debt named on it can
+	// never be cleared by any legal act; the surfaces would show a frozen
+	// row with an owner who has no move. internal/validate already draws
+	// exactly this exclusion for exactly this reason — policy_retire.go's
+	// RegisteredConsumer.Left, "excluded from the ack set entirely, they
+	// never block retire and are never counted as un-acked" (§5.4 bullet
+	// (a)). Before this field, pendency and that policy disagreed about the
+	// same consumer.
+	//
+	// EMPTY MEANS "no one has left, OR the caller cannot see membership" —
+	// the two are not distinguished, deliberately. A caller with no manifest
+	// gets exactly today's behaviour rather than having every owner
+	// silently dropped; internal/cache, the caller that has the manifest,
+	// populates it. Named here rather than hidden because it is the one
+	// fail-open in this package.
+	LeftParticipants []string
+
 	// ParentFrom is the PARENT envelope's `from`, populated only when
 	// Kind is fold.KindResponse — verify/dispute resolve against the
 	// parent's envelope, never the response's own (domain 3.4.6).
@@ -101,6 +122,26 @@ type Verdict struct {
 	Owners   []string // systems the next move is owed by; nil/empty means nobody
 	Expected string   // the transition owed; "" when Owners is empty
 	Why      string   // the rule this verdict came from, always populated
+
+	// HumanGate names the §3.7 gate the owed transition sits behind ("G3"),
+	// or "" when the owed move is one an agent makes on its own. Read from
+	// fold.HumanGate — never a second list here.
+	//
+	// It is a FIELD rather than prose in Why because this product is
+	// AI-first: an agent reading a verdict must be able to branch on "I
+	// cannot self-serve this" without parsing a sentence. Its absence was a
+	// real defect (spec 11 §18e/J3): decision/proposed told the approver's
+	// system it owed `approve` while CC-021 says an agent doing exactly that
+	// is ignored and flagged by the fold — the surface naming a move the
+	// tool refuses, which is the one thing threads.md promises cannot
+	// happen. §18d's own P-i row carried "(G3, human)" and it was dropped in
+	// re-derivation; this is that qualifier restored.
+	//
+	// Note the owner is unchanged and deliberately so: the required
+	// approver's SYSTEM is still who the move is owed by. The gate says how
+	// the act must be produced (a PR under a human's own account), not that
+	// nobody owes it — dropping the owner would hide a real, blocking debt.
+	HumanGate string
 }
 
 // ErrNoRow is returned by Resolve when no row exists for the given
@@ -117,6 +158,35 @@ func Resolve(in Input) (Verdict, error) {
 	}
 
 	owners := dedupSorted(r.who(in))
+
+	// CC-062, applied to every row rather than to one kind: a debt named on
+	// a system that has LEFT the space can be cleared by no legal act,
+	// because that system can no longer write. The row itself is right about
+	// who WOULD owe the move; membership is what makes the answer useless.
+	// So the orphans are dropped from Owners, and when dropping them empties
+	// the set the pendency TRANSFERS TO THE SENDER as a cancel/re-route
+	// decision — spec 11 §18d's own qualifier, and AC-102.2's
+	// `orphaned-counterparty`.
+	//
+	// The transfer uses the table's documented third verdict shape (owners,
+	// no Expected): "cancel or re-route" is a judgement about the exchange,
+	// and which transition carries it differs by kind — naming one here
+	// would be this table inventing a move again, which is exactly the §15
+	// defect. Saying "you, and the act is not a move on this artifact" is
+	// the honest answer the shape exists for.
+	if orphans := intersect(owners, in.LeftParticipants); len(orphans) > 0 {
+		owners = without(owners, orphans)
+		if len(owners) == 0 {
+			return Verdict{
+				Owners:   owner(in),
+				Expected: "",
+				Why: "orphaned counterparty (CC-062): " + joinSystems(orphans) +
+					" left the space and can no longer write, so the " + r.expected +
+					" this row names can never land; the sender owes a cancel or re-route decision instead",
+			}, nil
+		}
+	}
+
 	if len(owners) == 0 {
 		why := r.why
 		if r.onEmpty != nil {
@@ -131,7 +201,15 @@ func Resolve(in Input) (Verdict, error) {
 	if r.whyFor != nil {
 		why = r.whyFor(in)
 	}
-	return Verdict{Owners: owners, Expected: expected, Why: why}, nil
+	return Verdict{
+		Owners:   owners,
+		Expected: expected,
+		Why:      why,
+		// Asked of fold, never listed here — the whole reason
+		// fold.HumanGate exists is that this fact already had two
+		// hand-maintained homes.
+		HumanGate: fold.HumanGate(expected),
+	}, nil
 }
 
 // key is the table's lookup key: one (kind, fromState) subject, exactly
@@ -196,16 +274,39 @@ func parentOwner(in Input) []string {
 
 // unackedTargets resolves to the addressed set minus whoever has already
 // acknowledged (D-025's per-recipient ack set); a broadcast expands to
-// the active manifest participants except the author. When
-// AckRequested is false it yields nobody unconditionally — delivery
-// completes on publish, no acknowledgement is required (domain 3.4.7).
+// the active manifest participants except the author.
+//
+// AckRequested gates the `to:`-matched half ONLY. This is two of the
+// architect's rows sharing one resolver, and they carry different
+// qualifiers (spec 11 §18d, §18e/J1):
+//
+//   - P-m — "XA published, ack_requested, recipient without a folded ack".
+//     Gated on the flag: domain 3.4.7 says delivery completes on publish and
+//     a plain announcement requires no acknowledgement.
+//   - P-n — "XA deprecation: any currently-member REGISTERED consumer
+//     without an ack, REGISTRY-matched rather than `to:`-matched". No flag
+//     qualifier anywhere in its statement, and none in what reads the same
+//     fact: 03-domain.md:115 conditions retire on "all registered consumers
+//     acked (`left` systems excluded)", and internal/validate's
+//     CheckRetirePrecondition implements exactly that with no ack_requested
+//     gate at all.
+//
+// Collapsing them behind one early return is how this shipped: a deprecation
+// announcement without the flag resolved to "nobody owes anything" while
+// POL-006 was refusing its retire on the very consumer being told it owed
+// nothing — two surfaces of one binary answering one question differently.
+// The same early return also swallowed ExtraAddressees, so P4 Edge 3's
+// late-adopter recovery never ran on a flagless announcement either.
+//
+// So the flag zeroes `targets` and nothing else; the caller-resolved
+// registry half is unioned after it and survives.
 func unackedTargets(in Input) []string {
-	if !in.AckRequested {
-		return nil
-	}
 	targets := in.To
 	if in.Broadcast {
 		targets = in.ActiveParticipants
+	}
+	if !in.AckRequested {
+		targets = nil
 	}
 	// A union, never a replacement: a system that WAS in `to:` and has
 	// since dropped the dependency must not watch the announcement stop
@@ -264,6 +365,62 @@ func dedupSorted(in []string) []string {
 	return out
 }
 
+// intersect returns the members of owners that also appear in other,
+// sorted and deduplicated. Used for CC-062's orphan detection only.
+func intersect(owners, other []string) []string {
+	if len(owners) == 0 || len(other) == 0 {
+		return nil
+	}
+	in := make(map[string]bool, len(other))
+	for _, s := range other {
+		if s != "" {
+			in[s] = true
+		}
+	}
+	var out []string
+	for _, o := range owners {
+		if in[o] {
+			out = append(out, o)
+		}
+	}
+	return dedupSorted(out)
+}
+
+// without returns owners minus drop, preserving owners' order (already
+// sorted by dedupSorted at the call site).
+func without(owners, drop []string) []string {
+	if len(drop) == 0 {
+		return owners
+	}
+	gone := make(map[string]bool, len(drop))
+	for _, s := range drop {
+		gone[s] = true
+	}
+	var out []string
+	for _, o := range owners {
+		if !gone[o] {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// joinSystems renders a system list for a Why string — deterministic,
+// because a verdict's rationale is compared in tests and read by agents.
+func joinSystems(systems []string) string {
+	switch len(systems) {
+	case 0:
+		return ""
+	case 1:
+		return systems[0]
+	}
+	out := systems[0]
+	for _, s := range systems[1:] {
+		out += ", " + s
+	}
+	return out
+}
+
 // --- row constructors, one per named resolver ---
 
 func nobodyRow(why string) row {
@@ -317,7 +474,12 @@ func unackedTargetsRow(expected, why string) row {
 		why:      why,
 		onEmpty: func(in Input) string {
 			if !in.AckRequested {
-				return "domain 3.4.7 — delivery completes on publish, no acknowledgement is required"
+				// Only honest once the registry half has also come back
+				// empty — with no ack_requested AND no registry-matched
+				// consumer there is genuinely nothing owed. A flagless
+				// deprecation whose consumer IS registry-matched never
+				// reaches here any more (§18e/J1).
+				return "domain 3.4.7 — delivery completes on publish, no acknowledgement is required, and no registry-matched consumer is owed one either"
 			}
 			return "every addressed target has already acknowledged"
 		},

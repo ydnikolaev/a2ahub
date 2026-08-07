@@ -112,6 +112,7 @@ func actionableReasons(fa foldedArtifact, me string, manifest space.Manifest) []
 		Acks: fa.Result.Acks, Approvals: fa.Result.Approvals,
 		RequiredApprovers:  env.RequiredApprovers,
 		ActiveParticipants: activeParticipants(manifest, env.From),
+		LeftParticipants:   leftParticipants(manifest),
 		// P4 Edge 3, handed in rather than re-derived: this system's own
 		// registry says it consumes the contract this announcement
 		// deprecates, so it is addressed even though the frozen `to:`

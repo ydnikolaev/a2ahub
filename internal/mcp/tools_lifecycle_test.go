@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 )
 
 func TestLifecycleHandlerAckLegalBatch(t *testing.T) {
@@ -484,5 +486,29 @@ func TestRefsFromList(t *testing.T) {
 	out := refsFromList([]string{" a ", "", "b"})
 	if len(out) != 2 || out[0].Ref != "a" || out[1].Ref != "b" {
 		t.Fatalf("unexpected refsFromList output: %+v", out)
+	}
+}
+
+// TestGateMarkerAgreesWithFold is the same binding internal/cli draws, for
+// this package's own copy of the verb table: the "always G3-gated" fact
+// lives in fold.HumanGate, and this asserts this table cannot drift from it.
+// See internal/cli/cmd_lifecycle_test.go's own doc for why three copies of
+// one rule is what made spec 11 §18e/J3 possible.
+func TestGateMarkerAgreesWithFold(t *testing.T) {
+	t.Parallel()
+
+	gated := 0
+	for _, spec := range LifecycleVerbTable {
+		want := fold.HumanGate(spec.Transition) != ""
+		if want {
+			gated++
+		}
+		if spec.GateMarker != want {
+			t.Errorf("verb %q (transition %q): GateMarker=%v, fold.HumanGate=%q — the two homes of one rule disagree",
+				spec.Verb, spec.Transition, spec.GateMarker, fold.HumanGate(spec.Transition))
+		}
+	}
+	if gated == 0 {
+		t.Fatal("no verb in the table is human-gated according to fold — the registry lost its rows and a green result here would mean nothing")
 	}
 }
