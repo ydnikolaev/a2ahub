@@ -120,8 +120,36 @@ test('contract version selection switches one atomic package without cross-versi
   assert.equal(values.cdIsVersion, true);
   assert.equal(values.cdVersionAvailable, true);
   assert.deepEqual(Array.from(values.cdVersionPins, p => p.system), ['checkout']);
-  assert.ok(values.cdVersionNormativeDocs.every(file => file.path.includes('/2.2.0/')));
-  assert.ok(values.cdVersionSupportingDocs.every(file => file.path.includes('/2.2.0/')));
+  // The version package is a collapsed tree now, not two flat `*Docs` lists.
+  // A chain of single-entry directories compacts into one row, so a package
+  // opens at `contracts/<contract>/<version>` and its files stay hidden until
+  // that row is toggled. Same assertion as before — one atomic package, no
+  // file from a sibling version — asked of the shape that actually ships.
+  //
+  // This test read `cdVersionNormativeDocs`/`cdVersionSupportingDocs`, which
+  // the tree replaced; `undefined.every` is not a weaker assertion, it is no
+  // assertion, and it went unseen because the web lane is deliberately outside
+  // `make check`.
+  const packageRoot = (rows, label) => {
+    const list = Array.from(rows);
+    assert.equal(list.length, 1, `${label}: a version package compacts to one root row`);
+    assert.equal(list[0].isDir, true, `${label}: that row is the package directory`);
+    return list[0];
+  };
+  const otherVersions = /\/(1\.5\.0|2\.0\.0|2\.1\.0)(\/|$)/;
+  const normRoot = packageRoot(values.cdVersionNormativeTree, 'normative');
+  const suppRoot = packageRoot(values.cdVersionSupportingTree, 'supporting');
+  assert.match(normRoot.label, /^contracts\/XC-atlas-order-envelope\/2\.2\.0$/);
+  assert.match(suppRoot.label, /^contracts\/XC-atlas-order-envelope\/2\.2\.0$/);
+  assert.equal(normRoot.expandedAttr, 'false', 'a package folder starts collapsed');
+
+  normRoot.toggle();
+  values = controller.renderVals();
+  const normFiles = Array.from(values.cdVersionNormativeTree).filter(row => row.isFile);
+  assert.ok(normFiles.length > 0, 'expanding the package root reveals its files');
+  assert.ok(normFiles.every(file => file.key.includes('|contracts/XC-atlas-order-envelope/2.2.0/')));
+  assert.ok(normFiles.every(file => !otherVersions.test(file.key)));
+
   assert.ok(values.cdVersionFacts.some(row => row.value === '22aa11aa11aa11aa11aa11aa11aa11aa11aa11aa'));
   assert.ok(values.cdVersionFacts.every(row => !String(row.value).includes('21aa11')));
   assert.equal(values.cdVersionProvenanceExpanded, 'false');
@@ -133,7 +161,23 @@ test('contract version selection switches one atomic package without cross-versi
   values = controller.renderVals();
   assert.equal(values.cdVersionLegacy, true);
   assert.deepEqual(Array.from(values.cdVersionPins, p => p.system), ['fulfillment']);
-  assert.ok(values.cdVersionNormativeDocs.every(file => file.path.includes('/1.5.0/')));
+  // Switching version opens a fresh, collapsed package: the expansion key
+  // carries the directory path, so 2.2.0's open folder is not this one.
+  //
+  // The assertion that carries the test's title is the one below it. Proven by
+  // mutation: widening `selectedConDetail` to every version's documents — the
+  // exact leak the component's own comment warns about — reddens these lines
+  // and nothing else in the suite.
+  const legacyRoot = packageRoot(values.cdVersionNormativeTree, 'normative@1.5.0');
+  assert.match(legacyRoot.label, /^contracts\/XC-atlas-order-envelope\/1\.5\.0$/);
+  assert.equal(legacyRoot.expandedAttr, 'false');
+  legacyRoot.toggle();
+  values = controller.renderVals();
+  const legacyFiles = Array.from(values.cdVersionNormativeTree).filter(row => row.isFile);
+  assert.ok(legacyFiles.length > 0);
+  assert.ok(legacyFiles.every(file => file.key.includes('|contracts/XC-atlas-order-envelope/1.5.0/')));
+  assert.ok(legacyFiles.every(file => !/\/(2\.0\.0|2\.1\.0|2\.2\.0)(\/|$)/.test(file.key)));
+
   assert.ok(values.cdVersionFacts.some(row => row.value === '15aa11aa11aa11aa11aa11aa11aa11aa11aa11aa'));
   assert.ok(values.cdVersionFacts.every(row => !String(row.value).includes('22aa11')));
 

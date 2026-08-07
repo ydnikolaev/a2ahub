@@ -101,14 +101,26 @@ test('dashboard card titles keep the deliberate detail > normal > teaser hierarc
   await openDashboard(page, { theme: 'light', locale: 'en', viewport: DESKTOP });
 
   const mediumTitle = page.locator('[data-operational-process="true"] [style*="--font-card-title-md"]').first();
-  const smallTitle = page.locator('[data-overview-attention="true"] [style*="--font-card-title-sm"]').first();
   await expect(mediumTitle).toBeVisible();
-  await expect(smallTitle).toBeVisible();
+  const mediumPx = await mediumTitle.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
 
-  const [mediumPx, smallPx] = await Promise.all([
-    mediumTitle.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
-    smallTitle.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
-  ]);
+  // A top-level list card is a top-level list card wherever it appears: the
+  // overview's attention rows carry the SAME medium token as the ones in
+  // Threads, Contracts and Exchange. They used to be small, which is what made
+  // the overview read as a different, lesser page — v0.19.9 unified them, and
+  // this line is what keeps them unified.
+  const attentionTitle = page.locator('[data-overview-attention="true"] [style*="--font-card-title-md"]').first();
+  await expect(attentionTitle).toBeVisible();
+  expect(await attentionTitle.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)))
+    .toBe(mediumPx);
+
+  // The small token did not disappear in that unification — it moved to the
+  // tier it is actually for: a card NESTED inside another card. A thread's
+  // pending-document rows are that tier, so sample it where it now lives.
+  await page.getByRole('button', { name: 'Threads', exact: true }).click();
+  const smallTitle = page.locator('[data-screen-label="Threads"] [style*="--font-card-title-sm"]').first();
+  await expect(smallTitle).toBeVisible();
+  const smallPx = await smallTitle.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
 
   await page.getByRole('button', { name: 'Exchange', exact: true }).click();
   const detailTitle = page.locator('.a2a-detail-title').first();
@@ -285,6 +297,10 @@ test('contract file modal stays bounded and scrollable on a mobile viewport', as
 
   await page.locator('.a2a-pick').first().click();
   await page.locator('[data-contract-version="2.2.0"]').click();
+  // The version package is a tree whose folders start collapsed, so a file row
+  // does not exist until its directory is expanded. Reaching the modal now
+  // costs one click more than it did when the package was a flat list.
+  await page.locator('[data-contract-tree-dir]').first().click();
   const file = page.locator('[data-contract-file-key]').first();
   await expect(file).toBeVisible();
   await file.click();
