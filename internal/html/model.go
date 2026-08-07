@@ -594,7 +594,11 @@ type TranscriptEvent struct {
 	ProducedBy   provenance.Producer    `json:"produced_by,omitzero"`
 	Consistency  *cache.ReceiptMismatch `json:"consistency,omitempty"`
 	ResponseID   string                 `json:"response_id,omitempty"`
-	Note         string                 `json:"note,omitempty"`
+	// Version is the event's own §5.2.2 version, carried so a contract's
+	// repeated `publish` rows are distinguishable. Three identical
+	// "published the contract" lines were the reported defect.
+	Version string `json:"version,omitempty"`
+	Note    string `json:"note,omitempty"`
 }
 
 // ThreadOpenItem describes one unresolved item and its legal next actions.

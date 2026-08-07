@@ -4051,7 +4051,19 @@ class Component extends DCLogic {
           const subject = arts.find(x => x.id === ev.subject) || {};
           const subjectType = String(TYPE_WORDS(ru)[subject.type] || (ru ? "документ" : "document")).toLocaleLowerCase(ru ? "ru-RU" : "en-US");
           const identity = identityOf(actor.system, actor.name || actor.system);
-          const actionText = ev.transition === "note" ? (ru ? "добавил" : "added") : (TRANSITION_PAST(ru)[ev.transition] || ev.transition);
+          // The event's own §5.2.2 version, appended when it carries one.
+          // Without this a contract with three `publish` events rendered three
+          // IDENTICAL rows — "published the contract", three times — with
+          // nothing saying which version each created and every link resolving
+          // to the version-less contract id. Observed on a real space:
+          // XC-axon-getvisa-ingest carries a version-less publish (the
+          // contract itself) followed by 1.0.0 and 1.0.1, and read as one
+          // event repeated.
+          const evVersion = String(ev.version || "").trim();
+          const baseAction = ev.transition === "note" ? (ru ? "добавил" : "added") : (TRANSITION_PAST(ru)[ev.transition] || ev.transition);
+          const actionText = evVersion
+            ? baseAction + (ru ? " версию " : " version ") + evVersion
+            : baseAction;
           const signal = EVENT_SIGNAL(ev.transition, ru);
           const consistency = ev.consistency;
           const noteDetail = note ? {

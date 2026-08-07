@@ -895,7 +895,8 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 			row.Event = &TranscriptEvent{
 				ULID: entry.Event.ULID, Subject: entry.Event.Subject, Transition: entry.Event.Transition,
 				ClaimedState: entry.Event.ClaimedState, ResponseID: entry.Event.ResponseID,
-				Note: entry.Event.Note, Actor: actor, ProducedBy: entry.Event.ProducedBy,
+				Version: entry.Event.Version,
+				Note:    entry.Event.Note, Actor: actor, ProducedBy: entry.Event.ProducedBy,
 				Consistency: entry.Event.Consistency,
 			}
 		}
