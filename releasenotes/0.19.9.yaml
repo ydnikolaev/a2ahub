@@ -135,13 +135,11 @@ changes:
       emits it directly is ignored. The pending answer named the approver's
       system without saying any of that, so an agent reading it would try a move
       the tool refuses. Open items now carry `human_gate` when the move they
-      name is gated, so an agent can escalate instead of failing — on `a2a
-      thread` and `a2a inbox --actionable`. NOT yet on `a2a html`: that surface
-      keeps its own projection of an open item and does not carry the field, so
-      an agent reading the dashboard still cannot see the gate. Named here
-      rather than left for a reader to discover, and tracked as the first item
-      of the dashboard work.
-    affects: ["a2a thread", "a2a inbox --actionable"]
+      name is gated, so an agent can escalate instead of failing. `a2a html`
+      carries it too now — see RN-01909-4; when this entry was first written it
+      did not, and saying so was better than a claim the dashboard could not
+      honour.
+    affects: ["a2a thread", "a2a inbox --actionable", "a2a html"]
     action:
       scope: none
       why: >
@@ -149,3 +147,38 @@ changes:
         refusing while nobody appeared to owe anything — the consumer blocking it
         is now named. Items owed by a departed system move to you on the next
         read.
+  - id: RN-01909-4
+    kind: fix
+    impact: normal
+    subject: "The dashboard says which version was published, who adopted it, and why nobody owes a move"
+    detail: >
+      The local dashboard was answering less than the tool knew, in four
+      separate places, and every one of them had the data already.
+      A contract with three publications rendered three identical lines —
+      "published the contract", three times — with nothing saying which version
+      each created and every link resolving to the version-less contract. The
+      events carried their version the whole time; only the view dropped it.
+      Rows now read "published contract 1.0.1", and the one that publishes the
+      contract ITSELF, carrying no version, is finally distinguishable from the
+      two that publish versions.
+      A counterparty adopting a contract was invisible on its thread. It now
+      appears beside the artifact, naming each consumer and the version it
+      actually pinned — which is the number that says whether a deprecation
+      still has anybody to wait for. It is deliberately not a timeline entry:
+      adoption is a registry fact, not something that happened on this thread,
+      and the timeline only ever shows what happened.
+      Open items now carry the reason behind them. "Nobody owes a move here" is
+      a conclusion the tool is willing to justify, and the dashboard was showing
+      the conclusion while withholding the justification. It also now marks a
+      move as human-gated where it is one, so an agent reading the dashboard
+      stops being told to make a move the protocol would ignore.
+      Finally, work-progress rows show the same faces and profile links as every
+      other surface, and the cards on the overview page match the ones in
+      Threads, Contracts and Exchange in heading size, padding and inner
+      structure.
+    affects: ["a2a html", "a2a dashboard"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The dashboard is rendered fresh from your local cache
+        every time, so the next `a2a html` shows all of it.
