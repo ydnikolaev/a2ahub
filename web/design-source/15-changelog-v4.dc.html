@@ -183,7 +183,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline
                   <div style="display:flex; align-items:flex-start; gap:9px; flex-wrap:nowrap; margin-bottom:8px;"><span style="flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap; row-gap:6px;">
                     <dc-import name="StatusPill" text="{{ c.kind }}" tone="{{ c.kindTone }}" size="small" hint-size="90px,24px"></dc-import>
                     <span style="font-size:15px; color:var(--muted);">impact {{ c.impact }}</span>
-                    </span><span class="a2a-fade-scroll" tabindex="0" aria-label="Affected surfaces" style="flex:0 1 46%; min-width:0; max-width:46%; padding-inline:10px; font-size:15px; color:var(--muted); white-space:nowrap;">{{ c.affects }}</span>
+                    </span><sc-if value="{{ c.hasAffects }}" hint-placeholder-val="{{ true }}"><span class="a2a-fade-scroll" tabindex="0" aria-label="Affected surfaces" style="flex:0 1 46%; min-width:0; max-width:46%; padding-inline:10px; font-size:15px; color:var(--muted); white-space:nowrap;">{{ c.affects }}</span></sc-if>
                   </div>
                   <div style="font-size:var(--font-card-title-md); line-height:var(--line-card-title-md); font-weight:600; margin-bottom:8px;">{{ c.subject }}</div>
                   <p style="margin:0 0 14px; font-size:16px; line-height:1.6; color:var(--body); max-width:700px;">{{ c.detail }}</p>
@@ -424,6 +424,13 @@ class Component extends DCLogic {
           return {
             kind: c.kind, kindTone: KIND_TONE[c.kind] || "neutral", impact: c.impact,
             affects: (c.affects || []).join(" · "),
+            // A change that names no surface must not render the labelled,
+            // focusable scroller at all. RN-01909-6 is the first entry with
+            // `affects: []`, and on the v0.19.9 tag it produced an empty
+            // <span aria-label="Affected surfaces" tabindex="0"> — a tab stop
+            // with a name and nothing to read. axe refuses it (aria-label on a
+            // span carrying no role) and it is a real defect either way.
+            hasAffects: (c.affects || []).length > 0,
             subject: c.subject, detail: c.detail,
             actionLabel: needs ? "action: " + act.scope : "no action needed",
             actionTone: needs ? "attention" : "healthy",
