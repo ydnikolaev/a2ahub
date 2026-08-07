@@ -144,11 +144,24 @@ func CloneOrFetch(ctx context.Context, dir, repoURL string, credential host.Cred
 // instead of losing its write outright (the live-e2e concurrent-writers
 // regression).
 func checkoutRemoteHead(ctx context.Context, lock *MirrorLock, dir string) error {
+	return checkoutRemoteHeadWithin(ctx, lock, dir, indexLockWaitBudget)
+}
+
+// checkoutRemoteHeadWithin is checkoutRemoteHead with the contention budget
+// passed in instead of compiled in. checkoutRemoteHead is the only production
+// caller and always hands it the constant.
+//
+// It exists for the same reason acquireMirrorLockWithin does: the test that
+// proves the BOUND had to spend the bound. "A planted index.lock that is never
+// released makes this give up with a typed contention error instead of
+// hanging" is a claim about the shape of the retry, not about the number 2,
+// and asserting it at the production budget cost 3s of wall clock.
+func checkoutRemoteHeadWithin(ctx context.Context, lock *MirrorLock, dir string, budget time.Duration) error {
 	if err := mutateTree(lock, dir); err != nil {
 		return err
 	}
 	branch := remoteHeadBranch(ctx, dir)
-	deadline := time.Now().Add(indexLockWaitBudget)
+	deadline := time.Now().Add(budget)
 	if err := runGitRetryLocked(ctx, dir, deadline, "checkout", "-B", branch, "origin/"+branch); err != nil {
 		return err
 	}
