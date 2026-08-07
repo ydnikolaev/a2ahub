@@ -227,3 +227,29 @@ changes:
         envelopes by hand, stop filling in `actor.name` — the templates no
         longer ask you to, and a value you type there is exactly how the wrong
         attribution above happened.
+  - id: RN-01909-6
+    kind: fix
+    impact: low
+    subject: "Three tests stopped spending a production timeout to prove the rule it enforces"
+    detail: >
+      Nothing about the shipped tool changes. This is recorded because the
+      files touched are production files, and a release note that stayed silent
+      about them would leave the next reader wondering what moved.
+      Three bounds — the cache's mirror-sync budget, the mirror lock's wait, and
+      the git index-lock retry — could only be reached by tests that spent them.
+      Each test asserts a SHAPE: the wait ends, and it ends with a typed
+      contention error rather than a hang. None of them asserts the number of
+      seconds. So the bound became a parameter whose production default is the
+      same constant it always was, and the tests hand in a short one:
+      13.05s to 0.48s, 6.16s to 0.39s, 3.03s to 0.32s.
+      Each test's upper bound was rebased onto its own budget at the same time.
+      Left pointing at the production constants they would have become 20s and
+      10s ceilings on runs that finish in a third of a second — unreachable, and
+      therefore asserting nothing. That is how a faster suite quietly becomes a
+      weaker one.
+    affects: []
+    action:
+      scope: none
+      why: >
+        Nothing to do. The timeouts a2a actually enforces are unchanged; only
+        the tests that prove them are cheaper to run.
