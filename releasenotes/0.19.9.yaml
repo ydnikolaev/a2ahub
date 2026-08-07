@@ -30,8 +30,12 @@ changes:
       What you will see change: settled work drops off open items and stops
       counting toward a thread's open count, so `settled` and `your_move` mean
       what they say; `a2a thread --json` gained `expected_transition` and `why`
-      on each open item; and a deprecation announcement that requested no
-      acknowledgement no longer sits in `--actionable` waiting for one.
+      on each open item; and a plain announcement that requested no
+      acknowledgement no longer sits in `--actionable` waiting for one. (A
+      DEPRECATION announcement is the exception, and RN-01909-3 explains why:
+      a consumer registered against the contract being deprecated still owes
+      that acknowledgement, flag or no flag, because it is what unblocks the
+      retire.)
       Nothing was removed from the record. Every legal move a settled artifact
       still has is listed exactly as before under `next_actions` — the change is
       that it is no longer counted as a debt. Everything that happened is still
@@ -73,3 +77,70 @@ changes:
         Nothing to do. If a handoff of yours was rejected and then went quiet,
         it will reappear as yours to answer on the next read — the record kept
         it the whole time, only the reminder was missing.
+  - id: RN-01909-2
+    kind: fix
+    impact: normal
+    subject: "Fulfilling a requirement no longer breaks the thread you fulfilled it on"
+    detail: >
+      A requirement's only prescribed fulfilment path is to author a response
+      naming it as parent and submit that. Doing so permanently flagged the
+      requirement's own thread as carrying an illegal transition, and a flagged
+      conversation never renders clean again.
+      Nothing was wrong with the response or the submission. The thread reader
+      gathered a response's events into its parent's stream, and then evaluated
+      them against the PARENT's type — so the response's own `submit` was asked
+      of a requirement, which has no such move. Only two events genuinely belong
+      to a parent (a verification and a dispute), and now only those two cross
+      over.
+      The same wave also corrected the requirement's own pending answer. It had
+      been telling the RECEIVING system to emit the satisfy event, which the
+      protocol reserves for the requester — so the surface named a move the tool
+      would then refuse. Before a response exists, the receiver owes the work
+      (and the tool says so plainly, without pretending it is a transition on
+      the requirement); once one lands, the requester owes the satisfy.
+      Both were found by conformance paths that walk a whole requirement
+      exchange end to end, not by testing either transition alone — neither
+      transition was the broken part.
+    affects: ["a2a thread", "a2a inbox --actionable", "a2a html"]
+    action:
+      scope: none
+      why: >
+        Nothing to do, and nothing to re-file. The flag was computed at read
+        time, never stored, so an affected requirement thread reads clean on the
+        next look; the response you already submitted stands.
+  - id: RN-01909-3
+    kind: fix
+    impact: normal
+    subject: "Three answers about whose move it is, corrected: deprecation acks, departed systems, and human-gated approvals"
+    detail: >
+      Two independent reviews read the pending-move rules against the domain
+      specification, and each finding was then re-checked against the source
+      before being believed. Three were real, and all three had the same shape —
+      the rule was right and the answer was not.
+      A deprecation announcement that did not explicitly request acknowledgements
+      told its registered consumers they owed nothing, while the retire check
+      refused to retire the contract until those same consumers acknowledged.
+      Two parts of the tool disagreed about one question. Requesting
+      acknowledgement governs who is addressed by NAME; a system registered as a
+      consumer of the contract being deprecated owes the acknowledgement
+      regardless, because that is the acknowledgement the retire waits on.
+      A counterparty that has LEFT the space kept owing its move forever. It can
+      no longer write, so no legal act could ever clear the row, and no agent had
+      an action that removed it. Such a system is now excluded, and the pending
+      move transfers to the sender as a cancel-or-re-route decision — the item
+      stays visible, with an owner who can actually act on it, instead of
+      freezing.
+      Approving a decision is a human gate: the event has to arrive through a
+      pull request under the approving human's own account, and an agent that
+      emits it directly is ignored. The pending answer named the approver's
+      system without saying any of that, so an agent reading it would try a move
+      the tool refuses. Open items now carry `human_gate` when the move they
+      name is gated, so an agent can escalate instead of failing.
+    affects: ["a2a thread", "a2a inbox --actionable", "a2a html"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. If a deprecation of yours seemed stuck — the retire
+        refusing while nobody appeared to owe anything — the consumer blocking it
+        is now named. Items owed by a departed system move to you on the next
+        read.
