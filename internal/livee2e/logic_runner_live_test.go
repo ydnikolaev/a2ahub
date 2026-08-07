@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -131,22 +133,56 @@ func TestLogicMatrix(t *testing.T) {
 	// against a tier that costs ~41 minutes. Sharing one build across both is
 	// a real optimisation and deliberately NOT taken here: this wave changes
 	// isolation only, so that a measurement of it measures isolation.
-	pathHarness, pathCleanup, err := newLogicHarness(ctx, t)
-	defer func() {
-		if cleanupErr := pathCleanup(); cleanupErr != nil {
-			t.Errorf("conformance-path harness cleanup failed: %v", cleanupErr)
+	// P10 W2 — how many path spaces to stand up. The bound is DERIVED from
+	// the machine, never a literal tuned on one laptop (spec 10 §5), and is
+	// overridable so a bisect can pin it: A2A_LOGIC_PATH_SPACES=1 reproduces
+	// the serial behaviour exactly, which is the property that makes a
+	// concurrency regression reversible by one constant instead of a revert.
+	//
+	// Capped at 4 rather than NumCPU outright: every path spawns real `a2a`
+	// subprocesses doing real git, so the ceiling is IO and process churn well
+	// before it is cores, and the spec's own §3 warns that the win is "four to
+	// six fold, and the number is to be measured, not claimed".
+	pathSpaces := runtime.NumCPU() / 2
+	if pathSpaces > 4 {
+		pathSpaces = 4
+	}
+	if pathSpaces < 1 {
+		pathSpaces = 1
+	}
+	if raw := os.Getenv("A2A_LOGIC_PATH_SPACES"); raw != "" {
+		n, convErr := strconv.Atoi(raw)
+		if convErr != nil || n < 1 {
+			t.Fatalf("A2A_LOGIC_PATH_SPACES=%q is not a positive integer — refusing to guess what was meant", raw)
 		}
-	}()
-	if err != nil {
-		t.Fatalf("newLogicHarness (conformance paths): %v", err)
+		pathSpaces = n
 	}
-	if err := pathHarness.Seam.Validate(); err != nil {
-		t.Fatalf("conformance-path harness seam did not validate: %v", err)
+
+	// Every harness is constructed HERE, on the test goroutine, before any
+	// parallel subtest starts. fakegithub.New calls t.Fatalf, which is illegal
+	// off the test goroutine (spec 10 §4), so the setup stays serial and only
+	// the group bodies run concurrently. ~1s each, deliberately paid.
+	pathHarnesses := make([]*harness, 0, pathSpaces)
+	for i := 0; i < pathSpaces; i++ {
+		ph, phCleanup, phErr := newLogicHarness(ctx, t)
+		defer func(idx int, cleanup func() error) {
+			if cleanupErr := cleanup(); cleanupErr != nil {
+				t.Errorf("conformance-path harness %d cleanup failed: %v", idx+1, cleanupErr)
+			}
+		}(i, phCleanup)
+		if phErr != nil {
+			t.Fatalf("newLogicHarness (conformance paths, space %d): %v", i+1, phErr)
+		}
+		if err := ph.Seam.Validate(); err != nil {
+			t.Fatalf("conformance-path harness %d seam did not validate: %v", i+1, err)
+		}
+		if ph.Seam.IsRealGitHub() {
+			t.Fatalf("conformance-path harness %d seam reports real GitHub — refusing to drive a write against it: %+v", i+1, ph.Seam)
+		}
+		pathHarnesses = append(pathHarnesses, ph)
 	}
-	if pathHarness.Seam.IsRealGitHub() {
-		t.Fatalf("conformance-path harness seam reports real GitHub — refusing to drive a write against it: %+v", pathHarness.Seam)
-	}
-	runConformancePaths(ctx, t, pathHarness)
+	t.Logf("conformance paths: %d space(s)", len(pathHarnesses))
+	runConformancePaths(ctx, t, pathHarnesses)
 
 	run := NewRunFor(logicOrg, logicRepo, Catalogue())
 	run.Tier = TierLogic
