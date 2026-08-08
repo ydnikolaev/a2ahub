@@ -37,14 +37,26 @@ func TestEveryRowNamesAMoveItsOwnerMayActuallyMake(t *testing.T) {
 	t.Parallel()
 
 	const ownerSys, targetSys, approverSys, parentOwnerSys = "owner-sys", "target-sys", "approver-sys", "parent-owner-sys"
+	// A SECOND and THIRD addressee, and they are the point of this probe.
+	const targetSys2, targetSys3 = "target-sys-2", "target-sys-3"
 
 	// One envelope shape for every probe: `from` is the artifact's own
-	// author, `to` its single addressee. RoleAuthorizes resolves against
-	// exactly these, so a row naming a system that is neither reads as
-	// unauthorised — which is the failure this gate is for.
+	// author, `to` its addressees. RoleAuthorizes resolves against exactly
+	// these, so a row naming a system that is neither reads as unauthorised
+	// — which is the failure this gate is for.
+	//
+	// `to` carries THREE systems, and the single-target probe this replaced
+	// could not see the violation it exists to catch. `to` has no `maxItems`
+	// on the base schema — only the four exchange types add one — so a
+	// requirement, contract, decision or announcement may legally name
+	// several. pendency's `target()` returns every entry while
+	// fold.roleAuthorizes compared against `To0()` alone, so a live artifact
+	// carried `waiting_on` naming three systems and `next_actions` naming
+	// one. With one addressee in the probe, the two agreed trivially and the
+	// gate stayed green through the exact divergence it was written for.
 	env := fold.Envelope{
 		From:              ownerSys,
-		To:                []string{targetSys},
+		To:                []string{targetSys, targetSys2, targetSys3},
 		RequiredApprovers: []string{approverSys},
 	}
 
@@ -54,10 +66,10 @@ func TestEveryRowNamesAMoveItsOwnerMayActuallyMake(t *testing.T) {
 	for _, p := range fold.SubjectStates() {
 		verdict, err := Resolve(Input{
 			Kind: p.Kind, State: p.State,
-			From: ownerSys, To: []string{targetSys},
+			From: ownerSys, To: []string{targetSys, targetSys2, targetSys3},
 			AckRequested:       true,
 			RequiredApprovers:  []string{approverSys},
-			ActiveParticipants: []string{ownerSys, targetSys},
+			ActiveParticipants: []string{ownerSys, targetSys, targetSys2, targetSys3},
 			ParentFrom:         parentOwnerSys,
 		})
 		if err != nil || len(verdict.Owners) == 0 {

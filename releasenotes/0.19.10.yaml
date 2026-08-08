@@ -171,6 +171,28 @@ changes:
       why: >
         Nothing to do. If you have a decision or handoff stuck because the
         other side left, `a2a withdraw` or `a2a supersede` now works on it.
+  - id: RN-01910-7
+    kind: fix
+    impact: high
+    subject: "An artifact addressed to several systems now lets every one of them act"
+    detail: >
+      A requirement, contract, decision or announcement may be addressed to
+      more than one system — nothing in the schema limits it, and only the
+      four exchange types do. When one was, the tooling told all of the
+      addressees the move was theirs and then accepted it from the first one
+      only. The other named systems saw `your_move: true`, tried the move
+      they had been told they owed, and were refused.
+      One `a2a thread --json` object could carry three systems under
+      "waiting on" and one under "next actions" at the same time. Every
+      addressee named on an artifact can now act on it.
+      The check that exists to catch precisely this disagreement could not
+      see it: its probe addressed a single system, so the two sides agreed
+      trivially. It now probes three.
+    action:
+      scope: none
+      why: >
+        Nothing to do. If you were named on a multi-addressee artifact and
+        your acknowledgement or decline was refused, it works now.
   - id: RN-01910-1
     kind: fix
     impact: normal

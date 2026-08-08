@@ -320,7 +320,26 @@ func roleAuthorizes(role Role, env Envelope, actorSystem string) bool {
 	case RoleOwner:
 		return actorSystem == env.From
 	case RoleTarget:
-		return env.To0() != "" && actorSystem == env.To0()
+		// EVERY named target, not just the first.
+		//
+		// `to` carries no `maxItems` on the base schema — only the four
+		// exchange types add one — so a requirement, contract, decision or
+		// announcement may legally name several. Comparing against To0()
+		// alone authorized the first and refused the rest, while
+		// internal/pendency's `target()` returns every entry: one
+		// `a2a thread --json` object carried `waiting_on` naming three
+		// systems and `next_actions` naming one, telling two of them their
+		// move was owed and leaving the fold to reject it.
+		//
+		// A surface naming an act the domain refuses is the P-2 violation
+		// this epic is written against, and it was live in the shipped
+		// binary.
+		for _, target := range env.To {
+			if target != "" && actorSystem == target {
+				return true
+			}
+		}
+		return false
 	case RoleApprover:
 		for _, a := range env.RequiredApprovers {
 			if a == actorSystem {
