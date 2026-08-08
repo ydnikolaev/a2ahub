@@ -119,16 +119,25 @@ func Show(typ string) ([]byte, error) {
 // template's OWN default `schema_format` rather than a rendered draft's
 // overrides, because a caller inspecting a template has no draft yet.
 //
-// Only `contract` has a second generation to select between today; every
-// other type has exactly the historical envelope/v1 template, and saying so
-// through one function keeps the caller from re-deriving the rule.
+// This is deliberately NOT "does typ have a registered envelope/v2 schema".
+// `announcement` and (as of P4 wave A) `work_request` both do, yet
+// RenderNew (template.go) only ever branches to envelope/v2 for `contract`
+// — and `work_request` additionally has no `templates/v2/work_request.md`
+// to show at all. So `contract` is admitted into the schema_format-driven
+// branch below, and `work_request` is admitted too (harmlessly: its v1
+// template carries no `schema_format` field, so ContractDraftSchemaFormat
+// returns "" and isJSONSchema("") is false, so the answer is unchanged —
+// still "envelope/v1"). Every other type is refused this branch outright,
+// same as before. Widening this list to select envelope/v2 by default for
+// work_request needs both a v2 template and a RenderNew change; neither is
+// this wave's to make (see this func's package doc / the P4 wave-A brief).
 func AuthoringEnvelopeSchema(typ string, isJSONSchema func(string) bool) (string, error) {
 	const op = "AuthoringEnvelopeSchema"
 	raw, err := rawTemplate(typ, "")
 	if err != nil {
 		return "", &Error{Op: op, Input: typ, Err: err}
 	}
-	if typ != "contract" || isJSONSchema == nil {
+	if (typ != "contract" && typ != "work_request") || isJSONSchema == nil {
 		return "envelope/v1", nil
 	}
 	format, err := ContractDraftSchemaFormat(raw)

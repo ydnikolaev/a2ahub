@@ -55,16 +55,74 @@ func TestVersionedCorpus_EnvelopeV2BaseFixtures(t *testing.T) {
 	}
 }
 
+// TestVersionedCorpus_UnregisteredEnvelopeV2TypeRefused pins the ABSENCE of
+// an envelope/v2 decoder for the five types that genuinely have none —
+// requirement, question, decision, handoff, response. This used to also
+// cover work_request; P4 wave A registers (envelope, v2, work_request), so
+// work_request now resolves and is proven separately below
+// (TestVersionedCorpus_WorkRequestV2Resolves). The ErrUnknownType behaviour
+// itself stays load-bearing for the five types that still lack a v2
+// schema — it is the honest refusal an older binary gives a type it never
+// had, per the plan's §Floor story.
 func TestVersionedCorpus_UnregisteredEnvelopeV2TypeRefused(t *testing.T) {
 	t.Parallel()
 	c := mustLoad(t)
 
-	_, err := c.ValidateEnvelope("requirement", "envelope/v2", toInstance(t, `
+	for _, typ := range []string{"requirement", "question", "decision", "handoff", "response"} {
+		t.Run(typ, func(t *testing.T) {
+			t.Parallel()
+			_, err := c.ValidateEnvelope(typ, "envelope/v2", toInstance(t, "schema: envelope/v2\ntype: "+typ+"\n"))
+			if !errors.Is(err, ErrUnknownType) {
+				t.Fatalf("ValidateEnvelope(%s, envelope/v2) error = %v, want ErrUnknownType", typ, err)
+			}
+		})
+	}
+}
+
+// validWorkRequestV2 is a fully valid envelope/v2 work_request instance,
+// carrying one attachment through the new attachments[] block (P4 wave A,
+// spec 04-possession.md §7).
+const validWorkRequestV2 = `
 schema: envelope/v2
-type: requirement
-`))
-	if !errors.Is(err, ErrUnknownType) {
-		t.Fatalf("ValidateEnvelope(requirement, envelope/v2) error = %v, want ErrUnknownType", err)
+id: XW-axon-20260808-p9d3
+type: work_request
+title: A valid v2 work request
+space: getvisa
+from: axon
+to: [seomatrix]
+thread: thread:axon-20260808-k3f9
+actor: {kind: agent, name: codex}
+created: "2026-08-08T08:40:00Z"
+category: data
+priority: p3
+blocking: true
+classification: internal
+acceptance_criteria:
+  - "Every code exists in the registry."
+attachments:
+  - ref: blob-1
+    digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    verification: required
+    retention: "168h"
+`
+
+// TestVersionedCorpus_WorkRequestV2Resolves proves the mutation the brief
+// names: remove the corpusDefinitions row for (envelope, v2, work_request)
+// and this test must fail, naming work_request as the type that should
+// resolve and does not.
+func TestVersionedCorpus_WorkRequestV2Resolves(t *testing.T) {
+	t.Parallel()
+	c := mustLoad(t)
+
+	violations, err := c.ValidateEnvelope("work_request", "envelope/v2", toInstance(t, validWorkRequestV2))
+	if errors.Is(err, ErrUnknownType) {
+		t.Fatalf("ValidateEnvelope(work_request, envelope/v2) error = %v, want work_request to RESOLVE (not ErrUnknownType) now that (envelope, v2, work_request) is registered", err)
+	}
+	if err != nil {
+		t.Fatalf("ValidateEnvelope(work_request, envelope/v2): %v", err)
+	}
+	if len(violations) != 0 {
+		t.Fatalf("a fully valid envelope/v2 work_request instance (with attachments[]) produced violations: %+v", violations)
 	}
 }
 

@@ -70,6 +70,7 @@ var corpusDefinitions = []corpusDefinition{
 	{key: corpusKey{family: familyEnvelope, version: 2, typ: typeBase}, path: "envelope/v2/base.schema.json", refTarget: true},
 	{key: corpusKey{family: familyEnvelope, version: 2, typ: "contract"}, path: "envelope/v2/contract.schema.json"},
 	{key: corpusKey{family: familyEnvelope, version: 2, typ: "announcement"}, path: "envelope/v2/announcement.schema.json"},
+	{key: corpusKey{family: familyEnvelope, version: 2, typ: "work_request"}, path: "envelope/v2/work_request.schema.json"},
 	{key: corpusKey{family: familyEvent, version: 1, typ: typeEvent}, path: "event/v1/event.schema.json"},
 	{key: corpusKey{family: familyEvent, version: 2, typ: typeEvent}, path: "event/v2/event.schema.json"},
 	{key: corpusKey{family: familyManifest, version: 1, typ: typeSpace}, path: "manifest/v1/space.schema.json"},

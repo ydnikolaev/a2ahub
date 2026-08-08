@@ -232,6 +232,25 @@ fields:
     deprecates: AUTHOR
     period: AUTHOR
     work: AUTHOR
+  envelope/v2/work_request:
+    type: TOOL
+    id: TOOL
+    category: AUTHOR
+    acceptance_criteria: AUTHOR
+    proposed_change: AUTHOR
+    to: AUTHOR
+    # P4 wave A (attachments[]): no writer exists yet (a2a attach is P4 wave
+    # D). Classified AUTHOR by this table's stated default ("everything else
+    # -> AUTHOR"), matching the existing precedent that event.digest and
+    # event/v2 refs[].ref are AUTHOR too, not TOOL, absent evidence of a
+    # minting writer. Re-derive once wave D's writer lands.
+    attachments: AUTHOR
+    attachments[].ref: AUTHOR
+    attachments[].digest: AUTHOR
+    attachments[].role: AUTHOR
+    attachments[].conforms_to: AUTHOR
+    attachments[].verification: AUTHOR
+    attachments[].retention: AUTHOR
   event/v1/event:
     schema: TOOL
     event: TOOL
