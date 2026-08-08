@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/provenance"
 )
@@ -207,6 +208,16 @@ type Item struct {
 	// when this system has no legal move on the artifact, or when the artifact
 	// belongs to no thread and there is therefore nothing to fold it against.
 	Prompt *AgentPrompt `json:"prompt,omitempty"`
+
+	// Outcome, Terminal and the three State* fields — the domain's answer to
+	// what this state means and what produced it. See ThreadOpenItem's own
+	// comment on the same five; the component reads them instead of deciding
+	// from state names, which is the whole point of the phase that added them.
+	Outcome    fold.Outcome `json:"outcome,omitempty"`
+	Terminal   bool         `json:"terminal"`
+	StateSince time.Time    `json:"stateSince,omitzero"`
+	StateBy    string       `json:"stateBy,omitempty"`
+	StateEvent string       `json:"stateEvent,omitempty"`
 }
 
 // AgentPrompt is the fact set a copied agent prompt is assembled from. The
@@ -686,6 +697,22 @@ type ThreadOpenItem struct {
 	ExpectedTransition string `json:"expected_transition,omitempty"`
 	Why                string `json:"why"`
 	HumanGate          string `json:"human_gate,omitempty"`
+
+	// Outcome, Terminal and the three State* fields are the domain's own
+	// answer, carried rather than recomputed. Every one of them existed in
+	// the browser before this, as three kind-agnostic literal sets and a
+	// guess — which is how `retired` rendered as cancelled and a `note`
+	// rendered as the latest protocol event.
+	//
+	// StateSince is NOT MovedAt. MovedAt is the activity clock and moves for
+	// a transition-free event too; this is the state clock. Both are carried,
+	// under distinct names, because a renderer choosing between them by feel
+	// is exactly what spec 00's final acceptance criterion forbids.
+	Outcome    fold.Outcome `json:"outcome,omitempty"`
+	Terminal   bool         `json:"terminal"`
+	StateSince time.Time    `json:"stateSince,omitzero"`
+	StateBy    string       `json:"stateBy,omitempty"`
+	StateEvent string       `json:"stateEvent,omitempty"`
 }
 
 // ThreadNextAction identifies an available transition and its allowed actors.

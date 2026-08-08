@@ -148,10 +148,11 @@ type eventProbe struct {
 		Tool    string `yaml:"tool"`
 		Version string `yaml:"version"`
 	} `yaml:"produced_by"`
-	At      string     `yaml:"at"`
-	Note    string     `yaml:"note"`
-	Refs    []refEntry `yaml:"refs"`
-	Version string     `yaml:"version"`
+	At         string     `yaml:"at"`
+	ReasonCode string     `yaml:"reason_code"`
+	Note       string     `yaml:"note"`
+	Refs       []refEntry `yaml:"refs"`
+	Version    string     `yaml:"version"`
 }
 
 // decodeEnvelope decodes raw's YAML frontmatter block into an

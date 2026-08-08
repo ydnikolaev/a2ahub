@@ -72,6 +72,39 @@ type Item struct {
 	// json:"-" (like LatestEventAt): a dashboard-only Go field, so inbox/outbox
 	// `--json` stay byte-stable for their existing consumers.
 	Description string `json:"-"`
+
+	// Outcome and Terminal are the domain's own answer to what this state
+	// MEANS and whether anything can follow it — fold.OutcomeOf and
+	// fold.Terminal, computed once here instead of four times by four
+	// renderers from three kind-agnostic literal sets.
+	//
+	// These GO ON THE WIRE, unlike LatestEventAt and Description above. The
+	// byte-stability convention those fields honour is real but external:
+	// no in-repo gate enforces it, there is no golden fixture over inbox,
+	// outbox or show JSON, and `pending_merge`, `sync_stale` and `new` all
+	// arrived exactly this way. seam.md §3 takes that decision explicitly
+	// rather than inheriting it.
+	//
+	// Outcome is NOT isOpen (openStates, below). They disagree in one cell
+	// and both are right: handoff/rejected is open there — §3.4.5 puts the
+	// producer on the hook to resubmit — and refused here, because the
+	// verification did not pass.
+	Outcome  fold.Outcome `json:"outcome,omitempty"`
+	Terminal bool         `json:"terminal"`
+	// StateSince, StateBy and StateEvent carry the event that produced
+	// State: when, by which system, and which event. Distinct from
+	// LatestEvent* above, which is the ACTIVITY clock and moves for a
+	// transition-free `note` too. The dashboard rendered the activity clock
+	// under a "moved" label and told readers an artifact had moved when a
+	// note was all that happened.
+	//
+	// `omitzero`, not `omitempty`: the latter has never applied to a struct
+	// value, so a zero time would serialize as "0001-01-01T00:00:00Z" on
+	// every artifact whose state nothing produced. seam.md §3 froze
+	// `omitempty` and carries the amendment.
+	StateSince time.Time `json:"state_since,omitzero"`
+	StateBy    string    `json:"state_by,omitempty"`
+	StateEvent string    `json:"state_event,omitempty"`
 	// YourMove is the canonical "whose move is it" projection for this
 	// artifact. It is dashboard-only for now: the stable inbox/outbox JSON
 	// shape remains unchanged while presentation code stops inferring action

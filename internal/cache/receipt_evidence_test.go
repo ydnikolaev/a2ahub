@@ -135,8 +135,8 @@ func TestReceiptEvidenceMetadataCannotAffectFoldOrOrdering(t *testing.T) {
 		"02": provenance.NewEventEvidence("closed", provenance.Actor{Model: "model-b", Session: "session:b"}, provenance.Producer{Tool: "partner", Version: "build-9"}),
 	}
 
-	resultA, mismatchesA := foldWithReceiptEvidence(fold.KindQuestion, env, events, membership, baseEvidence)
-	resultB, mismatchesB := foldWithReceiptEvidence(fold.KindQuestion, env, events, membership, perturbed)
+	resultA, mismatchesA, _ := foldWithReceiptEvidence(fold.KindQuestion, env, events, membership, baseEvidence)
+	resultB, mismatchesB, _ := foldWithReceiptEvidence(fold.KindQuestion, env, events, membership, perturbed)
 	if !reflect.DeepEqual(resultA, resultB) {
 		t.Fatalf("metadata changed fold result: A=%+v B=%+v", resultA, resultB)
 	}

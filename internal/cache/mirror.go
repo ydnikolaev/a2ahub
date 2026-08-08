@@ -95,6 +95,14 @@ type foldedArtifact struct {
 	// commit order and the ULID still preserve their actual order.
 	LatestEventSeq int64
 	LatestEventID  string
+	// StateEventID, StateBy and StateSince identify the event that produced
+	// Result.State, which is NOT the same event as LatestEvent* whenever the
+	// newest event is transition-free. All three are empty/zero when nothing
+	// produced the state — the zero-events fallback, or a history whose
+	// every event was flagged and moved nothing.
+	StateEventID string
+	StateBy      string
+	StateSince   time.Time
 	// EventAt maps a committed event's ULID to its `at` timestamp —
 	// fold.Event itself carries none (fold is a pure, timestamp-free
 	// package, §T1); this side table is this package's own way of
@@ -105,6 +113,10 @@ type foldedArtifact struct {
 	// the pure fold input. Notes never influence state, but read surfaces must
 	// not reduce a committed note event to an unexplained status change.
 	EventNotes map[string]string
+	// EventReasonCodes maps a committed event's ULID to its machine-readable
+	// `reason_code` — the field schemas/event/v1 defines and the MCP decline
+	// tool REQUIRES, which this package decoded nowhere until P0.
+	EventReasonCodes map[string]string
 	// LatestPublishVersion is the most recent `publish` event's `version`
 	// field for this artifact (D-023: contract versions resolve through
 	// publish events) — empty when none recorded (never published, or a
@@ -268,12 +280,16 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 
 	eventAt := make(map[string]time.Time, len(events))
 	eventNotes := make(map[string]string, len(events))
+	eventReasonCodes := make(map[string]string, len(events))
 	for _, re := range events {
 		if t, terr := time.Parse(time.RFC3339, re.Ev.At); terr == nil {
 			eventAt[re.Ev.Event] = t
 		}
 		if re.Ev.Note != "" {
 			eventNotes[re.Ev.Event] = re.Ev.Note
+		}
+		if re.Ev.ReasonCode != "" {
+			eventReasonCodes[re.Ev.Event] = re.Ev.ReasonCode
 		}
 	}
 
@@ -291,7 +307,7 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			RequiredApprovers: a.Env.RequiredApprovers,
 		}
 		evs := gatherEvents(a.Env.ID, parentOf, eventsBySubject)
-		result, mismatches := foldWithReceiptEvidence(env.Kind, env, evs, membership, eventEvidence)
+		result, mismatches, origin := foldWithReceiptEvidence(env.Kind, env, evs, membership, eventEvidence)
 		for eventULID, mismatch := range mismatches {
 			receiptMismatches[eventULID] = mismatch
 		}
@@ -335,7 +351,8 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			Env: a.Env, Result: result, Events: evs, EventEvidence: eventEvidence,
 			ReceiptMismatches: receiptMismatches, LatestEventAt: latest,
 			LatestEventSeq: latestEventSeq, LatestEventID: latestEventID,
-			EventAt: eventAt, EventNotes: eventNotes, EventRefs: eventRefs, LatestPublishVersion: latestPublishVersion,
+			StateEventID: origin.EventULID, StateBy: origin.By, StateSince: eventAt[origin.EventULID],
+			EventAt: eventAt, EventNotes: eventNotes, EventReasonCodes: eventReasonCodes, EventRefs: eventRefs, LatestPublishVersion: latestPublishVersion,
 			Seq: seq[a.RelPath], OrderKnown: orderKnown,
 			// Edge 3, evaluated once — see foldedArtifact's own comment.
 			// The lookup is on the contract id alone; myDependencies is
@@ -386,9 +403,13 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 // mismatch flag. This avoids reconstructing dynamic actual outcomes from the
 // final result and avoids diagnosing duplicate/idempotent replays that Apply
 // correctly treats as no-ops.
-func foldWithReceiptEvidence(kind fold.Kind, env fold.Envelope, events []fold.Event, membership fold.MembershipView, evidence map[string]provenance.EventEvidence) (fold.Result, map[string]ReceiptMismatch) {
+func foldWithReceiptEvidence(kind fold.Kind, env fold.Envelope, events []fold.Event, membership fold.MembershipView, evidence map[string]provenance.EventEvidence) (fold.Result, map[string]ReceiptMismatch, stateOrigin) {
 	if len(events) == 0 {
-		return fold.Fold(kind, env, nil, membership), nil
+		// The zero-events fallback is a state nothing produced — no event,
+		// no actor, no instant. An empty origin is the honest answer, and
+		// the read model renders it as absence rather than inventing a
+		// timestamp from the artifact's own file.
+		return fold.Fold(kind, env, nil, membership), nil, stateOrigin{}
 	}
 	sorted := append([]fold.Event(nil), events...)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -400,9 +421,18 @@ func foldWithReceiptEvidence(kind fold.Kind, env fold.Envelope, events []fold.Ev
 
 	result := fold.NewResult(kind)
 	var mismatches map[string]ReceiptMismatch
+	var origin stateOrigin
 	for _, event := range sorted {
 		evaluation := fold.EvaluateCandidate(kind, result, event, env, membership)
 		next := fold.Apply(kind, env, result, event, membership)
+		// Which event produced the CURRENT state, observed rather than
+		// inferred. Asking fold.TransitionFree instead would answer a
+		// different question: a state-moving transition that was illegal or
+		// unauthorized is flagged and changes nothing, and it must not
+		// claim authorship of a state it never moved.
+		if next.State != result.State {
+			origin = stateOrigin{EventULID: event.ULID, By: event.Actor.System}
+		}
 		if evaluation.Applicable && event.ClaimedState != fold.StateNone &&
 			event.ClaimedState != evaluation.Outcome && appendedReceiptMismatch(result, next, event.ULID) {
 			if mismatches == nil {
@@ -430,7 +460,19 @@ func foldWithReceiptEvidence(kind fold.Kind, env fold.Envelope, events []fold.Ev
 		}
 		result = next
 	}
-	return result, mismatches
+	return result, mismatches, origin
+}
+
+// stateOrigin identifies the event that produced an artifact's current
+// folded state — distinct from its LATEST event, which may be a `note` or
+// any other transition-free one.
+//
+// The dashboard rendered `movedAt` from the latest event of any kind and
+// said the artifact moved when nothing had. Both facts are real and both
+// are kept: LatestEvent* stays the activity clock, this is the state clock.
+type stateOrigin struct {
+	EventULID string
+	By        string // the acting system, as the event recorded it
 }
 
 func appendedReceiptMismatch(before, after fold.Result, eventULID string) bool {

@@ -957,6 +957,10 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 			// contract stopped prompting on its exchange row while its thread
 			// still handed an agent `publish, deprecate`.
 			Prompt: agentPromptFor(item.WaitingOn, self, actions, item.Type, outgoing),
+			// The domain's own verdict on the state, carried whole — the
+			// same discipline the pendency verdict above already follows.
+			Outcome: item.Outcome, Terminal: item.Terminal,
+			StateSince: item.StateSince, StateBy: item.StateBy, StateEvent: item.StateEvent,
 		})
 		if len(waiting) > 0 {
 			view.Settled = false
@@ -1181,6 +1185,10 @@ func toItem(it cache.Item, now time.Time, self string, open openItemIndex) Item 
 		Severity: severityOf(it, gate), Reasons: it.Reasons, PendingMerge: it.PendingMerge,
 		SyncStale: it.SyncStale, YourMove: it.YourMove, Description: it.Description,
 		Prompt: prompt,
+		// Carried, never recomputed. The whole point of the domain having
+		// answered is that this layer stops deciding.
+		Outcome: it.Outcome, Terminal: it.Terminal,
+		StateSince: it.StateSince, StateBy: it.StateBy, StateEvent: it.StateEvent,
 	}
 }
 

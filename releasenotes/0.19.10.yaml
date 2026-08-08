@@ -1,0 +1,64 @@
+schema: release-notes/v1
+version: "0.19.10"
+released: "2026-08-08"
+headline: "The domain says what a state means, and every surface reads the same answer"
+changes:
+  - id: RN-01910-0
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: "An agent reading a state now gets the domain's own answer to what it means and what produced it, instead of each surface deciding separately — which is the difference between a protocol and a set of conventions."
+    impact: normal
+    subject: "An artifact now reports what its state MEANS, and which event put it there"
+    detail: >
+      Four surfaces each decided, separately, what a state was worth telling you
+      about it. The dashboard did it from three lists of state names with no
+      notion of artifact type, and being type-blind is what made them wrong.
+      A retired contract was filed as cancelled — so an orderly retirement and
+      an abandoned artifact rendered as the same event, when retiring a contract
+      is how a contract's life is supposed to end. And `accepted` was one entry
+      for every type, though on a handoff it is where the exchange ENDS (it is
+      what a passing verification produces) and on a question it is the middle
+      of the work. One list could not be right for both.
+      The domain answers now, and every surface reads that answer instead of
+      computing its own. `a2a inbox`, `a2a outbox`, `a2a thread --json` and the
+      MCP read tools carry two new fields per artifact: `outcome` — one of open,
+      settled, refused, withdrawn, superseded — and `terminal`, whether any move
+      can still follow.
+      They are deliberately different questions, and the difference is not
+      pedantry: a rejected decision is `refused` AND non-terminal, because it can
+      still be superseded. A failed handoff is the same shape, and the producer
+      is the one who owes the resubmission.
+      Alongside them, three fields answer "since when, and who": `state_since`,
+      `state_by` and `state_event` name the event that produced the current
+      state. That is NOT the artifact's latest event. A `note` changes nothing
+      about state, and the dashboard had been reading the newest event of any
+      kind under a "moved" label — so an artifact looked like it had moved when
+      somebody had only commented. Both clocks are now carried, separately.
+    action:
+      scope: none
+      why: >
+        Nothing to do. The new fields are additive on read surfaces. If you
+        parse `a2a inbox --json` or `a2a thread --json`, prefer `outcome` and
+        `terminal` over matching state names yourself — matching names is what
+        every surface used to do, and it is what got `retired` and handoff
+        `accepted` wrong.
+  - id: RN-01910-1
+    kind: fix
+    impact: normal
+    subject: "The reason code an agent is required to supply when refusing now reaches the reader"
+    detail: >
+      Declining a request requires a machine-readable `reason_code` — the MCP
+      tool refuses the call without one, and both event schemas define the
+      field. It was written into the event and then read by nobody: the cache
+      that builds every read surface never decoded it, so the only thing a
+      receiver could act on was the prose note beside it.
+      That is exactly the substitution the code exists to prevent, and it had
+      been true since the field was introduced. `a2a thread --json` now carries
+      `reason_code` on the event that supplied one.
+    action:
+      scope: none
+      why: >
+        Nothing to do. Existing declines already carry the code in their
+        committed events, so it becomes visible with no migration and no
+        re-authoring.

@@ -316,6 +316,9 @@ func toItem(fa foldedArtifact, syncStale, pendingMerge bool) Item {
 		CreatedAt: parseTimeField(fa.Env.Created), CreatedSeq: fa.Seq, CreatedOrderKnown: fa.OrderKnown,
 		LatestEventAt: fa.LatestEventAt, LatestEventSeq: fa.LatestEventSeq, LatestEventID: fa.LatestEventID,
 		Description: bodySummary(fa.Raw, 240),
+		Outcome:     fold.OutcomeOf(fa.kind(), fa.Result.State),
+		Terminal:    fold.Terminal(fa.kind(), fa.Result.State),
+		StateSince:  fa.StateSince, StateBy: fa.StateBy, StateEvent: fa.StateEventID,
 	}
 }
 

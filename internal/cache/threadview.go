@@ -155,6 +155,18 @@ type TranscriptEvent struct {
 	// them — this is an envelope-version fact, not a lifecycle fact.
 	Version string `json:"version,omitempty"`
 	Note    string `json:"note,omitempty"`
+	// ReasonCode is the event's machine-readable reason — schemas/event/v1
+	// and /v2 both define it, and the MCP `decline` tool requires it
+	// (tools_lifecycle.go's RequireReasonCode). Until P0 this package's own
+	// eventProbe did not decode it, so the one field an agent is REQUIRED to
+	// supply when refusing reached no reader at all: the prose `note` beside
+	// it was the only thing a receiver could act on, which is exactly the
+	// substitution the code was introduced to end.
+	//
+	// Carried here rather than deferred to P6 because P6 builds
+	// `blocked_by.reason_code` on this vocabulary, and a vocabulary that
+	// reaches no reader cannot be built on.
+	ReasonCode string `json:"reason_code,omitempty"`
 }
 
 // TranscriptDerivedAdoption is a transcript entry's derived-kind payload: one
@@ -232,6 +244,21 @@ type OpenItem struct {
 	// that. The field is what lets it branch instead — escalate to the human
 	// owner rather than emit an event that cannot land.
 	HumanGate string `json:"human_gate,omitempty"`
+	// Outcome, Terminal and the three State* fields mirror cache.Item's own
+	// identically-named fields — see their doc comments there. They are on
+	// OpenItem too because `a2a thread --json` is one of the four surfaces
+	// spec 00's AC2 names, and a consumer must not have to fetch the same
+	// artifact through `inbox` to learn what its state means.
+	//
+	// Outcome answers a different question than Why/WaitingOn above: those
+	// are the pendency verdict (who owes a move), this is what the state
+	// MEANS. An item can be `refused` and still owe one — handoff/rejected
+	// is exactly that.
+	Outcome    fold.Outcome `json:"outcome,omitempty"`
+	Terminal   bool         `json:"terminal"`
+	StateSince time.Time    `json:"state_since,omitzero"`
+	StateBy    string       `json:"state_by,omitempty"`
+	StateEvent string       `json:"state_event,omitempty"`
 }
 
 // ThreadFlag is one fold.Flag attributable to a thread member, rendered
@@ -827,6 +854,7 @@ func buildTranscript(sorted []foldedArtifact, order string, adoptions map[string
 						ResponseID:  ev.ResponseID,
 						Version:     ev.Version,
 						Note:        fa.EventNotes[ev.ULID],
+						ReasonCode:  fa.EventReasonCodes[ev.ULID],
 					},
 				},
 				seq: ev.CommitSeq, at: at, isEvent: true, tieID: ev.ULID,
@@ -1118,6 +1146,11 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 			ExpectedTransition: verdict.Expected,
 			Why:                verdict.Why,
 			HumanGate:          verdict.HumanGate,
+			Outcome:            fold.OutcomeOf(fa.kind(), fa.Result.State),
+			Terminal:           fold.Terminal(fa.kind(), fa.Result.State),
+			StateSince:         fa.StateSince,
+			StateBy:            fa.StateBy,
+			StateEvent:         fa.StateEventID,
 		})
 	}
 	return out
