@@ -69,6 +69,9 @@ var outcomes = map[Kind]map[State]Outcome{
 		StateApproved:   OutcomeSettled,
 		StateRejected:   OutcomeRefused,
 		StateSuperseded: OutcomeSuperseded,
+		// P1 gave the proposer a withdraw exit, so a decision can now rest
+		// here. Same meaning as everywhere else: the asker took it back.
+		StateWithdrawn: OutcomeWithdrawn,
 	},
 	KindHandoff: {
 		StateSubmitted:    OutcomeOpen,

@@ -144,6 +144,33 @@ changes:
       why: >
         Nothing to do. `a2a new question --field origin=...` and the other four
         now work; drafts you do not ask for them on are unchanged.
+  - id: RN-01910-6
+    kind: fix
+    impact: high
+    subject: "A decision or handoff whose counterparty left the space can now be closed by its sender"
+    detail: >
+      Three situations left a sender with nothing they could legally do.
+      A decision waiting on approvers who have all left the space stayed
+      `proposed` forever: approving and rejecting belong to the approvers, and
+      the proposer had no move at all. A handoff whose receiver left stayed
+      `submitted` or `acknowledged` the same way — including handoffs carrying
+      committed payload bytes, which is the case that hurts.
+      The tooling already knew what should happen. When every counterparty has
+      left, the "whose move is it" answer transfers to the sender and says they
+      owe a cancel-or-re-route decision. That was a promise the transition
+      table could not keep: it named the sender and then refused every move
+      the sender could make.
+      A proposer can now withdraw or supersede their own proposed decision,
+      and a producer can supersede a submitted or acknowledged handoff.
+      Withdraw and supersede stay separate on purpose — "no longer needed" and
+      "replaced by this one" are different statements, and forcing one to
+      stand in for the other is the kind of substitution this work exists to
+      remove.
+    action:
+      scope: none
+      why: >
+        Nothing to do. If you have a decision or handoff stuck because the
+        other side left, `a2a withdraw` or `a2a supersede` now works on it.
   - id: RN-01910-1
     kind: fix
     impact: normal

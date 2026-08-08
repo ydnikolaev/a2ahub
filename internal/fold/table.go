@@ -199,6 +199,20 @@ func decisionRows() []Row {
 		{Kind: KindDecision, From: StateProposed, Transition: TApprove, To: StateDynamic, Role: RoleApprover, Scenario: "quorum-not-reached", Outcomes: []State{StateProposed}},
 		{Kind: KindDecision, From: StateProposed, Transition: TApprove, To: StateDynamic, Role: RoleApprover, Scenario: "quorum-reached", Outcomes: []State{StateApproved}},
 		{Kind: KindDecision, From: StateProposed, Transition: TReject, To: StateRejected, Role: RoleApprover},
+		// The proposer's own exits. Without them a decision whose required
+		// approvers have all left the space can never leave `proposed`:
+		// approve and reject belong to the approvers, and pendency correctly
+		// transfers the obligation to the sender in that case
+		// (pendency.go:177, "the sender owes a cancel or re-route decision
+		// instead") — a verdict the table could not honour, because the
+		// sender had no legal move at all.
+		//
+		// Withdraw and supersede say different things and both are needed:
+		// "no longer needed" and "replaced by this other decision". Making a
+		// proposer misstate one as the other is the substitution this epic
+		// exists to end.
+		{Kind: KindDecision, From: StateProposed, Transition: TWithdraw, To: StateWithdrawn, Role: RoleOwner},
+		{Kind: KindDecision, From: StateProposed, Transition: TSupersede, To: StateSuperseded, Role: RoleOwner},
 		// Fold cannot verify "author of the successor decision" or "new
 		// approved decision only" from the PREDECESSOR's own envelope
 		// facts (that authorship lives on a different, not-yet-existing
@@ -217,6 +231,14 @@ func handoffRows() []Row {
 		{Kind: KindHandoff, From: StateAcknowledged, Transition: TVerifyPass, To: StateAccepted, Role: RoleTarget},
 		{Kind: KindHandoff, From: StateAcknowledged, Transition: TVerifyFail, To: StateRejected, Role: RoleTarget},
 		{Kind: KindHandoff, From: StateRejected, Transition: TSupersede, To: StateSuperseded, Role: RoleOwner},
+		// The producer's exits before verification. A handoff carries
+		// committed payload bytes, and until now the producer could not
+		// withdraw or replace one once submitted: every exit from
+		// `submitted` and `acknowledged` belonged to the receiver. When the
+		// receiver leaves, pendency names the producer and the table had
+		// nothing for them.
+		{Kind: KindHandoff, From: StateSubmitted, Transition: TSupersede, To: StateSuperseded, Role: RoleOwner},
+		{Kind: KindHandoff, From: StateAcknowledged, Transition: TSupersede, To: StateSuperseded, Role: RoleOwner},
 	}
 }
 

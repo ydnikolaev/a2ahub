@@ -161,6 +161,28 @@ func uncoveredTransitions() []uncoveredTransition {
 	// used to live here is gone outright, not reworded, because nothing in
 	// it remains uncovered.
 
+	out = append(out, uncoveredClass(
+		"P1 added these four owner-side exits so a sender is never left with no "+
+			"legal move once every counterparty has left the space — the freeze "+
+			"internal/fold's TestEveryLiveStateHasAnOwnerSideExit derives from "+
+			"pendency.go:177's own transfer-to-sender verdict (\"the sender owes "+
+			"a cancel or re-route decision instead\"), which the table could not "+
+			"honour because the sender had no legal move at all. "+
+			"They are deliberately NOT driven by a path yet, and the reason is "+
+			"structural rather than effort: every one is departure-conditional "+
+			"in practice — a proposer withdrawing a decision whose approvers "+
+			"left, a producer replacing a handoff whose receiver left — and the "+
+			"catalogue has no way to make a participant LEAVE mid-scenario. "+
+			"Membership is manifest state, not an event a path can drive. P8 "+
+			"owns the catalogue and a departure-capable scenario belongs there; "+
+			"listing them here with the reason is the honest interim, and this "+
+			"gate refusing to let them pass unlisted is what forced it.",
+		tk(fold.KindDecision, fold.StateProposed, fold.TWithdraw),
+		tk(fold.KindDecision, fold.StateProposed, fold.TSupersede),
+		tk(fold.KindHandoff, fold.StateSubmitted, fold.TSupersede),
+		tk(fold.KindHandoff, fold.StateAcknowledged, fold.TSupersede),
+	)...)
+
 	return out
 }
 

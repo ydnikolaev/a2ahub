@@ -3,22 +3,29 @@ package fold
 import "testing"
 
 // TestRestingStatesUniverse pins the universe size the internal/livee2e
-// coverage split (W3d, exercised-vs-asserted) is checked against — 44
+// coverage split (W3d, exercised-vs-asserted) is checked against — 45
 // distinct (Kind, State) pairs today: every ordinary row's To, unioned with
 // every dynamic row's declared Outcomes, unioned with
 // postSubmissionState(kind) for all eight kinds. A count drift here is a
 // real signal (a table row's To changed, an Outcomes declaration changed,
 // or a kind's zero-events fallback changed), not test noise.
 //
-// It was 43 until P0. The 44th is {decision approved}: both approve rows
-// carry the StateDynamic sentinel and no decision row carries StateApproved
-// as a literal To, so the old "every To, sentinel skipped" derivation said
-// a state a quorum-reached approve demonstrably produces could not be
-// observed at rest.
+// It was 43 until P0 and 44 until P1, and both increments are worth knowing.
+//
+// The 44th is {decision approved}: both approve rows carry the StateDynamic
+// sentinel and no decision row carries StateApproved as a literal To, so the
+// old "every To, sentinel skipped" derivation said a state a quorum-reached
+// approve demonstrably produces could not be observed at rest.
+//
+// The 45th is {decision withdrawn}: P1 gave a proposer the exits their own
+// decision lacked, and a new To is a new resting state. That this test reds
+// when a row is added is the point — the universe is not something a phase
+// gets to change quietly, and P1 changing it is what forced P0's outcome map
+// to gain a meaning for the new state in the same commit.
 func TestRestingStatesUniverse(t *testing.T) {
 	got := RestingStates()
-	if len(got) != 44 {
-		t.Fatalf("RestingStates(): want 44 pairs, got %d: %+v", len(got), got)
+	if len(got) != 45 {
+		t.Fatalf("RestingStates(): want 45 pairs, got %d: %+v", len(got), got)
 	}
 }
 
