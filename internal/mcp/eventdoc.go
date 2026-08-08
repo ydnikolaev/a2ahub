@@ -10,7 +10,9 @@ package mcp
 
 import (
 	"context"
+
 	"fmt"
+	"github.com/ydnikolaev/a2ahub/internal/template"
 	"io"
 	"path/filepath"
 	"sort"
@@ -47,7 +49,28 @@ type eventDoc struct {
 type eventActor struct {
 	Kind   string `yaml:"kind"`
 	Name   string `yaml:"name"`
-	System string `yaml:"system"`
+	System string `yaml:"system"` // Model and Session are DETECTED (schemas/fill-classes.yaml) and were
+	// structurally unreachable from this writer until P3: both event schemas
+	// allow them, internal/validate's POL-016 bound-checks them, and no
+	// first-party writer could produce either — so the policy was dead code
+	// against everything that actually writes events.
+	Model   string `yaml:"model,omitempty"`
+	Session string `yaml:"session,omitempty"`
+}
+
+// eventActorFrom builds an event's actor block from the RESOLVED actor plus
+// this project's own system id — the MCP mirror of internal/cli's function
+// of the same name, and for the same reason: the mapping was written out at
+// nine call sites from a fold.Actor, which deliberately carries only what
+// the fold needs, so `model` and `session` had nowhere to come from.
+func eventActorFrom(resolved template.Actor, system string) eventActor {
+	return eventActor{
+		Kind:    resolved.Kind,
+		Name:    resolved.Name,
+		System:  system,
+		Model:   resolved.Model,
+		Session: resolved.Session,
+	}
 }
 
 type refEntry struct {

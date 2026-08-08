@@ -72,6 +72,31 @@ changes:
       why: >
         Nothing to do. This is an internal surface; the flag is stable if you
         want to read it, but nothing in normal operation calls it.
+  - id: RN-01910-3
+    kind: fix
+    impact: normal
+    subject: "The session the tool already detected now reaches the record"
+    detail: >
+      When an agent acts, a2a can tell which agent session it is — that is how
+      several events get correlated back to one conversation. The value was
+      detected and then dropped on the floor: no struct on the authoring path
+      had a field for it, no event writer carried it, and the policy check that
+      bounds its length had nothing to check, because nothing could produce one.
+      A session id did get written in exactly one place — the work-checkpoint
+      path — which mints its own instead of asking detection. So the value
+      existed twice and neither copy was the real one.
+      Drafts and events now carry `actor.session` and `actor.model` when the
+      environment supplies them. An explicit `--field actor.session=` still
+      wins: naming it yourself is adding information, not contradicting the
+      environment.
+      One asymmetry is deliberate. `a2a submit` records the actor from the
+      DRAFT it is submitting, not whoever ran the command — a submit event says
+      who authored the artifact, and re-resolving would credit the wrong party.
+    action:
+      scope: none
+      why: >
+        Nothing to do. If your harness exports a session id, new drafts and
+        events pick it up; existing records are untouched.
   - id: RN-01910-1
     kind: fix
     impact: normal

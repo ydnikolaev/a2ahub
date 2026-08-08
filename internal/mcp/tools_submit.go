@@ -125,6 +125,13 @@ type submitEnvelopeInfo struct {
 	Actor             struct {
 		Kind string `yaml:"kind"`
 		Name string `yaml:"name"`
+		// Model and Session are DETECTED and were decoded nowhere on this
+		// path, so a submit event could not carry them even when the draft
+		// it submits did. This probe reads the DRAFT's own actor rather
+		// than re-resolving one: the submit event records who authored the
+		// artifact being submitted, and that is a fact already on disk.
+		Model   string `yaml:"model"`
+		Session string `yaml:"session"`
 	} `yaml:"actor"`
 }
 
@@ -231,8 +238,11 @@ func buildSubmitRequest(deps SubmitDeps, fresh []submitItem) (space.SubmitReques
 			Subject:    it.env.ID,
 			Transition: transition,
 			State:      eventReceiptState(evaluation),
-			Actor:      eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
-			At:         now.UTC().Format(time.RFC3339),
+			Actor: eventActor{
+				Kind: actor.Kind, Name: actor.Name, System: actor.System,
+				Model: it.env.Actor.Model, Session: it.env.Actor.Session,
+			},
+			At: now.UTC().Format(time.RFC3339),
 		}
 		eventRaw, err := yaml.Marshal(evDoc)
 		if err != nil {

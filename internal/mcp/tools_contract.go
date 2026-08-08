@@ -362,7 +362,7 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 		deprecateEvent := eventDoc{
 			Schema: "event/v1", Event: deprecateEventID.String(), Space: probe.Space,
 			Subject: in.ID, Transition: fold.TDeprecate, State: eventReceiptState(deprecateEvaluation), Version: legalityVersion,
-			Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+			Actor: eventActorFrom(resolved, actor.System),
 			At:    now.UTC().Format(time.RFC3339),
 			Refs:  []refEntry{{Ref: in.Successor}},
 		}
@@ -452,7 +452,7 @@ func newContractDeprecateHandler(deps ContractDeps) HandlerFunc {
 		announcementPublishEvent := eventDoc{
 			Schema: "event/v1", Event: announcementPublishEventID.String(), Space: probe.Space,
 			Subject: announcementID, Transition: fold.TPublish, State: eventReceiptState(announcementEvaluation),
-			Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+			Actor: eventActorFrom(resolved, actor.System),
 			At:    now.UTC().Format(time.RFC3339),
 		}
 		announcementPublishRaw, merr := yaml.Marshal(announcementPublishEvent)
@@ -560,7 +560,7 @@ func newContractRetireHandler(deps ContractDeps) HandlerFunc {
 		ev := eventDoc{
 			Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
 			Subject: in.ID, Transition: fold.TRetire, State: eventReceiptState(retireEvaluation), Version: legalityVersion,
-			Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+			Actor: eventActorFrom(resolved, actor.System),
 			At:    now.UTC().Format(time.RFC3339),
 			Note:  note,
 		}

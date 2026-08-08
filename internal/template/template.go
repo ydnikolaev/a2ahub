@@ -22,6 +22,21 @@ type Actor struct {
 	Kind  string // "human" | "agent"
 	Name  string
 	Model string // optional; omitted from the rendered draft when empty
+	// Session identifies the acting agent's own session, so several events
+	// correlate back to one conversation.
+	//
+	// It is DETECTED (schemas/fill-classes.yaml), and until P3 it was
+	// detected and then thrown away: agentid.Agent carried it, this struct
+	// had no field for it, fillActor had no case for it, and every event
+	// writer's actor struct lacked it too. The schemas allow it on every
+	// envelope and event, and internal/validate's POL-016 bound-checks it —
+	// against nothing, because no first-party writer could produce it.
+	//
+	// The one place a session id did get written is the v2 work-checkpoint
+	// path, which mints its own rather than consulting detection. That is
+	// the shape of the defect: the value existed, twice, and neither copy
+	// was the detected one.
+	Session string
 }
 
 // Input carries every value Render needs that must come from the caller
@@ -470,6 +485,24 @@ func fillActor(node *yaml.Node, a Actor) {
 				continue // omit, don't emit an empty model value
 			}
 			setScalar(val, a.Model)
+		case "session":
+			// Detection fills it when it fired; otherwise the template's own
+			// key is LEFT ALONE, deliberately unlike `model` above.
+			//
+			// Dropping the key when the session is unknown looks symmetric
+			// and is not: `actor.session` is required on a v2 work-checkpoint
+			// announcement, and `a2a work start` supplies it through the
+			// dotted-field pass — which refuses a key the template does not
+			// carry. Removing it here turned that supported path into
+			// "template has no actor.session key", caught by
+			// TestWorkProductionWiringMutations.
+			//
+			// Before P3 there was no case here at all, so a detected session
+			// was thrown away and an agent had to type by hand a value the
+			// tool already knew.
+			if a.Session != "" {
+				setScalar(val, a.Session)
+			}
 		}
 		kept = append(kept, key, val)
 	}

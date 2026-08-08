@@ -692,7 +692,7 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 	deprecateEvent := lifecycleEventDoc{
 		Schema: "event/v1", Event: deprecateEventID.String(), Space: probe.Space,
 		Subject: id, Transition: fold.TDeprecate, State: contractReceiptState(deprecateEvaluation), Version: legalityVersion,
-		Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+		Actor: eventActorFrom(resolved, actor.System),
 		At:    now.UTC().Format(time.RFC3339),
 		Refs:  []lifecycleRefEntry{{Ref: *successor}},
 	}
@@ -820,7 +820,7 @@ func (c *ContractCommand) runDeprecate(ctx context.Context, args []string, stdio
 	announcementPublishEvent := lifecycleEventDoc{
 		Schema: "event/v1", Event: announcementPublishEventID.String(), Space: probe.Space,
 		Subject: announcementID, Transition: fold.TPublish, State: contractReceiptState(announcementEvaluation),
-		Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+		Actor: eventActorFrom(resolved, actor.System),
 		At:    now.UTC().Format(time.RFC3339),
 	}
 	announcementPublishRaw, merr := yaml.Marshal(announcementPublishEvent)
@@ -953,7 +953,7 @@ func (c *ContractCommand) runRetire(ctx context.Context, args []string, stdio IO
 	ev := lifecycleEventDoc{
 		Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
 		Subject: id, Transition: fold.TRetire, State: contractReceiptState(retireEvaluation), Version: legalityVersion,
-		Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+		Actor: eventActorFrom(resolved, actor.System),
 		At:    now.UTC().Format(time.RFC3339),
 		Note:  note,
 	}

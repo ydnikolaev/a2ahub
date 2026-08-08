@@ -130,7 +130,7 @@ func newLifecycleHandler(spec lifecycleVerbSpec, deps WriteDeps) HandlerFunc {
 			ev := eventDoc{
 				Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
 				Subject: id, Transition: spec.Transition, State: eventReceiptState(evaluation),
-				Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+				Actor: eventActorFrom(resolved, actor.System),
 				At:    now.UTC().Format(time.RFC3339),
 			}
 			if in.Reason != "" {
@@ -358,7 +358,7 @@ func newRespondHandler(deps WriteDeps) HandlerFunc {
 			respondEvent := eventDoc{
 				Schema: "event/v1", Event: respondEventID.String(), Space: parentProbe.Space,
 				Subject: parentID, Transition: fold.TRespond, State: eventReceiptState(evaluation),
-				Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+				Actor: eventActorFrom(resolved, actor.System),
 				At:    now.UTC().Format(time.RFC3339),
 				Refs:  []refEntry{{Ref: responseID}},
 			}
@@ -500,7 +500,7 @@ func newVerifyHandler(deps WriteDeps) HandlerFunc {
 			verifyEvent := eventDoc{
 				Schema: "event/v1", Event: verifyEventID.String(), Space: parentProbe.Space,
 				Subject: responseID, Transition: fold.TVerify, State: eventReceiptState(evaluation),
-				Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+				Actor: eventActorFrom(resolved, actor.System),
 				At:    now.UTC().Format(time.RFC3339),
 			}
 			verifyRaw, merr := yaml.Marshal(verifyEvent)
@@ -526,7 +526,7 @@ func newVerifyHandler(deps WriteDeps) HandlerFunc {
 				closeEvent := eventDoc{
 					Schema: "event/v1", Event: closeEventID.String(), Space: parentProbe.Space,
 					Subject: parentID, Transition: fold.TClose, State: eventReceiptState(closeEvaluation),
-					Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+					Actor: eventActorFrom(resolved, actor.System),
 					At:    now.UTC().Format(time.RFC3339),
 				}
 				closeRaw, merr := yaml.Marshal(closeEvent)
@@ -599,7 +599,7 @@ func newDisputeHandler(deps WriteDeps) HandlerFunc {
 			ev := eventDoc{
 				Schema: "event/v1", Event: eventID.String(), Space: parentProbe.Space,
 				Subject: responseID, Transition: fold.TDispute, State: eventReceiptState(evaluation),
-				Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+				Actor: eventActorFrom(resolved, actor.System),
 				At:    now.UTC().Format(time.RFC3339),
 				Note:  in.Reason, ReasonCode: in.ReasonCode,
 			}
@@ -670,7 +670,7 @@ func newNoteHandler(deps WriteDeps) HandlerFunc {
 			ev := eventDoc{
 				Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
 				Subject: id, Transition: fold.TNote, State: eventReceiptState(evaluation),
-				Actor: eventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+				Actor: eventActorFrom(resolved, actor.System),
 				At:    now.UTC().Format(time.RFC3339),
 				Note:  in.Note,
 			}

@@ -40,9 +40,10 @@ import (
 // "A2A_ACTOR_*" prefix and the resolution order, not literal variable
 // names — see this phase's Deviations report for the explicit call-out).
 const (
-	envActorKind  = "A2A_ACTOR_KIND"
-	envActorName  = "A2A_ACTOR_NAME"
-	envActorModel = "A2A_ACTOR_MODEL"
+	envActorKind    = "A2A_ACTOR_KIND"
+	envActorName    = "A2A_ACTOR_NAME"
+	envActorModel   = "A2A_ACTOR_MODEL"
+	envActorSession = "A2A_ACTOR_SESSION"
 )
 
 // ActorFlags carries the explicit --actor-* flag values a verb parsed —
@@ -51,6 +52,11 @@ type ActorFlags struct {
 	Kind  string
 	Name  string
 	Model string
+	// Session is the explicit override for the detected session id. It has
+	// no --actor-session flag today: the dotted-field pass already accepts
+	// `--field actor.session=`, and adding a second spelling of one override
+	// would be the duplication this whole classification exists to remove.
+	Session string
 }
 
 // HarnessDefaults is the "harness adapter defaults" source (§7.4 order,
@@ -168,23 +174,26 @@ func resolveActorFrom(flags ActorFlags, harness HarnessDefaults, cfg ConfigActor
 					// names the product reliably and the model only
 					// sometimes, so a caller who knows it is adding
 					// information rather than contradicting any.
-					Model: firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model, detected.Model),
+					Model:   firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model, detected.Model),
+					Session: firstNonEmpty(flags.Session, env(envActorSession), detected.Session),
 				}, nil
 			}
 			if claimed == "" {
 				return template.Actor{
-					Kind:  "agent",
-					Name:  detected.ID,
-					Model: firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model, detected.Model),
+					Kind:    "agent",
+					Name:    detected.ID,
+					Model:   firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model, detected.Model),
+					Session: firstNonEmpty(flags.Session, env(envActorSession), detected.Session),
 				}, nil
 			}
 			// The caller named something that is not a rival agent — a
 			// person, a service, a test fixture. That is a different kind
 			// of claim and it stands; detection only contributes the model.
 			return template.Actor{
-				Kind:  firstNonEmpty(explicitKind, "agent"),
-				Name:  claimed,
-				Model: firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model, detected.Model),
+				Kind:    firstNonEmpty(explicitKind, "agent"),
+				Name:    claimed,
+				Model:   firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model, detected.Model),
+				Session: firstNonEmpty(flags.Session, env(envActorSession), detected.Session),
 			}, nil
 		}
 	}
@@ -197,6 +206,9 @@ func resolveActorFrom(flags ActorFlags, harness HarnessDefaults, cfg ConfigActor
 		Kind:  firstNonEmpty(explicitKind, "agent"),
 		Name:  name,
 		Model: firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model),
+		// No detection fired on this branch, so there is no detected
+		// session to carry — only an explicit one.
+		Session: firstNonEmpty(flags.Session, env(envActorSession)),
 	}, nil
 }
 
@@ -663,6 +675,14 @@ type submitEnvelopeProbe struct {
 	Actor             struct {
 		Kind string `yaml:"kind"`
 		Name string `yaml:"name"`
+		// Model and Session are DETECTED (schemas/fill-classes.yaml) and
+		// were decoded nowhere on this path. The submit event records who
+		// authored the artifact being submitted, so it reads the DRAFT's
+		// own actor — a fact already on disk — rather than re-resolving one
+		// at submit time, which would attribute the authoring to whoever
+		// happened to run `a2a submit`.
+		Model   string `yaml:"model"`
+		Session string `yaml:"session"`
 	} `yaml:"actor"`
 }
 

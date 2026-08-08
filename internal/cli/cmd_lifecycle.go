@@ -190,7 +190,31 @@ type lifecycleEventDoc struct {
 type lifecycleEventActor struct {
 	Kind   string `yaml:"kind"`
 	Name   string `yaml:"name"`
-	System string `yaml:"system"`
+	System string `yaml:"system"` // Model and Session are DETECTED (schemas/fill-classes.yaml) and were
+	// structurally unreachable from this writer until P3: both event schemas
+	// allow them, internal/validate's POL-016 bound-checks them, and no
+	// first-party writer could produce either — so the policy was dead code
+	// against everything that actually writes events.
+	Model   string `yaml:"model,omitempty"`
+	Session string `yaml:"session,omitempty"`
+}
+
+// eventActorFrom builds an event's actor block from the RESOLVED actor plus
+// this project's own system id.
+//
+// It exists so the mapping lives in one place. Every call site used to write
+// `lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System}`
+// from a fold.Actor — and fold.Actor deliberately carries only what the fold
+// needs to resolve a role, so `model` and `session` had nowhere to come from.
+// Copying the mapping to eight sites is also how a ninth gets forgotten.
+func eventActorFrom(resolved template.Actor, system string) lifecycleEventActor {
+	return lifecycleEventActor{
+		Kind:    resolved.Kind,
+		Name:    resolved.Name,
+		System:  system,
+		Model:   resolved.Model,
+		Session: resolved.Session,
+	}
 }
 
 type lifecycleRefEntry struct {
@@ -872,7 +896,7 @@ func (c *LifecycleCommand) Run(ctx context.Context, args []string, stdio IO) int
 		ev := lifecycleEventDoc{
 			Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
 			Subject: id, Transition: c.spec.Transition, State: lifecycleReceiptState(evaluation),
-			Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+			Actor: eventActorFrom(resolved, actor.System),
 			At:    now.UTC().Format(time.RFC3339),
 		}
 		if *reason != "" {
@@ -1228,7 +1252,7 @@ func (c *RespondCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		respondEvent := lifecycleEventDoc{
 			Schema: "event/v1", Event: respondEventID.String(), Space: parentProbe.Space,
 			Subject: parentID, Transition: fold.TRespond, State: lifecycleReceiptState(evaluation),
-			Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+			Actor: eventActorFrom(resolved, actor.System),
 			At:    now.UTC().Format(time.RFC3339),
 			Refs:  []lifecycleRefEntry{{Ref: responseID}},
 		}
@@ -1343,7 +1367,7 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		verifyEvent := lifecycleEventDoc{
 			Schema: "event/v1", Event: verifyEventID.String(), Space: parentProbe.Space,
 			Subject: responseID, Transition: fold.TVerify, State: lifecycleReceiptState(evaluation),
-			Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+			Actor: eventActorFrom(resolved, actor.System),
 			At:    now.UTC().Format(time.RFC3339),
 		}
 		verifyRaw, merr := yaml.Marshal(verifyEvent)
@@ -1375,7 +1399,7 @@ func (c *VerifyCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			closeEvent := lifecycleEventDoc{
 				Schema: "event/v1", Event: closeEventID.String(), Space: parentProbe.Space,
 				Subject: parentID, Transition: fold.TClose, State: lifecycleReceiptState(closeEvaluation),
-				Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+				Actor: eventActorFrom(resolved, actor.System),
 				At:    now.UTC().Format(time.RFC3339),
 			}
 			closeRaw, merr := yaml.Marshal(closeEvent)
@@ -1523,7 +1547,7 @@ func (c *DisputeCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		ev := lifecycleEventDoc{
 			Schema: "event/v1", Event: eventID.String(), Space: parentProbe.Space,
 			Subject: responseID, Transition: fold.TDispute, State: lifecycleReceiptState(evaluation),
-			Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+			Actor: eventActorFrom(resolved, actor.System),
 			At:    now.UTC().Format(time.RFC3339),
 			Note:  *reason, ReasonCode: *reasonCode,
 		}
@@ -1627,7 +1651,7 @@ func (c *NoteCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		ev := lifecycleEventDoc{
 			Schema: "event/v1", Event: eventID.String(), Space: probe.Space,
 			Subject: id, Transition: fold.TNote, State: lifecycleReceiptState(evaluation),
-			Actor: lifecycleEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+			Actor: eventActorFrom(resolved, actor.System),
 			At:    now.UTC().Format(time.RFC3339),
 			Note:  *noteText,
 		}

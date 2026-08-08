@@ -227,7 +227,13 @@ type submitFunnel interface {
 type submitEventActor struct {
 	Kind   string `yaml:"kind"`
 	Name   string `yaml:"name"`
-	System string `yaml:"system"`
+	System string `yaml:"system"` // Model and Session are DETECTED (schemas/fill-classes.yaml) and were
+	// structurally unreachable from this writer until P3: both event schemas
+	// allow them, internal/validate's POL-016 bound-checks them, and no
+	// first-party writer could produce either — so the policy was dead code
+	// against everything that actually writes events.
+	Model   string `yaml:"model,omitempty"`
+	Session string `yaml:"session,omitempty"`
 }
 
 // submitEventDoc is this file's own minimal event/v1 document builder —
@@ -637,7 +643,7 @@ func (c *SubmitCommand) buildRequest(fresh []submitItem) (space.SubmitRequest, [
 			Subject:    it.env.ID,
 			Transition: transition,
 			State:      string(evaluation.Outcome),
-			Actor:      submitEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System},
+			Actor:      submitEventActor{Kind: actor.Kind, Name: actor.Name, System: actor.System, Model: it.env.Actor.Model, Session: it.env.Actor.Session},
 			At:         now.UTC().Format(time.RFC3339),
 		}
 		eventRaw, err := yaml.Marshal(eventDoc)
