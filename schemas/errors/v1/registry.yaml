@@ -158,6 +158,11 @@ entries:
     title: Work subject or waiting system is invalid in checkpoint context
     applies_to: envelope/v2 work checkpoint V2/V3 validation when subject_ref is not the same thread or a resolved referenced artifact/contract, or a system wait target is absent from current and historical manifests
 
+  - code: REF-017
+    class: referential
+    title: Body names a digest no declared attachment carries
+    applies_to: an envelope body whose prose names a `sha256:` token that appears in no attachments[].digest — the reference cannot be resolved by the reader it was written for (agent-exchange-2026-08/P4, AC1)
+
   - code: LFC-001
     class: lifecycle
     title: Event encodes an illegal transition for the subject's current folded state
@@ -247,3 +252,8 @@ entries:
     class: policy
     title: First-party actor model or session is unsafe or invalid
     applies_to: a2a events at or above ClaimReceiptFloor; model is 1–96 Unicode scalars and session must be a bounded non-secret identifier
+
+  - code: POL-017
+    class: policy
+    title: Body enumerates what looks like a file tree while no attachment is declared
+    applies_to: a heuristic WARNING, never a refusal — only checkable facts refuse, and "this looks like a file tree" is not one (agent-exchange-2026-08/P4, AC7)

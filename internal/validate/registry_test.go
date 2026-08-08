@@ -3,6 +3,7 @@ package validate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/contract"
@@ -297,6 +298,15 @@ func TestRegistryClosure(t *testing.T) {
 	record(checkUnfilledPlaceholders(map[string]any{
 		"expected_response": map[string]any{"shape": "<what a good answer looks like>"},
 	}))
+
+	// REF-017 and POL-017: P4's possession rule. One body produces both —
+	// a digest named in prose that no attachment carries (the refusal) and
+	// a file tree enumerated with nothing declared (the warning) — which is
+	// the real incident's own shape, not two contrived fixtures.
+	record(checkPossession([]byte(
+		"The bundle is sha256:"+strings.Repeat("a", 64)+" and contains:\n"+
+			"- one.csv\n- two.csv\n- three.csv\n- four.csv\n"),
+		map[string]any{"type": "work_request"}))
 
 	for _, code := range append(append(registry.CodesInClass("referential"), registry.CodesInClass("lifecycle")...), registry.CodesInClass("policy")...) {
 		if !produced[code] {

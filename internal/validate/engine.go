@@ -195,6 +195,17 @@ func (e *Engine) runCommonEnvelope(d Draft) (violations []Violation, artifactID 
 	}
 	violations = append(violations, schemaViolations...)
 
+	// P4 possession (REF-017/POL-017, possession.go): digest-versus-
+	// declaration over the body's own text, runs here rather than being
+	// threaded through a new return value, because both ValidateDraft
+	// (V1, via runCommon) and ValidateForSubmit (V2) already reach this
+	// single success path with fm.Body and the decoded instance in
+	// scope. That is also what makes `a2a validate` (no --ci) catch it
+	// locally: ValidateDraft's only route to a decoded instance IS this
+	// function (ground truth: engine.go's ValidateDraft -> runCommon ->
+	// runCommonEnvelope).
+	violations = append(violations, checkPossession(fm.Body, instance)...)
+
 	return violations, artifactID, env, instance, true, nil
 }
 
