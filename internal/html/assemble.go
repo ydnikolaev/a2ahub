@@ -911,6 +911,7 @@ func toThreadView(result cache.ThreadResult, self string) ThreadView {
 				Version: entry.Event.Version,
 				Note:    entry.Event.Note, Actor: actor, ProducedBy: entry.Event.ProducedBy,
 				Consistency: entry.Event.Consistency,
+				ReasonCode:  entry.Event.ReasonCode, TransitionFree: entry.Event.TransitionFree,
 			}
 		}
 		if entry.Derived != nil {

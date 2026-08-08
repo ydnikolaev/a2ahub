@@ -670,7 +670,8 @@ func (s *Store) buildShowResult(fa foldedArtifact, spaceID string, all []foldedA
 			Actor: evidence.Actor.Name, ActorSystem: evidence.Actor.System,
 			ActorModel: evidence.Actor.Model, ActorSession: evidence.Actor.Session,
 			ProducedBy: evidence.Producer, Consistency: receiptMismatchFor(fa, e.ULID), At: fa.EventAt[e.ULID],
-			Note: fa.EventNotes[e.ULID],
+			Note: fa.EventNotes[e.ULID], ReasonCode: fa.EventReasonCodes[e.ULID],
+			TransitionFree: fold.TransitionFree(fa.kind(), e.Transition),
 		})
 	}
 	sort.Slice(events, func(i, j int) bool {

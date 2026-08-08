@@ -81,9 +81,25 @@ vocabulary_states() { # $1 = vocabulary json
     grep -oE '"[a-z_]+"' | tr -d '"' | sort -u
 }
 
-# state_lists finds array literals of two or more bare lowercase strings.
-# Prints "file:line:content". Whether one is a classification is decided by
-# its CONTENT, below — this only narrows the search.
+# state_lists finds ARRAY literals of two or more bare lowercase strings on
+# one line. Prints "file:line:content". Whether one is a classification is
+# decided by its CONTENT, below — this only narrows the search.
+#
+# Four evasions are knowingly NOT covered, measured rather than assumed, and
+# recorded in the epic's own epic-backlog.md: an object literal
+# (`{"closed": true, …}`), a list split one string per line, a Set built by
+# chained .add() calls, and a list assembled from named constants. None
+# exists in the components today.
+#
+# The object-literal form was TRIED and reverted, and the reason is worth
+# keeping: widening the pattern to `{` made the gate red on
+# A2A_STATUS_GUIDE — a 26-entry human glossary that names every state so the
+# UI can label it, alongside `blocking`, `overdue` and `space stale`, which
+# are not states at all. That list is a vocabulary for a reader, not a rule
+# for a machine, and refusing it would be refusing the thing this gate
+# explicitly set out not to refuse. Catching a hypothetical evasion at the
+# cost of a false positive on real, correct code is the wrong trade; the
+# honest boundary is a narrow pattern plus a written note of where it ends.
 state_lists() { # $1 = scan root
   grep -rnE '\[[[:space:]]*"[a-z_]+"([[:space:]]*,[[:space:]]*"[a-z_]+")+[[:space:]]*\]' \
     --include='*.dc.html' "$1" 2>/dev/null

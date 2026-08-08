@@ -178,6 +178,20 @@ type EventSummary struct {
 	Consistency  *ReceiptMismatch    `json:"consistency,omitempty"`
 	At           time.Time           `json:"at"`
 	Note         string              `json:"note,omitempty"`
+	// ReasonCode is the event's machine-readable reason. `a2a show` is the
+	// command an agent runs to inspect WHY something was declined, and the
+	// MCP decline tool refuses a call without this field — so it reaching
+	// the transcript but not here left the highest-traffic surface with the
+	// prose note as its only actionable content, which is the substitution
+	// the code exists to end.
+	ReasonCode string `json:"reason_code,omitempty"`
+	// TransitionFree marks an event that changes no artifact state — `note`
+	// everywhere (D-025) and `acknowledge` on an announcement. Derived from
+	// fold.TransitionFree, the same registry Apply dispatches on, so a
+	// reader never has to infer it from the transition name: `acknowledge`
+	// moves a requirement and moves nothing on a broadcast, and a name-only
+	// guess is wrong for one of the two.
+	TransitionFree bool `json:"transition_free,omitempty"`
 }
 
 // ReceiptScope names the one scalar fold result compared with a producer's

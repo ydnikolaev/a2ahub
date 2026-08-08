@@ -648,6 +648,13 @@ type TranscriptEvent struct {
 	// "published the contract" lines were the reported defect.
 	Version string `json:"version,omitempty"`
 	Note    string `json:"note,omitempty"`
+	// ReasonCode and TransitionFree are carried from cache.TranscriptEvent.
+	// Both were dropped at this boundary when they were first added one
+	// layer down, which is the same silent-field-loss the Item and
+	// OpenItem reflection gates exist to prevent — this projection had no
+	// such gate until transcriptevent_projection_test.go.
+	ReasonCode     string `json:"reason_code,omitempty"`
+	TransitionFree bool   `json:"transition_free,omitempty"`
 }
 
 // ThreadOpenItem describes one unresolved item and its legal next actions.

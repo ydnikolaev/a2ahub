@@ -167,6 +167,16 @@ type TranscriptEvent struct {
 	// `blocked_by.reason_code` on this vocabulary, and a vocabulary that
 	// reaches no reader cannot be built on.
 	ReasonCode string `json:"reason_code,omitempty"`
+	// TransitionFree marks an event that changes no artifact state — spec 00
+	// AC3. Derived from fold.TransitionFree, the same registry Apply
+	// dispatches on, so a reader is never left inferring it from the
+	// transition name: `acknowledge` moves a requirement and moves nothing
+	// on a broadcast, and a name-only guess is wrong for one of the two.
+	//
+	// Without it the dashboard guessed, and its guess was that a `note` is a
+	// protocol event — which is how a comment rendered as the latest
+	// protocol move on the home card.
+	TransitionFree bool `json:"transition_free,omitempty"`
 }
 
 // TranscriptDerivedAdoption is a transcript entry's derived-kind payload: one
@@ -849,12 +859,13 @@ func buildTranscript(sorted []foldedArtifact, order string, adoptions map[string
 							Kind: evidence.Actor.Kind, Name: evidence.Actor.Name, System: evidence.Actor.System,
 							Model: evidence.Actor.Model, Session: evidence.Actor.Session,
 						},
-						ProducedBy:  evidence.Producer,
-						Consistency: receiptMismatchFor(fa, ev.ULID),
-						ResponseID:  ev.ResponseID,
-						Version:     ev.Version,
-						Note:        fa.EventNotes[ev.ULID],
-						ReasonCode:  fa.EventReasonCodes[ev.ULID],
+						ProducedBy:     evidence.Producer,
+						Consistency:    receiptMismatchFor(fa, ev.ULID),
+						ResponseID:     ev.ResponseID,
+						Version:        ev.Version,
+						Note:           fa.EventNotes[ev.ULID],
+						ReasonCode:     fa.EventReasonCodes[ev.ULID],
+						TransitionFree: fold.TransitionFree(fa.kind(), ev.Transition),
 					},
 				},
 				seq: ev.CommitSeq, at: at, isEvent: true, tieID: ev.ULID,

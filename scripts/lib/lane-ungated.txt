@@ -52,6 +52,13 @@ docs/features/**/seam.md
 # here is the reasoning about WHY those controls exist — judgement, like the
 # specs beside it.
 docs/features/**/threat-model.md
+# epic-backlog.md — real problems found DURING an epic's implementation that
+# are neither HIGH enough to stop a wave nor small enough to fix in it. Each
+# row carries what is wrong, what closing it costs, and the evidence, so the
+# decision to defer stays reviewable. It is a ledger of judgement, like
+# docs/backlog.md and docs/validator-backlog.md above, and nothing mechanical
+# can check whether a deferral was the right call.
+docs/features/**/epic-backlog.md
 
 # Two integrations with their own toolchains — a Swift package and a VS Code
 # extension with its own npm test suite. Nothing in this repo's make-ABI can
