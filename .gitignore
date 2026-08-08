@@ -60,6 +60,7 @@ scripts/*
 !scripts/check_operational_projection_single_source.sh
 !scripts/check_work_checkpoint_schema.sh
 !scripts/check-lane-declarations.sh
+!scripts/check-pendency-uniqueness.sh
 # The lane deriver's ungated list (P12). Public for the same reason internal/lane
 # is: a public checkout that has the derivation but not the file recording which
 # paths are deliberately outside it would refuse on every one of them. Same
