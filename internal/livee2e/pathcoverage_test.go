@@ -183,6 +183,19 @@ func uncoveredTransitions() []uncoveredTransition {
 		tk(fold.KindHandoff, fold.StateAcknowledged, fold.TSupersede),
 	)...)
 
+	out = append(out, uncoveredClass(
+		"P1's blocked-cancel pair. Unlike the four owner-side exits above, "+
+			"these are NOT departure-conditional — a path could drive them by "+
+			"blocking an exchange and then cancelling it, with nobody leaving. "+
+			"They are listed rather than driven because authoring a path is P8's "+
+			"own deliverable and adding two here would fork the catalogue's "+
+			"ownership. The distinction is recorded so P8 knows these are "+
+			"ordinary work rather than blocked on a membership axis the "+
+			"catalogue does not have.",
+		tk(fold.KindQuestion, fold.StateBlocked, fold.TCancel),
+		tk(fold.KindWorkRequest, fold.StateBlocked, fold.TCancel),
+	)...)
+
 	return out
 }
 

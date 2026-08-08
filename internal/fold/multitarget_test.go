@@ -49,3 +49,34 @@ func TestANonTargetIsStillRefused(t *testing.T) {
 		}
 	}
 }
+
+// TestEveryNamedPartyMayNote is the asymmetry a post-P1 audit found. The
+// RoleTarget widening shipped without its RoleEitherParty counterpart, so on
+// a requirement addressed to three systems the second and third could
+// acknowledge or decline — state-moving acts — and were refused when
+// attaching a `note` to the same artifact.
+//
+// D-025's note is the only consumer of RoleEitherParty, which is why nothing
+// else caught it: the narrowing was invisible everywhere except the one act
+// it governed.
+func TestEveryNamedPartyMayNote(t *testing.T) {
+	t.Parallel()
+
+	env := Envelope{
+		ID:   "XR-acme-multi",
+		Kind: KindRequirement,
+		From: "acme",
+		To:   []string{"beta", "gamma", "delta"},
+	}
+
+	for _, party := range append([]string{env.From}, env.To...) {
+		if !roleAuthorizes(RoleEitherParty, env, party) {
+			t.Errorf("%q is a party to this artifact and RoleEitherParty refuses it — the same system may acknowledge and may not comment, which cannot both be right", party)
+		}
+	}
+	for _, outsider := range []string{"epsilon", ""} {
+		if roleAuthorizes(RoleEitherParty, env, outsider) {
+			t.Errorf("%q is not a party and RoleEitherParty accepted it", outsider)
+		}
+	}
+}

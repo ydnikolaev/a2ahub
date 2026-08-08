@@ -185,6 +185,12 @@ changes:
       One `a2a thread --json` object could carry three systems under
       "waiting on" and one under "next actions" at the same time. Every
       addressee named on an artifact can now act on it.
+      The same narrowing sat on a second, quieter path: attaching a note.
+      A note is open to either party by design — it changes no state, and
+      commenting is how a party says something the transitions have no word
+      for. On a multi-addressee artifact only the first addressee could leave
+      one, so a system that had just been allowed to acknowledge was refused
+      when it tried to explain itself.
       The check that exists to catch precisely this disagreement could not
       see it: its probe addressed a single system, so the two sides agreed
       trivially. It now probes three.
@@ -192,7 +198,27 @@ changes:
       scope: none
       why: >
         Nothing to do. If you were named on a multi-addressee artifact and
-        your acknowledgement or decline was refused, it works now.
+        your acknowledgement, decline or note was refused, it works now.
+  - id: RN-01910-9
+    kind: fix
+    impact: normal
+    subject: "A blocked question or work request can now be cancelled"
+    detail: >
+      A blocked exchange is the one most likely to be abandoned — the work
+      stopped because something outside it did not arrive — and it was the
+      one state from which cancelling was refused. Every other live state
+      accepted it: draft, submitted, acknowledged, accepted, in progress.
+      So a requester who no longer needed a blocked request had two options,
+      both wrong. Wait for a party that is by definition not the one who can
+      unblock it, or reach for `supersede`, which states "replaced by this
+      other artifact" — a different claim, recorded permanently, about work
+      that was simply no longer needed.
+      `a2a cancel` now works from `blocked` on questions and work requests.
+    action:
+      scope: none
+      why: >
+        Nothing to do. A blocked request you had left open because you could
+        not close it honestly can now be cancelled.
   - id: RN-01910-8
     kind: feat
     roadmap:

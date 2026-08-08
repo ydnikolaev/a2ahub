@@ -348,7 +348,22 @@ func roleAuthorizes(role Role, env Envelope, actorSystem string) bool {
 		}
 		return false
 	case RoleEitherParty:
-		return actorSystem == env.From || (env.To0() != "" && actorSystem == env.To0())
+		// Same widening as RoleTarget above, and it was missed when that one
+		// landed. Its only consumer is D-025's `note` (notePermitted), so
+		// leaving it narrow meant that on a requirement addressed to three
+		// systems, the second and third could acknowledge or decline — a
+		// state-moving act — and could not attach a note to the same
+		// artifact. "Every named target is authorized" and "a note is
+		// refused from a named target" cannot both be right.
+		if actorSystem == env.From {
+			return true
+		}
+		for _, party := range env.To {
+			if party != "" && actorSystem == party {
+				return true
+			}
+		}
+		return false
 	case RoleAny:
 		return true
 	default:

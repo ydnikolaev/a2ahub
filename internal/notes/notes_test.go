@@ -28,7 +28,7 @@ func TestLoad_CorpusIntegrity(t *testing.T) {
 	// file accidentally dropped or mis-ordered. Bump it when you cut a
 	// release — that edit IS the check.
 	if len(all) != 40 {
-		t.Fatalf("Load returned %d entries, want 39: %+v", len(all), all)
+		t.Fatalf("Load returned %d entries, want 40: %+v", len(all), all)
 	}
 
 	// 0.11.0 is present BEFORE its tag, deliberately: its entries were

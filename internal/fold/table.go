@@ -175,8 +175,18 @@ func exchangeRows(kind Kind) []Row {
 		Row{Kind: kind, From: StateResponded, Transition: TClose, To: StateClosed, Role: RoleOwner},
 		Row{Kind: kind, From: StateResponded, Transition: TDispute, To: StateInProgress, Role: RoleOwner},
 	)
-	// draft...in_progress | cancel | cancelled | sender
-	for _, from := range []State{StateDraft, StateSubmitted, StateAcknowledged, StateAccepted, StateInProgress} {
+	// draft...in_progress AND blocked | cancel | cancelled | sender
+	//
+	// `blocked` is in the list, and its absence was a real gap: a requester
+	// whose target is blocked had to either wait or reach for `supersede`,
+	// which says "replaced by" rather than "no longer needed". Making a
+	// sender misstate one as the other is the substitution this epic exists
+	// to end, and the blocking party is by definition not the one who can
+	// resolve it.
+	//
+	// One source line, two triples — exchangeRows runs for KindQuestion and
+	// KindWorkRequest both.
+	for _, from := range []State{StateDraft, StateSubmitted, StateAcknowledged, StateAccepted, StateInProgress, StateBlocked} {
 		out = append(out, Row{Kind: kind, From: from, Transition: TCancel, To: StateCancelled, Role: RoleOwner})
 	}
 	// any open | supersede | superseded | sender

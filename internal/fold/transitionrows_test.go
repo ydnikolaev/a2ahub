@@ -21,8 +21,8 @@ import "testing"
 // nothing to regression-pin beyond this count).
 func TestTransitionRowsUniverse(t *testing.T) {
 	got := TransitionRows()
-	if len(got) != 97 {
-		t.Fatalf("TransitionRows(): want 97 triples, got %d: %+v", len(got), got)
+	if len(got) != 99 {
+		t.Fatalf("TransitionRows(): want 99 triples, got %d: %+v", len(got), got)
 	}
 }
 
