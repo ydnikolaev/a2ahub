@@ -1,0 +1,298 @@
+# fill-classes.yaml — who is allowed to put a value in each schema field.
+#
+# The rule this table exists to make enforceable: WHAT THE TOOL ESTABLISHES,
+# AN AGENT MAY NOT TYPE. A field the environment resolves, or Go code mints,
+# is not a field an agent gets to assert — and the defect that motivated the
+# whole table is `actor.name`, where an OS username reached a slot meant for a
+# detected agent identity and nothing said which one it was.
+#
+# One row per field path per (family, version, type). The gate over it is in
+# internal/schema/fillclasses_test.go and has three parts; this file is the
+# declaration the first one reads.
+#
+# ## The five classes
+#
+#   TOOL       Go code mints it. No authoring surface may accept it.
+#   DETECTED   resolved from the environment. Overridable ONLY with the record
+#              saying it was overridden — see P3's D5: the rule is "may not be
+#              typed SILENTLY", not "may not be typed".
+#   AUTHOR     the agent must supply intent. This is the only class where an
+#              empty value is the agent's problem rather than the tool's.
+#   CONFIG     the manifest, project config or harness supplies it, with an
+#              explicit override available.
+#   DEFAULTED  a template or schema default stands unless overridden.
+#
+# **The fifth class is DEFAULTED, not NEGOTIATED.** Spec 03's §T2 lists
+# `NEGOTIATED` and the spec declares itself to be "that matrix made
+# enforceable" — but Matrix A (docs/inbox/agent-exchange-review/02-ground.md,
+# §"One row per field") defines DEFAULTED, uses it six times, and contains no
+# NEGOTIATED anywhere. The source the spec names wins over the spec's own
+# summary of it; the amendment is recorded in specs/03-fill-classes.md.
+#
+# ## Where each row came from, honestly
+#
+# 34 rows are Matrix A's own classification, each backed there by a file:line
+# citation of the code that does the filling. The rest are derived by the
+# rules below, and are the ones a later phase should challenge first:
+#
+#   actor.*            -> DETECTED  (the whole point of the table)
+#
+# One derived row was CORRECTED by this phase's own test rather than kept:
+# Matrix A classifies `envelope/v1/base.actor.session` AUTHOR, and calls it,
+# in its own prose, an "UNCLEAR field: typed by hand today, derivable by the
+# system, and in fact already derived elsewhere in the same codebase for a
+# different feature". Typed-by-hand is the DEFECT, not the classification —
+# `agentid.Detect` already resolves the session and the value is thrown away
+# before it reaches an envelope. P3's own wave C is what carries it through,
+# so the table declares what the field IS (DETECTED) rather than what a
+# broken authoring path currently forces.
+#   produced_by.*      -> TOOL
+#   schema, id, type, created, at, ulid, event, migrated_from, thread, since
+#                      -> TOOL      (minted or stamped, never typed)
+#   space, from, system -> CONFIG    (resolved from configuration, overridable)
+#   everything else    -> AUTHOR
+#
+# A derived row is a CLAIM, not a finding. P4, P5 and P6 each add fields here
+# and should correct any row their own evidence contradicts — that is cheaper
+# than re-deriving the classification, and it is why the table is a file
+# rather than a convention.
+#
+# ## Out of scope, deliberately
+#
+# Four schema families in the corpus carry no authoring path: nothing renders
+# a template for them and no agent fills their fields one at a time. Their
+# fields are listed in `out_of_scope` below rather than classified AUTHOR
+# wholesale, because calling 62 fields "the agent must supply intent" when no
+# agent ever touches them would be coverage without meaning.
+
+schema: fill-classes/v1
+
+out_of_scope:
+  - family: release-notes
+    reason: authored by a release cutter as a whole document, not filled field by field; its gate is the schema plus roadmap-release-decisions
+  - family: known-issues
+    reason: a standing operator-maintained list, edited as prose; no template, no --field path
+  - family: data-package
+    reason: emitted by `a2a data pack` in full; every field is TOOL by construction and no surface offers a fill
+  - family: verification-report
+    reason: emitted by the verifier; same shape as data-package
+
+fields:
+  envelope/v1/base:
+    schema: TOOL
+    id: TOOL
+    type: TOOL
+    title: AUTHOR
+    space: CONFIG
+    from: CONFIG
+    to: AUTHOR
+    actor: DETECTED
+    actor.kind: DETECTED
+    actor.name: DETECTED
+    actor.model: DETECTED
+    actor.session: DETECTED
+    created: TOOL
+    priority: DEFAULTED
+    blocking: DEFAULTED
+    needed_by: AUTHOR
+    effort_estimate: AUTHOR
+    expected_response: AUTHOR
+    expected_response.shape: AUTHOR
+    expected_response.by: AUTHOR
+    acceptance_criteria: AUTHOR
+    thread: TOOL
+    supersedes: AUTHOR
+    refs: AUTHOR
+    refs[].ref: AUTHOR
+    refs[].note: AUTHOR
+    origin: AUTHOR
+    migrated_from: AUTHOR
+    interim_behavior: AUTHOR
+    classification: DEFAULTED
+    valid_until: AUTHOR
+  envelope/v1/contract:
+    type: TOOL
+    id: TOOL
+    category: AUTHOR
+    version: AUTHOR
+    compat_policy: AUTHOR
+    generated_from: AUTHOR
+    generated_from.tool: AUTHOR
+    generated_from.source_digest: AUTHOR
+    schema_format: AUTHOR
+  envelope/v1/requirement:
+    type: TOOL
+    id: TOOL
+    category: AUTHOR
+    target_contract: AUTHOR
+    acceptance_criteria: AUTHOR
+  envelope/v1/question:
+    type: TOOL
+    id: TOOL
+    category: AUTHOR
+    to: AUTHOR
+  envelope/v1/work_request:
+    type: TOOL
+    id: TOOL
+    category: AUTHOR
+    acceptance_criteria: AUTHOR
+    proposed_change: AUTHOR
+    to: AUTHOR
+  envelope/v1/decision:
+    type: TOOL
+    id: TOOL
+    required_approvers: AUTHOR
+    context: AUTHOR
+    options_considered: AUTHOR
+  envelope/v1/response:
+    type: TOOL
+    id: TOOL
+    parent: AUTHOR
+    result: AUTHOR
+    to: AUTHOR
+  envelope/v1/handoff:
+    type: TOOL
+    id: TOOL
+    deliverables: AUTHOR
+    deliverables[].name: AUTHOR
+    deliverables[].ref: AUTHOR
+    deliverables[].kind: AUTHOR
+    verification: AUTHOR
+    acceptance_criteria: AUTHOR
+    limitations: AUTHOR
+    env_requirements: AUTHOR
+    fulfills: AUTHOR
+    to: AUTHOR
+  envelope/v1/announcement:
+    type: TOOL
+    id: TOOL
+    category: AUTHOR
+    ack_requested: AUTHOR
+    deprecates: AUTHOR
+    period: AUTHOR
+  envelope/v2/base:
+    schema: TOOL
+    id: TOOL
+    type: TOOL
+    title: AUTHOR
+    space: CONFIG
+    from: CONFIG
+    to: AUTHOR
+    actor: DETECTED
+    actor.kind: DETECTED
+    actor.name: DETECTED
+    actor.model: DETECTED
+    actor.session: DETECTED
+    created: TOOL
+    priority: AUTHOR
+    blocking: AUTHOR
+    needed_by: AUTHOR
+    effort_estimate: AUTHOR
+    expected_response: AUTHOR
+    expected_response.shape: AUTHOR
+    expected_response.by: AUTHOR
+    acceptance_criteria: AUTHOR
+    thread: TOOL
+    supersedes: AUTHOR
+    refs: AUTHOR
+    refs[].ref: AUTHOR
+    refs[].note: AUTHOR
+    origin: AUTHOR
+    migrated_from: TOOL
+    interim_behavior: AUTHOR
+    classification: AUTHOR
+    valid_until: AUTHOR
+  envelope/v2/contract:
+    type: TOOL
+    id: TOOL
+    category: AUTHOR
+    version: AUTHOR
+    compat_policy: AUTHOR
+    generated_from: AUTHOR
+    schema_format: AUTHOR
+    artifacts: AUTHOR
+  envelope/v2/announcement:
+    type: TOOL
+    id: TOOL
+    category: AUTHOR
+    ack_requested: AUTHOR
+    deprecates: AUTHOR
+    period: AUTHOR
+    work: AUTHOR
+  event/v1/event:
+    schema: TOOL
+    event: TOOL
+    space: CONFIG
+    subject: AUTHOR
+    transition: AUTHOR
+    state: AUTHOR
+    actor: DETECTED
+    actor.kind: DETECTED
+    actor.name: DETECTED
+    actor.system: DETECTED
+    actor.model: DETECTED
+    actor.session: DETECTED
+    at: TOOL
+    note: AUTHOR
+    refs: AUTHOR
+    refs[].ref: AUTHOR
+    refs[].note: AUTHOR
+    version: AUTHOR
+    reason_code: AUTHOR
+    commit: AUTHOR
+    digest: AUTHOR
+    produced_by: TOOL
+    produced_by.tool: TOOL
+    produced_by.version: TOOL
+  event/v2/event:
+    schema: TOOL
+    event: TOOL
+    space: CONFIG
+    subject: AUTHOR
+    transition: AUTHOR
+    state: AUTHOR
+    actor: DETECTED
+    actor.kind: DETECTED
+    actor.name: DETECTED
+    actor.system: DETECTED
+    actor.model: DETECTED
+    actor.session: DETECTED
+    at: TOOL
+    note: AUTHOR
+    refs: AUTHOR
+    refs[].ref: AUTHOR
+    refs[].note: AUTHOR
+    version: AUTHOR
+    reason_code: AUTHOR
+    commit: AUTHOR
+    digest: AUTHOR
+    digest_profile: TOOL
+    publication: AUTHOR
+    publication.intent_key: AUTHOR
+    publication.candidate_intent_digest: TOOL
+    publication.version_selector: AUTHOR
+    publication.operation_key: AUTHOR
+    produced_by: TOOL
+    produced_by.tool: TOOL
+    produced_by.version: TOOL
+  manifest/v1/space:
+    schema: TOOL
+    space: CONFIG
+    min_binary_version: AUTHOR
+    gates: AUTHOR
+    participants: AUTHOR
+    participants[].system: CONFIG
+    participants[].org: AUTHOR
+    participants[].section: AUTHOR
+    participants[].owners: AUTHOR
+    participants[].status: AUTHOR
+    participants[].joined: AUTHOR
+    vendored: AUTHOR
+  consumes/v1/consumes:
+    schema: TOOL
+    system: CONFIG
+    dependencies: AUTHOR
+    dependencies[].contract: AUTHOR
+    dependencies[].major: AUTHOR
+    dependencies[].since: TOOL
+    dependencies[].note: AUTHOR

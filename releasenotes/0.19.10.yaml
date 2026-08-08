@@ -35,6 +35,12 @@ changes:
       about state, and the dashboard had been reading the newest event of any
       kind under a "moved" label — so an artifact looked like it had moved when
       somebody had only commented. Both clocks are now carried, separately.
+      Events themselves say which kind they are. `transition_free` marks an
+      event that changes no state — a note anywhere, and an acknowledgement of
+      a broadcast. It is not something a reader can work out from the
+      transition name: acknowledging a requirement moves it, acknowledging a
+      broadcast does not, so the same word means both. It appears on
+      `a2a thread --json`, `a2a show --json` and the dashboard.
     action:
       scope: none
       why: >
@@ -77,8 +83,10 @@ changes:
       that builds every read surface never decoded it, so the only thing a
       receiver could act on was the prose note beside it.
       That is exactly the substitution the code exists to prevent, and it had
-      been true since the field was introduced. `a2a thread --json` now carries
-      `reason_code` on the event that supplied one.
+      been true since the field was introduced. `a2a thread --json` and
+      `a2a show --json` now both carry `reason_code` on the event that supplied
+      one — `show` in particular, since that is the command you run to find out
+      why something was refused.
     action:
       scope: none
       why: >
