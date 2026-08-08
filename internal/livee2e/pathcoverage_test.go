@@ -239,25 +239,25 @@ func TestPathCatalogueCoversEveryTransition(t *testing.T) {
 //     predicate the driver's own code still unconditionally skips —
 //     trading the old lie (every triple "covered") for a new, narrower
 //     one. Reported as a deviation rather than silently avoided.
-//  2. RestingStates() would ALSO wrongly decredit
-//     (decision, proposed, approve) at quorum: table.go's own row for
-//     decision `approve` carries the fold.StateDynamic sentinel as its
-//     To (resolved for real by resolveApprove/quorum arithmetic, never a
-//     literal table value), so StateApproved never appears as a literal
-//     `To` anywhere in decisionRows() and RestingStates() (defined as
-//     "every To in the rows ∪ zero-events fallback") never contains
-//     {decision, approved} — even though
+//
+//  2. RestingStates() USED TO wrongly decredit (decision, proposed,
+//     approve) at quorum, and that half is now FIXED upstream — recorded
+//     here rather than deleted, because it is the reason this function
+//     exists and a future reader will otherwise re-derive the same doubt.
+//     Both decision `approve` rows carry the fold.StateDynamic sentinel as
+//     their To, so StateApproved appears as a literal `To` nowhere in
+//     decisionRows(); the old enumerator skipped the sentinel outright and
+//     therefore never contained {decision, approved}, even though
 //     pathcatalogue_paths.go's decision-lifecycle-partial-quorum-then-
 //     approved path asserts FoldedState("decision", fold.StateApproved)
-//     and checkFoldedState judges it unconditionally (no skip branch for
-//     `approved`). A RestingStates()-based oracle would call a
-//     demonstrably-asserted transition "driven, not asserted" — a false
-//     negative, which is exactly the kind of wrong number this wave
-//     exists to remove. Flagged for the lead: spec §18a's own literal
-//     definition of RestingStates() is imprecise for any transition whose
-//     ONLY row is StateDynamic-resolved (today: `unblock`, decision
-//     `approve`) — not something this deliverable patches, since D2's own
-//     test pins RestingStates() at exactly 43 pairs.
+//     and checkFoldedState judges it unconditionally. agent-exchange-2026-08
+//     P0 gave each dynamic row an Outcomes declaration and RestingStates
+//     now unions it, so {decision, approved} IS a member and the universe
+//     is 44 pairs.
+//
+//     Reason 1 stands on its own and is why this is still not a
+//     RestingStates()-based oracle. Revisiting that is a deliberate
+//     decision with its own evidence, not a consequence of the fix.
 func assertedTriple(to fold.State) bool {
 	return to != fold.StateDraft
 }

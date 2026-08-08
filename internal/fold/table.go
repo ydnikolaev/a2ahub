@@ -63,6 +63,21 @@ type Row struct {
 	To         State
 	Role       Role
 	Scenario   string
+
+	// Outcomes are the concrete states this row can actually produce when
+	// To is the StateDynamic sentinel. Non-empty EXACTLY when To is
+	// StateDynamic (asserted, both directions, by table_test.go) — so the
+	// dynamic set is a property of the rows rather than a list of verb
+	// names three consumers each had to know.
+	//
+	// Before this field, buildTable and applyPrimaryScoped each excluded
+	// the dynamic rows by hardcoded transition name, mirrored, and
+	// RestingStates skipped the sentinel outright. That cost two real
+	// defects: a THIRD dynamic transition added by anyone panicked the
+	// package at init on a duplicate table key, and (decision, approved)
+	// was absent from RestingStates entirely even though a quorum-reached
+	// approve demonstrably lands there.
+	Outcomes []State
 }
 
 // rows is the exploded §3.4.1-§3.4.7 transition table. Every range in the
@@ -141,9 +156,11 @@ func exchangeRows(kind Kind) []Row {
 		out = append(out, Row{Kind: kind, From: from, Transition: TBlock, To: StateBlocked, Role: RoleTarget})
 	}
 	// blocked | unblock | *pre-block state* | target — one dynamic row
-	// per possible pre-block state, for test-scenario documentation.
+	// per possible pre-block state, for test-scenario documentation. Each
+	// row DECLARES that pre-block state as its outcome, so RestingStates
+	// and buildTable read the property rather than the verb name.
 	for _, pre := range []State{StateAcknowledged, StateAccepted, StateInProgress} {
-		out = append(out, Row{Kind: kind, From: StateBlocked, Transition: TUnblock, To: StateDynamic, Role: RoleTarget, Scenario: "pre-block=" + string(pre)})
+		out = append(out, Row{Kind: kind, From: StateBlocked, Transition: TUnblock, To: StateDynamic, Role: RoleTarget, Scenario: "pre-block=" + string(pre), Outcomes: []State{pre}})
 	}
 	// accepted/in_progress/acknowledged | respond | responded | target —
 	// PLUS `responded` itself (multi-response support, 3.4.6: "one parent
@@ -173,8 +190,14 @@ func exchangeRows(kind Kind) []Row {
 func decisionRows() []Row {
 	return []Row{
 		{Kind: KindDecision, From: StateDraft, Transition: TPropose, To: StateProposed, Role: RoleOwner},
-		{Kind: KindDecision, From: StateProposed, Transition: TApprove, To: StateDynamic, Role: RoleApprover, Scenario: "quorum-not-reached"},
-		{Kind: KindDecision, From: StateProposed, Transition: TApprove, To: StateDynamic, Role: RoleApprover, Scenario: "quorum-reached"},
+		// The two approve rows share (Kind, From, Transition) and differ
+		// only by quorum arithmetic a static lookup cannot perform, so
+		// they stay dynamic — but each now declares the concrete state it
+		// produces. {decision approved} reaches RestingStates through the
+		// second row and through nothing else: no decision row carries
+		// StateApproved as a literal To.
+		{Kind: KindDecision, From: StateProposed, Transition: TApprove, To: StateDynamic, Role: RoleApprover, Scenario: "quorum-not-reached", Outcomes: []State{StateProposed}},
+		{Kind: KindDecision, From: StateProposed, Transition: TApprove, To: StateDynamic, Role: RoleApprover, Scenario: "quorum-reached", Outcomes: []State{StateApproved}},
 		{Kind: KindDecision, From: StateProposed, Transition: TReject, To: StateRejected, Role: RoleApprover},
 		// Fold cannot verify "author of the successor decision" or "new
 		// approved decision only" from the PREDECESSOR's own envelope
@@ -234,6 +257,35 @@ type tableEntry struct {
 	Role Role
 }
 
+// dynamicKey names a (Kind, Transition) pair whose target state the table
+// cannot carry, because resolving it needs facts only the fold holds —
+// unblock's pre-block recovery, decision approve's quorum arithmetic.
+type dynamicKey struct {
+	Kind       Kind
+	Transition string
+}
+
+// dynamicResolver applies one dynamic transition, replacing the generic
+// table lookup for it. Every resolver takes the same arguments as the
+// generic path so the dispatch in applyPrimaryScoped stays uniform.
+type dynamicResolver func(kind Kind, env Envelope, result *Result, event Event, membership MembershipView)
+
+// dynamicResolvers is the dispatch half of the Outcomes declaration above:
+// which function resolves each dynamic row. Its key set MUST equal the set
+// of (Kind, Transition) pairs carried by rows with a non-empty Outcomes —
+// asserted by table_test.go, in BOTH directions, so a dynamic row without
+// a resolver and a resolver without a row are each a red test rather than
+// a silent misfold.
+//
+// Declared here, beside the rows, because it and Outcomes are two halves
+// of one fact. Until this existed, applyPrimaryScoped carried the same two
+// transition names buildTable did, mirrored, and neither knew why.
+var dynamicResolvers = map[dynamicKey]dynamicResolver{
+	{Kind: KindQuestion, Transition: TUnblock}:    applyUnblock,
+	{Kind: KindWorkRequest, Transition: TUnblock}: applyUnblock,
+	{Kind: KindDecision, Transition: TApprove}:    applyApprove,
+}
+
 // transitionTable is the generic (kind, fromState, transition) -> (toState,
 // role) lookup used by every row EXCEPT the dynamic ones (unblock;
 // decision approve), which dedicated logic in fold.go resolves — those
@@ -241,13 +293,61 @@ type tableEntry struct {
 // StateDynamic sentinel.
 var transitionTable = buildTable()
 
-func buildTable() map[tableKey]tableEntry {
-	m := make(map[tableKey]tableEntry, len(rows))
+// roleTable answers the one question the PRE-write gate actually asks —
+// "who may attempt this transition from this state" — for EVERY row,
+// dynamic ones included. It exists because CheckCandidate needs no target
+// state at all: a verdict is (is there a row) plus (may this actor act),
+// and the dynamic rows carry both facts in From and Role already.
+//
+// Before this, CheckCandidate carried its own copy of the same two verb
+// names buildTable and applyPrimaryScoped did. That is the mirror that
+// matters most: with the property-keyed dispatch on the post-write side
+// only, a third dynamic transition would be APPLIED by Apply and REFUSED
+// by CheckLegality. This file's own comment at legality.go:88-98 records
+// that exact divergence happening for broadcast-ack — every `a2a ack` on
+// an announcement refused LFC-001 while the fold stood ready to apply the
+// event — because the rule was shipped twice and the stricter copy won
+// silently.
+var roleTable = buildRoleTable()
+
+func buildRoleTable() map[tableKey]Role {
+	m := make(map[tableKey]Role, len(rows))
 	for _, r := range rows {
-		if r.Transition == TUnblock {
+		key := tableKey{Kind: r.Kind, From: r.From, Transition: r.Transition}
+		if existing, ok := m[key]; ok {
+			// Two rows sharing a key is legitimate here and NOT in
+			// transitionTable: the two decision `approve` rows differ only
+			// by the quorum arithmetic that picks between their outcomes,
+			// and both name the same authorized role. Two rows disagreeing
+			// about WHO may act is a real contradiction in the table —
+			// programmer error at package init, same class as the
+			// duplicate-key panic above.
+			if existing != r.Role {
+				panic("fold: rows disagree about the authorized role for " + string(r.Kind) + "/" + string(r.From) + "/" + r.Transition + ": " + string(existing) + " vs " + string(r.Role))
+			}
 			continue
 		}
-		if r.Kind == KindDecision && r.Transition == TApprove {
+		m[key] = r.Role
+	}
+	return m
+}
+
+func buildTable() map[tableKey]tableEntry { return buildTableFrom(rows) }
+
+// buildTableFrom takes the row slice as an argument so a test can prove
+// the exclusion is property-keyed by handing it a row set the package does
+// not actually carry — a third dynamic transition, which used to panic
+// here at init on a duplicate key. Testing that against the package-level
+// `rows` would require adding the row for real.
+func buildTableFrom(rs []Row) map[tableKey]tableEntry {
+	m := make(map[tableKey]tableEntry, len(rs))
+	for _, r := range rs {
+		// The exclusion is keyed on the PROPERTY that makes a row
+		// unlookupable, not on the two verb names that happen to have it
+		// today. A third dynamic transition used to panic here on a
+		// duplicate key the moment it was added; now it is excluded for
+		// the reason it should always have been.
+		if len(r.Outcomes) > 0 {
 			continue
 		}
 		key := tableKey{Kind: r.Kind, From: r.From, Transition: r.Transition}

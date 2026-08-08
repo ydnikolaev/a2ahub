@@ -147,12 +147,13 @@ func applyBroadcastAck(result *Result, event Event, membership MembershipView) {
 // applyPrimaryScoped handles every transition except note/broadcast-ack
 // (transition-free) and verify/dispute (response-scoped, D-024).
 func applyPrimaryScoped(kind Kind, env Envelope, result *Result, event Event, membership MembershipView) {
-	if event.Transition == TUnblock {
-		applyUnblock(kind, env, result, event, membership)
-		return
-	}
-	if kind == KindDecision && event.Transition == TApprove {
-		applyApprove(env, result, event, membership)
+	// The dynamic rows are dispatched by the same property that excludes
+	// them from the table (table.go's Outcomes / dynamicResolvers pair),
+	// not by a second copy of the two verb names. A (kind, transition) with
+	// no resolver falls through to the generic lookup, which flags it
+	// illegal exactly as it would any other unmodelled triple.
+	if resolve, ok := dynamicResolvers[dynamicKey{Kind: kind, Transition: event.Transition}]; ok {
+		resolve(kind, env, result, event, membership)
 		return
 	}
 
@@ -200,7 +201,7 @@ func applyUnblock(_ Kind, env Envelope, result *Result, event Event, membership 
 // applyApprove resolves decision approve's dynamic target: proposed
 // (n/m recorded) unless this is the last required approval, in which
 // case fold detects quorum = all required and moves to approved.
-func applyApprove(env Envelope, result *Result, event Event, membership MembershipView) {
+func applyApprove(_ Kind, env Envelope, result *Result, event Event, membership MembershipView) {
 	if result.State != StateProposed {
 		result.Flags = append(result.Flags, Flag{Kind: FlagIllegalTransition, EventULID: event.ULID, Subject: event.Subject})
 		return

@@ -17,12 +17,15 @@ import "sort"
 // pathcatalogue_paths.go's own FoldedState predicates that does not exist
 // yet, and is NOT this wave's to build (W3d is serialized on that same
 // file with W3e); (2) the coverage split's own credit rule — evaluated and
-// deliberately NOT used that way this wave (internal/livee2e's
-// pathcoverage_test.go, assertedTriple's own doc comment carries the two
-// concrete cases — decision's create step, decision's quorum-reached
-// approve — where RestingStates() membership gives the wrong answer).
-// RestingStates() itself is unaffected by either finding; both are about
-// how a caller should or should not consume it.
+// deliberately NOT used that way (internal/livee2e's pathcoverage_test.go,
+// assertedTriple's own doc comment).
+//
+// That doc comment carried TWO cases where RestingStates() membership gave
+// the wrong answer. The second — decision's quorum-reached approve — was a
+// defect in this enumerator and agent-exchange-2026-08 P0 fixed it here:
+// dynamic rows now declare their Outcomes and RestingStates unions them.
+// The first — decision's create step — is about what a CLI verb can
+// commit, not about what Fold can compute, and stands.
 type KindRestingState struct {
 	Kind  Kind
 	State State
@@ -50,10 +53,21 @@ var kinds = []Kind{
 // sources, both real:
 //
 //  1. Every distinct To across this package's transition rows (a state some
-//     transition lands a subject in). StateDynamic (unblock's pre-block
-//     recovery, decision approve's quorum arithmetic) is excluded — it is a
-//     table-row sentinel resolved at apply time, never a state a subject is
-//     literally found holding (see StateDynamic's own doc comment).
+//     transition lands a subject in), PLUS every state a dynamic row
+//     declares in its own Outcomes. StateDynamic itself never appears — it
+//     is a table-row sentinel resolved at apply time, never a state a
+//     subject is literally found holding (see StateDynamic's own doc
+//     comment) — but the states it resolves TO are ordinary resting states
+//     and belong here.
+//
+//     This half was wrong until P0. Skipping the sentinel outright dropped
+//     {decision approved} from the universe entirely: both approve rows
+//     carry StateDynamic and no decision row carries StateApproved as a
+//     literal To, so a quorum-reached approve landed a subject in a state
+//     this enumerator said could not exist. internal/livee2e's
+//     pathcoverage_test.go had flagged exactly that, as a false negative it
+//     could not fix from the outside.
+//
 //  2. postSubmissionState(kind) for every kind — 03-domain.md §3.4's
 //     explicit zero-events fallback (fold.go), the state an artifact with
 //     no committed events at all folds to. This half is load-bearing and
@@ -72,6 +86,12 @@ var kinds = []Kind{
 func RestingStates() []KindRestingState {
 	seen := make(map[KindRestingState]bool)
 	for _, r := range rows {
+		// A dynamic row contributes its declared outcomes and never its
+		// sentinel To; an ordinary row contributes its To. No branch on a
+		// transition name, and no state a row can produce is lost.
+		for _, s := range r.Outcomes {
+			seen[KindRestingState{Kind: r.Kind, State: s}] = true
+		}
 		if r.To == StateDynamic {
 			continue
 		}

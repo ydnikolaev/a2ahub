@@ -115,31 +115,25 @@ func CheckCandidate(kind Kind, prior Result, transition, version string, env Env
 		}
 		return VerdictLegal
 	}
-	if transition == TUnblock {
-		if currentState != StateBlocked {
-			return VerdictIllegalTransition
-		}
-		if !legalRole(RoleTarget, env, actor.System, membership) {
-			return VerdictUnauthorizedActor
-		}
-		return VerdictLegal
-	}
-	if kind == KindDecision && transition == TApprove {
-		if currentState != StateProposed {
-			return VerdictIllegalTransition
-		}
-		if !legalRole(RoleApprover, env, actor.System, membership) {
-			return VerdictUnauthorizedActor
-		}
-		return VerdictLegal
-	}
-
+	// The dynamic transitions used to be two more hand-written guards right
+	// here — `unblock`, and decision `approve` — each re-stating the row's
+	// own From and Role. They are gone, because roleTable (table.go) is
+	// built from EVERY row: a wrong current state means no key, which is
+	// the VerdictIllegalTransition those guards returned, and the role
+	// check is the same legalRole call they made.
+	//
+	// This is the point of the whole exclusion rework and not a tidy-up. A
+	// third dynamic transition added by anyone is now reached identically
+	// by the pre-write gate and by Apply. With the property-keyed dispatch
+	// on the post-write side only, it would have been applied by one and
+	// refused by the other — which is precisely what happened to
+	// broadcast-ack, recorded at :88-98 above.
 	key := tableKey{Kind: kind, From: currentState, Transition: transition}
-	entry, ok := transitionTable[key]
+	role, ok := roleTable[key]
 	if !ok {
 		return VerdictIllegalTransition
 	}
-	if !legalRole(entry.Role, env, actor.System, membership) {
+	if !legalRole(role, env, actor.System, membership) {
 		return VerdictUnauthorizedActor
 	}
 	return VerdictLegal

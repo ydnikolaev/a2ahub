@@ -3,16 +3,38 @@ package fold
 import "testing"
 
 // TestRestingStatesUniverse pins the universe size the internal/livee2e
-// coverage split (W3d, exercised-vs-asserted) is checked against — 43
-// distinct (Kind, State) pairs today: every row's To (StateDynamic
-// excluded) unioned with postSubmissionState(kind) for all eight kinds. A
-// count drift here is a real signal (a table row's To changed, or a kind's
-// zero-events fallback changed), not test noise.
+// coverage split (W3d, exercised-vs-asserted) is checked against — 44
+// distinct (Kind, State) pairs today: every ordinary row's To, unioned with
+// every dynamic row's declared Outcomes, unioned with
+// postSubmissionState(kind) for all eight kinds. A count drift here is a
+// real signal (a table row's To changed, an Outcomes declaration changed,
+// or a kind's zero-events fallback changed), not test noise.
+//
+// It was 43 until P0. The 44th is {decision approved}: both approve rows
+// carry the StateDynamic sentinel and no decision row carries StateApproved
+// as a literal To, so the old "every To, sentinel skipped" derivation said
+// a state a quorum-reached approve demonstrably produces could not be
+// observed at rest.
 func TestRestingStatesUniverse(t *testing.T) {
 	got := RestingStates()
-	if len(got) != 43 {
-		t.Fatalf("RestingStates(): want 43 pairs, got %d: %+v", len(got), got)
+	if len(got) != 44 {
+		t.Fatalf("RestingStates(): want 44 pairs, got %d: %+v", len(got), got)
 	}
+}
+
+// TestRestingStatesContainsDecisionApproved names the pair the enumerator
+// used to lose, so a regression reads as what it is rather than as an
+// off-by-one in the count above. P1's own AC1 is unsatisfiable without it,
+// and internal/livee2e's pathcoverage_test.go flagged the gap from the
+// outside without being able to fix it.
+func TestRestingStatesContainsDecisionApproved(t *testing.T) {
+	want := KindRestingState{Kind: KindDecision, State: StateApproved}
+	for _, krs := range RestingStates() {
+		if krs == want {
+			return
+		}
+	}
+	t.Fatalf("RestingStates() does not contain %+v — the quorum-reached approve row declares it in Outcomes and RestingStates must union it in", want)
 }
 
 // TestRestingStatesExcludesDynamic asserts the StateDynamic sentinel never
