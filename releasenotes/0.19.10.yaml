@@ -97,6 +97,27 @@ changes:
       why: >
         Nothing to do. If your harness exports a session id, new drafts and
         events pick it up; existing records are untouched.
+  - id: RN-01910-4
+    kind: fix
+    impact: low
+    subject: "A template's own actor kind is no longer overwritten by a default nobody chose"
+    detail: >
+      The decision template declares `kind: human` for its actor, with a note
+      saying why: approving a decision is a human gate, so a decision usually
+      carries a human actor. Drafting one overwrote that with `agent` every
+      time — not because anything had decided the actor was an agent, but
+      because `agent` is what the resolver falls back to when nothing names a
+      kind.
+      A fallback and a choice are different things, and the draft could not
+      tell them apart. Now it can: an explicit `--actor-kind`, or a detected
+      agent, still wins over whatever the template declares, and a bare
+      default leaves the template's own value standing.
+    action:
+      scope: none
+      why: >
+        Nothing to do. `a2a new decision` now keeps `kind: human` unless you
+        say otherwise; every other template already declared `agent`, so
+        nothing changes for them.
   - id: RN-01910-1
     kind: fix
     impact: normal
