@@ -193,6 +193,28 @@ changes:
       why: >
         Nothing to do. If you were named on a multi-addressee artifact and
         your acknowledgement or decline was refused, it works now.
+  - id: RN-01910-8
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: "An agent asking any surface whose move it is now gets the same answer with the same justification, which is what makes the answer worth acting on."
+    impact: normal
+    subject: "`a2a inbox` and `a2a outbox` now say who owes the next move, which move, and why"
+    detail: >
+      The answer was already being computed for these commands — it decides
+      whether `--actionable` lists an artifact at all — and then thrown away.
+      So `a2a thread --json` showed the conclusion and the reasoning behind
+      it, while `a2a inbox --json` showed neither for the same artifact.
+      Both now carry `waiting_on`, `expected_transition` and `why`. The last
+      one matters most: "nobody owes anything" is a claim the tooling has to
+      justify rather than something that falls out of a filter, and a surface
+      that shows a verdict while withholding its reason republishes the
+      ambiguity the verdict exists to remove.
+    action:
+      scope: none
+      why: >
+        Nothing to do. The three fields are additive. If you were parsing
+        `--actionable` to guess why something appeared, read `why` instead.
   - id: RN-01910-1
     kind: fix
     impact: normal

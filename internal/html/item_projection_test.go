@@ -34,6 +34,7 @@ var itemFieldsThisPackageDeliberatelyDrops = map[string]string{
 	"LatestEventID":      "renamed to ActivityEventID by toItem — the current transition identity",
 	"WaitingOn":          "consumed by the exchange overlay's edge aggregation (exchangeEdges -> ExchangeEdge.OwedCount), not by the per-row Item — see ExchangeEdge's own doc comment",
 	"ExpectedTransition": "same as WaitingOn: an edge-level pendency fact today, not a per-row one",
+	"Why":                "same again. P2 put the relation's justification on inbox/outbox --json, where a reader has no other way to ask why; the dashboard shows it on the THREAD item (ThreadOpenItem.Why), which is where a reader who wants the reasoning already is",
 }
 
 // TestItemCarriesEveryCacheItemField is the drift gate for the projection

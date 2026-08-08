@@ -99,7 +99,15 @@ func hasFulfillingResponse(fa foldedArtifact) bool {
 // axis entirely, not a missing-input carve-out) — see its own inline doc
 // comment for why folding it into pendency would be wrong, not merely
 // redundant.
-func actionableReasons(fa foldedArtifact, me string, manifest space.Manifest) []string {
+// actionableReasons returns why this artifact is actionable for `me`, AND
+// the pendency verdict it derived them from.
+//
+// The verdict is returned rather than discarded because the four surfaces
+// this epic must reconcile all need it, and recomputing it per surface is
+// what I7 forbids. `a2a inbox --json` carries waiting_on, expected_transition
+// and why for the first time as a consequence: they were computed here all
+// along and thrown away at the door.
+func actionableReasons(fa foldedArtifact, me string, manifest space.Manifest) ([]string, pendency.Verdict) {
 	var reasons []string
 	kind := fa.kind()
 	env := fa.Env
@@ -214,7 +222,7 @@ func actionableReasons(fa foldedArtifact, me string, manifest space.Manifest) []
 		reasons = append(reasons, "gate-pending-on-me")
 	}
 
-	return reasons
+	return reasons, verdict
 }
 
 func containsString(list []string, s string) bool {

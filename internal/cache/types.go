@@ -133,8 +133,21 @@ type Item struct {
 	// Go-typed callers) sees the zero value here, same as before these
 	// fields existed; `json:"-"` keeps that off `a2a inbox`/`outbox --json`
 	// exactly like YourMove.
-	WaitingOn          []string `json:"-"`
-	ExpectedTransition string   `json:"-"`
+	// They go ON THE WIRE as of P2. The doc above described them as
+	// dashboard-only because nothing computed them on the inbox path — the
+	// verdict was derived by actionableReasons and discarded at the door.
+	// It is returned now, so every Item carries the same answer the other
+	// three surfaces show, which is the whole of what "four surfaces, one
+	// answer" means.
+	WaitingOn          []string `json:"waiting_on,omitempty"`
+	ExpectedTransition string   `json:"expected_transition,omitempty"`
+	// Why is the pendency relation's own justification, ALWAYS populated —
+	// "nobody owes anything" is a claim that has to be justified, never a
+	// fall-through. `a2a thread --json` has carried it since the relation
+	// shipped; inbox and outbox showed the conclusion and withheld the
+	// reasoning, which republishes the ambiguity the relation was built to
+	// remove.
+	Why string `json:"why,omitempty"`
 }
 
 // SpaceSyncInfo is the mirror snapshot fact the dashboard needs per connected

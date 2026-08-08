@@ -465,21 +465,29 @@ func (s *Store) inbox(ctx context.Context, actionableOnly, advance, annotate, ex
 			if exchangeActiveOnly && !exchangeActive(fa, s.ownSystem, manifest) {
 				continue
 			}
-			var reasons []string
-			if actionableOnly {
-				reasons = actionableReasons(fa, s.ownSystem, manifest)
+			// The verdict is computed for EVERY item now, not only when a
+			// caller asked to filter or annotate. It is a pure table lookup
+			// over facts already in hand, and it is the one answer all four
+			// surfaces have to agree on — computing it conditionally is how
+			// `a2a inbox --json` came to omit fields the dashboard showed
+			// for the same artifact.
+			reasons, verdict := actionableReasons(fa, s.ownSystem, manifest)
+			switch {
+			case actionableOnly:
 				if len(reasons) == 0 {
 					continue
 				}
-			} else {
-				if !addressedToMe(fa, s.ownSystem) {
-					continue
-				}
-				if annotate {
-					reasons = actionableReasons(fa, s.ownSystem, manifest)
-				}
+			case !addressedToMe(fa, s.ownSystem):
+				continue
+			case !annotate:
+				// Reasons are an --actionable/annotate concern; the verdict
+				// itself stays, because every surface needs it.
+				reasons = nil
 			}
 			item := toItem(fa, stale, pending[fa.Env.ID])
+			item.WaitingOn = verdict.Owners
+			item.ExpectedTransition = verdict.Expected
+			item.Why = verdict.Why
 			if annotate {
 				item.YourMove = yourMove[fa.Env.ID]
 			}
