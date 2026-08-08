@@ -300,6 +300,46 @@ changes:
         Nothing to do. If you parse `a2a outbox --json`, three fields that
         were always absent may now be present; they are the same fields
         `a2a inbox --json` already carried.
+  - id: RN-01910-12
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: "A request that names bytes can now declare them in the envelope instead of describing them in prose, which is the difference between a reader fetching what you meant and a reader guessing."
+    impact: normal
+    subject: "A work request can declare the bytes it is about, under `schema: envelope/v2`"
+    detail: >
+      A request that is *about* some bytes had no way to carry them unless
+      those bytes were a dataset conforming to a pinned contract and were
+      answering a specific work request. Anything else — a transcript, a
+      bundle accompanying a question, a sample nobody is promising to judge —
+      could only be described in prose with a digest quoted beside it. A
+      reader then had a pointer they could not resolve, and the party who
+      wrote it never found out.
+      `schemas/envelope/v2/work_request.schema.json` is new and declares an
+      `attachments[]` block: a content-addressed reference, its `sha256:`
+      digest, an optional contract to conform to, what verification is being
+      asked for (`required`, `offered` or `none` — and `none` means no
+      verdict is defined, which is a different claim from unverified), and
+      how long the bytes are retained.
+      What works in this release: authoring a `work_request` with
+      `schema: envelope/v2` and having the block schema-checked. What does
+      NOT yet: there is no verb that writes an attachment, and nothing yet
+      refuses a request whose body names a digest no attachment carries.
+      Those are the point of the work and they are the next step.
+      The field lands on a schema that is itself NEW rather than widening one
+      already shipped, deliberately. Every released binary carries its own
+      embedded copy of the schemas, and each concrete type closes itself
+      against unknown properties — so adding a field to a schema an older
+      binary already knows would make it refuse a legal document it believes
+      it understands. An unknown TYPE is refused honestly instead, and only
+      for an author who chose the newer generation.
+    action:
+      scope: none
+      why: >
+        Nothing to do. Existing `envelope/v1` work requests are untouched and
+        stay valid. Before a space can accept `envelope/v2` work requests it
+        must be running a binary that knows the type — the CI workflow a
+        space pins decides that, not the author's local install.
   - id: RN-01910-1
     kind: fix
     impact: normal
