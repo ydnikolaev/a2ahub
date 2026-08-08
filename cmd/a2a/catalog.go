@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 )
@@ -131,6 +132,13 @@ func catalogCLICommand(name string) (cli.Command, bool) {
 		return cli.NewValidateCommand(nil, ""), true
 	case "sync":
 		return cli.NewSyncCommand("", "", "", nil), true
+	case "attach":
+		// Nil bounds/staging: like "data" below, the catalog path reads only
+		// Name()+Synopsis(). `attach` is a designated TOP-LEVEL verb rather
+		// than a `data` sub-action deliberately — P4's plan argues
+		// attachment is a first-class act, and the parity gate is a reason
+		// to ship both halves together, not to hide it inside a subsystem.
+		return cli.NewAttachCommand("", datapackage.Bounds{}), true
 	case "data":
 		// Nil operations: the catalog/help path only reads Name()+Synopsis()
 		// (DataCommand.Run tolerates nil ops for every sub-verb it never

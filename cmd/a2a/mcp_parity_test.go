@@ -85,6 +85,15 @@ func (ta toolAction) verb() string {
 	case "a2a_contract":
 		return "contract-" + ta.action
 	case "a2a_data":
+		// `attach` is the one a2a_data action whose CLI half is NOT a `data`
+		// sub-verb. P4 decided attachment is a first-class act and gave it a
+		// designated top-level verb, while MCP keeps it grouped under the
+		// data tool beside `deliver`, which it generalises. So this one
+		// action projects to the bare verb name; every other keeps the
+		// "data-" prefix the comment below explains.
+		if ta.action == "attach" {
+			return "attach"
+		}
 		// Without this case a2a_data's "verify" would fall to default and
 		// project to the same bare "verify" key a2a_exchange's own verify
 		// action already claims, and checkBijection's map-keyed-by-verb()
@@ -161,14 +170,40 @@ func designatedCLIVerbs() []string {
 // This test is fully self-contained: unlike TestMCPParityBijection it does
 // NOT depend on buildCommands()["data"] or the registry ever registering
 // a2a_data, so it is green today, ahead of that wiring landing.
+//
+// ONE action is deliberately not a `data` sub-verb: `attach`. P4 gave
+// attachment a designated top-level verb because it is the general case
+// `data deliver` specialises, while MCP keeps it grouped under a2a_data
+// beside the action it generalises. That asymmetry is a decision, so it is
+// named here rather than absorbed into a looser comparison — every OTHER
+// action must still match byte-for-byte and in order.
 func TestDataSubcommandsMatchMCPDataActions(t *testing.T) {
 	t.Parallel()
 	names := make([]string, len(cli.DataSubcommands()))
 	for i, sub := range cli.DataSubcommands() {
 		names[i] = sub.Name
 	}
-	if !reflect.DeepEqual(names, mcp.DataActions) {
-		t.Fatalf("cli.DataSubcommands() names must be byte-identical, in order, to mcp.DataActions: got %v, want %v", names, mcp.DataActions)
+	// topLevelDataActions are the a2a_data actions whose CLI half is a
+	// designated top-level verb instead of a `data` sub-verb. Adding an
+	// entry here is a decision about the CLI's shape; a typo just moves the
+	// failure to TestMCPParityBijection, which resolves the bare verb name.
+	topLevelDataActions := map[string]bool{"attach": true}
+	var wantSubs []string
+	for _, action := range mcp.DataActions {
+		if topLevelDataActions[action] {
+			continue
+		}
+		wantSubs = append(wantSubs, action)
+	}
+	if !reflect.DeepEqual(names, wantSubs) {
+		t.Fatalf("cli.DataSubcommands() names must be byte-identical, in order, to mcp.DataActions minus the top-level ones %v: got %v, want %v", topLevelDataActions, names, wantSubs)
+	}
+	// And the exclusion must not be a way to hide a missing verb: every
+	// top-level exception has to actually BE a designated verb.
+	for action := range topLevelDataActions {
+		if _, ok := buildCommands()[action]; !ok {
+			t.Errorf("a2a_data action %q is excused from the sub-verb list as top-level, but no designated verb %q is registered — the exclusion is hiding an unreachable capability", action, action)
+		}
 	}
 }
 

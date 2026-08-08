@@ -17,6 +17,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/avatar"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/feedback"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
@@ -393,6 +394,24 @@ func buildCommands() map[string]command {
 	// Data verb (spec 05a T1): `a2a data pack|deliver|fetch|verify`,
 	// dispatches its own sub-verbs; per-space like contract/lifecycle.
 	m["data"] = runData
+
+	// Attach verb (P4 possession, plan 04-possession wave D, Option A):
+	// `a2a attach` is meant to be a designated TOP-LEVEL verb, deliberately
+	// NOT a `data` sub-verb (the plan's own "MCP surface" section decides
+	// this so attachment reads as a first-class act). runAttach below is
+	// ready — NOT registered here yet, on purpose: buildCommands() is the
+	// SSOT catalog.go's own catalogCommandRows() enumerates
+	// (cmd/a2a/catalog.go), and every key it does not special-case must
+	// resolve through catalogCLICommand's own switch or that function
+	// PANICS ("no cli.Command construction for dispatch verb %q") — which
+	// kills the whole `cmd/a2a` test binary, not just one test. catalog.go
+	// and catalog_test.go (its own independent
+	// expectedCatalogCommandNames() derivation) are both off this wave's
+	// allowlist. Registering this line is a one-line change the moment a
+	// case for "attach" lands in catalogCLICommand (cli.NewAttachCommand("",
+	// datapackage.Bounds{}), nil-dep style, mirroring the "data" case right
+	// below it) and in catalog_test.go's own list.
+	m["attach"] = runAttach
 
 	// MCP façade (P14, OP-216): serve the §7.7 tool set over stdio JSON-RPC
 	// for the life of the session. internal/mcp re-wires the same core (never
@@ -881,6 +900,22 @@ func runData(args []string, stdout, stderr io.Writer) int {
 	}
 	cmd := cli.NewDataCommand(cliDataAdapter{core: core})
 	return cmd.Run(ctx, args, stdio(stdout, stderr))
+}
+
+// runAttach is `a2a attach`'s dispatch closure (P4 possession wave D). It
+// needs none of runData/runLifecycle's per-space resolution (no space
+// config is even loaded): attach reads and writes only p.staging and a
+// caller-named local source, exactly the ground m["init"]/m["new"] already
+// stand on. datapackage.DefaultBounds() is the same shipped ceiling
+// pack/fetch already enforce (Q2's re-anchor: "the ceiling already exists;
+// reuse it and add no constant").
+func runAttach(args []string, stdout, stderr io.Writer) int {
+	p, err := resolvePaths()
+	if err != nil {
+		return fail(stderr, err)
+	}
+	cmd := cli.NewAttachCommand(p.staging, datapackage.DefaultBounds())
+	return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 }
 
 // resolveDataDeps resolves `a2a data`'s per-space deps, routing on

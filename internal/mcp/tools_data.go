@@ -28,11 +28,27 @@ const (
 	maximumDataToolInput = 64 * 1024
 )
 
-// DataActions is the closed a2a_data discriminator enum — kept
+// DataActions is the closed a2a_data discriminator enum.
+//
+// DEVIATION, recorded rather than hidden: pack/deliver/fetch/verify are kept
 // byte-identical, name-for-name and in order, to cli.DataSubcommands()
 // (cmd/a2a/mcp_parity_test.go's TestDataSubcommandsMatchMCPDataActions
-// proves it, the one place both packages can be imported together).
-var DataActions = []string{"pack", "deliver", "fetch", "verify"}
+// proves it). "attach" is appended after them and breaks that DeepEqual on
+// purpose — attach is P4 possession plan 04's wave D, Option A: a
+// DESIGNATED TOP-LEVEL CLI verb (`a2a attach`), never a `data` sub-verb, so
+// it has no cli.DataSubcommands() row to mirror. The plan's own "MCP
+// surface" section still requires it reachable as an a2a_data action
+// ("a2a_data gains an attach action, mirroring how deliver is already
+// reachable"), and TestMCPParityBijection's verb() (cmd/a2a/
+// mcp_parity_test.go, off this wave's allowlist) unconditionally maps every
+// a2a_data action to a "data-"-prefixed verb — so (a2a_data, "attach")
+// projects to "data-attach", not the bare "attach" the designated verb set
+// actually contains, and NEITHER parity test can go green from this file
+// alone. Both fixes live in cmd/a2a/mcp_parity_test.go (a verb() case for
+// (a2a_data, attach), and TestDataSubcommandsMatchMCPDataActions needs to
+// stop asserting a bare DeepEqual against the full list) — reported to the
+// lead rather than worked around here.
+var DataActions = []string{"pack", "deliver", "fetch", "verify", "attach"}
 
 // DataPackRequest is a2a_data action=pack's resolved input.
 type DataPackRequest struct {
@@ -78,6 +94,45 @@ type DataVerifyRequest struct {
 	// nothing.
 	Record bool
 	Actor  ActorInput
+}
+
+// DataAttachRequest is a2a_data action=attach's resolved input — MCP's own
+// copy of cli.AttachRequest-shaped input (ADR-001: no shared Go type).
+type DataAttachRequest struct {
+	Space        string
+	Draft        string
+	From         string
+	Role         string
+	ConformsTo   string
+	Verification string
+	Retention    string
+}
+
+// DataAttachResult is action=attach's own result shape — the resolved
+// attachment entry plus the draft path it was written onto. Deliberately
+// its own type rather than a DataResult field: DataResult's fields are all
+// pointers to internal/datapackage's own manifest/report types, and an
+// Attachment is neither.
+type DataAttachResult struct {
+	Draft      string                               `json:"draft,omitempty"`
+	Attachment *datapackage.AttachmentManifestEntry `json:"attachment,omitempty"`
+}
+
+// DataAttachOperations is action=attach's own narrow capability,
+// deliberately kept SEPARATE from DataOperations below rather than adding
+// an Attach method to that interface: DataOperations already has a
+// production implementation (cmd/a2a/data_wiring.go's mcpDataAdapter, off
+// this wave's allowlist; asserted at data_wiring.go:1294 via
+// `var _ mcp.DataOperations = mcpDataAdapter{}`), and widening the required
+// method set there would fail that assertion — a compile break in a file
+// this wave cannot touch. newDataHandler below type-asserts
+// DataOperations against this interface at call time (the same optional-
+// capability idiom adapters.go's own skipReporter already uses in this
+// package) and reports "not configured" when the concrete ops value does
+// not (yet) implement it, exactly like DataToolDeps.Operations == nil
+// already does for the whole tool.
+type DataAttachOperations interface {
+	Attach(context.Context, DataAttachRequest) (DataAttachResult, error)
 }
 
 // DataResult mirrors cli.DataResult's own wire shape field-for-field —
@@ -145,6 +200,14 @@ type DataInput struct {
 	To          string     `json:"to,omitempty"`
 	Record      bool       `json:"record,omitempty"`
 	Actor       ActorInput `json:"actor,omitempty"`
+	// Draft/Role/ConformsTo/Verification/Retention are action=attach's own
+	// fields (mirrors cli.AttachCommand's own flags: draft, --role,
+	// --conforms-to, --verification, --retention).
+	Draft        string `json:"draft,omitempty"`
+	Role         string `json:"role,omitempty"`
+	ConformsTo   string `json:"conforms_to,omitempty"`
+	Verification string `json:"verification,omitempty"`
+	Retention    string `json:"retention,omitempty"`
 }
 
 func newDataHandler(deps DataToolDeps) HandlerFunc {
@@ -162,7 +225,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 
 		switch in.Action {
 		case "pack":
-			if err := dataForbidInput(in, "staging_root", "expect_pack", "package_id", "to", "record"); err != nil {
+			if err := dataForbidInput(in, "staging_root", "expect_pack", "package_id", "to", "record", "draft", "role", "conforms_to", "verification", "retention"); err != nil {
 				return nil, "", err
 			}
 			if in.Contract == "" || in.From == "" || in.Profile == "" || in.Format == "" {
@@ -178,7 +241,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			})
 			return result, dataSummary("pack", result), callErr
 		case "deliver":
-			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "max_attempts", "package_id", "to", "record"); err != nil {
+			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "max_attempts", "package_id", "to", "record", "draft", "role", "conforms_to", "verification", "retention"); err != nil {
 				return nil, "", err
 			}
 			if in.StagingRoot == "" || in.Fulfills == "" {
@@ -190,7 +253,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			})
 			return result, dataSummary("deliver", result), callErr
 		case "fetch":
-			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "record", "actor"); err != nil {
+			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "record", "actor", "draft", "role", "conforms_to", "verification", "retention"); err != nil {
 				return nil, "", err
 			}
 			if in.PackageID == "" || in.To == "" {
@@ -199,7 +262,7 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			result, callErr := deps.Operations.Fetch(ctx, DataFetchRequest{Space: in.Space, PackageID: in.PackageID, Destination: in.To})
 			return result, dataSummary("fetch", result), callErr
 		case "verify":
-			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "to"); err != nil {
+			if err := dataForbidInput(in, "contract", "from", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "to", "draft", "role", "conforms_to", "verification", "retention"); err != nil {
 				return nil, "", err
 			}
 			if in.PackageID == "" {
@@ -207,6 +270,22 @@ func newDataHandler(deps DataToolDeps) HandlerFunc {
 			}
 			result, callErr := deps.Operations.Verify(ctx, DataVerifyRequest{Space: in.Space, PackageID: in.PackageID, Record: in.Record, Actor: in.Actor})
 			return result, dataSummary("verify", result), callErr
+		case "attach":
+			if err := dataForbidInput(in, "contract", "profile", "format", "expires", "fulfills", "supersedes", "max_attempts", "staging_root", "expect_pack", "package_id", "to", "record", "actor"); err != nil {
+				return nil, "", err
+			}
+			if in.Draft == "" || in.From == "" || in.Verification == "" {
+				return nil, "", fmt.Errorf("a2a_data attach: draft, from and verification are required")
+			}
+			attacher, ok := deps.Operations.(DataAttachOperations)
+			if !ok {
+				return nil, "", fmt.Errorf("a2a_data attach: service is not configured")
+			}
+			result, callErr := attacher.Attach(ctx, DataAttachRequest{
+				Space: in.Space, Draft: in.Draft, From: in.From, Role: in.Role,
+				ConformsTo: in.ConformsTo, Verification: in.Verification, Retention: in.Retention,
+			})
+			return result, dataAttachSummary(result), callErr
 		default:
 			panic("unreachable closed a2a_data action")
 		}
@@ -249,6 +328,16 @@ func dataForbidInput(in DataInput, fields ...string) error {
 			present = in.Record
 		case "actor":
 			present = in.Actor != (ActorInput{})
+		case "draft":
+			present = in.Draft != ""
+		case "role":
+			present = in.Role != ""
+		case "conforms_to":
+			present = in.ConformsTo != ""
+		case "verification":
+			present = in.Verification != ""
+		case "retention":
+			present = in.Retention != ""
 		default:
 			panic("unknown a2a_data forbidden field " + field)
 		}
@@ -326,11 +415,23 @@ func dataSummary(action string, result DataResult) string {
 	}
 }
 
+// dataAttachSummary is dataSummary's own sibling for action=attach's
+// distinct result type (DataAttachResult, not DataResult) — mirrors
+// cmd_attach.go's own text-mode line ("attach: <digest> -> <draft>").
+func dataAttachSummary(result DataAttachResult) string {
+	if result.Attachment == nil {
+		return ""
+	}
+	return fmt.Sprintf("attached %s -> %s", result.Attachment.Digest, result.Draft)
+}
+
 func dataToolSchema() json.RawMessage {
 	return groupedSchema("action", DataActions, map[string]string{
 		"space": "string", "contract": "string", "from": "string", "profile": "string",
 		"format": "string", "expires": "string", "fulfills": "string", "supersedes": "string",
 		"max_attempts": "integer", "staging_root": "string", "expect_pack": "string",
 		"package_id": "string", "to": "string", "record": "boolean", "actor": "object",
+		"draft": "string", "role": "string", "conforms_to": "string",
+		"verification": "string", "retention": "string",
 	})
 }

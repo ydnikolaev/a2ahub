@@ -92,6 +92,7 @@ var coverageManifest = []coverageEntry{
 	// `space update` needs a host (it opens a PR through the write funnel),
 	// so it cannot be a txtar against the local fixture — it is covered at
 	// the host-rig tier instead, the same way `submit` is (spec 35 AC-950.5).
+	{Verb: "attach", GoTest: "internal/e2e.TestAttachVerbReachesTheBuiltBinary"},
 	{Verb: "space", GoTest: "internal/e2e.TestHostLoopSpaceUpdate"},
 	{Verb: "template", Txtar: "template_list.txtar"},
 	{Verb: "validate", Txtar: "new_validate.txtar"},
