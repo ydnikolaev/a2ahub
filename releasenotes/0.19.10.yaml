@@ -306,7 +306,7 @@ changes:
       visibility: shipped
       why: "A request that names bytes can now declare them in the envelope instead of describing them in prose, which is the difference between a reader fetching what you meant and a reader guessing."
     impact: normal
-    subject: "A work request can declare the bytes it is about, under `schema: envelope/v2`"
+    subject: "A work request can carry the bytes it is about, and a reference that does not resolve is refused"
     detail: >
       A request that is *about* some bytes had no way to carry them unless
       those bytes were a dataset conforming to a pinned contract and were
@@ -321,11 +321,28 @@ changes:
       asked for (`required`, `offered` or `none` — and `none` means no
       verdict is defined, which is a different claim from unverified), and
       how long the bytes are retained.
-      What works in this release: authoring a `work_request` with
-      `schema: envelope/v2` and having the block schema-checked. What does
-      NOT yet: there is no verb that writes an attachment, and nothing yet
-      refuses a request whose body names a digest no attachment carries.
-      Those are the point of the work and they are the next step.
+      `a2a attach <draft> --from <file-or-dir> --verification
+      required|offered|none` writes the entry, mints the content-addressed
+      reference and computes the digest. `verification` has no default and
+      the command refuses without it: defaulting it would claim somebody
+      promised a verdict on bytes nobody promised to judge, and separating
+      that claim from the bytes themselves is the whole point.
+      And the reference now has to resolve. `a2a validate` refuses an
+      artifact whose BODY names a `sha256:` that no declared attachment
+      carries — locally, before any pull request, which is what makes the
+      difference: the failure this is written from took six days to surface
+      because nothing local could see it. The set of digests checked is
+      scanned out of the body rather than declared, so it cannot drift from
+      what an author actually wrote. A body that merely lists what looks
+      like a file tree with nothing attached gets a WARNING, never a
+      refusal — only checkable facts refuse.
+      What does NOT work yet: `a2a new work_request` still writes
+      `envelope/v1`, so a draft carrying attachments has to be authored by
+      hand for now; and three read surfaces still need teaching —
+      `verification: none` renders as a missing package rather than "no
+      verdict is defined", a lapsed retention reads as a failed fetch rather
+      than a dead reference, and submit does not yet prove an attachment is
+      fetchable from the space rather than from the author's machine.
       The field lands on a schema that is itself NEW rather than widening one
       already shipped, deliberately. Every released binary carries its own
       embedded copy of the schemas, and each concrete type closes itself
@@ -337,9 +354,11 @@ changes:
       scope: none
       why: >
         Nothing to do. Existing `envelope/v1` work requests are untouched and
-        stay valid. Before a space can accept `envelope/v2` work requests it
-        must be running a binary that knows the type — the CI workflow a
-        space pins decides that, not the author's local install.
+        stay valid, and the new refusal only fires on a body that names a
+        digest — an artifact that names none is unaffected. Before a space
+        can accept `envelope/v2` work requests it must be running a binary
+        that knows the type: the CI workflow a space pins decides that, not
+        the author's local install.
   - id: RN-01910-1
     kind: fix
     impact: normal
