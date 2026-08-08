@@ -41,6 +41,11 @@ docs/features/**/plans/**
 docs/features/**/audits/**
 docs/features/**/plan.md
 docs/features/**/design-handoff.md
+# seam.md — an epic's frozen inter-phase contract, quoted verbatim by its
+# plans (agent-exchange-2026-08 is the first). Its Go signatures are prose
+# until the phase implements them, so nothing compiles or checks them here;
+# what enforces it is the plan cross-review, which is judgement.
+docs/features/**/seam.md
 
 # Two integrations with their own toolchains — a Swift package and a VS Code
 # extension with its own npm test suite. Nothing in this repo's make-ABI can
