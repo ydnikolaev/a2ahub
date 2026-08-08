@@ -81,3 +81,54 @@ func TestOpenStatesReachesEveryStateSomebodyOwesAMoveFrom(t *testing.T) {
 			len(unreachable), checked, strings.Join(unreachable, "\n  "))
 	}
 }
+
+// TestEveryLiveStateHasAPendencyRow is the OTHER direction, and it is the one
+// a runtime string used to narrate instead of proving.
+//
+// The gate above polices `pendency owes ⟹ isOpen`. This one polices
+// `isOpen ⟹ pendency has a row at all` — not that the row answers somebody
+// (a published contract legitimately owes nothing, which is why the converse
+// stays unasserted above), but that `pendency.Resolve` does not return
+// ErrUnknownState for a pair this package calls live.
+//
+// It existed as prose. `buildOpenItems` degraded a table miss to a Why that
+// read "this should be unreachable — see buildOpenItems' own doc comment",
+// and when P2 gave the inbox the same justification contract that string
+// went ON THE WIRE — where it is not merely unhelpful but false, because the
+// inbox lists terminal artifacts and asking about one is ordinary.
+//
+// A claim about a table is a gate's job. All 30 live pairs pass today, so
+// the claim is true; what it lacked was anything that would notice when it
+// stopped being.
+func TestEveryLiveStateHasAPendencyRow(t *testing.T) {
+	t.Parallel()
+
+	var missing []string
+	live := 0
+	for kind, states := range openStates {
+		for state, isLive := range states {
+			if !isLive {
+				continue
+			}
+			live++
+			// From/To are placeholders: this asks whether a ROW exists for
+			// the (kind, state) pair, never who it names.
+			if _, err := pendency.Resolve(pendency.Input{
+				Kind: kind, State: state,
+				From: "sender-sys", To: []string{"target-sys"},
+			}); err != nil {
+				missing = append(missing, string(kind)+"/"+string(state)+": "+err.Error())
+			}
+		}
+	}
+
+	if live == 0 {
+		t.Fatal("openStates admits no live pair at all — this gate is watching nothing")
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		t.Fatalf("%d of %d live (kind, state) pairs have no pendency row, so every surface "+
+			"asking about one gets a degraded verdict instead of an answer:\n  %s",
+			len(missing), live, strings.Join(missing, "\n  "))
+	}
+}

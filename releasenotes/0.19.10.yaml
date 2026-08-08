@@ -272,6 +272,34 @@ changes:
         Nothing to do. If a deprecation vanished from your exchange view
         while a retire was blocked on your acknowledgement, it is visible
         again.
+  - id: RN-01910-11
+    kind: fix
+    impact: normal
+    subject: "A response now says who owes the next move, on every surface that lists it"
+    detail: >
+      A response artifact answers somebody else's question or work request, and
+      it carries no addressee of its own — so who owes the verify is resolved
+      from the PARENT it answers. `a2a thread --json` did that. `a2a inbox
+      --json` did not: it had no parent in hand, and the answer degraded to
+      "nobody owes anything" rather than to an error. One artifact, two
+      answers, on two commands reading the same data.
+      Both surfaces resolve the parent now. `a2a outbox --json` also carries
+      `waiting_on`, `expected_transition` and `why` for the first time — they
+      were promised when the fields were added and only the inbox had been
+      wired.
+      Alongside, one string stops reaching readers. When an artifact is in a
+      state no obligation is defined for — a declined request you are still
+      listed on — the justification read "this should be unreachable" and
+      named an internal function. That sentence was written for a surface
+      where it was true and became visible on one where it is not; the state
+      is now described plainly, and the claim it used to make is proven by a
+      test instead of narrated to a user.
+    action:
+      scope: none
+      why: >
+        Nothing to do. If you parse `a2a outbox --json`, three fields that
+        were always absent may now be present; they are the same fields
+        `a2a inbox --json` already carried.
   - id: RN-01910-1
     kind: fix
     impact: normal

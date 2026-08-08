@@ -114,9 +114,20 @@ func hasFulfillingResponse(fa foldedArtifact) bool {
 //
 // parentFrom is the one fact a caller can know and this function cannot: a
 // response artifact carries no envelope of its own, so whose exchange it
-// answers is resolved from the PARENT. A caller with no parent in hand
-// passes "" — see resolveVerdict's own call sites and the asymmetry noted
-// there.
+// answers is resolved from the PARENT. Store.inbox and Store.outbox each
+// build a per-space id->artifact index (byArtifactID) and resolve it through
+// responseParentFrom before calling in here — the SAME resolution
+// buildOpenItems (threadview.go) already performs for the thread surface,
+// including its degrade-to-the-response's-own-`from` fallback when the
+// parent cannot be found in that space's index. This was the one remaining
+// asymmetry between the inbox/outbox surfaces and the thread surface (a
+// response's pendency verdict differed depending on which one was asked);
+// it is closed now, not merely recorded. Every OTHER caller passes ""
+// deliberately, for a reason specific to it — this file's own
+// actionableReasons 3-arg convenience wrapper (see its own doc comment for
+// why that is behaviour-preserving) and types.go's exchangeActive, whose
+// only resolveVerdict call fires on the announcement/published branch, a
+// kind for which parentFrom is never read at all.
 func resolveVerdict(fa foldedArtifact, me string, manifest space.Manifest, parentFrom string) pendency.Verdict {
 	env := fa.Env
 	in := pendency.Input{
@@ -154,7 +165,20 @@ func resolveVerdict(fa foldedArtifact, me string, manifest space.Manifest, paren
 		// fall-through. The thread view had this and the inbox did not,
 		// which is the same one-answer-two-surfaces split this phase exists
 		// to close, one level below the fields themselves.
-		return pendency.Verdict{Why: "pendency carries no row for (" + string(fa.kind()) + ", " + string(fa.Result.State) + "); this should be unreachable — see buildOpenItems' own doc comment"}
+		//
+		// The text is plain because it GOES ON THE WIRE. It used to read
+		// "this should be unreachable — see buildOpenItems' own doc comment",
+		// which was true where it was written: the thread view filters by
+		// isOpen before it asks, so a miss there means the two tables have
+		// drifted. It is not true here. The inbox lists a terminal artifact
+		// addressed to me, asks about it, and legitimately gets no row — so
+		// that sentence reached `a2a inbox --json` and told a reader their
+		// declined work request was an internal invariant violation.
+		//
+		// The drift claim did not disappear, it moved somewhere it can be
+		// PROVEN: TestEveryLiveStateHasAPendencyRow. A runtime string cannot
+		// detect a table gap that a gate can refuse outright.
+		return pendency.Verdict{Why: "no obligation is defined for a " + string(fa.kind()) + " in state " + string(fa.Result.State)}
 	}
 	return verdict
 }
@@ -167,18 +191,37 @@ func resolveVerdict(fa foldedArtifact, me string, manifest space.Manifest, paren
 // what I7 forbids. `a2a inbox --json` carries waiting_on, expected_transition
 // and why for the first time as a consequence: they were computed here all
 // along and thrown away at the door.
+//
+// This is a 3-arg convenience wrapper over actionableReasonsForResponse that
+// passes parentFrom="" — kept because notifications.go and statusline.go
+// call this exact form and neither iterates with a per-space id->artifact
+// index in hand to resolve a response's parent. That is safe FOR THEM
+// specifically, not in general: of the five OP-207 conditions below, only
+// 1/2/3/5 read verdict.Expected, and each tests it against TAcknowledge,
+// TClose, TRespond (kind-gated to exclude KindResponse) or TApprove — none
+// of which a response artifact's own verdict ever produces (its only two
+// possible Expected values are TVerify, with a resolved parent, or "",
+// without one). So `reasons` for a response artifact is byte-identical
+// whether or not parentFrom is supplied; only the discarded Verdict return
+// value would differ, and both of this wrapper's callers discard it. Store
+// itself never calls this form — Store.inbox calls
+// actionableReasonsForResponse directly, with a real parentFrom.
 func actionableReasons(fa foldedArtifact, me string, manifest space.Manifest) ([]string, pendency.Verdict) {
+	return actionableReasonsForResponse(fa, me, manifest, "")
+}
+
+// actionableReasonsForResponse is actionableReasons' full form: parentFrom
+// is threaded straight into resolveVerdict, so a caller iterating a space's
+// full artifact set (Store.inbox, via responseParentFrom) gets the SAME
+// verdict for a response artifact that the thread surface does, rather than
+// the degraded "nobody owes anything" answer a bare "" produces.
+func actionableReasonsForResponse(fa foldedArtifact, me string, manifest space.Manifest, parentFrom string) ([]string, pendency.Verdict) {
 	var reasons []string
 	kind := fa.kind()
 	env := fa.Env
 	state := fa.Result.State
 
-	// parentFrom is "" here: the inbox iterates one artifact at a time and
-	// has no parent envelope in hand. The thread view does, and passes it.
-	// That asymmetry is a KNOWN gap for a response artifact, recorded in
-	// the epic backlog rather than silently closed by this refactor — this
-	// commit preserves today's answers exactly.
-	verdict := resolveVerdict(fa, me, manifest, "")
+	verdict := resolveVerdict(fa, me, manifest, parentFrom)
 	iOwe := containsString(verdict.Owners, me)
 
 	// 1: {addressed to me with no ack by me} — a pure filter, for every
@@ -271,4 +314,54 @@ func containsString(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// byArtifactID builds an id -> foldedArtifact index from a []foldedArtifact
+// slice, keyed on Env.ID — the shape three separate call sites in this
+// package built inline (buildShowResult's ref-resolution,
+// yourMoveByArtifact's open-item lookup, and Store.inbox/Store.outbox's own
+// per-space response-parent lookup below), extracted once a third caller
+// needed it (rule of three). A fourth, pre-existing inline copy lives in
+// threadview.go's renderThread (byID); that file is outside this change's
+// allowlist and is left as-is.
+func byArtifactID(artifacts []foldedArtifact) map[string]foldedArtifact {
+	out := make(map[string]foldedArtifact, len(artifacts))
+	for _, fa := range artifacts {
+		out[fa.Env.ID] = fa
+	}
+	return out
+}
+
+// responseParentFrom resolves the parent's envelope `from` for a response
+// artifact, given byID (a per-space id->artifact index built by
+// byArtifactID). Returns "" for every non-response kind — that field is
+// meaningless for anything else, and resolveVerdict itself only reads
+// parentFrom for fold.KindResponse.
+//
+// When the parent cannot be found in byID, this degrades to the response's
+// OWN `from` rather than "" — the SAME fallback buildOpenItems
+// (threadview.go) already applies for the thread surface's authEnv. That
+// keeps the DEGRADED ANSWER the same shape on both surfaces (a real, if
+// weaker, from-id — never a silent "nobody owes anything").
+//
+// It does not, by itself, keep the two surfaces choosing the SAME branch on
+// every input, because the two byID indexes have different domains by
+// design: this one is the WHOLE SPACE (this function's own caller, per the
+// brief that introduced it), while buildOpenItems' byID is deliberately the
+// RENDERED THREAD MEMBER SET only (threadview.go's own doc comment on
+// renderThread's byID). So a response whose parent lives in the same space
+// but a DIFFERENT thread — already a REF-009/CC-073 violation, "a fork or a
+// broken propagation" per that same comment — resolves its real parent here
+// and degrades to its own `from` on the thread surface: a residual
+// divergence on that one already-anomalous shape, not on the normal case
+// (parent absent from the space entirely, or parent present in the thread),
+// where both surfaces agree. See this phase's own Deviations report.
+func responseParentFrom(fa foldedArtifact, byID map[string]foldedArtifact) string {
+	if fa.kind() != fold.KindResponse {
+		return ""
+	}
+	if parent, ok := byID[fa.Env.Parent]; ok {
+		return parent.Env.From
+	}
+	return fa.Env.From
 }

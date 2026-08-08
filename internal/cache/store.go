@@ -457,6 +457,10 @@ func (s *Store) inbox(ctx context.Context, actionableOnly, advance, annotate, ex
 		stale := s.spaceSyncStale(spaceID)
 		markers, _ := ReadMarkers(s.cacheDir, spaceID)
 		pending := markerSet(markers)
+		// byID is keyed on the WHOLE space's artifacts, not a thread
+		// subset, so a response's parent is found even when the response
+		// and its parent landed in different threads.
+		byID := byArtifactID(artifacts)
 		var yourMove map[string]bool
 		if annotate {
 			yourMove = yourMoveByArtifact(artifacts, s.manifestFor(spaceID), s.ownSystem)
@@ -471,7 +475,14 @@ func (s *Store) inbox(ctx context.Context, actionableOnly, advance, annotate, ex
 			// surfaces have to agree on — computing it conditionally is how
 			// `a2a inbox --json` came to omit fields the dashboard showed
 			// for the same artifact.
-			reasons, verdict := actionableReasons(fa, s.ownSystem, manifest)
+			//
+			// parentFrom resolves a response artifact's parent against this
+			// space's own byID index (responseParentFrom, inbox.go) —
+			// mirroring threadview.go's buildOpenItems so a response's
+			// pendency verdict no longer differs between `a2a thread` and
+			// `a2a inbox` for the same artifact.
+			parentFrom := responseParentFrom(fa, byID)
+			reasons, verdict := actionableReasonsForResponse(fa, s.ownSystem, manifest, parentFrom)
 			switch {
 			case actionableOnly:
 				if len(reasons) == 0 {
@@ -526,6 +537,14 @@ func (s *Store) advanceCursor(idx map[string][]foldedArtifact) error {
 // `--attention` union. Outbox never advances the read cursor itself
 // (only `a2a inbox` does, per OP-207's own wording) — it reads whatever
 // cursor snapshot the last inbox run left behind.
+//
+// Every Item's WaitingOn/ExpectedTransition/Why now carry the SAME pendency
+// verdict `a2a inbox`/`a2a thread` compute for the same artifact — the
+// unconditional-computation rule store.go's own inbox loop already states
+// (never conditional on attentionOnly/annotate, the same defect shape that
+// let `a2a inbox --json` drop these fields for one wave). Before this, an
+// outbox Item carried none of the three; a caller that stored a strict-shape
+// snapshot of `a2a outbox --json` output will see it grow these fields.
 func (s *Store) Outbox(ctx context.Context, attentionOnly bool) ([]Item, error) {
 	return s.outbox(ctx, attentionOnly, false, false)
 }
@@ -554,6 +573,10 @@ func (s *Store) outbox(ctx context.Context, attentionOnly, annotate, exchangeAct
 		markers, _ := ReadMarkers(s.cacheDir, spaceID)
 		pending := markerSet(markers)
 		sla := s.slaFor(spaceID)
+		// byID is keyed on the WHOLE space's artifacts, not a thread
+		// subset, so a response's parent is found even when the response
+		// and its parent landed in different threads — same as Store.inbox.
+		byID := byArtifactID(artifacts)
 		var yourMove map[string]bool
 		if annotate {
 			yourMove = yourMoveByArtifact(artifacts, s.manifestFor(spaceID), s.ownSystem)
@@ -576,6 +599,17 @@ func (s *Store) outbox(ctx context.Context, attentionOnly, annotate, exchangeAct
 				continue
 			}
 			item := toItem(fa, stale, pending[fa.Env.ID])
+			// The verdict is computed for EVERY item, unconditionally —
+			// mirroring Store.inbox's own rule (see its loop's comment):
+			// computing it only when a caller asked to filter or annotate
+			// is the exact defect shape this epic exists to end.
+			// parentFrom resolves a response artifact's parent against
+			// this space's own byID index (responseParentFrom, inbox.go).
+			parentFrom := responseParentFrom(fa, byID)
+			verdict := resolveVerdict(fa, s.ownSystem, manifest, parentFrom)
+			item.WaitingOn = verdict.Owners
+			item.ExpectedTransition = verdict.Expected
+			item.Why = verdict.Why
 			if annotate {
 				item.YourMove = yourMove[fa.Env.ID]
 			}
@@ -694,10 +728,7 @@ func (s *Store) buildShowResult(fa foldedArtifact, spaceID string, all []foldedA
 		flags = append(flags, string(f.Kind))
 	}
 
-	byID := make(map[string]foldedArtifact, len(all))
-	for _, a := range all {
-		byID[a.Env.ID] = a
-	}
+	byID := byArtifactID(all)
 	var refs []RefFact
 	for _, r := range fa.Env.Refs {
 		refs = append(refs, resolveRefFact(r, byID))
@@ -715,10 +746,7 @@ func (s *Store) buildShowResult(fa foldedArtifact, spaceID string, all []foldedA
 }
 
 func yourMoveByArtifact(artifacts []foldedArtifact, manifest space.Manifest, ownSystem string) map[string]bool {
-	byID := make(map[string]foldedArtifact, len(artifacts))
-	for _, fa := range artifacts {
-		byID[fa.Env.ID] = fa
-	}
+	byID := byArtifactID(artifacts)
 	out := make(map[string]bool, len(artifacts))
 	for _, item := range buildOpenItems(artifacts, byID, manifest, ownSystem) {
 		out[item.ID] = item.YourMove
