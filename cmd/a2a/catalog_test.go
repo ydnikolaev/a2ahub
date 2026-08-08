@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 )
 
 // catalog_test.go is the P13 catalog seam's own guard (spec 13 §8 AC #3 +
@@ -178,5 +180,112 @@ func TestEveryCatalogNameIsDispatchable(t *testing.T) {
 			"token is not a buildCommands() key is a command that answers `unknown command`. "+
 			"A sub-verb is an ARGUMENT of its parent verb, so it is joined with a space, never a hyphen.",
 			strings.Join(broken, "\n  "))
+	}
+}
+
+// TestCatalogVocabularyIsTheDomainsOwn proves the flag emits what fold
+// derives, not a projection this file re-states. The whole point of the
+// mode is that a gate can stop carrying its own copy of the vocabulary;
+// a CLI that filtered or reordered on the way out would reintroduce the
+// second source it exists to remove.
+func TestCatalogVocabularyIsTheDomainsOwn(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr bytes.Buffer
+
+	code := runCatalog([]string{"--vocabulary", "--json"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d (stderr: %q), want 0", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("wrote to stderr: %q", stderr.String())
+	}
+
+	var got fold.Vocabulary
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, stdout.String())
+	}
+	if !reflect.DeepEqual(got, fold.BuildVocabulary()) {
+		t.Fatalf("emitted vocabulary differs from fold.BuildVocabulary()\ngot:  %+v\nwant: %+v", got, fold.BuildVocabulary())
+	}
+}
+
+// TestCatalogVocabularyCoversEveryRestingPair is the assertion a gate
+// depends on and cannot make for itself: the vocabulary it derives its
+// forbidden list from must actually contain every state the domain can
+// produce. A vocabulary missing a state polices nothing about it, and the
+// gate would be green while a component spelled it by hand.
+func TestCatalogVocabularyCoversEveryRestingPair(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr bytes.Buffer
+	if code := runCatalog([]string{"--vocabulary", "--json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit code = %d (stderr: %q)", code, stderr.String())
+	}
+
+	var v fold.Vocabulary
+	if err := json.Unmarshal(stdout.Bytes(), &v); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+
+	for _, krs := range fold.RestingStates() {
+		found := false
+		for _, s := range v.States[string(krs.Kind)] {
+			if s == string(krs.State) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("vocabulary omits (%s, %s), a pair RestingStates() yields — a gate reading this would not police it", krs.Kind, krs.State)
+		}
+	}
+	if len(v.Outcomes) == 0 || len(v.Transitions) == 0 {
+		t.Fatal("vocabulary has no outcomes or no transitions — a gate deriving from it would forbid nothing and pass silently")
+	}
+}
+
+// TestCatalogFlagRefusals pins the two refusals as refusals. Defaulting
+// either one would be worse than failing: --vocabulary alone rendering
+// markdown invites a gate to parse prose, and --json alone silently
+// changing the command catalog's format would break the committed
+// skill/a2ahub/reference/commands.md projection.
+func TestCatalogFlagRefusals(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"vocabulary_without_json", []string{"--vocabulary"}},
+		{"json_without_vocabulary", []string{"--json"}},
+		{"unknown_flag", []string{"--nope"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var stdout, stderr bytes.Buffer
+			code := runCatalog(tc.args, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("exit code = %d, want 2 (a usage refusal)", code)
+			}
+			if stderr.Len() == 0 {
+				t.Fatal("refused with no explanation on stderr")
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("a refusal still wrote to stdout: %q", stdout.String())
+			}
+		})
+	}
+}
+
+// TestBareCatalogUnaffectedByTheNewFlags is the regression guard for the
+// committed projection: adding a mode must not move the default output,
+// which skill/a2ahub/reference/commands.md reproduces byte for byte.
+func TestBareCatalogUnaffectedByTheNewFlags(t *testing.T) {
+	t.Parallel()
+	var stdout, stderr bytes.Buffer
+	if code := runCatalog([]string{}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit code = %d", code)
+	}
+	if stdout.String() != renderCatalog() {
+		t.Fatal("an empty argument slice no longer produces the markdown catalog")
 	}
 }

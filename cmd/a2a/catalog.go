@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/mcp"
 )
 
@@ -214,9 +216,53 @@ func renderCatalog() string {
 // runCatalog implements the hidden `a2a __catalog` verb: prints the
 // deterministic markdown catalog to stdout and exits 0. It is registered
 // in wire.go's buildCommands() but deliberately absent from main.go's
-// printUsage — it is a machine-consumed, not a user-facing, verb. args is
-// accepted only to match the `command` dispatch signature; it is unused.
-func runCatalog(_ []string, stdout, _ io.Writer) int {
+// printUsage — it is a machine-consumed, not a user-facing, verb.
+//
+// `--vocabulary --json` switches it to the machine-readable vocabulary a
+// GATE reads: every outcome, every state per kind, every transition name,
+// all derived from the transition table rather than listed. Without it, a
+// gate policing what a component may spell has to carry its own copy of
+// the list — correct the day it is written and silently wrong the day a
+// state is added, which is the defect this epic exists to remove.
+//
+// The bare `a2a __catalog` output is UNCHANGED, byte for byte:
+// skill/a2ahub/reference/commands.md is its committed projection and the
+// skill-drift job regenerates and diffs it.
+func runCatalog(args []string, stdout, stderr io.Writer) int {
+	vocabulary, asJSON := false, false
+	for _, arg := range args {
+		switch arg {
+		case "--vocabulary":
+			vocabulary = true
+		case "--json":
+			asJSON = true
+		default:
+			_, _ = fmt.Fprintf(stderr, "a2a __catalog: unknown flag %q (accepts --vocabulary --json)\n", arg)
+			return 2
+		}
+	}
+
+	switch {
+	case vocabulary && !asJSON:
+		// Refused rather than defaulted to markdown. The vocabulary exists
+		// to be PARSED; rendering it would invite a gate to read prose,
+		// which is how the forbidden list becomes hand-maintained again by
+		// a different route.
+		_, _ = fmt.Fprintln(stderr, "a2a __catalog: --vocabulary requires --json (the vocabulary exists to be parsed, never rendered)")
+		return 2
+	case asJSON && !vocabulary:
+		_, _ = fmt.Fprintln(stderr, "a2a __catalog: --json is only defined with --vocabulary (the command catalog itself is markdown by contract)")
+		return 2
+	case vocabulary:
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(fold.BuildVocabulary()); err != nil {
+			_, _ = fmt.Fprintf(stderr, "a2a __catalog: encode vocabulary: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+
 	_, _ = io.WriteString(stdout, renderCatalog())
 	return 0
 }
