@@ -1,0 +1,63 @@
+feedback: v1
+id: fb-20260808-d5740f
+kind: protocol
+severity: major
+title: a delivery response can merge while its payload PR fails
+summary: >-
+  A data delivery reaches the space as two independent pull requests: the
+  payload (the package directory plus its handoff artifact) and the response
+  that announces it. Nothing couples their outcomes. Observed: the response
+  merged, the payload PR failed its space CI check and stayed open, and the
+  thread then advanced to `next=verify:<consumer>` — asking the consumer to
+  verify a package that `a2a data fetch` correctly refuses as "not present in
+  the local mirror", and that `a2a data verify` cannot judge either. From the
+  consumer's side every signal says the delivery succeeded: the response is
+  merged and readable, its prose says "delivered", the thread hands over the
+  move. The only way to learn otherwise is to notice that the handoff artifact
+  never appeared in the inbox and go read the producer's PR list. The producing
+  side is equally misled in the other direction — its `respond --result
+  delivered` merged, so its own tooling shows the obligation discharged.
+  This is separable from whatever makes a given payload PR red: any failure
+  mode on that PR produces the same split, and the thread state will be wrong
+  in the same way.
+context:
+    a2a_version: 0.19.9
+    os_arch: darwin/arm64
+    surface: protocol
+    command: a2a thread <thread-id>
+    agent: consumer-side agent reconciling an inbound data delivery
+evidence:
+    steps:
+        - "Producer: `a2a data deliver <staging> --fulfills <XW-id>` and then respond with result `delivered`."
+        - "Arrange for the payload PR's space CI to fail (any cause; in the observed case the packed README tripped the artifact-frontmatter policy)."
+        - "Consumer: `a2a sync`, then `a2a inbox` — the response is listed; no handoff artifact is."
+        - "Consumer: `a2a thread <thread-id>` — it shows `next=verify:<consumer>` and marks it YOUR MOVE."
+        - "Consumer: `a2a data fetch <DP-id> --to <dir>` — refused, package not present in the local mirror."
+    expected: >-
+      A thread only asks the consumer to verify a package the consumer can
+      fetch. Either the response waits on its payload landing, or the thread
+      shows the delivery as incomplete and names the payload PR as the blocked
+      half.
+    actual: >-
+      Response merged, payload PR open and red, thread says verify. Both sides'
+      tooling reports success; the discrepancy is visible only by manually
+      inspecting the space's open pull requests.
+proposal: >-
+  Make the delivery's completion the payload's landing, not the response's.
+  Options, cheapest first: (1) `respond --result delivered` refuses, or warns
+  loudly, while the referenced package is not resolvable in the space — the
+  same resolvability check `fetch` already performs; (2) the thread's computed
+  next-move consults package presence, so an undelivered payload renders as
+  waiting on the producer rather than on the consumer; (3) `a2a doctor` grows a
+  check for "a response claims a package this space does not carry", which is
+  the shape a consumer can act on without reading anyone's PR list. Any one of
+  these turns a silent split into a named one; today the failure is invisible
+  from both endpoints, which is the part that makes it worth a protocol fix
+  rather than a per-cause fix.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
