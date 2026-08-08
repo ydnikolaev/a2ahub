@@ -180,3 +180,35 @@ func collectFieldPaths(node map[string]any, prefix string, out *[]string) {
 		collectFieldPaths(items, prefix+"[]", out)
 	}
 }
+
+// EnvelopeFieldPaths returns every top-level field an envelope of this
+// generation and type may legally carry — the union of the shared base and
+// the per-type schema.
+//
+// The union is the point. A per-type schema reaches its shared fields
+// through `$ref`, so reflecting over its own `properties` alone yields four
+// names for `question` and misses the thirty-one on the base. A caller
+// asking "may this artifact carry `origin`?" and reading only the per-type
+// schema gets "no" for every type, which is how five schema-legal fields
+// came to be unreachable from any authoring surface.
+func EnvelopeFieldPaths(version int, typ string) ([]string, error) {
+	base, err := FieldPaths(fmt.Sprintf("envelope/v%d/%s", version, typeBase))
+	if err != nil {
+		return nil, err
+	}
+	own, err := FieldPaths(fmt.Sprintf("envelope/v%d/%s", version, typ))
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool, len(base)+len(own))
+	out := make([]string, 0, len(base)+len(own))
+	for _, p := range append(base, own...) {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out, nil
+}

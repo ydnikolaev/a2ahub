@@ -342,13 +342,76 @@ func applyFills(mapping *yaml.Node, in Input) error {
 		present[field] = true
 	}
 
+	// A --field key the template does not carry is APPENDED when the
+	// envelope schema allows it, and refused only when it does not.
+	//
+	// Five fields — effort_estimate, supersedes, origin, migrated_from and
+	// (on five of eight types) expected_response — are schema-legal on every
+	// envelope and appear in no template, so they were unreachable from any
+	// authoring surface: `--field` refused them for not being in the
+	// template, and the template could not carry them without putting an
+	// unfilled placeholder in every draft, which POL-010 then refuses at
+	// submit. Neither end could move, and the field stayed unusable.
+	//
+	// Appending on demand breaks that: a draft carries the field only when
+	// the author asked for it, and asks nothing of the drafts that do not.
+	// The refusal stays for a key the schema genuinely does not have — a
+	// typo must still be a typo.
+	var unappliable []string
 	for field := range in.Fields {
-		if !present[field] {
-			return fmt.Errorf("%w: --field %s=%q was given, but this template has no %q key",
-				ErrUnappliableField, field, in.Fields[field], field)
+		if present[field] {
+			continue
 		}
+		if !schemaAllowsField(in.Type, in.EnvelopeSchema, field) {
+			unappliable = append(unappliable, field)
+			continue
+		}
+		mapping.Content = append(mapping.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: field},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: in.Fields[field]})
+		present[field] = true
+	}
+	if len(unappliable) > 0 {
+		sort.Strings(unappliable)
+		field := unappliable[0]
+		return fmt.Errorf("%w: --field %s=%q was given, but neither this template nor the %s schema for %q has a %q key",
+			ErrUnappliableField, field, in.Fields[field], envelopeGeneration(in.EnvelopeSchema), in.Type, field)
 	}
 	return nil
+}
+
+// envelopeGeneration names the generation a draft is being rendered for,
+// defaulting to the historical envelope/v1 exactly as rawTemplate does.
+func envelopeGeneration(declared string) string {
+	if declared == "" {
+		return "envelope/v1"
+	}
+	return declared
+}
+
+// schemaAllowsField reports whether an envelope of this type and generation
+// may legally carry a top-level field. It asks the SCHEMA CORPUS rather than
+// the template: the template is one authoring convenience over the schema,
+// and treating it as the definition of what an artifact may contain is what
+// made five schema-legal fields unusable.
+func schemaAllowsField(typ, generation, field string) bool {
+	version := 1
+	if generation == "envelope/v2" {
+		version = 2
+	}
+	// No error branch: "the corpus could not answer" and "the schema does
+	// not allow it" are the same answer here — refuse. Distinguishing them
+	// would only offer a way to accept a field nobody could confirm.
+	paths, err := schema.EnvelopeFieldPaths(version, typ)
+	if err != nil {
+		return false
+	}
+	for _, p := range paths {
+		if p == field {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveDottedPath descends mapping through fullPath's dot-separated

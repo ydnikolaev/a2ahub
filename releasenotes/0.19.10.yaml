@@ -118,6 +118,27 @@ changes:
         Nothing to do. `a2a new decision` now keeps `kind: human` unless you
         say otherwise; every other template already declared `agent`, so
         nothing changes for them.
+  - id: RN-01910-5
+    kind: fix
+    impact: normal
+    subject: "Five schema-legal envelope fields you could not actually set"
+    detail: >
+      `effort_estimate`, `supersedes`, `origin`, `migrated_from` and — on most
+      types — `expected_response` are legal on every artifact and appear in no
+      template. Setting one with `--field` was refused for not being in the
+      template, and putting it in the template was not an option either: every
+      draft would then carry an unfilled placeholder, which submit refuses.
+      Neither end could move, so the fields stayed unusable.
+      What a draft may contain is the schema's answer, not the template's — a
+      template is one convenience over the schema. `--field` now adds a key the
+      schema allows, so the field appears only when you ask for it and no
+      other draft changes. A name the schema does not have is still refused,
+      so a typo stays a typo.
+    action:
+      scope: none
+      why: >
+        Nothing to do. `a2a new question --field origin=...` and the other four
+        now work; drafts you do not ask for them on are unchanged.
   - id: RN-01910-1
     kind: fix
     impact: normal
