@@ -241,6 +241,37 @@ changes:
       why: >
         Nothing to do. The three fields are additive. If you were parsing
         `--actionable` to guess why something appeared, read `why` instead.
+  - id: RN-01910-10
+    kind: fix
+    impact: high
+    subject: "A deprecation you are registered for no longer disappears from your exchange feed"
+    detail: >
+      When a contract you consume is deprecated, the announcement is
+      addressed to you two ways: by the recipient list frozen at deprecation
+      time, and by the live registry of who actually consumes the contract.
+      The second is the one that matters — a system that adopted the contract
+      after the announcement was written is not in the frozen list, and
+      `a2a contract retire` still refuses to retire until that system has
+      acknowledged.
+      The exchange feed used a third rule of its own. It required the
+      announcement's `ack_requested` flag before considering anyone at all,
+      and the registry-matched half of the addressing carries no such
+      qualifier. So a deprecation published without the flag was filed as
+      delivered and archived out of the consumer's feed, while the retire it
+      was blocking named that same consumer as the reason.
+      The feed asks the same relation as every other surface now, so the
+      announcement stays in front of the system that owes the acknowledgement.
+      Two more answers stop disagreeing as a consequence: `a2a inbox --json`
+      now justifies "nobody owes anything" the way `a2a thread --json`
+      already did, and the departed-counterparty verdict — the sender owes a
+      cancel-or-re-route decision when every addressee has left — is the same
+      on both.
+    action:
+      scope: none
+      why: >
+        Nothing to do. If a deprecation vanished from your exchange view
+        while a retire was blocked on your acknowledgement, it is visible
+        again.
   - id: RN-01910-1
     kind: fix
     impact: normal

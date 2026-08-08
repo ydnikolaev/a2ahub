@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
-	"github.com/ydnikolaev/a2ahub/internal/pendency"
 	"github.com/ydnikolaev/a2ahub/internal/provenance"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
@@ -1083,49 +1082,16 @@ func buildOpenItems(sorted []foldedArtifact, byID map[string]foldedArtifact, man
 			actions = append(actions, NextAction{Transition: mv.Transition, By: by})
 		}
 
-		in := pendency.Input{
-			Kind: fa.kind(), State: fa.Result.State,
-			From: fa.Env.From, To: normalizeTo(fa.Env.To),
-			Broadcast: fa.Env.isBroadcast(), AckRequested: fa.Env.AckRequested,
-			Acks: fa.Result.Acks, Approvals: fa.Result.Approvals,
-			RequiredApprovers:  fa.Env.RequiredApprovers,
-			ActiveParticipants: activeParticipants(manifest, fa.Env.From),
-			LeftParticipants:   leftParticipants(manifest),
-			// P4 Edge 3, handed in exactly as inbox.go's call site hands it
-			// in. Both call sites MUST supply this: the moment one of them
-			// omits it, the two disagree about who a frozen `to:` addresses,
-			// which is this wave's own defect in miniature.
-			//
-			// It names only ownSystem, because mirror.go resolved
-			// DeprecatesMyDependency from this system's own consumes.yaml —
-			// so this view answers "who owes an ack" completely for me and
-			// narrowly for everybody else. That gap is in the FACT, not the
-			// rule (pendency.Input.ExtraAddressees' own doc comment); W2 must
-			// not render this as authoritative for another system until a
-			// caller can read every participant's registry.
-			ExtraAddressees: extraAddressees(fa, ownSystem),
-			// The requirement row splits on this (pendency.Input's own doc):
-			// before a fulfilling response lands the target owes the work,
-			// after it lands the requester owes `satisfy`.
-			HasFulfillingResponse: hasFulfillingResponse(fa),
-		}
+		// The thread view has the parent envelope in hand (authEnv above),
+		// so a response artifact's verdict is resolved against whose
+		// exchange it answers. The inbox does not and passes "" — the one
+		// remaining asymmetry between the two, recorded in the epic
+		// backlog rather than closed silently here.
+		var parentFrom string
 		if fa.kind() == fold.KindResponse {
-			in.ParentFrom = authEnv.From
+			parentFrom = authEnv.From
 		}
-		verdict, err := pendency.Resolve(in)
-		if err != nil {
-			// isOpen(fa.kind(), fa.Result.State) above already filtered to
-			// exactly the (kind,state) pairs the pendency table carries a
-			// row for (I8's totality gate over fold.SubjectStates,
-			// mirrored 1:1 by this package's own openStates allowlist —
-			// see types.go's own doc comment). Reaching here would mean
-			// the two tables have drifted apart; degrade to "nobody"
-			// rather than lose the whole thread render over one item —
-			// but Why still names the degradation rather than silently
-			// rendering an empty string (OpenItem.Why's own "ALWAYS
-			// populated" contract).
-			verdict = pendency.Verdict{Why: "pendency carries no row for (" + string(fa.kind()) + ", " + string(fa.Result.State) + "); this should be unreachable — see buildOpenItems' own doc comment"}
-		}
+		verdict := resolveVerdict(fa, ownSystem, manifest, parentFrom)
 
 		// D-025's transition-free broadcast-acknowledge: no table row
 		// exists in fold (legalnext.go's own doc comment), so NextActions

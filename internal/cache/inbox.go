@@ -99,6 +99,66 @@ func hasFulfillingResponse(fa foldedArtifact) bool {
 // axis entirely, not a missing-input carve-out) — see its own inline doc
 // comment for why folding it into pendency would be wrong, not merely
 // redundant.
+
+// resolveVerdict asks internal/pendency whose move it is on fa, for system
+// `me`, from the facts this package resolved and that package structurally
+// cannot.
+//
+// It exists so that ONE function in this file builds a pendency.Input. Every
+// consumer inside this package — the `--actionable` conditions, the exchange
+// feed's liveness answer, the fields on Item — reads the SAME verdict rather
+// than assembling its own call with its own idea of which carried facts
+// matter. That is not tidiness: the two facts pendency cannot recover
+// (ExtraAddressees, ActiveParticipants) are silently omittable, and P11 W1
+// shipped one commit where inbox.go passed one and threadview.go did not.
+//
+// parentFrom is the one fact a caller can know and this function cannot: a
+// response artifact carries no envelope of its own, so whose exchange it
+// answers is resolved from the PARENT. A caller with no parent in hand
+// passes "" — see resolveVerdict's own call sites and the asymmetry noted
+// there.
+func resolveVerdict(fa foldedArtifact, me string, manifest space.Manifest, parentFrom string) pendency.Verdict {
+	env := fa.Env
+	in := pendency.Input{
+		Kind: fa.kind(), State: fa.Result.State,
+		From: env.From, To: normalizeTo(env.To),
+		Broadcast: env.isBroadcast(), AckRequested: env.AckRequested,
+		Acks: fa.Result.Acks, Approvals: fa.Result.Approvals,
+		RequiredApprovers:  env.RequiredApprovers,
+		ActiveParticipants: activeParticipants(manifest, env.From),
+		LeftParticipants:   leftParticipants(manifest),
+		// P4 Edge 3, handed in rather than re-derived: this system's own
+		// registry says it consumes the contract this announcement
+		// deprecates, so it is addressed even though the frozen `to:`
+		// predates its adoption. pendency owns what that MEANS; this call
+		// site owns only the registry read.
+		ExtraAddressees:       extraAddressees(fa, me),
+		HasFulfillingResponse: hasFulfillingResponse(fa),
+	}
+	if fa.kind() == fold.KindResponse {
+		in.ParentFrom = parentFrom
+	}
+	verdict, err := pendency.Resolve(in)
+	if err != nil {
+		// A lookup miss means fa's own (kind, state) is not one of the
+		// pairs internal/fold.SubjectStates enumerates — a terminal state
+		// pendency carries no row for at all (every terminal state this
+		// package's own isOpen would also reject) or a kind pendency does
+		// not model. Every consumer below is a strict subset of "the
+		// relation names me for transition X"; with no verdict there is
+		// nothing to filter, so all of them legitimately answer no rather
+		// than re-deriving their own fallback rule.
+		//
+		// Why is populated even here, and deliberately: pendency's contract
+		// is that "nobody owes anything" is a CLAIM to be justified, never a
+		// fall-through. The thread view had this and the inbox did not,
+		// which is the same one-answer-two-surfaces split this phase exists
+		// to close, one level below the fields themselves.
+		return pendency.Verdict{Why: "pendency carries no row for (" + string(fa.kind()) + ", " + string(fa.Result.State) + "); this should be unreachable — see buildOpenItems' own doc comment"}
+	}
+	return verdict
+}
+
 // actionableReasons returns why this artifact is actionable for `me`, AND
 // the pendency verdict it derived them from.
 //
@@ -113,33 +173,12 @@ func actionableReasons(fa foldedArtifact, me string, manifest space.Manifest) ([
 	env := fa.Env
 	state := fa.Result.State
 
-	verdict, err := pendency.Resolve(pendency.Input{
-		Kind: kind, State: state,
-		From: env.From, To: normalizeTo(env.To),
-		Broadcast: env.isBroadcast(), AckRequested: env.AckRequested,
-		Acks: fa.Result.Acks, Approvals: fa.Result.Approvals,
-		RequiredApprovers:  env.RequiredApprovers,
-		ActiveParticipants: activeParticipants(manifest, env.From),
-		LeftParticipants:   leftParticipants(manifest),
-		// P4 Edge 3, handed in rather than re-derived: this system's own
-		// registry says it consumes the contract this announcement
-		// deprecates, so it is addressed even though the frozen `to:`
-		// predates its adoption. pendency owns what that MEANS; this call
-		// site owns only the registry read.
-		ExtraAddressees:       extraAddressees(fa, me),
-		HasFulfillingResponse: hasFulfillingResponse(fa),
-	})
-	if err != nil {
-		// A lookup miss means fa's own (kind, state) is not one of the
-		// pairs internal/fold.SubjectStates enumerates — a terminal state
-		// pendency carries no row for at all (every terminal state this
-		// package's own isOpen would also reject) or a kind pendency does
-		// not model. Every condition below is a strict subset of "the
-		// relation names me for transition X"; with no verdict there is
-		// nothing to filter, so all four legitimately answer no rather
-		// than re-deriving their own fallback rule.
-		verdict = pendency.Verdict{}
-	}
+	// parentFrom is "" here: the inbox iterates one artifact at a time and
+	// has no parent envelope in hand. The thread view does, and passes it.
+	// That asymmetry is a KNOWN gap for a response artifact, recorded in
+	// the epic backlog rather than silently closed by this refactor — this
+	// commit preserves today's answers exactly.
+	verdict := resolveVerdict(fa, me, manifest, "")
 	iOwe := containsString(verdict.Owners, me)
 
 	// 1: {addressed to me with no ack by me} — a pure filter, for every

@@ -398,6 +398,24 @@ func isOpen(kind fold.Kind, state fold.State) bool {
 // `published` until superseded, but delivery itself is complete once every
 // intended recipient has acknowledged it. Treating published as permanently
 // active made delivered announcements linger in Outgoing forever.
+//
+// For every kind but a published announcement that is a pure STATE question,
+// answered above. For a published announcement it is an OBLIGATION question —
+// "does anybody still owe an acknowledgement" — and this function used to
+// answer it itself, from `ack_requested`, `to:` and the folded ack set.
+//
+// That was a fourth derivation of a relation this repo keeps in exactly one
+// place (I7), and it reproduced, silently, a defect internal/pendency had
+// already fixed: `ack_requested` gates the `to:`-matched half of the rule
+// ONLY. A deprecation announcement addresses every REGISTERED consumer,
+// registry-matched, with no flag qualifier anywhere in its statement — which
+// is also how `internal/validate.CheckRetirePrecondition` reads it. So a
+// flagless deprecation was archived out of the consumer's exchange feed while
+// `a2a contract retire` refused on that same consumer's missing acknowledge.
+//
+// The relation answers now. `resolveVerdict` is the package's single
+// pendency.Input call site, so this question and `--actionable`'s cannot
+// drift apart again.
 func exchangeActive(fa foldedArtifact, me string, manifest space.Manifest) bool {
 	if !isOpen(fa.kind(), fa.Result.State) {
 		return false
@@ -405,29 +423,12 @@ func exchangeActive(fa foldedArtifact, me string, manifest space.Manifest) bool 
 	if fa.kind() != fold.KindAnnouncement || fa.Result.State != fold.StatePublished {
 		return true
 	}
-	// An announcement without an acknowledgement request is delivered by the
-	// publish itself. Its durable protocol state remains `published`, while the
-	// operational Exchange feed archives it immediately.
-	if !fa.Env.AckRequested {
-		return false
+	verdict := resolveVerdict(fa, me, manifest, "")
+	// The author asks about the artifact — "is anyone still to acknowledge
+	// this" — while a recipient asks about itself. Both were already the
+	// two branches this function had; only the rule behind them changed.
+	if ownedByMe(fa, me) {
+		return len(verdict.Owners) > 0
 	}
-	if !ownedByMe(fa, me) {
-		return addressedToMe(fa, me) && !fa.Result.Acks[me]
-	}
-
-	targets := normalizeTo(fa.Env.To)
-	if fa.Env.isBroadcast() {
-		targets = targets[:0]
-		for _, participant := range manifest.Participants {
-			if participant.Status == "active" && participant.System != fa.Env.From {
-				targets = append(targets, participant.System)
-			}
-		}
-	}
-	for _, target := range targets {
-		if target != "all" && target != fa.Env.From && !fa.Result.Acks[target] {
-			return true
-		}
-	}
-	return false
+	return containsString(verdict.Owners, me)
 }
