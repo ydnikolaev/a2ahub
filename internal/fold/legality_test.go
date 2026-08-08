@@ -226,7 +226,7 @@ func TestCheckLegalityBroadcastAck(t *testing.T) {
 		}{{MembershipMember, true}, {MembershipLeft, false}, {MembershipUnknown, false}} {
 			view := func(string) MembershipStatus { return tc.status }
 			var result Result
-			applyBroadcastAck(&result, Event{ULID: "01", Subject: env.ID, Actor: Actor{System: "gamma"}}, view)
+			applyBroadcastAck(env, &result, Event{ULID: "01", Subject: env.ID, Actor: Actor{System: "gamma"}}, view)
 			postAccepted := len(result.Flags) == 0 && result.Acks["gamma"]
 
 			preAccepted := CheckLegality(KindAnnouncement, StatePublished, TAcknowledge, env, Actor{System: "gamma"}, tc.status) == VerdictLegal

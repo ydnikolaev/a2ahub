@@ -86,11 +86,17 @@ func Apply(kind Kind, env Envelope, prior Result, event Event, membership Member
 		result.Applied[event.ULID] = true
 	}
 
+	// Transition-free events are routed by the same registry TransitionFree
+	// answers from (transitionfree.go), never by a second copy of the two
+	// names. The predicate and the behaviour cannot drift apart, which is
+	// what let the dashboard decide on its own that a `note` is a protocol
+	// event.
+	if handle, ok := lookupTransitionFree(kind, event.Transition); ok {
+		handle(env, &result, event, membership)
+		return result
+	}
+
 	switch {
-	case event.Transition == TNote:
-		applyNote(env, &result, event, membership)
-	case event.Transition == TAcknowledge && kind == KindAnnouncement:
-		applyBroadcastAck(&result, event, membership)
 	case event.Transition == TVerify || event.Transition == TDispute:
 		applyResponseScoped(env, &result, event, membership)
 	case kind == KindContract && isContractVersionTransition(event.Transition):
@@ -133,7 +139,7 @@ func broadcastAckPermitted(status MembershipStatus) bool {
 	return status == MembershipMember
 }
 
-func applyBroadcastAck(result *Result, event Event, membership MembershipView) {
+func applyBroadcastAck(_ Envelope, result *Result, event Event, membership MembershipView) {
 	if membership != nil && !broadcastAckPermitted(membership(event.Actor.System)) {
 		result.Flags = append(result.Flags, Flag{Kind: FlagUnauthorizedActor, EventULID: event.ULID, Subject: event.Subject})
 		return
