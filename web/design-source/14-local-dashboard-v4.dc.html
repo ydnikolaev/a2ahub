@@ -2165,10 +2165,27 @@ function deliveryVerdictText(value, ru) {
   return words[value] || (ru ? "неизвестный вердикт: " + value : "unknown verdict: " + value);
 }
 const DRIFT_TONE = { current: "healthy", behind: "attention", deprecated: "attention", retired: "neutral", missing: "blockingStrong", dangling: "outline" };
-const SUCCESS_STATES = ["closed", "verified", "satisfied", "approved"];
-const CANCELLED_STATES = ["cancelled", "canceled", "withdrawn", "superseded", "retired"];
-const REFUSED_STATES = ["rejected", "declined"];
-function inState(value, set) { return set.indexOf(String(value || "").toLowerCase()) > -1; }
+// What a state MEANS is the domain's answer, carried on every row as
+// `outcome` (open | settled | refused | withdrawn | superseded) and
+// `terminal`. This file used to decide it from three lists of state names,
+// and being blind to the artifact TYPE is what made them wrong: `retired`
+// was filed as cancelled, so an orderly contract retirement and an
+// abandoned artifact rendered identically; and handoff `accepted` — where a
+// handoff ENDS — shared an entry with question `accepted`, which is the
+// middle of the work. One list cannot be right for both.
+//
+// The lists are gone. `scripts/check-view-vocabulary.sh` refuses a
+// component that builds another one, and takes its vocabulary from
+// `a2a __catalog --vocabulary --json` so a state added tomorrow is policed
+// the day it ships.
+function outcomeOf(x) { return String((x && x.outcome) || ""); }
+function isSettled(x) { return outcomeOf(x) === "settled"; }
+function isRefused(x) { return outcomeOf(x) === "refused"; }
+// Withdrawn and superseded are distinct outcomes the domain keeps apart —
+// who ended it, and what replaced it. They share a tone here because the
+// reader's question at this point is only "did this stop without being
+// answered", and they answer it the same way.
+function isAbandoned(x) { const o = outcomeOf(x); return o === "withdrawn" || o === "superseded"; }
 function mono(s) { return String(s || "?").slice(0, 2).toUpperCase(); }
 function monoCodes(names) {
   const out = {}, used = new Set();
@@ -3238,10 +3255,14 @@ class Component extends DCLogic {
       return { code, message: f ? f.message : (ru ? "К этому замечанию не приложено пояснения." : "No message is recorded for this flag in the fixture.") };
     });
 
-    const state = String(a.state || "").toLowerCase();
-    const cancelled = inState(state, CANCELLED_STATES);
-    const refused = inState(state, REFUSED_STATES);
-    const complete = !cancelled && !refused && (inState(state, SUCCESS_STATES) || !!(it && it.archived));
+    // `a` is the artifact detail, which carries the domain's own verdict; the
+    // exchange row `it` may not exist for it at all (an artifact can be shown
+    // from a space whose inbox/outbox projection does not list it), so the
+    // verdict is read from `a` and only `archived` — a local, per-system fact
+    // the domain has no opinion on — still comes from the row.
+    const cancelled = isAbandoned(a);
+    const refused = isRefused(a);
+    const complete = isSettled(a) || (!cancelled && !refused && !!(it && it.archived));
     let calloutTitle = "", calloutText = "", calloutTone = "neutral", calloutParts = [];
     const needed = e.needed_by || (e.expected_response && e.expected_response.by);
     if (e.expected_response || needed) {
@@ -3509,7 +3530,12 @@ class Component extends DCLogic {
     const exchangeAll = Array.from(exchangeByID.values());
     const isIncoming = (it) => (it.to || []).indexOf(d.self) > -1;
     const isOutgoing = (it) => it.from === d.self;
-    const isClosed = (it) => !!it.archived || inState(it.state, SUCCESS_STATES) || inState(it.state, CANCELLED_STATES) || inState(it.state, REFUSED_STATES) || String(it.state || "").toLowerCase() === "expired";
+    // "Closed" here means: this system has nothing left to watch. That is
+    // `archived` (a local fact), or an outcome that is not `open`, or the
+    // `expired` overlay — which is deliberately NOT a fold state (D-025
+    // exempts it from the transition table entirely), so the domain has no
+    // outcome for it and this is the one name that must still be spelled.
+    const isClosed = (it) => !!it.archived || (outcomeOf(it) !== "" && outcomeOf(it) !== "open") || String(it.state || "").toLowerCase() === "expired";
     const hasActiveDeadline = (it) => !!it.neededBy && !isClosed(it);
     // One rule: the newest document is on top. Exchange is a record of documents,
     // not a lifecycle-activity feed: a late acknowledgement or note belongs in

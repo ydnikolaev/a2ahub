@@ -760,6 +760,15 @@ type ArtifactDetail struct {
 	Refs        []ArtifactDetailRef   `json:"refs"`
 	SyncStale   bool                  `json:"sync_stale"`
 	SyncAge     string                `json:"sync_age"`
+	// Outcome and Terminal are the domain's reading of State, carried here
+	// too because the detail panel renders from THIS type and may have no
+	// matching exchange row to borrow them from — an artifact can be shown
+	// from a space whose inbox/outbox projection does not list it.
+	//
+	// Without them the panel fell back to classifying State by membership
+	// in its own name lists, which is the defect the whole phase removes.
+	Outcome  fold.Outcome `json:"outcome,omitempty"`
+	Terminal bool         `json:"terminal"`
 }
 
 // ArtifactDetailEvent carries one lifecycle event in the artifact detail panel.

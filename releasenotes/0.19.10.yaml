@@ -43,6 +43,29 @@ changes:
         `terminal` over matching state names yourself — matching names is what
         every surface used to do, and it is what got `retired` and handoff
         `accepted` wrong.
+  - id: RN-01910-2
+    kind: feat
+    roadmap:
+      visibility: omit
+      why: "A hidden machine-consumed surface whose only consumer is a repo gate. Naming it on the public roadmap would advertise an interface no agent or operator is meant to call directly."
+    impact: low
+    subject: "`a2a __catalog --vocabulary --json` publishes the domain's own vocabulary"
+    detail: >
+      The hidden `__catalog` verb gained a machine-readable mode listing every
+      outcome, every state per artifact type, and every transition name — all
+      derived from the transition table rather than written out.
+      It exists so a check can police what the dashboard is allowed to spell
+      without carrying its own copy of the list. A copy is correct the day it
+      is written and silently wrong the day a state is added, which is how
+      `canceled` — spelled with one `l`, matching nothing the protocol can
+      ever produce — sat inside the dashboard's own "is this cancelled" list
+      until a check derived from the binary found it.
+      The plain `a2a __catalog` output is unchanged.
+    action:
+      scope: none
+      why: >
+        Nothing to do. This is an internal surface; the flag is stable if you
+        want to read it, but nothing in normal operation calls it.
   - id: RN-01910-1
     kind: fix
     impact: normal

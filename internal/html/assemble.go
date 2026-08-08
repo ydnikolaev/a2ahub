@@ -15,6 +15,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -1250,6 +1251,11 @@ func toArtifactDetail(show cache.ShowResult) (ArtifactDetail, error) {
 		// re-humanises it into the same compact vocabulary every other age on
 		// this page uses.
 		Refs: refs, SyncStale: show.SyncStale, SyncAge: humanizeDuration(show.SyncAge),
+		// Asked here rather than carried from cache.ShowResult: that type has
+		// no outcome field, and the two arguments the domain needs — the kind
+		// and the state — are both already on the ShowResult being projected.
+		Outcome:  fold.OutcomeOf(fold.Kind(show.Type), fold.State(show.State)),
+		Terminal: fold.Terminal(fold.Kind(show.Type), fold.State(show.State)),
 	}, nil
 }
 

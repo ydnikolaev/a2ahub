@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators lane lane-run lane-declarations web-quality _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
+.PHONY: check test check-validators lane lane-run lane-declarations web-quality _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations view-vocabulary release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -60,7 +60,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline-check
+REPO_GATES := lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations view-vocabulary release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline-check
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -131,6 +131,9 @@ readme-lint: ## README stays compact, current, and exits to the canonical docs.
 
 dashboard-template-drift: ## internal/html/template.html must equal a fresh build of web/design-source (skips without web/node_modules).
 	@bash scripts/dashboard-template-drift.sh
+
+view-vocabulary: ## No component may classify by its own list of state names, or spell one the domain does not have.
+	@bash scripts/check-view-vocabulary.sh
 
 coverage: ## Same one-artifact race/coverage path as `check`, without static/vet/lint phases.
 	@bash scripts/verify.sh coverage
@@ -222,6 +225,7 @@ _harness-check:
 	@bash scripts/verify.sh --teeth
 	@bash scripts/check-gosec-scope.sh --teeth
 	@bash scripts/release-preflight.sh --teeth
+	@bash scripts/check-view-vocabulary.sh --teeth
 	@bash scripts/check-release-notes-freshness.sh --teeth
 	@bash scripts/check-roadmap-release-decisions.sh --teeth
 	@bash scripts/check-provider-tier-deferral.sh --teeth
