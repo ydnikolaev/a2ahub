@@ -239,14 +239,22 @@ fields:
     acceptance_criteria: AUTHOR
     proposed_change: AUTHOR
     to: AUTHOR
-    # P4 wave A (attachments[]): no writer exists yet (a2a attach is P4 wave
-    # D). Classified AUTHOR by this table's stated default ("everything else
-    # -> AUTHOR"), matching the existing precedent that event.digest and
-    # event/v2 refs[].ref are AUTHOR too, not TOOL, absent evidence of a
-    # minting writer. Re-derive once wave D's writer lands.
+    # P4 attachments[]. Wave A classified every leaf AUTHOR by this table's
+    # stated default, with a note saying to re-derive once wave D's writer
+    # landed. It has, so this is the re-derivation.
+    #
+    # Three of the seven are established by `a2a attach` from the bytes
+    # themselves and an agent typing one would be FABRICATING it, which is
+    # the whole line this table draws: `ref` and `digest` are the content
+    # address, and `expires_at` is resolved from the retention at attach
+    # time (a duration is a recipe; the date is the fact, and only the
+    # writer knows the anchor). The other four are what the author actually
+    # decides — what this is for, what it conforms to, what verdict is being
+    # asked for, and how long it is kept.
     attachments: AUTHOR
-    attachments[].ref: AUTHOR
-    attachments[].digest: AUTHOR
+    attachments[].ref: TOOL
+    attachments[].digest: TOOL
+    attachments[].expires_at: TOOL
     attachments[].role: AUTHOR
     attachments[].conforms_to: AUTHOR
     attachments[].verification: AUTHOR

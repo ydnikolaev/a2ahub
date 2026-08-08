@@ -3,6 +3,7 @@ package schema
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -104,12 +105,75 @@ attachments:
     digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     verification: required
     retention: "168h"
+    expires_at: "2026-08-15T10:00:00Z"
 `
 
 // TestVersionedCorpus_WorkRequestV2Resolves proves the mutation the brief
 // names: remove the corpusDefinitions row for (envelope, v2, work_request)
 // and this test must fail, naming work_request as the type that should
 // resolve and does not.
+// TestVersionedCorpus_RetentionAndExpiryAgree pins BOTH halves of the
+// attachments[] conditional, because only one of them was reachable by
+// accident.
+//
+// `retention` is a duration OR the literal "pinned", and `expires_at` is the
+// resolved lapse date. The two are not independent: a duration is a RECIPE,
+// and nothing on a committed artifact records when the bytes were attached —
+// so without the date a reader has no anchor, and one reaching for `created`
+// instead would compute a confidently wrong lapse. `pinned` means kept, so a
+// lapse date on it is a contradiction rather than a redundancy.
+//
+// The schema states that as an if/then/else, and this test is what stops
+// half of it from being decorative: the positive case above only exercises
+// the `else` branch.
+func TestVersionedCorpus_RetentionAndExpiryAgree(t *testing.T) {
+	t.Parallel()
+	c := mustLoad(t)
+
+	tests := []struct {
+		name       string
+		retention  string
+		expiresAt  string
+		wantRefuse bool
+		why        string
+	}{
+		{"a duration carries its resolved date", "168h", "2026-08-15T10:00:00Z", false,
+			"the ordinary case: kept for a week, and the artifact says when that ends"},
+		{"a duration without the date is refused", "168h", "", true,
+			"the reader is handed a recipe and no anchor — this is the shape that made AC5 unprovable"},
+		{"pinned carries no date", "pinned", "", false,
+			"pinned means kept; the absence of a lapse date IS the claim"},
+		{"pinned with a date is refused", "pinned", "2026-08-15T10:00:00Z", true,
+			"kept forever and expiring on a Saturday cannot both be true"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			doc := strings.Replace(validWorkRequestV2,
+				"    retention: \"168h\"\n    expires_at: \"2026-08-15T10:00:00Z\"\n",
+				"    retention: \""+tt.retention+"\"\n"+expiresLine(tt.expiresAt), 1)
+			violations, err := c.ValidateEnvelope("work_request", "envelope/v2", toInstance(t, doc))
+			if err != nil {
+				t.Fatalf("ValidateEnvelope: %v", err)
+			}
+			if tt.wantRefuse && len(violations) == 0 {
+				t.Errorf("retention=%q expires_at=%q was accepted, want refused — %s", tt.retention, tt.expiresAt, tt.why)
+			}
+			if !tt.wantRefuse && len(violations) > 0 {
+				t.Errorf("retention=%q expires_at=%q was refused (%v), want accepted — %s", tt.retention, tt.expiresAt, violations, tt.why)
+			}
+		})
+	}
+}
+
+func expiresLine(v string) string {
+	if v == "" {
+		return ""
+	}
+	return "    expires_at: \"" + v + "\"\n"
+}
+
 func TestVersionedCorpus_WorkRequestV2Resolves(t *testing.T) {
 	t.Parallel()
 	c := mustLoad(t)

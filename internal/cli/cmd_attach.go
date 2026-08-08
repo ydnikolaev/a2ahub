@@ -174,24 +174,21 @@ func (c *AttachCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return attachRefuse(stdio, err, *asJSON)
 	}
 
-	updated, uerr := attachAppendEntry(fm, attachment)
+	// Resolved BEFORE the write, not after: expires_at is part of the entry
+	// the draft carries now, so a retention this command cannot resolve must
+	// refuse before anything is written rather than leave a draft on disk
+	// carrying an entry whose lapse date nobody could compute.
+	entry, eerr := datapackage.NewAttachmentManifestEntry(attachment, c.now())
+	if eerr != nil {
+		return attachRefuse(stdio, fmt.Errorf("draft %s: cannot resolve retention: %w", draftPath, eerr), *asJSON)
+	}
+
+	updated, uerr := attachAppendEntry(fm, attachment, entry.ExpiresAt)
 	if uerr != nil {
 		return attachRefuse(stdio, fmt.Errorf("draft %s: %w", draftPath, uerr), *asJSON)
 	}
 	if werr := c.writeFile(draftPath, updated, 0o644); werr != nil {
 		return attachRefuse(stdio, fmt.Errorf("cannot write %s: %w", draftPath, werr), *asJSON)
-	}
-
-	entry, eerr := datapackage.NewAttachmentManifestEntry(attachment, c.now())
-	if eerr != nil {
-		// The draft is already written with a schema-legal entry (ExpiresAt
-		// is never part of it, see attachAppendEntry) — this can only fail on
-		// a retention this command's own core already accepted above, which
-		// ResolveAttachmentExpiry parses with the identical parser
-		// (parseRetention, attach.go). Reported rather than silently dropped:
-		// the human-readable expires_at is informational output only, never
-		// written to the draft.
-		return attachRefuse(stdio, fmt.Errorf("draft %s: attached but cannot resolve expiry: %w", draftPath, eerr), *asJSON)
 	}
 
 	if *asJSON {
@@ -213,14 +210,19 @@ var _ Command = (*AttachCommand)(nil)
 // itself, so the entry's keys are the struct's own yaml tags and never
 // drift from datapackage.Attachment's shape — and re-serializes.
 //
-// The entry carries ONLY Attachment's fields (ref, digest, role,
-// conforms_to, verification, retention) — never ExpiresAt
-// (AttachmentManifestEntry's own addition): the schema's
-// attachments[].additionalProperties is false and declares no expires_at
-// property (work_request.schema.json:78-113), so writing it onto the draft
-// would be exactly the SCH-003 drift this file's own type/schema guard
-// above exists to prevent.
-func attachAppendEntry(fm artifact.Frontmatter, attachment datapackage.Attachment) ([]byte, error) {
+// The entry carries Attachment's own fields (ref, digest, role,
+// conforms_to, verification, retention) PLUS the resolved expires_at.
+//
+// expires_at used to be deliberately omitted, because the schema declared no
+// such property and attachments[].additionalProperties is false — writing it
+// would have been SCH-003 drift. That omission then made AC5 unprovable:
+// `retention: 168h` is a RECIPE, and nothing on a committed artifact records
+// when the bytes were attached, so a reader had no anchor to apply it to. A
+// reader reaching for `created` instead would compute a confidently wrong
+// lapse date, which is the false-verdict class this phase exists to remove.
+// The schema carries expires_at now and requires it exactly when retention is
+// a duration; `pinned` carries none, which is what "pinned" means.
+func attachAppendEntry(fm artifact.Frontmatter, attachment datapackage.Attachment, expiresAt string) ([]byte, error) {
 	var doc map[string]any
 	if err := yaml.Unmarshal(fm.YAML, &doc); err != nil {
 		return nil, fmt.Errorf("cannot decode frontmatter: %w", err)
@@ -233,6 +235,13 @@ func attachAppendEntry(fm artifact.Frontmatter, attachment datapackage.Attachmen
 	var entry map[string]any
 	if err := yaml.Unmarshal(entryRaw, &entry); err != nil {
 		return nil, fmt.Errorf("cannot decode attachment entry: %w", err)
+	}
+	// Empty exactly when retention is `pinned`, and the schema refuses the
+	// key in that case — so the conditional here and the conditional there
+	// are the same rule stated twice, which is the point: neither can drift
+	// without the other refusing.
+	if expiresAt != "" {
+		entry["expires_at"] = expiresAt
 	}
 
 	var attachments []any
