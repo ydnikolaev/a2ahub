@@ -37,6 +37,19 @@ type Actor struct {
 	// the shape of the defect: the value existed, twice, and neither copy
 	// was the detected one.
 	Session string
+	// KindClaimed says whether any SOURCE named the kind, as opposed to the
+	// resolver falling back to "agent". The two are different facts and
+	// collapsing them cost a real defect: fillActor overwrote
+	// schemas/templates/v1/decision.md's own `actor: {kind: human, ...}` on
+	// every render, contradicting the template's documented intent that a
+	// decision typically carries a human actor because approving one is a
+	// G3 gate.
+	//
+	// A flag rather than an empty Kind, because ResolveActor's "agent"
+	// default is shipped, documented and test-pinned behaviour — the
+	// missing information was never the value, it was whether anyone chose
+	// it.
+	KindClaimed bool
 }
 
 // Input carries every value Render needs that must come from the caller
@@ -477,7 +490,20 @@ func fillActor(node *yaml.Node, a Actor) {
 		key, val := node.Content[i], node.Content[i+1]
 		switch key.Value {
 		case "kind":
-			setScalar(val, orDefault(a.Kind, "agent"))
+			// An unset Kind means NO source claimed one — not "agent".
+			// The template's own literal then stands, and the case that
+			// proves why is schemas/templates/v1/decision.md's
+			// `actor: {kind: human, ...}`: a decision typically carries a
+			// human actor because approving one is a G3 gate, and this fill
+			// used to overwrite that with `agent` on every render, silently
+			// contradicting the template's own documented intent.
+			//
+			// The resolver no longer applies the "agent" default itself, so
+			// the distinction survives all the way here. Event writers apply
+			// it at their own boundary, where the field is required.
+			if a.KindClaimed {
+				setScalar(val, a.Kind)
+			}
 		case "name":
 			setScalar(val, a.Name)
 		case "model":
@@ -517,13 +543,6 @@ func setScalar(node *yaml.Node, value string) {
 	node.Value = value
 	node.Style = 0
 	node.Tag = ""
-}
-
-func orDefault(v, def string) string {
-	if v == "" {
-		return def
-	}
-	return v
 }
 
 func rawTemplate(typ, envelopeSchema string) ([]byte, error) {

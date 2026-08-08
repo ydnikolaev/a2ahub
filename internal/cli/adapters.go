@@ -168,8 +168,9 @@ func resolveActorFrom(flags ActorFlags, harness HarnessDefaults, cfg ConfigActor
 			claimed := firstNonEmpty(flags.Name, env(envActorName), harness.Name, cfg.Name)
 			if agentid.Contradicts(claimed, detected.ID) {
 				return template.Actor{
-					Kind: "agent",
-					Name: detected.ID,
+					Kind:        "agent",
+					KindClaimed: true, // detection IS a claim about the process
+					Name:        detected.ID,
 					// An explicitly passed model still wins: the environment
 					// names the product reliably and the model only
 					// sometimes, so a caller who knows it is adding
@@ -180,20 +181,22 @@ func resolveActorFrom(flags ActorFlags, harness HarnessDefaults, cfg ConfigActor
 			}
 			if claimed == "" {
 				return template.Actor{
-					Kind:    "agent",
-					Name:    detected.ID,
-					Model:   firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model, detected.Model),
-					Session: firstNonEmpty(flags.Session, env(envActorSession), detected.Session),
+					Kind:        "agent",
+					KindClaimed: true,
+					Name:        detected.ID,
+					Model:       firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model, detected.Model),
+					Session:     firstNonEmpty(flags.Session, env(envActorSession), detected.Session),
 				}, nil
 			}
 			// The caller named something that is not a rival agent — a
 			// person, a service, a test fixture. That is a different kind
 			// of claim and it stands; detection only contributes the model.
 			return template.Actor{
-				Kind:    firstNonEmpty(explicitKind, "agent"),
-				Name:    claimed,
-				Model:   firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model, detected.Model),
-				Session: firstNonEmpty(flags.Session, env(envActorSession), detected.Session),
+				Kind:        firstNonEmpty(explicitKind, "agent"),
+				KindClaimed: true,
+				Name:        claimed,
+				Model:       firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model, detected.Model),
+				Session:     firstNonEmpty(flags.Session, env(envActorSession), detected.Session),
 			}, nil
 		}
 	}
@@ -203,9 +206,14 @@ func resolveActorFrom(flags ActorFlags, harness HarnessDefaults, cfg ConfigActor
 		return template.Actor{}, ErrNoActorName
 	}
 	return template.Actor{
-		Kind:  firstNonEmpty(explicitKind, "agent"),
-		Name:  name,
-		Model: firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model),
+		Kind: firstNonEmpty(explicitKind, "agent"),
+		// KindClaimed is false here and only here: this is the branch where
+		// no source named a kind and the "agent" above is a DEFAULT rather
+		// than a claim. fillActor reads it to decide whether it may
+		// overwrite a template's own literal.
+		KindClaimed: explicitKind != "",
+		Name:        name,
+		Model:       firstNonEmpty(flags.Model, env(envActorModel), harness.Model, cfg.Model),
 		// No detection fired on this branch, so there is no detected
 		// session to carry — only an explicit one.
 		Session: firstNonEmpty(flags.Session, env(envActorSession)),
