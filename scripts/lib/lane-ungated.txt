@@ -46,6 +46,12 @@ docs/features/**/design-handoff.md
 # until the phase implements them, so nothing compiles or checks them here;
 # what enforces it is the plan cross-review, which is judgement.
 docs/features/**/seam.md
+# threat-model.md — what an epic's own additions make abusable, per threat,
+# each landing in a named phase. Every control it names is enforced by the
+# phase that owns it (a refusal, a ceiling, a rendering), so what is left
+# here is the reasoning about WHY those controls exist — judgement, like the
+# specs beside it.
+docs/features/**/threat-model.md
 
 # Two integrations with their own toolchains — a Swift package and a VS Code
 # extension with its own npm test suite. Nothing in this repo's make-ABI can
