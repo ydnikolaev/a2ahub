@@ -214,13 +214,29 @@ func equivMCPHostConfig(remoteURL string) mcp.SubmitHostConfig {
 	}
 }
 
+// equivActor is the identity both surfaces resolve to in this suite. Model
+// and Session are carried because P3 made them reachable on the event
+// writers, and a suite that leaves them empty on both sides proves the two
+// surfaces agree about nothing in particular — the fields would be
+// byte-identical because neither wrote them.
+var equivActor = template.Actor{
+	Model:   "claude-opus-5",
+	Session: "session:equivalence",
+}
+
 func equivCLIActorResolver(kind, name string) func(cli.ActorFlags) (template.Actor, error) {
-	return func(cli.ActorFlags) (template.Actor, error) { return template.Actor{Kind: kind, Name: name}, nil }
+	return func(cli.ActorFlags) (template.Actor, error) {
+		a := equivActor
+		a.Kind, a.Name, a.KindClaimed = kind, name, true
+		return a, nil
+	}
 }
 
 func equivMCPActorResolver(kind, name string) mcp.ActorResolver {
 	return func(mcp.ActorInput) (template.Actor, error) {
-		return template.Actor{Kind: kind, Name: name}, nil
+		a := equivActor
+		a.Kind, a.Name, a.KindClaimed = kind, name, true
+		return a, nil
 	}
 }
 

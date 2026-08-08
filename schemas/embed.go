@@ -25,6 +25,7 @@ import "embed"
 //go:embed event/v2/*.schema.json
 //go:embed manifest/v1/*.schema.json
 //go:embed consumes/v1/*.schema.json
+//go:embed fill-classes.yaml
 //go:embed errors/v1/registry.yaml
 //go:embed templates/v1/*.md
 //go:embed templates/v2/*.md

@@ -131,9 +131,14 @@ changes:
       Neither end could move, so the fields stayed unusable.
       What a draft may contain is the schema's answer, not the template's — a
       template is one convenience over the schema. `--field` now adds a key the
-      schema allows, so the field appears only when you ask for it and no
-      other draft changes. A name the schema does not have is still refused,
-      so a typo stays a typo.
+      schema allows AND that you are entitled to set, so the field appears only
+      when you ask for it and no other draft changes.
+      Three of the five stay unavailable, each for its own reason:
+      `migrated_from` is stamped by the tool during a migration and is not
+      yours to type; `origin` and `expected_response` are a list and a block,
+      and `--field` sets single values only. The two that were genuinely yours
+      to state — `effort_estimate` and `supersedes` — now work.
+      A name the schema does not have is still refused, so a typo stays a typo.
     action:
       scope: none
       why: >

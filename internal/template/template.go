@@ -389,15 +389,50 @@ func envelopeGeneration(declared string) string {
 	return declared
 }
 
-// schemaAllowsField reports whether an envelope of this type and generation
-// may legally carry a top-level field. It asks the SCHEMA CORPUS rather than
-// the template: the template is one authoring convenience over the schema,
-// and treating it as the definition of what an artifact may contain is what
-// made five schema-legal fields unusable.
+// schemaAllowsField reports whether a CALLER may supply this field on an
+// envelope of this type and generation. Two questions, both required:
+//
+//   - Does the schema have the field? The template is one authoring
+//     convenience over the schema, and treating it as the definition of what
+//     an artifact may contain is what made five schema-legal fields unusable.
+//   - Is the field the caller's to state? schemas/fill-classes.yaml answers
+//     that, and TOOL and DETECTED are refused.
+//
+// The second check was missing when append-on-demand first shipped, and a
+// post-phase audit found the hole by typing `migrated_from` — a TOOL field —
+// onto a v2 contract draft. Asking only the schema reopened, in the same
+// phase, the exact rule the phase exists to enforce: a field the tool
+// establishes must not be typeable, and "the schema has it" says nothing
+// about who may fill it.
 func schemaAllowsField(typ, generation, field string) bool {
 	version := 1
 	if generation == "envelope/v2" {
 		version = 2
+	}
+	// Only a SCALAR field may be appended. The append writes one
+	// yaml.ScalarNode, so naming an array (`origin`, `refs`) or an object
+	// (`expected_response`) produces a draft the schema refuses — and
+	// `a2a new` writes the file straight after rendering, with no validation
+	// in between, so the author learns about it at submit or not at all.
+	//
+	// setField, which handles the list case, only ever runs for a key the
+	// template already carries; there is no existing node to route through
+	// here. Refusing is the honest answer until there is.
+	if declared, err := schema.EnvelopeFieldType(version, typ, field); err == nil {
+		switch declared {
+		case "array", "object":
+			return false
+		}
+	}
+	if table, err := schema.LoadFillClasses(); err == nil {
+		group := fmt.Sprintf("envelope/v%d/%s", version, typ)
+		// Checked against BOTH the per-type group and the base, because a
+		// shared field's row lives on the base and a caller naming it must
+		// be refused by the base's classification.
+		base := fmt.Sprintf("envelope/v%d/base", version)
+		if !table.Typeable(group, field) || !table.Typeable(base, field) {
+			return false
+		}
 	}
 	// No error branch: "the corpus could not answer" and "the schema does
 	// not allow it" are the same answer here — refuse. Distinguishing them

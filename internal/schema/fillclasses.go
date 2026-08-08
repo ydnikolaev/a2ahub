@@ -212,3 +212,67 @@ func EnvelopeFieldPaths(version int, typ string) ([]string, error) {
 	sort.Strings(out)
 	return out, nil
 }
+
+// LoadFillClasses parses the embedded schemas/fill-classes.yaml. It is the
+// accessor an authoring surface uses to ask "may a caller type this field",
+// so the classification is enforced from the same bytes the completeness
+// gate checks rather than from a second copy.
+func LoadFillClasses() (FillClassTable, error) {
+	raw, err := schemas.FS.ReadFile("fill-classes.yaml")
+	if err != nil {
+		return FillClassTable{}, fmt.Errorf("schema: read fill-classes.yaml: %w", err)
+	}
+	return ParseFillClasses(raw)
+}
+
+// Typeable reports whether a caller may supply this field's value directly.
+//
+// TOOL and DETECTED are refused: those are the two classes the epic's rule
+// names — what the tool establishes, an agent may not type. Everything else
+// is the agent's to state, including a field with no row, because refusing an
+// unclassified field would make the completeness gate's own failure mode
+// "authoring stops working" rather than "the gate goes red".
+func (t FillClassTable) Typeable(group, field string) bool {
+	class, ok := t.ClassOf(group, field)
+	if !ok {
+		return true
+	}
+	return class != FillTool && class != FillDetected
+}
+
+// EnvelopeFieldType returns the JSON-Schema `type` declared for a top-level
+// envelope field, or "" when the field is absent or declares none.
+//
+// It exists because "the schema has this field" and "a caller may supply it
+// as one scalar" are different questions. `origin` is an array,
+// `expected_response` an object, and appending a bare scalar for either
+// writes a draft the schema refuses — with nothing between render and disk
+// to say so, since `a2a new` writes the file straight after rendering.
+func EnvelopeFieldType(version int, typ, field string) (string, error) {
+	for _, group := range []string{
+		fmt.Sprintf("envelope/v%d/%s", version, typ),
+		fmt.Sprintf("envelope/v%d/%s", version, typeBase),
+	} {
+		for _, d := range corpusDefinitions {
+			if fmt.Sprintf("%s/v%d/%s", d.key.family, d.key.version, d.key.typ) != group {
+				continue
+			}
+			raw, err := schemas.FS.ReadFile(d.path)
+			if err != nil {
+				return "", fmt.Errorf("schema: read %s: %w", d.path, err)
+			}
+			var doc struct {
+				Properties map[string]struct {
+					Type string `yaml:"type"`
+				} `yaml:"properties"`
+			}
+			if err := yaml.Unmarshal(raw, &doc); err != nil {
+				return "", fmt.Errorf("schema: decode %s: %w", d.path, err)
+			}
+			if p, ok := doc.Properties[field]; ok && p.Type != "" {
+				return p.Type, nil
+			}
+		}
+	}
+	return "", nil
+}

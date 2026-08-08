@@ -58,6 +58,10 @@ type ActorInput struct {
 	Kind  string `json:"kind,omitempty"`
 	Name  string `json:"name,omitempty"`
 	Model string `json:"model,omitempty"`
+	// Session mirrors internal/cli's ActorFlags.Session — the explicit
+	// override for a detected session id, in the same position in the same
+	// resolution order.
+	Session string `json:"session,omitempty"`
 }
 
 // ActorResolver resolves the durable identity attached to an MCP-authored
@@ -101,15 +105,19 @@ func resolveActorFrom(in, env ActorInput, osUser string, lookup agentid.Lookup) 
 			claimed := firstNonEmpty(in.Name, env.Name)
 			if claimed == "" || agentid.Contradicts(claimed, detected.ID) {
 				return template.Actor{
-					Kind:  "agent",
-					Name:  detected.ID,
-					Model: firstNonEmpty(in.Model, env.Model, detected.Model),
+					Kind:        "agent",
+					KindClaimed: true, // detection IS a claim about the process
+					Name:        detected.ID,
+					Model:       firstNonEmpty(in.Model, env.Model, detected.Model),
+					Session:     firstNonEmpty(in.Session, env.Session, detected.Session),
 				}, nil
 			}
 			return template.Actor{
-				Kind:  firstNonEmpty(explicitKind, "agent"),
-				Name:  claimed,
-				Model: firstNonEmpty(in.Model, env.Model, detected.Model),
+				Kind:        firstNonEmpty(explicitKind, "agent"),
+				KindClaimed: true,
+				Name:        claimed,
+				Model:       firstNonEmpty(in.Model, env.Model, detected.Model),
+				Session:     firstNonEmpty(in.Session, env.Session, detected.Session),
 			}, nil
 		}
 	}
@@ -119,9 +127,21 @@ func resolveActorFrom(in, env ActorInput, osUser string, lookup agentid.Lookup) 
 		return template.Actor{}, ErrNoActorName
 	}
 	return template.Actor{
-		Kind:  firstNonEmpty(explicitKind, "agent"),
-		Name:  name,
-		Model: firstNonEmpty(in.Model, env.Model),
+		Kind: firstNonEmpty(explicitKind, "agent"),
+		// False only here, exactly as internal/cli's resolver does it: this
+		// is the branch where no source named a kind and "agent" above is a
+		// DEFAULT rather than a claim.
+		//
+		// This mirror was missed when KindClaimed shipped, and the cost was
+		// precise: with it always false, fillActor never overwrote a
+		// template's literal for ANY MCP-drafted artifact, so an MCP caller
+		// explicitly asserting `actor.kind: agent` on a decision was
+		// silently dropped and the template's `kind: human` stood. The fix
+		// for one surface had broken the other.
+		KindClaimed: explicitKind != "",
+		Name:        name,
+		Model:       firstNonEmpty(in.Model, env.Model),
+		Session:     firstNonEmpty(in.Session, env.Session),
 	}, nil
 }
 

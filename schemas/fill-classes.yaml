@@ -52,6 +52,19 @@
 #   space, from, system -> CONFIG    (resolved from configuration, overridable)
 #   everything else    -> AUTHOR
 #
+# Six derived rows were CORRECTED on 2026-08-08 by a post-phase audit that
+# read the writer for each, and they are worth naming because they show what
+# a derived row is worth:
+#
+#   migrated_from (v1)      AUTHOR -> TOOL       v2 already said TOOL; one
+#                                                field cannot have two classes
+#   thread (v1, v2)         TOOL -> DEFAULTED    cmd_new.go honours --thread and
+#                                                mints only when absent
+#   priority, blocking (v2) AUTHOR -> DEFAULTED  the v2 templates carry the same
+#                                                literals v1's DEFAULTED rows cite
+#   event.state (v1, v2)    AUTHOR -> TOOL       lifecycleReceiptState computes it
+#                                                from the fold; no flag supplies it
+#
 # A derived row is a CLAIM, not a finding. P4, P5 and P6 each add fields here
 # and should correct any row their own evidence contradicts — that is cheaper
 # than re-deriving the classification, and it is why the table is a file
@@ -100,13 +113,13 @@ fields:
     expected_response.shape: AUTHOR
     expected_response.by: AUTHOR
     acceptance_criteria: AUTHOR
-    thread: TOOL
+    thread: DEFAULTED
     supersedes: AUTHOR
     refs: AUTHOR
     refs[].ref: AUTHOR
     refs[].note: AUTHOR
     origin: AUTHOR
-    migrated_from: AUTHOR
+    migrated_from: TOOL
     interim_behavior: AUTHOR
     classification: DEFAULTED
     valid_until: AUTHOR
@@ -184,15 +197,15 @@ fields:
     actor.model: DETECTED
     actor.session: DETECTED
     created: TOOL
-    priority: AUTHOR
-    blocking: AUTHOR
+    priority: DEFAULTED
+    blocking: DEFAULTED
     needed_by: AUTHOR
     effort_estimate: AUTHOR
     expected_response: AUTHOR
     expected_response.shape: AUTHOR
     expected_response.by: AUTHOR
     acceptance_criteria: AUTHOR
-    thread: TOOL
+    thread: DEFAULTED
     supersedes: AUTHOR
     refs: AUTHOR
     refs[].ref: AUTHOR
@@ -225,7 +238,7 @@ fields:
     space: CONFIG
     subject: AUTHOR
     transition: AUTHOR
-    state: AUTHOR
+    state: TOOL
     actor: DETECTED
     actor.kind: DETECTED
     actor.name: DETECTED
@@ -250,7 +263,7 @@ fields:
     space: CONFIG
     subject: AUTHOR
     transition: AUTHOR
-    state: AUTHOR
+    state: TOOL
     actor: DETECTED
     actor.kind: DETECTED
     actor.name: DETECTED
