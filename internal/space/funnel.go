@@ -561,6 +561,24 @@ func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitReque
 		return result, &Error{Op: op, Input: branch, Err: remoteRecoveryConflict("prior-pr-not-observed")}
 	}
 
+	// P4 possession, AC2: every attachments[] entry declared on the files
+	// about to be committed must resolve THROUGH THE SPACE's own resolution
+	// path (possession.go's CheckAttachmentPossession, reading req.RepoDir's
+	// origin/main) before any commit/push git action below. Runs after the
+	// idempotent short-circuit (step 0) — a write that already merged is not
+	// re-litigated — and uses the FULL merged mutation set (req.Files AND
+	// req.Mutations; prepared.submitRequest sets only the latter, so reading
+	// req.Files alone would silently never run on the real Submit() path).
+	// An artifact declaring no attachments costs one no-op scan, exactly as
+	// today.
+	mutationsForPossession, err := normalizeMutations(req.Files, req.Mutations)
+	if err != nil {
+		return failWriteResult(op, branch, result, err)
+	}
+	if err := checkSubmitAttachmentPossession(ctx, req.RepoDir, mutationWrites(mutationsForPossession)); err != nil {
+		return failWriteResult(op, branch, result, err)
+	}
+
 	var openRequest host.OpenPRRequest
 	if prepared != nil && len(prepared.data.recoveryJSON) > 0 {
 		reader, ok := f.host.(remoteRecoveryReader)
