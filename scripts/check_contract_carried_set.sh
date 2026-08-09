@@ -115,9 +115,20 @@ var combineDigestAllowlist = map[string]bool{
 	"internal/contract/set.go":              true,
 	"internal/contract/publication_plan.go": true,
 	"internal/datapackage/entryset.go":      true,
+	// P4's submit-time possession check recomputes an attachment's digest
+	// from the bytes the SPACE resolved, so a reference that resolves to
+	// DIFFERENT bytes is refused rather than accepted. It must combine
+	// per-file digests the same way the minting side does, and it may not
+	// import internal/datapackage to borrow it — ADR-001's table forbids
+	// that edge. So it calls the one canonical function directly, which is
+	// what this allowlist is FOR: the rule is one implementation, and a
+	// second caller of it is what stops a second implementation being
+	// written.
+	"internal/space/possession.go": true,
 }
 
 var combineDigestCallCeiling = map[string]int{
+	"internal/space/possession.go":          1,
 	"internal/artifact/digesttree.go":       1,
 	"internal/contract/set.go":              3,
 	"internal/contract/publication_plan.go": 1,
