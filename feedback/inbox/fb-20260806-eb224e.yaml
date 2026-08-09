@@ -1,31 +1,74 @@
-checks:
-    docs_consulted: true
-    duplicates_checked: true
-    grounded_in_real_work: true
-    no_sensitive_content: true
-    not_space_specific: true
-context:
-    a2a_version: 0.19.7
-    command: a2a contract preflight XC-axon-getvisa-ingest --version 1.0.0 --staging <dir>
-    os_arch: darwin/arm64
-    surface: cli
-evidence:
-    actual: The value is reachable only by triggering the refusal that reports it, or by reimplementing the digest profile from a2ahub's own unpublished internals. Both leave the field asserting a2a's computation back to a2a.
-    expected: An author of a first release can obtain the export-source-v1 digest of their own candidate from a2a, before publishing, without a failed publication attempt - the same way the descriptor's other machine values are obtainable.
-    steps:
-        - Author a contract-set-v2 descriptor with a `generated_from` block, as reference/authoring/contract.md shows for a code-generated contract
-        - 'a2a validate <descriptor> -> valid: true, zero violations (the digest is not checked here)'
-        - 'a2a contract preflight <XC-id> --version 1.0.0 --staging <dir> -> planner refused: contract: digest-mismatch: generated_from.source_digest: asserted sha256:5866..., computed sha256:9a63... using export-source-v1'
-        - grep -rn 'export-source-v1' over the installed .a2ahub/skill tree -> ONE hit, the placeholder comment in reference/authoring/contract.md line 20; no definition, no worked example, no command
-        - a2a contract verify-export --local <dir> <XC-id> -> 'contract reference must be an exact XC-id@canonical-version'
-        - 'a2a contract verify-export --local <dir> <XC-id>@1.0.0 -> ''space: contract version is not published'' (it is the version being published)'
-        - a2a contract new / a2a new contract usage -> no verb emits the digest; the template ships the field commented out with a placeholder
 feedback: v1
 id: fb-20260806-eb224e
-kind: bug
-proposal: 'Let `a2a contract verify-export --local <path>` accept a candidate with no published version (or add `--staging <dir>`), and print the export-source-v1 digest and its per-file projection. That is one flag on a verb that already computes exactly this, and it turns the field from an obstacle into the proof it was designed to be. Alternatively have `contract new` / `contract preflight --write-source-digest` stamp it. Also worth stating the profile in the manual - "CombineDigestPairs over declared schema and fixture roles only; descriptor and artifacts/** companions excluded" is one sentence, and without it an author cannot even tell which bytes are covered. This is the same shape v0.19.7''s own release notes describe sweeping for: a refusal naming a precondition with no reachable means of satisfaction.'
-resolution: 'Shipped in v0.19.8 — "`a2a contract verify-export` computes the export-source-v1 digest before the first publish" (RN-01908-1). `a2a contract verify-export --local <dir> <XC-id>`, with no version, computes the digest over a local candidate and reports it against whatever the descriptor asserts. It is deliberately a CHECK rather than a source, so the documentation carries the load-bearing half: reference/contract-versions.md now defines the export-source-v1 profile — declared schema and fixture entries only, descriptor and `artifacts/` companions excluded, path-to-digest pairs combined — so a producer can implement it in their own generator and have something independent to compare against.'
-severity: major
+resolution: >-
+    Shipped in v0.19.8 — "`a2a contract verify-export` computes the
+    export-source-v1 digest before the first publish" (RN-01908-1). `a2a
+    contract verify-export --local <dir> <XC-id>`, with no version, computes the
+    digest over a local candidate and reports it against whatever the descriptor
+    asserts. It is deliberately a CHECK rather than a source, so the
+    documentation carries the load-bearing half: reference/contract-versions.md
+    now defines the export-source-v1 profile — declared schema and fixture
+    entries only, descriptor and `artifacts/` companions excluded,
+    path-to-digest pairs combined — so a producer can implement it in their
+    own generator and have something independent to compare against.
 status: shipped
-summary: '`generated_from.source_digest` must assert the export-source-v1 digest, and no shipped command computes it for an unpublished candidate. The authoring reference states the field as `sha256:<export-source-v1 digest>` and stops there; the manual defines the profile nowhere else. The only verb that computes it, `a2a contract verify-export --local <path> <id>@<version>`, requires an exact canonical version and refuses an unpublished one with "space: contract version is not published" - so it is unreachable for exactly the case that needs it, a producer''s FIRST release. The single remaining path is to run preflight, read the computed value out of the refusal ("asserted X, computed Y using export-source-v1"), and paste Y back into the descriptor. That makes the assertion self-fulfilling: the field exists so a producer can prove the published export matches their code, and a value copied from the tool''s own computation proves nothing at all. An author who omits `generated_from` entirely sails through; only the honest one who declares a code-generated contract is stopped. I satisfied it only by reimplementing the profile from a2ahub''s own internals, which is not an authoring path.'
+kind: bug
+severity: major
 title: export-source-v1 digest cannot be computed before the first publish
+summary: >-
+  `generated_from.source_digest` must assert the export-source-v1 digest, and no
+  shipped command computes it for an unpublished candidate. The authoring
+  reference states the field as `sha256:<export-source-v1 digest>` and stops
+  there; the manual defines the profile nowhere else. The only verb that computes
+  it, `a2a contract verify-export --local <path> <id>@<version>`, requires an
+  exact canonical version and refuses an unpublished one with "space: contract
+  version is not published" - so it is unreachable for exactly the case that
+  needs it, a producer's FIRST release. The single remaining path is to run
+  preflight, read the computed value out of the refusal ("asserted X, computed
+  Y using export-source-v1"), and paste Y back into the descriptor. That makes
+  the assertion self-fulfilling: the field exists so a producer can prove the
+  published export matches their code, and a value copied from the tool's own
+  computation proves nothing at all. An author who omits `generated_from`
+  entirely sails through; only the honest one who declares a code-generated
+  contract is stopped. I satisfied it only by reimplementing the profile from
+  a2ahub's own internals, which is not an authoring path.
+context:
+    a2a_version: 0.19.7
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a contract preflight XC-axon-getvisa-ingest --version 1.0.0 --staging <dir>
+evidence:
+    steps:
+        - "Author a contract-set-v2 descriptor with a `generated_from` block, as reference/authoring/contract.md shows for a code-generated contract"
+        - "a2a validate <descriptor> -> valid: true, zero violations (the digest is not checked here)"
+        - "a2a contract preflight <XC-id> --version 1.0.0 --staging <dir> -> planner refused: contract: digest-mismatch: generated_from.source_digest: asserted sha256:5866..., computed sha256:9a63... using export-source-v1"
+        - "grep -rn 'export-source-v1' over the installed .a2ahub/skill tree -> ONE hit, the placeholder comment in reference/authoring/contract.md line 20; no definition, no worked example, no command"
+        - "a2a contract verify-export --local <dir> <XC-id> -> 'contract reference must be an exact XC-id@canonical-version'"
+        - "a2a contract verify-export --local <dir> <XC-id>@1.0.0 -> 'space: contract version is not published' (it is the version being published)"
+        - "a2a contract new / a2a new contract usage -> no verb emits the digest; the template ships the field commented out with a placeholder"
+    expected: >-
+      An author of a first release can obtain the export-source-v1 digest of their
+      own candidate from a2a, before publishing, without a failed publication
+      attempt - the same way the descriptor's other machine values are obtainable.
+    actual: >-
+      The value is reachable only by triggering the refusal that reports it, or by
+      reimplementing the digest profile from a2ahub's own unpublished internals.
+      Both leave the field asserting a2a's computation back to a2a.
+proposal: >-
+  Let `a2a contract verify-export --local <path>` accept a candidate with no
+  published version (or add `--staging <dir>`), and print the export-source-v1
+  digest and its per-file projection. That is one flag on a verb that already
+  computes exactly this, and it turns the field from an obstacle into the proof
+  it was designed to be. Alternatively have `contract new` / `contract preflight
+  --write-source-digest` stamp it. Also worth stating the profile in the manual -
+  "CombineDigestPairs over declared schema and fixture roles only; descriptor and
+  artifacts/** companions excluded" is one sentence, and without it an author
+  cannot even tell which bytes are covered. This is the same shape v0.19.7's own
+  release notes describe sweeping for: a refusal naming a precondition with no
+  reachable means of satisfaction.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 func writeInboxItem(t *testing.T, hubRoot, id, kind, title, status string) {
@@ -266,6 +268,301 @@ func TestApplyVerdicts_UnknownIDIsSkipped(t *testing.T) {
 	}
 	if len(result.Skipped) != 1 || result.Skipped[0] != "fb-nonexistent" {
 		t.Fatalf("Skipped = %+v, want [fb-nonexistent]", result.Skipped)
+	}
+}
+
+// TestApplyStatusResolution_RequiresExactlyOneStatusLine is a direct-call
+// unit test (applyStatusResolution is unexported but in-package) for the
+// brief's rule 1: "Exactly one such line must exist; zero or more than one
+// is an error naming the path (fail before writing anything)." Neither shape
+// is reachable end-to-end through ApplyVerdicts — a missing status: key
+// leaves TriageItem.Status == "" (readInboxItems), which fails the
+// `item.Status != "new"` guard and is skipped before the writer ever runs;
+// a duplicate status: key is rejected earlier still, by the probe's own
+// yaml.Unmarshal. So this is the only path that actually exercises the guard.
+func TestApplyStatusResolution_RequiresExactlyOneStatusLine(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{name: "zero status lines", raw: "id: fb-20260801-eeeeee\ntitle: \"no status key\"\n"},
+		{name: "two status lines", raw: "id: fb-20260801-eeeeee\nstatus: new\nstatus: accepted\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			out, err := applyStatusResolution([]byte(tc.raw), "rejected", "")
+			if err == nil {
+				t.Fatalf("applyStatusResolution(%q) = %q, nil, want an error naming the status-line count", tc.raw, out)
+			}
+			if out != nil {
+				t.Fatalf("applyStatusResolution returned non-nil bytes on error: %q", out)
+			}
+		})
+	}
+}
+
+// TestApplyVerdicts_RefusesAnUnrepresentableResolution is the fail-closed
+// case for the round-trip guard in applyStatusResolution: a resolution
+// ending in a newline cannot survive a literal `|-` block (which strips a
+// trailing newline), so ApplyVerdicts must refuse rather than silently write
+// a resolution that does not match the verdict, and the file on disk must
+// stay byte-unchanged (fail BEFORE writing anything).
+func TestApplyVerdicts_RefusesAnUnrepresentableResolution(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	seedBacklog(t, hubRoot, 16)
+	writeInboxItem(t, hubRoot, "fb-20260801-ffffff", "bug", "unrepresentable resolution", "new")
+	path := filepath.Join(hubRoot, "feedback", "inbox", "fb-20260801-ffffff.yaml")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read before: %v", err)
+	}
+
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	verdicts := []Verdict{{ID: "fb-20260801-ffffff", Status: "rejected", Resolution: "trailing newline\n"}}
+	if _, err := ApplyVerdicts(hubRoot, verdicts, now); err == nil {
+		t.Fatal("ApplyVerdicts accepted a resolution a literal block cannot round-trip, want an error")
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read after: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("file changed despite the refusal:\n--- before ---\n%s\n--- after ---\n%s", before, after)
+	}
+}
+
+// testStripStatusAndResolution removes the top-level `status:` line and the
+// top-level `resolution:` section (its key line plus every following blank
+// or whitespace-indented continuation line) from raw. It is written
+// independently of applyStatusResolution's own section logic in triage.go —
+// sharing the helper would let a bug common to both sides hide from the
+// byte-preservation assertion below.
+func testStripStatusAndResolution(raw string) string {
+	lines := strings.Split(raw, "\n")
+	var out []string
+	i := 0
+	for i < len(lines) {
+		ln := lines[i]
+		if strings.HasPrefix(ln, "status:") {
+			i++
+			continue
+		}
+		if strings.HasPrefix(ln, "resolution:") {
+			i++
+			for i < len(lines) {
+				c := lines[i]
+				if c == "" || strings.HasPrefix(c, " ") || strings.HasPrefix(c, "\t") {
+					i++
+					continue
+				}
+				break
+			}
+			continue
+		}
+		out = append(out, ln)
+		i++
+	}
+	return strings.Join(out, "\n")
+}
+
+// TestApplyVerdicts_PreservesBytesOutsideStatusAndResolution is the
+// load-bearing regression for own-loop 09 §11 (2026-08-09, wave C): a
+// reporter's submitted record must survive triage intact except for the two
+// fields the verdict owns. The fixture uses submission-order (non-alphabetic)
+// keys, a folded `summary: >-` and a literal `proposal: |-` with an internal
+// blank line — exactly the reshaping a yaml.Marshal round-trip used to
+// introduce (alphabetical key reorder, re-quoting, re-folding).
+func TestApplyVerdicts_PreservesBytesOutsideStatusAndResolution(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	seedBacklog(t, hubRoot, 16)
+
+	dir := filepath.Join(hubRoot, "feedback", "inbox")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	original := "title: \"submission key order, not alphabetical\"\n" +
+		"kind: bug\n" +
+		"id: fb-20260801-aaaaaa\n" +
+		"feedback: v1\n" +
+		"summary: >-\n" +
+		"    a folded summary line that keeps\n" +
+		"    flowing across several continuation\n" +
+		"    lines of folded text\n" +
+		"severity: minor\n" +
+		"proposal: |-\n" +
+		"    First line of the proposal.\n" +
+		"\n" +
+		"    Second paragraph after a deliberate blank line.\n" +
+		"context:\n" +
+		"    surface: cli\n" +
+		"status: new\n"
+	path := filepath.Join(dir, "fb-20260801-aaaaaa.yaml")
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatalf("write inbox item: %v", err)
+	}
+
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	verdicts := []Verdict{{ID: "fb-20260801-aaaaaa", Status: "rejected", Resolution: "not applicable to this space"}}
+	if _, err := ApplyVerdicts(hubRoot, verdicts, now); err != nil {
+		t.Fatalf("ApplyVerdicts: %v", err)
+	}
+
+	gotRaw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read applied file: %v", err)
+	}
+
+	wantStripped := testStripStatusAndResolution(original)
+	gotStripped := testStripStatusAndResolution(string(gotRaw))
+	if gotStripped != wantStripped {
+		t.Fatalf("bytes outside status/resolution changed:\n--- want ---\n%s\n--- got ---\n%s", wantStripped, gotStripped)
+	}
+
+	// Submission key order (title: first, not alphabetical) must have
+	// survived too — a yaml.Marshal round-trip would put "checks"/"context"
+	// first.
+	if !strings.HasPrefix(string(gotRaw), "title:") {
+		t.Fatalf("expected submission key order (title: first) to survive, got:\n%s", gotRaw)
+	}
+}
+
+// TestApplyVerdicts_ResolutionValueRoundTrips covers renderResolutionSection's
+// two emitted shapes plus the whitespace-run case that must fall back from
+// folded to literal (a folded scalar unfolds every line break — and would
+// unfold a run of spaces just as wrongly — to a single space).
+func TestApplyVerdicts_ResolutionValueRoundTrips(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		resolution string
+	}{
+		{
+			name:       "long unbreakable token stays on its own line, unbroken",
+			resolution: "Fixed under P9; see docs/features/active/operational-confidence-2026-08/README.md for the write-up.",
+		},
+		{
+			name:       "newline forces a literal block",
+			resolution: "Fixed in v0.15.0.\n\nSee the commit for detail.",
+		},
+		{
+			name:       "a whitespace run cannot be folded, falls back to literal",
+			resolution: "duplicate of  fb-20260601-cccccc",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			hubRoot := t.TempDir()
+			seedBacklog(t, hubRoot, 16)
+			writeInboxItem(t, hubRoot, "fb-20260801-bbbbbb", "bug", "roundtrip case", "new")
+			now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+			verdicts := []Verdict{{ID: "fb-20260801-bbbbbb", Status: "rejected", Resolution: tc.resolution}}
+			if _, err := ApplyVerdicts(hubRoot, verdicts, now); err != nil {
+				t.Fatalf("ApplyVerdicts: %v", err)
+			}
+
+			raw, err := os.ReadFile(filepath.Join(hubRoot, "feedback", "inbox", "fb-20260801-bbbbbb.yaml"))
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			var doc map[string]any
+			if err := yaml.Unmarshal(raw, &doc); err != nil {
+				t.Fatalf("yaml.Unmarshal: %v\nraw:\n%s", err, raw)
+			}
+			got, _ := doc["resolution"].(string)
+			if got != tc.resolution {
+				t.Fatalf("resolution = %q, want %q\nraw:\n%s", got, tc.resolution, raw)
+			}
+		})
+	}
+}
+
+// TestApplyVerdicts_ResolutionInsertionAndReplacement covers both shapes of
+// § own-loop 09 rule 2: a record with no resolution: key gains one
+// immediately before status:, and a record that already carries a
+// multi-line resolution has the WHOLE section replaced with no orphan
+// continuation lines left behind.
+func TestApplyVerdicts_ResolutionInsertionAndReplacement(t *testing.T) {
+	t.Parallel()
+	hubRoot := t.TempDir()
+	seedBacklog(t, hubRoot, 16)
+
+	// Case 1: no resolution: key -> one is inserted immediately before status:.
+	writeInboxItem(t, hubRoot, "fb-20260801-cccccc", "bug", "gains a resolution", "new")
+
+	// Case 2: an existing multi-line resolution -> fully replaced.
+	dir := filepath.Join(hubRoot, "feedback", "inbox")
+	existing := "feedback: v1\n" +
+		"id: fb-20260801-dddddd\n" +
+		"kind: bug\n" +
+		"severity: minor\n" +
+		"title: \"already has a resolution\"\n" +
+		"summary: \"summary\"\n" +
+		"resolution: |-\n" +
+		"    stale line one\n" +
+		"    stale line two\n" +
+		"status: new\n"
+	if err := os.WriteFile(filepath.Join(dir, "fb-20260801-dddddd.yaml"), []byte(existing), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	verdicts := []Verdict{
+		{ID: "fb-20260801-cccccc", Status: "accepted", Resolution: "routed to backlog", Route: "backlog"},
+		{ID: "fb-20260801-dddddd", Status: "rejected", Resolution: "fresh resolution text replaces the stale one"},
+	}
+	if _, err := ApplyVerdicts(hubRoot, verdicts, now); err != nil {
+		t.Fatalf("ApplyVerdicts: %v", err)
+	}
+
+	// Case 1: resolution: inserted strictly before status:, nothing orphaned
+	// after status:.
+	raw1, err := os.ReadFile(filepath.Join(dir, "fb-20260801-cccccc.yaml"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	lines1 := strings.Split(string(raw1), "\n")
+	statusLine1, resolutionLine1 := -1, -1
+	for i, ln := range lines1 {
+		if strings.HasPrefix(ln, "status:") {
+			statusLine1 = i
+		}
+		if strings.HasPrefix(ln, "resolution:") {
+			resolutionLine1 = i
+		}
+	}
+	if resolutionLine1 == -1 || statusLine1 == -1 || resolutionLine1 >= statusLine1 {
+		t.Fatalf("expected resolution: inserted before status:, got resolutionLine=%d statusLine=%d, file:\n%s", resolutionLine1, statusLine1, raw1)
+	}
+	for _, ln := range lines1[statusLine1+1:] {
+		if ln != "" {
+			t.Fatalf("unexpected content after status: line: %q, full file:\n%s", ln, raw1)
+		}
+	}
+
+	// Case 2: stale continuation lines are gone, no orphans, replacement
+	// value round-trips.
+	raw2, err := os.ReadFile(filepath.Join(dir, "fb-20260801-dddddd.yaml"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if strings.Contains(string(raw2), "stale line") {
+		t.Fatalf("expected the stale resolution section to be fully replaced, got:\n%s", raw2)
+	}
+	var doc2 map[string]any
+	if err := yaml.Unmarshal(raw2, &doc2); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	if got, _ := doc2["resolution"].(string); got != "fresh resolution text replaces the stale one" {
+		t.Fatalf("resolution = %q, want replacement text", got)
+	}
+	if got, _ := doc2["status"].(string); got != "rejected" {
+		t.Fatalf("status = %q, want rejected", got)
 	}
 }
 

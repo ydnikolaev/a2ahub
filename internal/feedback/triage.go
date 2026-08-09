@@ -312,17 +312,9 @@ func ApplyVerdicts(hubRoot string, verdicts []Verdict, now time.Time) (ApplyResu
 		if rerr != nil {
 			return result, fmt.Errorf("feedback: %s: %w", op, rerr)
 		}
-		var doc map[string]any
-		if uerr := yaml.Unmarshal(raw, &doc); uerr != nil {
-			return result, fmt.Errorf("feedback: %s: %s: %w", op, item.Path, uerr)
-		}
-		doc["status"] = v.Status
-		if v.Resolution != "" {
-			doc["resolution"] = v.Resolution
-		}
-		out, merr := yaml.Marshal(doc)
-		if merr != nil {
-			return result, fmt.Errorf("feedback: %s: %w", op, merr)
+		out, aerr := applyStatusResolution(raw, v.Status, v.Resolution)
+		if aerr != nil {
+			return result, fmt.Errorf("feedback: %s: %s: %w", op, item.Path, aerr)
 		}
 		if werr := os.WriteFile(item.Path, out, 0o644); werr != nil {
 			return result, fmt.Errorf("feedback: %s: %w", op, werr)
@@ -352,6 +344,197 @@ func ApplyVerdicts(hubRoot string, verdicts []Verdict, now time.Time) (ApplyResu
 		}
 	}
 	return result, nil
+}
+
+// resolutionWrapWidth is the target column count for a wrapped folded
+// resolution body line, BEFORE the 4-space indent is added (§ own-loop 09
+// wave C: "wrapped at ~76 columns and indented 4 spaces").
+const resolutionWrapWidth = 76
+
+// resolutionIndent is the fixed indentation applied to every body line of a
+// rendered resolution block (folded or literal).
+const resolutionIndent = "    "
+
+// applyStatusResolution rewrites raw's top-level `status:` line and, when
+// resolution is non-empty, its top-level `resolution:` section — leaving
+// every other byte of the document exactly as it was (own-loop 09 §11,
+// 2026-08-09: "ApplyVerdicts must edit only the two fields it owns and leave
+// the record's other bytes untouched"). It fails closed: exactly one
+// top-level `status:` line must exist, and the rendered result must
+// yaml.Unmarshal back to the intended values, or no bytes are returned at
+// all (the caller does not write on error).
+func applyStatusResolution(raw []byte, status, resolution string) ([]byte, error) {
+	hadTrailingNewline := len(raw) > 0 && raw[len(raw)-1] == '\n'
+	text := string(raw)
+	if hadTrailingNewline {
+		text = text[:len(text)-1]
+	}
+	lines := strings.Split(text, "\n")
+
+	statusIdx := -1
+	statusCount := 0
+	for i, ln := range lines {
+		if isTopLevelKey(ln, "status") {
+			statusCount++
+			statusIdx = i
+		}
+	}
+	if statusCount != 1 {
+		return nil, fmt.Errorf("found %d top-level `status:` lines, want exactly 1", statusCount)
+	}
+	lines[statusIdx] = "status: " + status
+
+	if resolution != "" {
+		section := renderResolutionSection(resolution)
+
+		resIdx := -1
+		for i, ln := range lines {
+			if isTopLevelKey(ln, "resolution") {
+				resIdx = i
+				break
+			}
+		}
+		if resIdx == -1 {
+			out := make([]string, 0, len(lines)+len(section))
+			out = append(out, lines[:statusIdx]...)
+			out = append(out, section...)
+			out = append(out, lines[statusIdx:]...)
+			lines = out
+		} else {
+			end := topLevelSectionEnd(lines, resIdx)
+			out := make([]string, 0, len(lines)-(end-resIdx)+len(section))
+			out = append(out, lines[:resIdx]...)
+			out = append(out, section...)
+			out = append(out, lines[end:]...)
+			lines = out
+		}
+	}
+
+	outText := strings.Join(lines, "\n")
+	if hadTrailingNewline {
+		outText += "\n"
+	}
+	outBytes := []byte(outText)
+
+	// Fail-closed: an emitted block that does not round-trip to the intended
+	// values (an unrepresentable shape — a trailing newline a literal block
+	// strips, whitespace a folded block cannot preserve, ambiguous literal
+	// indentation) is a refusal, never a silently reshaped record.
+	var doc map[string]any
+	if uerr := yaml.Unmarshal(outBytes, &doc); uerr != nil {
+		return nil, fmt.Errorf("rendered YAML failed to parse: %w", uerr)
+	}
+	if got, _ := doc["status"].(string); got != status {
+		return nil, fmt.Errorf("rendered status = %q, want %q", got, status)
+	}
+	if resolution != "" {
+		if got, _ := doc["resolution"].(string); got != resolution {
+			return nil, fmt.Errorf("rendered resolution did not round-trip to the verdict text")
+		}
+	}
+	return outBytes, nil
+}
+
+// isTopLevelKey reports whether line is a column-0 mapping key named key —
+// i.e. begins with "key:" and is therefore neither indented (a nested key)
+// nor a different key sharing the prefix (e.g. "status" vs "statuses").
+func isTopLevelKey(line, key string) bool {
+	return strings.HasPrefix(line, key+":")
+}
+
+// topLevelSectionEnd returns the exclusive end index of the top-level
+// section starting at lines[start]: that line plus every following line
+// that is blank or starts with whitespace, which is how a folded (`>-`) or
+// literal (`|-`) scalar's continuation lines stay attached to their key.
+func topLevelSectionEnd(lines []string, start int) int {
+	end := start + 1
+	for end < len(lines) {
+		ln := lines[end]
+		if ln == "" || strings.HasPrefix(ln, " ") || strings.HasPrefix(ln, "\t") {
+			end++
+			continue
+		}
+		break
+	}
+	return end
+}
+
+// renderResolutionSection renders a top-level `resolution:` section
+// (key line + indented body) for text: a literal block (`|-`) when text
+// contains a newline, a folded block (`>-`) otherwise — UNLESS text's
+// whitespace is not already single-spaced (a run of spaces, a tab, or
+// leading/trailing space), which folding cannot represent without
+// reshaping it, so that case also falls back to literal.
+func renderResolutionSection(text string) []string {
+	if strings.Contains(text, "\n") || !isFoldable(text) {
+		return renderLiteralResolution(text)
+	}
+	return renderFoldedResolution(text)
+}
+
+// isFoldable reports whether text can be losslessly represented as a YAML
+// folded scalar: no newline, and its whitespace is already exactly single
+// spaces between words with no leading/trailing space or tabs — anything
+// else, folding (which unfolds every line break to one space) would change.
+func isFoldable(text string) bool {
+	return text != "" && !strings.Contains(text, "\n") && strings.Join(strings.Fields(text), " ") == text
+}
+
+// renderFoldedResolution renders text as `resolution: >-` with its body
+// wrapped at ~resolutionWrapWidth columns, split on whitespace only (never
+// inside a token — a hand-written wrapper broke a path at a hyphen one
+// commit before this fix, and folding then joins the halves with a space,
+// producing a path that resolves nowhere) and indented resolutionIndent.
+func renderFoldedResolution(text string) []string {
+	out := make([]string, 0, 4)
+	out = append(out, "resolution: >-")
+	for _, ln := range wrapWords(text, resolutionWrapWidth) {
+		out = append(out, resolutionIndent+ln)
+	}
+	return out
+}
+
+// wrapWords wraps words (split on whitespace) into lines of at most width
+// columns, never splitting a word — a single word longer than width goes on
+// its own line, unbroken. The accumulator always starts non-empty (the next
+// unplaced word), so a first word alone longer than width can never flush an
+// empty line ahead of it (never "emit a blank line inside the body").
+func wrapWords(text string, width int) []string {
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, 4)
+	cur := words[0]
+	for _, w := range words[1:] {
+		if len(cur)+1+len(w) > width {
+			lines = append(lines, cur)
+			cur = w
+			continue
+		}
+		cur += " " + w
+	}
+	lines = append(lines, cur)
+	return lines
+}
+
+// renderLiteralResolution renders text as `resolution: |-` with every line
+// of text indented resolutionIndent, preserving interior whitespace and
+// blank lines byte-for-byte (unlike folding, a literal block never rewrites
+// its body — the fail-closed round-trip check in applyStatusResolution
+// refuses any shape this cannot represent, e.g. a trailing newline or a
+// value whose own first line already carries leading whitespace).
+func renderLiteralResolution(text string) []string {
+	out := make([]string, 0, 4)
+	out = append(out, "resolution: |-")
+	for _, ln := range strings.Split(text, "\n") {
+		if ln == "" {
+			out = append(out, "")
+			continue
+		}
+		out = append(out, resolutionIndent+ln)
+	}
+	return out
 }
 
 func appendDigest(hubRoot string, now time.Time, lines []string) error {

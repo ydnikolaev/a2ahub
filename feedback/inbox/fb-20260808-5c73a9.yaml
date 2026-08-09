@@ -1,31 +1,77 @@
-checks:
-    docs_consulted: true
-    duplicates_checked: true
-    grounded_in_real_work: true
-    no_sensitive_content: true
-    not_space_specific: true
-context:
-    a2a_version: 0.19.9
-    agent: consumer-side agent verifying an inbound data delivery
-    command: a2a validate --ci --mode=v3-full-repo
-    error_code: POL-002
-    os_arch: darwin/arm64
-    surface: cli
-evidence:
-    actual: 'POL-002 (class policy, cc_ref CC-001, severity reject): "artifact frontmatter is missing or is not valid YAML" on the packed README.md. The delivery PR cannot merge, so the payload never lands while its response artifact merges separately.'
-    expected: 'A directory written by `a2a data pack` passes the space validator that gates its delivery PR. A file the package manifest declares as `role: readme` is package content, not a space artifact, so artifact frontmatter rules should not apply to it.'
-    steps:
-        - 'Producer side: `a2a data pack --contract <C-id>@<ver> --from <dir> --profile synthetic`, then `a2a data deliver <staging> --fulfills <XW-id>`.'
-        - 'Inspect the packed directory: it contains README.md whose first line is an ordinary markdown heading, no `---` frontmatter block.'
-        - 'Inspect manifest.json in the same directory: its entries include {"path":"README.md","role":"readme","media_type":"text/markdown"}.'
-        - 'Consumer side: clone the delivery PR branch and run `a2a validate --ci --mode=v3-full-repo` at the space root with the SAME 0.19.9 binary the pack was produced by.'
-        - 'Read the JSON verdict: `valid: false`, and exactly one entry under `artifacts[]` is invalid — the package''s own README.md.'
 feedback: v1
 id: fb-20260808-5c73a9
 kind: bug
-proposal: 'Make artifact discovery skip package content. The manifest is already the authority for what each packed file is, so the narrow fix is: files under a package directory are validated against the package manifest (path, digest, size, role), never against the artifact frontmatter policy. If a broader rule is preferred, excluding the `data/` subtree from artifact discovery achieves the same and is one predicate. Either way the invariant worth stating in the spec is that `a2a data pack` output must satisfy `a2a validate --ci` by construction — a tool whose writer and checker disagree cannot be made safe by the operator, only worked around by deleting content the request asked for. Worth an executable guard: pack a fixture package, run the validator over it, assert green.'
-resolution: 'Accepted, and it is a numbered acceptance criterion: agent-exchange-2026-08 P4 AC8 (docs/features/active/agent-exchange-2026-08/specs/04-possession.md) — a directory `a2a data pack` writes must pass `a2a validate --ci` by construction. The report is confirmed against the code, not just against its own account: the packed README.md is recorded in manifest.json as role=readme with no frontmatter, and artifact discovery collects every .md under a member section without consulting that manifest, so POL-002 rejects the tool''s own output. Adding frontmatter would break the package digest, so the writer and the checker cannot both be satisfied as they stand — which is why this is a phase, not a one-line fix. Observed live on r22d222/a2a PR #61, and that PR is still open because of it. Like cd2d11, this record sat on the hub unread; that is epic-backlog B10.'
 severity: major
-status: accepted
-summary: '`a2a data pack` writes a README.md into the package directory with no YAML frontmatter, and records it in the package manifest as {"path":"README.md","role":"readme","media_type":"text/markdown"}. The delivery PR that carries that directory is then failed by the space''s own `a2a validate --ci --mode=v3-full-repo`, which treats every .md under the space as an artifact and rejects that file with POL-002 "artifact frontmatter is missing or is not valid YAML". The two halves of the same binary disagree about the same file, and the manifest already carries the field (`role: readme`) that would settle it — the validator''s artifact discovery does not consult it. Consequence beyond the red check: the response artifact for the delivery merges independently and the thread advances to `next=verify:<consumer>`, while the payload PR stays open — so the consumer is asked to verify a package that `a2a data fetch` correctly reports as "not present in the local mirror". Reproduced by the CONSUMER side from a clone of the delivery branch, independently of the producing side''s own diagnosis.'
 title: data pack writes a role:readme file its own validator rejects with POL-002
+summary: >-
+  `a2a data pack` writes a README.md into the package directory with no YAML
+  frontmatter, and records it in the package manifest as
+  {"path":"README.md","role":"readme","media_type":"text/markdown"}. The
+  delivery PR that carries that directory is then failed by the space's own
+  `a2a validate --ci --mode=v3-full-repo`, which treats every .md under the
+  space as an artifact and rejects that file with POL-002 "artifact frontmatter
+  is missing or is not valid YAML". The two halves of the same binary disagree
+  about the same file, and the manifest already carries the field
+  (`role: readme`) that would settle it — the validator's artifact discovery
+  does not consult it. Consequence beyond the red check: the response artifact
+  for the delivery merges independently and the thread advances to
+  `next=verify:<consumer>`, while the payload PR stays open — so the consumer
+  is asked to verify a package that `a2a data fetch` correctly reports as "not
+  present in the local mirror". Reproduced by the CONSUMER side from a clone of
+  the delivery branch, independently of the producing side's own diagnosis.
+context:
+    a2a_version: 0.19.9
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a validate --ci --mode=v3-full-repo
+    error_code: POL-002
+    agent: consumer-side agent verifying an inbound data delivery
+evidence:
+    steps:
+        - "Producer side: `a2a data pack --contract <C-id>@<ver> --from <dir> --profile synthetic`, then `a2a data deliver <staging> --fulfills <XW-id>`."
+        - "Inspect the packed directory: it contains README.md whose first line is an ordinary markdown heading, no `---` frontmatter block."
+        - "Inspect manifest.json in the same directory: its entries include {\"path\":\"README.md\",\"role\":\"readme\",\"media_type\":\"text/markdown\"}."
+        - "Consumer side: clone the delivery PR branch and run `a2a validate --ci --mode=v3-full-repo` at the space root with the SAME 0.19.9 binary the pack was produced by."
+        - "Read the JSON verdict: `valid: false`, and exactly one entry under `artifacts[]` is invalid — the package's own README.md."
+    expected: >-
+      A directory written by `a2a data pack` passes the space validator that
+      gates its delivery PR. A file the package manifest declares as
+      `role: readme` is package content, not a space artifact, so artifact
+      frontmatter rules should not apply to it.
+    actual: >-
+      POL-002 (class policy, cc_ref CC-001, severity reject): "artifact
+      frontmatter is missing or is not valid YAML" on the packed README.md.
+      The delivery PR cannot merge, so the payload never lands while its
+      response artifact merges separately.
+proposal: >-
+  Make artifact discovery skip package content. The manifest is already the
+  authority for what each packed file is, so the narrow fix is: files under a
+  package directory are validated against the package manifest (path, digest,
+  size, role), never against the artifact frontmatter policy. If a broader rule
+  is preferred, excluding the `data/` subtree from artifact discovery achieves
+  the same and is one predicate. Either way the invariant worth stating in the
+  spec is that `a2a data pack` output must satisfy `a2a validate --ci` by
+  construction — a tool whose writer and checker disagree cannot be made safe
+  by the operator, only worked around by deleting content the request asked
+  for. Worth an executable guard: pack a fixture package, run the validator
+  over it, assert green.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+resolution: >-
+    Accepted, and it is a numbered acceptance criterion: agent-exchange-2026-08
+    P4 AC8 (docs/features/active/agent-exchange-2026-08/specs/04-possession.md)
+    — a directory `a2a data pack` writes must pass `a2a validate --ci` by
+    construction. The report is confirmed against the code, not just against its
+    own account: the packed README.md is recorded in manifest.json as
+    role=readme with no frontmatter, and artifact discovery collects every .md
+    under a member section without consulting that manifest, so POL-002 rejects
+    the tool's own output. Adding frontmatter would break the package digest, so
+    the writer and the checker cannot both be satisfied as they stand — which
+    is why this is a phase, not a one-line fix. Observed live on r22d222/a2a PR
+    #61, and that PR is still open because of it. Like cd2d11, this record sat
+    on the hub unread; that is epic-backlog B10.
+status: accepted

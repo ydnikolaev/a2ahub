@@ -1,31 +1,70 @@
-checks:
-    docs_consulted: true
-    duplicates_checked: true
-    grounded_in_real_work: true
-    no_sensitive_content: true
-    not_space_specific: true
-context:
-    a2a_version: 0.19.7
-    command: a2a contract publish XC-axon-getvisa-ingest --version 1.0.0 --staging <dir>
-    os_arch: darwin/arm64
-    surface: cli
-evidence:
-    actual: validate and preflight both pass; publish dies in PrepareSubmission because the space layout classifies the companion as an envelope draft and parses it for frontmatter.
-    expected: A contract that declares a companion under the only directory the envelope schema permits for it can be published. Failing that, validate or preflight refuses it - not the irreversible verb, after a plan digest has been shown.
-    steps:
-        - 'Author a contract-set-v2 descriptor declaring a companion, e.g. {path: artifacts/fixture-manifest.json, role: other, normative: true, media_type: application/json}, with the file staged beside schema/ and fixtures/'
-        - 'a2a validate <descriptor> -> valid: true, zero violations'
-        - a2a contract preflight <XC-id> --version 1.0.0 --staging <dir> -> planned <XC-id>@1.0.0 with a plan digest; the companion is inside that plan
-        - 'a2a contract publish <XC-id> --version 1.0.0 --staging <dir> -> ''contract publish: space: PrepareSubmission: cli: SubmitValidatorAdapter: parse axon/provides/getvisa-ingest/artifacts/fixture-manifest.json: artifact: ParseFrontmatter: artifact: missing or malformed frontmatter delimiters'''
-        - 'internal/space/layout.go ContractForPath: switch admits p == descriptorPath, len(parts) >= 5 && parts[3] == ''schema'', len(parts) >= 6 && parts[3] == ''fixtures''; default returns false. No ''artifacts'' arm.'
-        - cmd/a2a/data_wiring.go's dataNoopSubmitValidator comment already describes this exact mechanism for the data-package family, and names the fix - 'Widening that adapter's dispatch to recognize a data-package family (the same carve-out IsContractBaselinePath already gets)'. The contract family needs the same widening for its own v2 companion root.
-        - Removing the companion entry and its file, changing nothing else, makes publish reachable - so the companion declaration is the sole cause.
 feedback: v1
 id: fb-20260806-c6ad38
-kind: bug
-proposal: 'Add an `artifacts` arm to ContractForPath''s switch, beside `schema` and `fixtures` - it is the same one-line carve-out those two already have, and the descriptor''s own inventory is the authority on what is carried. A test that asserts every role the envelope schema admits has a publishable path would keep the two surfaces from drifting again; today neither side references the other, which is why a mandated directory could be unknown to the layout. Separately, worth moving this class of check earlier: preflight''s stated purpose is to preview the exact publication plan, and here it previewed a plan that publish refused - the same preflight/publish disagreement v0.19.7 fixed for the min_binary_version floor, in a different place.'
-resolution: 'Shipped in v0.19.8 — "A contract that declares a companion artifact can be published" (RN-01908-0). The space layout gained the `artifacts/` directory the contract-set-v2 envelope already required, in BOTH directions in the one file that holds them: the publication planner can place a companion, and the collector `a2a submit` uses to carry a staged contract''s files has an `artifacts/` arm, so a declared companion is no longer staged, declared and then silently not carried. The report is cited by name in that note.'
-severity: blocker
+resolution: >-
+    Shipped in v0.19.8 — "A contract that declares a companion artifact can be
+    published" (RN-01908-0). The space layout gained the `artifacts/` directory
+    the contract-set-v2 envelope already required, in BOTH directions in the one
+    file that holds them: the publication planner can place a companion, and the
+    collector `a2a submit` uses to carry a staged contract's files has an
+    `artifacts/` arm, so a declared companion is no longer staged, declared and
+    then silently not carried. The report is cited by name in that note.
 status: shipped
-summary: 'contract-set-v2 requires every companion role - errors, vocabulary, limits, changelog, example, other - to live under `artifacts/`; the envelope schema enforces that with a role-conditional path pattern, so a companion has no other legal location. The space layout does not know that directory exists. internal/space/layout.go ContractForPath recognizes exactly three shapes under <system>/provides/<slug>/ - the descriptor, `schema/**`, and `fixtures/**` - and returns false for anything else, so IsContractBaselinePath is false for every `artifacts/**` path. SubmitValidatorAdapter''s file-dispatch loop then treats each one as an envelope draft and runs artifact.ParseFrontmatter over it, which a JSON companion cannot satisfy. `contract publish` dies at PrepareSubmission with "missing or malformed frontmatter delimiters", naming the companion. Two surfaces of one rule disagree: the descriptor grammar mandates a directory the path layout was never widened to admit. The result is that the entire companion-role half of contract-set-v2 is unpublishable, while `a2a validate` and `a2a contract preflight` both pass - the failure appears only at the irreversible verb.'
+kind: bug
+severity: blocker
 title: no contract declaring a companion artifact can be published
+summary: >-
+  contract-set-v2 requires every companion role - errors, vocabulary, limits,
+  changelog, example, other - to live under `artifacts/`; the envelope schema
+  enforces that with a role-conditional path pattern, so a companion has no other
+  legal location. The space layout does not know that directory exists.
+  internal/space/layout.go ContractForPath recognizes exactly three shapes under
+  <system>/provides/<slug>/ - the descriptor, `schema/**`, and `fixtures/**` -
+  and returns false for anything else, so IsContractBaselinePath is false for
+  every `artifacts/**` path. SubmitValidatorAdapter's file-dispatch loop then
+  treats each one as an envelope draft and runs artifact.ParseFrontmatter over
+  it, which a JSON companion cannot satisfy. `contract publish` dies at
+  PrepareSubmission with "missing or malformed frontmatter delimiters", naming
+  the companion. Two surfaces of one rule disagree: the descriptor grammar
+  mandates a directory the path layout was never widened to admit. The result is
+  that the entire companion-role half of contract-set-v2 is unpublishable, while
+  `a2a validate` and `a2a contract preflight` both pass - the failure appears
+  only at the irreversible verb.
+context:
+    a2a_version: 0.19.7
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a contract publish XC-axon-getvisa-ingest --version 1.0.0 --staging <dir>
+evidence:
+    steps:
+        - "Author a contract-set-v2 descriptor declaring a companion, e.g. {path: artifacts/fixture-manifest.json, role: other, normative: true, media_type: application/json}, with the file staged beside schema/ and fixtures/"
+        - "a2a validate <descriptor> -> valid: true, zero violations"
+        - "a2a contract preflight <XC-id> --version 1.0.0 --staging <dir> -> planned <XC-id>@1.0.0 with a plan digest; the companion is inside that plan"
+        - "a2a contract publish <XC-id> --version 1.0.0 --staging <dir> -> 'contract publish: space: PrepareSubmission: cli: SubmitValidatorAdapter: parse axon/provides/getvisa-ingest/artifacts/fixture-manifest.json: artifact: ParseFrontmatter: artifact: missing or malformed frontmatter delimiters'"
+        - "internal/space/layout.go ContractForPath: switch admits p == descriptorPath, len(parts) >= 5 && parts[3] == 'schema', len(parts) >= 6 && parts[3] == 'fixtures'; default returns false. No 'artifacts' arm."
+        - "cmd/a2a/data_wiring.go's dataNoopSubmitValidator comment already describes this exact mechanism for the data-package family, and names the fix - 'Widening that adapter's dispatch to recognize a data-package family (the same carve-out IsContractBaselinePath already gets)'. The contract family needs the same widening for its own v2 companion root."
+        - "Removing the companion entry and its file, changing nothing else, makes publish reachable - so the companion declaration is the sole cause."
+    expected: >-
+      A contract that declares a companion under the only directory the envelope
+      schema permits for it can be published. Failing that, validate or preflight
+      refuses it - not the irreversible verb, after a plan digest has been shown.
+    actual: >-
+      validate and preflight both pass; publish dies in PrepareSubmission because
+      the space layout classifies the companion as an envelope draft and parses it
+      for frontmatter.
+proposal: >-
+  Add an `artifacts` arm to ContractForPath's switch, beside `schema` and
+  `fixtures` - it is the same one-line carve-out those two already have, and the
+  descriptor's own inventory is the authority on what is carried. A test that
+  asserts every role the envelope schema admits has a publishable path would keep
+  the two surfaces from drifting again; today neither side references the other,
+  which is why a mandated directory could be unknown to the layout. Separately,
+  worth moving this class of check earlier: preflight's stated purpose is to
+  preview the exact publication plan, and here it previewed a plan that publish
+  refused - the same preflight/publish disagreement v0.19.7 fixed for the
+  min_binary_version floor, in a different place.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
