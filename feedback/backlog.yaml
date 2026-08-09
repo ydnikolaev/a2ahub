@@ -1,42 +1,6 @@
 backlog: v1
 wip_limit: 16
 items:
-    - id: fb-20260802-10d983
-      kind: friction
-      severity: minor
-      title: export bytes can only be verified after the irreversible publish
-      verdict: accepted
-      route: phase
-      refs:
-        - docs/features/active/contract-confidence-loop-2026-08/README.md
-      date: "2026-08-02"
-    - id: fb-20260802-191c66
-      kind: protocol
-      severity: minor
-      title: a consumer has no supported way to materialize a pinned contract version
-      verdict: accepted
-      route: phase
-      refs:
-        - docs/features/active/contract-confidence-loop-2026-08/README.md
-      date: "2026-08-02"
-    - id: fb-20260802-d64d19
-      kind: bug
-      severity: major
-      title: submit reports failure on squash-only repos after the PR already exists
-      verdict: accepted
-      route: phase
-      refs:
-        - docs/features/active/contract-confidence-loop-2026-08/README.md
-      date: "2026-08-02"
-    - id: fb-20260802-e2d28b
-      kind: feature
-      severity: minor
-      title: classification is a label the space transport never honours
-      verdict: accepted
-      route: phase
-      refs:
-        - docs/features/active/contract-confidence-loop-2026-08/README.md
-      date: "2026-08-02"
     - id: fb-20260802-e6d436
       kind: feature
       severity: major
@@ -44,53 +8,8 @@ items:
       verdict: accepted
       route: phase
       refs:
-        - docs/features/active/contract-confidence-loop-2026-08/README.md
+        - docs/features/active/operational-confidence-2026-08/README.md
       date: "2026-08-02"
-    - id: fb-20260802-f04608
-      kind: feature
-      severity: major
-      title: a contract ships an executable fixture suite that nothing can execute
-      verdict: accepted
-      route: phase
-      refs:
-        - docs/features/active/contract-confidence-loop-2026-08/README.md
-      date: "2026-08-02"
-    - id: fb-20260806-3539ac
-      kind: bug
-      severity: blocker
-      title: contract publish planner refuses every contract the shipped template scaffolds
-      verdict: accepted
-      route: quick-fix
-      refs:
-        - docs/features/active/operational-confidence-2026-08/README.md
-      date: "2026-08-06"
-    - id: fb-20260806-c6ad38
-      kind: bug
-      severity: blocker
-      title: no contract declaring a companion artifact can be published
-      verdict: accepted
-      route: quick-fix
-      refs:
-        - docs/features/active/operational-confidence-2026-08/README.md
-      date: "2026-08-06"
-    - id: fb-20260806-eb224e
-      kind: bug
-      severity: major
-      title: export-source-v1 digest cannot be computed before the first publish
-      verdict: accepted
-      route: quick-fix
-      refs:
-        - docs/features/active/operational-confidence-2026-08/README.md
-      date: "2026-08-06"
-    - id: fb-20260806-2af06c
-      kind: docs
-      severity: minor
-      title: the carried-set path grammar has no home for a fixture-suite manifest
-      verdict: accepted
-      route: quick-fix
-      refs:
-        - docs/features/active/operational-confidence-2026-08/README.md
-      date: "2026-08-06"
     - id: fb-20260806-cd2d11
       kind: docs
       severity: minor

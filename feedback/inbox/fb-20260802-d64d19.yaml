@@ -49,9 +49,23 @@ proposal: |-
 
     For credentials, resolving through the gh CLI the way space writes already do
     removes an inconsistency rather than adding a feature.
-resolution: Verified host-write outcome gap; accepted as an independent first repair slice in the draft spec.
+resolution: >-
+    Shipped in v0.19.0 (RN-01900-2), and the date is what makes this verdict
+    safe rather than generous: the report was correct when filed against 0.18.2
+    on 2026-08-02, and the repair landed the following day. Every post-push
+    outcome now retains the remote stage, branch, tree and pull request
+    reference that actually exist; a failed auto-merge arm after a PR has
+    already been created returns a typed partial-write outcome carrying the PR
+    number, URL and state, which `a2a feedback submit` prints with the next
+    action, and retry proves that evidence and repairs the same PR instead of
+    tempting a duplicate. The merge method is resolved from the repository's own
+    settings and sent explicitly, so a squash-only repository is armed with
+    squash rather than refused. Its own triage note accepted it as "an
+    independent first repair slice" that was never cut as such — the slice was
+    absorbed into the v0.19.0 work, which is why no commit was ever filed
+    against this id.
 severity: major
-status: accepted
+status: shipped
 summary: |-
     OpenPR sends enablePullRequestAutoMerge without a mergeMethod, so GitHub
     applies its default, MERGE. Any repository configured squash-only or

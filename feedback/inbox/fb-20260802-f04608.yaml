@@ -29,9 +29,15 @@ proposal: |-
 
     Scope note: deliberately not a live endpoint prober. It runs against bytes,
     offline, which is what makes it usable before any integration exists.
-resolution: Verified absence of an offline contract conformance surface; accepted into the contract confidence loop draft spec.
+resolution: >-
+    Shipped in v0.19.0 (RN-01900-1). `a2a contract check` runs the declared
+    self-suite, or a payload, against an exact contract version OFFLINE — the
+    verb is in the shipped catalogue as "check a payload or the contract self-
+    suite offline". The carried fixture suite a contract ships is therefore
+    executable by the consumer that adopted it, which is what the report asked
+    for.
 severity: major
-status: accepted
+status: shipped
 summary: |-
     Publishing a JSON-Schema contract requires schema/** and at least one valid
     fixture; invalid fixtures are the natural companion. That combination is an

@@ -27,9 +27,15 @@ proposal: |-
     should materialize, and any offline conformance run needs those artifacts
     present locally to execute at all. Deciding the three separately risks a
     materialize verb that predates the artifact set it is supposed to write.
-resolution: Structurally verified consumer materialization gap; accepted as design input without claiming a reproduced runtime failure.
+resolution: >-
+    Shipped in v0.19.0 (RN-01900-1). `a2a contract materialize` reproduces an
+    exact historical contract version's verified bytes into a consumer's own
+    repository without overwriting divergent local work, and historical
+    resolution identifies the unique version-establishing commit including for
+    retired versions. The verb is in the shipped catalogue as "materialize an
+    exact historical contract version".
 severity: minor
-status: accepted
+status: shipped
 summary: |-
     Filed knowingly ahead of first-hand experience. The adopt step has not been
     run yet in our use, so this is a verified structural gap rather than a

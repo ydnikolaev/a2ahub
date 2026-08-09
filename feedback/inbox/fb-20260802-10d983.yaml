@@ -26,9 +26,19 @@ proposal: |-
     against a contract that has never been published, say that, rather than
     surfacing a missing path inside the local cache. The current error describes
     a filesystem, not the state the caller is in.
-resolution: Verified pre-publication trust gap; accepted into the contract confidence loop draft spec.
+resolution: >-
+    Shipped across v0.19.0 and v0.19.8. v0.19.0 (RN-01900-1) made contract
+    publication freeze one bounded candidate and use the SAME immutable plan for
+    preflight and publish, so the artifact set and digest profile are
+    inspectable before the irreversible verb runs. v0.19.8 (RN-01908-1) closed
+    the remaining half the report actually names: `a2a contract verify-export
+    --local <dir> <XC-id>`, with no version, computes the export-source-v1
+    digest over a local candidate and reports it against whatever the descriptor
+    asserts — so the bytes can be checked before the first publish rather than
+    only after it. reference/contract-versions.md defines the profile itself, so
+    a producer can compute it independently in their own generator.
 severity: minor
-status: accepted
+status: shipped
 summary: |-
     contract verify-export --local <path> <id> answers "do my locally generated
     bytes match the contract" by reading the published contract from the space

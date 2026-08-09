@@ -28,7 +28,18 @@ proposal: |-
     for the set, and whether non-text entries are allowed at all. A contract that
     quietly becomes a binary distribution channel is a different product; a
     contract that cannot carry its own error catalogue is the present problem.
-resolution: Verified fixed artifact-set mismatch with admitted contract formats; accepted as the dependency anchor of the draft spec.
+resolution: >-
+    Still open, deliberately, and now stated where it can be found rather than
+    left implicit. v0.19.6 made the tool SAY it: `a2a template show contract`
+    prints the declared-v2 shape for json-schema at a 0.19.0+ floor, and the
+    refusal now states out loud that an openapi or proto3 contract has NO
+    publishable shape at that floor, because the declared carried set requires a
+    schema and fixtures those formats cannot supply. That release's own note
+    records this id as where the remaining gap is tracked. Giving those formats
+    a publishable carried set is a wire-format decision nobody has priced; the
+    owning work is docs/features/active/operational-
+    confidence-2026-08/README.md, and the report that first surfaced it beside
+    this one is fb-20260806-3539ac.
 severity: major
 status: accepted
 summary: |-

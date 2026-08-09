@@ -26,9 +26,19 @@ proposal: |-
     converts a label into a rule, which is a protocol change and should be
     decided as one. The doctor row only reports what is already true, so it can
     ship without settling that question.
-resolution: Verified classification-versus-transport visibility gap; accepted as an advisory doctor diagnostic, not enforcement.
+resolution: >-
+    Shipped in v0.19.0 as the advisory diagnostic its own triage note promised,
+    not as enforcement: `a2a doctor` now compares an artifact's declared
+    classification against the repository's actual visibility and reports the
+    mismatch as a fact. The seam is consumer-owned by design —
+    internal/cli/visibility.go defines what doctor needs,
+    cmd/a2a/doctor_visibility.go adapts the cache's policy-free scan to it, and
+    the reader never decides PASS/WARN/UNVERIFIED. An unreadable visibility
+    stays silent rather than guessing. The transport still does not ENFORCE
+    classification, which is the deliberate half: a label the space cannot
+    honour is now visible instead of silently ignored.
 severity: minor
-status: accepted
+status: shipped
 summary: |-
     Every artifact carries classification: public, internal or restricted.
     Nothing in the tool relates that value to the actual confidentiality of the
