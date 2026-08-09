@@ -316,7 +316,15 @@ func ApplyVerdicts(hubRoot string, verdicts []Verdict, now time.Time) (ApplyResu
 		if aerr != nil {
 			return result, fmt.Errorf("feedback: %s: %s: %w", op, item.Path, aerr)
 		}
-		if werr := os.WriteFile(item.Path, out, 0o644); werr != nil {
+		// G703 fires here and not on the ReadFile above because the bytes
+		// written are now derived from the bytes read at the same path, which
+		// is the whole point of the change: the record is EDITED rather than
+		// regenerated. The path itself is not attacker-influenced — it comes
+		// from filepath.Glob over hubRoot/feedback/inbox, so its filename
+		// component is enumerated by this package, never supplied by a
+		// verdict. A verdict only ever names an `id`, and an id that matches
+		// no enumerated record is skipped, never turned into a path.
+		if werr := os.WriteFile(item.Path, out, 0o644); werr != nil { //nolint:gosec // reason: item.Path is enumerated by filepath.Glob under hubRoot's own feedback/inbox, never built from a verdict.
 			return result, fmt.Errorf("feedback: %s: %w", op, werr)
 		}
 
