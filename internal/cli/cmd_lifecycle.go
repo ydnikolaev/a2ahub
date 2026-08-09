@@ -695,7 +695,7 @@ var lifecycleVerbTable = []lifecycleVerbSpec{
 	{Verb: "unblock", Transition: fold.TUnblock, Synopsis: "unblock one or more artifacts (recovers pre-block state)"},
 	{Verb: "cancel", Transition: fold.TCancel, Synopsis: "cancel one or more artifacts"},
 	{Verb: "close", Transition: fold.TClose, Synopsis: "close one or more responded parents"},
-	{Verb: "withdraw", Transition: fold.TWithdraw, Synopsis: "withdraw one or more requirements"},
+	{Verb: "withdraw", Transition: fold.TWithdraw, Synopsis: "withdraw one or more requirements or proposed decisions"},
 	{Verb: "supersede", Transition: fold.TSupersede, Synopsis: "supersede an artifact with its successor", RequireRefs: true},
 	{Verb: "satisfy", Transition: fold.TSatisfy, Synopsis: "satisfy a requirement", RequireRefs: true},
 	{Verb: "approve", Transition: fold.TApprove, Synopsis: "approve a decision (always G3-gated)", GateMarker: true},

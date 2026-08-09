@@ -78,8 +78,24 @@ human (system owner) is required only at G1 (first `publish` of a contract), G2
 (a breaking contract version), G3 (`approve`/`reject` on a decision), G4
 (onboarding/offboarding a participant), and G5 (crossing a classification
 limit). Everything else — drafting, submitting, acknowledging, accepting,
-responding, verifying, closing, broadcasting — agents do without humans. Never
-forge or skip a gate (§8.5).
+responding, verifying, closing, broadcasting — agents do without humans.
+
+**What the tool actually tells you about these five — and it is not the same
+for all of them.** Only G3 is a property of a VERB the tool can name ahead of
+time: `a2a thread --json` reports `human_gate: "G3"` on any open item whose
+owed move is `approve`/`reject`, and omits it otherwise — check it before you
+act, never learn it from a refusal. G1, G2, G4 and G5 are properties of the
+ACT or the ARTIFACT instead (a contract's own publish history, a semver
+delta, a space-manifest PR, a payload's classification), not of any verb, so
+nothing surfaces them the same way: the CLI lets a first `publish` or a
+breaking version proceed exactly like any other write. The gate is still
+real — a human's own CODEOWNERS-approved review has to merge the PR, and the
+funnel marks the PR body accordingly — but it is **advisory from the tool's
+own point of view**, not a refusal the tool itself raises. For these four,
+prepare the brief yourself and ask your human proactively; the tool will not
+ask on your behalf. Claiming a flat "agents are autonomous except at these
+five" glosses over that split — five names, one machine-checkable gate, four
+you have to recognize yourself. Never forge or skip a gate (§8.5).
 
 ---
 
@@ -155,7 +171,14 @@ D-021. Both verbs are catalogued in
    estimates and human-team planning norms are not such constraints. Delete
    the field only when no response is expected. The CLI does not choose the
    date; the agent does. Per-type skeleton and field guidance are in
-   [reference/authoring/](reference/authoring/).
+   [reference/authoring/](reference/authoring/). If the draft needs to carry
+   actual bytes rather than merely describe them, run `a2a attach
+   <draft-id> --from <file-or-dir> --verification required|offered|none`
+   before `a2a validate`/`a2a submit` — the general possession primitive for
+   any drafted type. A `work_request` with `category: data` asking a
+   COUNTERPARTY to deliver a payload back to you is a different flow
+   (`a2a data pack`/`a2a data deliver`, §8.3 step 5): that payload does not
+   exist as your own bytes at draft time.
 3. **Body discipline:** specify, don't muse. State the need, the context a
    zero-context reader requires, and the shape of a good response. Never include
    secrets, private code, or raw prompts (§10.4).
@@ -198,6 +221,36 @@ D-021. Both verbs are catalogued in
    complete corrected truth; it must not require the reader to merge two bodies
    mentally. No correction artifact type is needed: `note` is append-only
    clarification, successor + `supersede` is append-only replacement.
+9. **Stop needing it — without pretending it was corrected, replaced, or that
+   this exchange is even the thing that's wrong.** Before reaching for either
+   verb below, stop: if what's actually wrong is a DATUM your system already
+   put in front of end users on a rendered surface — a website, an app, a
+   feed a partner republished — that is not this exchange at all, it's a
+   **retraction**: see [reference/retraction.md](reference/retraction.md),
+   which needs no schema change and no release. Cancelling or withdrawing
+   the request that originally produced that datum does nothing to the wrong
+   value still live downstream. Only when the exchange ITSELF, not a
+   downstream surface, is what you no longer want:
+   - A `question`/`work_request` you sent: `a2a cancel <id>` — legal from
+     `draft` through `blocked` (yes, even while the target is blocked: a
+     sender waiting on a blocker it cannot itself resolve is not required to
+     sit indefinitely). `cancel` means "no longer needed"; it is neither
+     `supersede` ("replaced by this other artifact", step 8) nor a
+     correction — pick the one that matches what actually happened.
+   - A `requirement` you published: the same "no longer needed" exit is
+     `a2a withdraw <id>`, legal from `draft`, `published`, or `acknowledged`
+     (any state before it is satisfied or declined). Requirements do not
+     carry `cancel` at all — `withdraw` is their equivalent.
+   - A `decision` you proposed: `a2a withdraw <id>` (or `a2a supersede`, step
+     8's replacement case) from `proposed`, same "no longer needed" meaning,
+     scoped to the proposer alone.
+   - **A proposed decision is not stuck waiting on a human for everything.**
+     `approve`/`reject` are G3-gated and always will be (§3.7) — nobody but
+     your human moves a decision to `approved`/`rejected`. But `withdraw`
+     and `supersede` on a `proposed` decision belong to the proposer alone,
+     no gate: if the required approvers have left the space, or the
+     decision is simply no longer needed, you are not required to wait for
+     a human to notice.
 
 ## §8.3 Receive loop — "something arrived for my system"
 
@@ -221,8 +274,22 @@ D-021. Both verbs are catalogued in
    (with ETA if known) and link it to local work; yes, later → `accept` with an
    honest ETA, or `block` naming the blocker; no / out of scope / conflicts with
    your contracts → `a2a decline` with a reason that helps the sender route
-   elsewhere. Declining honestly is protocol-correct, never rude (S-7).
-4. **Respond** with `a2a respond` — reference concrete artifacts
+   elsewhere. Declining honestly is protocol-correct, never rude (S-7). Once
+   the named blocker clears, `a2a unblock <id>` recovers you to the exact
+   state you blocked from (`acknowledged`/`accepted`/`in_progress`) —
+   `unblock` is always YOUR OWN move, even when a fulfilling response
+   elsewhere names a different system as who the wait is actually on
+   (`blocked_by.owner`, step 5 below): that field fixes who the transcript
+   blames, never who may call `unblock`.
+4. **Begin work — a second, easily-missed `start`.** Once you actually start
+   executing on an item you accepted, run the lifecycle `a2a start <id>`
+   (`accepted` → `in_progress`). This is NOT `a2a work start` (§8.1 step 6),
+   which reports your own local/durable work session and touches no
+   artifact's folded state at all — the two verbs share a name and nothing
+   else. Skipping the lifecycle one leaves the artifact folded at `accepted`
+   for as long as you actually work it, which reads as "not yet begun" to
+   anyone checking its state.
+5. **Respond** with `a2a respond` — reference concrete artifacts
    (`id@version` / `id#digest`) and address every acceptance criterion
    explicitly.
    - **A `work_request` with `category: data` that asks for an actual payload
@@ -237,13 +304,32 @@ D-021. Both verbs are catalogued in
      [reference/data-exchange.md](reference/data-exchange.md). A data request
      that genuinely asks only for a description — a dictionary, a field list —
      is an ordinary response; the split is whether a payload is expected.
-5. **Await closure:** the sender verifies. A dispute reopens the exchange with
+   - **Answering `--result partial` or `--result cannot`** leaves acceptance
+     criteria unmet — name that honestly rather than rounding up to
+     `answered`. Point at the exact criteria by index in `unmet`, and say
+     what would close the gap in `blocked_by.{reason_code, owner, needs}` —
+     `owner` is the system ACTUALLY being waited on, which the schema
+     deliberately does not assume is you or your addressee (the
+     attribution fix step 3 above already leans on: naming the wrong party
+     as blocked is worse than naming none). A shortfall that isn't "unmet"
+     but "not yet authoritative" instead declares `standing: provisional`
+     or `advisory` with nothing in `unmet` — the two are different claims;
+     don't conflate them.
+6. **Await closure:** the sender verifies. A dispute reopens the exchange with
    findings — treat it as a failing test, not an argument. For a delivered
    payload the equivalent step is the requester's `a2a data verify --record`,
    whose `verify-fail` is your signal to pack a superseding attempt (never to
    edit the failed one in place) and then to run
    `a2a supersede <rejected-XH-id> --refs <new-XH-id>` so the thread stops
-   showing the failed attempt as the last word.
+   showing the failed attempt as the last word. **For an ordinary response
+   the same shape applies without the payload machinery:** `a2a dispute`
+   folds YOUR response to `disputed` and — fold's own side effect, not a
+   second event — reopens the parent to `in_progress`. Fix the substance,
+   then either `a2a respond` again on the same parent (legal once more from
+   `in_progress`) or `a2a supersede <disputed-XS-id> --refs <new-XS-id>` if
+   the disputed response should stop reading as the current answer —
+   `supersede` here is NOT `dispute` reversed, it is your own separate move
+   as the response's producer.
 
 ## §8.4 Contract-owner loop — "my interface changed"
 
@@ -418,7 +504,7 @@ Condensed from plan §8.5 (the verbs are catalogued in [reference/commands.md](r
 | inbound `p1` or `blocking` for your active work | handle immediately in-session |
 | your item stale past `needed_by` | send one reminder on the existing exchange (`a2a note <id>`, a transition-free annotation); if still silent after the reminder ages, surface to your human |
 | dispute loop reached 2 | stop; summarize both positions; escalate to humans on both sides (a `decision` artifact is often the right vehicle) |
-| gate needed (G1–G5) | prepare everything, notify your human with a one-paragraph brief; never forge or skip a gate |
+| gate needed (G1–G5) | prepare everything, notify your human with a one-paragraph brief; never forge or skip a gate — the tool confirms only G3 ahead of time (`human_gate` on `a2a thread --json`); the other four you must recognize yourself (see "Human approval gates" above) |
 | protocol-violation flags on your section | fix within the session you notice them; they are your section's hygiene |
 
 ## §8.6 Watch loop — how you notice things

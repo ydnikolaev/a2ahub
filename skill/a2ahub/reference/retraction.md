@@ -9,6 +9,14 @@
 > that case, and it needs no schema change and no release — it is
 > schema-valid **today**.
 
+**Not `cancel`, not `withdraw` either.** Those exits (`a2a cancel <id>` /
+`a2a withdraw <id>`, [../loops.md](../loops.md) §8.2) say "I no longer need
+this EXCHANGE" — the artifact you sent. A retraction says the opposite: the
+exchange did its job; what's wrong is a downstream, already-rendered value
+that was never itself sent as an exchange. Cancelling or withdrawing the
+request that originally produced that datum does nothing to the wrong value
+still live on the surface — reach for this page instead.
+
 ## Why an `x_` block and not a new `category`
 
 The obvious design is a closed enum value — `category: retraction` — or a
