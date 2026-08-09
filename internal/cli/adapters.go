@@ -680,7 +680,13 @@ type submitEnvelopeProbe struct {
 	Space             string   `yaml:"space"`
 	To                any      `yaml:"to"`
 	RequiredApprovers []string `yaml:"required_approvers"`
-	Actor             struct {
+	// Parent is a response's own §3.4.6 linkage to the exchange it
+	// answers (response only — same tag/comment as cmd_lifecycle.go's
+	// lifecycleEnvelopeProbe.Parent). ValidateSubmit reads it to widen
+	// THIS draft's own candidate-event list to events over the artifact
+	// it refers to (see ValidateSubmit's own comment, LFC-004).
+	Parent string `yaml:"parent"`
+	Actor  struct {
 		Kind string `yaml:"kind"`
 		Name string `yaml:"name"`
 		// Model and Session are DETECTED (schemas/fill-classes.yaml) and
@@ -759,12 +765,53 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 				ID: probe.ID, Kind: fold.Kind(probe.Type), From: probe.From,
 				To: toStringSlice(probe.To), RequiredApprovers: probe.RequiredApprovers,
 			})
-			candidates = []validate.CandidateEvent{{
+			candidates = append(candidates, validate.CandidateEvent{
 				Subject:    ev.Subject,
 				Transition: ev.Transition,
 				Actor:      validate.Actor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
 				Version:    ev.Version,
-			}}
+			})
+		}
+
+		// LFC-004 (internal/validate/incompleteness.go's checkResidue) needs
+		// a CandidateEvent, in this SAME ValidateForSubmit call, whose
+		// Subject is this draft's own `parent` and whose Transition closes
+		// it — a closing event always targets the PARENT's id, never the
+		// response's own, so the events[probe.ID] lookup above can never
+		// see it (incompleteness.go's package-doc Deviation names this
+		// exact gap: "dormant through the one wired caller"). This is that
+		// caller-side widening — THIS draft's own candidate list only,
+		// never every draft's, and gated on the same terminal-transition
+		// set incompleteness.go's terminalParentTransitions declares.
+		//
+		// Deliberately excludes `respond`: cmd_lifecycle.go's RespondCommand
+		// authors a fresh response draft alongside a `respond` event whose
+		// Subject is that SAME parent, in the SAME batch — an unfiltered
+		// subject-only widen would attach that event here too, and
+		// checkLifecycle (engine.go) runs CheckLegality on every candidate
+		// it is handed. CheckLegality (below, this file) errors when no
+		// envelope is registered for the candidate's Subject, and this loop
+		// only ever registers the draft's OWN probe.ID (above) — never an
+		// unrelated parent's, which this adapter has no way to look up (the
+		// same seam.go Resolver gap incompleteness.go's own
+		// ParentCriteriaCounter Deviation documents: no content lookup).
+		// Restricting the widen to close/withdraw/cancel keeps `a2a respond`
+		// batches unaffected: no verb in this codebase closes a parent in
+		// the SAME batch as a fresh draft that names it as parent, so this
+		// widening is provably inert against every wired caller today —
+		// see this brief's own report for the residual finding (a future
+		// caller that DOES co-submit such a batch must call
+		// v.legality.RegisterEnvelope(probe.Parent, ...) itself first, or
+		// CheckLegality's own error fires instead of a violation).
+		if probe.Parent != "" && probe.Parent != probe.ID {
+			if ev, ok := events[probe.Parent]; ok && submitTerminalParentTransitions[ev.Transition] {
+				candidates = append(candidates, validate.CandidateEvent{
+					Subject:    ev.Subject,
+					Transition: ev.Transition,
+					Actor:      validate.Actor{Kind: ev.Actor.Kind, Name: ev.Actor.Name, System: ev.Actor.System},
+					Version:    ev.Version,
+				})
+			}
 		}
 
 		result, err := v.engine.ValidateForSubmit(
@@ -788,6 +835,21 @@ func (v *SubmitValidatorAdapter) ValidateSubmit(_ context.Context, files []space
 		return verr
 	}
 	return nil
+}
+
+// submitTerminalParentTransitions mirrors internal/validate/
+// incompleteness.go's own terminalParentTransitions (D3's exact
+// three-member set — close, withdraw, cancel — unexported there).
+// Duplicated here, rather than exporting a predicate from
+// internal/validate (off this wave's allowlist), so ValidateSubmit's own
+// widening above cannot silently drift wider than what checkResidue's
+// LFC-004 trigger needs — see this wave's own report for the ideal fix
+// (export a shared predicate from internal/validate so this literal has
+// one owner instead of two).
+var submitTerminalParentTransitions = map[string]bool{
+	"close":    true,
+	"withdraw": true,
+	"cancel":   true,
 }
 
 // toStringSlice normalizes an envelope `to` field (either a []any of
