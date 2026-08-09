@@ -259,6 +259,28 @@ fields:
     attachments[].conforms_to: AUTHOR
     attachments[].verification: AUTHOR
     attachments[].retention: AUTHOR
+  envelope/v2/response:
+    type: TOOL
+    id: TOOL
+    parent: AUTHOR
+    result: AUTHOR
+    to: AUTHOR
+    # P6 incompleteness fields. None of these five is minted or environment-
+    # resolved — every one is intent the responder supplies (which criteria
+    # are unmet, what would unblock them, what was attempted, how binding the
+    # values are, and where an open criterion is carried to on close) — so
+    # AUTHOR by this table's stated default, same as the v1 response row
+    # above it classifies its own three fields.
+    unmet: AUTHOR
+    blocked_by: AUTHOR
+    blocked_by.reason_code: AUTHOR
+    blocked_by.owner: AUTHOR
+    blocked_by.needs: AUTHOR
+    attempted: AUTHOR
+    standing: AUTHOR
+    residue: AUTHOR
+    residue[].criterion_index: AUTHOR
+    residue[].carried_to: AUTHOR
   event/v1/event:
     schema: TOOL
     event: TOOL

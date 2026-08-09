@@ -57,19 +57,21 @@ func TestVersionedCorpus_EnvelopeV2BaseFixtures(t *testing.T) {
 }
 
 // TestVersionedCorpus_UnregisteredEnvelopeV2TypeRefused pins the ABSENCE of
-// an envelope/v2 decoder for the five types that genuinely have none —
-// requirement, question, decision, handoff, response. This used to also
-// cover work_request; P4 wave A registers (envelope, v2, work_request), so
-// work_request now resolves and is proven separately below
-// (TestVersionedCorpus_WorkRequestV2Resolves). The ErrUnknownType behaviour
-// itself stays load-bearing for the five types that still lack a v2
+// an envelope/v2 decoder for the four types that genuinely have none —
+// requirement, question, decision, handoff. This used to also cover
+// work_request and response; P4 wave A registers (envelope, v2,
+// work_request) and P6 wave A registers (envelope, v2, response), so both
+// now resolve and are proven separately below
+// (TestVersionedCorpus_WorkRequestV2Resolves,
+// TestVersionedCorpus_ResponseV2Resolves). The ErrUnknownType behaviour
+// itself stays load-bearing for the four types that still lack a v2
 // schema — it is the honest refusal an older binary gives a type it never
 // had, per the plan's §Floor story.
 func TestVersionedCorpus_UnregisteredEnvelopeV2TypeRefused(t *testing.T) {
 	t.Parallel()
 	c := mustLoad(t)
 
-	for _, typ := range []string{"requirement", "question", "decision", "handoff", "response"} {
+	for _, typ := range []string{"requirement", "question", "decision", "handoff"} {
 		t.Run(typ, func(t *testing.T) {
 			t.Parallel()
 			_, err := c.ValidateEnvelope(typ, "envelope/v2", toInstance(t, "schema: envelope/v2\ntype: "+typ+"\n"))
@@ -187,6 +189,148 @@ func TestVersionedCorpus_WorkRequestV2Resolves(t *testing.T) {
 	}
 	if len(violations) != 0 {
 		t.Fatalf("a fully valid envelope/v2 work_request instance (with attachments[]) produced violations: %+v", violations)
+	}
+}
+
+// responseV2Header is the base frontmatter every envelope/v2 response case
+// below shares: everything the base schema requires plus `parent`, which is
+// response's own required field alongside `result`. Each test appends
+// `result:` plus whichever of P6's incompleteness fields the case needs.
+const responseV2Header = `
+schema: envelope/v2
+id: XS-axon-20260808-p9d3
+type: response
+title: A valid v2 response
+space: getvisa
+from: axon
+to: [seomatrix]
+thread: thread:axon-20260808-k3f9
+actor: {kind: agent, name: codex}
+created: "2026-08-08T08:40:00Z"
+priority: p3
+blocking: true
+classification: internal
+parent: XW-axon-20260808-p9d3
+`
+
+// validResponseV2 exercises every P6 field at once — the response half of
+// the live XS-seomatrix-20260801-6vr2 case, reconstructed per the plan's
+// 2026-08-08 amendment (the original bytes are not in this repo), plus
+// `residue` and `standing` so a single fixture proves the whole shape
+// resolves and validates with zero violations.
+const validResponseV2 = responseV2Header + `result: partial
+unmet: [0]
+blocked_by:
+  reason_code: out-of-scope
+  owner: seomatrix
+  needs: bytes
+attempted: "Replayed 0 of 1 fixtures; reported, not silent."
+standing: authoritative
+residue:
+  - criterion_index: 0
+    carried_to: XS-axon-20260809-q7d2
+`
+
+// TestVersionedCorpus_ResponseV2Resolves proves the mutation the brief
+// names: remove the corpusDefinitions row for (envelope, v2, response) and
+// this test must fail, naming response as the type that should resolve and
+// does not.
+func TestVersionedCorpus_ResponseV2Resolves(t *testing.T) {
+	t.Parallel()
+	c := mustLoad(t)
+
+	violations, err := c.ValidateEnvelope("response", "envelope/v2", toInstance(t, validResponseV2))
+	if errors.Is(err, ErrUnknownType) {
+		t.Fatalf("ValidateEnvelope(response, envelope/v2) error = %v, want response to RESOLVE (not ErrUnknownType) now that (envelope, v2, response) is registered", err)
+	}
+	if err != nil {
+		t.Fatalf("ValidateEnvelope(response, envelope/v2): %v", err)
+	}
+	if len(violations) != 0 {
+		t.Fatalf("a fully valid envelope/v2 response instance (unmet+blocked_by+attempted+standing+residue) produced violations: %+v", violations)
+	}
+}
+
+// TestVersionedCorpus_ResponseV2IncompletenessRefusal pins D1's third
+// clause — the refusal rule for `result: partial`/`cannot` — with ALL its
+// cells, not only the one the live incident happened to exercise (the P4
+// if/then lesson the brief calls out by name).
+func TestVersionedCorpus_ResponseV2IncompletenessRefusal(t *testing.T) {
+	t.Parallel()
+	c := mustLoad(t)
+
+	tests := []struct {
+		name       string
+		body       string
+		wantRefuse bool
+		why        string
+	}{
+		{
+			name:       "partial with none of unmet/blocked_by/standing is refused",
+			body:       "result: partial\n",
+			wantRefuse: true,
+			why:        "the shape that existed before D1 — a partial that says nothing machine-readable",
+		},
+		{
+			name: "partial naming unmet and blocked_by is accepted",
+			body: "result: partial\n" +
+				"unmet: [0]\n" +
+				"blocked_by:\n  reason_code: out-of-scope\n  owner: seomatrix\n  needs: bytes\n",
+			wantRefuse: false,
+			why:        "AC1/US-1: the 6vr2 replay — what is unmet and what would unblock it",
+		},
+		{
+			name:       "partial with only standing=authoritative is refused",
+			body:       "result: partial\nstanding: authoritative\n",
+			wantRefuse: true,
+			why:        "authoritative is the default meaning — typing it supplies no caveat and must not satisfy the refusal it exists to close",
+		},
+		{
+			name:       "partial with standing=provisional and empty unmet is accepted",
+			body:       "result: partial\nstanding: provisional\nunmet: []\n",
+			wantRefuse: false,
+			why:        "AC6/D1: the p1pf replay — every criterion answered, the shortfall is standing, not completeness",
+		},
+		{
+			name:       "cannot with none of unmet/blocked_by/standing is refused",
+			body:       "result: cannot\n",
+			wantRefuse: true,
+			why:        "the if's enum names both partial and cannot — cannot must be refused too, not just accepted by construction of the condition",
+		},
+		{
+			name:       "cannot with standing=advisory is accepted",
+			body:       "result: cannot\nstanding: advisory\n",
+			wantRefuse: false,
+			why:        "the cannot branch of the same rule must also have a reachable, accepted cell — not just a reachable refusal",
+		},
+		{
+			name:       "answered carries none of the fields and is accepted",
+			body:       "result: answered\n",
+			wantRefuse: false,
+			why:        "the if's condition is false for answered/delivered — the then-branch must not apply at all",
+		},
+		{
+			name:       "an unmet entry restated as prose instead of an index is refused",
+			body:       "result: partial\nunmet: [\"criterion 1 is not warranted\"]\nblocked_by:\n  reason_code: out-of-scope\n  owner: seomatrix\n  needs: bytes\n",
+			wantRefuse: true,
+			why:        "AC4: unmet is identified by INDEX into the parent's acceptance_criteria, never by restating the criterion in free text — drift must be impossible by construction",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			violations, err := c.ValidateEnvelope("response", "envelope/v2", toInstance(t, responseV2Header+tt.body))
+			if err != nil {
+				t.Fatalf("ValidateEnvelope: %v", err)
+			}
+			if tt.wantRefuse && len(violations) == 0 {
+				t.Errorf("%s: accepted, want refused — %s", tt.name, tt.why)
+			}
+			if !tt.wantRefuse && len(violations) > 0 {
+				t.Errorf("%s: refused (%+v), want accepted — %s", tt.name, violations, tt.why)
+			}
+		})
 	}
 }
 

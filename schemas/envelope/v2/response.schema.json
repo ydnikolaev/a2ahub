@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "envelope/v2/response.schema.json",
+  "title": "Envelope: response (v2)",
+  "description": "Carries the v1 shape (parent, result, to) plus P6's incompleteness fields: unmet[], blocked_by, attempted, standing, residue. New fields land only on this new file (P4 discipline) rather than widening the shipped v1 response or the shared v2 base (P4 D1).",
+  "allOf": [
+    { "$ref": "base.schema.json" },
+    {
+      "if": {
+        "properties": { "result": { "enum": ["partial", "cannot"] } },
+        "required": ["result"]
+      },
+      "then": {
+        "description": "D1's third clause: today's refusal (no unmet+blocked_by) would force `XS-seomatrix-20260801-p1pf` — every criterion answered, shortfall is standing, not completeness — to either mark a met criterion unmet or drop to `answered` and lose the caveat. So a `partial`/`cannot` is accepted when it names what is unmet AND what would unblock it, OR when it declares a non-authoritative standing (a bare `standing: authoritative` supplies no new signal and does not satisfy this branch).",
+        "anyOf": [
+          { "required": ["unmet", "blocked_by"] },
+          {
+            "properties": { "standing": { "enum": ["provisional", "advisory"] } },
+            "required": ["standing"]
+          }
+        ]
+      }
+    }
+  ],
+  "type": "object",
+  "properties": {
+    "type": { "const": "response" },
+    "id": { "pattern": "^XS-" },
+    "parent": { "type": "string" },
+    "result": { "type": "string", "enum": ["answered", "delivered", "partial", "cannot"] },
+    "to": {
+      "description": "Exchange type (X class, not decision): exactly one target system.",
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "maxItems": 1
+    },
+    "unmet": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 },
+      "description": "Which of the parent's acceptance_criteria[] this response did not satisfy, by INDEX into that array — never by restating the criterion in prose (AC4), so the record cannot drift from what the parent actually asked. May be present and empty: a `standing`-only shortfall (D1's `p1pf`) answered every criterion and has nothing to list here."
+    },
+    "blocked_by": {
+      "type": "object",
+      "description": "What would unblock the unmet criteria (US-1). `owner` is checked against fold.CheckLegality per P-2 before any surface reports it (P1's transferred AC4) — that check is a later wave's, not this schema's.",
+      "properties": {
+        "reason_code": {
+          "type": "string",
+          "enum": ["split-required", "security-concern", "out-of-scope", "duplicate", "other"],
+          "description": "Mirrors event/v2's reason_code enum (schemas/event/v2/event.schema.json) — the same vocabulary, not a second list. Mirrored rather than $ref'd: internal/schema/corpus.go registers only refTarget entries (the per-version base schema) at their own $id-derived URL, so a cross-family $ref from this file has nothing to resolve against without a corpus.go change this wave does not make."
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The system actually being waited on — not necessarily the response's own target (P1's US-3 attribution fix)."
+        },
+        "needs": {
+          "type": "string",
+          "enum": ["bytes", "judgement", "decision"],
+          "description": "Closed vocabulary (plan Q1), deliberately not free text. `bytes` is the only spec-named member (the live XS-seomatrix-20260801-6vr2 case: a committed review tree or a fetch locator). `judgement` and `decision` widen it per Q1's own priced examples — a native-speaker judgement and an owner decision — neither named verbatim by the spec, so this enumeration is this wave's own call; see the Deviations report."
+        }
+      },
+      "required": ["reason_code", "owner", "needs"],
+      "additionalProperties": false
+    },
+    "attempted": {
+      "type": "string",
+      "description": "What WAS done, so \"0 of N, reported\" is distinguishable from silence (US-2, AC3)."
+    },
+    "standing": {
+      "type": "string",
+      "enum": ["authoritative", "provisional", "advisory"],
+      "default": "authoritative",
+      "description": "Whether the supplier is entitled to make these values binding (D1 — a regression fix, not an addition). A `partial` whose shortfall is standing rather than completeness carries this with an EMPTY unmet[]."
+    },
+    "residue": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "criterion_index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index into the parent's acceptance_criteria[] whose non-met verdict is carried forward."
+          },
+          "carried_to": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The successor artifact id that inherits the open criterion."
+          }
+        },
+        "required": ["criterion_index", "carried_to"],
+        "additionalProperties": false
+      },
+      "description": "Where a non-met criterion goes when a terminal transition (close/withdraw/cancel) would otherwise extinguish it silently (D3, AC8). Shape only: the refusal — a terminal transition over a parent with a non-met verdict and no residue — depends on the closing event and the parent's verdicts, neither of which a response instance carries; that cross-artifact check belongs to internal/validate, off this wave's allowlist."
+    }
+  },
+  "required": ["parent", "result"],
+  "patternProperties": { "^x_": true },
+  "unevaluatedProperties": false
+}
