@@ -603,3 +603,71 @@ changes:
         Nothing to do. The accepted-then-invalid drafts this produced were
         already being rejected at validate; the refusal simply arrives at the
         point of entry now.
+  - id: RN-01910-21
+    kind: fix
+    impact: high
+    subject: "A packed data directory passes `a2a validate --ci` instead of being refused by it"
+    detail: >
+      `a2a data pack` writes a package whose README.md carries no frontmatter —
+      it cannot, because the package's digest is computed over exactly those
+      bytes and adding any would break verification for everyone who fetches
+      it. `a2a validate --ci` then treated that README as an exchange artifact
+      and rejected it with POL-002. The tool's own output failed the tool's own
+      check, and a real integration pull request sat open because of it.
+      Artifact discovery now recognises a data package's path shape and leaves
+      its payload alone, the same way it already recognises a contract
+      descriptor. The exemption is not a blanket skip of the system's section:
+      a genuinely malformed artifact elsewhere under the same system is still
+      refused.
+    affects: ["a2a validate --ci", "a2a data pack", "space CI"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. A package that was previously blocked at CI will pass on
+        the next run with no change to the package itself.
+  - id: RN-01910-22
+    kind: fix
+    impact: normal
+    subject: "A closed, cancelled or superseded artifact explains itself instead of falling back to boilerplate"
+    detail: >
+      Seventeen resting states — a cancelled question, a retired contract, an
+      accepted handoff, a superseded anything — had no entry in the table that
+      answers "whose move is it", and fell through to generic text that named
+      the kind and state back at you and said nothing else. Each now carries a
+      real reason: settled by the sender's own act; the sunset already ran; the
+      successor carries its own pendency.
+      `a2a inbox --json` and `a2a thread --json` report a different `why` for
+      those artifacts as a result. The obligation is unchanged — nobody owed a
+      move before and nobody owes one now; what changed is that the answer says
+      why.
+      Alongside it, one transition was removed: a disputed response could in
+      principle be superseded, but no shipped command could ever reach that,
+      and the real remedy already exists one level up — a dispute reopens the
+      parent, where a fresh response is owed.
+    affects: ["a2a inbox", "a2a thread", "the dashboard"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. No stored state changes; the same artifacts read back
+        with a better explanation.
+  - id: RN-01910-23
+    kind: fix
+    impact: normal
+    subject: "A response citing an acceptance criterion that does not exist is refused on every path, not some"
+    detail: >
+      A partial response names which of the parent's acceptance criteria are
+      unmet, by index. An index the parent does not have is refused — but only
+      on two of the paths that submit one. The check was attached to individual
+      call sites rather than to the thing they all build, so a path that
+      constructed its own resolver silently skipped it, including the
+      merge-time check a space pins in its own CI.
+      Counting a parent's criteria is now a property of the resolver itself,
+      held in place by the compiler, so a submit path gets the check by
+      existing rather than by remembering.
+    affects: ["a2a respond", "a2a submit", "a2a validate --ci", "contract and work write paths"]
+    action:
+      scope: none
+      why: >
+        Nothing to do — unless you have a draft with an out-of-range `unmet[]`
+        index that previously slipped through one of those paths, which will
+        now be refused with REF-018 and needs the index corrected.
