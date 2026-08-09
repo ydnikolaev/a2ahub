@@ -671,3 +671,23 @@ changes:
         Nothing to do — unless you have a draft with an out-of-range `unmet[]`
         index that previously slipped through one of those paths, which will
         now be refused with REF-018 and needs the index corrected.
+  - id: RN-01910-24
+    kind: policy
+    impact: low
+    subject: "How long a feedback submit waits for a concurrent one is now a pinned decision"
+    detail: >
+      Two `a2a feedback submit` runs on the same machine serialise through a
+      lock on the local ledger. The loser waits two seconds and is then told to
+      retry, rather than blocking indefinitely — a deliberate choice, because a
+      human is usually watching and an actionable refusal beats an unbounded
+      wait.
+      That two seconds had never been asserted anywhere, so it was one edit away
+      from becoming whatever a test found convenient. It is now pinned by its
+      own check: raising it is a decision about how long an operator waits, and
+      has to be made as one.
+    affects: ["a2a feedback submit"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The wait is unchanged at two seconds; what changed is
+        that it can no longer drift silently.
