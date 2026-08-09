@@ -126,9 +126,23 @@ func TestRestingStatesContainsDecisionApproved(t *testing.T) {
 // TestPathCatalogueCoversEveryTransition exactly, one universe swapped for
 // the other.
 //
-// This gate is RED today, on two pairs neither in restingStateExemptions()
-// NOR entered by any declared path: {decision withdrawn} and {response
-// superseded}. Both are reachable, not exempted, per the plan's own D4
+// HISTORY, not current status. This gate WAS red on its first run, on two
+// pairs neither in restingStateExemptions() nor entered by any declared path:
+// {decision withdrawn} and {response superseded}. Both were closed in the same
+// wave. It is GREEN at HEAD, and the narrative below is kept because the
+// reasoning it records is what a future reader needs when the next pair
+// appears — not because the gate is failing.
+//
+// The readiness audit of 2026-08-09 found this comment still written in the
+// present tense and mistook it for a live failure until it ran the test. A
+// narrated history in the present tense is indistinguishable from a status
+// report, which is the same defect class this epic exists to remove.
+//
+// {response superseded}'s cause is also gone: the row that entered it —
+// {response, disputed, supersede} — is DELETED, per spec 06's amendment of
+// 2026-08-09 (epic-backlog B8). The pair is no longer in the universe at all.
+//
+// The original finding, for the record: Both are reachable, not exempted, per the plan's own D4
 // instruction ("where a pair IS reachable and simply has no path, that is
 // the finding: report it. Do NOT exempt a reachable pair to go green"):
 //

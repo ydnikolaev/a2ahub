@@ -52,7 +52,26 @@
 //	  REF-018	live	agent-exchange-2026-08/P6	unmet[] index does not resolve to an entry in the parent's acceptance_criteria	<commit>	-
 //	  LFC-004	live	agent-exchange-2026-08/P6	terminal transition closes a parent carrying an unmet criterion with no residue	<commit>	-
 //
-// # Deviation: both rules are DORMANT under today's only production caller
+// # Deviation, CLOSED 2026-08-09 — both rules were dormant; both are now wired
+//
+// The section below is the ORIGINAL deviation as written when this file
+// shipped, kept because its reasoning explains the shape of the fix. It is no
+// longer a status report:
+//
+//   - REF-018 was wired through a Resolver that can read a parent's criteria
+//     count (f6ce7df2).
+//   - LFC-004 was wired through a submit adapter carrying a closing event over
+//     the draft's own parent (9cd7f12a).
+//
+// What IS still true, and is the honest residue: REF-018 is live on the two
+// write paths cmd/a2a/wire.go constructs and stays dormant on contract_p6 and
+// work_wiring, which each build their own bare resolver, and on `a2a data`,
+// which gets a no-op validator. The readiness audit of 2026-08-09 resolved
+// that into a decision — make criteria-counting a property of the resolver
+// TYPE rather than of the construction site, so no site can get it wrong —
+// recorded in the epic's audit dossier.
+//
+// The original text follows.
 //
 // REF-018 needs to know how many acceptance_criteria[] entries the
 // PARENT declares. internal/validate's Resolver (seam.go, off this wave's

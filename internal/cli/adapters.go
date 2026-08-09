@@ -335,9 +335,27 @@ func (a *LegalityAdapter) RegisterEnvelope(subject string, env fold.Envelope) {
 }
 
 // CheckLegality implements validate.LegalityChecker.
+//
+// The verify/dispute guard below is PROVABLY UNREACHED, not a known gap
+// awaiting a later phase, and the difference matters to anyone reading it.
+// Verified exhaustively 2026-08-09 by the readiness audit: the sole call site
+// of the validate.LegalityChecker interface is internal/validate's
+// checkLifecycle, reached only via Engine.ValidateForSubmit, and no wired
+// production caller reaches it with verify or dispute. docs/backlog.md already
+// records the real work as DONE under P8: the canonical legality table and its
+// regression suite cover response-scoped verify/dispute.
+//
+// The merge gate — the surface that actually stops anything — answers these
+// transitions for real, in a sibling adapter: validate_ci_lifecycle.go's
+// ciBaseLegalityChecker loads the response's PARENT envelope, folds prior
+// events and calls fold.CheckLegality. That is a different body sharing only
+// this condition line; the two are not duplicates of one guard.
+//
+// So this stays as a fail-loud backstop rather than a silent legal verdict, and
+// its error text no longer claims a phase owes it.
 func (a *LegalityAdapter) CheckLegality(candidate validate.CandidateEvent) (validate.Verdict, error) {
 	if candidate.Transition == fold.TVerify || candidate.Transition == fold.TDispute {
-		return 0, fmt.Errorf("cli: LegalityAdapter.CheckLegality: transition %q is unsupported in P6 (verify/dispute legality is a P7/P8 backlog item, not a silent legal verdict)", candidate.Transition)
+		return 0, fmt.Errorf("cli: LegalityAdapter.CheckLegality: transition %q is response-scoped and this adapter folds per subject; the merge-gate path (validate --ci) answers it against the parent envelope. Reaching this is a wiring error, not a missing feature", candidate.Transition)
 	}
 
 	a.mu.Lock()
