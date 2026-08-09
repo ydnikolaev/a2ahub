@@ -697,5 +697,50 @@ func buildTable() map[key]row {
 	m[key{fold.KindAnnouncement, fold.StatePublished}] = unackedTargetsRow(fold.TAcknowledge,
 		"D-025's per-recipient ack set; a broadcast expands to active manifest participants except the author")
 
+	// Resting-only states (AC10, spec 06 §8): every pair below is a member
+	// of fold.RestingStates() — a subject of this kind CAN be found sitting
+	// here — but no row in fold's table ever departs FROM it, so
+	// fold.SubjectStates() never surfaces it and TestI8Totality never asks
+	// about it. Each is a genuine terminal point of its kind's lifecycle:
+	// the answer is "nobody", and it is an ANSWER, not a gap left for the
+	// generic ErrNoRow fallback to narrate at runtime (the failure
+	// internal/cache/inbox.go's resolveVerdict doc comment records: a
+	// terminal artifact's lookup miss used to reach `a2a inbox --json` as
+	// "this should be unreachable").
+	m[key{fold.KindAnnouncement, fold.StateSuperseded}] = nobodyRow(
+		"settled; the replacement is a new announcement, not a move owed on this one")
+	m[key{fold.KindContract, fold.StateRetired}] = nobodyRow(
+		"settled; POL-006's sunset already ran and drove this to retire — nothing further is owed")
+	m[key{fold.KindDecision, fold.StateSuperseded}] = nobodyRow(
+		"settled; replaced by a new approved decision — the successor carries its own pendency")
+	m[key{fold.KindDecision, fold.StateWithdrawn}] = nobodyRow(
+		"settled by the proposer's own act; the remedy is a new decision, not a move owed on this one")
+	m[key{fold.KindHandoff, fold.StateAccepted}] = nobodyRow(
+		"settled; verification passed and the handoff is accepted — nothing further is owed")
+	m[key{fold.KindHandoff, fold.StateSuperseded}] = nobodyRow(
+		"settled; replaced by a new handoff — the successor carries its own pendency")
+	for _, k := range []fold.Kind{fold.KindQuestion, fold.KindWorkRequest} {
+		m[key{k, fold.StateCancelled}] = nobodyRow(
+			"settled by the sender's own act; nothing further is owed")
+		m[key{k, fold.StateClosed}] = nobodyRow(
+			"settled; the sender closed it after the answer landed")
+		m[key{k, fold.StateDeclined}] = nobodyRow(
+			"settled; the remedy is a new " + string(k) + ", not a move owed on this one")
+		m[key{k, fold.StateSuperseded}] = nobodyRow(
+			"settled; replaced by a new " + string(k) + " — the successor carries its own pendency")
+	}
+	m[key{fold.KindRequirement, fold.StateSuperseded}] = nobodyRow(
+		"settled; replaced by a new requirement — the successor carries its own pendency")
+	// response/superseded rests here only while fold.table.go carries the
+	// {response, disputed, supersede} row. That row is deleted in the very
+	// next commit (spec 06's amendment, epic-backlog B8) and this row goes
+	// with it — it exists in THIS commit because the gate below must be
+	// green and proven against the universe as it stands BEFORE the
+	// deletion. AC10: the commit order IS the criterion.
+	m[key{fold.KindResponse, fold.StateSuperseded}] = nobodyRow(
+		"settled; the producer's supersede escape hatch already ran — the successor response carries its own pendency")
+	m[key{fold.KindResponse, fold.StateVerified}] = nobodyRow(
+		"settled; the requester accepted the response as delivered — nothing further is owed")
+
 	return m
 }
