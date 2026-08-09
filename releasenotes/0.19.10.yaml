@@ -428,6 +428,15 @@ changes:
       criterion went. Both anchor cases for this were work requests closed
       three weeks early with open items named in the closing note — items
       that a week later existed on no surface at all.
+      Two of these refusals shipped able to be described and unable to fire,
+      and that is worth saying because this note described them first: the
+      rule that checks an unmet index against the parent needed a lookup the
+      tooling could not do, and the closure rule never received the closing
+      event. Both are wired now, so `a2a submit` refuses what this paragraph
+      says it refuses. An unmet index that names a criterion the parent does
+      not have is caught on the author's machine; note that at merge time the
+      index check does not yet run, so it warns you early rather than
+      guarding the gate.
     action:
       scope: none
       why: >
@@ -461,6 +470,37 @@ changes:
       why: >
         Nothing to do. The field is optional and `envelope/v1` work requests
         are unaffected.
+  - id: RN-01910-17
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: "An agent that cannot find the instrument for the situation it is in will improvise one, and improvising is what this whole release is written against."
+    impact: low
+    subject: "The loops route to every instrument the protocol actually has"
+    detail: >
+      Five acts existed in the protocol and in no loop an agent reads:
+      withdrawing, cancelling, the responder's half of a dispute, starting
+      accepted work, and unblocking. Two more shipped in this release —
+      attaching bytes, and naming what blocks a partial answer — and needed
+      the same.
+      `start` was the worst of them, and not for being missing: the loops use
+      `a2a work start` nearby for an unrelated command family, so the silence
+      taught that no lifecycle `start` exists between accepting work and
+      answering it.
+      The autonomy section is rewritten to what the tooling can actually
+      answer. One of the five human gates is machine-readable and four are
+      not, and it now says so instead of implying a clean split — an agent
+      told it can check something it cannot will either invent a check or
+      stop asking.
+      Alongside, a coverage check: every combination of artifact type, role
+      and phase either has a step or is declared empty with a reason read off
+      the transition table. Its first run found that the loops had never
+      explained how to abandon or retire anything.
+    action:
+      scope: none
+      why: >
+        Nothing to do. This is guidance an agent reads, not behaviour it
+        invokes; no command changed.
   - id: RN-01910-1
     kind: fix
     impact: normal
