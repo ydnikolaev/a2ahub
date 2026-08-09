@@ -217,7 +217,7 @@ D-021. Both verbs are catalogued in
    If any of those commitments changes — including correcting `needed_by` —
    author a successor of the same type on the same thread, set its
    `supersedes: <old-id>`, validate and submit it, then record the replacement
-   with `a2a supersede --refs <new-id> <old-id>`. The successor carries the
+   with `a2a supersede <old-id> --refs <new-id>`. The successor carries the
    complete corrected truth; it must not require the reader to merge two bodies
    mentally. No correction artifact type is needed: `note` is append-only
    clarification, successor + `supersede` is append-only replacement.
@@ -335,6 +335,15 @@ D-021. Both verbs are catalogued in
 
 1. Regenerate the contract export from your code (your project's mechanism);
    run `a2a contract verify-export` — commit contract + fixtures together.
+   - **Deciding you need a contract at all comes first.** A contract is a
+     stable, versioned interface surface other systems register against and
+     get notified when it changes — reach for one when that is the ask, not
+     for an internal capability nobody outside your system consumes.
+     `a2a contract new --slug <slug>` (or `a2a contract new <slug>`) drafts
+     it and lays down the exact `.a2a/staging/<system>/provides/<slug>/`
+     tree the rest of this step edits. Its own first `publish` is G1-gated
+     (see "Human approval gates" above) — prepare the brief for your human
+     before it goes out.
    - **Edit the schema in staging, not in the mirror.** Your changed
      `schema/**` and `fixtures/**` go under
      `.a2a/staging/<system>/provides/<slug>/` — the same tree `a2a contract
@@ -368,6 +377,12 @@ D-021. Both verbs are catalogued in
      in your contract's authoring-time `to:` and never ran `a2a contract
      adopt` is not a registered consumer: it does not receive the
      announcement and it does not block your retire.
+   - **Correcting a published announcement (deprecation or any other) after
+     the fact.** Once published it is immutable like every other artifact
+     (§3.4) — the fix is `a2a supersede <old-XA-id> --refs <new-XA-id>` from
+     `published` (a wrong `successor`, `valid_until`, or body), the same
+     replace-don't-mutate move every other type uses; there is no direct
+     edit.
    - **Read the window before you plan the cycle.** `a2a contracts` shows a
      sixth column for any contract with more than one published version —
      `1.0.0=retired 1.4.1=published 2.0.0=published`, oldest first. The

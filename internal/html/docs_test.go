@@ -141,7 +141,15 @@ func TestSkillCorrectionPolicy(t *testing.T) {
 		"a2a note --note <clarification> <id>",
 		"including correcting `needed_by`",
 		"`supersedes: <old-id>`",
-		"a2a supersede --refs <new-id> <old-id>",
+		// Subject first, flag after — matching `a2a withdraw <id>`,
+		// `a2a cancel <id>` and every other lifecycle verb, and matching
+		// loops.md's own three other supersede citations. This line used to
+		// pin the reverse order, which was the one outlier of four in a
+		// document whose whole job is teaching an agent how to invoke the
+		// tool. `parseArgsAnyOrder` accepts both, so the inconsistency was
+		// never a defect — it was just the document contradicting itself
+		// where it can least afford to.
+		"a2a supersede <old-id> --refs <new-id>",
 	} {
 		if !strings.Contains(policy, required) {
 			t.Errorf("correction policy is missing %q", required)

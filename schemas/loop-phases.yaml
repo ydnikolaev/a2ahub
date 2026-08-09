@@ -1,0 +1,241 @@
+# loop-phases.yaml — the phase axis of the loop-coverage matrix (P7, plan
+# "The gate").
+#
+# The 32-cell coverage gate's universe is (type x role x phase). Two of
+# those three axes are DERIVED, not declared here:
+#
+#   type  -> `a2a __catalog --vocabulary --json`'s `.states` object keys.
+#            Those keys are `fold.Kind` values, and they are the SAME 8
+#            strings `schema.EnvelopeTypes()` returns (verified by hand
+#            against both sources when this file was written; a mismatch
+#            between them would be its own defect, not something this
+#            gate's phase axis can see). Asking the binary rather than
+#            reading Go source keeps the gate honest through the exact
+#            drift `check-view-vocabulary.sh`'s header names: a gate that
+#            names a fixed source of truth other than the shipped artifact
+#            stays green through the drift it exists to catch.
+#   role  -> a closed pair, `originator` / `counterparty`. Nothing enumerates
+#            it because nothing needs to: a loop always has exactly the
+#            system that started the exchange and the system on the other
+#            end of it.
+#
+# `phase` has NO enumerator anywhere in the repository. It is invented per
+# type by hand today, in `docs/inbox/agent-exchange-review/02-ground.md`'s
+# Matrix C, which lists 84 rows (32 empty) by hand-walking every type's own
+# bespoke phase list. Declaring it here — checked by
+# scripts/check-loop-coverage.sh against the two derived axes above — costs
+# one file and turns "three asserted axes" into "two derived, one declared
+# and gate-checked". That is the trade the P7 plan's "## The gate" section
+# prices and takes.
+#
+# ## Two axes, not one per type — and the cost of that simplification
+#
+# Matrix C gives each of the 8 types ITS OWN phase list (a `response` never
+# gets `retire`/`abandon`; a `handoff` gets `deliver-payload` where nothing
+# else does; several types get `verify`/`close` as ORIGINATOR phases). This
+# file declares ONE list per ROLE instead, applied uniformly across every
+# type — the shape the P7 plan itself states: "originators get
+# decide-to-create | author | send | change | retire | abandon;
+# counterparties get receive | work | verify | change | retire."
+#
+# The consequence, named rather than hidden: 8 types x (6 + 5) phases is 88
+# cells, not Matrix C's 84, and this file's universe is BLIND to phases
+# Matrix C used that aren't in either role list above (`verify`/`close` as
+# an ORIGINATOR phase, `deliver-payload` for either role). A handful of
+# Matrix C's own 32 empties live on exactly those excluded cells
+# (`decision x originator x verify`, `decision x originator x close`,
+# among others) and this gate cannot see them. Widening the declared list
+# to close that gap is a decision for whoever owns this file next, priced
+# against the same trade this header describes — not something the
+# gate silently reaches for on its own.
+#
+# ## Reading a cell's verdict
+#
+# Every (type, role, phase) triple in the derived universe MUST appear
+# exactly once, in exactly one of the two lists below:
+#
+#   covered  -> the loops.md section id (a `## §X` heading the gate confirms
+#               actually exists) that narrates this phase for this party.
+#   empty    -> the cell is EMPTY ON PURPOSE — a structural fact about the
+#               domain, not a missing step — with the reason stated. An
+#               `empty` entry with a blank reason is refused, mirroring
+#               fill-classes.yaml's own out_of_scope rule: an exemption
+#               without a reason is a hole that reads as a decision.
+#
+# A cell with NO entry in either list is a real, undeclared gap: the gate
+# reds naming it. That silence is deliberate here for every phase the
+# spec's "shape of the gap" table calls kind 1 (an instrument exists and no
+# loop step links it — withdraw, cancel, dispute, start, unblock) or kind 2
+# (the phase itself is missing a loop section entirely, e.g. a decision's
+# approval-soliciting step). Only kind 3 — the cell is GENUINELY
+# meaningless, the same shape as "an announcement has no counterparty
+# verify" — gets an `empty` entry. Declaring one of the first two kinds
+# `empty` to make the gate pass would be exactly the silent weakening the
+# acceptance criteria forbid.
+#
+# A correction to that inheritance, made against the code rather than
+# Matrix C's prose (2026-08-09, this phase): Matrix C classifies
+# `handoff x originator x abandon` and `announcement x originator x
+# abandon` as its own kind 1 ("generic `cancel` [reference/commands.md:13]
+# unlinked from any loop step"), and this file's header used to leave both
+# types' `retire` cells unmarked too on the theory that an unlinked verb
+# can't be "genuinely meaningless" for one phase label and "a real gap" for
+# the other. `internal/fold/table.go` contradicts the premise:
+# `handoffRows()` and `announcementRows()` carry NO `TCancel`/`TWithdraw`
+# row at any state, for either kind — unlike question/work_request (whose
+# `cancel` genuinely IS legal from `draft` through `blocked`, per
+# `exchangeRows`) or requirement/decision (whose `withdraw` genuinely IS
+# legal, per `requirementRows`/`decisionRows`). `CheckCandidate`'s generic
+# path (legality.go) refuses any transition with no row in `roleTable`, so
+# `a2a cancel <handoff-id>` and `a2a cancel <announcement-id>` are both
+# ILLEGAL, not merely unnarrated. Matrix C's "unlinked" framing reads the
+# verb's generic catalog synopsis ("cancel one or more artifacts") rather
+# than the kind-specific legality table it actually gates on. All four
+# cells — both types' `retire` AND `abandon` — are genuinely kind 3 (the
+# domain offers no act at all, not merely an unnarrated one) and are marked
+# `empty` below, each citing the table fact that makes the call.
+#
+# A second, narrower deviation from Matrix C worth naming plainly rather
+# than folding into the 88-vs-84 note above: six of `announcement`'s cells
+# here (`originator` x decide-to-create/author/send/change, `counterparty`
+# x receive/work) and two of `handoff`'s (`originator` x author/send) are
+# marked `covered` on content that is real but CATEGORY- OR
+# VARIANT-SCOPED — Matrix C's own rows for the first five plus
+# `handoff x originator x author` (02-ground.md:1073-1099, 1127-1133) note
+# the loop text only reaches `category: deprecation` (announcement) or the
+# data-payload variant (handoff), and is silent for the other
+# categories/variants; the same is true of the two cells this phase adds:
+# `announcement x originator x change`, credited to a supersede bullet that
+# lives inside the same contract-owner-loop-only announcement content, and
+# `handoff x originator x send`, credited to the identical data-payload
+# `a2a data deliver` citation as `author`. This file's uniform per-role
+# phase axis has no category sub-dimension to express that split, so it
+# takes partial credit rather than leaving those eight cells unmarked or
+# manufacturing a false `empty` reason for them. A category axis would
+# resolve this properly; adding one is the same kind of decision as
+# widening the phase list above, not something this file reaches for
+# unilaterally.
+#
+# This file's own `covered`/`empty` classification is authored by hand
+# against skill/a2ahub/loops.md as it exists 2026-08-09. It is a claim, the
+# same way a fill-classes row is a claim (see that file's own header): a
+# later phase should correct any row its own evidence contradicts, and the
+# gate keeps the file honest going forward by refusing anything that drifts
+# structurally (a phase or type name that no longer exists, a `covered`
+# section id that no longer exists), even though it cannot itself judge
+# whether a `covered`/`empty` call was RIGHT.
+
+schema: loop-phases/v1
+
+phases:
+  originator: [decide-to-create, author, send, change, retire, abandon]
+  counterparty: [receive, work, verify, change, retire]
+
+covered:
+  # contract
+  contract/originator/decide-to-create: "§8.4"
+  contract/originator/author: "§8.4"
+  contract/originator/send: "§8.4"
+  contract/originator/change: "§8.4"
+  contract/originator/retire: "§8.4"
+  contract/counterparty/receive: "§8.4a"
+  contract/counterparty/verify: "§8.4a"
+  contract/counterparty/retire: "§8.4a"
+  # requirement
+  requirement/originator/decide-to-create: "§8.2"
+  requirement/originator/author: "§8.2"
+  requirement/originator/send: "§8.2"
+  requirement/originator/change: "§8.2"
+  requirement/originator/retire: "§8.2"
+  requirement/originator/abandon: "§8.2"
+  requirement/counterparty/receive: "§8.3"
+  requirement/counterparty/work: "§8.4"
+  # question
+  question/originator/decide-to-create: "§8.2"
+  question/originator/author: "§8.2"
+  question/originator/send: "§8.2"
+  question/originator/change: "§8.2"
+  question/originator/retire: "§8.2"
+  question/originator/abandon: "§8.2"
+  question/counterparty/receive: "§8.3"
+  question/counterparty/work: "§8.3"
+  # work_request
+  work_request/originator/decide-to-create: "§8.2"
+  work_request/originator/author: "§8.2"
+  work_request/originator/send: "§8.2"
+  work_request/originator/change: "§8.2"
+  work_request/originator/retire: "§8.2"
+  work_request/originator/abandon: "§8.2"
+  work_request/counterparty/receive: "§8.3"
+  work_request/counterparty/work: "§8.1"
+  # decision
+  decision/originator/decide-to-create: "§8.2"
+  decision/originator/author: "§8.2"
+  decision/originator/send: "§8.2"
+  decision/originator/change: "§8.2"
+  decision/originator/retire: "§8.2"
+  decision/counterparty/receive: "§8.3"
+  # handoff
+  handoff/originator/decide-to-create: "§8.3"
+  handoff/originator/author: "§8.3"
+  handoff/originator/send: "§8.3"
+  handoff/originator/change: "§8.3"
+  handoff/counterparty/receive: "§8.3"
+  handoff/counterparty/work: "§8.3"
+  handoff/counterparty/verify: "§8.2"
+  # response
+  response/originator/decide-to-create: "§8.3"
+  response/originator/author: "§8.3"
+  response/originator/send: "§8.3"
+  response/originator/change: "§8.2"
+  response/counterparty/receive: "§8.2"
+  response/counterparty/verify: "§8.2"
+  # announcement
+  announcement/originator/decide-to-create: "§8.4"
+  announcement/originator/author: "§8.4"
+  announcement/originator/send: "§8.4"
+  announcement/originator/change: "§8.4"
+  announcement/counterparty/receive: "§8.4a"
+  announcement/counterparty/work: "§8.4a"
+
+empty:
+  # contract — the two counterparty phases with no procedural content, and
+  # why each is structural rather than a gap.
+  contract/counterparty/work: "implementing against a contract is the consumer's own project mechanism (§8.4 step 1 uses the identical phrase for the producer's own code); the loop narrates how the consumer registers, discovers changes and verifies compatibility, never how they build"
+  contract/counterparty/change: "a consumer never edits a contract they do not own; their route to requesting a change is a separate work_request with category: contract-change (§8.2), not an action on the contract artifact itself"
+  contract/originator/abandon: "an un-published contract draft is simply never published; §3.4.1's table has no exit earlier than draft→publish (no cancel/withdraw exists for a contract at all, unlike requirement/question/work_request/decision), so there is no distinct abandon action separate from the drafter's own publish-or-not choice"
+  # requirement
+  requirement/counterparty/verify: "the requirement's own originator verifies the fulfilling response (§8.2 step 6); the system fulfilling it performs no verify action of its own"
+  requirement/counterparty/retire: "only the requirement's own originator can withdraw it; the fulfilling counterparty has no retire action here"
+  requirement/counterparty/change: "the fulfilling counterparty never edits the originator's own requirement; §3.4.2's table gives them acknowledge/decline only — editing an artifact you don't own is never a counterparty action, the same fact contract/counterparty/change already states for a consumer"
+  # question
+  question/counterparty/verify: "the asking originator verifies the answer (§8.2 step 6); the responding counterparty performs no verify action of its own"
+  question/counterparty/retire: "only the question's own originator can cancel it; the responding counterparty has no retire action here"
+  question/counterparty/change: "the responding counterparty never edits the originator's own question; §3.4.3's table gives them accept/start/block/unblock/decline/respond only — editing an artifact you don't own is never a counterparty action, the same fact contract/counterparty/change already states for a consumer"
+  # work_request
+  work_request/counterparty/verify: "the requesting originator verifies the response or the delivered payload (§8.2 step 6); the fulfilling counterparty performs no verify action of its own"
+  work_request/counterparty/retire: "only the work_request's own originator can cancel it; the fulfilling counterparty has no retire action here"
+  work_request/counterparty/change: "the fulfilling counterparty never edits the originator's own work_request; §3.4.3's table gives them accept/start/block/unblock/decline/respond only — editing an artifact you don't own is never a counterparty action, the same fact contract/counterparty/change already states for a consumer"
+  # decision
+  decision/counterparty/verify: "an approving counterparty produces approve or reject directly (the G3 gate act itself, §8.5's gate row); there is no separate verify step distinct from that act"
+  decision/counterparty/retire: "only the decision's own drafter can withdraw it; an approving counterparty's only actions are approve or reject, never retire"
+  decision/counterparty/work: "an approving counterparty's only act is approve or reject — the G3 gate act itself (§8.5's gate row) — with no separate deliberation/work step modeled between receiving a decision and rendering that verdict; contrast question/work_request/requirement, whose counterparty passes through accept and start before responding"
+  decision/counterparty/change: "an approving counterparty never edits the decision artifact; §3.4.4's table gives RoleApprover only approve/reject, and withdraw/supersede belong solely to the proposer — editing an artifact you don't own is never a counterparty action, the same fact contract/counterparty/change already states for a consumer"
+  decision/originator/abandon: "decision's own withdraw row (§3.4.4) only applies from proposed, never from draft — contrast requirement, whose withdraw explicitly spans draft too (§8.2 step 9) — so an un-proposed decision draft is simply never proposed, with no distinct abandon action, the same shape response/originator/abandon already states"
+  # handoff
+  handoff/originator/retire: "handoff's own table (§3.4.5) gives the producer no withdraw/cancel row at all — the two supersede rows (from submitted, from acknowledged) are its only pre-verification exits, and 'replaced by this other artifact' is credited under change, not retire; there is no distinct 'no longer needed' action for a handoff the way withdraw/cancel gives one to requirement/question/work_request/decision"
+  handoff/originator/abandon: "an un-submitted handoff draft is simply never submitted; §3.4.5's table has no exit earlier than draft→submit, so there is no distinct abandon action separate from the producer's own submit-or-not choice — the same shape response/originator/abandon already states"
+  handoff/counterparty/change: "the receiving counterparty never edits the handoff artifact itself; §3.4.5's table gives them only acknowledge and verify-pass/verify-fail — the same 'editing an artifact you don't own is never a counterparty action' fact contract/counterparty/change already states"
+  handoff/counterparty/retire: "only the handoff's own producer could ever retire it, and even the producer has no such verb (see handoff/originator/retire) — supersede is the sole owner exit and it is credited under change; the receiving counterparty has no retire action at all"
+  # response
+  response/originator/retire: "a submitted response is immutable (§8.2 step 8); there is no withdrawal action distinct from the successor-plus-supersede change path"
+  response/originator/abandon: "an unsent response draft is simply never submitted; loops.md narrates no distinct abandon action separate from the response's own submit-or-not choice (§8.3 step 4)"
+  response/counterparty/work: "receiving a response has no distinct work step between receipt and verification; the requester's own work happened earlier while awaiting the response (§8.2 step 5)"
+  response/counterparty/change: "the requester's remedy for an unsatisfactory response is dispute (§8.2 step 6, a failing verify verdict), never a direct edit to the response artifact, which only its own author may supersede"
+  response/counterparty/retire: "the response artifact's own author is the only party who could ever retire it, and even they cannot once submitted (see response/originator/retire); the requester has no retire action at all"
+  # announcement
+  announcement/originator/retire: "announcement's own table (§3.4.7) has only publish and supersede — no retire/withdraw/cancel row at all; a stale notice is corrected via supersede (the change cell above), never formally retired or decommissioned the way a contract version is"
+  announcement/originator/abandon: "an unpublished announcement draft is simply never published; §3.4.7's table has no exit earlier than draft→publish, so there is no distinct abandon action separate from the drafter's own publish-or-not choice — the same shape response/originator/abandon already states"
+  announcement/counterparty/verify: "§3.1's own table marks announcement Responds: no — there is nothing returned for a receiving counterparty to verify"
+  announcement/counterparty/change: "an announcement is one-way (§3.1, Responds: no); the receiving counterparty has no change action over it"
+  announcement/counterparty/retire: "one-way notice (§3.1, Responds: no); the receiving counterparty has no retire action over an announcement"
