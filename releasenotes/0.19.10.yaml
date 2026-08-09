@@ -522,3 +522,30 @@ changes:
         Nothing to do. Existing declines already carry the code in their
         committed events, so it becomes visible with no migration and no
         re-authoring.
+  - id: RN-01910-18
+    kind: fix
+    impact: normal
+    subject: "Recording a triage verdict no longer rewrites the report it is judging"
+    detail: >
+      `a2a feedback triage --apply` changed two fields and rewrote the whole
+      record to do it: every top-level key was reordered alphabetically and
+      every value re-quoted or re-folded. Nothing about the report changed and
+      every byte did, so a reporter's own submitted text stopped being the text
+      the corpus carried.
+      That matters beyond tidiness, because the feedback corpus exists in two
+      copies — where reports arrive and where verdicts are written — and the
+      rule reconciling them is that a record's body is authored in the first
+      and its status and resolution in the second. Reformatting made every
+      record look like its body had changed too, so the reconciliation refused
+      records nothing was wrong with.
+      A verdict now rewrites the `status` line and replaces, or inserts, the
+      `resolution` block, and leaves the rest of the file exactly as submitted.
+      A resolution a YAML block scalar cannot carry without altering it — one
+      ending in a newline, for instance — is now refused by name before
+      anything is written, rather than being silently truncated.
+    affects: ["a2a feedback triage --apply"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. Records already triaged keep their current content; the
+        change applies to verdicts recorded from here on.
