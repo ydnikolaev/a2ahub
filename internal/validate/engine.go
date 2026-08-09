@@ -96,6 +96,17 @@ func (e *Engine) ValidateForSubmit(d Draft, events []CandidateEvent, ctx LocalCo
 	violations = append(violations, checkAuthz(env, ctx.OwnSystem)...)
 	violations = append(violations, checkAddressees(env, ctx.Resolver)...)
 
+	// P6 incompleteness (incompleteness.go): AC1's unmet[]-index-range
+	// guard and AC8's residue guard. Both are cross-artifact checks that
+	// need `events` and/or `ctx.Resolver`, so — unlike P4's possession
+	// check — they cannot live in runCommonEnvelope, which only ever sees
+	// a single Draft's own body+instance and runs at V1 too. This makes
+	// both rules V2-only (`a2a submit` / `validate --ci`), never
+	// `a2a validate`'s plain V1 path — a deviation from the brief's "wire
+	// it where plain `a2a validate` reaches it" (see this phase's
+	// Deviations report).
+	violations = append(violations, checkIncompleteness(env, instance, events, ctx.Resolver)...)
+
 	lifecycleViolations, err := checkLifecycle(events, ctx.Legality)
 	if err != nil {
 		return Result{}, &Error{Op: op, Err: err}

@@ -163,6 +163,11 @@ entries:
     title: Body names a digest no declared attachment carries
     applies_to: an envelope body whose prose names a `sha256:` token that appears in no attachments[].digest — the reference cannot be resolved by the reader it was written for (agent-exchange-2026-08/P4, AC1)
 
+  - code: REF-018
+    class: referential
+    title: An unmet[] index does not resolve to an entry in the parent's acceptance_criteria
+    applies_to: envelope/v2 response `unmet[]` validated against the parent's declared acceptance_criteria — an index naming a criterion that does not exist is worse than prose, because it reads as precise (agent-exchange-2026-08/P6, AC1)
+
   - code: LFC-001
     class: lifecycle
     title: Event encodes an illegal transition for the subject's current folded state
@@ -177,6 +182,11 @@ entries:
     class: lifecycle
     title: Applicable first-party event is missing its producer evaluation receipt
     applies_to: contextual event validation when produced_by is a2a at or above ClaimReceiptFloor and fold.EvaluateCandidate identifies one scalar receipt scope
+
+  - code: LFC-004
+    class: lifecycle
+    title: A terminal transition closes a parent carrying an unmet criterion with no residue
+    applies_to: internal/validate.checkResidue — a close/withdraw/cancel over a parent whose response declared unmet criteria, with no residue naming where each went. Absent is a refusal rather than a default, because both anchor work_requests were closed weeks early with open items in the closing notes, and a week later those items were on no surface (agent-exchange-2026-08/P6, AC8)
 
   - code: POL-001
     class: policy

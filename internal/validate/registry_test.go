@@ -308,6 +308,26 @@ func TestRegistryClosure(t *testing.T) {
 			"- one.csv\n- two.csv\n- three.csv\n- four.csv\n"),
 		map[string]any{"type": "work_request"}))
 
+	// REF-018 and LFC-004: P6's incompleteness rules. Both are DORMANT
+	// under every Resolver that ships today — REF-018 needs a parent's
+	// criteria count that no production Resolver can supply, and LFC-004
+	// needs a closing event alongside the response. That is exactly why
+	// they belong here: this gate asks whether a code can be PRODUCED at
+	// all, and a rule that cannot is the "gate watching nothing" this
+	// corpus keeps calling worse than a red one. The stubs below supply
+	// what production does not, so the codes are proven reachable while
+	// the wiring that makes them fire is still owed.
+	record(checkUnmetIndexRange(
+		envelope{Type: "response", Parent: "XW-axon-20260808-clos"},
+		map[string]any{"unmet": []any{int64(9)}},
+		&criteriaResolver{criteria: map[string]int{"XW-axon-20260808-clos": 1}},
+	))
+	record(checkResidue(
+		envelope{Type: "response", Parent: "XW-axon-20260808-clos"},
+		map[string]any{"unmet": []any{int64(0)}},
+		[]CandidateEvent{{Subject: "XW-axon-20260808-clos", Transition: "close"}},
+	))
+
 	for _, code := range append(append(registry.CodesInClass("referential"), registry.CodesInClass("lifecycle")...), registry.CodesInClass("policy")...) {
 		if !produced[code] {
 			t.Errorf("registry code %q is never produced by any exercised path in this test", code)
