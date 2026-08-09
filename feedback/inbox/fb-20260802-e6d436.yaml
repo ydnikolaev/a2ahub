@@ -37,9 +37,9 @@ resolution: >-
     schema and fixtures those formats cannot supply. That release's own note
     records this id as where the remaining gap is tracked. Giving those formats
     a publishable carried set is a wire-format decision nobody has priced; the
-    owning work is docs/features/active/operational-
-    confidence-2026-08/README.md, and the report that first surfaced it beside
-    this one is fb-20260806-3539ac.
+    owning work is
+    docs/features/active/operational-confidence-2026-08/README.md, and the
+    report that first surfaced it beside this one is fb-20260806-3539ac.
 severity: major
 status: accepted
 summary: |-
