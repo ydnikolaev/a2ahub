@@ -472,6 +472,115 @@ func TestDataVerifyOperationKeyIsReportIDOnly(t *testing.T) {
 	}
 }
 
+// TestDataPackageForPath is AC8's predicate-level proof: the path grammar
+// DeliverDataPackage actually writes (dataPackageDir's own
+// "<system>/data/<DP-id>/...") is recognised, and nothing that merely looks
+// similar is — mirroring TestContractForPath's own shape for the sibling
+// predicate this one is built to match (layout.go:117).
+func TestDataPackageForPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		path         string
+		wantID       string
+		wantManifest string
+		wantOK       bool
+	}{
+		{
+			name:         "the manifest itself",
+			path:         "seomatrix/data/DP-seomatrix-20260808-7xaa/manifest.json",
+			wantID:       "DP-seomatrix-20260808-7xaa",
+			wantManifest: "seomatrix/data/DP-seomatrix-20260808-7xaa/manifest.json",
+			wantOK:       true,
+		},
+		{
+			name:         "the packed README — the exact incident shape",
+			path:         "seomatrix/data/DP-seomatrix-20260808-7xaa/README.md",
+			wantID:       "DP-seomatrix-20260808-7xaa",
+			wantManifest: "seomatrix/data/DP-seomatrix-20260808-7xaa/manifest.json",
+			wantOK:       true,
+		},
+		{
+			name:         "a nested payload file",
+			path:         "seomatrix/data/DP-seomatrix-20260808-7xaa/rows/orders.json",
+			wantID:       "DP-seomatrix-20260808-7xaa",
+			wantManifest: "seomatrix/data/DP-seomatrix-20260808-7xaa/manifest.json",
+			wantOK:       true,
+		},
+		{
+			name:   "a genuine artifact elsewhere under the same system — must NOT match",
+			path:   "seomatrix/exchanges/XW-seomatrix-20260808-ab12.md",
+			wantOK: false,
+		},
+		{
+			name:   "a contract path — the sibling predicate's own territory",
+			path:   "seomatrix/provides/widgets/schema/widget.json",
+			wantOK: false,
+		},
+		{
+			name:   "no data segment",
+			path:   "seomatrix/README.md",
+			wantOK: false,
+		},
+		{
+			// A valid DP- id at the right DEPTH, but under a directory
+			// literally named anything other than "data" — discriminates the
+			// parts[1] == "data" guard from the len(parts) floor alone,
+			// which a shorter "no data segment" case above cannot.
+			name:   "a DP- id shaped path under a directory that is not literally \"data\"",
+			path:   "seomatrix/notdata/DP-seomatrix-20260808-7xaa/README.md",
+			wantOK: false,
+		},
+		{
+			name:   "the package directory has no trailing file",
+			path:   "seomatrix/data/DP-seomatrix-20260808-7xaa",
+			wantOK: false,
+		},
+		{
+			name:   "not a DP- id at all",
+			path:   "seomatrix/data/XH-seomatrix-20260808-7xaa/README.md",
+			wantOK: false,
+		},
+		{
+			// dataPackageReportPath (this file) roots a verification report
+			// under the VERIFYING system's own section while the packageID
+			// still names the PRODUCER — TestRecordVerificationReportSingleCommit
+			// commits exactly this shape ("peer/data/DP-axon-.../report.json").
+			// A same-system check here would disagree with that real write.
+			name:         "a DP- id whose OWN embedded system disagrees with the directory it sits under — the real verify-report shape",
+			path:         "peer/data/DP-axon-20260804-ab12/report.json",
+			wantID:       "DP-axon-20260804-ab12",
+			wantManifest: "peer/data/DP-axon-20260804-ab12/manifest.json",
+			wantOK:       true,
+		},
+		{
+			name:   "path traversal",
+			path:   "seomatrix/data/../DP-seomatrix-20260808-7xaa/README.md",
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			id, manifest, ok := DataPackageForPath(tt.path)
+			if ok != tt.wantOK {
+				t.Fatalf("DataPackageForPath(%q) ok = %v, want %v", tt.path, ok, tt.wantOK)
+			}
+			if !tt.wantOK {
+				return
+			}
+			if id != tt.wantID {
+				t.Fatalf("DataPackageForPath(%q) id = %q, want %q", tt.path, id, tt.wantID)
+			}
+			if manifest != tt.wantManifest {
+				t.Fatalf("DataPackageForPath(%q) manifest = %q, want %q", tt.path, manifest, tt.wantManifest)
+			}
+		})
+	}
+}
+
 func splitLinesForTest(s string) []string {
 	var out []string
 	start := 0

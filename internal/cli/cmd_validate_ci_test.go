@@ -19,8 +19,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/datapackage"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
@@ -826,6 +829,278 @@ func TestValidateCI_FullRepoEmpty(t *testing.T) {
 	// An empty space is not an UNCHECKED space: the manifest is still audited,
 	// and that is the one thing there is to audit here.
 	ciManifestChecked(t, rep)
+}
+
+// TestWalkArtifactsExcludesDataPackagePayload is a direct, unit-level red
+// receipt for walkArtifacts' own exclusion (AC8, spec 04 §11): a package's
+// README.md must never appear in walkArtifacts' own returned slice, and a
+// genuine artifact under the same system still does — proven independently
+// of runValidateCI's own report shape, one call into the unexported function
+// itself, since package cli's test file can call it directly.
+func TestWalkArtifactsExcludesDataPackagePayload(t *testing.T) {
+	t.Parallel()
+
+	packageID, packageFiles := realDataPackageFixture(t, "seomatrix")
+	dpDir := "seomatrix/data/" + packageID + "/"
+	const genuineRel = "seomatrix/exchanges/XQ-seomatrix-20260808-h2k8.md"
+
+	files := map[string]string{
+		genuineRel: validQuestion("XQ-seomatrix-20260808-h2k8", "seomatrix", "axon"),
+	}
+	for rel, content := range packageFiles {
+		files[dpDir+rel] = content
+	}
+	root := ciRepo(t, ciSpaceYAML, files)
+
+	manifest, err := space.ParseManifest([]byte(ciSpaceYAML))
+	if err != nil {
+		t.Fatalf("ParseManifest: %v", err)
+	}
+	out, err := walkArtifacts(root, manifest)
+	if err != nil {
+		t.Fatalf("walkArtifacts: %v", err)
+	}
+
+	got := map[string]bool{}
+	for _, p := range out {
+		got[filepath.ToSlash(p)] = true
+	}
+	if got[dpDir+"README.md"] {
+		t.Fatalf("walkArtifacts returned the packed README.md, want it excluded: %v", out)
+	}
+	if !got[genuineRel] {
+		t.Fatalf("walkArtifacts must still return a genuine artifact under the same system, got %v", out)
+	}
+}
+
+// --- AC8 (spec 04 §11, amendment 2026-08-09): a directory `a2a data pack`
+// writes must pass `a2a validate --ci` BY CONSTRUCTION, and the exemption
+// must be scoped to the package's own directory, not a blanket "stop
+// validating this system" ---
+
+// fakeDataPackEntryChecker always passes every dataset entry: this fixture
+// only needs Pack to produce a schema-valid manifest carrying a real
+// RoleReadme entry, not to exercise conformance checking itself (that is
+// internal/datapackage's own tests' job).
+type fakeDataPackEntryChecker struct{}
+
+func (fakeDataPackEntryChecker) CheckEntry(_ context.Context, req datapackage.EntryCheckRequest) (datapackage.Check, error) {
+	return datapackage.NewCheck("chk-ok", req.Entry.RelPath, datapackage.CheckPass, nil), nil
+}
+
+// realDataPackageFixture packs a REAL data-package/v1 manifest via
+// internal/datapackage.Pack — the exact core `a2a data pack` calls
+// (cmd/a2a/data_wiring.go) — declaring README.md with RoleReadme exactly as
+// that file's entry classification does (README.md -> RoleReadme, no
+// frontmatter), then stages it the way writeStagedPackage does:
+// manifest.json holding json.Marshal(document), and every entry's bytes
+// copied byte-identical. Returns the minted DP- id and a relPath->content
+// map ready to drop into ciRepo under "<system>/data/<id>/".
+func realDataPackageFixture(t *testing.T, system string) (packageID string, files map[string]string) {
+	t.Helper()
+	source := t.TempDir()
+	const readme = "# Orders export\n\nA data package's own README — no frontmatter, because it is not an envelope draft.\n"
+	const orders = `[{"id":1},{"id":2}]`
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte(readme), 0o644); err != nil {
+		t.Fatalf("write README.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "orders.json"), []byte(orders), 0o644); err != nil {
+		t.Fatalf("write orders.json: %v", err)
+	}
+
+	req := datapackage.PackRequest{
+		Source:         source,
+		System:         system,
+		Thread:         cliFixtureThread,
+		Contract:       "XC-" + system + "-orders@1.0.0#sha256:" + strings.Repeat("a", 64),
+		Classification: "restricted",
+		DataProfile:    datapackage.DataProfileSynthetic,
+		Format:         datapackage.FormatJSON,
+		Locator:        "checkout-core/deliveries/DP-test",
+		Entries: map[string]datapackage.EntryDeclaration{
+			"README.md":   {Role: datapackage.RoleReadme, MediaType: "text/markdown"},
+			"orders.json": {Role: datapackage.RoleDataset, MediaType: "application/json", ConformsTo: "schema/orders.schema.json"},
+		},
+		Expires:    30 * 24 * time.Hour,
+		Attempt:    1,
+		Bounds:     datapackage.DefaultBounds(),
+		Checker:    fakeDataPackEntryChecker{},
+		Provenance: datapackage.Provenance{OriginSystem: system + "-orders-db", ExtractedAt: "2026-08-08T11:59:30Z"},
+		Now:        time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC),
+		Entropy:    bytes.NewReader([]byte{0x7a, 0xaa, 0, 0}),
+	}
+	doc, err := datapackage.Pack(context.Background(), req)
+	if err != nil {
+		t.Fatalf("datapackage.Pack: %v", err)
+	}
+
+	manifestRaw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("json.Marshal(doc): %v", err)
+	}
+
+	return doc.ID, map[string]string{
+		"manifest.json": string(manifestRaw),
+		"README.md":     readme,
+		"orders.json":   orders,
+	}
+}
+
+// assertDataPackagePayloadExempt asserts NO report entry exists for any path
+// under dpDir — the package's payload never reached artifact discovery at
+// all, exactly as space.ContractForPath's own schema/fixtures/companion
+// subtree does not.
+func assertDataPackagePayloadExempt(t *testing.T, rep ciReport, dpDir string) {
+	t.Helper()
+	for _, a := range rep.Artifacts {
+		if strings.HasPrefix(a.Path, dpDir) {
+			t.Fatalf("a package payload path was validated as an artifact and must not have been: %+v", a)
+		}
+	}
+}
+
+// assertControlArtifactRefused asserts the report carries exactly one entry
+// for controlRel and it is refused (error or an invalid V2 result).
+func assertControlArtifactRefused(t *testing.T, rep ciReport, controlRel string) {
+	t.Helper()
+	var sawControl bool
+	for _, a := range rep.Artifacts {
+		if a.Path != controlRel {
+			continue
+		}
+		sawControl = true
+		if a.Error == "" && (a.Result == nil || a.Result.Valid) {
+			t.Fatalf("control artifact %q should be refused, got %+v", controlRel, a)
+		}
+	}
+	if !sawControl {
+		t.Fatalf("expected a report entry for the control artifact %q, got %+v", controlRel, rep.Artifacts)
+	}
+}
+
+// TestValidateCI_PRDataPackagePayloadPassesByConstruction is AC8's v3-pr
+// GREEN half, asserted on its own: a PR carrying exactly what `a2a data
+// pack` + `a2a data deliver` commit — the manifest plus its byte-identical
+// payload, including the packed README.md with no frontmatter — is green,
+// with no other changed file to make that verdict ambiguous.
+func TestValidateCI_PRDataPackagePayloadPassesByConstruction(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+
+	packageID, packageFiles := realDataPackageFixture(t, "seomatrix")
+	dpDir := "seomatrix/data/" + packageID + "/"
+
+	files := map[string]string{}
+	var changed []string
+	for rel, content := range packageFiles {
+		p := dpDir + rel
+		files[p] = content
+		changed = append(changed, p)
+	}
+
+	root := ciRepo(t, ciSpaceYAML, files)
+	code, rep, errOut := runCI(t, engine, root, fakeGit(changed...), "v3-pr", "deadbeef", "misha-gh")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr=%s; report=%+v", code, errOut, rep)
+	}
+	if !rep.Valid {
+		t.Fatalf("expected a valid report, got %+v", rep)
+	}
+	assertDataPackagePayloadExempt(t, rep, dpDir)
+}
+
+// TestValidateCI_PRDataPackagePayloadExemptionIsNotBlanket is the control:
+// the SAME package payload alongside a genuinely malformed artifact filed
+// elsewhere under the SAME system still reds on the control — proving the
+// exemption above is the package's own directory grammar, not "stop
+// validating seomatrix". Remove the exclusion this brief adds and both this
+// test's control assertion AND the green test above go red (the latter on
+// the packed README.md itself, POL-002 — the exact incident).
+func TestValidateCI_PRDataPackagePayloadExemptionIsNotBlanket(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+
+	packageID, packageFiles := realDataPackageFixture(t, "seomatrix")
+	dpDir := "seomatrix/data/" + packageID + "/"
+
+	const controlRel = "seomatrix/exchanges/XQ-seomatrix-20260808-ffff.md"
+	files := map[string]string{
+		controlRel: "this is not frontmatter\n",
+	}
+	var changed []string
+	for rel, content := range packageFiles {
+		p := dpDir + rel
+		files[p] = content
+		changed = append(changed, p)
+	}
+	changed = append(changed, controlRel)
+
+	root := ciRepo(t, ciSpaceYAML, files)
+	code, rep, errOut := runCI(t, engine, root, fakeGit(changed...), "v3-pr", "deadbeef", "misha-gh")
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 (the control artifact must still red); stderr=%s; report=%+v", code, errOut, rep)
+	}
+	if rep.Valid {
+		t.Fatalf("expected an invalid report (the control artifact), got %+v", rep)
+	}
+	assertDataPackagePayloadExempt(t, rep, dpDir)
+	assertControlArtifactRefused(t, rep, controlRel)
+}
+
+// TestValidateCI_FullRepoDataPackagePayloadPassesByConstruction is AC8's
+// v3-full-repo GREEN half — walkArtifacts must exempt the package directory
+// exactly as the changed-file loop does above, asserted on its own.
+func TestValidateCI_FullRepoDataPackagePayloadPassesByConstruction(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+
+	packageID, packageFiles := realDataPackageFixture(t, "seomatrix")
+	dpDir := "seomatrix/data/" + packageID + "/"
+
+	files := map[string]string{}
+	for rel, content := range packageFiles {
+		files[dpDir+rel] = content
+	}
+
+	root := ciRepo(t, ciSpaceYAML, files)
+	code, rep, errOut := runCI(t, engine, root, nil, "v3-full-repo", "", "")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr=%s; report=%+v", code, errOut, rep)
+	}
+	if !rep.Valid {
+		t.Fatalf("expected a valid report, got %+v", rep)
+	}
+	assertDataPackagePayloadExempt(t, rep, dpDir)
+	ciManifestChecked(t, rep)
+}
+
+// TestValidateCI_FullRepoDataPackagePayloadExemptionIsNotBlanket is the
+// v3-full-repo control, mirroring TestValidateCI_PRDataPackagePayloadExemptionIsNotBlanket.
+func TestValidateCI_FullRepoDataPackagePayloadExemptionIsNotBlanket(t *testing.T) {
+	t.Parallel()
+	engine := ciEngine(t)
+
+	packageID, packageFiles := realDataPackageFixture(t, "seomatrix")
+	dpDir := "seomatrix/data/" + packageID + "/"
+
+	const controlRel = "seomatrix/exchanges/XQ-seomatrix-20260808-ffff.md"
+	files := map[string]string{
+		controlRel: "this is not frontmatter\n",
+	}
+	for rel, content := range packageFiles {
+		files[dpDir+rel] = content
+	}
+
+	root := ciRepo(t, ciSpaceYAML, files)
+	code, rep, errOut := runCI(t, engine, root, nil, "v3-full-repo", "", "")
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 (the control artifact must still red); stderr=%s; report=%+v", code, errOut, rep)
+	}
+	if rep.Valid {
+		t.Fatalf("expected an invalid report (the control artifact), got %+v", rep)
+	}
+	assertDataPackagePayloadExempt(t, rep, dpDir)
+	assertControlArtifactRefused(t, rep, controlRel)
 }
 
 func TestValidateCI_UsageErrors(t *testing.T) {

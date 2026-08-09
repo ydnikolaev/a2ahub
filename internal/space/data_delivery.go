@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 )
@@ -74,6 +75,59 @@ func dataPackageManifestPath(system, packageID string) string {
 // rooted under.
 func dataPackageReportPath(system, packageID string) string {
 	return path.Join(dataPackageDir(system, packageID), "report.json")
+}
+
+// DataPackageForPath reports whether p is a file committed inside a data
+// package's own directory — dataPackageDir(system, packageID)'s own
+// "<system>/data/<DP-id>/..." grammar, above — mirroring ContractForPath's
+// shape (layout.go:117) for the same reason that function exists: artifact
+// discovery (internal/cli/cmd_validate_ci.go) already asks ContractForPath
+// whether a changed path is a contract's own schema/fixtures/companion
+// subtree rather than a free-standing artifact, and a data package's payload
+// needs the identical exemption. DeliverDataPackage (below) commits a
+// package's files byte-identical to what `a2a data pack` wrote, and
+// datapackage.BuildEntrySet seals every entry's own sha256 with no
+// normalisation (entryset.go) — so a discovery site that ran artifact
+// frontmatter policy over a package's own README.md would be asking bytes
+// the manifest's digest forbids changing to change anyway (spec 04 §11,
+// amendment 2026-08-09, AC8).
+//
+// This is structural, not manifest-reading: it recognises the PATH grammar
+// the writer produces, never opens manifest.json to decide. Discovery
+// parsing each package's own digest-sealed manifest on the CI hot path is
+// the branch that amendment explicitly rejects.
+//
+// system is deliberately taken from the PATH alone, never cross-checked
+// against the id's own embedded system token: dataPackageDir(system,
+// packageID) is parameterised on system precisely because
+// dataPackageReportPath (below) roots a VERIFYING system's own report.json
+// under that system's section while packageID still names the PRODUCER
+// (its own doc comment; TestRecordVerificationReportSingleCommit commits
+// "peer/data/DP-axon-.../report.json"). A same-system check would make this
+// predicate disagree with the one write path it exists to mirror.
+//
+// It returns the DP- id and the package's own manifest.json path
+// (dataPackageManifestPath, resolved under the PATH's own system) so a
+// caller that separately wants to read the manifest has the path without
+// recomputing it; this function itself never reads it.
+func DataPackageForPath(p string) (packageID, manifestPath string, ok bool) {
+	parts := strings.Split(p, "/")
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return "", "", false
+		}
+	}
+	// system, "data", <DP-id>, <at least one path segment beneath it> —
+	// mirroring ContractForPath's own len(parts) < 4 floor (layout.go:124).
+	if len(parts) < 4 || parts[1] != "data" {
+		return "", "", false
+	}
+
+	system, candidate := parts[0], parts[2]
+	if _, idOK := dataPackagePrefixParsed(candidate); !idOK {
+		return "", "", false
+	}
+	return candidate, dataPackageManifestPath(system, candidate), true
 }
 
 // DataDeliveryRequest is one data-delivery write: the already-packed

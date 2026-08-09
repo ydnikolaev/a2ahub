@@ -183,6 +183,17 @@ func runValidateCI(ctx context.Context, engine *validate.Engine, root string, gi
 		}
 		if _, ok := systemForPath(manifest, p); ok {
 			authzPaths = append(authzPaths, p)
+			// A data package's own payload (space.DataPackageForPath's
+			// "<system>/data/<DP-id>/..." grammar) is sealed by
+			// manifest.json's per-entry sha256 and was never an envelope
+			// draft, a consumes.yaml registry, or an event document — so it
+			// is excluded from EVERY classification below, not merely the
+			// ".md" one (spec 04 §11, amendment 2026-08-09, AC8). authzPaths
+			// still carries it: it is a sectioned write and diff-authz must
+			// still see it, even though nothing here validates its content.
+			if isDataPackagePayloadPath(p) {
+				continue
+			}
 			switch {
 			case strings.HasSuffix(p, ".md"):
 				artifacts = append(artifacts, p)
@@ -730,6 +741,24 @@ func isConsumesRegistry(p string) bool {
 	return filepath.Base(p) == "consumes.yaml"
 }
 
+// isDataPackagePayloadPath reports whether p sits inside one `a2a data pack`
+// package's own directory (space.DataPackageForPath's own
+// "<system>/data/<DP-id>/..." grammar) — spec 04 §11's 2026-08-09 AC8
+// amendment. Both artifact-discovery sites in this file (the changed-file
+// loop above and walkArtifacts below) ask it exactly as they already ask
+// space.ContractForPath for a contract's own schema/fixtures/companion
+// subtree: a package's payload — including the packed README.md the real
+// incident failed on — is sealed by manifest.json's per-entry sha256
+// (datapackage.BuildEntrySet) and was never an envelope draft, so POL-002's
+// frontmatter policy does not apply to it. This is deliberately narrower
+// than "skip this whole system section": a genuinely malformed artifact
+// filed anywhere else under the same system still reaches artifact
+// discovery and still reds.
+func isDataPackagePayloadPath(p string) bool {
+	_, _, ok := space.DataPackageForPath(p)
+	return ok
+}
+
 // contractWorkingTreeFiles reads every file under
 // root/descriptorDir/sub (sub e.g. "schema" or "fixtures/valid"), keyed
 // the SAME way contractPriorVersionFiles/contractReadTreeAtSHA
@@ -974,6 +1003,14 @@ func walkArtifacts(root string, manifest space.Manifest) ([]string, error) {
 		}
 		rel, relErr := filepath.Rel(root, path)
 		if relErr != nil {
+			return nil
+		}
+		// A data package's own payload is excluded here for the same reason
+		// it is excluded from every classification in the changed-file loop
+		// above, not merely the ".md" one (spec 04 §11, AC8): none of *.md,
+		// consumes.yaml or an event document means what it normally means
+		// once it is a package's own sealed entry.
+		if isDataPackagePayloadPath(filepath.ToSlash(rel)) {
 			return nil
 		}
 		if _, ok := systemForPath(manifest, rel); ok || isSpaceLevelArtifact(rel) {
