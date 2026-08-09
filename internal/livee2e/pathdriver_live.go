@@ -885,6 +885,23 @@ func runPathQuestionDisputed(ctx context.Context, t *testing.T, h *harness, runT
 	return ids
 }
 
+// runPathResponseDisputedSuperseded drives the exit P6 gave `disputed`.
+//
+// It was the only refused state in the table with nothing departing it —
+// decision/rejected and handoff/rejected have always been supersedable —
+// so the producer of disputed bytes could not resubmit, replace or contest.
+// The actor is B because B authored the response; A is the disputer.
+func runPathResponseDisputedSuperseded(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "response-disputed-superseded")
+	ids := runPathQuestionDisputed(ctx, t, h, runTag)
+	b := h.B
+
+	syncBoth(ctx, t, h)
+	driveSupersedeWithPlaceholderRef(ctx, t, h, b, path, 0, "response", ids["response"], ids)
+	return ids
+}
+
 func runPathWorkRequestLifecycle(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
 	t.Helper()
 	path := mustPath(t, "work-request-lifecycle-accept-start-respond-verify-close")
@@ -1361,6 +1378,30 @@ func runPathDecisionRejectedSuperseded(ctx context.Context, t *testing.T, h *har
 		t.Fatalf("path %s step 0: mint a placeholder successor decision draft for --refs (%s): %v", path.ID, b.System, err)
 	}
 	driveSimpleVerb(ctx, t, h, a, path, 0, fold.TSupersede, ids["decision"], ids, "--refs", placeholderSuccessorID)
+	return ids
+}
+
+// runPathDecisionProposedWithdrawn drives the third branch off `proposed`,
+// beside approve and reject: the author withdrawing their own proposal.
+//
+// P1 added the row for the departed-approver case, and P8's resting-state
+// gate then found nothing entered {decision, withdrawn}. The transition is
+// `RoleOwner` UNCONDITIONALLY, so this driver needs no departure — which is
+// the distinction P1's own exemption blurred and P8's gate made visible: the
+// SCENARIO wants approvers gone, the TRANSITION never did.
+func runPathDecisionProposedWithdrawn(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
+	t.Helper()
+	path := mustPath(t, "decision-proposed-withdrawn")
+	ids := pathIDs{}
+	a := h.A
+
+	if _, stderr, err := a.Run(ctx, "sync"); err != nil {
+		t.Fatalf("path %s: a2a sync (A) before draft: %v: %s", path.ID, err, strings.TrimSpace(stderr))
+	}
+	sub := driveCreateAndFirstTransition(ctx, t, h, a, path, 0, 1, "decision", "decision", ids)
+
+	syncBoth(ctx, t, h)
+	driveSimpleVerb(ctx, t, h, a, path, 2, fold.TWithdraw, sub.ID, ids)
 	return ids
 }
 
@@ -2064,6 +2105,8 @@ var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harnes
 	"requirement-withdrawn-from-acknowledged":                  runPathRequirementWithdrawnFromAcknowledged,
 	"decision-lifecycle-partial-quorum-then-approved":          runPathDecisionPartialQuorumThenApproved,
 	"decision-approved-superseded":                             runPathDecisionApprovedSuperseded,
+	"decision-proposed-withdrawn":                              runPathDecisionProposedWithdrawn,
+	"response-disputed-superseded":                             runPathResponseDisputedSuperseded,
 	"decision-lifecycle-rejected":                              runPathDecisionRejected,
 	"decision-rejected-superseded":                             runPathDecisionRejectedSuperseded,
 	"question-supersede-from-submitted":                        runPathQuestionSupersedeFromSubmitted,
