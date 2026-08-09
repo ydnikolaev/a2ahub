@@ -53,6 +53,14 @@ type FillClassTable struct {
 	Schema     string                          `yaml:"schema"`
 	OutOfScope []FillClassExemption            `yaml:"out_of_scope"`
 	Fields     map[string]map[string]FillClass `yaml:"fields"`
+	// Unreachable declares an AUTHOR field that is legal on some schema but
+	// cannot be reached from either authoring surface (a template
+	// placeholder or `a2a new --field`) — spec 03 §8 AC5. A key has the
+	// shape "<family>/v<N>/<type>/<field>" (the field's own group, exactly
+	// as CorpusGroups()/ClassOf address it, with the field path appended
+	// after one more "/"), and the value is the reason it structurally
+	// cannot be reached, mirroring loop-phases.yaml's `empty:` map.
+	Unreachable map[string]string `yaml:"unreachable"`
 }
 
 // FillClassExemption names a schema family with no authoring path, and why.
@@ -93,7 +101,29 @@ func ParseFillClasses(raw []byte) (FillClassTable, error) {
 			return FillClassTable{}, fmt.Errorf("schema: fill-classes: an out_of_scope entry is missing its family or its reason — an exemption without a reason is a hole that reads as a decision")
 		}
 	}
+	for key, reason := range t.Unreachable {
+		if strings.TrimSpace(reason) == "" {
+			return FillClassTable{}, fmt.Errorf("schema: fill-classes: unreachable entry %q has a blank reason — a reason must say why the field structurally cannot be reached from either authoring surface, not merely assert that it cannot", key)
+		}
+		if _, _, err := splitUnreachableKey(key); err != nil {
+			return FillClassTable{}, fmt.Errorf("schema: fill-classes: unreachable entry %q: %w", key, err)
+		}
+	}
 	return t, nil
+}
+
+// splitUnreachableKey splits an `unreachable:` map key into the group it
+// names (the first three "/"-separated segments, exactly the shape
+// CorpusGroups() produces) and the field (everything after). A key that
+// does not have this shape cannot address a field the completeness gate
+// would ever look up, so it is rejected here rather than silently matching
+// nothing.
+func splitUnreachableKey(key string) (group, field string, err error) {
+	parts := strings.SplitN(key, "/", 4)
+	if len(parts) != 4 || parts[0] == "" || parts[1] == "" || parts[2] == "" || parts[3] == "" {
+		return "", "", fmt.Errorf("does not have the family/vN/type/field shape (e.g. envelope/v1/base/origin)")
+	}
+	return strings.Join(parts[:3], "/"), parts[3], nil
 }
 
 // ClassOf returns the declared class for one field of one schema, and
@@ -116,6 +146,43 @@ func (t FillClassTable) ExemptFamilies() []string {
 		out = append(out, e.Family)
 	}
 	sort.Strings(out)
+	return out
+}
+
+// UnreachableReason returns the declared reason one (group, field) cannot be
+// reached from any authoring surface, and whether an entry exists at all.
+func (t FillClassTable) UnreachableReason(group, field string) (string, bool) {
+	reason, ok := t.Unreachable[group+"/"+field]
+	return reason, ok
+}
+
+// UnreachableEntry is one declared `unreachable:` row, split into the
+// (group, field) it names.
+type UnreachableEntry struct {
+	Group  string
+	Field  string
+	Reason string
+}
+
+// UnreachableEntries returns every declared unreachable exemption, sorted by
+// group then field. A key that does not split cleanly is skipped rather than
+// panicking here — ParseFillClasses already refused it at load time, so this
+// accessor is only ever asked to enumerate keys it has already validated.
+func (t FillClassTable) UnreachableEntries() []UnreachableEntry {
+	out := make([]UnreachableEntry, 0, len(t.Unreachable))
+	for key, reason := range t.Unreachable {
+		group, field, err := splitUnreachableKey(key)
+		if err != nil {
+			continue
+		}
+		out = append(out, UnreachableEntry{Group: group, Field: field, Reason: reason})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Group != out[j].Group {
+			return out[i].Group < out[j].Group
+		}
+		return out[i].Field < out[j].Field
+	})
 	return out
 }
 
@@ -261,16 +328,44 @@ func EnvelopeFieldType(version int, typ, field string) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("schema: read %s: %w", d.path, err)
 			}
+			// `$ref` is resolved, not skipped, and the reason is a defect this
+			// resolution closes. Reading only an inline `type` returned "" for a
+			// property declared as {"$ref": "#/$defs/generatedFrom"} — so the
+			// caller's array/object append-refusal never fired, and
+			// `--field generated_from=probe` on a fresh envelope/v2 contract
+			// SUCCEEDED, writing a bare scalar into a slot the schema declares
+			// as an object with required sub-fields. The draft then failed at
+			// validate, far from the surface that accepted it: the exact
+			// "silent then surprising" shape spec 03 exists to remove for
+			// `origin` and `expected_response`. Found 2026-08-09 by P3 wave F's
+			// own reachability gate, which would otherwise have recorded that
+			// field as reachable on the strength of the bug.
 			var doc struct {
 				Properties map[string]struct {
 					Type string `yaml:"type"`
+					Ref  string `yaml:"$ref"`
 				} `yaml:"properties"`
+				Defs map[string]struct {
+					Type string `yaml:"type"`
+				} `yaml:"$defs"`
 			}
 			if err := yaml.Unmarshal(raw, &doc); err != nil {
 				return "", fmt.Errorf("schema: decode %s: %w", d.path, err)
 			}
-			if p, ok := doc.Properties[field]; ok && p.Type != "" {
+			p, ok := doc.Properties[field]
+			if !ok {
+				continue
+			}
+			if p.Type != "" {
 				return p.Type, nil
+			}
+			// Local `#/$defs/<name>` only. A cross-document ref is not resolved
+			// here and returns "" exactly as before — silently widening this to
+			// follow external refs would be a second, unreviewed schema walker.
+			if name, isLocal := strings.CutPrefix(p.Ref, "#/$defs/"); isLocal {
+				if def, found := doc.Defs[name]; found && def.Type != "" {
+					return def.Type, nil
+				}
 			}
 		}
 	}

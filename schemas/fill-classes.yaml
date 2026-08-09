@@ -70,6 +70,105 @@
 # than re-deriving the classification, and it is why the table is a file
 # rather than a convention.
 #
+# ## Unreachable, deliberately (spec 03 §8 AC5)
+#
+# An AUTHOR field must be reachable from an authoring surface — a template
+# placeholder, or `a2a new --field` — or it carries a reason here instead. The
+# gate is internal/schema/fillclasses_reachability_test.go's
+# TestEveryAuthorFieldIsReachableOrDeclaredUnreachable, which probes the real
+# `internal/template.Render` (the function `a2a new --field` calls), not a
+# second copy of its rule. Same grammar as loop-phases.yaml's `empty:` map: a
+# key naming the field ("<family>/v<N>/<type>/<field>", the row's own group
+# with the field path appended), a value that is the reason, not a label.
+#
+# This is deliberately measured, not assumed: the gate was run BEFORE this
+# list was written and named exactly these ten. Both the ten rows and the two
+# recurring root causes ("the append pass writes one scalar node, so an
+# array/object-typed field it did not already carry is refused" and "no
+# shipped template happens to carry this key, so there is no placeholder to
+# descend into or hand-edit") are named per row below rather than assumed
+# from spec 03's own two-field guess, which undercounted.
+#
+# Two of these ten are worth flagging as contingent rather than permanent:
+# `envelope/v2/base.acceptance_criteria` is unreachable only because the two
+# types that ship a v2 template (announcement, contract) do not need it —
+# not because appending an array can ever work. If a future v2 template for a
+# type that DOES carry `acceptance_criteria` ships, it becomes reachable
+# there and this row should be deleted rather than left stale.
+# `envelope/v1/contract.generated_from` (and its two sub-keys) are commented
+# out of templates/v1/contract.md as guidance, not structurally impossible —
+# uncommenting the block would make all three reachable as template
+# placeholders. Neither is "merely inconvenient" today, though: as shipped,
+# nothing reaches either.
+unreachable:
+  envelope/v1/base/origin: >-
+    origin is array-typed on the base schema (envelope/v1/base.schema.json);
+    the append pass (internal/template's applyFills) only ever writes one
+    yaml.ScalarNode for a --field key absent from the template, which the
+    schema refuses for an array. No v1 template embeds an `origin:` key as a
+    placeholder either, so neither authoring surface reaches it.
+  envelope/v1/base/expected_response.by: >-
+    expected_response.shape is a placeholder in three v1 templates (question,
+    requirement, work_request), but none of them embeds an
+    `expected_response.by` sub-key. --field's dotted-path pass only descends
+    into a key the rendered mapping already carries (map-only, no
+    key-creation — see internal/template's resolveDottedPath), and the
+    top-level append pass only ever creates a new TOP-LEVEL key, never a
+    nested one, so a sub-key no template wrote can never be reached.
+  envelope/v1/contract/generated_from: >-
+    generated_from is object-typed on the v1 contract schema, so the append
+    pass's one-scalar-node write is refused for it. templates/v1/contract.md
+    carries the shape only as a commented-out (`#`) guidance block, never as
+    a live YAML key, so there is no placeholder to hand-edit either.
+  envelope/v1/contract/generated_from.tool: >-
+    templates/v1/contract.md's `generated_from:` block is commented out, so
+    there is no live `generated_from` mapping for --field's dotted-path pass
+    to descend into, and the parent object cannot be appended to create one
+    (see this table's generated_from row).
+  envelope/v1/contract/generated_from.source_digest: >-
+    Same cause as generated_from.tool: the parent `generated_from:` block in
+    templates/v1/contract.md is commented out, so there is no live key to
+    descend into, and the parent object cannot be appended.
+  envelope/v2/base/origin: >-
+    Same cause as envelope/v1/base.origin: origin is array-typed on the v2
+    base schema, the append pass writes one scalar node, and no v2 template
+    (only announcement and contract ship one) embeds an `origin:` key.
+  envelope/v2/base/acceptance_criteria: >-
+    acceptance_criteria is array-typed on the base schema, so the append pass
+    is refused for it exactly as for origin. Neither v2 template
+    (announcement, contract — the only two types with a shipped
+    templates/v2/*.md) embeds an `acceptance_criteria:` placeholder; v1's
+    handoff/requirement/work_request templates do, but `a2a new` never
+    renders those as envelope/v2 today (template.go's
+    AuthoringEnvelopeSchema). Contingent, not permanent: a future v2 template
+    for a type that needs this field would make it reachable there.
+  envelope/v2/base/expected_response: >-
+    expected_response is object-typed on the v2 base schema, so the append
+    pass's one-scalar-node write is refused for it, and neither v2 template
+    (announcement, contract) embeds an `expected_response:` key at all —
+    unlike v1, where three templates do.
+  envelope/v2/base/expected_response.shape: >-
+    No v2 template embeds `expected_response:` at all (see this table's
+    expected_response row for v2/base), so its `shape` sub-key is never
+    present to descend into, and --field's dotted-path pass cannot create a
+    key the template lacks.
+  envelope/v2/base/expected_response.by: >-
+    Same cause as expected_response.shape at v2/base: no v2 template embeds
+    `expected_response:`, so there is no `by` sub-key to descend into either.
+  envelope/v2/contract/generated_from: >-
+    Object-typed, so the append pass's one-scalar-node write is refused, and
+    templates/v2/contract.md carries no `generated_from:` key to descend into.
+    This row is here BECAUSE OF A DEFECT THIS WAVE FIXED, and the sequence is
+    worth keeping: the field is declared as {"$ref": "#/$defs/generatedFrom"}
+    rather than an inline `type`, and EnvelopeFieldType read only the inline
+    key — so it answered "" , the array/object refusal never fired, and
+    `--field generated_from=probe` SUCCEEDED, writing a bare scalar into a
+    slot the schema declares as an object with required sub-fields. The draft
+    then failed at validate, far from the surface that had accepted it.
+    EnvelopeFieldType now resolves local `#/$defs/` refs, the refusal fires,
+    and the field takes its honest place here. Without that fix this table
+    would have recorded it as reachable on the strength of the bug.
+#
 # ## Out of scope, deliberately
 #
 # Four schema families in the corpus carry no authoring path: nothing renders
