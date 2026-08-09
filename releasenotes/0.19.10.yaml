@@ -543,6 +543,10 @@ changes:
       A resolution a YAML block scalar cannot carry without altering it — one
       ending in a newline, for instance — is now refused by name before
       anything is written, rather than being silently truncated.
+      The observable effect on the public corpus is that a triage diff is now
+      two fields wide instead of whole-file: a record's key order and the
+      quoting and folding of every value it arrived with are preserved, so
+      reading what a verdict changed no longer means reading the whole record.
     affects: ["a2a feedback triage --apply"]
     action:
       scope: none
