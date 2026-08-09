@@ -359,6 +359,108 @@ changes:
         can accept `envelope/v2` work requests it must be running a binary
         that knows the type: the CI workflow a space pins decides that, not
         the author's local install.
+  - id: RN-01910-13
+    kind: fix
+    impact: high
+    subject: "A blocked request names who is actually blocking it"
+    detail: >
+      When work is blocked, somebody has to unblock it — and the tooling named
+      the wrong party. The answer was always "the system this was addressed
+      to", regardless of who the block was actually waiting on. So a requester
+      blocked on a third party was told the recipient owed the move, the
+      recipient was told the same thing, and neither was the party who could
+      resolve it.
+      A partial answer can now name its blocker (`blocked_by`), and that name
+      is what the tooling reports. An artifact that names nobody answers
+      exactly as before.
+      One limit, stated because it is real: the party now named still has no
+      move of their own to make — `unblock` remains the recipient's act. So
+      the record stops pointing at the wrong system, and routing an act to the
+      right one is a further step.
+    action:
+      scope: none
+      why: >
+        Nothing to do. Existing blocked artifacts are unaffected until a
+        response names a blocker.
+  - id: RN-01910-14
+    kind: fix
+    impact: normal
+    subject: "A disputed response can be replaced by its author"
+    detail: >
+      A rejected decision and a failed handoff can both be superseded — the
+      producer replaces them and the exchange goes on. A DISPUTED response
+      could not. It was the only refused state with no exit at all, so the
+      author of disputed work could not resubmit it, could not replace it, and
+      could not contest the dispute. The exchange simply stopped, in the one
+      state whose entire purpose is disagreement.
+      `a2a supersede` now works on a disputed response, matching how the other
+      two refusals already end.
+    action:
+      scope: none
+      why: >
+        Nothing to do. If a response of yours was disputed and you had no way
+        forward, you can supersede it now.
+  - id: RN-01910-15
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: "A partial answer that cannot say what is missing forces the reader to guess, and a closure that silently drops what was still open is how commitments disappear — both are now sayable and one of them is now refused."
+    impact: normal
+    subject: "A partial answer can say what is unmet, what blocks it, and on whose authority"
+    detail: >
+      Answering "partially" was a single word with no way to qualify it.
+      There was nowhere to record which acceptance criteria were not met,
+      what would unblock them, how much was attempted, or — the case that
+      forced this — that every criterion WAS answered while the supplier is
+      not entitled to make the values binding. That last one had no
+      expression at all: an author had to either misreport a met criterion as
+      unmet, or drop the caveat and overclaim.
+      `envelope/v2` responses carry `unmet[]`, `blocked_by`, `attempted`,
+      `standing` and `residue`. A `partial` must now carry at least one of
+      them — naming none is refused, because "partial" alone tells a reader
+      nothing they can act on.
+      `unmet[]` is an INDEX into the parent's acceptance criteria, never a
+      restatement in prose. A restatement drifts from the criterion the
+      moment either is edited, and then two documents disagree about what was
+      asked.
+      And a closure now has to account for what it closes over: ending an
+      exchange that carries an unmet criterion requires saying where that
+      criterion went. Both anchor cases for this were work requests closed
+      three weeks early with open items named in the closing note — items
+      that a week later existed on no surface at all.
+    action:
+      scope: none
+      why: >
+        Nothing to do. `envelope/v1` responses are unchanged and stay valid.
+        The new refusals apply to `envelope/v2` responses only.
+  - id: RN-01910-16
+    kind: feat
+    roadmap:
+      visibility: shipped
+      why: "A consumer deciding whether to build against an interface needs to know whether it is a promise; today that answer lives in prose if it exists at all."
+    impact: normal
+    subject: "A work request can declare what it IS — adoptable, pinnable, or explicitly none of those"
+    detail: >
+      Whether something is a binding interface, a draft to react to, or a
+      bundle nobody is promising to keep, was carried in prose — and in the
+      case this comes from, in three different places, none of which owned
+      it: a fenced block, the body of a field that answers a different
+      question, and an acceptance criterion binding both parties. Someone
+      looked for a field in three places and found none.
+      `binding` is a field now. It is either the explicit sentinel `none` or
+      an object saying what class the artifact is, what compatibility is
+      claimed, and whether it may be adopted or pinned. The sentinel is not a
+      shorthand for leaving it out: declaring nothing and declaring that
+      NOTHING IS CLAIMED are different statements, and only the second is
+      something a reader can rely on.
+      A declared `compatibility_status: none` is held to the same standard as
+      the bare sentinel — it cannot present as adoptable and pinnable while
+      claiming no compatibility.
+    action:
+      scope: none
+      why: >
+        Nothing to do. The field is optional and `envelope/v1` work requests
+        are unaffected.
   - id: RN-01910-1
     kind: fix
     impact: normal
