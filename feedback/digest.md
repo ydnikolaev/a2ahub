@@ -30,3 +30,12 @@
 - fb-20260802-e2d28b (feature -> accepted): classification is a label the space transport never honours
 - fb-20260802-e6d436 (feature -> accepted): schema_format admits OpenAPI and proto but only a schema dir can travel
 - fb-20260802-f04608 (feature -> accepted): a contract ships an executable fixture suite that nothing can execute
+
+## 2026-08-09 Triage
+
+- fb-20260806-3539ac (bug -> shipped): contract publish planner refuses every contract the shipped template scaffolds
+- fb-20260806-c6ad38 (bug -> shipped): no contract declaring a companion artifact can be published
+- fb-20260806-eb224e (bug -> shipped): export-source-v1 digest cannot be computed before the first publish
+- fb-20260806-2af06c (docs -> shipped): the carried-set path grammar has no home for a fixture-suite manifest
+- fb-20260806-cd2d11 (docs -> accepted): publication never states its anchor, and never says no git tag is minted
+- fb-20260808-5c73a9 (bug -> accepted): data pack writes a role:readme file its own validator rejects with POL-002

@@ -1,64 +1,34 @@
+checks:
+    docs_consulted: true
+    duplicates_checked: true
+    grounded_in_real_work: true
+    no_sensitive_content: true
+    not_space_specific: true
+context:
+    a2a_version: 0.19.5
+    command: a2a contract preflight <XC-id> --version 1.0.0
+    os_arch: darwin/arm64
+    surface: cli
+evidence:
+    actual: '"contract preflight: planner refused: space: contract publication planner refused: contract: invalid-publication: artifacts: authoring floor requires declared-v2 candidate inventory". No shipped template, flag or documented procedure produces a declared-v2 candidate inventory.'
+    expected: preflight prints the exact immutable publication plan, which is the command's stated purpose in its own catalog entry ("preview the exact immutable publication plan"). A contract authored from the shipped template, validated, submitted and merged should be publishable.
+    steps:
+        - 'a2a template list  -> a single `contract` template; a2a template show contract -> descriptor with `version: 1.0.0` (the v1 shape)'
+        - Author a json-schema-2020-12 contract from that template, with schema/contract.schema.json and 20 valid+invalid fixtures under provides/<slug>/
+        - 'Per reference/contract-versions.md ("Fix it in the draft - set version: 0.0.0, submit that, then publish"), set the descriptor to version: 0.0.0'
+        - 'a2a validate <draft> -> valid: true, zero violations'
+        - a2a submit <XC-id> -> PR opened, all 21 sidecar files carried
+        - The space's own CI check `a2a-validate / validate` completes SUCCESS; the PR auto-merges to main
+        - a2a sync -> refreshed
+        - a2a contract preflight <XC-id> --version 1.0.0
+        - grep -rn 'declared-v2|candidate inventory|authoring floor' over the installed .a2ahub/skill tree -> zero hits, while a2a doctor reports `skill manual current (v0.19.5)`
+        - a2a contract new / a2a new contract / a2a contract publish usage lines -> no flag selects a v2 authoring shape
 feedback: v1
 id: fb-20260806-3539ac
 kind: bug
+proposal: 'Either ship the v2 authoring path the planner requires - a v2 contract template (or a `--v2` flag on `contract new`) that emits a declared candidate inventory - or have the planner state, in the refusal itself, the exact command that produces one. A refusal is only actionable if it names its own remedy; this one names a concept that exists nowhere the operator can reach. Secondarily: the shipped contract template still emits `version: 1.0.0`, which reference/contract-versions.md itself says publish will refuse as `publication-would-not-establish` - the template and the documented procedure disagree before the v2 issue is even reached.'
+resolution: 'Shipped in v0.19.6 — "`a2a template show contract` printed a shape `a2a contract publish` refuses" (RN-01906-0) and "The shipped contract authoring page documents the contract the tool writes" (RN-01906-3). `a2a template show` now emits the declared-v2 candidate shape for a json-schema contract at a 0.19.0+ floor, so the template the report followed produces a publishable artifact. The gate that should have caught the drift was comparing the authoring pages against a fixed templates directory rather than against the binary, and stayed green while the pages documented a shape the tool no longer wrote; it now asks `a2a template show`, the only comparand that cannot fall behind the product. The report''s secondary observation is answered too: openapi and proto3 contracts have NO publishable shape at floor 0.19.0+, and the refusal now says so instead of leaving it to be discovered. That remaining gap is tracked as fb-20260802-e6d436.'
 severity: blocker
+status: shipped
+summary: 'The publication planner requires a "declared-v2 candidate inventory" that no shipped surface can produce and no installed doc mentions. `a2a template list` offers exactly one contract template; `a2a template show contract` emits a v1 descriptor. Authoring from that template, following the documented 0.0.0 submit-then-publish sequence, produces a contract that validates, submits, passes the space''s own `a2a validate --ci` in CI, merges to main, and is then refused at preflight. The strings `declared-v2`, `candidate inventory` and `authoring floor` appear in zero lines of the installed skill manual, which `a2a doctor` reports as current for this binary (v0.19.5). No flag on `contract new`, `new contract` or `contract publish` selects a v2 shape. So a first contract publication has no path at all: the tool''s own scaffolding produces an artifact its own planner rejects, naming a precondition with no documented means of satisfaction. `a2a whatsnew` states that v0.19.0 changed the contract publication path, and its KNOWN ISSUE records provider-tier verification deferred across four consecutive releases over exactly those changed surfaces.'
 title: contract publish planner refuses every contract the shipped template scaffolds
-summary: >-
-  The publication planner requires a "declared-v2 candidate inventory" that no
-  shipped surface can produce and no installed doc mentions. `a2a template list`
-  offers exactly one contract template; `a2a template show contract` emits a v1
-  descriptor. Authoring from that template, following the documented 0.0.0
-  submit-then-publish sequence, produces a contract that validates, submits, passes
-  the space's own `a2a validate --ci` in CI, merges to main, and is then refused at
-  preflight. The strings `declared-v2`, `candidate inventory` and `authoring floor`
-  appear in zero lines of the installed skill manual, which `a2a doctor` reports as
-  current for this binary (v0.19.5). No flag on `contract new`, `new contract` or
-  `contract publish` selects a v2 shape. So a first contract publication has no
-  path at all: the tool's own scaffolding produces an artifact its own planner
-  rejects, naming a precondition with no documented means of satisfaction.
-  `a2a whatsnew` states that v0.19.0 changed the contract publication path, and
-  its KNOWN ISSUE records provider-tier verification deferred across four
-  consecutive releases over exactly those changed surfaces.
-context:
-    a2a_version: 0.19.5
-    os_arch: darwin/arm64
-    surface: cli
-    command: a2a contract preflight <XC-id> --version 1.0.0
-evidence:
-    steps:
-        - "a2a template list  -> a single `contract` template; a2a template show contract -> descriptor with `version: 1.0.0` (the v1 shape)"
-        - "Author a json-schema-2020-12 contract from that template, with schema/contract.schema.json and 20 valid+invalid fixtures under provides/<slug>/"
-        - "Per reference/contract-versions.md (\"Fix it in the draft - set version: 0.0.0, submit that, then publish\"), set the descriptor to version: 0.0.0"
-        - "a2a validate <draft> -> valid: true, zero violations"
-        - "a2a submit <XC-id> -> PR opened, all 21 sidecar files carried"
-        - "The space's own CI check `a2a-validate / validate` completes SUCCESS; the PR auto-merges to main"
-        - "a2a sync -> refreshed"
-        - "a2a contract preflight <XC-id> --version 1.0.0"
-        - "grep -rn 'declared-v2|candidate inventory|authoring floor' over the installed .a2ahub/skill tree -> zero hits, while a2a doctor reports `skill manual current (v0.19.5)`"
-        - "a2a contract new / a2a new contract / a2a contract publish usage lines -> no flag selects a v2 authoring shape"
-    expected: >-
-      preflight prints the exact immutable publication plan, which is the command's
-      stated purpose in its own catalog entry ("preview the exact immutable
-      publication plan"). A contract authored from the shipped template, validated,
-      submitted and merged should be publishable.
-    actual: >-
-      "contract preflight: planner refused: space: contract publication planner
-      refused: contract: invalid-publication: artifacts: authoring floor requires
-      declared-v2 candidate inventory". No shipped template, flag or documented
-      procedure produces a declared-v2 candidate inventory.
-proposal: >-
-  Either ship the v2 authoring path the planner requires - a v2 contract template
-  (or a `--v2` flag on `contract new`) that emits a declared candidate inventory -
-  or have the planner state, in the refusal itself, the exact command that produces
-  one. A refusal is only actionable if it names its own remedy; this one names a
-  concept that exists nowhere the operator can reach. Secondarily: the shipped
-  contract template still emits `version: 1.0.0`, which reference/contract-versions.md
-  itself says publish will refuse as `publication-would-not-establish` - the template
-  and the documented procedure disagree before the v2 issue is even reached.
-checks:
-    docs_consulted: true
-    grounded_in_real_work: true
-    not_space_specific: true
-    no_sensitive_content: true
-    duplicates_checked: true
-status: new

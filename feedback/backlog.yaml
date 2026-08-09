@@ -91,3 +91,21 @@ items:
       refs:
         - docs/features/active/operational-confidence-2026-08/README.md
       date: "2026-08-06"
+    - id: fb-20260806-cd2d11
+      kind: docs
+      severity: minor
+      title: publication never states its anchor, and never says no git tag is minted
+      verdict: accepted
+      route: phase
+      refs:
+        - docs/features/active/agent-exchange-2026-08/specs/07-loops.md
+      date: "2026-08-09"
+    - id: fb-20260808-5c73a9
+      kind: bug
+      severity: major
+      title: data pack writes a role:readme file its own validator rejects with POL-002
+      verdict: accepted
+      route: phase
+      refs:
+        - docs/features/active/agent-exchange-2026-08/specs/04-possession.md
+      date: "2026-08-09"
