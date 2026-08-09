@@ -146,10 +146,20 @@ func TestRenderOmitsEmptyModel(t *testing.T) {
 	}
 }
 
-// TestRenderEnumDefaultAndFieldOverride: category (an enum-placeholder
-// field) defaults to its first alternative absent an override, and an
-// explicit Fields override wins.
-func TestRenderEnumDefaultAndFieldOverride(t *testing.T) {
+// TestRenderEnumPlaceholderSurvivesUnlessOverridden: category (an
+// enum-placeholder field) is NOT defaulted to its first alternative absent
+// an override — the unreplaced pipe-alternatives token survives to the
+// rendered draft verbatim — and an explicit Fields override still wins.
+//
+// Renamed from TestRenderEnumDefaultAndFieldOverride: that name and its
+// "default" half asserted the exact fabrication agent-exchange-2026-08 B3
+// (spec 03-fill-classes.md §8 AC4) removed — Render used to silently fill
+// an unreplaced enum placeholder with its first alternative, so a fresh
+// `question` draft claimed `category: clarification` before any agent had
+// chosen a category. The tool must not invent a choice the author never
+// made; POL-010 refuses the surviving placeholder token at V2 (`a2a
+// submit` / `a2a validate --ci`) instead.
+func TestRenderEnumPlaceholderSurvivesUnlessOverridden(t *testing.T) {
 	t.Parallel()
 
 	in := fixedInput("question", "XQ-axon-20260721-k3f9")
@@ -157,8 +167,8 @@ func TestRenderEnumDefaultAndFieldOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
-	if !containsLine(string(out), "category: clarification") {
-		t.Errorf("expected default category=clarification (first enum alt); got:\n%s", out)
+	if !containsLine(string(out), "category: <clarification|defect|choice>") {
+		t.Errorf("expected the unreplaced enum placeholder to survive verbatim; got:\n%s", out)
 	}
 
 	in.Fields = map[string]string{"category": "defect"}
@@ -191,6 +201,17 @@ func TestRenderEnumDefaultAndFieldOverride(t *testing.T) {
 // The cost, named rather than hidden: AC-401.1's "placeholder-only fills are
 // V1-valid" guarantee is narrowed for this one field, and the coverage that
 // replaces it lives at the cli layer where the minting actually happens.
+//
+// `category` (announcement, contract, question, requirement, work_request)
+// and `result` (response) join `thread` in enumFieldOverrides for the same
+// reason: agent-exchange-2026-08 B3 (spec 03-fill-classes.md §8 AC4) deleted
+// applyFills' first-alternative enum fill, so an unreplaced `<a|b|c>`
+// placeholder now survives rendering verbatim and fails schema validation —
+// exactly like `thread`, the alternative to a placeholder is a fabricated
+// value, not a schema-valid default this test can leave unfilled.
+// `decision` and `handoff` carry no top-level enum placeholder and need no
+// entry. Values match internal/livee2e/draftfields.go's own choices for the
+// same fields, kept in sync deliberately rather than coincidentally.
 func TestRenderEveryTypeSchemaValid(t *testing.T) {
 	t.Parallel()
 	corpus, err := schema.Load()
@@ -209,11 +230,23 @@ func TestRenderEveryTypeSchemaValid(t *testing.T) {
 		"announcement": "XA-axon-20260721-k3f9",
 	}
 
+	enumFieldOverrides := map[string]map[string]string{
+		"announcement": {"category": "notice"},
+		"contract":     {"category": "other"},
+		"question":     {"category": "clarification"},
+		"requirement":  {"category": "other"},
+		"work_request": {"category": "data"},
+		"response":     {"result": "answered"},
+	}
+
 	for _, typ := range schema.EnvelopeTypes() {
 		t.Run(typ, func(t *testing.T) {
 			t.Parallel()
 			in := fixedInput(typ, prefixes[typ])
 			in.Fields = map[string]string{"thread": "thread:axon-20260721-k3f9"}
+			for field, value := range enumFieldOverrides[typ] {
+				in.Fields[field] = value
+			}
 			raw, err := template.Render(in)
 			if err != nil {
 				t.Fatalf("Render(%q): %v", typ, err)

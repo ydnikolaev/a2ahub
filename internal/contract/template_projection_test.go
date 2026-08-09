@@ -20,11 +20,17 @@ func TestCanonicalV2TemplateRendersSchemaValidCarriedSet(t *testing.T) {
 		Actor:          template.Actor{Kind: "agent", Name: "contract-bot", Model: "gpt-5"},
 		Created:        time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC),
 		Fields: map[string]string{
-			"title":  "Rendered contract carried set",
-			"space":  "checkout-core",
-			"from":   "axon",
-			"to":     "seomatrix",
-			"thread": "thread:axon-20260803-c5h9",
+			"title": "Rendered contract carried set",
+			"space": "checkout-core",
+			"from":  "axon",
+			"to":    "seomatrix",
+			// category joins thread (agent-exchange-2026-08 B3, spec
+			// 03-fill-classes.md §8 AC4): applyFills no longer fills an
+			// unreplaced enum placeholder with its first alternative, so
+			// this rendered-schema-valid assertion must supply the
+			// choice explicitly, same as it already does for thread.
+			"thread":   "thread:axon-20260803-c5h9",
+			"category": "other",
 		},
 	})
 	if err != nil {

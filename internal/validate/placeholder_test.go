@@ -133,10 +133,18 @@ func TestValidateForSubmit_RendersButUnfilledQuestionTemplateIsRefused(t *testin
 		Created: time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC),
 		// thread is the one field template.Render cannot leave as a
 		// placeholder-only fill (see template package's own doc comment
-		// on TestRenderEveryTypeSchemaValid) — every OTHER field,
-		// including expected_response.shape, is left exactly as the
-		// canonical template author wrote it.
-		Fields: map[string]string{"thread": "thread:axon-20260727-p1ac"},
+		// on TestRenderEveryTypeSchemaValid). category joins it here for
+		// a different reason (agent-exchange-2026-08 B3, spec
+		// 03-fill-classes.md §8 AC4): applyFills no longer fills an
+		// unreplaced enum-alternatives placeholder, so leaving `category`
+		// as `<clarification|defect|choice>` makes V1's OWN schema-class
+		// enum check reject it (SCH-002), not just POL-010 — and this
+		// test's whole point is that V1 stays clean while V2 refuses
+		// `expected_response.shape` specifically, so `category` must be
+		// filled to isolate that. `expected_response.shape` — this test's
+		// actual subject — is left exactly as the canonical template
+		// author wrote it.
+		Fields: map[string]string{"thread": "thread:axon-20260727-p1ac", "category": "clarification"},
 	})
 	if err != nil {
 		t.Fatalf("template.Render: %v", err)

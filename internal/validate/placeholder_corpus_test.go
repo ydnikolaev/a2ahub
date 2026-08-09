@@ -54,21 +54,31 @@ func TestPOL010ReachesEveryPlaceholderInTheShippedTemplates(t *testing.T) {
 	// <recipient-system>" refusal this repo already documents — now named
 	// at submit, by path, instead of arriving as a complaint about a
 	// system nobody typed.
+	// `category` (announcement, contract, question, requirement,
+	// work_request) and `result` (response) join this table for
+	// agent-exchange-2026-08 B3 (spec 03-fill-classes.md §8 AC4):
+	// applyFills no longer fills an unreplaced enum-alternatives placeholder
+	// with its first alternative, so a freshly drafted artifact of these six
+	// types now owes its enum field too, exactly like every other
+	// author-owed placeholder in this table. `decision` and `handoff` carry
+	// no top-level enum placeholder and are unaffected. This entry MOVES
+	// WITH THE PRODUCT: it is what makes the row above a pin rather than a
+	// decoration — it reds the moment the fill is restored.
 	want := map[string][]string{
-		"announcement": {"title", "to.0"},
-		"contract":     {"title", "to.0"},
+		"announcement": {"category", "title", "to.0"},
+		"contract":     {"category", "title", "to.0"},
 		"decision": {
 			"context", "options_considered.0", "options_considered.1",
 			"required_approvers.0", "required_approvers.1", "title", "to.0",
 		},
-		"question": {"expected_response.shape", "title", "to.0"},
-		"response": {"parent", "title", "to.0"},
+		"question": {"category", "expected_response.shape", "title", "to.0"},
+		"response": {"parent", "result", "title", "to.0"},
 		"requirement": {
-			"acceptance_criteria.0", "expected_response.shape", "interim_behavior",
+			"acceptance_criteria.0", "category", "expected_response.shape", "interim_behavior",
 			"needed_by", "title", "to.0",
 		},
 		"work_request": {
-			"acceptance_criteria.0", "expected_response.shape", "interim_behavior",
+			"acceptance_criteria.0", "category", "expected_response.shape", "interim_behavior",
 			"needed_by", "title", "to.0",
 		},
 		"handoff": {

@@ -1,6 +1,13 @@
 # OP-203 `a2a new` + OP-204 `a2a validate`: AC-401.1 — a freshly-minted
 # draft passes V1 (schema/frontmatter) BEFORE any hand edit.
-exec a2a new question --field title=t --field space=fixture-space
+#
+# category is supplied explicitly (agent-exchange-2026-08 B3, spec
+# 03-fill-classes.md §8 AC4): applyFills no longer fills an unreplaced enum
+# placeholder with its first alternative, and the surviving `<a|b|c>` token
+# fails V1's own schema-class enum check (SCH-002), not just POL-010 — so a
+# question draft that must be V1-valid has to choose one, same as title and
+# space already do.
+exec a2a new question --field title=t --field space=fixture-space --field category=clarification
 stdout 'drafted'
 exec a2a validate --all
 stdout '"valid": true'

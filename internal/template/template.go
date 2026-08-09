@@ -2,7 +2,6 @@ package template
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -81,16 +80,6 @@ type Input struct {
 	// own body section untouched.
 	Body []byte
 }
-
-// enumPlaceholder matches the pipe-alternatives placeholder token every
-// canonical template uses for its one enum-constrained field (e.g.
-// "<clarification|defect|choice>", "<answered|delivered|partial|cannot>").
-// Render's default-fill rule for these is entirely data-driven off this
-// shape — no per-type switch statement (Future-proofing table, §9): absent
-// an explicit Fields override, the FIRST alternative (the template
-// author's own ordering, chosen to avoid triggering any conditionally-
-// required field a later alternative implies) is filled in.
-var enumPlaceholder = regexp.MustCompile(`^<([^<>|]+(?:\|[^<>|]+)+)>$`)
 
 // Types returns the 8 canonical envelope type names this package has an
 // embedded template for, in schema.EnvelopeTypes()'s own stable order.
@@ -182,15 +171,25 @@ func ShowGeneration(typ, generation string, isJSONSchema func(string) bool) ([]b
 }
 
 // Render fills typ's canonical embedded template with in's minted ID,
-// resolved actor, and current date, applies any --field overrides, and
-// fills every enum-constrained placeholder field with its first valid
-// alternative absent an override — then returns the complete draft bytes
-// (frontmatter + body), otherwise byte-identical to the canonical
-// template. Every other field the template already carries an
-// already-schema-valid literal default for (priority, blocking,
-// classification, ...) is left untouched, which is what makes AC-401.1
-// ("V1 pass on placeholder-only fills") hold without this package needing
-// per-type domain knowledge beyond the enum-placeholder convention.
+// resolved actor, and current date, and applies any --field overrides —
+// then returns the complete draft bytes (frontmatter + body), otherwise
+// byte-identical to the canonical template. Every other field the template
+// already carries an already-schema-valid literal default for (priority,
+// blocking, classification, ...) is left untouched, which is what makes
+// AC-401.1 ("V1 pass on placeholder-only fills") hold without this package
+// needing per-type domain knowledge.
+//
+// An unreplaced enum-alternatives placeholder (e.g.
+// "<clarification|defect|choice>") is deliberately NOT filled with its
+// first alternative here (agent-exchange-2026-08 epic-backlog B3, spec
+// 03-fill-classes.md §8 AC4): the agent chose nothing, and a rendered
+// draft must not claim it did by picking on the author's behalf. The
+// token survives to the rendered draft and is refused at V2 (POL-010's
+// `^<.*>$` placeholder check, at `a2a submit` / `a2a validate --ci`) —
+// deliberately not at bare `a2a validate`, which is V1 and passes a
+// placeholder-only draft by AC-401.1's own design. Do not restore a
+// default here "as a kindness"; that is precisely the fabrication this
+// wave removed.
 func Render(in Input) ([]byte, error) {
 	const op = "Render"
 	raw, err := rawTemplate(in.Type, in.EnvelopeSchema)
@@ -299,12 +298,12 @@ func applyFills(mapping *yaml.Node, in Input) error {
 				}
 				continue
 			}
-			if val.Kind == yaml.ScalarNode {
-				if m := enumPlaceholder.FindStringSubmatch(val.Value); m != nil {
-					alts := strings.Split(m[1], "|")
-					setScalar(val, strings.TrimSpace(alts[0]))
-				}
-			}
+			// No default-fill for an unreplaced enum-alternatives
+			// placeholder (agent-exchange-2026-08 B3, AC4): the tool
+			// must not invent a choice the author never made. The
+			// token is left exactly as the template wrote it and
+			// survives to the rendered draft, where POL-010 refuses
+			// it at V2. See Render's doc comment for the full story.
 		}
 	}
 	// Second pass: any --field key not yet applied and not matched by the

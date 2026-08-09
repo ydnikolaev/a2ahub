@@ -294,7 +294,13 @@ func contractLifecycleHostConfig(remoteURL string) cli.SubmitHostConfig {
 // returns the minted contract id.
 func contractLifecycleDraftAndSubmit(t *testing.T, contractCmd *cli.ContractCommand, submitCmd *cli.SubmitCommand, stagingDir, slug string, extraFields ...string) string {
 	t.Helper()
-	args := []string{"new", slug, "--field", "to=beta", "--field", "title=" + slug + " contract"}
+	// category joins to/title as an explicit choice (agent-exchange-2026-08
+	// B3, spec 03-fill-classes.md §8 AC4): applyFills no longer fills an
+	// unreplaced enum placeholder with its first alternative, so a contract
+	// draft that must pass real submit validation (POL-010 at V2) has to
+	// choose one, same as internal/livee2e/draftfields.go does for the same
+	// field.
+	args := []string{"new", slug, "--field", "to=beta", "--field", "title=" + slug + " contract", "--field", "category=other"}
 	for _, field := range extraFields {
 		args = append(args, "--field", field)
 	}

@@ -21,11 +21,43 @@ func fixedActorResolver(cli.ActorFlags) (template.Actor, error) {
 	return template.Actor{Kind: "agent", Name: "test-bot", Model: "test-model"}, nil
 }
 
+// enumFieldArgs names the --field flag a fresh draft of typ must supply for
+// its top-level enum-constrained field, joining --slug in this test's list
+// of "the author's own input a placeholder-only fill cannot stand in for".
+//
+// Before agent-exchange-2026-08 B3 (spec 03-fill-classes.md §8 AC4),
+// applyFills silently filled an unreplaced enum placeholder with its first
+// alternative, so `a2a new announcement` produced `category: release`
+// nobody chose. That fill is gone, so these six types now need the same
+// explicit choice `--slug` already required for the two standing types.
+// `decision` and `handoff` carry no top-level enum placeholder and need no
+// entry. Values match internal/livee2e/draftfields.go's own choices for the
+// same fields.
+func enumFieldArgs(typ string) []string {
+	switch typ {
+	case "announcement":
+		return []string{"--field", "category=notice"}
+	case "contract":
+		return []string{"--field", "category=other"}
+	case "question":
+		return []string{"--field", "category=clarification"}
+	case "requirement":
+		return []string{"--field", "category=other"}
+	case "work_request":
+		return []string{"--field", "category=data"}
+	case "response":
+		return []string{"--field", "result=answered"}
+	default:
+		return nil
+	}
+}
+
 // TestNewDraftsEveryTypeV1Valid is AC-401.1, the real cli-layer
 // integration: for every type in the P2 corpus, `a2a new <type>` with
-// placeholder-only fills (plus --slug for the two standing types) then
-// `a2a validate` on the drafted file returns V1-pass — driven against
-// the real validate.Engine (schema.Load), not a fake.
+// placeholder-only fills (plus --slug for the two standing types and the
+// enum field required per enumFieldArgs) then `a2a validate` on the
+// drafted file returns V1-pass — driven against the real validate.Engine
+// (schema.Load), not a fake.
 func TestNewDraftsEveryTypeV1Valid(t *testing.T) {
 	t.Parallel()
 	corpus, err := schema.Load()
@@ -44,6 +76,7 @@ func TestNewDraftsEveryTypeV1Valid(t *testing.T) {
 			if typ == "contract" || typ == "requirement" {
 				args = append(args, "--slug", "ingest")
 			}
+			args = append(args, enumFieldArgs(typ)...)
 
 			io, out, errOut := newIO()
 			code := cmd.Run(context.Background(), args, io)
