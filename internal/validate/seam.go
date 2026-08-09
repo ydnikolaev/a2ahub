@@ -76,6 +76,13 @@ type LegalityChecker interface {
 // validate itself does no I/O, "Pure core" per go-conventions.md). A
 // concrete implementation is expected to close over a local git clone's
 // staged state; validate only ever calls these three methods.
+//
+// This interface is deliberately NOT widened for optional, rule-specific
+// facts a Resolver may also be able to answer — ParentCriteriaCounter
+// (incompleteness.go) is exactly such a consumer-side optional upgrade,
+// type-asserted against a Resolver rather than added here. cmd/a2a's
+// mirrorResolverWithCriteria (validate_resolver.go) is the one shipped
+// implementation P6's write paths wire.
 type Resolver interface {
 	// KnownArtifact reports whether id is a known artifact in the local
 	// cache (referential class: unresolvable ref/id).
