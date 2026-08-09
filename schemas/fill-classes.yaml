@@ -259,6 +259,18 @@ fields:
     attachments[].conforms_to: AUTHOR
     attachments[].verification: AUTHOR
     attachments[].retention: AUTHOR
+    # P5 D1/Q2: binding. What an artifact IS and whether it is adoptable or
+    # pinnable is intent only the producer holds — nothing mints an
+    # artifact_class, a compatibility_status, or an adopt/pin verdict from
+    # bytes or the clock the way `a2a attach` mints ref/digest/expires_at
+    # above. AUTHOR by this table's stated default; no minting writer exists
+    # for any of the five leaves, so unlike attachments[] there is nothing to
+    # re-derive once one lands.
+    binding: AUTHOR
+    binding.artifact_class: AUTHOR
+    binding.compatibility_status: AUTHOR
+    binding.adoptable: AUTHOR
+    binding.runtime_pinnable: AUTHOR
   envelope/v2/response:
     type: TOOL
     id: TOOL

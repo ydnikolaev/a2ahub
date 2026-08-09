@@ -82,9 +82,22 @@ func TestVersionedCorpus_UnregisteredEnvelopeV2TypeRefused(t *testing.T) {
 	}
 }
 
+// defaultBindingBlock is the object-form `binding` validWorkRequestV2 carries
+// by default: a declared claim, adoptable and pinnable, with a real
+// (non-`none`) compatibility_status. TestVersionedCorpus_BindingAgrees swaps
+// this exact substring to exercise every cell of P5 D1/Q2's shape — the bare
+// `none` sentinel, the long form's four required leaves, and the
+// compatibility_status:none -> unadoptable/unpinnable conditional threat-model
+// T2 requires (the long form must not disagree with the sentinel).
+const defaultBindingBlock = "binding:\n" +
+	"  artifact_class: definition\n" +
+	"  compatibility_status: \"backward-compatible\"\n" +
+	"  adoptable: true\n" +
+	"  runtime_pinnable: true\n"
+
 // validWorkRequestV2 is a fully valid envelope/v2 work_request instance,
 // carrying one attachment through the new attachments[] block (P4 wave A,
-// spec 04-possession.md §7).
+// spec 04-possession.md §7) and a declared `binding` (P5 D1/Q2).
 const validWorkRequestV2 = `
 schema: envelope/v2
 id: XW-axon-20260808-p9d3
@@ -100,7 +113,7 @@ category: data
 priority: p3
 blocking: true
 classification: internal
-acceptance_criteria:
+` + defaultBindingBlock + `acceptance_criteria:
   - "Every code exists in the registry."
 attachments:
   - ref: blob-1
@@ -189,6 +202,115 @@ func TestVersionedCorpus_WorkRequestV2Resolves(t *testing.T) {
 	}
 	if len(violations) != 0 {
 		t.Fatalf("a fully valid envelope/v2 work_request instance (with attachments[]) produced violations: %+v", violations)
+	}
+}
+
+// TestVersionedCorpus_BindingUndeclaredIsLegal pins P-1's discipline for
+// `binding` itself: absence is a live state ("undeclared"), never an error.
+// The field must stay optional — making it required would reproduce the
+// opt-in failure the spec forbids in the other direction, forcing a
+// declaration nobody may have grounds to make yet.
+func TestVersionedCorpus_BindingUndeclaredIsLegal(t *testing.T) {
+	t.Parallel()
+	c := mustLoad(t)
+
+	doc := strings.Replace(validWorkRequestV2, defaultBindingBlock, "", 1)
+	violations, err := c.ValidateEnvelope("work_request", "envelope/v2", toInstance(t, doc))
+	if err != nil {
+		t.Fatalf("ValidateEnvelope: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Fatalf("a work_request carrying no `binding` at all (undeclared, P-1) was refused: %+v", violations)
+	}
+}
+
+// TestVersionedCorpus_BindingAgrees pins every cell of P5 D1/Q2's `binding`
+// shape: the bare `none` sentinel, the long form's four required leaves, and
+// — per the plan's 2026-08-09 re-anchor's lesson about pinning every cell of
+// a conditional, not only the reachable one — both directions of the
+// compatibility_status:none -> unadoptable/unpinnable rule threat-model T2
+// requires so the long form cannot disagree with the sentinel.
+func TestVersionedCorpus_BindingAgrees(t *testing.T) {
+	t.Parallel()
+	c := mustLoad(t)
+
+	tests := []struct {
+		name       string
+		block      string
+		wantRefuse bool
+		why        string
+	}{
+		{
+			"the bare none sentinel",
+			"binding: \"none\"\n",
+			false,
+			"US-1: a producer declaring itself non-binding — the XW-axon-20260801-vet6 shape",
+		},
+		{
+			"none compatibility with both flags false agrees",
+			"binding:\n  artifact_class: review\n  compatibility_status: \"none\"\n  adoptable: false\n  runtime_pinnable: false\n",
+			false,
+			"the long form's none case must match the sentinel: unadoptable, unpinnable",
+		},
+		{
+			"none compatibility with adoptable true disagrees",
+			"binding:\n  artifact_class: review\n  compatibility_status: \"none\"\n  adoptable: true\n  runtime_pinnable: false\n",
+			true,
+			"T2: compatibility_status:none must be as unadoptable as the bare sentinel — this is the escape hatch T2 names",
+		},
+		{
+			"none compatibility with runtime_pinnable true disagrees",
+			"binding:\n  artifact_class: review\n  compatibility_status: \"none\"\n  adoptable: false\n  runtime_pinnable: true\n",
+			true,
+			"same asymmetry, the other flag",
+		},
+		{
+			"a real compatibility claim with both flags true agrees",
+			defaultBindingBlock,
+			false,
+			"the conditional only fires on compatibility_status:none; a real claim leaves both flags free",
+		},
+		{
+			"a real compatibility claim with both flags false also agrees",
+			"binding:\n  artifact_class: definition\n  compatibility_status: \"backward-compatible\"\n  adoptable: false\n  runtime_pinnable: false\n",
+			false,
+			"an artifact may decline adoption for its own reasons while still making a real compatibility claim — the conditional is one-directional",
+		},
+		{
+			"missing a required leaf is refused",
+			"binding:\n  compatibility_status: \"backward-compatible\"\n  adoptable: true\n  runtime_pinnable: true\n",
+			true,
+			"the long form requires all four leaves; artifact_class is missing here",
+		},
+		{
+			"an unknown key is refused",
+			"binding:\n  artifact_class: definition\n  compatibility_status: \"backward-compatible\"\n  adoptable: true\n  runtime_pinnable: true\n  extra: nope\n",
+			true,
+			"additionalProperties: false closes the long form",
+		},
+		{
+			"a string other than none matches neither shape",
+			"binding: \"sometimes\"\n",
+			true,
+			"the sentinel is exactly \"none\"; anything else must take the long form",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			doc := strings.Replace(validWorkRequestV2, defaultBindingBlock, tt.block, 1)
+			violations, err := c.ValidateEnvelope("work_request", "envelope/v2", toInstance(t, doc))
+			if err != nil {
+				t.Fatalf("ValidateEnvelope: %v", err)
+			}
+			if tt.wantRefuse && len(violations) == 0 {
+				t.Errorf("%s: accepted, want refused — %s", tt.name, tt.why)
+			}
+			if !tt.wantRefuse && len(violations) > 0 {
+				t.Errorf("%s: refused (%+v), want accepted — %s", tt.name, violations, tt.why)
+			}
+		})
 	}
 }
 

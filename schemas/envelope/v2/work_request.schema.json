@@ -75,6 +75,52 @@
       "minItems": 1,
       "maxItems": 1
     },
+    "binding": {
+      "description": "P5 D1/Q2: what this artifact IS and whether it can be adopted or pinned — the field the XW-axon-20260801-vet6 incident had to write by hand as a fenced `key = value` block because work_request carried none. Either the literal `none` (T2: a producer declaring itself non-binding, load-bearing on the reader's side too, so nobody pins it), or the four declarations the incident's block spelled out. Absence is `undeclared`, distinct from a declared `none` (P-1) — this field is optional, not required.",
+      "properties": {
+        "artifact_class": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What kind of thing this is, author's own vocabulary — e.g. non_binding_review."
+        },
+        "compatibility_status": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The compatibility claim being made, or \"none\" to make no claim at all."
+        },
+        "adoptable": {
+          "type": "boolean",
+          "description": "Whether `a2a contract adopt` may target the reviewed artifact."
+        },
+        "runtime_pinnable": {
+          "type": "boolean",
+          "description": "Whether a consumer may pin a runtime dependency against it."
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        { "const": "none" },
+        {
+          "type": "object",
+          "required": ["artifact_class", "compatibility_status", "adoptable", "runtime_pinnable"]
+        }
+      ],
+      "allOf": [
+        {
+          "description": "T2's asymmetry: a `compatibility_status: none` claim inside the long form must be as unadoptable and unpinnable as the bare `none` sentinel, or the long form reopens the escape hatch T2 names — the sentinel and the long form must not disagree.",
+          "if": {
+            "properties": { "compatibility_status": { "const": "none" } },
+            "required": ["compatibility_status"]
+          },
+          "then": {
+            "properties": {
+              "adoptable": { "const": false },
+              "runtime_pinnable": { "const": false }
+            }
+          }
+        }
+      ]
+    },
     "attachments": {
       "type": "array",
       "items": {
