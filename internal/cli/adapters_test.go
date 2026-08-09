@@ -351,6 +351,80 @@ func TestMirrorResolverSkippedNamesTheBadFileAndGoodRefStillResolves(t *testing.
 	}
 }
 
+// mirrorResolverParentCriteriaCounter is a compile-time assertion that
+// *cli.MirrorResolver satisfies validate.ParentCriteriaCounter — P6's
+// REF-018 gate (2026-08-09 readiness audit, row 50): the capability now
+// lives on the TYPE cli.NewMirrorResolver always returns, not on a
+// per-call-site wrapper, so every one of its four production construction
+// sites (cmd/a2a/wire.go x2, contract_p6_wiring.go, work_wiring.go)
+// inherits it by construction. A future edit that removed
+// AcceptanceCriteriaCount, or narrowed its signature, fails to COMPILE
+// here — no per-site review or AST scan required to catch the regression.
+var _ validate.ParentCriteriaCounter = (*cli.MirrorResolver)(nil)
+
+// writeParentArtifact seeds a committed envelope/v1 artifact directly under
+// mirrorDir/id.md with an explicit `acceptance_criteria` YAML fragment —
+// AcceptanceCriteriaCount's read target.
+func writeParentArtifact(t *testing.T, mirrorDir, id, criteriaYAML string) {
+	t.Helper()
+	raw := "---\nschema: envelope/v1\nid: " + id + "\ntype: work_request\ntitle: t\nspace: getvisa\nfrom: axon\nto: [seomatrix]\nthread: thread:axon-1\nactor: {kind: agent, name: codex}\ncreated: \"2026-08-08T08:40:00Z\"\npriority: p3\nblocking: true\nclassification: internal\ncategory: feature\nproposed_change: x\n" +
+		criteriaYAML + "\n---\nBody.\n"
+	if err := os.WriteFile(filepath.Join(mirrorDir, id+".md"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestMirrorResolverAcceptanceCriteriaCount is AcceptanceCriteriaCount's own
+// behavioural proof, moved here from cmd/a2a's now-retired
+// mirrorResolverWithCriteria wrapper (validate_resolver_test.go) — the
+// method itself moved, so its tests move with it.
+func TestMirrorResolverAcceptanceCriteriaCount(t *testing.T) {
+	t.Parallel()
+
+	t.Run("declared criteria count", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		writeParentArtifact(t, dir, "XW-axon-20260808-p9d3", "acceptance_criteria: [\"a\", \"b\", \"c\"]")
+		r := cli.NewMirrorResolver(dir, space.Manifest{})
+
+		count, ok := r.AcceptanceCriteriaCount("XW-axon-20260808-p9d3")
+		if !ok {
+			t.Fatalf("AcceptanceCriteriaCount: expected ok=true")
+		}
+		if count != 3 {
+			t.Errorf("AcceptanceCriteriaCount = %d, want 3", count)
+		}
+	})
+
+	t.Run("unknown parent degrades to not-ok", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		r := cli.NewMirrorResolver(dir, space.Manifest{})
+
+		count, ok := r.AcceptanceCriteriaCount("XW-axon-does-not-exist")
+		if ok {
+			t.Fatalf("AcceptanceCriteriaCount: expected ok=false for an unresolvable parent, got count=%d", count)
+		}
+	})
+
+	t.Run("absent acceptance_criteria degrades to not-ok, never a bare zero", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		// A handoff never declares acceptance_criteria at all — the field is
+		// absent from its frontmatter, not present-and-empty.
+		raw := "---\nschema: envelope/v1\nid: XH-axon-20260808-f3s5\ntype: handoff\ntitle: t\nspace: getvisa\nfrom: axon\nto: [seomatrix]\nthread: thread:axon-1\nactor: {kind: agent, name: codex}\ncreated: \"2026-08-08T08:40:00Z\"\npriority: p3\nblocking: true\nclassification: internal\ndeliverables: []\n---\nBody.\n"
+		if err := os.WriteFile(filepath.Join(dir, "XH-axon-20260808-f3s5.md"), []byte(raw), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		r := cli.NewMirrorResolver(dir, space.Manifest{})
+
+		count, ok := r.AcceptanceCriteriaCount("XH-axon-20260808-f3s5")
+		if ok {
+			t.Fatalf("AcceptanceCriteriaCount: expected ok=false for an absent field, got count=%d", count)
+		}
+	})
+}
+
 // --- SubmitValidatorAdapter ------------------------------------------------
 
 func TestSubmitValidatorAdapterValid(t *testing.T) {

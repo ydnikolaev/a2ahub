@@ -1,124 +1,45 @@
 package main
 
-import (
-	"os"
-	"path/filepath"
-
-	"github.com/ydnikolaev/a2ahub/internal/artifact"
-	"github.com/ydnikolaev/a2ahub/internal/cli"
-	"github.com/ydnikolaev/a2ahub/internal/schema"
-	"github.com/ydnikolaev/a2ahub/internal/space"
-	"github.com/ydnikolaev/a2ahub/internal/validate"
-)
-
-// validate_resolver.go closes P6's REF-018 dormancy gap
-// (internal/validate/incompleteness.go's own package-doc Deviation: "the
-// lead adds ... a cmd/a2a implementation backed by the local mirror").
-// internal/validate defines validate.ParentCriteriaCounter as a
-// consumer-side OPTIONAL upgrade to its Resolver seam (seam.go's own doc
-// comment licenses exactly this pattern: "a concrete implementation is
-// expected to close over its own local cache"); this file is that
-// upgrade's ONE shipped implementation.
-
-// mirrorResolverWithCriteria wraps cli.MirrorResolver (P6's shipped
-// validate.Resolver) with validate.ParentCriteriaCounter. It EMBEDS the
-// pointer rather than delegating each Resolver method individually so
-// every optional capability MirrorResolver already satisfies today
-// (validate.ThreadResolver's ThreadOf/ThreadExists, the unexported
-// skipReporter's Skipped()) is promoted for free — a hand-written
-// delegating wrapper would silently drop whichever of those a future
-// MirrorResolver method addition grows, the same class of defect
-// US-2 (adapters.go's own ViolationError doc comment) exists to prevent
-// for a different capability.
-type mirrorResolverWithCriteria struct {
-	*cli.MirrorResolver
-	mirrorDir string
-}
-
-// newMirrorResolverWithCriteria constructs the production
-// validate.Resolver both write paths (runSubmit, resolveLifecycleDepsWithPolicy)
-// wire: the same mirrorDir/manifest cli.NewMirrorResolver already took,
-// plus mirrorDir kept here for AcceptanceCriteriaCount's own on-disk read.
-func newMirrorResolverWithCriteria(mirrorDir string, manifest space.Manifest) *mirrorResolverWithCriteria {
-	return &mirrorResolverWithCriteria{
-		MirrorResolver: cli.NewMirrorResolver(mirrorDir, manifest),
-		mirrorDir:      mirrorDir,
-	}
-}
-
-var _ validate.Resolver = (*mirrorResolverWithCriteria)(nil)
-var _ validate.ParentCriteriaCounter = (*mirrorResolverWithCriteria)(nil)
-
-// AcceptanceCriteriaCount implements validate.ParentCriteriaCounter: it
-// locates parentID's own <id>.md file in the connected space's mirror
-// clone (findMirrorArtifactPath's bounded walk, mirroring
-// mirrorHoldsArtifact's own shape in wire.go) and counts its declared
-// `acceptance_criteria[]` entries via the SAME parse/decode pair
-// readEnvelopeFacts already uses (artifact.ParseFrontmatter ->
-// schema.DecodeYAMLInstance), never a second frontmatter parser.
+// validate_resolver.go RETIRED, 2026-08-09 — P6's REF-018 fix moved from a
+// per-call-site wrapper to the resolver TYPE itself.
 //
-// ok=false covers every "cannot count" case alike — parentID not found on
-// disk, the file failing to parse/decode, or `acceptance_criteria` absent
-// from its frontmatter — deliberately never degrading to (0, true) for an
-// absent field: that would make REF-018's caller (checkUnmetIndexRange)
-// treat "this parent kind carries no acceptance_criteria[] at all" the
-// same as "this parent declares zero criteria", firing REF-018 against
-// any unmet[] entry on a parent kind that never had the field to begin
-// with — a verdict change ParentCriteriaCounter's own seam.go-licensed
-// contract (see incompleteness.go's AcceptanceCriteriaCount doc comment:
-// "ok=false ... is deliberately NOT a violation here") does not permit
-// this wiring pass to introduce.
-func (r *mirrorResolverWithCriteria) AcceptanceCriteriaCount(parentID string) (count int, ok bool) {
-	path, found := findMirrorArtifactPath(r.mirrorDir, parentID)
-	if !found {
-		return 0, false
-	}
-	raw, err := os.ReadFile(path) //nolint:gosec // reason: path was located by walking r.mirrorDir itself (findMirrorArtifactPath), not taken directly from caller input — same class as readEnvelopeFacts' own G304 suppression in this package
-	if err != nil {
-		return 0, false
-	}
-	fm, err := artifact.ParseFrontmatter(raw)
-	if err != nil {
-		return 0, false
-	}
-	inst, err := schema.DecodeYAMLInstance(fm.YAML)
-	if err != nil {
-		return 0, false
-	}
-	m, ok := inst.(map[string]any)
-	if !ok {
-		return 0, false
-	}
-	criteria, ok := m["acceptance_criteria"].([]any)
-	if !ok {
-		return 0, false
-	}
-	return len(criteria), true
-}
-
-// findMirrorArtifactPath returns the on-disk path to id's own <id>.md file
-// within mirrorDir, and whether it was found — mirrorHoldsArtifact's own
-// walk (wire.go), returning the matched path instead of only its boolean,
-// since AcceptanceCriteriaCount needs to read the file, not merely know
-// it exists.
-func findMirrorArtifactPath(mirrorDir, id string) (path string, found bool) {
-	_ = filepath.WalkDir(mirrorDir, func(p string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if found {
-			return filepath.SkipAll
-		}
-		// Skip the bare `.git` object store — it never holds artifact files
-		// and walking it wastes work that grows with history (matches
-		// mirrorHoldsArtifact's own guard).
-		if d.IsDir() && d.Name() == ".git" {
-			return filepath.SkipDir
-		}
-		if !d.IsDir() && d.Name() == id+".md" {
-			path, found = p, true
-		}
-		return nil
-	})
-	return path, found
-}
+// This file used to define mirrorResolverWithCriteria: a cmd/a2a-private
+// wrapper around cli.MirrorResolver that type-asserted
+// validate.ParentCriteriaCounter onto it, applied at only the two write
+// paths wire.go's runSubmit/resolveLifecycleDepsWithPolicy constructed
+// (newMirrorResolverWithCriteria). Every OTHER site that built a bare
+// cli.NewMirrorResolver — contract_p6_wiring.go, work_wiring.go, and the
+// merge-time path internal/cli/cmd_validate_ci.go pins — silently lost
+// REF-018 counting, because criteria-counting was a property of WHO
+// remembered to wrap the resolver, not of the resolver itself.
+//
+// The 2026-08-09 readiness audit (row 50) resolved that into a decision:
+// AcceptanceCriteriaCount now lives on cli.MirrorResolver directly
+// (internal/cli/adapters.go), guarded by a compile-time
+// `var _ validate.ParentCriteriaCounter = (*cli.MirrorResolver)(nil)`
+// assertion there. Every cli.NewMirrorResolver call site — including the
+// three this file's wrapper never reached — now gets the capability by
+// construction. wire.go's two former newMirrorResolverWithCriteria calls
+// are now plain cli.NewMirrorResolver calls, identical to every other
+// production site.
+//
+// findMirrorArtifactPath (this file's other former export, a second
+// filepath.WalkDir keyed on a filename literally matching `<id>.md`) was
+// NOT ported to internal/cli — it was eliminated. AcceptanceCriteriaCount
+// resolves parentID's path from the resolver's OWN already-built index
+// (ensureIndex) instead, keyed on the frontmatter `id:` field
+// cache.BuildArtifactIndex already decoded, because
+// internal/cli/adapters_test.go's TestMirrorResolverAdapterCarriesNoWalk
+// forbids this package from ever regaining a second directory walk (AC-1.3,
+// spec 01-resolver-one-home.md) — a rail cmd/a2a carries no equivalent of,
+// which is exactly why the walk was safe to keep here originally but wrong
+// to keep once the capability moved onto the shared resolver type. The
+// index lookup is not a pure behavioural copy of the walk it replaced — see
+// this wave's own Deviations report for the differences (identity by `id:`
+// rather than filename, vendored/README/infrastructure exclusions,
+// snapshot-at-first-use via sync.Once).
+//
+// This package's own gate for the fix — proving wire.go's real
+// cli.NewMirrorResolver construction fires REF-018 through the real engine
+// — lives in validate_resolver_test.go, unchanged in shape, updated to
+// construct the resolver the same way wire.go now does.

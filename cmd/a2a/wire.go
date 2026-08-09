@@ -1099,7 +1099,7 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 	if err != nil {
 		return lifecycleDeps{}, failf(stderr, "a2a: %v", err)
 	}
-	resolver := newMirrorResolverWithCriteria(mirrorDir, manifest)
+	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
 	legality := cli.NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := cli.NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
 	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())
@@ -1273,7 +1273,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 		return failf(stderr, "a2a submit: %v", err)
 	}
 
-	resolver := newMirrorResolverWithCriteria(mirrorDir, manifest)
+	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
 	legality := cli.NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := cli.NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
 	h := host.NewGitHubHost(http.DefaultClient, githubAPIBase())

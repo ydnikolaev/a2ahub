@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -588,6 +589,79 @@ func (r *MirrorResolver) ensureIndex() {
 		r.skipped = skipped
 	})
 }
+
+// AcceptanceCriteriaCount implements validate.ParentCriteriaCounter (P6's
+// REF-018 rule, internal/validate/incompleteness.go): it reports how many
+// `acceptance_criteria[]` entries parentID's own frontmatter declares.
+//
+// It resolves parentID's on-disk path from THIS resolver's own index
+// (ensureIndex, above) rather than walking the mirror a second time —
+// TestMirrorResolverAdapterCarriesNoWalk (adapters_test.go) guards this
+// file against ever regaining its own directory walk (AC-1.3, spec
+// 01-resolver-one-home.md).
+// The file is then re-read and parsed for `acceptance_criteria[]`
+// specifically, via the SAME artifact.ParseFrontmatter ->
+// schema.DecodeYAMLInstance pair the rest of this package already uses,
+// never a second frontmatter parser — walkArtifacts' own decode discards
+// this field (ArtifactIndexEntry carries only Path/Thread/Digest), so it
+// cannot be read off the index alone.
+//
+// This method used to live in cmd/a2a as a package-private wrapper
+// (mirrorResolverWithCriteria) applied at only two of MirrorResolver's four
+// production construction sites (cmd/a2a/wire.go's own runSubmit and
+// resolveLifecycleDepsWithPolicy); contract_p6_wiring.go and work_wiring.go
+// each built a bare, uncounted resolver instead, so REF-018 was live or
+// dormant depending on which call site happened to remember the wrapper.
+// The 2026-08-09 readiness audit (row 50) moved the capability onto this
+// type instead, so every cli.NewMirrorResolver call site gets it by
+// construction, with nothing left to remember at the call site.
+//
+// ok=false covers every "cannot count" case alike — parentID absent from
+// this resolver's index, its file failing to re-read/parse/decode, or
+// `acceptance_criteria` absent from its frontmatter — deliberately never
+// degrading to (0, true) for an absent field: that would make REF-018's
+// caller (checkUnmetIndexRange) treat "this parent kind carries no
+// acceptance_criteria[] at all" the same as "this parent declares zero
+// criteria", firing REF-018 against any unmet[] entry on a parent kind
+// that never had the field to begin with — a verdict change
+// ParentCriteriaCounter's own doc comment (incompleteness.go) does not
+// permit.
+func (r *MirrorResolver) AcceptanceCriteriaCount(parentID string) (count int, ok bool) {
+	r.ensureIndex()
+	entry, found := r.index[parentID]
+	if !found {
+		return 0, false
+	}
+	raw, err := os.ReadFile(filepath.Join(r.mirrorDir, filepath.FromSlash(entry.Path)))
+	if err != nil {
+		return 0, false
+	}
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return 0, false
+	}
+	inst, err := schema.DecodeYAMLInstance(fm.YAML)
+	if err != nil {
+		return 0, false
+	}
+	m, ok := inst.(map[string]any)
+	if !ok {
+		return 0, false
+	}
+	criteria, ok := m["acceptance_criteria"].([]any)
+	if !ok {
+		return 0, false
+	}
+	return len(criteria), true
+}
+
+// var _ validate.ParentCriteriaCounter = (*MirrorResolver)(nil) is P6's
+// type-level gate (2026-08-09 readiness audit, row 50): it fails to COMPILE
+// if AcceptanceCriteriaCount is ever removed or its signature drifts, which
+// protects every current and future cli.NewMirrorResolver construction site
+// at once — no per-call-site review, and no AST scan of individual wiring
+// files, can substitute for this.
+var _ validate.ParentCriteriaCounter = (*MirrorResolver)(nil)
 
 // splitRefGrammar parses a §5.7 ref (`id`, `id@version`, `id#digest`,
 // `id@version#digest`) into its id/version/digest components — this
