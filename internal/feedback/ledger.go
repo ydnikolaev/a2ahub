@@ -104,10 +104,36 @@ func AppendLedger(path string, item LedgerItem) (err error) {
 }
 
 const (
-	ledgerLockWait  = 2 * time.Second
-	ledgerLockStale = 2 * time.Minute
-	ledgerLockPoll  = 25 * time.Millisecond
+	// defaultLedgerLockWait is a PRODUCT ergonomics choice, not a tuning
+	// knob: how long one `a2a feedback submit` waits for another before it
+	// tells the operator to retry. Two seconds is short on purpose — a
+	// human is watching, and a wait that outlasts their patience is worse
+	// than an actionable refusal. TestLedgerLockWaitDefaultIsTheProductBudget
+	// pins it so raising it needs a decision rather than a test's convenience.
+	defaultLedgerLockWait = 2 * time.Second
+	ledgerLockStale       = 2 * time.Minute
+	ledgerLockPoll        = 25 * time.Millisecond
 )
+
+// ledgerLockWait is a var, not a const, for exactly one reason, and the
+// arithmetic is the reason rather than a preference.
+//
+// The concurrency test pits 24 goroutines against one lock. Serialised, the
+// last writer polls at least 23 x ledgerLockPoll = 575 ms before its turn,
+// plus every holder's own read-modify-write. Unloaded that fits inside two
+// seconds with room; inside `make check`, where the rest of the suite is
+// saturating the machine, it does not — and on 2026-08-10 it did not,
+// producing exactly one red ("ledger is locked by another feedback submit;
+// retry") in a ceiling run whose every other package was green, while the
+// same test passed 3/3 in isolation.
+//
+// The honest reading: that test's subject is "concurrent writers lose no
+// rows", and it was failing on a PRODUCT budget that is not its subject. A
+// smaller writer count would have hidden the flake by testing less
+// contention. So the budget stays 2s for users, the test raises it for
+// itself, and the default is pinned by its own assertion so this variable
+// cannot quietly become a place where the product's patience gets tuned.
+var ledgerLockWait = defaultLedgerLockWait
 
 type ledgerLock struct {
 	path  string

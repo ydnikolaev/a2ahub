@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestReadLedger_MissingFile(t *testing.T) {
@@ -19,8 +20,34 @@ func TestReadLedger_MissingFile(t *testing.T) {
 	}
 }
 
-func TestAppendLedger_ConcurrentWritersLoseNoRows(t *testing.T) {
+// TestLedgerLockWaitDefaultIsTheProductBudget pins the wait a real
+// `a2a feedback submit` gives another holder before it refuses. It exists
+// because the test below RAISES that budget for itself, and a knob a test can
+// turn is a knob that quietly becomes the product's value unless something
+// asserts otherwise.
+func TestLedgerLockWaitDefaultIsTheProductBudget(t *testing.T) {
 	t.Parallel()
+
+	if defaultLedgerLockWait != 2*time.Second {
+		t.Fatalf("defaultLedgerLockWait = %v, want 2s — this is what an operator waits before being told to retry; changing it is a product decision, not a test fix", defaultLedgerLockWait)
+	}
+}
+
+func TestAppendLedger_ConcurrentWritersLoseNoRows(t *testing.T) {
+	// NOT t.Parallel(): this test mutates the package-level ledgerLockWait,
+	// and a sibling running concurrently would observe the raised budget.
+
+	// 24 writers serialise through one lock, so the last one polls at least
+	// 23 x ledgerLockPoll before its turn plus every holder's own write. The
+	// PRODUCT budget of 2s fits that unloaded and does not fit it inside
+	// `make check`, where the rest of the suite is saturating the machine —
+	// measured 2026-08-10, one red in an otherwise-green ceiling while this
+	// same test passed 3/3 in isolation. The subject here is "no row is
+	// lost", not "24 writers fit in the operator's patience", so the budget
+	// is raised for this test rather than the contention reduced to hide it.
+	restore := ledgerLockWait
+	ledgerLockWait = 60 * time.Second
+	t.Cleanup(func() { ledgerLockWait = restore })
 
 	path := filepath.Join(t.TempDir(), ".a2a", "feedback", "ledger.yaml")
 	const writers = 24
