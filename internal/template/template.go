@@ -177,19 +177,24 @@ func ShowGeneration(typ, generation string, isJSONSchema func(string) bool) ([]b
 // already carries an already-schema-valid literal default for (priority,
 // blocking, classification, ...) is left untouched, which is what makes
 // AC-401.1 ("V1 pass on placeholder-only fills") hold without this package
-// needing per-type domain knowledge.
+// needing per-type domain knowledge — except the enum-alternatives field
+// below, which deliberately gets no such default and is what a fresh draft
+// of six of the eight types now requires an explicit choice for.
 //
 // An unreplaced enum-alternatives placeholder (e.g.
 // "<clarification|defect|choice>") is deliberately NOT filled with its
 // first alternative here (agent-exchange-2026-08 epic-backlog B3, spec
 // 03-fill-classes.md §8 AC4): the agent chose nothing, and a rendered
 // draft must not claim it did by picking on the author's behalf. The
-// token survives to the rendered draft and is refused at V2 (POL-010's
-// `^<.*>$` placeholder check, at `a2a submit` / `a2a validate --ci`) —
-// deliberately not at bare `a2a validate`, which is V1 and passes a
-// placeholder-only draft by AC-401.1's own design. Do not restore a
-// default here "as a kindness"; that is precisely the fabrication this
-// wave removed.
+// token survives to the rendered draft and is refused twice: at V1
+// (bare `a2a validate`) by the ordinary JSON-Schema enum keyword,
+// SCH-002 — the placeholder is not a member of the enum, so V1 is no
+// longer silent on this field — and again at V2 (POL-010's
+// `^<.*>$` placeholder check, at `a2a submit` / `a2a validate --ci`),
+// which still has its own job: catching an unfilled PROSE placeholder
+// (e.g. `expected_response.shape`) that no JSON-Schema enum, and so no
+// V1 check, can ever see. Do not restore a default here "as a
+// kindness"; that is precisely the fabrication this wave removed.
 func Render(in Input) ([]byte, error) {
 	const op = "Render"
 	raw, err := rawTemplate(in.Type, in.EnvelopeSchema)

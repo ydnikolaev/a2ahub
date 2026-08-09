@@ -6,10 +6,16 @@
 // tell a responder what a good answer looks like.
 //
 // This is deliberately V2-only (see checkUnfilledPlaceholders's own doc
-// comment): AC-401.1 ("V1 passes on placeholder-only fills") is a shipped
-// acceptance criterion, and this refusal belongs at the boundary where a
-// draft becomes a shared record, not at the authoring point where every
-// OTHER field is still allowed to carry its literal schema-valid default.
+// comment): this refusal belongs at the boundary where a draft becomes a
+// shared record, not at the authoring point — but that boundary is not
+// "where V1 stays silent". For six of the eight types, the enum-alternatives
+// placeholder that template.Render no longer fabricates (agent-exchange-2026-08
+// P3 wave E) already fails V1 today, as SCH-002, because the surviving
+// `<a|b|c>` token is not a member of the JSON-Schema enum. POL-010 is V2-only
+// because it is a submit-time policy about an unfilled placeholder
+// GENERALLY, including a prose one — like this file's own motivating case,
+// `expected_response.shape: "<what a good answer looks like>"` — that no
+// JSON-Schema keyword, and so no V1 check, can ever judge.
 package validate
 
 import (
@@ -68,12 +74,18 @@ var placeholderPattern = regexp.MustCompile(`^<.*>$`)
 // which legitimately contains angle brackets and is out of scope by
 // construction, not by a special case here.
 //
-// Why V2 only, never V1 (ValidateDraft): AC-401.1 ("V1 passes on
-// placeholder-only fills") is a shipped acceptance criterion — `a2a new`
-// then `a2a validate` must stay clean so a drafted-but-not-yet-filled
-// artifact is still inspectable. The refusal belongs at the boundary
-// where a draft becomes a shared record (`a2a submit`), not at the
-// authoring point.
+// Why V2 only, never V1 (ValidateDraft): the refusal belongs at the
+// boundary where a draft becomes a shared record (`a2a submit`), not at
+// the authoring point — but this is not because V1 stays clean on a
+// placeholder-only draft. For six of the eight types, `a2a new` then bare
+// `a2a validate` already refuses the surviving enum-alternatives
+// placeholder as SCH-002, an ordinary JSON-Schema enum failure, because
+// template.Render no longer fabricates a first-alternative value for it
+// (agent-exchange-2026-08 P3 wave E). POL-010 earns its own place at V2
+// because it is the only check that can see an unfilled PROSE placeholder
+// — a value the JSON-Schema corpus accepts as any string and so cannot
+// judge at V1 at all, such as `expected_response.shape` or `needed_by`
+// left at their template literals.
 func checkUnfilledPlaceholders(instance any) []Violation {
 	var out []Violation
 	walkPlaceholders(instance, "", &out)

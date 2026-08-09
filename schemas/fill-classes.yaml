@@ -82,14 +82,19 @@
 # with the field path appended), a value that is the reason, not a label.
 #
 # This is deliberately measured, not assumed: the gate was run BEFORE this
-# list was written and named exactly these ten. Both the ten rows and the two
+# list was written and named exactly ten. Both the ten rows and the two
 # recurring root causes ("the append pass writes one scalar node, so an
 # array/object-typed field it did not already carry is refused" and "no
 # shipped template happens to carry this key, so there is no placeholder to
 # descend into or hand-edit") are named per row below rather than assumed
-# from spec 03's own two-field guess, which undercounted.
+# from spec 03's own two-field guess, which undercounted. The map below has
+# ELEVEN keys, not ten: `envelope/v2/contract.generated_from` joined after
+# the ten were measured, when the same wave's own `$ref` bug-fix
+# (EnvelopeFieldType resolving local `#/$defs/` refs, see that row) stopped
+# the field from looking reachable on the strength of a bug and put it
+# here instead.
 #
-# Two of these ten are worth flagging as contingent rather than permanent:
+# Two of these eleven are worth flagging as contingent rather than permanent:
 # `envelope/v2/base.acceptance_criteria` is unreachable only because the two
 # types that ship a v2 template (announcement, contract) do not need it —
 # not because appending an array can ever work. If a future v2 template for a

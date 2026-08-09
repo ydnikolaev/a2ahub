@@ -23,6 +23,17 @@
 //     three weeks before their `needed_by` with open items named only in
 //     prose, and a week later those items existed on no surface).
 //
+// # Deviation, CLOSED 2026-08-09 — REF-018 / LFC-004 are now in
+// # schemas/errors/v1/registry.yaml
+//
+// Both codes are live: registry.yaml:166 (REF-018) and :186 (LFC-004), and
+// schemas/errors/v1/history.tsv:20-21 lists both as `live` at commit
+// 3c256c4f. The section below is the ORIGINAL deviation as written when
+// this file shipped, before schemas/** carried the rows, kept because its
+// reasoning (the registry's own numbering, the ceiling gate it was blocking)
+// explains why the rows exist where they do. It is no longer a status
+// report:
+//
 // # Deviation: REF-018 / LFC-004 are not yet in schemas/errors/v1/
 // # registry.yaml
 //
