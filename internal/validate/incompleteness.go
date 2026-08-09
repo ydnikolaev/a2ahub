@@ -63,13 +63,30 @@
 //   - LFC-004 was wired through a submit adapter carrying a closing event over
 //     the draft's own parent (9cd7f12a).
 //
-// What IS still true, and is the honest residue: REF-018 is live on the two
-// write paths cmd/a2a/wire.go constructs and stays dormant on contract_p6 and
-// work_wiring, which each build their own bare resolver, and on `a2a data`,
-// which gets a no-op validator. The readiness audit of 2026-08-09 resolved
-// that into a decision — make criteria-counting a property of the resolver
+// The audit's decision — make criteria-counting a property of the resolver
 // TYPE rather than of the construction site, so no site can get it wrong —
-// recorded in the epic's audit dossier.
+// SHIPPED on 2026-08-10. cli.MirrorResolver counts criteria itself and a
+// compile-time assertion holds it to validate.ParentCriteriaCounter, so every
+// site that constructs one inherits REF-018 rather than remembering it:
+// cmd/a2a/wire.go's two paths, contract_p6_wiring.go, work_wiring.go, and
+// internal/cli/cmd_validate_ci.go — the merge-time path a space actually pins.
+// The cmd/a2a wrapper that used to carry the capability per-site is retired.
+//
+// The honest residue is now TWO sites this fix structurally cannot reach, and
+// the paragraph above used to name only part of it. Both are filed:
+//
+//   - internal/mcp constructs its OWN resolver type (mcp/wire.go), so the MCP
+//     surface keeps the gap the CLI just closed — epic-backlog B16. Porting the
+//     method a second time would ship the rule twice, which is the shape
+//     fold.go's own broadcastAckPermitted comment records as having already
+//     caused a bug here; collapsing the two types is the real answer.
+//   - `a2a data` gets dataNoopSubmitValidator, which runs NO V2 validation at
+//     all — not a resolver missing a capability, a write path missing a
+//     validator. Bigger and different — epic-backlog B15.
+//
+// Recorded because the two accountings of this residue that lived in this
+// repository disagreed with each other, and the disagreement is what surfaced
+// the sixth site nobody was counting.
 //
 // The original text follows.
 //
