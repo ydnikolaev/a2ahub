@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators lane lane-run lane-declarations web-quality _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations view-vocabulary pendency-uniqueness loop-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
+.PHONY: check test check-validators lane lane-run lane-declarations web-quality _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary pendency-uniqueness loop-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -180,6 +180,13 @@ skill-citations: ## Every `a2a <verb>` and error code the shipped skill PROSE ci
 	  bash scripts/check-skill-citations.sh; \
 	else \
 	  echo "skill-citations: skip — scripts/check-skill-citations.sh absent (public checkout)."; \
+	fi
+
+feedback-corpus: ## The feedback-corpus honesty gate (P9 wave A; NOT yet in REPO_GATES — private harness gate, presence-gated).
+	@if [ -f scripts/check-feedback-corpus.sh ]; then \
+	  bash scripts/check-feedback-corpus.sh; \
+	else \
+	  echo "feedback-corpus: skip — scripts/check-feedback-corpus.sh absent (public checkout)."; \
 	fi
 
 release-notes-freshness: ## User-visible product commits cannot outrun the newest authored release notes.
