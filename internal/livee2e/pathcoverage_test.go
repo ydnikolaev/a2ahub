@@ -162,42 +162,47 @@ func uncoveredTransitions() []uncoveredTransition {
 	// it remains uncovered.
 
 	out = append(out, uncoveredClass(
-		"P1 added these four owner-side exits so a sender is never left with no "+
-			"legal move once every counterparty has left the space — the freeze "+
-			"internal/fold's TestEveryLiveStateHasAnOwnerSideExit derives from "+
+		"P1 added these as three (originally four) owner-side exits so a sender is never "+
+			"left with no legal move once every counterparty has left the space — the "+
+			"freeze internal/fold's TestEveryLiveStateHasAnOwnerSideExit derives from "+
 			"pendency.go:177's own transfer-to-sender verdict (\"the sender owes "+
 			"a cancel or re-route decision instead\"), which the table could not "+
 			"honour because the sender had no legal move at all. "+
-			"They are deliberately NOT driven by a path yet, and the reason is "+
-			"structural rather than effort: every one is departure-conditional "+
-			"in practice — a proposer withdrawing a decision whose approvers "+
-			"left, a producer replacing a handoff whose receiver left — and the "+
-			"catalogue has no way to make a participant LEAVE mid-scenario. "+
-			"Membership is manifest state, not an event a path can drive. P8 "+
-			"owns the catalogue and a departure-capable scenario belongs there; "+
-			"listing them here with the reason is the honest interim, and this "+
-			"gate refusing to let them pass unlisted is what forced it.",
-		tk(fold.KindDecision, fold.StateProposed, fold.TWithdraw),
+			"P8 (2026-08-09) re-examined the class against fold/table.go directly and found "+
+			"the original reason over-broad for one member: (decision, proposed, withdraw) "+
+			"carries Role RoleOwner UNCONDITIONALLY — the proposer may withdraw a proposed "+
+			"decision whether or not any approver has left — so the TRANSITION was always "+
+			"drivable even though the departure-conditional SCENARIO "+
+			"(01-resting-totality.md's own \"decision-proposed-withdrawn-by-author-after-"+
+			"approvers-left\" id, scenariocoverage_test.go) is not; conflating the two was "+
+			"the error. Moved to decision-proposed-withdrawn (pathcatalogue_paths.go), which "+
+			"drives (decision, proposed, withdraw) without simulating a departure and closes "+
+			"P8's own {decision, withdrawn} resting-state gap (restingcoverage_test.go). "+
+			"The remaining three carry the SAME table-level fact (RoleOwner, unconditional) "+
+			"and are NOT structurally blocked either — but authoring their own paths is a "+
+			"separate catalogue decision this wave did not make (each enters a resting state "+
+			"{decision, superseded} / {handoff, superseded} some OTHER already-declared path "+
+			"already reaches — decision-rejected-superseded, decision-approved-superseded — "+
+			"so no resting-state gap forces the same one-driven-transition-per-wave scrutiny "+
+			"the two above got). Left listed, with the corrected reasoning, rather than driven "+
+			"speculatively: the catalogue has no way to make a participant LEAVE mid-scenario "+
+			"either way, so a path proving these three would need the same honest caveat "+
+			"decision-proposed-withdrawn's own Intent carries.",
 		tk(fold.KindDecision, fold.StateProposed, fold.TSupersede),
 		tk(fold.KindHandoff, fold.StateSubmitted, fold.TSupersede),
 		tk(fold.KindHandoff, fold.StateAcknowledged, fold.TSupersede),
 	)...)
 
-	out = append(out, uncoveredClass(
-		"agent-exchange-2026-08 P6's 2026-08-08 amendment (\"Q3 is no longer an argument, it is a "+
-			"measurement\", plan 06): the producer's `supersede` escape hatch out of a disputed "+
-			"response, matching decision `rejected` and handoff `rejected`'s own supersede exits "+
-			"(both driven above by decision-rejected-superseded and the P1 owner-side-exit class). Not "+
-			"path-driven: D-024's dispute ADDITIONALLY reopens the PARENT to in_progress, whose own "+
-			"pendency row already sends the producer back through a fresh `respond` — the practical "+
-			"remedy every disputed-response scenario in this catalogue already exercises "+
-			"(work-request-lifecycle-disputed-sender-owes, question-lifecycle-disputed-responder-owes). "+
-			"A path proving supersede specifically, rather than the respond it is an alternative to, "+
-			"would need a SECOND branch off the same disputed-response precondition — authoring that "+
-			"is P8's own catalogue call, not this phase's to add (same reasoning the two classes above "+
-			"already apply to their own gaps).",
-		tk(fold.KindResponse, fold.StateDisputed, fold.TSupersede),
-	)...)
+	// The response-disputed-supersede triple that used to live here (P6's
+	// 2026-08-08 amendment) is now covered by response-disputed-superseded
+	// (pathcatalogue_paths.go, Family 3) — the class that used to name it is
+	// gone outright, not reworded, because nothing in it remains uncovered.
+	// It closed P8's own {response, superseded} resting-state gap
+	// (restingcoverage_test.go): the response's own `supersede` row is Role
+	// RoleOwner resolved against the RESPONSE'S OWN `From` (the producer,
+	// table.go's own responseRows doc comment) — unconditional, exactly the
+	// same shape the decision-withdraw correction above rests on — so it
+	// needed no departure simulation either.
 
 	out = append(out, uncoveredClass(
 		"P1's blocked-cancel pair. Unlike the four owner-side exits above, "+

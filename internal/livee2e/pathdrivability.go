@@ -57,6 +57,15 @@ func drivenPathIDs() []string {
 		"requirement-withdrawn-from-acknowledged",
 		"decision-lifecycle-partial-quorum-then-approved",
 		"decision-approved-superseded",
+		// P8's resting-state gate named {decision, withdrawn} and
+		// {response, superseded} as entered by no path — both added by this
+		// epic (P1 and P6) and never driven. Both ride the SAME generic
+		// per-kind verb dispatch their siblings above already use
+		// (pathdriver_live.go's verbNames maps TWithdraw and TSupersede for
+		// every kind), so neither needs a new driver leg. The tagged matrix
+		// is what proves that rather than the argument.
+		"decision-proposed-withdrawn",
+		"response-disputed-superseded",
 		"decision-lifecycle-rejected",
 		"decision-rejected-superseded",
 		"question-supersede-from-submitted",

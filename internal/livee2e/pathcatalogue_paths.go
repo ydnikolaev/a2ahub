@@ -299,7 +299,42 @@ func questionPaths() []Path {
 		},
 	}
 
-	return []Path{acknowledged, closeBeforeRespondedRefused, respondByAskerRefused, toResponded, verifiedClosed, disputed}
+	// response-disputed-superseded closes P8's own resting-state gap
+	// ({response, superseded} — restingcoverage_test.go): responseRows()'s
+	// 2026-08-08 amendment gives the response's own PRODUCER an escape
+	// hatch out of `disputed` — supersede, resolved via the GENERIC
+	// (non-response-scoped) dispatch path, so Role is the response's own
+	// `From` (SystemB, who created and submitted it in toResponded above),
+	// unlike verify/dispute which resolve against the PARENT's `from`
+	// (table.go's own responseRows doc comment). Branches off `disputed`
+	// (this family's own precondition) rather than repeating the
+	// dispute-then-respond remedy that path already proves — this is the
+	// OTHER exit from the same state, matching decisionPaths' own
+	// approvedSuperseded/rejectedSuperseded shape one family up: a
+	// superseded artifact owes nobody while staying visible
+	// (AbsentFromOpenItems, never PendingOn — same reasoning
+	// supersedePaths' own doc comment gives).
+	responseDisputedSuperseded := Path{
+		ID:           "response-disputed-superseded",
+		Precondition: disputed.ID,
+		Intent: "the producer replaces the disputed response with a new one — NOT `dispute` " +
+			"reversed (a different act with a different owner), matching decision `rejected` " +
+			"and handoff `rejected`'s own supersede exits (uncoveredTransitions()'s own " +
+			"2026-08-08 amendment, pathcoverage_test.go). Drives (response, disputed, " +
+			"supersede) and enters the {response, superseded} resting state no other declared " +
+			"path reaches.",
+		Steps: []Step{
+			{
+				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TSupersede,
+				Predicates: []Predicate{
+					FoldedState("response", fold.StateSuperseded),
+					AbsentFromOpenItems("response"),
+				},
+			},
+		},
+	}
+
+	return []Path{acknowledged, closeBeforeRespondedRefused, respondByAskerRefused, toResponded, verifiedClosed, disputed, responseDisputedSuperseded}
 }
 
 // --- Family 4 — work_request through accept -> start -> respond ->
@@ -1218,7 +1253,44 @@ func decisionPaths() []Path {
 		},
 	}
 
-	return []Path{partialQuorumThenApproved, approvedSuperseded, rejected, rejectedSuperseded}
+	proposedWithdrawn := Path{
+		ID: "decision-proposed-withdrawn",
+		Intent: "withdraw is Role Owner (decisionRows()) and UNCONDITIONAL — the author may " +
+			"withdraw a proposed decision whether or not any approver has acted, the same " +
+			"table row P1 added for the departed-approver case (01-resting-totality.md AC2), " +
+			"driven here without a departure: the TRANSITION does not require one even though " +
+			"that spec's own scenario id does (a departure this catalogue's harness cannot " +
+			"simulate — no Step exists to make a participant leave mid-path, see " +
+			"scenariocoverage_test.go's own honest gap report). A fresh standalone instance " +
+			"(a `create` step always starts a genuinely new artifact), matching " +
+			"decision-lifecycle-rejected's own shape: propose/withdraw is a third branch off " +
+			"the same `proposed` state, mutually exclusive with approve and reject. Closes " +
+			"P8's own resting-state gap ({decision, withdrawn} — restingcoverage_test.go), " +
+			"the ONLY row that enters it.",
+		RequiredApprovers: []string{SystemA, SystemB},
+		Steps: []Step{
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TCreate,
+				Predicates: []Predicate{FoldedState("decision", fold.StateDraft)},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TPropose,
+				Predicates: []Predicate{
+					PendingOn("decision", SystemA, SystemB),
+					ExpectedTransition("decision", fold.TApprove),
+				},
+			},
+			{
+				Actor: SystemA, Kind: fold.KindDecision, Transition: fold.TWithdraw,
+				Predicates: []Predicate{
+					FoldedState("decision", fold.StateWithdrawn),
+					AbsentFromOpenItems("decision"),
+				},
+			},
+		},
+	}
+
+	return []Path{partialQuorumThenApproved, approvedSuperseded, rejected, rejectedSuperseded, proposedWithdrawn}
 }
 
 // --- Family 10 — supersede (P11 W3e Deliverable 1): the author abandoning
