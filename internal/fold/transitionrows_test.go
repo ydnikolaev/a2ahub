@@ -20,15 +20,19 @@ import "testing"
 // — the row's removal is behaviour-identical by construction, so there is
 // nothing to regression-pin beyond this count).
 //
-// 100, not 99: agent-exchange-2026-08 P6's 2026-08-08 amendment ("Q3 is
-// no longer an argument, it is a measurement") added
-// (response, disputed, supersede) — the producer's exit out of a disputed
-// response, matching decision `rejected` and handoff `rejected`'s own
-// supersede exits, which the earlier 99 already counted.
+// It briefly rose to 100 on 2026-08-08 ("Q3 is no longer an argument, it is
+// a measurement") with (response, disputed, supersede) — the producer's
+// exit out of a disputed response, matching decision `rejected` and handoff
+// `rejected`'s own supersede exits. 2026-08-09 deleted that row (spec 06's
+// amendment, epic-backlog B8): P8's tagged conformance matrix proved no
+// shipped verb ever reached it, and the exit it existed to provide already
+// exists one level up — a dispute reopens the PARENT to in_progress, where
+// the responder owes `respond`. Deleting the triple drops the count back
+// to 99.
 func TestTransitionRowsUniverse(t *testing.T) {
 	got := TransitionRows()
-	if len(got) != 100 {
-		t.Fatalf("TransitionRows(): want 100 triples, got %d: %+v", len(got), got)
+	if len(got) != 99 {
+		t.Fatalf("TransitionRows(): want 99 triples, got %d: %+v", len(got), got)
 	}
 }
 

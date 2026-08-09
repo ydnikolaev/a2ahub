@@ -83,6 +83,43 @@ func TestDeclaredOutcomesAreReachable(t *testing.T) {
 	}
 }
 
+// TestResponseDisputedSupersedeRowDeletedDisputeRowSurvives is spec 06's
+// 2026-08-09 amendment stated as two assertions, not one: "the table must
+// have no {KindResponse, StateDisputed, TSupersede} key AND
+// fold.CheckLegality(KindResponse, StateSubmitted, TDispute, ...) must
+// still accept the parent's owner. An implementation that deleted the wrong
+// line passes the first half and fails the second." TestTransitionTable's
+// generated subtest for the surviving row (fold_test.go's
+// testResponseClosureRow) already drives this at the Apply level for every
+// commit; this test names the AC's own two halves directly, in one place,
+// so a reviewer does not have to infer the second half from a generated
+// subtest's name.
+func TestResponseDisputedSupersedeRowDeletedDisputeRowSurvives(t *testing.T) {
+	t.Parallel()
+
+	// Half 1: the row that gave `disputed` a supersede exit (P6,
+	// 2026-08-08) is gone. Checked directly against the table, not against
+	// a symptom (LFC-001 on `a2a supersede`), because the symptom was
+	// already true before the row shipped, for an unrelated reason (a
+	// bare `supersede` on a response id resolves the response's OWN
+	// {submitted} state, which this row never touched either).
+	if _, ok := transitionTable[tableKey{Kind: KindResponse, From: StateDisputed, Transition: TSupersede}]; ok {
+		t.Fatal("transitionTable still carries {KindResponse, StateDisputed, TSupersede} — the row was supposed to be deleted")
+	}
+
+	// Half 2: the row directly above it — {StateSubmitted, TDispute ->
+	// StateDisputed} — is what CREATES `disputed`, and it must survive.
+	// verify/dispute resolve response-scoped (CheckLegality's own doc
+	// comment): currentState is the response's OWN closure sub-state,
+	// `env` is the PARENT's envelope, and RoleOwner authorizes the
+	// PARENT's `from`.
+	parentEnv := Envelope{ID: "XQ-acme-fixture", Kind: KindQuestion, From: "acme", To: []string{"beta"}}
+	got := CheckLegality(KindResponse, StateSubmitted, TDispute, parentEnv, Actor{System: "acme"}, MembershipMember)
+	if got != VerdictLegal {
+		t.Fatalf("CheckLegality(response, submitted, dispute) for the parent's own owner = %v, want VerdictLegal — deleting the wrong row would erase `disputed` entirely, not just its exit", got)
+	}
+}
+
 // driveDynamic runs the real Apply path that produces `want` for a dynamic
 // row, returning false when this row's (Kind, Transition) has no driver.
 func driveDynamic(r Row, want State) (State, bool) {

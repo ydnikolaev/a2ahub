@@ -17,6 +17,17 @@ var refusedButTerminal = map[KindRestingState]string{
 		"omission — reported as a product finding, not fixed here (out of this phase's own scope).",
 	{Kind: KindWorkRequest, State: StateDeclined}: "same shape as question/declined immediately above — " +
 		"exchangeRows() is shared between the two kinds (table.go), so the gap and its reason are identical.",
+	{Kind: KindResponse, State: StateDisputed}: "2026-08-08 gave this state a `supersede` exit, closing what " +
+		"was then this map's third entry. 2026-08-09 deleted that row (spec 06's amendment, epic-backlog B8): " +
+		"P8's tagged conformance matrix proved no shipped verb ever reached it — a response carries no " +
+		"separate envelope in fold's model, its closure state is sub-state on the PARENT's Result.Responses, " +
+		"and the only reader of that sub-state (applyResponseScoped) is scoped by its own doc comment to " +
+		"verify/dispute alone, never dispatching a bare `supersede` to it. Widening that routing was rejected " +
+		"by name: it would make a response's own state independently addressable, the model change P0 and P8 " +
+		"both rest on not happening. This state has no exit ON THIS ARTIFACT, deliberately — the remedy is one " +
+		"level up: D-024's dispute additionally reopens the PARENT to in_progress, where " +
+		"{question|work_request, in_progress, respond} sends the producer back through a fresh respond, which " +
+		"is the practical remedy every disputed-response scenario resolves to.",
 }
 
 // TestEveryRefusedStateHasAnExitOrADeliberateReason is the SHAPE test the

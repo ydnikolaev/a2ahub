@@ -225,8 +225,11 @@ func TestResolveRows(t *testing.T) {
 		},
 		{
 			name: "response/disputed: nobody — D-024 reopens the parent to in_progress, which already " +
-				"sends the producer back through respond; supersede is an available escape hatch on THIS " +
-				"response, not an owed act (2026-08-08 amendment, plan 06)",
+				"sends the producer back through respond. 2026-08-08 gave this state a supersede exit; " +
+				"2026-08-09 deleted that row (spec 06, epic-backlog B8) because no shipped verb ever " +
+				"reached it, so this pair is no longer a fold.SubjectStates() member — it stays a case " +
+				"here anyway because it is still a resting-only pair fold.RestingStates() enumerates and " +
+				"pendency still answers for it",
 			in: Input{Kind: fold.KindResponse, State: fold.StateDisputed, From: "sys-a", ParentFrom: "sys-c"},
 		},
 
@@ -273,12 +276,18 @@ func TestResolveRows(t *testing.T) {
 	// gate requires — announcement/published gets three scenario cases
 	// (directed, broadcast, no-ack-requested), so cases can outnumber
 	// pairs, but every pair must be covered at least once.
+	//
+	// The count is 36, one more than fold.SubjectStates()'s 35: every
+	// SubjectStates() pair is covered, PLUS response/disputed, which
+	// dropped OUT of SubjectStates() on 2026-08-09 (its only departing row
+	// was deleted — spec 06, epic-backlog B8) but is kept as a case here
+	// because it is still a fold.RestingStates() pair pendency answers for.
 	covered := make(map[key]bool, len(cases))
 	for _, tc := range cases {
 		covered[key{Kind: tc.in.Kind, State: tc.in.State}] = true
 	}
 	if len(covered) != 36 {
-		t.Fatalf("TestResolveRows: %d distinct (kind, state) pairs covered, want 36 (one per fold.SubjectStates() pair — 2026-08-08's response/disputed row is the 36th)", len(covered))
+		t.Fatalf("TestResolveRows: %d distinct (kind, state) pairs covered, want 36 (35 fold.SubjectStates() pairs plus the retained response/disputed resting-only case)", len(covered))
 	}
 
 	for _, tc := range cases {
@@ -449,6 +458,53 @@ func TestResolveDegradesOnMissingFacts(t *testing.T) {
 				t.Errorf("Why = %q, want it to contain %q", v.Why, tc.wantWhyHas)
 			}
 		})
+	}
+}
+
+// TestResponseDisputedWhyIsConditionalOnTheParentReopen is spec 06's
+// 2026-08-09 amendment's own gate: (response, disputed) always answers
+// "nobody", but the RATIONALE must not lie. Ordinarily the debt genuinely
+// moved to the parent (D-024's reopen), so the Why may say so. When the
+// caller reports that this dispute's own reopen attempt was itself refused
+// (fold.go's D-024 comment: the parent was not `responded` — already
+// closed, or already reopened by an earlier dispute), the Why must say THAT
+// instead, naming the flag, never the discharge that never happened.
+func TestResponseDisputedWhyIsConditionalOnTheParentReopen(t *testing.T) {
+	t.Parallel()
+
+	base := Input{Kind: fold.KindResponse, State: fold.StateDisputed, From: "sys-a", ParentFrom: "sys-c"}
+
+	ordinary, err := Resolve(base)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if len(ordinary.Owners) != 0 || ordinary.Expected != "" {
+		t.Fatalf("ordinary case: Owners=%v Expected=%q, want nobody/\"\" — response/disputed owes nothing on this artifact either way", ordinary.Owners, ordinary.Expected)
+	}
+	if !strings.Contains(ordinary.Why, "the debt is on the parent") {
+		t.Errorf("ordinary Why = %q, want it to say the debt moved to the parent", ordinary.Why)
+	}
+	if strings.Contains(ordinary.Why, "FlagIllegalTransition") {
+		t.Errorf("ordinary Why = %q, must NOT claim a refusal that did not happen", ordinary.Why)
+	}
+
+	failed := base
+	failed.ParentDisputeReopenFailed = true
+	reopenFailed, err := Resolve(failed)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if len(reopenFailed.Owners) != 0 || reopenFailed.Expected != "" {
+		t.Fatalf("reopen-failed case: Owners=%v Expected=%q, want nobody/\"\"", reopenFailed.Owners, reopenFailed.Expected)
+	}
+	if !strings.Contains(reopenFailed.Why, "FlagIllegalTransition") {
+		t.Errorf("reopen-failed Why = %q, want it to name the refusal's flag", reopenFailed.Why)
+	}
+	if strings.Contains(reopenFailed.Why, "the debt is on the parent that the dispute reopened") {
+		t.Errorf("reopen-failed Why = %q, must NOT claim the parent was reopened when it was refused", reopenFailed.Why)
+	}
+	if reopenFailed.Why == ordinary.Why {
+		t.Error("reopen-failed and ordinary cases produced the identical Why — the branch is not conditional")
 	}
 }
 

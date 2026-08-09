@@ -299,42 +299,17 @@ func questionPaths() []Path {
 		},
 	}
 
-	// response-disputed-superseded closes P8's own resting-state gap
-	// ({response, superseded} — restingcoverage_test.go): responseRows()'s
-	// 2026-08-08 amendment gives the response's own PRODUCER an escape
-	// hatch out of `disputed` — supersede, resolved via the GENERIC
-	// (non-response-scoped) dispatch path, so Role is the response's own
-	// `From` (SystemB, who created and submitted it in toResponded above),
-	// unlike verify/dispute which resolve against the PARENT's `from`
-	// (table.go's own responseRows doc comment). Branches off `disputed`
-	// (this family's own precondition) rather than repeating the
-	// dispute-then-respond remedy that path already proves — this is the
-	// OTHER exit from the same state, matching decisionPaths' own
-	// approvedSuperseded/rejectedSuperseded shape one family up: a
-	// superseded artifact owes nobody while staying visible
-	// (AbsentFromOpenItems, never PendingOn — same reasoning
-	// supersedePaths' own doc comment gives).
-	responseDisputedSuperseded := Path{
-		ID:           "response-disputed-superseded",
-		Precondition: disputed.ID,
-		Intent: "the producer replaces the disputed response with a new one — NOT `dispute` " +
-			"reversed (a different act with a different owner), matching decision `rejected` " +
-			"and handoff `rejected`'s own supersede exits (uncoveredTransitions()'s own " +
-			"2026-08-08 amendment, pathcoverage_test.go). Drives (response, disputed, " +
-			"supersede) and enters the {response, superseded} resting state no other declared " +
-			"path reaches.",
-		Steps: []Step{
-			{
-				Actor: SystemB, Kind: fold.KindResponse, Transition: fold.TSupersede,
-				Predicates: []Predicate{
-					FoldedState("response", fold.StateSuperseded),
-					AbsentFromOpenItems("response"),
-				},
-			},
-		},
-	}
-
-	return []Path{acknowledged, closeBeforeRespondedRefused, respondByAskerRefused, toResponded, verifiedClosed, disputed, responseDisputedSuperseded}
+	// response-disputed-superseded (the producer's supersede exit out of
+	// `disputed`) shipped 2026-08-08 and was DELETED 2026-08-09 (spec 06's
+	// amendment, epic-backlog B8): the table.go row it drove never had a
+	// reachable dispatch — a response's closure state is sub-state on the
+	// PARENT's Result.Responses, and the only reader of that sub-state
+	// (applyResponseScoped) never dispatches a bare `supersede` to it. This
+	// path is deleted with it, not routed elsewhere: the exit the row
+	// existed to provide already exists one level up, where `disputed`
+	// (above) already reopens the parent to in_progress for a fresh
+	// respond.
+	return []Path{acknowledged, closeBeforeRespondedRefused, respondByAskerRefused, toResponded, verifiedClosed, disputed}
 }
 
 // --- Family 4 — work_request through accept -> start -> respond ->

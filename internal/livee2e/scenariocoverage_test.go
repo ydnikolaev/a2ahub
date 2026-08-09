@@ -530,16 +530,26 @@ func TestScenarioDeclaredParsesRealSpecs(t *testing.T) {
 // 05-declared-nature.md's own append-only amendments use). All SIX ids the
 // gate named red are STILL red — the grant did not close any of them, and
 // this comment must not blur that with a different, true claim this wave
-// CAN make: it drove two of the UNDERLYING TRANSITIONS these ids depend on
-// (decision-proposed-withdrawn, response-disputed-superseded,
-// pathcatalogue_paths.go), under path ids that answer no declared scenario
-// id at all — {response, superseded} is a restingcoverage_test.go gate, not
-// a spec-01 scenario claim, and driving a transition without the
-// departure/manifest-mutation a scenario id names is not the same as
-// satisfying that id (the exact conflation the brief named and this file's
-// own reasons below keep separate). Re-derived per-id reasons, in code, for
-// all six, rather than leaving the bare missingScenarioPaths() failure to
-// speak for itself:
+// CAN make: it drove one of the UNDERLYING TRANSITIONS these ids depend on
+// (decision-proposed-withdrawn, pathcatalogue_paths.go), under a path id
+// that answers no declared scenario id at all — {decision, withdrawn} is a
+// restingcoverage_test.go gate, not a spec-01 scenario claim, and driving a
+// transition without the departure/manifest-mutation a scenario id names is
+// not the same as satisfying that id (the exact conflation the brief named
+// and this file's own reasons below keep separate).
+//
+// A second such path, response-disputed-superseded, existed alongside it
+// from 2026-08-08 until 2026-08-09, when it was deleted along with its
+// underlying fold row (spec 06's amendment, epic-backlog B8): P8's tagged
+// conformance matrix proved no shipped verb ever reached
+// {response, disputed, supersede}, and the exit it existed to provide
+// already exists one level up, on the parent a dispute reopens. It is
+// omitted from the list above because there is nothing left it drives —
+// neither the path, the transition, nor the {response, superseded} resting
+// state it used to answer for (restingcoverage_test.go) exist any more.
+//
+// Re-derived per-id reasons, in code, for all six, rather than leaving the
+// bare missingScenarioPaths() failure to speak for itself:
 //
 //  1. 01-resting-totality.md's all THREE declared ids
 //     (decision-proposed-withdrawn-by-author-after-approvers-left,

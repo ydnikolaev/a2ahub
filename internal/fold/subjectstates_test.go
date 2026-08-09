@@ -8,14 +8,21 @@ import "testing"
 // drift here is a real signal (a table row added/removed), not test noise;
 // internal/pendency's gate is what should red, not this one silently
 // tracking it.
-// The 36th is {response disputed}, added when P6 gave it a supersede exit:
-// a state nothing departed was in no From position, so it was not a subject
-// anybody could owe a move from. Giving it an exit makes it one, and
-// internal/pendency's I8 gate is what then requires the row that says who.
+//
+// It briefly rose to 36 on 2026-08-08 with {response disputed}, added when
+// a row gave it a supersede exit: a state nothing departed was in no From
+// position, so it was not a subject anybody could owe a move from. P8's
+// tagged conformance matrix then proved no shipped verb ever reached that
+// exit (epic-backlog B8), and 2026-08-09 deleted the row rather than
+// widening the routing to reach it — the exit it existed to provide already
+// exists one level up, on the PARENT the dispute reopens. Deleting the
+// row's only departure from {response disputed} drops the universe back to
+// 35; the state itself still exists (the row above it, {response submitted}
+// --dispute--> disputed, is what CREATES it, and that row was not touched).
 func TestSubjectStatesUniverse(t *testing.T) {
 	got := SubjectStates()
-	if len(got) != 36 {
-		t.Fatalf("SubjectStates(): want 36 pairs, got %d: %+v", len(got), got)
+	if len(got) != 35 {
+		t.Fatalf("SubjectStates(): want 35 pairs, got %d: %+v", len(got), got)
 	}
 }
 

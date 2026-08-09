@@ -95,16 +95,18 @@ var outcomes = map[Kind]map[State]Outcome{
 		StateVerified:  OutcomeSettled,
 		// The asker rejected the answer. D-024 additionally reopens the
 		// parent, so the exchange continues — but THIS response
-		// concluded against the party that gave it. Outcome and Terminal
-		// are still two different questions (Terminal's own doc comment):
-		// 2026-08-08's amendment gave the producer a `supersede` exit from
-		// here, matching decision `rejected` and handoff `rejected` — so
-		// `disputed` is refused AND, as of that row, non-terminal.
+		// concluded against the party that gave it.
+		//
+		// 2026-08-08 gave the producer a `supersede` exit from here,
+		// matching decision `rejected` and handoff `rejected`. 2026-08-09
+		// deleted that row (spec 06's amendment, epic-backlog B8): no
+		// shipped verb ever reached it, because a response's closure state
+		// is sub-state on the PARENT's Result.Responses and only
+		// applyResponseScoped's verify/dispute branch ever reads it. So
+		// `disputed` is refused AND, once again, terminal — the row that
+		// used to produce StateSuperseded for this kind is gone, and with
+		// it this kind's only member of that outcome.
 		StateDisputed: OutcomeRefused,
-		// The producer's escape hatch out of a disputed response. Same
-		// meaning as every other `superseded`: another artifact replaced
-		// this one.
-		StateSuperseded: OutcomeSuperseded,
 	},
 	KindAnnouncement: {
 		StatePublished:  OutcomeOpen,

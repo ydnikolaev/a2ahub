@@ -260,23 +260,27 @@ func handoffRows() []Row {
 // applyResponseScoped — the one place fold's subject resolution branches
 // on transition name (spec's own callout), never modeled as a distinct
 // Role value.
+//
+// 2026-08-09 amendment ("the disputed exit is DELETED, not routed to",
+// spec 06): a {StateDisputed, TSupersede -> StateSuperseded, RoleOwner} row
+// shipped here on 2026-08-08 to give a disputed producer an exit. P8's
+// tagged conformance matrix then found no shipped verb ever reaches it — a
+// response carries no separate envelope in fold's model, so its closure
+// state is sub-state on the PARENT's Result.Responses, and the only reader
+// of that sub-state (applyResponseScoped) is scoped by its own doc comment
+// to verify/dispute alone. `a2a supersede <XS-id>` was refused with LFC-001
+// regardless of the row (epic-backlog B8). The row is DELETED rather than
+// routed to: widening applyResponseScoped's branch would make a response's
+// own state independently addressable, the model change P0 and P8 both
+// rest on not happening. The exit already exists one level up — the row
+// directly above (StateSubmitted, TDispute -> StateDisputed) is what CREATES
+// the disputed state, and it stays: dispute reopens the PARENT to
+// in_progress, where the responder is RoleTarget and respond is legal.
 func responseRows() []Row {
 	return []Row{
 		{Kind: KindResponse, From: StateDraft, Transition: TSubmit, To: StateSubmitted, Role: RoleAny},
 		{Kind: KindResponse, From: StateSubmitted, Transition: TVerify, To: StateVerified, Role: RoleOwner},
 		{Kind: KindResponse, From: StateSubmitted, Transition: TDispute, To: StateDisputed, Role: RoleOwner},
-		// 2026-08-08 amendment ("Q3 is no longer an argument, it is a
-		// measurement", plan 06): before this row, `disputed` was the only
-		// member of the refused-and-non-terminal family (decision
-		// `rejected`, handoff `rejected`, response `disputed`) with no exit
-		// at all — a producer whose bytes were disputed could not resubmit,
-		// supersede, or contest. This row matches the other two: the
-		// producer replaces the disputed response with a new one. It is
-		// NOT `dispute` reversed (that is a different act with a different
-		// owner) — resolved via the generic (non-response-scoped) dispatch
-		// path, so Role is the RESPONSE'S OWN `From` (the producer), unlike
-		// verify/dispute above which resolve against the PARENT's envelope.
-		{Kind: KindResponse, From: StateDisputed, Transition: TSupersede, To: StateSuperseded, Role: RoleOwner},
 	}
 }
 

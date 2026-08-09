@@ -57,13 +57,20 @@ func drivenPathIDs() []string {
 		"requirement-withdrawn-from-acknowledged",
 		"decision-lifecycle-partial-quorum-then-approved",
 		"decision-approved-superseded",
-		// P8's resting-state gate named {decision, withdrawn} and
-		// {response, superseded} as entered by no path — both added by this
-		// epic (P1 and P6) and never driven. Both ride the SAME generic
-		// per-kind verb dispatch their siblings above already use
-		// (pathdriver_live.go's verbNames maps TWithdraw and TSupersede for
-		// every kind), so neither needs a new driver leg. The tagged matrix
-		// is what proves that rather than the argument.
+		// P8's resting-state gate named {decision, withdrawn} as entered by
+		// no path — added by P1 and never driven. It rides the SAME generic
+		// per-kind verb dispatch its siblings above already use
+		// (pathdriver_live.go's verbNames maps TWithdraw for every kind), so
+		// it needs no new driver leg. The tagged matrix is what proves that
+		// rather than the argument.
+		//
+		// The gate also once named {response, superseded} here — P6 added
+		// it, and it never had a real driven path (response-disputed-
+		// superseded lived in undrivablePaths below instead). 2026-08-09
+		// deleted the fold row that produced that resting state entirely
+		// (spec 06's amendment, epic-backlog B8), so the state itself is
+		// gone from fold.RestingStates() and there is nothing left to name
+		// here.
 		"decision-proposed-withdrawn",
 		"decision-lifecycle-rejected",
 		"decision-rejected-superseded",
@@ -118,26 +125,6 @@ func drivenPathIDs() []string {
 // own precedent for this shape).
 func undrivablePaths() []undrivablePath {
 	return []undrivablePath{
-		{
-			ID: "response-disputed-superseded",
-			Reason: "the ROW exists and no shipped surface can reach it. A response " +
-				"carries no separate envelope in fold's model — its closure state " +
-				"is sub-state on the PARENT's Result (types.go:239), and the only " +
-				"code that reads it is applyResponseScoped, which its own doc " +
-				"comment scopes to verify/dispute: 'the one place fold's subject " +
-				"resolution branches on transition name'. So `a2a supersede <XS-id>` " +
-				"never routes there. It resolves the response artifact's OWN folded " +
-				"state, which its own events left at `submitted`, and " +
-				"{response, submitted, supersede} has no row: LFC-001, illegal " +
-				"transition for the current folded state. " +
-				"THIS IS A PRODUCT FINDING, NOT A HARNESS GAP. P6 added " +
-				"{response, disputed, supersede} to close the one refused state with " +
-				"no exit — and the freeze is NOT closed, because the state the row " +
-				"departs from is not a state any CLI verb can act on. The matrix " +
-				"found it; the table could not. See spec 06's own amendment and " +
-				"epic-backlog B8. When the routing is fixed, delete this entry and " +
-				"put the id back in drivenPathIDs().",
-		},
 		{
 			ID: "requirement-satisfied",
 			Reason: "`a2a satisfy <XR-id> --refs <XC-id>@<version>,<XS-id>` validates its own " +

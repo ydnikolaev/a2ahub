@@ -104,6 +104,30 @@ type Input struct {
 	// parent's envelope, never the response's own (domain 3.4.6).
 	ParentFrom string
 
+	// ParentDisputeReopenFailed says the dispute event that put THIS
+	// response into `disputed` failed to reopen its parent — fold.go's own
+	// D-024 comment: "if the parent is not currently responded (e.g.
+	// already closed, or reopened by an earlier dispute), this
+	// parent-level effect is itself illegal and is flagged separately
+	// (FlagIllegalTransition) — the response-level disputed marking above
+	// still stands regardless." A caller-resolved FACT for the same reason
+	// ParentFrom is (this package reads no fold.Result.Flags): internal/
+	// cache's mirror already computes Flags per artifact and can see
+	// whether THIS dispute event's own reopen attempt raised one.
+	//
+	// It exists so (response, disputed)'s nobodyRow can say the honest
+	// thing (spec 06's 2026-08-09 amendment): ordinarily "the debt is on
+	// the parent that the dispute reopened" is true and the Why says so.
+	// When the reopen itself failed, that sentence would name a discharge
+	// that never happened — nobody owes on this response AND nobody
+	// inherited the debt on a parent that was never actually reopened.
+	//
+	// EMPTY (false) MEANS "the reopen succeeded, OR the caller cannot see
+	// the flag" — the same fail-open discipline LeftParticipants and
+	// BlockedByOwner already document: a caller with no flag visibility
+	// gets today's ordinary behaviour, never a synthesized refusal.
+	ParentDisputeReopenFailed bool
+
 	// BlockedByOwner is the system this artifact's own facts say is
 	// actually being waited on while it sits at `blocked` — a
 	// caller-resolved FACT for the same reason ExtraAddressees and
@@ -675,22 +699,50 @@ func buildTable() map[key]row {
 	m[key{fold.KindResponse, fold.StateDraft}] = ownerRow(fold.TSubmit, "unsent")
 	m[key{fold.KindResponse, fold.StateSubmitted}] = parentOwnerRow(fold.TVerify,
 		"domain 3.4.6: verify/dispute resolve against the PARENT's envelope, never the response's own")
-	// table.go's 2026-08-08 amendment gives the producer a `supersede`
-	// escape hatch out of `disputed` (matching decision `rejected` and
-	// handoff `rejected`'s own exits), but unlike those two it is not an
-	// OWED act: D-024's dispute ADDITIONALLY reopens the PARENT to
-	// `in_progress`, and the (question|work_request, in_progress) row
-	// above (targetRow(fold.TRespond, ...)) already sends the producer
-	// back through a fresh `respond` — the practical remedy every
-	// disputed-response scenario resolves to. Naming supersede as owed
-	// here would tell the producer twice, on two artifacts, for one
-	// situation. Closer to decision `rejected`'s own shape ("the revision
-	// is a NEW artifact on the thread, not a move owed on this one") than
-	// to handoff `rejected`'s genuinely-owed resubmission.
-	m[key{fold.KindResponse, fold.StateDisputed}] = nobodyRow(
-		"settled from this artifact's own perspective: the parent's own in_progress row already " +
-			"sends the producer back through a fresh respond; supersede is an available escape hatch on " +
-			"THIS response, never an owed act")
+	// table.go carried a `supersede` escape hatch out of `disputed` from
+	// 2026-08-08 to 2026-08-09 (matching decision `rejected` and handoff
+	// `rejected`'s own exits); it was never an OWED act even while it
+	// existed, because D-024's dispute ADDITIONALLY reopens the PARENT to
+	// `in_progress`, and the (question|work_request, in_progress) row above
+	// (targetRow(fold.TRespond, ...)) already sends the producer back
+	// through a fresh `respond` — the practical remedy every
+	// disputed-response scenario resolves to. 2026-08-09 deleted the row
+	// (spec 06's amendment, epic-backlog B8): P8's tagged conformance
+	// matrix proved no shipped verb ever reached it, so there is no longer
+	// any exit on THIS artifact at all, owed or otherwise — closer now to
+	// decision `rejected`'s own shape ("the revision is a NEW artifact on
+	// the thread, not a move owed on this one") than to handoff
+	// `rejected`'s genuinely-owed resubmission ever was.
+	//
+	// The Why is conditional (spec 06's 2026-08-09 amendment: "nobody owes
+	// on this object — the debt is on the parent that the dispute
+	// reopened. Where that parent-level reopen was itself refused..., the
+	// Why says so and carries the refusal's flag"): fold.go's own D-024
+	// comment records that the reopen can itself fail — "if the parent is
+	// not currently responded (e.g. already closed, or reopened by an
+	// earlier dispute), this parent-level effect is itself illegal and is
+	// flagged separately (FlagIllegalTransition)" — and a Why that always
+	// pointed to "the reopened parent" would lie in exactly that case: it
+	// would name a discharge that never happened. ParentDisputeReopenFailed
+	// is the caller-resolved fact (this package reads no Result.Flags)
+	// that lets it say so instead.
+	m[key{fold.KindResponse, fold.StateDisputed}] = row{
+		who:      nobody,
+		expected: "",
+		why: "nobody owes on this object — the debt is on the parent that the dispute reopened: " +
+			"D-024's reopen sends the producer back through a fresh respond there, not here",
+		onEmpty: func(in Input) string {
+			if in.ParentDisputeReopenFailed {
+				return "nobody owes on this object, and there is no reopened parent to carry the debt " +
+					"either — this dispute's own attempt to reopen the parent to in_progress was itself " +
+					"refused (the parent was not `responded` when the dispute landed: already closed, or " +
+					"already reopened by an earlier dispute), flagged FlagIllegalTransition on the " +
+					"parent's own envelope (fold.go's D-024 comment)"
+			}
+			return "nobody owes on this object — the debt is on the parent that the dispute reopened: " +
+				"D-024's reopen sends the producer back through a fresh respond there, not here"
+		},
+	}
 
 	// 3.4.7 announcement
 	m[key{fold.KindAnnouncement, fold.StateDraft}] = ownerRow(fold.TPublish, "unsent")
@@ -731,14 +783,13 @@ func buildTable() map[key]row {
 	}
 	m[key{fold.KindRequirement, fold.StateSuperseded}] = nobodyRow(
 		"settled; replaced by a new requirement — the successor carries its own pendency")
-	// response/superseded rests here only while fold.table.go carries the
-	// {response, disputed, supersede} row. That row is deleted in the very
-	// next commit (spec 06's amendment, epic-backlog B8) and this row goes
-	// with it — it exists in THIS commit because the gate below must be
-	// green and proven against the universe as it stands BEFORE the
-	// deletion. AC10: the commit order IS the criterion.
-	m[key{fold.KindResponse, fold.StateSuperseded}] = nobodyRow(
-		"settled; the producer's supersede escape hatch already ran — the successor response carries its own pendency")
+	// response/superseded is NOT a row here: fold.table.go's
+	// {response, disputed, supersede} row was its sole producer, and that
+	// row was deleted 2026-08-09 (spec 06's amendment, epic-backlog B8) —
+	// no shipped verb ever reached it. Deleting the row also removed this
+	// pair from fold.RestingStates() entirely, so TestEveryRestingStateHas-
+	// APendencyRow no longer asks about it; a row here now would be a claim
+	// about a state no response can rest in.
 	m[key{fold.KindResponse, fold.StateVerified}] = nobodyRow(
 		"settled; the requester accepted the response as delivered — nothing further is owed")
 

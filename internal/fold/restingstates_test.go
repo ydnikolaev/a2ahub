@@ -23,16 +23,22 @@ import "testing"
 // gets to change quietly, and P1 changing it is what forced P0's outcome map
 // to gain a meaning for the new state in the same commit.
 //
-// The 46th is {response superseded}: P6 closed the disputed sink. A disputed
-// response was `refused` AND TERMINAL while its two siblings —
-// decision/rejected and handoff/rejected — are refused and NON-terminal,
-// so the producer of disputed bytes could do nothing at all: not resubmit,
-// not supersede, not contest. The supersede exit that fixes it produces a
-// new To, and a new To is a new resting state, exactly as P1's did.
+// It briefly rose to 46 on 2026-08-08 with {response superseded}: a row
+// meant to close the disputed sink (a disputed response was refused AND
+// TERMINAL while its two siblings — decision/rejected and handoff/rejected —
+// are refused and non-terminal). P8's tagged conformance matrix then proved
+// no shipped verb ever reached that row — a response's closure state is
+// sub-state on the PARENT's Result.Responses, and the only reader of that
+// sub-state never dispatches a bare `supersede` to it. 2026-08-09 deleted
+// the row (spec 06's amendment, epic-backlog B8) rather than widening the
+// routing to reach it, because the exit it existed to provide already
+// exists one level up: a dispute reopens the PARENT to in_progress, where
+// the responder owes `respond`. Deleting the row's only producer of
+// {response superseded} drops the universe back to 45.
 func TestRestingStatesUniverse(t *testing.T) {
 	got := RestingStates()
-	if len(got) != 46 {
-		t.Fatalf("RestingStates(): want 46 pairs, got %d: %+v", len(got), got)
+	if len(got) != 45 {
+		t.Fatalf("RestingStates(): want 45 pairs, got %d: %+v", len(got), got)
 	}
 }
 

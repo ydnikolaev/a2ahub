@@ -193,16 +193,18 @@ func uncoveredTransitions() []uncoveredTransition {
 		tk(fold.KindHandoff, fold.StateAcknowledged, fold.TSupersede),
 	)...)
 
-	// The response-disputed-supersede triple that used to live here (P6's
-	// 2026-08-08 amendment) is now covered by response-disputed-superseded
-	// (pathcatalogue_paths.go, Family 3) — the class that used to name it is
-	// gone outright, not reworded, because nothing in it remains uncovered.
-	// It closed P8's own {response, superseded} resting-state gap
-	// (restingcoverage_test.go): the response's own `supersede` row is Role
-	// RoleOwner resolved against the RESPONSE'S OWN `From` (the producer,
-	// table.go's own responseRows doc comment) — unconditional, exactly the
-	// same shape the decision-withdraw correction above rests on — so it
-	// needed no departure simulation either.
+	// The (response, disputed, supersede) triple lived here once, then moved
+	// to a real path (response-disputed-superseded, Family 3) when P6 added
+	// the row it exercised. Neither the triple nor the path is anywhere any
+	// more: P8's tagged conformance matrix proved no shipped verb ever
+	// reached the row — a response's closure state is sub-state on the
+	// PARENT's Result.Responses, and the only reader of that sub-state
+	// never dispatches a bare `supersede` to it — so 2026-08-09 deleted the
+	// row outright (spec 06's amendment, epic-backlog B8) rather than
+	// routing to it. There is no triple left to name here: it left
+	// fold.TransitionRows() entirely, the same way the removed `create`
+	// rows did (W3d, above), so this class is gone rather than reworded a
+	// second time.
 
 	out = append(out, uncoveredClass(
 		"P1's blocked-cancel pair. Unlike the four owner-side exits above, "+

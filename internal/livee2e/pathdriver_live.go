@@ -885,23 +885,6 @@ func runPathQuestionDisputed(ctx context.Context, t *testing.T, h *harness, runT
 	return ids
 }
 
-// runPathResponseDisputedSuperseded drives the exit P6 gave `disputed`.
-//
-// It was the only refused state in the table with nothing departing it —
-// decision/rejected and handoff/rejected have always been supersedable —
-// so the producer of disputed bytes could not resubmit, replace or contest.
-// The actor is B because B authored the response; A is the disputer.
-func runPathResponseDisputedSuperseded(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
-	t.Helper()
-	path := mustPath(t, "response-disputed-superseded")
-	ids := runPathQuestionDisputed(ctx, t, h, runTag)
-	b := h.B
-
-	syncBoth(ctx, t, h)
-	driveSupersedeWithPlaceholderRef(ctx, t, h, b, path, 0, "response", ids["response"], ids)
-	return ids
-}
-
 func runPathWorkRequestLifecycle(ctx context.Context, t *testing.T, h *harness, runTag string) pathIDs {
 	t.Helper()
 	path := mustPath(t, "work-request-lifecycle-accept-start-respond-verify-close")
@@ -2106,7 +2089,6 @@ var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harnes
 	"decision-lifecycle-partial-quorum-then-approved":          runPathDecisionPartialQuorumThenApproved,
 	"decision-approved-superseded":                             runPathDecisionApprovedSuperseded,
 	"decision-proposed-withdrawn":                              runPathDecisionProposedWithdrawn,
-	"response-disputed-superseded":                             runPathResponseDisputedSuperseded,
 	"decision-lifecycle-rejected":                              runPathDecisionRejected,
 	"decision-rejected-superseded":                             runPathDecisionRejectedSuperseded,
 	"question-supersede-from-submitted":                        runPathQuestionSupersedeFromSubmitted,
