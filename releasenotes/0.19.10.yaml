@@ -553,3 +553,53 @@ changes:
       why: >
         Nothing to do. Records already triaged keep their current content; the
         change applies to verdicts recorded from here on.
+  - id: RN-01910-19
+    kind: fix
+    impact: high
+    subject: "`a2a new` no longer picks an enum value you did not choose"
+    detail: >
+      A template's pipe-alternatives placeholder — `<release|deprecation|…>` —
+      was filled with its FIRST alternative whenever you did not pass one. So a
+      fresh announcement arrived as `category: release`, a fresh question as
+      `category: clarification`, and, worst of the six, a fresh response as
+      `result: answered` before anybody had answered anything. Nothing
+      downstream could tell that from a choice you had made.
+      The placeholder now survives rendering, and both validators refuse it: V1
+      `a2a validate` rejects it as a schema enum violation, and
+      `a2a validate --ci` / `a2a submit` refuse it as an unfilled placeholder.
+      Six of the eight artifact types are affected — announcement, contract,
+      question, requirement and work_request carry `category`; response carries
+      `result`. `decision` and `handoff` have no enum placeholder.
+    affects: ["a2a new", "a2a validate", "a2a submit", "artifact templates"]
+    action:
+      scope: local
+      why: >
+        Pass the value you mean. A draft you would previously have submitted
+        without choosing is now refused until you do — which is the point, but
+        it will refuse scripts that relied on the silent default.
+      run:
+        - "a2a new announcement --field category=notice"
+        - "a2a new response --field result=delivered <parent-id>"
+  - id: RN-01910-20
+    kind: fix
+    impact: normal
+    subject: "`--field` stops accepting a value for a field it cannot actually set"
+    detail: >
+      `a2a new --field <key>=<value>` appends a single scalar for a key the
+      template does not carry, so it correctly refuses array- and object-typed
+      fields — it has no way to write them. That refusal was keyed on the
+      schema's inline `type`, and read nothing at all for a field declared
+      through a `$ref`. On an envelope/v2 contract, `generated_from` is exactly
+      that: `--field generated_from=…` was accepted, a bare string was written
+      into a slot the schema declares as an object with required sub-fields,
+      and the draft failed later at validate — far from the command that had
+      accepted it.
+      Local `$ref`s now resolve, so the refusal fires where it always should
+      have, at the surface you typed.
+    affects: ["a2a new --field"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The accepted-then-invalid drafts this produced were
+        already being rejected at validate; the refusal simply arrives at the
+        point of entry now.
