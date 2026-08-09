@@ -51,6 +51,7 @@ var foldedFieldsItemDeliberatelyDrops = map[string]string{
 	// foldedArtifact directly.
 	"DeprecatesMyDependency": "a dependency-drift overlay consumed by the contract/drift views, not a per-row inbox fact",
 	"FulfillingResponse":     "a thread-shaped overlay: whether this response fulfils its parent, which the thread view resolves against the parent it already has",
+	"BlockedByOwner":         "the system a fulfilling response names as who a `blocked` wait is actually on, legality-checked in mirror.go before it reaches the relation. Item already carries the ANSWER — pendency's Verdict.Owners names this system when it applies — so projecting the INPUT beside its own output would put two copies of one fact on the wire, free to disagree",
 }
 
 // TestItemCarriesEveryFoldedArtifactField is the third projection gate.

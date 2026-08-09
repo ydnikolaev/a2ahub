@@ -69,6 +69,20 @@ type envelopeProbe struct {
 	Parent string `yaml:"parent"`
 	Result string `yaml:"result"`
 
+	// BlockedBy is response/v2's own `blocked_by` object
+	// (envelope/v2/response.schema.json): what would unblock the unmet
+	// criteria, and — Owner — the system actually being waited on (P1's
+	// US-3, P6's `blocked_by.owner`). Empty on every non-response
+	// artifact and on a response that carries none. mirror.go resolves
+	// Owner into BlockedByOwner exactly once, the same way it resolves
+	// DeprecatesMyDependency and FulfillingResponse, because the evidence
+	// lives on a DIFFERENT artifact than the one being asked about.
+	BlockedBy struct {
+		ReasonCode string `yaml:"reason_code"`
+		Owner      string `yaml:"owner"`
+		Needs      string `yaml:"needs"`
+	} `yaml:"blocked_by"`
+
 	// Deprecates is announcement/v1's own machine-readable
 	// `deprecates: <XC-id>@<version>` field — written by both surfaces on
 	// every `contract deprecate`. P4's Edge 3 reads it so the read model

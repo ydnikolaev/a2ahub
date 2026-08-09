@@ -303,6 +303,79 @@ func TestResolveRows(t *testing.T) {
 	}
 }
 
+// TestBlockedNamesTheOwnerInsteadOfTheTarget is P1's US-3, transferred to
+// this field by the 2026-08-08 amendment ("as a blocked receiver, I do not
+// want to be told I owe unblock when the requester is what blocks me"). A
+// `blocked` question/work_request whose caller-resolved BlockedByOwner
+// names a party must put the next move on THAT party, with Expected left
+// "" (unblock stays the target's OWN event — domain 3.4.3 — so naming it
+// for anyone else would be exactly the "surface names a move the tool
+// refuses" failure the authority gate exists to catch). Absent
+// BlockedByOwner, the row must be byte-identical to what shipped before
+// this field existed: the target owes unblock.
+func TestBlockedNamesTheOwnerInsteadOfTheTarget(t *testing.T) {
+	t.Parallel()
+
+	for _, k := range []fold.Kind{fold.KindQuestion, fold.KindWorkRequest} {
+		t.Run(string(k)+"/blocked, no BlockedByOwner: target owes unblock (unchanged)", func(t *testing.T) {
+			t.Parallel()
+			v, err := Resolve(Input{Kind: k, State: fold.StateBlocked, From: "sys-a", To: []string{"sys-b"}})
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if !reflect.DeepEqual(v.Owners, []string{"sys-b"}) {
+				t.Errorf("Owners = %v, want [sys-b]", v.Owners)
+			}
+			if v.Expected != fold.TUnblock {
+				t.Errorf("Expected = %q, want %q", v.Expected, fold.TUnblock)
+			}
+		})
+
+		t.Run(string(k)+"/blocked, BlockedByOwner=requester: the REQUESTER is named, not the target", func(t *testing.T) {
+			t.Parallel()
+			v, err := Resolve(Input{
+				Kind: k, State: fold.StateBlocked, From: "sys-a", To: []string{"sys-b"},
+				BlockedByOwner: "sys-a",
+			})
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			// The mutation this guards: falling back to target() would
+			// produce [sys-b] here, not [sys-a] — asserting the exact
+			// owner string, not merely "not the target", is what catches
+			// a resolver mutated to ignore BlockedByOwner and return nil
+			// (which without a positive assertion here would also make
+			// v.Owners != []string{"sys-b"} true for the wrong reason).
+			if !reflect.DeepEqual(v.Owners, []string{"sys-a"}) {
+				t.Errorf("Owners = %v, want [sys-a]", v.Owners)
+			}
+			if v.Expected != "" {
+				t.Errorf("Expected = %q, want \"\" — unblock stays the target's own event", v.Expected)
+			}
+			if v.HumanGate != "" {
+				t.Errorf("HumanGate = %q, want \"\" for an Expected-less verdict", v.HumanGate)
+			}
+			if !strings.Contains(v.Why, "sys-a") {
+				t.Errorf("Why = %q, want it to name sys-a", v.Why)
+			}
+		})
+
+		t.Run(string(k)+"/blocked, BlockedByOwner set to a system not in from/to: still named — P-2's legality check is the CALLER's job, this package trusts what it is handed", func(t *testing.T) {
+			t.Parallel()
+			v, err := Resolve(Input{
+				Kind: k, State: fold.StateBlocked, From: "sys-a", To: []string{"sys-b"},
+				BlockedByOwner: "sys-z",
+			})
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if !reflect.DeepEqual(v.Owners, []string{"sys-z"}) {
+				t.Errorf("Owners = %v, want [sys-z]", v.Owners)
+			}
+		})
+	}
+}
+
 // TestResolveDegradesOnMissingFacts asserts a resolver that would
 // otherwise be productive, but is missing the envelope fact it needs,
 // answers "nobody" with a Why that says the fact was missing — never a

@@ -164,6 +164,22 @@ type foldedArtifact struct {
 	// production and lived only in a unit test. The `parent` field is the
 	// fact; this reads the fact.
 	FulfillingResponse bool
+
+	// BlockedByOwner is P1's US-3 fact, resolved here for the same reason
+	// FulfillingResponse is: the evidence (a response's `blocked_by.owner`)
+	// lives on a DIFFERENT artifact than the one this field describes.
+	// internal/pendency's `blocked` row reads it (Input.BlockedByOwner).
+	//
+	// Empty unless a response naming this artifact as `parent` carries a
+	// non-empty `blocked_by.owner` AND that owner passed fold.CheckLegality
+	// (P-2, checked against `note` — the floor "has ANY legal move on this
+	// artifact" bar, since `unblock` itself is RoleTarget-only and would
+	// refuse the very case this field exists for) against THIS artifact's
+	// own envelope and current membership. A named owner who is neither
+	// this envelope's `from` nor in its `to` fails that check and this
+	// field stays empty — the caller-side narrowing pendency's own
+	// BlockedByOwner doc comment describes.
+	BlockedByOwner string
 }
 
 func (f foldedArtifact) kind() fold.Kind { return fold.Kind(f.Env.Type) }
@@ -232,6 +248,12 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 	// (foldedArtifact.FulfillingResponse), built in the same pass rather than
 	// by a second traversal.
 	hasParentedResponse := map[string]bool{}
+	// blockedOwnerCandidate: parent artifact ID -> the FIRST (walk order,
+	// deterministic — filepath.WalkDir visits lexically) response's own
+	// `blocked_by.owner` naming it. Legality is not checked here: this map
+	// is only a candidate, resolved once membership and the parent's own
+	// envelope are both in scope, below.
+	blockedOwnerCandidate := map[string]string{}
 	for _, a := range artifacts {
 		if fold.Kind(a.Env.Type) == fold.KindResponse && a.Env.Parent != "" {
 			parentOf[a.Env.ID] = a.Env.Parent
@@ -241,6 +263,11 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 				responsesBySeqAndParent[s] = map[string][]string{}
 			}
 			responsesBySeqAndParent[s][a.Env.Parent] = append(responsesBySeqAndParent[s][a.Env.Parent], a.Env.ID)
+			if a.Env.BlockedBy.Owner != "" {
+				if _, exists := blockedOwnerCandidate[a.Env.Parent]; !exists {
+					blockedOwnerCandidate[a.Env.Parent] = a.Env.BlockedBy.Owner
+				}
+			}
 		}
 	}
 	for _, byParent := range responsesBySeqAndParent {
@@ -346,6 +373,8 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			}
 		}
 
+		blockedByOwner := resolveBlockedByOwner(blockedOwnerCandidate[a.Env.ID], env, result.State, membership)
+
 		out = append(out, foldedArtifact{
 			SpaceID: spaceID, RelPath: a.RelPath, Raw: a.Raw, Digest: a.Digest,
 			Env: a.Env, Result: result, Events: evs, EventEvidence: eventEvidence,
@@ -361,6 +390,7 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			// behaviour for such a system.
 			DeprecatesMyDependency: myDependencies[a.Env.deprecatedContractID()],
 			FulfillingResponse:     hasParentedResponse[a.Env.ID],
+			BlockedByOwner:         blockedByOwner,
 		})
 	}
 
@@ -563,6 +593,39 @@ func gatherEvents(id string, parentOf map[string]string, eventsBySubject map[str
 		}
 	}
 	return out
+}
+
+// resolveBlockedByOwner is P1's US-3 (AC4-transferred) legality gate:
+// candidate is a fulfilling response's own `blocked_by.owner`
+// (blockedOwnerCandidate, above), and it is returned unchanged ONLY when
+// fold.CheckLegality says candidate has a legal move on env — checked
+// against `note` (RoleEitherParty) rather than `unblock` itself, because
+// unblock's own row is Role: RoleTarget always (table.go), so asking
+// CheckLegality about `unblock` specifically would refuse every candidate
+// this field exists to name. `note`'s RoleEitherParty is the narrowest
+// available floor that still admits env.From (the common case this US
+// names: "the requester is what blocks me") and any addressed target,
+// while refusing a genuine bystander (P-2, spec 01 §6: "a third-party
+// member: note is RoleEitherParty, so even a note is unauthorized").
+//
+// The check needs env AND state (arguments, not the FulfillingResponse
+// pattern's zero extra input) because — unlike DeprecatesMyDependency and
+// FulfillingResponse, which are pure existence facts — a legality verdict
+// is a function of what the row's OWN artifact would let candidate do, and
+// pendency itself may not read the manifest membership CheckLegality
+// needs (Input's own doc comment). Doing it here, once, is this
+// package's half of P-2 the same way membershipView's own read is: cache
+// has the manifest, pendency never does.
+func resolveBlockedByOwner(candidate string, env fold.Envelope, state fold.State, membership fold.MembershipView) string {
+	if candidate == "" {
+		return ""
+	}
+	status := membership(candidate)
+	verdict := fold.CheckLegality(env.Kind, state, fold.TNote, env, fold.Actor{System: candidate}, status)
+	if verdict != fold.VerdictLegal {
+		return ""
+	}
+	return candidate
 }
 
 // membershipView adapts a space.Manifest's participant list into a

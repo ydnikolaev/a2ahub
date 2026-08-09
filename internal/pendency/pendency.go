@@ -103,6 +103,41 @@ type Input struct {
 	// Kind is fold.KindResponse — verify/dispute resolve against the
 	// parent's envelope, never the response's own (domain 3.4.6).
 	ParentFrom string
+
+	// BlockedByOwner is the system this artifact's own facts say is
+	// actually being waited on while it sits at `blocked` — a
+	// caller-resolved FACT for the same reason ExtraAddressees and
+	// LeftParticipants are (this package reads no registry and cannot
+	// itself discover which party a `block` event's target meant):
+	// internal/cache resolves it from a fulfilling response's own
+	// `blocked_by.owner` (envelope/v2/response.schema.json) and hands it
+	// in, never re-derived here.
+	//
+	// P1's US-3, transferred to this field: "as a blocked receiver, I do
+	// not want to be told I owe `unblock` when the requester is what
+	// blocks me". Today's row names the TARGET unconditionally, which is
+	// an ATTRIBUTION failure, not an authorization one — the target IS
+	// authorized to unblock, it just is not always who the artifact's own
+	// facts say the wait is on.
+	//
+	// P-2 (never name a party with no legal move) is the caller's job,
+	// not this package's: the caller has ALREADY checked the named system
+	// against fold.CheckLegality before handing it in, against `note`
+	// (RoleEitherParty) as the floor "has any legal move on this
+	// artifact" bar — `unblock` itself is unblock's dynamic row's own
+	// Role: RoleTarget always, so a named owner other than the target can
+	// never legally issue it, and asking CheckLegality about `unblock`
+	// specifically would refuse the exact case this field exists for. A
+	// legality check against manifest membership needs the manifest,
+	// which this package does not read; the caller does, the same way it
+	// already resolves LeftParticipants from one.
+	//
+	// EMPTY MEANS "nothing named a blocker, OR the caller's legality
+	// check refused the named party" — the two are not distinguished,
+	// deliberately, the same fail-open LeftParticipants documents: either
+	// way the artifact answers exactly as it does today, target owing
+	// `unblock`, rather than silently naming nobody.
+	BlockedByOwner string
 }
 
 // Verdict is one (artifact, system-set) answer: who the next move is
@@ -456,6 +491,49 @@ func targetRow(expected, why string) row {
 	}
 }
 
+// blockedRow is the question/work_request `blocked` row (P1's US-3,
+// transferred). Absent a caller-resolved BlockedByOwner it is byte-identical
+// to the old unconditional targetRow(fold.TUnblock, ...): the target owns
+// the move, because unblock's dynamic row (table.go) is Role: RoleTarget
+// always and no other system can legally issue it.
+//
+// When BlockedByOwner IS present, Owners names it instead — but Expected is
+// deliberately "", the same third verdict shape the orphaned-counterparty
+// branch and the requirement/acknowledged row already use (Verdict's own
+// doc): the named owner cannot legally call `unblock` either (that
+// transition stays the target's alone), so naming it as Expected would be
+// exactly the "surface names a move the tool refuses" failure the authority
+// gate exists to catch. Naming nobody would hide a real debt instead — the
+// artifact's own facts say the wait is on this system, not the target.
+func blockedRow() row {
+	return row{
+		who: func(in Input) []string {
+			if in.BlockedByOwner != "" {
+				return []string{in.BlockedByOwner}
+			}
+			return target(in)
+		},
+		expectedFor: func(in Input) string {
+			if in.BlockedByOwner != "" {
+				return ""
+			}
+			return fold.TUnblock
+		},
+		whyFor: func(in Input) string {
+			if in.BlockedByOwner != "" {
+				return "US-3: this artifact's own facts (a fulfilling response's blocked_by.owner) name " +
+					in.BlockedByOwner + " as who the wait is actually on, legality-checked by the caller " +
+					"before it reached here — but unblock stays the TARGET's own event (domain 3.4.3), so no " +
+					"transition of THIS artifact is owed by " + in.BlockedByOwner + " either"
+			}
+			return "domain 3.4.3 makes unblock the target's own event; the referenced blocker is a separate artifact carrying its own pendency"
+		},
+		onEmpty: func(Input) string {
+			return "no target (`to`) was recorded on this envelope, so the " + fold.TUnblock + " it would owe cannot be attributed"
+		},
+	}
+}
+
 func parentOwnerRow(expected, why string) row {
 	return row{
 		who:      parentOwner,
@@ -568,8 +646,7 @@ func buildTable() map[key]row {
 			"committed to; the answer is outstanding")
 		m[key{k, fold.StateInProgress}] = targetRow(fold.TRespond,
 			"same, in flight")
-		m[key{k, fold.StateBlocked}] = targetRow(fold.TUnblock,
-			"domain 3.4.3 makes unblock the target's own event; the referenced blocker is a separate artifact carrying its own pendency")
+		m[key{k, fold.StateBlocked}] = blockedRow()
 		m[key{k, fold.StateResponded}] = senderRow(fold.TClose,
 			"the answer landed; the sender owes verification then close, or a dispute")
 	}

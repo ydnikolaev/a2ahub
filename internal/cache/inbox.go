@@ -73,6 +73,17 @@ func hasFulfillingResponse(fa foldedArtifact) bool {
 	return fa.FulfillingResponse
 }
 
+// blockedByOwner returns the system a fulfilling response's own
+// `blocked_by.owner` names as who this artifact's `blocked` wait is
+// actually on — internal/pendency's `blocked` row splits on it
+// (Input.BlockedByOwner). Resolved and legality-checked in mirror.go, for
+// the same reason hasFulfillingResponse is: the evidence lives on a
+// DIFFERENT artifact, and P-2's legality check needs manifest membership
+// pendency does not read.
+func blockedByOwner(fa foldedArtifact) string {
+	return fa.BlockedByOwner
+}
+
 // actionableReasons evaluates every one of OP-207's 5 normative
 // `--actionable` conditions (quoted verbatim in spec 07 §T1) against fa
 // for system me, returning the subset that matched (nil if none). This
@@ -145,6 +156,7 @@ func resolveVerdict(fa foldedArtifact, me string, manifest space.Manifest, paren
 		// site owns only the registry read.
 		ExtraAddressees:       extraAddressees(fa, me),
 		HasFulfillingResponse: hasFulfillingResponse(fa),
+		BlockedByOwner:        blockedByOwner(fa),
 	}
 	if fa.kind() == fold.KindResponse {
 		in.ParentFrom = parentFrom
