@@ -662,12 +662,18 @@ func undrivenScenarios() []undrivenScenario {
 		},
 		{
 			ID: "contract-binding-none-refused-at-adopt-and-pin",
-			Reason: "UNMET ACCEPTANCE CRITERION, not a harness gap. P5's own Q1 " +
-				"records that `binding: none` is unreachable in any space at or " +
-				"above floor 0.19.0 — POL-009 and POL-013 both reject a " +
-				"carried-set-less contract — and decided to relax that. The " +
-				"relaxation has not shipped, so no path however written could pass " +
-				"against this binary. Tracked as P5 remaining work.",
+			Reason: "UNREACHABLE BY CONSTRUCTION, and the reason changed on " +
+				"2026-08-09. This entry used to say the POL-009/POL-013 " +
+				"relaxation had not shipped. That framing is retired: P5's AC2 " +
+				"was rewritten because it was WRONG, not merely undone — it " +
+				"names an interaction between two things that cannot meet. " +
+				"`binding` lives on schemas/envelope/v2/work_request.schema.json " +
+				"(P5's own D1 moved it there); it is not a property of " +
+				"contract.schema.json, and `a2a contract adopt` accepts only an " +
+				"XC id. So no contract can declare `binding: none` and no adopt " +
+				"or pin can refuse on it. The scenario cannot be driven until a " +
+				"contract-level binding field exists, which no phase has " +
+				"committed to creating. See specs/05-declared-nature.md AC2.",
 		},
 		{
 			ID: "contract-published-registered-consumer-yields-named-owner-with-no-new-field-set",
