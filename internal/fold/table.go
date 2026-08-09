@@ -265,6 +265,18 @@ func responseRows() []Row {
 		{Kind: KindResponse, From: StateDraft, Transition: TSubmit, To: StateSubmitted, Role: RoleAny},
 		{Kind: KindResponse, From: StateSubmitted, Transition: TVerify, To: StateVerified, Role: RoleOwner},
 		{Kind: KindResponse, From: StateSubmitted, Transition: TDispute, To: StateDisputed, Role: RoleOwner},
+		// 2026-08-08 amendment ("Q3 is no longer an argument, it is a
+		// measurement", plan 06): before this row, `disputed` was the only
+		// member of the refused-and-non-terminal family (decision
+		// `rejected`, handoff `rejected`, response `disputed`) with no exit
+		// at all — a producer whose bytes were disputed could not resubmit,
+		// supersede, or contest. This row matches the other two: the
+		// producer replaces the disputed response with a new one. It is
+		// NOT `dispute` reversed (that is a different act with a different
+		// owner) — resolved via the generic (non-response-scoped) dispatch
+		// path, so Role is the RESPONSE'S OWN `From` (the producer), unlike
+		// verify/dispute above which resolve against the PARENT's envelope.
+		{Kind: KindResponse, From: StateDisputed, Transition: TSupersede, To: StateSuperseded, Role: RoleOwner},
 	}
 }
 

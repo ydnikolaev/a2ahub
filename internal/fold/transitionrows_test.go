@@ -19,10 +19,16 @@ import "testing"
 // by a before/after probe in this phase's own report, not by a test here
 // — the row's removal is behaviour-identical by construction, so there is
 // nothing to regression-pin beyond this count).
+//
+// 100, not 99: agent-exchange-2026-08 P6's 2026-08-08 amendment ("Q3 is
+// no longer an argument, it is a measurement") added
+// (response, disputed, supersede) — the producer's exit out of a disputed
+// response, matching decision `rejected` and handoff `rejected`'s own
+// supersede exits, which the earlier 99 already counted.
 func TestTransitionRowsUniverse(t *testing.T) {
 	got := TransitionRows()
-	if len(got) != 99 {
-		t.Fatalf("TransitionRows(): want 99 triples, got %d: %+v", len(got), got)
+	if len(got) != 100 {
+		t.Fatalf("TransitionRows(): want 100 triples, got %d: %+v", len(got), got)
 	}
 }
 

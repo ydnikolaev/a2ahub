@@ -101,7 +101,15 @@ func TestTerminalNamedCases(t *testing.T) {
 		{KindContract, StateRetired, true, "retirement is a contract's ending"},
 		{KindContract, StateDeprecated, false, "a deprecated contract can still be retired"},
 		{KindQuestion, StateClosed, true, "a closed exchange has no successor transition"},
-		{KindResponse, StateDisputed, true, "the dispute concludes this response; D-024's reopening lands on the PARENT"},
+		// Was `true` with the reason "the dispute concludes this response".
+		// It did not: it concluded the PRODUCER, who could then do nothing
+		// at all. Its two siblings in the refused family — decision/rejected
+		// and handoff/rejected, both above — have always been non-terminal
+		// because the producer may supersede. This one was the odd member,
+		// and P1's totality gate could not see it: that gate is scoped to
+		// OPEN outcomes, and refused-and-terminal is neither open nor
+		// settled.
+		{KindResponse, StateDisputed, false, "the producer may supersede a disputed response, matching decision/rejected and handoff/rejected — refused AND non-terminal"},
 	}
 	for _, c := range cases {
 		if got := Terminal(c.kind, c.state); got != c.want {

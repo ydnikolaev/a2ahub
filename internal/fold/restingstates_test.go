@@ -22,10 +22,17 @@ import "testing"
 // when a row is added is the point — the universe is not something a phase
 // gets to change quietly, and P1 changing it is what forced P0's outcome map
 // to gain a meaning for the new state in the same commit.
+//
+// The 46th is {response superseded}: P6 closed the disputed sink. A disputed
+// response was `refused` AND TERMINAL while its two siblings —
+// decision/rejected and handoff/rejected — are refused and NON-terminal,
+// so the producer of disputed bytes could do nothing at all: not resubmit,
+// not supersede, not contest. The supersede exit that fixes it produces a
+// new To, and a new To is a new resting state, exactly as P1's did.
 func TestRestingStatesUniverse(t *testing.T) {
 	got := RestingStates()
-	if len(got) != 45 {
-		t.Fatalf("RestingStates(): want 45 pairs, got %d: %+v", len(got), got)
+	if len(got) != 46 {
+		t.Fatalf("RestingStates(): want 46 pairs, got %d: %+v", len(got), got)
 	}
 }
 

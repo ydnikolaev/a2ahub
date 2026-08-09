@@ -8,10 +8,14 @@ import "testing"
 // drift here is a real signal (a table row added/removed), not test noise;
 // internal/pendency's gate is what should red, not this one silently
 // tracking it.
+// The 36th is {response disputed}, added when P6 gave it a supersede exit:
+// a state nothing departed was in no From position, so it was not a subject
+// anybody could owe a move from. Giving it an exit makes it one, and
+// internal/pendency's I8 gate is what then requires the row that says who.
 func TestSubjectStatesUniverse(t *testing.T) {
 	got := SubjectStates()
-	if len(got) != 35 {
-		t.Fatalf("SubjectStates(): want 35 pairs, got %d: %+v", len(got), got)
+	if len(got) != 36 {
+		t.Fatalf("SubjectStates(): want 36 pairs, got %d: %+v", len(got), got)
 	}
 }
 

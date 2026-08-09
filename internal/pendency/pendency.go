@@ -598,6 +598,22 @@ func buildTable() map[key]row {
 	m[key{fold.KindResponse, fold.StateDraft}] = ownerRow(fold.TSubmit, "unsent")
 	m[key{fold.KindResponse, fold.StateSubmitted}] = parentOwnerRow(fold.TVerify,
 		"domain 3.4.6: verify/dispute resolve against the PARENT's envelope, never the response's own")
+	// table.go's 2026-08-08 amendment gives the producer a `supersede`
+	// escape hatch out of `disputed` (matching decision `rejected` and
+	// handoff `rejected`'s own exits), but unlike those two it is not an
+	// OWED act: D-024's dispute ADDITIONALLY reopens the PARENT to
+	// `in_progress`, and the (question|work_request, in_progress) row
+	// above (targetRow(fold.TRespond, ...)) already sends the producer
+	// back through a fresh `respond` — the practical remedy every
+	// disputed-response scenario resolves to. Naming supersede as owed
+	// here would tell the producer twice, on two artifacts, for one
+	// situation. Closer to decision `rejected`'s own shape ("the revision
+	// is a NEW artifact on the thread, not a move owed on this one") than
+	// to handoff `rejected`'s genuinely-owed resubmission.
+	m[key{fold.KindResponse, fold.StateDisputed}] = nobodyRow(
+		"settled from this artifact's own perspective: the parent's own in_progress row already " +
+			"sends the producer back through a fresh respond; supersede is an available escape hatch on " +
+			"THIS response, never an owed act")
 
 	// 3.4.7 announcement
 	m[key{fold.KindAnnouncement, fold.StateDraft}] = ownerRow(fold.TPublish, "unsent")

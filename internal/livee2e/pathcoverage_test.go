@@ -184,6 +184,22 @@ func uncoveredTransitions() []uncoveredTransition {
 	)...)
 
 	out = append(out, uncoveredClass(
+		"agent-exchange-2026-08 P6's 2026-08-08 amendment (\"Q3 is no longer an argument, it is a "+
+			"measurement\", plan 06): the producer's `supersede` escape hatch out of a disputed "+
+			"response, matching decision `rejected` and handoff `rejected`'s own supersede exits "+
+			"(both driven above by decision-rejected-superseded and the P1 owner-side-exit class). Not "+
+			"path-driven: D-024's dispute ADDITIONALLY reopens the PARENT to in_progress, whose own "+
+			"pendency row already sends the producer back through a fresh `respond` — the practical "+
+			"remedy every disputed-response scenario in this catalogue already exercises "+
+			"(work-request-lifecycle-disputed-sender-owes, question-lifecycle-disputed-responder-owes). "+
+			"A path proving supersede specifically, rather than the respond it is an alternative to, "+
+			"would need a SECOND branch off the same disputed-response precondition — authoring that "+
+			"is P8's own catalogue call, not this phase's to add (same reasoning the two classes above "+
+			"already apply to their own gaps).",
+		tk(fold.KindResponse, fold.StateDisputed, fold.TSupersede),
+	)...)
+
+	out = append(out, uncoveredClass(
 		"P1's blocked-cancel pair. Unlike the four owner-side exits above, "+
 			"these are NOT departure-conditional — a path could drive them by "+
 			"blocking an exchange and then cancelling it, with nobody leaving. "+

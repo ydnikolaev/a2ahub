@@ -223,6 +223,12 @@ func TestResolveRows(t *testing.T) {
 			wantOwners:   []string{"sys-c"},
 			wantExpected: fold.TVerify,
 		},
+		{
+			name: "response/disputed: nobody — D-024 reopens the parent to in_progress, which already " +
+				"sends the producer back through respond; supersede is an available escape hatch on THIS " +
+				"response, not an owed act (2026-08-08 amendment, plan 06)",
+			in: Input{Kind: fold.KindResponse, State: fold.StateDisputed, From: "sys-a", ParentFrom: "sys-c"},
+		},
 
 		// --- 3.4.7 announcement ---
 		{
@@ -271,8 +277,8 @@ func TestResolveRows(t *testing.T) {
 	for _, tc := range cases {
 		covered[key{Kind: tc.in.Kind, State: tc.in.State}] = true
 	}
-	if len(covered) != 35 {
-		t.Fatalf("TestResolveRows: %d distinct (kind, state) pairs covered, want 35 (one per fold.SubjectStates() pair)", len(covered))
+	if len(covered) != 36 {
+		t.Fatalf("TestResolveRows: %d distinct (kind, state) pairs covered, want 36 (one per fold.SubjectStates() pair — 2026-08-08's response/disputed row is the 36th)", len(covered))
 	}
 
 	for _, tc := range cases {

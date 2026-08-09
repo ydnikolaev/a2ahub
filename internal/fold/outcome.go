@@ -95,8 +95,16 @@ var outcomes = map[Kind]map[State]Outcome{
 		StateVerified:  OutcomeSettled,
 		// The asker rejected the answer. D-024 additionally reopens the
 		// parent, so the exchange continues — but THIS response
-		// concluded, and concluded against the party that gave it.
+		// concluded against the party that gave it. Outcome and Terminal
+		// are still two different questions (Terminal's own doc comment):
+		// 2026-08-08's amendment gave the producer a `supersede` exit from
+		// here, matching decision `rejected` and handoff `rejected` — so
+		// `disputed` is refused AND, as of that row, non-terminal.
 		StateDisputed: OutcomeRefused,
+		// The producer's escape hatch out of a disputed response. Same
+		// meaning as every other `superseded`: another artifact replaced
+		// this one.
+		StateSuperseded: OutcomeSuperseded,
 	},
 	KindAnnouncement: {
 		StatePublished:  OutcomeOpen,
