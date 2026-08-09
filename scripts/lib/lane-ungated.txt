@@ -113,14 +113,26 @@ LICENSE
 # skill; nothing here reads it.
 seeds/a2a.md
 
-# The repo's own feedback ledger — authored YAML and a generated digest. NO
-# gate inside `check` reads this copy: internal/feedback's tests exercise
-# fixtures under t.TempDir(), never these files. That is a real hole, not a
-# property of the data, and it is filed as a row in docs/validator-backlog.md
-# rather than hidden here. This entry is the honest interim: the coverage
-# refusal found the gap, the backlog owns closing it, and the day a gate
-# claims these paths this entry gets deleted.
-feedback/**
+# The repo's own feedback corpus is now CLAIMED — `feedback/inbox/**` and
+# `feedback/backlog.yaml` are declared by scripts/check-feedback-corpus.sh
+# (agent-exchange-2026-08 P9), which validates every record split by its
+# status, refuses an id that disagrees with its filename, refuses a release
+# note citing a report the corpus still calls unread, requires every non-`new`
+# resolution to name a referent that RESOLVES, and requires the WIP ledger to
+# agree with the inbox. What used to stand here was the whole of `feedback/**`
+# with the note "NO gate inside `check` reads this copy" — true when written,
+# and the exact hole the P12 coverage refusal existed to surface.
+#
+# What is left is the residue, narrowed rather than deleted, because AC8 asks
+# for the remainder to be named with its own reason:
+#
+# feedback/digest.md — the append-only triage history, written by
+# `feedback.ApplyVerdicts` and never read back by anything. It is a log, not a
+# state: nothing derives a verdict from it, so there is no invariant a gate
+# could hold it to beyond "it grew", which proves nothing. If it ever becomes
+# an input — a report generator, a released changelog — that is the day it
+# earns a claim, and this entry gets deleted rather than narrowed again.
+feedback/digest.md
 
 # macOS Finder droppings. Not repo content; appears only in the private
 # harness roots the universe walks because they are untracked by design.

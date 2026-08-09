@@ -60,7 +60,7 @@
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations view-vocabulary pendency-uniqueness loop-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline-check
+REPO_GATES := lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary pendency-uniqueness loop-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline-check
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -182,7 +182,7 @@ skill-citations: ## Every `a2a <verb>` and error code the shipped skill PROSE ci
 	  echo "skill-citations: skip — scripts/check-skill-citations.sh absent (public checkout)."; \
 	fi
 
-feedback-corpus: ## The feedback-corpus honesty gate (P9 wave A; NOT yet in REPO_GATES — private harness gate, presence-gated).
+feedback-corpus: ## A feedback record cannot be corrupted into the corpus, and a release cannot claim to close a report the corpus calls unread (P9; private harness gate, presence-gated).
 	@if [ -f scripts/check-feedback-corpus.sh ]; then \
 	  bash scripts/check-feedback-corpus.sh; \
 	else \
@@ -260,6 +260,11 @@ _harness-check:
 	  bash docs/runbooks/feedback-sync.sh --teeth; \
 	else \
 	  echo "harness-check: skip — docs/runbooks/feedback-sync.sh absent (public checkout)."; \
+	fi
+	@if [ -f scripts/check-feedback-corpus.sh ]; then \
+	  bash scripts/check-feedback-corpus.sh --teeth; \
+	else \
+	  echo "harness-check: skip — scripts/check-feedback-corpus.sh absent (public checkout)."; \
 	fi
 	@if [ -f scripts/check-feature-lint.sh ]; then \
 	  bash scripts/check-feature-lint.sh --teeth; \
