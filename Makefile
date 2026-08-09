@@ -49,7 +49,7 @@
 # what this is NOT: vet type-checks the tagged tree, it does not RUN it —
 # `make live-e2e` is still the only thing that touches a real GitHub space.
 
-.PHONY: check test check-validators lane lane-run lane-declarations web-quality _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus view-vocabulary pendency-uniqueness loop-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
+.PHONY: check test check-validators lane lane-run lane-declarations web-quality _print-repo-gates dashboard-template-drift feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations feedback-corpus feedback-sync view-vocabulary pendency-uniqueness loop-coverage release-notes-freshness roadmap-release-decisions provider-tier-deferral space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight live-e2e live-e2e-evidence logic-e2e install
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -189,6 +189,13 @@ feedback-corpus: ## The feedback-corpus honesty gate (P9 wave A; NOT yet in REPO
 	  echo "feedback-corpus: skip — scripts/check-feedback-corpus.sh absent (public checkout)."; \
 	fi
 
+feedback-sync: ## Pull the hub of record's feedback/inbox/** into this tree (P9 wave B; git-level, stages only).
+	@if [ -f docs/runbooks/feedback-sync.sh ]; then \
+	  bash docs/runbooks/feedback-sync.sh; \
+	else \
+	  echo "feedback-sync: skip — docs/runbooks/feedback-sync.sh absent (public checkout)."; \
+	fi
+
 release-notes-freshness: ## User-visible product commits cannot outrun the newest authored release notes.
 	@bash scripts/check-release-notes-freshness.sh
 
@@ -248,6 +255,11 @@ _harness-check:
 	  bash docs/runbooks/publish-to-public.sh --teeth; \
 	else \
 	  echo "harness-check: skip — private publish runbook absent (public checkout)."; \
+	fi
+	@if [ -f docs/runbooks/feedback-sync.sh ]; then \
+	  bash docs/runbooks/feedback-sync.sh --teeth; \
+	else \
+	  echo "harness-check: skip — docs/runbooks/feedback-sync.sh absent (public checkout)."; \
 	fi
 	@if [ -f scripts/check-feature-lint.sh ]; then \
 	  bash scripts/check-feature-lint.sh --teeth; \
