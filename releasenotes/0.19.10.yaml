@@ -883,3 +883,44 @@ changes:
         Nothing to do unless you author a response that references a handoff
         with a data deliverable. If you do and it is refused, the package has
         not landed yet — merge it first, then resubmit.
+  - id: RN-01910-31
+    kind: feat
+    impact: normal
+    roadmap:
+      visibility: shipped
+      why: >
+        A producer could not publish an artefact that says "do not build
+        against this" — the exact thing most worth saying. Now they can, and
+        the system enforces it rather than trusting the reader.
+    subject: "A contract can declare itself non-adoptable, and adoption refuses it"
+    detail: >
+      Some contracts exist to be read, not adopted: a review bundle, an agreed
+      definition with no machine-checkable grammar. Publishing one was
+      impossible — every contract must carry a schema plus valid and invalid
+      fixtures, and these have nothing to put there — so producers either
+      faked a schema or sent the thing outside the protocol.
+      Contracts gain an optional `x_binding` declaration: either the single
+      word `none`, or four fields saying what the artefact is
+      (`artifact_class`), what compatibility it claims
+      (`compatibility_status`), and whether it may be adopted or pinned
+      against. Leaving it out means undeclared, which is deliberately
+      different from declaring `none`.
+      Two things follow. `a2a contract adopt` refuses a contract that declares
+      itself non-adoptable, before it resolves `--major`, so the flag cannot
+      route around it — and since adopt is what writes the dependency pin,
+      refusing it is what stops the pin. And a contract that claims no
+      compatibility at all may publish without schemas or fixtures, because
+      there is nothing to check.
+      The relaxation is narrower than the refusal on purpose: a contract may
+      be unadoptable while still naming a real compatibility claim, and that
+      claim still needs its baseline.
+      Known limit, stated rather than implied: no surface displays these
+      fields yet, so a consumer learns a contract is unadoptable by being
+      refused at adopt rather than by reading it.
+    affects: ["a2a contract adopt", "a2a contract publish", "a2a validate --ci"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. The field is optional and absent from every existing
+        contract; a contract that does not declare it behaves exactly as
+        before.
