@@ -27,6 +27,7 @@ type transitionFreeHandler func(env Envelope, result *Result, event Event, membe
 var transitionFreeHandlers = map[freeKey]transitionFreeHandler{
 	{Transition: TNote}: applyNote,
 	{Kind: KindAnnouncement, Transition: TAcknowledge}: applyBroadcastAck,
+	{Kind: KindContract, Transition: TActivate}:        applyContractActivation,
 }
 
 // lookupTransitionFree resolves the handler for (kind, transition),

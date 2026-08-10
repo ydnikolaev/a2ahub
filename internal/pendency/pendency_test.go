@@ -484,6 +484,14 @@ func TestResolveDegradesOnMissingFacts(t *testing.T) {
 			},
 			wantWhyHas: "every addressed target has already acknowledged",
 		},
+		{
+			name: "contract published, OperationalDebtOwed but no from: degrades, does not panic, and does not misreport a real debt as settled",
+			in: Input{
+				Kind: fold.KindContract, State: fold.StatePublished,
+				OperationalDebtOwed: true,
+			},
+			wantWhyHas: "no owner",
+		},
 	}
 
 	for _, tc := range cases {
@@ -745,5 +753,102 @@ func TestOnlyTheLeftOwnerIsDroppedWhenOthersRemain(t *testing.T) {
 	}
 	if got.Expected != fold.TAcknowledge {
 		t.Errorf("Expected = %q, want %q: the exchange is still live for the member who remains", got.Expected, fold.TAcknowledge)
+	}
+}
+
+// TestContractPublishedOperationalDebtIsTheP1Assertion is spec
+// 05-declared-nature.md §6's own testing row, and the phase's whole
+// point: "published version + registered consumer ⇒ a live integration
+// with an owner, with NO voluntary field set — this is the P-1
+// assertion; it must pass with every new field absent." Input here
+// carries no x_operational, no known_gaps, nothing beyond the base
+// envelope facts plus the ONE caller-resolved registration/floor fact —
+// proving the derivation is not an opt-in field.
+func TestContractPublishedOperationalDebtIsTheP1Assertion(t *testing.T) {
+	t.Parallel()
+
+	v, err := Resolve(Input{
+		Kind: fold.KindContract, State: fold.StatePublished,
+		From: "producer-sys",
+		// No x_operational, no known_gaps, no descriptor fact of any kind
+		// — only the fact a caller resolves from registration+floor.
+		OperationalDebtOwed: true,
+	})
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if !reflect.DeepEqual(v.Owners, []string{"producer-sys"}) {
+		t.Errorf("Owners = %v, want [producer-sys]: the P-1 derivation must name the producer with no voluntary field set", v.Owners)
+	}
+	if v.Expected != "activate" {
+		t.Errorf("Expected = %q, want %q: the producer owes the discharge act 26A shipped", v.Expected, "activate")
+	}
+	if !strings.Contains(v.Why, "P5 AC1") {
+		t.Errorf("Why = %q, want it to name P5 AC1", v.Why)
+	}
+}
+
+// TestContractPublishedOperationalDebtIsGatedOnTheFloor is §8 AC1's own
+// gate: "GATED ON THE SPACE'S OWN FLOOR — below it, no derived row is
+// emitted and the thread reads exactly as it does today." The caller
+// resolves the floor into OperationalDebtOwed itself (pendency reads no
+// floor config), so the row-level assertion is simply that the FALSE
+// value — the one a below-floor space produces — reproduces today's
+// unconditional "nobody" verdict byte-for-byte.
+func TestContractPublishedOperationalDebtIsGatedOnTheFloor(t *testing.T) {
+	t.Parallel()
+
+	belowFloor, err := Resolve(Input{
+		Kind: fold.KindContract, State: fold.StatePublished,
+		From:                "producer-sys",
+		OperationalDebtOwed: false, // what a below-floor space resolves to
+	})
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if belowFloor.Owners != nil {
+		t.Errorf("Owners = %v, want nil: below the floor no derived row is emitted", belowFloor.Owners)
+	}
+	if belowFloor.Expected != "" {
+		t.Errorf("Expected = %q, want \"\"", belowFloor.Expected)
+	}
+
+	unset, err := Resolve(Input{
+		Kind: fold.KindContract, State: fold.StatePublished, From: "producer-sys",
+	})
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if !reflect.DeepEqual(unset, belowFloor) {
+		t.Errorf("Verdict with OperationalDebtOwed unset = %+v, want it byte-identical to the explicit-false case %+v — "+
+			"\"the thread reads exactly as it does today\"", unset, belowFloor)
+	}
+	wantWhy := "alive and settled: the owner MAY publish a successor or deprecate, but neither is a move anyone waits for"
+	if unset.Why != wantWhy {
+		t.Errorf("Why = %q, want the UNCHANGED settled text %q", unset.Why, wantWhy)
+	}
+}
+
+// TestContractPublishedNoRegisteredConsumerStillOwesNobody is the paired
+// control: OperationalDebtOwed only ever becomes true because a caller
+// found a registered consumer AND cleared the floor — this test pins
+// that a contract with neither (the ordinary case, most published
+// contracts) is unaffected by this wave. "A rule that fires on
+// everything is not a rule."
+func TestContractPublishedNoRegisteredConsumerStillOwesNobody(t *testing.T) {
+	t.Parallel()
+
+	v, err := Resolve(Input{
+		Kind: fold.KindContract, State: fold.StatePublished,
+		From: "producer-sys", To: []string{"nobody-in-particular"},
+	})
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if v.Owners != nil {
+		t.Errorf("Owners = %v, want nil: no registered consumer means no derived debt", v.Owners)
+	}
+	if v.Expected != "" {
+		t.Errorf("Expected = %q, want \"\"", v.Expected)
 	}
 }

@@ -161,6 +161,34 @@ type Input struct {
 	// behaviour (the sender owes close), never a synthesized refusal.
 	DeliveryUnresolvable bool
 
+	// OperationalDebtOwed is P5 AC1's derivation (specs/05-declared-nature.md,
+	// "The P-1 problem, stated honestly"): true when the CALLER has already
+	// established that a published contract has a registered consumer AND
+	// the space's own floor clears the derivation — a caller-resolved FACT
+	// for the same reason ExtraAddressees/LeftParticipants are (this
+	// package reads no registry and no floor config; §8 AC1's own words:
+	// "the derivation is GATED ON THE SPACE'S OWN FLOOR").
+	//
+	// It is set from registration and publication ALONE, never from
+	// `x_operational` — reading that field would reproduce exactly the
+	// opt-in-field failure P-1 forbids ("The obligation must derive from
+	// facts the system ALREADY holds, and the declaration must change what
+	// those facts MEAN, not whether they exist... The implementor must not
+	// weaken this into an opt-in field"). So this fires identically whether
+	// the descriptor names an item `state: absent` or carries no
+	// `x_operational` field at all — §6's testing row requires the
+	// derivation to "pass with every new field absent", and this field is
+	// how that requirement reaches the row: it is never conditioned on the
+	// schema field internal/cache resolves it from `x_operational` for.
+	//
+	// EMPTY (false) MEANS "no registered consumer was found for this
+	// contract's published major, OR the space is below floor, OR the
+	// caller cannot resolve either fact" — the same fail-open discipline
+	// every other caller-resolved fact in this struct documents: a caller
+	// with no visibility gets today's ordinary behaviour (nobody owes
+	// anything on a published contract), never a synthesized debt.
+	OperationalDebtOwed bool
+
 	// BlockedByOwner is the system this artifact's own facts say is
 	// actually being waited on while it sits at `blocked` — a
 	// caller-resolved FACT for the same reason ExtraAddressees and
@@ -330,9 +358,11 @@ type row struct {
 	whyFor      func(Input) string
 }
 
-// resolver is one of the six named resolvers this package uses — no
+// resolver is one of the seven named resolvers this package uses — no
 // others: nobody, owner, target, parentOwner, unackedTargets,
-// pendingApprovers.
+// pendingApprovers, contractActivationOwner. (blockedRow and respondedRow
+// additionally define their own inline, single-use resolvers — see each
+// row constructor's own doc comment.)
 type resolver func(Input) []string
 
 func nobody(Input) []string { return nil }
@@ -422,6 +452,34 @@ func unackedTargets(in Input) []string {
 		out = append(out, t)
 	}
 	return out
+}
+
+// contractActivate names the transition a published contract's operational
+// debt is owed as (26A's `a2a contract activate`, spec 05's 2026-08-10
+// amendment: "activation {version, status: live, satisfies[], note?} +
+// transition activate | event (event/v2, conditional block like
+// publication)"). It is a plain string, not a fold.T* constant, because
+// internal/fold's transition table (off-limits to this wave) carries no
+// `activate` row at all: activation is deliberately NOT a contract
+// lifecycle state transition (draft/published/deprecated/retired) — it is
+// a side fact about a published version's operational readiness, the same
+// reasoning `contract adopt`'s own consumes.yaml write already applies
+// (also un-evaluated by fold). The literal below matches the one
+// cmd_contract.go's runActivate writes onto the committed event
+// (Transition: "activate") and event/v2's own transition enum member.
+const contractActivate = "activate"
+
+// contractActivationOwner resolves to the contract's own `from` (the
+// producer — the only party who can clear this debt, spec 05 §11's
+// "producer departure" concern) when the CALLER has established
+// OperationalDebtOwed; nil otherwise, which lets Resolve's ordinary
+// "owners empty" path answer with today's unconditional "nobody" text via
+// contractPublishedRow's onEmpty.
+func contractActivationOwner(in Input) []string {
+	if !in.OperationalDebtOwed {
+		return nil
+	}
+	return owner(in)
 }
 
 // pendingApprovers resolves to the decision's required approvers who
@@ -631,6 +689,42 @@ func respondedRow() row {
 	}
 }
 
+// contractPublishedRow is P5 AC1's own row (spec 05, "The P-1 problem,
+// stated honestly"): a published contract owed nobody unconditionally
+// until this wave. When the CALLER establishes OperationalDebtOwed (a
+// registered consumer against this contract's published major, above the
+// space's own floor — cache.FindRegisteredConsumersForMajor,
+// caller-resolved for the same reason every other registry-derived fact
+// in Input is), the producer owes `activate`. Absent that fact, this is
+// byte-identical to the row's old unconditional nobodyRow: "alive and
+// settled: the owner MAY publish a successor or deprecate, but neither is
+// a move anyone waits for" — §8 AC1's own words, "below it [the floor],
+// no derived row is emitted and the thread reads exactly as it does
+// today."
+func contractPublishedRow() row {
+	return row{
+		who:      contractActivationOwner,
+		expected: contractActivate,
+		why: "P5 AC1 (specs/05-declared-nature.md): a registered consumer is " +
+			"building against this contract's published major, so the operational " +
+			"half is owed from registration and publication alone — the debt is " +
+			"the same whether x_operational names the gap `state: absent` or says " +
+			"nothing at all (P-1: undeclared is itself the debt, never an opt-in " +
+			"field); the producer owes activate",
+		onEmpty: func(in Input) string {
+			if in.OperationalDebtOwed {
+				// contractActivationOwner only returns nil here because
+				// owner(in) itself found in.From empty — the debt IS owed,
+				// the producer just could not be attributed. Reusing the
+				// unconditional "settled" text would misreport a real,
+				// unattributed debt as nothing owed at all.
+				return "no owner (`from`) was recorded on this contract's envelope, so the " + contractActivate + " it would owe cannot be attributed"
+			}
+			return "alive and settled: the owner MAY publish a successor or deprecate, but neither is a move anyone waits for"
+		},
+	}
+}
+
 func parentOwnerRow(expected, why string) row {
 	return row{
 		who:      parentOwner,
@@ -686,8 +780,7 @@ func buildTable() map[key]row {
 	// 3.4.1 contract
 	m[key{fold.KindContract, fold.StateDraft}] = ownerRow(fold.TPublish,
 		"an unpublished draft is work its author still owes")
-	m[key{fold.KindContract, fold.StatePublished}] = nobodyRow(
-		"alive and settled: the owner MAY publish a successor or deprecate, but neither is a move anyone waits for")
+	m[key{fold.KindContract, fold.StatePublished}] = contractPublishedRow()
 	m[key{fold.KindContract, fold.StateDeprecated}] = nobodyRow(
 		"migration is owed by consumers on the deprecation announcement's own ack set; retire-readiness (acks AND a passed sunset) is POL-006's gate, never a second copy here")
 

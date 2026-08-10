@@ -19,7 +19,7 @@
         "satisfy", "decline", "withdraw", "supersede", "submit",
         "accept", "start", "block", "unblock", "respond", "close",
         "dispute", "cancel", "propose", "approve", "reject",
-        "verify-pass", "verify-fail", "verify", "note"
+        "verify-pass", "verify-fail", "verify", "note", "activate"
       ]
     },
     "state": { "type": "string" },
@@ -94,6 +94,30 @@
       ],
       "additionalProperties": false
     },
+    "activation": {
+      "type": "object",
+      "description": "P5's AC1 discharge (docs/features/active/agent-exchange-2026-08/specs/05-declared-nature.md, 2026-08-10 amendment, importing docs/inbox/agent-exchange-review/04-design-agent-seat.md's Metadata table verbatim): the act that moves a contract's `x_operational[]` items (envelope/v2/contract.schema.json) toward `ready` -- an EVENT, not a descriptor field, because a descriptor is immutable after publication and readiness changes after publication without the interface itself changing. Keyed PER VERSION (`version` below), distinct from `consumes.yaml`'s per-major registration -- readiness is a property of a published version, registration a standing relationship to a major. Conditionally required on `activate` below.",
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+          "description": "The published contract version this activation covers."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["live"]
+        },
+        "satisfies": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Which `x_operational[]` item names this activation makes ready. Free text, matching x_operational[].name -- not a closed enum here either."
+        },
+        "note": { "type": "string" }
+      },
+      "required": ["version", "status", "satisfies"],
+      "additionalProperties": false
+    },
     "produced_by": {
       "type": "object",
       "properties": {
@@ -153,6 +177,19 @@
       "then": {
         "description": "T5's discharge: a verify or close over a parent's acceptance criteria must name a per-criterion verdict, not leave the judgement in prose. No minItems floor — a close over a parent that declares no acceptance_criteria[] at all must stay expressible with an empty array.",
         "required": ["verdicts"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "subject": { "pattern": "^XC-" },
+          "transition": { "const": "activate" }
+        },
+        "required": ["subject", "transition"]
+      },
+      "then": {
+        "description": "P5's AC1 discharge: an `activate` transition against a contract subject must name its own `activation` block — modelled on the `publish` conditional above.",
+        "required": ["activation"]
       }
     }
   ],

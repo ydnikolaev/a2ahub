@@ -85,12 +85,20 @@ func blockedByOwner(fa foldedArtifact) string {
 }
 
 // actionableReasons evaluates every one of OP-207's 5 normative
-// `--actionable` conditions (quoted verbatim in spec 07 §T1) against fa
-// for system me, returning the subset that matched (nil if none). This
-// is NOT scoped by addressedToMe: condition 2 keys off `from`==me
-// (I'm the owner awaiting my own verify/close) and condition 4 applies
-// to any item I'm a party to (from OR to) — see this phase's Deviations
-// report for the reading of condition 4's unqualified "any open state".
+// `--actionable` conditions (quoted verbatim in spec 07 §T1), PLUS the
+// one condition P5 AC1 (specs/05-declared-nature.md) adds on top of that
+// frozen set, against fa for system me, returning the subset that matched
+// (nil if none). This is NOT scoped by addressedToMe: condition 2 keys
+// off `from`==me (I'm the owner awaiting my own verify/close) and
+// condition 4 applies to any item I'm a party to (from OR to) — see this
+// phase's Deviations report for the reading of condition 4's unqualified
+// "any open state". Condition 6 is From==me too, for the same reason
+// condition 2 is: the contract's own author is never in its own `to:`,
+// so without this the row this wave's own pendency change adds would be
+// computed and then unreachable through `--actionable` — Store.inbox's
+// `actionableOnly` branch does not check addressedToMe at all (it is the
+// one inbox scope that lists an item not addressed to me, precisely for
+// From==me conditions like this one and condition 2).
 //
 // P11 W1 (11-authoring-path-and-seam-verification.plan.md, I7): conditions
 // 1, 2, 3 and 5 are FILTERS over internal/pendency's own relation — "does
@@ -158,6 +166,11 @@ func resolveVerdict(fa foldedArtifact, me string, manifest space.Manifest, paren
 		HasFulfillingResponse: hasFulfillingResponse(fa),
 		BlockedByOwner:        blockedByOwner(fa),
 		DeliveryUnresolvable:  fa.DeliveryUnresolvable,
+		// P5 AC1 (spec 05): resolved once in mirror.go's own build pass
+		// (contractOperationalDebtOwed) for the same reason every other
+		// registry/floor-derived fact here is — this package can do the
+		// I/O internal/pendency deliberately cannot.
+		OperationalDebtOwed: fa.OperationalDebtOwed,
 	}
 	if fa.kind() == fold.KindResponse {
 		in.ParentFrom = parentFrom
@@ -316,6 +329,24 @@ func actionableReasonsForResponse(fa foldedArtifact, me string, manifest space.M
 	// this read-only mirror composition cannot see, v1-min spec 07 §11).
 	if verdict.Expected == fold.TApprove && iOwe {
 		reasons = append(reasons, "gate-pending-on-me")
+	}
+
+	// 6: {operational activation owed on my own published contract} — P5
+	// AC1 (specs/05-declared-nature.md). Not one of OP-207's own 5
+	// (§T1), added on top of it: without a matching condition here, the
+	// row internal/pendency's contract/published resolver now computes
+	// (epic-backlog B19's own warning — "a row nobody can see is not a
+	// named owner") would be silently unreachable through
+	// `a2a inbox --actionable`, the ONE inbox scope that lists an item
+	// not addressed to me (Store.inbox's `actionableOnly` branch skips
+	// addressedToMe entirely). The literal below is not a fold.T*
+	// constant for the same reason pendency.go's own contractActivate
+	// documents: internal/fold's transition table carries no `activate`
+	// row at all, because activation is a side fact about a published
+	// version's operational readiness, never a contract lifecycle
+	// transition.
+	if verdict.Expected == "activate" && iOwe {
+		reasons = append(reasons, "activation-owed")
 	}
 
 	return reasons, verdict

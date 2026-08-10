@@ -279,6 +279,49 @@ func TestContractDeprecateIncludesSuccessor(t *testing.T) {
 	}
 }
 
+// TestContractActivateSatisfiesIsSetSemantics pins the ordering decision
+// ContractActivate's own doc comment makes: satisfies[] carries no wire
+// order of its own (unlike Respond's refs[]), so reordering --satisfies
+// flags for the SAME item set must mint the IDENTICAL key.
+func TestContractActivateSatisfiesIsSetSemantics(t *testing.T) {
+	t.Parallel()
+
+	given := ContractActivate("axon", "XC-axon-widget", "1.0.0", []string{"endpoint", "registration"}, "")
+	reordered := ContractActivate("axon", "XC-axon-widget", "1.0.0", []string{"registration", "endpoint"}, "")
+	if given != reordered {
+		t.Fatalf("reordering --satisfies (same item set) changed the key: %q vs %q", given, reordered)
+	}
+	if !Valid(given) {
+		t.Fatalf("key is not canonical: %q", given)
+	}
+}
+
+// TestContractActivateDistinguishesEveryInput is the negative half: changing
+// ANY one input — system, contract, version, the satisfies SET, or note —
+// must mint a distinct key, or two different activations silently collapse
+// onto one write branch.
+func TestContractActivateDistinguishesEveryInput(t *testing.T) {
+	t.Parallel()
+
+	base := ContractActivate("axon", "XC-axon-widget", "1.0.0", []string{"endpoint"}, "note")
+	variants := map[string]string{
+		"system":               ContractActivate("beta", "XC-axon-widget", "1.0.0", []string{"endpoint"}, "note"),
+		"contract":             ContractActivate("axon", "XC-axon-other", "1.0.0", []string{"endpoint"}, "note"),
+		"version":              ContractActivate("axon", "XC-axon-widget", "2.0.0", []string{"endpoint"}, "note"),
+		"satisfies":            ContractActivate("axon", "XC-axon-widget", "1.0.0", []string{"registration"}, "note"),
+		"note":                 ContractActivate("axon", "XC-axon-widget", "1.0.0", []string{"endpoint"}, "different"),
+		"added satisfies item": ContractActivate("axon", "XC-axon-widget", "1.0.0", []string{"endpoint", "registration"}, "note"),
+	}
+	for name, variant := range variants {
+		if variant == base {
+			t.Errorf("changing %s produced the same key as the base case", name)
+		}
+		if !Valid(variant) {
+			t.Errorf("%s: key is not canonical: %q", name, variant)
+		}
+	}
+}
+
 // TestVerifyDistinctIndicesDoNotCollide asserts what the index encoding
 // actually has to guarantee: two judgements differing only in which criterion
 // they name mint different keys, so the second is not silently deduped onto

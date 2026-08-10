@@ -243,6 +243,39 @@ type foldedArtifact struct {
 	// discipline every other caller-resolved fact in this struct
 	// documents.
 	DeliveryUnresolvable bool
+
+	// OperationalDebtOwed is P5 AC1's own derivation (specs/05-declared-
+	// nature.md, "The P-1 problem, stated honestly"): true only for a
+	// contract in state `published` that has at least one REGISTERED
+	// consumer (registered_consumers.go's contractOperationalDebtOwed,
+	// major-scoped to this contract's own LatestPublishVersion) above
+	// this space's own publication floor. internal/pendency's contract/
+	// published row reads it (Input.OperationalDebtOwed) so the producer
+	// is named as owing `activate` — never conditioned on
+	// `x_operational`, which this package does not even read for this
+	// fact: the debt derives from registration and publication alone
+	// (P-1: "the declaration must change what those facts MEAN, not
+	// whether they exist... the implementor must not weaken this into an
+	// opt-in field").
+	//
+	// False for every non-contract kind and every contract not currently
+	// `published`, and — the same fail-open discipline every other
+	// caller-resolved fact in this struct documents — for a published
+	// contract this package could not resolve the fact for (space below
+	// floor, unparseable published version, or an unreadable registry;
+	// see contractOperationalDebtOwed's own doc comment for which
+	// direction each failure fails).
+	//
+	// DISCHARGEABLE: also false once a committed `activate` event (26A's
+	// `a2a contract activate`) names THIS contract's own
+	// LatestPublishVersion in its own `activation.version`
+	// (activationEventVersion/canonicalVersionsContain, buildIndex's own
+	// per-artifact pass) — spec 05's 2026-08-10 amendment names, and
+	// refuses to ship a third time, "a derived obligation with no
+	// instrument to discharge it". Version-scoped, not major-scoped: an
+	// activation naming a DIFFERENT published version never clears this
+	// one.
+	OperationalDebtOwed bool
 }
 
 func (f foldedArtifact) kind() fold.Kind { return fold.Kind(f.Env.Type) }
@@ -446,6 +479,19 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 		var latestPublishSeq int64 = -1
 		var latestPublishVersion string
 		eventRefs := map[string][]refEntry{}
+		// activatedVersions collects every `activation.version` this
+		// subject's own committed `activate` events name (26A's `a2a
+		// contract activate`) — P5 AC1's discharge half. Read directly off
+		// each candidate event's raw bytes (activationEventVersion), not
+		// through decode.go's shared eventProbe: that probe does not carry
+		// `activation` yet (only `Verdicts` is promoted so far, its own
+		// doc comment), and decode.go is outside this wave's allowlist.
+		// Collected during this same subject-scoped pass rather than a
+		// second scan, and checked against latestPublishVersion only AFTER
+		// this loop completes — latestPublishSeq/latestPublishVersion
+		// themselves are not final until every event in `events` has been
+		// considered.
+		var activatedVersions []string
 		for _, re := range events {
 			if re.Ev.Subject != a.Env.ID {
 				continue
@@ -471,9 +517,48 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 				latestPublishSeq = re.CommitSeq
 				latestPublishVersion = re.Ev.Version
 			}
+			// The literal below is not a fold.T* constant for the same
+			// reason inbox.go's own condition 6 and pendency.go's
+			// contractActivate document: internal/fold's transition table
+			// carries no `activate` row at all (activation is a side fact
+			// about a published version's operational readiness, never a
+			// contract lifecycle transition), so there is no shared
+			// constant to import — and this package cannot import
+			// pendency's own unexported one.
+			if re.Ev.Transition == "activate" {
+				if v := activationEventVersion(dir, re.RelPath); v != "" {
+					activatedVersions = append(activatedVersions, v)
+				}
+			}
 		}
 
 		blockedByOwner := resolveBlockedByOwner(blockedOwnerCandidate[a.Env.ID], env, result.State, membership)
+
+		// P5 AC1, evaluated once here rather than per-read — same
+		// discipline this pass already applies to blockedByOwner/
+		// DeliveryUnresolvable. Restricted to (contract, published):
+		// contractOperationalDebtOwed's own registry walk is only ever
+		// meaningful for that pair, and gating the call on it here (rather
+		// than inside the helper) keeps every other kind/state from
+		// paying for a mirror-wide consumes.yaml scan it can never use.
+		//
+		// GATED ON DISCHARGE: a committed `activate` event naming THIS
+		// contract's own latestPublishVersion (activatedVersions, above)
+		// clears the debt for that version — the spec 05 2026-08-10
+		// amendment's own named failure mode ("a derived obligation with
+		// no instrument to discharge it ... this epic has now found that
+		// defect three times; it will not ship it deliberately"), and 26A
+		// already shipped the instrument (`a2a contract activate`) in this
+		// same tree. Version-scoped, never major-scoped (spec 05's
+		// imported key-scope answer: "readiness is a property of a
+		// published version, registration is a standing relationship to a
+		// major") — an activation naming a DIFFERENT version never clears
+		// this one.
+		operationalDebtOwed := false
+		if env.Kind == fold.KindContract && result.State == fold.StatePublished &&
+			!canonicalVersionsContain(activatedVersions, latestPublishVersion) {
+			operationalDebtOwed = contractOperationalDebtOwed(dir, manifest, a.Env.ID, latestPublishVersion)
+		}
 
 		out = append(out, foldedArtifact{
 			SpaceID: spaceID, RelPath: a.RelPath, Raw: a.Raw, Digest: a.Digest,
@@ -492,6 +577,7 @@ func buildIndex(ctx context.Context, spaceID, dir, ownSystem string, manifest sp
 			FulfillingResponse:     hasParentedResponse[a.Env.ID],
 			BlockedByOwner:         blockedByOwner,
 			DeliveryUnresolvable:   deliveryUnresolvable(a.Env.ID, deliveredResponseTo, handoffFulfills, packageResolver),
+			OperationalDebtOwed:    operationalDebtOwed,
 		})
 	}
 
@@ -1022,6 +1108,60 @@ func decodeEventFile(path, relSlash string) (rawEvent, *SkippedFile) {
 		return rawEvent{}, &SkippedFile{Path: relSlash, Reason: SkipReasonNoID}
 	}
 	return rawEvent{RelPath: relSlash, Ev: ev}, nil
+}
+
+// activationEventProbe is THIS package's own minimal decode of an
+// `activate` event's `activation` block (event/v2/event.schema.json,
+// spec 05-declared-nature.md's 2026-08-10 amendment) — the same "own
+// minimal decode" (ISP) idiom registered_consumers.go's requirementProbe
+// already documents. decode.go's shared eventProbe does not carry this
+// field (only `Verdicts` is promoted so far, that field's own doc
+// comment), and decode.go is outside this wave's allowlist — widening the
+// SHARED probe for the one field only this derivation needs today is
+// exactly the kind of casual widening that field's own comment warns
+// against, so this reads the raw bytes directly instead.
+type activationEventProbe struct {
+	Activation struct {
+		Version string `yaml:"version"`
+	} `yaml:"activation"`
+}
+
+// activationEventVersion reads the `activation.version` an `activate`
+// event committed at dir/relPath names, or "" on any read/decode failure
+// or an event carrying no such block. Fails toward "not activated" —
+// never toward silently treating an unreadable event as a discharge — the
+// same direction contractOperationalDebtOwed's own doc comment already
+// documents for the registry half of this derivation.
+func activationEventVersion(dir, relPath string) string {
+	raw, err := readBounded(filepath.Join(dir, filepath.FromSlash(relPath)), maxCacheReadBytes)
+	if err != nil {
+		return ""
+	}
+	var probe activationEventProbe
+	if yaml.Unmarshal(raw, &probe) != nil {
+		return ""
+	}
+	return probe.Activation.Version
+}
+
+// canonicalVersionsContain reports whether target, canonicalized, matches
+// any entry of versions once EACH is also canonicalized — so "1.0.0" and
+// "01.0.0" compare equal the same way canonicalEventVersion already makes
+// them compare equal as fold.Event.Version map keys. An empty/unparseable
+// target never matches (canonicalEventVersion fails open by returning its
+// input unchanged, so an empty target would otherwise vacuously "match"
+// an equally-empty stray entry).
+func canonicalVersionsContain(versions []string, target string) bool {
+	if target == "" {
+		return false
+	}
+	want := canonicalEventVersion(target)
+	for _, v := range versions {
+		if canonicalEventVersion(v) == want {
+			return true
+		}
+	}
+	return false
 }
 
 // reportPath best-effort relativizes path against dir for a SkippedFile

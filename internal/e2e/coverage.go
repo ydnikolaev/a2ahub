@@ -138,6 +138,11 @@ var coverageManifest = []coverageEntry{
 	{Verb: "withdraw", GoTest: "internal/e2e.TestT3LifecycleVerbs"},
 
 	// --- Contract ops (direct-construction, exec-unreachable) -----------
+	// P5 AC1's discharge. Its evidence is in internal/cli rather than here
+	// because the verb's whole subject is a set of REFUSALS resolved from a
+	// descriptor and the space floor — a txtar scenario would prove the happy
+	// path and none of the four rules that make it correct.
+	{Verb: "contract activate", GoTest: "internal/cli.TestContractActivate"},
 	{Verb: "contract adopt", GoTest: "internal/e2e.TestT3ContractAdopt"},
 	{Verb: "contract check", GoTest: "internal/e2e.TestHostLoopContractFamily"},
 	{Verb: "contract deprecate", GoTest: "internal/e2e.TestT3ContractNewPublishDeprecate"},

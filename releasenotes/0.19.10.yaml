@@ -958,3 +958,44 @@ changes:
       why: >
         Nothing to do. The flag is optional; a verification without it records
         an empty verdict list and behaves as before.
+  - id: RN-01910-33
+    kind: feat
+    impact: normal
+    roadmap:
+      visibility: shipped
+      why: >
+        The deadlock this epic was cut from: a contract was published, a
+        consumer built against it, and the record said nobody owed anything
+        while the endpoint did not exist. Now somebody owes it, by name,
+        without anyone having to volunteer a field.
+    subject: "A published contract with a registered consumer names who owes the operational half"
+    detail: >
+      Publishing an interface is not the same as making it usable. An endpoint
+      has to exist, credentials have to be issued, a registration has to
+      happen — and none of that was anywhere in the record, so a consumer
+      could adopt a contract, build a client, and wait indefinitely while
+      every surface reported that nothing was outstanding.
+      A published contract that has at least one registered consumer now
+      produces an owed move on the producer, shown wherever open items are.
+      This does NOT require the producer to have declared anything: the
+      obligation is derived from facts the space already holds — the contract
+      is published, and somebody adopted it. An operational half nobody has
+      spoken about is exactly the case worth surfacing.
+      Producers can be specific. A contract may declare `x_operational` — named
+      items such as an endpoint or a credential channel, each `ready` or
+      `absent`, each with an optional target date. Leaving it out means
+      undeclared, which is a different statement from declaring the parts are
+      absent, and the tool never fills it in for you.
+      `a2a contract activate --version <v> --satisfies <item>` is how a
+      producer records that a named item now exists. It refuses to activate an
+      item the contract never declared, a version that was never published, or
+      a contract belonging to another system.
+      This applies once your space's `min_binary_version` has reached the
+      contract-publication floor; below it no derived row appears and threads
+      read exactly as they did.
+    affects: ["a2a contract activate", "a2a inbox", "a2a thread", "the dashboard", "a2a_contract (MCP)"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. Existing contracts gain no obligation until they have a
+        registered consumer, and the declaration is optional.

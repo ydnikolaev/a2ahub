@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/a2ahub/internal/operation"
+	"gopkg.in/yaml.v3"
 )
 
 func writeContractDescriptor(t *testing.T, mirrorDir, slug, version string) {
@@ -406,5 +409,252 @@ func TestContractNewMissingSlug(t *testing.T) {
 	_, _, err := handler(context.Background(), json.RawMessage(`{}`))
 	if err == nil {
 		t.Fatal("expected an error for a missing slug")
+	}
+}
+
+// --- contract activate (Wave 26C — P5 AC1's MCP mirror of internal/cli's
+// runActivate) ---------------------------------------------------------
+
+// contractTestDepsAtFloor is contractTestDeps plus an explicit
+// min_binary_version — the field contractActivateEventSchema reads to
+// decide event/v1 vs event/v2.
+func contractTestDepsAtFloor(mirrorDir string, funnel Funnel, floor string) ContractDeps {
+	deps := contractTestDeps(mirrorDir, funnel)
+	deps.Manifest.MinBinaryVersion = floor
+	return deps
+}
+
+// writeContractDescriptorWithXOperational is writeContractDescriptor plus a
+// caller-chosen owning system and a raw x_operational block, on
+// envelope/v2 (`x_operational` is a v2-only field) — xOperationalRaw is
+// inserted as-is, so a caller may pass any number of declared items or
+// none at all. Mirrors internal/cli's own helper of the same name.
+func writeContractDescriptorWithXOperational(t *testing.T, mirrorDir, system, slug, version, xOperationalRaw string) {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v2\n" +
+		"id: XC-" + system + "-" + slug + "\n" +
+		"type: contract\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: " + system + "\n" +
+		"to: [beta]\n" +
+		"thread: " + testFixtureThread + "\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: api\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: \"" + version + "\"\n" +
+		"compat_policy: strict-semver\n" +
+		"schema_format: json-schema-2020-12\n" +
+		xOperationalRaw +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, system+"/provides/"+slug+"/contract.md", content)
+	writeMirrorFile(t, mirrorDir, system+"/provides/"+slug+"/schema/main.schema.json", `{"type":"object","additionalProperties":true}`)
+	writeMirrorFile(t, mirrorDir, system+"/provides/"+slug+"/fixtures/valid/ok.json", `{}`)
+	writeMirrorFile(t, mirrorDir, system+"/provides/"+slug+"/fixtures/invalid/bad.json", `null`)
+}
+
+// contractActivationProbe/contractActivateEventProbe decode the wire shape
+// these tests assert on — DECODED values, never strings.Contains over
+// rendered bytes. Mirrors internal/cli's own probes of the same names.
+type contractActivationProbe struct {
+	Version   string   `yaml:"version"`
+	Status    string   `yaml:"status"`
+	Satisfies []string `yaml:"satisfies"`
+	Note      string   `yaml:"note"`
+}
+
+type contractActivateEventProbe struct {
+	Schema     string                   `yaml:"schema"`
+	Transition string                   `yaml:"transition"`
+	Subject    string                   `yaml:"subject"`
+	Space      string                   `yaml:"space"`
+	Note       string                   `yaml:"note"`
+	Activation *contractActivationProbe `yaml:"activation"`
+}
+
+func decodeContractActivateEvent(t *testing.T, content []byte) contractActivateEventProbe {
+	t.Helper()
+	var probe contractActivateEventProbe
+	if err := yaml.Unmarshal(content, &probe); err != nil {
+		t.Fatalf("decode activate event: %v", err)
+	}
+	return probe
+}
+
+// seedActivatablePublished writes a v2 descriptor with the given
+// x_operational block, then a committed `publish` event carrying that same
+// version — the shared fixture every activate sub-test below builds on.
+func seedActivatablePublished(t *testing.T, mirrorDir, system, slug, version, xOperationalRaw string) {
+	t.Helper()
+	writeContractDescriptorWithXOperational(t, mirrorDir, system, slug, version, xOperationalRaw)
+	writeLifecycleEvent(t, mirrorDir, system, 0, "XC-"+system+"-"+slug, "publish", system)
+	appendVersionToLatestEvent(t, mirrorDir, system, version)
+}
+
+func TestContractActivateAuthorsEventV2ForDeclaredItem(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	seedActivatablePublished(t, mirrorDir, "axon", "act-a", "1.0.0",
+		"x_operational:\n  - name: endpoint\n    state: absent\n")
+
+	fake := &fakeFunnel{}
+	handler := newContractActivateHandler(contractTestDepsAtFloor(mirrorDir, fake, "0.19.0"))
+	args, _ := json.Marshal(ContractActivateInput{
+		ID: "XC-axon-act-a", Version: "1.0.0", Satisfies: []string{"endpoint"}, Note: "live now",
+	})
+	if _, _, err := handler(context.Background(), args); err != nil {
+		t.Fatalf("activate failed: %v", err)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+	}
+	files := fake.calls[0].Files
+	if len(files) != 1 {
+		t.Fatalf("expected exactly one event file, got %+v", files)
+	}
+	ev := decodeContractActivateEvent(t, files[0].Content)
+	if ev.Schema != "event/v2" || ev.Transition != "activate" || ev.Subject != "XC-axon-act-a" {
+		t.Fatalf("event = %+v, want schema event/v2, transition activate, subject XC-axon-act-a", ev)
+	}
+	if ev.Space != "fixture-space" {
+		t.Fatalf("event.Space = %q, want the descriptor's own space", ev.Space)
+	}
+	if ev.Note != "live now" {
+		t.Fatalf("event.Note = %q, want the note text", ev.Note)
+	}
+	if ev.Activation == nil {
+		t.Fatal("expected an `activation` block, got none")
+	}
+	if ev.Activation.Version != "1.0.0" || ev.Activation.Status != "live" {
+		t.Fatalf("activation = %+v, want version 1.0.0, status live", ev.Activation)
+	}
+	if len(ev.Activation.Satisfies) != 1 || ev.Activation.Satisfies[0] != "endpoint" {
+		t.Fatalf("activation.Satisfies = %+v, want [endpoint]", ev.Activation.Satisfies)
+	}
+	wantKey := operation.ContractActivate("axon", "XC-axon-act-a", "1.0.0", []string{"endpoint"}, "live now")
+	if fake.calls[0].OperationKey != wantKey {
+		t.Fatalf("OperationKey = %q, want %q", fake.calls[0].OperationKey, wantKey)
+	}
+}
+
+// TestContractActivateRefusesBelowFloor is refusal 2 (Wave 26C brief): below
+// contract.ContractPublicationFloor, `activation` has no event/v1 shape at
+// all, so this verb refuses outright rather than silently falling back.
+func TestContractActivateRefusesBelowFloor(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	seedActivatablePublished(t, mirrorDir, "axon", "act-b", "1.0.0",
+		"x_operational:\n  - name: endpoint\n    state: absent\n")
+
+	fake := &fakeFunnel{}
+	// No floor set (contractTestDeps' default Manifest never sets
+	// min_binary_version) — below the floor, the common pre-P5 case.
+	handler := newContractActivateHandler(contractTestDeps(mirrorDir, fake))
+	args, _ := json.Marshal(ContractActivateInput{ID: "XC-axon-act-b", Version: "1.0.0", Satisfies: []string{"endpoint"}})
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected a floor refusal")
+	}
+	if !strings.Contains(err.Error(), "min_binary_version") {
+		t.Fatalf("expected a floor refusal, got %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("refusal must happen before any funnel call, got %+v", fake.calls)
+	}
+}
+
+// TestContractActivateRefusesUndeclaredItem is refusal 4: --satisfies may
+// only name an item already declared in x_operational[].
+func TestContractActivateRefusesUndeclaredItem(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	seedActivatablePublished(t, mirrorDir, "axon", "act-c", "1.0.0",
+		"x_operational:\n  - name: endpoint\n    state: absent\n")
+
+	fake := &fakeFunnel{}
+	handler := newContractActivateHandler(contractTestDepsAtFloor(mirrorDir, fake, "0.19.0"))
+	args, _ := json.Marshal(ContractActivateInput{ID: "XC-axon-act-c", Version: "1.0.0", Satisfies: []string{"registration"}})
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected an undeclared-item refusal")
+	}
+	if !strings.Contains(err.Error(), "not a named item") {
+		t.Fatalf("expected an undeclared-item refusal, got %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("refusal must happen before any funnel call, got %+v", fake.calls)
+	}
+}
+
+// TestContractActivateRefusesUnpublishedVersion is refusal 3: activation
+// names a published version's readiness, it is not a way to publish one.
+func TestContractActivateRefusesUnpublishedVersion(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	seedActivatablePublished(t, mirrorDir, "axon", "act-e", "1.0.0",
+		"x_operational:\n  - name: endpoint\n    state: absent\n")
+
+	fake := &fakeFunnel{}
+	handler := newContractActivateHandler(contractTestDepsAtFloor(mirrorDir, fake, "0.19.0"))
+	args, _ := json.Marshal(ContractActivateInput{ID: "XC-axon-act-e", Version: "2.0.0", Satisfies: []string{"endpoint"}})
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected a not-published refusal")
+	}
+	if !strings.Contains(err.Error(), "has not been published") {
+		t.Fatalf("expected a not-published refusal, got %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("refusal must happen before any funnel call, got %+v", fake.calls)
+	}
+}
+
+// TestContractActivateRefusesUnownedContract is refusal 1: only the
+// producer (the system embedded in the contract's own id) may declare its
+// operational readiness.
+func TestContractActivateRefusesUnownedContract(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	seedActivatablePublished(t, mirrorDir, "beta", "content-feed", "1.0.0",
+		"x_operational:\n  - name: endpoint\n    state: absent\n")
+
+	fake := &fakeFunnel{}
+	// contractTestDeps sets OwnSystem to "axon"; the contract above is
+	// owned by "beta".
+	handler := newContractActivateHandler(contractTestDepsAtFloor(mirrorDir, fake, "0.19.0"))
+	args, _ := json.Marshal(ContractActivateInput{ID: "XC-beta-content-feed", Version: "1.0.0", Satisfies: []string{"endpoint"}})
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected an ownership refusal")
+	}
+	if !strings.Contains(err.Error(), "not owned by this system") {
+		t.Fatalf("expected an ownership refusal, got %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("refusal must happen before any funnel call, got %+v", fake.calls)
+	}
+}
+
+// TestContractActivateRequiresSatisfies proves the required-field guard
+// fires before any disk access or funnel call.
+func TestContractActivateRequiresSatisfies(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	seedActivatablePublished(t, mirrorDir, "axon", "act-f", "1.0.0",
+		"x_operational:\n  - name: endpoint\n    state: absent\n")
+
+	fake := &fakeFunnel{}
+	handler := newContractActivateHandler(contractTestDepsAtFloor(mirrorDir, fake, "0.19.0"))
+	args, _ := json.Marshal(ContractActivateInput{ID: "XC-axon-act-f", Version: "1.0.0"})
+	_, _, err := handler(context.Background(), args)
+	if err == nil {
+		t.Fatal("expected a required-field error (satisfies is empty)")
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("usage error must happen before any funnel call, got %+v", fake.calls)
 	}
 }

@@ -294,6 +294,28 @@ unreachable:
   envelope/v2/contract/x_binding.runtime_pinnable: >-
     Same cause as x_binding.adoptable: the parent `x_binding:` block is
     commented out, and the field is boolean-typed.
+  envelope/v2/contract/x_operational: >-
+    P5 2026-08-10 (specs/05-declared-nature.md's AC1 discharge half):
+    array-typed, so the append pass's one-scalar-node write (internal/
+    template's applyFills) is refused for it exactly as for attachments/
+    origin above. templates/v2/contract.md carries `x_operational:` only as
+    a commented-out (`#`) guidance block, in the same register as
+    `x_binding` one property above it — deliberately: a live block would
+    make every fresh contract author a declaration nobody made (P-1, this
+    file's own header). Neither authoring surface reaches it as a result.
+  envelope/v2/contract/x_operational[].name: >-
+    Same cause as x_operational above: no live `x_operational:` sequence to
+    descend into. --field's dotted-path pass never descends into a sequence
+    index at all (internal/template's resolveDottedPath doc comment), so
+    this leaf is unreachable by choice, not by parser limitation. `a2a
+    contract activate` names an already-declared item; it does not author
+    this leaf.
+  envelope/v2/contract/x_operational[].state: >-
+    Same cause as x_operational[].name: no live `x_operational:` sequence in
+    templates/v2/contract.md to hand-edit or descend into.
+  envelope/v2/contract/x_operational[].eta: >-
+    Same cause as x_operational[].name: no live `x_operational:` sequence in
+    templates/v2/contract.md to hand-edit or descend into.
 #
 # ## Out of scope, deliberately
 #
@@ -457,6 +479,14 @@ fields:
     x_binding.compatibility_status: AUTHOR
     x_binding.adoptable: AUTHOR
     x_binding.runtime_pinnable: AUTHOR
+    # P5 2026-08-10: x_operational (AC1 discharge half, specs/
+    # 05-declared-nature.md). Same reasoning as x_binding above: intent only
+    # the producer holds about what is running, nothing mints readiness from
+    # bytes or the clock. AUTHOR by this table's stated default.
+    x_operational: AUTHOR
+    x_operational[].name: AUTHOR
+    x_operational[].state: AUTHOR
+    x_operational[].eta: AUTHOR
   envelope/v2/announcement:
     type: TOOL
     id: TOOL
@@ -586,6 +616,17 @@ fields:
     verdicts[].index: AUTHOR
     verdicts[].verdict: AUTHOR
     verdicts[].cause_owner: AUTHOR
+    # P5 2026-08-10 (AC1 discharge half, specs/05-declared-nature.md):
+    # `activation`, `a2a contract activate`'s own payload. `status` is TOOL —
+    # the verb always writes the literal `live` (the schema's own enum has no
+    # other member yet); the other three leaves are typed via the verb's own
+    # flags (--version/--satisfies/--note), so AUTHOR by this table's stated
+    # default, same as `verdicts` above it.
+    activation: AUTHOR
+    activation.version: AUTHOR
+    activation.status: TOOL
+    activation.satisfies: AUTHOR
+    activation.note: AUTHOR
   manifest/v1/space:
     schema: TOOL
     space: CONFIG

@@ -701,9 +701,22 @@ func undrivenScenarios() []undrivenScenario {
 		},
 		{
 			ID: "contract-published-registered-consumer-yields-named-owner-with-no-new-field-set",
-			Reason: "UNMET ACCEPTANCE CRITERION, same phase. P5's P-1 derivation — " +
-				"an obligation derived from facts already held, with no declared " +
-				"field set — has not shipped. Tracked as P5 remaining work.",
+			Reason: "REASON REPLACED 2026-08-10 — the previous one is FALSE and is " +
+				"stated here so nobody restores it. It said P5's P-1 derivation " +
+				"'has not shipped'. It has: internal/pendency's (contract, " +
+				"published) row is conditional on a caller-resolved " +
+				"OperationalDebtOwed, internal/cache resolves it from the " +
+				"registry and the space floor, and the P-1 property — an owner " +
+				"derived with EVERY new field absent — has its own test. " +
+				"This id is UNDRIVEN HERE FOR A DIFFERENT AND WEAKER REASON, and " +
+				"it is NOT the structural miss its sibling above carries: nothing " +
+				"about a registry-plus-floor read makes it inexpressible as a " +
+				"declared path. What it needs is a catalogue path that stands up " +
+				"a published contract WITH a registered consumer in another " +
+				"system's consumes.yaml and then asserts the inbox verdict — " +
+				"setup this tier does not have a shape for yet. That is P8's " +
+				"work, not P5's, and P5's criterion is met without it. " +
+				"Needs: a registered-consumer fixture in the path driver.",
 		},
 	}
 }

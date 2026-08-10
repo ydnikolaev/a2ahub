@@ -46,6 +46,15 @@ const (
 	TVerifyFail  = "verify-fail"
 	TVerify      = "verify"
 	TNote        = "note" // transition-free (D-025); never in this table
+	// TActivate is the producer's attestation that a published contract
+	// version's OPERATIONAL half now exists (P5 AC1). Transition-free, and
+	// never in this table, for the reason the review corpus gives: readiness
+	// changes AFTER publication while a descriptor is immutable, so it has
+	// to be an event — but it moves no artifact state, because a contract
+	// that becomes reachable is still `published`. Modelling it as a real
+	// transition would need a state the domain does not have and would make
+	// every reader below the floor fold an unknown move.
+	TActivate = "activate"
 )
 
 // Row is one exploded (kind, fromState, transition) -> (toState, role)

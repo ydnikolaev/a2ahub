@@ -150,6 +150,24 @@ func applyBroadcastAck(_ Envelope, result *Result, event Event, membership Membe
 	result.Acks[event.Actor.System] = true
 }
 
+// applyContractActivation handles P5 AC1's transition-free `activate`: the
+// producer's attestation that a published contract version's operational
+// half now exists. It moves NO state — a contract that becomes reachable is
+// still `published` — which is why it lives in the transition-free registry
+// rather than as a table row.
+//
+// Authorization is the OWNER's, not either party's: activation is a claim
+// about the producer's own infrastructure, and a consumer asserting that a
+// producer's endpoint exists is exactly the false-claim shape this epic is
+// about. That is stricter than applyNote's RoleEitherParty and deliberately
+// so; `a2a contract activate` refuses a foreign contract at the CLI too, but
+// the CLI is not where a domain rule may live alone.
+func applyContractActivation(env Envelope, result *Result, event Event, membership MembershipView) {
+	if membership == nil || !legalRole(RoleOwner, env, event.Actor.System, membership(event.Actor.System)) {
+		result.Flags = append(result.Flags, Flag{Kind: FlagUnauthorizedActor, EventULID: event.ULID, Subject: event.Subject})
+	}
+}
+
 // applyPrimaryScoped handles every transition except note/broadcast-ack
 // (transition-free) and verify/dispute (response-scoped, D-024).
 func applyPrimaryScoped(kind Kind, env Envelope, result *Result, event Event, membership MembershipView) {

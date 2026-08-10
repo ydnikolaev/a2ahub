@@ -21,6 +21,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cache"
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/operation"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -49,6 +50,25 @@ type contractDescriptorProbe struct {
 		Tool         string `yaml:"tool"`
 		SourceDigest string `yaml:"source_digest"`
 	} `yaml:"generated_from"`
+	// XOperational is P5's AC1 discharge half (specs/05-declared-nature.md,
+	// 2026-08-10 amendment): the named operational items this contract
+	// declares, whatever their state. A nil slice (the field absent) is
+	// itself meaningful — this probe never treats absence as any item
+	// being `ready` (P-1) — but this package's only present use of it
+	// (`a2a_contract` action=activate's declared-item refusal, below) only
+	// asks "is this NAME present at all". Mirrors internal/cli's own
+	// contractDescriptorProbe field (ADR-001: internal/mcp never imports
+	// internal/cli).
+	XOperational []xOperationalItemProbe `yaml:"x_operational"`
+}
+
+// xOperationalItemProbe decodes one entry of envelope/v2/contract's
+// `x_operational[]` (specs/05-declared-nature.md's AC1 discharge half) —
+// {name, state, eta?}. Mirrors internal/cli's own xOperationalItemProbe.
+type xOperationalItemProbe struct {
+	Name  string `yaml:"name"`
+	State string `yaml:"state"`
+	ETA   string `yaml:"eta"`
 }
 
 func contractReadDescriptor(mirrorDir, id string) (fm artifact.Frontmatter, probe contractDescriptorProbe, relPath, relDir string, err error) {
@@ -888,4 +908,203 @@ func contractUpsertDependency(registry space.Consumes, dep space.Dependency) (sp
 		return registry.Dependencies[i].Contract < registry.Dependencies[j].Contract
 	})
 	return registry, true
+}
+
+// --- contract activate (P5 AC1, specs/05-declared-nature.md's 2026-08-10
+// amendments) ---------------------------------------------------------
+
+// contractActivationEntry is `a2a_contract` action=activate's own
+// `activation` object — schemas/event/v2/event.schema.json's own
+// `{version, status, satisfies[], note?}`. `Status` carries no input field:
+// this verb always writes the literal `live`, the schema's own enum has no
+// other member yet. Mirrors internal/cli's contractActivationEntry exactly
+// (ADR-001: internal/mcp never imports internal/cli).
+type contractActivationEntry struct {
+	Version   string   `yaml:"version"`
+	Status    string   `yaml:"status"`
+	Satisfies []string `yaml:"satisfies"`
+	Note      string   `yaml:"note,omitempty"`
+}
+
+// contractActivateEventDoc is `a2a_contract` action=activate's own event/v2
+// wire shape — a FILE-LOCAL copy of eventdoc.go's eventDoc carrying only the
+// fields an `activate` event needs, plus `activation`. Mirrors internal/cli's
+// contractActivateEventDoc exactly.
+type contractActivateEventDoc struct {
+	Schema     string                  `yaml:"schema"`
+	Event      string                  `yaml:"event"`
+	Space      string                  `yaml:"space"`
+	Subject    string                  `yaml:"subject"`
+	Transition string                  `yaml:"transition"`
+	Actor      eventActor              `yaml:"actor"`
+	At         string                  `yaml:"at"`
+	Note       string                  `yaml:"note,omitempty"`
+	Activation contractActivationEntry `yaml:"activation"`
+}
+
+// contractActivateEventSchema mirrors internal/cli's cmd_lifecycle.go
+// lifecycleEventSchema (ADR-001: internal/mcp never imports internal/cli):
+// a space whose `min_binary_version` (floor) is at or above
+// contract.ContractPublicationFloor authors event/v2; below it, event/v1.
+// An unparseable or absent floor fails CLOSED to event/v1, the same
+// conservative direction version.OlderThan's own doc comment names.
+//
+// This package's other write verbs still author "event/v1" unconditionally
+// (no general event/v2 authoring path exists here yet — internal/cli's own
+// verify/close have one via this same function, tools_lifecycle.go does
+// not). `activate` is the first MCP write verb that needs the floor
+// selection, because — unlike verify/close, which fall back to event/v1
+// without `verdicts[]` — `activation` has no event/v1 shape to fall back
+// to at all (see newContractActivateHandler's own doc comment), so the
+// check is scoped to this one verb rather than a package-wide selector
+// this wave does not need.
+func contractActivateEventSchema(floor string) string {
+	belowFloor, err := version.OlderThan(floor, contract.ContractPublicationFloor)
+	if err != nil || belowFloor {
+		return "event/v1"
+	}
+	return "event/v2"
+}
+
+// ContractActivateInput is a2a_contract's action=activate structured input.
+type ContractActivateInput struct {
+	ID        string     `json:"id"`
+	Version   string     `json:"version"`
+	Satisfies []string   `json:"satisfies"`
+	Note      string     `json:"note,omitempty"`
+	Actor     ActorInput `json:"actor,omitempty"`
+}
+
+// newContractActivateHandler mirrors internal/cli's runActivate exactly
+// (ADR-001: internal/mcp never imports internal/cli) — P5's AC1 discharge
+// half (specs/05-declared-nature.md's 2026-08-10 amendments): the
+// producer's own act that moves a published version's `x_operational[]`
+// items toward `ready`, authored as an `activate` event/v2 event (never a
+// descriptor edit — a descriptor is immutable after publication). Like
+// `adopt` above, this write is never legality-checked through
+// fold.EvaluateCandidate: `activation` is a side fact about a published
+// version's operational readiness, not a §3.4 lifecycle state transition,
+// so internal/fold's transition table has no `activate` row — runActivate's
+// own doc comment gives the full reasoning.
+//
+// Four refusals, all enforced here in the SAME order as internal/cli's own
+// (none may silently fall away between the two surfaces — this wave's own
+// brief):
+//
+//  1. The target contract must be owned by THIS system (embedded in its
+//     own id, §3.3) — only the producer may declare its own operational
+//     readiness. Checked first because, unlike `adopt` (which refuses the
+//     opposite direction), this write is never legality-checked through
+//     fold, so nothing else in this path would otherwise stop a system
+//     from authoring an activation event about a contract it does not own.
+//  2. Below contract.ContractPublicationFloor this verb refuses outright:
+//     `activation` has no event/v1 shape at all, so there is no legal
+//     fallback the way verify/close have one.
+//  3. The named version must actually have been published — activation
+//     names a published version's readiness, it is not a way to publish
+//     one.
+//  4. `satisfies` may only name an item already declared in the
+//     descriptor's own `x_operational[]` (any state) — activating an
+//     undeclared item would let a producer route around ever declaring
+//     the field at all (the exact P-1 failure this phase exists to
+//     close).
+func newContractActivateHandler(deps ContractDeps) HandlerFunc {
+	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
+		var in ContractActivateInput
+		if err := json.Unmarshal(args, &in); err != nil {
+			return nil, "", fmt.Errorf("contract activate: invalid input: %w", err)
+		}
+		if in.ID == "" || in.Version == "" || len(in.Satisfies) == 0 {
+			return nil, "", fmt.Errorf("contract activate: id, version and satisfies (at least one item) are required")
+		}
+
+		parsed, perr := artifact.ParseID(in.ID)
+		if perr != nil || parsed.Prefix != "XC" {
+			return nil, "", fmt.Errorf("contract activate: %q is not a contract id (XC-<system>-<slug>)", in.ID)
+		}
+		// Refusal 1 — ownership.
+		if parsed.System != deps.OwnSystem {
+			return nil, "", fmt.Errorf("contract activate: %s is not owned by this system (%s) — only the producer may declare its own operational readiness", in.ID, deps.OwnSystem)
+		}
+
+		// Refusal 2 — the floor.
+		eventSchema := contractActivateEventSchema(deps.Manifest.MinBinaryVersion)
+		if eventSchema != "event/v2" {
+			return nil, "", fmt.Errorf(
+				"contract activate: requires this space's min_binary_version to be at or above %s (event/v2, `activation` has no event/v1 shape); this space's floor is %q",
+				contract.ContractPublicationFloor, deps.Manifest.MinBinaryVersion)
+		}
+
+		_, probe, _, _, err := contractReadDescriptor(deps.MirrorDir, in.ID)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract activate: %w", err)
+		}
+
+		allEvents, err := readAllEvents(deps.MirrorDir)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract activate: %w", err)
+		}
+		canonicalVersion := contractCanonicalVersion(in.Version)
+		published := false
+		for _, v := range contractPublishedVersions(allEvents, in.ID) {
+			if v.String() == canonicalVersion {
+				published = true
+				break
+			}
+		}
+		// Refusal 3 — must be a published version.
+		if !published {
+			return nil, "", fmt.Errorf("contract activate: %s@%s has not been published — activation names a published version's operational readiness, it is not a way to publish one", in.ID, in.Version)
+		}
+
+		// Refusal 4 — an undeclared item. Regardless of the item's current
+		// state (ready or absent), its NAME must already be present in
+		// x_operational[] — see this function's own doc comment.
+		declared := map[string]bool{}
+		for _, item := range probe.XOperational {
+			declared[item.Name] = true
+		}
+		satisfies := append([]string(nil), in.Satisfies...)
+		for _, name := range satisfies {
+			if !declared[name] {
+				return nil, "", fmt.Errorf("contract activate: %q is not a named item in %s's x_operational[] — declare it there first (even as `state: absent`) before activating it", name, in.ID)
+			}
+		}
+
+		resolved, actorErr := deps.ResolveActor(in.Actor)
+		if actorErr != nil {
+			return nil, "", fmt.Errorf("contract activate: %w", actorErr)
+		}
+
+		now := deps.Now()
+		layout, err := space.NewLayout(deps.OwnSystem)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract activate: %w", err)
+		}
+		eventID, err := artifact.MintULIDAt(now, deps.Entropy)
+		if err != nil {
+			return nil, "", fmt.Errorf("contract activate: cannot mint event id: %w", err)
+		}
+
+		ev := contractActivateEventDoc{
+			Schema: eventSchema, Event: eventID.String(), Space: probe.Space,
+			Subject: in.ID, Transition: "activate",
+			Actor: eventActorFrom(resolved, deps.OwnSystem),
+			At:    now.UTC().Format(time.RFC3339),
+			Note:  in.Note,
+			Activation: contractActivationEntry{
+				Version: canonicalVersion, Status: "live", Satisfies: satisfies,
+			},
+		}
+		raw, merr := yaml.Marshal(ev)
+		if merr != nil {
+			return nil, "", fmt.Errorf("contract activate: cannot encode event: %w", merr)
+		}
+		files := []space.FileWrite{{Path: layout.EventFile(now.UTC().Format("2006"), eventID.String()), Content: raw}}
+
+		req := deps.buildRequest([]string{in.ID}, files, "contract-activate", false)
+		req.OperationKey = operation.ContractActivate(deps.OwnSystem, in.ID, canonicalVersion, satisfies, in.Note)
+		result, err := deps.submit(ctx, req, "contract activate", []string{in.ID})
+		return result, "", err
+	}
 }

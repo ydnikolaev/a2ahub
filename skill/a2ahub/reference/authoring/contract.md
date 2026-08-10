@@ -30,6 +30,16 @@ compat_policy: default
 #   made, and a live block with placeholder booleans would additionally render
 #   a draft that cannot validate (spec 05, the same reversal work_request's
 #   `binding` measured).
+# x_operational:                      # OPTIONAL — readiness of the operational half this contract describes
+#   - name: endpoint                  # e.g. endpoint, credential-channel, registration — a fourth kind is data
+#     state: <ready|absent>
+#     eta: <YYYY-MM-DD>                # a declared date, not a clock (§7) — omit if none
+#   Commented, like x_binding above and deliberately: a named item ABSENT from
+#   this array, or the field absent altogether, reads as `undeclared`
+#   downstream (P-1) — distinct from a declared `state: absent` — and a live
+#   block here would make every fresh contract author a declaration nobody
+#   made. Cleared by `a2a contract activate`, never by hand-editing this file
+#   after publication (a descriptor is immutable once published).
 thread: <thread:system-YYYYMMDD-rand4 — a2a new mints this>
 # refs:
 #   - {ref: "<XC-id>@<version>", note: "<why>"}

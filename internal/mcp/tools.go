@@ -264,7 +264,7 @@ func registerContractTool(r *Registry, newDeps NewDeps, contractDeps ContractDep
 	// --- a2a_contract (action: the contract sub-verbs) -------------------
 	r.Register(ToolSpec{
 		Name:        "a2a_contract",
-		Description: "contract family: action=new|preflight|publish|materialize|check|deprecate|retire|diff|verify-export|adopt",
+		Description: "contract family: action=new|preflight|publish|materialize|check|deprecate|retire|diff|verify-export|adopt|activate",
 		InputSchema: groupedSchema("action", ContractActions, map[string]string{
 			"space": "string", "slug": "string", "fields": "object", "body": "string",
 			"thread": "string", "id": "string", "version": "string",
@@ -274,7 +274,7 @@ func registerContractTool(r *Registry, newDeps NewDeps, contractDeps ContractDep
 			"successor": "string", "sunset": "string", "override": "boolean",
 			"v1": "string", "v2": "string", "local": "string",
 			"ref": "string", "actor": "object",
-			"major": "integer", "note": "string",
+			"major": "integer", "note": "string", "satisfies": "array",
 		}),
 		Handler: handler,
 	})
@@ -286,7 +286,7 @@ func rejectDegradedLegacyContractWrites(next HandlerFunc) HandlerFunc {
 			Action string `json:"action"`
 		}
 		if err := json.Unmarshal(args, &input); err == nil &&
-			(input.Action == "deprecate" || input.Action == "retire" || input.Action == "adopt") {
+			(input.Action == "deprecate" || input.Action == "retire" || input.Action == "adopt" || input.Action == "activate") {
 			return nil, "", ErrLegacyContractWriteUnavailable
 		}
 		return next(ctx, args)

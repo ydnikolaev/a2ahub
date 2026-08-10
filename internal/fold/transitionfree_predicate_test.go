@@ -86,3 +86,32 @@ func TestTransitionFreeUnknownTransition(t *testing.T) {
 		t.Error("TransitionFree must not call an unmodelled transition free — the generic path flags it illegal, and that is the point")
 	}
 }
+
+// TestContractActivateIsTransitionFreeOnlyForAContract pins P5 AC1's
+// activation, and it exists because the verb shipped BEFORE the domain knew
+// the transition. `a2a contract activate` wrote a committed event that
+// `Fold` then flagged `illegal-transition`, because the table has no
+// (contract, published, activate) row and nothing routed it away from the
+// lookup — so the same artifact read "activated" on one surface and "carries
+// an illegal event" on another. Found by the implementing wave's own
+// end-to-end check, not by a unit test, which is why this one exists.
+//
+// It is transition-free rather than a table row for the reason the review
+// corpus gives: readiness changes AFTER publication while a descriptor is
+// immutable, so it must be an event — but a contract that becomes reachable
+// is still `published`, so it moves no state.
+func TestContractActivateIsTransitionFreeOnlyForAContract(t *testing.T) {
+	t.Parallel()
+
+	if !TransitionFree(KindContract, TActivate) {
+		t.Fatal("TransitionFree(contract, activate) must be true — otherwise Fold sends a committed activation to the transition table, finds no row, and flags a legal producer attestation as an illegal transition")
+	}
+	// Kind-scoped, exactly as acknowledge is: `activate` says nothing about a
+	// question or a handoff, and making it free everywhere would silence a
+	// genuinely unmodelled move on some other kind rather than describing one.
+	for _, k := range []Kind{KindQuestion, KindWorkRequest, KindHandoff, KindRequirement, KindAnnouncement, KindDecision, KindResponse} {
+		if TransitionFree(k, TActivate) {
+			t.Errorf("TransitionFree(%s, activate) is true — activation is a contract-only fact, and a blanket entry would hide an unmodelled transition on this kind", k)
+		}
+	}
+}

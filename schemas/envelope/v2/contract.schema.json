@@ -70,6 +70,31 @@
           }
         }
       ]
+    },
+    "x_operational": {
+      "description": "P5 2026-08-10, specs/05-declared-nature.md's AC1 discharge half: readiness of the operational half of the interface this contract describes, per named item -- endpoint, credential-channel, registration are the items §7 names, and a fourth kind is DATA (a new array entry), not a schema change. Carried under the sanctioned `x_` prefix for the SAME reason as `x_binding`: this schema is deployed and closes with unevaluatedProperties: false. Each entry's own PRESENCE is the author's declaration -- a named item absent from this array, or the whole field absent, reads as `undeclared` downstream (P-1), distinct from a declared `state: absent`; that reading is the CALLER's (pendency's), never this schema's, to make -- this field carries no default and absence is never `ready`. `eta` is not a clock: a declared date, so a reader can tell \"next week\" from \"not this quarter\"; the domain still reads no clock (seam.md §6).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The operational item this entry declares -- e.g. endpoint, credential-channel, registration. Free text, not a closed enum: a fourth kind is data."
+          },
+          "state": {
+            "type": "string",
+            "enum": ["ready", "absent"]
+          },
+          "eta": {
+            "type": "string",
+            "format": "date",
+            "description": "A declared date this item is expected to reach `ready` -- not a clock the system polls."
+          }
+        },
+        "required": ["name", "state"],
+        "additionalProperties": false
+      }
     }
   },
   "required": ["category", "version", "compat_policy", "schema_format", "artifacts"],

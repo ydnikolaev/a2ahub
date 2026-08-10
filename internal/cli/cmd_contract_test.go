@@ -12,6 +12,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/operation"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"gopkg.in/yaml.v3"
@@ -1350,6 +1351,322 @@ func TestContractAdopt(t *testing.T) {
 		}
 		if len(fake.calls) != 1 {
 			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+	})
+}
+
+// --- contract activate (P5's AC1 discharge half, specs/05-declared-nature.md's
+// 2026-08-10 amendments) -----------------------------------------------------
+
+// writeContractDescriptorWithXOperational is writeContractDescriptor plus a
+// raw x_operational block, on envelope/v2 (`x_operational` is a v2-only
+// field) — xOperationalRaw is inserted as-is, so a caller may pass any
+// number of declared items or none at all.
+func writeContractDescriptorWithXOperational(t *testing.T, mirrorDir, slug, version, xOperationalRaw string) {
+	t.Helper()
+	content := "---\n" +
+		"schema: envelope/v2\n" +
+		"id: XC-axon-" + slug + "\n" +
+		"type: contract\n" +
+		"title: t\n" +
+		"space: fixture-space\n" +
+		"from: axon\n" +
+		"to: [beta]\n" +
+		"actor: {kind: agent, name: bot}\n" +
+		"created: 2026-07-21T10:00:00Z\n" +
+		"category: api\n" +
+		"priority: p3\n" +
+		"blocking: false\n" +
+		"classification: internal\n" +
+		"version: \"" + version + "\"\n" +
+		"compat_policy: strict-semver\n" +
+		"schema_format: json-schema-2020-12\n" +
+		"thread: thread:axon-20260721-c9c1\n" +
+		xOperationalRaw +
+		"---\nbody\n"
+	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/contract.md", content)
+	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/schema/main.schema.json", `{"type":"object","additionalProperties":true}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/fixtures/valid/ok.json", `{}`)
+	writeMirrorFile(t, mirrorDir, "axon/provides/"+slug+"/fixtures/invalid/bad.json", `null`)
+}
+
+// contractActivationProbe/contractActivateEventProbe decode the wire shape
+// these tests assert on — DECODED values, never strings.Contains over
+// rendered bytes (this epic's own paid-for trap).
+type contractActivationProbe struct {
+	Version   string   `yaml:"version"`
+	Status    string   `yaml:"status"`
+	Satisfies []string `yaml:"satisfies"`
+	Note      string   `yaml:"note"`
+}
+
+type contractActivateEventProbe struct {
+	Schema     string                   `yaml:"schema"`
+	Transition string                   `yaml:"transition"`
+	Subject    string                   `yaml:"subject"`
+	Space      string                   `yaml:"space"`
+	Note       string                   `yaml:"note"`
+	Activation *contractActivationProbe `yaml:"activation"`
+}
+
+func decodeContractActivateEvent(t *testing.T, content []byte) contractActivateEventProbe {
+	t.Helper()
+	var probe contractActivateEventProbe
+	if err := yaml.Unmarshal(content, &probe); err != nil {
+		t.Fatalf("decode activate event: %v", err)
+	}
+	return probe
+}
+
+func TestContractActivate(t *testing.T) {
+	t.Parallel()
+
+	seedPublishedWithOperational := func(t *testing.T, mirrorDir, slug, version, xOperationalRaw string) {
+		t.Helper()
+		writeContractDescriptorWithXOperational(t, mirrorDir, slug, version, xOperationalRaw)
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-"+slug, "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", version)
+	}
+
+	t.Run("authors an event/v2 activate event for a declared item", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		seedPublishedWithOperational(t, mirrorDir, "act-a", "1.0.0",
+			"x_operational:\n  - name: endpoint\n    state: absent\n")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"activate", "XC-axon-act-a", "--version", "1.0.0", "--satisfies", "endpoint", "--note", "live now"}, io)
+		if code != 0 {
+			t.Fatalf("code = %d, want 0; stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %d", len(fake.calls))
+		}
+		files := fake.calls[0].Files
+		if len(files) != 1 {
+			t.Fatalf("expected exactly one event file, got %+v", files)
+		}
+		ev := decodeContractActivateEvent(t, files[0].Content)
+		if ev.Schema != "event/v2" || ev.Transition != "activate" || ev.Subject != "XC-axon-act-a" {
+			t.Fatalf("event = %+v, want schema event/v2, transition activate, subject XC-axon-act-a", ev)
+		}
+		if ev.Space != "fixture-space" {
+			t.Fatalf("event.Space = %q, want the descriptor's own space", ev.Space)
+		}
+		if ev.Note != "live now" {
+			t.Fatalf("event.Note = %q, want the --note text", ev.Note)
+		}
+		if ev.Activation == nil {
+			t.Fatal("expected an `activation` block, got none")
+		}
+		if ev.Activation.Version != "1.0.0" || ev.Activation.Status != "live" {
+			t.Fatalf("activation = %+v, want version 1.0.0, status live", ev.Activation)
+		}
+		if len(ev.Activation.Satisfies) != 1 || ev.Activation.Satisfies[0] != "endpoint" {
+			t.Fatalf("activation.Satisfies = %+v, want [endpoint]", ev.Activation.Satisfies)
+		}
+		wantKey := operation.ContractActivate("axon", "XC-axon-act-a", "1.0.0", []string{"endpoint"}, "live now")
+		if fake.calls[0].OperationKey != wantKey {
+			t.Fatalf("OperationKey = %q, want %q", fake.calls[0].OperationKey, wantKey)
+		}
+	})
+
+	t.Run("refuses below the space floor — activation has no event/v1 shape", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		seedPublishedWithOperational(t, mirrorDir, "act-b", "1.0.0",
+			"x_operational:\n  - name: endpoint\n    state: absent\n")
+		fake := &fakeLifecycleFunnel{}
+		// lifecycleManifest() sets no min_binary_version at all — below the
+		// floor, the common pre-P5 case.
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"activate", "XC-axon-act-b", "--version", "1.0.0", "--satisfies", "endpoint"}, io)
+		if code != 1 {
+			t.Fatalf("code = %d, want 1; stderr=%s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "min_binary_version") {
+			t.Fatalf("expected a floor refusal, got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("refusal must happen before any funnel call, got %+v", fake.calls)
+		}
+	})
+
+	t.Run("refuses an item the descriptor never declared", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		seedPublishedWithOperational(t, mirrorDir, "act-c", "1.0.0",
+			"x_operational:\n  - name: endpoint\n    state: absent\n")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"activate", "XC-axon-act-c", "--version", "1.0.0", "--satisfies", "registration"}, io)
+		if code != 1 {
+			t.Fatalf("code = %d, want 1; stderr=%s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "not a named item") {
+			t.Fatalf("expected an undeclared-item refusal, got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("refusal must happen before any funnel call, got %+v", fake.calls)
+		}
+	})
+
+	t.Run("refuses a contract with no x_operational declared at all", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		seedPublishedWithOperational(t, mirrorDir, "act-d", "1.0.0", "")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"activate", "XC-axon-act-d", "--version", "1.0.0", "--satisfies", "endpoint"}, io)
+		if code != 1 {
+			t.Fatalf("code = %d, want 1; stderr=%s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "not a named item") {
+			t.Fatalf("expected an undeclared-item refusal, got %q", errOut.String())
+		}
+	})
+
+	t.Run("refuses a version that was never published", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		seedPublishedWithOperational(t, mirrorDir, "act-e", "1.0.0",
+			"x_operational:\n  - name: endpoint\n    state: absent\n")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"activate", "XC-axon-act-e", "--version", "2.0.0", "--satisfies", "endpoint"}, io)
+		if code != 1 {
+			t.Fatalf("code = %d, want 1; stderr=%s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "has not been published") {
+			t.Fatalf("expected a not-published refusal, got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("refusal must happen before any funnel call, got %+v", fake.calls)
+		}
+	})
+
+	t.Run("refuses a contract this system does not own", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeForeignContractDescriptor(t, mirrorDir, "beta", "content-feed", "1.0.0")
+		writeLifecycleEvent(t, mirrorDir, "beta", 0, "XC-beta-content-feed", "publish", "beta")
+		appendVersionToLatestEvent(t, mirrorDir, "beta", "1.0.0")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"activate", "XC-beta-content-feed", "--version", "1.0.0", "--satisfies", "endpoint"}, io)
+		if code != 1 {
+			t.Fatalf("code = %d, want 1; stderr=%s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "not owned by this system") {
+			t.Fatalf("expected an ownership refusal, got %q", errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("refusal must happen before any funnel call, got %+v", fake.calls)
+		}
+	})
+
+	t.Run("requires at least one --satisfies", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		seedPublishedWithOperational(t, mirrorDir, "act-f", "1.0.0",
+			"x_operational:\n  - name: endpoint\n    state: absent\n")
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"activate", "XC-axon-act-f", "--version", "1.0.0"}, io)
+		if code != 2 {
+			t.Fatalf("code = %d, want 2 (usage error); stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("usage error must happen before any funnel call, got %+v", fake.calls)
+		}
+	})
+}
+
+// TestContractActivateEventDoesNotBreakLaterFoldOfTheSameContract is the
+// interaction runActivate's own doc comment names but never runs:
+// internal/fold's transition table (off-limits to this wave) has no
+// `activate` row, and fold.Apply's own doc comment PROMISES it "never
+// errors or panics on an illegal or unauthorized event… it flags and
+// otherwise no-ops" — a promised property, not a checked one, until
+// something actually folds the event. This drives the REAL `contract
+// activate` write, commits its own event into the mirror (mimicking a
+// merged PR — writeMirrorFile, not a hand-rolled stand-in), then runs
+// `contract deprecate` and `contract retire` against the SAME contract
+// subject and asserts both still succeed: an interposed `activate` event
+// must not corrupt or block a later per-version legality check for the
+// contract it names.
+func TestContractActivateEventDoesNotBreakLaterFoldOfTheSameContract(t *testing.T) {
+	t.Parallel()
+
+	commitRealActivateEvent := func(t *testing.T, mirrorDir, slug string) {
+		t.Helper()
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"activate", "XC-axon-" + slug, "--version", "1.0.0", "--satisfies", "endpoint"}, io)
+		if code != 0 {
+			t.Fatalf("activate: code = %d, want 0; stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 1 || len(fake.calls[0].Files) != 1 {
+			t.Fatalf("expected exactly one activate event file, got %+v", fake.calls)
+		}
+		writeMirrorFile(t, mirrorDir, fake.calls[0].Files[0].Path, string(fake.calls[0].Files[0].Content))
+	}
+
+	t.Run("deprecate still succeeds with the activate event in history", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeContractDescriptorWithXOperational(t, mirrorDir, "act-fold-dep", "1.0.0",
+			"x_operational:\n  - name: endpoint\n    state: absent\n")
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-act-fold-dep", "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+		commitRealActivateEvent(t, mirrorDir, "act-fold-dep")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"deprecate", "--successor", "XC-axon-act-fold-dep@2.0.0", "--sunset", "2026-12-31", "XC-axon-act-fold-dep"}, io)
+		if code != 0 {
+			t.Fatalf("deprecate: code = %d, want 0; stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %+v", fake.calls)
+		}
+	})
+
+	t.Run("retire still succeeds with the activate event in history", func(t *testing.T) {
+		t.Parallel()
+		mirrorDir := t.TempDir()
+		writeContractDescriptorWithXOperational(t, mirrorDir, "act-fold-ret", "1.0.0",
+			"x_operational:\n  - name: endpoint\n    state: absent\n")
+		writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-act-fold-ret", "publish", "axon")
+		appendVersionToLatestEvent(t, mirrorDir, "axon", "1.0.0")
+		writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-act-fold-ret", "deprecate", "axon")
+		commitRealActivateEvent(t, mirrorDir, "act-fold-ret")
+
+		fake := &fakeLifecycleFunnel{}
+		cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifestAtFloor("0.19.0"), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+		io, _, errOut := newIO()
+		code := cmd.Run(context.Background(), []string{"retire", "XC-axon-act-fold-ret"}, io)
+		if code != 0 {
+			t.Fatalf("retire: code = %d, want 0; stderr=%s", code, errOut.String())
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("expected exactly one funnel call, got %+v", fake.calls)
 		}
 	})
 }

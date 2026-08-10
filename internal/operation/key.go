@@ -230,6 +230,33 @@ func ContractDeprecate(system, contractID, version, successor, sunset string) st
 	return encoder.key()
 }
 
+// ContractActivate derives the operation key for one `a2a contract activate`
+// invocation — P5's AC1 discharge write (specs/05-declared-nature.md,
+// 2026-08-10 amendment): an activation event naming which `x_operational[]`
+// items (satisfies) a published contract version has reached readiness on.
+//
+// satisfies is SORTED before encoding — set semantics, the same reasoning
+// Verify's own targets parameter documents: the schema's `satisfies[]` array
+// carries no relative-order meaning of its own (unlike Respond's refs[],
+// which IS an ordered envelope array), so two invocations naming the SAME
+// item set in a different --satisfies flag order describe one identical
+// activation and must mint the SAME key.
+// ContractActivate is part of the public package API.
+func ContractActivate(system, contractID, version string, satisfies []string, note string) string {
+	sorted := append([]string(nil), satisfies...)
+	sort.Strings(sorted)
+
+	encoder := newEncoder("contract-activate")
+	encoder.add(system)
+	encoder.add(contractID)
+	encoder.add(version)
+	for _, s := range sorted {
+		encoder.add(s)
+	}
+	encoder.add(note)
+	return encoder.key()
+}
+
 // Valid reports whether key is the canonical v1 full-SHA-256 representation.
 func Valid(key string) bool {
 	if len(key) != len(prefix)+sha256.Size*2 || key[:len(prefix)] != prefix {

@@ -28,8 +28,10 @@ import (
 	"path/filepath"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -236,6 +238,54 @@ func findRegisteredConsumers(mirrorDir, contractID string, major int) (map[strin
 		}
 	}
 	return out, nil
+}
+
+// contractOperationalDebtOwed is P5 AC1's floor-gated derivation (spec
+// 05-declared-nature.md §8 AC1: "the derivation is GATED ON THE SPACE'S
+// OWN FLOOR — below it, no derived row is emitted and the thread reads
+// exactly as it does today"), resolved here so
+// pendency.Input.OperationalDebtOwed carries a single caller-resolved
+// bool: true when (a) manifest's own min_binary_version is at or above
+// contract.ContractPublicationFloor — the same floor split every
+// event/v2 write already mirrors (internal/cli/cmd_lifecycle.go's
+// lifecycleEventSchema, which `contract activate` itself reuses) — AND
+// (b) at least one system is a REGISTERED consumer
+// (FindRegisteredConsumersForMajor, scoped to publishVersion's own
+// major) of contractID.
+//
+// The fact derives from registration and publication ALONE: it never
+// reads a contract descriptor's `x_operational[]`, so it is exactly as
+// true for a contract that never declared the field as for one
+// declaring an item `state: absent` — spec 05's P-1 constraint ("an
+// undeclared operational half ... is itself the debt"; §6's own testing
+// row: the derivation must "pass with every new field absent").
+//
+// Fails CLOSED on the floor: an unparseable/empty MinBinaryVersion or
+// publishVersion degrades to "no derived row", the same direction §8
+// AC1 names for a space below the floor, never to "assume above it".
+// Fails OPEN on the registry read: a consumes.yaml this package cannot
+// parse is treated as "no registered consumer found" here rather than
+// aborting the whole read model — deliberately the OPPOSITE of
+// FindRegisteredConsumers' own fail-closed contract (that function's own
+// doc comment), because that contract protects the retire gate from
+// destroying a dependent out from under it, and the failure mode here is
+// only ever "a derived row this best-effort read path could not
+// surface", the same fail-open discipline every other caller-resolved
+// fact in foldedArtifact documents.
+func contractOperationalDebtOwed(mirrorDir string, manifest space.Manifest, contractID, publishVersion string) bool {
+	belowFloor, ferr := version.OlderThan(manifest.MinBinaryVersion, contract.ContractPublicationFloor)
+	if ferr != nil || belowFloor {
+		return false
+	}
+	major, merr := version.Major(publishVersion)
+	if merr != nil {
+		return false
+	}
+	consumers, cerr := FindRegisteredConsumersForMajor(mirrorDir, contractID, major)
+	if cerr != nil {
+		return false
+	}
+	return len(consumers) > 0
 }
 
 // parseConsumesStrict parses a committed consumes.yaml and REFUSES anything
