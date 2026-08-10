@@ -87,19 +87,56 @@
 # array/object-typed field it did not already carry is refused" and "no
 # shipped template happens to carry this key, so there is no placeholder to
 # descend into or hand-edit") are named per row below rather than assumed
-# from spec 03's own two-field guess, which undercounted. The map below has
-# ELEVEN keys, not ten: `envelope/v2/contract.generated_from` joined after
-# the ten were measured, when the same wave's own `$ref` bug-fix
+# from spec 03's own two-field guess, which undercounted. The map below had
+# ELEVEN keys after `envelope/v2/contract.generated_from` joined the ten
+# already measured, when the same wave's own `$ref` bug-fix
 # (EnvelopeFieldType resolving local `#/$defs/` refs, see that row) stopped
 # the field from looking reachable on the strength of a bug and put it
 # here instead.
 #
-# Two of these eleven are worth flagging as contingent rather than permanent:
-# `envelope/v2/base.acceptance_criteria` is unreachable only because the two
-# types that ship a v2 template (announcement, contract) do not need it —
-# not because appending an array can ever work. If a future v2 template for a
-# type that DOES carry `acceptance_criteria` ships, it becomes reachable
-# there and this row should be deleted rather than left stale.
+# It has SEVENTEEN now, after `schemas/templates/v2/work_request.md` shipped
+# (specs/04-possession.md §11, 2026-08-10 amendment): three rows fell OUT —
+# `envelope/v2/base.acceptance_criteria`, `.expected_response` and
+# `.expected_response.shape` were exactly the "contingent, not permanent" row
+# this comment used to flag, and the new template is the future v2 template
+# that carries them, so they are deleted rather than left stale — and NINE
+# joined, in two families.
+#
+# Five for `attachments` and four of its leaves (`role`, `conforms_to`,
+# `verification`, `retention`): the template embeds `attachments:` only as a
+# commented-out guidance block (never a live key), by design — `ref`,
+# `digest` and `expires_at` are written by `a2a attach` from real bytes at
+# attach time, so a placeholder entry would be a fake attachment the author
+# would have to notice and delete.
+#
+# Four for `binding`'s leaves — and NOT for `binding` itself, which this gate
+# proved reachable when the row was written on an assumption: the field is
+# oneOf(the literal `none`, an object of four required leaves), so the append
+# pass reaches the sentinel and `a2a new work_request --field binding=none` is
+# a real authoring act. Only the long form needs a hand-edit.
+#
+# THAT FAMILY IS A REVERSAL WORTH READING BEFORE THE NEXT PERSON RE-DERIVES
+# IT. The wave first shipped a LIVE
+# `binding:` block, on the reasoning that the field is the reason the template
+# forks at all. Two things falsified that in the same run. AC-401.1
+# (`internal/cli`'s TestNewDraftsEveryTypeV1Valid — every fresh draft is
+# V1-valid on placeholder-only fills) went red on `binding.adoptable` and
+# `binding.runtime_pinnable`: both boolean, and no placeholder literal for a
+# boolean is schema-valid. And the schema's own text says absence means
+# `undeclared`, DISTINCT from a declared `none` (P-1) — so a live block makes
+# `a2a new` author a declaration nobody made, which is exactly the defect B3
+# closed for enum placeholders, one generation later and one level out. The
+# tempting middle (a live block with literal `false` booleans) renders VALID
+# and is still both of those faults, so green would have been the wrong test.
+# The template forks for `schema: envelope/v2` — which is what unlocks
+# `attachments[]` and makes `a2a attach` reachable at all
+# (internal/cli/cmd_attach.go refuses any draft that is not v2) — not for a
+# live `binding:` key.
+#
+# `envelope/v2/base.expected_response.by` stays: the new template's
+# `expected_response:` block carries `shape`, not `by`, so that one sub-key is
+# still reached by neither surface.
+#
 # `envelope/v1/contract.generated_from` (and its two sub-keys) are commented
 # out of templates/v1/contract.md as guidance, not structurally impossible —
 # uncommenting the block would make all three reachable as template
@@ -136,30 +173,73 @@ unreachable:
     descend into, and the parent object cannot be appended.
   envelope/v2/base/origin: >-
     Same cause as envelope/v1/base.origin: origin is array-typed on the v2
-    base schema, the append pass writes one scalar node, and no v2 template
-    (only announcement and contract ship one) embeds an `origin:` key.
-  envelope/v2/base/acceptance_criteria: >-
-    acceptance_criteria is array-typed on the base schema, so the append pass
-    is refused for it exactly as for origin. Neither v2 template
-    (announcement, contract — the only two types with a shipped
-    templates/v2/*.md) embeds an `acceptance_criteria:` placeholder; v1's
-    handoff/requirement/work_request templates do, but `a2a new` never
-    renders those as envelope/v2 today (template.go's
-    AuthoringEnvelopeSchema). Contingent, not permanent: a future v2 template
-    for a type that needs this field would make it reachable there.
-  envelope/v2/base/expected_response: >-
-    expected_response is object-typed on the v2 base schema, so the append
-    pass's one-scalar-node write is refused for it, and neither v2 template
-    (announcement, contract) embeds an `expected_response:` key at all —
-    unlike v1, where three templates do.
-  envelope/v2/base/expected_response.shape: >-
-    No v2 template embeds `expected_response:` at all (see this table's
-    expected_response row for v2/base), so its `shape` sub-key is never
-    present to descend into, and --field's dotted-path pass cannot create a
-    key the template lacks.
+    base schema, the append pass writes one scalar node, and none of the
+    three shipped v2 templates (announcement, contract, work_request) embeds
+    an `origin:` key.
   envelope/v2/base/expected_response.by: >-
-    Same cause as expected_response.shape at v2/base: no v2 template embeds
-    `expected_response:`, so there is no `by` sub-key to descend into either.
+    expected_response.shape is a placeholder in templates/v2/work_request.md
+    (P4 wave closing `a2a new work_request` on envelope/v2, carried verbatim
+    from the v1 template — specs/04-possession.md §11), but that block does
+    not embed a `by:` sub-key, and neither does any other shipped v2
+    template. --field's dotted-path pass only descends into a key the
+    rendered mapping already carries (map-only, no key-creation — see
+    internal/template's resolveDottedPath), so a sub-key no template wrote
+    can never be reached.
+  envelope/v2/work_request/attachments: >-
+    attachments is array-typed on envelope/v2/work_request.schema.json, so
+    the append pass's one-scalar-node write (internal/template's applyFills)
+    is refused for it exactly as for origin above. templates/v2/work_request.md
+    embeds `attachments:` only as a commented-out (`#`) guidance block, never
+    as a live YAML key — deliberately: ref/digest/expires_at are written by
+    `a2a attach` from real bytes at attach time, so a placeholder entry here
+    would be a fake attachment the author would have to notice and delete.
+    Neither authoring surface (a template placeholder, or `--field
+    attachments=...`) reaches it as a result.
+  envelope/v2/work_request/attachments[].role: >-
+    Same commented-out block as attachments above, so there is no live
+    `attachments:` sequence to descend into. pathPresent's `[]` handling can
+    descend into a non-empty rendered sequence's items when one exists (it is
+    not a parser limitation), but no sequence is ever rendered here, and
+    --field's dotted-path pass never descends into a sequence index at all
+    (internal/template's resolveDottedPath doc comment) — so role is
+    unreachable by choice, not by parser limitation. `a2a attach` is the
+    surface that authors it, from the file being attached.
+  envelope/v2/work_request/attachments[].conforms_to: >-
+    Same cause as attachments[].role: the parent `attachments:` block in
+    templates/v2/work_request.md is commented out, so there is no live
+    sequence item to hand-edit and no index for --field to descend into.
+    `a2a attach` authors it, from the file being attached.
+  envelope/v2/work_request/attachments[].verification: >-
+    Same cause as attachments[].role: no live `attachments:` sequence.
+    `a2a attach` authors it, from the verdict being asked for.
+  envelope/v2/work_request/attachments[].retention: >-
+    Same cause as attachments[].role: no live `attachments:` sequence.
+    `a2a attach` authors it, from how long the bytes are kept.
+  envelope/v2/work_request/binding.artifact_class: >-
+    The LONG FORM is not reachable, though the field itself is: `binding` is
+    oneOf(the literal `none`, an object of four required leaves), and the
+    append pass reaches the sentinel branch — `a2a new work_request --field
+    binding=none` is a real, valid authoring act, so `binding` carries no row
+    here. The object branch is a different matter: templates/v2/work_request.md
+    carries the block only as commented-out (`#`) guidance, in the register
+    `proposed_change` and `refs` use one generation over, so --field's
+    dotted-path pass (map-only, no key creation — internal/template's
+    resolveDottedPath) has no live mapping to descend into and the parent
+    cannot be appended to create one. Uncommenting the block reaches all four
+    leaves; that is a hand-edit, which is not one of AC5's two mechanisms.
+    COMMENTED BY DESIGN — see this file's header for why a live block was
+    tried, measured and reversed.
+  envelope/v2/work_request/binding.compatibility_status: >-
+    Same cause as binding.artifact_class: the parent `binding:` block is
+    commented out, so there is no live mapping to descend into.
+  envelope/v2/work_request/binding.adoptable: >-
+    Same cause as binding.artifact_class: the parent `binding:` block is
+    commented out. Boolean-typed, so it is additionally the leaf that proved
+    the point — a placeholder literal for it cannot be schema-valid, which is
+    how the live-block attempt was caught rather than shipped.
+  envelope/v2/work_request/binding.runtime_pinnable: >-
+    Same cause as binding.adoptable: the parent `binding:` block is commented
+    out, and the field is boolean-typed.
   envelope/v2/contract/generated_from: >-
     Object-typed, so the append pass's one-scalar-node write is refused, and
     templates/v2/contract.md carries no `generated_from:` key to descend into.

@@ -278,6 +278,87 @@ func TestRenderUnknownType(t *testing.T) {
 	}
 }
 
+// TestRenderV2WorkRequestIsCompletableThroughFieldOverrides is the other
+// half of TestRenderEveryTypeSchemaValid's V1-pass proof, which only ever
+// renders envelope/v1 (Render's default EnvelopeSchema). It proves the thing
+// that would actually matter to an author: the sanctioned completion surface
+// (`--field`, the same dotted-path pass `a2a new --field` drives) reaches a
+// FULLY VALID envelope/v2 work_request — the generation is not merely
+// selectable but usable.
+//
+// NARROWED, and the narrowing is the finding rather than a retreat. This test
+// first drove `binding.adoptable=false` and `binding.runtime_pinnable=false`
+// against a LIVE `binding:` block in templates/v2/work_request.md, and the
+// block is now commented out, so those two overrides no longer apply. The
+// live block was reversed for two measured reasons — AC-401.1
+// (internal/cli's TestNewDraftsEveryTypeV1Valid) went red, because no
+// placeholder literal for a boolean is schema-valid; and the schema's own
+// text makes absence mean `undeclared`, DISTINCT from a declared `none`
+// (P-1), so emitting the block would have `a2a new` author a declaration
+// nobody made, which is B3's defect one level out. See
+// schemas/fill-classes.yaml's header.
+//
+// What remains provable is stronger than it looks: `binding` is
+// oneOf(the literal `none`, an object of four required leaves), and the
+// SENTINEL branch is reachable through the append pass. So an author who
+// wants to declare non-binding does it in one flag, the long form is a
+// hand-edit of the commented block, and — the part worth pinning — a fresh
+// v2 draft completed only through `--field` validates clean.
+func TestRenderV2WorkRequestIsCompletableThroughFieldOverrides(t *testing.T) {
+	t.Parallel()
+
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+
+	in := fixedInput("work_request", "XW-axon-20260721-k3f9")
+	in.EnvelopeSchema = "envelope/v2"
+	in.Fields = map[string]string{
+		"category": "data",
+		"thread":   "thread:axon-20260721-k3f9",
+		"binding":  "none",
+	}
+	raw, err := template.Render(in)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		t.Fatalf("ParseFrontmatter: %v", err)
+	}
+	instance, err := schema.DecodeYAMLInstance(fm.YAML)
+	if err != nil {
+		t.Fatalf("DecodeYAMLInstance: %v", err)
+	}
+	violations, err := corpus.ValidateEnvelope("work_request", "envelope/v2", instance)
+	if err != nil {
+		t.Fatalf("ValidateEnvelope: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Fatalf("a fully field-overridden v2 work_request draft is still schema-invalid: %+v\n---\n%s", violations, raw)
+	}
+	// Assert the sentinel LANDED, not merely that the draft is valid — a
+	// draft with no `binding:` key at all is also valid (the field is
+	// optional, and absence is `undeclared`), so validity alone would pass
+	// even if the override had been silently dropped.
+	//
+	// Read it off the DECODED instance, never off the raw bytes. The first
+	// draft of this assertion was `strings.Contains(raw, "binding: none")`,
+	// and mutating the override away left it GREEN: templates/v2/
+	// work_request.md's commented-out guidance block contains the literal
+	// text "binding: none" as prose, so the substring check was matching a
+	// comment. The mutation is the only reason that is known.
+	obj, ok := instance.(map[string]any)
+	if !ok {
+		t.Fatalf("decoded v2 work_request instance is %T, not a mapping", instance)
+	}
+	if got := obj["binding"]; got != "none" {
+		t.Fatalf("`--field binding=none` did not reach the draft's `binding` key (got %#v); the sentinel branch is the only route an author has to declare non-binding through the sanctioned surface:\n%s", got, raw)
+	}
+}
+
 func TestRenderSelectsExplicitEnvelopeTemplateGeneration(t *testing.T) {
 	t.Parallel()
 
@@ -746,6 +827,82 @@ func TestAuthoringEnvelopeSchemaKnowsEveryType(t *testing.T) {
 		if got != "envelope/v1" && got != "envelope/v2" {
 			t.Fatalf("AuthoringEnvelopeSchema(%q) = %q, want a known generation", typ, got)
 		}
+	}
+}
+
+// wantGeneration is the pinned expectation table for "what envelope
+// generation does FRESH authoring render for typ", mirroring the shape of
+// internal/schema/fillclasses_reachability_test.go's own wantExcluded block:
+// a derived answer that could otherwise change silently is committed here so
+// widening it is a deliberate edit with a reason, not a side effect of
+// touching template.go's selector.
+//
+// `contract` is envelope/v2 because isJSONSchemaFixture (this file) reports
+// its default schema_format (json-schema-2020-12) as JSON-Schema — the one
+// row where the answer is a sniff rather than a fixed fact.
+// `work_request` is envelope/v2 UNCONDITIONALLY, per specs/04-possession.md
+// §11's 2026-08-10 amendment: attachments[] and binding are both optional,
+// so a v2 draft is a strict superset of v1 and there is no bifurcation to
+// sniff. `announcement` stays envelope/v1 and carries "B20" in its reason:
+// schemas/templates/v2/announcement.md ships, but it is a work-checkpoint
+// template (hardcoded `category: status`, a required `work:` block), not a
+// general v2 announcement, so selecting v2 for it here would misrender every
+// fresh `a2a new announcement` — filed as epic-backlog B20 rather than a
+// silent omission (see template.go's generationTable doc comment).
+var wantGeneration = map[string]string{
+	"contract":     "envelope/v2",
+	"requirement":  "envelope/v1",
+	"question":     "envelope/v1",
+	"work_request": "envelope/v2",
+	"decision":     "envelope/v1",
+	"response":     "envelope/v1",
+	"handoff":      "envelope/v1",
+	"announcement": "envelope/v1", // B20
+}
+
+// TestFreshAuthoringGenerationIsPinned is spec 04-possession.md §11's
+// 2026-08-10 amendment turned into a gate: for EVERY type
+// schema.EnvelopeTypes() names, the selector's answer (AuthoringEnvelopeSchema,
+// the `a2a template list/show` reporting path) must match wantGeneration's
+// declared expectation, AND RenderNew's actual rendered `schema:` line (the
+// `a2a new` authoring path) must agree with what AuthoringEnvelopeSchema
+// reported — the exact disagreement between those two functions that this
+// wave's own selectGeneration extraction was built to make impossible again
+// (see AuthoringEnvelopeSchema's doc comment for the 2026-08-06 incident).
+func TestFreshAuthoringGenerationIsPinned(t *testing.T) {
+	t.Parallel()
+
+	types := template.Types()
+	if len(wantGeneration) != len(types) {
+		t.Fatalf("wantGeneration has %d entries, template.Types() has %d — every envelope type needs an explicit, named row (no derived default)", len(wantGeneration), len(types))
+	}
+
+	for _, typ := range types {
+		t.Run(typ, func(t *testing.T) {
+			t.Parallel()
+
+			want, declared := wantGeneration[typ]
+			if !declared {
+				t.Fatalf("wantGeneration has no row for %q", typ)
+			}
+
+			got, err := template.AuthoringEnvelopeSchema(typ, isJSONSchemaFixture)
+			if err != nil {
+				t.Fatalf("AuthoringEnvelopeSchema(%q): %v", typ, err)
+			}
+			if got != want {
+				t.Errorf("AuthoringEnvelopeSchema(%q) = %q, want %q (pinned) — either the selection changed for a real reason (update wantGeneration and say why) or template.go's generationTable drifted", typ, got, want)
+			}
+
+			rendered, err := template.RenderNew(fixedInput(typ, idFor(typ)), isJSONSchemaFixture)
+			if err != nil {
+				t.Fatalf("RenderNew(%q): %v", typ, err)
+			}
+			renderedSchema := envelopeSchemaOf(t, rendered)
+			if renderedSchema != got {
+				t.Errorf("RenderNew(%q) rendered %q but AuthoringEnvelopeSchema(%q) reports %q — the two authoring surfaces disagree, exactly the 2026-08-06 incident this wave's selectGeneration extraction exists to prevent", typ, renderedSchema, typ, got)
+			}
+		})
 	}
 }
 

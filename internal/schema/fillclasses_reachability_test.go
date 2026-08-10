@@ -190,16 +190,21 @@ type shippedTemplate struct {
 // outlive the thing it exempts (TestExemptFamiliesAreRealAndReasoned's own
 // rule, mirrored here for this second exemption list).
 //
-// Non-envelope groups (event/*, manifest/*, consumes/*), and envelope groups
-// with no shipped template at all for a generation (envelope/v2/response,
-// envelope/v2/work_request currently ship no templates/v2/*.md and `a2a new`
-// never selects envelope/v2 for either type — see template.go's
-// AuthoringEnvelopeSchema), are excluded from this gate's universe rather
-// than forced into a required `unreachable:` entry: AC5's own two named
-// mechanisms do not exist for those groups at all, which is a different,
-// group-level fact from "this field is refused by an authoring surface that
-// does exist". t.Logf reports the excluded counts so the exclusion is
-// visible rather than silent.
+// Non-envelope groups (event/*, manifest/*, consumes/*), and an envelope
+// group with no shipped template at all for a generation (envelope/v2/response
+// ships no templates/v2/response.md and `a2a new` never selects envelope/v2
+// for that type — see template.go's AuthoringEnvelopeSchema), are excluded
+// from this gate's universe rather than forced into a required
+// `unreachable:` entry: AC5's own two named mechanisms do not exist for
+// those groups at all, which is a different, group-level fact from "this
+// field is refused by an authoring surface that does exist". t.Logf reports
+// the excluded counts so the exclusion is visible rather than silent.
+//
+// envelope/v2/work_request left this universe on 2026-08-10
+// (specs/04-possession.md §11): schemas/templates/v2/work_request.md now
+// ships, so its AUTHOR fields are judged like any other envelope group's —
+// reachable, or carrying a real `unreachable:` reason (schemas/fill-
+// classes.yaml).
 func TestEveryAuthorFieldIsReachableOrDeclaredUnreachable(t *testing.T) {
 	table, err := schema.LoadFillClasses()
 	if err != nil {
@@ -317,22 +322,25 @@ func TestEveryAuthorFieldIsReachableOrDeclaredUnreachable(t *testing.T) {
 	// because its universe is short" — so the universe's edge is a committed
 	// expectation here, and widening it is a deliberate edit with a reason.
 	//
-	// The six below have no authoring surface AT ALL, which is a different
+	// The five below have no authoring surface AT ALL, which is a different
 	// fact from `unreachable:`'s "a surface exists and refuses this field":
 	// the first four ship no templates/** file and are authored by dedicated
-	// verbs (`a2a note`, `a2a verify`, a hand-edited manifest); the two
-	// envelope/v2 groups have no templates/v2/<type>.md and `a2a new` never
-	// selects envelope/v2 for those types (template.go's
-	// AuthoringEnvelopeSchema). Forcing 64 per-field `unreachable:` rows would
-	// state a group-level absence as a field-by-field refusal, which is a
-	// stronger claim than is true.
+	// verbs (`a2a note`, `a2a verify`, a hand-edited manifest); the one
+	// envelope/v2 group has no templates/v2/<type>.md and `a2a new` never
+	// selects envelope/v2 for that type (template.go's
+	// AuthoringEnvelopeSchema). `envelope/v2/work_request` left this map on
+	// 2026-08-10 when schemas/templates/v2/work_request.md shipped (specs/
+	// 04-possession.md §11) — deleting the entry rather than leaving it is
+	// this same rule applied to itself: an exemption must not outlive the
+	// thing it exempts. Forcing per-field `unreachable:` rows for the
+	// remaining five groups would state a group-level absence as a
+	// field-by-field refusal, which is a stronger claim than is true.
 	wantExcluded := map[string]bool{
-		"consumes/v1/consumes":     true,
-		"envelope/v2/response":     true,
-		"envelope/v2/work_request": true,
-		"event/v1/event":           true,
-		"event/v2/event":           true,
-		"manifest/v1/space":        true,
+		"consumes/v1/consumes": true,
+		"envelope/v2/response": true,
+		"event/v1/event":       true,
+		"event/v2/event":       true,
+		"manifest/v1/space":    true,
 	}
 	for group := range excluded {
 		if !wantExcluded[group] {

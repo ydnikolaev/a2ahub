@@ -28,11 +28,16 @@ func TestAttachVerbReachesTheBuiltBinary(t *testing.T) {
 
 	dir := t.TempDir()
 
-	// A minimal envelope/v2 work_request. Hand-written on purpose: `a2a new`
-	// still authors envelope/v1 for this type (there is no v2 template), so
-	// a draft carrying the generation that declares attachments[] cannot yet
-	// be produced by the tool itself. That gap is real and recorded in P4's
-	// plan; this fixture works around it for the reachability question only.
+	// A minimal envelope/v2 work_request, hand-written to keep this test's
+	// subject narrow: it asks whether `a2a attach` reaches the draft, not
+	// whether `a2a new` can produce one.
+	//
+	// It used to say the fixture was a WORKAROUND, because `a2a new` authored
+	// envelope/v1 for this type and the generation declaring attachments[]
+	// was unreachable from the tool. That gap is closed —
+	// schemas/templates/v2/work_request.md ships and template.go's
+	// selectGeneration makes `a2a new work_request` unconditionally v2 — so
+	// the fixture is now a choice rather than a detour.
 	draft := filepath.Join(dir, "XW-axon-20260808-attach.md")
 	body := "---\n" +
 		"schema: envelope/v2\n" +

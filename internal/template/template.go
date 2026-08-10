@@ -104,39 +104,109 @@ func Show(typ string) ([]byte, error) {
 }
 
 // AuthoringEnvelopeSchema reports the envelope generation FRESH authoring
-// renders for typ — the same selection RenderNew makes, resolved off the
-// template's OWN default `schema_format` rather than a rendered draft's
-// overrides, because a caller inspecting a template has no draft yet.
+// renders for typ — the same selection RenderNew makes (both call
+// selectGeneration, the one seat below), resolved off the template's OWN
+// default `schema_format` rather than a rendered draft's overrides, because
+// a caller inspecting a template has no draft yet.
 //
-// This is deliberately NOT "does typ have a registered envelope/v2 schema".
-// `announcement` and (as of P4 wave A) `work_request` both do, yet
-// RenderNew (template.go) only ever branches to envelope/v2 for `contract`
-// — and `work_request` additionally has no `templates/v2/work_request.md`
-// to show at all. So `contract` is admitted into the schema_format-driven
-// branch below, and `work_request` is admitted too (harmlessly: its v1
-// template carries no `schema_format` field, so ContractDraftSchemaFormat
-// returns "" and isJSONSchema("") is false, so the answer is unchanged —
-// still "envelope/v1"). Every other type is refused this branch outright,
-// same as before. Widening this list to select envelope/v2 by default for
-// work_request needs both a v2 template and a RenderNew change; neither is
-// this wave's to make (see this func's package doc / the P4 wave-A brief).
+// The selection is table-driven (selectGeneration's generationTable), never
+// derived from "does typ have a shipped templates/v2/<type>.md" — that
+// table's own doc comment names the falsifying case (`announcement`).
+// `contract` is the one type where the choice is a genuine sniff, because an
+// openapi/proto3 contract has no publishable v2 shape at all;
+// `work_request` selects envelope/v2 unconditionally, per
+// specs/04-possession.md §11's 2026-08-10 amendment — its attachments[] and
+// binding are both optional, so a v2 draft is a strict superset of v1 and
+// there is no bifurcation to sniff. Before this wave, RenderNew and this
+// function answered the same question differently (RenderNew branched only
+// on `in.Type != "contract"`, this function additionally admitted
+// `work_request` into the sniff branch); that disagreement was the
+// 2026-08-06 incident recorded on ShowGeneration's own doc comment. A single
+// selector removes the possibility of the two disagreeing again.
 func AuthoringEnvelopeSchema(typ string, isJSONSchema func(string) bool) (string, error) {
 	const op = "AuthoringEnvelopeSchema"
 	raw, err := rawTemplate(typ, "")
 	if err != nil {
 		return "", &Error{Op: op, Input: typ, Err: err}
 	}
-	if (typ != "contract" && typ != "work_request") || isJSONSchema == nil {
+	generation, gerr := selectGeneration(typ, func() (string, error) {
+		return ContractDraftSchemaFormat(raw)
+	}, isJSONSchema)
+	if gerr != nil {
+		return "", &Error{Op: op, Input: typ, Err: gerr}
+	}
+	return generation, nil
+}
+
+// generationSelection is selectGeneration's own vocabulary for how a type's
+// fresh-authoring generation is decided — never a bool, because there are
+// three real answers (always v1, always v2, or "ask the schema_format"), not
+// two.
+type generationSelection int
+
+const (
+	generationV1 generationSelection = iota
+	generationV2Unconditional
+	generationContractSniff
+)
+
+// generationTable is THE explicit, per-type answer to "what envelope
+// generation does FRESH authoring render", decided in specs/04-possession.md
+// §11 (2026-08-10 amendment, corrected the same day before the wave). It is
+// a table, not a derivation, because the tempting derived rule — "select
+// envelope/v2 whenever templates/v2/<type>.md exists" — is FALSIFIED by
+// `announcement`: it HAS schemas/templates/v2/announcement.md, but that file
+// is a work-checkpoint template (hardcoded `category: status`, a required
+// `work:` block, its own internal/workcheckpoint validator and
+// scripts/check_work_checkpoint_schema.sh), not a general v2 announcement —
+// selecting v2 for it here would render a work checkpoint on every fresh
+// `a2a new announcement`. `announcement` therefore carries an explicit
+// generationV1 row below, with its reason, filed as epic-backlog B20, rather
+// than being left to fall through a default and read as an oversight.
+//
+// `contract` is the sole generationContractSniff row: an openapi/proto3
+// contract has no publishable v2 shape at all, so the choice is real there.
+// Every other type — including `work_request`, which is
+// generationV2Unconditional because attachments[] and binding are both
+// optional and a v2 draft is a strict superset of v1 — is a fixed answer,
+// not a sniff.
+var generationTable = map[string]generationSelection{
+	"contract":     generationContractSniff,
+	"requirement":  generationV1,
+	"question":     generationV1,
+	"work_request": generationV2Unconditional,
+	"decision":     generationV1,
+	"response":     generationV1,
+	"handoff":      generationV1,
+	"announcement": generationV1, // B20: templates/v2/announcement.md is a work checkpoint, not a general v2 template — see generationTable's own doc comment.
+}
+
+// selectGeneration is the ONE seat that answers "what envelope generation
+// does fresh authoring render for typ" — RenderNew (the `a2a new` path) and
+// AuthoringEnvelopeSchema (the `a2a template list`/`show` reporting path)
+// both call it, so the two surfaces cannot answer the same question
+// differently again. sniffFormat is called lazily and only for the
+// generationContractSniff branch, so a type whose row does not need it never
+// pays for the sniff.
+func selectGeneration(typ string, sniffFormat func() (string, error), isJSONSchema func(string) bool) (string, error) {
+	switch generationTable[typ] {
+	case generationV2Unconditional:
+		return "envelope/v2", nil
+	case generationContractSniff:
+		if isJSONSchema == nil {
+			return "envelope/v1", nil
+		}
+		format, err := sniffFormat()
+		if err != nil {
+			return "", err
+		}
+		if !isJSONSchema(format) {
+			return "envelope/v1", nil
+		}
+		return "envelope/v2", nil
+	default:
 		return "envelope/v1", nil
 	}
-	format, err := ContractDraftSchemaFormat(raw)
-	if err != nil {
-		return "", &Error{Op: op, Input: typ, Err: err}
-	}
-	if !isJSONSchema(format) {
-		return "envelope/v1", nil
-	}
-	return "envelope/v2", nil
 }
 
 // ShowGeneration returns typ's canonical embedded template for one explicit
@@ -238,25 +308,30 @@ func Render(in Input) ([]byte, error) {
 	return artifact.SerializeFrontmatter(artifact.Frontmatter{YAML: out, Body: body}), nil
 }
 
-// RenderNew centralizes fresh-authoring generation selection. A JSON-Schema
-// contract is first rendered through the historical template so the actual
-// schema_format override is known, then re-rendered as declared-v2. The caller
-// supplies the canonical dialect classifier, keeping template independent of
-// validate while CLI and MCP still make one identical decision.
+// RenderNew centralizes fresh-authoring generation selection through
+// selectGeneration — the one seat AuthoringEnvelopeSchema also answers from.
+// A JSON-Schema contract is first rendered through the historical template
+// so the actual schema_format override is known, then re-rendered as
+// declared-v2 only if selectGeneration says so; every other type's answer is
+// fixed and needs no re-render. The caller supplies the canonical dialect
+// classifier, keeping template independent of validate while CLI and MCP
+// still make one identical decision.
 func RenderNew(in Input, isJSONSchema func(string) bool) ([]byte, error) {
 	in.EnvelopeSchema = ""
 	draft, err := Render(in)
-	if err != nil || in.Type != "contract" {
+	if err != nil {
 		return draft, err
 	}
-	format, err := ContractDraftSchemaFormat(draft)
-	if err != nil {
-		return nil, err
+	generation, gerr := selectGeneration(in.Type, func() (string, error) {
+		return ContractDraftSchemaFormat(draft)
+	}, isJSONSchema)
+	if gerr != nil {
+		return nil, gerr
 	}
-	if isJSONSchema == nil || !isJSONSchema(format) {
+	if generation == "envelope/v1" {
 		return draft, nil
 	}
-	in.EnvelopeSchema = "envelope/v2"
+	in.EnvelopeSchema = generation
 	return Render(in)
 }
 
