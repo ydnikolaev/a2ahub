@@ -60,6 +60,67 @@ type contractDescriptorProbe struct {
 	// contractDescriptorProbe field (ADR-001: internal/mcp never imports
 	// internal/cli).
 	XOperational []xOperationalItemProbe `yaml:"x_operational"`
+	// XBinding is P5's AC2 counterweight, and it is on THIS probe because
+	// leaving it off was a live hole rather than an omission. The T2
+	// escape-hatch argument (threat-model.md) is that a contract declaring
+	// itself non-adoptable costs its author every consumer — which only
+	// holds if EVERY surface that can adopt refuses one. `a2a contract
+	// adopt` refused; `a2a_contract` action=adopt did not, and it writes the
+	// identical `consumes.yaml` dependency, which IS the pin. Found by the
+	// 2026-08-10 coherence audit, hours after the CLI half shipped in its
+	// own commit specifically so the hatch would never open alone.
+	// Mirrors internal/cli's own field (ADR-001: no import).
+	XBinding *xBindingProbe `yaml:"x_binding"`
+}
+
+// xBindingProbe decodes envelope/v2/contract's `x_binding` — either the
+// bare sentinel `none`, or the long form object. A nil pointer means the
+// field is ABSENT: undeclared, which is distinct from a declared `none`
+// (P-1), so callers must check for nil before asking anything of it.
+// Mirrors internal/cli's own xBindingProbe, including its UnmarshalYAML.
+type xBindingProbe struct {
+	Sentinel            bool
+	ArtifactClass       string `yaml:"artifact_class"`
+	CompatibilityStatus string `yaml:"compatibility_status"`
+	Adoptable           *bool  `yaml:"adoptable"`
+	RuntimePinnable     *bool  `yaml:"runtime_pinnable"`
+}
+
+// UnmarshalYAML distinguishes the two shapes x_binding's own schema oneOf's:
+// a bare scalar (only "none" is schema-valid; any other scalar decodes
+// harmlessly here because schema validation, not this probe, refuses it) or
+// the long-form mapping.
+func (x *xBindingProbe) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		var s string
+		if err := node.Decode(&s); err != nil {
+			return err
+		}
+		if s == "none" {
+			x.Sentinel = true
+		}
+		return nil
+	}
+	type alias xBindingProbe
+	var a alias
+	if err := node.Decode(&a); err != nil {
+		return err
+	}
+	*x = xBindingProbe(a)
+	return nil
+}
+
+// nonAdoptable reports whether x declares this contract unable to be
+// adopted — the bare `none` sentinel, or the long form with
+// `adoptable: false`. A nil x (undeclared) is adoptable, per P-1.
+func (x *xBindingProbe) nonAdoptable() bool {
+	if x == nil {
+		return false
+	}
+	if x.Sentinel {
+		return true
+	}
+	return x.Adoptable != nil && !*x.Adoptable
 }
 
 // xOperationalItemProbe decodes one entry of envelope/v2/contract's
@@ -819,15 +880,31 @@ func newContractAdoptHandler(deps ContractDeps) HandlerFunc {
 			return nil, "", fmt.Errorf("contract adopt: %s is this system's OWN contract — the registry records what you consume from OTHERS (§5.2.3)", in.ID)
 		}
 
+		// The descriptor is read UNCONDITIONALLY now, not only when major
+		// is 0, because the adoptability refusal below must not be skippable
+		// by passing an explicit major. That is exactly how this surface came
+		// to be missing it: the only descriptor read sat inside the
+		// major-resolution branch, so a caller supplying `major` never
+		// touched the contract's own declaration.
+		//
+		// A read failure does NOT refuse here — it skips the check and falls
+		// through to the existing, actionable "sync first" message below when
+		// the major actually needs resolving, mirroring internal/cli's
+		// runAdopt so the two surfaces fail the same way on an unsynced
+		// mirror.
+		_, adoptProbe, _, _, readErr := contractReadDescriptor(deps.MirrorDir, in.ID)
+		if readErr == nil && adoptProbe.XBinding.nonAdoptable() {
+			return nil, "", fmt.Errorf("contract adopt: %s declares itself non-adoptable (x_binding) — nobody may pin it", in.ID)
+		}
+
 		major := in.Major
 		if major == 0 {
-			_, probe, _, _, rerr := contractReadDescriptor(deps.MirrorDir, in.ID)
-			if rerr != nil {
-				return nil, "", fmt.Errorf("contract adopt: cannot read %s from the local mirror — sync first, or pass major: %w", in.ID, rerr)
+			if readErr != nil {
+				return nil, "", fmt.Errorf("contract adopt: cannot read %s from the local mirror — sync first, or pass major: %w", in.ID, readErr)
 			}
-			v, verr := contractParseSemver(probe.Version)
+			v, verr := contractParseSemver(adoptProbe.Version)
 			if verr != nil {
-				return nil, "", fmt.Errorf("contract adopt: %s has no usable published version (%q): %w", in.ID, probe.Version, verr)
+				return nil, "", fmt.Errorf("contract adopt: %s has no usable published version (%q): %w", in.ID, adoptProbe.Version, verr)
 			}
 			major = v[0]
 		}

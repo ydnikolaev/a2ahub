@@ -658,3 +658,87 @@ func TestContractActivateRequiresSatisfies(t *testing.T) {
 		t.Fatalf("usage error must happen before any funnel call, got %+v", fake.calls)
 	}
 }
+
+// TestContractAdoptRefusesANonAdoptableContract closes a hole the 2026-08-10
+// coherence audit found HOURS after the CLI half shipped, and the gap is the
+// point of the test rather than a footnote.
+//
+// P5's AC2 counterweight — a contract declaring itself non-adoptable cannot be
+// adopted — was committed FIRST, in its own commit, precisely so threat-model
+// T2's escape hatch would never exist without the economics that make it
+// unattractive. It landed on `a2a contract adopt` and NOT on this surface,
+// which performs the identical pin: `contractUpsertDependency` writes the same
+// `space.Dependency` into the same `consumes.yaml`, and that dependency IS the
+// pin the criterion is about. An MCP-driven agent could adopt what a CLI agent
+// could not.
+//
+// The parity gate could not catch it: `cmd/a2a/mcp_parity_test.go` enforces a
+// bijection over VERBS and contract sub-actions, and `adopt` exists on both.
+// It says nothing about whether the two implementations REFUSE the same things.
+func TestContractAdoptRefusesANonAdoptableContract(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name    string
+		slug    string
+		binding string
+		major   int
+	}{
+		{"the bare sentinel", "nb1", "x_binding: none\n", 0},
+		{"the long form with adoptable false", "nb2", "x_binding:\n  artifact_class: non_binding_review\n  compatibility_status: none\n  adoptable: false\n  runtime_pinnable: false\n", 0},
+		// An explicit major is the route that made this reachable at all: the
+		// descriptor used to be read ONLY when major was 0, so supplying one
+		// skipped the read entirely. If this subtest ever passes while the
+		// others fail, the check has drifted back inside that branch.
+		{"an explicit major cannot skip the check", "nb3", "x_binding: none\n", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mirrorDir := t.TempDir()
+			// `beta`'s contract, adopted by `axon` — adopt refuses one's own.
+			writeContractDescriptorWithXOperational(t, mirrorDir, "beta", tc.slug, "1.0.0", tc.binding)
+
+			fake := &fakeFunnel{}
+			handler := newContractAdoptHandler(contractTestDepsAtFloor(mirrorDir, fake, "0.19.0"))
+			args, _ := json.Marshal(ContractAdoptInput{ID: "XC-beta-" + tc.slug, Major: tc.major})
+			_, _, err := handler(context.Background(), args)
+			if err == nil {
+				t.Fatal("MCP adopted a contract that declares itself non-adoptable — the T2 counterweight is CLI-only and the pin went through on this surface")
+			}
+			if !strings.Contains(err.Error(), "non-adoptable") {
+				t.Fatalf("refused, but not for adoptability: %v", err)
+			}
+			if len(fake.calls) != 0 {
+				t.Fatalf("the refusal must precede any funnel write, got %+v", fake.calls)
+			}
+		})
+	}
+}
+
+// TestContractAdoptStillAdoptsWhenBindingPermitsIt is the other direction: a
+// refusal that fires on everything is not a refusal. Undeclared (no x_binding
+// at all) is adoptable by P-1 — absence is not a declared `none`.
+func TestContractAdoptStillAdoptsWhenBindingPermitsIt(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ name, slug, binding string }{
+		{"undeclared", "ok1", ""},
+		{"declared adoptable", "ok2", "x_binding:\n  artifact_class: api\n  compatibility_status: strict-semver\n  adoptable: true\n  runtime_pinnable: true\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mirrorDir := t.TempDir()
+			writeContractDescriptorWithXOperational(t, mirrorDir, "beta", tc.slug, "1.0.0", tc.binding)
+
+			fake := &fakeFunnel{}
+			handler := newContractAdoptHandler(contractTestDepsAtFloor(mirrorDir, fake, "0.19.0"))
+			args, _ := json.Marshal(ContractAdoptInput{ID: "XC-beta-" + tc.slug, Major: 1})
+			if _, _, err := handler(context.Background(), args); err != nil {
+				t.Fatalf("an adoptable contract was refused: %v", err)
+			}
+			if len(fake.calls) != 1 {
+				t.Fatalf("expected the adoption to reach the funnel exactly once, got %d", len(fake.calls))
+			}
+		})
+	}
+}
