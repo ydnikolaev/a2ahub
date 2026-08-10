@@ -746,3 +746,32 @@ changes:
       why: >
         Nothing to do. The field is optional on every event the binary
         currently produces.
+  - id: RN-01910-27
+    kind: break
+    impact: high
+    subject: "`a2a feedback triage` checks the hub before it tells you the inbox is clean"
+    detail: >
+      Triage read only the local tree. So it printed `inbox clean` while
+      reports sat unread on the hub the tool itself submits to — which is
+      exactly what happened: three of them, for up to three days, one of them
+      blocking a live delivery.
+      Run from a git work tree, triage now resolves the hub of record first and
+      REFUSES rather than reporting, naming both the drift and the hub, when
+      the hub carries a report this tree does not have, when the comparison
+      cannot be completed at all, or when no hub is configured. `inbox clean`
+      is reachable only after the hub is confirmed current — or when the
+      directory is not a git work tree, where there is no hub to diverge from.
+      Read the cost before you upgrade: **bare `triage` from a work tree now
+      needs the network**, and refuses without it. That is deliberate — an
+      unchecked "clean" is the failure this replaces — but it is a change in
+      what an offline invocation does. `a2a feedback triage --apply` and every
+      other feedback verb are unaffected; only the listing form checks.
+    affects: ["a2a feedback triage"]
+    action:
+      scope: local
+      why: >
+        If you triage offline, expect a refusal that names the reason instead
+        of a listing. Run `make feedback-sync` (or work from a non-work-tree
+        copy) when you need the queue without reaching the hub.
+      run:
+        - "make feedback-sync"
