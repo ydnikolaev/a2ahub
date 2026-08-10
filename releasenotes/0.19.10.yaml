@@ -806,3 +806,42 @@ changes:
       why: >
         Nothing to do. The JSON key is additive and omitted when an artifact
         has no attachments, so an existing consumer sees no change.
+  - id: RN-01910-29
+    kind: feat
+    impact: normal
+    roadmap:
+      visibility: shipped
+      why: >
+        A verb the product ships that cannot be used on anything the product
+        writes is not a capability, it is a promise. This closes the gap
+        between the two.
+    subject: "`a2a new work_request` writes the generation `a2a attach` requires"
+    detail: >
+      `a2a attach` carries bytes with a work request — the case the tool was
+      built for. It refuses any draft that is not an `envelope/v2`
+      work_request, because `attachments` exists only on that generation. And
+      `a2a new work_request` wrote `envelope/v1`. So attaching bytes to a
+      drafted request meant hand-editing the `schema:` line first, and the
+      refusal's own advice — "run `a2a new work_request`, which authors
+      envelope/v2 by default" — was not true.
+      It is now. `a2a new work_request` writes `envelope/v2`, and
+      `a2a template show work_request` shows the same document, from the same
+      decision, so the template an agent reads and the draft the tool renders
+      cannot disagree. A v2 draft is a strict superset of a v1 one — the two
+      fields it adds, `attachments` and `binding`, are both optional — so
+      nothing an author could write before stops being writable.
+      `binding` (what an artifact IS, and whether it may be adopted or pinned)
+      is offered as commented guidance rather than a filled-in block,
+      deliberately: leaving it out means "undeclared", which is a different
+      statement from declaring no binding at all, and the tool should not make
+      that statement on an author's behalf. To declare it in one flag:
+      `a2a new work_request --field binding=none`.
+      Other artifact types are unchanged. `announcement` in particular keeps
+      writing `envelope/v1`: its v2 template describes a work checkpoint, not a
+      general announcement, so switching it would render the wrong document.
+    affects: ["a2a new work_request", "a2a template show work_request", "a2a attach"]
+    action:
+      scope: none
+      why: >
+        Nothing to do. Existing v1 work requests stay valid and are still
+        accepted everywhere; only what a FRESH draft declares has changed.
