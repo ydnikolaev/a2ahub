@@ -778,6 +778,12 @@ changes:
   - id: RN-01910-28
     kind: feat
     impact: normal
+    roadmap:
+      visibility: shipped
+      why: >
+        The dashboard is where a human decides whether a delivery is
+        trustworthy, and until now it could not see what the delivery
+        referenced at all. The capability is the visibility.
     subject: "The dashboard shows what a work request attached, and `a2a show` stops deriving it separately"
     detail: >
       A work request can declare attachments — bytes it references by digest,
