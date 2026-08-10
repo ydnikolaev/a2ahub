@@ -93,10 +93,21 @@ test: ## Scoped race test through the owned environment. Optional: A2A_VERIFY_TE
 # without it, deleting check-convention.md's hand-maintained table would make this
 # lane vanish silently on the repo's second-largest tracked tree.
 # Presence-gated on web/node_modules exactly as dashboard-template-drift is.
+# skill/** is declared because the SITE IS GENERATED FROM IT, and leaving it out
+# was a false green that lasted a day. web/scripts/generate-content.mjs reads
+# skill/a2ahub/docs-manifest.json and every doc body it names, so a skill edit
+# changes this gate's verdict as directly as a web edit does. On 2026-08-09
+# commit a09db83e grew skill/a2ahub/loops.md by sixteen lines and pushed
+# docs/work-loops.html past its gzip budget; the lane selected nothing, the
+# commit went green, and the breakage surfaced a day later inside an unrelated
+# wave. This is exactly the hole check-convention.md predicts in its own words —
+# "a non-Go edit that changes path meaning does NOT select it today" — and the
+# fix it prescribes.
 # lane-inputs:
 #   web/**
 #   ui/**
-web-quality: ## The web stack's own quality gate (npm). NOT part of `make check` — run when web/** or ui/** changed.
+#   skill/**
+web-quality: ## The web stack's own quality gate (npm). NOT part of `make check` — run when web/**, ui/** or skill/** changed.
 	@if [ -d web/node_modules ]; then \
 	  npm --prefix web run check:quality; \
 	else \
